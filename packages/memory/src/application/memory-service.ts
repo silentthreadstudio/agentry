@@ -9,6 +9,7 @@ import { recallScore } from "../domain/ranking.js";
 import { originForScope, type Roots } from "../resolution/roots.js";
 
 const NEW_FACT_CONFIDENCE = 0.7;
+const ARCHIVE_THRESHOLD = 4; // recalled-but-unused strikes before self-archive (benchmark knob, doc 02 §7)
 
 export interface WriteInput {
   type: MemoryType;
@@ -114,6 +115,7 @@ export class MemoryService {
       text: input.text,
       confidence: NEW_FACT_CONFIDENCE,
       usefulness: 0,
+      decay: 0,
       status: "active",
       createdAt: ts,
       updatedAt: ts,
@@ -177,15 +179,30 @@ export class MemoryService {
     let updated = 0;
     for (const id of new Set([...input.recalled, ...input.used])) {
       const fact = this.facts.get(id);
-      if (!fact) continue;
+      // Recall only ever returns active facts, so a non-active id in recalled/used is illegitimate —
+      // never mutate it (supersession is terminal, doc 02 §42; archived facts decay only via recover).
+      if (!fact || fact.status !== "active") continue;
       if (used.has(id)) {
         this.save(
           input.outcome === "pass"
-            ? { ...fact, usefulness: fact.usefulness + 1, confidence: Math.min(1, fact.confidence + 0.05), updatedAt: ts }
-            : { ...fact, confidence: Math.max(0, fact.confidence - 0.1), updatedAt: ts }, // suspect
+            ? // cited + helped: boost and clear strikes — a used fact is alive
+              { ...fact, usefulness: fact.usefulness + 1, confidence: Math.min(1, fact.confidence + 0.05), decay: 0, updatedAt: ts }
+            : // suspect: lower confidence, but it was relevant/used — don't strike toward archive
+              { ...fact, confidence: Math.max(0, fact.confidence - 0.1), decay: 0, updatedAt: ts },
         );
       } else {
-        this.save({ ...fact, usefulness: Math.max(0, fact.usefulness - 0.25), updatedAt: ts }); // decay
+        // recalled, not used: decay usefulness and add a strike; self-archive once strikes cross the
+        // threshold AND usefulness has floored at 0 (a fresh fact at 0 isn't archived until it earns strikes).
+        const newUsefulness = Math.max(0, fact.usefulness - 0.25);
+        const newDecay = fact.decay + 1;
+        const archive = newDecay >= ARCHIVE_THRESHOLD && newUsefulness === 0;
+        this.save({
+          ...fact,
+          usefulness: newUsefulness,
+          decay: newDecay,
+          updatedAt: ts,
+          ...(archive ? { status: "archived" as const, archivedAt: ts } : {}),
+        });
       }
       updated++;
     }
@@ -204,20 +221,23 @@ export class MemoryService {
     episodes: number;
     active: number;
     superseded: number;
+    archived: number;
     undistilled: number;
     byType: Record<string, number>;
   } {
     let active = 0;
     let superseded = 0;
+    let archived = 0;
     const byType: Record<string, number> = {};
     for (const f of this.facts.values()) {
       if (f.status === "active") active++;
+      else if (f.status === "archived") archived++;
       else superseded++;
       byType[f.type] = (byType[f.type] ?? 0) + 1;
     }
     let undistilled = 0;
     for (const e of this.episodes.values()) if (!e.distilled) undistilled++;
-    return { facts: this.facts.size, episodes: this.episodes.size, active, superseded, undistilled, byType };
+    return { facts: this.facts.size, episodes: this.episodes.size, active, superseded, archived, undistilled, byType };
   }
 
   episodeWrite(input: EpisodeInput): { id: string } {
@@ -260,6 +280,22 @@ export class MemoryService {
 
   activeFacts(): Fact[] {
     return [...this.facts.values()].filter((f) => f.status === "active");
+  }
+
+  /**
+   * Restore a tombstoned (archived) fact back to active — the recover side of auto-decay (doc 02 §3).
+   * Clears the strike counter and tombstone. Because save() does not re-index, also re-add the fact to
+   * the text index so it's immediately searchable again (task mode) without waiting for a full load().
+   * No-op (recovered:false) if the id is missing or the fact isn't archived.
+   */
+  recover(id: string): { recovered: boolean } {
+    const fact = this.facts.get(id);
+    if (!fact || fact.status !== "archived") return { recovered: false };
+    const restored: Fact = { ...fact, status: "active", decay: 0, updatedAt: this.iso() };
+    delete restored.archivedAt;
+    this.save(restored);
+    this.index.add(id, this.body(restored));
+    return { recovered: true };
   }
 
   /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */

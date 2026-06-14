@@ -28493,6 +28493,7 @@ function dirFor(origin, roots) {
 
 // src/application/memory-service.ts
 var NEW_FACT_CONFIDENCE = 0.7;
+var ARCHIVE_THRESHOLD = 4;
 var MemoryService = class {
   constructor(store, index, roots, now = () => Date.now()) {
     this.store = store;
@@ -28534,6 +28535,7 @@ var MemoryService = class {
       text: input.text,
       confidence: NEW_FACT_CONFIDENCE,
       usefulness: 0,
+      decay: 0,
       status: "active",
       createdAt: ts,
       updatedAt: ts,
@@ -28585,14 +28587,28 @@ var MemoryService = class {
     let updated = 0;
     for (const id of /* @__PURE__ */ new Set([...input.recalled, ...input.used])) {
       const fact = this.facts.get(id);
-      if (!fact) continue;
+      if (!fact || fact.status !== "active") continue;
       if (used.has(id)) {
         this.save(
-          input.outcome === "pass" ? { ...fact, usefulness: fact.usefulness + 1, confidence: Math.min(1, fact.confidence + 0.05), updatedAt: ts } : { ...fact, confidence: Math.max(0, fact.confidence - 0.1), updatedAt: ts }
-          // suspect
+          input.outcome === "pass" ? (
+            // cited + helped: boost and clear strikes — a used fact is alive
+            { ...fact, usefulness: fact.usefulness + 1, confidence: Math.min(1, fact.confidence + 0.05), decay: 0, updatedAt: ts }
+          ) : (
+            // suspect: lower confidence, but it was relevant/used — don't strike toward archive
+            { ...fact, confidence: Math.max(0, fact.confidence - 0.1), decay: 0, updatedAt: ts }
+          )
         );
       } else {
-        this.save({ ...fact, usefulness: Math.max(0, fact.usefulness - 0.25), updatedAt: ts });
+        const newUsefulness = Math.max(0, fact.usefulness - 0.25);
+        const newDecay = fact.decay + 1;
+        const archive = newDecay >= ARCHIVE_THRESHOLD && newUsefulness === 0;
+        this.save({
+          ...fact,
+          usefulness: newUsefulness,
+          decay: newDecay,
+          updatedAt: ts,
+          ...archive ? { status: "archived", archivedAt: ts } : {}
+        });
       }
       updated++;
     }
@@ -28608,15 +28624,17 @@ var MemoryService = class {
   stats() {
     let active = 0;
     let superseded = 0;
+    let archived = 0;
     const byType = {};
     for (const f of this.facts.values()) {
       if (f.status === "active") active++;
+      else if (f.status === "archived") archived++;
       else superseded++;
       byType[f.type] = (byType[f.type] ?? 0) + 1;
     }
     let undistilled = 0;
     for (const e of this.episodes.values()) if (!e.distilled) undistilled++;
-    return { facts: this.facts.size, episodes: this.episodes.size, active, superseded, undistilled, byType };
+    return { facts: this.facts.size, episodes: this.episodes.size, active, superseded, archived, undistilled, byType };
   }
   episodeWrite(input) {
     const origin = this.roots.project ? "p" : "g";
@@ -28655,6 +28673,21 @@ var MemoryService = class {
   }
   activeFacts() {
     return [...this.facts.values()].filter((f) => f.status === "active");
+  }
+  /**
+   * Restore a tombstoned (archived) fact back to active — the recover side of auto-decay (doc 02 §3).
+   * Clears the strike counter and tombstone. Because save() does not re-index, also re-add the fact to
+   * the text index so it's immediately searchable again (task mode) without waiting for a full load().
+   * No-op (recovered:false) if the id is missing or the fact isn't archived.
+   */
+  recover(id) {
+    const fact = this.facts.get(id);
+    if (!fact || fact.status !== "archived") return { recovered: false };
+    const restored = { ...fact, status: "active", decay: 0, updatedAt: this.iso() };
+    delete restored.archivedAt;
+    this.save(restored);
+    this.index.add(id, this.body(restored));
+    return { recovered: true };
   }
   /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */
   forget(id) {
@@ -28712,6 +28745,7 @@ var SqliteTextIndex = class {
     this.db.exec("DELETE FROM docs;");
   }
   add(id, body) {
+    this.db.prepare("DELETE FROM docs WHERE id = ?").run(id);
     this.db.prepare("INSERT INTO docs(id, body) VALUES (?, ?)").run(id, body);
   }
   search(query, limit) {
@@ -28751,7 +28785,7 @@ import { join as join2 } from "node:path";
 
 // ../core/dist/enums.js
 var Scope = external_exports.enum(["user", "global", "repo"]);
-var Status = external_exports.enum(["active", "superseded"]);
+var Status = external_exports.enum(["active", "superseded", "archived"]);
 var MemoryType = external_exports.enum([
   // semantic core
   "gotcha",
@@ -28779,7 +28813,11 @@ var Fact = external_exports.object({
   // evolution only
   confidence: external_exports.number().min(0).max(1),
   usefulness: external_exports.number().min(0),
+  decay: external_exports.number().min(0).default(0),
+  // recalled-but-unused strike counter (doc 02 §3)
   status: Status,
+  archivedAt: external_exports.string().optional(),
+  // tombstone timestamp (audit/recoverability)
   supersedes: external_exports.string().optional(),
   provenance: external_exports.array(external_exports.string()).optional(),
   // source episode/fact ids — the interlink graph
@@ -29039,6 +29077,14 @@ function registerFactTools(server, service) {
       inputSchema: { id: external_exports.string() }
     },
     async (args) => ok(service.forget(args.id))
+  );
+  server.registerTool(
+    "memory_recover",
+    {
+      description: "Restore a tombstoned (archived) memory back to active \u2014 the recover side of auto-decay; decay handles archiving, this undoes a false-archive.",
+      inputSchema: { id: external_exports.string() }
+    },
+    async (args) => ok(service.recover(args.id))
   );
 }
 

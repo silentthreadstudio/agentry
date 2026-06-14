@@ -73,11 +73,11 @@ export class MarkdownFileStore implements FileStore {
     writeFileSync(join(dir, file), `---\n${stringifyYaml(front)}---\n\n${text}\n`);
   }
 
-  private read<T extends { id: string }, R>(
+  private read<S extends z.ZodType<{ id: string }, z.ZodTypeDef, unknown>, R>(
     kind: "facts" | "episodes",
-    schema: z.ZodType<T>,
+    schema: S,
     bodyKey: string,
-    wrap: (origin: Origin, record: T) => R,
+    wrap: (origin: Origin, record: z.output<S>) => R,
   ): R[] {
     const sources: [Origin, string][] = [["g", this.roots.global]];
     if (this.roots.project) sources.push(["p", this.roots.project]);

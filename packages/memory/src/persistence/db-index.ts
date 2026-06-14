@@ -37,6 +37,10 @@ export class SqliteTextIndex implements TextIndex {
   }
 
   add(id: string, body: string): void {
+    // Idempotent upsert: clear any prior row for this id first, so re-adding (e.g. the recover() path)
+    // never leaves a duplicate. Works for both the FTS5 and LIKE-fallback tables (neither has a UNIQUE
+    // constraint, so ON CONFLICT can't fire) — and a fresh add is just a delete of zero rows.
+    this.db.prepare("DELETE FROM docs WHERE id = ?").run(id);
     this.db.prepare("INSERT INTO docs(id, body) VALUES (?, ?)").run(id, body);
   }
 

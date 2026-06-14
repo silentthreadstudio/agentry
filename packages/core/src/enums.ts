@@ -4,7 +4,7 @@ import { z } from "zod";
 export const Scope = z.enum(["user", "global", "repo"]);
 export type Scope = z.infer<typeof Scope>;
 
-export const Status = z.enum(["active", "superseded"]);
+export const Status = z.enum(["active", "superseded", "archived"]);
 export type Status = z.infer<typeof Status>;
 
 export const MemoryType = z.enum([

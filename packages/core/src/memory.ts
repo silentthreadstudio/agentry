@@ -12,7 +12,9 @@ export const Fact = z.object({
   subject: z.string().optional(), // evolution only
   confidence: z.number().min(0).max(1),
   usefulness: z.number().min(0),
+  decay: z.number().min(0).default(0), // recalled-but-unused strike counter (doc 02 §3)
   status: Status,
+  archivedAt: z.string().optional(), // tombstone timestamp (audit/recoverability)
   supersedes: z.string().optional(),
   provenance: z.array(z.string()).optional(), // source episode/fact ids — the interlink graph
   repoId: z.string().optional(),

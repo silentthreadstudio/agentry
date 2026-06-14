@@ -101,4 +101,14 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
     },
     async (args) => ok(service.forget(args.id)),
   );
+
+  server.registerTool(
+    "memory_recover",
+    {
+      description:
+        "Restore a tombstoned (archived) memory back to active — the recover side of auto-decay; decay handles archiving, this undoes a false-archive.",
+      inputSchema: { id: z.string() },
+    },
+    async (args) => ok(service.recover(args.id)),
+  );
 }
