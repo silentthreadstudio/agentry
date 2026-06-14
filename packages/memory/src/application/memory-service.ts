@@ -4,7 +4,7 @@
 import type { Episode, Fact, MemoryType, Scope } from "@agentry/core";
 import { DEDUP_THRESHOLD, similarity } from "../domain/dedup.js";
 import { newId, originOf, type Origin } from "../domain/id.js";
-import type { FileStore, TextIndex } from "../domain/ports.js";
+import type { FileStore, ReadError, TextIndex } from "../domain/ports.js";
 import { recallScore } from "../domain/ranking.js";
 import { originForScope, type Roots } from "../resolution/roots.js";
 
@@ -25,6 +25,38 @@ export interface WriteInput {
 export interface WriteResult {
   id: string;
   action: "created" | "reinforced";
+  // Present (= the bogus supersedes id) ONLY when `supersedes` was requested but no such fact existed.
+  // The write still succeeds — this flags the link as a no-op so the caller isn't misled (Q3 / AC6).
+  // Absent on the happy path (AC9 additive-only).
+  supersededMissing?: string;
+}
+
+// ── Service outcomes — typed discriminated unions the adapters switch on (ADR-001 §B). The service
+//    emits a category + the offending value; it never builds an envelope and never throws for an
+//    expected failure. Envelope prose lives in tools/errors.ts at the adapter boundary.
+
+export type UpdateOutcome =
+  | { ok: true; id: string }
+  | { ok: false; reason: "bad-input"; field: string; rule: string }
+  | { ok: false; reason: "not-found"; id: string };
+
+export type ForgetOutcome =
+  | { ok: true; id: string; kind: "fact" | "episode" }
+  | { ok: false; reason: "bad-input"; field: string; rule: string }
+  | { ok: false; reason: "not-found"; id: string };
+
+export type RecoverOutcome =
+  | { ok: true; id: string }
+  | { ok: false; reason: "bad-input"; field: string; rule: string }
+  | { ok: false; reason: "not-found"; id: string }
+  | { ok: false; reason: "invalid-state"; id: string; status: Fact["status"] };
+
+// Per-id partial model (feedback + distill-stamp): applied ids and skipped ids each with a reason.
+// All-ids-invalid (applied empty AND ≥1 id requested) is detected by the adapter → not-found error (Q2).
+export interface PartialOutcome {
+  applied: string[];
+  skipped: { id: string; reason: string }[];
+  requested: number;
 }
 
 export interface RecallInput {
@@ -68,6 +100,9 @@ export interface EpisodeInput {
 export class MemoryService {
   private readonly facts = new Map<string, Fact>();
   private readonly episodes = new Map<string, Episode>();
+  // Read-errors collected at the last load() — corrupt/unreadable store records the file store could not
+  // parse. Surfaced through stats() so memory_stats can report them (Q1); never silently swallowed.
+  private readErrors: ReadError[] = [];
 
   constructor(
     private readonly store: FileStore,
@@ -81,11 +116,15 @@ export class MemoryService {
     this.facts.clear();
     this.episodes.clear();
     this.index.reset();
-    for (const { fact } of this.store.readFacts()) {
+    this.readErrors = [];
+    const facts = this.store.readFacts();
+    for (const { fact } of facts.records) {
       this.facts.set(fact.id, fact);
       if (fact.status === "active") this.index.add(fact.id, this.body(fact));
     }
-    for (const { episode } of this.store.readEpisodes()) this.episodes.set(episode.id, episode);
+    const episodes = this.store.readEpisodes();
+    for (const { episode } of episodes.records) this.episodes.set(episode.id, episode);
+    this.readErrors = [...facts.errors, ...episodes.errors];
   }
 
   write(input: WriteInput): WriteResult {
@@ -127,12 +166,18 @@ export class MemoryService {
       ...(input.provenance ? { provenance: input.provenance } : {}),
     };
 
+    let supersededMissing: string | undefined;
     if (input.supersedes) {
       const old = this.facts.get(input.supersedes);
       if (old) this.save({ ...old, status: "superseded", updatedAt: ts });
+      else supersededMissing = input.supersedes; // requested a supersession of an id that doesn't exist
     }
     this.create(fact);
-    return { id: fact.id, action: "created" };
+    return {
+      id: fact.id,
+      action: "created",
+      ...(supersededMissing !== undefined ? { supersededMissing } : {}),
+    };
   }
 
   recall(input: RecallInput): { memories: ScoredFact[]; episodes?: Episode[] } {
@@ -166,22 +211,32 @@ export class MemoryService {
     });
   }
 
-  update(id: string, patch: UpdatePatch): { id: string; updated: boolean } {
+  update(id: string, patch: UpdatePatch): UpdateOutcome {
+    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
-    if (!fact) return { id, updated: false };
+    if (!fact) return { ok: false, reason: "not-found", id };
     this.save({ ...fact, ...this.clean(patch), updatedAt: this.iso() });
-    return { id, updated: true };
+    return { ok: true, id };
   }
 
-  feedback(input: FeedbackInput): { updated: number } {
+  feedback(input: FeedbackInput): PartialOutcome {
     const ts = this.iso();
     const used = new Set(input.used);
-    let updated = 0;
-    for (const id of new Set([...input.recalled, ...input.used])) {
+    const applied: string[] = [];
+    const skipped: { id: string; reason: string }[] = [];
+    const recalledUsed = new Set([...input.recalled, ...input.used]);
+    for (const id of recalledUsed) {
       const fact = this.facts.get(id);
       // Recall only ever returns active facts, so a non-active id in recalled/used is illegitimate —
       // never mutate it (supersession is terminal, doc 02 §42; archived facts decay only via recover).
-      if (!fact || fact.status !== "active") continue;
+      if (!fact) {
+        skipped.push({ id, reason: "no such fact exists" });
+        continue;
+      }
+      if (fact.status !== "active") {
+        skipped.push({ id, reason: `fact is '${fact.status}', not active` });
+        continue;
+      }
       if (used.has(id)) {
         this.save(
           input.outcome === "pass"
@@ -204,16 +259,20 @@ export class MemoryService {
           ...(archive ? { status: "archived" as const, archivedAt: ts } : {}),
         });
       }
-      updated++;
+      applied.push(id);
     }
     for (const id of input.recallMisses ?? []) {
+      if (recalledUsed.has(id)) continue; // already counted above — don't double-report
       const fact = this.facts.get(id);
       if (fact) {
         this.save({ ...fact, confidence: Math.min(1, fact.confidence + 0.05), updatedAt: ts });
-        updated++;
+        applied.push(id);
+      } else {
+        skipped.push({ id, reason: "no such fact exists" });
       }
     }
-    return { updated };
+    const requested = recalledUsed.size + (input.recallMisses ?? []).filter((id) => !recalledUsed.has(id)).length;
+    return { applied, skipped, requested };
   }
 
   stats(): {
@@ -224,6 +283,7 @@ export class MemoryService {
     archived: number;
     undistilled: number;
     byType: Record<string, number>;
+    readErrors: ReadError[];
   } {
     let active = 0;
     let superseded = 0;
@@ -237,7 +297,16 @@ export class MemoryService {
     }
     let undistilled = 0;
     for (const e of this.episodes.values()) if (!e.distilled) undistilled++;
-    return { facts: this.facts.size, episodes: this.episodes.size, active, superseded, archived, undistilled, byType };
+    return {
+      facts: this.facts.size,
+      episodes: this.episodes.size,
+      active,
+      superseded,
+      archived,
+      undistilled,
+      byType,
+      readErrors: this.readErrors,
+    };
   }
 
   episodeWrite(input: EpisodeInput): { id: string } {
@@ -264,18 +333,25 @@ export class MemoryService {
     return [...this.episodes.values()].filter((e) => !e.distilled);
   }
 
-  stampDistilled(ids: string[]): { stamped: number } {
-    let stamped = 0;
+  stampDistilled(ids: string[]): PartialOutcome {
+    const applied: string[] = [];
+    const skipped: { id: string; reason: string }[] = [];
     for (const id of ids) {
       const e = this.episodes.get(id);
-      if (e && !e.distilled) {
-        const next: Episode = { ...e, distilled: true };
-        this.store.writeEpisode(originOf(e.id), next);
-        this.episodes.set(id, next);
-        stamped++;
+      if (!e) {
+        skipped.push({ id, reason: "no such episode exists" });
+        continue;
       }
+      if (e.distilled) {
+        skipped.push({ id, reason: "episode is already distilled" });
+        continue;
+      }
+      const next: Episode = { ...e, distilled: true };
+      this.store.writeEpisode(originOf(e.id), next);
+      this.episodes.set(id, next);
+      applied.push(id);
     }
-    return { stamped };
+    return { applied, skipped, requested: ids.length };
   }
 
   activeFacts(): Fact[] {
@@ -286,29 +362,33 @@ export class MemoryService {
    * Restore a tombstoned (archived) fact back to active — the recover side of auto-decay (doc 02 §3).
    * Clears the strike counter and tombstone. Because save() does not re-index, also re-add the fact to
    * the text index so it's immediately searchable again (task mode) without waiting for a full load().
-   * No-op (recovered:false) if the id is missing or the fact isn't archived.
+   * Splits failure (ADR-001 §B): id absent → not-found; present but not archived → invalid-state
+   * (carrying the actual status so the adapter can distinguish the two for the caller).
    */
-  recover(id: string): { recovered: boolean } {
+  recover(id: string): RecoverOutcome {
+    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
-    if (!fact || fact.status !== "archived") return { recovered: false };
+    if (!fact) return { ok: false, reason: "not-found", id };
+    if (fact.status !== "archived") return { ok: false, reason: "invalid-state", id, status: fact.status };
     const restored: Fact = { ...fact, status: "active", decay: 0, updatedAt: this.iso() };
     delete restored.archivedAt;
     this.save(restored);
     this.index.add(id, this.body(restored));
-    return { recovered: true };
+    return { ok: true, id };
   }
 
   /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */
-  forget(id: string): { forgotten: boolean; kind?: "fact" | "episode" } {
+  forget(id: string): ForgetOutcome {
+    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     if (this.facts.delete(id)) {
       this.store.deleteFact(originOf(id), id);
-      return { forgotten: true, kind: "fact" };
+      return { ok: true, id, kind: "fact" };
     }
     if (this.episodes.delete(id)) {
       this.store.deleteEpisode(originOf(id), id);
-      return { forgotten: true, kind: "episode" };
+      return { ok: true, id, kind: "episode" };
     }
-    return { forgotten: false };
+    return { ok: false, reason: "not-found", id };
   }
 
   // ── internals ──────────────────────────────────────────────────────────

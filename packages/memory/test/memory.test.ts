@@ -22,7 +22,7 @@ const fresh = (): string => mkdtempSync(join(tmpdir(), "agentry-mem-"));
 // test inspect tombstone fields (decay/status/archivedAt) that recall/search deliberately don't expose.
 function factOnDisk(global: string, id: string): Fact | undefined {
   const store = new MarkdownFileStore({ global, project: null });
-  return store.readFacts().find((r) => r.fact.id === id)?.fact;
+  return store.readFacts().records.find((r) => r.fact.id === id)?.fact;
 }
 
 test("write → recall round-trips", () => {
@@ -88,10 +88,10 @@ test("forget: removes a memory from the store and disk", () => {
     text: "this temporary fact will be forgotten shortly",
   });
   assert.equal(service.stats().active, 1);
-  assert.deepEqual(service.forget(id), { forgotten: true, kind: "fact" });
+  assert.deepEqual(service.forget(id), { ok: true, id, kind: "fact" });
   assert.equal(service.stats().facts, 0);
   assert.equal(service.recall({ query: "temporary forgotten fact" }).memories.length, 0);
-  assert.equal(service.forget(id).forgotten, false); // idempotent
+  assert.equal(service.forget(id).ok, false); // idempotent — now a not-found outcome
 });
 
 const ARCHIVE_THRESHOLD = 4; // mirrors the service constant (doc 02 §7 benchmark knob)
@@ -173,7 +173,7 @@ test("recover: a tombstoned fact returns to active and is recallable again witho
   }
   assert.equal(factOnDisk(dir, id)?.status, "archived");
 
-  assert.deepEqual(service.recover(id), { recovered: true });
+  assert.deepEqual(service.recover(id), { ok: true, id });
   const recovered = factOnDisk(dir, id);
   assert.equal(recovered?.status, "active");
   assert.equal(recovered?.decay, 0);
@@ -183,9 +183,13 @@ test("recover: a tombstoned fact returns to active and is recallable again witho
   const { memories } = service.recall({ query: "recover me back into the search index" });
   assert.equal(memories.some((m) => m.fact.id === id), true);
 
-  // recover is a no-op on an active or unknown id
-  assert.equal(service.recover(id).recovered, false);
-  assert.equal(service.recover("p:nonexistent").recovered, false);
+  // recover on an already-active id → invalid-state (it exists but isn't archived); unknown id → not-found
+  const reRecover = service.recover(id);
+  assert.equal(reRecover.ok, false);
+  assert.equal(reRecover.ok === false && reRecover.reason, "invalid-state");
+  const missing = service.recover("p:nonexistent");
+  assert.equal(missing.ok, false);
+  assert.equal(missing.ok === false && missing.reason, "not-found");
 });
 
 test("feedback ignores non-active ids: a superseded fact can never be decayed or archived", () => {
@@ -216,8 +220,10 @@ test("feedback ignores non-active ids: a superseded fact can never be decayed or
   assert.equal(stillSuperseded?.status, "superseded");
   assert.equal(stillSuperseded?.decay, 0, "decay counter never advanced on a non-active fact");
 
-  // and recover() cannot resurrect it (it isn't archived)
-  assert.equal(service.recover(first.id).recovered, false);
+  // and recover() cannot resurrect it (it exists but isn't archived → invalid-state, not not-found)
+  const rec = service.recover(first.id);
+  assert.equal(rec.ok, false);
+  assert.equal(rec.ok === false && rec.reason, "invalid-state");
   assert.equal(factOnDisk(dir, first.id)?.status, "superseded");
 });
 
@@ -258,7 +264,7 @@ test("recover is idempotent in the index: a recovered fact appears exactly once 
     clock += 1_000;
     service.feedback({ recalled: [id], used: [], outcome: "pass" });
   }
-  assert.deepEqual(service.recover(id), { recovered: true });
+  assert.deepEqual(service.recover(id), { ok: true, id });
 
   // task-mode recall returns the fact exactly once (count, not .some — the double-index bug would
   // have surfaced two scored entries for the same id, consuming two of the ranked slots).

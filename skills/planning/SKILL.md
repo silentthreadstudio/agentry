@@ -42,13 +42,14 @@ Full treatment — contract derivation, overlap detection, finding propagation w
 
 ## Output
 
-A set of Task documents (doc-01 format) with structured frontmatter (`id`, `status`, `owner`, `satisfies`, `deps`, `contract.owns`, `contract.exposes`) and the prose body, plus the criterion→task coverage matrix. Report any memory that shaped the decomposition in `used_memories`.
+A set of Task documents (doc-01 format) with structured frontmatter (`id`, `status`, `owner`, `satisfies`, `deps`, `contract.owns`, `contract.exposes`, `contract.excludes`) and the prose body, plus the criterion→task coverage matrix. Report any memory that shaped the decomposition in `used_memories`. Each task body carries its **must-not-touch** boundary, **pinned** names for any surface a sibling consumes, and the **leave-it-green** verify/build steps (discovered from the repo, never hardcoded) — see the reference.
 
 ## Anti-patterns (refuse these)
 
 - **Over-decomposition** — more tasks than the work needs; overhead beats value.
 - **Overlapping contracts run in parallel** — silent clobbering; the parallelism bug.
 - **Uncovered criterion** — an AC with no task; it never gets built (catch it at the matrix).
+- **Unverified-state assumption** — a task that asserts the repo is already in some state ("the script is absent", "no fixtures dir") the architect never checked. Have the task *verify and adjust*, not act on a guess — an assumed-absent thing that's present-but-wrong silently breaks the build.
 - **Vague acceptance** — a task whose "done" isn't independently checkable; it can't be verified alone.
 - **Context-starved task** — no pointers/contract, so a cold agent can't execute it.
 

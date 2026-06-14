@@ -1,9 +1,12 @@
 // Flow tools — distill + consolidate. PROPOSE-only: they return drafts/proposals; the conductor
-// writes facts (through the bar) and gates skill promotions with the user.
+// writes facts (through the bar) and gates skill promotions with the user. Wrapped in guard() so an
+// unexpected throw becomes the `internal` envelope (AC7). distill (stamp mode) maps its per-id partial
+// outcome → ok(applied+skipped) / err(not-found) on all-invalid (AC5/Q2), via the shared mapper.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { MemoryService } from "../application/memory-service.js";
 import { consolidate, distill } from "../application/flows.js";
+import { guard, partial } from "./adapter.js";
 import { ok } from "./result.js";
 
 export function registerFlowTools(server: McpServer, service: MemoryService): void {
@@ -17,10 +20,11 @@ export function registerFlowTools(server: McpServer, service: MemoryService): vo
         episodeIds: z.array(z.string()).optional(),
       },
     },
-    async (args) =>
+    guard(async (args) =>
       args.mode === "stamp"
-        ? ok(service.stampDistilled(args.episodeIds ?? []))
+        ? partial(service.stampDistilled(args.episodeIds ?? []))
         : ok({ clusters: distill(service.undistilledEpisodes()) }),
+    ),
   );
 
   server.registerTool(
@@ -33,7 +37,8 @@ export function registerFlowTools(server: McpServer, service: MemoryService): vo
         minUsefulness: z.number().nonnegative().optional(),
       },
     },
-    async (args) =>
+    guard(async (args) =>
       ok({ proposals: consolidate(service.activeFacts(), args.minRecurrence, args.minUsefulness) }),
+    ),
   );
 }

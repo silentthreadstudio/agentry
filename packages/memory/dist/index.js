@@ -1304,21 +1304,21 @@ var require_errors = __commonJS({
     function extendErrors({ gen, keyword, schemaValue, data, errsCount, it }) {
       if (errsCount === void 0)
         throw new Error("ajv implementation error");
-      const err = gen.name("err");
+      const err2 = gen.name("err");
       gen.forRange("i", errsCount, names_1.default.errors, (i) => {
-        gen.const(err, (0, codegen_1._)`${names_1.default.vErrors}[${i}]`);
-        gen.if((0, codegen_1._)`${err}.instancePath === undefined`, () => gen.assign((0, codegen_1._)`${err}.instancePath`, (0, codegen_1.strConcat)(names_1.default.instancePath, it.errorPath)));
-        gen.assign((0, codegen_1._)`${err}.schemaPath`, (0, codegen_1.str)`${it.errSchemaPath}/${keyword}`);
+        gen.const(err2, (0, codegen_1._)`${names_1.default.vErrors}[${i}]`);
+        gen.if((0, codegen_1._)`${err2}.instancePath === undefined`, () => gen.assign((0, codegen_1._)`${err2}.instancePath`, (0, codegen_1.strConcat)(names_1.default.instancePath, it.errorPath)));
+        gen.assign((0, codegen_1._)`${err2}.schemaPath`, (0, codegen_1.str)`${it.errSchemaPath}/${keyword}`);
         if (it.opts.verbose) {
-          gen.assign((0, codegen_1._)`${err}.schema`, schemaValue);
-          gen.assign((0, codegen_1._)`${err}.data`, data);
+          gen.assign((0, codegen_1._)`${err2}.schema`, schemaValue);
+          gen.assign((0, codegen_1._)`${err2}.data`, data);
         }
       });
     }
     exports.extendErrors = extendErrors;
     function addError(gen, errObj) {
-      const err = gen.const("err", errObj);
-      gen.if((0, codegen_1._)`${names_1.default.vErrors} === null`, () => gen.assign(names_1.default.vErrors, (0, codegen_1._)`[${err}]`), (0, codegen_1._)`${names_1.default.vErrors}.push(${err})`);
+      const err2 = gen.const("err", errObj);
+      gen.if((0, codegen_1._)`${names_1.default.vErrors} === null`, () => gen.assign(names_1.default.vErrors, (0, codegen_1._)`[${err2}]`), (0, codegen_1._)`${names_1.default.vErrors}.push(${err2})`);
       gen.code((0, codegen_1._)`${names_1.default.errors}++`);
     }
     function returnErrors(it, errs) {
@@ -14956,8 +14956,8 @@ var ZodType = class {
         } : {
           issues: ctx.common.issues
         };
-      } catch (err) {
-        if (err?.message?.toLowerCase()?.includes("encountered")) {
+      } catch (err2) {
+        if (err2?.message?.toLowerCase()?.includes("encountered")) {
           this["~standard"].async = true;
         }
         ctx.common = {
@@ -28503,16 +28503,23 @@ var MemoryService = class {
   }
   facts = /* @__PURE__ */ new Map();
   episodes = /* @__PURE__ */ new Map();
+  // Read-errors collected at the last load() — corrupt/unreadable store records the file store could not
+  // parse. Surfaced through stats() so memory_stats can report them (Q1); never silently swallowed.
+  readErrors = [];
   /** Load the file store into memory and (re)build the text index. Call once at startup. */
   load() {
     this.facts.clear();
     this.episodes.clear();
     this.index.reset();
-    for (const { fact } of this.store.readFacts()) {
+    this.readErrors = [];
+    const facts = this.store.readFacts();
+    for (const { fact } of facts.records) {
       this.facts.set(fact.id, fact);
       if (fact.status === "active") this.index.add(fact.id, this.body(fact));
     }
-    for (const { episode } of this.store.readEpisodes()) this.episodes.set(episode.id, episode);
+    const episodes = this.store.readEpisodes();
+    for (const { episode } of episodes.records) this.episodes.set(episode.id, episode);
+    this.readErrors = [...facts.errors, ...episodes.errors];
   }
   write(input) {
     for (const fact2 of this.facts.values()) {
@@ -28546,12 +28553,18 @@ var MemoryService = class {
       ...input.supersedes !== void 0 ? { supersedes: input.supersedes } : {},
       ...input.provenance ? { provenance: input.provenance } : {}
     };
+    let supersededMissing;
     if (input.supersedes) {
       const old = this.facts.get(input.supersedes);
       if (old) this.save({ ...old, status: "superseded", updatedAt: ts });
+      else supersededMissing = input.supersedes;
     }
     this.create(fact);
-    return { id: fact.id, action: "created" };
+    return {
+      id: fact.id,
+      action: "created",
+      ...supersededMissing !== void 0 ? { supersededMissing } : {}
+    };
   }
   recall(input) {
     const limit = input.limit ?? 5;
@@ -28576,18 +28589,28 @@ var MemoryService = class {
     });
   }
   update(id, patch) {
+    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
-    if (!fact) return { id, updated: false };
+    if (!fact) return { ok: false, reason: "not-found", id };
     this.save({ ...fact, ...this.clean(patch), updatedAt: this.iso() });
-    return { id, updated: true };
+    return { ok: true, id };
   }
   feedback(input) {
     const ts = this.iso();
     const used = new Set(input.used);
-    let updated = 0;
-    for (const id of /* @__PURE__ */ new Set([...input.recalled, ...input.used])) {
+    const applied = [];
+    const skipped = [];
+    const recalledUsed = /* @__PURE__ */ new Set([...input.recalled, ...input.used]);
+    for (const id of recalledUsed) {
       const fact = this.facts.get(id);
-      if (!fact || fact.status !== "active") continue;
+      if (!fact) {
+        skipped.push({ id, reason: "no such fact exists" });
+        continue;
+      }
+      if (fact.status !== "active") {
+        skipped.push({ id, reason: `fact is '${fact.status}', not active` });
+        continue;
+      }
       if (used.has(id)) {
         this.save(
           input.outcome === "pass" ? (
@@ -28610,16 +28633,20 @@ var MemoryService = class {
           ...archive ? { status: "archived", archivedAt: ts } : {}
         });
       }
-      updated++;
+      applied.push(id);
     }
     for (const id of input.recallMisses ?? []) {
+      if (recalledUsed.has(id)) continue;
       const fact = this.facts.get(id);
       if (fact) {
         this.save({ ...fact, confidence: Math.min(1, fact.confidence + 0.05), updatedAt: ts });
-        updated++;
+        applied.push(id);
+      } else {
+        skipped.push({ id, reason: "no such fact exists" });
       }
     }
-    return { updated };
+    const requested = recalledUsed.size + (input.recallMisses ?? []).filter((id) => !recalledUsed.has(id)).length;
+    return { applied, skipped, requested };
   }
   stats() {
     let active = 0;
@@ -28634,7 +28661,16 @@ var MemoryService = class {
     }
     let undistilled = 0;
     for (const e of this.episodes.values()) if (!e.distilled) undistilled++;
-    return { facts: this.facts.size, episodes: this.episodes.size, active, superseded, archived, undistilled, byType };
+    return {
+      facts: this.facts.size,
+      episodes: this.episodes.size,
+      active,
+      superseded,
+      archived,
+      undistilled,
+      byType,
+      readErrors: this.readErrors
+    };
   }
   episodeWrite(input) {
     const origin = this.roots.project ? "p" : "g";
@@ -28659,17 +28695,24 @@ var MemoryService = class {
     return [...this.episodes.values()].filter((e) => !e.distilled);
   }
   stampDistilled(ids) {
-    let stamped = 0;
+    const applied = [];
+    const skipped = [];
     for (const id of ids) {
       const e = this.episodes.get(id);
-      if (e && !e.distilled) {
-        const next = { ...e, distilled: true };
-        this.store.writeEpisode(originOf(e.id), next);
-        this.episodes.set(id, next);
-        stamped++;
+      if (!e) {
+        skipped.push({ id, reason: "no such episode exists" });
+        continue;
       }
+      if (e.distilled) {
+        skipped.push({ id, reason: "episode is already distilled" });
+        continue;
+      }
+      const next = { ...e, distilled: true };
+      this.store.writeEpisode(originOf(e.id), next);
+      this.episodes.set(id, next);
+      applied.push(id);
     }
-    return { stamped };
+    return { applied, skipped, requested: ids.length };
   }
   activeFacts() {
     return [...this.facts.values()].filter((f) => f.status === "active");
@@ -28678,28 +28721,32 @@ var MemoryService = class {
    * Restore a tombstoned (archived) fact back to active — the recover side of auto-decay (doc 02 §3).
    * Clears the strike counter and tombstone. Because save() does not re-index, also re-add the fact to
    * the text index so it's immediately searchable again (task mode) without waiting for a full load().
-   * No-op (recovered:false) if the id is missing or the fact isn't archived.
+   * Splits failure (ADR-001 §B): id absent → not-found; present but not archived → invalid-state
+   * (carrying the actual status so the adapter can distinguish the two for the caller).
    */
   recover(id) {
+    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
-    if (!fact || fact.status !== "archived") return { recovered: false };
+    if (!fact) return { ok: false, reason: "not-found", id };
+    if (fact.status !== "archived") return { ok: false, reason: "invalid-state", id, status: fact.status };
     const restored = { ...fact, status: "active", decay: 0, updatedAt: this.iso() };
     delete restored.archivedAt;
     this.save(restored);
     this.index.add(id, this.body(restored));
-    return { recovered: true };
+    return { ok: true, id };
   }
   /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */
   forget(id) {
+    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     if (this.facts.delete(id)) {
       this.store.deleteFact(originOf(id), id);
-      return { forgotten: true, kind: "fact" };
+      return { ok: true, id, kind: "fact" };
     }
     if (this.episodes.delete(id)) {
       this.store.deleteEpisode(originOf(id), id);
-      return { forgotten: true, kind: "episode" };
+      return { ok: true, id, kind: "episode" };
     }
-    return { forgotten: false };
+    return { ok: false, reason: "not-found", id };
   }
   // ── internals ──────────────────────────────────────────────────────────
   create(fact) {
@@ -28799,6 +28846,30 @@ var MemoryType = external_exports.enum([
 ]);
 var KnownShape = external_exports.enum(["one-shot", "spec-first", "decompose+verify"]);
 var Shape = external_exports.string();
+
+// ../core/dist/errors.js
+var MemoryErrorCode = external_exports.enum([
+  "bad-input",
+  // passes shape validation but is semantically invalid (blank id, limit ≤ 0)
+  "not-found",
+  // a referenced id does not exist
+  "invalid-state",
+  // the target exists but the op does not apply (recover on a non-archived id)
+  "internal",
+  // an unexpected exception inside a handler
+  "storage-read"
+  // a store record was corrupt/unreadable (not retryable by changing the call)
+]);
+var MemoryError = external_exports.object({
+  code: MemoryErrorCode,
+  // stable machine category (closed set above)
+  what: external_exports.string().min(1),
+  // what went wrong, human-readable
+  why: external_exports.string().min(1),
+  // the cause, including the offending value where relevant
+  fix: external_exports.string().min(1)
+  // a concrete instruction for the next call (names field + valid form)
+});
 
 // ../core/dist/memory.js
 var Fact = external_exports.object({
@@ -28942,7 +29013,8 @@ ${text}
   read(kind, schema, bodyKey, wrap) {
     const sources = [["g", this.roots.global]];
     if (this.roots.project) sources.push(["p", this.roots.project]);
-    const out = [];
+    const records = [];
+    const errors = [];
     for (const [origin, root] of sources) {
       const dir = join2(root, kind);
       if (!existsSync(dir)) continue;
@@ -28952,21 +29024,64 @@ ${text}
           const m = FRONTMATTER.exec(readFileSync(join2(dir, file), "utf8"));
           if (!m) continue;
           const front = (0, import_yaml.parse)(m[1] ?? "");
-          out.push(wrap(origin, schema.parse({ ...front, [bodyKey]: (m[2] ?? "").trim() })));
-        } catch {
+          records.push(wrap(origin, schema.parse({ ...front, [bodyKey]: (m[2] ?? "").trim() })));
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          errors.push({ kind, file, reason });
           process.stderr.write(`[mem] skipped unreadable ${kind}/${file}
 `);
         }
       }
     }
-    return out;
+    return { records, errors };
   }
 };
+
+// src/tools/errors.ts
+var notFound = (id) => MemoryError.parse({
+  code: "not-found",
+  what: "The requested record does not exist.",
+  why: `No record was found for id "${id}".`,
+  fix: "Pass the id of an existing record \u2014 list or search first to obtain a valid id, then retry."
+});
+var badInput = (field, rule) => MemoryError.parse({
+  code: "bad-input",
+  what: "An input value is semantically invalid.",
+  why: `The "${field}" value does not satisfy its constraint: ${rule}.`,
+  fix: `Set "${field}" to a value that satisfies: ${rule}, then retry.`
+});
+var invalidState = (what, why, fix) => MemoryError.parse({ code: "invalid-state", what, why, fix });
+var internal = () => MemoryError.parse({
+  code: "internal",
+  what: "An unexpected internal error occurred.",
+  why: "The handler failed for an internal reason, not because of the caller's input.",
+  fix: "Retry the request; if it persists, the issue is server-side and not fixable by changing the call."
+});
 
 // src/tools/result.ts
 var ok = (data) => ({
   content: [{ type: "text", text: JSON.stringify(data) }]
 });
+var err = (envelope) => ({
+  content: [{ type: "text", text: JSON.stringify({ error: envelope }) }],
+  isError: true
+});
+
+// src/tools/adapter.ts
+var guard = (handler) => async (args) => {
+  try {
+    return await handler(args);
+  } catch {
+    return err(internal());
+  }
+};
+function partial2(outcome) {
+  if (outcome.applied.length === 0 && outcome.requested > 0) {
+    const ids = outcome.skipped.map((s) => s.id).join(", ");
+    return err(notFound(ids));
+  }
+  return ok({ applied: outcome.applied, skipped: outcome.skipped });
+}
 
 // src/tools/episode-tools.ts
 function registerEpisodeTools(server, service) {
@@ -28985,15 +29100,16 @@ function registerEpisodeTools(server, service) {
         repoId: external_exports.string().optional()
       }
     },
-    async (args) => ok(service.episodeWrite(args))
+    guard(async (args) => ok(service.episodeWrite(args)))
   );
   server.registerTool(
     "memory_stats",
     {
-      description: "Aggregate counts across layers \u2014 facts/episodes, active/superseded, undistilled-episode debt, by type.",
+      description: "Aggregate counts across layers \u2014 facts/episodes, active/superseded, undistilled-episode debt, by type. Surfaces read-errors for any corrupt/unreadable store record.",
       inputSchema: {}
     },
-    async () => ok(service.stats())
+    // stats() already carries readErrors as an additive field (Q1) — surface it on the payload.
+    guard(async () => ok(service.stats()))
   );
 }
 
@@ -29015,7 +29131,7 @@ function registerFactTools(server, service) {
         provenance: external_exports.array(external_exports.string()).optional()
       }
     },
-    async (args) => ok(service.write(args))
+    guard(async (args) => ok(service.write(args)))
   );
   server.registerTool(
     "memory_recall",
@@ -29027,7 +29143,7 @@ function registerFactTools(server, service) {
         mode: external_exports.enum(["task", "prime"]).optional()
       }
     },
-    async (args) => ok(service.recall(args))
+    guard(async (args) => ok(service.recall(args)))
   );
   server.registerTool(
     "memory_search",
@@ -29035,7 +29151,7 @@ function registerFactTools(server, service) {
       description: "Broader full-text search with snippets \u2014 for exploration when recall's few aren't enough.",
       inputSchema: { query: external_exports.string(), limit: external_exports.number().int().positive().optional() }
     },
-    async (args) => ok({ results: service.search(args.query, args.limit) })
+    guard(async (args) => ok({ results: service.search(args.query, args.limit) }))
   );
   server.registerTool(
     "memory_update",
@@ -29052,10 +29168,13 @@ function registerFactTools(server, service) {
         supersedes: external_exports.string().optional()
       }
     },
-    async (args) => {
+    guard(async (args) => {
       const { id, ...patch } = args;
-      return ok(service.update(id, patch));
-    }
+      const outcome = service.update(id, patch);
+      if (outcome.ok) return ok({ id: outcome.id, updated: true });
+      if (outcome.reason === "bad-input") return err(badInput(outcome.field, outcome.rule));
+      return err(notFound(outcome.id));
+    })
   );
   server.registerTool(
     "memory_feedback",
@@ -29068,7 +29187,7 @@ function registerFactTools(server, service) {
         recallMisses: external_exports.array(external_exports.string()).optional()
       }
     },
-    async (args) => ok(service.feedback(args))
+    guard(async (args) => partial2(service.feedback(args)))
   );
   server.registerTool(
     "memory_forget",
@@ -29076,7 +29195,12 @@ function registerFactTools(server, service) {
       description: "Remove a memory by id \u2014 from the live store and disk. The manual-removal override (doc 02 \xA73); use sparingly \u2014 decay handles routine cleanup.",
       inputSchema: { id: external_exports.string() }
     },
-    async (args) => ok(service.forget(args.id))
+    guard(async (args) => {
+      const outcome = service.forget(args.id);
+      if (outcome.ok) return ok({ forgotten: true, kind: outcome.kind });
+      if (outcome.reason === "bad-input") return err(badInput(outcome.field, outcome.rule));
+      return err(notFound(outcome.id));
+    })
   );
   server.registerTool(
     "memory_recover",
@@ -29084,7 +29208,19 @@ function registerFactTools(server, service) {
       description: "Restore a tombstoned (archived) memory back to active \u2014 the recover side of auto-decay; decay handles archiving, this undoes a false-archive.",
       inputSchema: { id: external_exports.string() }
     },
-    async (args) => ok(service.recover(args.id))
+    guard(async (args) => {
+      const outcome = service.recover(args.id);
+      if (outcome.ok) return ok({ recovered: true });
+      if (outcome.reason === "bad-input") return err(badInput(outcome.field, outcome.rule));
+      if (outcome.reason === "not-found") return err(notFound(outcome.id));
+      return err(
+        invalidState(
+          "cannot recover this memory",
+          `it is '${outcome.status}', not archived`,
+          "recover only applies to archived facts"
+        )
+      );
+    })
   );
 }
 
@@ -29134,7 +29270,9 @@ function registerFlowTools(server, service) {
         episodeIds: external_exports.array(external_exports.string()).optional()
       }
     },
-    async (args) => args.mode === "stamp" ? ok(service.stampDistilled(args.episodeIds ?? [])) : ok({ clusters: distill(service.undistilledEpisodes()) })
+    guard(
+      async (args) => args.mode === "stamp" ? partial2(service.stampDistilled(args.episodeIds ?? [])) : ok({ clusters: distill(service.undistilledEpisodes()) })
+    )
   );
   server.registerTool(
     "memory_consolidate",
@@ -29145,7 +29283,9 @@ function registerFlowTools(server, service) {
         minUsefulness: external_exports.number().nonnegative().optional()
       }
     },
-    async (args) => ok({ proposals: consolidate(service.activeFacts(), args.minRecurrence, args.minUsefulness) })
+    guard(
+      async (args) => ok({ proposals: consolidate(service.activeFacts(), args.minRecurrence, args.minUsefulness) })
+    )
   );
 }
 

@@ -9,7 +9,7 @@ import { Episode, Fact } from "@agentry/core";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { z } from "zod";
 import { bareId, slug, type Origin } from "../domain/id.js";
-import type { FileStore, StoredEpisode, StoredFact } from "../domain/ports.js";
+import type { FileStore, ReadError, ReadResult, StoredEpisode, StoredFact } from "../domain/ports.js";
 import { dirFor, type Roots } from "../resolution/roots.js";
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
@@ -29,11 +29,11 @@ export class MarkdownFileStore implements FileStore {
     this.write(origin, "episodes", episode.id, episode, "task");
   }
 
-  readFacts(): StoredFact[] {
+  readFacts(): ReadResult<StoredFact> {
     return this.read("facts", Fact, "text", (origin, fact) => ({ origin, fact }));
   }
 
-  readEpisodes(): StoredEpisode[] {
+  readEpisodes(): ReadResult<StoredEpisode> {
     return this.read("episodes", Episode, "task", (origin, episode) => ({ origin, episode }));
   }
 
@@ -78,11 +78,12 @@ export class MarkdownFileStore implements FileStore {
     schema: S,
     bodyKey: string,
     wrap: (origin: Origin, record: z.output<S>) => R,
-  ): R[] {
+  ): ReadResult<R> {
     const sources: [Origin, string][] = [["g", this.roots.global]];
     if (this.roots.project) sources.push(["p", this.roots.project]);
 
-    const out: R[] = [];
+    const records: R[] = [];
+    const errors: ReadError[] = [];
     for (const [origin, root] of sources) {
       const dir = join(root, kind);
       if (!existsSync(dir)) continue;
@@ -92,12 +93,15 @@ export class MarkdownFileStore implements FileStore {
           const m = FRONTMATTER.exec(readFileSync(join(dir, file), "utf8"));
           if (!m) continue;
           const front = parseYaml(m[1] ?? "") as Record<string, unknown>;
-          out.push(wrap(origin, schema.parse({ ...front, [bodyKey]: (m[2] ?? "").trim() })));
-        } catch {
+          records.push(wrap(origin, schema.parse({ ...front, [bodyKey]: (m[2] ?? "").trim() })));
+        } catch (cause) {
+          // Don't swallow: record the corrupt/unreadable file so it stays legible to the caller (Q1).
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          errors.push({ kind, file, reason });
           process.stderr.write(`[mem] skipped unreadable ${kind}/${file}\n`);
         }
       }
     }
-    return out;
+    return { records, errors };
   }
 }

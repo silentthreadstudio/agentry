@@ -5,6 +5,7 @@
 // Keep in lockstep with the design docs (.docs/internal).
 
 export * from "./enums.js";
+export * from "./errors.js";
 export * from "./memory.js";
 export * from "./artifacts.js";
 export * from "./events.js";

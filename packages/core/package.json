@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test"
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
     "zod": "^3.23.0"

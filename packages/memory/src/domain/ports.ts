@@ -12,13 +12,30 @@ export interface StoredEpisode {
   episode: Episode;
 }
 
+/**
+ * A record that could not be parsed off disk (corrupt frontmatter, schema mismatch, conflict marker).
+ * Plain values only — no `node:fs` types leak across the port (ADR-001 §Q1). Surfaced through the read
+ * methods so a bad file is legible to the caller instead of silently swallowed (Q1 / `storage-read`).
+ */
+export interface ReadError {
+  kind: "facts" | "episodes";
+  file: string;
+  reason: string;
+}
+
+/** Records parsed from disk plus any read-errors collected along the way (Q1 — errors never swallowed). */
+export interface ReadResult<T> {
+  records: T[];
+  errors: ReadError[];
+}
+
 /** The source of truth: one JSON file per record under each root's memory dir. */
 export interface FileStore {
   readonly hasProjectRoot: boolean;
   writeFact(origin: Origin, fact: Fact): void;
   writeEpisode(origin: Origin, episode: Episode): void;
-  readFacts(): StoredFact[];
-  readEpisodes(): StoredEpisode[];
+  readFacts(): ReadResult<StoredFact>;
+  readEpisodes(): ReadResult<StoredEpisode>;
   deleteFact(origin: Origin, id: string): void;
   deleteEpisode(origin: Origin, id: string): void;
 }

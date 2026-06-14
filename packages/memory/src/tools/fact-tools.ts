@@ -1,5 +1,7 @@
 // Fact tools — thin MCP adapters over MemoryService. Input is validated by the SDK against the zod
 // raw shape, then handed to the service (cast at this boundary to the service's exact-optional types).
+// Each adapter switches the service's typed outcome → ok(payload) on success or err(builder(...)) on
+// failure (ADR-001 §B); envelope prose lives in tools/errors.ts, never built here (AC8).
 import { MemoryType, Scope } from "@agentry/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -10,7 +12,9 @@ import type {
   UpdatePatch,
   WriteInput,
 } from "../application/memory-service.js";
-import { ok } from "./result.js";
+import { guard, partial } from "./adapter.js";
+import { badInput, invalidState, notFound } from "./errors.js";
+import { err, ok } from "./result.js";
 
 export function registerFactTools(server: McpServer, service: MemoryService): void {
   server.registerTool(
@@ -30,7 +34,7 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
         provenance: z.array(z.string()).optional(),
       },
     },
-    async (args) => ok(service.write(args as WriteInput)),
+    guard(async (args) => ok(service.write(args as WriteInput))),
   );
 
   server.registerTool(
@@ -44,7 +48,7 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
         mode: z.enum(["task", "prime"]).optional(),
       },
     },
-    async (args) => ok(service.recall(args as RecallInput)),
+    guard(async (args) => ok(service.recall(args as RecallInput))),
   );
 
   server.registerTool(
@@ -53,7 +57,7 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
       description: "Broader full-text search with snippets — for exploration when recall's few aren't enough.",
       inputSchema: { query: z.string(), limit: z.number().int().positive().optional() },
     },
-    async (args) => ok({ results: service.search(args.query, args.limit) }),
+    guard(async (args) => ok({ results: service.search(args.query, args.limit) })),
   );
 
   server.registerTool(
@@ -71,10 +75,13 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
         supersedes: z.string().optional(),
       },
     },
-    async (args) => {
+    guard(async (args) => {
       const { id, ...patch } = args;
-      return ok(service.update(id, patch as UpdatePatch));
-    },
+      const outcome = service.update(id, patch as UpdatePatch);
+      if (outcome.ok) return ok({ id: outcome.id, updated: true });
+      if (outcome.reason === "bad-input") return err(badInput(outcome.field, outcome.rule));
+      return err(notFound(outcome.id));
+    }),
   );
 
   server.registerTool(
@@ -89,7 +96,7 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
         recallMisses: z.array(z.string()).optional(),
       },
     },
-    async (args) => ok(service.feedback(args as FeedbackInput)),
+    guard(async (args) => partial(service.feedback(args as FeedbackInput))),
   );
 
   server.registerTool(
@@ -99,7 +106,12 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
         "Remove a memory by id — from the live store and disk. The manual-removal override (doc 02 §3); use sparingly — decay handles routine cleanup.",
       inputSchema: { id: z.string() },
     },
-    async (args) => ok(service.forget(args.id)),
+    guard(async (args) => {
+      const outcome = service.forget(args.id);
+      if (outcome.ok) return ok({ forgotten: true, kind: outcome.kind });
+      if (outcome.reason === "bad-input") return err(badInput(outcome.field, outcome.rule));
+      return err(notFound(outcome.id));
+    }),
   );
 
   server.registerTool(
@@ -109,6 +121,18 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
         "Restore a tombstoned (archived) memory back to active — the recover side of auto-decay; decay handles archiving, this undoes a false-archive.",
       inputSchema: { id: z.string() },
     },
-    async (args) => ok(service.recover(args.id)),
+    guard(async (args) => {
+      const outcome = service.recover(args.id);
+      if (outcome.ok) return ok({ recovered: true });
+      if (outcome.reason === "bad-input") return err(badInput(outcome.field, outcome.rule));
+      if (outcome.reason === "not-found") return err(notFound(outcome.id));
+      return err(
+        invalidState(
+          "cannot recover this memory",
+          `it is '${outcome.status}', not archived`,
+          "recover only applies to archived facts",
+        ),
+      );
+    }),
   );
 }

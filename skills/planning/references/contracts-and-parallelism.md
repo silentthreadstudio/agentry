@@ -7,9 +7,18 @@ Reference for the `planning` skill: how to derive Task contracts from an archite
 Each component/seam on the architecture map becomes one or more tasks. For each, fill:
 
 - **`owns`** — the concrete files/modules this task creates or modifies. Be specific (`auth/middleware.ts`), not vague (`the auth stuff`). Specificity is what makes overlap detectable.
-- **`exposes`** — the public interface other tasks depend on (a function signature, a type, an endpoint, an event). This is the *contract with the rest of the system*.
+- **`exposes`** — the public interface other tasks depend on (a function signature, a type, an endpoint, an event). This is the *contract with the rest of the system*. **Pin the exact names** (the literal type/function/field strings a consumer imports) when another task is written against this surface — the consumer codes against a frozen signature, not a paraphrase, so a rename can't silently break it.
+- **`excludes` (must-not-touch)** — the files a sibling owns that this task must **not** edit. The explicit negative of `owns`: it makes the boundary enforceable from *both* sides (a cold agent can clobber-check itself) and is most valuable when this task only *consumes* a surface a sibling already published — say "consume it, don't edit it; a needed change there is a request to that task, not an edit here."
 
 A task's `owns` should be **disjoint** from every other task's `owns` wherever possible. Where two tasks genuinely must touch the same file, that file is a shared seam → they get a `deps` edge and serialize.
+
+### Verify state, don't assume it
+
+A task contract must not assert repo state the architect didn't check ("the test script is absent", "there's no fixtures dir"). An assumed-absent thing that's actually *present-but-inadequate* makes the implementer skip it, and the gap surfaces only at the gate. When a task depends on existing tooling/config, write it as **"verify the current state of X; adjust if it doesn't meet the need"** — never "if X is missing, add it." Discovery beats assumption (the same capability-first rule the conductor uses).
+
+### Leave-it-green steps
+
+Each task carries the **verify/build steps it must run to leave the repo green** — the typecheck/test/build/lint commands that prove the contract holds and that downstream consumers still compile. **Discover these from the repo's own tooling; never hardcode a command** — the task is the place to name the project's specifics, the skill is not.
 
 ## Overlap detection (the parallel-safety rule)
 
