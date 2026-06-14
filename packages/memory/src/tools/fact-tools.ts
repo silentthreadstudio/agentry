@@ -91,4 +91,14 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
     },
     async (args) => ok(service.feedback(args as FeedbackInput)),
   );
+
+  server.registerTool(
+    "memory_forget",
+    {
+      description:
+        "Remove a memory by id — from the live store and disk. The manual-removal override (doc 02 §3); use sparingly — decay handles routine cleanup.",
+      inputSchema: { id: z.string() },
+    },
+    async (args) => ok(service.forget(args.id)),
+  );
 }

@@ -262,6 +262,19 @@ export class MemoryService {
     return [...this.facts.values()].filter((f) => f.status === "active");
   }
 
+  /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */
+  forget(id: string): { forgotten: boolean; kind?: "fact" | "episode" } {
+    if (this.facts.delete(id)) {
+      this.store.deleteFact(originOf(id), id);
+      return { forgotten: true, kind: "fact" };
+    }
+    if (this.episodes.delete(id)) {
+      this.store.deleteEpisode(originOf(id), id);
+      return { forgotten: true, kind: "episode" };
+    }
+    return { forgotten: false };
+  }
+
   // ── internals ──────────────────────────────────────────────────────────
   private create(fact: Fact): void {
     this.store.writeFact(originOf(fact.id), fact);

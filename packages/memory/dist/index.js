@@ -28656,6 +28656,18 @@ var MemoryService = class {
   activeFacts() {
     return [...this.facts.values()].filter((f) => f.status === "active");
   }
+  /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */
+  forget(id) {
+    if (this.facts.delete(id)) {
+      this.store.deleteFact(originOf(id), id);
+      return { forgotten: true, kind: "fact" };
+    }
+    if (this.episodes.delete(id)) {
+      this.store.deleteEpisode(originOf(id), id);
+      return { forgotten: true, kind: "episode" };
+    }
+    return { forgotten: false };
+  }
   // ── internals ──────────────────────────────────────────────────────────
   create(fact) {
     this.store.writeFact(originOf(fact.id), fact);
@@ -28862,6 +28874,18 @@ var MarkdownFileStore = class {
   readEpisodes() {
     return this.read("episodes", Episode, "task", (origin, episode) => ({ origin, episode }));
   }
+  deleteFact(origin, id) {
+    this.remove(origin, "facts", id);
+  }
+  deleteEpisode(origin, id) {
+    this.remove(origin, "episodes", id);
+  }
+  remove(origin, kind, id) {
+    const dir = join2(dirFor(origin, this.roots), kind);
+    if (!existsSync(dir)) return;
+    const suffix = `-${bareId(id)}.md`;
+    for (const f of readdirSync(dir)) if (f.endsWith(suffix)) unlinkSync(join2(dir, f));
+  }
   /** `bodyKey` is the field rendered as the Markdown body; everything else is frontmatter. */
   write(origin, kind, id, record2, bodyKey) {
     const dir = join2(dirFor(origin, this.roots), kind);
@@ -29007,6 +29031,14 @@ function registerFactTools(server, service) {
       }
     },
     async (args) => ok(service.feedback(args))
+  );
+  server.registerTool(
+    "memory_forget",
+    {
+      description: "Remove a memory by id \u2014 from the live store and disk. The manual-removal override (doc 02 \xA73); use sparingly \u2014 decay handles routine cleanup.",
+      inputSchema: { id: external_exports.string() }
+    },
+    async (args) => ok(service.forget(args.id))
   );
 }
 

@@ -114,9 +114,10 @@ search **union across both roots**; `id` origin-prefix (`g:`/`p:`) tells updates
 
 ---
 
-## 2. Tool surface (9 tools)
+## 2. Tool surface (10 tools)
 
-The 8 from doc 03 + **`memory_feedback`** (the sink for the usefulness signal, 02 §4).
+The 8 from doc 03 + **`memory_feedback`** (the usefulness-signal sink, 02 §4) + **`memory_forget`** (the
+manual-removal override promised in 02 §3).
 
 ### Writes
 
@@ -148,6 +149,13 @@ out: { updated: number }
 ```
 `used + pass` → +usefulness/+confidence · `recalled, not used` → decay tick · `used + fail-in-domain` →
 **suspect**: lower confidence · `recallMiss` → +relevance weight.
+
+**`memory_forget`** — the manual-removal override (02 §3): delete a memory by id from the live store and
+disk. Use sparingly — decay handles routine cleanup; this is for noise/mistakes.
+```
+in : { id: string }
+out: { forgotten: boolean, kind?: "fact" | "episode" }
+```
 
 ### Reads
 

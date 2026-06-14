@@ -19,6 +19,8 @@ export interface FileStore {
   writeEpisode(origin: Origin, episode: Episode): void;
   readFacts(): StoredFact[];
   readEpisodes(): StoredEpisode[];
+  deleteFact(origin: Origin, id: string): void;
+  deleteEpisode(origin: Origin, id: string): void;
 }
 
 export interface SearchHit {

@@ -1,5 +1,5 @@
 // @agentry/memory — stdio MCP server entry. Wires the layers: resolve roots → build the in-memory
-// index from the file store → register the 9 tools → connect the transport. See doc 07.
+// index from the file store → register the 10 tools → connect the transport. See doc 07.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { MemoryService } from "./application/memory-service.js";

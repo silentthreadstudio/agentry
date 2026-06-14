@@ -37,6 +37,21 @@ export class MarkdownFileStore implements FileStore {
     return this.read("episodes", Episode, "task", (origin, episode) => ({ origin, episode }));
   }
 
+  deleteFact(origin: Origin, id: string): void {
+    this.remove(origin, "facts", id);
+  }
+
+  deleteEpisode(origin: Origin, id: string): void {
+    this.remove(origin, "episodes", id);
+  }
+
+  private remove(origin: Origin, kind: "facts" | "episodes", id: string): void {
+    const dir = join(dirFor(origin, this.roots), kind);
+    if (!existsSync(dir)) return;
+    const suffix = `-${bareId(id)}.md`;
+    for (const f of readdirSync(dir)) if (f.endsWith(suffix)) unlinkSync(join(dir, f));
+  }
+
   /** `bodyKey` is the field rendered as the Markdown body; everything else is frontmatter. */
   private write(
     origin: Origin,

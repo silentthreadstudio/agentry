@@ -72,6 +72,20 @@ test("supersede: recall returns only the active fact", () => {
   assert.match(memories[0]?.fact.text ?? "", /identity adapters/);
 });
 
+test("forget: removes a memory from the store and disk", () => {
+  const service = newService(fresh());
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "this temporary fact will be forgotten shortly",
+  });
+  assert.equal(service.stats().active, 1);
+  assert.deepEqual(service.forget(id), { forgotten: true, kind: "fact" });
+  assert.equal(service.stats().facts, 0);
+  assert.equal(service.recall({ query: "temporary forgotten fact" }).memories.length, 0);
+  assert.equal(service.forget(id).forgotten, false); // idempotent
+});
+
 test("episode_write + stats tracks undistilled debt", () => {
   const service = newService(fresh());
   service.episodeWrite({
