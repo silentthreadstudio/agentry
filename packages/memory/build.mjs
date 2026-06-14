@@ -4,7 +4,9 @@
 // - The createRequire banner lets esbuild's __require resolve real requires for bundled CommonJS
 //   deps (e.g. `yaml`) under ESM output — without it, their internal require() throws
 //   "Dynamic require not supported" at startup.
+import { writeFileSync } from "node:fs";
 import { build } from "esbuild";
+import { srcHash } from "../../scripts/lib/src-hash.mjs";
 
 await build({
   entryPoints: ["src/index.ts"],
@@ -18,5 +20,8 @@ await build({
   },
   outfile: "dist/index.js",
 });
+
+// Stamp the source content-hash next to the bundle so dist-lockstep is verifiable without mtimes.
+writeFileSync("dist/.srchash", srcHash("src"));
 
 console.log("built dist/index.js");

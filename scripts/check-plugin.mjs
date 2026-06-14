@@ -5,6 +5,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { srcHash } from "./lib/src-hash.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -106,11 +107,13 @@ if (existsSync(memSrc)) {
   if (!existsSync(memDist)) {
     warn("packages/memory/dist/index.js missing — build + commit before the MCP can run (dist-lockstep)");
   } else {
-    const newestSrc = readdirSync(memSrc, { recursive: true })
-      .map((f) => join(memSrc, String(f)))
-      .filter((p) => existsSync(p) && statSync(p).isFile())
-      .reduce((mx, p) => Math.max(mx, statSync(p).mtimeMs), 0);
-    if (newestSrc > statSync(memDist).mtimeMs) warn("packages/memory/dist is older than src — rebuild + commit (dist-lockstep)");
+    // Content-hash compare, not mtime: git doesn't preserve mtimes, so a checkout/squash-merge would
+    // otherwise trip a false "dist is stale". build.mjs stamps dist/.srchash; recompute + compare.
+    const stampPath = join(ROOT, "packages", "memory", "dist", ".srchash");
+    const stamped = existsSync(stampPath) ? readFileSync(stampPath, "utf8").trim() : "";
+    const current = srcHash(memSrc);
+    if (!stamped) warn("packages/memory/dist/.srchash missing — rebuild so dist-lockstep is verifiable");
+    else if (stamped !== current) warn("packages/memory/dist is stale (src changed since last build) — rebuild + commit (dist-lockstep)");
     else ok("dist-lockstep", "up to date");
   }
 }
