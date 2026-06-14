@@ -21345,13 +21345,18 @@ var MemoryService = class {
 // src/persistence/db-index.ts
 import { DatabaseSync } from "node:sqlite";
 function toMatch(query) {
-  const tokens = query.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-  return tokens.map((t) => `${t}*`).join(" OR ");
+  return tokens(query).map((t) => `${t}*`).join(" OR ");
 }
+var tokens = (s) => s.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 var SqliteTextIndex = class {
   db = new DatabaseSync(":memory:");
+  fts;
   constructor() {
-    this.db.exec("CREATE VIRTUAL TABLE docs USING fts5(id UNINDEXED, body);");
+    this.fts = this.tryCreateFts();
+    if (!this.fts) {
+      this.db.exec("CREATE TABLE docs (id TEXT, body TEXT);");
+      process.stderr.write("[mem] FTS5 unavailable \u2014 using LIKE fallback index\n");
+    }
   }
   reset() {
     this.db.exec("DELETE FROM docs;");
@@ -21360,11 +21365,33 @@ var SqliteTextIndex = class {
     this.db.prepare("INSERT INTO docs(id, body) VALUES (?, ?)").run(id, body);
   }
   search(query, limit) {
+    return this.fts ? this.searchFts(query, limit) : this.searchScan(query, limit);
+  }
+  tryCreateFts() {
+    try {
+      this.db.exec("CREATE VIRTUAL TABLE docs USING fts5(id UNINDEXED, body);");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  searchFts(query, limit) {
     const match = toMatch(query);
     if (!match) return [];
     const rows = this.db.prepare("SELECT id, bm25(docs) AS rank FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT ?").all(match, limit);
     const n = rows.length;
     return rows.map((r, i) => ({ id: r.id, relevance: (n - i) / n }));
+  }
+  /** Fallback: token-overlap over a full scan. Fine for the in-memory index's modest size. */
+  searchScan(query, limit) {
+    const qs = tokens(query);
+    if (qs.length === 0) return [];
+    const rows = this.db.prepare("SELECT id, body FROM docs").all();
+    return rows.map((r) => {
+      const body = r.body.toLowerCase();
+      const hits = qs.reduce((acc, t) => acc + (body.includes(t) ? 1 : 0), 0);
+      return { id: r.id, relevance: hits / qs.length };
+    }).filter((r) => r.relevance > 0).sort((a, b) => b.relevance - a.relevance).slice(0, limit);
   }
 };
 
