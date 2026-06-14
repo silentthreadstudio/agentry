@@ -17,3 +17,6 @@ packages/workbench/dist/
 .idea/
 .vscode/
 *.tsbuildinfo
+
+#agentry
+.agentry

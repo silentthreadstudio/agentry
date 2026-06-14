@@ -28,3 +28,9 @@ export const originOf = (id: string): Origin => (id.startsWith("p:") ? "p" : "g"
 export const bareId = (id: string): string =>
   id.includes(":") ? id.slice(id.indexOf(":") + 1) : id;
 export const newId = (origin: Origin): string => qualify(origin, ulid());
+
+/** A short, human-readable slug from text — for readable filenames (the ULID keeps identity). */
+export const slug = (text: string): string => {
+  const words = (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).slice(0, 6).join("-").slice(0, 60);
+  return words || "memory";
+};

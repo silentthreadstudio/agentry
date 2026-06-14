@@ -15,9 +15,38 @@ them. Agent is the sole writer; humans read-only. One file per memory · **origi
 autoincrement → no merge collisions) · **supersede, not mutate** · two roots (global `~/.agentry` +
 project `.agentry/`). The Obsidian/wiki layer is removed.
 
-A write is atomic *inline*: write the memory file **and** upsert its DB row in one operation, so the DB
-never drifts mid-session. Out-of-band changes (git pull/merge) are absorbed by an **atomic
-rebuild-on-session-start** (`files → DB`, temp + swap).
+A write is atomic *inline*: write the memory file **and** update the in-memory index in one operation,
+so the index never drifts mid-session. Out-of-band changes (git pull/merge) are absorbed by a
+**rebuild-on-session-start** (`files → index`).
+
+> *Implementation note (Phase 1):* the derived index is **in-memory `node:sqlite`/FTS5, rebuilt at
+> startup** (no DB file → nothing to gitignore, no temp+swap); FTS5 falls back to a token scan where a
+> Node build lacks it (e.g. Node 22).
+
+### On-disk record format
+
+One **Markdown** file per record: `<root>/facts/<slug>-<ulid>.md`, `<root>/episodes/<slug>-<ulid>.md`.
+**YAML frontmatter** holds the fields; the **body** holds the prose (a fact's `text`, an episode's
+`task`) — human-readable and git-diffable. The `<slug>` (derived from the body) is for readability; the
+`<ulid>` is the stable, collision-free identity (one file per id — a stale-slug sibling is removed on
+rewrite). Parsed/written with the bundled `yaml` lib. **Same-concept duplication is prevented by
+dedup-reinforce at write time, not by the filename.**
+
+```markdown
+---
+id: p:01KV28YP22JRH8D81GAH0VVQSZ
+type: gotcha
+scope: repo
+confidence: 0.7
+usefulness: 0
+status: active
+tags: [plugin-dev, mcp]
+createdAt: 2026-06-14T05:16:29.120Z
+why: <rationale>
+---
+
+<the memory text — the body>
+```
 
 ---
 

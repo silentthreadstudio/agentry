@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { MemoryService } from "../src/application/memory-service.js";
 import { SqliteTextIndex } from "../src/persistence/db-index.js";
-import { JsonFileStore } from "../src/persistence/file-store.js";
+import { MarkdownFileStore } from "../src/persistence/file-store.js";
 import type { Roots } from "../src/resolution/roots.js";
 
 function newService(global: string): MemoryService {
   const roots: Roots = { global, project: null };
-  const service = new MemoryService(new JsonFileStore(roots), new SqliteTextIndex(), roots);
+  const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
   service.load();
   return service;
 }
