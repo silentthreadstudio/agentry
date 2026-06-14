@@ -12,13 +12,22 @@ Read the prompt's shape first; investigate only if genuinely ambiguous. Bias to 
 | **Scope** | one file/symbol | small, 1–2 files | many files/modules |
 | **Reversibility** | trivially undoable | low risk | risky / high blast radius |
 | **Unknowns** | none | maybe | real — research/explore upstream |
+| **Decision-content** | no design choice — the *how* is obvious | a bounded design choice | the solution hinges on an undecided fork |
 | **Precedent** | similar one-shots succeeded | similar needed clarifying | similar needed decomposition |
 
-Pick the **lowest** row the signals justify. Precedent is an input, not a mandate — a warm store sharpens this over time.
+### The override — the *highest-severity* signal sets the floor, NOT the average
 
-## Escalation triggers (concrete)
+Signals are **not equal votes.** Take the **highest** shape any single signal justifies, then bias down only within what every signal allows. In particular, **`Unknowns: real` or `Decision-content: undecided fork` VETOES one-shot** → it forces **≥ spec-first regardless of `Scope`.** A task can be one or two files yet carry a load-bearing design choice; **small footprint ≠ small decision.** One-shotting it doesn't skip the decision — it makes it *silently and badly* (e.g. resolving an event's work-id by "newest-mtime folder" because no plan decided it). Decide forks in a spec/plan, not inside an edit.
 
-Escalate one shape and re-enter at the smallest sufficient node when:
+> Worked example (the failure this rule exists to stop): *"emit events to events.jsonl"* reads as ~2 files → `Scope` says one-shot. But *where the log lives* and *how a per-tool-call hook learns the active work-id* is an **undecided fork** (`Decision-content` + `Unknowns`). Floor = **spec-first → plan gate**, not one-shot — and the fork is visible in the prompt up front, so escalate **before** touching code.
+
+Pick the floor the override allows. Precedent is an input, not a mandate — a warm store sharpens this over time.
+
+## Escalation triggers (pre-flight AND concrete mid-flight)
+
+**Pre-flight (sets the initial floor):** before any edit, if a real unknown or an undecided design fork is already visible in the prompt, escalate *now* — don't wait for it to bite mid-task. The fork is usually visible up front.
+
+**Mid-flight** — escalate one shape and re-enter at the smallest sufficient node when:
 - the change touches **far more files** than the shape assumed,
 - verify **fails twice** on the same task (don't burn a third undisciplined retry),
 - a **real unknown** surfaces mid-task (unfamiliar API/lib) → route to research/explore,

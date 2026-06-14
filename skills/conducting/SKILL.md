@@ -10,7 +10,7 @@ Run a task as Agentry's conductor: choose the **least process that wins**, dispa
 
 ## Two prime directives
 
-1. **Bias to the floor.** Under-routing is cheap to fix (escalate mid-flight); over-routing is sunk, visible waste. Default to the floor and escalate only on evidence. The blunt rule: *if you can finish it in one edit / one agent without learning anything new, do it — writing a plan for that is the failure.*
+1. **Bias to the floor — but the floor is set by the *hardest* signal, not the file count.** Under-routing is cheap to fix (escalate mid-flight); over-routing is sunk, visible waste. Default to the floor and escalate only on evidence. The blunt rule: *if you can finish it in one edit / one agent without learning anything new, do it — writing a plan for that is the failure.* **The symmetric failure is just as real:** one-shotting a task that hides an **undecided design choice** means you *guess* that choice and ship a fragile result — e.g. resolving an event's work-id by "newest-mtime folder" because no plan ever decided it. So: a **real unknown or an undecided design fork vetoes the floor** — it forces **≥ spec-first regardless of how few files it touches.** Small footprint ≠ small decision.
 2. **Guide, don't cage.** Use whatever tools/MCPs the user has (capability-first); never hard-restrict a specialist's tools or replace your own judgment with a fixed workflow.
 
 ## The loop
@@ -22,15 +22,15 @@ Recall → Right-size → [Spec gate?] → Dispatch → [Plan gate?] → Build �
 Most tasks touch only part of this. A one-liner is `Recall → do it → Learn`.
 
 1. **Recall.** Memory is primed at session start. Before deciding, recall precedent (*"tasks like this went well as `<shape>`"*) + gotchas for the files/subsystem in play. Recall **once** and thread what you find into each agent's brief — don't make every worker recall the same subsystem cold.
-2. **Right-size.** Read the *shape of the prompt* (specificity · scope · reversibility · unknowns) and pick the floor shape. Let precedent inform, not dictate. See `references/routing-and-dispatch.md` for the signals→shape rubric.
+2. **Right-size.** Read the *shape of the prompt* (specificity · scope · reversibility · unknowns · **decision-content**) and pick the floor shape. **Pre-flight check, before any edit:** does the solution hinge on an **undecided design choice**, or a **real unknown** (an unfamiliar API/payload shape, an identity/routing question)? If yes → **≥ spec-first, even for a one-file change** — don't let a worker (or you) resolve that fork silently inside an edit. Signals are **not equal votes**: the *highest-severity* one sets the floor, never the average. Let precedent inform, not dictate. See `references/routing-and-dispatch.md` for the signals→shape rubric.
 3. **Dispatch.** Send work to specialists (the ladder below). Pass each a self-contained brief: the contract, the recalled gotchas, the acceptance. Parallelize only where task contracts don't overlap.
 4. **Gate** at the decision points (below). Gating needs the user — that's why you're the main session. **Each gate's artifact (`spec.md`, `plan.md`, task files) is written to `.agentry/work/<id>/` as a file *before* you gate** — reasoning it out in chat without persisting the file is the failure (the Workbench and re-review read the files, not the transcript).
 5. **Verify / Assemble.** A *separate* verifier proves the work; assemble runs the whole product against the Spec's acceptance criteria. See the build loop below.
 6. **Learn.** Record the episode; harvest gotchas the verifier named; offer to reflect.
 
-## Escalation triggers (escalate one shape, re-enter, continue)
+## Escalation triggers (pre-flight AND mid-flight)
 
-Touched far more files than expected · failed verify twice · discovered a real unknown mid-task · hit an irreversible/high-blast-radius step. Re-enter at the *smallest sufficient* node — never restart.
+Touched far more files than expected · failed verify twice · discovered a real unknown mid-task · hit an irreversible/high-blast-radius step. These fire **mid-flight** — re-enter at the *smallest sufficient* node, never restart. Their **pre-flight equivalents set the initial floor** (§Right-size): an unknown or a design fork you can already see in the prompt escalates *before* you touch code — not only once it surfaces mid-task. The fork is usually visible up front; catch it then.
 
 ## Dispatch ladder
 
@@ -43,7 +43,7 @@ Touched far more files than expected · failed verify twice · discovered a real
 On **spec-first and decompose+verify these gates are mandatory stops, in order — do not collapse or skip them.** A worker NEVER advances past a gate on its own; you stop and get the user.
 
 - **Spec is always a written artifact.** On any work above one-shot, produce `spec.md` (intent + observable acceptance criteria) as a *file* — never inline the acceptance criteria into a worker's brief and skip the doc. (doc 01: Spec is the always-emitted artifact.)
-- **Spec gate** — present `spec.md` and confirm "done = X" with the user before planning. (Mandatory when under-specified; on a clear task, still surface the spec for a quick confirm before you plan.)
+- **Spec gate** — present `spec.md` and confirm "done = X" with the user before planning. Mandatory when the work is **under-specified _or_ the goal is specified but the design/mechanism is undecided** (a fork the solution hinges on) — not just the vague "make X better" case. A specified goal with an open mechanism (e.g. "emit events" where *how/where* is undecided) still needs the spec gate. On a genuinely clear task, still surface the spec for a quick confirm before you plan.
 - **Plan gate** — **plan first, gate, *then* split.** Dispatch the architect for **Plan + ADR only** (NOT tasks). Optionally run the verifier's plan-lens (falsifiable acceptance? contracts compose? riskiest first?). Present the Plan + any ADR to the user and get approval. **Only after approval** do you dispatch split (task contracts). Never bundle plan→split into one dispatch — that removes the gate.
 - **Ship gate** — on an assemble MEETS verdict, offer {commit+PR / keep iterating / reflect}.
 
