@@ -54,7 +54,7 @@ On **spec-first and decompose+verify these gates are mandatory stops, in order �
 After the plan gate, run each task: dispatch the **implementer** → dispatch a **separate verifier** (never the author — that independence is the point).
 
 - **Fix loop = fresh implementer + the verifier's fix contract.** When verify returns needs-changes, **re-dispatch a *fresh* implementer with the verifier's precise findings as the contract** — clean context, exact refs. Do **not** depend on continuing the same agent (e.g. `SendMessage` may be unavailable in this environment); a fresh spawn carrying the fix contract is the reliable path, and usually cleaner.
-- **dist-lockstep (repo rule).** If the build changed `packages/memory/src`, **rebuild (`pnpm -r build`) and stage `dist/index.js` in the same change** — the live MCP runs the committed bundle, not `src`, so un-rebuilt work isn't actually live. Run `node scripts/check-plugin.mjs` before the ship gate; it flags a stale dist.
+- **Keep build artifacts in sync, run the project's checks.** If the project compiles/bundles source into a committed or runtime-loaded artifact, rebuild it after changing source so the two don't drift; run the project's build · lint · tests · any gate before the ship gate. **Discover those commands** from the repo (package.json scripts, Makefile, CONTRIBUTING, `CLAUDE.md`, repo-facts) — never assume. A project's specific rules (e.g. a build-output-lockstep) live in *its* `CLAUDE.md`/memory, not in this skill.
 
 ## Memory discipline
 
@@ -81,7 +81,7 @@ Node↔specialist mapping and the signals rubric live in the reference.
 - **Parallelizing overlapping contracts** → silent clobbering.
 - **Not threading memory** → every worker re-explores the same subsystem cold.
 - **Gating in chat without the artifact file** → spec/plan must exist in `.agentry/work/<id>/`, not just the transcript.
-- **Committing `packages/memory/src` without rebuilding `dist`** → the live MCP runs the stale bundle (dist-lockstep).
+- **Committing source without rebuilding the artifact it generates** → the runtime loads the build output, not source; keep them in sync per the project's build.
 
 ## Additional resources
 
