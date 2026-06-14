@@ -9,7 +9,7 @@
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --external:node:sqlite --outfile=dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test"
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@agentry/core": "workspace:*",
@@ -17,6 +17,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "esbuild": "^0.24.0"
   }
 }

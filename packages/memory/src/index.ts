@@ -1,17 +1,29 @@
-// @agentry/memory — durable memory MCP (stdio). Ports-and-adapters; see README + doc 07.
-//
-// SCAFFOLD: the structure is fixed here; the 9 tools and the file-store/db-index are implemented
-// in the next step (doc 07 §2/§4). Build: esbuild → dist/index.js (committed, zero-install).
-// Storage: text files = source of truth; node:sqlite (Node ≥ 24) = derived index, rebuilt on start.
-//
-// Intended layout:
-//   domain/        pure types (re-uses @agentry/core) + MemoryStore logic — no I/O, unit-tested
-//   application/   services: write · recall · search · update · feedback · distill · consolidate · stats
-//   persistence/
-//     file-store/  one-file-per-memory (the SOURCE OF TRUTH)
-//     db-index/    node:sqlite + FTS5 derived index; rebuild(files) → DB (atomic temp + swap)
-//   resolution/    two-root resolution (global + project) + id origin-qualification
-//   tools/         one thin adapter per MCP tool (description + zod input + handler)
-//   index.ts       resolve roots → rebuild index → register 9 tools → connect stdio transport
+// @agentry/memory — stdio MCP server entry. Wires the layers: resolve roots → build the in-memory
+// index from the file store → register the 9 tools → connect the transport. See doc 07.
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { MemoryService } from "./application/memory-service.js";
+import { SqliteTextIndex } from "./persistence/db-index.js";
+import { JsonFileStore } from "./persistence/file-store.js";
+import { resolveRoots } from "./resolution/roots.js";
+import { registerEpisodeTools } from "./tools/episode-tools.js";
+import { registerFactTools } from "./tools/fact-tools.js";
+import { registerFlowTools } from "./tools/flow-tools.js";
 
-export {}; // TODO(impl): build the stdio server per .docs/internal/07-memory-mcp.md
+async function main(): Promise<void> {
+  const roots = resolveRoots();
+  const service = new MemoryService(new JsonFileStore(roots), new SqliteTextIndex(), roots);
+  service.load(); // rebuild-on-start from the file store (text = truth)
+
+  const server = new McpServer({ name: "agentry-memory", version: "0.1.0" });
+  registerFactTools(server, service);
+  registerEpisodeTools(server, service);
+  registerFlowTools(server, service);
+
+  await server.connect(new StdioServerTransport());
+}
+
+main().catch((error: unknown) => {
+  process.stderr.write(`[mem] fatal: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});

@@ -28,29 +28,33 @@ Design + scaffold + repo.
 
 ---
 
-## Phase 1 — Memory core: the moat goes live 🎯 NEXT
+## Phase 1 — Memory core: the moat goes live ✅ DONE (headless-verified; one live check pending)
 
 **Goal:** `@agentry/memory` implemented end-to-end (doc 07) — text-as-truth store + derived index + the 9 tools.
 
 **Tasks**
-- [ ] 1.1 Firm up `@agentry/core` as the contract surface grows (keep it the single source of truth).
-- [ ] 1.2 **Persistence** — `file-store` (one-file-per-memory CRUD · ULID ids · supersede-not-mutate) +
-  `db-index` (`node:sqlite` schema + FTS5 · **atomic rebuild-on-start**, temp+swap).
-- [ ] 1.3 **Application services** — write (bar + dedup-reinforce) · recall (few/ranked/never-superseded ·
-  prime mode) · search · update · feedback (citation+outcome table) · distill · consolidate (propose-only) · stats.
-- [ ] 1.4 **Tools** — 9 thin adapters (zod inputs) + `index.ts` stdio server (MCP SDK) · two-root resolution.
-- [ ] 1.5 **Tests** — unit (`MemoryStore`) + a stdio integration test (`node:test`).
-- [ ] 1.6 **Build + wire** — esbuild → commit `dist/index.js`; point the SessionStart primer at the real store.
+- [x] 1.1 `@agentry/core` is the contract; consumed by memory.
+- [x] 1.2 **Persistence** — `file-store` (one JSON file per record · ULID ids · supersede-not-mutate) +
+  `db-index`. *Simplification vs doc 07:* the index is **in-memory** `node:sqlite`/FTS5 rebuilt at startup
+  (no DB file → nothing to gitignore, no temp+swap). Cleaner; the files remain the truth.
+- [x] 1.3 **Application services** — `MemoryService` (write+dedup-reinforce · recall+prime · search ·
+  update · feedback · stats · episode_write · distill/consolidate in `flows.ts`).
+- [x] 1.4 **Tools** — 9 thin adapters (zod) + `index.ts` stdio server (MCP SDK) · two-root resolution.
+- [x] 1.5 **Tests** — 5 `node:test` units green (round-trip · dedup-reinforce · rebuild-on-start ·
+  supersede · episode/stats) + a headless stdio smoke (server starts, lists all 9 tools).
+- [x] 1.6 **Build** — esbuild → committed `dist/index.js` (739KB, parses clean). Primer reads the real
+  file-store layout.
 
-**Definition of Done (gate):** `pnpm -r test` green · `check-plugin` green (dist present) · after reload,
-`/mcp` shows `mem`; a `memory_write` → `memory_recall` round-trips; superseded never returned;
-rebuild-on-start absorbs an out-of-band file add; the primer injects a real warm set.
+**Definition of Done (gate):** `pnpm -r test` green ✅ · `check-plugin` green (dist present) ✅ · stdio smoke
+lists 9 tools ✅ · round-trip / supersede-never-returned / rebuild-on-start all proven in tests ✅.
+**Remaining (user, reload-gated):** restart a Claude Code session with the plugin installed and confirm
+`/mcp` shows `mem` and a live `memory_write`→`memory_recall` round-trips. That flips the gate fully green.
 
 **Risks:** `node:sqlite` API specifics on Node 24 · FTS5 query shape · esbuild externalizing `node:sqlite`.
 
 ---
 
-## Phase 2 — End-to-end dogfood: the spine runs
+## Phase 2 — End-to-end dogfood: the spine runs 🎯 NEXT
 
 **Goal:** a real task flows through `/agentry` with memory live.
 
