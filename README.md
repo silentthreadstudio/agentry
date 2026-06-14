@@ -61,16 +61,15 @@ Restart the session (agents, hooks, and the `mem` MCP load at startup), then:
 
 ```
 agentry/                  # repo root = the Claude Code plugin
-├── .claude-plugin/       # plugin + marketplace manifests
+├── .claude-plugin/       # plugin + marketplace manifests + inline `mem` MCP wiring
 ├── agents/ commands/ skills/ hooks/   # the shipped plugin payload
-├── .mcp.json             # wires @agentry/memory (the `mem` server)
 ├── packages/
 │   ├── core/             # @agentry/core — the typed contract
 │   ├── memory/           # @agentry/memory — the durable memory MCP
 │   └── workbench/        # V2
 ├── benchmark/            # the honest scoreboard (win-conditions C1–C4)
 ├── scripts/              # check-plugin gate
-└── .docs/internal/       # the design docs (01–09)
+└── .docs/internal/       # the design docs (01–10)
 ```
 
 ## Design
