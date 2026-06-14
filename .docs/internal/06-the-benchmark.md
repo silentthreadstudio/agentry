@@ -29,6 +29,28 @@ R0 is as important as R1/R2: over-orchestrating a one-liner is a **failure to su
 
 ---
 
+## 1a. The parity trap — measure edges, not averages
+
+Same model → on an **average** task, a plain session and Agentry produce roughly equal output.
+**Benchmarking average quality would measure parity and falsely conclude "no value."** Agentry's claim
+was never "better on everything" — it's four *specific* edges, each exposed by a regime and measured by a
+metric that **surfaces the edge instead of averaging it away**:
+
+| Edge | Regime | Metric (where they are NOT equal) |
+| :--- | :--- | :--- |
+| separate verifier (no self-grading) | **R1′ bug-seeded** tasks | **escaped-defect rate** — defects shipped that a hidden suite catches |
+| spec gate (clarify "done=X") | **R2 under-specified** (hidden AC set) | **requirement coverage** — hidden ACs met (plain under-delivers on vague) |
+| **the moat** (recall precedent/gotchas) | **R3 warm vs cold** follow-up | tokens · iterations · a prior gotcha demonstrably avoided |
+| right-sizing (negative claim) | **R0 trivial** | overhead ≤ X% — must *not* tax the trivial |
+
+**Lead with the moat — it is the only *categorical* edge.** A plain session **structurally cannot**
+recall a prior run's gotcha; Agentry can, so R3 parity is impossible by construction. The other three are
+**probabilistic** — a plain session *sometimes* also catches the bug or meets the vague AC — so they show
+as a **rate difference over N runs**, not a guaranteed per-task win. Choose `N` and tasks accordingly,
+and never average over R0-style tasks where parity is the expected, correct outcome.
+
+---
+
 ## 2. The arms
 
 - **A — plain** : `claude -p "<task>"` (baseline, no Agentry).
@@ -41,11 +63,16 @@ R0 is as important as R1/R2: over-orchestrating a one-liner is a **failure to su
 
 | Metric | How | Role |
 | :--- | :--- | :--- |
-| **AC pass-rate** | run the task's **hidden acceptance suite** (tests / observed behavior) | **primary, objective** — this *is* `assemble` against Spec ACs |
+| **AC pass-rate** | run the task's **hidden acceptance suite** (tests / observed behavior) | the objective *substrate* (`assemble` vs Spec ACs) — but on R0/average tasks it's **parity**, so it proves little alone |
+| **Escaped-defect rate** | hidden suite catches a **seeded/subtle bug** the run shipped (R1′) | **edge metric** — the separate-verifier value; Agentry should escape fewer |
+| **Requirement coverage** | of the **hidden** AC set on an under-specified ask (R2) | **edge metric** — the spec-gate value; plain under-delivers on vague |
+| **Warm − cold delta** | arm C vs arm B on the R3 follow-up | **edge metric — the moat (categorical)** |
 | **Cost** | tokens · turns · wall-clock from `--output-format json` usage | objective — counts *all* subagent/conductor overhead, honestly |
-| **Code quality** | static (file length, complexity, lint) + an **LLM-judge panel** (multi-judge, variance reported) | secondary, softer — never the sole basis of a verdict |
+| **Code quality** | static (file length, complexity, lint) + an LLM-judge panel (multi-judge, variance) | secondary, softer — never the sole basis of a verdict |
 
-Grading leans on **AC pass-rate + cost**; quality is a supporting signal because LLM-judging is noisy.
+**The edge metrics — not average AC-pass — are what prove the thesis.** Averaging AC-pass across mixed
+tasks washes out to parity (your skepticism, correct). Report each edge metric **per regime, as a rate
+over N runs** with variance; the warm−cold delta is the one that can't tie.
 
 ---
 
@@ -53,11 +80,13 @@ Grading leans on **AC pass-rate + cost**; quality is a supporting signal because
 
 - **C1 — no tax (R0):** Agentry AC-pass ≥ plain **and** token overhead ≤ **X%**. *Proves it routes
   one-shot and pays no orchestration tax.* Failure = over-orchestration, surfaced loudly.
-- **C2 — multi-file lift (R1):** Agentry AC-pass > plain by ≥ **Y** points.
-- **C3 — under-specified lift (R2):** Agentry meets ≥ **Z** more *hidden* ACs than plain (plain tends to
-  under-deliver on vague goals).
-- **C4 — the moat (R3):** **warm (C)** beats **cold (B)** on the *same* follow-up — ≥ **W%** fewer tokens
-  **and/or** higher AC-pass **and/or** a gotcha from run #1 demonstrably avoided.
+- **C2 — fewer escaped defects (R1′):** on bug-seeded multi-file tasks, Agentry's **escaped-defect rate is
+  lower than plain's by ≥ Y** (the separate verifier catches what self-grading ships). A *rate over N*, not a per-task win.
+- **C3 — fewer missed requirements (R2):** Agentry meets ≥ **Z** more *hidden* ACs than plain on
+  under-specified asks (plain under-delivers on vague goals).
+- **C4 — the moat (R3) [categorical]:** **warm (C)** beats **cold (B)** on the *same* follow-up — ≥ **W%**
+  fewer tokens/iterations **and/or** a run-#1 gotcha demonstrably avoided. Parity is impossible here by
+  construction (plain can't recall), so this is the proof to land first.
 
 `X / Y / Z / W` are written as **targets up front**, then set by the first measured run. The scoreboard
 reports the real deltas regardless.
@@ -114,11 +143,13 @@ a warm context map).
 
 Real buildable tasks across regimes (seed set, grows over time):
 
-- **R0 trivial:** one-line fix · single-function add · a typo/rename.
+- **R0 trivial:** one-line fix · single-function add · a typo/rename. (parity expected — guards the no-tax claim)
 - **R1 multi-file:** a feature across several modules (e.g. paginate an endpoint end-to-end).
+- **R1′ bug-seeded:** a task whose correct solution must avoid a subtle bug/edge case the hidden suite
+  probes — exposes the separate-verifier edge (escaped-defect rate).
 - **R2 under-specified:** a vague goal ("make X better") with a *hidden* AC set the ideal solution meets.
 - **R3 pairs:** teacher + related follow-up (e.g. build module A → extend A; first run learns a gotcha
-  the second should recall).
+  the second should recall) + the specific lesson the follow-up should reuse.
 
 Each task is small enough to run many times cheaply, real enough that structure + memory can matter.
 
@@ -143,9 +174,12 @@ Each task is small enough to run many times cheaply, real enough that structure 
 falsifiable win-conditions** · the **controlled cold-vs-warm moat experiment** (the v1 gap, solved at the
 design level) · harness mechanics · credibility controls · the regime-labeled task suite.
 
-**Deferred (next, per the build order):** the actual **agent + SKILL.md content** (depth) · **MCP tool
-shapes** + type enum + priming hook · the **Workbench** (V2) · plugin manifest/layout assembly · *then*
-implement this harness in `benchmark/` and run the first calibration pass.
+**Deferred — and build the harness LAST, on purpose.** Benchmarking an immature harness measures its
+immaturity, not the design (we've found ~6 conductor/skill gaps in early dogfooding alone). So:
+**dogfood real tasks until the conductor + skills stabilize**, *then* build `benchmark/` and run the
+first calibration pass. Cheap interim signal: a **manual duel** (one bug-seeded task run plain vs
+`/agentry:go`, compare escaped defects) — no harness needed. The automated harness is the last step, not
+the next.
 
 ---
 
