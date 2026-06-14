@@ -28,9 +28,13 @@ Design + scaffold + repo.
 
 ---
 
-## Phase 1 — Memory core: the moat goes live ✅ DONE (headless-verified; one live check pending)
+## Phase 1 — Memory core: the moat goes live ✅ DONE — live-verified
 
-**Goal:** `@agentry/memory` implemented end-to-end (doc 07) — text-as-truth store + derived index + the 9 tools.
+**Goal:** `@agentry/memory` implemented end-to-end (doc 07) — text-as-truth store + derived index + the tools.
+
+**Live-verified:** `/mcp` green on a clean Markdown store; write→recall round-trips in-session; 6/6 tests.
+**10 tools** (added `memory_feedback` + `memory_forget`). Three packaging bugs found+fixed by dogfooding
+(FTS5-not-universal · root-`.mcp.json` double-load · CJS-in-ESM esbuild banner) — each now a stored gotcha.
 
 **Tasks**
 - [x] 1.1 `@agentry/core` is the contract; consumed by memory.
