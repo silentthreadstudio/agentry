@@ -55,7 +55,7 @@ On **spec-first and decompose+verify these gates are mandatory stops, in order �
 
 After the plan gate, run each task: dispatch the **implementer** → dispatch a **separate verifier** (never the author — that independence is the point).
 
-- **Fix loop = fresh implementer + the verifier's fix contract.** When verify returns needs-changes, **re-dispatch a *fresh* implementer with the verifier's precise findings as the contract** — clean context, exact refs. Do **not** depend on continuing the same agent (e.g. `SendMessage` may be unavailable in this environment); a fresh spawn carrying the fix contract is the reliable path, and usually cleaner.
+- **Fix loop = fresh implementer + the verifier's fix contract.** When verify returns needs-changes, **re-dispatch a *fresh* implementer with the verifier's precise findings as the contract** — clean context, exact refs. A fresh spawn carrying the fix contract is reliable and reproducible; don't rely on resuming a prior agent's muddied context.
 - **Keep build artifacts in sync, run the project's checks.** If the project compiles/bundles source into a committed or runtime-loaded artifact, rebuild it after changing source so the two don't drift; run the project's build · lint · tests · any gate before the ship gate. **Discover those commands** from the repo (package.json scripts, Makefile, CONTRIBUTING, `CLAUDE.md`, repo-facts) — never assume. A project's specific rules (e.g. a build-output-lockstep) live in *its* `CLAUDE.md`/memory, not in this skill.
 
 ## Memory discipline
