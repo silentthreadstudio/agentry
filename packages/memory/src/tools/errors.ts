@@ -13,6 +13,16 @@ export const notFound = (id: string): MemoryError =>
     fix: "Pass the id of an existing record — list or search first to obtain a valid id, then retry.",
   });
 
+// None of several referenced ids could be applied (all missing/ineligible — the all-invalid partial case).
+// Same `code` and field set as notFound (AC4); `why` lists each id distinctly so the model can see which.
+export const notFoundMany = (ids: string[]): MemoryError =>
+  MemoryErrorSchema.parse({
+    code: "not-found",
+    what: "None of the requested records could be applied.",
+    why: `No record was found for any of these ids: ${ids.map((id) => `"${id}"`).join(", ")}.`,
+    fix: "Pass ids of existing records — list or search first to obtain valid ids, then retry.",
+  });
+
 // Input passes shape validation but is semantically invalid. `fix` names the field and states the rule.
 export const badInput = (field: string, rule: string): MemoryError =>
   MemoryErrorSchema.parse({

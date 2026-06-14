@@ -2,7 +2,7 @@
 // `guard` wraps a handler so any unexpected throw becomes the `internal` envelope; `partial` maps a
 // per-id partial outcome → ok(applied+skipped) / err(not-found) on all-invalid (AC5/Q2).
 import type { PartialOutcome } from "../application/memory-service.js";
-import { internal, notFound } from "./errors.js";
+import { internal, notFound, notFoundMany } from "./errors.js";
 import { err, ok } from "./result.js";
 
 /**
@@ -27,8 +27,8 @@ export const guard =
  */
 export function partial(outcome: PartialOutcome): ReturnType<typeof ok> | ReturnType<typeof err> {
   if (outcome.applied.length === 0 && outcome.requested > 0) {
-    const ids = outcome.skipped.map((s) => s.id).join(", ");
-    return err(notFound(ids));
+    const ids = outcome.skipped.map((s) => s.id);
+    return err(ids.length === 1 ? notFound(ids[0] as string) : notFoundMany(ids));
   }
   return ok({ applied: outcome.applied, skipped: outcome.skipped });
 }

@@ -29044,6 +29044,12 @@ var notFound = (id) => MemoryError.parse({
   why: `No record was found for id "${id}".`,
   fix: "Pass the id of an existing record \u2014 list or search first to obtain a valid id, then retry."
 });
+var notFoundMany = (ids) => MemoryError.parse({
+  code: "not-found",
+  what: "None of the requested records could be applied.",
+  why: `No record was found for any of these ids: ${ids.map((id) => `"${id}"`).join(", ")}.`,
+  fix: "Pass ids of existing records \u2014 list or search first to obtain valid ids, then retry."
+});
 var badInput = (field, rule) => MemoryError.parse({
   code: "bad-input",
   what: "An input value is semantically invalid.",
@@ -29077,8 +29083,8 @@ var guard = (handler) => async (args) => {
 };
 function partial2(outcome) {
   if (outcome.applied.length === 0 && outcome.requested > 0) {
-    const ids = outcome.skipped.map((s) => s.id).join(", ");
-    return err(notFound(ids));
+    const ids = outcome.skipped.map((s) => s.id);
+    return err(ids.length === 1 ? notFound(ids[0]) : notFoundMany(ids));
   }
   return ok({ applied: outcome.applied, skipped: outcome.skipped });
 }

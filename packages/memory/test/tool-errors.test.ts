@@ -140,7 +140,10 @@ test("AC5/Q2: feedback with all-invalid ids → isError, code:not-found naming t
   const res = await call("memory_feedback", { recalled: ["g:NOPE1", "g:NOPE2"], used: [], outcome: "pass" });
   const env = envelopeOf(res);
   assert.equal(env.code, "not-found");
-  assert.ok(env.why.includes("g:NOPE1") && env.why.includes("g:NOPE2"), "why names the missing ids");
+  assert.ok(
+    env.why.includes('"g:NOPE1"') && env.why.includes('"g:NOPE2"'),
+    "why names each missing id distinctly (quoted), not joined into one string",
+  );
 });
 
 // ── AC5 / Q2 — distill stamp: partial + all-invalid ─────────────────────────────────────────────────
