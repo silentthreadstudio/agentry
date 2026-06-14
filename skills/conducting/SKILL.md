@@ -49,7 +49,7 @@ On **spec-first and decompose+verify these gates are mandatory stops, in order �
 
 > The anti-pattern that bit us live: a clear task tempts you to inline the ACs, skip `spec.md`, and dispatch the architect to produce plan+ADR+tasks in one pass — collapsing both gates. Don't. The artifact + the stops are the point — and the artifact is a **file on disk** in `.agentry/work/<id>/`, not a chat message.
 
-**Work-folder layout** (the same in every repo): `spec.md` · `plan.md` at the root; **`adr/NNN-slug.md`** (a folder — ADRs are a numbered, append-only series); **`tasks/NNN-slug.md`** + `tasks/coverage.md`. Series get folders; single docs stay at the root.
+**Work-folder layout** (the same in every repo): `spec.md` and `plan.md` are single docs at the **root**; **`adr/NNN-slug.md`** and **`tasks/NNN-slug.md`** (+ `tasks/coverage.md`) are **always folders** — ADRs and tasks are numbered, append-only series, so `adr/` and `tasks/` are folders *even with a single entry*. An ADR at the work-dir root is wrong; it goes in `adr/`.
 
 ## Build loop (implement ⇄ verify)
 
