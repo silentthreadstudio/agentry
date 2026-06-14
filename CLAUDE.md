@@ -30,7 +30,7 @@ durable memory). **The repo root *is* the plugin**; TypeScript lives under `pack
 - **Reload-gated** — agent/command/skill/hook/MCP changes register only on reload/restart; verify live after a restart.
 - **Run `node scripts/check-plugin.mjs` before every commit** (it catches namespacing + structure drift).
 - **Acceptance-gated phases** (doc 10) — never advance a phase on vibes.
-- **Dogfood from Phase 2 on** — build through `/agentry` where it helps; log friction as Evolution entries (doc 01 §5).
+- **Dogfood from Phase 2 on** — build through `/agentry:go` where it helps; log friction as Evolution entries (doc 01 §5).
 
 ## Commits
 

@@ -1,6 +1,6 @@
 ---
 name: conducting
-description: This skill should be used when acting as Agentry's conductor — routing a task to the least sufficient shape (one-shot / spec-first / decompose+verify), dispatching specialist subagents, gating approvals with the user, and sequencing a build end-to-end. Loaded by the /agentry front door.
+description: This skill should be used when acting as Agentry's conductor — routing a task to the least sufficient shape (one-shot / spec-first / decompose+verify), dispatching specialist subagents, gating approvals with the user, and sequencing a build end-to-end. Loaded by the /agentry:go front door.
 version: 0.1.0
 ---
 

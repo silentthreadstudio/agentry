@@ -37,7 +37,7 @@ a browser MCP…) and degrade gracefully when something's absent. No tool allowl
 
 ## Commands
 
-- **`/agentry <task>`** — the front door. Routes and conducts.
+- **`/agentry:go <task>`** — the front door. Routes and conducts.
 - Nodes: `/agentry:onboard · :research · :spec · :plan · :split · :implement · :verify · :assemble ·
   :reflect · :remember` — each standalone and composable.
 
@@ -54,7 +54,7 @@ Restart the session (agents, hooks, and the `mem` MCP load at startup), then:
 
 ```
 /agentry:onboard                                   # warm memory on this repo (read-only)
-/agentry "add pagination to the users endpoint"    # the adaptive front door routes it
+/agentry:go "add pagination to the users endpoint"    # the adaptive front door routes it
 ```
 
 ## Repository layout

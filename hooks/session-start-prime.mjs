@@ -37,7 +37,7 @@ const countRecords = (dir) => {
 };
 
 const lines = [
-  "Agentry is active. Front door: `/agentry` — routes a task to the least process that wins (one-shot → spec-first → decompose+verify).",
+  "Agentry is active. Front door: `/agentry:go <task>` — routes a task to the least process that wins (one-shot → spec-first → decompose+verify).",
 ];
 
 let warm = false;
