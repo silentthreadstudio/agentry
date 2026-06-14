@@ -203,12 +203,20 @@ promotion's provenance; it does not install the skill.
 ## 3. The priming hook (SessionStart)
 
 Lives at the **plugin root** (`hooks/`), not in an agent (04 §6 — plugin agents can't embed hooks/MCP).
+Fires on SessionStart; primes the **conductor only** (checks `agent_type`), workers skipped.
 
-- Fires on SessionStart; checks `agent_type` → **prime the conductor only**, not workers.
-- Calls `memory_recall(mode:"prime")` and injects the warm set as a `systemMessage`: recent episodes
-  (continue-context) · top repo semantic · the **available-capabilities** line (detected MCPs/tools, 05
-  §3b) · the **undistilled-episode debt** count ("N undistilled — run reflect to compound?").
-- Bounded by construction → recall is reliable, the model can't forget what's injected.
+**A minimal nudge — NOT a context dump.** It does **not** inject the warm set. At session start there is
+no task yet, so a generic top-N is low-relevance *and* taxes every session (including plain chats that
+never touch Agentry). It emits only a small, **hard-capped (≤ ~a few hundred tokens)** note:
+- Agentry is active + the front door (`/agentry:go`).
+- memory state: counts (facts/episodes) + undistilled-episode debt ("N undistilled — `/agentry:reflect` to compound").
+- the **available-capabilities** line (detected MCPs/tools, 05 §3b).
+- *optionally* a one-line continue-context pointer (the most-recent episode's task).
+
+> **Recall is the discipline, and it is task-specific.** Relevant memory enters context when the
+> conductor **recalls for a task** (conducting "Recall first") — high-signal, scoped, deliberate.
+> Reliability comes from the conductor *always recalling on a task*, **not** from force-feeding a generic
+> warm set at startup. The hook's job is presence + discoverability, not to pre-load context.
 
 ---
 

@@ -40,8 +40,10 @@ memory are the same system here.
   a future decision.* If it won't alter a future action, it's a Journal line, not a memory. Episodes are
   exempt (the firehose).
 - **Recall gate** — return **few** (≈3–7, *tuning knob*), scoped, ranked, **never superseded**, bounded
-  *by construction* so injecting it can't pollute context. **Primed at session start** so the model
-  can't forget what the harness already loaded.
+  *by construction* so injecting it can't pollute context. Recall is **task-specific and disciplined** —
+  the conductor recalls *for the task at hand* (relevant, deliberate). The SessionStart primer is only a
+  **minimal nudge** (counts + a continue-context pointer, hard-capped), **not** a force-fed warm set —
+  auto-injecting generic memory at startup (no task yet) is low-relevance pollution (doc 07 §3).
 - **Decay gate** — a memory never recalled, or recalled-and-ignored, **loses rank and self-archives**
   (tombstoned, recoverable — not deleted). The active set stays small on its own. This is the valve v1
   lacked.
@@ -113,8 +115,10 @@ the score over volume — **never** as primary.
 ## 5. Continue-context — the amnesia cure
 
 The "talk about 15 days ago / continue where we left off" capability **is** the episodic layer done
-right: **primed at session start, ranked recency × relevance, the recent Journals reconstruct the working
-set.** Not "remember everything" — *warm-start the few things that matter for what you're now doing.*
+right: when the conductor recalls **for a task**, recent Journals (ranked recency × relevance)
+reconstruct the working set. The primer may surface a one-line *"last worked on…"* pointer, but the
+real continuity comes from **task-specific recall**, not a generic startup dump. Not "remember
+everything" — *recall the few things that matter for what you're doing now.*
 
 ---
 
