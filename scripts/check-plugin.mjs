@@ -15,10 +15,21 @@ if (process.argv.includes("--version")) {
   process.exit(0);
 }
 
+// Color, gated on an interactive TTY (and not NO_COLOR) so piped/CI output stays plain.
+const tty = process.stdout.isTTY && !process.env.NO_COLOR;
+const c = (code, s) => (tty ? `\x1b[${code}m${s}\x1b[0m` : s);
+const dim = (s) => c("2", s);
+const bold = (s) => c("1", s);
+const green = (s) => c("32", s);
+const red = (s) => c("31", s);
+const yellow = (s) => c("33", s);
+
 const errors = [];
 const warnings = [];
+const checks = []; // { name, detail } — one row per section validated, for the summary
 const err = (m) => errors.push(m);
 const warn = (m) => warnings.push(m);
+const ok = (name, detail) => checks.push({ name, detail });
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 const frontmatter = (p) => {
@@ -36,6 +47,7 @@ if (!existsSync(pluginManifest)) {
   const p = readJson(pluginManifest);
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(p.name ?? "")) err(`plugin.json name invalid: ${p.name}`);
   if (p.version && !/^\d+\.\d+\.\d+/.test(p.version)) err(`plugin.json version not semver: ${p.version}`);
+  ok("plugin.json", p.version ? `${p.name} v${p.version}` : p.name);
 }
 
 // 2. marketplace.json
@@ -44,31 +56,37 @@ if (existsSync(market)) {
   const m = readJson(market);
   if (!Array.isArray(m.plugins) || m.plugins.length === 0) err("marketplace.json has no plugins[]");
   for (const pl of m.plugins ?? []) if (!pl.source) err(`marketplace plugin ${pl.name} missing source`);
+  ok("marketplace.json", `${m.plugins?.length ?? 0} plugin(s)`);
 }
 
 // 3. agents — frontmatter name + description; no forbidden tools allowlist (capability-first, doc 04)
 const agentsDir = join(ROOT, "agents");
 if (existsSync(agentsDir)) {
-  for (const f of readdirSync(agentsDir).filter((f) => f.endsWith(".md"))) {
+  const files = readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
+  for (const f of files) {
     const fm = frontmatter(join(agentsDir, f));
     if (!hasField(fm, "name")) err(`agents/${f}: missing frontmatter name`);
     if (!hasField(fm, "description")) err(`agents/${f}: missing frontmatter description`);
     if (hasField(fm, "tools")) warn(`agents/${f}: has a tools: allowlist — Agentry is capability-first (doc 04)`);
   }
+  ok("agents", `${files.length} validated`);
 }
 
 // 4. commands — frontmatter description
 const cmdDir = join(ROOT, "commands");
 if (existsSync(cmdDir)) {
-  for (const f of readdirSync(cmdDir).filter((f) => f.endsWith(".md"))) {
+  const files = readdirSync(cmdDir).filter((f) => f.endsWith(".md"));
+  for (const f of files) {
     if (!hasField(frontmatter(join(cmdDir, f)), "description")) err(`commands/${f}: missing frontmatter description`);
   }
+  ok("commands", `${files.length} validated`);
 }
 
 // 5. skills — SKILL.md with name + description
 const skillsDir = join(ROOT, "skills");
 if (existsSync(skillsDir)) {
-  for (const d of readdirSync(skillsDir)) {
+  const dirs = readdirSync(skillsDir).filter((d) => statSync(join(skillsDir, d)).isDirectory());
+  for (const d of dirs) {
     const sk = join(skillsDir, d, "SKILL.md");
     if (!existsSync(sk)) {
       err(`skills/${d}: missing SKILL.md`);
@@ -78,6 +96,7 @@ if (existsSync(skillsDir)) {
     if (!hasField(fm, "name")) err(`skills/${d}/SKILL.md: missing name`);
     if (!hasField(fm, "description")) err(`skills/${d}/SKILL.md: missing description`);
   }
+  ok("skills", `${dirs.length} validated`);
 }
 
 // 6. dist-lockstep — if memory/src exists, dist must too (warn if it looks stale)
@@ -92,14 +111,29 @@ if (existsSync(memSrc)) {
       .filter((p) => existsSync(p) && statSync(p).isFile())
       .reduce((mx, p) => Math.max(mx, statSync(p).mtimeMs), 0);
     if (newestSrc > statSync(memDist).mtimeMs) warn("packages/memory/dist is older than src — rebuild + commit (dist-lockstep)");
+    else ok("dist-lockstep", "up to date");
   }
 }
 
 // Report
-for (const w of warnings) console.warn(`⚠️  ${w}`);
+const pad = Math.max(0, ...checks.map((c) => c.name.length));
+console.log(bold("\n  Agentry plugin gate"));
+for (const { name, detail } of checks) {
+  console.log(`  ${green("✓")} ${name.padEnd(pad)}  ${dim(detail)}`);
+}
+if (warnings.length) {
+  console.log("");
+  for (const w of warnings) console.warn(`  ${yellow("⚠")}  ${w}`);
+}
 if (errors.length) {
-  for (const e of errors) console.error(`❌ ${e}`);
-  console.error(`\ncheck-plugin: ${errors.length} error(s), ${warnings.length} warning(s)`);
+  console.log("");
+  for (const e of errors) console.error(`  ${red("✗")}  ${e}`);
+}
+
+const tally = `${errors.length} error(s), ${warnings.length} warning(s)`;
+console.log("");
+if (errors.length) {
+  console.error(`  ${red(bold("FAIL"))} — ${tally}\n`);
   process.exit(1);
 }
-console.log(`✅ check-plugin: OK (${warnings.length} warning(s))`);
+console.log(`  ${green(bold("OK"))} — ${checks.length} checks passed, ${tally}\n`);
