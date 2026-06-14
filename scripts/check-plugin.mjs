@@ -7,6 +7,14 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// `--version`: print the plugin version and exit (handy for CI / release scripts).
+if (process.argv.includes("--version")) {
+  const { version } = JSON.parse(readFileSync(join(ROOT, ".claude-plugin", "plugin.json"), "utf8"));
+  console.log(version);
+  process.exit(0);
+}
+
 const errors = [];
 const warnings = [];
 const err = (m) => errors.push(m);
