@@ -24,8 +24,8 @@ Most tasks touch only part of this. A one-liner is `Recall → do it → Learn`.
 1. **Recall.** Memory is primed at session start. Before deciding, recall precedent (*"tasks like this went well as `<shape>`"*) + gotchas for the files/subsystem in play. Recall **once** and thread what you find into each agent's brief — don't make every worker recall the same subsystem cold.
 2. **Right-size.** Read the *shape of the prompt* (specificity · scope · reversibility · unknowns) and pick the floor shape. Let precedent inform, not dictate. See `references/routing-and-dispatch.md` for the signals→shape rubric.
 3. **Dispatch.** Send work to specialists (the ladder below). Pass each a self-contained brief: the contract, the recalled gotchas, the acceptance. Parallelize only where task contracts don't overlap.
-4. **Gate** at the decision points (below). Gating needs the user — that's why you're the main session.
-5. **Verify / Assemble.** A *separate* verifier proves the work; assemble runs the whole product against the Spec's acceptance criteria.
+4. **Gate** at the decision points (below). Gating needs the user — that's why you're the main session. **Each gate's artifact (`spec.md`, `plan.md`, task files) is written to `.agentry/work/<id>/` as a file *before* you gate** — reasoning it out in chat without persisting the file is the failure (the Workbench and re-review read the files, not the transcript).
+5. **Verify / Assemble.** A *separate* verifier proves the work; assemble runs the whole product against the Spec's acceptance criteria. See the build loop below.
 6. **Learn.** Record the episode; harvest gotchas the verifier named; offer to reflect.
 
 ## Escalation triggers (escalate one shape, re-enter, continue)
@@ -47,7 +47,14 @@ On **spec-first and decompose+verify these gates are mandatory stops, in order �
 - **Plan gate** — **plan first, gate, *then* split.** Dispatch the architect for **Plan + ADR only** (NOT tasks). Optionally run the verifier's plan-lens (falsifiable acceptance? contracts compose? riskiest first?). Present the Plan + any ADR to the user and get approval. **Only after approval** do you dispatch split (task contracts). Never bundle plan→split into one dispatch — that removes the gate.
 - **Ship gate** — on an assemble MEETS verdict, offer {commit+PR / keep iterating / reflect}.
 
-> The anti-pattern that bit us live: a clear task tempts you to inline the ACs, skip `spec.md`, and dispatch the architect to produce plan+ADR+tasks in one pass — collapsing both gates. Don't. The artifact + the stops are the point.
+> The anti-pattern that bit us live: a clear task tempts you to inline the ACs, skip `spec.md`, and dispatch the architect to produce plan+ADR+tasks in one pass — collapsing both gates. Don't. The artifact + the stops are the point — and the artifact is a **file on disk** in `.agentry/work/<id>/`, not a chat message.
+
+## Build loop (implement ⇄ verify)
+
+After the plan gate, run each task: dispatch the **implementer** → dispatch a **separate verifier** (never the author — that independence is the point).
+
+- **Fix loop = fresh implementer + the verifier's fix contract.** When verify returns needs-changes, **re-dispatch a *fresh* implementer with the verifier's precise findings as the contract** — clean context, exact refs. Do **not** depend on continuing the same agent (e.g. `SendMessage` may be unavailable in this environment); a fresh spawn carrying the fix contract is the reliable path, and usually cleaner.
+- **dist-lockstep (repo rule).** If the build changed `packages/memory/src`, **rebuild (`pnpm -r build`) and stage `dist/index.js` in the same change** — the live MCP runs the committed bundle, not `src`, so un-rebuilt work isn't actually live. Run `node scripts/check-plugin.mjs` before the ship gate; it flags a stale dist.
 
 ## Memory discipline
 
@@ -73,6 +80,8 @@ Node↔specialist mapping and the signals rubric live in the reference.
 - **Skipping the spec gate** on a vague ask → building the wrong thing.
 - **Parallelizing overlapping contracts** → silent clobbering.
 - **Not threading memory** → every worker re-explores the same subsystem cold.
+- **Gating in chat without the artifact file** → spec/plan must exist in `.agentry/work/<id>/`, not just the transcript.
+- **Committing `packages/memory/src` without rebuilding `dist`** → the live MCP runs the stale bundle (dist-lockstep).
 
 ## Additional resources
 
