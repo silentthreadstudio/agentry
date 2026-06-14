@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# build output — gitignored EXCEPT the committed memory bundle (zero-install, doc 09)
+packages/core/dist/
+packages/workbench/dist/
+# packages/memory/dist/ is COMMITTED — intentionally NOT ignored
+
+# derived memory index (text files are the source of truth and ARE committed; the DB is rebuilt)
+**/.agentry/memory/**/*.db
+**/.agentry/memory/**/*.db-shm
+**/.agentry/memory/**/*.db-wal
+
+# misc
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.tsbuildinfo

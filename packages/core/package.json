@@ -1,0 +1,22 @@
+{
+  "name": "@agentry/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Agentry's typed contract — the single source of truth for artifact, memory, event, and config shapes.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  }
+}
