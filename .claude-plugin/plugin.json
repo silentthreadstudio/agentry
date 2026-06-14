@@ -16,5 +16,11 @@
     "skills",
     "sdlc",
     "claude-code"
-  ]
+  ],
+  "mcpServers": {
+    "mem": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/packages/memory/dist/index.js"]
+    }
+  }
 }

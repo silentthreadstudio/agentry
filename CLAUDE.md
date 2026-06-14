@@ -6,7 +6,7 @@ durable memory). **The repo root *is* the plugin**; TypeScript lives under `pack
 ## Where things are
 
 - `agents/` `commands/` `skills/` `hooks/` — shipped plugin payload (markdown + the dep-free primer hook)
-- `.claude-plugin/` `.mcp.json` — manifests + the `mem` MCP wiring
+- `.claude-plugin/plugin.json` — manifests + **inline** `mem` MCP wiring (NOT a root `.mcp.json` — that double-loads as project config and fails on `${CLAUDE_PLUGIN_ROOT}` when dogfooding)
 - `packages/core` — `@agentry/core`, the typed contract · `packages/memory` — the memory MCP · `packages/workbench` — V2
 - `.docs/internal/01–10` — the design (read these before changing behavior); **`10` is the execution roadmap** (current: Phase 1 — implement `@agentry/memory`)
 
