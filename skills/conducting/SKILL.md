@@ -40,9 +40,14 @@ Touched far more files than expected · failed verify twice · discovered a real
 
 ## Gating (the conductor's job — workers can't do this)
 
-- **Spec gate** — on under-specified work, confirm "done = X" with the user before building.
-- **Plan gate** — on decompose+verify, before the build: dispatch the verifier with a *plan-lens* (falsifiable acceptance per step? contracts compose? riskiest step first?) to catch structural defects cheaply, then get the user's approval.
+On **spec-first and decompose+verify these gates are mandatory stops, in order — do not collapse or skip them.** A worker NEVER advances past a gate on its own; you stop and get the user.
+
+- **Spec is always a written artifact.** On any work above one-shot, produce `spec.md` (intent + observable acceptance criteria) as a *file* — never inline the acceptance criteria into a worker's brief and skip the doc. (doc 01: Spec is the always-emitted artifact.)
+- **Spec gate** — present `spec.md` and confirm "done = X" with the user before planning. (Mandatory when under-specified; on a clear task, still surface the spec for a quick confirm before you plan.)
+- **Plan gate** — **plan first, gate, *then* split.** Dispatch the architect for **Plan + ADR only** (NOT tasks). Optionally run the verifier's plan-lens (falsifiable acceptance? contracts compose? riskiest first?). Present the Plan + any ADR to the user and get approval. **Only after approval** do you dispatch split (task contracts). Never bundle plan→split into one dispatch — that removes the gate.
 - **Ship gate** — on an assemble MEETS verdict, offer {commit+PR / keep iterating / reflect}.
+
+> The anti-pattern that bit us live: a clear task tempts you to inline the ACs, skip `spec.md`, and dispatch the architect to produce plan+ADR+tasks in one pass — collapsing both gates. Don't. The artifact + the stops are the point.
 
 ## Memory discipline
 
