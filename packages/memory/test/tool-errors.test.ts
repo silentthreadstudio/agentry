@@ -239,8 +239,8 @@ test("AC8/Q1: corrupt read does not regress memory_stats to an error — it stay
   assert.equal(Array.isArray(data.readErrors), true);
 });
 
-// ── AC9 — happy-path regression: every one of the 11 tools returns isError falsy with expected data ──
-test("AC9: every one of the 11 tools' happy path stays isError:false with expected data", async () => {
+// ── AC9 — happy-path regression: every registered tool returns isError falsy with expected data ──
+test("AC9: every registered tool's happy path stays isError:false with expected data", async () => {
   const { service, call } = wired(fresh());
 
   // seed records the happy paths can act on

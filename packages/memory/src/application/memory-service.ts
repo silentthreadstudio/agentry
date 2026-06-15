@@ -4,7 +4,7 @@
 import type { Episode, Fact, MemoryType, Scope } from "@agentry/core";
 import { DEDUP_THRESHOLD, similarity } from "../domain/dedup.js";
 import { newId, originOf, type Origin } from "../domain/id.js";
-import type { FileStore, ReadError, TextIndex } from "../domain/ports.js";
+import type { FileStore, ReadError, StoreSignature, TextIndex } from "../domain/ports.js";
 import { recallScore } from "../domain/ranking.js";
 import { originForScope, type Roots } from "../resolution/roots.js";
 
@@ -103,6 +103,9 @@ export class MemoryService {
   // Read-errors collected at the last load() — corrupt/unreadable store records the file store could not
   // parse. Surfaced through stats() so memory_stats can report them (Q1); never silently swallowed.
   private readErrors: ReadError[] = [];
+  // Freshness fingerprint captured at the end of the last load() (ADR-001). ensureFresh() re-probes and
+  // compares against this to detect out-of-band writes; null until the first load().
+  private signature: StoreSignature | null = null;
 
   constructor(
     private readonly store: FileStore,
@@ -125,6 +128,8 @@ export class MemoryService {
     const episodes = this.store.readEpisodes();
     for (const { episode } of episodes.records) this.episodes.set(episode.id, episode);
     this.readErrors = [...facts.errors, ...episodes.errors];
+    // Capture the freshness fingerprint of the just-loaded store; ensureFresh() compares against it.
+    this.signature = this.store.signature();
   }
 
   write(input: WriteInput): WriteResult {
@@ -181,6 +186,7 @@ export class MemoryService {
   }
 
   recall(input: RecallInput): { memories: ScoredFact[]; episodes?: Episode[] } {
+    this.ensureFresh();
     const limit = input.limit ?? 5;
     if (input.mode === "prime") {
       const memories = this.activeFacts()
@@ -203,6 +209,7 @@ export class MemoryService {
   }
 
   search(query: string, limit = 10): { id: string; snippet: string; type: MemoryType; scope: Scope }[] {
+    this.ensureFresh();
     return this.index.search(query, limit).flatMap((hit) => {
       const f = this.facts.get(hit.id);
       return f && f.status === "active"
@@ -285,6 +292,7 @@ export class MemoryService {
     byType: Record<string, number>;
     readErrors: ReadError[];
   } {
+    this.ensureFresh();
     let active = 0;
     let superseded = 0;
     let archived = 0;
@@ -391,7 +399,45 @@ export class MemoryService {
     return { ok: false, reason: "not-found", id };
   }
 
+  /**
+   * Manual force-rebuild (ADR-001 §b): re-read the file store (truth) into the maps/index regardless of
+   * the freshness signature, and report the fact/episode counts before and after. The escape hatch when
+   * another process wrote memories this session can't see. `rebuilt` reflects whether a count moved (the
+   * rebuild itself always runs — that is the "force" semantics).
+   */
+  resync(): {
+    rebuilt: boolean;
+    before: { facts: number; episodes: number };
+    after: { facts: number; episodes: number };
+  } {
+    // Read `before` from the CURRENT maps first — load() clears them before repopulating.
+    const before = { facts: this.facts.size, episodes: this.episodes.size };
+    this.load();
+    const after = { facts: this.facts.size, episodes: this.episodes.size };
+    return {
+      rebuilt: before.facts !== after.facts || before.episodes !== after.episodes,
+      before,
+      after,
+    };
+  }
+
   // ── internals ──────────────────────────────────────────────────────────
+  /**
+   * Cheap freshness guard (ADR-001 §a): re-probe the store's stat-signature and, only on mismatch (or
+   * before the first load), rebuild via the idempotent load(). When nothing changed on disk the fresh
+   * path is just a tuple compare — no rebuild. Runs at the top of every disk-truth-dependent read.
+   */
+  private ensureFresh(): void {
+    const sig = this.store.signature();
+    if (
+      this.signature === null ||
+      sig.count !== this.signature.count ||
+      sig.maxMtimeMs !== this.signature.maxMtimeMs
+    ) {
+      this.load(); // re-captures this.signature
+    }
+  }
+
   private create(fact: Fact): void {
     this.store.writeFact(originOf(fact.id), fact);
     this.facts.set(fact.id, fact);

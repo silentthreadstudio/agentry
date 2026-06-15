@@ -28506,6 +28506,9 @@ var MemoryService = class {
   // Read-errors collected at the last load() — corrupt/unreadable store records the file store could not
   // parse. Surfaced through stats() so memory_stats can report them (Q1); never silently swallowed.
   readErrors = [];
+  // Freshness fingerprint captured at the end of the last load() (ADR-001). ensureFresh() re-probes and
+  // compares against this to detect out-of-band writes; null until the first load().
+  signature = null;
   /** Load the file store into memory and (re)build the text index. Call once at startup. */
   load() {
     this.facts.clear();
@@ -28520,6 +28523,7 @@ var MemoryService = class {
     const episodes = this.store.readEpisodes();
     for (const { episode } of episodes.records) this.episodes.set(episode.id, episode);
     this.readErrors = [...facts.errors, ...episodes.errors];
+    this.signature = this.store.signature();
   }
   write(input) {
     for (const fact2 of this.facts.values()) {
@@ -28567,6 +28571,7 @@ var MemoryService = class {
     };
   }
   recall(input) {
+    this.ensureFresh();
     const limit = input.limit ?? 5;
     if (input.mode === "prime") {
       const memories = this.activeFacts().map((fact) => ({ fact, score: recallScore(fact, 1) })).sort((a, b) => b.score - a.score).slice(0, limit);
@@ -28583,6 +28588,7 @@ var MemoryService = class {
     return { memories: scored.slice(0, limit) };
   }
   search(query, limit = 10) {
+    this.ensureFresh();
     return this.index.search(query, limit).flatMap((hit) => {
       const f = this.facts.get(hit.id);
       return f && f.status === "active" ? [{ id: f.id, snippet: f.text.slice(0, 200), type: f.type, scope: f.scope }] : [];
@@ -28649,6 +28655,7 @@ var MemoryService = class {
     return { applied, skipped, requested };
   }
   stats() {
+    this.ensureFresh();
     let active = 0;
     let superseded = 0;
     let archived = 0;
@@ -28748,7 +28755,34 @@ var MemoryService = class {
     }
     return { ok: false, reason: "not-found", id };
   }
+  /**
+   * Manual force-rebuild (ADR-001 §b): re-read the file store (truth) into the maps/index regardless of
+   * the freshness signature, and report the fact/episode counts before and after. The escape hatch when
+   * another process wrote memories this session can't see. `rebuilt` reflects whether a count moved (the
+   * rebuild itself always runs — that is the "force" semantics).
+   */
+  resync() {
+    const before = { facts: this.facts.size, episodes: this.episodes.size };
+    this.load();
+    const after = { facts: this.facts.size, episodes: this.episodes.size };
+    return {
+      rebuilt: before.facts !== after.facts || before.episodes !== after.episodes,
+      before,
+      after
+    };
+  }
   // ── internals ──────────────────────────────────────────────────────────
+  /**
+   * Cheap freshness guard (ADR-001 §a): re-probe the store's stat-signature and, only on mismatch (or
+   * before the first load), rebuild via the idempotent load(). When nothing changed on disk the fresh
+   * path is just a tuple compare — no rebuild. Runs at the top of every disk-truth-dependent read.
+   */
+  ensureFresh() {
+    const sig = this.store.signature();
+    if (this.signature === null || sig.count !== this.signature.count || sig.maxMtimeMs !== this.signature.maxMtimeMs) {
+      this.load();
+    }
+  }
   create(fact) {
     this.store.writeFact(originOf(fact.id), fact);
     this.facts.set(fact.id, fact);
@@ -28827,7 +28861,7 @@ var SqliteTextIndex = class {
 };
 
 // src/persistence/file-store.ts
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join as join2 } from "node:path";
 
 // ../core/dist/enums.js
@@ -28988,6 +29022,35 @@ var MarkdownFileStore = class {
   }
   deleteEpisode(origin, id) {
     this.remove(origin, "episodes", id);
+  }
+  /**
+   * Stat-only freshness fingerprint (ADR-001): count `.md` files and fold their `mtimeMs` into a max,
+   * across `facts/`+`episodes/` under BOTH roots. Same source list as the reads (global always; project
+   * when present). Limitation: two writes within one `mtimeMs` tick to the same file are indistinguishable
+   * — accepted, the out-of-band writer is a separate process (>1ms round-trip) and the in-process writer
+   * updates the map directly (it never relies on this probe). No content hashing (ADR-001 alt #3).
+   */
+  signature() {
+    const sources = [this.roots.global];
+    if (this.roots.project) sources.push(this.roots.project);
+    let count = 0;
+    let maxMtimeMs = 0;
+    for (const root of sources) {
+      for (const kind of ["facts", "episodes"]) {
+        const dir = join2(root, kind);
+        if (!existsSync(dir)) continue;
+        for (const file of readdirSync(dir)) {
+          if (!file.endsWith(".md")) continue;
+          try {
+            const { mtimeMs } = statSync(join2(dir, file));
+            count++;
+            if (mtimeMs > maxMtimeMs) maxMtimeMs = mtimeMs;
+          } catch {
+          }
+        }
+      }
+    }
+    return { count, maxMtimeMs };
   }
   remove(origin, kind, id) {
     const dir = join2(dirFor(origin, this.roots), kind);
@@ -29295,6 +29358,18 @@ function registerFlowTools(server, service) {
   );
 }
 
+// src/tools/resync-tool.ts
+function registerResyncTool(server, service) {
+  server.registerTool(
+    "memory_resync",
+    {
+      description: "Force-rebuild the derived index from the file-store (truth) \u2014 use when another process wrote memories this session can't see. Returns before/after fact+episode counts.",
+      inputSchema: {}
+    },
+    guard(async () => ok(service.resync()))
+  );
+}
+
 // src/index.ts
 async function main() {
   const roots = resolveRoots();
@@ -29304,6 +29379,7 @@ async function main() {
   registerFactTools(server, service);
   registerEpisodeTools(server, service);
   registerFlowTools(server, service);
+  registerResyncTool(server, service);
   await server.connect(new StdioServerTransport());
 }
 main().catch((error2) => {

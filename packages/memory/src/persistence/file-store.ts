@@ -3,13 +3,20 @@
 // YAML frontmatter holds the fields; the body holds the prose (a fact's text / an episode's task) —
 // human-readable and git-diffable. Origin is derived from which root a file lives in. Corrupt/
 // conflict-marked files are skipped (logged), never fatal — a bad merge can't break the rebuild.
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Episode, Fact } from "@agentry/core";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { z } from "zod";
 import { bareId, slug, type Origin } from "../domain/id.js";
-import type { FileStore, ReadError, ReadResult, StoredEpisode, StoredFact } from "../domain/ports.js";
+import type {
+  FileStore,
+  ReadError,
+  ReadResult,
+  StoreSignature,
+  StoredEpisode,
+  StoredFact,
+} from "../domain/ports.js";
 import { dirFor, type Roots } from "../resolution/roots.js";
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
@@ -43,6 +50,39 @@ export class MarkdownFileStore implements FileStore {
 
   deleteEpisode(origin: Origin, id: string): void {
     this.remove(origin, "episodes", id);
+  }
+
+  /**
+   * Stat-only freshness fingerprint (ADR-001): count `.md` files and fold their `mtimeMs` into a max,
+   * across `facts/`+`episodes/` under BOTH roots. Same source list as the reads (global always; project
+   * when present). Limitation: two writes within one `mtimeMs` tick to the same file are indistinguishable
+   * — accepted, the out-of-band writer is a separate process (>1ms round-trip) and the in-process writer
+   * updates the map directly (it never relies on this probe). No content hashing (ADR-001 alt #3).
+   */
+  signature(): StoreSignature {
+    const sources: string[] = [this.roots.global];
+    if (this.roots.project) sources.push(this.roots.project);
+
+    let count = 0;
+    let maxMtimeMs = 0;
+    for (const root of sources) {
+      for (const kind of ["facts", "episodes"] as const) {
+        const dir = join(root, kind);
+        if (!existsSync(dir)) continue;
+        for (const file of readdirSync(dir)) {
+          if (!file.endsWith(".md")) continue;
+          try {
+            const { mtimeMs } = statSync(join(dir, file));
+            count++;
+            if (mtimeMs > maxMtimeMs) maxMtimeMs = mtimeMs;
+          } catch {
+            // Skip on vanish: a cross-process writer may delete a file between readdir and stat;
+            // a file that no longer exists simply doesn't contribute to count/mtime (mirrors the read path).
+          }
+        }
+      }
+    }
+    return { count, maxMtimeMs };
   }
 
   private remove(origin: Origin, kind: "facts" | "episodes", id: string): void {

@@ -29,6 +29,17 @@ export interface ReadResult<T> {
   errors: ReadError[];
 }
 
+/**
+ * A cheap freshness fingerprint of the file store (ADR-001 §Detection signal). `count` + `maxMtimeMs`
+ * across `facts/`+`episodes/` in BOTH roots catches adds, deletes, AND in-place edits (one file per id,
+ * so an edit moves only mtime). Plain values only — no `node:fs` types leak across the port (mirrors
+ * `ReadError` above). Equality is a field compare: `a.count === b.count && a.maxMtimeMs === b.maxMtimeMs`.
+ */
+export interface StoreSignature {
+  count: number; // active file count across facts/ + episodes/ in BOTH roots
+  maxMtimeMs: number; // max mtimeMs across those files; 0 when there are none
+}
+
 /** The source of truth: one JSON file per record under each root's memory dir. */
 export interface FileStore {
   readonly hasProjectRoot: boolean;
@@ -38,6 +49,8 @@ export interface FileStore {
   readEpisodes(): ReadResult<StoredEpisode>;
   deleteFact(origin: Origin, id: string): void;
   deleteEpisode(origin: Origin, id: string): void;
+  /** Cheap stat-only freshness probe — does NOT read file bodies (ADR-001). */
+  signature(): StoreSignature;
 }
 
 export interface SearchHit {
