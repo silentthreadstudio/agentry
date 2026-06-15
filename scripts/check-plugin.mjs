@@ -118,6 +118,49 @@ if (existsSync(memSrc)) {
   }
 }
 
+// 7. hooks.json — events MUST nest under a top-level "hooks" key. The bare form
+// (events at the root) parses as valid JSON but silently fails to load — no hook
+// ever fires, including SessionStart, with no error anywhere. Catch it here.
+const HOOK_EVENTS = new Set([
+  "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+  "PostToolUseFailure", "PostToolBatch", "Stop", "StopFailure", "SubagentStart",
+  "SubagentStop", "PreCompact", "PostCompact", "Notification", "FileChanged",
+]);
+const hooksJson = join(ROOT, "hooks", "hooks.json");
+if (existsSync(hooksJson)) {
+  let h;
+  try {
+    h = readJson(hooksJson);
+  } catch (e) {
+    err(`hooks/hooks.json: invalid JSON — ${e.message}`);
+  }
+  if (h) {
+    const rootKeys = Object.keys(h);
+    if (!("hooks" in h)) {
+      // bare form — events at the root with no wrapper → silently never loads
+      const looksLikeEvents = rootKeys.some((k) => HOOK_EVENTS.has(k));
+      err(looksLikeEvents
+        ? `hooks/hooks.json: events (${rootKeys.filter((k) => HOOK_EVENTS.has(k)).join(", ")}) at the root — must nest under a top-level "hooks" key, or NOTHING loads (silent)`
+        : `hooks/hooks.json: missing top-level "hooks" key`);
+    } else {
+      const events = h.hooks;
+      let groups = 0;
+      for (const [evt, list] of Object.entries(events)) {
+        if (!HOOK_EVENTS.has(evt)) warn(`hooks/hooks.json: unknown event "${evt}"`);
+        for (const grp of list ?? []) {
+          for (const hk of grp.hooks ?? []) {
+            groups++;
+            // verify any ${CLAUDE_PLUGIN_ROOT}-relative script the hook runs actually exists
+            const ref = (hk.command ?? "").match(/\$\{CLAUDE_PLUGIN_ROOT\}\/(\S+?)["\s]/);
+            if (ref && !existsSync(join(ROOT, ref[1]))) err(`hooks/hooks.json: ${evt} → missing script ${ref[1]}`);
+          }
+        }
+      }
+      ok("hooks.json", `${Object.keys(events).length} event(s), ${groups} handler(s)`);
+    }
+  }
+}
+
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));
 console.log(bold("\n  Agentry plugin gate"));
