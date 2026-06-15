@@ -24,6 +24,7 @@ interface CliArgs {
   out?: string;
   k?: string;
   x?: string;
+  pluginDir?: string;
   replayFixture?: string;
   replayFixtures?: string;
 }
@@ -35,6 +36,7 @@ const FLAGS: Record<string, keyof CliArgs> = {
   "--out": "out",
   "--k": "k",
   "--x": "x",
+  "--plugin-dir": "pluginDir",
   "--replay-fixture": "replayFixture",
   "--replay-fixtures": "replayFixtures",
 };
@@ -108,6 +110,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       outPath,
       ...(args.k !== undefined ? { k: Number(args.k) } : {}),
       ...(args.x !== undefined ? { x: Number(args.x) } : {}),
+      ...(args.pluginDir !== undefined ? { pluginDir: resolve(args.pluginDir) } : {}),
     });
 
     if (result.artifact.condition === "aborted") {

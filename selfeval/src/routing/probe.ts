@@ -74,12 +74,17 @@ async function runAndExtract(
 ): Promise<Shape | null> {
   const sandbox: Sandbox = prepareSandbox();
   const streamPath = join(sandbox.workingDir, "stream.jsonl");
+  // Running "through Agentry" = invoking the front door so the conducting skill actually routes. When the
+  // Agentry plugin is loaded (pluginDir set), wrap the bare labeled task as a `/agentry:go` invocation and
+  // bypass perms so the conductor can dispatch headless inside the isolated sandbox. Without pluginDir
+  // (e.g. replay tests), pass the bare prompt unchanged — the recorded stream already encodes the routing.
+  const prompt = pluginDir !== undefined ? `/agentry:go ${task.prompt}` : task.prompt;
   const result = await runner.run(
     {
-      prompt: task.prompt,
+      prompt,
       model,
       streamPath,
-      ...(pluginDir !== undefined ? { pluginDir } : {}),
+      ...(pluginDir !== undefined ? { pluginDir, permissionMode: "bypassPermissions" } : {}),
     },
     sandbox,
   );
