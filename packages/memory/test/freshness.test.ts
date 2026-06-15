@@ -117,6 +117,23 @@ test("resync() force-rebuilds and reports before/after counts reflecting out-of-
   assert.deepEqual(Object.keys(result).sort(), ["after", "before", "rebuilt"]);
 });
 
+test("resync twice with no disk change → search returns exactly one hit (no double-index)", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  const { id } = service.write({ type: "gotcha", scope: "global", text: "onyx must index exactly once" });
+
+  // Force two rebuilds back-to-back with nothing changing on disk between them. add() is
+  // delete-then-insert (db-index.ts:43) and load() resets first (memory-service.ts:118), so the term
+  // resolves to a SINGLE row — a duplicate hit means add() regressed to INSERT-only and the
+  // no-UNIQUE FTS/LIKE tables started double-indexing (the invariant ADR-001 leans on).
+  service.resync();
+  service.resync();
+
+  const hits = service.search("onyx");
+  assert.equal(hits.length, 1, "double resync must not double-index the term");
+  assert.equal(hits[0]?.id, id);
+});
+
 test("memory_resync tool registers and its handler returns an ok envelope with resync payload", async () => {
   const dir = fresh();
   const service = newService(dir);
