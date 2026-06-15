@@ -18,6 +18,16 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
+  benchmark:
+    dependencies:
+      '@agentry/core':
+        specifier: workspace:*
+        version: link:../packages/core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.2
+
   packages/core:
     dependencies:
       zod:

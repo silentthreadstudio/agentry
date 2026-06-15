@@ -10,7 +10,11 @@ export interface Roots {
 }
 
 export function resolveRoots(env: NodeJS.ProcessEnv = process.env): Roots {
-  const global = join(homedir(), ".agentry", "memory");
+  // AGENTRY_GLOBAL_DIR overrides the global root (ADR-002 Fork C). It is a *base dir* — the
+  // function appends `.agentry/memory`, symmetric with how AGENTRY_PROJECT_DIR/CLAUDE_PROJECT_DIR
+  // are treated below. Absent => byte-identical to the homedir()-based default (backward-compat).
+  const globalDir = env.AGENTRY_GLOBAL_DIR;
+  const global = globalDir ? join(globalDir, ".agentry", "memory") : join(homedir(), ".agentry", "memory");
   const projectDir = env.CLAUDE_PROJECT_DIR ?? env.AGENTRY_PROJECT_DIR;
   return { global, project: projectDir ? join(projectDir, ".agentry", "memory") : null };
 }

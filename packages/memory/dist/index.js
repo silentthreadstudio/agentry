@@ -28480,7 +28480,8 @@ function recallScore(fact, relevance) {
 import { homedir } from "node:os";
 import { join } from "node:path";
 function resolveRoots(env = process.env) {
-  const global = join(homedir(), ".agentry", "memory");
+  const globalDir = env.AGENTRY_GLOBAL_DIR;
+  const global = globalDir ? join(globalDir, ".agentry", "memory") : join(homedir(), ".agentry", "memory");
   const projectDir = env.CLAUDE_PROJECT_DIR ?? env.AGENTRY_PROJECT_DIR;
   return { global, project: projectDir ? join(projectDir, ".agentry", "memory") : null };
 }
