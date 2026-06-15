@@ -58,24 +58,30 @@ lists 9 tools ✅ · round-trip / supersede-never-returned / rebuild-on-start al
 
 ---
 
-## Phase 2 — End-to-end dogfood: the spine runs 🎯 NEXT
+## Phase 2 — End-to-end dogfood: the spine runs ✅ DONE — demonstrated across multiple real runs
 
 **Goal:** a real task flows through `/agentry` with memory live.
 
 **Tasks**
-- [ ] Reload; run a one-liner → confirm it routes **one-shot** (no orchestration tax).
-- [ ] Run a multi-file task → confirm decompose+verify: spec gate · architect plan · parallel implementers
-  on disjoint contracts · adversarial verify · assemble · ship gate.
-- [ ] Confirm memory: recall-on-route · gotchas threaded into task briefs · `used_memories` cited ·
-  `memory_feedback` applied · `episode_write` on completion · `/agentry:reflect` distills episodes→facts.
-- [ ] Fix the connective bugs surfaced (capture them as Evolution entries).
+- [x] One-liner routes **one-shot** (no orchestration tax) — the no-dupes regression test (`f4b5002`).
+- [x] Multi-file decompose+verify: spec gate · architect plan + ADR · **parallel implementers on disjoint
+  contracts** · adversarial verify · assemble · ship gate — the mem-resync staleness fix (`a2d1e89`,
+  T1→T4) and the roster-hardening sweep (`dd5e6e5`, 4 parallel implementers + verifier, proven in
+  `events.jsonl`).
+- [x] Memory loop end-to-end: recall-on-route · gotchas threaded · `used_memories` cited ·
+  `memory_feedback` applied · `episode_write` on completion · `/agentry:reflect` distilled **4 facts with
+  provenance** (the librarian run, debt 7→0).
+- [x] Connective bugs surfaced + fixed durably: hooks.json wrapper (`33739dd`), block-scalar frontmatter
+  (`ec5a2e8`), derived-index staleness (`a2d1e89`) — each hardened the layer, not the operator.
 
 **Definition of Done (gate):** one multi-file task completes via decompose+verify with memory written
-*and* recalled; a one-liner stays one-shot; reflect produces ≥1 distilled fact with provenance.
+*and* recalled ✅; a one-liner stays one-shot ✅; reflect produces ≥1 distilled fact with provenance ✅.
+**Green 2026-06-15.** Notable: the roster began *correcting the operator* (caught a stale-memory landmine
+by reading current source) — the self-detection the spine was meant to enable.
 
 ---
 
-## Phase 3 — Benchmark harness + first proof
+## Phase 3 — Benchmark harness + first proof 🎯 NEXT
 
 **Goal:** implement `benchmark/` (doc 06) and get the first C1–C4 numbers.
 
