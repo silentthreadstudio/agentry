@@ -1,0 +1,8 @@
+# R0 — a trivial baseline task (smallest valuable slice; floor of the regime ladder). Generic: the prompt
+# DECLARES what to produce; it bakes in no repo-specific path. The hidden suite lives in the sibling grader/.
+id: r0-greeter
+regime: R0
+armEligibility: [A, B, C]
+prompt: |
+  Create a file `greeting.txt` in the working directory whose contents are exactly the single line:
+  Hello, world!

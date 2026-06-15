@@ -1,0 +1,5 @@
+[
+  { "id": "R1-1-module-exists", "kind": "file_exists", "path": "src/counter.js" },
+  { "id": "R1-2-exports-count", "kind": "file_contains", "path": "src/counter.js", "pattern": "count" },
+  { "id": "R1-3-tests-pass", "kind": "command", "cmd": ["node", "--test", "test/counter.test.js"], "expectExit": 0 }
+]

@@ -1,0 +1,14 @@
+# R3 TEACHER (Plan §2.1; ADR-002 Fork A R3 pairing). The teacher task establishes a project convention that
+# lands in memory; the follow-up (r3-followup-logger) then reuses it. Cross-referenced by id via `pair`.
+#
+# The convention seeded here: this project FORBIDS `console.log` in shipped source — code must log via the
+# exported `log()` helper. A run that learns this writes a memory record (the lesson) the warm follow-up reuses.
+# Generic: the convention is declared in-prompt, not pulled from any real repo.
+id: r3-teacher-logger
+regime: R3
+armEligibility: [B, C]
+pair: r3-followup-logger
+prompt: |
+  This project FORBIDS `console.log` in shipped source: all logging must go through a single helper.
+  Create `src/log.js` (CommonJS) exporting `log(message)` that writes the message via
+  `process.stdout.write(message + "\n")` (NOT `console.log`). Record this convention so future work follows it.

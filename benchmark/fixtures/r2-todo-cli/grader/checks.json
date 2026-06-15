@@ -1,0 +1,8 @@
+[
+  { "id": "R2-1-module-exists", "kind": "file_exists", "path": "src/todo.js" },
+  { "id": "R2-2-exports-add", "kind": "file_contains", "path": "src/todo.js", "pattern": "add" },
+  { "id": "R2-3-exports-complete", "kind": "file_contains", "path": "src/todo.js", "pattern": "complete" },
+  { "id": "R2-4-exports-list", "kind": "file_contains", "path": "src/todo.js", "pattern": "list" },
+  { "id": "R2-5-tests-pass", "kind": "command", "cmd": ["node", "--test", "test/todo.test.js"], "expectExit": 0 },
+  { "id": "R2-6-readme-exists", "kind": "file_exists", "path": "README.md" }
+]

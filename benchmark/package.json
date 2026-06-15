@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@agentry/core": "workspace:*"
+    "@agentry/core": "workspace:*",
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0"

@@ -1,0 +1,5 @@
+[
+  { "id": "R1p-1-module-exists", "kind": "file_exists", "path": "src/range.js" },
+  { "id": "R1p-2-inclusive-bound", "kind": "file_contains", "path": "src/range.js", "pattern": "<=\\s*end|end\\s*>=|end\\s*\\+\\s*1" },
+  { "id": "R1p-3-tests-pass", "kind": "command", "cmd": ["node", "--test", "test/range.test.js"], "expectExit": 0 }
+]

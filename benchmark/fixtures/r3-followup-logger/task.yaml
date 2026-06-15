@@ -1,0 +1,23 @@
+# R3 FOLLOW-UP (Plan §2.1; ADR-002 Fork A R3 pairing). Both arms (cold B / warm C) run THIS same task; the
+# warm arm carries the teacher's memory and should REUSE the no-`console.log` convention. The moat delta is
+# B vs C on this follow-up (AC7), and `lesson` declares how reuse is OBSERVED (AC8).
+#
+# Cross-reference: `pair` + `deps` name the teacher by id (teacher runs first, seeds memory).
+#
+# `lesson` is a LessonDecl (owned by the grader, T-006 — imported, not redeclared). Reuse is observed two ways:
+#   • lessonId present in the run's used_memories (the warm run reported using the convention record), OR
+#   • avoidedGotcha: `console.log` PRESENT in the produced module marks the UN-avoided gotcha (a cold run
+#     reaches for it); its ABSENCE = the warm run avoided it = the lesson was reused.
+id: r3-followup-logger
+regime: R3
+armEligibility: [B, C]
+pair: r3-teacher-logger
+deps: [r3-teacher-logger]
+prompt: |
+  Create `src/notify.js` (CommonJS) exporting `notify(message)` that emits a single log line for `message`.
+  Follow this project's logging convention.
+lesson:
+  lessonId: "agentry:no-console-log-in-source"
+  avoidedGotcha:
+    treePath: "src/notify.js"
+    pattern: "console\\.log"

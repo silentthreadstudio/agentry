@@ -1,0 +1,13 @@
+# R2 — a multi-criterion task: several independent acceptance facets so the hidden suite is a real SET
+# (AC15 grades met/total over ≥2 checks). Generic: declares the behavior to build, not a repo-specific path.
+id: r2-todo-cli
+regime: R2
+armEligibility: [A, B, C]
+prompt: |
+  Build a tiny in-memory todo module `src/todo.js` (CommonJS) exporting:
+    • `createStore()` → a fresh store object,
+    • `add(store, title)` → adds a todo and returns its integer id (ids start at 1, monotonic),
+    • `complete(store, id)` → marks the todo done; returns true if found, false otherwise,
+    • `list(store)` → returns the todos as an array of `{ id, title, done }`.
+  Add `test/todo.test.js` using `node:test` + `node:assert` covering add/complete/list, passing under
+  `node --test`. Document the module's API in a top-of-file comment and create a `README.md` describing usage.

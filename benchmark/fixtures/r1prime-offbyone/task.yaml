@@ -1,0 +1,14 @@
+# R1' — the BUG-SEEDED variant of R1 (Spec: same shape as R1, but the starting point carries a planted bug
+# the agent must find and fix). The prompt describes the seeded bug and the expected fix; the agent must
+# PRODUCE the corrected module + a passing test. Generic: no repo-specific paths — the fix is described by
+# behavior. The hidden suite (sibling grader/) observes the fix in the produced tree (affirmative only).
+id: r1prime-offbyone
+regime: R1prime
+armEligibility: [A, B, C]
+prompt: |
+  Create `src/range.js` (CommonJS) exporting `inclusiveRange(start, end)` that returns an array of every
+  integer from `start` to `end` INCLUSIVE (e.g. `inclusiveRange(1, 3)` is `[1, 2, 3]`).
+
+  A common bug is an off-by-one loop bound (`i < end` instead of `i <= end`) which drops the final element —
+  do NOT ship that bug. Also create `test/range.test.js` using `node:test` + `node:assert` that asserts
+  `inclusiveRange(1, 3)` deep-equals `[1, 2, 3]` (this catches the off-by-one), and passes under `node --test`.

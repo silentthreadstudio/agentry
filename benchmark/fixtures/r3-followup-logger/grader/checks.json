@@ -1,0 +1,4 @@
+[
+  { "id": "R3F-1-notify-exists", "kind": "file_exists", "path": "src/notify.js" },
+  { "id": "R3F-2-exports-notify", "kind": "file_contains", "path": "src/notify.js", "pattern": "notify" }
+]
