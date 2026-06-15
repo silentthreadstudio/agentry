@@ -1,0 +1,14 @@
+{
+  "cost": {
+    "inputTokens": 10080,
+    "outputTokens": 470,
+    "cacheReadInputTokens": 20150,
+    "cacheCreationInputTokens": 5080,
+    "numTurns": 3,
+    "totalCostUsd": 0.203,
+    "durationMs": 9150
+  },
+  "producedTree": ["src/solution.ts"],
+  "usedMemories": [],
+  "raw": { "is_error": false, "note": "AC13 forced-null fixture: warm arm C, run 2 — equivalent to cold B (delta ~ 0)" }
+}

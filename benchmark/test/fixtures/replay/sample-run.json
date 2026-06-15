@@ -1,0 +1,30 @@
+{
+  "cost": {
+    "inputTokens": 18071,
+    "outputTokens": 192,
+    "cacheReadInputTokens": 42484,
+    "cacheCreationInputTokens": 32455,
+    "numTurns": 2,
+    "totalCostUsd": 0.40430575,
+    "durationMs": 12783
+  },
+  "producedTree": ["src/index.ts", "src/util.ts"],
+  "usedMemories": ["fact:date-formatter-drops-tz"],
+  "raw": {
+    "type": "result",
+    "subtype": "success",
+    "is_error": false,
+    "num_turns": 2,
+    "total_cost_usd": 0.40430575,
+    "duration_ms": 12783,
+    "modelUsage": {
+      "claude-opus-4-8[1m]": {
+        "inputTokens": 18071,
+        "outputTokens": 192,
+        "cacheReadInputTokens": 42484,
+        "cacheCreationInputTokens": 32455,
+        "costUSD": 0.40430575
+      }
+    }
+  }
+}
