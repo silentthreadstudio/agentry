@@ -1,0 +1,6 @@
+[
+  { "id": "AC1-entry-exists", "kind": "file_exists", "path": "src/index.ts" },
+  { "id": "AC2-exports-run", "kind": "file_contains", "path": "src/index.ts", "pattern": "export function run" },
+  { "id": "AC3-util-exists", "kind": "file_exists", "path": "src/util.ts" },
+  { "id": "AC4-no-todo-left", "kind": "file_contains", "path": "src/index.ts", "pattern": "return" }
+]

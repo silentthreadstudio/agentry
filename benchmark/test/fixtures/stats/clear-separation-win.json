@@ -1,0 +1,26 @@
+{
+  "_doc": "Clear-separation dataset. Warm (C) consistently costs FEWER tokens/dollars than cold (B) on the same follow-up — the warm arm wins on every paired observation with a stable margin. The paired bootstrap CI of (C−B) sits ENTIRELY below 0 and the effect size is large → verdict('win'). Pairs with equivalent-arms-null.json to prove the verdict gate discriminates both ways.",
+  "metric": "cost.totalCostUsd per run; C is ~0.12, B is ~0.20, a large but non-constant ~0.08 separation (per-pair diffs vary so the bootstrap CI has real width and dz is finite)",
+  "warmC": {
+    "regime": "R3",
+    "arm": "C",
+    "runs": [
+      { "cost": { "inputTokens": 6000, "outputTokens": 300, "cacheReadInputTokens": 12000, "cacheCreationInputTokens": 3000, "numTurns": 2, "totalCostUsd": 0.120, "durationMs": 6000 }, "producedTree": ["src/solution.ts"], "usedMemories": ["fact:reuse-1"], "raw": null },
+      { "cost": { "inputTokens": 6100, "outputTokens": 305, "cacheReadInputTokens": 12100, "cacheCreationInputTokens": 3050, "numTurns": 2, "totalCostUsd": 0.130, "durationMs": 6100 }, "producedTree": ["src/solution.ts"], "usedMemories": ["fact:reuse-1"], "raw": null },
+      { "cost": { "inputTokens": 5900, "outputTokens": 295, "cacheReadInputTokens": 11900, "cacheCreationInputTokens": 2950, "numTurns": 2, "totalCostUsd": 0.115, "durationMs": 5900 }, "producedTree": ["src/solution.ts"], "usedMemories": ["fact:reuse-1"], "raw": null },
+      { "cost": { "inputTokens": 6050, "outputTokens": 302, "cacheReadInputTokens": 12050, "cacheCreationInputTokens": 3020, "numTurns": 2, "totalCostUsd": 0.125, "durationMs": 6050 }, "producedTree": ["src/solution.ts"], "usedMemories": ["fact:reuse-1"], "raw": null },
+      { "cost": { "inputTokens": 5950, "outputTokens": 298, "cacheReadInputTokens": 11950, "cacheCreationInputTokens": 2980, "numTurns": 2, "totalCostUsd": 0.110, "durationMs": 5950 }, "producedTree": ["src/solution.ts"], "usedMemories": ["fact:reuse-1"], "raw": null }
+    ]
+  },
+  "coldB": {
+    "regime": "R3",
+    "arm": "B",
+    "runs": [
+      { "cost": { "inputTokens": 10000, "outputTokens": 500, "cacheReadInputTokens": 20000, "cacheCreationInputTokens": 5000, "numTurns": 3, "totalCostUsd": 0.200, "durationMs": 9000 }, "producedTree": ["src/solution.ts"], "usedMemories": [], "raw": null },
+      { "cost": { "inputTokens": 10100, "outputTokens": 510, "cacheReadInputTokens": 20100, "cacheCreationInputTokens": 5050, "numTurns": 3, "totalCostUsd": 0.202, "durationMs": 9100 }, "producedTree": ["src/solution.ts"], "usedMemories": [], "raw": null },
+      { "cost": { "inputTokens": 9900, "outputTokens": 495, "cacheReadInputTokens": 19900, "cacheCreationInputTokens": 4950, "numTurns": 3, "totalCostUsd": 0.198, "durationMs": 8900 }, "producedTree": ["src/solution.ts"], "usedMemories": [], "raw": null },
+      { "cost": { "inputTokens": 10050, "outputTokens": 505, "cacheReadInputTokens": 20050, "cacheCreationInputTokens": 5020, "numTurns": 3, "totalCostUsd": 0.201, "durationMs": 9050 }, "producedTree": ["src/solution.ts"], "usedMemories": [], "raw": null },
+      { "cost": { "inputTokens": 9950, "outputTokens": 498, "cacheReadInputTokens": 19950, "cacheCreationInputTokens": 4980, "numTurns": 3, "totalCostUsd": 0.199, "durationMs": 8950 }, "producedTree": ["src/solution.ts"], "usedMemories": [], "raw": null }
+    ]
+  }
+}

@@ -2,7 +2,11 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "./src",
-    "noEmit": true
+    "noEmit": true,
+    // benchmark is dev-only, run via tsx (never bundled) — modules value-import sibling `.ts` files directly
+    // (e.g. grader/runner.ts imports grader/check.ts). With NodeNext + verbatimModuleSyntax + declaration,
+    // a value `.ts` import needs this flag; it is additive (only permits the extension) and never emits.
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts"],
   "files": []
