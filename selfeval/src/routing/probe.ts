@@ -14,10 +14,11 @@
 // AC10: the only "what shape was chosen" input is `extractShape` over the captured stream. There is no
 // task-completion / grade signal in selfeval to leak in — structurally enforced by the package boundary.
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Runner, Sandbox } from "../io/port.ts";
-import { prepareSandbox } from "../io/sandbox.ts";
+import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
 import { extractShape, DegenerateRunError } from "./extract.ts";
 import { loadRoutingFixture, type RoutingTask } from "./fixture.ts";
 import type { Shape } from "./shape.ts";
@@ -71,8 +72,16 @@ async function runAndExtract(
   runner: Runner,
   model: string,
   pluginDir: string | undefined,
+  fixtureDir: string,
 ): Promise<Shape | null> {
   const sandbox: Sandbox = prepareSandbox();
+  // Seed the working dir with this task's realistic starting codebase BEFORE the run, so the prompt's file
+  // references resolve and multi-part tasks don't collapse to one-shot. Gated on the seed dir existing:
+  // synthetic replay fixtures (no `seeds/<id>/`) are seeded with nothing and run unchanged.
+  const seedDir = join(fixtureDir, "seeds", task.id);
+  if (existsSync(seedDir)) {
+    seedSandbox(sandbox.workingDir, seedDir);
+  }
   const streamPath = join(sandbox.workingDir, "stream.jsonl");
   // Running "through Agentry" = invoking the front door so the conducting skill actually routes. When the
   // Agentry plugin is loaded (pluginDir set), wrap the bare labeled task as a `/agentry:go` invocation and
@@ -124,7 +133,7 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
   // Step 2 — the labeled run: each task once → its dispatched shape (degenerate ⇒ null).
   const outcomes: RoutingOutcome[] = [];
   for (const task of tasks) {
-    const dispatched = await runAndExtract(task, opts.runner, model, opts.pluginDir);
+    const dispatched = await runAndExtract(task, opts.runner, model, opts.pluginDir, opts.fixtureDir);
     outcomes.push({
       taskId: task.id,
       mustEscalate: task.trap === "must-escalate",
@@ -139,7 +148,7 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
   const aaTask = tasks[0]!; // the designated A/A task is the first labeled task
   const aaShapes: Shape[] = [];
   for (let i = 0; i < k; i++) {
-    const shape = await runAndExtract(aaTask, opts.runner, model, opts.pluginDir);
+    const shape = await runAndExtract(aaTask, opts.runner, model, opts.pluginDir, opts.fixtureDir);
     // A degenerate A/A repeat is non-comparable; record a sentinel so the set is not unanimous (it fails — a
     // run that can't even produce k clean repeats has not established the null).
     aaShapes.push(shape ?? ("__degenerate__" as Shape));

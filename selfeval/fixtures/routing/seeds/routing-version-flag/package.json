@@ -1,0 +1,9 @@
+{
+  "name": "greet-cli",
+  "version": "1.4.2",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "greet": "bin/cli.js"
+  }
+}

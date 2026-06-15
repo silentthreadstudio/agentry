@@ -6,7 +6,7 @@
 // contract type). This module also owns the produced-tree DISAMBIGUATOR walk — a boolean, not a tree list:
 // it is the OQ1 one-shot signal (`RunResult.producedTreeNonEmpty`), NOT scoring (no grader reads it).
 
-import { mkdtempSync, readdirSync, statSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -57,6 +57,19 @@ export function prepareSandbox(): Sandbox {
     projectRoot: memoryRootFor(projectBase),
     env,
   };
+}
+
+/**
+ * Seed a prepared sandbox's working dir with a realistic starting codebase. Recursively copies the CONTENTS
+ * of `seedDir` into `workingDir` so the task's prompt references real files (a premise the empty sandbox
+ * would otherwise make false, collapsing multi-part tasks to one-shot).
+ *
+ * Pure fs, one concern: it does not check for the dir's existence (the caller gates on that) and does not
+ * touch the env or memory roots. `cpSync(..., { recursive: true })` merges `seedDir`'s tree onto the
+ * (freshly-minted, empty) working dir.
+ */
+export function seedSandbox(workingDir: string, seedDir: string): void {
+  cpSync(seedDir, workingDir, { recursive: true });
 }
 
 /**
