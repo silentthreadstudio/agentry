@@ -41,6 +41,7 @@ Coverage is a means, not a target. Aim for **the cases that would actually break
 - A bounded feature needs happy path + the real edges + the error paths in its contract.
 - Match the repo's test style, layout, and runner — put tests where the repo puts them, name them how the repo names them.
 - **Stop when adding a test no longer reduces real risk.** Testing every trivial getter, asserting on internals, or duplicating a case you already cover is over-testing — the testing-side gold-plating.
+- **The symmetric failure is just as real — there is a floor.** The contract's happy path, its real edges, and a **regression test for any bug you fix** are mandatory, not "prioritize" — dropping them is under-testing, not right-sizing. Right-sizing trims *above* the floor; it never cuts through it.
 
 ## Anti-patterns (refuse these)
 

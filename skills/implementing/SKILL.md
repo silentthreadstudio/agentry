@@ -16,9 +16,9 @@ Write the **least code that satisfies the contract, reads clearly, and matches t
 
 ## Method (building)
 
-1. **Restate "done."** From the Task acceptance (or the request), state in one line what observably-working looks like. If it can't be restated crisply, the work is blocked — get clarity, don't guess.
+1. **Restate "done."** From the Task acceptance (or the request), state in one line what observably-working looks like. If it can't be restated crisply, **or it leaves a decision the implementation must make**, the work is blocked — surface it (`NEEDS_CONTEXT` / `NEEDS_DECISION`), don't guess.
 2. **Read before writing.** Open the owned files and their immediate neighbors. Note the conventions in force and any recalled gotchas for these files. Prefer a semantic code-intel tool (Serena / LSP) to read structure fast; fall back to grep / glob / read.
-3. **Write the smallest correct change.** Implement the exposed behavior directly. Keep functions cohesive (one job each); keep the public surface small; keep the diff focused on the contract.
+3. **Write the smallest correct change.** Implement the exposed behavior directly. Keep functions cohesive (one job each); keep the public surface small; keep the diff focused on the contract. **Small footprint ≠ small decision:** if an undecided design choice surfaces *inside* an owned file — an identity / routing / ordering / naming question the contract never resolved — STOP and surface it (`NEEDS_CONTEXT` / `NEEDS_DECISION`). Do **not** resolve that fork silently inside the edit; a one-line change can still hide a decision that should have gone to a gate.
 4. **Run the checks the repo provides.** Tests, linter, typechecker — via the repo's own scripts/runner. Green before you call it done.
 5. **Self-check against acceptance and boundary.** Every acceptance item observably met; nothing edited outside `contract.owns`.
 
@@ -42,6 +42,7 @@ Fixing is a different discipline from building — most failed fixes come from s
 - **Gold-plating** — abstractions / options / coverage the contract never asked for.
 - **Convention drift** — a new lib/pattern/style the repo doesn't use, with no decision behind it.
 - **Guess-driven debugging** — changing code without a repro and a hypothesis; stacking speculative edits.
+- **Silently deciding an undecided fork** — resolving an identity/routing/ordering/naming choice the contract never made, inside the edit, instead of surfacing it. Small footprint ≠ small decision.
 - **Silent acceptance-miss** — calling it done when an acceptance item isn't actually met.
 
 ## Output

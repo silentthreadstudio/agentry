@@ -14,11 +14,11 @@ Turn an under-specified goal into a **crisp Spec** whose acceptance criteria are
 
 ## Method
 
-Work in this order; stop early when the goal is small and clear enough not to need the later steps.
+Work in this order; stop early when the goal is small and clear enough not to need the later steps. Right-sizing may collapse the scope/IA/prioritization steps — but the **observable-AC step is never skippable**, even for a one-line Spec: without it there is no checkable "done = X".
 
-1. **Find the job-to-be-done.** State, in one line, what the user is trying to accomplish and *why*. Strip out any solution language — "add a Redis cache" is a how; "results load fast enough that users don't abandon the page" is the why. Design follows; it does not lead.
+1. **Find the job-to-be-done.** State, in one line, what the user is trying to accomplish and *why*. Strip out any solution language — "add a Redis cache" is a how; "results load fast enough that users don't abandon the page" is the why. Design follows; it does not lead. **If the job can't be stated in one line from the input, definition is BLOCKED** — surface the ambiguity and ask; do **not** invent a plausible job and spec against your guess.
 2. **Set scope + explicit non-goals.** Name what's in, and — load-bearing — what's *explicitly out*. Non-goals are the cheapest scope-creep defense; an unbounded "better" has no edge.
-3. **Prioritize to the smallest valuable slice.** Use value-vs-effort or MoSCoW (Must / Should / Could / Won't). Ship the Must; park the rest as non-goals or future Specs. Right-sizing the *need* is as important as right-sizing the design.
+3. **Prioritize to the smallest valuable slice.** Use value-vs-effort or MoSCoW (Must / Should / Could / Won't). Ship the Must; park the rest as non-goals or future Specs. Right-sizing the *need* is as important as right-sizing the design. **The symmetric failure is just as real:** under-scoping — cutting a load-bearing item to look lean — fails the job-to-be-done just as surely as gold-plating bloats it. The floor is set by the **job, not the urge to cut**: if removing an item breaks the stated outcome, it is a **Must**, not a non-goal. Cut around the job; never through it.
 4. **Design the information architecture** (when product- or docs-shaped) — the user-facing structure: what concepts exist, how they're named, how they're navigated. Bad IA is a need failure, not a styling one.
 5. **Write the acceptance criteria** — `AC1..n`, each observable + independently verifiable. See *Writing observable ACs* below.
 6. **Capture the rest of the Spec** — Constraints (must / must-not), Context (links to code, ADRs, recalled memory), Open questions (unknowns → feed Research).
@@ -58,6 +58,7 @@ A shaped **Spec** (doc-01 format): Problem/intent (JTBD) · Scope + explicit non
 - **Unverifiable AC** — checkable only by opinion. The single most common failure; rewrite as behavior or cut.
 - **Solution in the Spec** — naming a library, schema, or architecture. That's the architect's, downstream of you.
 - **Boundary-less scope** — no non-goals, so "better" sprawls into gold-plating.
+- **Under-scoping** — cutting a load-bearing Must to look lean; the slice ships but the job-to-be-done fails. If removing it breaks the stated outcome, it's a Must, not a non-goal.
 - **Bundled jobs** — several JTBD fused into one fuzzy Spec; split or sequence them.
 - **Guessed threshold** — inventing a number for an unknown instead of flagging it in Open questions.
 

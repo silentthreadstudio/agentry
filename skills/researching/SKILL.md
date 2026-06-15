@@ -11,12 +11,12 @@ Turn an *unknown* into **cited fact** the team can act on. The deliverable is no
 ## The three rules that govern every investigation
 
 1. **Cite every claim.** A fact carries its source — URL + the version/date observed, or `file:line` for repo facts. No source → it is inference, and must be labeled as such.
-2. **Distrust stale training.** Training has a cutoff and drifts; library/framework/API facts go stale fast. Anything version- or recency-sensitive is verified against current sources, never answered from memory.
+2. **Distrust stale training.** Training has a cutoff and drifts. Recency-sensitive is broader than versions: **anything whose truth has a date** — a library/framework/API's behavior, but also pricing, current best practice, a revised standard, or any "is X still true" — is verified against current sources, never answered from memory.
 3. **Never single-source a load-bearing claim.** Corroborate from a second independent source, or mark it explicitly **unverified**.
 
 ## Method
 
-Work in this order; stop as soon as the answer is established and corroborated — don't over-research a settled question.
+Work in this order; stop as soon as the answer is established and corroborated — don't over-research a settled question. **The symmetric failure is just as real:** the stop-floor is set by the *hardest* claim — the most load-bearing, most recency-sensitive one — **not by the effort already spent.** A load-bearing claim backed by a single source, or one whose recency you couldn't confirm, is **not done** no matter how long you've looked. Over-research and premature-stop are both failures; the hardest claim, not your fatigue, decides which line you're near.
 
 1. **Frame the unknown.** State the precise question and *what decision it gates* in one line. If it can't be framed crisply, narrow it before searching — an unbounded question is a rabbit hole.
 2. **Fan out.** Search broadly to surface candidate sources across the web *and* the repo. Cast wide first; you're finding leads, not answers yet.
@@ -56,6 +56,8 @@ Honesty here is the whole value. Confident-but-wrong is the failure this skill e
 - **Uncited claim** — a fact with no source.
 - **Stale-training answer** — answering a recency-sensitive question from memory instead of current sources.
 - **Single-source trust** — one unverified source driving a decision.
+- **Snippet-answering** — citing or concluding from a search-result snippet or summary without fetching the underlying source. The snippet is a lead, never the citation; open the page and read the real text.
+- **Premature stop** — stopping because the effort feels sufficient while a load-bearing claim is still single-sourced or its recency unconfirmed. The hardest claim sets the floor, not the time spent.
 - **Scope creep** — chasing the rabbit hole past what the decision needs.
 - **False confidence** — inference dressed as fact, or a capability gap hidden behind a guess.
 
@@ -66,4 +68,5 @@ A **Research** doc: `## Findings` (each claim cited, fact-vs-inference distingui
 ## Additional resources
 
 ### Reference files
+- **`references/search-craft.md`** — query-formulation craft: phrasing queries in specific terms / error strings / versions, engine-agnostic operators, narrowing vs broadening a failing query, multi-query decomposition, and recency handling.
 - **`references/verification-playbook.md`** — source-authority ranking, the corroboration & recency protocol, how to attack a claim, handling conflicting sources, and the citation format for findings.

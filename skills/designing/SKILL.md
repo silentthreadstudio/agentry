@@ -17,7 +17,7 @@ Design interfaces that are **coherent, accessible, and consistent with the syste
 
 Work in this order; stop early when the change is small enough not to need later steps — but never skip the see-it loop on anything visible.
 
-1. **Restate** what the UI must let the user do, and what "looks/works right" means here. If that can't be stated, design is blocked — get product clarity first.
+1. **Restate** what the UI must let the user do, and what "looks/works right" means here. If that can't be stated, design is blocked — get product clarity first. This stop is **pre-flight AND mid-flight**: if a design decision turns out to hinge on an **undecided product or IA fork** (which flow wins, what a concept is called, what's in the view) — whether you see it up front or hit it deep in the comp — **surface that fork**, don't quietly pick one inside the design and ship it as settled.
 2. **Detect capabilities.** Which design skills are installed; whether a browser MCP is available to render and inspect.
 3. **Read the existing design system.** Tokens (color, spacing, radius, shadow), type scale, component library, theme/dark-mode, breakpoints, and the conventions in force. Build *with* these — consistency beats novelty.
 4. **Design** by conducting the best available skill(s): visual hierarchy, layout/spacing, typography, color/contrast, responsive behavior, and every interaction state.
@@ -65,6 +65,7 @@ Pick the right one for the job and conduct it. Hand-roll from the principles bel
 - **Engineer-aesthetics** — inconsistent spacing, no hierarchy, default-everything, clashing components.
 - **Ignoring the existing design system** — inventing new styles instead of building with the repo's tokens/components.
 - **Reinventing** — hand-rolling when a capable design skill is installed.
+- **Over-design** — adding visual flourish, animation, or novel patterns the task never asked for; a button tweak doesn't earn a redesign. Match the scope of the ask, not the urge to restyle. The symmetric twin of under-accessibility: gold-plating the visual while inventing scope.
 
 ## Output
 

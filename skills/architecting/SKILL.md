@@ -6,12 +6,14 @@ version: 0.1.0
 
 # Architecting
 
-Design code structure that is **right-sized, repo-consistent, and bounded** — so the result is clean and changeable, not a 1000-line file with no seams. The craft is judgment, not dogma: the goal is the *least structure that keeps the work clear and changeable*, scaled to the task.
+Design code structure that is **right-sized, repo-consistent, and bounded** — so the result is clean and changeable, not a 1000-line file with no seams. The craft is judgment, not dogma: the goal is the *least structure that keeps the work clear and changeable*, scaled to the task. **The symmetric failure is just as real:** under-structuring a genuinely complex change — no seams on a multi-actor subsystem — costs exactly as much as over-engineering a small one. The floor is set by the **hardest structural signal** (number of actors, volatility, blast radius), not by a bias toward less. Add the least structure that *meets that floor*, never less.
 
 ## The two rules that govern every design
 
 1. **Right-sized.** Match structure to the work. Heavy patterns on a small task are over-engineering; no boundaries on a large one is the god-file. Add structure only when the work earns it.
 2. **Repo-consistent.** Read the existing code and conventions first. Match what's there. Introduce a new pattern only with an ADR justifying it. A clever-but-foreign structure is worse than a plain-but-consistent one.
+
+> **Override — consistency does not automatically win.** When matching the repo would *propagate an existing anti-pattern* (the established convention IS the god-file, the leaky boundary, the shotgun-surgery shape), that conflict is itself an **ADR-worthy fork**: name it and surface it, do not silently extend the bad pattern in the name of consistency. The floor is set by the harder of the two rules, not by a default to "match what's there."
 
 ## Method
 
@@ -21,7 +23,7 @@ Work in this order; stop early when the work is small enough not to need the lat
 2. **Map the existing shape.** What modules exist, how they're organized, what conventions are in force (naming, layering, error handling, test layout). Prefer a semantic code-intel tool to read structure fast.
 3. **Find the boundaries the change needs.** Group by responsibility (things that change together live together; things that change for different reasons separate). Name each part's single responsibility.
 4. **Check cohesion and coupling.** High cohesion inside a module, low coupling across. A seam is good when each side can change without the other.
-5. **Decide forks → ADR.** When real alternatives exist with lasting consequences, choose and record it (see *Decisions* below). A trivial choice is a memory fact, not an ADR.
+5. **Decide forks → ADR — but a real fork is surfaced, not silently self-picked.** A trivial choice is a memory fact. A fork with **genuine alternatives AND lasting consequences** must be **surfaced for the gate** (recorded as an ADR and put in front of the user), or — if it hinges on an unknown — **routed to research** first. Do **not** resolve such a fork silently mid-design just because it's inside your owned structure: an undecided design fork vetoes the floor. Small footprint ≠ small decision.
 6. **Express the structure** as the Plan's Architecture map: components, responsibilities, and the interfaces between them. This map is the source the `planning` skill slices Task contracts from.
 
 ## Applying SOLID with judgment
@@ -43,7 +45,7 @@ Folder/module conventions, layering patterns, and the full anti-pattern catalog 
 
 ## Decisions (ADR)
 
-When a fork has genuine alternatives and lasting consequences, record it. Default to a **Y-statement**:
+An ADR is required when **genuine alternatives exist OR the chosen structure deviates from established repo convention** (even an uncontested deviation — a new pattern with no competing option still needs the record that justifies departing). Record it. Default to a **Y-statement**:
 
 > *In the context of (use case), facing (concern), we chose (option), to achieve (quality), accepting (downside).*
 
@@ -56,6 +58,8 @@ Always capture the **alternative rejected and why** — that is what stops the d
 - **Over-engineering the small** — structure a one-shot would never need.
 - **Convention drift** — a foreign pattern with no ADR.
 - **Leaky boundary** — modules that reach across each other's internals.
+- **Under-structuring the complex** — no seams on a multi-actor/volatile subsystem because the bias said "less"; the symmetric twin of over-engineering.
+- **Silent fork-picking** — if you catch yourself choosing between real alternatives without writing an ADR or surfacing the fork, **stop**: that's the silent-guess failure.
 
 ## Output
 

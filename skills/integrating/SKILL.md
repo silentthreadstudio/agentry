@@ -12,6 +12,8 @@ Run the **whole product** against the **Spec's acceptance criteria** as observed
 
 **Observe end-to-end behavior, not per-task results.** The Spec ACs describe the *product* doing something; prove each by exercising the assembled system, not by re-reading the task verdicts. Independently-built tasks can each be locally correct and still fail where they meet — and only running across the seam reveals it. If all you do is confirm the task checkmarks, you have added nothing.
 
+**The scope floor — and its symmetric ceiling.** Assemble checks the **seams** and the **Spec ACs**, *not* each task's own unit ACs over again. Those were already gated at verify; re-verifying behavior at the unit level here is over-checking — the symmetric failure to skimming the seams. Stay at the whole-product altitude: what the seams do when wired, and what the Spec promises end-to-end.
+
 ## Why per-task green is not enough
 
 Each task verified against its own `## Acceptance` in isolation, often with mocks at its boundaries. The gaps live *between* tasks:
@@ -27,7 +29,7 @@ Each task verified against its own `## Acceptance` in isolation, often with mock
 
 1. **Pull the Spec ACs** (`AC1..n`) — these, not the task acceptances, are the bar. The task `satisfies` links show which tasks *claim* to cover each; trust the claim only after you observe it.
 2. **Stand up the whole product** — run the real assembled system (real wiring, real dependencies where feasible), not the unit harnesses.
-3. **For each Spec AC, exercise the end-to-end path** that proves it, and record the **method**: the command, the request/response, the driven UI interaction + screenshot, the measured number.
+3. **For each Spec AC, exercise the end-to-end path** that proves it, and record the **method**: the command, the request/response, the driven UI interaction + screenshot, the measured number. **Any Spec AC whose end-to-end path can't be observed with the tools available is UNVERIFIED + a named blocker** — for *any* AC type, not just UI. Never infer an AC from per-task green: a green unit is not an observed product behavior.
 4. **Probe the seams deliberately** — the handoffs between tasks listed above. Feed the boundary the inputs the unit tests mocked.
 5. **Write the assemble verdict**: per-Spec-AC PASS/FAIL with cited evidence + any integration gotcha discovered.
 
@@ -41,6 +43,8 @@ Each task verified against its own `## Acceptance` in isolation, often with mock
 
 - **Checking diffs instead of behavior** — assemble is *only* meaningful as observed end-to-end behavior.
 - **Re-summarizing task verdicts** — confirming the checkmarks adds nothing; the gaps are between them.
+- **Re-verifying unit ACs** — re-checking each task's own acceptance at assemble; it was already gated. Stay at the seam/Spec-AC altitude.
+- **Inferring an unobservable AC from per-task green** — if the e2e path can't be observed, the AC is UNVERIFIED with a named blocker, never assumed-passed.
 - **Bare PASS** — every Spec AC cites the end-to-end method that proved it.
 - **Mock-deep assemble** — if the real seams are still mocked, you haven't assembled.
 - **Skipping cross-cutting ACs** because no single task owns them — those are the ones assemble exists for.

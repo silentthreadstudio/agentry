@@ -89,3 +89,4 @@ Node↔specialist mapping and the signals rubric live in the reference.
 
 ### Reference files
 - **`references/routing-and-dispatch.md`** — the signals→shape rubric, escalation-trigger detail, the dispatch ladder, the node↔specialist map, and gating points with the artifacts each produces.
+- **`references/judgment.md`** — the senior reasoning *upstream* of the rubric: evaluating uncertainty (known vs. real unknown · the bet test), complexity (footprint vs. decision-content), the hardest-signal-not-the-average rule, one-way/two-way-door trade-offs, and right-sizing worked examples + self-catch list.

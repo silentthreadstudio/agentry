@@ -18,11 +18,15 @@ Each task declares the **public surface it owns**: which files/modules it touche
 
 Contracts are **sliced from the architecture map** (the `architecting` output): each module/interface on the map becomes the `owns`/`exposes` of one or more tasks. See `references/contracts-and-parallelism.md` for the derivation and overlap rules.
 
+## Pre-flight gate (before you slice)
+
+Planning slices what the architecture map *bounds* — it does not invent the boundaries. **If the map has un-bounded seams, or it can't yield disjoint contracts, planning is BLOCKED** — surface it back to architecting; do **not** draw boundaries the map doesn't imply. The same rule architecting runs on itself applies here: if the structure can't be sliced crisply into owned surfaces, the design isn't ready to plan against.
+
 ## Method
 
 1. **Slice from the map.** Walk the architecture map; turn each component/seam into a task with a contract. Don't invent tasks the map doesn't imply.
 2. **Right-size each task.** A task should be a coherent, independently verifiable unit — not so granular that overhead dominates, not so large it hides a god-file. Heuristic: one task = one contract a single agent can finish and verify alone.
-3. **Set dependencies.** Add `deps` **only** where contracts overlap (a shared seam, an interface one task produces and another consumes). Everything else is parallelizable — leave it unblocked.
+3. **Set dependencies.** Add `deps` **only** where contracts overlap (a shared seam, an interface one task produces and another consumes). Everything else is parallelizable — leave it unblocked. **When overlap is ambiguous, the conservative default is SERIALIZE** — add the `deps` edge. Never parallelize on an *unproven* assumption of disjointness; a wrong guess silently clobbers, and serializing only costs time.
 4. **Sequence.** Within the dependency order, do the **risky/uncertain step first** (fail cheap), and produce shared seams before their consumers.
 5. **Cover the spec.** Build the criterion→task matrix: **every acceptance criterion must trace to ≥1 task** (`satisfies: [AC…]`). Flag any uncovered criterion before the build starts — this is the cheapest place to catch a dropped requirement.
 6. **Make each task self-contained.** Fill Background (what + why), Contract, Gotchas (pre-filled from recalled memory for the owned files), Acceptance (independently checkable), Out-of-scope.
@@ -47,7 +51,9 @@ A set of Task documents (doc-01 format) with structured frontmatter (`id`, `stat
 ## Anti-patterns (refuse these)
 
 - **Over-decomposition** — more tasks than the work needs; overhead beats value.
-- **Overlapping contracts run in parallel** — silent clobbering; the parallelism bug.
+- **Under-decomposition** — the symmetric failure: one task owning many unrelated files; it becomes the god-file the contract was meant to prevent.
+- **Overlapping contracts run in parallel** — silent clobbering; the parallelism bug. When overlap is unclear, serialize — never guess disjoint.
+- **Inventing boundaries the map doesn't imply** — slicing on past un-bounded seams instead of blocking back to architecting.
 - **Uncovered criterion** — an AC with no task; it never gets built (catch it at the matrix).
 - **Unverified-state assumption** — a task that asserts the repo is already in some state ("the script is absent", "no fixtures dir") the architect never checked. Have the task *verify and adjust*, not act on a guess — an assumed-absent thing that's present-but-wrong silently breaks the build.
 - **Vague acceptance** — a task whose "done" isn't independently checkable; it can't be verified alone.

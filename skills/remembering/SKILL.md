@@ -8,6 +8,8 @@ version: 0.1.0
 
 The discipline of **durable memory**: keep the store small, true, and useful so it surfaces the *few things that change the next action* — never a firehose. The craft is selectivity, not accumulation. A clean store that warms run #2 is the goal; a bloated one that drowns recall is the failure.
 
+**The symmetric failure is just as real.** Over-writing bloats recall, but decay can clean it. Dropping a durable, decision-changing lesson is a *silent loss decay can never recover* — the fact was never written, so nothing surfaces it, and run #2 stays cold exactly where it would have been warmed. Selectivity means writing the few that earn it, **not** under-capturing the gold to look lean. Both directions miss; the write-bar — not the urge to keep the store small — decides each fact.
+
 ## The one rule under everything: the write-bar
 
 Write a **semantic** memory only if it is **durable, reusable, non-derivable, and will change a future decision.** If it won't alter a future action, it is a Journal line, not a memory. This is the gate that stops hoarding — apply it to *every* fact before writing.
@@ -21,6 +23,9 @@ Write a **semantic** memory only if it is **durable, reusable, non-derivable, an
 - Then hand the run's episodes to distill.
 
 ### distill — episodes → facts (the differentiator)
+
+**Pre-flight (mandatory stop):** when undistilled-episode debt crosses the threshold (`memory_stats`), distill is **mandatory, not optional** — you do not get to defer it as low-value housekeeping. Undistilled episodes hold lessons that are aging out of reach; past the threshold, running distill is a required stop before the run closes, the same way a gate is a required stop. Skipping it because nothing "feels" worth keeping is the under-capture failure — let the write-bar decide per cluster, not a blanket skip.
+
 1. **Cluster** recent undistilled episodes by topic.
 2. For each recurring lesson, apply the **write-bar**. Below the bar → drop it.
 3. Above the bar → **dedup-reinforce or write**: search for a similar fact first; if one exists, **bump its confidence/usefulness** instead of writing a twin. Only write a new fact when none exists.
@@ -66,6 +71,7 @@ Recall returns **few** (≈3–7), **ranked** by `relevance × confidence × use
 ## Anti-patterns (refuse these)
 
 - **Hoarding / over-writing** — a fact that won't change a future decision belongs in the Journal, not the store.
+- **Under-capturing** — letting a durable, decision-changing lesson die as an undistilled episode (or never distilling past the debt threshold) to keep the store lean. The symmetric trap to hoarding, and the worse one: decay can't recover a fact that was never written.
 - **Duplicating** — writing a near-twin instead of dedup-reinforcing the existing fact.
 - **Mutating instead of superseding** — editing or deleting a stale fact in place, breaking the recoverable chain.
 - **Recalling superseded facts** — surfacing a replaced fact; recall excludes them by construction.

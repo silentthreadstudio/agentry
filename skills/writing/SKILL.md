@@ -12,8 +12,8 @@ Write prose a reader can act on: **plain, structured, audience-first, point-firs
 
 1. **Audience-first.** Decide who reads this and what they already know *before* writing a word. A README for users, a guide for new contributors, and release notes for an upgrading team are three different documents — never one. Write for their context, not your own.
 2. **Lead with the point.** Put the conclusion, the action, or the answer **first** — then support it. Don't bury the verb under a paragraph of throat-clearing. The reader should get the takeaway from the first line and the details only if they want them (BLUF — bottom line up front).
-3. **Structure for scanning.** Readers scan before they read. Use descriptive headings, short paragraphs, and lists for parallel items. A reader should find their answer from the headings alone.
-4. **Cut filler.** Delete words that carry no information ("simply", "just", "in order to", "it should be noted that", "very"). Prefer the short word, the active voice, the concrete noun. If a sentence still means the same thing with a clause removed, remove it.
+3. **Structure for scanning.** Readers scan before they read. Use descriptive headings, short paragraphs, and lists for parallel items. A reader should find their answer from the headings alone. (Micro-copy — an error message, a commit subject, a tooltip — scales this down: it *is* the bottom line, so it gets no headings; lead with what happened and what to do, in one line.)
+4. **Cut filler — but clarity is the floor, brevity serves it (not the reverse).** Delete words that carry no information ("simply", "just", "in order to", "it should be noted that", "very"). Prefer the short word, the active voice, the concrete noun. If a sentence still means the same thing with a clause removed, remove it. **The symmetric failure is just as real:** cutting a prerequisite, an edge case, or the "why" leaves the reader unable to act — terse but unusable is a failure, not an achievement. Cut words, never the information the reader needs to act. A clause is filler only if removing it costs the reader nothing.
 
 ## Method
 
@@ -34,13 +34,14 @@ Full templates, voice/tone calibration, and a before/after edit gallery are in `
 
 ## Output
 
-Finished prose, fit for its audience and format, that leads with the point and contains no filler. When the piece states facts about the product or its behavior, ground them in the Spec / code — don't invent capabilities.
+Finished prose, fit for its audience and format, that leads with the point and contains no filler. When the piece states facts about the product or its behavior, ground them in the Spec / code — don't invent capabilities. **When a fact the prose needs isn't in the Spec or the code, mark it `TODO` and flag it for the conductor — never write a confident sentence over an unverified behavior.** A plausible-sounding invented capability is worse than a visible gap: the reader acts on it.
 
 ## Anti-patterns (refuse these)
 
 - **Burying the lede** — the point arrives in paragraph three. Move it to line one.
 - **Wall of text** — no headings, no lists, no paragraph breaks. Structure it for scanning.
 - **Filler and hedging** — "simply", "just", "very", "in order to", passive throat-clearing. Cut them.
+- **Under-explaining** — omitting a prerequisite, an edge case, or the "why", so the reader can't act. The symmetric trap to over-writing: brevity that strips out what the reader needs is terse but unusable. Clarity is the floor; cut words, not the information.
 - **Audience blindness** — explaining to experts what they know, or to novices in terms they don't. Calibrate.
 - **Decorative writing** — clever or padded prose that costs the reader time. Clarity over flourish, always.
 

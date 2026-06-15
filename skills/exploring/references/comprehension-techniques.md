@@ -33,7 +33,7 @@ Repo-consistency downstream depends on naming the rules already in force. Read a
 - **Tests** — colocated vs separate tree, framework, naming, what's mocked at the seams.
 - **Config & secrets** — env vars, config files, how the app is wired at startup.
 
-Two files agreeing is a pattern; one file is an instance. State conventions you can see repeated, flag the rest as uncertain.
+Two files agreeing is a pattern; one file is an instance. State conventions you can see repeated, flag the rest as uncertain. When files **disagree** on a convention, report *both* and flag the inconsistency — often a migration-in-progress — rather than silently picking the more common one as "the" convention.
 
 ## Stack profiling cheat-sheet
 

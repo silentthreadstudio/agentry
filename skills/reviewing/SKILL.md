@@ -31,7 +31,11 @@ Only after compliance passes. Judge:
 - **Correctness risks** — unhandled errors, missing edge cases, race conditions, resource leaks.
 - **Test quality** — do the tests actually exercise the behavior, or are they vacuous / over-mocked?
 
-Quality findings are **reported**, not gated on — unless a finding is itself a correctness risk, which becomes a FAIL.
+Quality findings are **reported**, not gated on — unless a finding is itself a correctness risk, which becomes a FAIL. **The symmetric failure is just as real:** FAILing on a style/quality nit that is neither a correctness nor a security risk — or scope-creeping the review past the task's ACs — is over-blocking, and it's as much a broken review as rubber-stamping. A nit is reported; only a correctness or security risk is gated on.
+
+## The aggregate verdict (hardest signal wins)
+
+The overall verdict is set by the **hardest** signal, never the average of the per-criterion results. Any **FAIL** or **security-FAIL** fails the whole review; any **UNVERIFIED** blocks a clean PASS (the work is at best PASS-with-caveats until the gap is observed). Never roll a mix of passes and a fail up into a "mostly-passes" — one unmet criterion is a failed review.
 
 ## The security lens (carried through both passes)
 
@@ -57,6 +61,7 @@ A security failure is a **FAIL** regardless of feature-completeness.
 - **Self-grading** — reviewing work you authored. The whole value is independence.
 - **Bare PASS** — a verdict with no cited method.
 - **Rubber-stamping** — approving because it "looks right" or the author said done.
+- **Over-blocking** — FAILing on a style/quality nit that's neither a correctness nor a security risk, or scope-creeping the review past the task's ACs. A nit is reported, not gated on; review the ACs, not your taste.
 - **Diff-checking instead of behavior-checking** — reasoning over the patch rather than running the system.
 - **Skipping the security lens** because it "isn't a security change."
 
