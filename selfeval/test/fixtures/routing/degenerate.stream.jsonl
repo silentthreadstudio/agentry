@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"s-degenerate"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Starting work..."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_r","name":"Read","input":{"file_path":"/tmp/missing.txt"}}]}}

@@ -5,6 +5,11 @@
 > we can't move the goalposts. This is the doc that fixes the v1 disappointment: v1 shipped but never
 > *proved* the moat (the headless moat measurement was left unsolved, #40).
 
+> **Re-pointed (2026-06-15):** Under the reframed self-improvement purpose — *measure Agentry to tune
+> Agentry* — this plain/cold/warm benchmark is **demoted to one experiment** of many, not the headline.
+> Its C1–C4 / moat framing below stands as the design-of-record for that experiment. See reframe decision
+> `p:01KV4QTADVHFRP1WE8GMZC0S9X` and `.agentry/work/benchmark-selfeval/spec.md`.
+
 ---
 
 ## 0. The stance

@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"s-decompose"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_a","name":"Agent","input":{"subagent_type":"architect","prompt":"plan the slices"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_a","content":"plan done"}]},"parent_tool_use_id":"toolu_a"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_b","name":"Agent","input":{"subagent_type":"implementer","prompt":"build T-1"}}]}}

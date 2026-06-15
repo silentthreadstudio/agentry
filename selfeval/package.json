@@ -1,0 +1,22 @@
+{
+  "name": "@agentry/selfeval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agentry's routing-accuracy self-eval — an early-signal probe that captures the conductor's claude -p event stream, infers the dispatched shape, and reports accuracy only after the control gates pass. Self-contained; dev-only, run via tsx (not bundled); imports nothing from benchmark/.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

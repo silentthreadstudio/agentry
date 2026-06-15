@@ -1,0 +1,66 @@
+# Malformed: a valid 6-task spread, EXCEPT t1's rationale is FREE TEXT (a string) instead of a structured
+# mapping. loadRoutingFixture must throw — the rationale must be structured, not prose.
+version: 1
+labeling:
+  rubric_ref: skills/conducting/references/routing-and-dispatch.md
+  labeler_a: a
+  labeler_b: b
+  agreement_at_creation: "6/6"
+
+tasks:
+  - id: t1
+    prompt: |
+      Fix formatPrice to always show 2 decimals in src/format.js.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale: "it's a tiny one-line fix so just do it directly, no need to escalate"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t2
+    prompt: |
+      Add a --version flag to bin/cli.js.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: one file"
+      bounded_reversible: "additive single-file flag"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t3
+    prompt: |
+      Add a dedupe(items) helper to src/utils.js.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "Decision-content: undecided fork"
+      decision_hidden: "what defines a duplicate (id? email?)"
+      consequence: "wrong key silently merges distinct users"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  - id: t4
+    prompt: |
+      Make the session token TTL more secure in auth/config.js.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "Decision-content: undecided fork + vague"
+      decision_hidden: "the actual TTL value and refresh policy"
+      consequence: "too short logs users out; too long widens theft window"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  - id: t5
+    prompt: |
+      Add pagination across handler, service, and data layers.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Scope: many files with seams"
+      seams: "handler -> service -> data-access"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+
+  - id: t6
+    prompt: |
+      Build a notifications feature: model, service, endpoint, worker.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Scope: many modules"
+      seams: "four components with seams between them"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }

@@ -1,0 +1,99 @@
+# Routing-accuracy labeled task set — the ground truth for the self-eval ROUTING probe.
+# Spec: .agentry/work/benchmark-selfeval/spec.md (AC1) · OQ3 resolution: floors are rubric-anchored,
+# carry a structured/checkable rationale, and were agreed by a SECOND INDEPENDENT labeler (blind) at
+# fixture-creation. Non-circular: correct_floor = what the conducting rubric's INTENT prescribes; the
+# probe measures what the conductor's BEHAVIOR (events.jsonl dispatch) actually did.
+#
+# Rubric (ground truth): skills/conducting/references/routing-and-dispatch.md — "Signals → shape rubric"
+# + the OVERRIDE: the highest-severity signal sets the floor; `Unknowns: real` or `Decision-content:
+# undecided fork` VETOES one-shot → forces >= spec-first REGARDLESS of scope (small footprint != small
+# decision). Floors: one-shot | spec-first | decompose.
+#
+# Labeling provenance (OQ3): labeler_a applied the rubric task-by-task; labeler_b is an independent agent
+# given ONLY the rubric + the bare prompts (blind to labeler_a). agreement: true iff both reached the same
+# floor. Disagreements are escalated/excluded, never shipped. Agreement at creation: 7/7.
+#
+# Spread (AC8 saturation guard — must NOT collapse to one shape): one-shot x2, spec-first x3, decompose x2.
+
+version: 1
+labeling:
+  rubric_ref: skills/conducting/references/routing-and-dispatch.md
+  labeler_a: conductor (rubric-applied, task-by-task)
+  labeler_b: independent agent, blind to labeler_a's floors
+  agreement_at_creation: "7/7"
+
+tasks:
+  - id: routing-format-price
+    prompt: |
+      In `src/format.js`, `formatPrice(cents)` returns dollars but drops trailing zeros
+      (`formatPrice(500)` yields `$5` not `$5.00`). Fix it so it always shows 2 decimal places.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "Specificity: done=X clear · Scope: one symbol · Decision-content: how is obvious"
+      bounded_reversible: "single function body, trivially undoable, no contract/interface change, no fork"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: routing-version-flag
+    prompt: |
+      Add a `--version` flag to the CLI in `bin/cli.js` that prints the version from package.json
+      and exits 0.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Specificity: done=X clear · Scope: one file · Unknowns: none"
+      bounded_reversible: "additive single-file flag, obvious how, no undecided choice"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: routing-dedupe-key
+    prompt: |
+      Add a `dedupe(items)` helper to `src/utils.js` that removes duplicate user records from a list.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "Decision-content: undecided fork (VETOES one-shot, override rule)"
+      decision_hidden: "what defines a 'duplicate' (by id? by email? case-folded? deep-equality?) and which copy is kept (first vs last)"
+      consequence: "wrong key silently merges distinct users or leaves dupes through — data corruption with no error"
+      footprint_note: "one function, one file — Scope alone reads one-shot, but the decision is load-bearing (small footprint != small decision)"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  - id: routing-token-ttl
+    prompt: |
+      Change the session token TTL in `auth/config.js` from 1 hour to something more secure.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "Decision-content: undecided fork + Specificity: vague ('more secure')"
+      decision_hidden: "the actual TTL value, and whether to add refresh / sliding expiry — a security-vs-UX fork"
+      consequence: "too short logs active users out (UX); too long widens the session-theft window (security) — a one-line edit makes the call silently and badly"
+      footprint_note: "literally one line — Scope reads one-shot, but the fork must be decided in a spec, not inside the edit"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  - id: routing-search-faster
+    prompt: |
+      Make the search results page load faster.
+    correct_floor: spec-first
+    rationale:
+      governing_signal: "Specificity: vague ('make X better') · Unknowns: real (where is the bottleneck?)"
+      decision_hidden: "what 'faster' means (which metric / target) and which layer to optimize — undiagnosed"
+      consequence: "one-shotting picks an arbitrary optimization that may not touch the real bottleneck — wasted work, no measured win"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  - id: routing-users-pagination
+    prompt: |
+      Add pagination to the users API across the HTTP handler, the service layer, and the data-access
+      layer, with limit/offset query params and a total-count response header.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Scope: many files/modules with contract seams · Specificity: clear"
+      seams: "handler -> service -> data-access — three layers, each a bounded contract; parallel-safe if owns are disjoint"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+
+  - id: routing-notifications-feature
+    prompt: |
+      Build a notifications feature: a data model, a service that creates notifications, a REST endpoint
+      to list and mark-as-read, and a background worker that delivers them.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Scope: many modules (model + service + endpoint + worker) · Specificity: clear"
+      seams: "four components with seams between them — a multi-part feature build, not a single edit"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }

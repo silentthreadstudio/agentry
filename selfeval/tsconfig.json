@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "noEmit": true,
+    // selfeval is dev-only, run via tsx (never bundled) — modules value-import sibling `.ts` files directly
+    // (e.g. routing/probe.ts imports io/live.ts). With NodeNext + verbatimModuleSyntax + declaration, a value
+    // `.ts` import needs this flag; it is additive (only permits the extension) and never emits.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/**/*.ts"],
+  "files": []
+}

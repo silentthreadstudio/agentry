@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","session_id":"s-spec-first"}
+this is a non-JSON noise line the extractor must tolerate
+{"type":"assistant","message":{"content":[{"type":"text","text":"This is under-specified — shaping a Spec first."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_a","name":"Agent","input":{"subagent_type":"product-owner","prompt":"write the spec"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_a","content":"spec done"}]},"parent_tool_use_id":"toolu_a"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_b","name":"Agent","input":{"subagent_type":"architect","prompt":"design the structure"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_b","content":"plan done"}]},"parent_tool_use_id":"toolu_b"}

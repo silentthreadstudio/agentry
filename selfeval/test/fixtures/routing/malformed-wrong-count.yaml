@@ -1,0 +1,26 @@
+# Malformed: only 2 tasks — below the 6–8 floor. loadRoutingFixture must throw on the count.
+version: 1
+labeling:
+  rubric_ref: skills/conducting/references/routing-and-dispatch.md
+  labeler_a: a
+  labeler_b: b
+  agreement_at_creation: "2/2"
+
+tasks:
+  - id: t1
+    prompt: |
+      Fix a one-line bug in src/format.js.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: one symbol"
+      bounded_reversible: "single function body, trivially undoable"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t2
+    prompt: |
+      Add pagination across handler, service, and data layers.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Scope: many files with seams"
+      seams: "handler -> service -> data-access"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }

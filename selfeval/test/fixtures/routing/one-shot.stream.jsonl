@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"s-one-shot"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Small, reversible — doing it directly."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_w","name":"Write","input":{"file_path":"/tmp/out.txt","content":"done"}}]}}
+{"type":"result","subtype":"success","is_error":false}

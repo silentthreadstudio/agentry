@@ -1,0 +1,64 @@
+# Malformed: 6 tasks, valid in every other way, but NO must-escalate trap (and no spec-first/decompose floor),
+# so there is no escalation case for the probe to catch. loadRoutingFixture must throw on the missing trap.
+version: 1
+labeling:
+  rubric_ref: skills/conducting/references/routing-and-dispatch.md
+  labeler_a: a
+  labeler_b: b
+  agreement_at_creation: "6/6"
+
+tasks:
+  - id: t1
+    prompt: |
+      Fix formatPrice to always show 2 decimals in src/format.js.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "Scope: one symbol"
+      bounded_reversible: "single function body, trivially undoable"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t2
+    prompt: |
+      Add a --version flag to bin/cli.js.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: one file"
+      bounded_reversible: "additive single-file flag"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t3
+    prompt: |
+      Rename a local variable in src/utils.js.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: one symbol"
+      bounded_reversible: "pure rename, no contract change"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t4
+    prompt: |
+      Add a unit test for the existing dedupe helper.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: one test file"
+      bounded_reversible: "additive test, no production change"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t5
+    prompt: |
+      Fix a typo in the README.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: docs only"
+      bounded_reversible: "doc-only change, trivially reverted"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t6
+    prompt: |
+      Bump a dependency patch version in package.json.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: one manifest line"
+      bounded_reversible: "single line, revertible"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }

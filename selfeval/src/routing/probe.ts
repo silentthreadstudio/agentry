@@ -1,0 +1,176 @@
+// The probe driver (T-5 / ADR-004) — the integration finisher that SEQUENCES the pure pieces into the gated
+// control flow the Spec demands. It does the volatile I/O at the edge (prepareSandbox + the injected Runner)
+// and calls the pure core (extractShape, the three controls, the artifact builder) at the centre.
+//
+// THE CONTROL-FLOW ORDER IS THE AC8 CONTRACT (ADR-004) — enforced here, in this exact sequence:
+//   (a) A/A unanimity   — run a designated A/A task EXACTLY k times; a split ⇒ instrument-measures-noise, STOP.
+//   (b) positive control — a planted known-correct case; a miss ⇒ positive-control-missed, STOP.
+//   (c) saturation guard — over the observed DISPATCHED shapes; runs BEFORE any accuracy computation; no
+//                          spread ⇒ no-discriminating-power, STOP, emit NO accuracy number.
+//   (d) ONLY THEN        — accuracy + confusion matrix + (when X is set) pass/fail.
+// Each STOP returns an ABORTED artifact (the firing verdict, no score) — the AC8 "no number when a gate fires"
+// guarantee made observable. The function NEVER reaches the accuracy computation if any gate failed.
+//
+// AC10: the only "what shape was chosen" input is `extractShape` over the captured stream. There is no
+// task-completion / grade signal in selfeval to leak in — structurally enforced by the package boundary.
+
+import { join } from "node:path";
+
+import type { Runner, Sandbox } from "../io/port.ts";
+import { prepareSandbox } from "../io/sandbox.ts";
+import { extractShape, DegenerateRunError } from "./extract.ts";
+import { loadRoutingFixture, type RoutingTask } from "./fixture.ts";
+import type { Shape } from "./shape.ts";
+import { aaUnanimity, positiveControl, saturationGuard, DEFAULT_AA_REPEATS } from "./control.ts";
+import {
+  buildScoredArtifact,
+  buildAbortedArtifact,
+  writeArtifact,
+  type RoutingArtifact,
+  type RoutingOutcome,
+} from "./artifact.ts";
+
+/** The model the probe pins for every run. Discovered from env by the command; a generic default here. */
+const DEFAULT_MODEL = "claude-opus-4-8[1m]";
+
+/** Options for one probe run. The `Runner` is INJECTED (replay in tests = zero spend; live from the command). */
+export interface RoutingProbeOptions {
+  /** Directory holding `tasks.yaml` (the labeled set) — loaded via `loadRoutingFixture`. */
+  fixtureDir: string;
+  /** The runner to drive each task through — live (real `claude -p`) or replay (recorded streams). */
+  runner: Runner;
+  /** The A/A repeat count (OQ4 default 3). The designated A/A task runs EXACTLY this many times. */
+  k?: number;
+  /** Where the artifact JSON is written. */
+  outPath: string;
+  /** The success-condition threshold X (AC9b); unset by design (OQ5) ⇒ the artifact ships the "X unset" marker. */
+  x?: number;
+  /** Model id to pin per run (defaults to {@link DEFAULT_MODEL}); the command discovers it from env/config. */
+  model?: string;
+  /** Plugin root to load Agentry from (`--plugin-dir`); absent ⇒ the conductor layer is not loaded. */
+  pluginDir?: string;
+}
+
+/** The result of a probe run: the emitted artifact + where it was written + the per-task outcomes it scored. */
+export interface RoutingResult {
+  /** The emitted artifact (aborted or scored). */
+  artifact: RoutingArtifact;
+  /** The path the artifact JSON was written to (the command echoes this to stdout). */
+  outPath: string;
+  /** The per-task outcomes (labeled floor + dispatched shape); empty insofar as a gate aborted before scoring. */
+  outcomes: readonly RoutingOutcome[];
+}
+
+/**
+ * Run one routing task through the injected runner and extract its DISPATCHED shape. Catches
+ * `DegenerateRunError` (an aborted / indeterminate no-dispatch run) and returns `null` for that task rather
+ * than crashing the whole probe — one bad run must not sink the labeled set.
+ */
+async function runAndExtract(
+  task: RoutingTask,
+  runner: Runner,
+  model: string,
+  pluginDir: string | undefined,
+): Promise<Shape | null> {
+  const sandbox: Sandbox = prepareSandbox();
+  const streamPath = join(sandbox.workingDir, "stream.jsonl");
+  const result = await runner.run(
+    {
+      prompt: task.prompt,
+      model,
+      streamPath,
+      ...(pluginDir !== undefined ? { pluginDir } : {}),
+    },
+    sandbox,
+  );
+  try {
+    return extractShape(result.streamPath, {
+      ...(result.resultSubtype !== undefined ? { resultSubtype: result.resultSubtype } : {}),
+      producedTreeNonEmpty: result.producedTreeNonEmpty,
+    });
+  } catch (err) {
+    if (err instanceof DegenerateRunError) return null; // indeterminate run — registered as a miss, not a crash
+    throw err;
+  }
+}
+
+/**
+ * Drive the routing probe end-to-end in the GATED order (ADR-004), writing the artifact to `opts.outPath`.
+ *
+ * Flow:
+ *   1. load the labeled set (`loadRoutingFixture`);
+ *   2. run each labeled task once → its dispatched shape (degenerate ⇒ null) — these are the OBSERVED shapes;
+ *   3. (a) A/A unanimity: run the designated A/A task (the first labeled task) EXACTLY `k` times and pass those
+ *          exactly-`k` shapes to `aaUnanimity`; a split ⇒ ABORT with `instrument-measures-noise`, no score;
+ *   4. (b) positive control: the planted case is the first labeled task — its labeled floor is the hard-coded
+ *          known-correct shape, compared to what it actually dispatched; a miss ⇒ ABORT, no score;
+ *   5. (c) saturation guard over the OBSERVED dispatched shapes — RUNS BEFORE ANY ACCURACY — no spread ⇒ ABORT
+ *          with `no-discriminating-power`, no score;
+ *   6. (d) ONLY THEN: accuracy + confusion matrix + (X set) pass/fail.
+ *
+ * Any abort short-circuits BEFORE step 6 — the accuracy computation is unreachable once a gate fails.
+ */
+export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<RoutingResult> {
+  const k = opts.k ?? DEFAULT_AA_REPEATS;
+  const model = opts.model ?? DEFAULT_MODEL;
+  const threshold = opts.x ?? null;
+  const tasks = loadRoutingFixture(join(opts.fixtureDir, "tasks.yaml"));
+
+  // Step 2 — the labeled run: each task once → its dispatched shape (degenerate ⇒ null).
+  const outcomes: RoutingOutcome[] = [];
+  for (const task of tasks) {
+    const dispatched = await runAndExtract(task, opts.runner, model, opts.pluginDir);
+    outcomes.push({
+      taskId: task.id,
+      mustEscalate: task.trap === "must-escalate",
+      labeledFloor: task.correctFloor,
+      dispatched,
+    });
+  }
+
+  // --- the gated control ladder (ADR-004) — each gate aborts BEFORE the next, and all before scoring ----
+
+  // (a) A/A unanimity — run the designated A/A task EXACTLY k times (aaUnanimity requires shapes.length === k).
+  const aaTask = tasks[0]!; // the designated A/A task is the first labeled task
+  const aaShapes: Shape[] = [];
+  for (let i = 0; i < k; i++) {
+    const shape = await runAndExtract(aaTask, opts.runner, model, opts.pluginDir);
+    // A degenerate A/A repeat is non-comparable; record a sentinel so the set is not unanimous (it fails — a
+    // run that can't even produce k clean repeats has not established the null).
+    aaShapes.push(shape ?? ("__degenerate__" as Shape));
+  }
+  const aa = aaUnanimity(aaShapes, k);
+  if (!aa.ok) {
+    return emit(opts.outPath, buildAbortedArtifact(aa.verdict!), []);
+  }
+
+  // (b) positive control — the planted case is the first labeled task: its labeled floor is the known-correct
+  // shape, checked against what it actually dispatched. A degenerate dispatch can never match ⇒ miss.
+  const plantedTask = tasks[0]!;
+  const plantedOutcome = outcomes.find((o) => o.taskId === plantedTask.id)!;
+  const observedForPlanted = plantedOutcome.dispatched ?? ("__degenerate__" as Shape);
+  const positive = positiveControl(plantedTask.correctFloor, observedForPlanted);
+  if (!positive.ok) {
+    return emit(opts.outPath, buildAbortedArtifact(positive.verdict!), []);
+  }
+
+  // (c) saturation guard — over the OBSERVED dispatched shapes; MUST run before any accuracy computation.
+  const observedShapes = outcomes
+    .map((o) => o.dispatched)
+    .filter((s): s is Shape => s !== null);
+  const saturation = saturationGuard(observedShapes);
+  if (!saturation.power) {
+    // NO accuracy number is built — the aborted artifact carries the verdict only (AC8).
+    return emit(opts.outPath, buildAbortedArtifact(saturation.verdict!), []);
+  }
+
+  // (d) ONLY NOW — accuracy + confusion matrix + (X set) pass/fail.
+  const artifact = buildScoredArtifact(outcomes, threshold);
+  return emit(opts.outPath, artifact, outcomes);
+}
+
+/** Write the artifact and package the result (single exit point keeps the write in one place). */
+function emit(outPath: string, artifact: RoutingArtifact, outcomes: readonly RoutingOutcome[]): RoutingResult {
+  writeArtifact(outPath, artifact);
+  return { artifact, outPath, outcomes };
+}
