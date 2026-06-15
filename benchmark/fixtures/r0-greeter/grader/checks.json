@@ -1,4 +1,0 @@
-[
-  { "id": "R0-1-greeting-exists", "kind": "file_exists", "path": "greeting.txt" },
-  { "id": "R0-2-greeting-content", "kind": "file_contains", "path": "greeting.txt", "pattern": "Hello, world!" }
-]

@@ -1,9 +1,0 @@
-# Sample task fixture manifest (ADR-002 Fork A). The suite LOADER (T-007) owns parsing this; the grader does
-# NOT read it — it is here so the fixture has its real on-disk shape for the AC10 invisibility proof.
-id: grader-sample
-regime: R2
-arm-eligibility: [A, B, C]
-prompt: |
-  Create src/index.ts exporting `run()` and a src/util.ts helper.
-# The hidden suite lives in the sibling grader/ dir (grader/checks.json) — withheld from the sandbox by the
-# arms (T-005); never copied into the working tree, never put in the prompt (AC10).

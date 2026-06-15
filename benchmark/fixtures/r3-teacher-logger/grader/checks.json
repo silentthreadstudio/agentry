@@ -1,4 +1,0 @@
-[
-  { "id": "R3T-1-log-helper-exists", "kind": "file_exists", "path": "src/log.js" },
-  { "id": "R3T-2-uses-stdout-write", "kind": "file_contains", "path": "src/log.js", "pattern": "process\\.stdout\\.write" }
-]
