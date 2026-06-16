@@ -1,0 +1,4 @@
+Add deduplication to the analytics event ingestion pipeline. Events arrive from many client SDKs over a flaky
+network, so the same event is frequently delivered more than once (client retries, at-least-once queues). We are
+double-counting. Make ingestion deduplicate incoming events so each real event is recorded exactly once, without
+dropping genuinely distinct events that happen to look similar.
