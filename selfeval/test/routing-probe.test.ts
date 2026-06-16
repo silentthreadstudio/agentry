@@ -1,9 +1,10 @@
 // Tests for the probe driver + artifact emitter + headless command (T-5 / AC3, AC4, AC8, AC9a/b, AC10).
 // ZERO API spend: every case drives the probe through the REAL `replaySequenceRunner` over recorded
-// `RunResult` fixtures (one per `runner.run()` call). The recorded results point at the per-shape captured
-// stream logs already under test/fixtures/routing/, so the probe runs the genuine extract→control→score path
-// offline. The forced cases (a collapsed dispatch set, an A/A split) prove the GATED ORDER (ADR-004): a fired
-// gate aborts BEFORE scoring and emits NO accuracy number.
+// `RunResult` fixtures (one per `runner.run()` call). Each recorded result carries the WORK-FOLDER ARTIFACT
+// layout its shape implies (autopilot-design §2); the replay runner plants those under the sandbox's
+// `.agentry/work/*`, so the probe runs the genuine artifact-based extract→control→score path offline. The
+// forced cases (a collapsed shape set, an A/A split) prove the GATED ORDER (ADR-004): a fired gate aborts
+// BEFORE scoring and emits NO accuracy number.
 //
 // HOW THE A/A k-REPEATS ARE SOURCED: `runRoutingProbe` runs the labeled set once each (N calls), THEN runs the
 // designated A/A task (the first labeled task) EXACTLY k more times (k calls). So a replay sequence is
@@ -23,20 +24,33 @@ import { runRoutingProbe } from "../src/routing/probe.ts";
 import { loadRoutingFixture } from "../src/routing/fixture.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const STREAMS = join(HERE, "fixtures", "routing");
 const REAL_FIXTURE_DIR = join(HERE, "..", "fixtures", "routing");
 
-/** The captured stream log for a given shape (already on disk from the extractor's fixtures). */
-const streamFor = (shape: string): string => join(STREAMS, `${shape}.stream.jsonl`);
-
-/** The RunResult settle signals each shape's recorded result needs for the extractor to classify it. */
+/**
+ * A recorded RunResult whose work-folder artifacts encode the given shape (autopilot-design §2):
+ *   - decompose  → a `plan.md` planted in a work folder;
+ *   - spec-first → a `spec.md` only;
+ *   - one-shot   → no work-folder artifacts, with a clean settle (success) + a non-empty produced tree.
+ * The replay runner materializes `workFolder` under the sandbox before the probe's `extractShape` scans it.
+ * `streamPath` is required by the type but no longer the shape input (kept for provenance).
+ */
 function runResultFor(shape: "one-shot" | "spec-first" | "decompose"): RunResult {
-  if (shape === "one-shot") {
-    // one-shot is the only branch that consults the settle signals (zero dispatch + success + non-empty tree).
-    return { streamPath: streamFor("one-shot"), resultSubtype: "success", producedTreeNonEmpty: true };
+  if (shape === "decompose") {
+    return {
+      streamPath: "unused.jsonl",
+      producedTreeNonEmpty: true,
+      workFolder: { "work/probe-case/plan.md": "# plan\n" },
+    };
   }
-  // spec-first / decompose are classified from the dispatch alone — no trailing result envelope needed.
-  return { streamPath: streamFor(shape), producedTreeNonEmpty: false };
+  if (shape === "spec-first") {
+    return {
+      streamPath: "unused.jsonl",
+      producedTreeNonEmpty: true,
+      workFolder: { "work/probe-case/spec.md": "# spec\n" },
+    };
+  }
+  // one-shot: no work-folder artifacts; the settle signals carry the one-shot verdict.
+  return { streamPath: "unused.jsonl", resultSubtype: "success", producedTreeNonEmpty: true };
 }
 
 /** Write a sequence of RunResults to temp JSON files and return a real `replaySequenceRunner` over them. */

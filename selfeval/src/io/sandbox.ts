@@ -16,6 +16,13 @@ import type { Sandbox } from "./port.ts";
 export const GLOBAL_DIR_ENV = "AGENTRY_GLOBAL_DIR";
 /** The env var (base dir) that relocates the project memory root. */
 export const PROJECT_DIR_ENV = "AGENTRY_PROJECT_DIR";
+/**
+ * The env var that puts the conductor in AUTO-PILOT (autopilot-design §1): decide-record-proceed at every
+ * gate instead of blocking on `AskUserQuestion`, and ALWAYS emit the decision artifact on any escalation
+ * above one-shot. The probe sets it so the headless run produces the work-folder artifacts the extractor
+ * reads (the faithful routing signal — autopilot-design §2/§3), never stalling on an interactive gate.
+ */
+export const AUTOPILOT_ENV = "AGENTRY_AUTOPILOT";
 
 /**
  * Resolve a base dir to the memory root the file-store actually writes under. The memory layer treats
@@ -49,6 +56,7 @@ export function prepareSandbox(): Sandbox {
     ...process.env, // real HOME preserved → auth stays intact
     [GLOBAL_DIR_ENV]: globalBase,
     [PROJECT_DIR_ENV]: projectBase,
+    [AUTOPILOT_ENV]: "1", // decide-record-proceed: the conductor emits routing artifacts, never blocks a gate
   };
 
   return {

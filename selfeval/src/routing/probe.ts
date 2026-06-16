@@ -11,8 +11,9 @@
 // Each STOP returns an ABORTED artifact (the firing verdict, no score) — the AC8 "no number when a gate fires"
 // guarantee made observable. The function NEVER reaches the accuracy computation if any gate failed.
 //
-// AC10: the only "what shape was chosen" input is `extractShape` over the captured stream. There is no
-// task-completion / grade signal in selfeval to leak in — structurally enforced by the package boundary.
+// AC10: the only "what shape was chosen" input is `extractShape` over the conductor's WORK-FOLDER ARTIFACTS
+// (autopilot-design §2). There is no task-completion / grade signal in selfeval to leak in — structurally
+// enforced by the package boundary.
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -33,6 +34,22 @@ import {
 
 /** The model the probe pins for every run. Discovered from env by the command; a generic default here. */
 const DEFAULT_MODEL = "claude-opus-4-8[1m]";
+
+/**
+ * Mode directive appended to every live task (autopilot-design §1). Relying on the conductor to *detect* its
+ * mode by running `printenv` proved unreliable (the model doesn't proactively self-check), so the harness
+ * sets the mode explicitly. This sets the MODE only (autonomous, never block) — NOT the routing answer; the
+ * shape decision (one-shot/spec-first/decompose) remains entirely the conductor's. The forcing clause makes
+ * the decision OBSERVABLE: any escalation must leave a work-folder artifact.
+ */
+const AUTOPILOT_DIRECTIVE =
+  "\n\n[AUTO-PILOT MODE — AGENTRY_AUTOPILOT=1]: Operate per the conducting skill's auto-pilot mode. Do NOT " +
+  "block and do NOT call AskUserQuestion — there is no interactive user. For EVERY decision fork you would " +
+  "otherwise ask about, decide the best option yourself with a stated rationale. CRITICAL: for ANY task that " +
+  "escalates above a trivial one-shot (i.e. it hides a decision, spans multiple components, or needs a plan), " +
+  "you MUST write the routing artifact to `.agentry/work/<slug>/` BEFORE building — a `spec.md` at minimum " +
+  "(and `plan.md` + `tasks/` if you decompose) — recording each auto-decided fork + its assumption + a " +
+  "one-line override hint. A genuinely trivial one-shot writes no work-folder artifact. Then proceed to build.";
 
 /** Options for one probe run. The `Runner` is INJECTED (replay in tests = zero spend; live from the command). */
 export interface RoutingProbeOptions {
@@ -63,9 +80,9 @@ export interface RoutingResult {
 }
 
 /**
- * Run one routing task through the injected runner and extract its DISPATCHED shape. Catches
- * `DegenerateRunError` (an aborted / indeterminate no-dispatch run) and returns `null` for that task rather
- * than crashing the whole probe — one bad run must not sink the labeled set.
+ * Run one routing task through the injected runner and extract its ROUTED shape from the conductor's
+ * work-folder artifacts. Catches `DegenerateRunError` (an aborted / indeterminate no-artifact run) and returns
+ * `null` for that task rather than crashing the whole probe — one bad run must not sink the labeled set.
  */
 async function runAndExtract(
   task: RoutingTask,
@@ -87,18 +104,23 @@ async function runAndExtract(
   // Agentry plugin is loaded (pluginDir set), wrap the bare labeled task as a `/agentry:go` invocation and
   // bypass perms so the conductor can dispatch headless inside the isolated sandbox. Without pluginDir
   // (e.g. replay tests), pass the bare prompt unchanged — the recorded stream already encodes the routing.
-  const prompt = pluginDir !== undefined ? `/agentry:go ${task.prompt}` : task.prompt;
+  const prompt = pluginDir !== undefined ? `/agentry:go ${task.prompt}${AUTOPILOT_DIRECTIVE}` : task.prompt;
+  // CAPPED / no-kill mode (autopilot-design §3): do NOT early-terminate on the first dispatch — let the
+  // conductor run and emit its work-folder routing artifacts (the shape input), terminating at settle or cap.
   const result = await runner.run(
     {
       prompt,
       model,
       streamPath,
+      noKillOnDispatch: true,
       ...(pluginDir !== undefined ? { pluginDir, permissionMode: "bypassPermissions" } : {}),
     },
     sandbox,
   );
   try {
-    return extractShape(result.streamPath, {
+    // The shape is read from the conductor's WORK-FOLDER ARTIFACTS under the sandbox working dir (§2), with the
+    // settle signals only disambiguating the no-artifact one-shot-vs-degenerate case.
+    return extractShape(sandbox.workingDir, {
       ...(result.resultSubtype !== undefined ? { resultSubtype: result.resultSubtype } : {}),
       producedTreeNonEmpty: result.producedTreeNonEmpty,
     });

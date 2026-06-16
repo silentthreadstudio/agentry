@@ -97,6 +97,28 @@ test("captured run tees every emitted line to streamPath, kills on first Agent d
   assert.equal(record.resultSubtype, undefined, "a killed run forfeits the trailing result envelope");
 });
 
+// --- CAPPED / no-kill mode: a dispatch does NOT kill; the run settles on its result envelope ----------
+
+test("noKillOnDispatch lets a dispatch run on, settles on the result envelope, never kills", async () => {
+  const sandbox = freshSandbox();
+  const streamPath = streamFileIn(sandbox);
+  const child = new FakeChild();
+  const spawnFn: SpawnFn = () => child;
+
+  // Capped mode: the conductor dispatches a subagent, then runs on to settle — the kill must NOT fire.
+  const inv: Invocation = { prompt: "noop", model: "test-model", streamPath, noKillOnDispatch: true };
+
+  const runPromise = runCaptured(inv, sandbox, spawnFn);
+  // A dispatch appears (would kill in default mode) but the run continues to its settled result envelope.
+  child.feed([THINKING_LINE, AGENT_DISPATCH_LINE, RESULT_SUCCESS_LINE]);
+  const record = await runPromise;
+
+  assert.equal(child.killCount, 0, "capped mode must NOT kill on dispatch — the conductor runs on to settle");
+  assert.equal(record.streamPath, streamPath);
+  assert.equal(record.resultSubtype, "success", "a settled capped run surfaces result.subtype");
+  assert.ok(readFileSync(streamPath, "utf8").includes('"name":"Agent"'), "the dispatch line is still teed");
+});
+
 // --- no-dispatch run lets the process close normally (no kill) and observes its result subtype --------
 
 test("a no-dispatch captured run is never killed, closes with streamPath set, and surfaces resultSubtype", async () => {

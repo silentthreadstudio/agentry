@@ -1,7 +1,10 @@
 // The LIVE Runner — invokes the real `claude -p --output-format stream-json --verbose` under a prepared
-// sandbox/env, tees the event stream to `stream.jsonl`, and kills the child on the first `Agent` dispatch
-// (early-terminate, ADR-002/005). This is the only module that spends API; it is written here but NOT executed
-// by the tests (zero API spend — the fake child drives the capture path, `replay.ts` covers the offline path).
+// sandbox/env and tees the event stream to `stream.jsonl`. It has TWO termination modes (ADR-002/005 +
+// autopilot-design §3): the default kill-on-first-`Agent`-dispatch early-terminate, and an opt-in CAPPED /
+// no-kill mode (`Invocation.noKillOnDispatch`) that lets the conductor run on and emit its work-folder
+// routing artifacts, terminating at settle or a time cap. This is the only module that spends API; it is
+// written here but NOT executed by the tests (zero API spend — the fake child drives the capture path,
+// `replay.ts` covers the offline path).
 //
 // PORT of benchmark/src/runner/live.ts's CAPTURE half: `spawnClaudeStreaming`, `isAgentDispatch`, `buildArgs`,
 // `StreamChild`, `SpawnFn`, `runCaptured` (→ exported via `liveRunner.run`). DROPPED (all scoring): the
@@ -79,13 +82,34 @@ export type SpawnFn = (args: string[], sandbox: Sandbox) => StreamChild;
 const realSpawn: SpawnFn = (args, sandbox) =>
   spawn("claude", args, { cwd: sandbox.workingDir, env: sandbox.env });
 
+/** Options governing how a captured stream terminates. */
+interface CaptureOptions {
+  /**
+   * CAPPED / no-kill mode (autopilot-design §3): when true the run is NOT killed on the first `Agent`
+   * dispatch — it runs to settle (its trailing `result` envelope) or until {@link timeoutMs}, so the
+   * conductor can emit its work-folder routing artifacts. Default false ⇒ kill-on-first-dispatch.
+   */
+  noKillOnDispatch?: boolean;
+  /** Hard time cap (ms) for the capped run; the child is killed at the cap if it has not settled. */
+  timeoutMs?: number;
+}
+
+/** Default per-invocation time cap for the capped/no-kill run (autopilot-design §3: ~180–210s). */
+export const DEFAULT_CAP_MS = 180_000;
+
 /**
  * Stream-capture spawn (ADR-002/005): run `claude -p --output-format stream-json --verbose`, tee stdout
- * line-by-line to `streamPath`, and `proc.kill()` the moment the first `tool_use name:"Agent"` event is seen
- * (dispatch observed — OQ2 early-terminate). A no-dispatch run is never killed; the process closes normally
- * and its trailing `result` envelope is observed (so `resultSubtype` is set on one-shot / no-dispatch runs).
- * The partial stream after a kill lacks the trailing `result` envelope — expected; `resultSubtype` is then
- * undefined. Resolves with the observed `result.subtype` (or undefined) once the child closes.
+ * line-by-line to `streamPath`, and observe the trailing `result.subtype` when the run settles.
+ *
+ * Two termination modes:
+ *   - DEFAULT (kill-on-dispatch): `proc.kill()` the moment the first `tool_use name:"Agent"` event is seen
+ *     (OQ2 early-terminate). A no-dispatch run is never killed; it closes normally and its `result` envelope
+ *     is observed. A killed run's partial stream lacks the trailing `result`, so `resultSubtype` is undefined.
+ *   - CAPPED ({@link CaptureOptions.noKillOnDispatch}): never kill on dispatch — let the conductor run and
+ *     emit its work-folder artifacts; terminate at process settle OR at `timeoutMs` (kill the child at the
+ *     cap if it has not closed). This is the mode the routing probe uses (autopilot-design §3).
+ *
+ * Resolves with the observed `result.subtype` (or undefined) once the child closes.
  *
  * `spawnFn` is injected only in tests (a fake child driving a synthetic NDJSON stream); production uses the
  * real `claude` spawn.
@@ -94,19 +118,40 @@ function spawnClaudeStreaming(
   args: string[],
   sandbox: Sandbox,
   streamPath: string,
+  options: CaptureOptions = {},
   spawnFn: SpawnFn = realSpawn,
 ): Promise<string | undefined> {
+  const noKill = options.noKillOnDispatch === true;
+  const capMs = options.timeoutMs ?? DEFAULT_CAP_MS;
   return new Promise((resolve, reject) => {
     const proc = spawnFn(args, sandbox);
     const file = createWriteStream(streamPath);
     let buffer = "";
-    let killed = false;
+    let terminated = false; // we have killed the child (dispatch or cap) — stop classifying further lines
     let resultSubtype: string | undefined;
+    let capTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const clearCap = (): void => {
+      if (capTimer !== undefined) {
+        clearTimeout(capTimer);
+        capTimer = undefined;
+      }
+    };
+
+    // CAPPED mode: arm a hard cap so a decompose build cannot run unbounded; kill the child if it overruns.
+    if (noKill) {
+      capTimer = setTimeout(() => {
+        terminated = true;
+        proc.kill();
+      }, capMs);
+      // Don't keep the event loop alive solely for the cap timer (Node child already does that).
+      (capTimer as { unref?: () => void }).unref?.();
+    }
 
     const handleLine = (line: string): void => {
       const trimmed = line.trim();
       if (trimmed === "") return;
-      if (killed) return;
+      if (terminated) return;
       let event: unknown;
       try {
         event = JSON.parse(trimmed);
@@ -115,8 +160,9 @@ function spawnClaudeStreaming(
       }
       const subtype = resultSubtypeOf(event);
       if (subtype !== undefined) resultSubtype = subtype;
-      if (isAgentDispatch(event)) {
-        killed = true;
+      // Kill-on-dispatch ONLY in the default mode; capped mode lets the conductor run on to emit artifacts.
+      if (!noKill && isAgentDispatch(event)) {
+        terminated = true;
         proc.kill();
       }
     };
@@ -134,10 +180,12 @@ function spawnClaudeStreaming(
     });
     proc.stderr.on("data", () => {}); // drain; a captured run forfeits nothing readable here, so stderr is advisory
     proc.on("error", (err: Error) => {
+      clearCap();
       file.end();
       reject(err);
     });
     proc.on("close", () => {
+      clearCap();
       handleLine(buffer); // flush any final unterminated line
       buffer = "";
       file.end(() => resolve(resultSubtype));
@@ -147,9 +195,13 @@ function spawnClaudeStreaming(
 
 /**
  * Run one captured invocation (ADR-002/005): stream `claude -p --output-format stream-json --verbose`, tee to
- * `invocation.streamPath`, kill on the first `Agent` dispatch, and return the MINIMAL `RunResult` the extractor
- * needs — `streamPath` (the captured `stream.jsonl`), `resultSubtype` (the settled run's `result.subtype`, or
- * undefined on a killed run), and `producedTreeNonEmpty` (the OQ1 one-shot disambiguator's tree boolean).
+ * `invocation.streamPath`, and return the MINIMAL `RunResult` the extractor needs — `streamPath` (the captured
+ * `stream.jsonl`), `resultSubtype` (the settled run's `result.subtype`, or undefined on a killed run), and
+ * `producedTreeNonEmpty` (the OQ1 one-shot disambiguator's tree boolean).
+ *
+ * Termination follows the invocation: `noKillOnDispatch` ⇒ CAPPED mode (run to settle or `timeoutMs`, so the
+ * conductor emits its work-folder artifacts — autopilot-design §3); otherwise the original kill-on-first-
+ * dispatch early-terminate. The shape itself is read by the extractor from the work folder, not from here.
  *
  * `spawnFn` is injected only in tests (a fake child driving a synthetic NDJSON stream); production passes the
  * real `claude` spawn through {@link spawnClaudeStreaming}'s default.
@@ -163,7 +215,17 @@ export async function runCaptured(
     throw new Error("runCaptured: no streamPath to tee the event stream to");
   }
   const args = buildArgs(invocation);
-  const resultSubtype = await spawnClaudeStreaming(args, sandbox, invocation.streamPath, spawnFn);
+  const captureOptions: CaptureOptions = {
+    ...(invocation.noKillOnDispatch !== undefined ? { noKillOnDispatch: invocation.noKillOnDispatch } : {}),
+    ...(invocation.timeoutMs !== undefined ? { timeoutMs: invocation.timeoutMs } : {}),
+  };
+  const resultSubtype = await spawnClaudeStreaming(
+    args,
+    sandbox,
+    invocation.streamPath,
+    captureOptions,
+    spawnFn,
+  );
   const result: RunResult = {
     streamPath: invocation.streamPath,
     producedTreeNonEmpty: producedTreeNonEmpty(sandbox.workingDir),
@@ -174,9 +236,9 @@ export async function runCaptured(
 
 /**
  * The live Runner: spawn `claude -p --output-format stream-json --verbose` in the prepared sandbox, tee the
- * events to `invocation.streamPath`, kill the child on the first `Agent` dispatch, and return the captured
- * `RunResult`. Discovers nothing on its own — model and `pluginDir` come in on the Invocation; roots come in on
- * the Sandbox env (`prepareSandbox`).
+ * events to `invocation.streamPath`, terminate per the invocation (kill-on-dispatch by default; capped/no-kill
+ * when `noKillOnDispatch` is set), and return the captured `RunResult`. Discovers nothing on its own — model
+ * and `pluginDir` come in on the Invocation; roots come in on the Sandbox env (`prepareSandbox`).
  */
 export const liveRunner: Runner = {
   run(invocation: Invocation, sandbox: Sandbox): Promise<RunResult> {

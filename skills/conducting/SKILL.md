@@ -13,6 +13,20 @@ Run a task as Agentry's conductor: choose the **least process that wins**, dispa
 1. **Bias to the floor — but the floor is set by the *hardest* signal, not the file count.** Over-routing is sunk, visible waste — *but under-routing a task that hides a decision is worse and invisible:* you silently **guess** the fork and ship a fragile default no one notices until it breaks (e.g. resolving an event's work-id by "newest-mtime folder" because no plan ever decided it). Don't be lulled by "under-routing is cheap to fix mid-flight" — the measured failure is that it *isn't* caught mid-flight; it ships. So: default to the floor for **genuinely** simple work, but **you may one-shot only after actively clearing the escalation check (§Right-size) — "I saw no reason to escalate" counts only if you actually ran the check.** The blunt rule: *if you can finish it in one edit / one agent without learning anything new AND it hides no decision, do it.* A **real unknown or an undecided design fork vetoes the floor** → **≥ spec-first regardless of how few files it touches.** Small footprint ≠ small decision.
 2. **Guide, don't cage.** Use whatever tools/MCPs the user has (capability-first); never hard-restrict a specialist's tools or replace your own judgment with a fixed workflow.
 
+## Interaction mode — interactive (default) vs auto-pilot
+
+The conductor runs in one of two modes. **Mode changes *gating*, not *thinking*** — the routing, right-sizing, escalation check, spec/plan/split work, and the shapes you choose are **identical** in both. What differs is only what happens *at* a gate.
+
+- **interactive (default)** — today's behavior, unchanged. At each gate you **stop and get the user** (see §Gating). The chat turn is the gate.
+- **auto-pilot (opt-in, autonomous)** — you **never block**. At each gate you **decide → record → proceed**: pick the best option with stated rationale, write the decision artifact, name the auto-decided fork + the assumption + a one-line override hint *in that artifact*, and continue. Autonomous **and** accountable — every fork is surfaced and reversible, never silently guessed.
+
+**Detecting the mode — check once, early (before the first gate):**
+- Run `printenv AGENTRY_AUTOPILOT` via Bash. If it is `1`, auto-pilot is **ON**.
+- Auto-pilot is also ON when running **headless** with no interactive user to gate with (a blocking gate would hang).
+- Otherwise the mode is **interactive**.
+
+Full mechanics — the decide→record→proceed protocol, the always-emit-artifact rule, and the override-hint format — live in `references/autopilot.md`. The rest of this skill describes the shared work; the mode only re-routes the gate steps.
+
 ## The loop
 
 ```
@@ -48,9 +62,11 @@ Touched far more files than expected · failed verify twice · discovered a real
 
 ## Gating (the conductor's job — workers can't do this)
 
-On **spec-first and decompose+verify these gates are mandatory stops, in order — do not collapse or skip them.** A worker NEVER advances past a gate on its own; you stop and get the user.
+> **Mode-dependent (§Interaction mode).** The gates below describe **interactive** mode. In **auto-pilot** the *artifacts* below are still written — the **stop** is replaced by **decide→record→proceed**: you do NOT block and do NOT call a blocking `AskUserQuestion` to obtain a gate decision; you pick the best option, record the chosen option + assumption + override hint in the artifact, and continue. The escalation check and the artifact contract are unchanged. See `references/autopilot.md`.
 
-- **Spec is always a written artifact.** On any work above one-shot, produce `spec.md` (intent + observable acceptance criteria) as a *file* — never inline the acceptance criteria into a worker's brief and skip the doc. (doc 01: Spec is the always-emitted artifact.)
+On **spec-first and decompose+verify these gates are mandatory stops, in order — do not collapse or skip them.** A worker NEVER advances past a gate on its own; in interactive mode you stop and get the user.
+
+- **Spec is always a written artifact — on ANY escalation above one-shot.** The instant you escalate above one-shot — *including* a small fork you'd otherwise resolve with one inline question — produce `spec.md` (intent + observable acceptance criteria) as a *file*. Never inline the acceptance criteria into a worker's brief, and never gate a fork via `AskUserQuestion` while writing no `spec.md` — that's the inconsistency to kill (a one-function "dedupe" task that detects a real fork must still emit `spec.md`). A **genuine one-shot writes nothing** to `.agentry/work/` — it just does the edit. This rule holds in **both** modes; auto-pilot additionally records the chosen option + override hint in the artifact instead of gating. (doc 01: Spec is the always-emitted artifact.)
 - **Spec gate** — present `spec.md` and confirm "done = X" with the user before planning. Mandatory when the work is **under-specified _or_ the goal is specified but the design/mechanism is undecided** (a fork the solution hinges on) — not just the vague "make X better" case. A specified goal with an open mechanism (e.g. "emit events" where *how/where* is undecided) still needs the spec gate. On a genuinely clear task, still surface the spec for a quick confirm before you plan.
 - **Plan gate** — **plan first, gate, *then* split.** Dispatch the architect for **Plan + ADR only** (NOT tasks). Optionally run the verifier's plan-lens (falsifiable acceptance? contracts compose? riskiest first?). Present the Plan + any ADR to the user and get approval. **Only after approval** do you dispatch split (task contracts). Never bundle plan→split into one dispatch — that removes the gate.
 - **Ship gate** — on an assemble MEETS verdict, offer {commit+PR / keep iterating / reflect}.
@@ -96,5 +112,6 @@ Node↔specialist mapping and the signals rubric live in the reference.
 ## Additional resources
 
 ### Reference files
+- **`references/autopilot.md`** — auto-pilot mode in full: the `AGENTRY_AUTOPILOT` / headless trigger, the decide→record→proceed protocol, the always-emit-`spec.md` rule, and the decision-artifact + override-hint format (the surfaced-and-reversible safety contract).
 - **`references/routing-and-dispatch.md`** — the signals→shape rubric, escalation-trigger detail, the dispatch ladder, the node↔specialist map, and gating points with the artifacts each produces.
 - **`references/judgment.md`** — the senior reasoning *upstream* of the rubric: evaluating uncertainty (known vs. real unknown · the bet test), complexity (footprint vs. decision-content), the hardest-signal-not-the-average rule, one-way/two-way-door trade-offs, and right-sizing worked examples + self-catch list.
