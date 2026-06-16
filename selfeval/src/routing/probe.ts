@@ -30,6 +30,7 @@ import {
   writeArtifact,
   type RoutingArtifact,
   type RoutingOutcome,
+  type TaskRuns,
 } from "./artifact.ts";
 
 /** The model the probe pins for every run. Discovered from env by the command; a generic default here. */
@@ -67,6 +68,14 @@ export interface RoutingProbeOptions {
   model?: string;
   /** Plugin root to load Agentry from (`--plugin-dir`); absent ⇒ the conductor layer is not loaded. */
   pluginDir?: string;
+  /**
+   * MULTI-RUN VARIANCE (default 1 = exactly today's single-run behavior). Routing is per-task stochastic, so a
+   * single run is a noisy point estimate; running each labeled task `runs` times lets the artifact report a
+   * per-run accuracy distribution + per-task stability instead of one number. When `runs === 1` the variance
+   * fields are absent and the artifact is byte-for-byte today's shape. When `runs >= k`, the A/A control reuses
+   * the first task's already-collected `runs` shapes (no extra A/A executions).
+   */
+  runs?: number;
 }
 
 /** The result of a probe run: the emitted artifact + where it was written + the per-task outcomes it scored. */
@@ -135,9 +144,12 @@ async function runAndExtract(
  *
  * Flow:
  *   1. load the labeled set (`loadRoutingFixture`);
- *   2. run each labeled task once → its dispatched shape (degenerate ⇒ null) — these are the OBSERVED shapes;
- *   3. (a) A/A unanimity: run the designated A/A task (the first labeled task) EXACTLY `k` times and pass those
- *          exactly-`k` shapes to `aaUnanimity`; a split ⇒ ABORT with `instrument-measures-noise`, no score;
+ *   2. run each labeled task `runs` times (default 1) → its dispatched shapes (a degenerate repeat ⇒ null). The
+ *          legacy single-shape outcomes use RUN 0; with `runs > 1` the full per-task shape set feeds the
+ *          additive variance readouts (per-run accuracy distribution + per-task stability table);
+ *   3. (a) A/A unanimity: the designated A/A task is the first labeled task. When `runs >= k`, REUSE its first
+ *          `k` already-collected shapes (no extra A/A runs); otherwise run it EXACTLY `k` times. A split ⇒
+ *          ABORT with `instrument-measures-noise`, no score;
  *   4. (b) positive control: the planted case is the first labeled task — its labeled floor is the hard-coded
  *          known-correct shape, compared to what it actually dispatched; a miss ⇒ ABORT, no score;
  *   5. (c) saturation guard over the OBSERVED dispatched shapes — RUNS BEFORE ANY ACCURACY — no spread ⇒ ABORT
@@ -148,33 +160,54 @@ async function runAndExtract(
  */
 export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<RoutingResult> {
   const k = opts.k ?? DEFAULT_AA_REPEATS;
+  const runs = opts.runs ?? 1;
   const model = opts.model ?? DEFAULT_MODEL;
   const threshold = opts.x ?? null;
   const tasks = loadRoutingFixture(join(opts.fixtureDir, "tasks.yaml"));
 
-  // Step 2 — the labeled run: each task once → its dispatched shape (degenerate ⇒ null).
-  const outcomes: RoutingOutcome[] = [];
+  // Step 2 — the labeled run: each task `runs` times → its dispatched shapes (a degenerate repeat ⇒ null).
+  // The legacy single-shape `outcomes` (the existing accuracy/matrix/over-under inputs) use RUN 0's shape, so
+  // when `runs === 1` this is byte-for-byte today's behavior. `taskRuns` carries all `runs` shapes per task for
+  // the additive variance readouts.
+  const taskRuns: TaskRuns[] = [];
   for (const task of tasks) {
-    const dispatched = await runAndExtract(task, opts.runner, model, opts.pluginDir, opts.fixtureDir);
-    outcomes.push({
+    const shapes: (Shape | null)[] = [];
+    for (let r = 0; r < runs; r++) {
+      shapes.push(await runAndExtract(task, opts.runner, model, opts.pluginDir, opts.fixtureDir));
+    }
+    taskRuns.push({
       taskId: task.id,
       mustEscalate: task.trap === "must-escalate",
       labeledFloor: task.correctFloor,
-      dispatched,
+      shapes,
     });
   }
+  const outcomes: RoutingOutcome[] = taskRuns.map((t) => ({
+    taskId: t.taskId,
+    mustEscalate: t.mustEscalate,
+    labeledFloor: t.labeledFloor,
+    dispatched: t.shapes[0]!, // run 0 is the representative single-run shape (preserves runs===1 behavior)
+  }));
 
   // --- the gated control ladder (ADR-004) — each gate aborts BEFORE the next, and all before scoring ----
 
-  // (a) A/A unanimity — run the designated A/A task EXACTLY k times (aaUnanimity requires shapes.length === k).
-  const aaTask = tasks[0]!; // the designated A/A task is the first labeled task
-  const aaShapes: Shape[] = [];
-  for (let i = 0; i < k; i++) {
-    const shape = await runAndExtract(aaTask, opts.runner, model, opts.pluginDir, opts.fixtureDir);
-    // A degenerate A/A repeat is non-comparable; record a sentinel so the set is not unanimous (it fails — a
-    // run that can't even produce k clean repeats has not established the null).
-    aaShapes.push(shape ?? ("__degenerate__" as Shape));
+  // (a) A/A unanimity — needs EXACTLY k dispatched shapes of the designated A/A task (the first labeled task).
+  // REUSE: when `runs >= k`, the first task was ALREADY run `runs` times above, so slice its first k collected
+  // shapes instead of executing k more A/A runs (saves compute — Spec §6). When `runs < k` (the runs===1 path),
+  // fall back to the original separate A/A pass so today's exact behavior is preserved.
+  const aaTask = tasks[0]!;
+  let aaSourceShapes: (Shape | null)[];
+  if (runs >= k) {
+    aaSourceShapes = taskRuns[0]!.shapes.slice(0, k);
+  } else {
+    aaSourceShapes = [];
+    for (let i = 0; i < k; i++) {
+      aaSourceShapes.push(await runAndExtract(aaTask, opts.runner, model, opts.pluginDir, opts.fixtureDir));
+    }
   }
+  // A degenerate A/A repeat is non-comparable; record a sentinel so the set is not unanimous (it fails — a run
+  // that can't even produce k clean repeats has not established the null).
+  const aaShapes: Shape[] = aaSourceShapes.map((s) => s ?? ("__degenerate__" as Shape));
   const aa = aaUnanimity(aaShapes, k);
   if (!aa.ok) {
     return emit(opts.outPath, buildAbortedArtifact(aa.verdict!), []);
@@ -200,8 +233,9 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
     return emit(opts.outPath, buildAbortedArtifact(saturation.verdict!), []);
   }
 
-  // (d) ONLY NOW — accuracy + confusion matrix + (X set) pass/fail.
-  const artifact = buildScoredArtifact(outcomes, threshold);
+  // (d) ONLY NOW — accuracy + confusion matrix + (X set) pass/fail, plus the additive multi-run variance
+  // (attached by the builder only when `runs > 1`; absent for the single-run backward-compatible artifact).
+  const artifact = buildScoredArtifact(outcomes, threshold, taskRuns);
   return emit(opts.outPath, artifact, outcomes);
 }
 

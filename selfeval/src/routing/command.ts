@@ -4,7 +4,8 @@
 // logic — `probe.ts` wires the gated control flow; this module only selects the runner and plumbs flags.
 //
 //   node selfeval/src/routing/command.ts --fixture <dir> --runner live|replay [--out <path>] [--k 3]
-//                                        [--x <threshold>] [--replay-fixture <p>] [--replay-fixtures a,b,c]
+//                                        [--runs <k>] [--x <threshold>] [--replay-fixture <p>]
+//                                        [--replay-fixtures a,b,c]
 //
 // AC3 (headless): runs non-interactively, no TTY prompt, exits 0 on success; the artifact lands on disk and
 // its path is echoed to stdout. The replay runner spends ZERO API (tests and offline runs use it); `live`
@@ -23,6 +24,7 @@ interface CliArgs {
   runner?: string;
   out?: string;
   k?: string;
+  runs?: string;
   x?: string;
   pluginDir?: string;
   replayFixture?: string;
@@ -35,6 +37,7 @@ const FLAGS: Record<string, keyof CliArgs> = {
   "--runner": "runner",
   "--out": "out",
   "--k": "k",
+  "--runs": "runs",
   "--x": "x",
   "--plugin-dir": "pluginDir",
   "--replay-fixture": "replayFixture",
@@ -109,6 +112,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       runner,
       outPath,
       ...(args.k !== undefined ? { k: Number(args.k) } : {}),
+      ...(args.runs !== undefined ? { runs: Number(args.runs) } : {}),
       ...(args.x !== undefined ? { x: Number(args.x) } : {}),
       ...(args.pluginDir !== undefined ? { pluginDir: resolve(args.pluginDir) } : {}),
     });

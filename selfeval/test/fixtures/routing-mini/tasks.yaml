@@ -1,0 +1,91 @@
+# SYNTHETIC mini routing fixture — OWNED BY THE PROBE UNIT TESTS, decoupled from the real 30-task product set.
+#
+# Why this exists: routing-probe.test.ts must NOT load the real `fixtures/routing/tasks.yaml` — that set grows
+# over time and any count (3/7, 6/7, …) baked into a test breaks the moment it changes. This is a SMALL, STABLE
+# set the probe tests own: its size and floor layout never drift, so the tests can derive N + expected accuracy
+# from it rather than hard-code real-set numbers.
+#
+# Design constraints (must satisfy `loadRoutingFixture`'s strict validation — see src/routing/fixture.ts):
+#   - 6 tasks (within the 6–60 bound);
+#   - task[0] floor is ONE-SHOT — the probe designates the first task as both the A/A unanimity case and the
+#     planted positive control, so its floor is the known-correct shape those gates check against;
+#   - all THREE shapes are covered (one-shot / spec-first / decompose) so the saturation guard, confusion matrix,
+#     and stability/distribution paths have real spread to exercise;
+#   - ≥1 must-escalate trap (task `mini-escalation-trap`, floor spec-first, with structured decision_hidden +
+#     consequence) and ≥1 trivial (the one-shot tasks);
+#   - every task carries a STRUCTURED rationale with the floor-appropriate evidence keys and recorded
+#     second-labeler agreement.
+#
+# FLOOR LAYOUT (index → floor) — the tests read these from the loaded fixture; do not silently reorder:
+#   0 one-shot · 1 one-shot · 2 spec-first(must-escalate) · 3 spec-first · 4 decompose · 5 decompose
+version: 1
+labeling:
+  rubric_ref: skills/conducting/references/routing-and-dispatch.md
+  labeler_a: mini-a
+  labeler_b: mini-b
+  agreement_at_creation: "6/6"
+
+tasks:
+  # [0] one-shot — the A/A + positive-control anchor (the probe runs THIS task k extra times and plants its
+  # floor as the known-correct positive control).
+  - id: mini-format-decimals
+    prompt: |
+      Fix formatPrice to always show 2 decimals in src/format.ts.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "Scope: one symbol, one file"
+      bounded_reversible: "single function body, trivially undoable in one diff"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  # [1] one-shot — a second trivial so the set has clear one-shot mass.
+  - id: mini-version-flag
+    prompt: |
+      Add a --version flag to bin/cli.ts that prints the package version.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: one additive flag, one file"
+      bounded_reversible: "additive single-file flag, no contract change"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  # [2] spec-first MUST-ESCALATE trap — hides a decision; the floor is ≥ spec-first so the trap clears the bar.
+  - id: mini-escalation-trap
+    prompt: |
+      Dedupe incoming records before we persist them.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "Hidden decision: which record wins on a key collision"
+      decision_hidden: "the identity key + the tie-break (latest vs first) is unspecified"
+      consequence: "guessing the wrong winner silently drops or overwrites real records"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  # [3] spec-first (untrapped) — needs only the structured body (governing_signal + ≥1 evidence key).
+  - id: mini-search-tuning
+    prompt: |
+      Make the catalog search return results faster without changing what it returns.
+    correct_floor: spec-first
+    rationale:
+      governing_signal: "Undecided approach: index vs cache vs query rewrite"
+      decision_hidden: "the performance lever to pull is unspecified and has trade-offs"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  # [4] decompose — a multi-seam build the conductor should split.
+  - id: mini-pagination-stack
+    prompt: |
+      Add pagination to the users listing across the API, service, and data layers.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Spans multiple modules with contracts between them"
+      seams: "api handler ↔ service ↔ data query — three owners, parallel-safe slices"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+
+  # [5] decompose — a second decompose so the heaviest shape also has mass for the confusion matrix.
+  - id: mini-notifications-center
+    prompt: |
+      Build a notifications center: a feed, read/unread state, and delivery preferences.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Several cohesive sub-features with their own boundaries"
+      seams: "feed store ↔ read-state ↔ preferences — distinct modules, separately ownable"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }

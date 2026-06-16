@@ -1,6 +1,7 @@
 // Tests for the routing-fixture schema + strict loader (ADR-003 / AC1). Two halves:
 //   1. the REAL as-shipped fixture (`selfeval/fixtures/routing/tasks.yaml`, the OQ3 deliverable) loads clean
-//      and returns 7 well-formed `RoutingTask`s — the loader must accept the product set as-is;
+//      and returns 30 well-formed `RoutingTask`s (7 original + 23 grown) — the loader must accept the product
+//      set as-is, parse the optional `held_out` flag, and preserve the must-escalate / trivial spread;
 //   2. synthetic MALFORMED fixtures (under test/fixtures/routing/) each throw a SPECIFIC FixtureError —
 //      wrong count, missing must-escalate trap, free-text rationale, agreement:false.
 // Zero API spend: pure parse/validate over YAML on disk.
@@ -17,18 +18,30 @@ const MALFORMED = (name: string): string => join(HERE, "fixtures", "routing", `$
 
 // --- 1. the real shipped fixture loads clean -----------------------------------------------------------
 
-test("the real shipped tasks.yaml loads and returns 7 well-formed RoutingTasks", () => {
+test("the real shipped tasks.yaml loads and returns 30 well-formed RoutingTasks", () => {
   const tasks = loadRoutingFixture(REAL_FIXTURE);
 
-  assert.equal(tasks.length, 7);
+  assert.equal(tasks.length, 30, "7 original + 23 grown");
   for (const t of tasks) {
     assert.ok(t.id.length > 0, "id present");
     assert.ok(t.prompt.length > 0, "prompt present");
     assert.ok(["one-shot", "spec-first", "decompose"].includes(t.correctFloor), "correctFloor is a Shape");
+    assert.equal(typeof t.heldOut, "boolean", "heldOut parsed as a boolean");
     assert.ok(t.rationale.governingSignal.length > 0, "structured rationale carries governing signal");
     assert.equal(t.labels.agreement, true, "second-labeler agreement recorded");
     assert.ok(t.labels.labelerA.length > 0 && t.labels.labelerB.length > 0, "both labelers present");
   }
+});
+
+test("the real fixture parses the optional held_out flag (some held out, the original 7 default false)", () => {
+  const tasks = loadRoutingFixture(REAL_FIXTURE);
+
+  const heldOut = tasks.filter((t) => t.heldOut);
+  assert.ok(heldOut.length >= 1, "at least one task is held out");
+  // The original 7 omit `held_out`, so they must default to false (the flag is optional, not required).
+  const original = tasks.find((t) => t.id === "routing-format-price");
+  assert.ok(original, "an original task is present");
+  assert.equal(original.heldOut, false, "an original task omitting held_out defaults to false");
 });
 
 test("the real fixture carries ≥1 must-escalate trap and ≥1 trivial (the spread the probe needs)", () => {
@@ -59,10 +72,11 @@ test("the real fixture maps snake_case YAML to the camelCase RoutingTask shape",
 
 // --- 2. malformed fixtures each throw their specific error ---------------------------------------------
 
-test("rejects a fixture with the wrong task count (below the 6–8 floor)", () => {
+test("rejects a fixture with the wrong task count (below the 6-task floor)", () => {
   assert.throws(
     () => loadRoutingFixture(MALFORMED("malformed-wrong-count")),
-    (err: unknown) => err instanceof FixtureError && /6.?8 tasks, got 2/.test((err as Error).message),
+    (err: unknown) =>
+      err instanceof FixtureError && /6.?60 tasks, got 2/.test((err as Error).message),
   );
 });
 

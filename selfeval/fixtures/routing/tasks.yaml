@@ -103,3 +103,282 @@ tasks:
       governing_signal: "Scope: many modules (model + service + endpoint + worker) · Specificity: clear"
       seams: "four components with seams between them — a multi-part feature build, not a single edit"
     labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+
+  - id: re-os-temp-convert
+    prompt: In src/temp.js, celsiusToF(c) uses the wrong formula (returns c*9/5 instead of c*9/5+32). Fix it.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: The prompt states both the exact defect (celsiusToF returns c*9/5) and the exact correct formula (c*9/5+32), so the fix is fully specified — a single-token change to one line in one named file (src/temp.js). The sibling fToCelsius already shows the +32 convention, confirming the bug and the right answer with zero ambiguity.
+      bounded_reversible: The edit touches one return statement in one function; report.js merely consumes celsiusToF and needs no change. Nothing else in the seed depends on the wrong behavior, the change is a one-line diff, and it is trivially revertible — no decision is hidden, nothing forks, so spec-first or decompose would be pure overhead on a self-evident one-liner.
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+
+  - id: re-os-cli-quiet
+    prompt: Add a --quiet flag to the CLI in bin/run.js that suppresses the normal stdout banner.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "Single clearly-scoped target file (bin/run.js) with an established arg-parsing pattern to extend; the task names the exact file, the exact flag, and the exact effect. printBanner() is the one unconditional stdout write, so the change is mechanical: add a --quiet case to parseArgs and guard the printBanner() call. No competing conventions, no separable units, no undecided key/policy."
+      bounded_reversible: One flag, one guarded call site in one file. Banner already lives on stdout (not stderr) and progress/build output is emitted separately by run(), so suppressing the banner cannot collide with other output paths. The edit is a few lines, trivially diffable and revertible; routing it through spec-first or decompose would be pure overhead with nothing to decide or split.
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+
+  - id: re-os-null-guard
+    prompt: In src/user.js, getDisplayName(user) crashes when user.profile is undefined. Add a guard so it returns the email instead.
+    correct_floor: one-shot
+    held_out: true
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "getDisplayName dereferences user.profile.firstName/lastName directly, so an undefined profile throws — the bug the prompt names is literally present. The record shape is documented in-file (email plus optional profile, absent for invite-flow users), so the fallback the prompt asks for (return the email) is already an existing field. The whole change is a single early guard in one function in one file: if profile is missing, return user.email. No competing convention, no undecided policy, no second concern to coordinate — render.js merely consumes the function and is untouched."
+      bounded_reversible: "One guard clause at the top of getDisplayName in src/user.js: `if (!user.profile) return user.email;`. Fully contained in a single function, trivially revertible, observable by the function no longer throwing on a profile-less user. No interface, contract, or caller changes — getInitials and renderUserRow keep working unchanged."
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+
+  - id: re-os-rename-fn
+    prompt: Rename the function calcTot to calculateTotal in src/cart.js and update its callers in that file.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: The prompt names one symbol (calcTot), one file (src/cart.js), one verb (rename), and scopes callers to that same file. The seed is a single self-contained module where calcTot is declared once and called by exactly two same-file functions (applyDiscount, summarize) plus the export line — every occurrence is mechanical and visible in the one file the task points at.
+      bounded_reversible: "The whole change is a find/replace of calcTot to calculateTotal within src/cart.js: one declaration, two call sites, one export key. There is no second file, no external importer, no naming choice (the new name is given), and no behavior change — so it is fully bounded to one file and trivially reversible by renaming back. Spinning up spec/plan/decompose machinery would be pure overhead; this is a deliberately-trivial one-shot."
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+
+  - id: re-os-const-bump
+    prompt: In src/config.js, change MAX_UPLOAD_MB from 5 to 25.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: The task names the exact file (src/config.js), the exact symbol (MAX_UPLOAD_MB), the current value (5), and the new value (25). There is exactly one constant to flip, with no choice of how. config.js holds three sibling constants but only MAX_UPLOAD_MB is targeted, and the value 25 is given outright — nothing to research, weigh, or decide. The consumers (upload.js multiplies it into a byte limit, server.js wires the validator) read the constant by name, so they require no edits; they exist only to make the constant a real load-bearing value rather than a dead literal.
+      bounded_reversible: "A one-character-class change to a single numeric literal in one file: edit 5 to 25 on the MAX_UPLOAD_MB line. The blast radius is contained — downstream code already references the symbol, so behavior updates automatically and correctly. Trivially reversible by flipping it back; spinning up spec-first or decompose machinery here would be pure overhead on an obvious, self-evidently-correct edit."
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+
+  - id: re-os-add-test
+    prompt: Add a node:test unit test for the existing pure function slugify(s) in src/slug.js, covering spaces and uppercase.
+    correct_floor: one-shot
+    held_out: true
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "The prompt fully specifies the target (a node:test unit test), the subject (the already-existing pure slugify(s)), its location (src/slug.js), and the exact cases to cover (spaces and uppercase). The seed makes that premise literally true: slug.js exists with slugify implemented and exported, and there is deliberately NO test file present, so the only thing missing is the one obvious test file. Nothing in the function's behavior is undecided — it lowercases, trims, and collapses whitespace to single hyphens, all observable from the code and its doc examples, so the assertions write themselves (slugify('Hello World') === 'hello-world')."
+      bounded_reversible: Adding one self-contained test file (e.g. test/slug.test.js) against an unchanged pure function is fully additive and trivially reversible — delete the file and nothing else is affected. No production code is touched, no contract or convention decision is forked, and the single function is exported via a stable CommonJS barrel, so the change is mechanical and one-shot; spinning up spec or decompose machinery would be pure overhead.
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+
+  - id: re-os-error-msg
+    prompt: In src/auth.js the login error says "Invalid passowrd" (typo) — fix the spelling to "Invalid password".
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "The prompt names the exact file (src/auth.js), the exact wrong string (\"Invalid passowrd\"), and the exact replacement (\"Invalid password\"). The seed makes that premise literally true: src/auth.js contains the typo'd string (twice, on the two login-failure return paths) and nothing else in the tree spells it differently. There is no convention to reconcile, no policy to pick, and no second component to coordinate — users.js is inert support (hash/lookup) that the change never touches. The whole job is a string edit in one named target."
+      bounded_reversible: The change is a single literal substitution of 'passowrd'->'password' inside one file's two return statements; it is mechanically obvious, owns no interface, and is trivially reverted by re-typing the typo. Routing it through spec or decompose would add ceremony with zero decision to govern — the seed deliberately hides no fork, so any shape heavier than one-shot is over-orchestration.
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+
+  - id: re-os-clamp
+    prompt: In src/volume.js, setVolume(n) should clamp n to the range 0..100. Add the clamping.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: The prompt fully specifies the target (src/volume.js), the function (setVolume), the operation (clamp n), and the exact range (0..100). The seed exposes a single trivial setVolume that assigns n directly with no clamping, so the change is a self-evident two-bound wrap (Math.min(100, Math.max(0, n))) with no convention, policy, or value left to pick.
+      bounded_reversible: The edit touches one statement in one tiny module owned by no contract; getVolume/index.js consume the return unchanged, so clamping is locally contained and trivially revertable. No spec fork to settle and nothing separable to slice — routing past one-shot would be pure overhead.
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+
+  - id: re-sf-cache
+    prompt: Add caching to the getProduct(id) lookups in src/catalog.js.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "The repo already contains TWO competing, equally-installed caching conventions, and the target getProduct sits between them: src/cache.js is a process-local TTL Map (Convention A, used by pricing.js, no cross-process invalidation) and src/sessions.js is shared Redis with explicit eviction (Convention B, used because logout must evict for all workers). 'Add caching to getProduct' names no convention, no TTL, and no invalidation hook — the choice is undecided in the code, not in the prompt, which is the spec-first signature."
+      decision_hidden: Which convention + invalidation policy governs product reads. catalog.js has a mutation path (updateProduct) and an inline note that a stale read shows a wrong price at checkout — so unlike tiers (which never change and tolerate Convention A's blunt 60s-no-invalidation), getProduct REQUIRES that updateProduct evict the cached entry, and across all web workers. That forces Convention B (Redis with del) plus wiring del() into updateProduct — a policy the prompt never states and the code never settles.
+      consequence: "Guessing Convention A (the closest, simplest neighbor) ships a per-process Map with no eviction: updateProduct on worker 1 leaves a stale product cached on workers 2..N until the TTL lapses, so checkout reads a wrong price — the exact failure the catalog.js comment warns about. The footprint is tiny (one function in one file), which is precisely why it's an escalation trap: the small surface hides a correctness-shaped policy decision that a one-shot edit would silently get wrong."
+    labels:
+      labeler_a: spec-first
+      labeler_b: spec-first
+      agreement: true
+
+  - id: re-sf-ratelimit
+    prompt: Add rate limiting to the login endpoint in src/routes/auth.js.
+    correct_floor: spec-first
+    held_out: true
+    trap: must-escalate
+    rationale:
+      governing_signal: The task names one file (src/routes/auth.js) and reads like a small add, but the surrounding code makes the real work a policy choice, not a code edit. auth.js's register() shows where a limiter slots in but says its key, window, threshold, and store are all unspecified; audit-log.js exposes that the app sits behind a proxy (req.ip is the proxy, X-Forwarded-For is the client); store.js states there is no Redis and counters would live in non-shared, restart-volatile process memory. Tiny footprint, decision-dense — spec-first.
+      decision_hidden: "Four undecided policy axes the code surfaces but does not settle: (1) the rate-limit KEY — per-IP (broken behind the proxy auditLog reveals, and punishes a shared NAT) vs per-account (invites lockout-as-DoS); (2) the WINDOW and threshold values; (3) the response on limit (429 + Retry-After, or silent); (4) where counts LIVE, given store.js says there is no external cache and process memory is per-instance and lost on restart."
+      consequence: "Guessing ships a fragile limiter: an in-memory per-IP counter looks correct in review yet throttles the proxy's single IP (locking out all users at once or no one), silently resets every deploy, and diverges across instances — a security control that reads as present but does not actually bound credential-stuffing. A one-shot edit hides exactly the decision that determines whether the feature works."
+    labels:
+      labeler_a: spec-first
+      labeler_b: spec-first
+      agreement: true
+
+  - id: re-sf-export-big
+    prompt: Make the CSV export in src/export.js handle very large datasets without running out of memory.
+    correct_floor: spec-first
+    rationale:
+      governing_signal: "exportCsv in src/export.js buffers the entire result set: source.fetchAll() materializes every row into an array, then encodeRow builds one big string joined with \\r\\n and returned whole — making the prompt's premise ('runs out of memory on very large datasets') literally true. Fixing it is a single coherent change (turn buffering into streaming), not separable components — there is no model/service/endpoint split to slice, so it is spec-first, not decompose."
+      decision_hidden: "The seed forces the implementer to PICK a streaming contract before writing code, and the choice is non-obvious: (a) exportCsv's return type — it currently returns a string; streaming means it must instead push into a sink, return an async iterable, or accept a writable — and the two consumers in src/routes.js DISAGREE on the sink (handleDownload pipes to a Node writable HTTP response via res.write/res.end; dumpToFile expects a single string to hand fs.writeFile). (b) the data side: source.js exposes both fetchAll() (whole array) and an unused stream() cursor, and the comment states they are mutually exclusive — so a real fix must switch to stream(). (c) the CSV dialect documented in export.js (header always emitted even when empty, minimal quoting with doubled quotes, \\r\\n separators, NO trailing newline) must survive the rewrite byte-for-byte."
+      consequence: Guessing ships something fragile. If the author streams only the file path and leaves handleDownload buffering, the HTTP route still OOMs — the premise is only half-fixed. If they change exportCsv's return shape to satisfy streaming but don't update dumpToFile, the file dump breaks (writeFile gets a stream/iterator, not a string). And a naive line-by-line rewrite that forgets to emit the header on an empty set, or that appends a trailing \r\n, silently corrupts the agreed CSV dialect that downstream consumers parse. The undecided sink-and-return-type policy is exactly what the spec-first shape exists to pin down before code is written.
+    labels:
+      labeler_a: spec-first
+      labeler_b: spec-first
+      agreement: true
+
+  - id: re-sf-retry
+    prompt: Add retry logic to the chargeCard() call in src/payments.js.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "The task names a one-line edit (\"add retry to chargeCard()\"), but chargeCard() is a non-idempotent money movement and the surrounding code carries an unfinished safety contract: gateway.charge() accepts an idempotencyKey and throws GatewayError with a .retryable flag, idempotencyKeyFor(order) already produces a stable key, and checkout.js computes that key but never threads it into the charge. The retry can't be written without deciding what to do with these visible-but-unwired pieces — that is the spec-first fork."
+      decision_hidden: "What makes a charge retry SAFE and CORRECT: (a) replaying the existing idempotencyKeyFor(order) key through gateway.charge so a lost-response retry returns the original charge instead of creating a second one, and (b) retrying ONLY on GatewayError.retryable (timeout/503) while letting terminal outcomes like card_declined fail fast — plus the unstated attempt count / backoff."
+      consequence: A blind retry wrapper (try/catch + loop, no key, retry-on-any-error) compiles and passes a naive happy-path test but double-charges customers on a timed-out-but-succeeded first attempt and hammers the gateway on hard declines. The fragility ships silently because the seam (idempotency key, .retryable flag) is reused incorrectly, not absent — so guessing produces working-looking, financially unsafe code.
+    labels:
+      labeler_a: spec-first
+      labeler_b: spec-first
+      agreement: true
+
+  - id: re-sf-soft-delete
+    prompt: Add soft-delete to the records in src/notes.js so deleted notes can be recovered.
+    correct_floor: spec-first
+    held_out: true
+    rationale:
+      governing_signal: "The task names one target (src/notes.js) and is one coherent change (soft-delete), but the seed exposes an undecided policy in code: notes.js fixes a timestamp convention (createdAt/updatedAt stored as ISO strings, not epoch numbers or Date objects) and remove() hard-deletes, while queries.js holds four read paths (list/search/count/byId) that all assume every stored row is a live note and filter nothing. There is a real decision fork and a cross-file consistency obligation, so a spec must be pinned before writing — this is spec-first, not a one-shot."
+      decision_hidden: What represents 'deleted', and what it costs everywhere it's read. The marker must be chosen (a deletedAt ISO string consistent with the existing timestamp convention, vs. a boolean `deleted` flag, vs. a nullable field) AND every reader in queries.js must learn to exclude tombstones while a new recover path clears the marker. The recovery requirement ('so deleted notes can be recovered') forces a tombstone-in-place design rather than a hard delete, which makes the read-path filtering mandatory rather than optional.
+      consequence: Guess the marker shape and it clashes with the ISO-string convention the rest of the module assumes; skip even one reader in queries.js and deleted notes leak into list(), search(), or count() — or a 'recovered' note is unreachable because byId() still hides it. The bug is silent and only surfaces as wrong counts / ghost rows, which is exactly the fragile ship spec-first exists to prevent.
+    labels:
+      labeler_a: spec-first
+      labeler_b: spec-first
+      agreement: true
+
+  - id: re-sf-dedupe-events
+    prompt: Add a function to src/events.js that removes duplicate analytics events from a batch before they are sent.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "src/events.js gives every event TWO ids with opposite semantics: `id` is stamped fresh per delivery attempt (stampEvent increments a seq, so it CHANGES on every retry and is never equal across two records), while `eventId` is the client idempotency key that stampEvent/retryEvent carry UNCHANGED across retries. src/flush.js shows retryEvent re-enqueuing failed attempts, which is exactly how the same logical action lands in one batch twice. So 'remove duplicate events' is not a one-liner: the dedup key is an undecided fork the code makes visible but does not resolve."
+      decision_hidden: Which field defines 'duplicate'. Deduping on `id` (the obvious, present-on-every-object field) removes nothing — every record has a distinct per-attempt id, so the filter is a silent no-op. Deduping on `name` (or name+props, or ts) collapses genuinely distinct user actions that happen to share a name. The only correct key is `eventId`, the stable idempotency key the sendBatch ingest contract already rejects duplicates on. The comments state this but the task prompt does not, so a guess picks a plausible-but-wrong field.
+      consequence: "Keying on `id` ships a dedupe function that never dedupes, so retried events still trigger the whole-batch rejection sendBatch documents and analytics flushes keep failing. Keying on `name`/`ts` is worse: it drops legitimate distinct events and undercounts real activity. Both look correct in a quick review and only surface as data loss or stuck flushes in production — the spec-first decision must be made and stated, not inferred."
+    labels:
+      labeler_a: spec-first
+      labeler_b: spec-first
+      agreement: true
+
+  - id: re-dc-comments
+    prompt: "Build a comments feature: a comment data model, a service to create comments, REST endpoints to list and post, and a moderation worker that flags banned words."
+    correct_floor: decompose
+    rationale:
+      governing_signal: "The repo is a layered app skeleton with an established four-directory convention — models/, services/, api/, workers/ plus an app.js that wires routes and starts workers — already demonstrated by a complete existing 'posts' domain. The task ('a comment data model, a service to create comments, REST endpoints to list and post, and a moderation worker') enumerates four distinct artifacts that map one-to-one onto those four directories. The seed makes that decomposition unambiguous: each new comment unit has its own home and its own contract to satisfy, and a parallel reference (the post-* files) shows exactly what the contract for each layer looks like."
+      seams: "Four genuinely separable units, each in its own directory with a distinct contract and a working sibling to mirror: (1) models/comment.js — pure in-memory store keyed by id, referencing postId (mirrors models/post.js, no I/O); (2) services/comment.service.js — createComment business logic over the model that also enqueues a moderation job (mirrors services/post.service.js); (3) api/comments.routes.js — POST to create + GET to list, registered into the shared express Router (mirrors api/posts.routes.js, returns 201/200); (4) workers/comment-moderation.worker.js — an enqueue/drain loop that flags banned words (mirrors workers/index-rebuild.worker.js's queue pattern). The seams are explicit interfaces: service→model is the createComment/getComments calls, service→worker is the enqueue call, routes→service is the create/list calls, and app.js is the single integration point where the new routes register and the new worker starts. Each unit is independently buildable and testable against its own boundary; the only cross-unit coupling is the named function signatures at each seam, all of which the existing post-* mirror already pins down."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+
+  - id: re-dc-auth
+    prompt: "Add user authentication: signup and login endpoints, a password-hashing service, session middleware, and an in-memory token store."
+    correct_floor: decompose
+    held_out: true
+    rationale:
+      governing_signal: "The prompt enumerates four components that map onto four existing-but-empty layer slots in the skeleton: a password-hashing service belongs in services/ next to user.service.js; an in-memory token store is a new model alongside models/user.js; session middleware is a sibling of middleware/require-fields.js (whose comment already describes the exact attach-req.user shape); and signup/login endpoints are a new routes module like api/users.routes.js wired into app.js. Each named noun has its own contract and a pre-existing structural home, so the work fans out into distinct units rather than collapsing into one edit."
+      seams: "Four parallel-safe units with stable interfaces: (1) token store — exposes issue(userId)->token / lookup(token)->userId / revoke(token), owns no other module; (2) password-hashing service — exposes hash(plain)/verify(plain,hash), pure, no deps on the rest; (3) session middleware — depends only on the token store's lookup contract and attaches req.user; (4) signup/login endpoints — compose user.service + hashing service + token store. The model already carries findByEmail and is ready to gain a passwordHash field, so the credential-persistence seam is pre-cut. app.js is the single integration point where the routes mount and the middleware is installed, keeping the units independently buildable against their contracts and only meeting at wiring."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+
+  - id: re-dc-upload
+    prompt: "Build a file-upload feature: an upload endpoint, a storage adapter, a metadata model, and a background thumbnail-generation worker."
+    correct_floor: decompose
+    rationale:
+      governing_signal: "The seed is an already-layered app (models/ + services/ + api/ + workers/) where each layer has exactly one peer module and a clean inward-pointing dependency line: api -> service -> model, and service -> worker via an enqueue boundary. There is no upload path anywhere, so the four requested pieces map one-to-one onto four existing, separable layers rather than onto one file. The feature does not collapse into a single edit and hides no policy fork — it fans out across established seams, which is the decompose signal."
+      seams: "Four independent contracts, each ownable as its own task: (1) the metadata MODEL — a new sibling to models/document.js holding filename/contentType/size/storageKey/thumbnailKey/status, contract = the record shape; (2) the storage ADAPTER — a brand-new boundary with no peer in the seed (persist/fetch bytes by key), the one truly novel interface; (3) the upload ENDPOINT — a multipart route registered in api/documents.routes.js alongside the existing JSON routes, contract = HTTP in/out; (4) the thumbnail WORKER — a sibling loop to workers/audit.worker.js with its own queue, contract = the job shape it drains plus writing the derived thumbnail back through the storage adapter. The seams are real: the worker depends on the adapter and the model, the endpoint depends on the service which depends on model+adapter+worker-enqueue — each unit has a distinct interface so the units can be built and verified against their own contracts in parallel, then integrated at the service wiring."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+
+  - id: re-dc-audit
+    prompt: "Add an audit-log system: an event model, logging middleware that records mutations, a query API to read the log, and a retention worker that prunes old entries."
+    correct_floor: decompose
+    held_out: true
+    rationale:
+      governing_signal: The prompt names four distinct deliverables joined by 'and' — an event model, logging middleware, a query API, and a retention worker — and the seed is a layered app skeleton (models/ services/ api/ middleware/ workers/) where each of those four maps onto its own directory and its own sibling pattern. The structure makes the decomposition the obvious reading, not a stylistic choice.
+      seams: "Four genuinely separable units, each with a distinct contract and an existing sibling to mirror: (1) an audit-event model in models/ alongside resource.js, owning the event record shape {actor, action, target, timestamp}; (2) logging middleware in middleware/ alongside request-id.js, owning the wrap-the-mutating-routes interface and deciding what a 'mutation' is from the POST/PATCH/DELETE routes in api/resources.routes.js; (3) a query API in api/ alongside resources.routes.js, owning the read-the-log endpoint and its filter params; (4) a retention worker in workers/ alongside cleanup.worker.js, owning the prune-by-age loop and its interval/threshold. The contracts meet at clean boundaries: middleware writes events the model defines, the query API reads them, the worker prunes them — each buildable and verifiable against its own interface, so the work splits into bounded tasks rather than one tangled edit. The seed contains no audit code, so all four units are net-new and independently ownable."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+
+  - id: re-dc-webhooks
+    prompt: "Build a webhook delivery system: a subscription model, a dispatch service, a delivery endpoint, and a retry worker for failed deliveries."
+    correct_floor: decompose
+    rationale:
+      governing_signal: The prompt enumerates four named parts (subscription model, dispatch service, delivery endpoint, retry worker) and the seed already lays them out as four sibling directories — models/, services/, api/, workers/ — each holding a working analog of the part to be built. The structure mirrors the prompt one-to-one, so the decompose shape is unambiguous.
+      seams: "Four genuinely separable units, each with its own contract and an existing sibling that fixes its pattern: (1) models/subscription.js owns the persisted-row shape (targetUrl, event types, signing secret); (2) services/dispatch.service.js owns event->subscription matching and fan-out, depending only on the model's read API; (3) api/deliveries.routes.js owns the outbound HTTP send (signed POST, record response/status) behind the router-registration contract; (4) workers/retry.worker.js owns the failed-delivery re-attempt loop (backoff, max-attempts) behind the enqueue/drain contract. The seams are the import boundaries — dispatch reads the model, the endpoint sends and records, the worker re-drives failures — so the feature splits into four bounded tasks that meet only at those typed edges rather than one coupled change."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+
+  - id: re-dc-cart
+    prompt: "Implement a shopping cart: a cart model, a pricing service, a checkout endpoint, and an inventory-reservation worker."
+    correct_floor: decompose
+    rationale:
+      governing_signal: The seed is a layered app skeleton with four already-separated directories (models/, services/, api/, workers/) each holding a single existing 'order' domain as precedent. The task names exactly four artifacts (cart model, pricing service, checkout endpoint, inventory-reservation worker) that map one-to-one onto those four layers, so the work splits cleanly into distinct units rather than one coherent edit — the decompose shape is unambiguous.
+      seams: "Four bounded units with independent contracts: (1) models/cart.js — a cart aggregate of productId->quantity line items, sibling to models/order.js, talking only to models/catalog.js for product data; (2) services/pricing.service.js — pure pricing over a cart (unitPrice*qty per line, summed), no transport/storage, mirroring order.service.js; (3) api/checkout.routes.js — a POST /checkout endpoint registered in app.js exactly like registerOrderRoutes, calling pricing then enqueuing reservation; (4) workers/reservation.worker.js — a sibling drain-loop to fulfillment.worker.js whose job decrements catalog stock (decrementStock already exists) and releases on shortfall. The model->service->endpoint->worker dependency direction and the existing order precedent define each unit's interface, letting them be built and verified against their own contract; the only shared touchpoints are app.js wiring and the catalog model both the pricing read and the reservation write depend on."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+
+  - id: re-dc-jobqueue
+    prompt: "Build a job queue: a job model, an enqueue API, a worker that processes jobs, and a dead-letter handler for repeatedly-failing jobs."
+    correct_floor: decompose
+    held_out: true
+    rationale:
+      governing_signal: "The seed already ships four distinct layers, each in its own directory with its own contract and an explicit missing slot: models/job.js (record store, no lifecycle fields), services/queue.service.js (stores+counts, no enqueue/claim contract), api/jobs.routes.js (inspection route only, no enqueue endpoint), and workers/runner.js (a bare tick loop that claims nothing and has no failure path). The task names exactly four units — job model, enqueue API, worker, dead-letter handler — and each maps onto a separate seam in the skeleton, so the work is genuinely separable rather than one coherent edit."
+      seams: Model owns the job record shape (must grow status / attempts / lastError); the service owns the enqueue + next-pending-job contract built on the model; the api route owns the HTTP enqueue endpoint built on the service; the worker owns the claim/run/retry loop; the dead-letter handler is its own unit that consumes the attempts threshold the model exposes and routes exhausted jobs aside. Each unit has a distinct interface and can be built and verified against its own contract — the model's lifecycle fields are the shared dependency the service, worker, and dead-letter handler all negotiate across.
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+
+  - id: re-dc-chat
+    prompt: "Add real-time chat: a message model, a websocket gateway, a persistence service, and a presence tracker for online users."
+    correct_floor: decompose
+    rationale:
+      governing_signal: The task names four nouns that map one-to-one onto the four layers the seed already establishes (models/, services/, gateways/, realtime/) and wires through a composition root in app.js. The existing user.js + UserStore + WsServer + createRealtime quartet is a worked example of that layering, so the chat feature is structurally a parallel quartet, not a single edit.
+      seams: "Four separable units with independent contracts: (1) models/message.js — a createMessage factory mirroring createUser, pure, no I/O; (2) services/message-store.js — async save/get/list keyed by id, mirroring UserStore's contract; (3) gateways/chat-gateway.js — registers a 'chat.send' handler on the transport-only WsServer (which owns neither persistence nor presence), depending on the message store's interface; (4) realtime/presence.js — an online-user tracker driven by WsServer's accept/onClose socket lifecycle. The gateway depends on the store's save() and the presence tracker's API as contracts, but each is built and testable behind its own boundary, then composed in app.js/realtime the way notifications already are."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+
+  - id: re-dc-campaign
+    prompt: "Build an email-campaign feature: a campaign model, a template-rendering service, a send endpoint, and a scheduler worker that sends at the scheduled time."
+    correct_floor: decompose
+    held_out: true
+    rationale:
+      governing_signal: The skeleton already physically separates the app into four sibling layers — models/, services/, api/, workers/ — each an existing file with its own export surface. The task prompt enumerates four units (campaign model, template-rendering service, send endpoint, scheduler worker) that map one-to-one onto those directories, so the feature naturally splits into distinct units with their own contracts rather than collapsing into one edit.
+      seams: "Four bounded units along clean interfaces: (1) models/campaign.js owns the campaign record shape (subject/templateId/audience/scheduledAt) and the in-memory store API; (2) services/template.service.js owns rendering — it reads a campaign + template and returns subject/body, depending only on the model's getter; (3) api/campaigns.routes.js owns the send endpoint — it calls the service to render and the sender to dispatch, then mutates status, depending on service + model but not on the worker; (4) workers/digest.worker.js owns the scheduler tick — it polls scheduledAt and triggers send, depending on the model's query and the send path. Each seam is a typed hand-off (campaign row -> rendered email -> HTTP send -> scheduled trigger), so the units can be built and verified against their own contract in parallel, with integration limited to those four hand-offs."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true

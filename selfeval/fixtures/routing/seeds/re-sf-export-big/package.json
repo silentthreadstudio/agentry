@@ -1,0 +1,6 @@
+{
+  "name": "report-export",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/export.js"
+}

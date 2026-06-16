@@ -48,11 +48,15 @@ export interface RoutingLabels {
 /**
  * One labeled routing task — the ground truth for the self-eval. `correctFloor` is the process the conducting
  * rubric's INTENT prescribes; the probe compares it to what the conductor's BEHAVIOR actually dispatched.
+ *
+ * `heldOut` marks a task reserved for the held-out evaluation slice (default `false` when the YAML omits
+ * `held_out`); it is parsed but never gates loading — the loader validates structure, the probe decides splits.
  */
 export interface RoutingTask {
   id: string;
   prompt: string;
   correctFloor: Shape;
+  heldOut: boolean;
   trap?: Trap;
   rationale: RoutingRationale;
   labels: RoutingLabels;
@@ -70,7 +74,7 @@ const SHAPES: ReadonlySet<string> = new Set<Shape>(SHAPES_BY_WEIGHT);
 const TRAPS: ReadonlySet<string> = new Set<Trap>(["must-escalate", "must-not-over-orchestrate"]);
 
 const MIN_TASKS = 6;
-const MAX_TASKS = 8;
+const MAX_TASKS = 60;
 
 /** Floors at or above `spec-first` (i.e. NOT one-shot) — a must-escalate trap's floor must clear this bar. */
 const ESCALATED_FLOORS: ReadonlySet<Shape> = new Set<Shape>(["spec-first", "decompose"]);
@@ -78,7 +82,7 @@ const ESCALATED_FLOORS: ReadonlySet<Shape> = new Set<Shape>(["spec-first", "deco
 /**
  * Parse + validate the routing fixture at `path` into `RoutingTask[]`. THROWS a {@link FixtureError} with a
  * specific message on the first violation. The rules (AC1):
- *   1. the file parses to `{version, labeling, tasks[]}` with 6–8 tasks;
+ *   1. the file parses to `{version, labeling, tasks[]}` with MIN_TASKS–MAX_TASKS tasks;
  *   2. each task has a non-empty `prompt`, a `correct_floor ∈ Shape`, and a STRUCTURED `rationale`
  *      (a mapping with a `governing_signal` plus the floor-appropriate evidence keys — never a bare string);
  *   3. ≥1 must-escalate trap (`trap: must-escalate` with `correct_floor` ≥ spec-first) AND ≥1 trivial
@@ -150,6 +154,8 @@ function parseTask(value: unknown, index: number, path: string): RoutingTask {
   }
   const correctFloor = correctFloorRaw as Shape;
 
+  const heldOut = parseHeldOut(obj.held_out, where, path);
+
   let trap: Trap | undefined;
   if (obj.trap !== undefined) {
     const trapRaw = requireString(obj.trap, `${where}.trap`, path);
@@ -164,9 +170,23 @@ function parseTask(value: unknown, index: number, path: string): RoutingTask {
   const rationale = parseRationale(obj.rationale, correctFloor, trap, where, path);
   const labels = parseLabels(obj.labels, where, path);
 
-  const task: RoutingTask = { id, prompt, correctFloor, rationale, labels };
+  const task: RoutingTask = { id, prompt, correctFloor, heldOut, rationale, labels };
   if (trap !== undefined) task.trap = trap;
   return task;
+}
+
+/**
+ * Parse the OPTIONAL `held_out` flag — `true` marks a task for the held-out slice; absent or `false` means
+ * not held out. Strict on type (a non-boolean is a fixture bug, surfaced loudly), permissive on absence.
+ */
+function parseHeldOut(value: unknown, where: string, path: string): boolean {
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") {
+    throw new FixtureError(
+      `${path}: ${where}.held_out must be a boolean when present, got ${describe(value)}`,
+    );
+  }
+  return value;
 }
 
 /** The structured-evidence keys a rationale can carry (beyond `governing_signal`) — ≥1 proves it isn't prose. */

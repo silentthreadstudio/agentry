@@ -17,6 +17,21 @@ import { writeFileSync } from "node:fs";
 import type { Shape } from "./shape.ts";
 import { SHAPES_BY_WEIGHT } from "./shape.ts";
 
+/**
+ * The multi-run outcome for one task (the variance unit). When the probe runs each task `runs` times it
+ * collects `runs` dispatched shapes here (a degenerate repeat ⇒ `null` for that index); the single-run case
+ * (`runs === 1`) carries exactly one shape, so `shapes` collapses to `[dispatched]` and the variance readouts
+ * degenerate to the point estimate. The per-run accuracy distribution reads the SHAPE AT EACH RUN INDEX across
+ * tasks, so `shapes` is index-aligned: `shapes[i]` is task's shape on run `i` for every task.
+ */
+export interface TaskRuns {
+  taskId: string;
+  mustEscalate: boolean;
+  labeledFloor: Shape;
+  /** The dispatched shape per run (length `runs`); a degenerate repeat is `null`. */
+  shapes: readonly (Shape | null)[];
+}
+
 /** The early-signal caveat (AC4): N=6–8 is a DIRECTIONAL read, not a statistically powered estimate. PINNED. */
 export const EARLY_SIGNAL_CAVEAT =
   "Early-signal (N=6–8): a directional read of where the rubric over- vs under-routes (~1–2 cases per cell), " +
@@ -69,6 +84,50 @@ export interface PassFail {
 }
 
 /**
+ * One row of the per-task stability table (multi-run variance). For a task run `runs` times:
+ *   - `modalShape` is the most frequent dispatched shape across the runs (ties broken by process-weight order,
+ *     lightest first — a deterministic, documented tie-break; `null` only when EVERY run was degenerate);
+ *   - `stability` is the fraction of runs whose shape equals `modalShape` (1.0 = routed identically every time;
+ *     < 1.0 = the router is noisy on this task). Degenerate runs count against stability (mode is over shapes,
+ *     not over null);
+ *   - `correctFraction` is the fraction of runs whose shape equals the labeled floor — the noise-aware per-task
+ *     hit rate that feeds the expected-accuracy point estimate.
+ */
+export interface TaskStability {
+  taskId: string;
+  labeledFloor: Shape;
+  /** The most frequent shape across the runs, or `null` if every run was degenerate. */
+  modalShape: Shape | null;
+  /** Fraction of runs equal to `modalShape` (0 when every run was degenerate). */
+  stability: number;
+  /** Fraction of runs equal to the labeled floor. */
+  correctFraction: number;
+}
+
+/**
+ * The overall accuracy with error bars across the `runs` repeats (additive, multi-run only). Two complementary
+ * views (see the Spec): the per-run accuracy DISTRIBUTION (`mean`/`std`/`min`/`max` of the k single-run
+ * accuracies) shows run-to-run spread; `expected` (mean over tasks of `correctFraction`) is the noise-aware
+ * point estimate. `runs` records how many repeats produced the distribution.
+ */
+export interface AccuracyDistribution {
+  /** Number of repeats each task was run (k). */
+  runs: number;
+  /** The per-run accuracies, one per run index — `accuracy_i = (#tasks whose run-i shape == label) / N`. */
+  perRunAccuracy: readonly number[];
+  /** Mean of `perRunAccuracy`. */
+  accuracyMean: number;
+  /** Population standard deviation of `perRunAccuracy` (0 when every run scored identically). */
+  accuracyStd: number;
+  /** Min of `perRunAccuracy`. */
+  accuracyMin: number;
+  /** Max of `perRunAccuracy`. */
+  accuracyMax: number;
+  /** The noise-aware point estimate: mean over tasks of `correctFraction`. */
+  expectedAccuracy: number;
+}
+
+/**
  * The emitted artifact. `condition` describes the eval's terminal state:
  *   - `"aborted"` — a control gate fired; `abortVerdict` carries the pinned verdict; `accuracy` is `null` and
  *     the matrix / over/under-route readouts / pass-fail are ABSENT (AC8: no number when a gate fires).
@@ -92,6 +151,15 @@ export interface RoutingArtifact {
   successCondition?: SuccessCondition;
   /** Pass/fail against the condition (AC9b) — present only on a scored run WITH a threshold X. */
   passFail?: PassFail;
+  /**
+   * MULTI-RUN VARIANCE (additive). Present only on a scored run with `runs > 1`; ABSENT when `runs === 1` so
+   * the single-run artifact is byte-for-byte today's shape. `accuracyDistribution` is the run-to-run accuracy
+   * spread (error bars) + the noise-aware expected accuracy; `stabilityTable` is the per-task variance census;
+   * `noisyTasks` is the ids whose `stability < 1.0` (a router that routed inconsistently on that task).
+   */
+  accuracyDistribution?: AccuracyDistribution;
+  stabilityTable?: TaskStability[];
+  noisyTasks?: string[];
 }
 
 /** Index of a shape in the weight order — used to read over- vs under-route direction. */
@@ -113,6 +181,7 @@ function weightIndex(shape: Shape): number {
 export function buildScoredArtifact(
   outcomes: readonly RoutingOutcome[],
   threshold: number | null,
+  taskRuns?: readonly TaskRuns[],
 ): RoutingArtifact {
   const total = outcomes.length;
   const correct = outcomes.filter((o) => o.dispatched !== null && o.dispatched === o.labeledFloor).length;
@@ -156,7 +225,96 @@ export function buildScoredArtifact(
       zeroTrapUnderroute,
     };
   }
+
+  // Multi-run variance is ADDITIVE: only attached when the probe ran each task more than once. With a single
+  // run, the fields stay absent so the artifact is identical to today's shape (Spec backward-compat clause).
+  if (taskRuns !== undefined && taskRuns.length > 0 && (taskRuns[0]!.shapes.length) > 1) {
+    const stabilityTable = taskRuns.map(taskStability);
+    artifact.stabilityTable = stabilityTable;
+    artifact.noisyTasks = stabilityTable.filter((t) => t.stability < 1).map((t) => t.taskId);
+    artifact.accuracyDistribution = accuracyDistribution(taskRuns, stabilityTable);
+  }
+
   return artifact;
+}
+
+/**
+ * Per-task variance row (multi-run). The mode is taken over the NON-degenerate shapes only (a degenerate run
+ * is never "the most common shape"); ties are broken by process-weight order (lightest first) so the readout
+ * is deterministic and reproducible. `stability` and `correctFraction` divide by the FULL run count (degenerate
+ * runs count against both — a run that didn't route cleanly is neither stable nor correct).
+ */
+function taskStability(t: TaskRuns): TaskStability {
+  const runs = t.shapes.length;
+  const counts = new Map<Shape, number>();
+  for (const s of t.shapes) {
+    if (s === null) continue;
+    counts.set(s, (counts.get(s) ?? 0) + 1);
+  }
+
+  let modalShape: Shape | null = null;
+  let modalCount = 0;
+  // Iterate in weight order so a tie resolves to the lighter shape deterministically.
+  for (const shape of SHAPES_BY_WEIGHT) {
+    const c = counts.get(shape) ?? 0;
+    if (c > modalCount) {
+      modalCount = c;
+      modalShape = shape;
+    }
+  }
+
+  const stability = runs === 0 ? 0 : modalCount / runs;
+  const correctHits = t.shapes.filter((s) => s !== null && s === t.labeledFloor).length;
+  const correctFraction = runs === 0 ? 0 : correctHits / runs;
+  return { taskId: t.taskId, labeledFloor: t.labeledFloor, modalShape, stability, correctFraction };
+}
+
+/**
+ * The overall accuracy distribution across the `runs` repeats. The per-run accuracy reads the shape at each run
+ * INDEX across all tasks (`accuracy_i = #correct-at-run-i / N`), so it requires the per-task `shapes` arrays to
+ * be index-aligned (they are: every task is run the same `runs` times in the same order). `expectedAccuracy` is
+ * the mean over tasks of `correctFraction` — the noise-aware point estimate, independent of run alignment.
+ */
+function accuracyDistribution(
+  taskRuns: readonly TaskRuns[],
+  stabilityTable: readonly TaskStability[],
+): AccuracyDistribution {
+  const n = taskRuns.length;
+  const runs = n === 0 ? 0 : taskRuns[0]!.shapes.length;
+
+  const perRunAccuracy: number[] = [];
+  for (let i = 0; i < runs; i++) {
+    const correctAtI = taskRuns.filter((t) => {
+      const s = t.shapes[i];
+      return s !== null && s !== undefined && s === t.labeledFloor;
+    }).length;
+    perRunAccuracy.push(n === 0 ? 0 : correctAtI / n);
+  }
+
+  const accuracyMean = mean(perRunAccuracy);
+  const accuracyStd = std(perRunAccuracy, accuracyMean);
+  const expectedAccuracy = mean(stabilityTable.map((t) => t.correctFraction));
+  return {
+    runs,
+    perRunAccuracy,
+    accuracyMean,
+    accuracyStd,
+    accuracyMin: perRunAccuracy.length === 0 ? 0 : Math.min(...perRunAccuracy),
+    accuracyMax: perRunAccuracy.length === 0 ? 0 : Math.max(...perRunAccuracy),
+    expectedAccuracy,
+  };
+}
+
+/** Arithmetic mean (0 for an empty set). */
+function mean(xs: readonly number[]): number {
+  return xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length;
+}
+
+/** Population standard deviation about `m` (0 for an empty set, and 0 when every value equals the mean). */
+function std(xs: readonly number[], m: number): number {
+  if (xs.length === 0) return 0;
+  const variance = xs.reduce((acc, x) => acc + (x - m) ** 2, 0) / xs.length;
+  return Math.sqrt(variance);
 }
 
 /**

@@ -1,0 +1,7 @@
+{
+  "name": "re-sf-ratelimit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/routes/auth.js"
+}
