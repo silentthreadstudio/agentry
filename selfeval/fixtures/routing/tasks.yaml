@@ -82,11 +82,17 @@ tasks:
     prompt: |
       Add pagination to the users API across the HTTP handler, the service layer, and the data-access
       layer, with limit/offset query params and a total-count response header.
-    correct_floor: decompose
+    # re-labeled 2026-06-15: decompose -> spec-first. 3 TIGHTLY-COUPLED thin layers = ONE coherent change
+    # threaded through coupled seams (one contract/return-shape propagates handler->service->dao), NOT
+    # separable units warranting parallel task contracts. The pagination-semantics fork vetoes one-shot.
+    # Borderline vs decompose (judgment.md cites this prompt as decompose under a 'clean independent seams'
+    # assumption the seed deliberately violates); 2 independent labelers concur spec-first for THIS seed.
+    correct_floor: spec-first
     rationale:
-      governing_signal: "Scope: many files/modules with contract seams · Specificity: clear"
-      seams: "handler -> service -> data-access — three layers, each a bounded contract; parallel-safe if owns are disjoint"
-    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+      governing_signal: "Decision-content: pagination-semantics fork vetoes one-shot · Scope: 3 coupled thin layers, one coherent change"
+      decision_hidden: "pagination semantics — param names (limit/offset), default + max page size, where total-count lives (header vs body)"
+      consequence: "guessing the semantics ships a wrong, fragile API contract that clients build against"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
 
   - id: routing-notifications-feature
     prompt: |
