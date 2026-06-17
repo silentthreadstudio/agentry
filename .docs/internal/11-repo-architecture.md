@@ -63,7 +63,7 @@ protocol or validation. Keep the dep *count* small and pure-JS; otherwise, use w
 The **single source of truth** for every structured shape, in code, tested:
 - artifact frontmatter (Spec · Plan · Task · ADR · Review · Journal) — zod schemas + inferred types
 - memory records (Fact · Episode) + the enums (`MemoryType` · `Scope` · `Status` · `Shape`)
-- the event-log + review-sidecar shapes (doc 08 seams)
+- the event-log + review-sidecar shapes (doc 10 seams)
 - **No runtime dependencies.** Imported by `memory`, `benchmark`, the `check-plugin` script, and (later)
   `workbench`, so all agree on one contract. (Justified: ≥3 consumers today — past the YAGNI line.)
 
@@ -85,7 +85,7 @@ packages/memory/src/
 Domain is free of MCP/FS concerns; tools are thin adapters. **Logic in code, not prose.**
 
 ### `@agentry/workbench` — V2 (slot reserved)
-React + Vite + TS + a thin Node service over the files (doc 08). Builds separately, runs locally — **not
+React + Vite + TS + a thin Node service over the files (doc 10). Builds separately, runs locally — **not
 on the zero-install path**, so it may use what it needs. Built when V1 runs.
 
 ---

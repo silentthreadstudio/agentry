@@ -119,7 +119,7 @@ id: T-003
 title: Add session middleware
 status: todo            # todo | in-progress | blocked | in-review | done
 owner: implementer
-lockedBy:               # agent id while status=in-progress → Workbench renders read-only (doc 08)
+lockedBy:               # agent id while status=in-progress → Workbench renders read-only (doc 10)
 satisfies: [AC2, AC3]   # traceability → spec criteria (powers coverage check)
 deps: [T-001]           # serialize only where contracts overlap
 contract:
@@ -136,7 +136,7 @@ contract:
 
 - `deps` + `contract.owns` **must** be structured → parallel-safety is mechanical, not parsed from prose.
 - `status` drives the **Workbench lock**: `in-progress` → file renders read-only (`lockedBy` names the
-  agent); nobody edits a task an agent already started (doc 08 §3).
+  agent); nobody edits a task an agent already started (doc 10 §3).
 - **`Gotchas` is the memory→task bridge.** At creation, recall pre-fills warnings for the files in
   `contract.owns`; during the run, new ones are appended and graduate back into memory. The second time
   you touch a file, the task is *born with yesterday's warning in it.* This is where the moat pays off.
@@ -231,8 +231,8 @@ this time." Every entry cites the run that surfaced it.
         T-001.md
       reviews/            # verdicts
       journal.md          # outcome → feeds episodic memory
-      events.jsonl        # append-only event log (agent started · on node X · spent N · done) — Workbench tails it (doc 08 §5)
-      .review/            # comment/approve sidecars: <gate>.annotations.json (doc 08 §4)
+      events.jsonl        # append-only event log (agent started · on node X · spent N · done) — Workbench tails it (doc 10 §5)
+      .review/            # comment/approve sidecars: <gate>.annotations.json (doc 10 §4)
   memory/                 # text-as-truth store + derived DB (.gitignored)
 ```
 
@@ -240,7 +240,7 @@ this time." Every entry cites the run that surfaced it.
 the Workbench renders a folder as a feature) · one file per task (independently lockable/statusable/
 parallel) · ADRs graduate *out* of the transient work folder into durable `decisions/`.
 
-**Workbench seams (V1 provides; V2 builds on — doc 08 §6):** every editable artifact carries a
+**Workbench seams (V1 provides; V2 builds on — doc 10 §6):** every editable artifact carries a
 `version` (content-hash) in its frontmatter for **optimistic concurrency** (a stale save is rejected, not
 silently overwritten); tasks carry `lockedBy` (§3.3); the `events.jsonl` log and `.review/` sidecars are
 the live + review contracts. These four data contracts are the only thing V1 owes the future Workbench.

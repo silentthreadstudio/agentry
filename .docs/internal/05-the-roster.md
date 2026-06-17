@@ -1,8 +1,9 @@
 # 05 — The Roster: Dev Team + Product Team
 
-> **Status:** Locked (iteration 1) · **Date:** 2026-06-13 · **Scope:** the specialists Agentry ships —
-> their roles, their craft skills, the agent↔skill pairing, and how they adapt to the user's environment.
-> "Well-prepared, benchmarked specialists" made concrete.
+> **Status:** Locked + capability layer executed · **Date:** 2026-06-13 (roster) · 2026-06-15 (capability
+> layer merged in from former 05.1) · **Scope:** the specialists Agentry ships — their roles, craft skills,
+> the agent↔skill pairing, how they adapt to the user's environment (§0–§8), **and** the verified plugin
+> capability layer: frontmatter standard + lifecycle-event seam (§9).
 >
 > Depends on: the brain (04 — conductor, guide-don't-cage), content (01), memory (02–03).
 
@@ -160,6 +161,55 @@ is everything) · the **MCP tool shapes** + type enum + priming-hook implementat
 
 ---
 
-_Signed-off (iteration 1): the roster is locked — a 6-strong dev team and a 2-strong product team, one
-conductor, all capability-first and adaptive to the user's environment. The next work is depth: the
-actual skill content._
+---
+
+## 9. The capability layer (frontmatter + lifecycle — executed)
+
+*(Merged from the former doc 05.1. Born from dogfooding: two capability bugs surfaced — agent frontmatter
+silently dropping fields, and per-agent hooks blocked for plugins — so this records the **verified** matrix.
+Governing principle: **a capability we *assume* but don't *verify* is a silent failure** — parse the
+frontmatter, don't eyeball it.)*
+
+### 9a. Plugin-subagent capability matrix
+
+Agentry ships as a plugin (the repo root *is* the plugin), so only fields that apply to **plugin subagents**
+are usable:
+
+| Field | Plugin subagent? | Agentry uses it |
+| :-- | :-- | :-- |
+| `name`, `description` | ✅ required | ✅ |
+| `tools` / `disallowedTools` | ✅ | ✗ (capability-first — no allowlists) |
+| `model` | ✅ | ✅ `inherit` |
+| `skills` | ✅ — **injects full skill content at startup** | ✅ (the craft-preload guarantee) |
+| `color` | ✅ (8 valid colors) | ✅ distinct per agent |
+| `memory` | ✅ | ✗ deliberately — `@agentry/memory` is the single substrate |
+| `isolation: worktree` | ✅ | ✅ situationally (parallel implementers) |
+| **`hooks`** / **`mcpServers`** / **`permissionMode`** | ❌ ignored for plugin subagents | plugin-level hooks (§9c); MCP in `plugin.json` |
+
+### 9b. The frontmatter standard (every agent)
+
+Clean `key: value` lines first, **`description: |` (block scalar) last** — a multi-line `description` with
+`<example>` blocks that is *not* a block scalar breaks YAML at the first inline colon and **silently drops
+every field after it** (`model`/`color`/`skills`). The whole roster once ran with no preloaded skills this
+way. `skills:` is the craft-preload guarantee (full content injected at startup). Colors: architect=blue ·
+designer=purple · explorer=cyan · implementer=green · librarian=yellow · product-owner=orange ·
+researcher=pink · verifier=red.
+
+### 9c. Lifecycle events → the Workbench seam
+
+The Workbench's "see agents working" seam (doc 10) needs the run's agent lifecycle in `events.jsonl`.
+Per-agent frontmatter hooks are out; the mechanism is **plugin-level hooks in `hooks/hooks.json`**:
+`SubagentStart` → `{kind:"agent-started", agent}`, `SubagentStop` → `{kind:"agent-done", …}`, dep-free
+`.mjs` (the `session-start-prime.mjs` template), silent in non-Agentry repos. **Hard-won caveat:** every
+event must nest under a **top-level `"hooks"` key** — the bare form parses as valid JSON but loads as
+*nothing* (no hook fires, no error); `check-plugin` now hard-fails it.
+
+> **Status: executed + verified** through `/agentry:go` dogfooding — `ec5a2e8` (frontmatter), `bd68668` +
+> `33739dd` (lifecycle events + the hooks-wrapper gate), `dd5e6e5` (the roster-wide fragility audit:
+> gate-skip sweep of all 8 agents + 13 skills, + `judgment.md`/`search-craft.md` references).
+
+---
+
+_Signed-off: the roster is locked — a 6-strong dev team and a 2-strong product team, one conductor, all
+capability-first and adaptive to the user's environment, with the frontmatter + lifecycle capability layer
+verified live. The standing work is depth: the actual skill content._

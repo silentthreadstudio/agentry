@@ -29,7 +29,7 @@ durable memory). **The repo root *is* the plugin**; TypeScript lives under `pack
 - **Dist-lockstep** — any `packages/memory/src` change → rebuild + commit `dist/index.js` in the same change.
 - **Reload-gated** — agent/command/skill/hook/MCP changes register only on reload/restart; verify live after a restart.
 - **Run `node scripts/check-plugin.mjs` before every commit** (it catches namespacing + structure drift).
-- **Acceptance-gated phases** (doc 10) — never advance a phase on vibes.
+- **Acceptance-gated phases** (doc 12) — never advance a phase on vibes.
 - **Dogfood from Phase 2 on** — build through `/agentry:go` where it helps; log friction as Evolution entries (doc 01 §5).
 
 ## Commits
@@ -37,4 +37,4 @@ durable memory). **The repo root *is* the plugin**; TypeScript lives under `pack
 End commit messages with:
 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
-When in doubt about structure, the `architecting`/`planning` skills and doc 09 govern.
+When in doubt about structure, the `architecting`/`planning` skills and doc 11 govern.

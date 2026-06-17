@@ -113,7 +113,7 @@ documented decision to rescope a regime with the measured reason.
 
 ## Phase 5 — Workbench V2
 
-**Goal:** the review surface (doc 08) over real artifacts.
+**Goal:** the review surface (doc 10) over real artifacts.
 
 **Tasks**
 - [ ] Wire the V1 seams live: `events.jsonl` emission in the conductor/nodes · review-sidecar ingestion at
