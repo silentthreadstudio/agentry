@@ -114,14 +114,18 @@ async function runAndExtract(
   // bypass perms so the conductor can dispatch headless inside the isolated sandbox. Without pluginDir
   // (e.g. replay tests), pass the bare prompt unchanged — the recorded stream already encodes the routing.
   const prompt = pluginDir !== undefined ? `/agentry:go ${task.prompt}${AUTOPILOT_DIRECTIVE}` : task.prompt;
-  // CAPPED / no-kill mode (autopilot-design §3): do NOT early-terminate on the first dispatch — let the
-  // conductor run and emit its work-folder routing artifacts (the shape input), terminating at settle or cap.
+  // ARTIFACT-AWARE early-terminate (autopilot-design §3): do NOT kill on the first dispatch — instead poll the
+  // work folder and terminate the moment the routing shape is DETERMINED (plan/tasks ⇒ decompose; spec-only
+  // past a grace ⇒ spec-first), with `timeoutMs` as the hard-ceiling fallback. This both reads the shape more
+  // accurately (no slow roll mis-killed as one-shot before it writes) AND never builds the feature. It
+  // supersedes the old `noKillOnDispatch` capped mode for live routing runs. The shape itself is still read by
+  // `extractShape` AFTER the run from the same work folder — this only changes WHEN the child is stopped.
   const result = await runner.run(
     {
       prompt,
       model,
       streamPath,
-      noKillOnDispatch: true,
+      terminateOnArtifact: true,
       ...(pluginDir !== undefined ? { pluginDir, permissionMode: "bypassPermissions" } : {}),
     },
     sandbox,

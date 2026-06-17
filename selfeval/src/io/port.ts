@@ -82,9 +82,21 @@ export interface Invocation {
    */
   noKillOnDispatch?: boolean;
   /**
-   * Per-invocation hard time cap (ms) for the capped/no-kill run — so a `decompose` build does not run
-   * unbounded. The child is killed at the cap if it has not settled. Only consulted in {@link noKillOnDispatch}
-   * mode; the kill-on-dispatch path settles on dispatch and ignores it. Defaults to the runner's cap.
+   * ARTIFACT-AWARE early-terminate (autopilot-design §3): when true the runner POLLS the sandbox work folder
+   * (`<workingDir>/.agentry/work/*`) while the child runs and kills it as soon as the routing shape is
+   * DETERMINED — `plan.md`/non-empty `tasks/` ⇒ decompose (kill at once); `spec.md`-only past a grace window
+   * ⇒ spec-first. A run that writes no artifact and settles on its own is one-shot/degenerate (never force-
+   * killed). This terminates on the ARTIFACT, not the dispatch, so it reads the shape more accurately AND
+   * kills earlier (never building the feature). Supersedes {@link noKillOnDispatch} for live routing runs;
+   * {@link timeoutMs} remains the hard-ceiling fallback. Absent/false ⇒ governed by `noKillOnDispatch`.
+   */
+  terminateOnArtifact?: boolean;
+  /**
+   * Per-invocation HARD CEILING (ms) — the fallback that kills the child if no dispatch/artifact/settle ends
+   * the run first, so a `decompose` build cannot run unbounded. Consulted in {@link noKillOnDispatch} and
+   * {@link terminateOnArtifact} modes; the kill-on-dispatch path settles on dispatch and ignores it. Defaults
+   * to the runner's ceiling (~300s — raised so a slow stochastic roll has room to write its artifact before
+   * artifact-aware termination kicks in).
    */
   timeoutMs?: number;
 }

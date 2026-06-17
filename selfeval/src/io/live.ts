@@ -14,7 +14,8 @@
 
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import type { Invocation, RunResult, Runner, Sandbox } from "./port.ts";
 import { producedTreeNonEmpty } from "./sandbox.ts";
@@ -83,69 +84,162 @@ const realSpawn: SpawnFn = (args, sandbox) =>
   spawn("claude", args, { cwd: sandbox.workingDir, env: sandbox.env });
 
 /** Options governing how a captured stream terminates. */
-interface CaptureOptions {
+export interface CaptureOptions {
   /**
    * CAPPED / no-kill mode (autopilot-design §3): when true the run is NOT killed on the first `Agent`
    * dispatch — it runs to settle (its trailing `result` envelope) or until {@link timeoutMs}, so the
    * conductor can emit its work-folder routing artifacts. Default false ⇒ kill-on-first-dispatch.
    */
   noKillOnDispatch?: boolean;
-  /** Hard time cap (ms) for the capped run; the child is killed at the cap if it has not settled. */
+  /**
+   * ARTIFACT-AWARE early-terminate (autopilot-design §3): when true, poll the sandbox work folder while the
+   * child runs and kill it as soon as the routing SHAPE is DETERMINED (plan/tasks ⇒ decompose; spec-only
+   * past a grace ⇒ spec-first). Supersedes {@link noKillOnDispatch} for live routing runs — it terminates on
+   * the artifact, not the dispatch, so it both reads more accurately AND kills earlier/cheaper. {@link timeoutMs}
+   * stays the hard ceiling fallback. Default false ⇒ behavior is governed by {@link noKillOnDispatch}.
+   */
+  terminateOnArtifact?: boolean;
+  /** Hard ceiling (ms): the child is killed at this cap regardless of mode if it has not settled/terminated. */
   timeoutMs?: number;
+  /** Polling interval (ms) for the artifact watch; defaults to {@link DEFAULT_POLL_MS}. Test-injectable. */
+  pollMs?: number;
+  /** Grace window (ms) after spec.md-only appears, awaiting plan/tasks before settling on spec-first. */
+  graceMs?: number;
 }
 
-/** Default per-invocation time cap for the capped/no-kill run (autopilot-design §3: ~180–210s). */
-export const DEFAULT_CAP_MS = 180_000;
+/** Default hard ceiling for a capped/artifact-aware run — the fallback when no artifact ever determines a shape. */
+export const DEFAULT_CAP_MS = 300_000;
+
+/** Default poll interval for the artifact watch (autopilot-design §3: every few seconds). */
+export const DEFAULT_POLL_MS = 4_000;
+
+/** Default grace window after spec.md-only before concluding spec-first (autopilot-design §3: ~45s). */
+export const DEFAULT_GRACE_MS = 45_000;
+
+/** True iff `dir` exists, is a directory, and holds at least one entry (mirrors extract.ts's `dirNonEmpty`). */
+function dirNonEmpty(dir: string): boolean {
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return false;
+  return readdirSync(dir).length > 0;
+}
+
+/** The routing artifact evidence the poll watches for under `<workingDir>/.agentry/work/*`. */
+interface WorkArtifacts {
+  /** Any `plan.md` exists, OR any `tasks/` dir is non-empty (⇒ the run decomposed) — the DETERMINED signal. */
+  hasDecompose: boolean;
+  /** Any `spec.md` exists (⇒ the work was spec'd) — opens the grace window unless decompose already fired. */
+  hasSpec: boolean;
+}
+
+/**
+ * Scan `<workingDir>/.agentry/work/*` for the routing artifacts the conductor writes — MIRRORS the mapping
+ * `extract.ts` reads after the run, so the live kill-when-determined matches the post-run shape verdict. Only
+ * `spec.md` / `plan.md` / `tasks/` count; the primer hook's own `events.jsonl` log shares the folder (a known
+ * naming collision) and is IGNORED here, exactly as the extractor ignores it. Tolerates a missing work root
+ * (a not-yet-written / one-shot run scans clean). Pure fs reads.
+ */
+function scanWorkArtifacts(workingDir: string): WorkArtifacts {
+  const workRoot = join(workingDir, ".agentry", "work");
+  if (!existsSync(workRoot) || !statSync(workRoot).isDirectory()) {
+    return { hasDecompose: false, hasSpec: false };
+  }
+  let hasDecompose = false;
+  let hasSpec = false;
+  for (const slug of readdirSync(workRoot)) {
+    const slugDir = join(workRoot, slug);
+    if (!statSync(slugDir).isDirectory()) continue;
+    // events.jsonl is the primer hook's log, not a routing artifact — never counted (only plan/tasks/spec are).
+    if (existsSync(join(slugDir, "plan.md")) || dirNonEmpty(join(slugDir, "tasks"))) hasDecompose = true;
+    if (existsSync(join(slugDir, "spec.md"))) hasSpec = true;
+  }
+  return { hasDecompose, hasSpec };
+}
 
 /**
  * Stream-capture spawn (ADR-002/005): run `claude -p --output-format stream-json --verbose`, tee stdout
  * line-by-line to `streamPath`, and observe the trailing `result.subtype` when the run settles.
  *
- * Two termination modes:
+ * Three termination modes:
  *   - DEFAULT (kill-on-dispatch): `proc.kill()` the moment the first `tool_use name:"Agent"` event is seen
  *     (OQ2 early-terminate). A no-dispatch run is never killed; it closes normally and its `result` envelope
  *     is observed. A killed run's partial stream lacks the trailing `result`, so `resultSubtype` is undefined.
  *   - CAPPED ({@link CaptureOptions.noKillOnDispatch}): never kill on dispatch — let the conductor run and
  *     emit its work-folder artifacts; terminate at process settle OR at `timeoutMs` (kill the child at the
- *     cap if it has not closed). This is the mode the routing probe uses (autopilot-design §3).
+ *     cap if it has not closed).
+ *   - ARTIFACT-AWARE ({@link CaptureOptions.terminateOnArtifact}): poll the sandbox work folder while the
+ *     child runs and kill as soon as the routing shape is DETERMINED — `plan.md`/non-empty `tasks/` ⇒
+ *     decompose (kill at once); `spec.md`-only ⇒ open a grace window, killing on spec-first if plan/tasks
+ *     never appear within it (or earlier on decompose if they do). A run that writes no artifact and settles
+ *     on its own is one-shot/degenerate (the natural close, never force-killed). `timeoutMs` is the hard
+ *     ceiling fallback. This supersedes `noKillOnDispatch` for live routing runs (autopilot-design §3).
  *
  * Resolves with the observed `result.subtype` (or undefined) once the child closes.
  *
  * `spawnFn` is injected only in tests (a fake child driving a synthetic NDJSON stream); production uses the
  * real `claude` spawn.
  */
-function spawnClaudeStreaming(
+export function spawnClaudeStreaming(
   args: string[],
   sandbox: Sandbox,
   streamPath: string,
   options: CaptureOptions = {},
   spawnFn: SpawnFn = realSpawn,
 ): Promise<string | undefined> {
-  const noKill = options.noKillOnDispatch === true;
+  const onArtifact = options.terminateOnArtifact === true;
+  const noKill = onArtifact || options.noKillOnDispatch === true; // artifact mode also never kills on dispatch
   const capMs = options.timeoutMs ?? DEFAULT_CAP_MS;
+  const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
+  const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
   return new Promise((resolve, reject) => {
     const proc = spawnFn(args, sandbox);
     const file = createWriteStream(streamPath);
     let buffer = "";
-    let terminated = false; // we have killed the child (dispatch or cap) — stop classifying further lines
+    let terminated = false; // we have killed the child (dispatch / artifact / cap) — stop classifying lines
     let resultSubtype: string | undefined;
     let capTimer: ReturnType<typeof setTimeout> | undefined;
+    let pollTimer: ReturnType<typeof setInterval> | undefined;
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
+    let graceArmed = false; // a spec.md-only sighting has opened the grace window awaiting plan/tasks
 
-    const clearCap = (): void => {
-      if (capTimer !== undefined) {
-        clearTimeout(capTimer);
-        capTimer = undefined;
-      }
+    const clearTimers = (): void => {
+      if (capTimer !== undefined) clearTimeout(capTimer);
+      if (pollTimer !== undefined) clearInterval(pollTimer);
+      if (graceTimer !== undefined) clearTimeout(graceTimer);
+      capTimer = pollTimer = graceTimer = undefined;
     };
 
-    // CAPPED mode: arm a hard cap so a decompose build cannot run unbounded; kill the child if it overruns.
+    /** Kill the child once and latch `terminated` so no further line/poll re-classifies a settling run. */
+    const killOnce = (): void => {
+      if (terminated) return;
+      terminated = true;
+      clearTimers();
+      proc.kill();
+    };
+
+    // CAPPED / ARTIFACT mode: a hard ceiling so a build cannot run unbounded; kill the child if it overruns.
     if (noKill) {
-      capTimer = setTimeout(() => {
-        terminated = true;
-        proc.kill();
-      }, capMs);
-      // Don't keep the event loop alive solely for the cap timer (Node child already does that).
-      (capTimer as { unref?: () => void }).unref?.();
+      capTimer = setTimeout(killOnce, capMs);
+      (capTimer as { unref?: () => void }).unref?.(); // don't keep the loop alive solely for the ceiling
+    }
+
+    // ARTIFACT-AWARE mode: poll the work folder; kill when the routing shape is DETERMINED.
+    if (onArtifact) {
+      const poll = (): void => {
+        if (terminated) return;
+        const { hasDecompose, hasSpec } = scanWorkArtifacts(sandbox.workingDir);
+        if (hasDecompose) {
+          killOnce(); // plan.md / non-empty tasks/ ⇒ decompose is determined — kill immediately.
+          return;
+        }
+        if (hasSpec && !graceArmed) {
+          // spec.md only so far ⇒ start the grace window; if plan/tasks appear within it the poll fires
+          // decompose above, otherwise the grace expiry settles spec-first.
+          graceArmed = true;
+          graceTimer = setTimeout(killOnce, graceMs);
+          (graceTimer as { unref?: () => void }).unref?.();
+        }
+      };
+      pollTimer = setInterval(poll, pollMs);
+      (pollTimer as { unref?: () => void }).unref?.();
     }
 
     const handleLine = (line: string): void => {
@@ -160,10 +254,9 @@ function spawnClaudeStreaming(
       }
       const subtype = resultSubtypeOf(event);
       if (subtype !== undefined) resultSubtype = subtype;
-      // Kill-on-dispatch ONLY in the default mode; capped mode lets the conductor run on to emit artifacts.
+      // Kill-on-dispatch ONLY in the default mode; capped/artifact modes let the conductor run on to emit artifacts.
       if (!noKill && isAgentDispatch(event)) {
-        terminated = true;
-        proc.kill();
+        killOnce();
       }
     };
 
@@ -180,12 +273,12 @@ function spawnClaudeStreaming(
     });
     proc.stderr.on("data", () => {}); // drain; a captured run forfeits nothing readable here, so stderr is advisory
     proc.on("error", (err: Error) => {
-      clearCap();
+      clearTimers();
       file.end();
       reject(err);
     });
     proc.on("close", () => {
-      clearCap();
+      clearTimers();
       handleLine(buffer); // flush any final unterminated line
       buffer = "";
       file.end(() => resolve(resultSubtype));
@@ -217,6 +310,7 @@ export async function runCaptured(
   const args = buildArgs(invocation);
   const captureOptions: CaptureOptions = {
     ...(invocation.noKillOnDispatch !== undefined ? { noKillOnDispatch: invocation.noKillOnDispatch } : {}),
+    ...(invocation.terminateOnArtifact !== undefined ? { terminateOnArtifact: invocation.terminateOnArtifact } : {}),
     ...(invocation.timeoutMs !== undefined ? { timeoutMs: invocation.timeoutMs } : {}),
   };
   const resultSubtype = await spawnClaudeStreaming(
