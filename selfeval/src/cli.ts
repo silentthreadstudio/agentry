@@ -16,7 +16,8 @@
 // spends. Without `--from-run` it judges the planted fixtures as before.
 
 import { mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { newRunId } from "./store/runId.ts";
 import { createRunStore, type RunStore } from "./store/write.ts";
@@ -32,14 +33,20 @@ import { runQualityProbe, type QualityInput } from "./quality/probe.ts";
 import { realJudgeFn, type JudgeFn } from "./quality/judge.ts";
 import { loadPlantedFixtures, resolveInputs } from "./quality/command.ts";
 
-/** The default `runs/` parent, relative to CWD when `--runs-root` is not given. */
-const DEFAULT_RUNS_ROOT = "selfeval/runs";
+/**
+ * The default runs-root, anchored to the SELFEVAL PACKAGE ROOT (`<selfeval>/runs`) — NOT to CWD. Computed from this
+ * file's own location: `cli.ts` lives at `<selfeval>/src/cli.ts`, so the package root is one dir up from `src/`.
+ * CWD-relative resolution was the bug — invoked from inside `selfeval/` it nested to `selfeval/selfeval/runs/`, which
+ * the root `.gitignore` `selfeval/runs/` does not match, so run output escaped the ignore. An explicit `--runs-root`
+ * still resolves relative to CWD (for tests / custom locations).
+ */
+const DEFAULT_RUNS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "runs");
 
 /** A usage error — surfaced loudly and mapped to exit code 2 (a setup/argument bug, distinct from a runtime fault). */
 class UsageError extends Error {}
 
 /** Parsed flags shared across the subcommands (raw strings; each handler reads only the ones it needs). */
-interface CliFlags {
+export interface CliFlags {
   fixture?: string;
   fixtures?: string;
   runs?: string;
@@ -87,8 +94,11 @@ function parseFlags(argv: readonly string[]): { positionals: string[]; flags: Cl
   return { positionals, flags };
 }
 
-/** Resolve the runs-root (defaulting to `selfeval/runs`) to an absolute path. */
-function resolveRunsRoot(flags: CliFlags): string {
+/**
+ * Resolve the runs-root to an absolute path. Default = the package-root `<selfeval>/runs` (already absolute, so
+ * `resolve` is a no-op and it's CWD-independent). An explicit `--runs-root` resolves relative to CWD as before.
+ */
+export function resolveRunsRoot(flags: CliFlags): string {
   return resolve(flags.runsRoot ?? DEFAULT_RUNS_ROOT);
 }
 

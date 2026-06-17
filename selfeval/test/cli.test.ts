@@ -13,7 +13,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { main } from "../src/cli.ts";
+import { sep } from "node:path";
+
+import { main, resolveRunsRoot } from "../src/cli.ts";
 import { replaySequenceRunner } from "../src/io/replay.ts";
 import type { RunResult, Runner } from "../src/io/port.ts";
 import { loadRoutingFixture } from "../src/routing/fixture.ts";
@@ -121,6 +123,48 @@ function seedStoredRun(runsRoot: string, runId: string, specs: Record<string, st
     writeFileSync(join(slugDir, "spec.md"), spec, "utf8");
   }
 }
+
+// --- default runs-root is anchored to the selfeval package, NOT to CWD (the path-nesting fix) ----------
+
+test("the default runs-root resolves to <selfeval>/runs (package-anchored), independent of CWD", () => {
+  // The package root is two dirs up from this test file (test/ → selfeval/); the default must land its `runs/`
+  // there — a path ending in `selfeval/runs`, never the doubly-nested `selfeval/selfeval/runs` the CWD-relative
+  // default produced when the CLI was invoked from inside `selfeval/`.
+  const expected = join(HERE, "..", "runs");
+  const resolved = resolveRunsRoot({});
+
+  assert.equal(resolved, join(expected)); // `join` normalizes the `..` so the comparison is on canonical paths.
+  assert.ok(resolved.endsWith(`selfeval${sep}runs`), `expected a path ending in selfeval/runs, got ${resolved}`);
+  assert.ok(!resolved.endsWith(`selfeval${sep}selfeval${sep}runs`), "must NOT nest to selfeval/selfeval/runs");
+});
+
+test("the default runs-root is the same regardless of process.cwd()", () => {
+  // Compute it from two different working directories; an absolute, file-anchored default is invariant under CWD.
+  const original = process.cwd();
+  try {
+    process.chdir(HERE);
+    const fromHere = resolveRunsRoot({});
+    process.chdir(tmpdir());
+    const fromTmp = resolveRunsRoot({});
+    assert.equal(fromHere, fromTmp);
+  } finally {
+    process.chdir(original);
+  }
+});
+
+test("an explicit --runs-root overrides the default (resolved relative to CWD)", () => {
+  const custom = freshRunsRoot(); // an absolute custom dir
+  assert.equal(resolveRunsRoot({ runsRoot: custom }), custom);
+
+  // A relative --runs-root resolves against CWD, NOT the package root — the override escape hatch for tests.
+  const original = process.cwd();
+  try {
+    process.chdir(tmpdir());
+    assert.equal(resolveRunsRoot({ runsRoot: "my-runs" }), join(process.cwd(), "my-runs"));
+  } finally {
+    process.chdir(original);
+  }
+});
 
 // --- run routing: a replay/injected runner writes a complete runs/<id>/ -------------------------------
 

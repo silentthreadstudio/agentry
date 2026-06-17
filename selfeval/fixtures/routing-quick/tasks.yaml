@@ -1,0 +1,117 @@
+# Quick 6-task subset for a soft k=3 demo run (system smoke + live progress).
+version: 1
+labeling:
+  rubric_ref: skills/conducting/references/routing-and-dispatch.md
+  labeler_a: conductor (rubric-applied, task-by-task)
+  labeler_b: independent agent, blind to labeler_a's floors
+  agreement_at_creation: 7/7
+tasks:
+  - id: routing-format-price
+    prompt: >
+      In `src/format.js`, `formatPrice(cents)` returns dollars but drops
+      trailing zeros
+
+      (`formatPrice(500)` yields `$5` not `$5.00`). Fix it so it always shows 2
+      decimal places.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "Specificity: done=X clear · Scope: one symbol ·
+        Decision-content: how is obvious"
+      bounded_reversible: single function body, trivially undoable, no
+        contract/interface change, no fork
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+  - id: routing-version-flag
+    prompt: >
+      Add a `--version` flag to the CLI in `bin/cli.js` that prints the version
+      from package.json
+
+      and exits 0.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Specificity: done=X clear · Scope: one file · Unknowns: none"
+      bounded_reversible: additive single-file flag, obvious how, no undecided choice
+    labels:
+      labeler_a: one-shot
+      labeler_b: one-shot
+      agreement: true
+  - id: routing-dedupe-key
+    prompt: >
+      Add a `dedupe(items)` helper to `src/utils.js` that removes duplicate user
+      records from a list.
+    correct_floor: spec-first
+    trap: must-escalate
+    rationale:
+      governing_signal: "Decision-content: undecided fork (VETOES one-shot, override rule)"
+      decision_hidden: what defines a 'duplicate' (by id? by email? case-folded?
+        deep-equality?) and which copy is kept (first vs last)
+      consequence: wrong key silently merges distinct users or leaves dupes through —
+        data corruption with no error
+      footprint_note: one function, one file — Scope alone reads one-shot, but the
+        decision is load-bearing (small footprint != small decision)
+    labels:
+      labeler_a: spec-first
+      labeler_b: spec-first
+      agreement: true
+  - id: routing-search-faster
+    prompt: |
+      Make the search results page load faster.
+    correct_floor: spec-first
+    rationale:
+      governing_signal: "Specificity: vague ('make X better') · Unknowns: real (where
+        is the bottleneck?)"
+      decision_hidden: what 'faster' means (which metric / target) and which layer to
+        optimize — undiagnosed
+      consequence: one-shotting picks an arbitrary optimization that may not touch the
+        real bottleneck — wasted work, no measured win
+    labels:
+      labeler_a: spec-first
+      labeler_b: spec-first
+      agreement: true
+  - id: routing-notifications-feature
+    prompt: >
+      Build a notifications feature: a data model, a service that creates
+      notifications, a REST endpoint
+
+      to list and mark-as-read, and a background worker that delivers them.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Scope: many modules (model + service + endpoint + worker) ·
+        Specificity: clear"
+      seams: four components with seams between them — a multi-part feature build, not
+        a single edit
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
+  - id: re-dc-webhooks
+    prompt: "Build a webhook delivery system: a subscription model, a dispatch
+      service, a delivery endpoint, and a retry worker for failed deliveries."
+    correct_floor: decompose
+    rationale:
+      governing_signal: The prompt enumerates four named parts (subscription model,
+        dispatch service, delivery endpoint, retry worker) and the seed already
+        lays them out as four sibling directories — models/, services/, api/,
+        workers/ — each holding a working analog of the part to be built. The
+        structure mirrors the prompt one-to-one, so the decompose shape is
+        unambiguous.
+      seams: "Four genuinely separable units, each with its own contract and an
+        existing sibling that fixes its pattern: (1) models/subscription.js owns
+        the persisted-row shape (targetUrl, event types, signing secret); (2)
+        services/dispatch.service.js owns event->subscription matching and
+        fan-out, depending only on the model's read API; (3)
+        api/deliveries.routes.js owns the outbound HTTP send (signed POST,
+        record response/status) behind the router-registration contract; (4)
+        workers/retry.worker.js owns the failed-delivery re-attempt loop
+        (backoff, max-attempts) behind the enqueue/drain contract. The seams are
+        the import boundaries — dispatch reads the model, the endpoint sends and
+        records, the worker re-drives failures — so the feature splits into four
+        bounded tasks that meet only at those typed edges rather than one
+        coupled change."
+    labels:
+      labeler_a: decompose
+      labeler_b: decompose
+      agreement: true
