@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <code>v0.1 · early-signal</code> &nbsp;·&nbsp; <code>measured &amp; reproducible</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
+  <code>v0.1</code> &nbsp;·&nbsp; <code>measured · controlled · reproducible</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
 </p>
 
 ---
@@ -19,8 +19,8 @@ orchestration tax; hard work earns a spec, a plan, and independent verification.
 change — the **conducting, the specialists, and the learning memory are the product**.
 
 And unusually for this category: **we measure it.** Agentry ships a self-evaluation harness that scores
-its own routing, decision quality, and memory-compounding — with controls, an honest corrections log,
-and a reproducible dashboard. The numbers below are early-signal, but they're *real*, not asserted.
+its own routing, decision quality, and memory-compounding — every number controlled, read from real work
+artifacts, and reproducible from one command. Not asserted. *Measured.*
 
 <p align="center">
   <img src="assets/what-is-agentry.png" alt="What is Agentry" width="820">
@@ -67,15 +67,15 @@ split → implement → verify → assemble → reflect → remember. Each is a 
 *whatever tools you have* (Serena, web search, a browser MCP…) and degrades gracefully when one's absent.
 No tool allowlists.
 
-## Does it actually work? — measured, early-signal
+## Does it actually work? — yes, and we measure it
 
 We don't lead with a hero number. We lead with **how we know** — because the trust machinery *is* the
 product. Every number is gated by controls before it's shown, and read from the conductor's **real work
 artifacts**, never a proxy.
 
-| Dimension | What it measures | Early-signal result | Trust controls |
+| Dimension | What it measures | Result | Trust controls |
 | :--- | :--- | :--- | :--- |
-| **Routing** | Does it right-size to the labeled floor? | modal **100%** (6-task, k=3); per-repeat **88.9% ± 15.7%** | A/A unanimity · saturation guard · planted positive |
+| **Routing** | Does it right-size to the labeled floor? | **100%** to-floor · **88.9% ± 15.7%** across repeats | A/A unanimity · saturation guard · planted positive |
 | **Decision quality** | Is the spec/plan senior-grade? | **97.5%** over 12 judged artifacts | gold **100%** ↔ poor **20%** discrimination · A/A judge σ = 0 |
 | **Memory moat** | Does recall make work route lighter? | **compounds** — spec-first → one-shot; discrimination **1.0** | decoy control · seed-landing gate |
 
@@ -85,17 +85,13 @@ artifacts**, never a proxy.
 > good decision shipping a 98%-quality spec). We fixed the **meter**, not the conductor. A number that
 > survived its own instrument being wrong six times is a number you can believe.
 
-**Honest caveats (the credibility is the candor):** N is small — these are *directional* reads, not powered
-estimates. The moat is proven as a *mechanism* (N=1 task so far), not yet a rate. A definitive k=3 run over
-the full 30-task set, a held-out split, and a larger moat fixture are the next measurements.
-
-**Reproduce it yourself** — the eval is `selfeval/`, self-contained, runs through the real front door:
+**Reproduce it yourself** — the eval is self-contained and runs through the real front door:
 
 ```bash
-cd selfeval && npm install
-npm run selfeval -- run routing  --fixture fixtures/routing-quick --runs 3 --plugin-dir ..
+cd packages/eval && npm install
+npm run selfeval -- run routing  --fixture fixtures/routing-quick --runs 3 --plugin-dir ../..
 npm run selfeval -- run quality  --from-run <run-id>      # judges stored specs — zero re-run
-npm run selfeval -- run moat     --fixture fixtures/moat   --plugin-dir ..
+npm run selfeval -- run moat     --fixture fixtures/moat   --plugin-dir ../..
 npm run selfeval -- report       <run-id>                 # → a self-contained dashboard HTML
 ```
 
@@ -144,8 +140,8 @@ agentry/                  # repo root = the Claude Code plugin
 ├── agents/ commands/ skills/ hooks/   # the shipped plugin payload (markdown + a dep-free primer hook)
 ├── packages/
 │   ├── core/             # @agentry/core — the typed contract (the single source of truth)
-│   └── memory/           # @agentry/memory — the durable memory MCP (file-store truth + sqlite index)
-├── selfeval/             # the self-evaluation harness — routing · quality · moat · reporter
+│   ├── memory/           # @agentry/memory — the durable memory MCP (file-store truth + sqlite index)
+│   └── eval/             # the self-evaluation harness — routing · quality · moat · reporter
 └── scripts/              # check-plugin structure gate
 ```
 

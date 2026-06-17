@@ -27,6 +27,6 @@ skills-lock.json
 .docs/
 
 # self-eval run artifacts — per-run capture trees (config/events/summary/tasks); regenerated, never committed
-selfeval/runs/
+packages/eval/runs/
 # self-eval generated dashboards — `selfeval report <id>` output; regenerable from a run, carries a generatedAt stamp
-selfeval/results/
+packages/eval/results/
