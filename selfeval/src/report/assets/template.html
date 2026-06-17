@@ -253,6 +253,7 @@
       <button data-view="overview" class="active"><span class="ico">◎</span> Overview</button>
       <button data-view="routing"><span class="ico">⇄</span> Routing <span class="badge" id="nav-routing">88.9%</span></button>
       <button data-view="quality"><span class="ico">★</span> Decision quality <span class="badge" id="nav-quality">97.5%</span></button>
+      <button data-view="moat"><span class="ico">⛁</span> Memory moat <span class="badge" id="nav-moat">1.0</span></button>
       <button data-view="tasks"><span class="ico">▤</span> Tasks <span class="badge" id="nav-tasks">6</span></button>
       <div class="grp">Trust</div>
       <button data-view="corrections"><span class="ico">⚑</span> Corrections log <span class="badge" id="nav-corrections">6</span></button>
@@ -384,6 +385,16 @@
           <p class="cap">12 spec/plan artifacts · click a row for the judge's rationale</p>
           <table class="tbl" id="qa-tbl"></table>
         </div>
+      </section>
+
+      <!-- MOAT -->
+      <section class="view" data-view="moat">
+        <div class="banner">
+          <b>The moat: does memory compound?</b> Each task runs warm TWICE — once with a fork-resolving decision in
+          memory, once with an irrelevant decoy. It scores ONLY if the relevant fact makes the task route lighter
+          <b>where the decoy does not</b> — ruling out "warm runs just route lighter." Falsifiable by construction.
+        </div>
+        <div id="moat-body"></div>
       </section>
 
       <!-- TASKS -->
@@ -525,13 +536,19 @@ const SAMPLE_RUNS = [
   { id:"20260615-141002-b3c8", fixture:"routing", n:30, k:1, when:"Jun 15 · 14:10", dur:"1h12m", rt:0.80, qa:null },
 ];
 
+const SAMPLE_MOAT = {
+  runId: "20260617-182721-83d4", compoundRate: 1, decoyLightenRate: 0, discrimination: 1,
+  seedLanding: { landedCount: 1, total: 1 },
+  census: [{ taskId: "routing-dedupe-key", coldFloor: "spec-first", warmRelevant: "one-shot", warmDecoy: "spec-first", compounded: true, decoyHeld: true }],
+};
+
 // ============ data source — reporter injects window.__SELFEVAL__; standalone preview falls back to SAMPLE ============
 const D = (typeof window !== "undefined" && window.__SELFEVAL__) || {
   routing: SAMPLE_ROUTING, quality: SAMPLE_QUALITY, tasks: SAMPLE_TASKS,
-  corrections: SAMPLE_CORRECTIONS, history: SAMPLE_RUNS,
+  corrections: SAMPLE_CORRECTIONS, history: SAMPLE_RUNS, moat: SAMPLE_MOAT,
   meta: { runId: "20260617-115857-829a", fixture: "routing-quick", repeats: 3 },
 };
-const ROUTING = D.routing, QUALITY = D.quality, TASKS = D.tasks, CORRECTIONS = D.corrections, RUNS = D.history;
+const ROUTING = D.routing, QUALITY = D.quality, TASKS = D.tasks, CORRECTIONS = D.corrections, RUNS = D.history, MOAT = D.moat || null;
 
 // ============ constellation motif (the brand "A" network) ============
 function constellation(elId, w, h, n, seed){
@@ -660,9 +677,39 @@ document.getElementById("rn-tbl").innerHTML =
     <td><b class="${r.rt>=.85?'good':'warn'}">${pct(r.rt)}</b></td>
     <td>${r.qa?`<b class="violet">${pct(r.qa)}</b>`:'<span class="muted">—</span>'}</td></tr>`).join("");
 
+// moat view (the latest scored moat run, or an empty state)
+(function(){
+  const el = document.getElementById("moat-body");
+  if(!MOAT){ el.innerHTML = '<div class="card"><p class="empty">No scored moat run in the store yet — run <b>selfeval run moat</b>.</p></div>'; return; }
+  const sl = MOAT.seedLanding || { landedCount: 0, total: 0 };
+  el.innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="k-lab">Compound rate</div><div class="k-val good">${pct(MOAT.compoundRate)}</div><div class="k-sub">tasks routed lighter via recall</div></div>
+      <div class="kpi"><div class="k-lab">Discrimination</div><div class="k-val good">${MOAT.discrimination.toFixed(2)}</div><div class="k-sub">compound − decoy (memory-attributable)</div></div>
+      <div class="kpi"><div class="k-lab">Decoy lightened</div><div class="k-val ${MOAT.decoyLightenRate>0?'bad':'good'}">${pct(MOAT.decoyLightenRate)}</div><div class="k-sub">control — should be 0%</div></div>
+      <div class="kpi"><div class="k-lab">Seed landing</div><div class="k-val good">${sl.landedCount} / ${sl.total}</div><div class="k-sub">relevant seeds recalled</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3>Per-task census</h3>
+      <p class="cap">cold floor → warm (relevant) vs warm (decoy) · compounded = relevant routes lighter AND decoy holds</p>
+      <table class="tbl">
+        <tr><th>Task</th><th>Cold floor</th><th>Warm · relevant</th><th>Warm · decoy</th><th>Compounded</th></tr>
+        ${MOAT.census.map(c=>`<tr>
+          <td>${c.taskId.replace(/^routing-/,"")}</td>
+          <td><span class="tag ${shapeCls(c.coldFloor)}">${c.coldFloor}</span></td>
+          <td><span class="tag ${shapeCls(c.warmRelevant)}">${c.warmRelevant||"—"}</span></td>
+          <td><span class="tag ${shapeCls(c.warmDecoy)}">${c.warmDecoy||"—"}</span></td>
+          <td><span class="tag ${c.compounded?'ok':'noisy'}">${c.compounded?'yes ✓':'no'}</span></td>
+        </tr>`).join("")}
+      </table>
+      <p class="cap" style="margin-top:14px;color:var(--muted)">from moat run ${MOAT.runId}</p>
+    </div>`;
+})();
+
 // ============ nav ============
 const RUNREF = "/ run " + (((D.meta||{}).runId||"").split("-").pop() || "");
 const titles = {overview:["Overview",RUNREF],routing:["Routing accuracy",RUNREF],quality:["Decision quality",RUNREF],
+  moat:["Memory moat","/ analyze"],
   tasks:["Task explorer",RUNREF],corrections:["Corrections log","/ trust"],controls:["Controls","/ trust"],
   live:["Live monitor","/ operate"],runs:["Run history","/ operate"]};
 document.getElementById("nav").addEventListener("click", e=>{
@@ -782,6 +829,7 @@ function setText(id, txt){ const el=$(id); if(el) el.textContent=txt; }
   // nav badges + corrections count
   setText("nav-routing", pct(ROUTING.mean!=null?ROUTING.mean:modal));
   setText("nav-quality", pct(QUALITY.overall||0));
+  setText("nav-moat", MOAT ? MOAT.compoundRate.toFixed(1) : "—");
   setText("nav-tasks", String((TASKS||[]).length));
   setText("nav-corrections", String((CORRECTIONS||[]).length));
   setText("nav-runs", String((RUNS||[]).length));

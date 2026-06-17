@@ -27,6 +27,7 @@ import type {
 } from "./model.ts";
 import { loadCorrections } from "./corrections.ts";
 import { loadHistory } from "./history.ts";
+import { loadMoat } from "./moat.ts";
 
 /** Canonical shape vocabulary in escalation order — the confusion matrix rows/cols. */
 const FLOORS = ["one-shot", "spec-first", "decompose"];
@@ -65,6 +66,8 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
   const perTaskRuns = parseEvents(join(runDir, "events.jsonl")); // taskId → ordered {shape, ms}[]
   const quality = readQuality(join(runDir, "decision-quality.json"));
 
+  const moat = loadMoat(runsRoot); // the latest scored moat run (its own run kind), surfaced beside routing/quality
+
   return {
     meta: {
       runId: summary.runId,
@@ -77,6 +80,7 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
     tasks: buildTasks(routingRaw, perTaskRuns, quality.perTask),
     corrections: loadCorrections(opts.correctionsPath),
     history: loadHistory(runsRoot, summary.runId),
+    ...(moat !== undefined ? { moat } : {}),
   };
 }
 

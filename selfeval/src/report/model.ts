@@ -110,6 +110,38 @@ export interface HistoryRow {
   cur: boolean;
 }
 
+/** One row of the moat census — a task's compounding behavior (relevant vs. decoy warm run). */
+export interface MoatCensus {
+  /** The labeled task id. */
+  taskId: string;
+  /** The shape the task routes to with empty memory. */
+  coldFloor: string;
+  /** Shape dispatched with the fork-resolving fact recalled. */
+  warmRelevant: string | null;
+  /** Shape dispatched with the irrelevant decoy recalled. */
+  warmDecoy: string | null;
+  /** Relevant memory recalled AND routed lighter than the cold floor. */
+  compounded: boolean;
+  /** The decoy did NOT lighten the shape (the discrimination control held). */
+  decoyHeld: boolean;
+}
+
+/** The memory-hygiene (moat) projection — does recalled memory make a task route lighter? From the latest moat run. */
+export interface MoatData {
+  /** The moat run this data came from (a different run than routing/quality — the latest scored moat run). */
+  runId: string;
+  /** Fraction of tasks where a recalled relevant decision routed the task lighter than its cold floor. */
+  compoundRate: number;
+  /** Fraction of tasks where the irrelevant decoy ALSO lightened (the contrast — should be ~0). */
+  decoyLightenRate: number;
+  /** `compoundRate − decoyLightenRate` — the memory-attributable lightening (the clean signal). */
+  discrimination: number;
+  /** How many relevant warm runs recalled their seed (the validity readout). */
+  seedLanding: { landedCount: number; total: number };
+  /** Per-task census. */
+  census: MoatCensus[];
+}
+
 /** The complete injected page payload — exactly `window.__SELFEVAL__`. */
 export interface PageData {
   meta: PageMeta;
@@ -118,4 +150,6 @@ export interface PageData {
   tasks: TaskData[];
   corrections: Correction[];
   history: HistoryRow[];
+  /** The latest scored moat run's projection, when one exists in the store (else absent). */
+  moat?: MoatData;
 }
