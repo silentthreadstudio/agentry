@@ -86,6 +86,7 @@ async function runWarm(
   model: string,
   pluginDir: string | undefined,
   fixtureDir: string,
+  signature: string | undefined,
 ): Promise<WarmOutcome> {
   const sandbox: Sandbox = prepareSandbox();
   const seedDir = join(fixtureDir, "seeds", task.id);
@@ -119,9 +120,11 @@ async function runWarm(
 
   const { text, tools } = readStream(streamPath);
   const recallFired = tools.some((t) => /memory_recall/.test(t));
+  // `signature` ties landing to a SPECIFIC fact (the relevant run). The decoy run passes no signature, so its
+  // landing just means "recall fired + non-empty" — the correct meaning for an irrelevant seed it shouldn't apply.
   const landed =
     recallLanded(text, recallFired) &&
-    (task.factSignature !== undefined ? factSurfaced(text, task.factSignature) : true);
+    (signature !== undefined ? factSurfaced(text, signature) : true);
 
   return { shape, landed, streamPath };
 }
@@ -145,9 +148,10 @@ export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> 
   for (const task of tasks) {
     i++;
     opts.observer?.emit?.({ kind: "task-started", runId, detail: `${i}/${tasks.length} ${task.id}`, ts: new Date().toISOString() });
-    // Two warm runs per task: distinct id-seeds keep the two seeded facts' ULIDs from colliding.
-    const relevant = await runWarm(task, task.relevant, 2 * i, opts.runner, model, opts.pluginDir, opts.fixtureDir);
-    const decoy = await runWarm(task, task.decoy, 2 * i + 1, opts.runner, model, opts.pluginDir, opts.fixtureDir);
+    // Two warm runs per task: distinct id-seeds keep the two seeded facts' ULIDs from colliding. Only the
+    // relevant run gets the fact signature (landing must tie to THAT fact); the decoy's landing is "recalled non-empty".
+    const relevant = await runWarm(task, task.relevant, 2 * i, opts.runner, model, opts.pluginDir, opts.fixtureDir, task.factSignature);
+    const decoy = await runWarm(task, task.decoy, 2 * i + 1, opts.runner, model, opts.pluginDir, opts.fixtureDir, undefined);
 
     const outcome: MoatOutcome = {
       taskId: task.id,
