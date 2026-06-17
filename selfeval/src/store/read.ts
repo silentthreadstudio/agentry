@@ -40,7 +40,7 @@ const SPEC_PLAN_SEPARATOR = "\n\n--- PLAN ---\n\n";
  * the `--run-id` test override); none contain a path separator, so rejecting separators / `..` / absolute paths
  * costs nothing legitimate.
  */
-function safeRunDir(runsRoot: string, runId: string): string {
+export function safeRunDir(runsRoot: string, runId: string): string {
   if (
     runId === "" ||
     runId === "." ||

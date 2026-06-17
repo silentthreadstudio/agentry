@@ -1,0 +1,50 @@
+[
+  {
+    "date": "2026-06-16",
+    "high": true,
+    "h": "Dispatch-pattern proxy was invalid",
+    "meter": "scored one-shot",
+    "truth": "conductor escalated via the AskUserQuestion gate (spec-first)",
+    "fix": "replaced the proxy with artifact-based extraction — read plan/spec/tree, not the tool pattern"
+  },
+  {
+    "date": "2026-06-16",
+    "high": true,
+    "h": "events.jsonl seam never existed",
+    "meter": "assumed a stream file",
+    "truth": "the benchmark used --output-format json; no such file",
+    "fix": "switched shape extraction to the conductor's work-folder artifacts"
+  },
+  {
+    "date": "2026-06-15",
+    "high": true,
+    "h": "Cap-timing deflated decompose → one-shot",
+    "meter": "scored one-shot",
+    "truth": "a slow planner was killed before it wrote plan.md",
+    "fix": "artifact-aware early-terminate — poll the work folder, kill on the real signal"
+  },
+  {
+    "date": "2026-06-16",
+    "high": false,
+    "h": "'Under-routes' were good decisions",
+    "meter": "flagged as failures",
+    "truth": "the lighter shape shipped 98%-quality specs",
+    "fix": "quality-gate over under-routes — a shape-mismatch only counts if output quality suffered"
+  },
+  {
+    "date": "2026-06-15",
+    "high": false,
+    "h": "Pagination mislabeled decompose",
+    "meter": "labeled decompose",
+    "truth": "spec-first was right — two independent labelers agreed",
+    "fix": "re-labeled the task; the conductor had routed it correctly"
+  },
+  {
+    "date": "2026-06-17",
+    "high": false,
+    "h": "Grace window deflates some decompose",
+    "meter": "45s grace",
+    "truth": "slow decompose→spec-first planners clipped at the boundary",
+    "fix": "bump grace to 120s for the definitive run (queued)"
+  }
+]

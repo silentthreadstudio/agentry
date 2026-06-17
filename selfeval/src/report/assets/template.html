@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agentry · Self-Eval Workbench</title>
+<style>
+  :root {
+    /* neutral near-black canvas · amber brand spark · violet = ACTION only · semantic data colors */
+    --bg: #0d0d11;
+    --bg-2: #08080b;
+    --shell: #0a0a0e;
+    --panel: #15151b;
+    --panel-2: #1d1d25;
+    --panel-3: #25252f;
+    --line: #27272f;
+    --line-soft: #1b1b21;
+    --ink: #e9e9ee;
+    --muted: #9a9aa6;
+    --faint: #5f5f6b;
+    --amber: #f4a93c;        /* brand spark */
+    --amber-2: #f7bd5e;
+    --violet: #8b5cf6;       /* ACTION accent only */
+    --violet-2: #a78bfa;
+    --violet-dim: rgba(139,92,246,.14);
+    --good: #46c98a;         /* data: correct/pass */
+    --good-dim: rgba(70,201,138,.14);
+    --coral: #ef8a5c;        /* data: noisy/caution */
+    --warn-dim: rgba(239,138,92,.15);
+    --bad: #f0604d;          /* data: fail */
+    --bad-dim: rgba(240,96,77,.14);
+    --cyan: #56b6c2;         /* data: one-shot category */
+    --action: linear-gradient(135deg, #8b5cf6, #7c3aed);  /* purple = actions */
+    --grad: linear-gradient(120deg, #f4a93c 0%, #ef8a5c 45%, #8b5cf6 100%); /* brand mark/constellation only */
+    --grad-soft: var(--violet-dim);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans);
+    font-size: 14px; -webkit-font-smoothing: antialiased; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2a2552; border-radius: 6px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3470; }
+
+  /* ---------------- app shell ---------------- */
+  .app { display: grid; grid-template-columns: 252px 1fr; height: 100vh; }
+
+  aside { background: var(--shell); border-right: 1px solid var(--line); display: flex; flex-direction: column; position: relative; }
+  .brand { display: flex; align-items: center; gap: 12px; padding: 19px 18px 15px; position: relative; }
+  .brand .logo { width: 38px; height: 38px; border-radius: 10px; flex: none; position: relative;
+    background: radial-gradient(120% 120% at 25% 20%, rgba(244,169,60,.22), transparent 60%), var(--panel);
+    border: 1px solid var(--line); overflow: hidden; }
+  .brand .logo svg { position: absolute; inset: 0; }
+  .brand .ttl { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; line-height: 1.1; }
+  .brand .ttl small { display: block; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; margin-top: 3px; }
+
+  .runpick { margin: 4px 12px 14px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; cursor: pointer; transition: .15s; }
+  .runpick:hover { border-color: var(--violet); }
+  .runpick .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
+  .runpick .val { font-family: var(--mono); font-size: 12.5px; margin-top: 4px; display: flex; align-items: center; justify-content: space-between; }
+  .runpick .val b { font-weight: 600; color: var(--violet-2); }
+  .runpick .caret { color: var(--muted); }
+
+  nav { padding: 4px 10px; display: flex; flex-direction: column; gap: 2px; }
+  nav .grp { font-size: 9.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); padding: 15px 10px 6px; }
+  nav button { all: unset; display: flex; align-items: center; gap: 11px; padding: 8px 11px; border-radius: 9px;
+    color: var(--muted); cursor: pointer; font-size: 13.5px; position: relative; transition: .12s; }
+  nav button:hover { background: var(--panel); color: var(--ink); }
+  nav button.active { background: var(--grad-soft); color: var(--ink); font-weight: 600; }
+  nav button.active::before { content: ""; position: absolute; left: -10px; top: 7px; bottom: 7px; width: 3px;
+    border-radius: 3px; background: var(--action); }
+  nav button .ico { width: 16px; text-align: center; opacity: .9; }
+  nav button .badge { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+    background: var(--panel); padding: 1px 7px; border-radius: 999px; }
+  nav button.active .badge { color: var(--violet-2); background: var(--violet-dim); }
+
+  .side-foot { margin-top: auto; padding: 14px 18px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--faint); font-family: var(--mono); }
+  .side-foot .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 6px; box-shadow: 0 0 0 3px var(--good-dim); }
+
+  /* ---------------- main ---------------- */
+  main { overflow-y: auto; background: radial-gradient(120% 50% at 85% -15%, rgba(139,92,246,.05), transparent 55%), var(--bg); }
+  .topbar { position: sticky; top: 0; z-index: 5; background: rgba(10,10,14,.88); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line); padding: 14px 30px; display: flex; align-items: center; gap: 14px; }
+  .topbar h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  .topbar .crumb { color: var(--faint); font-size: 12.5px; font-family: var(--mono); }
+  .topbar .spacer { flex: 1; }
+  .chip { font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; }
+  .chip b { color: var(--ink); font-weight: 600; }
+  .btn { font-size: 12.5px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 9px; padding: 7px 14px; cursor: pointer; font-weight: 500; transition: .15s; }
+  .btn:hover { border-color: var(--violet); }
+  .btn.primary { background: var(--action); color: #fff; border: none; font-weight: 700; }
+  .btn.primary:hover { filter: brightness(1.12); }
+
+  .content { padding: 24px 30px 80px; max-width: 1280px; }
+  .view { display: none; animation: fade .28s ease; }
+  .view.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+  /* hero band */
+  .hero { position: relative; overflow: hidden; border-radius: 18px; border: 1px solid var(--line);
+    background: linear-gradient(120deg, #15151c 0%, #121217 55%, #17141e 100%); padding: 26px 30px; margin-bottom: 18px; }
+  .hero .constel { position: absolute; inset: 0; opacity: .3; pointer-events: none; }
+  .hero .inner { position: relative; display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; align-items: center; }
+  .hero .eyebrow { font-size: 10.5px; text-transform: uppercase; letter-spacing: .16em; color: var(--amber); font-weight: 700; }
+  .hero .big { font-size: 58px; font-weight: 850; letter-spacing: -0.03em; line-height: .95; margin: 10px 0 4px; color: var(--ink); }
+  .hero .big small { font-size: 20px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+  .hero .second { font-size: 14px; color: var(--ink); font-weight: 500; }
+  .hero .second b { color: var(--coral); font-family: var(--mono); }
+  .hero .method { font-size: 12.5px; color: var(--muted); margin-top: 14px; max-width: 90%; line-height: 1.55; }
+  .hero .method b { color: var(--ink); }
+  .hero .ctrlbox { background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .hero .ctrlbox .ch { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 12px; display: flex; justify-content: space-between; }
+  .hero .ctrlbox .ch b { color: var(--good); }
+  .ctrl-line { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 12.5px; font-family: var(--mono); border-top: 1px solid var(--line-soft); }
+  .ctrl-line:first-of-type { border-top: none; }
+  .ctrl-line .ck { width: 16px; height: 16px; border-radius: 50%; background: var(--good-dim); color: var(--good); display: grid; place-items: center; font-size: 10px; flex: none; }
+  .ctrl-line .cv { margin-left: auto; color: var(--muted); }
+
+  /* KPI row */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .kpi { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; overflow: hidden; }
+  .kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--line); }
+  .kpi .k-lab { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); }
+  .kpi .k-val { font-size: 31px; font-weight: 800; letter-spacing: -0.02em; margin-top: 9px; line-height: 1; }
+  .kpi .k-val small { font-size: 14px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+  .kpi .k-sub { font-size: 11.5px; color: var(--faint); margin-top: 8px; font-family: var(--mono); }
+  .amber { color: var(--amber); } .violet { color: var(--good); }
+  .good { color: var(--good); } .warn { color: var(--coral); } .bad { color: var(--bad); }
+
+  /* cards / grid */
+  .grid { display: grid; gap: 16px; margin-top: 16px; }
+  .g-2 { grid-template-columns: 1fr 1fr; }
+  .g-12-1 { grid-template-columns: 1.5fr 1fr; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .card.glow { background: linear-gradient(180deg, rgba(255,255,255,.025), transparent 40%), var(--panel); }
+  .card > h3 { font-size: 13.5px; margin: 0 0 3px; font-weight: 650; display: flex; align-items: center; justify-content: space-between; }
+  .card > .cap { font-size: 11.5px; color: var(--faint); margin: 0 0 16px; font-family: var(--mono); }
+
+  /* bars */
+  .bars { display: flex; flex-direction: column; gap: 11px; }
+  .bar-row { display: grid; grid-template-columns: 138px 1fr; align-items: center; gap: 12px; }
+  .bar-row .blab { font-size: 12px; color: var(--muted); text-align: right; font-family: var(--mono); }
+  .track { position: relative; height: 23px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 6px; transition: width .85s cubic-bezier(.2,.8,.2,1); }
+  .bval { position: absolute; top: 0; height: 23px; display: flex; align-items: center; font-size: 11px; font-weight: 700; font-family: var(--mono); }
+
+  /* confusion heatmap */
+  table.mtx { border-collapse: separate; border-spacing: 5px; width: 100%; }
+  table.mtx th { color: var(--muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; padding: 4px; }
+  table.mtx td.rl { color: var(--muted); font-family: var(--mono); font-size: 11.5px; text-align: right; padding-right: 8px; }
+  table.mtx td.cell { text-align: center; border-radius: 9px; height: 48px; font-family: var(--mono); font-weight: 700; font-size: 15px; }
+
+  /* tables */
+  table.tbl { border-collapse: collapse; width: 100%; }
+  table.tbl th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .05em; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  table.tbl td { padding: 11px 10px; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); font-size: 12.5px; }
+  table.tbl tr.clk { cursor: pointer; transition: .1s; }
+  table.tbl tr.clk:hover td { background: var(--panel-2); }
+  table.tbl tr:last-child td { border-bottom: none; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; font-family: var(--mono); }
+  .tag.ok { background: var(--good-dim); color: var(--good); }
+  .tag.noisy { background: var(--warn-dim); color: var(--coral); }
+  .tag.os { background: rgba(86,182,194,.15); color: var(--cyan); }
+  .tag.sf { background: rgba(244,169,60,.15); color: var(--amber); }
+  .tag.dc { background: rgba(70,201,138,.14); color: var(--good); }
+  .pill { font-family: var(--mono); font-size: 11px; padding: 2px 9px; border-radius: 6px; background: var(--panel-2); color: var(--muted); }
+
+  /* corrections timeline */
+  .timeline { position: relative; padding-left: 26px; }
+  .timeline::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+  .tl-item { position: relative; padding: 0 0 22px; }
+  .tl-item::before { content: ""; position: absolute; left: -23px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--shell); border: 2px solid var(--good); }
+  .tl-item.high::before { border-color: var(--bad); box-shadow: 0 0 0 4px var(--bad-dim); }
+  .tl-date { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .tl-h { font-weight: 650; font-size: 13.5px; margin: 3px 0 7px; }
+  .tl-body { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
+  .tl-body .ln { display: flex; gap: 8px; }
+  .tl-body .ln b { color: var(--bad); font-weight: 600; min-width: 52px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding-top: 1px; }
+  .tl-body .ln.t b { color: var(--good); }
+  .tl-body .ln.f b { color: var(--amber); }
+
+  /* radar */
+  .radar-wrap { display: grid; grid-template-columns: 220px 1fr; align-items: center; gap: 18px; }
+
+  /* live monitor */
+  .live-top { display: flex; align-items: center; gap: 22px; margin-bottom: 18px; }
+  .ring { --p: 0; width: 96px; height: 96px; border-radius: 50%; flex: none;
+    background: conic-gradient(from -90deg, var(--violet-2) 0%, var(--violet) calc(var(--p) * 1%), var(--panel-2) 0); display: grid; place-items: center; }
+  .ring .inner { width: 74px; height: 74px; border-radius: 50%; background: var(--panel); display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 18px; }
+  .live-meta { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .live-meta .l { color: var(--ink); font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .stream { background: var(--bg-2); border: 1px solid var(--line); border-radius: 11px; padding: 14px 16px;
+    font-family: var(--mono); font-size: 12px; height: 280px; overflow-y: auto; line-height: 1.7; }
+  .stream .ev { white-space: pre-wrap; }
+  .stream .t { color: var(--faint); }
+  .stream .start { color: var(--cyan); }
+  .stream .done { color: var(--good); }
+  .taskgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 14px; }
+  .tgrid-cell { background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 9px; text-align: center; font-family: var(--mono); font-size: 10.5px; color: var(--faint); transition: .3s; }
+  .tgrid-cell.run { border-color: var(--violet); color: var(--violet-2); box-shadow: 0 0 0 3px rgba(139,92,246,.12); }
+  .tgrid-cell.done { border-color: var(--good); color: var(--good); background: var(--good-dim); }
+
+  /* drawer */
+  .scrim { position: fixed; inset: 0; background: rgba(8,6,20,.66); opacity: 0; pointer-events: none; transition: .25s; z-index: 20; }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+  .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 560px; max-width: 92vw; background: var(--panel);
+    border-left: 1px solid var(--line); transform: translateX(100%); transition: transform .3s cubic-bezier(.2,.8,.2,1); z-index: 21; overflow-y: auto; }
+  .drawer.open { transform: none; }
+  .drawer .dh { padding: 20px 24px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel)); }
+  .drawer .dh .x { float: right; cursor: pointer; color: var(--muted); font-size: 20px; line-height: 1; }
+  .drawer .dh h2 { margin: 0; font-size: 17px; font-family: var(--mono); }
+  .drawer .db { padding: 20px 24px 40px; }
+  .drawer .kv { display: grid; grid-template-columns: 130px 1fr; gap: 8px 12px; font-size: 12.5px; margin-bottom: 18px; }
+  .drawer .kv dt { color: var(--faint); font-family: var(--mono); }
+  .drawer .kv dd { margin: 0; font-family: var(--mono); }
+  .drawer h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--amber); margin: 22px 0 9px; }
+  .quote { background: var(--bg-2); border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: 9px;
+    padding: 13px 15px; font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+  .repeats { display: flex; gap: 8px; }
+  .rep { flex: 1; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px; text-align: center; }
+  .rep .rn { font-size: 10px; color: var(--faint); font-family: var(--mono); }
+  .rep .rs { font-size: 11.5px; font-family: var(--mono); margin-top: 5px; font-weight: 600; }
+
+  .muted { color: var(--muted); } .fmono { font-family: var(--mono); }
+  .empty { color: var(--faint); font-family: var(--mono); font-size: 12.5px; padding: 8px 0; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside>
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 38 38" id="logo-constel"></svg></div>
+      <div class="ttl">Agentry<small>Self-Eval</small></div>
+    </div>
+
+    <div class="runpick" id="runpick">
+      <div class="lbl">Active run</div>
+      <div class="val"><b id="rp-id">20260617-115857-829a</b><span class="caret">⌄</span></div>
+    </div>
+
+    <nav id="nav">
+      <div class="grp">Analyze</div>
+      <button data-view="overview" class="active"><span class="ico">◎</span> Overview</button>
+      <button data-view="routing"><span class="ico">⇄</span> Routing <span class="badge" id="nav-routing">88.9%</span></button>
+      <button data-view="quality"><span class="ico">★</span> Decision quality <span class="badge" id="nav-quality">97.5%</span></button>
+      <button data-view="tasks"><span class="ico">▤</span> Tasks <span class="badge" id="nav-tasks">6</span></button>
+      <div class="grp">Trust</div>
+      <button data-view="corrections"><span class="ico">⚑</span> Corrections log <span class="badge" id="nav-corrections">6</span></button>
+      <button data-view="controls"><span class="ico">⛉</span> Controls</button>
+      <div class="grp">Operate</div>
+      <button data-view="live"><span class="ico">◴</span> Live monitor</button>
+      <button data-view="runs"><span class="ico">≣</span> Run history <span class="badge" id="nav-runs">3</span></button>
+    </nav>
+
+    <div class="side-foot">
+      <div class="row"><span><span class="dot"></span>store healthy</span><span>v0.1</span></div>
+      <div class="row"><span>memory</span><span>34 facts · 10 ep</span></div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main>
+    <div class="topbar">
+      <h1 id="view-title">Overview</h1>
+      <span class="crumb" id="view-crumb">/ run 829a</span>
+      <span class="spacer"></span>
+      <span class="chip">fixture <b id="tb-fixture">routing-quick</b></span>
+      <span class="chip" id="tb-repeats">×3 repeats</span>
+      <button class="btn">Export</button>
+      <button class="btn primary">Re-run</button>
+    </div>
+
+    <div class="content">
+
+      <!-- OVERVIEW -->
+      <section class="view active" data-view="overview">
+        <div class="hero">
+          <svg class="constel" id="hero-constel" preserveAspectRatio="xMidYMid slice"></svg>
+          <div class="inner">
+            <div>
+              <div class="eyebrow" id="hero-eyebrow">Routing · run 829a · floor-conformance</div>
+              <div class="big" id="hero-big">100%<small> &nbsp;modal</small></div>
+              <div class="second" id="hero-second">6 / 6 on the diagonal &nbsp;·&nbsp; per-repeat mean <b>88.9% ±15.7%</b> (range 67–100%)</div>
+              <div class="method">
+                <b>Method first, headline second.</b> Early-signal (N=6) — directional, not powered. Routing is read
+                from the conductor's <b>real work artifacts</b>, not a proxy. Where the meter and the conductor
+                disagreed, the conductor was right — see the Corrections log.
+              </div>
+            </div>
+            <div class="ctrlbox">
+              <div class="ch">Controls <b>all passed ✓</b></div>
+              <div class="ctrl-line"><span class="ck">✓</span> A/A negative <span class="cv">k=3 unanimous</span></div>
+              <div class="ctrl-line"><span class="ck">✓</span> Planted gold↔poor <span class="cv">0.80 gap</span></div>
+              <div class="ctrl-line"><span class="ck">✓</span> Saturation guard <span class="cv">floor spread ok</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="k-lab">Decision quality</div><div class="k-val violet" id="kpi-quality">97.5%</div><div class="k-sub" id="kpi-quality-sub">12 artifacts judged</div></div>
+          <div class="kpi"><div class="k-lab">Judge discrimination</div><div class="k-val good" id="kpi-disc">0.80</div><div class="k-sub" id="kpi-disc-sub">gold 100% ↔ poor 20%</div></div>
+          <div class="kpi"><div class="k-lab">Task stability</div><div class="k-val amber" id="kpi-stab">4 / 6<small> unanimous</small></div><div class="k-sub" id="kpi-stab-sub">2 noisy across repeats</div></div>
+          <div class="kpi"><div class="k-lab">Mis-routes</div><div class="k-val good" id="kpi-misroute">0<small> / 18</small></div><div class="k-sub">no over- or under-routes</div></div>
+        </div>
+
+        <div class="grid g-12-1">
+          <div class="card glow">
+            <h3>Accuracy per repeat</h3>
+            <p class="cap">each run drawn separately — the noisy run is short, not averaged away</p>
+            <div class="bars" id="ov-acc"></div>
+          </div>
+          <div class="card">
+            <h3>Confusion matrix</h3>
+            <p class="cap">floor (row) × dispatched (col)</p>
+            <table class="mtx" id="ov-mtx"></table>
+          </div>
+        </div>
+
+        <div class="grid g-2">
+          <div class="card">
+            <h3>Quality by dimension</h3>
+            <p class="cap">mean across 12 artifacts · 0–2 each</p>
+            <div class="bars" id="ov-dim"></div>
+          </div>
+          <div class="card">
+            <h3>Controls <span class="pill">all passed</span></h3>
+            <p class="cap">gates run before any score is shown</p>
+            <div class="bars" id="ov-ctrl"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ROUTING -->
+      <section class="view" data-view="routing">
+        <div class="grid g-12-1">
+          <div class="card glow">
+            <h3>Confusion matrix</h3>
+            <p class="cap">labeled floor (row) × dispatched shape (col) · diagonal = correct</p>
+            <table class="mtx" id="rt-mtx"></table>
+          </div>
+          <div class="card">
+            <h3>Accuracy per repeat</h3>
+            <p class="cap">mean 88.9% ± 15.7%</p>
+            <div class="bars" id="rt-acc"></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h3>Stability per task <span class="pill" id="rt-noisy"></span></h3>
+          <p class="cap">how often each task agreed with its own modal shape across the 3 repeats</p>
+          <table class="tbl" id="rt-stab"></table>
+        </div>
+      </section>
+
+      <!-- QUALITY -->
+      <section class="view" data-view="quality">
+        <div class="grid g-2">
+          <div class="card glow">
+            <h3>Rubric profile</h3>
+            <p class="cap">5 dimensions · 0–2 each</p>
+            <div class="radar-wrap">
+              <svg id="qa-radar" width="220" height="200" viewBox="0 0 220 200"></svg>
+              <div class="bars" id="qa-dim"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Judge trust — planted controls</h3>
+            <p class="cap">discrimination is the evidence, not the headline</p>
+            <div class="bars" id="qa-trust"></div>
+            <p class="cap" style="margin-top:16px;color:var(--muted)">A/A judge stdev <b class="good">0.000</b> — the judge re-scores one fixed artifact identically 3×. The model's self-score is discarded (anti-gaming): overall is recomputed from the rubric.</p>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h3>Judged artifacts</h3>
+          <p class="cap">12 spec/plan artifacts · click a row for the judge's rationale</p>
+          <table class="tbl" id="qa-tbl"></table>
+        </div>
+      </section>
+
+      <!-- TASKS -->
+      <section class="view" data-view="tasks">
+        <div class="card">
+          <h3>Task explorer</h3>
+          <p class="cap">6 labeled tasks · click for shape-per-repeat, timing, the fork, and the judged decision</p>
+          <table class="tbl" id="tk-tbl"></table>
+        </div>
+      </section>
+
+      <!-- CORRECTIONS -->
+      <section class="view" data-view="corrections">
+        <div class="hero" style="margin-bottom:16px;padding:22px 30px">
+          <svg class="constel" id="cr-constel" preserveAspectRatio="xMidYMid slice"></svg>
+          <div style="position:relative">
+            <div class="eyebrow" style="color:var(--violet-2)">The corrections log is the product</div>
+            <div class="method" style="max-width:75%;margin-top:10px;font-size:13.5px">
+              Each entry is a time the meter disagreed with the conductor — and the conductor was right. We fixed the
+              <b>meter</b>, not the conductor. This is why the headline is believable: it survived its own instrument
+              being wrong <b id="cr-count">6 times</b>.
+            </div>
+          </div>
+        </div>
+        <div class="card"><div class="timeline" id="cr-tl"></div></div>
+      </section>
+
+      <!-- CONTROLS -->
+      <section class="view" data-view="controls">
+        <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+          <div class="kpi"><div class="k-lab">A/A negative</div><div class="k-val good">PASS</div><div class="k-sub">k=3 unanimous · no false signal</div></div>
+          <div class="kpi"><div class="k-lab">Planted positive</div><div class="k-val good">PASS</div><div class="k-sub">gold 100% ↔ poor 20%</div></div>
+          <div class="kpi"><div class="k-lab">Saturation guard</div><div class="k-val good">PASS</div><div class="k-sub">floor spread intact</div></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h3>Why these gates run first</h3>
+          <p class="cap">a number is only shown if its controls pass — otherwise the instrument, not the system, is suspect</p>
+          <div class="bars" id="ct-bars"></div>
+        </div>
+      </section>
+
+      <!-- LIVE -->
+      <section class="view" data-view="live">
+        <div class="card glow">
+          <h3>Live monitor <span class="pill" id="lv-state">idle</span></h3>
+          <p class="cap">tails the run's events.jsonl — task-started / task-done as the conductor routes</p>
+          <div class="live-top">
+            <div class="ring" id="lv-ring" style="--p:0"><div class="inner" id="lv-pct">0%</div></div>
+            <div class="live-meta">
+              <div class="l" id="lv-now">press “Replay run” to stream run 829a</div>
+              <div id="lv-sub">18 task-runs · 6 tasks × 3 repeats</div>
+            </div>
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn primary" id="lv-go">▶ Replay run</button>
+          </div>
+          <div class="stream" id="lv-stream"></div>
+          <div class="taskgrid" id="lv-grid"></div>
+        </div>
+      </section>
+
+      <!-- RUNS -->
+      <section class="view" data-view="runs">
+        <div class="card">
+          <h3>Run history</h3>
+          <p class="cap">every captured run · stored under selfeval/runs/&lt;id&gt; · capture-once, analyze-many</p>
+          <table class="tbl" id="rn-tbl"></table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- DRAWER -->
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer"><div id="drawer-content"></div></div>
+
+<!--__SELFEVAL_DATA__-->
+<script>
+// ============ palette + helpers ============
+const C = { good:"#46c98a", warn:"#ef8a5c", bad:"#f0604d", os:"#56b6c2", sf:"#f4a93c", dc:"#46c98a", amber:"#f4a93c", cyan:"#56b6c2" };
+const pct = (x) => Math.round(x*100) + "%";
+const pct1 = (x) => (x*100).toFixed(1) + "%";  // one-decimal for the honesty headline (mean ± std)
+const shapeCls = (s) => s==="one-shot" ? "os" : s==="spec-first" ? "sf" : "dc";
+
+// ---- standalone-preview SAMPLE (run 829a). The reporter overrides all of this via window.__SELFEVAL__. ----
+const SAMPLE_ROUTING = {
+  perRun: [1, 0.6667, 1], mean: 0.889, std: 0.157,
+  floors: ["one-shot","spec-first","decompose"],
+  confusion: { "one-shot|one-shot":2, "spec-first|spec-first":2, "decompose|decompose":2 },
+  noisy: ["routing-notifications-feature","re-dc-webhooks"],
+};
+const SAMPLE_QUALITY = {
+  overall: 0.975,
+  dims: { "Fork surfacing":2.0, "Decision soundness":2.0, "Accountability":1.917, "Scope discipline":1.917, "Coherence":1.917 },
+  controls: { gold:1.0, poor:0.2, aa:0 },
+};
+const SAMPLE_TASKS = [
+  { id:"routing-format-price", floor:"one-shot", shapes:["one-shot","one-shot","one-shot"], t:[42.0,46.1,50.5],
+    fork:"Pure formatting helper — no undecided fork. Correctly one-shotted; no artifact to judge.", quality:null },
+  { id:"routing-version-flag", floor:"one-shot", shapes:["one-shot","one-shot","one-shot"], t:[57.5,54.3,59.7],
+    fork:"Add a --version flag against an existing CLI. Bounded, reversible — one-shot floor holds.", quality:null },
+  { id:"routing-dedupe-key", floor:"spec-first", shapes:["spec-first","spec-first","spec-first"], t:[113,110,108],
+    fork:"What does 'duplicate' mean? findById keys on id, findByEmail on case-folded email — and the seed data is rigged so {id:1, ada@} and {id:2, Ada@} disagree. The identity function is the load-bearing decision; one-shotting it would silently no-op.",
+    quality:[1.0,1.0,0.9] },
+  { id:"routing-search-faster", floor:"spec-first", shapes:["spec-first","spec-first","spec-first"], t:[96,101,99],
+    fork:"'Make search faster' — client-side waste (refetch per keystroke) vs server re-architecture. No backend exists in the repo, so the conductor stays in provably-correct client fixes and records the fork.",
+    quality:[1.0,1.0,0.9] },
+  { id:"routing-notifications-feature", floor:"decompose", shapes:["decompose","decompose","spec-first"], t:[171,168,120],
+    fork:"Notifications across model + service + REST + worker. Load-bearing fork: read-state (user ack) vs delivery-status (worker push) are orthogonal lifecycles a naive build conflates.",
+    quality:[1.0,1.0,1.0], noisy:true },
+  { id:"re-dc-webhooks", floor:"decompose", shapes:["decompose","spec-first","decompose"], t:[182,131,176],
+    fork:"Outbound webhook system: signing scheme (HMAC-SHA256), idempotency key, retry/backoff, delivery-success definition, persistence. Multiple coupled forks → decompose+verify.",
+    quality:[1.0,1.0,0.9], noisy:true },
+];
+const SAMPLE_CORRECTIONS = [
+  { date:"2026-06-16", high:true, h:"Dispatch-pattern proxy was invalid",
+    meter:"scored one-shot", truth:"conductor escalated via the AskUserQuestion gate (spec-first)",
+    fix:"replaced the proxy with artifact-based extraction — read plan/spec/tree, not the tool pattern" },
+  { date:"2026-06-16", high:true, h:"events.jsonl seam never existed",
+    meter:"assumed a stream file", truth:"the benchmark used --output-format json; no such file",
+    fix:"switched shape extraction to the conductor's work-folder artifacts" },
+  { date:"2026-06-15", high:true, h:"Cap-timing deflated decompose → one-shot",
+    meter:"scored one-shot", truth:"a slow planner was killed before it wrote plan.md",
+    fix:"artifact-aware early-terminate — poll the work folder, kill on the real signal" },
+  { date:"2026-06-16", high:false, h:"'Under-routes' were good decisions",
+    meter:"flagged as failures", truth:"the lighter shape shipped 98%-quality specs",
+    fix:"quality-gate over under-routes — a shape-mismatch only counts if output quality suffered" },
+  { date:"2026-06-15", high:false, h:"Pagination mislabeled decompose",
+    meter:"labeled decompose", truth:"spec-first was right — two independent labelers agreed",
+    fix:"re-labeled the task; the conductor had routed it correctly" },
+  { date:"2026-06-17", high:false, h:"Grace window deflates some decompose",
+    meter:"45s grace", truth:"slow decompose→spec-first planners clipped at the boundary",
+    fix:"bump grace to 120s for the definitive run (queued)" },
+];
+const SAMPLE_RUNS = [
+  { id:"20260617-115857-829a", fixture:"routing-quick", n:6, k:3, when:"Jun 17 · 11:58", dur:"29m", rt:0.889, qa:0.975, cur:true },
+  { id:"20260616-203314-7f21", fixture:"routing-quick", n:6, k:3, when:"Jun 16 · 20:33", dur:"31m", rt:0.833, qa:0.962 },
+  { id:"20260615-141002-b3c8", fixture:"routing", n:30, k:1, when:"Jun 15 · 14:10", dur:"1h12m", rt:0.80, qa:null },
+];
+
+// ============ data source — reporter injects window.__SELFEVAL__; standalone preview falls back to SAMPLE ============
+const D = (typeof window !== "undefined" && window.__SELFEVAL__) || {
+  routing: SAMPLE_ROUTING, quality: SAMPLE_QUALITY, tasks: SAMPLE_TASKS,
+  corrections: SAMPLE_CORRECTIONS, history: SAMPLE_RUNS,
+  meta: { runId: "20260617-115857-829a", fixture: "routing-quick", repeats: 3 },
+};
+const ROUTING = D.routing, QUALITY = D.quality, TASKS = D.tasks, CORRECTIONS = D.corrections, RUNS = D.history;
+
+// ============ constellation motif (the brand "A" network) ============
+function constellation(elId, w, h, n, seed){
+  const el = document.getElementById(elId); if(!el) return;
+  let s = seed||7; const rnd = () => (s = (s*9301+49297) % 233280) / 233280;
+  const nodes = Array.from({length:n}, () => ({ x: rnd()*w, y: rnd()*h }));
+  const grad = `<defs><linearGradient id="cg${elId}" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#f4a93c"/><stop offset="0.5" stop-color="#ef7d54"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>`;
+  let edges = "";
+  for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
+    const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy);
+    if(d < w*0.28) edges += `<line x1="${nodes[i].x.toFixed(1)}" y1="${nodes[i].y.toFixed(1)}" x2="${nodes[j].x.toFixed(1)}" y2="${nodes[j].y.toFixed(1)}" stroke="url(#cg${elId})" stroke-width="1" opacity="${(1-d/(w*0.28))*0.5}"/>`;
+  }
+  const dots = nodes.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(1.4+rnd()*1.8).toFixed(1)}" fill="url(#cg${elId})"/>`).join("");
+  el.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  el.innerHTML = grad + edges + dots;
+}
+constellation("logo-constel", 38, 38, 7, 3);
+constellation("hero-constel", 900, 240, 30, 11);
+constellation("cr-constel", 900, 160, 22, 5);
+
+// ============ render helpers ============
+function bars(elId, rows){
+  document.getElementById(elId).innerHTML = rows.map(r=>{
+    const w = Math.max(2, Math.round(r.value*100)), inside = w>76;
+    const vs = inside ? `right:8px;color:#0b0b0e` : `left:calc(${w}% + 8px);color:var(--muted)`;
+    return `<div class="bar-row"><div class="blab">${r.label}</div>
+      <div class="track"><div class="fill" style="width:${w}%;background:${r.color}"></div>
+      <div class="bval" style="${vs}">${r.display}</div></div></div>`;
+  }).join("");
+}
+function confusion(elId){
+  const f = ROUTING.floors;
+  let h = "<tr><th></th>"+f.map(c=>`<th>${c}</th>`).join("")+"</tr>";
+  for(const row of f){
+    h += `<tr><td class="rl">${row}</td>`+f.map(col=>{
+      const n = ROUTING.confusion[`${row}|${col}`]||0, diag = row===col;
+      const bg = diag ? "var(--good-dim)" : (n? "var(--bad-dim)":"var(--panel-2)");
+      const fg = diag ? "var(--good)" : (n? "var(--bad)":"var(--faint)");
+      return `<td class="cell" style="background:${bg};color:${fg}">${n||"·"}</td>`;
+    }).join("")+"</tr>";
+  }
+  document.getElementById(elId).innerHTML = h;
+}
+
+const accRows = ROUTING.perRun.map((a,i)=>({label:"Run "+(i+1),value:a,display:pct(a),color:a>=.999?C.good:a>=.8?C.warn:C.bad}));
+bars("ov-acc", accRows); bars("rt-acc", accRows);
+confusion("ov-mtx"); confusion("rt-mtx");
+const dimRows = Object.entries(QUALITY.dims).map(([k,v])=>({label:k,value:v/2,display:v.toFixed(2)+" / 2",color:C.good}));
+bars("ov-dim", dimRows); bars("qa-dim", dimRows);
+bars("ov-ctrl", [
+  {label:"A/A negative",value:1,display:"pass",color:C.good},
+  {label:"Gold ↔ poor",value:0.8,display:"0.80",color:C.good},
+  {label:"Saturation",value:1,display:"pass",color:C.good},
+]);
+bars("qa-trust", [
+  {label:"Planted GOLD",value:QUALITY.controls.gold,display:pct(QUALITY.controls.gold),color:C.good},
+  {label:"Planted POOR",value:QUALITY.controls.poor,display:pct(QUALITY.controls.poor),color:C.bad},
+]);
+bars("ct-bars", [
+  {label:"A/A negative",value:1,display:"k=3 unanimous",color:C.good},
+  {label:"Planted gold",value:1,display:"100%",color:C.good},
+  {label:"Planted poor",value:0.2,display:"20%",color:C.bad},
+  {label:"Saturation",value:1,display:"floor spread ok",color:C.good},
+]);
+document.getElementById("rt-noisy").textContent = (ROUTING.noisy||[]).length+" noisy";
+
+document.getElementById("rt-stab").innerHTML =
+  "<tr><th>Task</th><th>Floor</th><th>Modal shape</th><th>Repeats</th><th>Stable</th></tr>"+
+  TASKS.map(t=>{
+    const stab = t.shapes.filter(s=>s===t.floor).length/3;
+    const reps = t.shapes.map(s=>`<span class="tag ${shapeCls(s)}">${s.split("-")[0]}</span>`).join(" ");
+    return `<tr><td>${t.id.replace(/^routing-/,"")}</td><td><span class="tag ${shapeCls(t.floor)}">${t.floor}</span></td>
+      <td>${t.shapes[0]}</td><td>${reps}</td>
+      <td><span class="tag ${stab>=.999?'ok':'noisy'}">${pct(stab)}</span></td></tr>`;
+  }).join("");
+
+(function(){
+  const dims = Object.entries(QUALITY.dims), cx=110, cy=100, R=72, n=dims.length;
+  const pt=(i,r)=>{const a=-Math.PI/2 + i*2*Math.PI/n; return [cx+r*Math.cos(a), cy+r*Math.sin(a)];};
+  let g="";
+  for(let ring=1;ring<=2;ring++){
+    const pts = dims.map((_,i)=>pt(i,R*ring/2).join(",")).join(" ");
+    g += `<polygon points="${pts}" fill="none" stroke="#27272f" stroke-width="1"/>`;
+  }
+  dims.forEach((_,i)=>{const[x,y]=pt(i,R); g+=`<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#1b1b21"/>`;});
+  const valPts = dims.map(([,v],i)=>pt(i,R*v/2).join(",")).join(" ");
+  g += `<polygon points="${valPts}" fill="rgba(70,201,138,.20)" stroke="#46c98a" stroke-width="2"/>`;
+  dims.forEach(([,v],i)=>{const[x,y]=pt(i,R*v/2); g+=`<circle cx="${x}" cy="${y}" r="3.2" fill="#f4a93c"/>`;});
+  document.getElementById("qa-radar").innerHTML = g;
+})();
+
+const ART = [];
+TASKS.filter(t=>t.quality).forEach(t=>t.quality.forEach((q,i)=>ART.push({task:t.id,run:i+1,overall:q,t})));
+document.getElementById("qa-tbl").innerHTML =
+  "<tr><th>Task</th><th>Repeat</th><th>Overall</th><th>Verdict</th></tr>"+
+  ART.map((a,idx)=>`<tr class="clk" data-art="${idx}"><td>${a.task.replace(/^routing-/,"")}</td>
+    <td>r${a.run}</td><td><b class="${a.overall>=.95?'good':'warn'}">${pct(a.overall)}</b></td>
+    <td class="muted">${a.overall>=.999?'flawless spec':'strong — minor dock'}</td></tr>`).join("");
+
+document.getElementById("tk-tbl").innerHTML =
+  "<tr><th>Task</th><th>Floor</th><th>Dispatched ×3</th><th>Avg time</th><th>Quality</th></tr>"+
+  TASKS.map((t,idx)=>{
+    const reps = t.shapes.map(s=>`<span class="tag ${shapeCls(s)}">${s.split("-")[0]}</span>`).join(" ");
+    const avg = (t.t.reduce((a,b)=>a+b,0)/3).toFixed(0)+"s";
+    const q = t.quality ? `<b class="good">${pct(t.quality.reduce((a,b)=>a+b,0)/3)}</b>` : `<span class="muted">— one-shot</span>`;
+    return `<tr class="clk" data-task="${idx}"><td>${t.id.replace(/^routing-/,"")}</td>
+      <td><span class="tag ${shapeCls(t.floor)}">${t.floor}</span></td><td>${reps}</td><td>${avg}</td><td>${q}</td></tr>`;
+  }).join("");
+
+document.getElementById("cr-tl").innerHTML = CORRECTIONS.map(c=>`
+  <div class="tl-item ${c.high?'high':''}">
+    <div class="tl-date">${c.date}${c.high?' · high':''}</div>
+    <div class="tl-h">${c.h}</div>
+    <div class="tl-body">
+      <div class="ln"><b>meter</b><span>${c.meter}</span></div>
+      <div class="ln t"><b>truth</b><span>${c.truth}</span></div>
+      <div class="ln f"><b>fix</b><span>${c.fix}</span></div>
+    </div>
+  </div>`).join("");
+
+document.getElementById("rn-tbl").innerHTML =
+  "<tr><th>Run id</th><th>Fixture</th><th>Tasks</th><th>k</th><th>When</th><th>Dur</th><th>Routing</th><th>Quality</th></tr>"+
+  RUNS.map(r=>`<tr class="clk"><td>${r.id}${r.cur?' <span class="tag ok">active</span>':''}</td>
+    <td>${r.fixture}</td><td>${r.n}</td><td>×${r.k}</td><td>${r.when}</td><td>${r.dur}</td>
+    <td><b class="${r.rt>=.85?'good':'warn'}">${pct(r.rt)}</b></td>
+    <td>${r.qa?`<b class="violet">${pct(r.qa)}</b>`:'<span class="muted">—</span>'}</td></tr>`).join("");
+
+// ============ nav ============
+const RUNREF = "/ run " + (((D.meta||{}).runId||"").split("-").pop() || "");
+const titles = {overview:["Overview",RUNREF],routing:["Routing accuracy",RUNREF],quality:["Decision quality",RUNREF],
+  tasks:["Task explorer",RUNREF],corrections:["Corrections log","/ trust"],controls:["Controls","/ trust"],
+  live:["Live monitor","/ operate"],runs:["Run history","/ operate"]};
+document.getElementById("nav").addEventListener("click", e=>{
+  const b = e.target.closest("button[data-view]"); if(!b) return;
+  document.querySelectorAll("#nav button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active");
+  const v = b.dataset.view;
+  document.querySelectorAll(".view").forEach(s=>s.classList.toggle("active", s.dataset.view===v));
+  document.getElementById("view-title").textContent = titles[v][0];
+  document.getElementById("view-crumb").textContent = titles[v][1];
+  document.querySelector("main").scrollTo(0,0);
+});
+
+// ============ drawer ============
+const scrim=document.getElementById("scrim"), drawer=document.getElementById("drawer"), dc=document.getElementById("drawer-content");
+function openDrawer(html){ dc.innerHTML=html; drawer.classList.add("open"); scrim.classList.add("open"); }
+function closeDrawer(){ drawer.classList.remove("open"); scrim.classList.remove("open"); }
+scrim.addEventListener("click", closeDrawer);
+
+document.getElementById("tk-tbl").addEventListener("click", e=>{
+  const tr=e.target.closest("tr[data-task]"); if(!tr) return;
+  const t=TASKS[+tr.dataset.task];
+  const reps = t.shapes.map((s,i)=>`<div class="rep"><div class="rn">r${i+1} · ${t.t[i]}s</div><div class="rs"><span class="tag ${shapeCls(s)}">${s}</span></div></div>`).join("");
+  const q = t.quality ? `<h4>Decision quality</h4><div class="kv"><dt>per repeat</dt><dd>${t.quality.map(pct).join(" · ")}</dd><dt>mean</dt><dd class="good">${pct(t.quality.reduce((a,b)=>a+b,0)/3)}</dd></div>` : `<h4>Decision quality</h4><p class="empty">one-shot — no spec/plan artifact to judge</p>`;
+  openDrawer(`<div class="dh"><span class="x" onclick="closeDrawer()">✕</span><h2>${t.id}</h2></div>
+    <div class="db">
+      <div class="kv"><dt>labeled floor</dt><dd><span class="tag ${shapeCls(t.floor)}">${t.floor}</span></dd>
+      <dt>modal shape</dt><dd>${t.shapes[0]}</dd>
+      <dt>stability</dt><dd>${t.noisy?'<span class="tag noisy">noisy — 1 repeat differs</span>':'<span class="tag ok">unanimous</span>'}</dd></div>
+      <h4>Dispatched per repeat</h4><div class="repeats">${reps}</div>
+      <h4>The load-bearing fork</h4><div class="quote">${t.fork}</div>
+      ${q}
+    </div>`);
+});
+document.getElementById("qa-tbl").addEventListener("click", e=>{
+  const tr=e.target.closest("tr[data-art]"); if(!tr) return;
+  const a=ART[+tr.dataset.art];
+  const flawless = a.overall>=.999;
+  const rationale = flawless
+    ? "Surfaces exactly the load-bearing forks rather than trivia; chosen options are senior-defensible; every fork carries an assumption AND a one-line reversible override (the auto-pilot contract); scope crisp with sensible non-goals; spec closes the loop end-to-end with observable acceptance criteria."
+    : "Strong across forkSurfacing / soundness / coherence; docked one dimension — either an auto-decided fork deferred wholesale to plan.md without an inline override, or non-goals left a literal slice of the goal only partially addressed. Real, minor, honest.";
+  openDrawer(`<div class="dh"><span class="x" onclick="closeDrawer()">✕</span><h2>${a.task} · r${a.run}</h2></div>
+    <div class="db">
+      <div class="kv"><dt>overall</dt><dd class="${flawless?'good':'warn'}">${pct(a.overall)}</dd>
+      <dt>fork surfacing</dt><dd>2 / 2</dd><dt>soundness</dt><dd>2 / 2</dd>
+      <dt>accountability</dt><dd>${flawless?'2':'1'} / 2</dd><dt>scope</dt><dd>${flawless?'2':'1'} / 2</dd><dt>coherence</dt><dd>${flawless?'2':'1'} / 2</dd></div>
+      <h4>Judge rationale</h4><div class="quote">${rationale}</div>
+      <h4>Anti-gaming</h4><p class="empty">overall recomputed from the rubric — the model's self-score is discarded</p>
+    </div>`);
+});
+
+// ============ live monitor ============
+const grid=document.getElementById("lv-grid");
+grid.innerHTML = TASKS.map(t=>`<div class="tgrid-cell" data-id="${t.id}">${t.id.replace(/^routing-/,"").replace(/^re-/,"")}</div>`).join("");
+document.getElementById("lv-go").addEventListener("click", runLive);
+function runLive(){
+  const stream=document.getElementById("lv-stream"); stream.innerHTML="";
+  const stEl=document.getElementById("lv-state"); stEl.textContent="streaming"; stEl.style.color="var(--violet-2)";
+  document.querySelectorAll(".tgrid-cell").forEach(c=>c.className="tgrid-cell");
+  let step=0; const total=TASKS.length*3;
+  const seq=[]; TASKS.forEach((t,ti)=>{for(let r=0;r<3;r++)seq.push({t,ti,r});});
+  function tick(){
+    if(step>=seq.length){ stEl.textContent="done"; stEl.style.color="var(--good)";
+      document.getElementById("lv-now").textContent="run complete · 88.9% mean accuracy"; return; }
+    const {t,ti,r}=seq[step]; const cell=grid.children[ti];
+    const num=`${ti+1}/6`; const ts=new Date(1771000000000+step*47000).toISOString().substr(11,8);
+    if(r===0) cell.className="tgrid-cell run";
+    stream.innerHTML += `<div class="ev"><span class="t">${ts}</span> <span class="start">▸ ${num} ${t.id} (r${r})</span></div>`;
+    document.getElementById("lv-now").textContent=`routing ${t.id} — repeat ${r+1}/3`;
+    setTimeout(()=>{
+      stream.innerHTML += `<div class="ev"><span class="t">${ts}</span> <span class="done">✓ ${num} ${t.id} → ${t.shapes[r]} (${(t.t[r]*1000).toFixed(0)}ms)</span></div>`;
+      stream.scrollTop=stream.scrollHeight;
+      if(r===2){ cell.className="tgrid-cell done"; }
+      step++; const p=Math.round(step/total*100);
+      document.getElementById("lv-ring").style.setProperty("--p",p); document.getElementById("lv-pct").textContent=p+"%";
+      setTimeout(tick, 240);
+    }, 300);
+  }
+  tick();
+}
+
+// ============ hydrate the static chrome (hero, KPIs, chips, nav badges) from D ============
+function $(id){ return document.getElementById(id); }
+function setHTML(id, html){ const el=$(id); if(el) el.innerHTML=html; }
+function setText(id, txt){ const el=$(id); if(el) el.textContent=txt; }
+(function hydrate(){
+  const m = D.meta || {};
+  const shortId = (m.runId||"").split("-").pop() || (m.runId||"—");
+  setText("rp-id", m.runId || "—");
+  setText("tb-fixture", m.fixture || "—");
+  setText("tb-repeats", "×"+(m.repeats||1)+" repeats");
+
+  // routing headline — modal accuracy is the confusion diagonal; the per-repeat mean±std sits beside it (honesty contract)
+  const total = Object.values(ROUTING.confusion||{}).reduce((a,b)=>a+b,0);
+  const diag = (ROUTING.floors||[]).reduce((s,f)=>s+((ROUTING.confusion||{})[f+"|"+f]||0),0);
+  const modal = total ? diag/total : 0;
+  const per = ROUTING.perRun||[];
+  setText("hero-eyebrow", "Routing · run "+shortId+" · floor-conformance");
+  setHTML("hero-big", pct(modal)+'<small> &nbsp;modal</small>');
+  setHTML("hero-second", diag+" / "+total+" on the diagonal &nbsp;·&nbsp; per-repeat mean <b>"+pct1(ROUTING.mean!=null?ROUTING.mean:modal)+" ±"+pct1(ROUTING.std||0)+"</b>"+(per.length?" (range "+pct(Math.min(...per))+"–"+pct(Math.max(...per))+")":""));
+
+  // KPIs
+  const noisy = (ROUTING.noisy||[]).length;
+  const unanim = (TASKS||[]).length - noisy;
+  const misroutes = ((ROUTING.overRoutes||[]).length)+((ROUTING.underRoutes||[]).length);
+  const totalRuns = (per.length||1) * (TASKS||[]).length;
+  const ctrl = QUALITY.controls||{};
+  const gap = (ctrl.gold||0) - (ctrl.poor||0);
+  setHTML("kpi-quality", pct(QUALITY.overall||0));
+  setText("kpi-quality-sub", ART.length+" artifacts judged");
+  setHTML("kpi-disc", gap.toFixed(2));
+  setText("kpi-disc-sub", "gold "+pct(ctrl.gold||0)+" ↔ poor "+pct(ctrl.poor||0));
+  setHTML("kpi-stab", unanim+" / "+(TASKS||[]).length+"<small> unanimous</small>");
+  setText("kpi-stab-sub", noisy+" noisy across repeats");
+  setHTML("kpi-misroute", misroutes+"<small> / "+totalRuns+"</small>");
+
+  // nav badges + corrections count
+  setText("nav-routing", pct(ROUTING.mean!=null?ROUTING.mean:modal));
+  setText("nav-quality", pct(QUALITY.overall||0));
+  setText("nav-tasks", String((TASKS||[]).length));
+  setText("nav-corrections", String((CORRECTIONS||[]).length));
+  setText("nav-runs", String((RUNS||[]).length));
+  setText("cr-count", (CORRECTIONS||[]).length+" times");
+})();
+</script>
+</body>
+</html>

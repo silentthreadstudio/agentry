@@ -33,6 +33,8 @@ import { runQualityProbe, type QualityInput } from "./quality/probe.ts";
 import { realJudgeFn, type JudgeFn } from "./quality/judge.ts";
 import { loadPlantedFixtures, resolveInputs } from "./quality/command.ts";
 
+import { emitReport } from "./report/emit.ts";
+
 /**
  * The default runs-root, anchored to the SELFEVAL PACKAGE ROOT (`<selfeval>/runs`) — NOT to CWD. Computed from this
  * file's own location: `cli.ts` lives at `<selfeval>/src/cli.ts`, so the package root is one dir up from `src/`.
@@ -41,6 +43,10 @@ import { loadPlantedFixtures, resolveInputs } from "./quality/command.ts";
  * still resolves relative to CWD (for tests / custom locations).
  */
 const DEFAULT_RUNS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "runs");
+
+/** The committed report-output root (`<selfeval>/results`) and the curated corrections file, both package-anchored. */
+const DEFAULT_RESULTS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "results");
+const DEFAULT_CORRECTIONS = join(dirname(fileURLToPath(import.meta.url)), "..", "corrections.json");
 
 /** A usage error — surfaced loudly and mapped to exit code 2 (a setup/argument bug, distinct from a runtime fault). */
 class UsageError extends Error {}
@@ -55,6 +61,8 @@ export interface CliFlags {
   runsRoot?: string;
   runId?: string;
   fromRun?: string;
+  resultsRoot?: string;
+  correctionsPath?: string;
 }
 
 /** Map of `--flag` → CliFlags key. A flag absent here is an unknown flag → loud UsageError. */
@@ -67,6 +75,8 @@ const FLAGS: Record<string, keyof CliFlags> = {
   "--runs-root": "runsRoot",
   "--run-id": "runId",
   "--from-run": "fromRun",
+  "--results-root": "resultsRoot",
+  "--corrections": "correctionsPath",
 };
 
 /**
@@ -278,6 +288,23 @@ function replay(positionals: string[], flags: CliFlags): number {
 }
 
 /**
+ * `report <id>` — generate the static dashboard for a STORED run with ZERO live API (doc 08 §6). Reads the run's
+ * stored artifacts (`summary.json` / `events.jsonl` / `decision-quality.json`) + the curated corrections file + the
+ * run-history index, and writes a self-contained `results/<date>/<id>/index.html`. Echoes the written path.
+ */
+function report(positionals: string[], flags: CliFlags): number {
+  const runId = positionals[0];
+  if (runId === undefined) throw new UsageError("report: a <id> positional argument is required");
+  const runsRoot = resolveRunsRoot(flags);
+  const resultsRoot = flags.resultsRoot !== undefined ? resolve(flags.resultsRoot) : DEFAULT_RESULTS_ROOT;
+  const correctionsPath = flags.correctionsPath !== undefined ? resolve(flags.correctionsPath) : DEFAULT_CORRECTIONS;
+
+  const { outPath } = emitReport(runsRoot, runId, { resultsRoot, correctionsPath });
+  process.stdout.write(`${outPath}\n`);
+  return 0;
+}
+
+/**
  * The subcommand dispatcher. Parses the leading subcommand token(s), hands the rest to the matching handler, and
  * maps thrown errors to exit codes: a {@link UsageError} → 2 (argument/usage), any other error → 1 (runtime).
  *
@@ -308,8 +335,13 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
       return replay(positionals, flags);
     }
 
+    if (command === "report") {
+      const { positionals, flags } = parseFlags([sub, ...rest].filter((t): t is string => t !== undefined));
+      return report(positionals, flags);
+    }
+
     throw new UsageError(
-      `selfeval: unknown command "${command ?? ""}" (expected "run routing" | "run quality" | "trace <taskId>" | "replay <id>")`,
+      `selfeval: unknown command "${command ?? ""}" (expected "run routing" | "run quality" | "trace <taskId>" | "replay <id>" | "report <id>")`,
     );
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n`);
