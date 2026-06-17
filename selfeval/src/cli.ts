@@ -34,6 +34,7 @@ import { realJudgeFn, type JudgeFn } from "./quality/judge.ts";
 import { loadPlantedFixtures, resolveInputs } from "./quality/command.ts";
 
 import { emitReport } from "./report/emit.ts";
+import { runMoatProbe } from "./moat/probe.ts";
 
 /**
  * The default runs-root, anchored to the SELFEVAL PACKAGE ROOT (`<selfeval>/runs`) — NOT to CWD. Computed from this
@@ -218,6 +219,40 @@ async function runQuality(flags: CliFlags, judge: JudgeFn = realJudgeFn): Promis
 }
 
 /**
+ * `run moat` — drive the memory-hygiene (moat) probe with full persistence. Per fixture task it runs a warm
+ * conductor with a fork-resolving fact seeded vs. an irrelevant decoy, and scores whether recalled memory makes
+ * the task route lighter (compounding) — gated by seed-landing + decoy discrimination. Echoes the run dir.
+ */
+async function runMoat(flags: CliFlags, runner = liveRunner): Promise<number> {
+  if (flags.fixture === undefined) throw new UsageError("run moat: --fixture <dir> is required");
+  const fixtureDir = resolve(flags.fixture);
+  const runsRoot = resolveRunsRoot(flags);
+  const runId = newRunId(flags.runId);
+
+  const config: RunConfig = {
+    runId,
+    kind: "moat",
+    fixtureDir,
+    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
+    startedAt: new Date().toISOString(),
+  };
+  const { store, runDir, observer } = openRun(runsRoot, runId, config);
+
+  const result = await runMoatProbe({
+    fixtureDir,
+    runner,
+    outPath: join(runDir, "summary-artifact.json"),
+    observer,
+    runId,
+    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
+  });
+
+  store.finishRun(summaryFor(config, result.outcomes.length, result.artifact));
+  process.stdout.write(`${runDir}\n`);
+  return 0;
+}
+
+/**
  * `trace <taskId>` — run the routing probe over the fixture with full capture into a run dir, then echo the path
  * to the requested task's captured `tasks/<taskId>/` directory (its `stream.jsonl` + `work/` + shape/timing). The
  * durable replacement for the throwaway `diag-<task>.ts` scripts: a stored, inspectable single-task capture.
@@ -322,7 +357,10 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
       if (sub === "quality") {
         return await runQuality(parseFlags(rest).flags, deps.judge);
       }
-      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "routing" | "quality")`);
+      if (sub === "moat") {
+        return await runMoat(parseFlags(rest).flags, deps.runner);
+      }
+      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "routing" | "quality" | "moat")`);
     }
 
     if (command === "trace") {

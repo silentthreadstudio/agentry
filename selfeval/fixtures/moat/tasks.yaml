@@ -1,0 +1,35 @@
+# Moat (memory-hygiene) fixture — does recalled memory make a task route LIGHTER?
+#
+# Each task pairs a COLD floor (the shape it routes to with empty memory) with a RELEVANT fork-resolving fact
+# (expected to collapse the fork → route lighter) and an irrelevant DECOY fact (the discrimination control →
+# expected NOT to change the shape). The codebase is seeded from `seeds/<id>` (symlinked to the routing seeds).
+version: 1
+tasks:
+  - id: routing-dedupe-key
+    prompt: |
+      Add a `dedupe(items)` helper to `src/utils.js` that removes duplicate user records from a list.
+    # COLD: the id-vs-email "what is a duplicate" fork is undecided → the conductor escalates to spec-first.
+    cold_floor: spec-first
+    # A verbatim clause from the relevant fact — confirms it actually SURFACED in recall (not just non-empty).
+    fact_signature: "not stable across imports"
+    relevant:
+      type: decision
+      scope: repo
+      tags: [dedupe, identity, users, email]
+      provenance: [src/users.js]
+      why: "Settles the only load-bearing fork in this repo's user-dedup work so it need not be re-litigated."
+      text: >-
+        For user-deduplication in this codebase, two user records are duplicates iff their email matches
+        case-insensitively. Key dedup on the case-folded email and keep the FIRST occurrence; never key on id
+        (ids are not stable across imports, so id-keying would treat one person as two accounts). This settles
+        the findById-vs-findByEmail ambiguity.
+    # An on-topic-but-irrelevant fact: it does NOT resolve the duplicate-identity fork, so it must NOT let the
+    # conductor one-shot. If it does, "compounding" is memory-agnostic and the discrimination gate fires.
+    decoy:
+      type: repo-fact
+      scope: repo
+      tags: [tooling, build]
+      provenance: [package.json]
+      text: >-
+        This project ships as ESM and uses Node's built-in test runner (node:test); there is no bundler and no
+        TypeScript build step. Helpers in src/ are plain .js with named exports.

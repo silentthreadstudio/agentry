@@ -15,8 +15,8 @@
  */
 export const SCHEMA_VERSION = "1";
 
-/** The two probe kinds a run can be — routing accuracy or decision quality. */
-export type RunKind = "routing" | "quality";
+/** The probe kinds a run can be — routing accuracy, decision quality, or memory-hygiene (the moat). */
+export type RunKind = "routing" | "quality" | "moat";
 
 /**
  * The resolved parameters of one run — the reproducibility header written verbatim to `config.json` (ADR-001).
