@@ -20,3 +20,6 @@ packages/workbench/dist/
 
 #agentry
 .agentry
+
+# self-eval run artifacts — per-run capture trees (config/events/summary/tasks); regenerated, never committed
+selfeval/runs/

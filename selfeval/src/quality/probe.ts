@@ -14,6 +14,7 @@
 // The judge is INJECTED (canned scores in tests = zero spend; the real `claude -p` judge from the command), the
 // same seam routing uses for its Runner.
 
+import type { EvalObserver } from "../store/schema.ts";
 import { judgeArtifact, type JudgeFn, type QualityScore } from "./judge.ts";
 import { aaJudgeStability, plantedDiscrimination, DEFAULT_AA_TOLERANCE } from "./control.ts";
 import {
@@ -64,6 +65,14 @@ export interface QualityProbeOptions {
   model?: string;
   /** Where the artifact JSON is written. */
   outPath: string;
+  /**
+   * ADDITIVE observability seam (ADR-002). When absent (the default) the probe is byte-for-byte its pre-seam
+   * behavior — the only call site is a guarded `observer?.emit?.()` after each input is judged. No `onTaskComplete`
+   * here: the quality probe has no per-task sandbox to capture (it scores already-stored artifact text).
+   */
+  observer?: EvalObserver;
+  /** The run id stamped onto emitted {@link EvalEvent}s (matches the store's `runs/<runId>/`); "" when unset. */
+  runId?: string;
 }
 
 /** The result of a probe run: the emitted artifact + where it was written. */
@@ -124,10 +133,19 @@ export async function runQualityProbe(opts: QualityProbeOptions): Promise<Qualit
   }
 
   // (c) ONLY NOW — score each real input artifact; the gates have proven the judge is stable and discriminating.
+  const observer = opts.observer;
+  const runId = opts.runId ?? "";
   const scored: ScoredArtifact[] = [];
   for (const input of opts.artifacts) {
     const score = await judgeOne(input.taskPrompt, input.artifactText, judge, model);
     scored.push({ taskId: input.taskId, score });
+    // ADDITIVE: announce the judged input. Guarded — absent observer ⇒ no event, identical scoring path.
+    observer?.emit?.({
+      kind: "task-done",
+      runId,
+      detail: `judged ${input.taskId} → ${score.overall}`,
+      ts: new Date().toISOString(),
+    });
   }
   const artifact = buildScoredArtifact(scored, {
     aaStdev: aa.stdev,

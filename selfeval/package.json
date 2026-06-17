@@ -8,6 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "selfeval": "node --import tsx src/cli.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

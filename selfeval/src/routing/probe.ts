@@ -19,6 +19,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Runner, Sandbox } from "../io/port.ts";
+import type { EvalObserver } from "../store/schema.ts";
 import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
 import { extractShape, DegenerateRunError } from "./extract.ts";
 import { loadRoutingFixture, type RoutingTask } from "./fixture.ts";
@@ -76,6 +77,16 @@ export interface RoutingProbeOptions {
    * the first task's already-collected `runs` shapes (no extra A/A executions).
    */
   runs?: number;
+  /**
+   * ADDITIVE observability seam (ADR-002 / ADR-001). When absent (the default) the probe is byte-for-byte its
+   * pre-seam behavior — every call site below is guarded `observer?.…?.()`, so a no-observer run neither emits
+   * events nor captures sandboxes. The store injects this to drive `events.jsonl` + stdout progress and to copy
+   * each task's sandbox out before it is discarded. The probe only ever WRITES through the sink, never reads it,
+   * so it cannot influence any gated decision.
+   */
+  observer?: EvalObserver;
+  /** The run id stamped onto emitted {@link EvalEvent}s (matches the store's `runs/<runId>/`); "" when unset. */
+  runId?: string;
 }
 
 /** The result of a probe run: the emitted artifact + where it was written + the per-task outcomes it scored. */
@@ -88,10 +99,23 @@ export interface RoutingResult {
   outcomes: readonly RoutingOutcome[];
 }
 
+/** What one task run yields the caller: the routed shape (or null) PLUS the sandbox paths needed to capture it. */
+interface RunOutcome {
+  /** The ROUTED shape, or `null` for a degenerate / indeterminate no-artifact run (registered as a miss). */
+  shape: Shape | null;
+  /** The task's sandbox working dir — the capture source root (its `.agentry/work/` tree is copied out). */
+  sandboxDir: string;
+  /** Absolute path to this run's captured `stream.jsonl` under the sandbox. */
+  streamPath: string;
+}
+
 /**
  * Run one routing task through the injected runner and extract its ROUTED shape from the conductor's
- * work-folder artifacts. Catches `DegenerateRunError` (an aborted / indeterminate no-artifact run) and returns
- * `null` for that task rather than crashing the whole probe — one bad run must not sink the labeled set.
+ * work-folder artifacts. Catches `DegenerateRunError` (an aborted / indeterminate no-artifact run) and reports
+ * a `null` shape for that task rather than crashing the whole probe — one bad run must not sink the labeled set.
+ *
+ * Returns the sandbox dir + stream path alongside the shape (purely ADDITIVE — the extract/score logic is
+ * unchanged) so the per-task loop can hand them to `observer?.onTaskComplete` before the sandbox is discarded.
  */
 async function runAndExtract(
   task: RoutingTask,
@@ -99,7 +123,7 @@ async function runAndExtract(
   model: string,
   pluginDir: string | undefined,
   fixtureDir: string,
-): Promise<Shape | null> {
+): Promise<RunOutcome> {
   const sandbox: Sandbox = prepareSandbox();
   // Seed the working dir with this task's realistic starting codebase BEFORE the run, so the prompt's file
   // references resolve and multi-part tasks don't collapse to one-shot. Gated on the seed dir existing:
@@ -133,12 +157,14 @@ async function runAndExtract(
   try {
     // The shape is read from the conductor's WORK-FOLDER ARTIFACTS under the sandbox working dir (§2), with the
     // settle signals only disambiguating the no-artifact one-shot-vs-degenerate case.
-    return extractShape(sandbox.workingDir, {
+    const shape = extractShape(sandbox.workingDir, {
       ...(result.resultSubtype !== undefined ? { resultSubtype: result.resultSubtype } : {}),
       producedTreeNonEmpty: result.producedTreeNonEmpty,
     });
+    return { shape, sandboxDir: sandbox.workingDir, streamPath };
   } catch (err) {
-    if (err instanceof DegenerateRunError) return null; // indeterminate run — registered as a miss, not a crash
+    // indeterminate run — registered as a miss (null shape), not a crash; still report the sandbox for capture.
+    if (err instanceof DegenerateRunError) return { shape: null, sandboxDir: sandbox.workingDir, streamPath };
     throw err;
   }
 }
@@ -168,16 +194,48 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
   const model = opts.model ?? DEFAULT_MODEL;
   const threshold = opts.x ?? null;
   const tasks = loadRoutingFixture(join(opts.fixtureDir, "tasks.yaml"));
+  // ADDITIVE observability (default-absent): the observer + run id drive `events.jsonl`/stdout progress and the
+  // per-task sandbox capture. Both hooks are optional, so a run without an observer behaves exactly as before.
+  const observer = opts.observer;
+  const runId = opts.runId ?? "";
+  const N = tasks.length;
 
   // Step 2 — the labeled run: each task `runs` times → its dispatched shapes (a degenerate repeat ⇒ null).
   // The legacy single-shape `outcomes` (the existing accuracy/matrix/over-under inputs) use RUN 0's shape, so
   // when `runs === 1` this is byte-for-byte today's behavior. `taskRuns` carries all `runs` shapes per task for
   // the additive variance readouts.
   const taskRuns: TaskRuns[] = [];
-  for (const task of tasks) {
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i]!;
     const shapes: (Shape | null)[] = [];
     for (let r = 0; r < runs; r++) {
-      shapes.push(await runAndExtract(task, opts.runner, model, opts.pluginDir, opts.fixtureDir));
+      // ADDITIVE: announce the task start, time the run (wall-clock), run it, then announce done + capture the
+      // sandbox. All three observer calls are guarded — absent ⇒ no events, no capture, identical control flow.
+      observer?.emit?.({
+        kind: "task-started",
+        runId,
+        detail: `${i + 1}/${N} ${task.id}`,
+        ts: new Date().toISOString(),
+      });
+      const startedMs = Date.now();
+      const outcome = await runAndExtract(task, opts.runner, model, opts.pluginDir, opts.fixtureDir);
+      const timingMs = Date.now() - startedMs;
+      shapes.push(outcome.shape);
+      const shapeLabel = outcome.shape ?? "degenerate";
+      observer?.emit?.({
+        kind: "task-done",
+        runId,
+        detail: `${i + 1}/${N} ${task.id} → ${shapeLabel} (${timingMs}ms)`,
+        ts: new Date().toISOString(),
+      });
+      observer?.onTaskComplete?.({
+        taskId: task.id,
+        ...(runs > 1 ? { runIndex: r } : {}),
+        sandboxDir: outcome.sandboxDir,
+        streamPath: outcome.streamPath,
+        shape: shapeLabel,
+        timingMs,
+      });
     }
     taskRuns.push({
       taskId: task.id,
@@ -206,7 +264,8 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
   } else {
     aaSourceShapes = [];
     for (let i = 0; i < k; i++) {
-      aaSourceShapes.push(await runAndExtract(aaTask, opts.runner, model, opts.pluginDir, opts.fixtureDir));
+      const aaOutcome = await runAndExtract(aaTask, opts.runner, model, opts.pluginDir, opts.fixtureDir);
+      aaSourceShapes.push(aaOutcome.shape);
     }
   }
   // A degenerate A/A repeat is non-comparable; record a sentinel so the set is not unanimous (it fails — a run
@@ -214,6 +273,7 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
   const aaShapes: Shape[] = aaSourceShapes.map((s) => s ?? ("__degenerate__" as Shape));
   const aa = aaUnanimity(aaShapes, k);
   if (!aa.ok) {
+    emitGate(observer, runId, aa.verdict!);
     return emit(opts.outPath, buildAbortedArtifact(aa.verdict!), []);
   }
 
@@ -224,6 +284,7 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
   const observedForPlanted = plantedOutcome.dispatched ?? ("__degenerate__" as Shape);
   const positive = positiveControl(plantedTask.correctFloor, observedForPlanted);
   if (!positive.ok) {
+    emitGate(observer, runId, positive.verdict!);
     return emit(opts.outPath, buildAbortedArtifact(positive.verdict!), []);
   }
 
@@ -234,6 +295,7 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
   const saturation = saturationGuard(observedShapes);
   if (!saturation.power) {
     // NO accuracy number is built — the aborted artifact carries the verdict only (AC8).
+    emitGate(observer, runId, saturation.verdict!);
     return emit(opts.outPath, buildAbortedArtifact(saturation.verdict!), []);
   }
 
@@ -247,4 +309,9 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
 function emit(outPath: string, artifact: RoutingArtifact, outcomes: readonly RoutingOutcome[]): RoutingResult {
   writeArtifact(outPath, artifact);
   return { artifact, outPath, outcomes };
+}
+
+/** ADDITIVE: announce a fired control gate through the (optional) observer. No-op when no observer is injected. */
+function emitGate(observer: EvalObserver | undefined, runId: string, verdict: string): void {
+  observer?.emit?.({ kind: "gate-fired", runId, detail: verdict, ts: new Date().toISOString() });
 }
