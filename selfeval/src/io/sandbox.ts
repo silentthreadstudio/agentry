@@ -23,6 +23,15 @@ export const PROJECT_DIR_ENV = "AGENTRY_PROJECT_DIR";
  * reads (the faithful routing signal — autopilot-design §2/§3), never stalling on an interactive gate.
  */
 export const AUTOPILOT_ENV = "AGENTRY_AUTOPILOT";
+/**
+ * Claude Code's own project-dir var. The memory layer resolves the PROJECT root as
+ * `CLAUDE_PROJECT_DIR ?? AGENTRY_PROJECT_DIR` (packages/memory `resolution/roots.ts`) — CLAUDE_PROJECT_DIR WINS.
+ * Since the eval runs INSIDE a Claude Code session, the inherited `CLAUDE_PROJECT_DIR` (the real repo) would
+ * silently override our sandbox `AGENTRY_PROJECT_DIR`, breaking project-memory isolation: the child would read
+ * and write the REAL repo's memory, not the fresh sandbox root. So `prepareSandbox` PINS it to the sandbox base.
+ * (No symmetric hazard for the global root — `roots.ts` reads only `AGENTRY_GLOBAL_DIR` there.)
+ */
+export const CLAUDE_PROJECT_DIR_ENV = "CLAUDE_PROJECT_DIR";
 
 /**
  * Resolve a base dir to the memory root the file-store actually writes under. The memory layer treats
@@ -43,7 +52,8 @@ export function memoryRootFor(baseDir: string): string {
  *
  * The returned `Sandbox.{globalRoot,projectRoot}` are the RESOLVED roots (`<base>/.agentry/memory`), so the
  * Runner and any isolation assertion point at the same paths the child writes under. The env is
- * `{...process.env}` (real HOME PRESERVED → Claude auth resolves normally) plus the two base-dir overrides.
+ * `{...process.env}` (real HOME PRESERVED → Claude auth resolves normally) plus the base-dir overrides —
+ * including pinning `CLAUDE_PROJECT_DIR` to the sandbox base so it can't override our project-memory root.
  *
  * No `arm` parameter (ported from benchmark, dropped): selfeval has a single config, not arms.
  */
@@ -56,6 +66,9 @@ export function prepareSandbox(): Sandbox {
     ...process.env, // real HOME preserved → auth stays intact
     [GLOBAL_DIR_ENV]: globalBase,
     [PROJECT_DIR_ENV]: projectBase,
+    // Pin CLAUDE_PROJECT_DIR to the sandbox base too: the memory layer prefers it over AGENTRY_PROJECT_DIR, so
+    // the session's inherited value would otherwise point the child at the REAL repo memory (isolation leak).
+    [CLAUDE_PROJECT_DIR_ENV]: projectBase,
     [AUTOPILOT_ENV]: "1", // decide-record-proceed: the conductor emits routing artifacts, never blocks a gate
   };
 
