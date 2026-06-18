@@ -80,6 +80,54 @@ test("supersede: recall returns only the active fact", () => {
   assert.match(memories[0]?.fact.text ?? "", /identity adapters/);
 });
 
+test("supersede beats dedup: an explicit supersedes is honored even on near-duplicate text", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  // variant A: the new text near-dups the very fact being superseded.
+  const old = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the database connection pool size is set to ten in config",
+  });
+  const res = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the database connection pool size is set to ten in config",
+    supersedes: old.id,
+  });
+  assert.equal(res.action, "created");
+  assert.equal(res.supersededMissing, undefined);
+  assert.equal(factOnDisk(dir, old.id)?.status, "superseded");
+  assert.notEqual(res.id, old.id);
+});
+
+test("supersede beats dedup: honored when the new text near-dups a different active fact", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  // the fact we explicitly retire (dissimilar text).
+  const target = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the auth module lives under src server handlers legacy path",
+  });
+  // a different active fact whose text the new write near-duplicates.
+  service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the database connection pool size is set to ten in config",
+  });
+  // the new write supersedes `target` but its text near-dups the pool-size fact.
+  const res = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the database connection pool size is set to ten in config",
+    supersedes: target.id,
+  });
+  assert.equal(res.action, "created");
+  assert.equal(res.supersededMissing, undefined);
+  assert.equal(factOnDisk(dir, target.id)?.status, "superseded");
+});
+
 test("forget: removes a memory from the store and disk", () => {
   const service = newService(fresh());
   const { id } = service.write({

@@ -28527,17 +28527,18 @@ var MemoryService = class {
     this.signature = this.store.signature();
   }
   write(input) {
-    for (const fact2 of this.facts.values()) {
-      if (fact2.status === "active" && fact2.type === input.type && similarity(fact2.text, input.text) >= DEDUP_THRESHOLD) {
-        this.save({
-          ...fact2,
-          usefulness: fact2.usefulness + 1,
-          confidence: Math.min(1, fact2.confidence + 0.05),
-          updatedAt: this.iso()
-        });
-        return { id: fact2.id, action: "reinforced" };
+    if (!input.supersedes)
+      for (const fact2 of this.facts.values()) {
+        if (fact2.status === "active" && fact2.type === input.type && similarity(fact2.text, input.text) >= DEDUP_THRESHOLD) {
+          this.save({
+            ...fact2,
+            usefulness: fact2.usefulness + 1,
+            confidence: Math.min(1, fact2.confidence + 0.05),
+            updatedAt: this.iso()
+          });
+          return { id: fact2.id, action: "reinforced" };
+        }
       }
-    }
     const ts = this.iso();
     const origin = originForScope(input.scope, this.roots);
     const fact = {
@@ -28881,6 +28882,8 @@ var MemoryType = external_exports.enum([
 ]);
 var KnownShape = external_exports.enum(["one-shot", "spec-first", "decompose+verify"]);
 var Shape = external_exports.string();
+var KnownKind = external_exports.enum(["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"]);
+var Kind = external_exports.string();
 
 // ../core/dist/errors.js
 var MemoryErrorCode = external_exports.enum([
@@ -28974,7 +28977,9 @@ var SpecFrontmatter = external_exports.object({
   id: external_exports.string(),
   title: external_exports.string(),
   status: external_exports.enum(["draft", "approved", "superseded"]),
-  version: external_exports.string().optional()
+  version: external_exports.string().optional(),
+  kind: Kind.optional()
+  // the routing kind axis (ADR-005); optional — a spec may predate it
 });
 
 // ../core/dist/events.js

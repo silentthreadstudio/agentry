@@ -134,7 +134,11 @@ export class MemoryService {
 
   write(input: WriteInput): WriteResult {
     // dedup-reinforce: a near-duplicate active fact of the same type → reinforce, don't copy.
-    for (const fact of this.facts.values()) {
+    // Skipped when an explicit `supersedes` is requested: that is a deliberate create-and-retire, and
+    // the dedup early-return would otherwise swallow it (reinforce-and-return before supersedes is ever
+    // applied) — leaving the to-be-retired fact active forever and silently misleading the caller.
+    if (!input.supersedes)
+      for (const fact of this.facts.values()) {
       if (
         fact.status === "active" &&
         fact.type === input.type &&
