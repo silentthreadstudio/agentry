@@ -6,3 +6,7 @@ packages:
 allowBuilds:
   '@biomejs/biome': true
   esbuild: true
+  sharp: false
+
+minimumReleaseAgeExclude:
+  - astro@6.4.8

@@ -1,0 +1,240 @@
+---
+// RoutingDemo.astro — §4.5 wrapper for the interactive routing demo (VISION §6.2).
+// Renders a server-side fallback for the DEFAULT task (so it reads correctly with
+// JS off / before hydration), the demo root the island upgrades, and the script
+// that imports the island module. `class="reveal"` so the section animates in.
+//
+// The island (islands/RoutingDemo.ts) defers its first render to when the root is
+// visible, then replaces this fallback's children with the interactive UI. The
+// fallback is built from the SAME typed TASKS data, so JS-off and hydrated agree.
+import { TASKS, type Shape } from '../islands/tasks';
+
+const DEFAULT_ID = 'fix';
+const fallback = TASKS.find((t) => t.id === DEFAULT_ID) ?? TASKS[0];
+
+const SHAPE_LABEL: Record<Shape, string> = {
+  'one-shot': 'one-shot',
+  'spec-first': 'spec-first',
+  decompose: 'decompose + verify',
+};
+const SHAPE_TONE: Record<Shape, string> = {
+  'one-shot': 'is-one-shot',
+  'spec-first': 'is-spec-first',
+  decompose: 'is-decompose',
+};
+---
+
+<div class="routing-demo reveal" data-routing-demo data-default={DEFAULT_ID}>
+  {/* Server-rendered fallback — the default task, static. The island replaces this. */}
+  <div class="routing-demo__tabs" role="tablist" aria-label="Example tasks">
+    {
+      TASKS.map((task) => (
+        <button
+          type="button"
+          role="tab"
+          id={`rd-tab-${task.id}`}
+          class={`routing-demo__tab${task.id === DEFAULT_ID ? ' is-active' : ''}`}
+          aria-selected={task.id === DEFAULT_ID ? 'true' : 'false'}
+          tabindex={task.id === DEFAULT_ID ? 0 : -1}
+        >
+          {task.label}
+        </button>
+      ))
+    }
+  </div>
+
+  <div class="routing-demo__panel" role="tabpanel" aria-labelledby={`rd-tab-${DEFAULT_ID}`}>
+    <p class="routing-demo__prompt">
+      <span class="routing-demo__prompt-mark">/agentry:go</span> "{fallback.prompt}"
+    </p>
+    <div class="routing-demo__route">
+      <span class="label">routes to</span>
+      <span class={`routing-demo__badge ${SHAPE_TONE[fallback.shape]}`}>
+        {SHAPE_LABEL[fallback.shape]}
+      </span>
+    </div>
+    <p class="routing-demo__reason muted">{fallback.reason}</p>
+    <div class="routing-demo__trace">
+      <span class="label">trace</span>
+      <ol class="routing-demo__trace-list">
+        {fallback.trace.map((step) => <li>{step}</li>)}
+      </ol>
+    </div>
+  </div>
+</div>
+
+<script>
+  import '../islands/RoutingDemo.ts';
+</script>
+
+<style is:global>
+  /* T5-owned styling for the T6 routing-demo island. is:global is REQUIRED here: the island
+     (islands/RoutingDemo.ts) rebuilds the panel/tabs via document.createElement after hydration,
+     so those elements never carry Astro's scoped data attribute — scoped styles wouldn't match
+     them. Every rule is namespaced under .routing-demo, so nothing leaks past this component.
+     Color discipline: the badge tones are SEMANTIC DATA — they encode process weight, not
+     decoration — and the shape NAME is always spelled out so meaning never rests on color alone.
+       one-shot   = good/green  (lightest, a clean win)
+       spec-first = cyan        (shape it first — the middle process)
+       decompose  = violet      (heaviest, fully orchestrated)  */
+
+  .routing-demo {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 8px;
+    overflow: hidden;
+  }
+
+  /* tab strip ------------------------------------------------------------- */
+  .routing-demo__tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .routing-demo__tab {
+    appearance: none;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13.5px;
+    font-weight: 600;
+    /* keep a comfortable hit target for the tablist */
+    min-height: 40px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+  }
+
+  .routing-demo__tab:hover {
+    color: var(--ink);
+    background: var(--panel-2);
+  }
+
+  .routing-demo__tab.is-active {
+    color: var(--ink);
+    background: var(--panel-2);
+    border-color: var(--line);
+  }
+
+  /* panel ----------------------------------------------------------------- */
+  .routing-demo__panel {
+    padding: 24px 22px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .routing-demo__prompt {
+    font-family: var(--mono);
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+
+  .routing-demo__prompt-mark {
+    color: var(--muted);
+    margin-right: 4px;
+  }
+
+  /* route + badge --------------------------------------------------------- */
+  .routing-demo__route {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .routing-demo__badge {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    padding: 6px 12px;
+    border-radius: 999px;
+    /* tone-specific color + tint set by the .is-* modifiers below */
+    border: 1px solid currentColor;
+  }
+
+  .routing-demo__badge.is-one-shot {
+    color: var(--good);
+    background: color-mix(in srgb, var(--good) 14%, transparent);
+  }
+  .routing-demo__badge.is-spec-first {
+    color: var(--cyan);
+    background: color-mix(in srgb, var(--cyan) 14%, transparent);
+  }
+  .routing-demo__badge.is-decompose {
+    color: var(--violet-2);
+    background: var(--violet-dim);
+  }
+
+  /* reason ---------------------------------------------------------------- */
+  .routing-demo__reason {
+    font-size: 15px;
+    line-height: 1.6;
+    max-width: 64ch;
+  }
+
+  /* trace ----------------------------------------------------------------- */
+  .routing-demo__trace {
+    border-top: 1px solid var(--line-soft);
+    padding-top: 16px;
+  }
+
+  .routing-demo__trace .label {
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  .routing-demo__trace-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    counter-reset: trace;
+  }
+
+  .routing-demo__trace-list li {
+    position: relative;
+    padding-left: 30px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--muted);
+    counter-increment: trace;
+  }
+
+  /* numbered trace steps; the numeral is a mono brand mark, not data color */
+  .routing-demo__trace-list li::before {
+    content: counter(trace);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--faint);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+
+  @media (max-width: 600px) {
+    .routing-demo__panel {
+      padding: 18px 16px 16px;
+    }
+    .routing-demo__tab {
+      font-size: 13px;
+      padding: 8px 11px;
+    }
+  }
+</style>

@@ -1,0 +1,97 @@
+---
+// Kpi.astro — one count-up KPI card, reused 3× in the Hero (VISION §4.2 / §5 motion).
+//
+// Honesty contract (VISION §8): every KPI carries its caveat in muted text, and the value
+// must be sourced. Numeric values animate 0→value on first view via T6's countUp.ts (markup:
+// data-countup / data-to / data-suffix / data-decimals); NON-numeric values (e.g. "MIT") render
+// static — countUp.ts only touches [data-countup] elements.
+//
+// The final value is ALSO the element's text, so it's correct with JS off (countUp.ts overwrites
+// it only when it runs). Glass card (floating over the hero constellation).
+interface Props {
+  /** The headline value. Number → animated count-up; string → static (e.g. "MIT · v0.1"). */
+  value: number | string;
+  /** What the number measures (short, mono-eyebrow style). */
+  label: string;
+  /** The caveat / source — the honest qualifier (VISION §8). Optional but strongly encouraged. */
+  caveat?: string;
+  /** Appended after a numeric value (e.g. "%", "+"). Ignored for string values. */
+  suffix?: string;
+  /** Prepended before a numeric value. Ignored for string values. */
+  prefix?: string;
+  /** Decimal places for a numeric value. Default 0. */
+  decimals?: number;
+}
+
+const { value, label, caveat, suffix = "", prefix = "", decimals = 0 } = Astro.props;
+
+const isNumeric = typeof value === "number";
+const display = isNumeric
+  ? `${prefix}${(value as number).toFixed(decimals)}${suffix}`
+  : String(value);
+---
+
+<div class="kpi glass">
+  {
+    isNumeric ? (
+      <span
+        class="kpi__value"
+        data-countup
+        data-to={String(value)}
+        data-suffix={suffix}
+        data-prefix={prefix}
+        data-decimals={String(decimals)}
+      >
+        {display}
+      </span>
+    ) : (
+      <span class="kpi__value kpi__value--static">{display}</span>
+    )
+  }
+  <span class="kpi__label label">{label}</span>
+  {caveat && <span class="kpi__caveat">{caveat}</span>}
+</div>
+
+<style>
+  .kpi {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 18px 20px;
+    /* let three sit in a row but wrap gracefully on narrow viewports */
+    min-width: 0;
+  }
+
+  .kpi__value {
+    font-family: var(--mono);
+    /* big, confident, but below the H1 in the hierarchy */
+    font-size: clamp(26px, 3.2vw, 36px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    color: var(--ink);
+    /* numbers don't reflow width as they count up */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Static (non-numeric) values read as brand-spark, not a counted metric. */
+  .kpi__value--static {
+    font-size: clamp(18px, 1.9vw, 22px);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--amber);
+  }
+
+  .kpi__label {
+    /* mono eyebrow (.label) already sets family/spacing/transform; tune size in-context */
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .kpi__caveat {
+    font-size: 12px;
+    line-height: 1.4;
+    /* honest sourcing copy meant to be READ → --muted clears WCAG AA (6.6:1), not --faint (3.2:1) */
+    color: var(--muted);
+  }
+</style>

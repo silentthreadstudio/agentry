@@ -1,0 +1,19 @@
+/*
+ * tokens.css — the single source of truth for the site's design tokens (ADR 003).
+ * Transcribed EXACTLY from VISION.md §5. Do not invent, rename, reorder, or add tokens.
+ * This file is pure tokens: it defines only :root. No other selectors live here.
+ * Brand-critical values are drift-checked against the eval dashboard template (ADR 003).
+ *
+ * Observatory aesthetic: neutral near-black canvas · violet = ACTIONS only ·
+ * amber = brand spark / headline · green/coral/cyan/bad = DATA meaning only.
+ */
+:root {
+  --bg:#0b0b0f; --bg-2:#08080b; --panel:#14141a; --panel-2:#1c1c24; --line:#26262f; --line-soft:#1b1b21;
+  --ink:#eaeaf0; --muted:#9a9aa7; --faint:#61616d;
+  --amber:#f4a93c; --violet:#8b5cf6; --violet-2:#a78bfa; --violet-dim:rgba(139,92,246,.14);
+  --good:#46c98a; --coral:#ef8a5c; --cyan:#56b6c2; --bad:#f0604d;
+  --action:linear-gradient(135deg,#8b5cf6,#7c3aed);
+  --brand:linear-gradient(120deg,#f4a93c,#ef8a5c 42%,#8b5cf6);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}

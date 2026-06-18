@@ -1,0 +1,147 @@
+---
+// Install.astro — the 20-second copy-paste (VISION §4.8). The primary CTA's destination.
+//   - the install command in a mono block + the copy button (T6's ui.ts drives [data-copy]).
+//   - the Node ≥ 24 prerequisite note.
+//   - a one-line next step: then `/agentry:go <task>`.
+//
+// id="install" so the nav + hero + footer anchors resolve. class="reveal".
+// Color discipline: the copy button is the action → btn-primary (violet). The command block is
+// neutral panel. The success "Copied" swap is handled by ui.ts (informational, not motion).
+//
+// Base-path rule: no internal asset/href here (the install string is a literal command, the next
+// step is a literal command) → no withBase needed. The command is the literal marketplace add.
+const INSTALL_CMD = "/plugin marketplace add Codestz/agentry";
+const NEXT_CMD = "/agentry:go <task>";
+---
+
+<section id="install" class="install section reveal" aria-labelledby="install-title">
+  <div class="container install__inner">
+    <p class="eyebrow install__eyebrow">Install</p>
+    <h2 id="install-title" class="install__title">One copy-paste from installed.</h2>
+    <p class="install__sub muted">
+      Paste this into Claude Code. It adds Agentry from its GitHub repo — no account, no build step.
+    </p>
+
+    <div class="install__cmd">
+      <code class="install__code">
+        <span class="install__sigil" aria-hidden="true">$</span>{INSTALL_CMD}
+      </code>
+      <button class="btn btn-primary install__copy" data-copy data-clipboard={INSTALL_CMD}>
+        Copy
+      </button>
+    </div>
+
+    <ul class="install__notes" role="list">
+      <li class="install__note">
+        <span class="install__notekey label">Requires</span>
+        <span class="muted">Node ≥ 24 (the repo standard) and Claude Code.</span>
+      </li>
+      <li class="install__note">
+        <span class="install__notekey label">Then</span>
+        <span class="muted">run <code class="install__inline">{NEXT_CMD}</code> — and Agentry routes it for you.</span>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<style>
+  .install__inner {
+    max-width: 760px;
+  }
+
+  .install__eyebrow {
+    margin-bottom: 16px;
+  }
+
+  .install__title {
+    margin-bottom: 14px;
+  }
+
+  .install__sub {
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 52ch;
+    margin-bottom: 28px;
+  }
+
+  /* the command block: neutral panel, the copy action sits at the right */
+  .install__cmd {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+
+  .install__code {
+    flex: 1 1 320px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 16px 20px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    font-family: var(--mono);
+    font-size: clamp(13px, 1.3vw, 15px);
+    color: var(--ink);
+    /* a long command scrolls inside the block rather than breaking the layout */
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .install__sigil {
+    color: var(--violet-2);
+    flex: none;
+    user-select: none;
+  }
+
+  .install__copy {
+    flex: none;
+    /* matches the command block height visually */
+    min-width: 104px;
+  }
+
+  /* the transient success state (ui.ts sets data-copied) — a calm confirmation, no motion */
+  .install__copy[data-copied] {
+    background: var(--good);
+    color: var(--bg);
+    border-color: transparent;
+  }
+
+  .install__notes {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .install__note {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .install__notekey {
+    flex: none;
+    /* fixed-ish width so the two notes' values align into a clean column */
+    min-width: 72px;
+    color: var(--faint);
+  }
+
+  .install__inline {
+    color: var(--violet-2);
+    background: var(--violet-dim);
+    padding: 1px 6px;
+    border-radius: 6px;
+  }
+
+  @media (max-width: 520px) {
+    .install__copy {
+      width: 100%;
+    }
+  }
+</style>

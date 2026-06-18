@@ -1,0 +1,194 @@
+---
+// Nav.astro — the sticky site chrome (VISION §4.1).
+// A small SEEDED constellation mark (the §5 node-graph motif: amber→violet nodes/edges) as the
+// brand logo linking home, the anchor nav, the GitHub external link, and the Install CTA.
+//
+// Interaction contract (T6 owns the JS): this renders <header data-nav>; T6's islands/ui.ts adds a
+// `.scrolled` class past a scroll threshold — styled below for the blur/condense (un-scrolled state
+// is transparent/minimal). No JS is needed for the responsive collapse (CSS-only, see <900px rules).
+//
+// Base-path rule (the #1 failure mode): every hand-written INTERNAL href is prefixed with
+// import.meta.env.BASE_URL or it 404s under /agentry. In-page anchors (#proof) stay bare. GitHub is
+// an absolute EXTERNAL URL.
+const base = import.meta.env.BASE_URL;
+const GITHUB = "https://github.com/Codestz/agentry";
+
+// The in-page section anchors (VISION §4.1: Proof · How it works · Pillars · Install).
+// "Proof" leads — it's the centerpiece (§4.7) and the north-star "show the receipts" (§1).
+const anchors = [
+  { href: "#proof", label: "Proof" },
+  { href: "#how", label: "How it works" },
+  { href: "#pillars", label: "Pillars" },
+  { href: "#install", label: "Install" },
+];
+---
+
+<header data-nav>
+  <nav class="nav container" aria-label="Primary">
+    <!-- Brand: seeded constellation mark + wordmark, links home. -->
+    <a class="brand" href={base} aria-label="Agentry — home">
+      <span class="mark" aria-hidden="true">
+        <!-- Seeded constellation node-graph (§5 motif): fixed coords = deterministic.
+             Edges first (under nodes), amber spark → violet network. -->
+        <svg viewBox="0 0 28 28" width="28" height="28" role="img" focusable="false">
+          <g class="edges" stroke="url(#navEdge)" stroke-width="1" fill="none" opacity="0.65">
+            <line x1="6" y1="9" x2="14" y2="5" />
+            <line x1="14" y1="5" x2="22" y2="10" />
+            <line x1="6" y1="9" x2="11" y2="18" />
+            <line x1="11" y1="18" x2="22" y2="10" />
+            <line x1="11" y1="18" x2="20" y2="22" />
+            <line x1="22" y1="10" x2="20" y2="22" />
+          </g>
+          <g class="nodes">
+            <circle cx="14" cy="5" r="2.4" fill="var(--amber)" />
+            <circle cx="6" cy="9" r="1.7" fill="var(--violet-2)" />
+            <circle cx="22" cy="10" r="1.9" fill="var(--violet)" />
+            <circle cx="11" cy="18" r="1.7" fill="var(--violet-2)" />
+            <circle cx="20" cy="22" r="1.6" fill="var(--violet)" />
+          </g>
+          <defs>
+            <linearGradient id="navEdge" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="var(--amber)" />
+              <stop offset="1" stop-color="var(--violet)" />
+            </linearGradient>
+          </defs>
+        </svg>
+      </span>
+      <span class="wordmark">Agentry</span>
+    </a>
+
+    <!-- In-page anchors + GitHub. Bare # anchors are fine; GitHub is absolute external. -->
+    <ul class="links" role="list">
+      {anchors.map((a) => (
+        <li><a href={a.href}>{a.label}</a></li>
+      ))}
+      <li>
+        <a href={GITHUB} target="_blank" rel="noopener noreferrer">
+          GitHub
+          <span class="ext" aria-hidden="true">↗</span>
+        </a>
+      </li>
+    </ul>
+
+    <!-- Install CTA — the ONLY violet in the chrome (color discipline §5: violet = action). -->
+    <a class="btn btn-primary cta" href="#install">Install</a>
+  </nav>
+</header>
+
+<style>
+  /* The sticky chrome. Height ≈ 64px content + 1px line ≈ matches global.css
+     scroll-padding-top:84px / rail top:110px assumptions. Un-scrolled = transparent/minimal. */
+  header[data-nav] {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: transparent;
+    border-bottom: 1px solid transparent;
+    transition: background 0.25s ease, border-color 0.25s ease, backdrop-filter 0.25s ease;
+  }
+
+  /* Scrolled state (T6's ui.ts toggles .scrolled): condense + glass blur (§4.1 "blurs on scroll").
+     Uses the same blur recipe as global.css .glass for consistency. */
+  header[data-nav].scrolled {
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    border-bottom-color: var(--line);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+    backdrop-filter: blur(14px) saturate(120%);
+  }
+
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    height: 64px;
+  }
+
+  /* Brand ----------------------------------------------------------------- */
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    /* 44px hit target on the tap-critical home link */
+    min-height: 44px;
+    padding-right: 4px;
+  }
+
+  .mark {
+    display: inline-flex;
+    /* a soft brand glow behind the mark so it reads as the spark */
+    filter: drop-shadow(0 0 6px rgba(244, 169, 60, 0.25));
+  }
+
+  .wordmark {
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  /* Anchors --------------------------------------------------------------- */
+  .links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    /* push the link cluster + CTA to the right of the brand */
+    margin-left: auto;
+  }
+
+  .links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    /* 44px hit target, comfortable horizontal padding */
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--muted);
+    transition: color 0.18s ease, background 0.18s ease;
+  }
+
+  .links a:hover {
+    color: var(--ink);
+    background: var(--violet-dim);
+  }
+
+  .ext {
+    font-size: 0.85em;
+    color: var(--faint);
+  }
+
+  /* Install CTA ----------------------------------------------------------- */
+  .cta {
+    /* keep the 44px hit-target floor (WCAG 2.5.5) but a touch tighter padding so it
+       sits comfortably in the 64px bar */
+    min-height: 44px;
+    padding: 10px 18px;
+    font-size: 14px;
+    flex: none;
+  }
+
+  /* Responsive (VISION §4.1 collapse <900px): CSS-only, no hamburger island.
+     Hide secondary anchors; keep brand + Install always reachable. The sections
+     remain reachable by scroll, and the footer repeats the key links. */
+  @media (max-width: 900px) {
+    .nav {
+      gap: 16px;
+    }
+    .links {
+      gap: 0;
+    }
+    /* hide in-page section anchors + GitHub; brand + Install stay */
+    .links {
+      display: none;
+    }
+  }
+
+  /* Very small screens: keep the wordmark but ensure the CTA never crowds it. */
+  @media (max-width: 380px) {
+    .wordmark {
+      font-size: 16px;
+    }
+  }
+</style>

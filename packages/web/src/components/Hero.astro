@@ -1,0 +1,383 @@
+---
+// Hero.astro — the living above-the-fold (VISION §4.2).
+//
+// Composition (and the staggered entrance order, VISION §5 motion):
+//   badge → headline (brand gradient) → lead → dual CTA → 3 KPIs → typing terminal,
+// over a constellation canvas + aurora backdrop (T6's ConstellationNet renders both onto the canvas).
+//
+// Island contract (T6 modules self-init on this markup):
+//   - <canvas data-constellation aria-hidden="true"> filling the hero (ConstellationNet.ts)
+//   - <Kpi/> emits [data-countup] (countUp.ts)
+//   - <div data-terminal data-cmd="…"> with [data-term-line] children (terminal.ts)
+// The hero <script> below imports those three modules.
+//
+// Color discipline (VISION §5): the ONE violet focal point above the fold is the primary CTA.
+// The headline is the amber→violet brand gradient (.brand-text). Semantic colors carry no
+// decoration here.
+//
+// Base-path rule: in-page anchors (#install, #proof) stay BARE (they're fragments, not asset URLs).
+// No hand-written internal asset/href in this file needs withBase.
+//
+// Entrance: .h-rise elements fade-up on load with a per-element delay (CSS animation). The global
+// prefers-reduced-motion off-switch (global.css) zeroes the animation; we also belt-and-suspenders
+// the start state so reduced-motion never leaves content invisible (animation-fill stays at the
+// end frame because the off-switch forces a ~0ms single-iteration run to completion).
+import Kpi from "./Kpi.astro";
+---
+
+<section class="hero" aria-labelledby="hero-title">
+  <!-- Living backdrop: ConstellationNet draws nodes/edges + the aurora glow onto this canvas. -->
+  <canvas class="hero__canvas" data-constellation aria-hidden="true"></canvas>
+  <!-- A soft CSS aurora wash under the canvas so the hero never reads flat even before/without JS. -->
+  <div class="hero__aurora" aria-hidden="true"></div>
+
+  <div class="container hero__inner">
+    <p class="hero__badge h-rise" style="--d:0">
+      <span class="hero__dot" aria-hidden="true"></span>
+      Adaptive agentic layer for Claude Code
+    </p>
+
+    <h1 id="hero-title" class="hero__title h-rise" style="--d:1">
+      The agentic layer that<br />
+      <span class="brand-text">measures itself.</span>
+    </h1>
+
+    <p class="hero__lead h-rise muted" style="--d:2">
+      Right-sized orchestration, SDLC specialists, and durable memory — for Claude Code.
+      It routes each task to the least process that wins, then holds itself to a bar it can show you.
+      Measured, not asserted.
+    </p>
+
+    <div class="hero__cta h-rise" style="--d:3">
+      <a class="btn btn-primary" href="#install">Install Agentry</a>
+      <a class="btn" href="#proof">See the evidence</a>
+    </div>
+
+    <div class="hero__kpis h-rise" style="--d:4">
+      <Kpi
+        value={6}
+        suffix=""
+        label="Corrections logged"
+        caveat="Times the meter was wrong and the conductor was right — the receipts."
+      />
+      <Kpi
+        value="All passed"
+        label="Eval controls"
+        caveat="A/A stability + planted gold-vs-poor discrimination on the run store."
+      />
+      <Kpi
+        value="MIT · v0.1"
+        label="License · maturity"
+        caveat="Pre-1.0, live and measured — honest about where it is."
+      />
+    </div>
+
+    <!-- Typing terminal: terminal.ts types the cmd, then reveals the [data-term-line] children.
+       Degrade: with JS off the output lines would stay hidden, so a <noscript> override forces
+       them visible (and shows the full command). -->
+  <noscript>
+    <style>
+      .hero__out { opacity: 1 !important; transform: none !important; }
+      .hero__cmd::after { content: '/agentry:go "Add pagination across the API, service and data layers"'; }
+    </style>
+  </noscript>
+    <div class="hero__terminal glass h-rise" style="--d:5" role="img"
+      aria-label='Running /agentry:go "Add pagination to the users endpoint" routes to decompose + verify.'>
+      <div class="hero__termbar" aria-hidden="true">
+        <span class="hero__dotred"></span>
+        <span class="hero__dotamber"></span>
+        <span class="hero__dotgreen"></span>
+        <span class="hero__termtitle label">agentry — conductor</span>
+      </div>
+      <div class="hero__termbody"
+        data-terminal
+        data-cmd={'/agentry:go "Add pagination across the API, service and data layers"'}>
+        <p class="hero__termline">
+          <span class="hero__prompt" aria-hidden="true">$</span>
+          <span data-term-cmd class="hero__cmd"></span><span data-term-cursor class="hero__cursor" aria-hidden="true"></span>
+        </p>
+        <span data-term-line class="hero__out">› classify: multi-file feature, contract seams across 3 layers</span>
+        <span data-term-line class="hero__out hero__out--route">› route: <span class="hero__shape">decompose + verify</span> <span class="muted">— least process that wins</span></span>
+        <span data-term-line class="hero__out">› architect → plan + bounded task contracts</span>
+        <span data-term-line class="hero__out">› implement in parallel → verify the assembled whole</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import "../islands/ConstellationNet.ts";
+  import "../islands/countUp.ts";
+  import "../islands/terminal.ts";
+</script>
+
+<style>
+  /* ============================== layout ============================== */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    /* full first-screen presence without forcing exactly 100vh (which clips short laptops) */
+    min-height: clamp(620px, 92vh, 900px);
+    display: flex;
+    align-items: center;
+    /* clear the sticky nav (64px) + breathing room; bottom rhythm into the Why band */
+    padding-block: 120px 96px;
+    /* fade the hero into the page canvas at its base so the section seam is soft */
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .hero__canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    /* the canvas is decorative; content sits above it */
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* CSS aurora: a calm radial wash so the hero has depth even with JS off / before paint. */
+  .hero__aurora {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(60% 50% at 28% 32%, rgba(139, 92, 246, 0.16), transparent 70%),
+      radial-gradient(48% 44% at 74% 64%, rgba(244, 169, 60, 0.1), transparent 72%);
+  }
+
+  .hero__inner {
+    position: relative;
+    z-index: 1;
+    /* the content column is intentionally narrower than the container for editorial measure */
+    max-width: 880px;
+  }
+
+  /* ============================== badge ============================== */
+  .hero__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 26px;
+    padding: 7px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--panel) 60%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .hero__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--good);
+    box-shadow: 0 0 0 0 rgba(70, 201, 138, 0.6);
+    animation: live-pulse 2.4s ease-out infinite;
+  }
+
+  @keyframes live-pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(70, 201, 138, 0.5);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 7px rgba(70, 201, 138, 0);
+    }
+  }
+
+  /* ============================== headline + lead ============================== */
+  .hero__title {
+    margin-bottom: 22px;
+  }
+
+  .hero__lead {
+    max-width: 60ch;
+    font-size: clamp(16px, 1.4vw, 19px);
+    line-height: 1.6;
+    margin-bottom: 34px;
+  }
+
+  /* ============================== CTA ============================== */
+  .hero__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 48px;
+  }
+
+  /* ============================== KPIs ============================== */
+  .hero__kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 40px;
+  }
+
+  /* ============================== terminal ============================== */
+  .hero__terminal {
+    overflow: hidden;
+    /* slightly wider feel than the lead measure; capped so it stays readable */
+    max-width: 720px;
+  }
+
+  .hero__termbar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg-2) 60%, transparent);
+  }
+
+  .hero__dotred,
+  .hero__dotamber,
+  .hero__dotgreen {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+  }
+  /* window-chrome dots: decorative, drawn from semantic tokens but read as macOS chrome, not data */
+  .hero__dotred {
+    background: var(--bad);
+  }
+  .hero__dotamber {
+    background: var(--amber);
+  }
+  .hero__dotgreen {
+    background: var(--good);
+  }
+
+  .hero__termtitle {
+    margin-left: 8px;
+    font-size: 10.5px;
+    color: var(--faint);
+  }
+
+  .hero__termbody {
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.75;
+    /* never breaks layout; long command scrolls rather than wrapping into the chrome */
+    overflow-x: auto;
+  }
+
+  .hero__termline {
+    display: flex;
+    align-items: baseline;
+    white-space: nowrap;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+
+  .hero__prompt {
+    color: var(--violet-2);
+    margin-right: 10px;
+    flex: none;
+  }
+
+  .hero__cmd {
+    color: var(--ink);
+    white-space: pre;
+  }
+
+  /* blinking cursor (CSS; the global reduced-motion off-switch freezes it) */
+  .hero__cursor {
+    display: inline-block;
+    width: 8px;
+    height: 1.05em;
+    margin-left: 2px;
+    transform: translateY(2px);
+    background: var(--violet-2);
+    animation: term-blink 1.05s step-end infinite;
+  }
+
+  @keyframes term-blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    50.01%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* output lines: start hidden, revealed by terminal.ts adding .in (per the island contract).
+     terminal.ts reveals them in BOTH branches — typed reveal (normal) and showAll (reduced-motion,
+     runs unconditionally on load) — so any JS-on user sees them. The JS-OFF degrade is the
+     <noscript> override above, which forces them visible. */
+  .hero__out {
+    display: block;
+    color: var(--muted);
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.45s ease, transform 0.45s ease;
+  }
+
+  .hero__out.in {
+    opacity: 1;
+    transform: none;
+  }
+
+  .hero__out--route .hero__shape {
+    color: var(--violet-2);
+    font-weight: 600;
+  }
+
+  /* ============================== staggered entrance ============================== */
+  /* Each .h-rise element fades up; --d sets the stagger step. The global reduced-motion
+     off-switch (global.css) collapses the duration so the page lands instantly and calm. */
+  .h-rise {
+    opacity: 0;
+    transform: translateY(16px);
+    animation: h-rise-in 0.62s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+    animation-delay: calc(var(--d, 0) * 110ms + 80ms);
+  }
+
+  @keyframes h-rise-in {
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Belt-and-suspenders: if a user prefers reduced motion, render the final state immediately
+     and skip the rise entirely (the global off-switch zeroes duration, but we also drop the
+     start offset so there is never a flash of shifted/hidden content). */
+  @media (prefers-reduced-motion: reduce) {
+    .h-rise {
+      opacity: 1 !important;
+      transform: none !important;
+      animation: none !important;
+    }
+    .hero__dot {
+      animation: none !important;
+    }
+    .hero__cursor {
+      animation: none !important;
+      opacity: 1;
+    }
+  }
+
+  /* ============================== responsive ============================== */
+  @media (max-width: 720px) {
+    .hero {
+      min-height: auto;
+      padding-block: 104px 72px;
+    }
+    .hero__kpis {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .hero__termbody {
+      font-size: 12px;
+    }
+  }
+</style>

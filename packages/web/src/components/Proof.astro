@@ -1,0 +1,280 @@
+---
+// Proof.astro — the credibility centerpiece (VISION §4.7, §1 "show the receipts").
+// Three movements in the editorial split: (1) the corrections log — real tracked
+// episodes where the meter was wrong and the conductor was right, rendered as a
+// scannable evidence table; (2) the controls — a measured, caveated statement that
+// the eval's null/discrimination controls passed; (3) the creed — the "measured,
+// not asserted" thesis. The section's single ACTION (violet) links to the real,
+// embedded eval dashboard.
+//
+// Static by design: no client JS. Scroll-reveal comes from the global reveal.ts via
+// `class="reveal"`; per-row stagger uses `data-reveal-delay` (reveal.ts supports it).
+import { corrections } from '../data/corrections.ts';
+import { withBase } from '../lib/base.ts';
+
+// Counts are derived from the real data — never invented (VISION §8).
+const total = corrections.length;
+const highCount = corrections.filter((c) => c.high).length;
+
+// Format the ISO date for display without inventing a locale-specific surprise.
+function fmtDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return `${months[Number(m) - 1]} ${Number(d)}, ${y}`;
+}
+---
+
+<section id="proof" class="reveal proof">
+  <div class="container split">
+    <div class="rail">
+      <p class="eyebrow">Proof</p>
+      <h2>Show the receipts.</h2>
+      <p class="muted proof__lede">
+        The thesis is "measured, not asserted" — so here is the meter being wrong, in
+        the open. Every entry below is real tracked data, the same run store the eval
+        dashboard reads.
+      </p>
+      <a
+        class="btn btn-primary proof__cta"
+        href={withBase('dashboard/')}
+        target="_blank"
+        rel="noopener"
+      >
+        See the evidence
+        <span aria-hidden="true">&#8599;</span>
+      </a>
+    </div>
+
+    <div class="proof__body">
+      {/* ── Movement 1: the corrections log ─────────────────────────────── */}
+      <div class="proof__log-head">
+        <h3>The corrections log</h3>
+        <p class="muted">
+          <strong>{total}</strong> corrections logged, and acted on — times the meter
+          said one thing and the conductor was right. <span class="proof__count-note"
+            >{highCount} would have shipped a wrong number; the rest were refinements.</span
+          >
+        </p>
+      </div>
+
+      <ol class="proof__log">
+        {
+          corrections.map((c, i) => (
+            <li
+              class={`card proof__row reveal${c.high ? ' is-high' : ''}`}
+              data-reveal-delay={i * 60}
+            >
+              <div class="proof__row-top">
+                <span class={`proof__sev${c.high ? ' is-high' : ''}`}>
+                  {c.high ? 'high' : 'refinement'}
+                </span>
+                <time class="proof__date" datetime={c.date}>
+                  {fmtDate(c.date)}
+                </time>
+              </div>
+              <p class="proof__headline">{c.h}</p>
+              <dl class="proof__detail">
+                <div class="proof__step">
+                  <dt class="proof__step-label">meter said</dt>
+                  <dd class="proof__step-val is-meter">{c.meter}</dd>
+                </div>
+                <div class="proof__step">
+                  <dt class="proof__step-label">truth was</dt>
+                  <dd class="proof__step-val is-truth">{c.truth}</dd>
+                </div>
+                <div class="proof__step">
+                  <dt class="proof__step-label">fixed by</dt>
+                  <dd class="proof__step-val is-fix">{c.fix}</dd>
+                </div>
+              </dl>
+            </li>
+          ))
+        }
+      </ol>
+
+      {/* ── Movement 2: the controls ────────────────────────────────────── */}
+      <div class="card proof__controls">
+        <h3>The controls held.</h3>
+        <p class="muted">
+          The harness runs the checks that keep the meter honest: an A/A null test
+          (the same task scored against itself should show no difference), and a
+          planted-discrimination test (deliberately strong and deliberately weak runs
+          should separate). In the tracked runs they came back as expected — the null
+          test stayed null, and the planted cases separated. We report this
+          qualitatively: it's a pre-1.0 harness on a small sample, so read it as "the
+          meter behaves," not a headline metric.
+        </p>
+      </div>
+
+      {/* ── Movement 3: the creed ───────────────────────────────────────── */}
+      <blockquote class="proof__creed">
+        <p>
+          We don't ask you to trust the routing — we show you where it was wrong and
+          how we fixed the meter, not the verdict. Measured, not asserted. The receipts
+          are public, the harness is reproducible, and the dashboard is live.
+        </p>
+        <footer class="proof__creed-foot muted">
+          Agentry is v0.1, pre-1.0, MIT. The numbers are small and caveated on purpose.
+        </footer>
+      </blockquote>
+    </div>
+  </div>
+</section>
+
+<style>
+  .proof__lede {
+    margin-top: 16px;
+    max-width: 38ch;
+  }
+
+  .proof__cta {
+    margin-top: 24px;
+  }
+
+  /* ── corrections log ───────────────────────────────────────────────── */
+  .proof__log-head h3 {
+    margin-bottom: 8px;
+  }
+
+  .proof__count-note {
+    color: var(--faint);
+  }
+
+  .proof__log {
+    margin-top: 28px;
+    display: grid;
+    gap: 16px;
+  }
+
+  .proof__row {
+    /* the card primitive carries surface/border/hover; this adds the log accent */
+    padding: 20px 22px;
+    border-left: 3px solid var(--line);
+  }
+
+  /* severity carries DATA meaning only (VISION §5): high = bad/coral accent,
+     refinements stay muted. Never decorative. */
+  .proof__row.is-high {
+    border-left-color: var(--coral);
+  }
+
+  .proof__row-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .proof__sev {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .proof__sev.is-high {
+    color: var(--bad);
+  }
+
+  .proof__date {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--faint);
+    white-space: nowrap;
+  }
+
+  .proof__headline {
+    margin-top: 10px;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .proof__detail {
+    margin-top: 14px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .proof__step {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 12px;
+    align-items: baseline;
+  }
+
+  .proof__step-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  /* the telemetry payload is mono — it's machine-grade evidence, not prose */
+  .proof__step-val {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  /* meter→truth→fix data colors carry meaning: what was wrong (coral),
+     what was true (cyan), how it was resolved (good). Data colors only. */
+  .proof__step-val.is-meter {
+    color: var(--coral);
+  }
+
+  .proof__step-val.is-truth {
+    color: var(--cyan);
+  }
+
+  .proof__step-val.is-fix {
+    color: var(--good);
+  }
+
+  /* ── controls ──────────────────────────────────────────────────────── */
+  .proof__controls {
+    margin-top: 32px;
+  }
+
+  .proof__controls h3 {
+    margin-bottom: 10px;
+  }
+
+  .proof__controls p {
+    max-width: 62ch;
+  }
+
+  /* ── creed ─────────────────────────────────────────────────────────── */
+  .proof__creed {
+    margin-top: 32px;
+    padding-left: 22px;
+    border-left: 3px solid var(--line);
+  }
+
+  .proof__creed p {
+    font-size: clamp(18px, 1.5vw, 21px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    max-width: 56ch;
+  }
+
+  .proof__creed-foot {
+    margin-top: 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  @media (max-width: 560px) {
+    .proof__step {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+  }
+</style>

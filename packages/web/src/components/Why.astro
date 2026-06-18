@@ -1,0 +1,72 @@
+---
+// Why.astro — the thesis band (VISION §4.3). Static, confident, measured prose (§8).
+// The argument's pivot: "dropping a powerful model on a hard task and hoping is not engineering."
+// One big claim, generous space, no decoration. class="reveal" (T6's reveal.ts fades it up).
+//
+// No interactive markup, no internal asset URLs → no island wiring, no withBase needed here.
+---
+
+<section class="why reveal" aria-labelledby="why-title">
+  <div class="container why__inner">
+    <p class="why__eyebrow eyebrow">The thesis</p>
+    <h2 id="why-title" class="why__claim">
+      Dropping a powerful model on a hard task and <em>hoping</em> is not engineering.
+    </h2>
+    <p class="why__body muted">
+      A capable model will produce something. Whether it produced the <em>right</em> thing,
+      at the right altitude, with the bar held — that is a separate question, and most setups
+      never ask it. Agentry treats orchestration as engineering: the work is shaped to the least
+      process that wins, built by specialists inside clean boundaries, and checked against an
+      acceptance bar before it counts as done. And the system measures itself — so the bar isn't
+      a claim, it's a number you can read.
+    </p>
+  </div>
+</section>
+
+<style>
+  .why {
+    /* a touch tighter than .section's 150px so it reads as a bridge, not a full stop */
+    padding-block: 120px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .why__inner {
+    max-width: 920px;
+  }
+
+  .why__eyebrow {
+    margin-bottom: 22px;
+  }
+
+  .why__claim {
+    /* the band's whole job is this sentence — let it breathe big */
+    font-size: clamp(30px, 4.4vw, 52px);
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+    margin-bottom: 28px;
+    max-width: 18ch;
+  }
+
+  /* emphasis carries meaning ("hoping", "right"), not color — amber would break discipline */
+  .why__claim em {
+    font-style: italic;
+    color: var(--amber);
+  }
+
+  .why__body {
+    font-size: clamp(16px, 1.4vw, 19px);
+    line-height: 1.65;
+    max-width: 64ch;
+  }
+
+  .why__body em {
+    font-style: italic;
+    color: var(--ink);
+  }
+
+  @media (max-width: 720px) {
+    .why {
+      padding-block: 88px;
+    }
+  }
+</style>

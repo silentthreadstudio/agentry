@@ -1,0 +1,27 @@
+{
+  "name": "@agentry/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agentry's public marketing site — a static Astro one-pager (\"show the receipts\" observatory) that embeds the real eval dashboard. Deployable, never published; nothing imports it.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "prebuild": "node -e \"import('node:fs').then(({existsSync})=>{for(const f of ['scripts/load-metrics.mjs','scripts/embed-dashboard.mjs'])if(!existsSync(f)){console.log('[prebuild] '+f+' not present yet (T3) — skipping data step');process.exit(0)}import('node:child_process').then(({execSync})=>execSync('pnpm run metrics && pnpm run embed',{stdio:'inherit'}))})\"",
+    "build": "astro build",
+    "metrics": "node scripts/load-metrics.mjs",
+    "embed": "node scripts/embed-dashboard.mjs",
+    "preview": "astro preview",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "astro": "^6.4.8"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

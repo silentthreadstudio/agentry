@@ -1,0 +1,64 @@
+name: Deploy web to GitHub Pages
+
+# Builds the Astro marketing site (@agentry/web) and deploys it to GitHub Pages. Independent of the
+# plugin pipeline: path-filtered to packages/web/** (+ this file) so it never runs on plugin-only
+# pushes, and ci.yml/release.yml are left untouched (VISION §3). Mirrors ci.yml's setup ordering —
+# pnpm BEFORE setup-node, so setup-node's `packageManager` detection works (commit d69824f).
+#
+# ONE-TIME MANUAL PREREQUISITE (this workflow cannot do it): in the repo Settings → Pages, set
+# Source = "GitHub Actions". Without it, actions/deploy-pages fails.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/web/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up pnpm (version from the package.json `packageManager` field)
+        uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24" # @agentry/web requires Node ≥ 24 (matches ci.yml)
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Astro site (prebuild runs metrics + dashboard embed)
+        run: pnpm --filter @agentry/web build
+        env:
+          BASE_PATH: ${{ vars.BASE_PATH || '/agentry' }}
+
+      - name: Upload Pages artifact (Astro outputs to dist/, not _site/)
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: packages/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

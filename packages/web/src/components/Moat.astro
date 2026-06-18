@@ -1,0 +1,252 @@
+---
+// Moat.astro — the compounding memory (VISION §4.6). The same task, run twice:
+//   COLD (first time): no memory → spec-first, write the decision, gate it.
+//   WARM (later): the decision is recalled → one-shot.
+// The differentiator is "compounds," not "magic" (§8) — honest framing, no overclaim.
+//
+// Two state cards with an animated → between them (CSS marquee on the arrow; the global
+// reduced-motion off-switch freezes it to a static arrow). class="reveal".
+//
+// Color discipline: the WARM state is the "recalled" state — violet is allowed here (§5: violet =
+// "warm/recalled" states), used on the warm card's accent + the badge. The arrow uses the brand
+// gradient (amber→violet) to read as the journey from spark to network. No internal asset URLs.
+---
+
+<section class="moat section reveal" aria-labelledby="moat-title">
+  <div class="container moat__inner">
+    <header class="moat__head">
+      <p class="eyebrow">The moat</p>
+      <h2 id="moat-title" class="moat__title">Memory compounds.</h2>
+      <p class="moat__sub muted">
+        Run the same task twice. The first time, Agentry has no prior decision, so it works
+        spec-first — and writes down what it decided. The next time, that decision is recalled,
+        and the same task routes one-shot. The system gets cheaper at the work it has already
+        reasoned through.
+      </p>
+    </header>
+
+    <div class="moat__flow">
+      <article class="moat__state moat__state--cold">
+        <p class="moat__when label">First run · cold</p>
+        <p class="moat__task">
+          <span class="moat__taskmark" aria-hidden="true">/agentry:go</span>
+          "dedupe the import resolver"
+        </p>
+        <p class="moat__shape moat__shape--cold">spec-first</p>
+        <p class="moat__detail muted">
+          No prior decision. Shape the approach, gate it, build — then write the decision to memory
+          with its provenance.
+        </p>
+      </article>
+
+      <div class="moat__arrow" aria-hidden="true">
+        <span class="moat__arrowline"></span>
+        <span class="moat__arrowhead">→</span>
+        <span class="moat__arrownote label">decision recalled</span>
+      </div>
+
+      <article class="moat__state moat__state--warm">
+        <p class="moat__when label">Next run · warm</p>
+        <p class="moat__task">
+          <span class="moat__taskmark" aria-hidden="true">/agentry:go</span>
+          "dedupe the import resolver"
+        </p>
+        <p class="moat__shape moat__shape--warm">one-shot</p>
+        <p class="moat__detail muted">
+          The recalled decision removes the unknown. The least process that wins is now a single
+          bounded pass — no re-deriving what was already settled.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<style>
+  .moat__inner {
+    max-width: 1080px;
+  }
+
+  .moat__head {
+    max-width: 60ch;
+    margin-bottom: 56px;
+  }
+
+  .moat__head .eyebrow {
+    margin-bottom: 14px;
+  }
+
+  .moat__title {
+    margin-bottom: 16px;
+  }
+
+  .moat__sub {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  /* the two-state flow: cold → warm, with the arrow between */
+  .moat__flow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .moat__state {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 24px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* warm = recalled: a violet wash + accent (§5 violet = warm/recalled state) */
+  .moat__state--warm {
+    border-color: color-mix(in srgb, var(--violet) 38%, var(--line));
+    background: linear-gradient(180deg, var(--violet-dim), transparent 60%), var(--panel);
+  }
+
+  .moat__when {
+    color: var(--faint);
+  }
+
+  .moat__task {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    color: var(--ink);
+    line-height: 1.5;
+  }
+
+  .moat__taskmark {
+    color: var(--muted);
+  }
+
+  .moat__shape {
+    font-family: var(--mono);
+    font-size: clamp(20px, 2.2vw, 26px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-top: 2px;
+  }
+
+  /* cold shape: cyan = a "process" data tone (semantic, not decorative) */
+  .moat__shape--cold {
+    color: var(--cyan);
+  }
+  /* warm shape: violet = the recalled/action state */
+  .moat__shape--warm {
+    color: var(--violet-2);
+  }
+
+  .moat__detail {
+    font-size: 14.5px;
+    line-height: 1.6;
+  }
+
+  /* the arrow: brand-gradient head with a drifting shimmer line; reduced-motion freezes it */
+  .moat__arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding-inline: 14px;
+    min-width: 96px;
+  }
+
+  .moat__arrowline {
+    width: 100%;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    background-size: 200% 100%;
+    animation: moat-flow 2.6s linear infinite;
+  }
+
+  @keyframes moat-flow {
+    0% {
+      background-position: 0% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  .moat__arrowhead {
+    font-size: 28px;
+    line-height: 1;
+    font-weight: 700;
+    background: var(--brand);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: moat-nudge 2.6s ease-in-out infinite;
+  }
+
+  @keyframes moat-nudge {
+    0%,
+    100% {
+      transform: translateX(-2px);
+    }
+    50% {
+      transform: translateX(4px);
+    }
+  }
+
+  .moat__arrownote {
+    font-size: 10px;
+    color: var(--faint);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  /* reduced-motion: a calm, static arrow (the global off-switch zeroes the animations; we also
+     pin the gradient line to a stable frame so it doesn't read as a half-rendered streak) */
+  @media (prefers-reduced-motion: reduce) {
+    .moat__arrowline {
+      animation: none !important;
+      background-position: 0 0 !important;
+    }
+    .moat__arrowhead {
+      animation: none !important;
+      transform: none !important;
+    }
+  }
+
+  /* responsive: stack into a vertical flow; the arrow rotates to point down */
+  @media (max-width: 760px) {
+    .moat__flow {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
+    .moat__arrow {
+      flex-direction: row;
+      gap: 12px;
+      padding-block: 10px;
+      min-width: 0;
+    }
+    .moat__arrowline {
+      display: none;
+    }
+    .moat__arrowhead {
+      transform: rotate(90deg);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .moat__arrowhead {
+        animation: moat-nudge-v 2.6s ease-in-out infinite;
+      }
+    }
+    @keyframes moat-nudge-v {
+      0%,
+      100% {
+        transform: rotate(90deg) translateX(-2px);
+      }
+      50% {
+        transform: rotate(90deg) translateX(4px);
+      }
+    }
+  }
+</style>

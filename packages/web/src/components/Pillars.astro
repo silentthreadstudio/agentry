@@ -1,0 +1,105 @@
+---
+// Pillars.astro — the three pillars (VISION §4.4): brain (right-sized conductor),
+// memory (the moat), harness (capability-first specialists).
+//
+// Layout: the editorial 2-col .split (sticky heading rail + stacked .card column) from global.css.
+// Each pillar is concrete, not buzzy (§8). Per-card stagger via reveal.ts's child stagger on .reveal.
+//
+// Color discipline: the pillar index numerals use the BRAND amber spark (they're brand marks, not
+// data); body copy is muted. No violet here — violet is reserved for actions.
+//
+// id="pillars" so the nav anchor resolves. No internal asset URLs → no withBase needed.
+const pillars = [
+  {
+    n: "01",
+    title: "The brain — a right-sized conductor",
+    body:
+      "Every task is routed to the least process that wins: a one-line fix goes straight to an implementer; an under-specified goal gets a Spec and a gate first; a multi-file feature is planned, split into bounded contracts, and verified. No ceremony where none is earned — and no hoping where a gate is.",
+  },
+  {
+    n: "02",
+    title: "The memory — the moat that compounds",
+    body:
+      "Decisions, gotchas, and repo-facts are written to durable memory with provenance, then recalled — few, ranked, scoped — exactly when the next task needs them. The second run is warmer than the first: a problem solved spec-first once can route one-shot later, because the decision is remembered.",
+  },
+  {
+    n: "03",
+    title: "The harness — capability-first specialists",
+    body:
+      "Architect, implementer, verifier, designer, librarian — each a specialist with a single concern, dispatched into a clean boundary and held to its contract. They use whatever tools and skills you already have rather than a fixed allowlist, so the harness adapts to your environment instead of fighting it.",
+  },
+];
+---
+
+<section id="pillars" class="pillars section reveal" aria-labelledby="pillars-title">
+  <div class="container split">
+    <div class="rail">
+      <p class="eyebrow pillars__eyebrow">How it holds together</p>
+      <h2 id="pillars-title" class="pillars__title">Three parts, one discipline.</h2>
+      <p class="pillars__sub muted">
+        Orchestration, memory, and specialists — each doing one thing well, wired into a system
+        that adapts to the work in front of it.
+      </p>
+    </div>
+
+    <ul class="pillars__list" role="list">
+      {
+        pillars.map((p, i) => (
+          <li class="pillars__card card reveal" data-reveal-delay={String(i * 110)}>
+            <span class="pillars__num" aria-hidden="true">{p.n}</span>
+            <h3 class="pillars__name">{p.title}</h3>
+            <p class="pillars__body muted">{p.body}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .pillars__eyebrow {
+    margin-bottom: 16px;
+  }
+
+  .pillars__title {
+    margin-bottom: 16px;
+  }
+
+  .pillars__sub {
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 38ch;
+  }
+
+  .pillars__list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .pillars__card {
+    /* relative so the big ghost numeral can sit as a quiet brand watermark */
+    position: relative;
+    padding: 26px 28px;
+  }
+
+  .pillars__num {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    /* the brand spark marks the pillar index — amber = brand, not data */
+    color: var(--amber);
+    opacity: 0.85;
+  }
+
+  .pillars__name {
+    margin: 10px 0 10px;
+  }
+
+  .pillars__body {
+    font-size: 15.5px;
+    line-height: 1.62;
+    max-width: 62ch;
+  }
+</style>

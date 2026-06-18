@@ -1,0 +1,8 @@
+# Build-step outputs — generated, never committed (matches eval's gitignore-the-generated stance; plan risk #6).
+dist/
+public/dashboard/
+src/data/corrections.ts
+
+# Astro / tooling caches
+.astro/
+node_modules/
