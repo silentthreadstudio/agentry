@@ -1,0 +1,35 @@
+name: CI
+
+# The correctness net: the plugin structure + dist-lockstep gate, then each package's typecheck + tests.
+# All tests are offline (replay/pure — no live `claude -p`), so CI never spends API budget.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24" # the memory MCP uses the built-in node:sqlite (Node ≥ 24)
+
+      - name: Plugin structure + dist-lockstep gate
+        run: node scripts/check-plugin.mjs
+
+      - name: "@agentry/core — typecheck + test"
+        working-directory: packages/core
+        run: npm install && npm run typecheck && npm test
+
+      - name: "@agentry/memory — typecheck + test"
+        working-directory: packages/memory
+        run: npm install && npm run typecheck && npm test
+
+      - name: "@agentry/eval — typecheck + test"
+        working-directory: packages/eval
+        run: npm install && npm run typecheck && npm test

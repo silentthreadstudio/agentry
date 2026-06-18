@@ -1,0 +1,45 @@
+name: Release
+
+# Tagging `v*` publishes a GitHub Release with a LEAN plugin payload zip — only what an install needs
+# (doc 09 §2), never the dev/eval tooling. Users install the zip via `--plugin-url` (Claude Code ≥ 2.1.128)
+# or a marketplace pointing at the release asset. This is the packaging answer: the repo root stays "the
+# plugin" for dogfooding (marketplace source `./`), while the SHIPPED artifact is scoped to the payload.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release + upload the asset
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Verify plugin gate (incl. dist-lockstep — the shipped mem MCP must be in sync)
+        run: node scripts/check-plugin.mjs
+
+      - name: Assemble the lean plugin payload
+        run: |
+          set -euo pipefail
+          PAYLOAD="dist-plugin/agentry"
+          mkdir -p "$PAYLOAD/packages/memory"
+          # The shipped payload (doc 09 §2): manifest + the four component dirs + the committed mem MCP dist.
+          cp -r .claude-plugin agents commands skills hooks "$PAYLOAD/"
+          cp -r packages/memory/dist "$PAYLOAD/packages/memory/dist"
+          cp packages/memory/package.json "$PAYLOAD/packages/memory/package.json"
+          [ -f LICENSE ] && cp LICENSE "$PAYLOAD/" || true
+          (cd dist-plugin && zip -rq "../agentry-${GITHUB_REF_NAME}.zip" agentry)
+          echo "::group::payload manifest" && unzip -l "agentry-${GITHUB_REF_NAME}.zip" && echo "::endgroup::"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: agentry-*.zip
+          generate_release_notes: true
