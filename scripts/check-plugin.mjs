@@ -5,7 +5,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { srcHash } from "./lib/src-hash.mjs";
+import { bundleSrcHash } from "./lib/src-hash.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // The shipped plugin payload lives in `plugin/` (marketplace `source: "./plugin"`) = CLAUDE_PLUGIN_ROOT.
@@ -105,7 +105,8 @@ if (existsSync(skillsDir)) {
 
 // 6. dist-lockstep — if memory/src exists, dist must too (warn if it looks stale)
 // The mem MCP src lives in the package; the SHIPPED bundle is built into plugin/mem/ (committed with the payload).
-const memSrc = join(ROOT, "packages", "memory", "src");
+const memPkg = join(ROOT, "packages", "memory");
+const memSrc = join(memPkg, "src");
 const memDist = join(PLUGIN, "mem", "index.js");
 if (existsSync(memSrc)) {
   if (!existsSync(memDist)) {
@@ -113,11 +114,13 @@ if (existsSync(memSrc)) {
   } else {
     // Content-hash compare, not mtime: git doesn't preserve mtimes, so a checkout/squash-merge would
     // otherwise trip a false "dist is stale". build.mjs stamps plugin/mem/.srchash; recompute + compare.
+    // bundleSrcHash covers memory's own src AND every @agentry/* workspace dep esbuild inlines (e.g.
+    // @agentry/core's dist) — so a transitive dep change can't leave the bundle stale yet report green.
     const stampPath = join(PLUGIN, "mem", ".srchash");
     const stamped = existsSync(stampPath) ? readFileSync(stampPath, "utf8").trim() : "";
-    const current = srcHash(memSrc);
+    const current = bundleSrcHash(memPkg);
     if (!stamped) warn("plugin/mem/.srchash missing — rebuild so dist-lockstep is verifiable");
-    else if (stamped !== current) warn("plugin/mem is stale (memory src changed since last build) — rebuild + commit (dist-lockstep)");
+    else if (stamped !== current) warn("plugin/mem is stale (memory src or a bundled @agentry/* dep changed since last build) — rebuild + commit (dist-lockstep)");
     else ok("dist-lockstep", "up to date");
   }
 }

@@ -4,7 +4,7 @@
 // dist-vs-src mtimes yields false "dist is stale" warnings. Hashing file *contents* is checkout-proof:
 // build.mjs stamps this hash into the committed dist, and check-plugin recomputes + compares it.
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 // SHA-256 over every file's POSIX-normalized relative path + its bytes, in sorted path order.
@@ -20,6 +20,40 @@ export function srcHash(srcDir) {
     h.update(rel);
     h.update("\0");
     h.update(readFileSync(join(srcDir, rel)));
+    h.update("\0");
+  }
+  return h.digest("hex");
+}
+
+// The dist-lockstep signal for a BUNDLED package (e.g. @agentry/memory → plugin/mem/index.js).
+//
+// `srcHash(pkg/src)` alone is BLIND to transitive staleness: esbuild inlines the package's workspace
+// dependencies, so a change in a dep (e.g. @agentry/core) leaves the bundle stale while the own-src hash is
+// unchanged and the gate reports "up to date" (the v0.2 `kind`-enum drift was exactly this). This hashes the
+// package's OWN src PLUS the `src` of each `@agentry/* workspace:*` dependency, auto-discovered from
+// package.json (so a future workspace dep is covered without editing this).
+//
+// We hash each dep's `src` (git-TRACKED), not its built `dist` entry that esbuild actually inlines: `dist` is a
+// gitignored build artifact, so hashing it would make the signal depend on local build state — a fresh clone
+// (no `dist`) would hash differently than a post-build tree and trip a false "stale". `src` is the stable,
+// tracked source of truth: if a dep's src changed, the committed bundle must be rebuilt. (Third-party deps are
+// pinned by the lockfile and remain out of scope — the proven gap is workspace deps.)
+export function bundleSrcHash(pkgDir) {
+  const packagesDir = join(pkgDir, "..");
+  const pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
+  // [label, srcDir] pairs: the package's own src, then each @agentry/* workspace dep's src.
+  const inputs = [["self", join(pkgDir, "src")]];
+  for (const [name, ver] of Object.entries(pkg.dependencies ?? {})) {
+    if (typeof ver !== "string" || !ver.startsWith("workspace:") || !name.startsWith("@agentry/")) continue;
+    const depSrc = join(packagesDir, name.slice("@agentry/".length), "src");
+    if (existsSync(depSrc)) inputs.push([name, depSrc]);
+  }
+  inputs.sort((a, b) => (a[0] < b[0] ? -1 : 1)); // stable order, independent of package.json key order
+  const h = createHash("sha256");
+  for (const [label, dir] of inputs) {
+    h.update(label);
+    h.update("\0");
+    h.update(srcHash(dir));
     h.update("\0");
   }
   return h.digest("hex");

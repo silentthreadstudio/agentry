@@ -8,7 +8,7 @@
 //   "Dynamic require not supported" at startup.
 import { writeFileSync } from "node:fs";
 import { build } from "esbuild";
-import { srcHash } from "../../scripts/lib/src-hash.mjs";
+import { bundleSrcHash } from "../../scripts/lib/src-hash.mjs";
 
 await build({
   entryPoints: ["src/index.ts"],
@@ -23,7 +23,9 @@ await build({
   outfile: "../../plugin/mem/index.js",
 });
 
-// Stamp the source content-hash next to the bundle so dist-lockstep is verifiable without mtimes.
-writeFileSync("../../plugin/mem/.srchash", srcHash("src"));
+// Stamp the source content-hash next to the bundle so dist-lockstep is verifiable without mtimes. Covers this
+// package's own src AND every @agentry/* workspace dep esbuild inlines (e.g. @agentry/core's dist) — so a
+// transitive dep change can't leave the committed bundle stale while the gate reports green.
+writeFileSync("../../plugin/mem/.srchash", bundleSrcHash("."));
 
 console.log("built plugin/mem/index.js");
