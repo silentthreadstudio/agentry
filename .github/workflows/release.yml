@@ -19,6 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # setup-node@v5 reads the `packageManager: pnpm` field and expects pnpm present, so install it first
+      # (mirrors CI). The release does not install deps — it ships the committed mem bundle — pnpm is just for
+      # setup-node's package-manager detection.
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version: "24" # for the dep-free check-plugin gate
