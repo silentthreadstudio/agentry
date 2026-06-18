@@ -24,9 +24,17 @@ const SHAPE_TONE: Record<Shape, string> = {
 };
 ---
 
-<div class="routing-demo reveal" data-routing-demo data-default={DEFAULT_ID}>
-  {/* Server-rendered fallback — the default task, static. The island replaces this. */}
-  <div class="routing-demo__tabs" role="tablist" aria-label="Example tasks">
+<section id="how" class="section reveal routing-section" aria-labelledby="how-title">
+  <div class="container routing-section__inner">
+    <p class="eyebrow routing-section__eyebrow">How it works</p>
+    <h2 id="how-title" class="routing-section__title">The router, on real tasks.</h2>
+    <p class="routing-section__lead muted">
+      Pick a task — watch it route to the least process that wins.
+    </p>
+
+    <div class="routing-demo" data-routing-demo data-default={DEFAULT_ID}>
+      {/* Server-rendered fallback — the default task, static. The island replaces this. */}
+      <div class="routing-demo__tabs" role="tablist" aria-label="Example tasks">
     {
       TASKS.map((task) => (
         <button
@@ -61,7 +69,9 @@ const SHAPE_TONE: Record<Shape, string> = {
       </ol>
     </div>
   </div>
-</div>
+    </div>
+  </div>
+</section>
 
 <script>
   import '../islands/routing-demo.ts';
@@ -78,7 +88,32 @@ const SHAPE_TONE: Record<Shape, string> = {
        spec-first = cyan        (shape it first — the middle process)
        decompose  = violet      (heaviest, fully orchestrated)  */
 
+  /* section chrome — centered eyebrow + heading + lead, matching the other sections.
+     Centered (not the 2-col .split) because the demo below is a single focused widget. */
+  .routing-section__inner {
+    text-align: center;
+  }
+
+  .routing-section__eyebrow {
+    margin-bottom: 16px;
+  }
+
+  .routing-section__title {
+    margin-bottom: 14px;
+  }
+
+  .routing-section__lead {
+    font-size: clamp(16px, 1.4vw, 18px);
+    line-height: 1.6;
+    max-width: 52ch;
+    margin: 0 auto 40px;
+  }
+
+  /* the demo is a deliberate, width-capped widget — centered, not full-bleed */
   .routing-demo {
+    max-width: 760px;
+    margin-inline: auto;
+    text-align: left;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 18px;
@@ -119,6 +154,43 @@ const SHAPE_TONE: Record<Shape, string> = {
     color: var(--ink);
     background: var(--panel-2);
     border-color: var(--line);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Subtle auto-cycle cue: while the attract loop is running, the active tab grows a thin
+     violet progress bar across its base over one rotation interval (kept in sync with
+     ROTATE_MS in routing-demo.ts). The island re-renders tabs on each advance, so the
+     animation restarts cleanly per task. Violet = the routing action, on-system. */
+  .routing-demo.is-rotating .routing-demo__tab.is-active::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    width: 100%;
+    background: var(--violet-2);
+    transform-origin: left center;
+    animation: rd-progress 3800ms linear forwards;
+  }
+
+  @keyframes rd-progress {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  /* The auto-cycle cue is motion — honor the reduced-motion off-switch belt-and-suspenders.
+     (The island also never starts the loop under reduced-motion, so .is-rotating won't be set;
+     this is defense in depth.) */
+  @media (prefers-reduced-motion: reduce) {
+    .routing-demo.is-rotating .routing-demo__tab.is-active::after {
+      animation: none;
+      display: none;
+    }
   }
 
   /* panel ----------------------------------------------------------------- */

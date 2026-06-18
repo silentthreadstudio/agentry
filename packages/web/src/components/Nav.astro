@@ -175,6 +175,9 @@ const anchors = [
   @media (max-width: 900px) {
     .nav {
       gap: 16px;
+      /* with the anchor links hidden, split the two remaining items to the edges:
+         brand hard-left, Install hard-right (not bunched in the middle) */
+      justify-content: space-between;
     }
     .links {
       gap: 0;

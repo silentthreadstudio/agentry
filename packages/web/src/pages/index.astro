@@ -3,10 +3,9 @@
 // section components and renders them in IA order (VISION §4: claim → why → how → proof → install).
 // No section logic, no styles of its own — every section owns its own markup, styles, and ids.
 //
-// Anchor integrity: Nav links to #proof, #how, #pillars, #install. The components already set
-// #proof (Proof), #pillars (Pillars), and #install (Install). RoutingDemo ("how it works") does
-// NOT carry an id, so its <RoutingDemo /> is wrapped here in <section id="how"> — the integration
-// fix lives in the composition root, not in the component (other tasks' scope).
+// Anchor integrity: Nav links to #proof, #how, #pillars, #install. Each component owns its own
+// section id — Proof (#proof), Pillars (#pillars), Install (#install), and RoutingDemo (#how, with
+// its own "How it works" section chrome). index.astro stays pure composition.
 import Base from '../layouts/Base.astro';
 import Hero from '../components/Hero.astro';
 import Why from '../components/Why.astro';
@@ -24,7 +23,7 @@ import Install from '../components/Install.astro';
   <Hero />
   <Why />
   <Pillars />
-  <section id="how"><RoutingDemo /></section>
+  <RoutingDemo />
   <Moat />
   <Proof />
   <Install />
