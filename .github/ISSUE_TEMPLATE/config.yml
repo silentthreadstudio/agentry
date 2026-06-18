@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & ideas (Discussions)
+    url: https://github.com/Codestz/agentry/discussions
+    about: Ask a question, share an idea, or discuss before filing an issue.
+  - name: Security vulnerability
+    url: https://github.com/Codestz/agentry/security/advisories/new
+    about: Report a vulnerability privately — please do NOT open a public issue.

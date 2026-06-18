@@ -2,10 +2,7 @@
   "name": "@agentry/memory",
   "version": "0.1.0",
   "type": "module",
-  "description": "Agentry's durable memory MCP — text-as-truth file store + derived node:sqlite/FTS5 index, shipped as a committed zero-install bundle.",
-  "bin": {
-    "agentry-memory": "./dist/index.js"
-  },
+  "description": "Agentry's durable memory MCP — text-as-truth file store + derived node:sqlite/FTS5 index, shipped as a committed zero-install bundle at plugin/mem/index.js.",
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",

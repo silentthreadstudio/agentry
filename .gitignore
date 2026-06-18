@@ -1,10 +1,9 @@
 # dependencies
 node_modules/
 
-# build output — gitignored EXCEPT the committed memory bundle (zero-install, doc 09)
+# build output — all dev-only. The SHIPPED mem MCP bundle is built into plugin/mem/ (committed, zero-install).
 packages/core/dist/
-packages/workbench/dist/
-# packages/memory/dist/ is COMMITTED — intentionally NOT ignored
+packages/memory/dist/
 
 # derived memory index (text files are the source of truth and ARE committed; the DB is rebuilt)
 **/.agentry/memory/**/*.db

@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # pnpm workspace dependencies (dev tooling: tsx, typescript, esbuild, biome, yaml, zod, MCP SDK).
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-tooling:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps"
+
+  # GitHub Actions used by CI + release.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"

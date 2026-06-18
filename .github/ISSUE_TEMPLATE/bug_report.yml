@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in Agentry doesn't work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please don't include secrets or proprietary code in logs/repros.
+        For security vulnerabilities, do **not** file a public issue — see SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: "I ran /agentry:go on … and the conductor … but I expected …"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that triggers it.
+      placeholder: |
+        1. Install via `/plugin marketplace add Codestz/agentry`
+        2. /reload-plugins
+        3. Run `/agentry:go "…"`
+        4. …
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Conductor / routing (/agentry:go)
+        - An agent (architect, implementer, verifier, …)
+        - A skill
+        - Memory MCP (mem) / recall
+        - A command / node
+        - Install / plugin loading
+        - Self-eval (packages/eval)
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: cc-version
+    attributes:
+      label: Claude Code version
+      placeholder: "e.g. 2.1.130"
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      placeholder: "node -v → e.g. v24.15.0 (Agentry needs ≥ 24)"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install Agentry?
+      options:
+        - "Marketplace from the repo (/plugin marketplace add Codestz/agentry)"
+        - "Release zip (--plugin-url)"
+        - "Local dev (cloned + marketplace add .)"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / `/doctor` output
+      description: Any error from `/doctor`, the load summary, or relevant console output. This will be rendered as code.
+      render: shell

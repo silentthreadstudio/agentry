@@ -1,4 +1,6 @@
-// Build @agentry/memory → a single committed, zero-install ESM bundle (dist/index.js).
+// Build @agentry/memory → a single committed, zero-install ESM bundle shipped INSIDE the plugin payload at
+// `plugin/mem/index.js` (the path the manifest's mem MCP points at: `${CLAUDE_PLUGIN_ROOT}/mem/index.js`). The
+// bundle lives in the plugin dir, not the package, so a marketplace install of `plugin/` carries the MCP with it.
 //
 // - node:sqlite stays EXTERNAL (it's a runtime builtin, not bundled).
 // - The createRequire banner lets esbuild's __require resolve real requires for bundled CommonJS
@@ -18,10 +20,10 @@ await build({
   banner: {
     js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
   },
-  outfile: "dist/index.js",
+  outfile: "../../plugin/mem/index.js",
 });
 
 // Stamp the source content-hash next to the bundle so dist-lockstep is verifiable without mtimes.
-writeFileSync("dist/.srchash", srcHash("src"));
+writeFileSync("../../plugin/mem/.srchash", srcHash("src"));
 
-console.log("built dist/index.js");
+console.log("built plugin/mem/index.js");

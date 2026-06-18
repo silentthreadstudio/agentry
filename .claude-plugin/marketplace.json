@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "agentry",
-      "source": "./",
+      "source": "./plugin",
       "description": "An adaptive agentic layer for Claude Code: right-sized orchestration, SDLC specialists, and durable memory that compounds across sessions."
     }
   ]

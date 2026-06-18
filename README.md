@@ -132,25 +132,10 @@ Restart the session (agents, hooks, and the `mem` MCP load at startup), then:
 /agentry:go "add pagination to the users endpoint"     # the adaptive front door routes it
 ```
 
-## Repository layout
+## Contributing
 
-```
-agentry/                  # repo root = the Claude Code plugin
-├── .claude-plugin/       # plugin + marketplace manifests + inline `mem` MCP wiring
-├── agents/ commands/ skills/ hooks/   # the shipped plugin payload (markdown + a dep-free primer hook)
-├── packages/
-│   ├── core/             # @agentry/core — the typed contract (the single source of truth)
-│   ├── memory/           # @agentry/memory — the durable memory MCP (file-store truth + sqlite index)
-│   └── eval/             # the self-evaluation harness — routing · quality · moat · reporter
-└── scripts/              # check-plugin structure gate
-```
-
-## How it's designed
-
-Agentry is designed the way it asks *you* to work: win-conditions and success metrics written up front, a
-strict code bar (SRP, types in one place, right-sized structure), and ports-and-adapters where it counts
-(the memory MCP). The design is captured in 12 internal documents — and, more convincingly, in an eval that
-holds the system to the bar and **corrects the instrument, not the result, when they disagree.**
+Issues and PRs welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the dev setup (pnpm workspace, the
+`check-plugin` gate, dist-lockstep) and the bar a change is held to.
 
 ## License
 

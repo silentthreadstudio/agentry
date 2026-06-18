@@ -8,10 +8,13 @@ import { fileURLToPath } from "node:url";
 import { srcHash } from "./lib/src-hash.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+// The shipped plugin payload lives in `plugin/` (marketplace `source: "./plugin"`) = CLAUDE_PLUGIN_ROOT.
+// Only `marketplace.json` stays at the repo ROOT; everything else the plugin loads is under PLUGIN.
+const PLUGIN = join(ROOT, "plugin");
 
 // `--version`: print the plugin version and exit (handy for CI / release scripts).
 if (process.argv.includes("--version")) {
-  const { version } = JSON.parse(readFileSync(join(ROOT, ".claude-plugin", "plugin.json"), "utf8"));
+  const { version } = JSON.parse(readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8"));
   console.log(version);
   process.exit(0);
 }
@@ -41,7 +44,7 @@ const frontmatter = (p) => {
 const hasField = (fm, field) => fm != null && new RegExp(`^${field}:`, "m").test(fm);
 
 // 1. plugin.json
-const pluginManifest = join(ROOT, ".claude-plugin", "plugin.json");
+const pluginManifest = join(PLUGIN, ".claude-plugin", "plugin.json");
 if (!existsSync(pluginManifest)) {
   err(".claude-plugin/plugin.json missing");
 } else {
@@ -61,7 +64,7 @@ if (existsSync(market)) {
 }
 
 // 3. agents — frontmatter name + description; no forbidden tools allowlist (capability-first, doc 04)
-const agentsDir = join(ROOT, "agents");
+const agentsDir = join(PLUGIN, "agents");
 if (existsSync(agentsDir)) {
   const files = readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
   for (const f of files) {
@@ -74,7 +77,7 @@ if (existsSync(agentsDir)) {
 }
 
 // 4. commands — frontmatter description
-const cmdDir = join(ROOT, "commands");
+const cmdDir = join(PLUGIN, "commands");
 if (existsSync(cmdDir)) {
   const files = readdirSync(cmdDir).filter((f) => f.endsWith(".md"));
   for (const f of files) {
@@ -84,7 +87,7 @@ if (existsSync(cmdDir)) {
 }
 
 // 5. skills — SKILL.md with name + description
-const skillsDir = join(ROOT, "skills");
+const skillsDir = join(PLUGIN, "skills");
 if (existsSync(skillsDir)) {
   const dirs = readdirSync(skillsDir).filter((d) => statSync(join(skillsDir, d)).isDirectory());
   for (const d of dirs) {
@@ -101,19 +104,20 @@ if (existsSync(skillsDir)) {
 }
 
 // 6. dist-lockstep — if memory/src exists, dist must too (warn if it looks stale)
+// The mem MCP src lives in the package; the SHIPPED bundle is built into plugin/mem/ (committed with the payload).
 const memSrc = join(ROOT, "packages", "memory", "src");
-const memDist = join(ROOT, "packages", "memory", "dist", "index.js");
+const memDist = join(PLUGIN, "mem", "index.js");
 if (existsSync(memSrc)) {
   if (!existsSync(memDist)) {
-    warn("packages/memory/dist/index.js missing — build + commit before the MCP can run (dist-lockstep)");
+    warn("plugin/mem/index.js missing — build + commit before the MCP can run (dist-lockstep)");
   } else {
     // Content-hash compare, not mtime: git doesn't preserve mtimes, so a checkout/squash-merge would
-    // otherwise trip a false "dist is stale". build.mjs stamps dist/.srchash; recompute + compare.
-    const stampPath = join(ROOT, "packages", "memory", "dist", ".srchash");
+    // otherwise trip a false "dist is stale". build.mjs stamps plugin/mem/.srchash; recompute + compare.
+    const stampPath = join(PLUGIN, "mem", ".srchash");
     const stamped = existsSync(stampPath) ? readFileSync(stampPath, "utf8").trim() : "";
     const current = srcHash(memSrc);
-    if (!stamped) warn("packages/memory/dist/.srchash missing — rebuild so dist-lockstep is verifiable");
-    else if (stamped !== current) warn("packages/memory/dist is stale (src changed since last build) — rebuild + commit (dist-lockstep)");
+    if (!stamped) warn("plugin/mem/.srchash missing — rebuild so dist-lockstep is verifiable");
+    else if (stamped !== current) warn("plugin/mem is stale (memory src changed since last build) — rebuild + commit (dist-lockstep)");
     else ok("dist-lockstep", "up to date");
   }
 }
@@ -126,7 +130,7 @@ const HOOK_EVENTS = new Set([
   "PostToolUseFailure", "PostToolBatch", "Stop", "StopFailure", "SubagentStart",
   "SubagentStop", "PreCompact", "PostCompact", "Notification", "FileChanged",
 ]);
-const hooksJson = join(ROOT, "hooks", "hooks.json");
+const hooksJson = join(PLUGIN, "hooks", "hooks.json");
 if (existsSync(hooksJson)) {
   let h;
   try {
@@ -152,7 +156,7 @@ if (existsSync(hooksJson)) {
             groups++;
             // verify any ${CLAUDE_PLUGIN_ROOT}-relative script the hook runs actually exists
             const ref = (hk.command ?? "").match(/\$\{CLAUDE_PLUGIN_ROOT\}\/(\S+?)["\s]/);
-            if (ref && !existsSync(join(ROOT, ref[1]))) err(`hooks/hooks.json: ${evt} → missing script ${ref[1]}`);
+            if (ref && !existsSync(join(PLUGIN, ref[1]))) err(`hooks/hooks.json: ${evt} → missing script ${ref[1]}`);
           }
         }
       }

@@ -1,13 +1,17 @@
 # CLAUDE.md — working in the Agentry repo
 
 Agentry is an adaptive agentic layer for Claude Code (right-sized orchestration + SDLC specialists +
-durable memory). **The repo root *is* the plugin**; TypeScript lives under `packages/`.
+durable memory). **The shipped plugin lives in `plugin/`** (marketplace `source: "./plugin"`, so an install
+copies only that dir — not the dev tree); TypeScript dev packages live under `packages/`.
 
 ## Where things are
 
-- `agents/` `commands/` `skills/` `hooks/` — shipped plugin payload (markdown + the dep-free primer hook)
-- `.claude-plugin/plugin.json` — manifests + **inline** `mem` MCP wiring (NOT a root `.mcp.json` — that double-loads as project config and fails on `${CLAUDE_PLUGIN_ROOT}` when dogfooding)
-- `packages/core` — `@agentry/core`, the typed contract · `packages/memory` — the memory MCP · `packages/workbench` — V2
+- `plugin/` — the shipped plugin payload = `CLAUDE_PLUGIN_ROOT`:
+  - `plugin/agents/ commands/ skills/ hooks/` — markdown payload + the dep-free primer hook
+  - `plugin/.claude-plugin/plugin.json` — manifest + **inline** `mem` MCP wiring (`${CLAUDE_PLUGIN_ROOT}/mem/index.js`)
+  - `plugin/mem/index.js` — the committed, zero-install memory MCP bundle (built from `packages/memory`)
+- `.claude-plugin/marketplace.json` — the marketplace manifest (stays at repo ROOT; `source: "./plugin"`)
+- `packages/core` — `@agentry/core`, the typed contract · `packages/memory` — the memory MCP (builds → `plugin/mem/`) · `packages/eval` — the self-eval harness
 - `.docs/internal/01–10` — the design (read these before changing behavior); **`10` is the execution roadmap** (current: Phase 1 — implement `@agentry/memory`)
 
 ## The code bar (non-negotiable — we build the `architecting` skill; the code obeys it)
@@ -26,7 +30,7 @@ durable memory). **The repo root *is* the plugin**; TypeScript lives under `pack
 
 ## Standing process rules
 
-- **Dist-lockstep** — any `packages/memory/src` change → rebuild + commit `dist/index.js` in the same change.
+- **Dist-lockstep** — any `packages/memory/src` change → rebuild + commit `plugin/mem/index.js` (+ `.srchash`) in the same change.
 - **Reload-gated** — agent/command/skill/hook/MCP changes register only on reload/restart; verify live after a restart.
 - **Run `node scripts/check-plugin.mjs` before every commit** (it catches namespacing + structure drift).
 - **Acceptance-gated phases** (doc 12) — never advance a phase on vibes.
