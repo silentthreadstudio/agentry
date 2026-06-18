@@ -23,6 +23,37 @@ Signals are **not equal votes.** Take the **highest** shape any single signal ju
 
 Pick the floor the override allows. Precedent is an input, not a mandate — a warm store sharpens this over time.
 
+## Two orthogonal axes — complexity (process weight) and kind (discipline)
+
+Routing decides **two things at once**, and they are **independent**:
+
+- **Complexity shape** (the rubric above) — *how much process* the work needs: one-shot / spec-first / decompose+verify.
+- **Kind** — *which discipline* the work runs under: `{feature, bug, refactor, perf, dep-upgrade, ci-red}`.
+
+**Kind ⊥ complexity is load-bearing.** Classifying the kind never forces a complexity shape, and choosing a shape never forces a kind. The same kind takes different shapes depending on its complexity signals:
+
+| Same kind, different complexity | Shape |
+| :--- | :--- |
+| `bug` — a date formatter drops the timezone (one symbol, reversible) | **one-shot** (debug discipline still applies: reproduce first) |
+| `bug` — a race spanning the parser, the cache, and persistence | **decompose+verify** (debug discipline across the seams) |
+| `feature` — add a `--json` flag to one command | **one-shot** |
+| `feature` — a notifications center across API, service, and data layers | **decompose+verify** |
+
+Record the kind as `kind: <kind>` in `spec.md` frontmatter on any escalation above one-shot (a genuine one-shot writes no `spec.md`, so its kind lives in the run trace/episode only). The complexity shape is recorded the same way it always was — the kind axis is **additive**, it does not change shape recording or scoring.
+
+### Kind → discipline mapping
+
+| Kind | Discipline |
+| :--- | :--- |
+| `feature` | default build discipline (`implementing` — build mode) |
+| `refactor` | default build discipline (behavior-preserving) |
+| `dep-upgrade` | default build discipline |
+| `bug` | **debug discipline** — `implementing` "When fixing" mode: reproduce-first → hypothesis → regression-guard |
+| `perf` | **debug discipline** — measure/reproduce the regression before changing anything |
+| `ci-red` | **debug discipline** — reproduce the red signal, fix, prove it green |
+
+`bug / perf / ci-red` select the debug discipline (the tightened `implementing` mode); the rest use the default build discipline. Discipline is about *how the implementer works*; it is orthogonal to *how much process* the complexity shape calls for.
+
 ## Escalation triggers (pre-flight AND concrete mid-flight)
 
 **Pre-flight (sets the initial floor):** before any edit, if a real unknown or an undecided design fork is already visible in the prompt, escalate *now* — don't wait for it to bite mid-task. The fork is usually visible up front.

@@ -173,6 +173,16 @@ test("mixed-shape run => scored artifact with accuracy, confusion matrix, over/u
   assert.equal(onDisk.condition, "scored");
 });
 
+test("mini fixture (NO kind labels) => no kindAccuracy on the scored artifact (additive-absent)", async () => {
+  // The mini fixture carries no `kind` labels, so the kind axis must stay ABSENT — the shape-only artifact is
+  // byte-for-byte unchanged. This is the backward-compat clause for the kind axis (ADR-005 / AC11).
+  const runner = sequenceRunner(fullSequence(allCorrectShapes(), AA_FLOOR as ShapeName));
+  const result = await runRoutingProbe({ fixtureDir: MINI_FIXTURE_DIR, runner, outPath: outPath(), k: K });
+
+  assert.equal(result.artifact.condition, "scored");
+  assert.equal(result.artifact.kindAccuracy, undefined, "no kind axis when the fixture labels no kinds");
+});
+
 // --- AC8: a collapsed dispatch set aborts at saturation, BEFORE scoring --------------------------------
 
 test("collapsed-shape run => saturationGuard aborts, NO accuracy emitted, abort precedes scoring", async () => {
@@ -368,6 +378,108 @@ test("runs=1: the variance fields are ABSENT (artifact is byte-for-byte today's 
   assert.equal(result.artifact.accuracyDistribution, undefined, "no distribution on a single run");
   assert.equal(result.artifact.stabilityTable, undefined, "no stability table on a single run");
   assert.equal(result.artifact.noisyTasks, undefined, "no noisyTasks list on a single run");
+});
+
+// --- THE KIND AXIS (ADR-005 / AC11): a kind-labeled fixture emits kindAccuracy + a kind confusion matrix -----
+//
+// Drives the kind axis through the probe END-TO-END offline. The kind is read by `extractKind` from the run's
+// `spec.md` FRONTMATTER, so each escalated task's recorded result plants a `spec.md` carrying `kind: <k>` (a
+// one-shot plants no work folder, so it has no kind). The kind-mini fixture (owned here) labels its five
+// escalated tasks with all six known kinds; the probe scores extracted-vs-labeled over exactly those.
+
+const KIND_MINI_DIR = join(HERE, "fixtures", "routing-kind-mini");
+const KIND_TASKS = loadRoutingFixture(join(KIND_MINI_DIR, "tasks.yaml"));
+const KIND_N = KIND_TASKS.length;
+const KIND_FLOORS: readonly Shape[] = KIND_TASKS.map((t) => t.correctFloor);
+
+/**
+ * A RunResult that encodes BOTH axes: the shape (via the planted artifact kind) AND, for an escalated task, a
+ * `spec.md` whose frontmatter carries `kind: <kind>` so `extractKind` reads it. `kind === null` ⇒ a one-shot
+ * (no work folder). A spec-first/decompose with a kind plants a `spec.md` (and a `plan.md` too for decompose).
+ */
+function runResultForKind(shape: ShapeName, kind: string | null): RunResult {
+  if (shape === "one-shot") {
+    return { streamPath: "unused.jsonl", resultSubtype: "success", producedTreeNonEmpty: true };
+  }
+  const frontmatter = kind === null ? "id: SP\n" : `id: SP\nkind: ${kind}\n`;
+  const specMd = `---\n${frontmatter}---\n\n# spec\n`;
+  const workFolder: Record<string, string> =
+    shape === "decompose"
+      ? { "work/probe-case/spec.md": specMd, "work/probe-case/plan.md": "# plan\n" }
+      : { "work/probe-case/spec.md": specMd };
+  return { streamPath: "unused.jsonl", producedTreeNonEmpty: true, workFolder };
+}
+
+/** The full single-run sequence for the kind-mini fixture: each task routes its floor + plants `extractedKinds`. */
+function kindFullSequence(extractedKinds: readonly (string | null)[], k = K): RunResult[] {
+  assert.equal(extractedKinds.length, KIND_N, "extractedKinds must cover every kind-mini task");
+  const labeled = KIND_FLOORS.map((f, i) => runResultForKind(f as ShapeName, extractedKinds[i]!));
+  // The A/A tail re-runs task[0] (a one-shot, no kind) k times.
+  const aaTail = Array.from({ length: k }, () => runResultForKind(KIND_FLOORS[0]! as ShapeName, null));
+  return [...labeled, ...aaTail];
+}
+
+test("kind-labeled fixture, all kinds extracted correctly => kindAccuracy 1.0 + full confusion diagonal", async () => {
+  // Each escalated task's run records the SAME kind it is labeled with ⇒ perfect kind accuracy. task[0] is a
+  // one-shot (no kind), so it is not kind-scored.
+  const extracted = KIND_TASKS.map((t) => t.kind ?? null);
+  const runner = sequenceRunner(kindFullSequence(extracted));
+
+  const result = await runRoutingProbe({ fixtureDir: KIND_MINI_DIR, runner, outPath: outPath(), k: K });
+
+  assert.equal(result.artifact.condition, "scored");
+  const ka = result.artifact.kindAccuracy!;
+  assert.ok(ka, "kindAccuracy emitted alongside the shape accuracy");
+
+  const labeledCount = KIND_TASKS.filter((t) => t.kind !== undefined).length;
+  assert.equal(ka.total, labeledCount, "kind axis scores exactly the kind-labeled tasks");
+  assert.equal(ka.accuracy, 1, "every extracted kind matches its label ⇒ accuracy 1.0");
+  // Every confusion cell is on the diagonal (labeled === extracted).
+  assert.ok(ka.confusionMatrix.every((c) => c.labeledKind === c.extractedKind), "all cells on the diagonal");
+  const matrixTotal = ka.confusionMatrix.reduce((sum, c) => sum + c.count, 0);
+  assert.equal(matrixTotal, labeledCount, "the matrix accounts for every labeled task");
+});
+
+test("kind axis is ORTHOGONAL to shape: a kind miss does not change the shape accuracy (AC4)", async () => {
+  // Route every task to its floor (shape accuracy = 1.0) but record one task's kind WRONG. The kind accuracy
+  // drops; the shape accuracy must stay 1.0 — the two axes are scored independently.
+  const extracted = KIND_TASKS.map((t) => t.kind ?? null);
+  const missIdx = KIND_TASKS.findIndex((t) => t.kind !== undefined);
+  const wrongKind = KIND_TASKS[missIdx]!.kind === "bug" ? "feature" : "bug";
+  extracted[missIdx] = wrongKind; // record a different kind than the label ⇒ one kind miss
+
+  const runner = sequenceRunner(kindFullSequence(extracted));
+  const result = await runRoutingProbe({ fixtureDir: KIND_MINI_DIR, runner, outPath: outPath(), k: K });
+
+  assert.equal(result.artifact.condition, "scored");
+  assert.equal(result.artifact.accuracy, 1, "shape accuracy is unchanged by a kind miss (orthogonality)");
+  const ka = result.artifact.kindAccuracy!;
+  const labeledCount = KIND_TASKS.filter((t) => t.kind !== undefined).length;
+  assert.equal(ka.accuracy, (labeledCount - 1) / labeledCount, "exactly one kind miss is reflected");
+  // The off-diagonal cell (labeled !== extracted) for the missed task is readable in the matrix.
+  assert.ok(
+    ka.confusionMatrix.some((c) => c.labeledKind !== c.extractedKind),
+    "an off-diagonal kind cell is recorded for the miss",
+  );
+});
+
+test("a kind-labeled task whose run records NO kind => an indeterminate kind miss (null extraction)", async () => {
+  // One escalated task's run records no kind (its spec.md omits the field). That task is an indeterminate kind
+  // miss (counted in total, never correct, and absent from the matrix), the parallel of a degenerate shape miss.
+  const extracted = KIND_TASKS.map((t) => t.kind ?? null);
+  const dropIdx = KIND_TASKS.findIndex((t) => t.kind !== undefined);
+  extracted[dropIdx] = null; // the run wrote a spec.md with no kind field
+
+  const runner = sequenceRunner(kindFullSequence(extracted));
+  const result = await runRoutingProbe({ fixtureDir: KIND_MINI_DIR, runner, outPath: outPath(), k: K });
+
+  assert.equal(result.artifact.condition, "scored");
+  const ka = result.artifact.kindAccuracy!;
+  const labeledCount = KIND_TASKS.filter((t) => t.kind !== undefined).length;
+  assert.equal(ka.total, labeledCount, "the null-extraction task is still counted in total");
+  assert.equal(ka.accuracy, (labeledCount - 1) / labeledCount, "the null extraction is a miss, not correct");
+  const matrixTotal = ka.confusionMatrix.reduce((sum, c) => sum + c.count, 0);
+  assert.equal(matrixTotal, labeledCount - 1, "the null extraction places no cell in the matrix");
 });
 
 // --- AC3 (headless): command.ts --runner replay exits 0, stdout = artifact path ------------------------

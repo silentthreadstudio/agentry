@@ -46,6 +46,12 @@ A conductor (the main session) routes every task to the **least process that win
 them. It's **biased to the floor** and escalates *on evidence*: a hidden decision fork vetoes a one-shot;
 multiple coupled components earn a decompose. It never re-implements what a specialist or a node already does.
 
+Routing has a **second axis, orthogonal to the complexity shape: the *kind* of work** —
+`feature · bug · refactor · perf · dep-upgrade · ci-red`. Kind ⊥ complexity: it picks the *discipline*
+(a `bug` or `ci-red` runs repro-first; a `feature` may spec-first), while the shape still picks *how much
+process*. A one-line bug and a tangled one are the same kind but route to different shapes. And once work is
+built and verified, the last mile has one bar: **Done = merged + green.**
+
 <br clear="left">
 
 ### 2 · Memory — the moat that compounds
@@ -136,6 +142,8 @@ same machinery.
 | `/agentry:implement` | Build one task — clean, bounded code and tests within its contract | implementer | code + tests |
 | `/agentry:verify` | Adversarially verify one task against its acceptance (separate from the author) | verifier | a Verdict |
 | `/agentry:assemble` | Run the **whole** product against the spec as observed behavior — the integration gate | verifier | an integration Verdict |
+| `/agentry:fix <symptom>` | Diagnose a failure and fix it — a repro-first debug run (reproduce → isolate → fix → regression-guard). For a stack trace, failing test, red CI log, or perf regression | conductor (`conducting`) | the diagnosed fix + regression guard |
+| `/agentry:ship` | Take the verified working tree the last mile — branch → commit → PR → CI-watch → merge, stopping at the authorization gate before anything leaves the machine | conductor (`conducting` · `shipping`) | the merged, green change |
 | `/agentry:reflect` | Curate memory and distill the run's episodes into durable facts; proposes skills (human-gated) | librarian | durable facts |
 | `/agentry:remember <fact>` | Capture a durable memory now — straight through the write-bar | — (direct, no subagent) | a stored memory |
 

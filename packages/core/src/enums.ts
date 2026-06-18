@@ -28,3 +28,12 @@ export type KnownShape = z.infer<typeof KnownShape>;
 
 export const Shape = z.string();
 export type Shape = string;
+
+// The routing kind axis (ADR-005) — orthogonal to Shape. The CURRENT set is enumerated, but the
+// stored value is permissive on purpose (same rationale as Shape): accept an unknown kind rather
+// than reject it, so adding a kind later can't corrupt routing precedent or throw on old records.
+export const KnownKind = z.enum(["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"]);
+export type KnownKind = z.infer<typeof KnownKind>;
+
+export const Kind = z.string();
+export type Kind = string;

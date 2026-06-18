@@ -24,14 +24,15 @@ Write the **least code that satisfies the contract, reads clearly, and matches t
 
 ## When fixing (vs building)
 
-Fixing is a different discipline from building — most failed fixes come from skipping it and guessing. When the task is a bug fix, follow this loop, not intuition:
+Fixing is a different discipline from building — most failed fixes come from skipping it and guessing. When the input is a *failure to diagnose* (a `bug` / `ci-red` / `perf` task), follow this loop, not intuition. Three of its steps are **guarantees, not suggestions** — the gate, the regression artifact, and the gotcha close are what make a fix trustworthy:
 
-1. **Reproduce first.** Get a reliable, minimal repro before changing anything. A fix you can't reproduce-then-watch-pass is a guess. If you can, capture the repro as a failing test — it becomes the regression test.
+1. **Reproduce-first GATE — the failing repro precedes any fix.** Before changing one line, capture the failure as a **failing test, observed RED** — the *first* artifact of the run. (Where a test is genuinely impossible, a documented **deterministic repro** — exact steps + observed wrong output — stands in.) **No fix may precede a repro.** A fix you can't reproduce-then-watch-pass is a guess, and an unreproduced fix fails this gate. For a `perf` failure the repro is a measurement against a **stated baseline** (e.g. "operation X takes <observed> vs. the <baseline> target"), reproduced before the change — *reproduce-and-improve*, not a profiling harness.
 2. **Read the error literally.** The stack trace, the assertion, the actual-vs-expected — take them at face value before theorizing. The bug is usually where the evidence points, not where you assume.
 3. **Hypothesis, then test.** Form *one* explicit hypothesis ("the timezone is dropped because X parses before Y"), then make the smallest change that would confirm or kill it. Don't change five things hoping one works.
 4. **Change one variable at a time.** If a change doesn't move the needle, revert it before trying the next. Stacked speculative edits hide which one mattered and create new bugs.
-5. **Bisect when lost.** If the cause is unclear, narrow it: comment out / git-bisect / binary-search the input or the history until the failing region is small. Localize before fixing.
-6. **Confirm the fix and guard it.** Watch the repro pass, run the surrounding tests, and leave a regression test so it can't silently return.
+5. **Bisect when lost.** If the cause is unclear, narrow it: comment out / binary-search the input, or use the repo's history-bisect tool, until the failing region is small. Localize before fixing.
+6. **Regression guarantee — confirm the fix and LEAVE the guard.** Watch the repro flip RED → green, then run the surrounding suite and confirm it stays green. The repro test is a **required left-green artifact: it stays in the suite** as a regression guard (never deleted after the fix, never left as a throwaway). A fix without a committed, passing regression test is not done. (For `perf`, the guard asserts the improved measurement holds against the stated baseline.)
+7. **Remember-the-gotcha close — surface the root cause for harvest.** On a *successful* debug run, surface the bug's **root cause** (not the symptom) as a gotcha with provenance — what was actually wrong, the subsystem it lives in, and the run/episode it came from — so the conductor can harvest it via the **existing `memory_write`** tool (the conductor writes; you surface). This closes the loop: the same failure becomes recallable for the touched subsystem next time. Do not write memory yourself or invent a new memory tool — the seam is *implementer surfaces, conductor harvests*.
 
 > **Two failed attempts is a signal, not a cue to thrash.** Stop re-rolling guesses; re-reproduce, re-read the evidence, or surface that you need more context. Undisciplined retries burn the budget and add noise.
 

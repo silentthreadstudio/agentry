@@ -14,6 +14,8 @@
 
 import { writeFileSync } from "node:fs";
 
+import type { Kind } from "@agentry/core";
+
 import type { Shape } from "./shape.ts";
 import { SHAPES_BY_WEIGHT } from "./shape.ts";
 
@@ -57,6 +59,41 @@ export interface ConfusionCell {
   labeledFloor: Shape;
   dispatched: Shape;
   count: number;
+}
+
+/**
+ * One per-task KIND outcome (ADR-005 / AC11) — the SECOND routing axis, orthogonal to the shape outcome above.
+ * `labeledKind` is the fixture's `kind` label; `extractedKind` is what `extractKind` read from the run's
+ * `spec.md` frontmatter (`null` when the run wrote no labeled kind — counted as an indeterminate miss, never
+ * silently dropped). Only escalated tasks carry a labeled kind, so the kind axis scores over exactly those.
+ */
+export interface KindOutcome {
+  taskId: string;
+  labeledKind: Kind;
+  /** The kind from `extractKind`, or `null` for a run that recorded no kind in its artifact. */
+  extractedKind: Kind | null;
+}
+
+/** A single kind confusion-matrix cell: labeled-kind × extracted-kind and how many tasks landed in it. */
+export interface KindConfusionCell {
+  labeledKind: Kind;
+  extractedKind: Kind;
+  count: number;
+}
+
+/**
+ * The kind-axis readout (ADR-005 / AC11) — emitted alongside the unchanged shape `accuracy`/`confusionMatrix`,
+ * inside the SAME control gates (the probe builds it only on a scored run). Structurally parallel to the shape
+ * axis: `accuracy = correct / total` over the kind-labeled tasks (a task is correct iff its extracted kind
+ * equals its labeled kind; a `null` extraction is an indeterminate miss), plus the labeled × extracted census.
+ */
+export interface KindAccuracy {
+  /** `correct / total` over the kind-labeled tasks; `0` when no task carried a labeled kind. */
+  accuracy: number;
+  /** Number of kind-labeled tasks scored (the denominator). */
+  total: number;
+  /** Labeled-kind × extracted-kind cells — the kind confusion census. */
+  confusionMatrix: KindConfusionCell[];
 }
 
 /** A task that over-routed (dispatched a HEAVIER shape than its floor) — the rubric over-orchestrated. */
@@ -149,6 +186,13 @@ export interface RoutingArtifact {
   earlySignalCaveat: string;
   /** The pre-registered success condition (AC9a); absent on an aborted run. */
   successCondition?: SuccessCondition;
+  /**
+   * The KIND-AXIS readout (ADR-005 / AC11) — accuracy + confusion over the kind-labeled tasks, alongside the
+   * unchanged shape `accuracy`/`confusionMatrix`. Present on a scored run when ≥1 task carried a labeled kind;
+   * absent on an aborted run (no number when a gate fires) and on a scored run with no kind-labeled tasks. The
+   * shape numbers above are computed independently of this (AC4 orthogonality) — adding it changes neither.
+   */
+  kindAccuracy?: KindAccuracy;
   /** Pass/fail against the condition (AC9b) — present only on a scored run WITH a threshold X. */
   passFail?: PassFail;
   /**
@@ -182,6 +226,7 @@ export function buildScoredArtifact(
   outcomes: readonly RoutingOutcome[],
   threshold: number | null,
   taskRuns?: readonly TaskRuns[],
+  kindOutcomes?: readonly KindOutcome[],
 ): RoutingArtifact {
   const total = outcomes.length;
   const correct = outcomes.filter((o) => o.dispatched !== null && o.dispatched === o.labeledFloor).length;
@@ -235,7 +280,45 @@ export function buildScoredArtifact(
     artifact.accuracyDistribution = accuracyDistribution(taskRuns, stabilityTable);
   }
 
+  // The KIND axis is ADDITIVE and INDEPENDENT (AC4 / AC11): attached only when ≥1 task carried a labeled kind,
+  // computed from the kind outcomes alone — it reads none of the shape state above, so the shape numbers are
+  // provably unchanged. Absent when no kind labels are present, so today's shape-only artifact is unchanged.
+  if (kindOutcomes !== undefined && kindOutcomes.length > 0) {
+    artifact.kindAccuracy = buildKindAxis(kindOutcomes);
+  }
+
   return artifact;
+}
+
+/**
+ * Build the kind-axis readout (ADR-005 / AC11) from the per-task kind outcomes — structurally parallel to the
+ * shape accuracy/matrix: `accuracy = correct / total` (a task is correct iff its extracted kind equals its
+ * labeled kind; a `null` extraction is an indeterminate miss counted in `total`, never correct), plus the
+ * labeled-kind × extracted-kind census. Computed over ONLY the kind-labeled tasks the probe supplies.
+ */
+function buildKindAxis(kindOutcomes: readonly KindOutcome[]): KindAccuracy {
+  const total = kindOutcomes.length;
+  const correct = kindOutcomes.filter(
+    (o) => o.extractedKind !== null && o.extractedKind === o.labeledKind,
+  ).length;
+  const accuracy = total === 0 ? 0 : correct / total;
+  return { accuracy, total, confusionMatrix: kindConfusionMatrix(kindOutcomes) };
+}
+
+/** The labeled-kind × extracted-kind census (AC11): one cell per (labeled, extracted) pair with a hit. */
+function kindConfusionMatrix(kindOutcomes: readonly KindOutcome[]): KindConfusionCell[] {
+  const counts = new Map<string, KindConfusionCell>();
+  for (const o of kindOutcomes) {
+    if (o.extractedKind === null) continue; // a null extraction has no kind to place in the matrix
+    const key = `${o.labeledKind}=>${o.extractedKind}`;
+    const cell = counts.get(key);
+    if (cell) {
+      cell.count++;
+    } else {
+      counts.set(key, { labeledKind: o.labeledKind, extractedKind: o.extractedKind, count: 1 });
+    }
+  }
+  return [...counts.values()];
 }
 
 /**

@@ -26,6 +26,9 @@ importers:
 
   packages/eval:
     dependencies:
+      '@agentry/core':
+        specifier: workspace:*
+        version: link:../core
       yaml:
         specifier: ^2.5.0
         version: 2.9.0

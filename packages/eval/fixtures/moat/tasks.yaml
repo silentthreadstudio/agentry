@@ -33,3 +33,37 @@ tasks:
       text: >-
         This project ships as ESM and uses Node's built-in test runner (node:test); there is no bundler and no
         TypeScript build step. Helpers in src/ are plain .js with named exports.
+
+  # Gotcha-prevents-rebug (AC12): a RELEVANT gotcha that is a prior bug's ROOT CAUSE settles how the fix must be
+  # written so the bug is NOT re-introduced; an unrelated DECOY gotcha does not. Same scenario shape as above —
+  # the relevant fact collapses the warm run from the cold floor to a lighter shape, the decoy holds at the floor.
+  - id: moat-gotcha-money-rounding
+    prompt: |
+      Add an `applyDiscount(cents, percentOff)` helper to `src/pricing.js` that returns the discounted price.
+    # COLD: the "how do we do money math here" fork is undecided — float-dollars vs integer-cents rounding is a
+    # real choice with a wrong answer, so with empty memory the conductor escalates to spec-first.
+    cold_floor: spec-first
+    # A verbatim clause from the relevant gotcha — confirms it actually SURFACED in recall (not just non-empty).
+    fact_signature: "compute in integer cents"
+    relevant:
+      type: gotcha
+      scope: repo
+      tags: [pricing, money, rounding, discount, float]
+      provenance: [src/pricing.js]
+      why: "A prior totals-off-by-a-cent bug whose root cause, once remembered, stops the same fix from re-introducing it."
+      text: >-
+        Money math in this codebase already bit us: a discount computed in floating-point dollars
+        (price * (1 - pct/100)) re-introduced an off-by-a-cent totals bug because 0.1 + 0.2 !== 0.3 in IEEE-754.
+        The root cause is float-dollar arithmetic. The fix that holds: compute in integer cents and round with
+        Math.round once at the end — never accumulate in floating-point dollars. This settles how
+        applyDiscount must be written, so it need not be re-litigated.
+    # An on-topic-but-irrelevant gotcha: it is a real bug-lesson but does NOT resolve the float-vs-cents rounding
+    # fork, so it must NOT let the conductor one-shot. If it does, "compounding" is memory-agnostic and the gate fires.
+    decoy:
+      type: gotcha
+      scope: repo
+      tags: [logging, async, observability]
+      provenance: [src/log.js]
+      text: >-
+        An earlier bug: console.log in a hot request path was left in and flooded production logs, hiding real
+        errors. Route log lines through the structured logger and gate debug output behind the LOG_LEVEL env var.

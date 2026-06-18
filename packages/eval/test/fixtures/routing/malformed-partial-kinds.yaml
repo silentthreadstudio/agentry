@@ -1,0 +1,68 @@
+# Malformed: structurally valid (6 tasks, a must-escalate trap, a trivial), but it OPTS IN to the kind axis
+# (one task carries `kind: bug`) while covering only ONE of the six kinds. loadRoutingFixture must throw on the
+# incomplete kind coverage — a kind-labeled fixture must span all six known kinds.
+version: 1
+labeling:
+  rubric_ref: skills/conducting/references/routing-and-dispatch.md
+  labeler_a: a
+  labeler_b: b
+  agreement_at_creation: "6/6"
+
+tasks:
+  - id: t1
+    prompt: |
+      Fix formatPrice to always show 2 decimals in src/format.js.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "Scope: one symbol"
+      bounded_reversible: "single function body, trivially undoable"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t2
+    prompt: |
+      Add a --version flag to bin/cli.js.
+    correct_floor: one-shot
+    rationale:
+      governing_signal: "Scope: one file"
+      bounded_reversible: "additive single-file flag"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  - id: t3
+    prompt: |
+      Dedupe incoming records before we persist them.
+    correct_floor: spec-first
+    kind: bug
+    trap: must-escalate
+    rationale:
+      governing_signal: "Hidden decision: which record wins on a collision"
+      decision_hidden: "the identity key + tie-break is unspecified"
+      consequence: "guessing the wrong winner silently drops or overwrites records"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  - id: t4
+    prompt: |
+      Make the catalog search return results faster without changing what it returns.
+    correct_floor: spec-first
+    rationale:
+      governing_signal: "Undecided approach: index vs cache vs query rewrite"
+      decision_hidden: "the performance lever to pull is unspecified"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  - id: t5
+    prompt: |
+      Add pagination to the users listing across the API, service, and data layers.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Spans multiple modules with contracts between them"
+      seams: "api handler ↔ service ↔ data query — three owners"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+
+  - id: t6
+    prompt: |
+      Build a notifications center: a feed, read/unread state, and delivery preferences.
+    correct_floor: decompose
+    rationale:
+      governing_signal: "Several cohesive sub-features with their own boundaries"
+      seams: "feed store ↔ read-state ↔ preferences — distinct modules"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }

@@ -18,10 +18,13 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import type { Kind } from "@agentry/core";
+
 import type { Runner, Sandbox } from "../io/port.ts";
 import type { EvalObserver } from "../store/schema.ts";
 import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
 import { extractShape, DegenerateRunError } from "./extract.ts";
+import { extractKind } from "./extract-kind.ts";
 import { loadRoutingFixture, type RoutingTask } from "./fixture.ts";
 import type { Shape } from "./shape.ts";
 import { aaUnanimity, positiveControl, saturationGuard, DEFAULT_AA_REPEATS } from "./control.ts";
@@ -31,6 +34,7 @@ import {
   writeArtifact,
   type RoutingArtifact,
   type RoutingOutcome,
+  type KindOutcome,
   type TaskRuns,
 } from "./artifact.ts";
 
@@ -103,6 +107,12 @@ export interface RoutingResult {
 interface RunOutcome {
   /** The ROUTED shape, or `null` for a degenerate / indeterminate no-artifact run (registered as a miss). */
   shape: Shape | null;
+  /**
+   * The ROUTED kind from `extractKind` over the same work-folder `spec.md` (ADR-005 / AC11), or `null` when the
+   * run recorded no kind (a one-shot, or an unlabeled spec). Read INDEPENDENTLY of `shape` (AC4 orthogonality) —
+   * a second pure read of the same artifact, never derived from the shape.
+   */
+  kind: Kind | null;
   /** The task's sandbox working dir — the capture source root (its `.agentry/work/` tree is copied out). */
   sandboxDir: string;
   /** Absolute path to this run's captured `stream.jsonl` under the sandbox. */
@@ -154,6 +164,10 @@ async function runAndExtract(
     },
     sandbox,
   );
+  // The KIND axis (ADR-005 / AC11): read INDEPENDENTLY of the shape from the same work-folder `spec.md`
+  // frontmatter. `null` for a run that wrote no labeled kind (a one-shot / unlabeled spec). This read never
+  // throws (a one-shot is `null`, not degenerate) and is computed even when the shape extract throws below.
+  const kind = extractKind(sandbox.workingDir);
   try {
     // The shape is read from the conductor's WORK-FOLDER ARTIFACTS under the sandbox working dir (§2), with the
     // settle signals only disambiguating the no-artifact one-shot-vs-degenerate case.
@@ -161,10 +175,12 @@ async function runAndExtract(
       ...(result.resultSubtype !== undefined ? { resultSubtype: result.resultSubtype } : {}),
       producedTreeNonEmpty: result.producedTreeNonEmpty,
     });
-    return { shape, sandboxDir: sandbox.workingDir, streamPath };
+    return { shape, kind, sandboxDir: sandbox.workingDir, streamPath };
   } catch (err) {
     // indeterminate run — registered as a miss (null shape), not a crash; still report the sandbox for capture.
-    if (err instanceof DegenerateRunError) return { shape: null, sandboxDir: sandbox.workingDir, streamPath };
+    if (err instanceof DegenerateRunError) {
+      return { shape: null, kind, sandboxDir: sandbox.workingDir, streamPath };
+    }
     throw err;
   }
 }
@@ -205,6 +221,10 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
   // when `runs === 1` this is byte-for-byte today's behavior. `taskRuns` carries all `runs` shapes per task for
   // the additive variance readouts.
   const taskRuns: TaskRuns[] = [];
+  // The kind axis (ADR-005 / AC11): RUN 0's extracted kind per task, keyed by task id — the representative
+  // single-run kind, mirroring how `outcomes` uses run 0's shape. Built into `KindOutcome[]` at scoring time
+  // for the tasks that carry a labeled `kind`. Collected here but consumed ONLY past the gates (step d).
+  const firstRunKinds = new Map<string, Kind | null>();
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i]!;
     const shapes: (Shape | null)[] = [];
@@ -221,6 +241,7 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
       const outcome = await runAndExtract(task, opts.runner, model, opts.pluginDir, opts.fixtureDir);
       const timingMs = Date.now() - startedMs;
       shapes.push(outcome.shape);
+      if (r === 0) firstRunKinds.set(task.id, outcome.kind); // run 0 is the representative single-run kind
       const shapeLabel = outcome.shape ?? "degenerate";
       observer?.emit?.({
         kind: "task-done",
@@ -299,9 +320,17 @@ export async function runRoutingProbe(opts: RoutingProbeOptions): Promise<Routin
     return emit(opts.outPath, buildAbortedArtifact(saturation.verdict!), []);
   }
 
+  // The kind-axis outcomes (ADR-005 / AC11) — built ONLY past the gates, over the tasks that carry a labeled
+  // `kind` (escalated tasks; a one-shot has no artifact-visible kind, so it is not kind-scored by design). The
+  // labeled kind comes from the fixture; the extracted kind is run 0's `extractKind` read. Orthogonal to shape.
+  const kindOutcomes: KindOutcome[] = tasks
+    .filter((t): t is RoutingTask & { kind: Kind } => t.kind !== undefined)
+    .map((t) => ({ taskId: t.id, labeledKind: t.kind, extractedKind: firstRunKinds.get(t.id) ?? null }));
+
   // (d) ONLY NOW — accuracy + confusion matrix + (X set) pass/fail, plus the additive multi-run variance
-  // (attached by the builder only when `runs > 1`; absent for the single-run backward-compatible artifact).
-  const artifact = buildScoredArtifact(outcomes, threshold, taskRuns);
+  // (attached by the builder only when `runs > 1`; absent for the single-run backward-compatible artifact),
+  // plus the additive kind-axis readout (attached only when ≥1 task carried a labeled kind).
+  const artifact = buildScoredArtifact(outcomes, threshold, taskRuns, kindOutcomes);
   return emit(opts.outPath, artifact, outcomes);
 }
 

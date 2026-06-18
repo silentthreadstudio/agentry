@@ -13,6 +13,9 @@ import { readFileSync } from "node:fs";
 
 import { parse as parseYaml } from "yaml";
 
+import { KnownKind } from "@agentry/core";
+import type { Kind } from "@agentry/core";
+
 import type { Shape } from "./shape.ts";
 import { SHAPES_BY_WEIGHT } from "./shape.ts";
 
@@ -58,6 +61,14 @@ export interface RoutingTask {
   correctFloor: Shape;
   heldOut: boolean;
   trap?: Trap;
+  /**
+   * The OPTIONAL routing kind label (ADR-005 / AC11) — the second routing axis, orthogonal to `correctFloor`.
+   * Present only on ESCALATED tasks (where the conductor writes a `spec.md` that `extractKind` can read); a
+   * one-shot's kind is not artifact-visible, so its label is omitted by design. Permissive on value (mirrors
+   * `@agentry/core`'s `Kind = z.string()`) but the validator requires the labeled set to cover all six known
+   * kinds. Absent when the YAML omits `kind`.
+   */
+  kind?: Kind;
   rationale: RoutingRationale;
   labels: RoutingLabels;
 }
@@ -72,6 +83,10 @@ export class FixtureError extends Error {
 
 const SHAPES: ReadonlySet<string> = new Set<Shape>(SHAPES_BY_WEIGHT);
 const TRAPS: ReadonlySet<string> = new Set<Trap>(["must-escalate", "must-not-over-orchestrate"]);
+
+/** The six known routing kinds (ADR-005) — the coverage the kind fixture must span. From `@agentry/core`. */
+const KNOWN_KINDS: readonly string[] = KnownKind.options;
+const KNOWN_KINDS_SET: ReadonlySet<string> = new Set<string>(KNOWN_KINDS);
 
 const MIN_TASKS = 6;
 const MAX_TASKS = 60;
@@ -132,6 +147,24 @@ export function loadRoutingFixture(path: string): RoutingTask[] {
     );
   }
 
+  // The kind axis (ADR-005 / AC11): a fixture that OPTS IN to kind labels (≥1 task carries a `kind`) must cover
+  // ALL SIX known kinds, so the kind probe scores every kind at least once. The label is optional per task
+  // (one-shots omit it by design), and a fixture with NO kind labels is simply not a kind fixture — it is exempt
+  // (the mini/synthetic fixtures other tests own carry no kinds and stay valid). But once a fixture labels any
+  // kind, a missing one is a coverage bug, surfaced loudly like every other rule.
+  const labeledKinds = new Set<string>();
+  for (const t of tasks) {
+    if (t.kind !== undefined) labeledKinds.add(t.kind);
+  }
+  if (labeledKinds.size > 0) {
+    const missingKinds = KNOWN_KINDS.filter((k) => !labeledKinds.has(k));
+    if (missingKinds.length > 0) {
+      throw new FixtureError(
+        `${path}: a kind-labeled fixture must cover all six kinds (${KNOWN_KINDS.join(", ")}); missing: ${missingKinds.join(", ")}`,
+      );
+    }
+  }
+
   return tasks;
 }
 
@@ -167,12 +200,36 @@ function parseTask(value: unknown, index: number, path: string): RoutingTask {
     trap = trapRaw as Trap;
   }
 
+  const kind = parseKind(obj.kind, where, path);
+
   const rationale = parseRationale(obj.rationale, correctFloor, trap, where, path);
   const labels = parseLabels(obj.labels, where, path);
 
   const task: RoutingTask = { id, prompt, correctFloor, heldOut, rationale, labels };
   if (trap !== undefined) task.trap = trap;
+  if (kind !== undefined) task.kind = kind;
   return task;
+}
+
+/**
+ * Parse the OPTIONAL `kind` label (ADR-005 / AC11) — absent ⇒ unlabeled (a one-shot whose kind isn't
+ * artifact-visible). Strict on type (a non-string `kind` is a fixture bug, surfaced loudly), and strict that a
+ * PRESENT label is one of the six known kinds — an unknown kind in the fixture is a labeling mistake to catch at
+ * load, even though the stored vocabulary is permissive elsewhere.
+ */
+function parseKind(value: unknown, where: string, path: string): Kind | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new FixtureError(
+      `${path}: ${where}.kind must be a non-empty string when present, got ${describe(value)}`,
+    );
+  }
+  if (!KNOWN_KINDS_SET.has(value)) {
+    throw new FixtureError(
+      `${path}: ${where}.kind "${value}" is not one of ${KNOWN_KINDS.join("|")}`,
+    );
+  }
+  return value;
 }
 
 /**

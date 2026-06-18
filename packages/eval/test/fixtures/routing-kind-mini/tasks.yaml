@@ -1,0 +1,100 @@
+# SYNTHETIC kind-mini routing fixture — OWNED BY routing-probe.test.ts, decoupled from the real product set.
+#
+# Why it exists: to drive the KIND AXIS (ADR-005 / AC11) through the probe end-to-end offline. It mirrors the
+# shape-mini fixture's invariants (task[0] one-shot = the A/A + positive-control anchor; all three shapes
+# covered so saturation passes; ≥1 must-escalate trap; ≥1 trivial) AND opts into the kind axis: the five
+# ESCALATED tasks cover all six known kinds (feature appears at both spec-first and decompose). task[0] is a
+# one-shot, so it carries NO kind (a one-shot has no artifact-visible kind — by design).
+#
+# 7 tasks. FLOOR LAYOUT (index → floor): 0 one-shot · 1 spec-first(must-escalate) · 2 spec-first ·
+#                                        3 decompose · 4 decompose · 5 decompose · 6 decompose
+# KIND LAYOUT  (index → kind):  0 (none, one-shot) · 1 bug · 2 perf · 3 feature · 4 refactor · 5 dep-upgrade ·
+#                               6 ci-red — the five+ escalated tasks cover all six known kinds.
+version: 1
+labeling:
+  rubric_ref: skills/conducting/references/routing-and-dispatch.md
+  labeler_a: kind-mini-a
+  labeler_b: kind-mini-b
+  agreement_at_creation: "6/6"
+
+tasks:
+  # [0] one-shot — the A/A + positive-control anchor; one-shots carry no kind.
+  - id: km-format-decimals
+    prompt: |
+      Fix formatPrice to always show 2 decimals in src/format.ts.
+    correct_floor: one-shot
+    trap: must-not-over-orchestrate
+    rationale:
+      governing_signal: "Scope: one symbol, one file"
+      bounded_reversible: "single function body, trivially undoable in one diff"
+    labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+
+  # [1] spec-first must-escalate — kind: bug
+  - id: km-dedupe-records
+    prompt: |
+      Dedupe incoming records before we persist them.
+    correct_floor: spec-first
+    kind: bug
+    trap: must-escalate
+    rationale:
+      governing_signal: "Hidden decision: which record wins on a collision"
+      decision_hidden: "the identity key + tie-break is unspecified"
+      consequence: "guessing the wrong winner silently drops or overwrites records"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  # [2] spec-first — kind: perf
+  - id: km-search-tuning
+    prompt: |
+      Make the catalog search return results faster without changing what it returns.
+    correct_floor: spec-first
+    kind: perf
+    rationale:
+      governing_signal: "Undecided approach: index vs cache vs query rewrite"
+      decision_hidden: "the performance lever to pull is unspecified"
+    labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+
+  # [3] decompose — kind: feature (feature also at spec-first below? no — feature appears at decompose here and
+  #     the real fixture proves the two-shape orthogonality; this mini just needs all six covered once).
+  - id: km-notifications
+    prompt: |
+      Build a notifications center: a feed, read/unread state, and delivery preferences.
+    correct_floor: decompose
+    kind: feature
+    rationale:
+      governing_signal: "Several cohesive sub-features with their own boundaries"
+      seams: "feed store ↔ read-state ↔ preferences — distinct modules"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+
+  # [4] decompose — kind: refactor
+  - id: km-pagination
+    prompt: |
+      Add pagination to the users listing across the API, service, and data layers.
+    correct_floor: decompose
+    kind: refactor
+    rationale:
+      governing_signal: "Spans multiple modules with contracts between them"
+      seams: "api handler ↔ service ↔ data query — three owners"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+
+  # [5] decompose — kind: dep-upgrade (one kind per task; ci-red rides task [6]).
+  - id: km-jobqueue
+    prompt: |
+      Build a job queue: a model, an enqueue API, a worker, and a dead-letter handler.
+    correct_floor: decompose
+    kind: dep-upgrade
+    rationale:
+      governing_signal: "Four separable units mapping onto distinct layers"
+      seams: "model ↔ service ↔ api ↔ worker — separately ownable"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+
+  # [6] decompose — kind: ci-red (the sixth kind)
+  - id: km-webhooks
+    prompt: |
+      Build a webhook delivery system: a subscription model, a dispatch service, a delivery endpoint, and a
+      retry worker.
+    correct_floor: decompose
+    kind: ci-red
+    rationale:
+      governing_signal: "Four named parts mapping onto four sibling layers"
+      seams: "model ↔ service ↔ endpoint ↔ worker — bounded tasks"
+    labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }

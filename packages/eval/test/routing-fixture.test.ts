@@ -70,6 +70,34 @@ test("the real fixture maps snake_case YAML to the camelCase RoutingTask shape",
   assert.equal(dedupe.labels.labelerB, "spec-first");
 });
 
+// --- the kind axis (ADR-005 / AC11): the real fixture covers all six kinds, orthogonal to shape -------
+
+test("the real fixture's kind-labeled tasks cover all six known kinds", () => {
+  const tasks = loadRoutingFixture(REAL_FIXTURE);
+
+  const labeled = tasks.filter((t) => t.kind !== undefined);
+  assert.ok(labeled.length >= 6, "at least six tasks carry a kind label");
+  const kinds = new Set(labeled.map((t) => t.kind));
+  for (const k of ["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"]) {
+    assert.ok(kinds.has(k), `kind "${k}" is covered`);
+  }
+});
+
+test("the kind labels live ONLY on escalated tasks (a one-shot has no artifact-visible kind)", () => {
+  const tasks = loadRoutingFixture(REAL_FIXTURE);
+
+  for (const t of tasks.filter((t) => t.kind !== undefined)) {
+    assert.notEqual(t.correctFloor, "one-shot", `kind-labeled task "${t.id}" is escalated (≥ spec-first)`);
+  }
+});
+
+test("kind is orthogonal to shape: `feature` appears at TWO different complexity floors (AC4)", () => {
+  const tasks = loadRoutingFixture(REAL_FIXTURE);
+
+  const featureFloors = new Set(tasks.filter((t) => t.kind === "feature").map((t) => t.correctFloor));
+  assert.ok(featureFloors.size >= 2, "the same kind (feature) is measured at ≥2 complexities — orthogonality");
+});
+
 // --- 2. malformed fixtures each throw their specific error ---------------------------------------------
 
 test("rejects a fixture with the wrong task count (below the 6-task floor)", () => {
@@ -98,5 +126,13 @@ test("rejects a fixture where a task's second-labeler agreement is false", () =>
   assert.throws(
     () => loadRoutingFixture(MALFORMED("malformed-agreement-false")),
     (err: unknown) => err instanceof FixtureError && /agreement must be `true`/.test((err as Error).message),
+  );
+});
+
+test("rejects a kind-labeled fixture that covers only some of the six kinds", () => {
+  assert.throws(
+    () => loadRoutingFixture(MALFORMED("malformed-partial-kinds")),
+    (err: unknown) =>
+      err instanceof FixtureError && /must cover all six kinds.*missing/s.test((err as Error).message),
   );
 });
