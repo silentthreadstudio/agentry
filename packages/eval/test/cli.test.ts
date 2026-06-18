@@ -124,18 +124,18 @@ function seedStoredRun(runsRoot: string, runId: string, specs: Record<string, st
   }
 }
 
-// --- default runs-root is anchored to the selfeval package, NOT to CWD (the path-nesting fix) ----------
+// --- default runs-root is anchored to the eval package, NOT to CWD (the path-nesting fix) ----------
 
-test("the default runs-root resolves to <selfeval>/runs (package-anchored), independent of CWD", () => {
-  // The package root is two dirs up from this test file (test/ → selfeval/); the default must land its `runs/`
-  // there — a path ending in `selfeval/runs`, never the doubly-nested `selfeval/selfeval/runs` the CWD-relative
-  // default produced when the CLI was invoked from inside `selfeval/`.
+test("the default runs-root resolves to <eval>/runs (package-anchored), independent of CWD", () => {
+  // The package root is two dirs up from this test file (test/ → packages/eval/); the default must land its
+  // `runs/` there — a path ending in `eval/runs`, never the doubly-nested `eval/eval/runs` the CWD-relative
+  // default produced when the CLI was invoked from inside the package.
   const expected = join(HERE, "..", "runs");
   const resolved = resolveRunsRoot({});
 
   assert.equal(resolved, join(expected)); // `join` normalizes the `..` so the comparison is on canonical paths.
-  assert.ok(resolved.endsWith(`selfeval${sep}runs`), `expected a path ending in selfeval/runs, got ${resolved}`);
-  assert.ok(!resolved.endsWith(`selfeval${sep}selfeval${sep}runs`), "must NOT nest to selfeval/selfeval/runs");
+  assert.ok(resolved.endsWith(`eval${sep}runs`), `expected a path ending in eval/runs, got ${resolved}`);
+  assert.ok(!resolved.endsWith(`eval${sep}eval${sep}runs`), "must NOT nest to eval/eval/runs");
 });
 
 test("the default runs-root is the same regardless of process.cwd()", () => {
