@@ -121,7 +121,7 @@ gracefully.
 **Requires Node ≥ 24** (the memory MCP uses the built-in `node:sqlite`). From a Claude Code session:
 
 ```
-/plugin marketplace add /absolute/path/to/agentry
+/plugin marketplace add Codestz/agentry
 /plugin install agentry@agentry-dev
 ```
 

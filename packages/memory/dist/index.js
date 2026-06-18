@@ -28981,8 +28981,12 @@ var SpecFrontmatter = external_exports.object({
 var WorkEvent = external_exports.object({
   ts: external_exports.string(),
   kind: external_exports.string(),
-  // "agent-started" | "node" | "spend" | "done" | …
+  // "agent-started" | "agent-done" | "node" | "spend" | "done" | …
   agent: external_exports.string().optional(),
+  agentId: external_exports.string().optional(),
+  // correlates a subagent start with its stop
+  session: external_exports.string().optional(),
+  // partitions lines by run/session
   detail: external_exports.string().optional()
 });
 

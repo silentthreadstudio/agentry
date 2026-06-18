@@ -1,9 +1,10 @@
 name: Release
 
 # Tagging `v*` publishes a GitHub Release with a LEAN plugin payload zip — only what an install needs
-# (doc 09 §2), never the dev/eval tooling. Users install the zip via `--plugin-url` (Claude Code ≥ 2.1.128)
-# or a marketplace pointing at the release asset. This is the packaging answer: the repo root stays "the
-# plugin" for dogfooding (marketplace source `./`), while the SHIPPED artifact is scoped to the payload.
+# (doc 09 §2), never the dev/eval tooling. The mem MCP bundle is REBUILT fresh and the structure +
+# dist-lockstep gate runs before packaging, so the shipped artifact is validated. Users install the zip via
+# `--plugin-url` (Claude Code ≥ 2.1.128) or a marketplace pointing at the release asset; the repo root stays
+# "the plugin" for dogfooding (marketplace source `./`).
 
 on:
   push:
@@ -18,11 +19,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+          cache: pnpm
 
-      - name: Verify plugin gate (incl. dist-lockstep — the shipped mem MCP must be in sync)
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the shipped mem MCP bundle (fresh)
+        run: pnpm --filter @agentry/memory build
+
+      - name: Verify plugin gate (structure + dist-lockstep)
         run: node scripts/check-plugin.mjs
 
       - name: Assemble the lean plugin payload
