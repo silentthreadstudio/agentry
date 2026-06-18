@@ -127,7 +127,8 @@ test("artifact mode waits out the grace on spec.md-only, then kills (spec-first 
   const elapsed = Date.now() - before;
 
   assert.equal(child.killCount, 1, "spec-only past the grace → killed once");
-  assert.ok(elapsed >= 40, `kill must wait out the ~grace window, not fire immediately (elapsed=${elapsed}ms)`);
+  // ~5ms tolerance for setTimeout/Date.now granularity on CI runners (same as the hard-ceiling test below).
+  assert.ok(elapsed >= 35, `kill must wait out the ~grace window, not fire immediately (elapsed=${elapsed}ms)`);
 });
 
 // --- decompose-within-grace: spec.md, then plan.md before the grace expires → killed on decompose --------
@@ -203,5 +204,7 @@ test("the hard ceiling fires when no artifact ever determines a shape and the ch
   const elapsed = Date.now() - before;
 
   assert.equal(child.killCount, 1, "the hard ceiling is the fallback kill when nothing else terminates the run");
-  assert.ok(elapsed >= 30, `ceiling must wait out timeoutMs (elapsed=${elapsed}ms)`);
+  // ~5ms tolerance below timeoutMs: setTimeout + Date.now() granularity can report a hair under the delay on
+  // some runners (observed 29ms for a 30ms ceiling in CI). The intent is "it waited ~timeoutMs, not fired at 0".
+  assert.ok(elapsed >= 25, `ceiling must wait out ~timeoutMs, not fire immediately (elapsed=${elapsed}ms)`);
 });
