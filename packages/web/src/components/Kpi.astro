@@ -2,11 +2,11 @@
 // Kpi.astro — one count-up KPI card, reused 3× in the Hero (VISION §4.2 / §5 motion).
 //
 // Honesty contract (VISION §8): every KPI carries its caveat in muted text, and the value
-// must be sourced. Numeric values animate 0→value on first view via T6's countUp.ts (markup:
+// must be sourced. Numeric values animate 0→value on first view via T6's count-up.ts (markup:
 // data-countup / data-to / data-suffix / data-decimals); NON-numeric values (e.g. "MIT") render
-// static — countUp.ts only touches [data-countup] elements.
+// static — count-up.ts only touches [data-countup] elements.
 //
-// The final value is ALSO the element's text, so it's correct with JS off (countUp.ts overwrites
+// The final value is ALSO the element's text, so it's correct with JS off (count-up.ts overwrites
 // it only when it runs). Glass card (floating over the hero constellation).
 interface Props {
   /** The headline value. Number → animated count-up; string → static (e.g. "MIT · v0.1"). */

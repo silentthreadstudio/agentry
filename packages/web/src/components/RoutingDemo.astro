@@ -4,7 +4,7 @@
 // JS off / before hydration), the demo root the island upgrades, and the script
 // that imports the island module. `class="reveal"` so the section animates in.
 //
-// The island (islands/RoutingDemo.ts) defers its first render to when the root is
+// The island (islands/routing-demo.ts) defers its first render to when the root is
 // visible, then replaces this fallback's children with the interactive UI. The
 // fallback is built from the SAME typed TASKS data, so JS-off and hydrated agree.
 import { TASKS, type Shape } from '../islands/tasks';
@@ -64,12 +64,12 @@ const SHAPE_TONE: Record<Shape, string> = {
 </div>
 
 <script>
-  import '../islands/RoutingDemo.ts';
+  import '../islands/routing-demo.ts';
 </script>
 
 <style is:global>
   /* T5-owned styling for the T6 routing-demo island. is:global is REQUIRED here: the island
-     (islands/RoutingDemo.ts) rebuilds the panel/tabs via document.createElement after hydration,
+     (islands/routing-demo.ts) rebuilds the panel/tabs via document.createElement after hydration,
      so those elements never carry Astro's scoped data attribute — scoped styles wouldn't match
      them. Every rule is namespaced under .routing-demo, so nothing leaks past this component.
      Color discipline: the badge tones are SEMANTIC DATA — they encode process weight, not

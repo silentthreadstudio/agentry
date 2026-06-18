@@ -1,4 +1,4 @@
-// RoutingDemo.ts — the data-driven tabbed routing demo (VISION §6.2).
+// routing-demo.ts — the data-driven tabbed routing demo (VISION §6.2).
 // Reads the typed TASKS array and renders, for the selected task: a tab strip,
 // the routed shape badge (one-shot / spec-first / decompose), the rationale, and
 // a small trace. Pure DOM, no framework.

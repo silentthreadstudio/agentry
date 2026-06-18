@@ -1,4 +1,4 @@
-// ConstellationNet.ts — the hero canvas node-graph (VISION §6.1).
+// constellation-net.ts — the hero canvas node-graph (VISION §6.1).
 // A seeded, deterministic constellation: amber→violet nodes drifting gently,
 // distance-based edges under a radial mask, mouse repulsion, and a slowly
 // drifting aurora glow. Orchestration as a living network — calm, not a screensaver.

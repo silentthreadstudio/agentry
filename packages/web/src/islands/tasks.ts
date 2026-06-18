@@ -1,5 +1,5 @@
 // tasks.ts — the typed TASKS data for the RoutingDemo island (VISION §6.2).
-// Pure data, no I/O. Consumed by RoutingDemo.ts and (for the server-rendered
+// Pure data, no I/O. Consumed by routing-demo.ts and (for the server-rendered
 // fallback) by components/RoutingDemo.astro.
 //
 // Each task teaches the "least process that wins" idea: a one-line fix routes to

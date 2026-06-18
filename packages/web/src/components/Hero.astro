@@ -6,8 +6,8 @@
 // over a constellation canvas + aurora backdrop (T6's ConstellationNet renders both onto the canvas).
 //
 // Island contract (T6 modules self-init on this markup):
-//   - <canvas data-constellation aria-hidden="true"> filling the hero (ConstellationNet.ts)
-//   - <Kpi/> emits [data-countup] (countUp.ts)
+//   - <canvas data-constellation aria-hidden="true"> filling the hero (constellation-net.ts)
+//   - <Kpi/> emits [data-countup] (count-up.ts)
 //   - <div data-terminal data-cmd="…"> with [data-term-line] children (terminal.ts)
 // The hero <script> below imports those three modules.
 //
@@ -106,8 +106,8 @@ import Kpi from "./Kpi.astro";
 </section>
 
 <script>
-  import "../islands/ConstellationNet.ts";
-  import "../islands/countUp.ts";
+  import "../islands/constellation-net.ts";
+  import "../islands/count-up.ts";
   import "../islands/terminal.ts";
 </script>
 

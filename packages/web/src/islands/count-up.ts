@@ -1,4 +1,4 @@
-// countUp.ts — count-up KPI helper (VISION §5 motion).
+// count-up.ts — count-up KPI helper (VISION §5 motion).
 // Animates an element's number from 0 → `data-to` on first view (easeOutCubic),
 // honouring `data-prefix` / `data-suffix` / `data-decimals`. Uses an
 // IntersectionObserver so the count starts when the KPI scrolls in.
