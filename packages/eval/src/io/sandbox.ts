@@ -8,7 +8,7 @@
 
 import { cpSync, mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import type { Sandbox } from "./port.ts";
 
@@ -88,22 +88,53 @@ export function seedSandbox(workingDir: string, seedDir: string): void {
 }
 
 /**
- * The one-shot disambiguator's tree signal (OQ1): does `workingDir` contain at least one file? Ported from
- * benchmark's `collectProducedTree` walk, but returns a *boolean* instead of a `TreePath[]` — the extractor
- * only needs "did the run leave a non-empty produced tree?", not the tree itself. This is disambiguator
- * input, NOT scoring (no grader reads it). Stops at the first file found.
+ * The basename of the live runner's teed event stream (`Invocation.streamPath`, port.ts) — it is written at
+ * the `workingDir` ROOT, so it is always present live and must NOT count as the conductor's produced tree.
+ */
+const STREAM_FILE = "stream.jsonl";
+/**
+ * The basename of the primer hook's own log — written under `<workingDir>/.agentry/work/<slug>/`. It shares
+ * the work folder with the conductor's routing artifacts (a known naming collision; see live.ts/extract.ts),
+ * so it is excluded ONLY within the `.agentry/work/` subtree, never blanket-ignored elsewhere.
+ */
+const PRIMER_LOG_FILE = "events.jsonl";
+/** The work-folder subtree the primer log lives under (relative to `workingDir`). */
+const WORK_SUBTREE = join(".agentry", "work");
+
+/**
+ * The one-shot disambiguator's tree signal (OQ1): did the run leave a non-empty produced tree of ITS OWN?
+ * Ported from benchmark's `collectProducedTree` walk, but returns a *boolean* instead of a `TreePath[]` — the
+ * extractor only needs "did the run produce anything?", not the tree itself. This is disambiguator input, NOT
+ * scoring (no grader reads it). Stops at the first qualifying file.
+ *
+ * Excludes the HARNESS's own bookkeeping, which is teed into this same `workingDir` and would otherwise make
+ * the signal structurally always-true (collapsing extractShape's degenerate-vs-one-shot guard): the teed
+ * `stream.jsonl` (workingDir root) and the primer hook's `events.jsonl` (under `.agentry/work/`). Everything
+ * else — the conductor's `spec.md`/`plan.md`/`tasks/` artifacts AND any sandbox code edits — still counts, so
+ * a workingDir with ONLY harness files reads empty while any conductor output reads non-empty.
  */
 export function producedTreeNonEmpty(workingDir: string): boolean {
+  const workSubtreeAbs = join(workingDir, WORK_SUBTREE);
   const walk = (dir: string): boolean => {
     for (const entry of readdirSync(dir)) {
       const abs = join(dir, entry);
       if (statSync(abs).isDirectory()) {
         if (walk(abs)) return true;
-      } else {
+      } else if (!isHarnessBookkeeping(abs, entry, workSubtreeAbs)) {
         return true;
       }
     }
     return false;
   };
   return walk(workingDir);
+}
+
+/**
+ * True iff `abs` (basename `entry`) is one of the harness's own bookkeeping files, not conductor output: the
+ * teed `stream.jsonl` (anywhere), or the primer's `events.jsonl` WITHIN the `.agentry/work/` subtree.
+ */
+function isHarnessBookkeeping(abs: string, entry: string, workSubtreeAbs: string): boolean {
+  if (entry === STREAM_FILE) return true;
+  if (entry === PRIMER_LOG_FILE && abs.startsWith(workSubtreeAbs + sep)) return true;
+  return false;
 }

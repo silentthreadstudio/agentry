@@ -1,6 +1,6 @@
-// Tests for `seedSandbox` (io/sandbox.ts) — the recursive copy that plants a realistic starting codebase
-// into a prepared working dir BEFORE a run. Pure fs, ZERO API spend: it builds a nested fixture tree in a
-// temp dir, seeds a fresh temp working dir from it, and asserts every file landed with its content intact.
+// Tests for `seedSandbox` and `producedTreeNonEmpty` (io/sandbox.ts) — the recursive copy that plants a
+// realistic starting codebase into a prepared working dir BEFORE a run, and the OQ1 one-shot disambiguator's
+// tree-signal walk. Pure fs, ZERO API spend: builds fixture trees in temp dirs and asserts directly.
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { AUTOPILOT_ENV, prepareSandbox, seedSandbox } from "../src/io/sandbox.ts";
+import { AUTOPILOT_ENV, prepareSandbox, producedTreeNonEmpty, seedSandbox } from "../src/io/sandbox.ts";
 
 /** Build a small nested seed tree on disk and return its root. */
 function makeSeedTree(): string {
@@ -35,4 +35,49 @@ test("prepareSandbox sets AGENTRY_AUTOPILOT=1 in the child env (decide-record-pr
   // The conductor reads this to run in auto-pilot and emit its work-folder routing artifacts (autopilot §1/§3).
   const sandbox = prepareSandbox();
   assert.equal(sandbox.env[AUTOPILOT_ENV], "1");
+});
+
+// --- producedTreeNonEmpty: the OQ1 one-shot tree signal, walking the REAL workingDir -------------------
+// The harness tees its OWN bookkeeping into the same workingDir the conductor runs in: the live runner
+// writes `stream.jsonl` at the workingDir root, and the primer hook writes `.agentry/work/<slug>/events.jsonl`.
+// Those are NOT the conductor's produced tree — only the conductor's edits/artifacts are. So a workingDir
+// holding ONLY harness bookkeeping must read as EMPTY (else extractShape's degenerate guard is dead).
+
+/** A fresh, empty temp working dir (the sandbox root the produced-tree walk inspects). */
+function freshWorkingDir(): string {
+  return mkdtempSync(join(tmpdir(), "selfeval-produced-tree-"));
+}
+
+test("a workingDir holding ONLY harness bookkeeping (stream.jsonl + primer events.jsonl) => empty produced tree", () => {
+  const wd = freshWorkingDir();
+  // The live runner's teed event stream, at the workingDir root.
+  writeFileSync(join(wd, "stream.jsonl"), '{"type":"system"}\n', "utf8");
+  // The primer hook's own log, under .agentry/work/<slug>/.
+  const slug = join(wd, ".agentry", "work", "some-task");
+  mkdirSync(slug, { recursive: true });
+  writeFileSync(join(slug, "events.jsonl"), '{"event":"primer"}\n', "utf8");
+
+  assert.equal(producedTreeNonEmpty(wd), false);
+});
+
+test("a workingDir with a conductor work-folder artifact (spec.md) => non-empty produced tree", () => {
+  const wd = freshWorkingDir();
+  // Harness bookkeeping present too — but the conductor's spec.md is real signal and must still count.
+  writeFileSync(join(wd, "stream.jsonl"), '{"type":"system"}\n', "utf8");
+  const slug = join(wd, ".agentry", "work", "some-task");
+  mkdirSync(slug, { recursive: true });
+  writeFileSync(join(slug, "events.jsonl"), '{"event":"primer"}\n', "utf8");
+  writeFileSync(join(slug, "spec.md"), "# spec\n", "utf8");
+
+  assert.equal(producedTreeNonEmpty(wd), true);
+});
+
+test("a workingDir with a conductor CODE edit (a sandbox source file) => non-empty produced tree", () => {
+  const wd = freshWorkingDir();
+  writeFileSync(join(wd, "stream.jsonl"), '{"type":"system"}\n', "utf8");
+  // A genuine one-shot leaves real code edits in the sandbox — those must count as produced.
+  mkdirSync(join(wd, "src"), { recursive: true });
+  writeFileSync(join(wd, "src", "index.js"), "export const x = 1;\n", "utf8");
+
+  assert.equal(producedTreeNonEmpty(wd), true);
 });
