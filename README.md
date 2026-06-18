@@ -98,23 +98,46 @@ npm run selfeval -- report       <run-id>                 # → a self-contained
 `report` emits a single static dashboard (routing accuracy, decision quality, the memory moat, and the
 corrections log) — *run the eval, get the page.*
 
-## The roster
+## The roster — eight SDLC specialists
 
-| Team | Specialists |
-| :--- | :--- |
-| **Dev** | explorer · researcher · architect · implementer · verifier · librarian |
-| **Product** | product-owner · designer |
+Each agent owns one slice of the SDLC. Its craft is **composed from preloaded skills** (the durable
+know-how), and it's **capability-first** — no `tools:` allowlists; it uses whatever you have (Serena, web
+search, a browser MCP…) and degrades gracefully when one's absent. The conductor dispatches a specialist
+only when the work *earns* it; it never re-implements what an agent already does.
 
-Each agent's craft is a preloaded **skill** (13 — `conducting`, `architecting`, `planning`, `implementing`,
-`testing`, `reviewing`, `integrating`, `exploring`, `researching`, `remembering`, `product`, `writing`,
-`designing`). Agents are **capability-first**: no `tools:` allowlists; they use what you have and degrade
-gracefully.
+| Agent | What it does | Composed from | The conductor dispatches it when… |
+| :--- | :--- | :--- | :--- |
+| **architect** | Turns a spec or under-specified goal into sound structure — module boundaries, ADRs, a Plan with an architecture map, then bounded Task contracts | `architecting` · `planning` | work is multi-file, structurally non-trivial, or hinges on a real design fork |
+| **implementer** | Writes clean, bounded code **and tests** to a Task contract; also the debugging mode (reproduce → fix the smallest thing → prove it) | `implementing` · `testing` | a Task with a contract exists — or a clear, reversible one-shot fix |
+| **verifier** | Adversarial, **independent** verification against acceptance + a security lens (injection, authz, SSRF, secrets); returns a Verdict, never fixes | `reviewing` · `integrating` | a builder reports "done", or the assembled product needs an end-to-end check |
+| **explorer** | Read-only comprehension of an existing codebase → a Context map (where things live, conventions in force, how data flows) | `exploring` | the work touches code Agentry hasn't mapped yet |
+| **researcher** | Investigates genuine unknowns (a library's current API, an external standard) → **cited** findings + their implications | `researching` | a decision is blocked on an external fact where recency/correctness matters |
+| **product-owner** | Owns the *what & why* — turns "make X better" into a Spec with **observable** acceptance criteria; also docs, READMEs, release notes | `product` · `writing` | the ask is vague, product-shaped, or user-facing and "done = X" isn't clear yet |
+| **designer** | UX/UI craft — hierarchy, layout, accessibility, design-system fit — verified against the **rendered** result (the see-it loop), not asserted | `designing` | the work bears a UI: a new screen, a visual/layout change, an a11y fix |
+| **librarian** | Runs the memory flows — reflect (curate), distill (episodes→facts), consolidate (**propose** a skill); keeps recall few, ranked, never-superseded | `remembering` | after non-trivial work, or when memory needs grooming |
 
-## Commands
+## Commands — the nodes
 
-- **`/agentry:go <task>`** — the front door. Routes and conducts.
-- Nodes (standalone + composable): `/agentry:onboard · :research · :spec · :plan · :split · :implement ·
-  :verify · :assemble · :reflect · :remember`
+Every step of the SDLC is a **node**: a standalone command that does one job and emits one **typed
+artifact** — a Spec, a Plan, a Task, a Verdict, a Context map, an Episode. `/agentry:go` is the conductor —
+it *right-sizes which nodes to run* and chains them for you. But every node also **stands alone**, and they
+**compose** because they share one typed contract (`@agentry/core`): the artifact one node emits is exactly
+what the next node consumes. Run the whole pipeline through the front door, or drive a single node by hand —
+same machinery.
+
+| Command | What it does | Runs | Emits |
+| :--- | :--- | :--- | :--- |
+| **`/agentry:go <task>`** | **The front door.** Right-sizes the task (`one-shot → spec-first → decompose+verify`) and conducts it end-to-end, dispatching only the nodes it earns | conductor (`conducting`) | the finished, verified work |
+| `/agentry:onboard` | Comprehend a repo read-only and seed durable repo-facts — warms a cold codebase | explorer | a Context map |
+| `/agentry:research <q>` | Investigate an unknown across web + repo | researcher | cited findings |
+| `/agentry:spec <goal>` | Turn a goal — especially "make X better" — into observable acceptance criteria | product-owner | a Spec |
+| `/agentry:plan` | Design the approach + record the ADRs for the real forks | architect | a Plan (+ ADRs) |
+| `/agentry:split` | Slice the plan's architecture map into parallel-safe Task contracts | architect | Task contracts |
+| `/agentry:implement` | Build one task — clean, bounded code and tests within its contract | implementer | code + tests |
+| `/agentry:verify` | Adversarially verify one task against its acceptance (separate from the author) | verifier | a Verdict |
+| `/agentry:assemble` | Run the **whole** product against the spec as observed behavior — the integration gate | verifier | an integration Verdict |
+| `/agentry:reflect` | Curate memory and distill the run's episodes into durable facts; proposes skills (human-gated) | librarian | durable facts |
+| `/agentry:remember <fact>` | Capture a durable memory now — straight through the write-bar | — (direct, no subagent) | a stored memory |
 
 ## Install
 
