@@ -1,0 +1,202 @@
+/* Panorama canvas styles — ported from design/prototype-app.html's React Flow block. Co-located with
+   the Live route's owned components (Panorama / DocNode / edge-types). Reads the design tokens
+   (tokens.css) for every color; adds no new palette. Node visual states: dim (todo) / lit (done) /
+   prog (in-progress, pulsing). */
+
+.flowwrap {
+  position: relative;
+  height: 100%;
+}
+
+.react-flow {
+  background: transparent;
+}
+.react-flow__attribution {
+  display: none;
+}
+
+/* ── custom node (DocNode) ──────────────────────────────────────────────────────────────── */
+.rf-node {
+  width: 212px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  padding: 12px 13px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transition: border-color 0.14s, box-shadow 0.14s, opacity 0.14s;
+  cursor: pointer;
+}
+.rf-node:hover {
+  border-color: var(--line2);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+}
+.rf-node.dim {
+  opacity: 0.4;
+}
+.rf-node.lit {
+  border-color: var(--accent);
+}
+.rf-node.prog {
+  border-color: #3a3320;
+  animation: rf-pulse 1.8s ease-in-out infinite;
+}
+.rf-node.rev {
+  border-color: #243246;
+}
+.rf-node.blocked {
+  border-color: var(--block);
+}
+
+@keyframes rf-pulse {
+  0%,
+  100% {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), 0 0 0 0 rgba(212, 162, 58, 0.22);
+  }
+  50% {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), 0 0 0 4px rgba(212, 162, 58, 0.1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rf-node.prog {
+    animation: none;
+  }
+}
+
+.rn-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+.rn-kind {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--faint);
+  letter-spacing: 0.2px;
+}
+.rn-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.rn-ttl {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  line-height: 1.2;
+}
+.rn-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 11px;
+  min-height: 18px;
+}
+.rn-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.rn-block {
+  color: var(--block);
+  font-size: 11px;
+}
+
+/* status dots (the node header status pill) */
+.sdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.s-done {
+  background: var(--done);
+}
+.s-prog {
+  background: var(--prog);
+  box-shadow: 0 0 0 3px rgba(212, 162, 58, 0.16);
+}
+.s-rev {
+  background: var(--rev);
+}
+.s-todo {
+  background: var(--todo);
+}
+
+/* React Flow handles are invisible (edges attach top/bottom but we don't show ports). */
+.react-flow__handle {
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  border: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── typed edges ────────────────────────────────────────────────────────────────────────── */
+/* the blocks-edge glow when its blocker is active (AC7 live overlay). */
+.rf-edge-blocks-active {
+  filter: drop-shadow(0 0 3px rgba(224, 104, 90, 0.7));
+}
+.rf-edge-label {
+  position: absolute;
+  pointer-events: none;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--panel);
+}
+.rf-edge-label-blocks {
+  color: var(--block);
+}
+
+/* ── controls / minimap ─────────────────────────────────────────────────────────────────── */
+.react-flow__controls {
+  box-shadow: none;
+}
+.react-flow__controls-button {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--muted);
+}
+.react-flow__controls-button:hover {
+  background: var(--panel2);
+}
+.react-flow__minimap {
+  background: var(--panel) !important;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+/* ── legend ─────────────────────────────────────────────────────────────────────────────── */
+.legend {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 5;
+  background: rgba(21, 21, 26, 0.86);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.legend .r {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.legend .ln {
+  width: 22px;
+  height: 0;
+  border-top-width: 2px;
+}

@@ -4,6 +4,7 @@
 // now (empty states are good states, VISION §3). The tab routes are the named slots those phases fill.
 import { NavLink, Route, Routes } from "react-router-dom";
 import { EmptyState, Pill } from "../../design-system/index.js";
+import { Panorama } from "./live/Panorama.js";
 
 // The run id comes from /api/context (the *.localhost host bootstrap), not the SPA path — App reads
 // it once and passes it down. Within the work shell, the routes are only the Live / Activity tabs.
@@ -29,21 +30,11 @@ export function WorkLayout({ runId }: { runId: string }) {
       <div className="body">
         <Routes>
           {/* Phase 2 fills the Live slot with the Panorama graph canvas. */}
-          <Route index element={<LivePlaceholder />} />
+          <Route index element={<Panorama runId={runId} />} />
           {/* Phase 4 fills the Activity slot with the event feed. */}
           <Route path="activity" element={<ActivityPlaceholder />} />
         </Routes>
       </div>
-    </div>
-  );
-}
-
-function LivePlaceholder() {
-  return (
-    <div className="page">
-      <EmptyState title="Live">
-        The Panorama — the run executing now, as a graph — arrives in this view.
-      </EmptyState>
     </div>
   );
 }
