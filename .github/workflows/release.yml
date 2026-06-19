@@ -19,14 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # setup-node@v5 reads the `packageManager: pnpm` field and expects pnpm present, so install it first
-      # (mirrors CI). The release does not install deps — it ships the committed mem bundle — pnpm is just for
-      # setup-node's package-manager detection.
-      - uses: pnpm/action-setup@v4
-
+      # The release is install-free — it ships the committed mem bundle and runs only the dep-free check-plugin
+      # gate (node:* builtins). So set up node alone and DISABLE setup-node's package-manager cache: with no
+      # `pnpm install`, setup-node@v5 (which defaults package-manager-cache: true and detects the
+      # `packageManager: pnpm` field) tries to save a pnpm store that was never populated, and the post-job
+      # cache-save fails with "Path Validation Error" — reddening an otherwise-successful release.
       - uses: actions/setup-node@v5
         with:
           node-version: "24" # for the dep-free check-plugin gate
+          package-manager-cache: false
 
       - name: Verify plugin gate (structure + dist-lockstep — validates the committed mem bundle ↔ src)
         run: node scripts/check-plugin.mjs
