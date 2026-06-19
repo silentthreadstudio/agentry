@@ -41,7 +41,7 @@ Most tasks touch only part of this. A one-liner is `Recall → do it → Learn`.
    **Mandatory pre-flight escalation check — run it before you may choose one-shot.** Ask, of the *actual* task (not a glance at file count):
    - **Hidden decision?** Could a competent engineer reasonably resolve this more than one way, where the choice carries a consequence — a key, a policy, a value, a default, a contract? (e.g. "merge two config files" hides *which side wins on conflict*; "add a retry" hides *the backoff policy*.) → the fork **vetoes one-shot → ≥ spec-first**, even for a one-file change.
    - **Real unknown?** An unfamiliar API / payload shape / identity / routing question you'd otherwise have to *guess*? → **≥ spec-first** (research/explore first).
-   - **Multiple components?** Does it span several distinct concerns/layers/modules with seams between them — distinct contracts, not raw file count (e.g. a change the parser **and** the validator **and** the persistence layer must move together for)? → **decompose**.
+   - **Multiple components?** Does it span several distinct concerns/layers/modules with seams between them — distinct contracts, not raw file count (e.g. a change the parser **and** the validator **and** the persistence layer must move together for)? → **decompose+verify**.
    - **Irreversible / high-blast-radius?** Migration, deletion, external write? → add a gate.
 
    A **YES on any line forbids one-shot.** Defaulting to one-shot *without running this check* is the under-routing failure — the most-failed conductor judgment. See `references/routing-and-dispatch.md` for the full signals→shape rubric.

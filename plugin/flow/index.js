@@ -28439,7 +28439,7 @@ import { join as join2 } from "node:path";
 var RoutingDecisionEvent = external_exports.object({
   ts: external_exports.string(),
   type: external_exports.literal("routing-decision"),
-  shape: external_exports.enum(["one-shot", "spec-first", "decompose"]),
+  shape: external_exports.enum(["one-shot", "spec-first", "decompose+verify"]),
   kind: external_exports.enum(["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"])
 });
 var GateEvent = external_exports.object({
@@ -29045,11 +29045,10 @@ var RunService = class {
   emit(run, event) {
     const parsed = FlowEvent.safeParse(event);
     if (!parsed.success) {
-      return {
-        ok: false,
-        field: "type",
-        rule: "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)"
-      };
+      const issue2 = parsed.error.issues[0];
+      const field = issue2 && issue2.path.length > 0 ? String(issue2.path[0]) : "type";
+      const rule = field === "type" ? "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)" : issue2?.message ?? "the value required by the FlowEvent schema for this type";
+      return { ok: false, field, rule };
     }
     this.services.events.append(run, parsed.data);
     return { ok: true };

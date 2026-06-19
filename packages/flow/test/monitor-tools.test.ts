@@ -59,7 +59,7 @@ test("AC8: routing-decision / gate / node-enter / node-done(durationMs) round-tr
   const { run } = service.start({ goal: "escalated run" });
 
   assert.deepEqual(
-    service.emit(run, { ts: "2026-01-01T00:00:00.000Z", type: "routing-decision", shape: "decompose", kind: "feature" }),
+    service.emit(run, { ts: "2026-01-01T00:00:00.000Z", type: "routing-decision", shape: "decompose+verify", kind: "feature" }),
     { ok: true },
   );
   service.emit(run, { ts: "2026-01-01T00:00:01.000Z", type: "gate", gate: "plan", outcome: "approved" });
@@ -73,7 +73,7 @@ test("AC8: routing-decision / gate / node-enter / node-done(durationMs) round-tr
   for (const ev of events) assert.doesNotThrow(() => FlowEvent.parse(ev));
 
   const byType = Object.fromEntries(events.map((e) => [e.type, e]));
-  assert.equal(byType["routing-decision"].shape, "decompose");
+  assert.equal(byType["routing-decision"].shape, "decompose+verify");
   assert.equal(byType["routing-decision"].kind, "feature");
   assert.equal(byType["gate"].gate, "plan");
   assert.equal(byType["node-enter"].agent, "agentry:implementer");
@@ -88,6 +88,30 @@ test("event_emit rejects an out-of-union type (closed vocabulary, AC8)", () => {
 
   // A rejected emit never reaches the stream.
   assert.equal(service.tail(run).events.length, 0);
+});
+
+// Regression (the conductor↔FLOW vocabulary seam): the canonical routing-decision shape the conductor
+// actually emits — "decompose+verify" (core KnownShape) — must round-trip through emit → tail at the
+// real service boundary, not just validate in isolation. The bare "decompose" used to be rejected here.
+test("event_emit accepts the canonical decompose+verify routing-decision and tails it back", () => {
+  const { run } = service.start({ goal: "g" });
+  const outcome = service.emit(run, { ts: "2026-01-01T00:00:00.000Z", type: "routing-decision", shape: "decompose+verify", kind: "feature" });
+  assert.deepEqual(outcome, { ok: true });
+
+  const { events } = service.tail(run);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, "routing-decision");
+  if (events[0].type === "routing-decision") assert.equal(events[0].shape, "decompose+verify");
+});
+
+// Error-attribution: a bad MEMBER field (here a bad `shape`, with a valid discriminator `type`) is
+// reported against the field that actually failed — `shape` — not always blamed on the `type`
+// discriminator. The live T08 rejection mislabeled this as the "type" field failing.
+test("event_emit attributes a bad member field to that field, not the type discriminator", () => {
+  const { run } = service.start({ goal: "g" });
+  const outcome = service.emit(run, { ts: "2026-01-01T00:00:00.000Z", type: "routing-decision", shape: "nonsense", kind: "feature" });
+  assert.equal(outcome.ok, false);
+  if (!outcome.ok) assert.equal(outcome.field, "shape");
 });
 
 // ── event_tail reads both shapes + filters the empty-agent main-session line ─────────────────────

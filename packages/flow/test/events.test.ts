@@ -2,7 +2,7 @@
 // legacy hook line with a real `agent` as `hook`, and an empty-`agent` main-session line as `skip`.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FlowEvent, parseLogLine } from "../src/domain/events.js";
+import { FlowEvent, RoutingDecisionEvent, parseLogLine } from "../src/domain/events.js";
 
 test("parseLogLine classifies a FLOW line (has .type) as flow", () => {
   const line = JSON.stringify({
@@ -51,4 +51,21 @@ test("parseLogLine skips a malformed FLOW line (type present, payload invalid)",
 
 test("FlowEvent rejects a type outside the closed union", () => {
   assert.equal(FlowEvent.safeParse({ ts: "t", type: "made-up", x: 1 }).success, false);
+});
+
+// Regression: the conductor/core canonical shape is "decompose+verify" (core KnownShape, and the
+// conducting skill emits it). RoutingDecisionEvent must ACCEPT it — when the enum carried the bare
+// "decompose" instead, the conductor's routing-decision event was silently rejected on every
+// decompose run (found by live T08 validation, not the unit suite, because the units used FLOW's
+// OWN value). This guards the conductor↔FLOW vocabulary seam.
+test("RoutingDecisionEvent accepts the canonical decompose+verify shape", () => {
+  const event = { ts: "2026-06-19T10:00:00.000Z", type: "routing-decision", shape: "decompose+verify", kind: "feature" };
+  assert.equal(RoutingDecisionEvent.safeParse(event).success, true);
+});
+
+test("FlowEvent classifies a routing-decision with decompose+verify as flow", () => {
+  const line = JSON.stringify({ ts: "2026-06-19T10:00:00.000Z", type: "routing-decision", shape: "decompose+verify", kind: "feature" });
+  const parsed = parseLogLine(line);
+  assert.equal(parsed.kind, "flow");
+  if (parsed.kind === "flow") assert.equal(parsed.event.type, "routing-decision");
 });

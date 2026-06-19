@@ -83,11 +83,16 @@ export class RunService {
   emit(run: string, event: unknown): { ok: true } | { ok: false; field: string; rule: string } {
     const parsed = FlowEvent.safeParse(event);
     if (!parsed.success) {
-      return {
-        ok: false,
-        field: "type",
-        rule: "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)",
-      };
+      // Attribute the failure to the field that actually failed, not always the `type` discriminator:
+      // a discriminated-union mismatch surfaces an issue whose `path` names the offending key (e.g.
+      // ["shape"]). Only a bad/absent discriminator yields an empty `path` → then it really is `type`.
+      const issue = parsed.error.issues[0];
+      const field = issue && issue.path.length > 0 ? String(issue.path[0]) : "type";
+      const rule =
+        field === "type"
+          ? "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)"
+          : issue?.message ?? "the value required by the FlowEvent schema for this type";
+      return { ok: false, field, rule };
     }
     this.services.events.append(run, parsed.data);
     return { ok: true };

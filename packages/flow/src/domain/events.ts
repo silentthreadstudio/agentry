@@ -14,7 +14,7 @@ import { z } from "zod";
 export const RoutingDecisionEvent = z.object({
   ts: z.string(),
   type: z.literal("routing-decision"),
-  shape: z.enum(["one-shot", "spec-first", "decompose"]),
+  shape: z.enum(["one-shot", "spec-first", "decompose+verify"]),
   kind: z.enum(["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"]),
 });
 
