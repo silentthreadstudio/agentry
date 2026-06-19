@@ -1,6 +1,6 @@
 {
   "name": "agentry",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "An adaptive agentic layer for Claude Code: right-sized orchestration, SDLC specialists, and durable memory that compounds across sessions.",
   "author": {
     "name": "Esteban Estrada",

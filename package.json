@@ -1,6 +1,6 @@
 {
   "name": "agentry-workspace",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Agentry monorepo — the Claude Code plugin lives at the repo root; TypeScript packages live under packages/.",
