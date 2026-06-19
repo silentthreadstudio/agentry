@@ -1,5 +1,17 @@
 #!/usr/bin/env node
 // Agentry — Subagent* event emitter (the READ side of the pointer seam).
+//
+// ROLE: BACKSTOP, not the primary emitter. The conductor's `flow` MCP
+// (`event_emit`) is now the PRIMARY, rich event stream — it sees the routing
+// decisions, gates, and node durations a lifecycle hook never can (doc 13 §2.3).
+// This hook stays as the harness-GUARANTEED safety net: it fires on every
+// SubagentStart/Stop regardless of what the model does, so FLOW's reader can
+// cross-check its lines against the `flow` record and FLAG a skipped `event_emit`
+// call (the records disagree → a missed call is detectable). MCP primary + hook
+// backstop = the reliability guarantee. Its byte-behavior, output schema, and
+// always-exit-0 contract are DELIBERATELY unchanged — that boringness IS the
+// guarantee; do not "upgrade" this hook.
+//
 // Dependency-free (node builtins only). Invoked for BOTH SubagentStart and
 // SubagentStop (the kind is read from hook_event_name). Resolves this session's
 // work-id from the pointer the binder wrote, builds a WorkEvent, and appends one

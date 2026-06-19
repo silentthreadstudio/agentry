@@ -77,12 +77,24 @@ On **spec-first and decompose+verify these gates are mandatory stops, in order �
 
 > The anti-pattern that bit us live: a clear task tempts you to inline the ACs, skip `spec.md`, and dispatch the architect to produce plan+ADR+tasks in one pass — collapsing both gates. Don't. The artifact + the stops are the point — and the artifact is a **file on disk** in `.agentry/work/<id>/`, not a chat message.
 
+> **FLOW on escalated runs (pointer).** Each gate reached and each routing decision is an `event_emit(run, …)`, and each gate artifact (`spec.md`, `plan.md`) is written through `artifact_write(run, …)` — see §FLOW. The artifact is still a **file on disk** in `.agentry/work/<run>/`; `artifact_write` is how you write it (and stamps `version`), not a substitute for it. This applies above the one-shot floor only.
+
 **Work-folder layout** (the same in every repo): `spec.md` and `plan.md` are single docs at the **root**; **`adr/NNN-slug.md`** and **`tasks/NNN-slug.md`** (+ `tasks/coverage.md`) are **always folders** — ADRs and tasks are numbered, append-only series, so `adr/` and `tasks/` are folders *even with a single entry*. An ADR at the work-dir root is wrong; it goes in `adr/`.
+
+## FLOW — the orchestration record (escalated runs only)
+
+On any run **above the one-shot floor** (spec-first / decompose+verify), record the orchestration through the **`flow` MCP** (`mcp__…_flow__*`) so the run's state is structured and correct-by-construction, not prose-narrated. The skill *mandates* these calls; they are not optional narration.
+
+- **`run_start` FIRST — hold the returned `run` handle.** Begin the run by calling `run_start(goal)` *before* any other FLOW call or any artifact write. It mints and returns a **`run` handle**; **thread that explicit `run` into every subsequent FLOW call** (`task_*`, `event_emit`, `artifact_write`, `agent_*`, `review_*`, `run_get`/`run_status`). Per **ADR-005 (NO branch)** the stdio FLOW server has **no ambient "current run"** — `run` is a **required argument** on every tool, never resolved server-side; a FLOW call before `run_start` is an error. If you know this session's `session_id`, pass it to `run_start` so it seeds the session→run pointer proactively; if not, omit it and the `work-id-binder` hook seeds the pointer reactively on the first Write.
+- **Write a spec/plan ⇒ `artifact_write`** (threading `run`) — it stamps the `version` content-hash. Do this *as* you write each gate artifact (`spec.md`, `plan.md`).
+- **Each routing decision / gate reached / node enter·done ⇒ `event_emit`** (threading `run`). The **conductor is the primary event emitter** — the `flow` stream is the rich record (shape + kind, gate, node + duration); the `subagent-emit` hook is only the backstop.
+- **CHECKPOINT — proportional (AC7).** This entire FLOW mandate applies **only above the one-shot floor.** A **one-shot run calls NOTHING through FLOW** — no `run_start`, no `task_*`, no `event_emit`, no `artifact_write`. Never impose FLOW ceremony on a one-shot; right-sizing already decided it didn't need orchestration state. (This mirrors §Gating: a genuine one-shot writes nothing to `.agentry/work/`.)
 
 ## Build loop (implement ⇄ verify)
 
 After the plan gate, run each task: dispatch the **implementer** → dispatch a **separate verifier** (never the author — that independence is the point).
 
+- **Record the task lifecycle through FLOW (escalated runs).** On **dispatch** of a task, call `task_assign(run, …)` (sets the assignee / `lockedBy`) **and** `task_status(run, in-progress)`; on the worker's **return**, call `task_status(run, in-review)` then `task_status(run, done)` once it passes — every call threading the explicit `run` handle from `run_start`. The status enum is closed and the assignee can't be forgotten because the tool enforces them; this is what makes the task files carry live status, not drifted prose.
 - **Fix loop = fresh implementer + the verifier's fix contract.** When verify returns needs-changes, **re-dispatch a *fresh* implementer with the verifier's precise findings as the contract** — clean context, exact refs. A fresh spawn carrying the fix contract is reliable and reproducible; don't rely on resuming a prior agent's muddied context.
 - **Keep build artifacts in sync, run the project's checks.** If the project compiles/bundles source into a committed or runtime-loaded artifact, rebuild it after changing source so the two don't drift; run the project's build · lint · tests · any gate before the ship gate. **Discover those commands** from the repo (package.json scripts, Makefile, CONTRIBUTING, `CLAUDE.md`, repo-facts) — never assume. A project's specific rules (e.g. a build-output-lockstep) live in *its* `CLAUDE.md`/memory, not in this skill.
 

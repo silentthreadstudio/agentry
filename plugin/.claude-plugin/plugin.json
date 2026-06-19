@@ -21,6 +21,10 @@
     "mem": {
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mem/index.js"]
+    },
+    "flow": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/flow/index.js"]
     }
   }
 }

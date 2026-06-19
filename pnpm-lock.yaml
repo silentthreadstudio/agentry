@@ -43,6 +43,28 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
+  packages/flow:
+    dependencies:
+      '@agentry/core':
+        specifier: workspace:*
+        version: link:../core
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.0.0
+        version: 1.29.0(zod@3.25.76)
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.2
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+
   packages/memory:
     dependencies:
       '@agentry/core':

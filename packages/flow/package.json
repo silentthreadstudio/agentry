@@ -1,0 +1,21 @@
+{
+  "name": "@agentry/flow",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Agentry's in-run orchestration MCP — schema-validated task lifecycle, event stream, review sidecar and content-hash over the .agentry/work/<run>/ files (text = truth, ADR-001), shipped as a committed zero-install bundle at plugin/flow/index.js.",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@agentry/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "yaml": "^2.5.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.24.0"
+  }
+}

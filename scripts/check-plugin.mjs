@@ -103,27 +103,37 @@ if (existsSync(skillsDir)) {
   ok("skills", `${dirs.length} validated`);
 }
 
-// 6. dist-lockstep — if memory/src exists, dist must too (warn if it looks stale)
-// The mem MCP src lives in the package; the SHIPPED bundle is built into plugin/mem/ (committed with the payload).
-const memPkg = join(ROOT, "packages", "memory");
-const memSrc = join(memPkg, "src");
-const memDist = join(PLUGIN, "mem", "index.js");
-if (existsSync(memSrc)) {
-  if (!existsSync(memDist)) {
-    warn("plugin/mem/index.js missing — build + commit before the MCP can run (dist-lockstep)");
-  } else {
-    // Content-hash compare, not mtime: git doesn't preserve mtimes, so a checkout/squash-merge would
-    // otherwise trip a false "dist is stale". build.mjs stamps plugin/mem/.srchash; recompute + compare.
-    // bundleSrcHash covers memory's own src AND every @agentry/* workspace dep esbuild inlines (e.g.
-    // @agentry/core's dist) — so a transitive dep change can't leave the bundle stale yet report green.
-    const stampPath = join(PLUGIN, "mem", ".srchash");
-    const stamped = existsSync(stampPath) ? readFileSync(stampPath, "utf8").trim() : "";
-    const current = bundleSrcHash(memPkg);
-    if (!stamped) warn("plugin/mem/.srchash missing — rebuild so dist-lockstep is verifiable");
-    else if (stamped !== current) warn("plugin/mem is stale (memory src or a bundled @agentry/* dep changed since last build) — rebuild + commit (dist-lockstep)");
-    else ok("dist-lockstep", "up to date");
+// 6. dist-lockstep — each committed plugin bundle must track its package src (warn if it looks stale).
+// The MCP src lives in the package; the SHIPPED bundle is built into plugin/<label>/ (committed with the
+// payload). Content-hash compare, not mtime: git doesn't preserve mtimes, so a checkout/squash-merge would
+// otherwise trip a false "dist is stale". build.mjs stamps plugin/<label>/.srchash; recompute + compare.
+// bundleSrcHash covers the package's own src AND every @agentry/* workspace dep esbuild inlines (e.g.
+// @agentry/core's dist) — so a transitive dep change can't leave the bundle stale yet report green.
+const checkBundle = (pkgDir, distPath, srchashPath, label) => {
+  if (!existsSync(join(pkgDir, "src"))) return;
+  if (!existsSync(distPath)) {
+    warn(`plugin/${label}/index.js missing — build + commit before the MCP can run (dist-lockstep)`);
+    return;
   }
-}
+  const stamped = existsSync(srchashPath) ? readFileSync(srchashPath, "utf8").trim() : "";
+  const current = bundleSrcHash(pkgDir);
+  if (!stamped) warn(`plugin/${label}/.srchash missing — rebuild so dist-lockstep is verifiable`);
+  else if (stamped !== current)
+    warn(`plugin/${label} is stale (${label} src or a bundled @agentry/* dep changed since last build) — rebuild + commit (dist-lockstep)`);
+  else ok(`dist-lockstep (${label})`, "up to date");
+};
+checkBundle(
+  join(ROOT, "packages", "memory"),
+  join(PLUGIN, "mem", "index.js"),
+  join(PLUGIN, "mem", ".srchash"),
+  "mem",
+);
+checkBundle(
+  join(ROOT, "packages", "flow"),
+  join(PLUGIN, "flow", "index.js"),
+  join(PLUGIN, "flow", ".srchash"),
+  "flow",
+);
 
 // 7. hooks.json — events MUST nest under a top-level "hooks" key. The bare form
 // (events at the root) parses as valid JSON but silently fails to load — no hook

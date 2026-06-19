@@ -48,6 +48,8 @@ Full treatment — contract derivation, overlap detection, finding propagation w
 
 A set of Task documents (doc-01 format) with structured frontmatter (`id`, `status`, `owner`, `satisfies`, `deps`, `contract.owns`, `contract.exposes`, `contract.excludes`) and the prose body, plus the criterion→task coverage matrix. Report any memory that shaped the decomposition in `used_memories`. Each task body carries its **must-not-touch** boundary, **pinned** names for any surface a sibling consumes, and the **leave-it-green** verify/build steps (discovered from the repo, never hardcoded) — see the reference.
 
+**Emit each slice through FLOW — `task_create` per task.** When the split runs as part of an escalated run, write each Task contract via the **`flow` MCP** `task_create(run, …)` call (threading the `run` handle the conductor holds from `run_start`), not a raw hand-written file. One `task_create` per slice produces the `tasks/NNN-*.md` file with schema-validated frontmatter (`status: todo`, the closed status enum, the contract fields) — correct by construction, so the status vocabulary can't drift and a slice can't be emitted without its contract. (This is the planning half of the FLOW mandate; the conducting skill mandates `task_assign`/`task_status` for the lifecycle. As ever, this applies **above the one-shot floor only** — a one-shot writes no task files at all.)
+
 ## Anti-patterns (refuse these)
 
 - **Over-decomposition** — more tasks than the work needs; overhead beats value.
