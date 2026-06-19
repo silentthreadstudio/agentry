@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Agentry's in-run orchestration MCP — schema-validated task lifecycle, event stream, review sidecar and content-hash over the .agentry/work/<run>/ files (text = truth, ADR-001), shipped as a committed zero-install bundle at plugin/flow/index.js.",
+  "comment:exports": "Internal 'live-types' subpath exports (ADR-007): expose flow's source modules to in-repo workspace consumers (e.g. @agentry/workbench-*) so they import flow's domain shapes + computeVersion/render instead of redeclaring them. Source-pointing (.ts) because flow has no dist build — its own bundle is built from an explicit esbuild entryPoint, so this does NOT affect plugin/flow/index.js and does NOT touch src/, so dist-lockstep is unaffected.",
+  "exports": {
+    "./*": "./src/*.ts",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",

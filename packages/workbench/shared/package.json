@@ -1,0 +1,19 @@
+{
+  "name": "@agentry/workbench-shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Agentry Workbench read-model contract (ADR-005 tier 2) — the server↔web transport types, owned once so both halves import one non-drifting definition. Type-only: no build artifact; consumed via direct src import / TS project refs. Leans on @agentry/flow for the closed on-disk unions (FlowTaskStatus, AgentState, FlowEvent, ReviewComment) rather than redeclaring them (ADR-005 tier 1).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agentry/flow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

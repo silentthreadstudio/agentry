@@ -3,7 +3,7 @@
 // Dependency-free. Exits non-zero on hard errors; warnings don't fail.
 
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleSrcHash } from "./lib/src-hash.mjs";
 
@@ -109,17 +109,28 @@ if (existsSync(skillsDir)) {
 // otherwise trip a false "dist is stale". build.mjs stamps plugin/<label>/.srchash; recompute + compare.
 // bundleSrcHash covers the package's own src AND every @agentry/* workspace dep esbuild inlines (e.g.
 // @agentry/core's dist) — so a transitive dep change can't leave the bundle stale yet report green.
-const checkBundle = (pkgDir, distPath, srchashPath, label) => {
-  if (!existsSync(join(pkgDir, "src"))) return;
+//
+// `opts` is forwarded verbatim to bundleSrcHash (additive — mem/flow pass none, so their behavior is
+// byte-identical). `label` drives ONLY the summary row (`dist-lockstep (${label})`); warning paths are
+// derived from the real distPath/srchashPath (relative to plugin/), so the workbench bundles — which live
+// under plugin/workbench/{web,server}/ but want the short rows `web` / `server` — read honestly in both.
+// The workbench is one package with two buildable source roots under a single pkgDir (web/src + server/src),
+// so we read `srcSubdir` here too: the src-existence guard and the recompute must look at the SAME root the
+// build hashed, not a non-existent `pkgDir/src`.
+const checkBundle = (pkgDir, distPath, srchashPath, label, opts = {}) => {
+  const { srcSubdir = "src" } = opts;
+  if (!existsSync(join(pkgDir, srcSubdir))) return;
+  const distRel = relative(PLUGIN, distPath);
+  const dir = dirname(distRel);
   if (!existsSync(distPath)) {
-    warn(`plugin/${label}/index.js missing — build + commit before the MCP can run (dist-lockstep)`);
+    warn(`plugin/${distRel} missing — build + commit before the bundle can run (dist-lockstep)`);
     return;
   }
   const stamped = existsSync(srchashPath) ? readFileSync(srchashPath, "utf8").trim() : "";
-  const current = bundleSrcHash(pkgDir);
-  if (!stamped) warn(`plugin/${label}/.srchash missing — rebuild so dist-lockstep is verifiable`);
+  const current = bundleSrcHash(pkgDir, opts);
+  if (!stamped) warn(`plugin/${dir}/.srchash missing — rebuild so dist-lockstep is verifiable`);
   else if (stamped !== current)
-    warn(`plugin/${label} is stale (${label} src or a bundled @agentry/* dep changed since last build) — rebuild + commit (dist-lockstep)`);
+    warn(`plugin/${dir} is stale (${label} src or a bundled @agentry/* dep changed since last build) — rebuild + commit (dist-lockstep)`);
   else ok(`dist-lockstep (${label})`, "up to date");
 };
 checkBundle(
@@ -133,6 +144,24 @@ checkBundle(
   join(PLUGIN, "flow", "index.js"),
   join(PLUGIN, "flow", ".srchash"),
   "flow",
+);
+// Workbench — one package (packages/workbench), two committed artifacts. The web bundle is self-contained
+// (Vite inlines its third-party deps into static assets → skipWorkspaceDeps); the server bundle keeps the
+// @agentry/* walk so a transitive @agentry/flow/src change marks it stale. Both anchor at packages/workbench
+// (the home of the package.json whose workspace deps are walked) and select their root via srcSubdir.
+checkBundle(
+  join(ROOT, "packages", "workbench"),
+  join(PLUGIN, "workbench", "web", "index.html"),
+  join(PLUGIN, "workbench", "web", ".srchash"),
+  "web",
+  { srcSubdir: "web/src", skipWorkspaceDeps: true },
+);
+checkBundle(
+  join(ROOT, "packages", "workbench"),
+  join(PLUGIN, "workbench", "server", "index.js"),
+  join(PLUGIN, "workbench", "server", ".srchash"),
+  "server",
+  { srcSubdir: "server/src" },
 );
 
 // 7. hooks.json — events MUST nest under a top-level "hooks" key. The bare form

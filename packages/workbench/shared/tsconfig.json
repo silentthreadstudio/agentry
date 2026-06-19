@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+    // @agentry/flow domain shapes resolve via flow's package `exports` ("./*": "./src/*.ts", ADR-007) —
+    // no per-package shim needed. We import FLOW's closed unions (FlowTaskStatus, AgentState, FlowEvent,
+    // ReviewComment) from "@agentry/flow/domain/*" rather than redeclaring them (ADR-005 tier 1).
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,97 @@
+/* Agentry Workbench design tokens — extracted verbatim from design/prototype-app.html (the
+   dark near-monochrome language: whitespace over borders, status = small dot + muted label, no
+   icon noise). This is the single source of visual truth; every primitive reads from these vars.
+   Do NOT hard-code colors/spacing in components — add a token here and reference it. */
+
+:root {
+  /* ── Surfaces ─────────────────────────────────────────────── */
+  --bg: #0d0d11; /* app canvas */
+  --side-bg: #0f0f13; /* sidebar (a touch darker than canvas) */
+  --panel: #15151a; /* cards, run-card, inputs */
+  --panel2: #1a1a20; /* active nav, raised chips */
+  --line: #24242b; /* hairline borders / dividers */
+  --line2: #2f2f38; /* stronger borders (inputs, pills, hover) */
+  --hover: #1d1d24; /* row/nav hover wash */
+
+  /* ── Ink ──────────────────────────────────────────────────── */
+  --ink: #e9e9ee; /* primary text */
+  --muted: #8a8a96; /* secondary text */
+  --faint: #585862; /* tertiary / labels / metadata */
+
+  /* ── Accent (the single brand hue — used sparingly) ───────── */
+  --accent: #6e72e8;
+  --accent-soft: #1b1b2e;
+  --accent-ink: #b9bbf2; /* accent text on accent-soft */
+  --accent-line: #2c2c52;
+
+  /* ── Status hues (dot + muted label; never color alone) ───── */
+  --done: #46b67e;
+  --prog: #d4a23a; /* in-progress */
+  --rev: #5b8fd6; /* in-review */
+  --block: #e0685a; /* blocked */
+  --todo: #55555f;
+
+  /* ── Type ─────────────────────────────────────────────────── */
+  --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  --fs-base: 13.5px; /* the prototype's body size */
+
+  /* ── Spacing scale (the rhythm the prototype uses) ────────── */
+  --sp-1: 4px;
+  --sp-2: 7px;
+  --sp-3: 10px;
+  --sp-4: 14px;
+  --sp-5: 18px;
+  --sp-6: 22px;
+  --sp-7: 26px;
+
+  /* ── Radius ───────────────────────────────────────────────── */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+
+  /* ── Focus ring (a11y — visible keyboard focus, not in proto
+       but required: the prototype has no keyboard story) ─────── */
+  --focus: var(--accent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--fs-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A single, consistent, visible focus ring for keyboard users across every interactive
+   element. Mouse clicks suppress it (:focus-visible); keyboard Tab shows it. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Respect reduced-motion: the prototype's transitions are decorative. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@agentry/workbench-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Agentry Workbench local service — the file-watching Node server the /agentry:workbench command spawns, shipped as a committed zero-install bundle at plugin/workbench/server/index.js. Phase 0: a minimal node:http server answering GET /healthz; the ports-and-adapters tree (domain/application/persistence/transport/instance) lands in Phase 1+.",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@agentry/flow": "workspace:*",
+    "@agentry/workbench-shared": "workspace:*",
+    "chokidar": "^5.0.0",
+    "ws": "^8.18.0",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.5.0",
+    "esbuild": "^0.24.0"
+  }
+}

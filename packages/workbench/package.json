@@ -3,10 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The Agentry Workbench — the local Agent Center: a React + Vite + Tiptap + React Flow app over a file-watching local service. Empty scaffold; see VISION.md. Built by the V2 build via /agentry:go.",
+  "description": "The Agentry Workbench — the local Agent Center: a React + Vite + Tiptap + React Flow app over a file-watching local service. This root package orchestrates the two-artifact build (web SPA + server bundle) and is the anchor whose @agentry/* workspace deps the server's dist-lockstep hash walks (so @agentry/flow/src is covered). See VISION.md.",
+  "dependencies": {
+    "@agentry/flow": "workspace:*",
+    "@agentry/workbench-shared": "workspace:*"
+  },
   "scripts": {
-    "dev": "echo 'workbench: not implemented yet — see VISION.md (scaffolded by the V2 build)'",
-    "build": "echo 'workbench: not implemented yet — see VISION.md (V2 build emits plugin/workbench)'",
-    "typecheck": "echo 'workbench: no sources yet — see VISION.md'"
+    "dev": "echo 'workbench: run @agentry/workbench-web (vite) and @agentry/workbench-server (node) — see VISION.md'",
+    "build": "pnpm --filter @agentry/workbench-web build && pnpm --filter @agentry/workbench-server build",
+    "typecheck": "pnpm --filter @agentry/workbench-web --filter @agentry/workbench-server --filter @agentry/workbench-shared typecheck"
   }
 }

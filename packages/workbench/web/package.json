@@ -1,0 +1,29 @@
+{
+  "name": "@agentry/workbench-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Agentry Workbench web half — a React + Vite SPA that `vite build`s into the committed plugin payload at plugin/workbench/web/ (the server static-serves it). Phase 0 is a placeholder shell proving the Vite artifact + dist-lockstep (ADR-003); the real router/sidebar/tabs land in Phase 1.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node -e \"import('node:fs').then(({writeFileSync})=>import('../../../scripts/lib/src-hash.mjs').then(({bundleSrcHash})=>writeFileSync('../../../plugin/workbench/web/.srchash',bundleSrcHash('..',{srcSubdir:'web/src',skipWorkspaceDeps:true}))))\"",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agentry/workbench-shared": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^6.0.2",
+    "typescript": "^5.6.0",
+    "vite": "^8.0.16"
+  }
+}
