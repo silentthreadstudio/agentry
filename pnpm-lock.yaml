@@ -103,6 +103,8 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
+  packages/workbench: {}
+
 packages:
 
   '@astrojs/check@0.9.9':

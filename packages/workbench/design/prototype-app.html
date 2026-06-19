@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Agent Center</title>
+<link rel="stylesheet" href="https://esm.sh/@xyflow/react@12/dist/style.css"/>
+<style>
+:root{
+  --bg:#0d0d11; --panel:#15151a; --panel2:#1a1a20; --line:#24242b; --line2:#2f2f38; --hover:#1d1d24;
+  --ink:#e9e9ee; --muted:#8a8a96; --faint:#585862;
+  --accent:#6e72e8; --accent-soft:#1b1b2e;
+  --done:#46b67e; --prog:#d4a23a; --rev:#5b8fd6; --block:#e0685a; --todo:#55555f;
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body,#root{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13.5px;-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:212px 1fr;height:100vh}
+
+/* sidebar */
+.side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:#0f0f13;padding:14px 12px}
+.logo{display:flex;align-items:center;gap:9px;padding:6px 8px;margin-bottom:14px}
+.logo .m{width:22px;height:22px;border-radius:7px;background:var(--ink);color:#0d0d11;display:grid;place-items:center;font-weight:800;font-size:13px}
+.logo b{font-weight:600;letter-spacing:-.1px}
+.navlbl{font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);padding:10px 9px 5px;font-weight:600}
+.nav{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:8px;color:var(--muted);cursor:pointer;font-size:13.5px;font-weight:500}
+.nav:hover{background:var(--hover);color:var(--ink)}
+.nav.on{background:var(--panel2);color:var(--ink)}
+.nav .ic{width:15px;height:15px;flex:none;opacity:.85}
+.nav .ct{margin-left:auto;font-size:11px;color:var(--faint);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+.nav.on .ct{color:var(--muted)}
+.side .grow{flex:1}
+.runcard{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel)}
+.runcard .k{font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
+.runcard .n{font-weight:600;margin:3px 0 7px;font-size:13px}
+.runcard .row{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11.5px}
+.livedot{width:6px;height:6px;border-radius:50%;background:var(--done);box-shadow:0 0 0 3px rgba(70,182,126,.15)}
+
+/* main */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.head{display:flex;align-items:center;gap:12px;padding:14px 22px;border-bottom:1px solid var(--line)}
+.head h1{font-size:16px;font-weight:600;letter-spacing:-.2px;margin:0}
+.head .sub{color:var(--faint);font-size:12.5px}
+.head .grow{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--muted)}
+.pill.route{color:#b9bbf2;border-color:#2c2c52;background:var(--accent-soft)}
+.host{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.body{flex:1;min-height:0;overflow:auto}
+
+/* status dot */
+.sdot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.s-done{background:var(--done)} .s-prog{background:var(--prog)} .s-rev{background:var(--rev)} .s-block{background:var(--block)} .s-todo{background:var(--todo)}
+.s-prog{box-shadow:0 0 0 3px rgba(212,162,58,.16)}
+
+/* ===== React Flow ===== */
+.flowwrap{position:relative;height:100%}
+.react-flow{background:transparent}
+.react-flow__attribution{display:none}
+.rf-node{width:212px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px;
+  box-shadow:0 2px 6px rgba(0,0,0,.25);transition:border-color .14s,box-shadow .14s,transform .14s;cursor:pointer}
+.rf-node:hover{border-color:var(--line2);box-shadow:0 8px 22px rgba(0,0,0,.4)}
+.rf-node.dim{opacity:.4}
+.rf-node.lit{border-color:var(--accent)}
+.rf-node.prog{border-color:#3a3320}
+.rn-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.rn-kind{font-size:10.5px;font-weight:600;color:var(--faint);letter-spacing:.2px}
+.rn-st{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.rn-ttl{font-size:14px;font-weight:600;letter-spacing:-.1px;line-height:1.2}
+.rn-foot{display:flex;align-items:center;justify-content:space-between;margin-top:11px}
+.rn-who{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11.5px}
+.av{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:8.5px;font-weight:700;color:#0d0d11;background:#9a9aa6}
+.rn-ver{font:500 10.5px var(--mono);color:var(--faint)}
+.rn-block{color:var(--block);font-size:11px}
+.react-flow__handle{opacity:0;width:1px;height:1px;border:0;min-width:0;min-height:0}
+.react-flow__controls{box-shadow:none}
+.react-flow__controls-button{background:var(--panel);border-color:var(--line);color:var(--muted)}
+.react-flow__controls-button:hover{background:var(--panel2)}
+.react-flow__minimap{background:var(--panel)!important;border:1px solid var(--line);border-radius:8px}
+
+.legend{position:absolute;left:16px;bottom:16px;z-index:5;background:rgba(21,21,26,.86);backdrop-filter:blur(6px);
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+.legend .r{display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--muted)}
+.legend .ln{width:22px;height:0;border-top-width:2px;border-top-style:solid}
+
+/* ===== generic page ===== */
+.page{padding:22px 26px;max-width:1000px}
+.section{margin-bottom:26px}
+.muted{color:var(--muted)} .faint{color:var(--faint)}
+
+/* activity timeline */
+.daylbl{font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--faint);font-weight:600;margin:18px 0 8px}
+.ev{display:flex;gap:13px;padding:9px 4px;border-radius:8px}
+.ev:hover{background:var(--panel)}
+.ev .t{font:500 11.5px var(--mono);color:var(--faint);width:54px;flex:none;padding-top:1px}
+.ev .ic{width:22px;height:22px;border-radius:7px;flex:none;display:grid;place-items:center;font-size:11px;background:var(--panel2);border:1px solid var(--line)}
+.ev .c .h{font-size:13.5px}
+.ev .c .h b{font-weight:600}
+.ev .c .m{font-size:12px;color:var(--muted);margin-top:1px}
+.ev .run{margin-left:auto;font:500 11px var(--mono);color:var(--faint);align-self:center}
+
+/* table-ish (agents) */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px}
+.card .ct{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.card .ct .av{width:26px;height:26px;font-size:10px}
+.card .ct .nm{font-weight:600;font-size:14px}
+.card .ct .nm small{display:block;font-weight:500;font-size:11px;color:var(--faint)}
+.card .stat{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:4px 0;border-top:1px solid var(--line)}
+.card .stat b{color:var(--ink);font-weight:600}
+
+/* tokens bars */
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
+.kpi{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:15px}
+.kpi .l{font-size:11.5px;color:var(--faint)}
+.kpi .v{font-size:24px;font-weight:680;letter-spacing:-.5px;margin-top:5px}
+.kpi .d{font-size:11.5px;color:var(--muted);margin-top:3px}
+.bars{display:flex;align-items:flex-end;gap:10px;height:160px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end}
+.bar .b{width:100%;max-width:34px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,var(--accent),#4a4ec2)}
+.bar .bl{font-size:10.5px;color:var(--faint)}
+
+/* memory */
+.mfact{border:1px solid var(--line);border-radius:11px;background:var(--panel);padding:13px 14px;margin-bottom:10px}
+.mfact .mt{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.tagk{font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:6px}
+.tk-gotcha{color:#e0a05a;background:#241c10} .tk-decision{color:#7c93e8;background:#171a2c} .tk-repo{color:#5db58a;background:#122119} .tk-learning{color:#b98fe0;background:#201730}
+.mfact .mb{font-size:13px;color:#c9c9d4;line-height:1.55}
+.mfact .mp{font:500 11px var(--mono);color:var(--faint);margin-top:7px}
+.search{width:100%;background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px 13px;color:var(--ink);font-size:13px;margin-bottom:16px;font-family:inherit}
+.search::placeholder{color:var(--faint)}
+
+/* gates inbox */
+.gate{display:flex;align-items:center;gap:13px;border:1px solid var(--line);border-radius:11px;background:var(--panel);padding:13px 15px;margin-bottom:10px;cursor:pointer}
+.gate:hover{border-color:var(--line2)}
+.gate .gi{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--panel2);border:1px solid var(--line2);font-size:13px}
+.gate .gt{font-weight:600;font-size:13.5px}
+.gate .gm{font-size:12px;color:var(--muted);margin-top:1px}
+.gate .ga{margin-left:auto;display:flex;gap:8px}
+.btn{font:600 12.5px var(--sans);padding:7px 13px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--ink);color:#0d0d11;border-color:var(--ink)}
+.empty{color:var(--faint);text-align:center;padding:40px;font-size:13px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+import React, { useState, useMemo, useCallback } from 'https://esm.sh/react@18.3.1'
+import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client'
+import htm from 'https://esm.sh/htm@3.1.1'
+import { ReactFlow, Background, Controls, MiniMap, Handle, Position, MarkerType } from 'https://esm.sh/@xyflow/react@12?deps=react@18.3.1,react-dom@18.3.1'
+import dagre from 'https://esm.sh/@dagrejs/dagre@1'
+const html = htm.bind(React.createElement)
+
+/* ---------- run graph data ---------- */
+const ST={done:'Done',prog:'In progress',rev:'In review',block:'Blocked',todo:'To do'}
+const RAW = [
+  {id:'routing',kind:'Routing',ttl:'decompose+verify',st:'done',by:'conductor',ver:'feature'},
+  {id:'spec',kind:'Spec',ttl:'spec.md',st:'done',by:'product-owner',ver:'9572be'},
+  {id:'adr1',kind:'ADR · 001',ttl:'pure-file',st:'done',by:'architect',ver:'a1'},
+  {id:'adr5',kind:'ADR · 005',ttl:'run-id no-branch',st:'done',by:'architect',ver:'aa31'},
+  {id:'plan',kind:'Plan',ttl:'plan.md',st:'done',by:'architect',ver:'3a1f0c'},
+  {id:'t01',kind:'Task · T01',ttl:'foundation',st:'done',by:'implementer',ver:'82✓'},
+  {id:'t03',kind:'Task · T03',ttl:'monitoring · events',st:'prog',by:'implementer',ver:'5255fc'},
+  {id:'t04',kind:'Task · T04',ttl:'review sidecar',st:'rev',by:'verifier',ver:'77aa14'},
+  {id:'t05',kind:'Task · T05',ttl:'agents',st:'done',by:'implementer',ver:'done'},
+  {id:'t06',kind:'Task · T06',ttl:'packaging · gate',st:'block',by:null,ver:null},
+  {id:'t08',kind:'Task · T08',ttl:'live verify',st:'todo',by:null,ver:null},
+]
+const REL = [
+  ['routing','spec','derives'],['spec','adr1','derives'],['spec','adr5','derives'],['spec','plan','derives'],
+  ['plan','t01','derives'],['t01','t03','dep'],['t01','t04','dep'],['t01','t05','dep'],
+  ['t03','t06','block'],['t04','t06','dep'],['t05','t08','dep'],['t06','t08','dep'],
+]
+const EDGE_STYLE={
+  derives:{stroke:'#34343e',w:1.6,dash:null,col:'#34343e'},
+  dep:{stroke:'#34343e',w:1.4,dash:null,col:'#34343e'},
+  block:{stroke:'#e0685a',w:1.8,dash:'5 5',col:'#e0685a',anim:true,label:'blocks'},
+}
+const inits=s=>s?s.split('-').map(w=>w[0]).join('').slice(0,2).toUpperCase():''
+const NW=212, NH=96
+
+/* ---------- dagre layout (no overlap, crossing-min) ---------- */
+function layout(){
+  const g=new dagre.graphlib.Graph(); g.setDefaultEdgeLabel(()=>({}))
+  g.setGraph({rankdir:'TB',ranksep:64,nodesep:38,marginx:30,marginy:20})
+  RAW.forEach(n=>g.setNode(n.id,{width:NW,height:NH}))
+  REL.forEach(([s,t])=>g.setEdge(s,t))
+  dagre.layout(g)
+  return Object.fromEntries(RAW.map(n=>{const p=g.node(n.id);return [n.id,{x:p.x-NW/2,y:p.y-NH/2}]}))
+}
+const POS=layout()
+
+/* ---------- custom node ---------- */
+function DocNode({data}){
+  return html`<div class=${'rf-node '+(data.st==='prog'?'prog ':'')+(data.hl===false?'dim':data.hl===true?'lit':'')}>
+    <${Handle} type="target" position=${Position.Top}/>
+    <div class="rn-top"><span class="rn-kind">${data.kind}</span>
+      <span class="rn-st"><span class=${'sdot s-'+data.st}></span>${ST[data.st]}</span></div>
+    <div class="rn-ttl">${data.ttl}</div>
+    <div class="rn-foot">
+      <span class="rn-who">${data.by?html`<span class="av">${inits(data.by)}</span>${data.by}`:(data.st==='block'?html`<span class="rn-block">blocked by T03</span>`:html`<span class="faint">unassigned</span>`)}</span>
+      ${data.ver?html`<span class="rn-ver">${data.ver}</span>`:null}
+    </div>
+    <${Handle} type="source" position=${Position.Bottom}/>
+  </div>`
+}
+const nodeTypes={doc:DocNode}
+
+/* ---------- Live page (React Flow) ---------- */
+function Live(){
+  const [hover,setHover]=useState(null)
+  const lit=useMemo(()=>{ if(!hover) return null
+    const s=new Set([hover]); REL.forEach(([a,b])=>{ if(a===hover)s.add(b); if(b===hover)s.add(a) }); return s
+  },[hover])
+  const nodes=useMemo(()=>RAW.map(n=>({id:n.id,type:'doc',position:POS[n.id],
+    data:{...n, hl: lit? lit.has(n.id):undefined}})),[lit])
+  const edges=useMemo(()=>REL.map(([s,t,ty],i)=>{const e=EDGE_STYLE[ty]
+    const on = !lit || (lit.has(s)&&lit.has(t))
+    return {id:'e'+i,source:s,target:t,type:'smoothstep',animated:!!e.anim&&on,label:e.label||undefined,
+      labelStyle:{fill:e.col,fontSize:10,fontWeight:700},labelBgStyle:{fill:'#15151a'},
+      style:{stroke:e.col,strokeWidth:e.w,strokeDasharray:e.dash||undefined,opacity:on?(lit?1:.85):.18},
+      markerEnd:{type:MarkerType.ArrowClosed,color:e.col,width:14,height:14}}
+  }),[lit])
+  return html`<div class="flowwrap">
+    <${ReactFlow} nodes=${nodes} edges=${edges} nodeTypes=${nodeTypes} fitView
+      fitViewOptions=${{padding:.18}} minZoom=${0.3} proOptions=${{hideAttribution:true}}
+      onNodeMouseEnter=${(e,n)=>setHover(n.id)} onNodeMouseLeave=${()=>setHover(null)} nodesDraggable=${false}>
+      <${Background} color="#20202a" gap=${26} size=${1}/>
+      <${Controls} showInteractive=${false}/>
+      <${MiniMap} pannable zoomable nodeColor=${n=>({done:'#46b67e',prog:'#d4a23a',rev:'#5b8fd6',block:'#e0685a',todo:'#41414a'}[RAW.find(r=>r.id===n.id)?.st]||'#41414a')} maskColor="rgba(13,13,17,.7)"/>
+    </${ReactFlow}>
+    <div class="legend">
+      <div class="r"><span class="ln" style=${{borderColor:'#34343e'}}></span>derives / depends-on</div>
+      <div class="r"><span class="ln" style=${{borderColor:'#e0685a',borderTopStyle:'dashed'}}></span>blocks</div>
+      <div class="r"><span class="ln" style=${{borderColor:'#3a3a44',borderTopStyle:'dotted'}}></span>satisfies (in the doc)</div>
+    </div>
+  </div>`
+}
+
+/* ---------- Activity ---------- */
+const ACT=[
+  {d:'Today',items:[
+    {t:'20:24',ic:'◆',h:html`<b>routing-decision</b> · decompose+verify · feature`,m:'flow-mcp-v1',run:'flow-mcp-v1'},
+    {t:'20:24',ic:'✓',h:html`<b>gate</b> · spec approved`,m:'you approved with 1 comment',run:'flow-mcp-v1'},
+    {t:'20:25',ic:'→',h:html`<b>node-enter</b> · T03 monitoring`,m:'dispatched implementer',run:'flow-mcp-v1'},
+    {t:'19:36',ic:'🛠',h:html`<b>/agentry:fix</b> · shape-vocab drift`,m:'reproduced → fixed → 82 tests green',run:'flow-mcp-v1'},
+    {t:'02:23',ic:'⬆',h:html`<b>/agentry:ship</b> · v0.1.2 merged + green`,m:'PR #8 · authorized merge',run:'web-site'},
+  ]},
+  {d:'Yesterday',items:[
+    {t:'22:24',ic:'◷',h:html`<b>memory</b> · distilled 3 facts`,m:'session_id rule · FLOW ADRs · parallel-wave lesson',run:'flow-mcp-v1'},
+    {t:'20:05',ic:'✦',h:html`<b>FLOW MCP v1</b> built · 78 tests`,m:'decompose+verify · 8 tasks',run:'flow-mcp-v1'},
+  ]},
+]
+function Activity(){
+  return html`<div class="page">${ACT.map(g=>html`<div key=${g.d}>
+    <div class="daylbl">${g.d}</div>
+    ${g.items.map((e,i)=>html`<div class="ev" key=${i}>
+      <span class="t">${e.t}</span><span class="ic">${e.ic}</span>
+      <div class="c"><div class="h">${e.h}</div><div class="m">${e.m}</div></div>
+      <span class="run">${e.run}</span></div>`)}
+  </div>`)}</div>`
+}
+
+/* ---------- Agents ---------- */
+const AGENTS=[
+  {nm:'conductor',role:'routes & sequences',st:'prog',runs:14,acts:'on T03 now'},
+  {nm:'implementer',role:'builds to a contract',st:'prog',runs:42,acts:'writing monitoring·events'},
+  {nm:'architect',role:'plans & ADRs',st:'done',runs:11,acts:'plan.md + 5 ADRs'},
+  {nm:'verifier',role:'adversarial review',st:'rev',runs:9,acts:'reviewing T04'},
+  {nm:'product-owner',role:'specs the what',st:'done',runs:7,acts:'spec.md'},
+  {nm:'librarian',role:'memory flows',st:'todo',runs:6,acts:'idle'},
+]
+function Agents(){
+  return html`<div class="page"><div class="cards">${AGENTS.map(a=>html`<div class="card" key=${a.nm}>
+    <div class="ct"><span class="av">${inits(a.nm)}</span><div class="nm">${a.nm}<small>${a.role}</small></div>
+      <span style=${{marginLeft:'auto'}} class=${'sdot s-'+a.st}></span></div>
+    <div class="stat"><span>State</span><b>${ST[a.st]}</b></div>
+    <div class="stat"><span>Runs touched</span><b>${a.runs}</b></div>
+    <div class="stat"><span>Recent</span><span class="muted">${a.acts}</span></div>
+  </div>`)}</div></div>`
+}
+
+/* ---------- Tokens ---------- */
+const TOK=[{l:'Mon',v:42},{l:'Tue',v:88},{l:'Wed',v:61},{l:'Thu',v:120},{l:'Fri',v:96},{l:'Sat',v:150},{l:'Sun',v:74}]
+function Tokens(){
+  const max=Math.max(...TOK.map(t=>t.v))
+  return html`<div class="page">
+    <div class="kpis">
+      <div class="kpi"><div class="l">Tokens · this run</div><div class="v">1.46M</div><div class="d">across 9 agents · 8 tasks</div></div>
+      <div class="kpi"><div class="l">Est. cost · this run</div><div class="v">$5.20</div><div class="d">↓ 18% vs the v0.1 build</div></div>
+      <div class="kpi"><div class="l">Most expensive</div><div class="v">T07 eval</div><div class="d">177k tokens · 1 implementer</div></div>
+    </div>
+    <div class="daylbl" style=${{marginTop:0}}>Tokens · last 7 days (k)</div>
+    <div class="bars">${TOK.map(t=>html`<div class="bar" key=${t.l}><div class="b" style=${{height:(t.v/max*100)+'%'}}></div><div class="bl">${t.l}</div></div>`)}</div>
+    <div class="faint" style=${{fontSize:'11.5px',marginTop:'10px'}}>Source · Claude Code session transcripts (same as <span class="muted">/session-report</span>).</div>
+  </div>`
+}
+
+/* ---------- Memory ---------- */
+const MEM=[
+  {k:'gotcha',kc:'tk-gotcha',b:'A Claude Code stdio MCP server receives no session_id — only CLAUDE_PROJECT_DIR. Per-run identity must be an explicit minted handle, never self-resolved.',p:'used in flow-mcp-v1 · recalled 2×'},
+  {k:'decision',kc:'tk-decision',b:'FLOW v1 ADRs: pure-file · events.jsonl closed FlowEvent.type in domain · flag-not-block backstop · 4-value status subset · run-id NO-branch.',p:'700659e · recalled 1×'},
+  {k:'gotcha',kc:'tk-gotcha',b:"A schema test using its own vocabulary can't catch a cross-component value mismatch — derive the fixture from the emitter's source, and live-verify the seam.",p:'found by /agentry:fix · live T08'},
+  {k:'repo-fact',kc:'tk-repo',b:'check-plugin dist-lockstep now covers transitive @agentry/* workspace-dep staleness (bundleSrcHash). The surface is two MCPs: mem + flow.',p:'35d893a'},
+]
+function Memory(){
+  return html`<div class="page">
+    <input class="search" placeholder="Search 51 facts · 16 episodes…"/>
+    ${MEM.map((m,i)=>html`<div class="mfact" key=${i}>
+      <div class="mt"><span class=${'tagk '+m.kc}>${m.k}</span></div>
+      <div class="mb">${m.b}</div><div class="mp">${m.p}</div></div>`)}
+    <div class="faint" style=${{fontSize:'11.5px',marginTop:'6px'}}>Read-only — memory is agent-curated (reflect / distill). The Workbench shows it; it never edits it.</div>
+  </div>`
+}
+
+/* ---------- Gates ---------- */
+const GATES=[
+  {gi:'◆',gt:'plan gate · flow-mcp-v1',gm:'1 comment awaiting — “Confirm the shape enum matches decompose+verify.”'},
+  {gi:'⬆',gt:'merge · authorize push → PR',gm:'web-site · v0.1.3 — waiting on you to authorize the outward action.'},
+]
+function Gates(){
+  return html`<div class="page">${GATES.length?GATES.map((g,i)=>html`<div class="gate" key=${i}>
+    <span class="gi">${g.gi}</span><div><div class="gt">${g.gt}</div><div class="gm">${g.gm}</div></div>
+    <div class="ga"><button class="btn">Open</button><button class="btn primary">Approve</button></div></div>`)
+    :html`<div class="empty">Nothing waiting on you. 🎉</div>`}</div>`
+}
+
+/* ---------- shell ---------- */
+const PAGES={
+  live:{t:'flow-mcp-v1',sub:'the run, executing now',el:Live,head:html`<span class="grow"></span><span class="pill route">◆ decompose+verify · feature</span><span class="host">flow-mcp-v1.localhost:4317</span>`},
+  activity:{t:'Activity',sub:'everything Agentry has done',el:Activity},
+  agents:{t:'Agents',sub:'the roster, live',el:Agents},
+  tokens:{t:'Tokens',sub:'usage & cost',el:Tokens},
+  memory:{t:'Memory',sub:'the moat — read-only',el:Memory},
+  gates:{t:'Gates',sub:'waiting on you',el:Gates},
+}
+const NAVS=[['live','◷','Live'],['activity','≡','Activity'],['agents','◇','Agents'],['tokens','▣','Tokens'],['memory','✦','Memory'],['gates','◆','Gates','2']]
+function App(){
+  const [pg,setPg]=useState('live')
+  const P=PAGES[pg]
+  return html`<div class="app">
+    <div class="side">
+      <div class="logo"><span class="m">a</span><b>Agent Center</b></div>
+      <div class="navlbl">Project · agentry</div>
+      ${NAVS.map(([id,ic,lb,ct])=>html`<div key=${id} class=${'nav'+(pg===id?' on':'')} onClick=${()=>setPg(id)}>
+        <span class="ic">${ic}</span>${lb}${ct?html`<span class="ct">${ct}</span>`:null}</div>`)}
+      <div class="grow"></div>
+      <div class="runcard"><div class="k">Active run</div><div class="n">flow-mcp-v1</div>
+        <div class="row"><span class="livedot"></span> live · mem + flow</div></div>
+    </div>
+    <div class="main">
+      <div class="head"><h1>${P.t}</h1><span class="sub">${P.sub}</span>${P.head||null}</div>
+      <div class="body">${React.createElement(P.el)}</div>
+    </div>
+  </div>`
+}
+createRoot(document.getElementById('root')).render(html`<${App}/>`)
+</script>
+</body>
+</html>

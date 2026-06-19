@@ -1,0 +1,12 @@
+{
+  "name": "@agentry/workbench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Agentry Workbench — the local Agent Center: a React + Vite + Tiptap + React Flow app over a file-watching local service. Empty scaffold; see VISION.md. Built by the V2 build via /agentry:go.",
+  "scripts": {
+    "dev": "echo 'workbench: not implemented yet — see VISION.md (scaffolded by the V2 build)'",
+    "build": "echo 'workbench: not implemented yet — see VISION.md (V2 build emits plugin/workbench)'",
+    "typecheck": "echo 'workbench: no sources yet — see VISION.md'"
+  }
+}
