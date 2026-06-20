@@ -4,94 +4,192 @@
 
 <p align="center">
   <b>An adaptive agentic layer for Claude Code.</b><br>
-  Same model — disciplined structure around it, and a memory that compounds.
+  Right-sized orchestration · SDLC specialists · durable memory that compounds.
 </p>
 
 <p align="center">
-  <code>v0.1</code> &nbsp;·&nbsp; <code>measured · controlled · reproducible</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
+  <code>v0.1 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
 </p>
 
 ---
 
-Agentry wraps Claude Code in **right-sized orchestration**, a roster of **SDLC specialists**, and
-**durable memory**. It applies the *least process that wins*: trivial work goes one-shot with no
-orchestration tax; hard work earns a spec, a plan, and independent verification. The model doesn't
-change — the **conducting, the specialists, and the learning memory are the product**.
-
-And unusually for this category: **we measure it.** Agentry ships a self-evaluation harness that scores
-its own routing, decision quality, and memory-compounding — every number controlled, read from real work
-artifacts, and reproducible from one command. Not asserted. *Measured.*
+Agentry wraps Claude Code in **right-sized orchestration**, a roster of **SDLC specialists**, and **durable
+memory**. You give it a task through one front door — **`/agentry:go <task>`** — and it picks the *least
+process that wins*: a one-liner goes straight to a fix; a tangled feature earns a spec, a plan, independent
+verification, and a clean merge. The model doesn't change. The conducting, the specialists, and the learning
+memory are the product.
 
 <p align="center">
   <img src="assets/what-is-agentry.png" alt="What is Agentry" width="820">
 </p>
 
-## Why it exists
+## Install
 
-Dropping a powerful model into a hard task and hoping is not engineering. Teams want the *judgment* of a
-senior engineer: knowing when a one-liner is a one-liner and when a "small change" hides a load-bearing
-decision; spec'ing before building when it matters; never re-deciding what was already decided last week.
+**Requires Node ≥ 24** — the memory engine uses Node's built-in `node:sqlite` (no native modules, nothing to
+compile). From a Claude Code session:
 
-Agentry encodes that judgment as a system — and then holds itself to it with an eval that keeps catching
-its *own instrument* being wrong.
+```
+/plugin marketplace add Codestz/agentry
+/plugin install agentry@agentry-dev
+```
 
-## The three pillars
+Restart the session — agents, commands, and the bundled MCP servers load at startup. Then:
 
-### 1 · The brain — a conductor that right-sizes the work
+```
+/agentry:onboard                                       # warm memory on this repo (read-only)
+/agentry:go "add pagination to the users endpoint"     # the front door routes and conducts it
+```
 
-<img src="assets/icon-brain.png" alt="The brain" width="92" align="left">
+That's the whole setup. You can run Agentry entirely from the terminal; the web Workbench and live channels
+below are **optional** add-ons.
 
-A conductor (the main session) routes every task to the **least process that wins** —
-`one-shot → spec-first → decompose+verify` — and dispatches specialist subagents only when the work earns
-them. It's **biased to the floor** and escalates *on evidence*: a hidden decision fork vetoes a one-shot;
-multiple coupled components earn a decompose. It never re-implements what a specialist or a node already does.
+## How it works — the right-sizing harness
 
-Routing has a **second axis, orthogonal to the complexity shape: the *kind* of work** —
-`feature · bug · refactor · perf · dep-upgrade · ci-red`. Kind ⊥ complexity: it picks the *discipline*
-(a `bug` or `ci-red` runs repro-first; a `feature` may spec-first), while the shape still picks *how much
-process*. A one-line bug and a tangled one are the same kind but route to different shapes. And once work is
-built and verified, the last mile has one bar: **Done = merged + green.**
+`/agentry:go` routes every task to the **least process that wins**, then conducts it. The conductor (your main
+session) is biased to the floor and escalates only on evidence:
 
-<br clear="left">
+| Shape | When it's used | What runs |
+| :--- | :--- | :--- |
+| **one-shot** | a clear, reversible change with no hidden decision | a single bounded edit, then verify |
+| **spec-first** | "done = X" isn't clear yet, or the ask is product-shaped | shape a Spec with observable acceptance criteria, gate it, then build |
+| **decompose + verify** | multiple coupled parts, real design forks | spec → plan → split into tasks → build → verify → assemble |
 
-### 2 · Memory — the moat that compounds
+A hidden decision fork vetoes a one-shot; several coupled components earn a decompose. Once work is built and
+verified, the last mile has one bar: **done = merged + green.** At each step the conductor dispatches specialist
+subagents only when the work earns them, and **gates approvals with you** — you stay in the loop at every fork.
 
-<img src="assets/memory.png" alt="Memory" width="820">
+<p align="center">
+  <img src="assets/harness.png" alt="The right-sizing harness" width="820">
+</p>
 
-A local, **zero-install** MCP. **Text files are the source of truth; a derived `node:sqlite` index** powers
-recall. Recall ranks by *relevance × confidence × usefulness*, auto-writes through a write-bar, auto-prunes
-by decay, and runs a graduation pipeline (**episodes → facts → skills**) so the store gets *warm*. The
-payoff, **measured** (see below): the second time Agentry meets a decision it settled before, it **recalls
-it, applies it, and routes the task lighter** — spec-first becomes one-shot.
+## The specialists
 
-### 3 · The harness — breadth without the orchestration tax
+Each agent owns one slice of the SDLC. Its craft comes from preloaded **skills**, and it is **capability-first** —
+no tool allowlists; it uses whatever you have (Serena, web search, a browser MCP) and degrades gracefully when
+one's absent. The conductor dispatches a specialist only when the work needs it.
 
-<img src="assets/harness.png" alt="The coding harness" width="820">
+| Agent | Owns |
+| :--- | :--- |
+| **product-owner** | the *what & why* — turns "make X better" into a Spec with observable acceptance criteria; also docs, READMEs, release notes |
+| **architect** | sound structure — module boundaries, ADRs, a Plan with an architecture map, then bounded Task contracts |
+| **implementer** | clean, bounded code **and tests** to a Task contract; also the debugging mode (reproduce → fix the smallest thing → prove it) |
+| **designer** | UX/UI craft — hierarchy, layout, accessibility, design-system fit — verified against the **rendered** result |
+| **verifier** | adversarial, **independent** verification against acceptance + a security lens; returns a Verdict, never fixes |
+| **explorer** | read-only comprehension of an existing codebase → a Context map (where things live, conventions, how data flows) |
+| **researcher** | investigates genuine unknowns (a library's current API, an external standard) → **cited** findings + implications |
+| **librarian** | runs the memory flows — curate, distill (episodes → facts), and *propose* skills (human-gated) |
 
-A roster of capability-first specialists wraps the model in an SDLC: explore → research → spec → plan →
-split → implement → verify → assemble → reflect → remember. Each is a preloaded **skill**; each uses
-*whatever tools you have* (Serena, web search, a browser MCP…) and degrades gracefully when one's absent.
-No tool allowlists.
+Every step is also a standalone command (`/agentry:spec`, `/agentry:plan`, `/agentry:implement`, `/agentry:verify`,
+`/agentry:ship`, …) emitting one typed artifact. `/agentry:go` chains them for you; you can also drive a single
+one by hand — same machinery, one shared contract.
 
-## Does it actually work? — yes, and we measure it
+## Architecture
 
-We don't lead with a hero number. We lead with **how we know** — because the trust machinery *is* the
-product. Every number is gated by controls before it's shown, and read from the conductor's **real work
-artifacts**, never a proxy.
+The **repo root is the plugin marketplace.** `plugin/` is the **shipped payload** — installing copies only that
+directory, never the dev tree. TypeScript dev packages live under `packages/` and build down into the committed,
+zero-install bundles inside `plugin/`.
 
-| Dimension | What it measures | Result | Trust controls |
-| :--- | :--- | :--- | :--- |
-| **Routing** | Does it right-size to the labeled floor? | **100%** to-floor · **88.9% ± 15.7%** across repeats | A/A unanimity · saturation guard · planted positive |
-| **Decision quality** | Is the spec/plan senior-grade? | **97.5%** over 12 judged artifacts | gold **100%** ↔ poor **20%** discrimination · A/A judge σ = 0 |
-| **Memory moat** | Does recall make work route lighter? | **compounds** — spec-first → one-shot; discrimination **1.0** | decoy control · seed-landing gate |
+| Where | What it is |
+| :--- | :--- |
+| `plugin/` | the **shipped plugin** — `agents/ commands/ skills/ hooks/` + the committed `mem`, `flow`, and `workbench` bundles |
+| `plugin/.claude-plugin/plugin.json` | the manifest — wires the `mem` and `flow` MCP servers inline (`${CLAUDE_PLUGIN_ROOT}/…/index.js`) |
+| `.claude-plugin/marketplace.json` | the marketplace manifest (stays at the repo root; `source: "./plugin"`) |
+| `packages/core` | `@agentry/core` — the single typed contract every node shares |
+| `packages/memory` | the memory MCP → builds to `plugin/mem/index.js` |
+| `packages/flow` | the FLOW MCP → builds to `plugin/flow/index.js` |
+| `packages/workbench` · `packages/web` | the Workbench app + site → build to `plugin/workbench/` |
+| `packages/eval` | the self-evaluation harness |
 
-> **The corrections log is the real story.** Building the instrument, it disagreed with the conductor **six
-> times** — and *every time, the conductor was right and the meter was wrong* (a proxy that scored an
-> escalation as a one-shot; a timing bug that killed a slow planner; an "under-route" that was actually a
-> good decision shipping a 98%-quality spec). We fixed the **meter**, not the conductor. A number that
-> survived its own instrument being wrong six times is a number you can believe.
+Two of these bundles are **always on** — the substrate Agentry can't run without. The rest are additive.
 
-**Reproduce it yourself** — the eval is self-contained and runs through the real front door:
+## FLOW — the orchestration engine (mandatory)
+
+FLOW is the in-run engine. It records every run's state to plain files under `.agentry/work/<run>/` — and **those
+files are the truth.** Text is the source of record; the engine is stateless over it. Kill the session mid-run and
+restart, and nothing is lost — the files hold the whole run, so it resumes cold.
+
+FLOW gives the conductor:
+
+- **Task lifecycle + status** — each task's state (`todo · in-progress · in-review · done · blocked`) and its lock
+  (`lockedBy`), so two builders never clobber the same file.
+- **An append-only event log** (`events.jsonl`) — routing, gates, node-enter/done, agent states — the run's timeline.
+- **A review sidecar** (`.review/<gate>.json`) — comments anchored to a span of an artifact, with the 3-way anchor
+  that lets the agent relocate them after edits.
+- **A content-hash `version`** stamped on every artifact write — so a save against a stale version is rejected
+  (optimistic concurrency), and any change is a diff.
+
+<p align="center">
+  <img src="assets/flow.png" alt="FLOW — the orchestration engine" width="820">
+</p>
+
+## Memory — the moat that compounds (mandatory)
+
+A local, **zero-install** MCP (stdio, `node:sqlite`). **Text files are the source of truth; a derived SQLite index
+powers recall.** It's project-rooted with a global root alongside, so facts and episodes follow the work.
+
+Recall is **task-specific** — pulled per task, ranked by relevance × confidence × usefulness, never a session-start
+dump. Writes pass a write-bar; stale facts decay; a graduation pipeline turns **episodes → facts → skills**. The
+payoff: the second time Agentry meets a decision it settled before, it recalls it, applies it, and routes the task
+lighter — spec-first becomes one-shot. **Run #2 is warmer than run #1.**
+
+## Workbench — the Agent Center (optional)
+
+The Workbench is a per-project local web app for *acting on* a run's work — a second client beside the chat
+session, over the same `.agentry/` files. Read, **edit, comment on, and approve** the spec / plan / tasks, and
+**watch and steer** the agents on a live graph of the run. Your edits are authoritative: the agent reads them
+back next turn.
+
+One server per project on a fixed port (`:4317`); each run gets its own URL by host-routing
+(`<run>.localhost:4317`, no `/etc/hosts` edit). Launch or focus it with `/agentry:workbench [run]`. It is **stateless
+over the files** — kill it and the run is untouched; the `.agentry/` tree is the state.
+
+**Optional:** you can conduct an entire run from the terminal and never open it.
+
+<p align="center">
+  <img src="assets/workbench.png" alt="The Workbench — the Agent Center" width="820">
+</p>
+
+## Channels — live human ↔ agent steering (optional)
+
+By default the Workbench loop is **async**: you edit a file, the agent reads it on its next turn. Channels add a
+**live push layer over that file-watch loop** — the human ↔ agent link goes real-time:
+
+- **Live review comments** and threaded replies (`channel_reply`) — pushed into the session, not waited for at the
+  next gate.
+- **A permission relay** — approve or deny a tool-use from the Workbench instead of the terminal; whichever side
+  answers first wins.
+- **Human status changes that steer the agent** — force a task back to `todo` to redo it, or to `done`, and the
+  agent re-reads and adjusts.
+
+Channels are a **research-preview** feature. They require launching Claude Code with the development flag:
+
+```
+claude --dangerously-load-development-channels plugin:agentry@agentry-dev
+```
+
+<p align="center">
+  <img src="assets/channels.png" alt="Channels — live human ↔ agent steering" width="820">
+</p>
+
+## What's mandatory, what's optional
+
+Memory and FLOW are the only hard requirements. Everything above them is additive — turn it off and the run still
+completes, because **the files are always the truth.**
+
+| Layer | Required? | Turn it off and… |
+| :--- | :--- | :--- |
+| **Memory** | **Yes** | — (the always-on store; run #2 is warmer than #1) |
+| **FLOW** | **Yes** | — (the always-on engine; the run's state lives in `.agentry/`) |
+| **Workbench** | No | conduct the whole run from the terminal, exactly as normal |
+| **Channels** | No | everything still works via the async file-watch loop — the agent reads your edits next turn, and tool approvals fall back to the terminal dialog |
+
+In short: the Workbench and channels are *better ways to watch and steer*; they are never the thing that makes a
+run work. The terminal-only path is a first-class path.
+
+## Does it work? — yes, and we measure it
+
+Agentry ships a self-evaluation harness that scores its own routing, decision quality, and memory-compounding —
+every number gated by controls and read from real work artifacts, never a proxy. Reproduce it yourself:
 
 ```bash
 cd packages/eval && npm install
@@ -101,73 +199,21 @@ npm run selfeval -- run moat     --fixture fixtures/moat   --plugin-dir ../..
 npm run selfeval -- report       <run-id>                 # → a self-contained dashboard HTML
 ```
 
-`report` emits a single static dashboard (routing accuracy, decision quality, the memory moat, and the
-corrections log) — *run the eval, get the page.*
-
-## The roster — eight SDLC specialists
-
-Each agent owns one slice of the SDLC. Its craft is **composed from preloaded skills** (the durable
-know-how), and it's **capability-first** — no `tools:` allowlists; it uses whatever you have (Serena, web
-search, a browser MCP…) and degrades gracefully when one's absent. The conductor dispatches a specialist
-only when the work *earns* it; it never re-implements what an agent already does.
-
-| Agent | What it does | Composed from | The conductor dispatches it when… |
-| :--- | :--- | :--- | :--- |
-| **architect** | Turns a spec or under-specified goal into sound structure — module boundaries, ADRs, a Plan with an architecture map, then bounded Task contracts | `architecting` · `planning` | work is multi-file, structurally non-trivial, or hinges on a real design fork |
-| **implementer** | Writes clean, bounded code **and tests** to a Task contract; also the debugging mode (reproduce → fix the smallest thing → prove it) | `implementing` · `testing` | a Task with a contract exists — or a clear, reversible one-shot fix |
-| **verifier** | Adversarial, **independent** verification against acceptance + a security lens (injection, authz, SSRF, secrets); returns a Verdict, never fixes | `reviewing` · `integrating` | a builder reports "done", or the assembled product needs an end-to-end check |
-| **explorer** | Read-only comprehension of an existing codebase → a Context map (where things live, conventions in force, how data flows) | `exploring` | the work touches code Agentry hasn't mapped yet |
-| **researcher** | Investigates genuine unknowns (a library's current API, an external standard) → **cited** findings + their implications | `researching` | a decision is blocked on an external fact where recency/correctness matters |
-| **product-owner** | Owns the *what & why* — turns "make X better" into a Spec with **observable** acceptance criteria; also docs, READMEs, release notes | `product` · `writing` | the ask is vague, product-shaped, or user-facing and "done = X" isn't clear yet |
-| **designer** | UX/UI craft — hierarchy, layout, accessibility, design-system fit — verified against the **rendered** result (the see-it loop), not asserted | `designing` | the work bears a UI: a new screen, a visual/layout change, an a11y fix |
-| **librarian** | Runs the memory flows — reflect (curate), distill (episodes→facts), consolidate (**propose** a skill); keeps recall few, ranked, never-superseded | `remembering` | after non-trivial work, or when memory needs grooming |
-
-## Commands — the nodes
-
-Every step of the SDLC is a **node**: a standalone command that does one job and emits one **typed
-artifact** — a Spec, a Plan, a Task, a Verdict, a Context map, an Episode. `/agentry:go` is the conductor —
-it *right-sizes which nodes to run* and chains them for you. But every node also **stands alone**, and they
-**compose** because they share one typed contract (`@agentry/core`): the artifact one node emits is exactly
-what the next node consumes. Run the whole pipeline through the front door, or drive a single node by hand —
-same machinery.
-
-| Command | What it does | Runs | Emits |
-| :--- | :--- | :--- | :--- |
-| **`/agentry:go <task>`** | **The front door.** Right-sizes the task (`one-shot → spec-first → decompose+verify`) and conducts it end-to-end, dispatching only the nodes it earns | conductor (`conducting`) | the finished, verified work |
-| `/agentry:onboard` | Comprehend a repo read-only and seed durable repo-facts — warms a cold codebase | explorer | a Context map |
-| `/agentry:research <q>` | Investigate an unknown across web + repo | researcher | cited findings |
-| `/agentry:spec <goal>` | Turn a goal — especially "make X better" — into observable acceptance criteria | product-owner | a Spec |
-| `/agentry:plan` | Design the approach + record the ADRs for the real forks | architect | a Plan (+ ADRs) |
-| `/agentry:split` | Slice the plan's architecture map into parallel-safe Task contracts | architect | Task contracts |
-| `/agentry:implement` | Build one task — clean, bounded code and tests within its contract | implementer | code + tests |
-| `/agentry:verify` | Adversarially verify one task against its acceptance (separate from the author) | verifier | a Verdict |
-| `/agentry:assemble` | Run the **whole** product against the spec as observed behavior — the integration gate | verifier | an integration Verdict |
-| `/agentry:fix <symptom>` | Diagnose a failure and fix it — a repro-first debug run (reproduce → isolate → fix → regression-guard). For a stack trace, failing test, red CI log, or perf regression | conductor (`conducting`) | the diagnosed fix + regression guard |
-| `/agentry:ship` | Take the verified working tree the last mile — branch → commit → PR → CI-watch → merge, stopping at the authorization gate before anything leaves the machine | conductor (`conducting` · `shipping`) | the merged, green change |
-| `/agentry:reflect` | Curate memory and distill the run's episodes into durable facts; proposes skills (human-gated) | librarian | durable facts |
-| `/agentry:remember <fact>` | Capture a durable memory now — straight through the write-bar | — (direct, no subagent) | a stored memory |
-
-## Install
-
-**Requires Node ≥ 24** (the memory MCP uses the built-in `node:sqlite`). From a Claude Code session:
+## Repo layout & dev
 
 ```
-/plugin marketplace add Codestz/agentry
-/plugin install agentry@agentry-dev
+plugin/            the shipped plugin (agents · commands · skills · hooks · mem · flow · workbench)
+packages/          TypeScript dev sources (core · memory · flow · workbench · web · eval)
+.docs/internal/    the design docs — read these before changing behavior
 ```
 
-Restart the session (agents, hooks, and the `mem` MCP load at startup), then:
+Two standing rules if you hack on the bundles: any change to a `packages/*/src` that ships must rebuild and commit
+its `plugin/` dist in the same change (**dist-lockstep**), and `node scripts/check-plugin.mjs` must pass before
+every commit. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full dev setup and the bar a change is held to.
 
-```
-/agentry:onboard                                       # warm memory on this repo (read-only)
-/agentry:go "add pagination to the users endpoint"     # the adaptive front door routes it
-```
+## Maturity & license
 
-## Contributing
+**v0.1, pre-1.0.** The shape is settled and the core paths are exercised, but contracts can still change between
+versions and the channels layer rides Claude Code's research preview. Use it, file issues, expect some churn.
 
-Issues and PRs welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the dev setup (pnpm workspace, the
-`check-plugin` gate, dist-lockstep) and the bar a change is held to.
-
-## License
-
-MIT
+MIT.
