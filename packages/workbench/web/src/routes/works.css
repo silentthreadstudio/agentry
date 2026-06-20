@@ -1,0 +1,257 @@
+/* Works home — the expressive KPI tiles + run cards (design/ui-v2.html). Owned by routes/Works.tsx (the
+   only page that renders these). The shared shell/hero/section chrome lives in App.css; the narrow-width
+   `.metrics` reflow is in App.css's media query (a layout-level concern). Reads tokens.css. */
+
+/* ── metrics — big expressive KPI tiles ─────────────────────────── */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 34px;
+}
+.kpi {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 18px 19px;
+  overflow: hidden;
+  background: linear-gradient(165deg, #17171f, #101015);
+}
+.kpi .glow {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  filter: blur(46px);
+  opacity: 0.5;
+  right: -30px;
+  top: -40px;
+  pointer-events: none;
+}
+.kpi .k {
+  font: 700 10px var(--sans);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.kpi .v {
+  font-size: 34px;
+  font-weight: 740;
+  letter-spacing: -1.2px;
+  margin-top: 9px;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.kpi .v small {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.kpi .trend {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* ── section bar (heading + count pill + the filter segment) ────── */
+.sec {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 2px 16px;
+}
+.sec h2 {
+  font-size: 16px;
+  font-weight: 680;
+  letter-spacing: -0.3px;
+  margin: 0;
+}
+.pillct {
+  font: 700 10.5px var(--sans);
+  color: var(--v2);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.seg {
+  margin-left: auto;
+  display: flex;
+  border: 1px solid var(--line2);
+  border-radius: 11px;
+  overflow: hidden;
+  background: #101016;
+}
+.seg button {
+  padding: 7px 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+}
+.seg button.on {
+  background: linear-gradient(180deg, #23213b, #1a1a22);
+  color: #fff;
+}
+
+/* ── the expressive run cards ───────────────────────────────────── */
+.works-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(345px, 1fr));
+  gap: 17px;
+}
+/* the whole card is a flex column so the footer pins to the bottom on a tall card. The status-tinted
+   `aura` blob + the LIGHT hover shadow live in the .ds-card--interactive rules (ui/Card.css). */
+.ds-card.work-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 19px 20px;
+  min-height: 210px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #16161e, #101015);
+}
+.work-card-aura {
+  position: absolute;
+  right: -40px;
+  top: -46px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  filter: blur(50px);
+  opacity: 0.28;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+.ds-card.work-card:hover .work-card-aura {
+  opacity: 0.42;
+}
+.work-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.work-card-title {
+  font-size: 16px;
+  font-weight: 680;
+  letter-spacing: -0.3px;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.work-card-run {
+  font: 600 10.5px var(--mono);
+  color: var(--faint);
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.work-card-summary {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink2);
+  opacity: 0.8;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.work-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.work-badge {
+  font: 700 10px var(--sans);
+  letter-spacing: 0.2px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line2);
+  background: var(--panel2);
+  color: var(--muted);
+  text-transform: lowercase;
+}
+.work-badge.accent {
+  color: #fff;
+  background: linear-gradient(110deg, #2a2750, #1c1c34);
+  border: 1px solid var(--accent-line);
+}
+.work-card-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: auto;
+}
+.work-card-barwrap {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.work-bar {
+  flex: 1;
+  height: 7px;
+  border-radius: 999px;
+  background: #0c0c11;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.work-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--grad-bar);
+}
+.work-pctn {
+  font: 700 12px var(--sans);
+  color: var(--ink2);
+}
+.work-card-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.count b {
+  color: var(--ink);
+  font-weight: 700;
+}
+.work-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.work-card-foot .grow {
+  flex: 1;
+}
+.work-ava {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #2b2750, #1b1b30);
+  border: 1px solid var(--accent-line);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  font: 800 9px var(--sans);
+  flex: none;
+}

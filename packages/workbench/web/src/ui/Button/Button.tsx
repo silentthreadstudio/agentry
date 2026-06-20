@@ -2,6 +2,7 @@
 // primary = the inverted ink button (light fill, dark text — the one high-contrast call to action).
 // A real <button> with hover/active/disabled states and the global focus-visible ring (a11y).
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import "./Button.css";
 
 export type ButtonVariant = "secondary" | "primary";
 

@@ -2,6 +2,7 @@
 // placeholder. A controlled text input with a visually-hidden label (a11y: every field needs a
 // programmatic name even when the placeholder carries the visible hint).
 import type { ChangeEvent } from "react";
+import "./SearchInput.css";
 
 export interface SearchInputProps {
   value: string;

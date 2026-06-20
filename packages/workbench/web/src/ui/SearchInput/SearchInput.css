@@ -1,0 +1,17 @@
+/* SearchInput — the panel input with placeholder + hover. Reads tokens.css. */
+.ds-search {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: var(--r-lg);
+  padding: 10px 13px;
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+}
+.ds-search::placeholder {
+  color: var(--faint);
+}
+.ds-search:hover {
+  border-color: var(--faint);
+}

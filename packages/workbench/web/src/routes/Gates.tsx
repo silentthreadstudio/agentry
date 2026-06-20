@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { ApiError, fetchGates } from "../api/index.js";
 import type { OpenGateItem } from "../api/index.js";
-import { Button, EmptyState } from "../design-system/index.js";
+import { Button, EmptyState } from "../ui/index.js";
 
 // ── View model ─────────────────────────────────────────────────────────────────────────────────────────
 // Pure, exported for unit test. A gate row's headline ("<gate> gate · <run>") + a detail summarizing its

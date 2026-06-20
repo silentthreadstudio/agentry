@@ -12,8 +12,8 @@ import { Memory } from "./routes/Memory.js";
 import { Works } from "./routes/Works.js";
 import { WorkLayout } from "./routes/work/WorkLayout.js";
 
-import "./design-system/tokens.css";
-import "./design-system/components.css";
+import "./ui/tokens.css";
+import "./App.css";
 
 // The sidebar nav — Works / Memory / Gates only (Agents/Tokens removed). `ic` is a monochrome glyph
 // (text, not an icon set); the active state's gradient pill + left bar are CSS (.nav.on).

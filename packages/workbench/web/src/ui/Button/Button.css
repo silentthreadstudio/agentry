@@ -1,0 +1,29 @@
+/* Button — primary (ink) / secondary (panel) variants + disabled. Reads tokens.css. */
+.ds-btn {
+  font: 600 12.5px var(--sans);
+  padding: 7px 13px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+}
+.ds-btn--secondary {
+  border: 1px solid var(--line2);
+  background: var(--panel2);
+  color: var(--ink);
+}
+.ds-btn--secondary:hover {
+  border-color: var(--faint);
+  background: var(--hover);
+}
+.ds-btn--primary {
+  border: 0;
+  background: var(--ink);
+  color: #08080b;
+}
+.ds-btn--primary:hover {
+  opacity: 0.9;
+}
+.ds-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

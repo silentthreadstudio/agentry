@@ -3,6 +3,7 @@
 // it renders as a real <button> (keyboard-operable, focus-ring, hover lift) so a clickable card is
 // not a div-with-onClick (a11y: clickable surfaces must be reachable and activatable by keyboard).
 import type { CSSProperties, ReactNode } from "react";
+import "./Card.css";
 
 export interface CardProps {
   children: ReactNode;

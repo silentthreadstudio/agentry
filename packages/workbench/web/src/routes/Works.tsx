@@ -7,9 +7,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { RunSummary } from "@agentry/workbench-shared";
 import { workSlug } from "@agentry/workbench-shared";
 import { ApiError, fetchWorks } from "../api/index.js";
-import { Card, EmptyState, SearchInput, StatusDot } from "../design-system/index.js";
-import type { DotStatus, FlowTaskStatus } from "../design-system/index.js";
+import { Card, EmptyState, SearchInput, StatusDot } from "../ui/index.js";
+import type { DotStatus, FlowTaskStatus } from "../ui/index.js";
 import { deriveKpis, isActiveRun, tasksTotal } from "./works-kpis.js";
+
+import "./works.css";
 
 // The host a run card opens. Same host, same port — only the subdomain changes (bare → <workSlug>).
 // The slug is the short, stable label both halves compute; the server resolves it back to the run id.
