@@ -14,7 +14,7 @@
 import { useEffect, useRef } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Pill } from "../../ui/index.js";
-import { Activity } from "./Activity.js";
+import { Activity } from "./activity/Activity.js";
 import { Panorama } from "./live/Panorama.js";
 import { DocsWorkspace } from "./docs/DocsWorkspace.js";
 import { selectDoc, useSelectedDoc } from "./docs/doc-tabs.js";

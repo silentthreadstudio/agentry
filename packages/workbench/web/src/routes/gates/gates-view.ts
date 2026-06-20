@@ -3,7 +3,7 @@
 // (headline + open-comment summary + the jump-to-doc-at-gate deep link). `runHost` mirrors works-view's
 // runHref so a gate jump and a Works-card click land on the identical host.
 import type { CSSProperties } from "react";
-import type { OpenGateItem } from "../api/index.js";
+import type { OpenGateItem } from "../../api/index.js";
 
 export interface GateRow {
   run: string;

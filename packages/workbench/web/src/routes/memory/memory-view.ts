@@ -8,7 +8,7 @@
 // components/hooks (the CSSProperties return is a type only).
 import type { CSSProperties } from "react";
 import MarkdownIt from "markdown-it";
-import type { MemReadRecord } from "../api/index.js";
+import type { MemReadRecord } from "../../api/index.js";
 
 // The body field name per record kind (the reader re-attaches the prose here: a fact's `text`, an
 // episode's `task`).

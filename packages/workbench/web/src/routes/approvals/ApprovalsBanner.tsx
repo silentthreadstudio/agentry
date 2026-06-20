@@ -17,8 +17,8 @@
 //     host; the server broadcasts these messages to all sockets.
 import { useCallback, useEffect, useState } from "react";
 import type { PermissionRequest } from "@agentry/workbench-shared";
-import { fetchPermissions, postVerdict } from "../api/index.js";
-import { getWsClient } from "../api/ws.js";
+import { fetchPermissions, postVerdict } from "../../api/index.js";
+import { getWsClient } from "../../api/ws.js";
 import { applyPermissionMessage, mergeSnapshot } from "./permissions-store.js";
 import { useApprovalsStyles } from "./approvals-styles.js";
 

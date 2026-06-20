@@ -7,9 +7,9 @@
 // the frontmatter-derived meta pills, a "Why" callout, and a Provenance list. V1 NON-GOAL: editing memory —
 // no write affordance. The page title lives in App.tsx's PageHero; this is the body BELOW it.
 import { useEffect, useMemo, useState } from "react";
-import { ApiError, fetchMemory } from "../api/index.js";
-import type { MemReadRecord } from "../api/index.js";
-import { EmptyState, SearchInput } from "../ui/index.js";
+import { ApiError, fetchMemory } from "../../api/index.js";
+import type { MemReadRecord } from "../../api/index.js";
+import { EmptyState, SearchInput } from "../../ui/index.js";
 import { applyFilters, metricsFor, renderMemoryMarkdown, toMemRow, typeBadge, typeColor } from "./memory-view.js";
 import type { KindFilter, MemRow, OriginFilter } from "./memory-view.js";
 import "./memory.css";

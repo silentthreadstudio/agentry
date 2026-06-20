@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MemReadRecord } from "../api/index.js";
-import { applyFilters, metricsFor, toMemRow } from "../routes/memory-view.js";
+import { applyFilters, metricsFor, toMemRow } from "../routes/memory/memory-view.js";
 
 function rec(over: Partial<MemReadRecord> & { fields: Record<string, unknown> }): MemReadRecord {
   return {

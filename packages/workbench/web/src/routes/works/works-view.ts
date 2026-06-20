@@ -4,7 +4,7 @@
 // relative-time + initials formatters, and the filter/count vocabularies. No JSX, no React.
 import type { RunSummary } from "@agentry/workbench-shared";
 import { workSlug } from "@agentry/workbench-shared";
-import type { DotStatus, FlowTaskStatus } from "../ui/index.js";
+import type { DotStatus, FlowTaskStatus } from "../../ui/index.js";
 
 type TaskCounts = RunSummary["taskCounts"];
 type TaskStatus = keyof TaskCounts;

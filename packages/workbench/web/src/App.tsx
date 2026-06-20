@@ -6,10 +6,10 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { fetchContext } from "./api/index.js";
-import { ApprovalsBanner } from "./routes/ApprovalsBanner.js";
-import { Gates } from "./routes/Gates.js";
-import { Memory } from "./routes/Memory.js";
-import { Works } from "./routes/Works.js";
+import { ApprovalsBanner } from "./routes/approvals/ApprovalsBanner.js";
+import { Gates } from "./routes/gates/Gates.js";
+import { Memory } from "./routes/memory/Memory.js";
+import { Works } from "./routes/works/Works.js";
 import { WorkLayout } from "./routes/work/WorkLayout.js";
 
 import "./ui/tokens.css";

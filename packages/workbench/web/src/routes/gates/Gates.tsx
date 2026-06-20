@@ -6,9 +6,9 @@
 // resolves a gate. The view-model (OpenGateItem → GateRow), the deep-link helpers, and the inline styles
 // live in `gates-view`.
 import { useEffect, useState } from "react";
-import { ApiError, fetchGates } from "../api/index.js";
-import type { OpenGateItem } from "../api/index.js";
-import { Button, EmptyState } from "../ui/index.js";
+import { ApiError, fetchGates } from "../../api/index.js";
+import type { OpenGateItem } from "../../api/index.js";
+import { Button, EmptyState } from "../../ui/index.js";
 import {
   GATE,
   GATE_DETAIL,

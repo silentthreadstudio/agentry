@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PermissionRequest, WsMessage } from "@agentry/workbench-shared";
-import { applyPermissionMessage, mergeSnapshot } from "../routes/permissions-store.js";
+import { applyPermissionMessage, mergeSnapshot } from "../routes/approvals/permissions-store.js";
 
 function req(id: string, over: Partial<PermissionRequest> = {}): PermissionRequest {
   return {

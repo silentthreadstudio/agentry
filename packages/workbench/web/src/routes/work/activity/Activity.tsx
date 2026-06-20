@@ -6,8 +6,8 @@
 // The view-model (EventView → TimelineRow) + the formatters + the inline styles live in `activity-view`.
 import { useEffect, useMemo, useState } from "react";
 import type { EventView } from "@agentry/workbench-shared";
-import { ApiError, fetchEvents } from "../../api/index.js";
-import { EmptyState } from "../../ui/index.js";
+import { ApiError, fetchEvents } from "../../../api/index.js";
+import { EmptyState } from "../../../ui/index.js";
 import {
   DAYLBL,
   EV,

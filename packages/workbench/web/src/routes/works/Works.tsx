@@ -5,8 +5,8 @@
 // decision. Loading / empty / error are all designed (empty states are good states, VISION §3).
 import { useEffect, useMemo, useState } from "react";
 import type { RunSummary } from "@agentry/workbench-shared";
-import { ApiError, fetchWorks } from "../api/index.js";
-import { Card, EmptyState, SearchInput, StatusDot } from "../ui/index.js";
+import { ApiError, fetchWorks } from "../../api/index.js";
+import { Card, EmptyState, SearchInput, StatusDot } from "../../ui/index.js";
 import {
   AURA_HUE,
   COUNT_ORDER,
