@@ -42,6 +42,11 @@ export function CommentRail({
   // Split the flat list into human threads + nested agent replies (Phase 2b). Human comments are the
   // top-level cards; agent `channel_reply` entries nest under the human comment they answer (`replyTo`).
   const { threads, orphanReplies } = threadsOf(comments);
+  // Display order: newest first (reverse the chronological store), then OPEN above RESOLVED (a stable sort
+  // keeps newest-first within each group). Fixes "new comments showed at the bottom, under resolved ones".
+  const orderedThreads = [...threads]
+    .reverse()
+    .sort((a, b) => Number(a.comment.resolved) - Number(b.comment.resolved));
 
   // Hydrate the on-disk comments on mount (and on a run/doc switch): seed the store from
   // `.review/<gate>.annotations.json` so a fresh page load shows comments that already exist on disk, not
@@ -76,7 +81,7 @@ export function CommentRail({
           </div>
         ) : (
           <>
-            {threads.map((t) => (
+            {orderedThreads.map((t) => (
               <CommentCard key={t.comment.id} runId={runId} docId={docId} thread={t} />
             ))}
             {orphanReplies.length > 0 ? (
