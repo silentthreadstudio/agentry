@@ -19,6 +19,23 @@ import { registerTaskTools } from "./tools/task-tools.js";
 import { registerMonitorTools } from "./tools/monitor-tools.js";
 import { registerAgentTools } from "./tools/agent-tools.js";
 import { registerReviewTools } from "./tools/review-tools.js";
+import { ChannelBridge } from "./channel/channel-bridge.js";
+import type { ChannelNotification } from "./channel/channel-event.js";
+
+// The experimental capability key for the live human↔agent channel. Declaring it is load-safe and
+// additive (the spike proved: ignored without the `--dangerously-load-development-channels` dev
+// flag, never breaks normal tool loading — AC1). The notification METHOD has no capability gate, so
+// the bridge emits without throwing even when the session didn't load flow as a channel.
+const CHANNEL_CAPABILITY = "claude/channel";
+const CHANNEL_METHOD = "notifications/claude/channel";
+
+// Tells Claude how to treat the channel events the bridge pushes — what the `<channel …>` tag means
+// and what to do with it. Carried on the server's `instructions` so it reaches the session on load.
+const CHANNEL_INSTRUCTIONS =
+  'Events tagged `<channel source="agentry-flow" run_id=… doc=… decision=…>` are live human review ' +
+  "comments left in the Agentry Workbench on a run's artifact. Read them and act: address the comment " +
+  "by editing the referenced doc (respecting locks/version) and/or resolving it. The run_id and doc " +
+  "identify which artifact; decision is approve|changes|question.";
 
 // The shared service context every tool family receives — the file-store adapters (the only state
 // holders, AC6) plus the resolved cwd. T02–T05's `register*Tools` close over this; the run is NOT
@@ -85,13 +102,42 @@ export async function main(): Promise<void> {
   const cwd = process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd();
   const services = createServices(cwd);
 
-  const server = new McpServer({ name: "agentry-flow", version: "0.1.0" });
+  const server = new McpServer(
+    { name: "agentry-flow", version: "0.1.0" },
+    {
+      // Additive + load-safe (AC1): declared experimental capability is ignored without the dev flag.
+      // `tools: {}` is the existing default; declaring it explicitly here keeps the four tool families
+      // advertised exactly as before alongside the new channel capability.
+      capabilities: { experimental: { [CHANNEL_CAPABILITY]: {} }, tools: {} },
+      instructions: CHANNEL_INSTRUCTIONS,
+    },
+  );
   registerTaskTools(server, services);
   registerMonitorTools(server, services);
   registerAgentTools(server, services);
   registerReviewTools(server, services);
 
   await server.connect(new StdioServerTransport());
+
+  // Channel bridge (Phase 1 comment→push): watch the review sidecars and push new human comments as
+  // `notifications/claude/channel`. Started AFTER connect so emits land on a live transport. Emitting
+  // is unconditional — silently dropped if the session didn't load flow as a channel (spike-proven),
+  // so the bridge needs no enablement branch. The custom notification method isn't in the SDK's typed
+  // notification union, so the emit is cast at this single seam (the low-level `Server` is at
+  // `McpServer.server`); the bridge itself stays SDK-agnostic behind the `EmitFn`.
+  const emit = async (n: ChannelNotification): Promise<void> => {
+    await server.server.notification({
+      method: CHANNEL_METHOD,
+      params: { content: n.content, meta: n.meta },
+    } as Parameters<typeof server.server.notification>[0]);
+  };
+  const bridge = new ChannelBridge(cwd, services.reviews, emit);
+  bridge.start();
+
+  // Tear the watcher down on transport close so a server restart doesn't leak a dangling watcher.
+  server.server.onclose = () => {
+    void bridge.stop();
+  };
 }
 
 // Entry point: connect the stdio transport ONLY when invoked directly (`node dist/index.js`), never

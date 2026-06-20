@@ -16,6 +16,7 @@
   "dependencies": {
     "@agentry/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "chokidar": "^4.0.3",
     "yaml": "^2.5.0",
     "zod": "^3.23.0"
   },
