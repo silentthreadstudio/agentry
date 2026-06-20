@@ -19,7 +19,8 @@
 //                         exactly as on disk).
 //   - run id paths      → FLOW's `runDir` (the traversal-safe layout, ADR-005 §4).
 //   - the sidecar       → FLOW's `ReviewComment` shape + the `.review/<gate>.annotations.json` JSON
-//                         layout (JsonReviewStore's exact format).
+//                         layout (JsonReviewStore's exact format). The READ-back half reuses the single
+//                         parse-tolerant `readSidecar` (`review-sidecar-source.ts`) — one parser, not two.
 // `cwd` (the project root) is injected and threaded on every join — no ambient cwd, mirroring FLOW.
 //
 // It does NOT re-serialize markdown: the body it writes arrives already-normalized (ADR-004; task 14
@@ -32,6 +33,7 @@ import { computeVersion } from "@agentry/flow/domain/version";
 import { ReviewComment } from "@agentry/flow/domain/review";
 import { runDir } from "@agentry/flow/resolution/run-pointer";
 import { assertSafeSegment } from "@agentry/flow/domain/ids";
+import { readSidecar } from "./review-sidecar-source.js";
 
 // FLOW's frontmatter splitter (task-file-store.ts) — the SAME pattern, reused not forked. Group 1 =
 // the YAML between the first `---` fence; group 2 = the remaining body (which, for a workbench task
@@ -100,7 +102,7 @@ export class FlowWriter implements FlowWriterPort {
     const validated = ReviewComment.parse(comment);
     const dir = join(runDir(this.cwd, run), ".review");
     const file = join(dir, `${gate}.annotations.json`);
-    const existing = this.readComments(file);
+    const existing = readSidecar(file);
     mkdirSync(dir, { recursive: true });
     // The SAME on-disk layout JsonReviewStore writes (2-space JSON + trailing newline), so the two
     // writers of this sidecar stay byte-compatible.
@@ -112,7 +114,7 @@ export class FlowWriter implements FlowWriterPort {
   resolveComment(run: string, gate: string, commentId: string): boolean {
     assertSafeSegment(gate);
     const file = join(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
-    const existing = this.readComments(file);
+    const existing = readSidecar(file);
     let found = false;
     const next = existing.map((c) => {
       if (c.id !== commentId) return c;
@@ -184,18 +186,5 @@ export class FlowWriter implements FlowWriterPort {
       throw new Error(`flow-writer: no task file for ${target.taskNo} in run ${run} to write`);
     }
     return join(runDir(this.cwd, run), `${target.kind}.md`);
-  }
-
-  // Read the gate sidecar back, validating each comment through `ReviewComment` (a corrupt/partial
-  // sidecar reads as empty rather than throwing — the JsonReviewStore tolerance).
-  private readComments(file: string): ReviewComment[] {
-    if (!existsSync(file)) return [];
-    try {
-      const raw = JSON.parse(readFileSync(file, "utf8"));
-      if (!Array.isArray(raw)) return [];
-      return raw.map((c) => ReviewComment.parse(c));
-    } catch {
-      return [];
-    }
   }
 }

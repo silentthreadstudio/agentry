@@ -17320,8 +17320,8 @@ var PermissionWatcher = class {
 
 // src/persistence/flow-writer.ts
 var import_yaml3 = __toESM(require_dist(), 1);
-import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync5, readdirSync as readdirSync3, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join8 } from "node:path";
+import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join9 } from "node:path";
 
 // ../../flow/src/domain/review.ts
 var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
@@ -17351,6 +17351,39 @@ function isHumanComment(comment) {
   return comment.origin !== "agent";
 }
 
+// src/persistence/review-sidecar-source.ts
+import { existsSync as existsSync3, readFileSync as readFileSync5, readdirSync as readdirSync3 } from "node:fs";
+import { join as join8 } from "node:path";
+var SIDECAR_SUFFIX = ".annotations.json";
+var FsReviewSidecarSource = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  // The gate stems present under one run's `.review/` (sorted, stable), or `[]` when the dir is absent.
+  // The stem is the filename minus the `.annotations.json` suffix — the gate key the inbox folds over.
+  listGates(run) {
+    const dir = join8(runDir(this.cwd, run), ".review");
+    if (!existsSync3(dir)) return [];
+    return readdirSync3(dir).filter((file) => file.endsWith(SIDECAR_SUFFIX)).map((file) => file.slice(0, -SIDECAR_SUFFIX.length)).sort();
+  }
+  // One gate's validated `ReviewComment[]`, or `[]` when the sidecar is absent/corrupt. The single
+  // parse-tolerant reader (see header) — every sidecar read in the package routes through here.
+  commentsFor(run, gate) {
+    const file = join8(runDir(this.cwd, run), ".review", `${gate}${SIDECAR_SUFFIX}`);
+    return readSidecar(file);
+  }
+};
+function readSidecar(file) {
+  if (!existsSync3(file)) return [];
+  try {
+    const raw = JSON.parse(readFileSync5(file, "utf8"));
+    if (!Array.isArray(raw)) return [];
+    return raw.map((c) => ReviewComment.parse(c));
+  } catch {
+    return [];
+  }
+}
+
 // src/persistence/flow-writer.ts
 var FRONTMATTER3 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 var FlowWriter = class {
@@ -17359,12 +17392,12 @@ var FlowWriter = class {
   }
   readArtifact(run, target) {
     const path = this.artifactPath(run, target);
-    if (path === void 0 || !existsSync3(path)) return void 0;
-    return this.parse(readFileSync5(path, "utf8"));
+    if (path === void 0 || !existsSync4(path)) return void 0;
+    return this.parse(readFileSync6(path, "utf8"));
   }
   writeArtifact(run, target, frontmatter, body) {
     const path = this.resolveWritePath(run, target);
-    mkdirSync3(join8(path, ".."), { recursive: true });
+    mkdirSync3(join9(path, ".."), { recursive: true });
     const { rendered, version } = this.render(frontmatter, body);
     writeFileSync3(path, rendered);
     return version;
@@ -17372,9 +17405,9 @@ var FlowWriter = class {
   appendComment(run, gate, comment) {
     assertSafeSegment(gate);
     const validated = ReviewComment.parse(comment);
-    const dir = join8(runDir(this.cwd, run), ".review");
-    const file = join8(dir, `${gate}.annotations.json`);
-    const existing = this.readComments(file);
+    const dir = join9(runDir(this.cwd, run), ".review");
+    const file = join9(dir, `${gate}.annotations.json`);
+    const existing = readSidecar(file);
     mkdirSync3(dir, { recursive: true });
     writeFileSync3(file, `${JSON.stringify([...existing, validated], null, 2)}
 `);
@@ -17383,8 +17416,8 @@ var FlowWriter = class {
   // SAME JsonReviewStore layout. Read-modify-write by id: absent id ⇒ false (no write), found ⇒ true.
   resolveComment(run, gate, commentId) {
     assertSafeSegment(gate);
-    const file = join8(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
-    const existing = this.readComments(file);
+    const file = join9(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    const existing = readSidecar(file);
     let found = false;
     const next = existing.map((c) => {
       if (c.id !== commentId) return c;
@@ -17432,13 +17465,13 @@ ${body}
   // undefined for a task whose file does not yet exist (an absent artifact reads as undefined).
   artifactPath(run, target) {
     const dir = runDir(this.cwd, run);
-    if ("kind" in target) return join8(dir, `${target.kind}.md`);
+    if ("kind" in target) return join9(dir, `${target.kind}.md`);
     assertSafeSegment(target.taskNo);
-    const tasksDir = join8(dir, "tasks");
-    if (!existsSync3(tasksDir)) return void 0;
+    const tasksDir = join9(dir, "tasks");
+    if (!existsSync4(tasksDir)) return void 0;
     const prefix = `${target.taskNo}-`;
-    const file = readdirSync3(tasksDir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
-    return file ? join8(tasksDir, file) : void 0;
+    const file = readdirSync4(tasksDir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
+    return file ? join9(tasksDir, file) : void 0;
   }
   // The path to WRITE a target. For a task we never write to a fresh name (the WriteService only
   // writes after a successful read at the same target, so the file exists) — but if FLOW renamed the
@@ -17450,18 +17483,33 @@ ${body}
     if ("taskNo" in target) {
       throw new Error(`flow-writer: no task file for ${target.taskNo} in run ${run} to write`);
     }
-    return join8(runDir(this.cwd, run), `${target.kind}.md`);
+    return join9(runDir(this.cwd, run), `${target.kind}.md`);
   }
-  // Read the gate sidecar back, validating each comment through `ReviewComment` (a corrupt/partial
-  // sidecar reads as empty rather than throwing — the JsonReviewStore tolerance).
-  readComments(file) {
-    if (!existsSync3(file)) return [];
+};
+
+// src/persistence/event-source.ts
+import { existsSync as existsSync5, readFileSync as readFileSync7 } from "node:fs";
+import { join as join10 } from "node:path";
+var FsEventSource = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  // `events.jsonl` split into lines, or `[]` when absent. The application indexes the lines (the feed key)
+  // and runs FLOW's `parseLogLine` over each — this adapter does no line interpretation.
+  eventLines(run) {
+    const log = join10(runDir(this.cwd, run), "events.jsonl");
+    if (!existsSync5(log)) return [];
+    return readFileSync7(log, "utf8").split("\n");
+  }
+  // `run-state.json` parsed to loose data, or `undefined` when absent/unparseable. A corrupt file reads as
+  // `undefined` (the application surfaces it as an empty roster) rather than throwing.
+  runState(run) {
+    const path = join10(runDir(this.cwd, run), "run-state.json");
+    if (!existsSync5(path)) return void 0;
     try {
-      const raw = JSON.parse(readFileSync5(file, "utf8"));
-      if (!Array.isArray(raw)) return [];
-      return raw.map((c) => ReviewComment.parse(c));
+      return JSON.parse(readFileSync7(path, "utf8"));
     } catch {
-      return [];
+      return void 0;
     }
   }
 };
@@ -17768,15 +17816,13 @@ function mintCommentId() {
 }
 
 // src/application/event-store.ts
-import { existsSync as existsSync4, readFileSync as readFileSync6 } from "node:fs";
-import { join as join9 } from "node:path";
 var EventStore = class {
-  // `cwd` (the project root) is threaded on every fs path — no ambient cwd, mirroring FsWorkRepository.
-  // The repository provides the run list (the SAME `.agentry/work/` listing the Works home uses), so the
-  // fold and the Works list never disagree about which runs exist.
-  constructor(repository, cwd) {
+  // The run list comes from the repository (the SAME `.agentry/work/` listing the Works home uses, so the
+  // fold and the Works list never disagree about which runs exist); the two run-level files come from the
+  // injected `EventSource` port — no fs here, the adapter owns the bytes (ADR-001).
+  constructor(repository, source) {
     this.repository = repository;
-    this.cwd = cwd;
+    this.source = source;
   }
   // The one fold. With no `runId`, fold EVERY run's events into a single cross-run timeline (the Agents
   // projection); with a `runId`, fold ONLY that run (the per-work Activity feed). Both come from the SAME
@@ -17809,35 +17855,25 @@ var EventStore = class {
     }
     return views;
   }
-  // Fold one run's `events.jsonl` into the accumulator. Each kept line becomes one `EventView` with a
+  // Fold one run's `events.jsonl` lines into the accumulator. Each kept line becomes one `EventView` with a
   // stable feed key (run + line index — unique within the fold, stable across reads of an unchanged file).
   // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session hook line) is dropped.
   // A hook backstop line is projected into the closed `node-enter` shape so the feed renders one event
   // vocabulary — its `kind` becomes the node label, its `agent` the actor (the hook's only structured fields).
   foldRun(run, into) {
-    const log = join9(runDir(this.cwd, run), "events.jsonl");
-    if (!existsSync4(log)) return;
-    const lines = readFileSync6(log, "utf8").split("\n");
-    lines.forEach((line, index) => {
+    this.source.eventLines(run).forEach((line, index) => {
       const parsed = parseLogLine(line);
       if (parsed.kind === "skip") return;
       const event = parsed.kind === "flow" ? parsed.event : hookToEvent(parsed.line);
       into.push({ id: `${run}#${index}`, event });
     });
   }
-  // Read one run's roster off `run-state.json`. The traversal-safe `runDir` asserts the run segment before
-  // any fs touch. A corrupt/absent file, or one whose `agents` isn't an object, yields no entries. Each
-  // agent's `state` is validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent
-  // rather than surfacing an ill-typed state.
+  // Derive one run's roster from the source's parsed `run-state.json`. A corrupt/absent file (the source
+  // returns `undefined`), or one whose `agents` isn't an object, yields no entries. Each agent's `state` is
+  // validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent rather than
+  // surfacing an ill-typed state.
   rosterOf(run) {
-    const path = join9(runDir(this.cwd, run), "run-state.json");
-    if (!existsSync4(path)) return [];
-    let raw;
-    try {
-      raw = JSON.parse(readFileSync6(path, "utf8"));
-    } catch {
-      return [];
-    }
+    const raw = this.source.runState(run);
     const agents = isRecord(raw) ? raw.agents : void 0;
     if (!isRecord(agents)) return [];
     const out = [];
@@ -17850,11 +17886,6 @@ var EventStore = class {
     }
     return out;
   }
-  // The cross-run root the fold lists under (exposed for the route's empty-state check). `workRoot`
-  // mirrors FsWorkRepository's listing root, so an absent root simply yields no runs (a fresh project).
-  get root() {
-    return workRoot(this.cwd);
-  }
 };
 function hookToEvent(line) {
   return { ts: line.ts, type: "node-enter", node: line.kind, agent: line.agent };
@@ -17864,13 +17895,12 @@ function isRecord(value) {
 }
 
 // src/application/gate-inbox.ts
-import { existsSync as existsSync5, readFileSync as readFileSync7, readdirSync as readdirSync4 } from "node:fs";
-import { join as join10 } from "node:path";
 var GateInbox = class {
-  // `cwd` (the project root) is threaded on every fs path — no ambient cwd (mirrors FsWorkRepository).
-  constructor(repository, cwd) {
+  // The run list comes from the repository (mirrors the Works home listing); the sidecar reads come from
+  // the injected `ReviewSidecarSource` port — no fs here, the adapter owns the bytes + the parser (ADR-001).
+  constructor(repository, sidecars) {
     this.repository = repository;
-    this.cwd = cwd;
+    this.sidecars = sidecars;
   }
   // The open waiting-on-you list across every run (or one run when `runId` is given). A gate is OPEN when
   // its sidecar holds at least one unresolved comment. Runs are scanned in `listRuns` order (stable); a run
@@ -17880,7 +17910,8 @@ var GateInbox = class {
     const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
     const items = [];
     for (const run of runs) {
-      for (const { gate, comments } of this.gatesOf(run)) {
+      for (const gate of this.sidecars.listGates(run)) {
+        const comments = this.sidecars.commentsFor(run, gate);
         const openComments = comments.filter((c) => isHumanComment(c) && !c.resolved);
         if (openComments.length === 0) continue;
         items.push({ run, gate, docId: gate, comments: openComments, decision: null });
@@ -17890,37 +17921,10 @@ var GateInbox = class {
   }
   // ALL comments (open + resolved) for one run+gate — the doc-level read the comment rail hydrates from on
   // load (the bidirectional AI↔Dashboard loop, VISION §6). The gate key IS the docId (the SAME key the
-  // `/comment` POST writes under). Reuses `readSidecar` (no second parser); an absent sidecar ⇒ `[]` (clean
+  // `/comment` POST writes under). Delegates to the source's single parser; an absent sidecar ⇒ `[]` (clean
   // empty), distinct from `open()` which filters to unresolved and drops resolved-empty gates.
   commentsFor(run, gate) {
-    const file = join10(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
-    if (!existsSync5(file)) return [];
-    return this.readSidecar(file);
-  }
-  // Every gate sidecar in one run: the `<gate>.annotations.json` files under `.review/`, each parsed into
-  // its `ReviewComment[]`. The gate name is the filename stem. An absent `.review/` dir ⇒ no gates.
-  gatesOf(run) {
-    const reviewDir = join10(runDir(this.cwd, run), ".review");
-    if (!existsSync5(reviewDir)) return [];
-    const out = [];
-    for (const file of readdirSync4(reviewDir).sort()) {
-      if (!file.endsWith(".annotations.json")) continue;
-      const gate = file.slice(0, -".annotations.json".length);
-      out.push({ gate, comments: this.readSidecar(join10(reviewDir, file)) });
-    }
-    return out;
-  }
-  // Parse one sidecar into validated `ReviewComment[]`. Reuses FLOW's closed schema; a non-array or a file
-  // that fails to parse reads as empty (the SAME tolerance FLOW's review store gives — a half-written
-  // sidecar never throws here). A single ill-formed comment drops the whole file to empty, matching FLOW.
-  readSidecar(file) {
-    try {
-      const raw = JSON.parse(readFileSync7(file, "utf8"));
-      if (!Array.isArray(raw)) return [];
-      return raw.map((c) => ReviewComment.parse(c));
-    } catch {
-      return [];
-    }
+    return this.sidecars.commentsFor(run, gate);
   }
 };
 
@@ -18201,18 +18205,155 @@ function parseHostLabel(hostHeader) {
   return leading;
 }
 
-// src/persistence/permission-writer.ts
-import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join13 } from "node:path";
-function writeVerdict(projectRoot, requestId, behavior) {
-  assertSafeSegment(requestId);
-  const dir = permissionsDir(projectRoot);
-  mkdirSync4(dir, { recursive: true });
-  const record = { request_id: requestId, behavior };
-  writeFileSync4(join13(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
+// src/transport/http-kit.ts
+function guardGet(method, res, run) {
+  if (method !== "GET") {
+    sendJson(res, 405, { error: "method_not_allowed" });
+    return true;
+  }
+  run();
+  return true;
+}
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function reject(res, status, error, extra = {}) {
+  sendJson(res, status, { error, ...extra });
+  return true;
+}
+function sendJson(res, status, body) {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+}
+var MAX_BODY_BYTES = 4 * 1024 * 1024;
+function readJsonBody(req) {
+  return new Promise((resolve4, rejectPromise) => {
+    let size = 0;
+    const chunks = [];
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        rejectPromise(new Error("payload_too_large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      const text = Buffer.concat(chunks).toString("utf8").trim();
+      if (text.length === 0) return resolve4({});
+      try {
+        resolve4(JSON.parse(text));
+      } catch {
+        rejectPromise(new Error("invalid_json"));
+      }
+    });
+    req.on("error", rejectPromise);
+  });
 }
 
-// src/transport/routes.ts
+// src/transport/route-match.ts
+function runParam(url) {
+  const run = url.searchParams.get("run");
+  return run !== null && run.length > 0 ? run : void 0;
+}
+function resolveRun(reader, label) {
+  return resolveSlug(label, reader.listRuns());
+}
+function matchWorkGraph(path) {
+  const m = /^\/api\/work\/([^/]+)\/graph$/.exec(path);
+  if (!m || m[1] === void 0) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return null;
+  }
+}
+function matchWorkDoc(path) {
+  const m = /^\/api\/work\/([^/]+)\/doc\/([^/]+)$/.exec(path);
+  if (!m || m[1] === void 0 || m[2] === void 0) return null;
+  try {
+    return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };
+  } catch {
+    return null;
+  }
+}
+function matchWorkReview(path) {
+  const m = /^\/api\/work\/([^/]+)\/review\/([^/]+)$/.exec(path);
+  if (!m || m[1] === void 0 || m[2] === void 0) return null;
+  try {
+    return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };
+  } catch {
+    return null;
+  }
+}
+function matchWritePath(path) {
+  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover|status)$/.exec(path);
+  if (!m || m[1] === void 0 || m[2] === void 0) return null;
+  try {
+    return { kind: m[2], runId: decodeURIComponent(m[1]) };
+  } catch {
+    return null;
+  }
+}
+function matchPermissionVerdict(path) {
+  const m = /^\/api\/permissions\/([^/]+)$/.exec(path);
+  if (!m || m[1] === void 0) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return null;
+  }
+}
+
+// src/transport/doc-model.ts
+function reloadDoc(reader, runId, target) {
+  const read = reader.read(runId);
+  if (!read) return void 0;
+  const found = read.docs.find((d) => d.id === docIdOf(target));
+  return found ? toDocModel(found) : void 0;
+}
+function docIdOf(target) {
+  return "kind" in target ? target.kind : `task-${target.taskNo}`;
+}
+function toDocModel(doc) {
+  const { version: _stamped, ...sansVersion } = doc.frontmatter;
+  return {
+    frontmatter: doc.frontmatter,
+    body: doc.body,
+    version: computeVersion(doc.body, sansVersion),
+    lock: lockOf(doc.frontmatter)
+  };
+}
+function lockOf(frontmatter) {
+  if (frontmatter.status !== "in-progress") return null;
+  const by = frontmatter.lockedBy;
+  const assignee = frontmatter.assignee;
+  const holder = typeof by === "string" && by.length > 0 ? by : typeof assignee === "string" && assignee.length > 0 ? assignee : "an agent";
+  const acquiredAt = typeof frontmatter.updatedAt === "string" ? frontmatter.updatedAt : "";
+  return { by: holder, acquiredAt };
+}
+function targetFromDocId(raw) {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  if (raw === "spec" || raw === "plan") return { kind: raw };
+  if (raw.startsWith("adr-")) return "read_only";
+  if (raw.startsWith("task-")) {
+    const taskNo = raw.slice("task-".length);
+    return taskNo.length > 0 ? { taskNo } : null;
+  }
+  return null;
+}
+function taskNoFromTakeover(body) {
+  const target = body.target;
+  if (typeof target === "string" && target.startsWith("task-")) {
+    const taskNo2 = target.slice("task-".length);
+    return taskNo2.length > 0 ? taskNo2 : null;
+  }
+  const taskNo = body.taskNo;
+  return typeof taskNo === "string" && taskNo.length > 0 ? taskNo : null;
+}
+
+// src/transport/read-routes.ts
 function handleApiRequest(req, res, reader, context) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -18250,6 +18391,16 @@ function handleApiRequest(req, res, reader, context) {
   }
   return false;
 }
+function listWorks(reader) {
+  const summaries = [];
+  for (const runId of reader.listRuns()) {
+    const read = reader.read(runId);
+    if (read) summaries.push(read.summary);
+  }
+  return summaries;
+}
+
+// src/transport/reader-routes.ts
 function handleReaderRequest(req, res, deps) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -18293,10 +18444,8 @@ function handleReaderRequest(req, res, deps) {
   }
   return false;
 }
-function runParam(url) {
-  const run = url.searchParams.get("run");
-  return run !== null && run.length > 0 ? run : void 0;
-}
+
+// src/transport/write-routes.ts
 async function handlePostRequest(req, res, deps) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -18319,53 +18468,21 @@ async function handlePostRequest(req, res, deps) {
     sendJson(res, 400, { error: "invalid_json" });
     return true;
   }
-  if (write.kind === "comment") return handleComment(res, deps, runId, body);
-  if (write.kind === "resolve") return handleResolve(res, deps, runId, body);
-  if (write.kind === "status") return handleStatus(res, deps, runId, body);
-  if (write.kind === "artifact") return handleArtifact(res, deps, runId, body);
-  return handleTakeover(res, deps, runId, body);
-}
-async function handlePermissionRequest(req, res, deps) {
-  const url = new URL(req.url ?? "/", "http://localhost");
-  const path = url.pathname;
-  const method = req.method ?? "GET";
-  if (path === "/api/permissions") {
-    return guardGet(method, res, () => sendJson(res, 200, deps.watcher.current()));
-  }
-  const requestId = matchPermissionVerdict(path);
-  if (requestId === null) return false;
-  if (method !== "POST") {
-    sendJson(res, 405, { error: "method_not_allowed" });
-    return true;
-  }
-  let body;
-  try {
-    body = await readJsonBody(req);
-  } catch {
-    sendJson(res, 400, { error: "invalid_json" });
-    return true;
-  }
-  return handleVerdict(res, deps, requestId, body);
-}
-function handleVerdict(res, deps, requestId, body) {
-  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
-  const behavior = body.behavior;
-  if (behavior !== "allow" && behavior !== "deny") return reject(res, 400, "invalid_behavior");
-  try {
-    writeVerdict(deps.projectRoot, requestId, behavior);
-  } catch {
-    return reject(res, 400, "invalid_request_id");
-  }
-  sendJson(res, 200, { ok: true });
-  return true;
-}
-function matchPermissionVerdict(path) {
-  const m = /^\/api\/permissions\/([^/]+)$/.exec(path);
-  if (!m || m[1] === void 0) return null;
-  try {
-    return decodeURIComponent(m[1]);
-  } catch {
-    return null;
+  switch (write.kind) {
+    case "comment":
+      return handleComment(res, deps, runId, body);
+    case "resolve":
+      return handleResolve(res, deps, runId, body);
+    case "status":
+      return handleStatus(res, deps, runId, body);
+    case "artifact":
+      return handleArtifact(res, deps, runId, body);
+    case "takeover":
+      return handleTakeover(res, deps, runId, body);
+    default: {
+      const _exhaustive = write.kind;
+      return _exhaustive;
+    }
   }
 }
 function handleComment(res, deps, runId, body) {
@@ -18431,7 +18548,7 @@ function handleArtifact(res, deps, runId, body) {
   if (typeof newBody !== "string") return reject(res, 400, "missing_newBody");
   const outcome = deps.writeService.writeArtifact({ run: runId, target, baseVersion, newBody });
   if (outcome.ok) {
-    const doc = reloadDoc(deps, runId, target);
+    const doc = reloadDoc(deps.reader, runId, target);
     if (doc) {
       const message = { type: "doc-updated", docId: docIdOf(target), doc };
       deps.transport.push(runId, message);
@@ -18456,150 +18573,57 @@ function handleTakeover(res, deps, runId, body) {
   const outcome = deps.writeService.takeOver({ run: runId, taskNo, by });
   if (!outcome.ok) return reject(res, 404, "not_found");
   const target = { taskNo };
-  const doc = reloadDoc(deps, runId, target);
+  const doc = reloadDoc(deps.reader, runId, target);
   if (doc) deps.transport.push(runId, { type: "doc-updated", docId: docIdOf(target), doc });
   sendJson(res, 200, { ok: true });
   return true;
 }
-function reloadDoc(deps, runId, target) {
-  const read = deps.reader.read(runId);
-  if (!read) return void 0;
-  const found = read.docs.find((d) => d.id === docIdOf(target));
-  return found ? toDocModel(found) : void 0;
+
+// src/persistence/permission-writer.ts
+import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join13 } from "node:path";
+function writeVerdict(projectRoot, requestId, behavior) {
+  assertSafeSegment(requestId);
+  const dir = permissionsDir(projectRoot);
+  mkdirSync4(dir, { recursive: true });
+  const record = { request_id: requestId, behavior };
+  writeFileSync4(join13(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
 }
-function docIdOf(target) {
-  return "kind" in target ? target.kind : `task-${target.taskNo}`;
-}
-function toDocModel(doc) {
-  const { version: _stamped, ...sansVersion } = doc.frontmatter;
-  return {
-    frontmatter: doc.frontmatter,
-    body: doc.body,
-    version: computeVersion(doc.body, sansVersion),
-    lock: lockOf(doc.frontmatter)
-  };
-}
-function lockOf(frontmatter) {
-  if (frontmatter.status !== "in-progress") return null;
-  const by = frontmatter.lockedBy;
-  const assignee = frontmatter.assignee;
-  const holder = typeof by === "string" && by.length > 0 ? by : typeof assignee === "string" && assignee.length > 0 ? assignee : "an agent";
-  const acquiredAt = typeof frontmatter.updatedAt === "string" ? frontmatter.updatedAt : "";
-  return { by: holder, acquiredAt };
-}
-function listWorks(reader) {
-  const summaries = [];
-  for (const runId of reader.listRuns()) {
-    const read = reader.read(runId);
-    if (read) summaries.push(read.summary);
+
+// src/transport/permission-routes.ts
+async function handlePermissionRequest(req, res, deps) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const path = url.pathname;
+  const method = req.method ?? "GET";
+  if (path === "/api/permissions") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.watcher.current()));
   }
-  return summaries;
-}
-function resolveRun(reader, label) {
-  return resolveSlug(label, reader.listRuns());
-}
-function matchWorkGraph(path) {
-  const m = /^\/api\/work\/([^/]+)\/graph$/.exec(path);
-  if (!m || m[1] === void 0) return null;
-  try {
-    return decodeURIComponent(m[1]);
-  } catch {
-    return null;
-  }
-}
-function matchWorkDoc(path) {
-  const m = /^\/api\/work\/([^/]+)\/doc\/([^/]+)$/.exec(path);
-  if (!m || m[1] === void 0 || m[2] === void 0) return null;
-  try {
-    return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };
-  } catch {
-    return null;
-  }
-}
-function matchWorkReview(path) {
-  const m = /^\/api\/work\/([^/]+)\/review\/([^/]+)$/.exec(path);
-  if (!m || m[1] === void 0 || m[2] === void 0) return null;
-  try {
-    return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };
-  } catch {
-    return null;
-  }
-}
-function matchWritePath(path) {
-  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover|status)$/.exec(path);
-  if (!m || m[1] === void 0 || m[2] === void 0) return null;
-  try {
-    return {
-      kind: m[2],
-      runId: decodeURIComponent(m[1])
-    };
-  } catch {
-    return null;
-  }
-}
-function targetFromDocId(raw) {
-  if (typeof raw !== "string" || raw.length === 0) return null;
-  if (raw === "spec" || raw === "plan") return { kind: raw };
-  if (raw.startsWith("adr-")) return "read_only";
-  if (raw.startsWith("task-")) {
-    const taskNo = raw.slice("task-".length);
-    return taskNo.length > 0 ? { taskNo } : null;
-  }
-  return null;
-}
-function taskNoFromTakeover(body) {
-  const target = body.target;
-  if (typeof target === "string" && target.startsWith("task-")) {
-    const taskNo2 = target.slice("task-".length);
-    return taskNo2.length > 0 ? taskNo2 : null;
-  }
-  const taskNo = body.taskNo;
-  return typeof taskNo === "string" && taskNo.length > 0 ? taskNo : null;
-}
-var MAX_BODY_BYTES = 4 * 1024 * 1024;
-function readJsonBody(req) {
-  return new Promise((resolve4, rejectPromise) => {
-    let size = 0;
-    const chunks = [];
-    req.on("data", (chunk) => {
-      size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
-        rejectPromise(new Error("payload_too_large"));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => {
-      const text = Buffer.concat(chunks).toString("utf8").trim();
-      if (text.length === 0) return resolve4({});
-      try {
-        resolve4(JSON.parse(text));
-      } catch {
-        rejectPromise(new Error("invalid_json"));
-      }
-    });
-    req.on("error", rejectPromise);
-  });
-}
-function guardGet(method, res, run) {
-  if (method !== "GET") {
+  const requestId = matchPermissionVerdict(path);
+  if (requestId === null) return false;
+  if (method !== "POST") {
     sendJson(res, 405, { error: "method_not_allowed" });
     return true;
   }
-  run();
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    sendJson(res, 400, { error: "invalid_json" });
+    return true;
+  }
+  return handleVerdict(res, deps, requestId, body);
+}
+function handleVerdict(res, deps, requestId, body) {
+  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
+  const behavior = body.behavior;
+  if (behavior !== "allow" && behavior !== "deny") return reject(res, 400, "invalid_behavior");
+  try {
+    writeVerdict(deps.projectRoot, requestId, behavior);
+  } catch {
+    return reject(res, 400, "invalid_request_id");
+  }
+  sendJson(res, 200, { ok: true });
   return true;
-}
-function isRecord3(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function reject(res, status, error, extra = {}) {
-  sendJson(res, status, { error, ...extra });
-  return true;
-}
-function sendJson(res, status, body) {
-  res.writeHead(status, { "content-type": "application/json" });
-  res.end(JSON.stringify(body));
 }
 
 // src/transport/http.ts
@@ -18803,8 +18827,8 @@ async function main() {
   const watcher = new ChokidarWatcher(projectRoot);
   const writeService = new WriteService(new FlowWriter(projectRoot));
   const permissionWatcher = new PermissionWatcher(projectRoot);
-  const events = new EventStore(repository, projectRoot);
-  const gates = new GateInbox(repository, projectRoot);
+  const events = new EventStore(repository, new FsEventSource(projectRoot));
+  const gates = new GateInbox(repository, new FsReviewSidecarSource(projectRoot));
   const tokens = new TokenReader(new TranscriptReader(projectRoot));
   const memory = new MemReader(projectRoot);
   const reader = new WorkReader(repository, systemClock, (run) => events.roster(run).length);

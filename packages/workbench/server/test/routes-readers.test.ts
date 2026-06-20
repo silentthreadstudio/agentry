@@ -10,6 +10,8 @@ import { test } from "node:test";
 import type { RunFiles, WorkRepository } from "../src/domain/ports.js";
 import { EventStore } from "../src/application/event-store.js";
 import { GateInbox } from "../src/application/gate-inbox.js";
+import { FsEventSource } from "../src/persistence/event-source.js";
+import { FsReviewSidecarSource } from "../src/persistence/review-sidecar-source.js";
 import { TokenReader } from "../src/application/token-reader.js";
 import { TranscriptReader } from "../src/persistence/transcript-reader.js";
 import { MemReader } from "../src/persistence/mem-reader.js";
@@ -64,8 +66,8 @@ function seed(): { cwd: string; home: string; deps: ReaderDeps } {
 
   const repo = fakeRepo(["run-a"]);
   const deps: ReaderDeps = {
-    events: new EventStore(repo, cwd),
-    gates: new GateInbox(repo, cwd),
+    events: new EventStore(repo, new FsEventSource(cwd)),
+    gates: new GateInbox(repo, new FsReviewSidecarSource(cwd)),
     tokens: new TokenReader(new TranscriptReader(cwd, home)),
     memory: new MemReader(cwd, home),
   };

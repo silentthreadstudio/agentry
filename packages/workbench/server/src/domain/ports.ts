@@ -11,6 +11,7 @@
 // port — no `node:fs`/`ws` types leak through, keeping the domain pure.
 import type { WsMessage } from "@agentry/workbench-shared";
 import type { FlowTask } from "@agentry/flow/domain/ports";
+import type { ReviewComment } from "@agentry/flow/domain/review";
 
 // The parsed contents of one `.agentry/work/<run>/` directory — the read side of `WorkRepository`,
 // and the sole input to `buildGraph` (see graph.ts). Already-parsed plain data (frontmatter +
@@ -48,6 +49,29 @@ export interface ArtifactFile {
 export interface WorkRepository {
   listRuns(): string[]; // the run ids present under .agentry/work/
   readRun(run: string): RunFiles | undefined; // parsed run dir, or undefined when the run is absent
+}
+
+// EventSource — read-only access to a run's two run-level event files (ADR-001), the port `EventStore`
+// folds over. The adapter (`persistence/event-source.ts`) owns the fs read; the application owns the
+// parse/fold policy. Plain values cross the seam — no fs handles, no FLOW resolution helpers leak in.
+//   - `eventLines(run)` returns `events.jsonl` split into lines (`[]` when the file is absent) — the
+//     application runs FLOW's `parseLogLine` over each line, so line indexing (the feed key) stays its job.
+//   - `runState(run)` returns the parsed `run-state.json` as loose data, or `undefined` when the file is
+//     absent or unparseable (the application validates `agents` + each `AgentState`, keeping policy inward).
+export interface EventSource {
+  eventLines(run: string): string[];
+  runState(run: string): unknown;
+}
+
+// ReviewSidecarSource — read-only access to a run's `.review/<gate>.annotations.json` sidecars (ADR-001),
+// the port `GateInbox` scans. The adapter (`persistence/review-sidecar-source.ts`) owns the fs read AND the
+// single parse-tolerant `ReviewComment[]` reader (consolidated — no second parser in the application or in
+// `flow-writer`). A corrupt/absent sidecar reads as `[]` (FLOW's `JsonReviewStore` tolerance).
+//   - `listGates(run)` returns the gate stems present under `.review/` (sorted; `[]` when the dir is absent).
+//   - `commentsFor(run, gate)` returns the gate's validated `ReviewComment[]` (`[]` when absent/corrupt).
+export interface ReviewSidecarSource {
+  listGates(run: string): string[];
+  commentsFor(run: string, gate: string): ReviewComment[];
 }
 
 // A debounced file-change notification for a run — the parsed-agnostic signal the transport pushes

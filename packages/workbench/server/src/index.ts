@@ -15,6 +15,8 @@ import { FsWorkRepository } from "./persistence/fs-work-repository.js";
 import { ChokidarWatcher } from "./persistence/chokidar-watcher.js";
 import { PermissionWatcher, type PermissionEvent } from "./persistence/permission-watcher.js";
 import { FlowWriter } from "./persistence/flow-writer.js";
+import { FsEventSource } from "./persistence/event-source.js";
+import { FsReviewSidecarSource } from "./persistence/review-sidecar-source.js";
 import { WorkReader } from "./application/work-reader.js";
 import { WriteService } from "./application/write-service.js";
 import { EventStore } from "./application/event-store.js";
@@ -70,8 +72,8 @@ async function main(): Promise<void> {
   // the one timeline fold + the roster source; its `roster` doubles as the `RunSummary.agentCount` counter
   // wired into the WorkReader (one roster read, not two). `TokenReader` folds the `TranscriptReader`'s
   // samples; `MemReader` browses both mem roots read-only.
-  const events = new EventStore(repository, projectRoot);
-  const gates = new GateInbox(repository, projectRoot);
+  const events = new EventStore(repository, new FsEventSource(projectRoot));
+  const gates = new GateInbox(repository, new FsReviewSidecarSource(projectRoot));
   const tokens = new TokenReader(new TranscriptReader(projectRoot));
   const memory = new MemReader(projectRoot);
   const reader = new WorkReader(repository, systemClock, (run) => events.roster(run).length);

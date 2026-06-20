@@ -12,6 +12,8 @@ import type { RunFiles, WorkRepository } from "../src/domain/ports.js";
 import { FsWorkRepository } from "../src/persistence/fs-work-repository.js";
 import { EventStore } from "../src/application/event-store.js";
 import { GateInbox } from "../src/application/gate-inbox.js";
+import { FsEventSource } from "../src/persistence/event-source.js";
+import { FsReviewSidecarSource } from "../src/persistence/review-sidecar-source.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 
@@ -55,7 +57,7 @@ test("timeline folds FLOW events and drops empty-agent main-session lines (parse
   ].join("\n");
   const cwd = seedProject({ "run-a": { events } });
   try {
-    const store = new EventStore(fakeRepo(["run-a"]), cwd);
+    const store = new EventStore(fakeRepo(["run-a"]), new FsEventSource(cwd));
     const timeline = store.timeline();
     // 2 FLOW lines + 1 hook line kept; the empty-agent / blank / malformed lines dropped.
     assert.equal(timeline.length, 3, "kept exactly the 3 valid lines");
@@ -74,7 +76,7 @@ test("timeline(runId) filters to one run; cross-run folds every run", () => {
     "run-b": { events: '{"ts":"2026-06-19T21:00:00.000Z","type":"node-done","node":"b","durationMs":1}' },
   });
   try {
-    const store = new EventStore(fakeRepo(["run-a", "run-b"]), cwd);
+    const store = new EventStore(fakeRepo(["run-a", "run-b"]), new FsEventSource(cwd));
     assert.equal(store.timeline("run-a").length, 1, "per-run fold sees only run-a");
     assert.equal(store.timeline().length, 2, "cross-run fold sees both runs");
   } finally {
@@ -88,7 +90,7 @@ test("roster reads run-state.json across runs, validating AgentState, namespacin
     "run-b": { runState: JSON.stringify({ agents: { verifier: { state: "done" }, bogus: { state: "nonsense" } } }) },
   });
   try {
-    const store = new EventStore(fakeRepo(["run-a", "run-b"]), cwd);
+    const store = new EventStore(fakeRepo(["run-a", "run-b"]), new FsEventSource(cwd));
     const roster = store.roster();
     // 2 valid agents kept; the out-of-enum `bogus` agent dropped.
     assert.equal(roster.length, 2, "two valid agents, the bad-state one dropped");
@@ -105,7 +107,7 @@ test("roster reads run-state.json across runs, validating AgentState, namespacin
 test("roster reads an empty roster for an absent/corrupt run-state", () => {
   const cwd = seedProject({ "run-a": { runState: "{ not json" }, "run-b": {} });
   try {
-    const store = new EventStore(fakeRepo(["run-a", "run-b"]), cwd);
+    const store = new EventStore(fakeRepo(["run-a", "run-b"]), new FsEventSource(cwd));
     assert.deepEqual(store.roster(), [], "corrupt + absent run-state → empty roster, no throw");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -121,7 +123,7 @@ test("GateInbox.open returns gates with unresolved comments, dropping resolved o
   ]);
   const cwd = seedProject({ "run-a": { reviews: { spec: open, plan: resolved } } });
   try {
-    const inbox = new GateInbox(fakeRepo(["run-a"]), cwd);
+    const inbox = new GateInbox(fakeRepo(["run-a"]), new FsReviewSidecarSource(cwd));
     const items = inbox.open();
     assert.equal(items.length, 1, "only the spec gate is waiting on you");
     const item = items[0];
@@ -145,7 +147,7 @@ test("GateInbox.open(runId) filters to one run; a corrupt sidecar reads empty", 
     },
   });
   try {
-    const inbox = new GateInbox(fakeRepo(["run-a"]), cwd);
+    const inbox = new GateInbox(fakeRepo(["run-a"]), new FsReviewSidecarSource(cwd));
     const items = inbox.open("run-a");
     assert.equal(items.length, 1, "corrupt sidecar reads empty, only the valid spec gate is open");
   } finally {
@@ -155,8 +157,8 @@ test("GateInbox.open(runId) filters to one run; a corrupt sidecar reads empty", 
 
 test("EventStore + GateInbox on the REAL repo runs (acceptance)", () => {
   const repo = new FsWorkRepository(REPO_ROOT);
-  const store = new EventStore(repo, REPO_ROOT);
-  const inbox = new GateInbox(repo, REPO_ROOT);
+  const store = new EventStore(repo, new FsEventSource(REPO_ROOT));
+  const inbox = new GateInbox(repo, new FsReviewSidecarSource(REPO_ROOT));
 
   // The cross-run timeline folds real events.jsonl into views — at least one routing-decision exists.
   const timeline = store.timeline();
@@ -178,7 +180,7 @@ test("EventStore + GateInbox on the REAL repo runs (acceptance)", () => {
     },
   });
   try {
-    const fixtureStore = new EventStore(fakeRepo(["run-fixture"]), cwd);
+    const fixtureStore = new EventStore(fakeRepo(["run-fixture"]), new FsEventSource(cwd));
     const fixtureRoster = fixtureStore.roster();
     assert.equal(fixtureRoster.length, 1, "the fixture run records exactly one agent");
     assert.equal(fixtureRoster[0]?.role, "implementer", "the recorded agent surfaces from run-state");

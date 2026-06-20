@@ -1,20 +1,18 @@
 // GateInbox — the waiting-on-you list (plan §6). Scans every run's `.review/<gate>.annotations.json`
 // sidecars and returns the OPEN gate items: a gate with at least one UNRESOLVED review comment is waiting
 // on a human. Each `GateItem` carries the jump-to-doc-at-gate pointer (run + doc + gate) so the Gates page
-// can deep-link straight to the document at the gate. PURE of HTTP/ws (ADR-001): it depends only on the
-// `WorkRepository` (the run list) + plain fs reads of the sidecars.
+// can deep-link straight to the document at the gate. PURE of HTTP/ws AND of fs (ADR-001): it depends only
+// on the `WorkRepository` (the run list) + the `ReviewSidecarSource` port (the sidecar reads), so it is
+// unit-testable against a fake source with no disk.
 //
 // ── Reuse, not fork (ADR-005 tier 1) ─────────────────────────────────────────────────────────────────
-// The sidecar shape is FLOW's: each file is a `ReviewComment[]`, validated through FLOW's closed
-// `ReviewComment` schema (a corrupt/partially-written sidecar reads as empty rather than throwing — the
-// SAME tolerance FLOW's `JsonReviewStore.read` gives). A comment is OPEN when `resolved === false`; a gate
-// with no open comments is not in the inbox.
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+// The sidecar shape is FLOW's: each file is a `ReviewComment[]`, read through the port's single
+// parse-tolerant reader (a corrupt/partially-written sidecar reads as empty rather than throwing — the
+// SAME tolerance FLOW's `JsonReviewStore.read` gives, now consolidated in `FsReviewSidecarSource`). A
+// comment is OPEN when `resolved === false`; a gate with no open comments is not in the inbox.
 import type { GateItem } from "@agentry/workbench-shared";
 import { ReviewComment, isHumanComment } from "@agentry/flow/domain/review";
-import { runDir } from "@agentry/flow/resolution/run-pointer";
-import type { WorkRepository } from "../domain/ports.js";
+import type { ReviewSidecarSource, WorkRepository } from "../domain/ports.js";
 
 // The inbox carries the run alongside each gate item so the Gates page can deep-link into the right run.
 // `GateItem` (the shared shape) pins `gate`/`docId`/`comments`/`decision`; `run` is the jump target added
@@ -24,10 +22,11 @@ export interface OpenGateItem extends GateItem {
 }
 
 export class GateInbox {
-  // `cwd` (the project root) is threaded on every fs path — no ambient cwd (mirrors FsWorkRepository).
+  // The run list comes from the repository (mirrors the Works home listing); the sidecar reads come from
+  // the injected `ReviewSidecarSource` port — no fs here, the adapter owns the bytes + the parser (ADR-001).
   constructor(
     private readonly repository: WorkRepository,
-    private readonly cwd: string,
+    private readonly sidecars: ReviewSidecarSource,
   ) {}
 
   // The open waiting-on-you list across every run (or one run when `runId` is given). A gate is OPEN when
@@ -38,7 +37,8 @@ export class GateInbox {
     const runs = runId !== undefined ? [runId] : this.repository.listRuns();
     const items: OpenGateItem[] = [];
     for (const run of runs) {
-      for (const { gate, comments } of this.gatesOf(run)) {
+      for (const gate of this.sidecars.listGates(run)) {
+        const comments = this.sidecars.commentsFor(run, gate);
         // Waiting-on-you = unresolved HUMAN comments only. Agent replies (`origin:"agent"`, Phase 2b)
         // already carry `resolved:true`, but filter them explicitly so a malformed unresolved reply can
         // never surface a gate as "waiting on you" (defense-in-depth, ADR-002).
@@ -52,38 +52,9 @@ export class GateInbox {
 
   // ALL comments (open + resolved) for one run+gate — the doc-level read the comment rail hydrates from on
   // load (the bidirectional AI↔Dashboard loop, VISION §6). The gate key IS the docId (the SAME key the
-  // `/comment` POST writes under). Reuses `readSidecar` (no second parser); an absent sidecar ⇒ `[]` (clean
+  // `/comment` POST writes under). Delegates to the source's single parser; an absent sidecar ⇒ `[]` (clean
   // empty), distinct from `open()` which filters to unresolved and drops resolved-empty gates.
   commentsFor(run: string, gate: string): ReviewComment[] {
-    const file = join(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
-    if (!existsSync(file)) return [];
-    return this.readSidecar(file);
-  }
-
-  // Every gate sidecar in one run: the `<gate>.annotations.json` files under `.review/`, each parsed into
-  // its `ReviewComment[]`. The gate name is the filename stem. An absent `.review/` dir ⇒ no gates.
-  private gatesOf(run: string): Array<{ gate: string; comments: ReviewComment[] }> {
-    const reviewDir = join(runDir(this.cwd, run), ".review");
-    if (!existsSync(reviewDir)) return [];
-    const out: Array<{ gate: string; comments: ReviewComment[] }> = [];
-    for (const file of readdirSync(reviewDir).sort()) {
-      if (!file.endsWith(".annotations.json")) continue;
-      const gate = file.slice(0, -".annotations.json".length);
-      out.push({ gate, comments: this.readSidecar(join(reviewDir, file)) });
-    }
-    return out;
-  }
-
-  // Parse one sidecar into validated `ReviewComment[]`. Reuses FLOW's closed schema; a non-array or a file
-  // that fails to parse reads as empty (the SAME tolerance FLOW's review store gives — a half-written
-  // sidecar never throws here). A single ill-formed comment drops the whole file to empty, matching FLOW.
-  private readSidecar(file: string): ReviewComment[] {
-    try {
-      const raw = JSON.parse(readFileSync(file, "utf8"));
-      if (!Array.isArray(raw)) return [];
-      return raw.map((c) => ReviewComment.parse(c));
-    } catch {
-      return [];
-    }
+    return this.sidecars.commentsFor(run, gate);
   }
 }

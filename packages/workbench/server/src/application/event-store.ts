@@ -1,9 +1,10 @@
 // EventStore — the ONE timeline fold (plan §2.2). Folds every run's `events.jsonl` (+ the hook backstop
 // lines) into a single `EventView[]` projection that powers BOTH the per-work Activity feed (filtered to
 // one run) and the cross-run Agents view — a projection, NOT five ad-hoc scanners. Also derives the agent
-// roster (`AgentView[]`) from each run's `run-state.json`. PURE of HTTP/ws (ADR-001): it depends only on
-// the `WorkRepository` (for the run list) + plain fs reads of the two run-level files, so the transport
-// edge serves it without re-reading the disk.
+// roster (`AgentView[]`) from each run's `run-state.json`. PURE of HTTP/ws AND of fs (ADR-001): it depends
+// only on the `WorkRepository` (for the run list) + the `EventSource` port (for the two run-level files),
+// so it is unit-testable against a fake source with no disk, and the transport edge serves it without
+// re-reading the disk.
 //
 // ── Reuse, not fork (ADR-005 tier 1) ─────────────────────────────────────────────────────────────────
 // Event parsing is FLOW's: `parseLogLine` discriminates the two `events.jsonl` line shapes (FLOW events
@@ -11,22 +12,19 @@
 // that — a malformed line is already a `skip`, so the fold tolerates a corrupt stream past one bad entry.
 // The roster is read off `run-state.json`'s `{ agents: { "<id>": { state, assignedTask? } } }` shape (the
 // same shape FLOW's `AgentService` owns), validated through FLOW's closed `AgentState` enum.
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { AgentView, EventView } from "@agentry/workbench-shared";
 import type { FlowEvent, HookBackstopLine } from "@agentry/flow/domain/events";
 import { parseLogLine } from "@agentry/flow/domain/events";
 import { AgentState } from "@agentry/flow/domain/status";
-import { runDir, workRoot } from "@agentry/flow/resolution/run-pointer";
-import type { WorkRepository } from "../domain/ports.js";
+import type { EventSource, WorkRepository } from "../domain/ports.js";
 
 export class EventStore {
-  // `cwd` (the project root) is threaded on every fs path — no ambient cwd, mirroring FsWorkRepository.
-  // The repository provides the run list (the SAME `.agentry/work/` listing the Works home uses), so the
-  // fold and the Works list never disagree about which runs exist.
+  // The run list comes from the repository (the SAME `.agentry/work/` listing the Works home uses, so the
+  // fold and the Works list never disagree about which runs exist); the two run-level files come from the
+  // injected `EventSource` port — no fs here, the adapter owns the bytes (ADR-001).
   constructor(
     private readonly repository: WorkRepository,
-    private readonly cwd: string,
+    private readonly source: EventSource,
   ) {}
 
   // The one fold. With no `runId`, fold EVERY run's events into a single cross-run timeline (the Agents
@@ -62,16 +60,13 @@ export class EventStore {
     return views;
   }
 
-  // Fold one run's `events.jsonl` into the accumulator. Each kept line becomes one `EventView` with a
+  // Fold one run's `events.jsonl` lines into the accumulator. Each kept line becomes one `EventView` with a
   // stable feed key (run + line index — unique within the fold, stable across reads of an unchanged file).
   // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session hook line) is dropped.
   // A hook backstop line is projected into the closed `node-enter` shape so the feed renders one event
   // vocabulary — its `kind` becomes the node label, its `agent` the actor (the hook's only structured fields).
   private foldRun(run: string, into: EventView[]): void {
-    const log = join(runDir(this.cwd, run), "events.jsonl");
-    if (!existsSync(log)) return;
-    const lines = readFileSync(log, "utf8").split("\n");
-    lines.forEach((line, index) => {
+    this.source.eventLines(run).forEach((line, index) => {
       const parsed = parseLogLine(line);
       if (parsed.kind === "skip") return;
       const event = parsed.kind === "flow" ? parsed.event : hookToEvent(parsed.line);
@@ -79,19 +74,12 @@ export class EventStore {
     });
   }
 
-  // Read one run's roster off `run-state.json`. The traversal-safe `runDir` asserts the run segment before
-  // any fs touch. A corrupt/absent file, or one whose `agents` isn't an object, yields no entries. Each
-  // agent's `state` is validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent
-  // rather than surfacing an ill-typed state.
+  // Derive one run's roster from the source's parsed `run-state.json`. A corrupt/absent file (the source
+  // returns `undefined`), or one whose `agents` isn't an object, yields no entries. Each agent's `state` is
+  // validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent rather than
+  // surfacing an ill-typed state.
   private rosterOf(run: string): Array<{ agent: string; state: AgentState; assignedTask?: string }> {
-    const path = join(runDir(this.cwd, run), "run-state.json");
-    if (!existsSync(path)) return [];
-    let raw: unknown;
-    try {
-      raw = JSON.parse(readFileSync(path, "utf8"));
-    } catch {
-      return []; // a corrupt state file reads as an empty roster rather than throwing
-    }
+    const raw = this.source.runState(run);
     const agents = isRecord(raw) ? raw.agents : undefined;
     if (!isRecord(agents)) return [];
 
@@ -104,12 +92,6 @@ export class EventStore {
       out.push({ agent, state: state.data, ...(assignedTask !== undefined ? { assignedTask } : {}) });
     }
     return out;
-  }
-
-  // The cross-run root the fold lists under (exposed for the route's empty-state check). `workRoot`
-  // mirrors FsWorkRepository's listing root, so an absent root simply yields no runs (a fresh project).
-  get root(): string {
-    return workRoot(this.cwd);
   }
 }
 
