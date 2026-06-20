@@ -11,17 +11,26 @@
     "dev": "vite",
     "build": "vite build && node -e \"import('node:fs').then(({writeFileSync})=>import('../../../scripts/lib/src-hash.mjs').then(({bundleSrcHash})=>writeFileSync('../../../plugin/workbench/web/.srchash',bundleSrcHash('..',{srcSubdir:'web/src',skipWorkspaceDeps:true}))))\"",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test 'src/test/**/*.test.ts'"
   },
   "dependencies": {
     "@agentry/workbench-shared": "workspace:*",
+    "@codemirror/lang-markdown": "^6.3.4",
     "@dagrejs/dagre": "^1.1.4",
+    "@tiptap/extension-link": "^2.11.5",
+    "@tiptap/pm": "^2.11.5",
+    "@tiptap/react": "^2.11.5",
+    "@tiptap/starter-kit": "^2.11.5",
+    "@uiw/react-codemirror": "^4.23.10",
     "@xyflow/react": "^12.3.5",
+    "markdown-it": "^14.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.4"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.0.2",

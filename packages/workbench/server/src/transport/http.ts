@@ -16,7 +16,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorkReader } from "../application/work-reader.js";
 import { resolveRunContext } from "./host-router.js";
-import { handleApiRequest } from "./routes.js";
+import { handleApiRequest, handlePostRequest, type WriteDeps } from "./routes.js";
 
 // Resolve the built SPA's static root. `CLAUDE_PLUGIN_ROOT` (set by the plugin host) wins; otherwise the
 // web dir sits beside the server bundle (`<bundle>/../web`). Resolved once at module load — the layout
@@ -55,23 +55,31 @@ const CONTENT_TYPES: Record<string, string> = {
   ".map": "application/json; charset=utf-8",
 };
 
-// Build the http request handler bound to the application reader. The composition root attaches the
-// returned handler to the port-locked server (`server.on("request", handler)`).
-export function createHttpHandler(reader: WorkReader) {
+// Build the http request handler bound to the application reader (+ the Phase-3 write deps). The
+// composition root attaches the returned handler to the port-locked server (`server.on("request",
+// handler)`). `write` carries the WriteService + Transport the POST routes need (threaded the same way
+// the reader is — task 9's DI pattern).
+export function createHttpHandler(reader: WorkReader, write: WriteDeps) {
   return function handler(req: IncomingMessage, res: ServerResponse): void {
     const context = resolveRunContext(req.headers.host);
 
-    // API + healthz first; a matched route answers and we're done.
+    // GET API + healthz first; a matched read route answers and we're done.
     if (handleApiRequest(req, res, reader, context)) return;
 
-    // Everything else is the SPA: a real asset path serves the file; anything else falls back to the
-    // app shell (client-side routing). Only GET/HEAD reach static serving.
-    if (req.method !== "GET" && req.method !== "HEAD") {
-      res.writeHead(405, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "method_not_allowed" }));
-      return;
-    }
-    serveStatic(req, res);
+    // The write surface (POST /comment,/artifact,/takeover) consumes the request body, so it is async;
+    // it answers a matched write path, otherwise falls through to static-serving below. A non-write,
+    // non-GET request lands at the 405 after the (resolved-false) write dispatch.
+    void handlePostRequest(req, res, write).then((handled) => {
+      if (handled) return;
+      // Everything else is the SPA: a real asset path serves the file; anything else falls back to the
+      // app shell (client-side routing). Only GET/HEAD reach static serving.
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        res.writeHead(405, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "method_not_allowed" }));
+        return;
+      }
+      serveStatic(req, res);
+    });
   };
 }
 

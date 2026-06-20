@@ -20,6 +20,9 @@ import { getWsClient } from "../../../api/ws-client.js";
 import { nodeTypes } from "./DocNode.js";
 import { edgeTypes, Legend, markerForKind } from "./edge-types.js";
 import { layoutGraph } from "./layout-dagre.js";
+import { DocDrawer, selectDoc } from "./doc/DocDrawer.js";
+import { CommentRail } from "./doc/CommentRail.js";
+import { DiffDrawer } from "./doc/DiffDrawer.js";
 
 import "@xyflow/react/dist/style.css";
 import "./panorama.css";
@@ -166,6 +169,7 @@ function PanoramaCanvas({ runId }: { runId: string }) {
         proOptions={{ hideAttribution: true }}
         onNodeMouseEnter={(_e, n) => setHover(n.id)}
         onNodeMouseLeave={() => setHover(null)}
+        onNodeClick={(_e, n) => selectDoc(n.id)}
       >
         <Background color="#20202a" gap={26} size={1} />
         <Controls showInteractive={false} />
@@ -180,6 +184,13 @@ function PanoramaCanvas({ runId }: { runId: string }) {
         />
       </ReactFlow>
       <Legend />
+      {/* Phase 3: a node click selects a doc (selectDoc), which opens the drawer over the dimmed canvas.
+          The comment rail (task 18) + diff drawer (task 19) plug into the drawer's pinned slots. */}
+      <DocDrawer
+        runId={runId}
+        commentRail={({ runId, docId }) => <CommentRail runId={runId} docId={docId} />}
+        diffDrawer={({ runId, docId }) => <DiffDrawer runId={runId} docId={docId} />}
+      />
     </div>
   );
 }

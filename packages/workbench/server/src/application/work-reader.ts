@@ -8,8 +8,8 @@
 //   - summary: the `RunSummary` for the Works list (AC2) — task tally by FLOW's closed status, the
 //     agent count, the title, and the `updatedAt` stamp.
 //   - graph:   the `GraphModel` via `buildGraph` (the dependency/derivation graph for an opened run).
-//   - docs:    the run's parsed artifacts (spec/plan/adrs) keyed for the editor; Phase 1 ferries the
-//     parsed records so task 9 can serve them without re-reading the disk.
+//   - docs:    the run's parsed artifacts (spec/plan/adrs/tasks) keyed for the editor; Phase 1 ferries
+//     the parsed records so task 9 can serve them without re-reading the disk.
 import type { GraphModel, RunSummary } from "@agentry/workbench-shared";
 import { FlowTaskStatus } from "@agentry/flow/domain/status";
 import type { Clock, RunFiles, WorkRepository } from "../domain/ports.js";
@@ -18,7 +18,7 @@ import { buildGraph } from "../domain/graph.js";
 // One parsed artifact as the reader hands it to the transport (frontmatter + body). The DocModel's
 // version/lock fields are stamped at the transport edge (Phase 3); Phase 1 ferries the parsed record.
 export interface ReaderDoc {
-  id: string; // stable doc id: "spec" | "plan" | "adr-<key>" (mirrors buildGraph's node ids)
+  id: string; // stable doc id: "spec" | "plan" | "adr-<key>" | "task-<NNN>" (mirrors buildGraph's node ids)
   frontmatter: Record<string, unknown>;
   body: string;
 }
@@ -92,8 +92,12 @@ export class WorkReader {
     return files.run;
   }
 
-  // The run's docs for the editor: spec, plan, and each adr — keyed with the SAME ids buildGraph mints
-  // for its nodes, so a graph click maps straight to a doc.
+  // The run's docs for the editor: spec, plan, each adr, AND each task — keyed with the SAME ids
+  // buildGraph mints for its nodes, so a graph click maps straight to a doc. Tasks are keyed
+  // `task-<NNN>` (matching buildGraph's `taskId`), so `GET /doc/task-NNN` resolves and a task write
+  // can push a fresh DocModel. The doc's lock/version are derived at the transport edge from the
+  // ferried frontmatter (`toDocModel`/`lockOf`): a task whose `status: in-progress` reports locked by
+  // its `lockedBy` (the SAME derivation spec/plan/adr docs already use — no second lock path here).
   private docsOf(files: RunFiles): ReaderDoc[] {
     const docs: ReaderDoc[] = [];
     if (files.spec) docs.push({ id: "spec", ...files.spec });
@@ -103,6 +107,9 @@ export class WorkReader {
       const key = typeof id === "string" && id.length > 0 ? id : String(i);
       docs.push({ id: `adr-${key}`, frontmatter: adr.frontmatter, body: adr.body });
     });
+    for (const task of files.tasks) {
+      docs.push({ id: `task-${task.taskNo}`, frontmatter: task.frontmatter, body: task.body });
+    }
     return docs;
   }
 }

@@ -11046,7 +11046,7 @@ import { createServer } from "node:http";
 var WORKBENCH_PORT = 4317;
 var LOOPBACK_HOST = "127.0.0.1";
 function bindPortLock(port = WORKBENCH_PORT) {
-  return new Promise((resolve4, reject) => {
+  return new Promise((resolve4, reject2) => {
     const server = createServer();
     const onError = (err) => {
       server.removeListener("listening", onListening);
@@ -11054,7 +11054,7 @@ function bindPortLock(port = WORKBENCH_PORT) {
         resolve4({ status: "already-up" });
         return;
       }
-      reject(err);
+      reject2(err);
     };
     const onListening = () => {
       server.removeListener("error", onError);
@@ -16277,9 +16277,9 @@ var NodeFsHandler = class {
         this._addToNodeFs(path, initialAdd, wh, depth + 1);
       }
     }).on(EV.ERROR, this._boundHandleError);
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve4, reject2) => {
       if (!stream)
-        return reject();
+        return reject2();
       stream.once(STR_END, () => {
         if (this.fsw.closed) {
           stream = void 0;
@@ -17195,6 +17195,128 @@ var ChokidarWatcher = class {
   }
 };
 
+// src/persistence/flow-writer.ts
+var import_yaml3 = __toESM(require_dist(), 1);
+import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync4, readdirSync as readdirSync3, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join7 } from "node:path";
+
+// ../../flow/src/domain/review.ts
+var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
+var ReviewAnchor = external_exports.object({
+  originalText: external_exports.string(),
+  // the exact snippet the comment was made against
+  headingAnchor: external_exports.string(),
+  // the nearest section heading
+  startLine: external_exports.number()
+  // the line the comment was made at
+});
+var ReviewComment = external_exports.object({
+  id: external_exports.string(),
+  anchor: ReviewAnchor,
+  decision: ReviewDecision,
+  body: external_exports.string(),
+  resolved: external_exports.boolean()
+  // distinguishes open from resolved comments (AC10: review_resolve marks one)
+});
+
+// src/persistence/flow-writer.ts
+var FRONTMATTER3 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var FlowWriter = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  readArtifact(run, target) {
+    const path = this.artifactPath(run, target);
+    if (path === void 0 || !existsSync3(path)) return void 0;
+    return this.parse(readFileSync4(path, "utf8"));
+  }
+  writeArtifact(run, target, frontmatter, body) {
+    const path = this.resolveWritePath(run, target);
+    mkdirSync3(join7(path, ".."), { recursive: true });
+    const { rendered, version } = this.render(frontmatter, body);
+    writeFileSync3(path, rendered);
+    return version;
+  }
+  appendComment(run, gate, comment) {
+    assertSafeSegment(gate);
+    const validated = ReviewComment.parse(comment);
+    const dir = join7(runDir(this.cwd, run), ".review");
+    const file = join7(dir, `${gate}.annotations.json`);
+    const existing = this.readComments(file);
+    mkdirSync3(dir, { recursive: true });
+    writeFileSync3(file, `${JSON.stringify([...existing, validated], null, 2)}
+`);
+  }
+  // ── internals ──────────────────────────────────────────────────────────────────────────────────
+  // Split the file FLOW's way and recompute the version over (body, frontmatter-sans-version) — so
+  // the version returned here is the one FLOW stamped on disk. The body is `.trim()`ed exactly as
+  // FLOW's `readArtifact`/`parseTaskFile` trim it: FLOW's `render` writes `\n\n${body}\n` but stamps
+  // the version over the TRIMMED body, so reading back the raw inter-fence text and hashing it
+  // un-trimmed would not match the stamped version (the `\n\n…\n` padding would perturb the hash).
+  // A file with no fence is all body (empty frontmatter), never a throw (mirrors FsWorkRepository).
+  parse(text) {
+    const m = FRONTMATTER3.exec(text);
+    const front = m ? (0, import_yaml3.parse)(m[1] ?? "") ?? {} : {};
+    const body = (m ? m[2] ?? "" : text).trim();
+    const { version: _dropped, ...sansVersion } = front;
+    return {
+      frontmatter: sansVersion,
+      body,
+      version: computeVersion(body, sansVersion)
+    };
+  }
+  // FLOW's exact render (task-file-store.ts:77): drop any caller `version`, re-stamp over (body,
+  // frontmatter-sans-version), emit `---\n${yaml}---\n\n${body}\n`. Returns the rendered bytes and
+  // the stamped version so the caller (and the WriteService) can echo the new version to the client.
+  render(frontmatter, body) {
+    const { version: _dropped, ...front } = frontmatter;
+    const version = computeVersion(body, front);
+    const stamped = { ...front, version };
+    return { rendered: `---
+${(0, import_yaml3.stringify)(stamped)}---
+
+${body}
+`, version };
+  }
+  // The on-disk path of an artifact target for READ — a run-root `<kind>.md`, or the existing
+  // `tasks/NNN-*.md` file (found by its number prefix, the way FLOW's `readTask` finds it). Returns
+  // undefined for a task whose file does not yet exist (an absent artifact reads as undefined).
+  artifactPath(run, target) {
+    const dir = runDir(this.cwd, run);
+    if ("kind" in target) return join7(dir, `${target.kind}.md`);
+    assertSafeSegment(target.taskNo);
+    const tasksDir = join7(dir, "tasks");
+    if (!existsSync3(tasksDir)) return void 0;
+    const prefix = `${target.taskNo}-`;
+    const file = readdirSync3(tasksDir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
+    return file ? join7(tasksDir, file) : void 0;
+  }
+  // The path to WRITE a target. For a task we never write to a fresh name (the WriteService only
+  // writes after a successful read at the same target, so the file exists) — but if FLOW renamed the
+  // slug we still target the existing file by its number prefix; absent ⇒ a hard error (writing a
+  // task that was never read is a misuse the application gates against).
+  resolveWritePath(run, target) {
+    const path = this.artifactPath(run, target);
+    if (path !== void 0) return path;
+    if ("taskNo" in target) {
+      throw new Error(`flow-writer: no task file for ${target.taskNo} in run ${run} to write`);
+    }
+    return join7(runDir(this.cwd, run), `${target.kind}.md`);
+  }
+  // Read the gate sidecar back, validating each comment through `ReviewComment` (a corrupt/partial
+  // sidecar reads as empty rather than throwing — the JsonReviewStore tolerance).
+  readComments(file) {
+    if (!existsSync3(file)) return [];
+    try {
+      const raw = JSON.parse(readFileSync4(file, "utf8"));
+      if (!Array.isArray(raw)) return [];
+      return raw.map((c) => ReviewComment.parse(c));
+    } catch {
+      return [];
+    }
+  }
+};
+
 // ../../flow/src/domain/status.ts
 var FlowTaskStatus = external_exports.enum(["todo", "in-progress", "in-review", "done"]);
 var AgentState = external_exports.enum(["working", "blocked", "done"]);
@@ -17341,8 +17463,12 @@ var WorkReader = class {
     if (typeof fromSpec === "string" && fromSpec.length > 0) return fromSpec;
     return files.run;
   }
-  // The run's docs for the editor: spec, plan, and each adr — keyed with the SAME ids buildGraph mints
-  // for its nodes, so a graph click maps straight to a doc.
+  // The run's docs for the editor: spec, plan, each adr, AND each task — keyed with the SAME ids
+  // buildGraph mints for its nodes, so a graph click maps straight to a doc. Tasks are keyed
+  // `task-<NNN>` (matching buildGraph's `taskId`), so `GET /doc/task-NNN` resolves and a task write
+  // can push a fresh DocModel. The doc's lock/version are derived at the transport edge from the
+  // ferried frontmatter (`toDocModel`/`lockOf`): a task whose `status: in-progress` reports locked by
+  // its `lockedBy` (the SAME derivation spec/plan/adr docs already use — no second lock path here).
   docsOf(files) {
     const docs = [];
     if (files.spec) docs.push({ id: "spec", ...files.spec });
@@ -17352,13 +17478,97 @@ var WorkReader = class {
       const key = typeof id === "string" && id.length > 0 ? id : String(i);
       docs.push({ id: `adr-${key}`, frontmatter: adr.frontmatter, body: adr.body });
     });
+    for (const task of files.tasks) {
+      docs.push({ id: `task-${task.taskNo}`, frontmatter: task.frontmatter, body: task.body });
+    }
     return docs;
   }
 };
 
+// src/application/write-service.ts
+var WriteService = class {
+  constructor(writer) {
+    this.writer = writer;
+  }
+  // Append a comment with the 3-way anchor to the gate's sidecar — ALWAYS allowed, lock or not
+  // (VISION §5: you can always annotate). The id is minted here (the caller gets a handle back) and
+  // a fresh comment is open (`resolved:false`), mirroring FLOW's ReviewService.comment.
+  addComment(req) {
+    const id = mintCommentId();
+    const comment = {
+      id,
+      anchor: req.anchor,
+      decision: req.decision,
+      body: req.body,
+      resolved: false
+    };
+    this.writer.appendComment(req.run, req.gate, comment);
+    return { id };
+  }
+  // The guarded artifact write — the clobber-safety core (AC4/AC6). Re-reads disk at write time, then:
+  //   1. not-found  → the artifact is gone (a concurrent delete).
+  //   2. locked     → the task is `in-progress`; reject with `lockedBy` (the UI shows who holds it).
+  //   3. stale      → the recomputed current version ≠ the client's `baseVersion`; reject (someone
+  //                   wrote in between) — optimistic concurrency.
+  //   4. else       → recombine the UNTOUCHED frontmatter + the normalized body, re-stamp the version,
+  //                   and return the new version to push to the client.
+  writeArtifact(req) {
+    const current = this.writer.readArtifact(req.run, req.target);
+    if (current === void 0) return { ok: false, reason: "not-found" };
+    const lock = this.lockOf(current);
+    if (lock !== void 0) return { ok: false, reason: "locked", lockedBy: lock };
+    if (current.version !== req.baseVersion) {
+      return { ok: false, reason: "stale", currentVersion: current.version };
+    }
+    const version = this.writer.writeArtifact(
+      req.run,
+      req.target,
+      current.frontmatter,
+      // untouched frontmatter — only the body is the edit (ADR-006)
+      req.newBody
+    );
+    return { ok: true, version };
+  }
+  // Take over: the explicit lock transition the SERVER performs (the human claims the edit). Re-reads
+  // the task, then writes back its frontmatter with the lock released (`status` → `in-review`, the
+  // not-in-progress state a human edit moves to; `lockedBy` → the claimer), re-stamping the version.
+  // After this, `writeArtifact` against the same task passes the lock gate. A no-op body write keeps
+  // the body byte-identical so the take-over does not alter the prose (the lock flip is frontmatter).
+  takeOver(req) {
+    const target = { taskNo: req.taskNo };
+    const current = this.writer.readArtifact(req.run, target);
+    if (current === void 0) return { ok: false, reason: "not-found" };
+    const frontmatter = {
+      ...current.frontmatter,
+      status: "in-review",
+      // off `in-progress` → the lock gate now passes
+      lockedBy: req.by
+      // the human now holds the edit
+    };
+    this.writer.writeArtifact(req.run, target, frontmatter, current.body);
+    return { ok: true };
+  }
+  // The lock check (ADR-006): a task is locked when its on-disk `status === "in-progress"`, and the
+  // holder is `lockedBy` (falling back to the assignee, then a generic label so the UI always has a
+  // name). Run-root artifacts (spec/plan) carry no task lifecycle, so they are never lock-gated.
+  // Returns the holder when locked, else undefined.
+  lockOf(current) {
+    const parsed = FlowTaskStatus.safeParse(current.frontmatter.status);
+    if (!parsed.success || parsed.data !== "in-progress") return void 0;
+    const lockedBy = current.frontmatter.lockedBy;
+    if (typeof lockedBy === "string" && lockedBy.length > 0) return lockedBy;
+    const assignee = current.frontmatter.assignee;
+    if (typeof assignee === "string" && assignee.length > 0) return assignee;
+    return "an agent";
+  }
+};
+function mintCommentId() {
+  return `c-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
+}
+
 // src/transport/http.ts
-import { createReadStream, existsSync as existsSync3, statSync } from "node:fs";
-import { extname as extname2, join as join7, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
+import { createReadStream, existsSync as existsSync4, statSync } from "node:fs";
+import { extname as extname2, join as join8, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/transport/host-router.ts
@@ -17402,7 +17612,127 @@ function handleApiRequest(req, res, reader, context) {
       sendJson(res, 200, read.graph);
     });
   }
+  const doc = matchWorkDoc(path);
+  if (doc !== null) {
+    return guardGet(method, res, () => {
+      const read = reader.read(doc.runId);
+      if (!read) return sendJson(res, 404, { error: "unknown_run" });
+      const found = read.docs.find((d) => d.id === doc.docId);
+      if (!found) return sendJson(res, 404, { error: "unknown_doc" });
+      sendJson(res, 200, toDocModel(found));
+    });
+  }
   return false;
+}
+async function handlePostRequest(req, res, deps) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const path = url.pathname;
+  const method = req.method ?? "GET";
+  const write = matchWritePath(path);
+  if (write === null) return false;
+  if (method !== "POST") {
+    sendJson(res, 405, { error: "method_not_allowed" });
+    return true;
+  }
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    sendJson(res, 400, { error: "invalid_json" });
+    return true;
+  }
+  if (write.kind === "comment") return handleComment(res, deps, write.runId, body);
+  if (write.kind === "artifact") return handleArtifact(res, deps, write.runId, body);
+  return handleTakeover(res, deps, write.runId, body);
+}
+function handleComment(res, deps, runId, body) {
+  if (!isRecord(body)) return reject(res, 400, "invalid_body");
+  const gate = body.gate;
+  const bodyText = body.body;
+  if (typeof gate !== "string" || gate.length === 0) return reject(res, 400, "missing_gate");
+  if (typeof bodyText !== "string") return reject(res, 400, "missing_body");
+  const anchor = ReviewAnchor.safeParse(body.anchor);
+  if (!anchor.success) return reject(res, 400, "invalid_anchor");
+  const decision = ReviewDecision.safeParse(body.decision);
+  if (!decision.success) return reject(res, 400, "invalid_decision");
+  const result = deps.writeService.addComment({
+    run: runId,
+    gate,
+    anchor: anchor.data,
+    decision: decision.data,
+    body: bodyText
+  });
+  deps.transport.push(runId, { type: "file-changed", path: `.review/${gate}.annotations.json` });
+  sendJson(res, 200, result);
+  return true;
+}
+function handleArtifact(res, deps, runId, body) {
+  if (!isRecord(body)) return reject(res, 400, "invalid_body");
+  const mapped = targetFromDocId(body.target);
+  if (mapped === "read_only") return reject(res, 409, "read_only");
+  if (mapped === null) return reject(res, 400, "invalid_target");
+  const target = mapped;
+  const baseVersion = body.baseVersion;
+  const newBody = body.newBody;
+  if (typeof baseVersion !== "string") return reject(res, 400, "missing_baseVersion");
+  if (typeof newBody !== "string") return reject(res, 400, "missing_newBody");
+  const outcome = deps.writeService.writeArtifact({ run: runId, target, baseVersion, newBody });
+  if (outcome.ok) {
+    const doc = reloadDoc(deps, runId, target);
+    if (doc) {
+      const message = { type: "doc-updated", docId: docIdOf(target), doc };
+      deps.transport.push(runId, message);
+      sendJson(res, 200, doc);
+    } else {
+      sendJson(res, 200, { version: outcome.version });
+    }
+    return true;
+  }
+  if (outcome.reason === "locked") return reject(res, 409, "locked", { lockedBy: outcome.lockedBy });
+  if (outcome.reason === "stale") {
+    return reject(res, 409, "stale", { currentVersion: outcome.currentVersion });
+  }
+  return reject(res, 404, "not_found");
+}
+function handleTakeover(res, deps, runId, body) {
+  if (!isRecord(body)) return reject(res, 400, "invalid_body");
+  const taskNo = taskNoFromTakeover(body);
+  if (taskNo === null) return reject(res, 400, "invalid_target");
+  const rawBy = body.by;
+  const by = typeof rawBy === "string" && rawBy.length > 0 ? rawBy : "human";
+  const outcome = deps.writeService.takeOver({ run: runId, taskNo, by });
+  if (!outcome.ok) return reject(res, 404, "not_found");
+  const target = { taskNo };
+  const doc = reloadDoc(deps, runId, target);
+  if (doc) deps.transport.push(runId, { type: "doc-updated", docId: docIdOf(target), doc });
+  sendJson(res, 200, { ok: true });
+  return true;
+}
+function reloadDoc(deps, runId, target) {
+  const read = deps.reader.read(runId);
+  if (!read) return void 0;
+  const found = read.docs.find((d) => d.id === docIdOf(target));
+  return found ? toDocModel(found) : void 0;
+}
+function docIdOf(target) {
+  return "kind" in target ? target.kind : `task-${target.taskNo}`;
+}
+function toDocModel(doc) {
+  const { version: _stamped, ...sansVersion } = doc.frontmatter;
+  return {
+    frontmatter: doc.frontmatter,
+    body: doc.body,
+    version: computeVersion(doc.body, sansVersion),
+    lock: lockOf(doc.frontmatter)
+  };
+}
+function lockOf(frontmatter) {
+  if (frontmatter.status !== "in-progress") return null;
+  const by = frontmatter.lockedBy;
+  const assignee = frontmatter.assignee;
+  const holder = typeof by === "string" && by.length > 0 ? by : typeof assignee === "string" && assignee.length > 0 ? assignee : "an agent";
+  const acquiredAt = typeof frontmatter.updatedAt === "string" ? frontmatter.updatedAt : "";
+  return { by: holder, acquiredAt };
 }
 function listWorks(reader) {
   const summaries = [];
@@ -17421,12 +17751,82 @@ function matchWorkGraph(path) {
     return null;
   }
 }
+function matchWorkDoc(path) {
+  const m = /^\/api\/work\/([^/]+)\/doc\/([^/]+)$/.exec(path);
+  if (!m || m[1] === void 0 || m[2] === void 0) return null;
+  try {
+    return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };
+  } catch {
+    return null;
+  }
+}
+function matchWritePath(path) {
+  const m = /^\/api\/work\/([^/]+)\/(comment|artifact|takeover)$/.exec(path);
+  if (!m || m[1] === void 0 || m[2] === void 0) return null;
+  try {
+    return { kind: m[2], runId: decodeURIComponent(m[1]) };
+  } catch {
+    return null;
+  }
+}
+function targetFromDocId(raw) {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  if (raw === "spec" || raw === "plan") return { kind: raw };
+  if (raw.startsWith("adr-")) return "read_only";
+  if (raw.startsWith("task-")) {
+    const taskNo = raw.slice("task-".length);
+    return taskNo.length > 0 ? { taskNo } : null;
+  }
+  return null;
+}
+function taskNoFromTakeover(body) {
+  const target = body.target;
+  if (typeof target === "string" && target.startsWith("task-")) {
+    const taskNo2 = target.slice("task-".length);
+    return taskNo2.length > 0 ? taskNo2 : null;
+  }
+  const taskNo = body.taskNo;
+  return typeof taskNo === "string" && taskNo.length > 0 ? taskNo : null;
+}
+var MAX_BODY_BYTES = 4 * 1024 * 1024;
+function readJsonBody(req) {
+  return new Promise((resolve4, rejectPromise) => {
+    let size = 0;
+    const chunks = [];
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        rejectPromise(new Error("payload_too_large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      const text = Buffer.concat(chunks).toString("utf8").trim();
+      if (text.length === 0) return resolve4({});
+      try {
+        resolve4(JSON.parse(text));
+      } catch {
+        rejectPromise(new Error("invalid_json"));
+      }
+    });
+    req.on("error", rejectPromise);
+  });
+}
 function guardGet(method, res, run) {
   if (method !== "GET") {
     sendJson(res, 405, { error: "method_not_allowed" });
     return true;
   }
   run();
+  return true;
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function reject(res, status, error, extra = {}) {
+  sendJson(res, status, { error, ...extra });
   return true;
 }
 function sendJson(res, status, body) {
@@ -17438,13 +17838,13 @@ function sendJson(res, status, body) {
 function resolveWebRoot() {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (pluginRoot && pluginRoot.length > 0) {
-    return join7(pluginRoot, "workbench", "web");
+    return join8(pluginRoot, "workbench", "web");
   }
   const bundleDir = fileURLToPath(new URL(".", import.meta.url));
   return resolve3(bundleDir, "..", "web");
 }
 var WEB_ROOT = resolveWebRoot();
-var INDEX_HTML = join7(WEB_ROOT, "index.html");
+var INDEX_HTML = join8(WEB_ROOT, "index.html");
 var CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -17463,26 +17863,29 @@ var CONTENT_TYPES = {
   ".ttf": "font/ttf",
   ".map": "application/json; charset=utf-8"
 };
-function createHttpHandler(reader) {
+function createHttpHandler(reader, write) {
   return function handler(req, res) {
     const context = resolveRunContext(req.headers.host);
     if (handleApiRequest(req, res, reader, context)) return;
-    if (req.method !== "GET" && req.method !== "HEAD") {
-      res.writeHead(405, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "method_not_allowed" }));
-      return;
-    }
-    serveStatic(req, res);
+    void handlePostRequest(req, res, write).then((handled) => {
+      if (handled) return;
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        res.writeHead(405, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "method_not_allowed" }));
+        return;
+      }
+      serveStatic(req, res);
+    });
   };
 }
 function serveStatic(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const filePath = resolveStaticFile(url.pathname);
-  if (filePath && existsSync3(filePath) && statSync(filePath).isFile()) {
+  if (filePath && existsSync4(filePath) && statSync(filePath).isFile()) {
     sendFile(req, res, filePath);
     return;
   }
-  if (existsSync3(INDEX_HTML)) {
+  if (existsSync4(INDEX_HTML)) {
     sendFile(req, res, INDEX_HTML);
     return;
   }
@@ -17493,7 +17896,7 @@ function resolveStaticFile(pathname) {
   const decoded = safeDecode(pathname);
   if (decoded === null) return null;
   if (decoded === "/" || decoded === "") return INDEX_HTML;
-  const candidate = normalize2(join7(WEB_ROOT, decoded));
+  const candidate = normalize2(join8(WEB_ROOT, decoded));
   if (candidate !== WEB_ROOT && !candidate.startsWith(WEB_ROOT + sep2)) return null;
   return candidate;
 }
@@ -17600,8 +18003,9 @@ async function main() {
   const repository = new FsWorkRepository(projectRoot);
   const watcher = new ChokidarWatcher(projectRoot);
   const reader = new WorkReader(repository, systemClock);
-  server.on("request", createHttpHandler(reader));
+  const writeService = new WriteService(new FlowWriter(projectRoot));
   const transport = new WsTransport(server);
+  server.on("request", createHttpHandler(reader, { reader, writeService, transport }));
   watcher.subscribe((change) => {
     if (!reader.read(change.run)) return;
     for (const path of change.paths) {

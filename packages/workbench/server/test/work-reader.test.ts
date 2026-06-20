@@ -34,7 +34,7 @@ function sampleFiles(): RunFiles {
     adrs: [{ frontmatter: { id: "ADR-001", title: "stateless" }, body: "# ADR-001" }],
     tasks: [
       { taskNo: "001", frontmatter: { title: "a", status: "done", deps: [] }, body: "" },
-      { taskNo: "002", frontmatter: { title: "b", status: "in-progress", deps: [1] }, body: "" },
+      { taskNo: "002", frontmatter: { title: "b", status: "in-progress", lockedBy: "implementer", deps: [1] }, body: "task 2 body" },
       { taskNo: "003", frontmatter: { title: "c", deps: [1] }, body: "" }, // no status → todo bucket
     ],
   };
@@ -62,12 +62,34 @@ test("read returns a GraphModel derived from the same files (buildGraph delegati
   assert.ok(result.graph.edges.length > 0, "edges derived");
 });
 
-test("read ferries docs keyed with buildGraph's node ids", () => {
+test("read ferries docs keyed with buildGraph's node ids (spec/plan/adr/task)", () => {
   const reader = new WorkReader(fakeRepo(sampleFiles()), fixedClock);
   const result = reader.read("sample");
   assert.ok(result, "the run reads");
   const ids = result.docs.map((d) => d.id);
-  assert.deepEqual(ids, ["spec", "plan", "adr-ADR-001"], "spec/plan/adr docs, adr keyed by its id");
+  assert.deepEqual(
+    ids,
+    ["spec", "plan", "adr-ADR-001", "task-001", "task-002", "task-003"],
+    "spec/plan/adr THEN a task-<NNN> doc per task, keys mirroring buildGraph's node ids",
+  );
+});
+
+test("read ferries each task as a task-<NNN> doc carrying its frontmatter + body", () => {
+  const reader = new WorkReader(fakeRepo(sampleFiles()), fixedClock);
+  const result = reader.read("sample");
+  assert.ok(result, "the run reads");
+  const task002 = result.docs.find((d) => d.id === "task-002");
+  assert.ok(task002, "GET /doc/task-002 now resolves — the task doc is present");
+  assert.equal(task002.body, "task 2 body", "the task's body is ferried");
+  // The lock is derived at the transport edge from the ferried frontmatter (status + lockedBy): an
+  // in-progress task is locked by its `lockedBy`. Proving the lock-driving fields reach the reader doc.
+  assert.equal(task002.frontmatter.status, "in-progress", "the in-progress status reaches the doc");
+  assert.equal(task002.frontmatter.lockedBy, "implementer", "the lock holder reaches the doc");
+
+  // A done task ferries no lock signal — its status drives `lock: null` at the edge (it's editable).
+  const task001 = result.docs.find((d) => d.id === "task-001");
+  assert.ok(task001, "the done task doc is present too");
+  assert.equal(task001.frontmatter.status, "done", "a done task carries no in-progress lock");
 });
 
 test("read falls back to the run id for the title when no plan/spec title exists", () => {

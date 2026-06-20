@@ -13,7 +13,9 @@ import { bindPortLock } from "./instance/port-lock.js";
 import { removePidfile, writePidfile } from "./instance/pidfile.js";
 import { FsWorkRepository } from "./persistence/fs-work-repository.js";
 import { ChokidarWatcher } from "./persistence/chokidar-watcher.js";
+import { FlowWriter } from "./persistence/flow-writer.js";
 import { WorkReader } from "./application/work-reader.js";
+import { WriteService } from "./application/write-service.js";
 import type { Clock, RunChange } from "./domain/ports.js";
 import { createHttpHandler } from "./transport/http.js";
 import { WsTransport } from "./transport/ws.js";
@@ -45,14 +47,17 @@ async function main(): Promise<void> {
   // this file is just who/where/when.
   writePidfile(projectRoot, { pid: process.pid, port, startedAt: systemClock.now() });
 
-  // Wire the ports-and-adapters tree: fs read side + watcher → the application reader.
+  // Wire the ports-and-adapters tree: fs read side + watcher → the application reader; the fs write
+  // side → the WriteService boundary (ADR-006) the POST routes call.
   const repository = new FsWorkRepository(projectRoot);
   const watcher = new ChokidarWatcher(projectRoot);
   const reader = new WorkReader(repository, systemClock);
+  const writeService = new WriteService(new FlowWriter(projectRoot));
 
-  // Transports: the http edge serves the SPA + REST; the ws edge pushes per-run change messages.
-  server.on("request", createHttpHandler(reader));
+  // Transports: the ws edge (constructed first so the http handler can push on a successful write) pushes
+  // per-run change messages; the http edge serves the SPA + REST reads + the Phase-3 writes.
   const transport = new WsTransport(server);
+  server.on("request", createHttpHandler(reader, { reader, writeService, transport }));
 
   // The live loop (AC7): a debounced run change → push a `file-changed` message per changed path to that
   // run's ws subscribers. The `WorkReader.read` confirms the run still resolves (a change in a vanished
