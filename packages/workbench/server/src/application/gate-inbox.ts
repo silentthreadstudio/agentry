@@ -47,6 +47,16 @@ export class GateInbox {
     return items;
   }
 
+  // ALL comments (open + resolved) for one run+gate — the doc-level read the comment rail hydrates from on
+  // load (the bidirectional AI↔Dashboard loop, VISION §6). The gate key IS the docId (the SAME key the
+  // `/comment` POST writes under). Reuses `readSidecar` (no second parser); an absent sidecar ⇒ `[]` (clean
+  // empty), distinct from `open()` which filters to unresolved and drops resolved-empty gates.
+  commentsFor(run: string, gate: string): ReviewComment[] {
+    const file = join(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    if (!existsSync(file)) return [];
+    return this.readSidecar(file);
+  }
+
   // Every gate sidecar in one run: the `<gate>.annotations.json` files under `.review/`, each parsed into
   // its `ReviewComment[]`. The gate name is the filename stem. An absent `.review/` dir ⇒ no gates.
   private gatesOf(run: string): Array<{ gate: string; comments: ReviewComment[] }> {

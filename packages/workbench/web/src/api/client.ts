@@ -112,3 +112,23 @@ export function fetchMemory(query?: string, signal?: AbortSignal): Promise<MemRe
   const q = query && query.trim().length > 0 ? `?q=${encodeURIComponent(query.trim())}` : "";
   return getJson<MemReadRecord[]>(`/api/memory${q}`, signal);
 }
+
+/** FLOW's `ReviewComment` (the gate-sidecar entry), reached via the shared `GateItem.comments` — the same
+ *  projection the doc rail's `review-types` uses, kept off the one read-model contract (no new import). */
+export type ReviewComment = GateItem["comments"][number];
+
+/**
+ * One doc's on-disk review comments (the comment-rail hydrate, VISION §6). The `docId` IS the gate key —
+ * the SAME id the `/comment` POST writes under. Returns `[]` for a doc with no comments yet (the server
+ * answers a clean empty array, never a 404 here).
+ */
+export function fetchReview(
+  runId: string,
+  docId: string,
+  signal?: AbortSignal,
+): Promise<ReviewComment[]> {
+  return getJson<ReviewComment[]>(
+    `/api/work/${encodeURIComponent(runId)}/review/${encodeURIComponent(docId)}`,
+    signal,
+  );
+}

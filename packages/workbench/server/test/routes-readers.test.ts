@@ -157,6 +157,37 @@ test("GET /api/memory browses; ?q filters (read-only)", () => {
   });
 });
 
+test("GET /api/work/:id/review/:docId returns the doc's on-disk comments (open + resolved)", () => {
+  withSeed((deps) => {
+    const { res, captured } = fakeRes();
+    assert.equal(
+      handleReaderRequest(fakeReq("/api/work/run-a/review/spec"), res, deps),
+      true,
+    );
+    assert.equal(captured.status, 200);
+    const comments = captured.body as Array<{ id: string; resolved: boolean }>;
+    assert.equal(comments.length, 1, "the seeded spec comment");
+    assert.equal(comments[0]?.id, "c1");
+  });
+});
+
+test("GET …/review/:docId returns [] for a doc with no sidecar (clean empty, not 404)", () => {
+  withSeed((deps) => {
+    const { res, captured } = fakeRes();
+    handleReaderRequest(fakeReq("/api/work/run-a/review/plan"), res, deps);
+    assert.equal(captured.status, 200, "absent sidecar is a clean empty, never a 404");
+    assert.deepEqual(captured.body, [], "no comments yet → []");
+  });
+});
+
+test("a non-GET to …/review/:docId is 405", () => {
+  withSeed((deps) => {
+    const { res, captured } = fakeRes();
+    handleReaderRequest(fakeReq("/api/work/run-a/review/spec", "POST"), res, deps);
+    assert.equal(captured.status, 405);
+  });
+});
+
 test("a non-GET to a reader path is 405", () => {
   withSeed((deps) => {
     const { res, captured } = fakeRes();

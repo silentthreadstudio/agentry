@@ -17688,6 +17688,15 @@ var GateInbox = class {
     }
     return items;
   }
+  // ALL comments (open + resolved) for one run+gate — the doc-level read the comment rail hydrates from on
+  // load (the bidirectional AI↔Dashboard loop, VISION §6). The gate key IS the docId (the SAME key the
+  // `/comment` POST writes under). Reuses `readSidecar` (no second parser); an absent sidecar ⇒ `[]` (clean
+  // empty), distinct from `open()` which filters to unresolved and drops resolved-empty gates.
+  commentsFor(run, gate) {
+    const file = join9(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    if (!existsSync5(file)) return [];
+    return this.readSidecar(file);
+  }
   // Every gate sidecar in one run: the `<gate>.annotations.json` files under `.review/`, each parsed into
   // its `ReviewComment[]`. The gate name is the filename stem. An absent `.review/` dir ⇒ no gates.
   gatesOf(run) {
@@ -18037,6 +18046,18 @@ function handleReaderRequest(req, res, deps) {
       () => sendJson(res, 200, q !== null && q.length > 0 ? deps.memory.search(q) : deps.memory.list())
     );
   }
+  const review = matchWorkReview(path);
+  if (review !== null) {
+    return guardGet(method, res, () => {
+      let comments;
+      try {
+        comments = deps.gates.commentsFor(review.runId, review.docId);
+      } catch {
+        comments = [];
+      }
+      sendJson(res, 200, comments);
+    });
+  }
   return false;
 }
 function runParam(url) {
@@ -18172,6 +18193,15 @@ function matchWorkGraph(path) {
 }
 function matchWorkDoc(path) {
   const m = /^\/api\/work\/([^/]+)\/doc\/([^/]+)$/.exec(path);
+  if (!m || m[1] === void 0 || m[2] === void 0) return null;
+  try {
+    return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };
+  } catch {
+    return null;
+  }
+}
+function matchWorkReview(path) {
+  const m = /^\/api\/work\/([^/]+)\/review\/([^/]+)$/.exec(path);
   if (!m || m[1] === void 0 || m[2] === void 0) return null;
   try {
     return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };

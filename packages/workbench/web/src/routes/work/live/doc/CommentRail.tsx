@@ -6,9 +6,11 @@
 //
 // SRP: the rail RENDERS comments from the shared comment-store; SelectionBubble WRITES to it; the node
 // badge READS the count from it. No comment state lives in this component — it subscribes to the store.
+import { useEffect } from "react";
 import type { ReviewDecision } from "./review-types.js";
+import { fetchReview } from "../../../../api/client.js";
 import { SelectionBubble } from "./SelectionBubble.js";
-import { resolveComment, useComments, type UiComment } from "./comment-store.js";
+import { hydrate, resolveComment, useComments, type UiComment } from "./comment-store.js";
 import { useCommentRailStyles } from "./comment-styles.js";
 
 const DECISION_LABEL: Record<ReviewDecision, string> = {
@@ -30,6 +32,22 @@ export function CommentRail({
 }) {
   useCommentRailStyles();
   const comments = useComments(runId, docId);
+
+  // Hydrate the on-disk comments on mount (and on a run/doc switch): seed the store from
+  // `.review/<gate>.annotations.json` so a fresh page load shows comments that already exist on disk, not
+  // just this session's POSTs (the bidirectional AI↔Dashboard loop, VISION §6). The merge keeps session
+  // comments (dedup by id, store-side); a fetch error leaves the session-only state untouched (the rail
+  // still works, just without the on-disk seed). Aborted on unmount so a late response never seeds a
+  // closed/switched doc.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchReview(runId, docId, ctrl.signal)
+      .then((disk) => hydrate(runId, docId, disk))
+      .catch(() => {
+        /* offline or rejected — keep the session-only state; the badge still reflects POSTs */
+      });
+    return () => ctrl.abort();
+  }, [runId, docId]);
 
   return (
     <div className="dd-railwrap">

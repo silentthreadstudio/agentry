@@ -22,7 +22,7 @@
 // only ever issues a path whose id is its own `<id>.localhost` host.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { DocModel, WsMessage } from "@agentry/workbench-shared";
-import { ReviewAnchor, ReviewDecision } from "@agentry/flow/domain/review";
+import { ReviewAnchor, ReviewDecision, type ReviewComment } from "@agentry/flow/domain/review";
 import { computeVersion } from "@agentry/flow/domain/version";
 import type { WorkReader } from "../application/work-reader.js";
 import type { WriteService } from "../application/write-service.js";
@@ -118,6 +118,7 @@ export function handleApiRequest(
 //   GET /api/gates[?run=<id>]   → OpenGateItem[] — the open waiting-on-you gate items
 //   GET /api/tokens?run=<id>    → TokenSeries   — the per-day token series for one run (empty if absent)
 //   GET /api/memory[?q=<text>]  → MemReadRecord[] — read-only browse/search over both mem roots
+//   GET /api/work/:id/review/:docId → ReviewComment[] — one doc's on-disk review comments (gate == docId)
 export function handleReaderRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -154,6 +155,23 @@ export function handleReaderRequest(
     return guardGet(method, res, () =>
       sendJson(res, 200, q !== null && q.length > 0 ? deps.memory.search(q) : deps.memory.list()),
     );
+  }
+
+  const review = matchWorkReview(path);
+  if (review !== null) {
+    // One doc's on-disk review comments (the comment-rail hydrate, VISION §6). The gate key IS the docId
+    // (the SAME key the `/comment` POST writes under). Reuses GateInbox's sidecar reader — no second
+    // parser; an absent sidecar reads as `[]` (clean empty, never a 404 on a doc that simply has no
+    // comments yet). A poisoned run/doc segment (the `runDir` guard throws) also reads as `[]`.
+    return guardGet(method, res, () => {
+      let comments: ReviewComment[];
+      try {
+        comments = deps.gates.commentsFor(review.runId, review.docId);
+      } catch {
+        comments = [];
+      }
+      sendJson(res, 200, comments);
+    });
   }
 
   return false; // not a reader route — fall through to the write/static path.
@@ -372,6 +390,19 @@ function matchWorkGraph(path: string): string | null {
 // `matchWorkGraph`; the run/doc safety is the host-router/reader guard, not this matcher.
 function matchWorkDoc(path: string): { runId: string; docId: string } | null {
   const m = /^\/api\/work\/([^/]+)\/doc\/([^/]+)$/.exec(path);
+  if (!m || m[1] === undefined || m[2] === undefined) return null;
+  try {
+    return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };
+  } catch {
+    return null;
+  }
+}
+
+// Match `/api/work/:id/review/:docId` → the decoded run + doc ids, or null. The doc id IS the gate key
+// (the comment loop's gate == docId). Same decode discipline as `matchWorkDoc`; the run-segment safety is
+// the store's `runDir`/`assertSafeSegment` guard, not this matcher.
+function matchWorkReview(path: string): { runId: string; docId: string } | null {
+  const m = /^\/api\/work\/([^/]+)\/review\/([^/]+)$/.exec(path);
   if (!m || m[1] === undefined || m[2] === undefined) return null;
   try {
     return { runId: decodeURIComponent(m[1]), docId: decodeURIComponent(m[2]) };
