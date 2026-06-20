@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { GateItem } from "@agentry/workbench-shared";
-import { ReviewComment } from "@agentry/flow/domain/review";
+import { ReviewComment, isHumanComment } from "@agentry/flow/domain/review";
 import { runDir } from "@agentry/flow/resolution/run-pointer";
 import type { WorkRepository } from "../domain/ports.js";
 
@@ -39,7 +39,10 @@ export class GateInbox {
     const items: OpenGateItem[] = [];
     for (const run of runs) {
       for (const { gate, comments } of this.gatesOf(run)) {
-        const openComments = comments.filter((c) => !c.resolved);
+        // Waiting-on-you = unresolved HUMAN comments only. Agent replies (`origin:"agent"`, Phase 2b)
+        // already carry `resolved:true`, but filter them explicitly so a malformed unresolved reply can
+        // never surface a gate as "waiting on you" (defense-in-depth, ADR-002).
+        const openComments = comments.filter((c) => isHumanComment(c) && !c.resolved);
         if (openComments.length === 0) continue; // resolved gates are not waiting on you
         items.push({ run, gate, docId: gate, comments: openComments, decision: null });
       }

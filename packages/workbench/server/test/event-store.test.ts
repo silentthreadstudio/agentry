@@ -162,10 +162,29 @@ test("EventStore + GateInbox on the REAL repo runs (acceptance)", () => {
   const timeline = store.timeline();
   assert.ok(timeline.length > 0, "the real runs fold into a non-empty timeline");
 
-  // The roster reads real run-state.json — at least one run has recorded an agent.
+  // The roster reads real run-state.json — every recorded agent validates to a known state. We do NOT
+  // assert a non-zero count against the real tree: the repo's runs are mutable (a run may have no
+  // run-state.json, or none recording an agent), which made this flaky. The roster's "reads a recorded
+  // agent" guarantee is proven deterministically below against a temp fixture; here we only prove the
+  // real-tree read never produces an out-of-enum state.
   const roster = store.roster();
-  assert.ok(roster.length > 0, "the real runs carry at least one recorded agent");
+  assert.ok(Array.isArray(roster), "the real runs fold into a roster without throwing");
   for (const agent of roster) assert.ok(["working", "blocked", "done"].includes(agent.state));
+
+  // Deterministic roster proof: a temp fixture run that records one agent surfaces it (no real-tree dep).
+  const cwd = seedProject({
+    "run-fixture": {
+      runState: JSON.stringify({ agents: { implementer: { state: "working", assignedTask: "001" } } }),
+    },
+  });
+  try {
+    const fixtureStore = new EventStore(fakeRepo(["run-fixture"]), cwd);
+    const fixtureRoster = fixtureStore.roster();
+    assert.equal(fixtureRoster.length, 1, "the fixture run records exactly one agent");
+    assert.equal(fixtureRoster[0]?.role, "implementer", "the recorded agent surfaces from run-state");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 
   // The inbox scans real `.review/` sidecars — never throws (open list may be empty if all resolved).
   assert.ok(Array.isArray(inbox.open()), "the inbox scans real sidecars without throwing");

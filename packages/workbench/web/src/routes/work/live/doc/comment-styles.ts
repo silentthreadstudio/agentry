@@ -56,6 +56,24 @@ const COMMENT_CSS = `
   background:var(--panel2);color:var(--muted);cursor:pointer}
 .dd-mini:hover{color:var(--ink);border-color:var(--line2)}
 
+/* an agent channel_reply (Phase 2b), nested in its human comment's card — tinted reply block
+   (mockup .reply / .ava.ag). Display-only: the human acts via Resolve + the diff drawer. */
+.dd-reply{margin:9px -11px -11px;padding:9px 11px;border-top:1px solid var(--line);
+  background:color-mix(in srgb,var(--done) 7%,transparent)}
+.dd-reply-top{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.dd-reply-ava{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;flex:none;
+  font:800 9px var(--sans);color:var(--done);background:color-mix(in srgb,var(--done) 16%,transparent);
+  border:1px solid color-mix(in srgb,var(--done) 40%,transparent)}
+.dd-reply-who{font:600 11.5px var(--sans);color:var(--ink)}
+.dd-reply-when{font-size:10.5px;color:var(--faint)}
+.dd-reply-bd{font-size:12px;color:var(--ink2);word-break:break-word}
+
+/* fallback flat "replies" area — agent replies whose replyTo points at no known human comment */
+.dd-orphans{margin-top:6px;border-top:1px dashed var(--line2);padding-top:8px}
+.dd-orphans-h{font:700 9px var(--sans);letter-spacing:.6px;text-transform:uppercase;color:var(--faint);
+  margin-bottom:6px}
+.dd-orphans .dd-reply{margin:0 0 8px;border:1px solid var(--line);border-radius:var(--r-lg)}
+
 /* the floating selection bubble */
 .dd-bubble{position:fixed;z-index:90;display:flex;gap:3px;transform:translate(-50%,-130%);
   background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-lg);padding:5px;

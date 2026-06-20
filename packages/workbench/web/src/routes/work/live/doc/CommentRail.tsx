@@ -10,7 +10,14 @@ import { useEffect } from "react";
 import type { ReviewDecision } from "./review-types.js";
 import { fetchReview } from "../../../../api/client.js";
 import { SelectionBubble } from "./SelectionBubble.js";
-import { hydrate, resolveComment, useComments, type UiComment } from "./comment-store.js";
+import {
+  hydrate,
+  resolveComment,
+  threadsOf,
+  useComments,
+  type CommentThread,
+  type UiComment,
+} from "./comment-store.js";
 import { useCommentRailStyles } from "./comment-styles.js";
 
 const DECISION_LABEL: Record<ReviewDecision, string> = {
@@ -32,6 +39,9 @@ export function CommentRail({
 }) {
   useCommentRailStyles();
   const comments = useComments(runId, docId);
+  // Split the flat list into human threads + nested agent replies (Phase 2b). Human comments are the
+  // top-level cards; agent `channel_reply` entries nest under the human comment they answer (`replyTo`).
+  const { threads, orphanReplies } = threadsOf(comments);
 
   // Hydrate the on-disk comments on mount (and on a run/doc switch): seed the store from
   // `.review/<gate>.annotations.json` so a fresh page load shows comments that already exist on disk, not
@@ -63,9 +73,19 @@ export function CommentRail({
             Select any text to request changes, ask, or approve.
           </div>
         ) : (
-          comments.map((c) => (
-            <CommentCard key={c.id} runId={runId} docId={docId} comment={c} />
-          ))
+          <>
+            {threads.map((t) => (
+              <CommentCard key={t.comment.id} runId={runId} docId={docId} thread={t} />
+            ))}
+            {orphanReplies.length > 0 ? (
+              <div className="dd-orphans">
+                <div className="dd-orphans-h">replies</div>
+                {orphanReplies.map((r) => (
+                  <AgentReply key={r.id} reply={r} />
+                ))}
+              </div>
+            ) : null}
+          </>
         )}
       </div>
       <SelectionBubble runId={runId} docId={docId} applyCommentMark={applyCommentMark} />
@@ -76,12 +96,13 @@ export function CommentRail({
 function CommentCard({
   runId,
   docId,
-  comment,
+  thread,
 }: {
   runId: string;
   docId: string;
-  comment: UiComment;
+  thread: CommentThread;
 }) {
+  const { comment, replies } = thread;
   const { decision, anchor, body, resolved, id } = comment;
   return (
     <div className={`dd-cmt ${decision}${resolved ? " resolved" : ""}`} data-id={id}>
@@ -108,6 +129,25 @@ function CommentCard({
           </button>
         )}
       </div>
+      {replies.map((r) => (
+        <AgentReply key={r.id} reply={r} />
+      ))}
+    </div>
+  );
+}
+
+// One agent `channel_reply` (Phase 2b), nested inside the human comment it answers. Display-only here —
+// the human acts via the comment's Resolve and the diff drawer's Accept/Reject (no action lives on the
+// reply). Tinted reply block per the mockup's `.reply`: agent avatar, "agent · when", then the body.
+function AgentReply({ reply }: { reply: UiComment }) {
+  return (
+    <div className="dd-reply" data-id={reply.id}>
+      <div className="dd-reply-top">
+        <span className="dd-reply-ava">✦</span>
+        <span className="dd-reply-who">agent</span>
+        <span className="dd-reply-when">· reply</span>
+      </div>
+      {reply.body ? <div className="dd-reply-bd">{reply.body}</div> : null}
     </div>
   );
 }

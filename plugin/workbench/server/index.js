@@ -17210,14 +17210,23 @@ var ReviewAnchor = external_exports.object({
   startLine: external_exports.number()
   // the line the comment was made at
 });
+var ReviewOrigin = external_exports.enum(["human", "agent"]);
 var ReviewComment = external_exports.object({
   id: external_exports.string(),
   anchor: ReviewAnchor,
   decision: ReviewDecision,
   body: external_exports.string(),
-  resolved: external_exports.boolean()
+  resolved: external_exports.boolean(),
   // distinguishes open from resolved comments (AC10: review_resolve marks one)
+  // ── Phase 2 reply lane (ADR-002) — both optional + additive so old sidecars still parse ──────────
+  origin: ReviewOrigin.optional(),
+  // absent ⇒ human; "agent" marks a channel_reply (Phase 2b's rail)
+  replyTo: external_exports.string().optional()
+  // the human comment id this reply answers (threading; agent only)
 });
+function isHumanComment(comment) {
+  return comment.origin !== "agent";
+}
 
 // src/persistence/flow-writer.ts
 var FRONTMATTER3 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
@@ -17709,7 +17718,7 @@ var GateInbox = class {
     const items = [];
     for (const run of runs) {
       for (const { gate, comments } of this.gatesOf(run)) {
-        const openComments = comments.filter((c) => !c.resolved);
+        const openComments = comments.filter((c) => isHumanComment(c) && !c.resolved);
         if (openComments.length === 0) continue;
         items.push({ run, gate, docId: gate, comments: openComments, decision: null });
       }
