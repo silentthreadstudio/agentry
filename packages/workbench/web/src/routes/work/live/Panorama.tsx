@@ -13,11 +13,13 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
 } from "@xyflow/react";
 import type { GraphEdgeKind, GraphModel } from "@agentry/workbench-shared";
 import { fetchGraph } from "../../../api/client.js";
 import { getWsClient } from "../../../api/ws-client.js";
-import { nodeTypes } from "./DocNode.js";
+import { HoverProvider, nodeTypes } from "./DocNode.js";
 import { edgeTypes, Legend, markerForKind } from "./edge-types.js";
 import { layoutGraph } from "./layout-dagre.js";
 import type { AdrRef, DocNode } from "./layout-dagre.js";
@@ -109,6 +111,35 @@ function PanoramaCanvas({ runId }: { runId: string }) {
     [runId, graph, activeBlocks],
   );
 
+  // RF-owned interaction state (task 007): seed the nodes/edges into useNodesState/useEdgesState and wire
+  // onNodesChange/onEdgesChange so React Flow persists its own pan/zoom/measure state across renders and
+  // stops re-measuring. The arrays are re-seeded ONLY when the GRAPH changes (the effect below, keyed on
+  // `base`) — never on hover — so node identity is referentially stable and the canvas doesn't re-diff
+  // every node as the cursor moves. The per-edge marker/animated flags are graph-derived (stable), not
+  // hover-derived; the hover lit/dim now rides through HoverContext (read by DocNode / TypedEdge).
+  const [nodes, setNodes, onNodesChange] = useNodesState(base.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(
+    base.edges.map((e) => ({
+      ...e,
+      animated: e.data?.active === true,
+      markerEnd: markerForKind(e.data?.kind as GraphEdgeKind),
+    })),
+  );
+
+  // Sync the freshly-laid-out graph into the RF state when (and only when) the graph changes. Keyed on
+  // `base` (which is memoized on runId/graph/activeBlocks) — a hover never reaches here, so the arrays keep
+  // their identity across hovers. RF then preserves measured sizes/positions instead of re-measuring.
+  useEffect(() => {
+    setNodes(base.nodes);
+    setEdges(
+      base.edges.map((e) => ({
+        ...e,
+        animated: e.data?.active === true,
+        markerEnd: markerForKind(e.data?.kind as GraphEdgeKind),
+      })),
+    );
+  }, [base, setNodes, setEdges]);
+
   // The node click gate (BUG 4a): ONLY a backing-document node (`kind === "doc"`) opens the doc drawer.
   // The routing root and the synthetic ADR group container carry no doc — clicking them must NOT call
   // selectDoc (no 404 fetch). The group opens the Decisions drawer (a list → each ADR's doc); routing is
@@ -124,8 +155,10 @@ function PanoramaCanvas({ runId }: { runId: string }) {
   }, []);
 
   // hover-highlight: the hovered node + its direct neighbors stay lit; everything else dims. null = no
-  // hover (resting status-derived visuals). Computed here (the canvas knows adjacency); the node/edge
-  // components just honor the per-render `highlight` / opacity.
+  // hover (resting status-derived visuals). Computed here (the canvas knows adjacency) and published
+  // through HoverContext — NOT stamped onto the nodes/edges arrays — so the canvas arrays stay stable and
+  // only the (memo'd) DocNode/TypedEdge consumers whose lit state flipped re-render. This is the core fix:
+  // hover no longer rebuilds the graph, so React Flow no longer re-diffs/re-measures every node (no flicker).
   const litSet = useMemo(() => {
     if (!hover || !graph) return null;
     const set = new Set<string>([hover]);
@@ -136,32 +169,31 @@ function PanoramaCanvas({ runId }: { runId: string }) {
     return set;
   }, [hover, graph]);
 
-  const nodes = useMemo(
-    () =>
-      base.nodes.map((n): DocNode =>
-        // Only stamp `highlight` when something is hovered (litSet exists); otherwise leave it absent so
-        // the node renders its resting status-derived visual (exactOptionalPropertyTypes: never set undefined).
-        litSet
-          ? { ...n, data: { ...n.data, highlight: litSet.has(n.id) } }
-          : n,
-      ),
-    [base.nodes, litSet],
-  );
+  const hoverValue = useMemo(() => ({ litSet }), [litSet]);
 
-  const edges = useMemo(
-    () =>
-      base.edges.map((e) => {
-        const lit = !litSet || (litSet.has(e.source) && litSet.has(e.target));
-        const opacity = lit ? (litSet ? 1 : 0.85) : 0.18;
-        return {
-          ...e,
-          animated: e.data?.active === true && lit,
-          markerEnd: markerForKind(e.data?.kind as GraphEdgeKind),
-          style: { opacity },
-        };
-      }),
-    [base.edges, litSet],
-  );
+  // Stabilize hover (task 007): as the cursor pans across the canvas it crosses node boundaries, firing
+  // enter/leave in quick succession. Toggling hover id→null→id restarts the lit/dim CSS transitions and
+  // flashes. Guard against no-op sets, and debounce the leave→null by a frame so an immediately-following
+  // enter (the next node under the cursor) cancels the clear — the highlight slides node→node, never blinks
+  // through the resting state.
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onNodeEnter = useCallback((_e: unknown, n: { id: string }) => {
+    if (leaveTimer.current) {
+      clearTimeout(leaveTimer.current);
+      leaveTimer.current = null;
+    }
+    setHover((prev) => (prev === n.id ? prev : n.id));
+  }, []);
+  const onNodeLeave = useCallback(() => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    leaveTimer.current = setTimeout(() => {
+      leaveTimer.current = null;
+      setHover(null);
+    }, 60);
+  }, []);
+  useEffect(() => () => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+  }, []);
 
   if (load.kind === "loading") {
     return <div className="flowwrap" aria-busy="true" />;
@@ -176,32 +208,36 @@ function PanoramaCanvas({ runId }: { runId: string }) {
 
   return (
     <div className="flowwrap">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.18 }}
-        minZoom={0.3}
-        nodesDraggable={false}
-        proOptions={{ hideAttribution: true }}
-        onNodeMouseEnter={(_e, n) => setHover(n.id)}
-        onNodeMouseLeave={() => setHover(null)}
-        onNodeClick={onNodeClick}
-      >
-        <Background color="#20202a" gap={26} size={1} />
-        <Controls showInteractive={false} />
-        <MiniMap
-          pannable
-          zoomable
-          maskColor="rgba(13,13,17,.7)"
-          nodeColor={(n) => {
-            const status = (n.data as { status?: string } | undefined)?.status ?? "todo";
-            return MINIMAP_STATUS_COLOR[status] ?? "#41414a";
-          }}
-        />
-      </ReactFlow>
+      <HoverProvider value={hoverValue}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.18 }}
+          minZoom={0.3}
+          nodesDraggable={false}
+          proOptions={{ hideAttribution: true }}
+          onNodeMouseEnter={onNodeEnter}
+          onNodeMouseLeave={onNodeLeave}
+          onNodeClick={onNodeClick}
+        >
+          <Background color="#20202a" gap={26} size={1} />
+          <Controls showInteractive={false} />
+          <MiniMap
+            pannable
+            zoomable
+            maskColor="rgba(13,13,17,.7)"
+            nodeColor={(n) => {
+              const status = (n.data as { status?: string } | undefined)?.status ?? "todo";
+              return MINIMAP_STATUS_COLOR[status] ?? "#41414a";
+            }}
+          />
+        </ReactFlow>
+      </HoverProvider>
       <Legend />
       {/* Phase 3: a node click selects a doc (selectDoc), which opens the drawer over the dimmed canvas.
           The comment rail (task 18) + diff drawer (task 19) plug into the drawer's pinned slots. */}

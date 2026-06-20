@@ -8,10 +8,25 @@
 // (hover-highlight) and *which* blocks edges are active — it passes those through `style.opacity` and
 // the edge `data.active` flag the layout sets. We read the kind from `data`, draw the path, and let
 // the caller's opacity ride on top. We invent no relationship — the kind comes from the read-model.
+import { useContext } from "react";
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, MarkerType } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
 import type { GraphEdgeKind } from "@agentry/workbench-shared";
 import type { DocEdge } from "./layout-dagre.js";
+import { HoverContext } from "./DocNode.js";
+
+// The hover-highlight opacity for an edge (task 007). Mirrors the old Panorama-computed rule, but read
+// from HoverContext at render time so the `edges` array stays referentially STABLE across hovers (no
+// per-hover array rebuild = no re-diff/re-measure flicker). An edge is lit only when BOTH endpoints are
+// in the lit set; when nothing is hovered the spine sits at a slightly-muted 0.85 (its resting look).
+export function edgeHoverOpacity(
+  litSet: ReadonlySet<string> | null,
+  source: string,
+  target: string,
+): number {
+  if (!litSet) return 0.85;
+  return litSet.has(source) && litSet.has(target) ? 1 : 0.18;
+}
 
 // The per-kind visual vocabulary. Neutral hue for the structural spine; accent-red for blocks; a faint
 // dotted line for satisfies. Colors mirror the design tokens (--line2 / --block / a faint --line2).
@@ -37,6 +52,8 @@ const KIND_STYLE: Record<GraphEdgeKind, EdgeKindStyle> = {
 // hover-highlight dim. A single component keeps the four kinds from drifting apart.
 function TypedEdge(kind: GraphEdgeKind) {
   function Edge({
+    source,
+    target,
     sourceX,
     sourceY,
     targetX,
@@ -56,13 +73,20 @@ function TypedEdge(kind: GraphEdgeKind) {
       targetPosition,
     });
     const kindStyle = KIND_STYLE[kind];
-    const active = kind === "blocks" && data?.active === true;
+    // hover-highlight (task 007): the lit/dim opacity is derived from HoverContext here — NOT passed down
+    // through a per-hover-rebuilt `style.opacity` — so the edges array stays stable across hovers. A blocks
+    // edge animates/glows only while its blocker is active AND the edge is lit (matches the old rule).
+    const { litSet } = useContext(HoverContext);
+    const opacity = edgeHoverOpacity(litSet, source, target);
+    const lit = opacity === 1 || (!litSet && opacity === 0.85);
+    const active = kind === "blocks" && data?.active === true && lit;
     const edgeStyle: React.CSSProperties = {
       stroke: kindStyle.stroke,
       strokeWidth: kindStyle.width,
       ...(kindStyle.dash ? { strokeDasharray: kindStyle.dash } : {}),
-      // Panorama's hover-highlight opacity rides on top of the kind's base stroke.
+      // a caller-supplied style still rides on top of the kind's base stroke; the hover opacity wins.
       ...(style ?? {}),
+      opacity,
     };
     return (
       <>
@@ -78,7 +102,7 @@ function TypedEdge(kind: GraphEdgeKind) {
               className="rf-edge-label rf-edge-label-blocks"
               style={{
                 transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-                opacity: typeof edgeStyle.opacity === "number" ? edgeStyle.opacity : 1,
+                opacity,
               }}
             >
               blocks

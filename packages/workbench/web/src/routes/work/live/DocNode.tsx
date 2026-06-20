@@ -11,10 +11,33 @@
 // Visual STATE — pulse (in-progress) / dim (todo) / lit (done) / blocked — is driven entirely by the FLOW
 // task status carried on the node data, plus the derived `blocked` overlay flag and the hover-highlight
 // hint. It invents nothing: every visual derives from the read-model (DocNodeData, pinned by layout-dagre).
+import { createContext, memo, useContext, useMemo } from "react";
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import type { DocNode as DocNodeType, DocNodeData } from "./layout-dagre.js";
 import { useOpenCommentCount } from "./doc/comment-store.js";
+
+// ── Hover-highlight context (task 007: kill the node flicker) ───────────────────────────────────────
+// The hover-highlight (lit the hovered node + its neighbors, dim the rest) used to be stamped onto every
+// node's `data` on each hover — which rebuilt the whole `nodes`/`edges` arrays with fresh object refs and
+// made React Flow re-diff + re-measure all ~37 nodes every time the cursor moved (the flicker). Instead,
+// Panorama keeps the node/edge arrays referentially STABLE (they change only when the GRAPH changes) and
+// publishes the hover state through this context. The memo'd DocNode (and TypedEdge in edge-types) read it
+// and derive their own lit/dim class — so a hover re-renders only the cheap context consumers, not the
+// canvas. `litSet === null` means nothing is hovered (resting status-derived visuals stand).
+export interface HoverHighlight {
+  litSet: ReadonlySet<string> | null;
+}
+export const HoverContext = createContext<HoverHighlight>({ litSet: null });
+export const HoverProvider = HoverContext.Provider;
+
+// The tri-state lit/dim hint for a node id, read from the hover context: undefined = nothing hovered
+// (resting visual); true = this node is in the lit set; false = dimmed. Mirrors the old `data.highlight`
+// tri-state so the node's class logic is unchanged — only its source moved from props to context.
+function useHighlight(id: string): boolean | undefined {
+  const { litSet } = useContext(HoverContext);
+  return litSet ? litSet.has(id) : undefined;
+}
 
 // FLOW's closed status, reached transitively through the read-model (DocNodeData.status is FLOW's
 // FlowTaskStatus) so the web package needn't depend on @agentry/flow directly — the type still ripples.
@@ -60,11 +83,15 @@ function titleOf(id: string, label: string): string {
   return label;
 }
 
-export function DocNode({ id, data }: NodeProps<DocNodeType>) {
+// memo'd (task 007): with the node array referentially stable across hovers, React Flow no longer hands a
+// fresh `data` ref to every node each hover — so memo lets the ~37 nodes skip re-render on hover. The
+// lit/dim hint is read from HoverContext inside the leaf cards, not threaded through props, so a hover only
+// re-renders the (cheap) cards whose lit state actually flipped via the context update.
+export const DocNode = memo(function DocNode({ id, data }: NodeProps<DocNodeType>) {
   if (data.kind === "routing") return <RoutingNode label={data.label} />;
-  if (data.kind === "group") return <GroupNode data={data} />;
+  if (data.kind === "group") return <GroupNode id={id} data={data} />;
   return <DocCard id={id} data={data} />;
-}
+});
 
 // ── Option-B card (a backing-document node) ───────────────────────────────────────────────────────────
 function DocCard({ id, data }: { id: string; data: DocNodeData }) {
@@ -75,9 +102,10 @@ function DocCard({ id, data }: { id: string; data: DocNodeData }) {
   // gate sidecar both key on it), so the badge reads the same shared store the rail/bubble write to.
   const openComments = useOpenCommentCount(data.runId, id);
   // hover-highlight overrides the resting visual: a dimmed node loses its lit/prog emphasis. When nothing
-  // is hovered (highlight === undefined), the status-derived resting state stands.
-  const highlightClass =
-    data.highlight === false ? "dim" : data.highlight === true ? "lit" : view.state;
+  // is hovered (highlight === undefined), the status-derived resting state stands. Read from HoverContext
+  // (task 007) instead of `data` so the node array stays stable across hovers.
+  const highlight = useHighlight(id);
+  const highlightClass = highlight === false ? "dim" : highlight === true ? "lit" : view.state;
   const className = ["bn-node", highlightClass, data.blocked ? "blocked" : ""].filter(Boolean).join(" ");
 
   return (
@@ -135,10 +163,10 @@ function RoutingNode({ label }: { label: string }) {
 // ── ADR "Decisions" group (non-document, single unified card — BUG 4a) ─────────────────────────────────
 // Always one card: title + 2-line description + ADR count. Clicking it opens the Decisions drawer (which
 // lists the ADRs and routes each to its doc) — there is no canvas-expand and the card never changes shape.
-function GroupNode({ data }: { data: DocNodeData }) {
+function GroupNode({ id, data }: { id: string; data: DocNodeData }) {
   const count = data.adrCount ?? 0;
-  const highlightClass =
-    data.highlight === false ? "dim" : data.highlight === true ? "lit" : "";
+  const highlight = useHighlight(id);
+  const highlightClass = highlight === false ? "dim" : highlight === true ? "lit" : "";
   const className = ["bn-group", highlightClass].filter(Boolean).join(" ");
   return (
     <div className={className}>

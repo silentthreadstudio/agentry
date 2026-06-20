@@ -25,7 +25,10 @@
   border: 1px solid var(--line2);
   border-radius: var(--r-xl);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38);
-  transition: border-color 0.14s, box-shadow 0.14s, opacity 0.14s;
+  /* hover-highlight (task 007): transition compositor-friendly properties only (opacity + color), short and
+     non-thrashing — no width/transform that would reflow. `will-change: opacity` hints the lit/dim fade. */
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
+  will-change: opacity;
   cursor: pointer;
   overflow: hidden;
 }
@@ -218,7 +221,9 @@
   background: color-mix(in srgb, var(--panel) 70%, transparent);
   padding: 12px;
   cursor: pointer;
-  transition: border-color 0.14s, opacity 0.14s;
+  /* hover-highlight (task 007): opacity/color-only transition + will-change hint (compositor-friendly). */
+  transition: border-color 0.14s ease, opacity 0.14s ease;
+  will-change: opacity;
 }
 .bn-group:hover {
   border-color: var(--accent-line);
@@ -301,6 +306,11 @@
 }
 
 /* ── typed edges ────────────────────────────────────────────────────────────────────────── */
+/* hover-highlight (task 007): the edge opacity (set per-edge from HoverContext) fades smoothly — opacity
+   is compositor-friendly, so dimming/lighting edges on hover doesn't thrash. */
+.react-flow__edge .react-flow__edge-path {
+  transition: opacity 0.14s ease;
+}
 /* the blocks-edge glow when its blocker is active (AC7 live overlay). */
 .rf-edge-blocks-active {
   filter: drop-shadow(0 0 3px rgba(224, 104, 90, 0.7));
