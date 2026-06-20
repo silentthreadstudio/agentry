@@ -43,7 +43,11 @@ function fakeRepo(files: RunFiles): WorkRepository {
 // A recording Transport: captures every (run, message) push so the test can assert the AC7 ws fan-out.
 function recordingTransport(): Transport & { pushes: Array<{ run: string; message: WsMessage }> } {
   const pushes: Array<{ run: string; message: WsMessage }> = [];
-  return { pushes, push: (run, message) => void pushes.push({ run, message }) };
+  return {
+    pushes,
+    push: (run, message) => void pushes.push({ run, message }),
+    pushAll: (message) => void pushes.push({ run: "*", message }),
+  };
 }
 
 // A stub WriteService whose three methods return whatever the test arms — the route is the unit here, so

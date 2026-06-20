@@ -19,10 +19,17 @@ import type {
   EventView,
   GateItem,
   GraphModel,
+  PermissionRequest,
   RunSummary,
   TokenSeries,
 } from "@agentry/workbench-shared";
-export type { AgentView, EventView, GateItem, TokenSeries } from "@agentry/workbench-shared";
+export type {
+  AgentView,
+  EventView,
+  GateItem,
+  PermissionRequest,
+  TokenSeries,
+} from "@agentry/workbench-shared";
 
 /** A gate inbox item plus the run it lives in — the jump-to-doc-at-gate target (server `OpenGateItem`). */
 export interface OpenGateItem extends GateItem {
@@ -131,4 +138,29 @@ export function fetchReview(
     `/api/work/${encodeURIComponent(runId)}/review/${encodeURIComponent(docId)}`,
     signal,
   );
+}
+
+// ── Permission relay (Phase 3b) ───────────────────────────────────────────────────────────────────────
+// The project-global approvals endpoints — NOT run-scoped (permissions are session/project-level, served
+// on every host). `fetchPermissions` seeds the banner; `postVerdict` writes the verdict file FLOW reads.
+
+/** The pending tool-approval prompts awaiting a human verdict — the approvals-banner seed. */
+export function fetchPermissions(signal?: AbortSignal): Promise<PermissionRequest[]> {
+  return getJson<PermissionRequest[]>("/api/permissions", signal);
+}
+
+/**
+ * Answer one approval prompt: write the verdict FLOW relays to Claude Code. First answer wins — if the
+ * terminal already resolved it (the request file is gone), FLOW drops a stale verdict harmlessly. The
+ * banner clears off the ws `permission-removed` (the request-file unlink), not this response.
+ */
+export async function postVerdict(requestId: string, behavior: "allow" | "deny"): Promise<void> {
+  const res = await fetch(`/api/permissions/${encodeURIComponent(requestId)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ behavior }),
+  });
+  if (!res.ok) {
+    throw new ApiError(`POST /api/permissions/${requestId} → ${res.status} ${res.statusText}`, res.status);
+  }
 }

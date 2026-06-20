@@ -13,6 +13,7 @@ import { bindPortLock } from "./instance/port-lock.js";
 import { removePidfile, writePidfile } from "./instance/pidfile.js";
 import { FsWorkRepository } from "./persistence/fs-work-repository.js";
 import { ChokidarWatcher } from "./persistence/chokidar-watcher.js";
+import { PermissionWatcher, type PermissionEvent } from "./persistence/permission-watcher.js";
 import { FlowWriter } from "./persistence/flow-writer.js";
 import { WorkReader } from "./application/work-reader.js";
 import { WriteService } from "./application/write-service.js";
@@ -59,6 +60,12 @@ async function main(): Promise<void> {
   const watcher = new ChokidarWatcher(projectRoot);
   const writeService = new WriteService(new FlowWriter(projectRoot));
 
+  // The project-global permission relay (Phase 3b): watch `.agentry/run/permissions/*.json` (FLOW's
+  // request files) for pending tool-approval prompts. NOT under `.agentry/work/`, so a SEPARATE watcher
+  // from the run-tree one above. Its `current()` seeds `GET /api/permissions`; its events drive the
+  // approvals banner via `pushAll` (wired below, after the transport exists).
+  const permissionWatcher = new PermissionWatcher(projectRoot);
+
   // Phase-4 aggregation readers (the Activity / Agents / Gates / Tokens / Memory data). `EventStore` is
   // the one timeline fold + the roster source; its `roster` doubles as the `RunSummary.agentCount` counter
   // wired into the WorkReader (one roster read, not two). `TokenReader` folds the `TranscriptReader`'s
@@ -78,8 +85,24 @@ async function main(): Promise<void> {
   const transport = new WsTransport(server, (label) => resolveSlug(label, reader.listRuns()) ?? null);
   server.on(
     "request",
-    createHttpHandler(reader, { reader, writeService, transport }, { events, gates, tokens, memory }),
+    createHttpHandler(
+      reader,
+      { reader, writeService, transport },
+      { events, gates, tokens, memory },
+      { watcher: permissionWatcher, projectRoot },
+    ),
   );
+
+  // The approvals live loop (Phase 3b): a request file appears/resolves → broadcast it to EVERY connected
+  // client (`pushAll`, not `push` — permissions belong to no run, and the banner mounts on the base host
+  // and every run host alike). The watcher already coalesces add/change into a single `added` per id.
+  permissionWatcher.subscribe((event: PermissionEvent) => {
+    if (event.kind === "added") {
+      transport.pushAll({ type: "permission-added", request: event.request });
+    } else {
+      transport.pushAll({ type: "permission-removed", requestId: event.requestId });
+    }
+  });
 
   // The live loop (AC7): a debounced run change → push a `file-changed` message per changed path to that
   // run's ws subscribers. The `WorkReader.read` confirms the run still resolves (a change in a vanished
@@ -101,7 +124,9 @@ async function main(): Promise<void> {
     console.log(`workbench server shutting down (${signal})`);
     removePidfile(projectRoot);
     transport.close();
-    void watcher.close().finally(() => server.close(() => process.exit(0)));
+    void Promise.allSettled([watcher.close(), permissionWatcher.close()]).finally(() =>
+      server.close(() => process.exit(0)),
+    );
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));

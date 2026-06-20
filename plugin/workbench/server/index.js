@@ -15573,10 +15573,10 @@ var ReaddirpStream = class extends Readable {
   }
   async _formatEntry(dirent, path) {
     let entry;
-    const basename3 = this._isDirent ? dirent.name : dirent;
+    const basename4 = this._isDirent ? dirent.name : dirent;
     try {
-      const fullPath = presolve(pjoin(path, basename3));
-      entry = { path: prelative(this._root, fullPath), fullPath, basename: basename3 };
+      const fullPath = presolve(pjoin(path, basename4));
+      entry = { path: prelative(this._root, fullPath), fullPath, basename: basename4 };
       entry[this._statsProp] = this._isDirent ? dirent : await this._stat(fullPath);
     } catch (err) {
       this._onError(err);
@@ -16117,9 +16117,9 @@ var NodeFsHandler = class {
   _watchWithNodeFs(path, listener) {
     const opts = this.fsw.options;
     const directory = sp.dirname(path);
-    const basename3 = sp.basename(path);
+    const basename4 = sp.basename(path);
     const parent = this.fsw._getWatchedDir(directory);
-    parent.add(basename3);
+    parent.add(basename4);
     const absolutePath = sp.resolve(path);
     const options = {
       persistent: opts.persistent
@@ -16129,7 +16129,7 @@ var NodeFsHandler = class {
     let closer;
     if (opts.usePolling) {
       const enableBin = opts.interval !== opts.binaryInterval;
-      options.interval = enableBin && isBinaryPath(basename3) ? opts.binaryInterval : opts.interval;
+      options.interval = enableBin && isBinaryPath(basename4) ? opts.binaryInterval : opts.interval;
       closer = setFsWatchFileListener(path, absolutePath, options, {
         listener,
         rawEmitter: this.fsw._emitRaw
@@ -16152,10 +16152,10 @@ var NodeFsHandler = class {
       return;
     }
     const dirname3 = sp.dirname(file);
-    const basename3 = sp.basename(file);
+    const basename4 = sp.basename(file);
     const parent = this.fsw._getWatchedDir(dirname3);
     let prevStats = stats;
-    if (parent.has(basename3))
+    if (parent.has(basename4))
       return;
     const listener = async (path, newStats) => {
       if (!this.fsw._throttle(THROTTLE_MODE_WATCH, file, 5))
@@ -16180,9 +16180,9 @@ var NodeFsHandler = class {
             prevStats = newStats2;
           }
         } catch (error) {
-          this.fsw._remove(dirname3, basename3);
+          this.fsw._remove(dirname3, basename4);
         }
-      } else if (parent.has(basename3)) {
+      } else if (parent.has(basename4)) {
         const at = newStats.atimeMs;
         const mt = newStats.mtimeMs;
         if (!at || at <= mt || mt !== prevStats.mtimeMs) {
@@ -17195,10 +17195,133 @@ var ChokidarWatcher = class {
   }
 };
 
+// src/persistence/permission-watcher.ts
+import { basename as basename3 } from "node:path";
+
+// ../../flow/src/channel/permission-relay.ts
+import { join as join7 } from "node:path";
+
+// ../../flow/src/channel/permission-event.ts
+var PermissionRequestSchema = external_exports.object({
+  method: external_exports.literal("notifications/claude/channel/permission_request"),
+  params: external_exports.object({
+    request_id: external_exports.string(),
+    // five lowercase letters (a-z, no 'l') — echoed verbatim in the verdict
+    tool_name: external_exports.string(),
+    // e.g. "Bash", "Write"
+    description: external_exports.string(),
+    // human-readable summary of this specific call
+    input_preview: external_exports.string()
+    // tool args as JSON, truncated to ~200 chars by Claude Code
+  })
+});
+var PermissionBehaviorSchema = external_exports.enum(["allow", "deny"]);
+var PermissionVerdictFileSchema = external_exports.object({
+  request_id: external_exports.string(),
+  behavior: PermissionBehaviorSchema
+});
+
+// ../../flow/src/channel/permission-relay.ts
+function permissionsDir(cwd) {
+  return join7(cwd, ".agentry", "run", "permissions");
+}
+
+// src/persistence/permission-reader.ts
+import { readFileSync as readFileSync4 } from "node:fs";
+function readRequestFile(path) {
+  let raw;
+  try {
+    raw = readFileSync4(path, "utf8");
+  } catch {
+    return void 0;
+  }
+  return parseRequestFile(raw);
+}
+function parseRequestFile(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return void 0;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+  const r = parsed;
+  if (!isNonEmptyString(r.request_id) || !isString(r.tool_name) || !isString(r.description) || !isString(r.input_preview) || !isString(r.created_at)) {
+    return void 0;
+  }
+  return {
+    request_id: r.request_id,
+    tool_name: r.tool_name,
+    description: r.description,
+    input_preview: r.input_preview,
+    created_at: r.created_at
+  };
+}
+function isString(v) {
+  return typeof v === "string";
+}
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.length > 0;
+}
+
+// src/persistence/permission-watcher.ts
+var VERDICT_SUFFIX = ".verdict.json";
+var PermissionWatcher = class {
+  fsWatcher;
+  handlers = /* @__PURE__ */ new Set();
+  // The pending requests, keyed by request_id (== the `<id>.json` filename stem). The source of truth the
+  // REST snapshot reads; the watcher keeps it in lockstep with the dir's request files.
+  pending = /* @__PURE__ */ new Map();
+  constructor(projectRoot) {
+    const dir = permissionsDir(projectRoot);
+    this.fsWatcher = watch(dir, { ignoreInitial: false, persistent: true, depth: 0 });
+    this.fsWatcher.on("add", (path) => this.onUpsert(path));
+    this.fsWatcher.on("change", (path) => this.onUpsert(path));
+    this.fsWatcher.on("unlink", (path) => this.onUnlink(path));
+  }
+  // Register a change handler; returns an unsubscribe handle (mirrors ChokidarWatcher).
+  subscribe(handler) {
+    this.handlers.add(handler);
+    return () => this.handlers.delete(handler);
+  }
+  // The current pending requests — the seed for `GET /api/permissions`. A copy, newest last (insertion
+  // order == file-add order), so a caller can't mutate the internal map.
+  current() {
+    return [...this.pending.values()];
+  }
+  async close() {
+    await this.fsWatcher.close();
+    this.pending.clear();
+    this.handlers.clear();
+  }
+  // A request file was added or rewritten. Ignore our own verdict files; parse the request file and, when
+  // it's well-formed, upsert it into pending + emit `added`. A malformed/half-written file is skipped (no
+  // emit) — chokidar will fire `change` again when FLOW finishes the write.
+  onUpsert(path) {
+    if (path.endsWith(VERDICT_SUFFIX)) return;
+    const request = readRequestFile(path);
+    if (request === void 0) return;
+    this.pending.set(request.request_id, request);
+    this.emit({ kind: "added", request });
+  }
+  // A file was removed. A verdict file leaving is not a request resolution we track (FLOW deletes both
+  // files; the request unlink is the signal). For a request file, drop it from pending + emit `removed`
+  // keyed by the filename stem (== request_id, the pinned `<id>.json` contract).
+  onUnlink(path) {
+    if (path.endsWith(VERDICT_SUFFIX)) return;
+    const requestId = basename3(path).replace(/\.json$/, "");
+    if (!this.pending.delete(requestId)) return;
+    this.emit({ kind: "removed", requestId });
+  }
+  emit(event) {
+    for (const handler of [...this.handlers]) handler(event);
+  }
+};
+
 // src/persistence/flow-writer.ts
 var import_yaml3 = __toESM(require_dist(), 1);
-import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync4, readdirSync as readdirSync3, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync5, readdirSync as readdirSync3, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join8 } from "node:path";
 
 // ../../flow/src/domain/review.ts
 var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
@@ -17237,11 +17360,11 @@ var FlowWriter = class {
   readArtifact(run, target) {
     const path = this.artifactPath(run, target);
     if (path === void 0 || !existsSync3(path)) return void 0;
-    return this.parse(readFileSync4(path, "utf8"));
+    return this.parse(readFileSync5(path, "utf8"));
   }
   writeArtifact(run, target, frontmatter, body) {
     const path = this.resolveWritePath(run, target);
-    mkdirSync3(join7(path, ".."), { recursive: true });
+    mkdirSync3(join8(path, ".."), { recursive: true });
     const { rendered, version } = this.render(frontmatter, body);
     writeFileSync3(path, rendered);
     return version;
@@ -17249,8 +17372,8 @@ var FlowWriter = class {
   appendComment(run, gate, comment) {
     assertSafeSegment(gate);
     const validated = ReviewComment.parse(comment);
-    const dir = join7(runDir(this.cwd, run), ".review");
-    const file = join7(dir, `${gate}.annotations.json`);
+    const dir = join8(runDir(this.cwd, run), ".review");
+    const file = join8(dir, `${gate}.annotations.json`);
     const existing = this.readComments(file);
     mkdirSync3(dir, { recursive: true });
     writeFileSync3(file, `${JSON.stringify([...existing, validated], null, 2)}
@@ -17292,13 +17415,13 @@ ${body}
   // undefined for a task whose file does not yet exist (an absent artifact reads as undefined).
   artifactPath(run, target) {
     const dir = runDir(this.cwd, run);
-    if ("kind" in target) return join7(dir, `${target.kind}.md`);
+    if ("kind" in target) return join8(dir, `${target.kind}.md`);
     assertSafeSegment(target.taskNo);
-    const tasksDir = join7(dir, "tasks");
+    const tasksDir = join8(dir, "tasks");
     if (!existsSync3(tasksDir)) return void 0;
     const prefix = `${target.taskNo}-`;
     const file = readdirSync3(tasksDir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
-    return file ? join7(tasksDir, file) : void 0;
+    return file ? join8(tasksDir, file) : void 0;
   }
   // The path to WRITE a target. For a task we never write to a fresh name (the WriteService only
   // writes after a successful read at the same target, so the file exists) — but if FLOW renamed the
@@ -17310,14 +17433,14 @@ ${body}
     if ("taskNo" in target) {
       throw new Error(`flow-writer: no task file for ${target.taskNo} in run ${run} to write`);
     }
-    return join7(runDir(this.cwd, run), `${target.kind}.md`);
+    return join8(runDir(this.cwd, run), `${target.kind}.md`);
   }
   // Read the gate sidecar back, validating each comment through `ReviewComment` (a corrupt/partial
   // sidecar reads as empty rather than throwing — the JsonReviewStore tolerance).
   readComments(file) {
     if (!existsSync3(file)) return [];
     try {
-      const raw = JSON.parse(readFileSync4(file, "utf8"));
+      const raw = JSON.parse(readFileSync5(file, "utf8"));
       if (!Array.isArray(raw)) return [];
       return raw.map((c) => ReviewComment.parse(c));
     } catch {
@@ -17605,8 +17728,8 @@ function mintCommentId() {
 }
 
 // src/application/event-store.ts
-import { existsSync as existsSync4, readFileSync as readFileSync5 } from "node:fs";
-import { join as join8 } from "node:path";
+import { existsSync as existsSync4, readFileSync as readFileSync6 } from "node:fs";
+import { join as join9 } from "node:path";
 var EventStore = class {
   // `cwd` (the project root) is threaded on every fs path — no ambient cwd, mirroring FsWorkRepository.
   // The repository provides the run list (the SAME `.agentry/work/` listing the Works home uses), so the
@@ -17652,9 +17775,9 @@ var EventStore = class {
   // A hook backstop line is projected into the closed `node-enter` shape so the feed renders one event
   // vocabulary — its `kind` becomes the node label, its `agent` the actor (the hook's only structured fields).
   foldRun(run, into) {
-    const log = join8(runDir(this.cwd, run), "events.jsonl");
+    const log = join9(runDir(this.cwd, run), "events.jsonl");
     if (!existsSync4(log)) return;
-    const lines = readFileSync5(log, "utf8").split("\n");
+    const lines = readFileSync6(log, "utf8").split("\n");
     lines.forEach((line, index) => {
       const parsed = parseLogLine(line);
       if (parsed.kind === "skip") return;
@@ -17667,11 +17790,11 @@ var EventStore = class {
   // agent's `state` is validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent
   // rather than surfacing an ill-typed state.
   rosterOf(run) {
-    const path = join8(runDir(this.cwd, run), "run-state.json");
+    const path = join9(runDir(this.cwd, run), "run-state.json");
     if (!existsSync4(path)) return [];
     let raw;
     try {
-      raw = JSON.parse(readFileSync5(path, "utf8"));
+      raw = JSON.parse(readFileSync6(path, "utf8"));
     } catch {
       return [];
     }
@@ -17701,8 +17824,8 @@ function isRecord(value) {
 }
 
 // src/application/gate-inbox.ts
-import { existsSync as existsSync5, readFileSync as readFileSync6, readdirSync as readdirSync4 } from "node:fs";
-import { join as join9 } from "node:path";
+import { existsSync as existsSync5, readFileSync as readFileSync7, readdirSync as readdirSync4 } from "node:fs";
+import { join as join10 } from "node:path";
 var GateInbox = class {
   // `cwd` (the project root) is threaded on every fs path — no ambient cwd (mirrors FsWorkRepository).
   constructor(repository, cwd) {
@@ -17730,20 +17853,20 @@ var GateInbox = class {
   // `/comment` POST writes under). Reuses `readSidecar` (no second parser); an absent sidecar ⇒ `[]` (clean
   // empty), distinct from `open()` which filters to unresolved and drops resolved-empty gates.
   commentsFor(run, gate) {
-    const file = join9(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    const file = join10(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
     if (!existsSync5(file)) return [];
     return this.readSidecar(file);
   }
   // Every gate sidecar in one run: the `<gate>.annotations.json` files under `.review/`, each parsed into
   // its `ReviewComment[]`. The gate name is the filename stem. An absent `.review/` dir ⇒ no gates.
   gatesOf(run) {
-    const reviewDir = join9(runDir(this.cwd, run), ".review");
+    const reviewDir = join10(runDir(this.cwd, run), ".review");
     if (!existsSync5(reviewDir)) return [];
     const out = [];
     for (const file of readdirSync4(reviewDir).sort()) {
       if (!file.endsWith(".annotations.json")) continue;
       const gate = file.slice(0, -".annotations.json".length);
-      out.push({ gate, comments: this.readSidecar(join9(reviewDir, file)) });
+      out.push({ gate, comments: this.readSidecar(join10(reviewDir, file)) });
     }
     return out;
   }
@@ -17752,7 +17875,7 @@ var GateInbox = class {
   // sidecar never throws here). A single ill-formed comment drops the whole file to empty, matching FLOW.
   readSidecar(file) {
     try {
-      const raw = JSON.parse(readFileSync6(file, "utf8"));
+      const raw = JSON.parse(readFileSync7(file, "utf8"));
       if (!Array.isArray(raw)) return [];
       return raw.map((c) => ReviewComment.parse(c));
     } catch {
@@ -17802,9 +17925,9 @@ function dayOf(timestamp) {
 }
 
 // src/persistence/transcript-reader.ts
-import { existsSync as existsSync6, readFileSync as readFileSync7, readdirSync as readdirSync5 } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync8, readdirSync as readdirSync5 } from "node:fs";
 import { homedir } from "node:os";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 var TranscriptReader = class {
   // `cwd` (the project root) locates the FLOW session pointers; `home` is the transcript root base
   // (injectable so the reader is testable against a fixture tree without touching the real home dir).
@@ -17823,7 +17946,7 @@ var TranscriptReader = class {
     if (dir === null || !existsSync6(dir)) return [];
     const samples = [];
     for (const session of sessions) {
-      const file = join10(dir, `${session}.jsonl`);
+      const file = join11(dir, `${session}.jsonl`);
       if (!existsSync6(file)) continue;
       samples.push(...this.readTranscript(file));
     }
@@ -17833,13 +17956,13 @@ var TranscriptReader = class {
   // `workId` is this run names a session whose transcript belongs to the run. A missing pointer dir, an
   // unreadable pointer, or one with no matching `workId` simply contributes no session.
   sessionsForRun(run) {
-    const dir = join10(this.cwd, ".agentry", "run", "sessions");
+    const dir = join11(this.cwd, ".agentry", "run", "sessions");
     if (!existsSync6(dir)) return [];
     const sessions = [];
     for (const file of readdirSync5(dir)) {
       if (!file.endsWith(".json")) continue;
       try {
-        const ptr = JSON.parse(readFileSync7(join10(dir, file), "utf8"));
+        const ptr = JSON.parse(readFileSync8(join11(dir, file), "utf8"));
         if (ptr && typeof ptr === "object" && ptr.workId === run) {
           sessions.push(file.slice(0, -".json".length));
         }
@@ -17854,7 +17977,7 @@ var TranscriptReader = class {
   readTranscript(file) {
     let text;
     try {
-      text = readFileSync7(file, "utf8");
+      text = readFileSync8(file, "utf8");
     } catch {
       return [];
     }
@@ -17869,9 +17992,9 @@ var TranscriptReader = class {
   // absolute cwd with every non-alphanumeric char replaced by `-` (Claude Code's layout). Returns null
   // only if the base projects dir is itself absent (Claude Code never ran) — a degrade signal.
   transcriptDir() {
-    const base = join10(this.home, ".claude", "projects");
+    const base = join11(this.home, ".claude", "projects");
     if (!existsSync6(base)) return null;
-    return join10(base, projectSlug(this.cwd));
+    return join11(base, projectSlug(this.cwd));
   }
 };
 function parseUsageLine(line) {
@@ -17905,9 +18028,9 @@ function isRecord2(value) {
 
 // src/persistence/mem-reader.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync as readdirSync6 } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync9, readdirSync as readdirSync6 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 var FRONTMATTER4 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 var BODY_KEY = { facts: "text", episodes: "task" };
 var MemReader = class {
@@ -17917,8 +18040,8 @@ var MemReader = class {
   // written memory contributes nothing rather than erroring.
   constructor(cwd, home = homedir2()) {
     this.roots = [
-      { origin: "global", dir: join11(home, ".agentry", "memory") },
-      { origin: "project", dir: join11(cwd, ".agentry", "memory") }
+      { origin: "global", dir: join12(home, ".agentry", "memory") },
+      { origin: "project", dir: join12(cwd, ".agentry", "memory") }
     ];
   }
   // Every memory record across both roots (facts then episodes), each tagged with its kind + origin. A
@@ -17927,7 +18050,7 @@ var MemReader = class {
     const records = [];
     for (const { origin, dir } of this.roots) {
       for (const kind of ["facts", "episodes"]) {
-        records.push(...this.readDir(origin, kind, join11(dir, kind)));
+        records.push(...this.readDir(origin, kind, join12(dir, kind)));
       }
     }
     return records;
@@ -17953,7 +18076,7 @@ var MemReader = class {
     const records = [];
     for (const file of readdirSync6(dir).sort()) {
       if (!file.endsWith(".md")) continue;
-      const record = this.parseRecord(origin, kind, join11(dir, file));
+      const record = this.parseRecord(origin, kind, join12(dir, file));
       if (record !== null) records.push(record);
     }
     return records;
@@ -17965,7 +18088,7 @@ var MemReader = class {
   parseRecord(origin, kind, file) {
     let text;
     try {
-      text = readFileSync8(file, "utf8");
+      text = readFileSync9(file, "utf8");
     } catch {
       return null;
     }
@@ -17998,7 +18121,7 @@ function stemOf(file) {
 
 // src/transport/http.ts
 import { createReadStream, existsSync as existsSync8, statSync } from "node:fs";
-import { extname as extname2, join as join12, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
+import { extname as extname2, join as join14, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ../shared/src/slug.ts
@@ -18036,6 +18159,17 @@ function parseHostLabel(hostHeader) {
     return null;
   }
   return leading;
+}
+
+// src/persistence/permission-writer.ts
+import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join13 } from "node:path";
+function writeVerdict(projectRoot, requestId, behavior) {
+  assertSafeSegment(requestId);
+  const dir = permissionsDir(projectRoot);
+  mkdirSync4(dir, { recursive: true });
+  const record = { request_id: requestId, behavior };
+  writeFileSync4(join13(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
 }
 
 // src/transport/routes.ts
@@ -18148,6 +18282,49 @@ async function handlePostRequest(req, res, deps) {
   if (write.kind === "comment") return handleComment(res, deps, runId, body);
   if (write.kind === "artifact") return handleArtifact(res, deps, runId, body);
   return handleTakeover(res, deps, runId, body);
+}
+async function handlePermissionRequest(req, res, deps) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const path = url.pathname;
+  const method = req.method ?? "GET";
+  if (path === "/api/permissions") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.watcher.current()));
+  }
+  const requestId = matchPermissionVerdict(path);
+  if (requestId === null) return false;
+  if (method !== "POST") {
+    sendJson(res, 405, { error: "method_not_allowed" });
+    return true;
+  }
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    sendJson(res, 400, { error: "invalid_json" });
+    return true;
+  }
+  return handleVerdict(res, deps, requestId, body);
+}
+function handleVerdict(res, deps, requestId, body) {
+  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
+  const behavior = body.behavior;
+  if (behavior !== "allow" && behavior !== "deny") return reject(res, 400, "invalid_behavior");
+  try {
+    writeVerdict(deps.projectRoot, requestId, behavior);
+  } catch {
+    return reject(res, 400, "invalid_request_id");
+  }
+  sendJson(res, 200, { ok: true });
+  return true;
+}
+function matchPermissionVerdict(path) {
+  const m = /^\/api\/permissions\/([^/]+)$/.exec(path);
+  if (!m || m[1] === void 0) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return null;
+  }
 }
 function handleComment(res, deps, runId, body) {
   if (!isRecord3(body)) return reject(res, 400, "invalid_body");
@@ -18354,13 +18531,13 @@ function sendJson(res, status, body) {
 function resolveWebRoot() {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (pluginRoot && pluginRoot.length > 0) {
-    return join12(pluginRoot, "workbench", "web");
+    return join14(pluginRoot, "workbench", "web");
   }
   const bundleDir = fileURLToPath(new URL(".", import.meta.url));
   return resolve3(bundleDir, "..", "web");
 }
 var WEB_ROOT = resolveWebRoot();
-var INDEX_HTML = join12(WEB_ROOT, "index.html");
+var INDEX_HTML = join14(WEB_ROOT, "index.html");
 var CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -18379,14 +18556,14 @@ var CONTENT_TYPES = {
   ".ttf": "font/ttf",
   ".map": "application/json; charset=utf-8"
 };
-function createHttpHandler(reader, write, readers) {
+function createHttpHandler(reader, write, readers, permissions) {
   return function handler(req, res) {
     const label = parseHostLabel(req.headers.host);
     const run = label !== null ? resolveSlug(label, reader.listRuns()) ?? null : null;
     const context = { run };
     if (handleApiRequest(req, res, reader, context)) return;
     if (handleReaderRequest(req, res, readers)) return;
-    void handlePostRequest(req, res, write).then((handled) => {
+    void handlePostRequest(req, res, write).then((handled) => handled ? true : handlePermissionRequest(req, res, permissions)).then((handled) => {
       if (handled) return;
       if (req.method !== "GET" && req.method !== "HEAD") {
         res.writeHead(405, { "content-type": "application/json" });
@@ -18415,7 +18592,7 @@ function resolveStaticFile(pathname) {
   const decoded = safeDecode(pathname);
   if (decoded === null) return null;
   if (decoded === "/" || decoded === "") return INDEX_HTML;
-  const candidate = normalize2(join12(WEB_ROOT, decoded));
+  const candidate = normalize2(join14(WEB_ROOT, decoded));
   if (candidate !== WEB_ROOT && !candidate.startsWith(WEB_ROOT + sep2)) return null;
   return candidate;
 }
@@ -18471,28 +18648,52 @@ var WsTransport = class {
   }
   wss;
   // run id → the set of open sockets subscribed to it. A bare-home connection (no run) is not registered
-  // for any run — it receives nothing (the Works home is poll/REST-driven in Phase 1).
+  // for any run — it receives nothing per-run (the Works home is poll/REST-driven in Phase 1).
   byRun = /* @__PURE__ */ new Map();
-  // Register an accepted socket under its run. A connection with no run context (bare home) is accepted
-  // but joins no run set, so it is never a `push` target — it stays open for the client's status check.
+  // EVERY open socket (run hosts AND the bare home), the target of `pushAll`. Permission-relay messages
+  // are project-global (no run), so the approvals banner must reach the base host too — `byRun` alone
+  // would miss it. Kept in lockstep with `byRun` on register/close.
+  all = /* @__PURE__ */ new Set();
+  // Register an accepted socket. Every socket joins `all` (the `pushAll` target for project-global
+  // messages like the permission relay), even the bare home. A run-bound socket also joins its run set
+  // (the per-run `push` target); a bare-home socket (no run) joins only `all`.
   register(ws, run) {
-    if (run === null) return;
+    this.all.add(ws);
+    const set = run !== null ? this.runSet(run) : void 0;
+    if (set) set.add(ws);
+    ws.on("close", () => {
+      this.all.delete(ws);
+      if (set && run !== null) {
+        set.delete(ws);
+        if (set.size === 0) this.byRun.delete(run);
+      }
+    });
+  }
+  // The socket set for a run, created on first use.
+  runSet(run) {
     let set = this.byRun.get(run);
     if (!set) {
       set = /* @__PURE__ */ new Set();
       this.byRun.set(run, set);
     }
-    set.add(ws);
-    ws.on("close", () => {
-      set.delete(ws);
-      if (set.size === 0) this.byRun.delete(run);
-    });
+    return set;
   }
   // Transport port: push a `WsMessage` to every open socket subscribed to `run`. No subscribers ⇒ a
   // no-op (a run nobody is watching costs nothing). Serialized once and reused across the run's sockets.
   push(run, message) {
     const set = this.byRun.get(run);
     if (!set || set.size === 0) return;
+    this.broadcast(set, message);
+  }
+  // Transport port: broadcast a project-global `WsMessage` to EVERY open socket (run hosts + the bare
+  // home). The permission relay (Phase 3b) is the consumer — a request belongs to no run, so the
+  // approvals banner subscribes everywhere.
+  pushAll(message) {
+    if (this.all.size === 0) return;
+    this.broadcast(this.all, message);
+  }
+  // Serialize once and send to every OPEN socket in the set.
+  broadcast(set, message) {
     const payload = JSON.stringify(message);
     for (const ws of set) {
       if (ws.readyState === ws.OPEN) ws.send(payload);
@@ -18500,9 +18701,8 @@ var WsTransport = class {
   }
   // Close every socket and the server (graceful shutdown). Idempotent.
   close() {
-    for (const set of this.byRun.values()) {
-      for (const ws of set) ws.close();
-    }
+    for (const ws of this.all) ws.close();
+    this.all.clear();
     this.byRun.clear();
     this.wss.close();
   }
@@ -18527,6 +18727,7 @@ async function main() {
   const repository = new FsWorkRepository(projectRoot);
   const watcher = new ChokidarWatcher(projectRoot);
   const writeService = new WriteService(new FlowWriter(projectRoot));
+  const permissionWatcher = new PermissionWatcher(projectRoot);
   const events = new EventStore(repository, projectRoot);
   const gates = new GateInbox(repository, projectRoot);
   const tokens = new TokenReader(new TranscriptReader(projectRoot));
@@ -18535,8 +18736,20 @@ async function main() {
   const transport = new WsTransport(server, (label) => resolveSlug(label, reader.listRuns()) ?? null);
   server.on(
     "request",
-    createHttpHandler(reader, { reader, writeService, transport }, { events, gates, tokens, memory })
+    createHttpHandler(
+      reader,
+      { reader, writeService, transport },
+      { events, gates, tokens, memory },
+      { watcher: permissionWatcher, projectRoot }
+    )
   );
+  permissionWatcher.subscribe((event) => {
+    if (event.kind === "added") {
+      transport.pushAll({ type: "permission-added", request: event.request });
+    } else {
+      transport.pushAll({ type: "permission-removed", requestId: event.requestId });
+    }
+  });
   watcher.subscribe((change) => {
     if (!reader.read(change.run)) return;
     for (const path of change.paths) {
@@ -18551,7 +18764,9 @@ async function main() {
     console.log(`workbench server shutting down (${signal})`);
     removePidfile(projectRoot);
     transport.close();
-    void watcher.close().finally(() => server.close(() => process.exit(0)));
+    void Promise.allSettled([watcher.close(), permissionWatcher.close()]).finally(
+      () => server.close(() => process.exit(0))
+    );
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));

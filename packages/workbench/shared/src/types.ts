@@ -113,10 +113,27 @@ export interface TokenSeries {
   tokens: number[]; // cumulative token count at each sample (same length as timestamps)
 }
 
+// ── Permission relay ──────────────────────────────────────────────────────────────────────────────
+// One pending tool-approval prompt the agent relayed for a human verdict (FLOW Phase 3a's permission
+// relay, channels.md §"Relay permission prompts"). FLOW writes a `<request_id>.json` request file when
+// a tool needs approval and waits; the Workbench reads it, shows it, and on Allow/Deny writes a
+// `<request_id>.verdict.json` FLOW emits to Claude Code. This shape MIRRORS FLOW's pinned on-disk
+// `PermissionRequestFile` (the four relayed params + an ISO `created_at`) — it is NOT run-scoped:
+// permissions are project/session-level, served on the base host. FLOW deletes the request file once
+// the verdict is emitted (by the Workbench OR the terminal), so a request vanishing means it resolved.
+export interface PermissionRequest {
+  request_id: string; // the five-letter id FLOW issued (echoed back in the verdict)
+  tool_name: string; // the tool needing approval, e.g. "Bash" / "Write" / "Edit"
+  description: string; // human-readable summary of this specific call (the terminal-dialog text)
+  input_preview: string; // the tool's args as JSON, truncated (~200 chars) — shown mono, truncated
+  created_at: string; // ISO timestamp the request was raised
+}
+
 // ── WebSocket envelope ────────────────────────────────────────────────────────────────────────────
 // The push messages the server streams to the web client over the local WebSocket. A discriminated
-// union on `type` — the client switches on it. Three kinds: a raw file changed on disk, a parsed
-// document was updated (carrying the fresh DocModel), and a diff is ready to display.
+// union on `type` — the client switches on it. Four kinds: a raw file changed on disk, a parsed
+// document was updated (carrying the fresh DocModel), a diff is ready to display, and a permission
+// request appeared/resolved (the project-global approvals relay).
 
 // A file on disk changed under the watched run — the low-level notification before parsing.
 export interface FileChangedMessage {
@@ -141,4 +158,23 @@ export interface DiffReadyMessage {
   headVersion: string; // the version diffed to
 }
 
-export type WsMessage = FileChangedMessage | DocUpdatedMessage | DiffReadyMessage;
+// A permission request appeared or resolved (the project-global approvals relay). `added` carries the
+// full `PermissionRequest` so the banner can render it without a refetch; `removed` carries only the id
+// (FLOW deleted the request file — resolved in the terminal or by a verdict the Workbench wrote), so the
+// banner drops it. NOT run-scoped: pushed to every connected client (the base host included).
+export interface PermissionAddedMessage {
+  type: "permission-added";
+  request: PermissionRequest;
+}
+
+export interface PermissionRemovedMessage {
+  type: "permission-removed";
+  requestId: string;
+}
+
+export type WsMessage =
+  | FileChangedMessage
+  | DocUpdatedMessage
+  | DiffReadyMessage
+  | PermissionAddedMessage
+  | PermissionRemovedMessage;

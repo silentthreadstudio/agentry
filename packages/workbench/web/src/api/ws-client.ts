@@ -121,7 +121,13 @@ function parseMessage(data: unknown): WsMessage | null {
   }
   if (!parsed || typeof parsed !== "object" || !("type" in parsed)) return null;
   const type = (parsed as { type: unknown }).type;
-  if (type === "file-changed" || type === "doc-updated" || type === "diff-ready") {
+  if (
+    type === "file-changed" ||
+    type === "doc-updated" ||
+    type === "diff-ready" ||
+    type === "permission-added" ||
+    type === "permission-removed"
+  ) {
     return parsed as WsMessage;
   }
   return null;

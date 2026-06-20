@@ -19,8 +19,10 @@ import type { WorkReader } from "../application/work-reader.js";
 import { parseHostLabel, type RunContext } from "./host-router.js";
 import {
   handleApiRequest,
+  handlePermissionRequest,
   handlePostRequest,
   handleReaderRequest,
+  type PermissionDeps,
   type ReaderDeps,
   type WriteDeps,
 } from "./routes.js";
@@ -66,7 +68,12 @@ const CONTENT_TYPES: Record<string, string> = {
 // composition root attaches the returned handler to the port-locked server (`server.on("request",
 // handler)`). `write` carries the WriteService + Transport the POST routes need (threaded the same way
 // the reader is — task 9's DI pattern).
-export function createHttpHandler(reader: WorkReader, write: WriteDeps, readers: ReaderDeps) {
+export function createHttpHandler(
+  reader: WorkReader,
+  write: WriteDeps,
+  readers: ReaderDeps,
+  permissions: PermissionDeps,
+) {
   return function handler(req: IncomingMessage, res: ServerResponse): void {
     // Parse the host's run LABEL (pure), then resolve it to a FULL run id against the known runs — the
     // label may be a short `workSlug` (task 003) or the full id itself (back-compat / terse ids). An
@@ -83,20 +90,24 @@ export function createHttpHandler(reader: WorkReader, write: WriteDeps, readers:
     // tried before the write/static path; a matched reader route answers here.
     if (handleReaderRequest(req, res, readers)) return;
 
-    // The write surface (POST /comment,/artifact,/takeover) consumes the request body, so it is async;
-    // it answers a matched write path, otherwise falls through to static-serving below. A non-write,
-    // non-GET request lands at the 405 after the (resolved-false) write dispatch.
-    void handlePostRequest(req, res, write).then((handled) => {
-      if (handled) return;
-      // Everything else is the SPA: a real asset path serves the file; anything else falls back to the
-      // app shell (client-side routing). Only GET/HEAD reach static serving.
-      if (req.method !== "GET" && req.method !== "HEAD") {
-        res.writeHead(405, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: "method_not_allowed" }));
-        return;
-      }
-      serveStatic(req, res);
-    });
+    // The body-consuming dispatchers are async. The write surface (POST /comment,/artifact,/takeover) and
+    // the project-global permission relay (GET /api/permissions, POST /api/permissions/:id) each answer a
+    // matched path, otherwise fall through to static-serving below. The permission relay is tried after
+    // the run-scoped write surface (the paths don't overlap; order is just a stable ladder). A non-write,
+    // non-GET request lands at the 405 after both dispatchers resolve false.
+    void handlePostRequest(req, res, write)
+      .then((handled) => (handled ? true : handlePermissionRequest(req, res, permissions)))
+      .then((handled) => {
+        if (handled) return;
+        // Everything else is the SPA: a real asset path serves the file; anything else falls back to the
+        // app shell (client-side routing). Only GET/HEAD reach static serving.
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.writeHead(405, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "method_not_allowed" }));
+          return;
+        }
+        serveStatic(req, res);
+      });
   };
 }
 

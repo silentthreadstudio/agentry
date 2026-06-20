@@ -26,8 +26,12 @@ export type ResolveRun = (label: string) => string | null;
 export class WsTransport implements Transport {
   private readonly wss: WebSocketServer;
   // run id → the set of open sockets subscribed to it. A bare-home connection (no run) is not registered
-  // for any run — it receives nothing (the Works home is poll/REST-driven in Phase 1).
+  // for any run — it receives nothing per-run (the Works home is poll/REST-driven in Phase 1).
   private readonly byRun = new Map<string, Set<WebSocket>>();
+  // EVERY open socket (run hosts AND the bare home), the target of `pushAll`. Permission-relay messages
+  // are project-global (no run), so the approvals banner must reach the base host too — `byRun` alone
+  // would miss it. Kept in lockstep with `byRun` on register/close.
+  private readonly all = new Set<WebSocket>();
 
   // `resolveRun` turns the host's parsed label (slug or full id) into the FULL run id the socket
   // subscribes under — the SAME id `push` is keyed by. Defaults to identity (the label IS the id) so
@@ -52,20 +56,30 @@ export class WsTransport implements Transport {
     });
   }
 
-  // Register an accepted socket under its run. A connection with no run context (bare home) is accepted
-  // but joins no run set, so it is never a `push` target — it stays open for the client's status check.
+  // Register an accepted socket. Every socket joins `all` (the `pushAll` target for project-global
+  // messages like the permission relay), even the bare home. A run-bound socket also joins its run set
+  // (the per-run `push` target); a bare-home socket (no run) joins only `all`.
   private register(ws: WebSocket, run: string | null): void {
-    if (run === null) return;
+    this.all.add(ws);
+    const set = run !== null ? this.runSet(run) : undefined;
+    if (set) set.add(ws);
+    ws.on("close", () => {
+      this.all.delete(ws);
+      if (set && run !== null) {
+        set.delete(ws);
+        if (set.size === 0) this.byRun.delete(run);
+      }
+    });
+  }
+
+  // The socket set for a run, created on first use.
+  private runSet(run: string): Set<WebSocket> {
     let set = this.byRun.get(run);
     if (!set) {
       set = new Set();
       this.byRun.set(run, set);
     }
-    set.add(ws);
-    ws.on("close", () => {
-      set.delete(ws);
-      if (set.size === 0) this.byRun.delete(run);
-    });
+    return set;
   }
 
   // Transport port: push a `WsMessage` to every open socket subscribed to `run`. No subscribers ⇒ a
@@ -73,6 +87,19 @@ export class WsTransport implements Transport {
   push(run: string, message: WsMessage): void {
     const set = this.byRun.get(run);
     if (!set || set.size === 0) return;
+    this.broadcast(set, message);
+  }
+
+  // Transport port: broadcast a project-global `WsMessage` to EVERY open socket (run hosts + the bare
+  // home). The permission relay (Phase 3b) is the consumer — a request belongs to no run, so the
+  // approvals banner subscribes everywhere.
+  pushAll(message: WsMessage): void {
+    if (this.all.size === 0) return;
+    this.broadcast(this.all, message);
+  }
+
+  // Serialize once and send to every OPEN socket in the set.
+  private broadcast(set: Set<WebSocket>, message: WsMessage): void {
     const payload = JSON.stringify(message);
     for (const ws of set) {
       if (ws.readyState === ws.OPEN) ws.send(payload);
@@ -81,9 +108,8 @@ export class WsTransport implements Transport {
 
   // Close every socket and the server (graceful shutdown). Idempotent.
   close(): void {
-    for (const set of this.byRun.values()) {
-      for (const ws of set) ws.close();
-    }
+    for (const ws of this.all) ws.close();
+    this.all.clear();
     this.byRun.clear();
     this.wss.close();
   }

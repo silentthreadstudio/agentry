@@ -31224,9 +31224,147 @@ var ChannelBridge = class {
   }
 };
 
+// src/channel/permission-relay.ts
+import { mkdirSync as mkdirSync7, readFileSync as readFileSync6, rmSync, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join8 } from "node:path";
+
+// src/channel/permission-event.ts
+var PermissionRequestSchema = external_exports.object({
+  method: external_exports.literal("notifications/claude/channel/permission_request"),
+  params: external_exports.object({
+    request_id: external_exports.string(),
+    // five lowercase letters (a-z, no 'l') — echoed verbatim in the verdict
+    tool_name: external_exports.string(),
+    // e.g. "Bash", "Write"
+    description: external_exports.string(),
+    // human-readable summary of this specific call
+    input_preview: external_exports.string()
+    // tool args as JSON, truncated to ~200 chars by Claude Code
+  })
+});
+var PermissionBehaviorSchema = external_exports.enum(["allow", "deny"]);
+var PermissionVerdictFileSchema = external_exports.object({
+  request_id: external_exports.string(),
+  behavior: PermissionBehaviorSchema
+});
+function buildRequestFile(params, createdAt) {
+  return {
+    request_id: params.request_id,
+    tool_name: params.tool_name,
+    description: params.description,
+    input_preview: params.input_preview,
+    created_at: createdAt
+  };
+}
+function parseVerdictFile(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return void 0;
+  }
+  const result = PermissionVerdictFileSchema.safeParse(parsed);
+  return result.success ? result.data : void 0;
+}
+
+// src/channel/permission-relay.ts
+var VERDICT_SUFFIX = ".verdict.json";
+function permissionsDir(cwd) {
+  return join8(cwd, ".agentry", "run", "permissions");
+}
+var PermissionRelay = class {
+  constructor(cwd, emit) {
+    this.cwd = cwd;
+    this.emit = emit;
+  }
+  // Request ids flow has issued and not yet resolved. A verdict only emits for an id in this set
+  // (the file contract: ignore stray verdict files for ids flow never issued).
+  pending = /* @__PURE__ */ new Set();
+  watcher;
+  // The zod schema Claude Code's `permission_request` notification validates against — also the
+  // dispatch key `setNotificationHandler` routes by. Re-exported so index.ts registers it on the
+  // low-level Server (the SDK stays at that single seam, mirroring the bridge's `emit` cast).
+  static requestSchema = PermissionRequestSchema;
+  // The handler index.ts wires to `server.server.setNotificationHandler(PermissionRelay.requestSchema, …)`.
+  // Load-safe: a non-permission session never triggers a permission_request, so it never fires.
+  onRequestNotification = (notification) => {
+    this.onRequest(notification.params);
+  };
+  // Start watching the permissions dir for verdict files. The dir MUST exist before chokidar watches
+  // it (same macOS gotcha the ChannelBridge documents: pointed at a missing dir, chokidar reports
+  // `ready` but never establishes the watch). Idempotent: a second `start` is a no-op.
+  start() {
+    if (this.watcher !== void 0) return;
+    const dir = permissionsDir(this.cwd);
+    mkdirSync7(dir, { recursive: true });
+    this.watcher = watch(dir, {
+      ignoreInitial: false,
+      persistent: true,
+      depth: 0
+      // verdict files are direct children of the permissions dir
+    });
+    const onPath = (filePath) => {
+      if (!filePath.endsWith(VERDICT_SUFFIX)) return;
+      void this.handleVerdict(filePath);
+    };
+    this.watcher.on("add", onPath);
+    this.watcher.on("change", onPath);
+  }
+  // Tear down the watcher (shutdown path). Safe to call when never started.
+  async stop() {
+    if (this.watcher === void 0) return;
+    await this.watcher.close();
+    this.watcher = void 0;
+  }
+  // Test/inspection seam: a snapshot of the ids flow is currently awaiting a verdict on.
+  pendingIds() {
+    return [...this.pending];
+  }
+  // A permission_request arrived: track the id pending + write the request file the Workbench reads.
+  // Public so a test can drive the request path without a live SDK transport (the registrar handler
+  // delegates straight here).
+  onRequest(params) {
+    this.pending.add(params.request_id);
+    const dir = permissionsDir(this.cwd);
+    mkdirSync7(dir, { recursive: true });
+    const record2 = buildRequestFile(params, (/* @__PURE__ */ new Date()).toISOString());
+    writeFileSync5(join8(dir, `${params.request_id}.json`), JSON.stringify(record2, null, 2));
+  }
+  // A verdict file appeared. Read + validate it; if its `request_id` is pending, emit the verdict,
+  // drop the id, and delete both files. A malformed file or an unknown/stale id is ignored — we still
+  // remove the stray verdict file so it doesn't re-fire on every later dir change.
+  async handleVerdict(filePath) {
+    let raw;
+    try {
+      raw = readFileSync6(filePath, "utf8");
+    } catch {
+      return;
+    }
+    const verdict = parseVerdictFile(raw);
+    if (verdict === void 0) {
+      rmSync(filePath, { force: true });
+      return;
+    }
+    if (!this.pending.has(verdict.request_id)) {
+      rmSync(filePath, { force: true });
+      return;
+    }
+    this.pending.delete(verdict.request_id);
+    await this.emit({
+      method: "notifications/claude/channel/permission",
+      params: { request_id: verdict.request_id, behavior: verdict.behavior }
+    });
+    const dir = permissionsDir(this.cwd);
+    rmSync(join8(dir, `${verdict.request_id}.json`), { force: true });
+    rmSync(filePath, { force: true });
+  }
+};
+
 // src/index.ts
 var CHANNEL_CAPABILITY = "claude/channel";
 var CHANNEL_METHOD = "notifications/claude/channel";
+var PERMISSION_CAPABILITY = "claude/channel/permission";
+var PERMISSION_METHOD = "notifications/claude/channel/permission";
 var CHANNEL_INSTRUCTIONS = 'Events tagged `<channel source="agentry-flow" run_id=\u2026 doc=\u2026 decision=\u2026>` are live human review comments left in the Agentry Workbench on a run\'s artifact. Read them and act: address the comment by editing the referenced doc (respecting locks/version) and/or resolving it. The run_id and doc identify which artifact; decision is approve|changes|question.';
 function createServices(cwd) {
   return {
@@ -31259,7 +31397,12 @@ async function main() {
       // Additive + load-safe (AC1): declared experimental capability is ignored without the dev flag.
       // `tools: {}` is the existing default; declaring it explicitly here keeps the four tool families
       // advertised exactly as before alongside the new channel capability.
-      capabilities: { experimental: { [CHANNEL_CAPABILITY]: {} }, tools: {} },
+      capabilities: {
+        // `claude/channel`: the live human→agent review-comment push (Phase 1). `claude/channel/permission`:
+        // tool-approval relay (Phase 3a) — both additive + load-safe (ignored without the dev flag).
+        experimental: { [CHANNEL_CAPABILITY]: {}, [PERMISSION_CAPABILITY]: {} },
+        tools: {}
+      },
       instructions: CHANNEL_INSTRUCTIONS
     }
   );
@@ -31268,6 +31411,14 @@ async function main() {
   registerAgentTools(server, services);
   registerReviewTools(server, services);
   registerChannelReplyTools(server, services);
+  const emitVerdict = async (n) => {
+    await server.server.notification({
+      method: PERMISSION_METHOD,
+      params: n.params
+    });
+  };
+  const relay = new PermissionRelay(cwd, emitVerdict);
+  server.server.setNotificationHandler(PermissionRelay.requestSchema, relay.onRequestNotification);
   await server.connect(new StdioServerTransport());
   const emit = async (n) => {
     await server.server.notification({
@@ -31277,8 +31428,10 @@ async function main() {
   };
   const bridge = new ChannelBridge(cwd, services.reviews, emit);
   bridge.start();
+  relay.start();
   server.server.onclose = () => {
     void bridge.stop();
+    void relay.stop();
   };
 }
 var invokedDirectly = process.argv[1] !== void 0 && import.meta.url === `file://${process.argv[1]}`;

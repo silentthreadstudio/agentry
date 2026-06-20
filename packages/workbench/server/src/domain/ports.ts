@@ -67,8 +67,12 @@ export interface Watcher {
 
 // Transport — pushes a read-model `WsMessage` (the shared discriminated envelope) to the clients
 // subscribed to a run. The ws adapter implements it; the application calls it to fan a change out.
+// `pushAll` broadcasts to EVERY connected client (the base host included), for project-global messages
+// that belong to no single run — the permission relay (Phase 3b) is the one consumer: permissions are
+// session/project-level, so the approvals banner must reach the bare host as well as every run host.
 export interface Transport {
   push(run: string, message: WsMessage): void;
+  pushAll(message: WsMessage): void;
 }
 
 // MemSource — read-only access to the project's `mem` file-store (Phase 4, the memory panel). A

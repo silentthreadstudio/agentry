@@ -22,6 +22,8 @@ import { registerReviewTools } from "./tools/review-tools.js";
 import { registerChannelReplyTools } from "./tools/channel-reply-tools.js";
 import { ChannelBridge } from "./channel/channel-bridge.js";
 import type { ChannelNotification } from "./channel/channel-event.js";
+import { PermissionRelay } from "./channel/permission-relay.js";
+import type { PermissionVerdictNotification } from "./channel/permission-event.js";
 
 // The experimental capability key for the live human↔agent channel. Declaring it is load-safe and
 // additive (the spike proved: ignored without the `--dangerously-load-development-channels` dev
@@ -29,6 +31,18 @@ import type { ChannelNotification } from "./channel/channel-event.js";
 // the bridge emits without throwing even when the session didn't load flow as a channel.
 const CHANNEL_CAPABILITY = "claude/channel";
 const CHANNEL_METHOD = "notifications/claude/channel";
+
+// The experimental capability key for permission relay (channels.md "Relay permission prompts",
+// Phase 3a). Declaring it tells Claude Code (≥ 2.1.81) to forward tool-approval prompts to flow as
+// `notifications/claude/channel/permission_request`; flow surfaces them to the Workbench and relays
+// the human's verdict back as `notifications/claude/channel/permission`. Additive + load-safe (like
+// `claude/channel`: ignored without the dev flag, and earlier CC versions ignore the capability).
+// SECURITY (channels.md): only declare relay if the inbound sender is authenticated — our verdict
+// sender is the localhost-only Workbench writing into `<cwd>/.agentry/run/permissions/` (a local-fs
+// trust boundary, no network surface), so the gate is met. The verdict METHOD has no capability gate,
+// so the relay emits without throwing even when the session didn't load flow as a channel.
+const PERMISSION_CAPABILITY = "claude/channel/permission";
+const PERMISSION_METHOD = "notifications/claude/channel/permission";
 
 // Tells Claude how to treat the channel events the bridge pushes — what the `<channel …>` tag means
 // and what to do with it. Carried on the server's `instructions` so it reaches the session on load.
@@ -109,7 +123,12 @@ export async function main(): Promise<void> {
       // Additive + load-safe (AC1): declared experimental capability is ignored without the dev flag.
       // `tools: {}` is the existing default; declaring it explicitly here keeps the four tool families
       // advertised exactly as before alongside the new channel capability.
-      capabilities: { experimental: { [CHANNEL_CAPABILITY]: {} }, tools: {} },
+      capabilities: {
+        // `claude/channel`: the live human→agent review-comment push (Phase 1). `claude/channel/permission`:
+        // tool-approval relay (Phase 3a) — both additive + load-safe (ignored without the dev flag).
+        experimental: { [CHANNEL_CAPABILITY]: {}, [PERMISSION_CAPABILITY]: {} },
+        tools: {},
+      },
       instructions: CHANNEL_INSTRUCTIONS,
     },
   );
@@ -118,6 +137,20 @@ export async function main(): Promise<void> {
   registerAgentTools(server, services);
   registerReviewTools(server, services);
   registerChannelReplyTools(server, services); // ADR-002: the agent→human reply lane
+
+  // Permission relay (Phase 3a): register the permission_request handler on the low-level Server
+  // BEFORE connect (channels.md registers it between the ctor and `connect`). The custom verdict
+  // method isn't in the SDK's typed notification union, so the emit is cast at this single seam; the
+  // relay stays SDK-agnostic behind `EmitVerdictFn`. Load-safe: a non-permission session never sends
+  // a permission_request, so the handler never fires.
+  const emitVerdict = async (n: PermissionVerdictNotification): Promise<void> => {
+    await server.server.notification({
+      method: PERMISSION_METHOD,
+      params: n.params,
+    } as Parameters<typeof server.server.notification>[0]);
+  };
+  const relay = new PermissionRelay(cwd, emitVerdict);
+  server.server.setNotificationHandler(PermissionRelay.requestSchema, relay.onRequestNotification);
 
   await server.connect(new StdioServerTransport());
 
@@ -136,9 +169,15 @@ export async function main(): Promise<void> {
   const bridge = new ChannelBridge(cwd, services.reviews, emit);
   bridge.start();
 
-  // Tear the watcher down on transport close so a server restart doesn't leak a dangling watcher.
+  // Start the verdict watcher AFTER connect so an emitted verdict lands on a live transport (mirrors
+  // the bridge). Watches `<cwd>/.agentry/run/permissions/*.verdict.json`; emits the verdict back for
+  // any pending request id, then deletes both files.
+  relay.start();
+
+  // Tear both watchers down on transport close so a server restart doesn't leak a dangling watcher.
   server.server.onclose = () => {
     void bridge.stop();
+    void relay.stop();
   };
 }
 

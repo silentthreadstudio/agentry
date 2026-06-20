@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { fetchContext } from "./api/client.js";
+import { ApprovalsBanner } from "./routes/ApprovalsBanner.js";
 import { Gates } from "./routes/Gates.js";
 import { Memory } from "./routes/Memory.js";
 import { Works } from "./routes/Works.js";
@@ -57,6 +58,9 @@ export function App() {
             <Route path="/*" element={<WorkLayout runId={boot.run} />} />
           </Routes>
         </div>
+        {/* The approvals banner floats over the run shell (a fixed overlay) — permission prompts are
+            project-global and time-sensitive, so it appears regardless of the active tab. */}
+        <ApprovalsBanner />
       </BrowserRouter>
     );
   }
@@ -91,6 +95,9 @@ export function App() {
             </Routes>
           </div>
         </main>
+        {/* Same global approvals overlay on the bare host (Works / Memory / Gates) — a tool may need
+            approval while the user is on a secondary page, not inside a run. */}
+        <ApprovalsBanner />
       </div>
     </BrowserRouter>
   );
