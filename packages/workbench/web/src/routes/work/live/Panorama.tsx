@@ -43,18 +43,17 @@ type Load =
   | { kind: "error"; message: string }
   | { kind: "ready"; graph: GraphModel };
 
-// `compact` renders the canvas as the Docs-navigator "Graph" mode (task 008): same canvas, no legend, a
-// click still opens the doc's tab — but it must NOT navigate to /docs (the navigator already lives there).
-// On the Live tab (compact=false) a doc-node click navigates to the Docs workspace AND opens the tab.
-export function Panorama({ runId, compact = false }: { runId: string; compact?: boolean }) {
+// The run-as-graph canvas on the Live tab. A doc-node click navigates to the Docs workspace AND opens the
+// doc's tab. (The compact "Graph" navigator mode was removed with the Documents⇄Graph toggle.)
+export function Panorama({ runId }: { runId: string }) {
   return (
     <ReactFlowProvider>
-      <PanoramaCanvas runId={runId} compact={compact} />
+      <PanoramaCanvas runId={runId} />
     </ReactFlowProvider>
   );
 }
 
-function PanoramaCanvas({ runId, compact }: { runId: string; compact: boolean }) {
+function PanoramaCanvas({ runId }: { runId: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [hover, setHover] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -147,9 +146,7 @@ function PanoramaCanvas({ runId, compact }: { runId: string; compact: boolean })
   // root and the synthetic ADR group container carry no doc — clicking them must NOT call selectDoc (no 404
   // fetch). The group opens the Decisions drawer (a list → each ADR's doc); routing is inert.
   //
-  // Task 008: opening a doc now means "open its tab in the Docs workspace and switch to it". On the Live
-  // tab (compact=false) that's a navigate to /docs + selectDoc; in the Docs-navigator's Graph mode
-  // (compact=true) the workspace is already showing, so only the tab opens (no navigation).
+  // Opening a doc means "open its tab in the Docs workspace and switch to it": selectDoc + navigate to /docs.
   const onNodeClick = useCallback(
     (_e: unknown, n: DocNode) => {
       const kind = n.data.kind;
@@ -159,9 +156,9 @@ function PanoramaCanvas({ runId, compact }: { runId: string; compact: boolean })
       }
       if (kind !== "doc") return; // routing (or any non-doc) → never opens a doc
       selectDoc(n.id);
-      if (!compact) navigate("docs");
+      navigate("docs");
     },
-    [compact, navigate],
+    [navigate],
   );
 
   // hover-highlight: the hovered node + its direct neighbors stay lit; everything else dims. null = no
@@ -248,12 +245,12 @@ function PanoramaCanvas({ runId, compact }: { runId: string; compact: boolean })
           />
         </ReactFlow>
       </HoverProvider>
-      {compact ? null : <Legend />}
+      <Legend />
       {/* Task 008: the drawer-over-graph is RETIRED. A doc-node click now opens the doc as a TAB in the
           Docs workspace (selectDoc + navigate to /docs); the editor / comment rail / diff drawer all live
           there now. The Decisions list stays — clicking the ADR group node opens it; each row routes to
           the ADR's tab in the Docs workspace. */}
-      <DecisionsDrawer onOpenDoc={compact ? undefined : () => navigate("docs")} />
+      <DecisionsDrawer onOpenDoc={() => navigate("docs")} />
     </div>
   );
 }

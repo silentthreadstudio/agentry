@@ -107,8 +107,3 @@ export function buildDocTree(model: GraphModel): DocTreeGroup[] {
   }
   return groups;
 }
-
-/** The flat, ordered list of all doc ids in the tree — the "Review all docs" walk-through sequence. */
-export function docOrder(model: GraphModel): string[] {
-  return buildDocTree(model).flatMap((g) => g.items.map((i) => i.id));
-}

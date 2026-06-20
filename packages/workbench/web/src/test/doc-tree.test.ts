@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { GraphModel } from "@agentry/workbench-shared";
-import { buildDocTree, docOrder, kindGlyphOf } from "../routes/work/docs/doc-tree.js";
+import { buildDocTree, kindGlyphOf } from "../routes/work/docs/doc-tree.js";
 
 // A representative run graph: routing root + the synthetic adr-group are NON-documents (must be excluded);
 // spec/plan/adr-*/task-* are the docs. Node order is deliberately NOT spec-then-plan, to prove the sort.
@@ -80,17 +80,6 @@ test("drops a group with no members (a run with no ADRs shows no Decisions secti
 
 test("an empty graph yields no groups", () => {
   assert.deepEqual(buildDocTree({ nodes: [], edges: [] }), []);
-});
-
-test("docOrder is the flat Spec→Plan→Decisions→Tasks walk-through sequence", () => {
-  assert.deepEqual(docOrder(sampleGraph()), [
-    "spec",
-    "plan",
-    "adr-001",
-    "adr-003",
-    "task-014",
-    "task-026",
-  ]);
 });
 
 test("kindGlyphOf maps each doc kind to its mockup glyph", () => {

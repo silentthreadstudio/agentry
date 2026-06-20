@@ -21,14 +21,12 @@ import type {
   GraphModel,
   PermissionRequest,
   RunSummary,
-  TokenSeries,
 } from "@agentry/workbench-shared";
 export type {
   AgentView,
   EventView,
   GateItem,
   PermissionRequest,
-  TokenSeries,
 } from "@agentry/workbench-shared";
 
 /** A gate inbox item plus the run it lives in — the jump-to-doc-at-gate target (server `OpenGateItem`). */
@@ -107,11 +105,6 @@ export function fetchAgents(runId?: string, signal?: AbortSignal): Promise<Agent
 /** The open waiting-on-you gate items, each carrying its run for the jump-to-doc-at-gate. */
 export function fetchGates(runId?: string, signal?: AbortSignal): Promise<OpenGateItem[]> {
   return getJson<OpenGateItem[]>(`/api/gates${runQuery(runId)}`, signal);
-}
-
-/** The per-day cumulative token series for one run (may be an empty series — degrade gracefully). */
-export function fetchTokens(runId: string, signal?: AbortSignal): Promise<TokenSeries> {
-  return getJson<TokenSeries>(`/api/tokens?run=${encodeURIComponent(runId)}`, signal);
 }
 
 /** Read-only memory browse (no query) / search (`q`) over both mem roots — the Memory page. */
