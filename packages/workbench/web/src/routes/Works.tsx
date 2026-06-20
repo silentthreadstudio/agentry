@@ -5,83 +5,34 @@
 // decision. Loading / empty / error are all designed (empty states are good states, VISION §3).
 import { useEffect, useMemo, useState } from "react";
 import type { RunSummary } from "@agentry/workbench-shared";
-import { workSlug } from "@agentry/workbench-shared";
 import { ApiError, fetchWorks } from "../api/index.js";
 import { Card, EmptyState, SearchInput, StatusDot } from "../ui/index.js";
-import type { DotStatus, FlowTaskStatus } from "../ui/index.js";
-import { deriveKpis, isActiveRun, tasksTotal } from "./works-kpis.js";
+import {
+  AURA_HUE,
+  COUNT_ORDER,
+  FILTERS,
+  deriveKpis,
+  isActiveRun,
+  primaryStatus,
+  relativeTime,
+  runHref,
+  runInitials,
+  tasksTotal,
+  type WorksFilter,
+} from "./works-view.js";
 
 import "./works.css";
 
-// The host a run card opens. Same host, same port — only the subdomain changes (bare → <workSlug>).
-// The slug is the short, stable label both halves compute; the server resolves it back to the run id.
-function runHref(runId: string): string {
-  const { protocol, hostname, port } = location;
-  // strip any existing run subdomain so we always target <slug>.<base-host>
-  const baseHost = hostname.replace(/^[^.]+\.(?=localhost$)/, "");
-  const host = `${workSlug(runId)}.${baseHost}${port ? `:${port}` : ""}`;
-  return `${protocol}//${host}/`;
-}
-
-// The card's headline status: the most "live" bucket that has work, so the eye lands on what's moving.
-const STATUS_PRIORITY: FlowTaskStatus[] = ["in-progress", "in-review", "todo", "done"];
-function primaryStatus(counts: Record<FlowTaskStatus, number>): DotStatus {
-  for (const s of STATUS_PRIORITY) {
-    if ((counts[s] ?? 0) > 0) return s;
-  }
-  return "done";
-}
-
-const COUNT_ORDER: { key: FlowTaskStatus; label: string }[] = [
-  { key: "in-progress", label: "in progress" },
-  { key: "in-review", label: "in review" },
-  { key: "todo", label: "to do" },
-  { key: "done", label: "done" },
-];
-
-// The status-tint of a run's aura blob — matches its primary status's hue.
-const AURA_HUE: Record<DotStatus, string> = {
-  "in-progress": "var(--prog)",
-  "in-review": "var(--rev)",
-  todo: "var(--todo)",
-  done: "var(--done)",
-  blocked: "var(--block)",
-};
-
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const secs = Math.round((Date.now() - then) / 1000);
-  if (secs < 60) return "just now";
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
-}
-
-// The agent-avatar initials — first two letters of the run's leading word, uppercased.
-function runInitials(run: string): string {
-  const first = run.split(/[-_\s]/).filter(Boolean)[0] ?? run;
-  return first.slice(0, 2).toUpperCase();
-}
-
+// The route's own load state machine (component-local — the derivations/formatters live in works-view).
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ready"; works: RunSummary[] };
 
-type Filter = "all" | "active" | "done";
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "done", label: "Done" },
-];
-
 export function Works() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<WorksFilter>("all");
 
   useEffect(() => {
     const ctrl = new AbortController();

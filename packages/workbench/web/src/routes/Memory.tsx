@@ -7,25 +7,13 @@
 // the frontmatter-derived meta pills, a "Why" callout, and a Provenance list. V1 NON-GOAL: editing memory —
 // no write affordance. The page title lives in App.tsx's PageHero; this is the body BELOW it.
 import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
-import MarkdownIt from "markdown-it";
 import { ApiError, fetchMemory } from "../api/index.js";
 import type { MemReadRecord } from "../api/index.js";
 import { EmptyState, SearchInput } from "../ui/index.js";
-import { applyFilters, metricsFor, toMemRow, typeColor } from "./memory-view.js";
+import { applyFilters, metricsFor, renderMemoryMarkdown, toMemRow, typeBadge, typeColor } from "./memory-view.js";
 import type { KindFilter, MemRow, OriginFilter } from "./memory-view.js";
 import "./memory.css";
 
-/** The badge's tinted background — the type hue at low alpha over the panel (the mockup's #2a1714 etc). */
-function typeBadge(type: string): CSSProperties {
-  const c = typeColor(type);
-  return { color: c, background: `color-mix(in srgb, ${c} 16%, var(--panel))` };
-}
-
-// ── Markdown (read-only render of local file content; markdown-it the doc layer already bundles) ─────────
-const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
-
-// ── Component ────────────────────────────────────────────────────────────────────────────────────────
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
@@ -216,7 +204,7 @@ export function Memory() {
 }
 
 function MemDetail({ row }: { row: MemRow }) {
-  const html = useMemo(() => md.render(row.body), [row.body]);
+  const html = useMemo(() => renderMemoryMarkdown(row.body), [row.body]);
   return (
     <div className="mem-detail">
       <div className="mem-dhead">

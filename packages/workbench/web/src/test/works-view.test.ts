@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { RunSummary } from "@agentry/workbench-shared";
-import { deriveKpis, isActiveRun, tasksTotal } from "../routes/works-kpis.js";
+import { deriveKpis, isActiveRun, tasksTotal } from "../routes/works-view.js";
 
 function run(over: Partial<RunSummary> & { run: string }): RunSummary {
   return {
