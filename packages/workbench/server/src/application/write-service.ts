@@ -85,6 +85,13 @@ export class WriteService {
     return { id };
   }
 
+  // Resolve a comment by id in the gate sidecar — the rail's Resolve action, persisted to disk so it
+  // survives reload (VISION §6). `ok:false` means no comment carried that id (the route → 404). Always
+  // allowed (resolving an annotation is not an edit, so the lock gate does not apply — VISION §5).
+  resolveComment(req: { run: string; gate: string; commentId: string }): { ok: boolean } {
+    return { ok: this.writer.resolveComment(req.run, req.gate, req.commentId) };
+  }
+
   // The guarded artifact write — the clobber-safety core (AC4/AC6). Re-reads disk at write time, then:
   //   1. not-found  → the artifact is gone (a concurrent delete).
   //   2. locked     → the task is `in-progress`; reject with `lockedBy` (the UI shows who holds it).

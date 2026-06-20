@@ -123,7 +123,7 @@ function CommentCard({
           <button
             type="button"
             className="dd-mini"
-            onClick={() => resolveComment(runId, docId, id)}
+            onClick={() => void resolveComment(runId, docId, id)}
           >
             Resolve
           </button>

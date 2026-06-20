@@ -68,6 +68,9 @@ export interface FlowWriterPort {
   ): string;
   // Append a validated `ReviewComment` to the gate's sidecar (the JsonReviewStore layout).
   appendComment(run: string, gate: string, comment: ReviewComment): void;
+  // Mark a comment `resolved:true` in the gate's sidecar by id. Returns true when a matching comment
+  // was found+rewritten, false when the id is absent (the route maps that to 404). Idempotent.
+  resolveComment(run: string, gate: string, commentId: string): boolean;
 }
 
 export class FlowWriter implements FlowWriterPort {
@@ -102,6 +105,23 @@ export class FlowWriter implements FlowWriterPort {
     // The SAME on-disk layout JsonReviewStore writes (2-space JSON + trailing newline), so the two
     // writers of this sidecar stay byte-compatible.
     writeFileSync(file, `${JSON.stringify([...existing, validated], null, 2)}\n`);
+  }
+
+  // Flip `resolved:true` on the comment with `commentId` in the gate sidecar, rewriting the file in the
+  // SAME JsonReviewStore layout. Read-modify-write by id: absent id ⇒ false (no write), found ⇒ true.
+  resolveComment(run: string, gate: string, commentId: string): boolean {
+    assertSafeSegment(gate);
+    const file = join(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    const existing = this.readComments(file);
+    let found = false;
+    const next = existing.map((c) => {
+      if (c.id !== commentId) return c;
+      found = true;
+      return { ...c, resolved: true };
+    });
+    if (!found) return false;
+    writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
+    return true;
   }
 
   // ── internals ──────────────────────────────────────────────────────────────────────────────────

@@ -17379,6 +17379,23 @@ var FlowWriter = class {
     writeFileSync3(file, `${JSON.stringify([...existing, validated], null, 2)}
 `);
   }
+  // Flip `resolved:true` on the comment with `commentId` in the gate sidecar, rewriting the file in the
+  // SAME JsonReviewStore layout. Read-modify-write by id: absent id ⇒ false (no write), found ⇒ true.
+  resolveComment(run, gate, commentId) {
+    assertSafeSegment(gate);
+    const file = join8(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    const existing = this.readComments(file);
+    let found = false;
+    const next = existing.map((c) => {
+      if (c.id !== commentId) return c;
+      found = true;
+      return { ...c, resolved: true };
+    });
+    if (!found) return false;
+    writeFileSync3(file, `${JSON.stringify(next, null, 2)}
+`);
+    return true;
+  }
   // ── internals ──────────────────────────────────────────────────────────────────────────────────
   // Split the file FLOW's way and recompute the version over (body, frontmatter-sans-version) — so
   // the version returned here is the one FLOW stamped on disk. The body is `.trim()`ed exactly as
@@ -17665,6 +17682,12 @@ var WriteService = class {
     };
     this.writer.appendComment(req.run, req.gate, comment);
     return { id };
+  }
+  // Resolve a comment by id in the gate sidecar — the rail's Resolve action, persisted to disk so it
+  // survives reload (VISION §6). `ok:false` means no comment carried that id (the route → 404). Always
+  // allowed (resolving an annotation is not an edit, so the lock gate does not apply — VISION §5).
+  resolveComment(req) {
+    return { ok: this.writer.resolveComment(req.run, req.gate, req.commentId) };
   }
   // The guarded artifact write — the clobber-safety core (AC4/AC6). Re-reads disk at write time, then:
   //   1. not-found  → the artifact is gone (a concurrent delete).
@@ -18280,6 +18303,7 @@ async function handlePostRequest(req, res, deps) {
     return true;
   }
   if (write.kind === "comment") return handleComment(res, deps, runId, body);
+  if (write.kind === "resolve") return handleResolve(res, deps, runId, body);
   if (write.kind === "artifact") return handleArtifact(res, deps, runId, body);
   return handleTakeover(res, deps, runId, body);
 }
@@ -18345,6 +18369,20 @@ function handleComment(res, deps, runId, body) {
   });
   deps.transport.push(runId, { type: "file-changed", path: `.review/${gate}.annotations.json` });
   sendJson(res, 200, result);
+  return true;
+}
+function handleResolve(res, deps, runId, body) {
+  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
+  const gate = body.gate;
+  const commentId = body.commentId;
+  if (typeof gate !== "string" || gate.length === 0) return reject(res, 400, "missing_gate");
+  if (typeof commentId !== "string" || commentId.length === 0) {
+    return reject(res, 400, "missing_comment_id");
+  }
+  const result = deps.writeService.resolveComment({ run: runId, gate, commentId });
+  if (!result.ok) return reject(res, 404, "unknown_comment");
+  deps.transport.push(runId, { type: "file-changed", path: `.review/${gate}.annotations.json` });
+  sendJson(res, 200, { ok: true });
   return true;
 }
 function handleArtifact(res, deps, runId, body) {
@@ -18454,10 +18492,13 @@ function matchWorkReview(path) {
   }
 }
 function matchWritePath(path) {
-  const m = /^\/api\/work\/([^/]+)\/(comment|artifact|takeover)$/.exec(path);
+  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover)$/.exec(path);
   if (!m || m[1] === void 0 || m[2] === void 0) return null;
   try {
-    return { kind: m[2], runId: decodeURIComponent(m[1]) };
+    return {
+      kind: m[2],
+      runId: decodeURIComponent(m[1])
+    };
   } catch {
     return null;
   }

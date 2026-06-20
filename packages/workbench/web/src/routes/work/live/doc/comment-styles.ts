@@ -74,14 +74,21 @@ const COMMENT_CSS = `
   margin-bottom:6px}
 .dd-orphans .dd-reply{margin:0 0 8px;border:1px solid var(--line);border-radius:var(--r-lg)}
 
-/* the floating selection bubble */
-.dd-bubble{position:fixed;z-index:90;display:flex;gap:3px;transform:translate(-50%,-130%);
-  background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-lg);padding:5px;
-  box-shadow:0 12px 30px rgba(0,0,0,.5)}
-.dd-bubble-btn{border:0;background:transparent;color:var(--ink);font-size:12px;font-weight:600;
-  padding:5px 9px;border-radius:var(--r-md);cursor:pointer;display:flex;align-items:center;gap:6px;
+/* the floating selection composer — a small card: textarea + a row of decision buttons */
+.dd-bubble{position:fixed;z-index:90;display:flex;flex-direction:column;gap:7px;width:300px;
+  transform:translate(-50%,-118%);background:var(--panel2);border:1px solid var(--line2);
+  border-radius:var(--r-lg);padding:9px;box-shadow:0 16px 40px rgba(0,0,0,.55)}
+.dd-bubble-ta{width:100%;box-sizing:border-box;min-height:58px;resize:vertical;font:400 12.5px var(--sans);
+  color:var(--ink);background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-md);
+  padding:7px 9px;line-height:1.5}
+.dd-bubble-ta::placeholder{color:var(--faint)}
+.dd-bubble-ta:focus{outline:none;border-color:var(--prog)}
+.dd-bubble-row{display:flex;gap:3px;justify-content:space-between}
+.dd-bubble-btn{border:0;background:transparent;color:var(--ink);font-size:11.5px;font-weight:600;
+  padding:5px 8px;border-radius:var(--r-md);cursor:pointer;display:flex;align-items:center;gap:5px;
   font-family:var(--sans);white-space:nowrap}
-.dd-bubble-btn:hover{background:var(--hover)}
+.dd-bubble-btn:hover:not(:disabled){background:var(--hover)}
+.dd-bubble-btn:disabled{opacity:.5;cursor:default}
 .dd-bubble-btn.acc{color:var(--done)}
 .dd-bubble-btn.chg{color:var(--coral,var(--block))}
 .dd-bubble-btn.qz{color:var(--rev)}

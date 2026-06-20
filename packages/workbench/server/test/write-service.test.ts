@@ -52,12 +52,37 @@ function fakeWriter(seed: Record<string, StoredArtifact> = {}) {
     appendComment(run, gate, comment): void {
       comments.push({ run, gate, comment });
     },
+    resolveComment(_run, gate, commentId): boolean {
+      const hit = comments.find((c) => c.gate === gate && c.comment.id === commentId);
+      if (!hit) return false;
+      hit.comment = { ...hit.comment, resolved: true };
+      return true;
+    },
   };
 
   return { port, store, comments };
 }
 
 const ANCHOR = { originalText: "the snippet", headingAnchor: "## Section", startLine: 3 };
+
+// ── Resolve persistence (VISION §6 — survives reload) ────────────────────────────────────────────────
+
+test("resolveComment flips a comment by id; ok:false for an unknown id", () => {
+  const fake = fakeWriter();
+  const svc = new WriteService(fake.port);
+  const { id } = svc.addComment({
+    run: "r",
+    gate: "spec",
+    anchor: ANCHOR,
+    decision: "changes",
+    body: "please fix",
+  });
+
+  assert.equal(svc.resolveComment({ run: "r", gate: "spec", commentId: id }).ok, true);
+  assert.equal(fake.comments.find((c) => c.comment.id === id)?.comment.resolved, true);
+  // An id that was never written cannot be resolved.
+  assert.equal(svc.resolveComment({ run: "r", gate: "spec", commentId: "nope" }).ok, false);
+});
 
 // ── AC6: optimistic concurrency ─────────────────────────────────────────────────────────────────────
 

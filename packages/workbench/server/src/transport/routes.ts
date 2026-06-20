@@ -237,6 +237,7 @@ export async function handlePostRequest(
   }
 
   if (write.kind === "comment") return handleComment(res, deps, runId, body);
+  if (write.kind === "resolve") return handleResolve(res, deps, runId, body);
   if (write.kind === "artifact") return handleArtifact(res, deps, runId, body);
   return handleTakeover(res, deps, runId, body);
 }
@@ -346,6 +347,24 @@ function handleComment(res: ServerResponse, deps: WriteDeps, runId: string, body
   // file-changed loop in index.ts; here we only confirm the write landed).
   deps.transport.push(runId, { type: "file-changed", path: `.review/${gate}.annotations.json` });
   sendJson(res, 200, result);
+  return true;
+}
+
+// POST /api/work/:id/resolve → mark a comment resolved on disk by id (the rail's Resolve action,
+// persisted so it survives reload — VISION §6). Body { gate, commentId }. A missing id is 404
+// (unknown_comment); a successful flip pushes the same file-changed nudge the comment POST does.
+function handleResolve(res: ServerResponse, deps: WriteDeps, runId: string, body: unknown): boolean {
+  if (!isRecord(body)) return reject(res, 400, "invalid_body");
+  const gate = body.gate;
+  const commentId = body.commentId;
+  if (typeof gate !== "string" || gate.length === 0) return reject(res, 400, "missing_gate");
+  if (typeof commentId !== "string" || commentId.length === 0) {
+    return reject(res, 400, "missing_comment_id");
+  }
+  const result = deps.writeService.resolveComment({ run: runId, gate, commentId });
+  if (!result.ok) return reject(res, 404, "unknown_comment");
+  deps.transport.push(runId, { type: "file-changed", path: `.review/${gate}.annotations.json` });
+  sendJson(res, 200, { ok: true });
   return true;
 }
 
@@ -525,11 +544,14 @@ function matchWorkReview(path: string): { runId: string; docId: string } | null 
 // null. The matcher only recognizes the shape; the verb gate + body parse happen in the dispatcher.
 function matchWritePath(
   path: string,
-): { kind: "comment" | "artifact" | "takeover"; runId: string } | null {
-  const m = /^\/api\/work\/([^/]+)\/(comment|artifact|takeover)$/.exec(path);
+): { kind: "comment" | "resolve" | "artifact" | "takeover"; runId: string } | null {
+  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover)$/.exec(path);
   if (!m || m[1] === undefined || m[2] === undefined) return null;
   try {
-    return { kind: m[2] as "comment" | "artifact" | "takeover", runId: decodeURIComponent(m[1]) };
+    return {
+      kind: m[2] as "comment" | "resolve" | "artifact" | "takeover",
+      runId: decodeURIComponent(m[1]),
+    };
   } catch {
     return null;
   }
