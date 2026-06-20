@@ -24,7 +24,7 @@ export function useDocsRailStyles(): void {
 
 const WORKSPACE_CSS = `
 /* three-column grid: navigator | editor | conversation */
-.dw-grid{height:100%;display:grid;grid-template-columns:236px 1fr 348px;min-height:0;min-width:0;overflow:hidden}
+.dw-grid{height:100%;display:grid;grid-template-columns:236px 1fr 392px;min-height:0;min-width:0;overflow:hidden}
 
 /* navigator */
 .nv-root{border-right:1px solid var(--line);background:var(--side-bg,var(--bg));display:flex;flex-direction:column;min-height:0;min-width:0}

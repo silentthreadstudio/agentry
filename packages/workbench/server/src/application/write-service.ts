@@ -32,6 +32,10 @@ export interface AddCommentRequest {
   anchor: ReviewAnchor; // the 3-way anchor (originalText/headingAnchor/startLine) — FLOW's shape
   decision: ReviewDecision; // approve | changes | question
   body: string;
+  // Reply lane: when set, this nests under `replyTo` and carries `origin:"human"` (a human follow-up in
+  // a thread). A top-level annotation leaves both unset (absent origin ⇒ human, FLOW's back-compat rule).
+  replyTo?: string;
+  origin?: "human" | "agent";
 }
 
 // Write an artifact body. `target` addresses a run-root artifact (`kind`) or a task file (`taskNo`).
@@ -80,6 +84,10 @@ export class WriteService {
       decision: req.decision,
       body: req.body,
       resolved: false,
+      // Only stamp the reply fields when present, so a top-level comment's on-disk shape is byte-identical
+      // to before (no `origin`/`replyTo` keys) — keeps old sidecars and these writes indistinguishable.
+      ...(req.replyTo !== undefined ? { replyTo: req.replyTo } : {}),
+      ...(req.origin !== undefined ? { origin: req.origin } : {}),
     };
     this.writer.appendComment(req.run, req.gate, comment);
     return { id };

@@ -336,12 +336,19 @@ function handleComment(res: ServerResponse, deps: WriteDeps, runId: string, body
   const decision = ReviewDecision.safeParse(body.decision);
   if (!decision.success) return reject(res, 400, "invalid_decision");
 
+  // Optional reply lane: a human follow-up nests under `replyTo` with `origin:"human"`. Both are validated
+  // loosely (a non-string replyTo / an out-of-vocab origin is ignored, never a write of a bad shape).
+  const replyTo = typeof body.replyTo === "string" && body.replyTo.length > 0 ? body.replyTo : undefined;
+  const origin = body.origin === "human" || body.origin === "agent" ? body.origin : undefined;
+
   const result = deps.writeService.addComment({
     run: runId,
     gate,
     anchor: anchor.data,
     decision: decision.data,
     body: bodyText,
+    ...(replyTo !== undefined ? { replyTo } : {}),
+    ...(origin !== undefined ? { origin } : {}),
   });
   // A comment changed the gate sidecar — nudge the run's watchers (the doc-level projection rides the
   // file-changed loop in index.ts; here we only confirm the write landed).

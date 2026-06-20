@@ -55,11 +55,12 @@ test("threadsOf keeps human comments in store order (newest-first preserved)", (
   );
 });
 
-test("threadsOf routes a reply with a missing replyTo to orphanReplies (never dropped)", () => {
+test("threadsOf treats a comment with no replyTo as a thread root (threading keys on replyTo, not origin)", () => {
+  // A reply ALWAYS carries replyTo (channel_reply sets it); a comment without one is a root regardless of
+  // origin. So a stray no-replyTo entry becomes its own top-level thread, never an orphan.
   const { threads, orphanReplies } = threadsOf([human("c1"), reply("r1")]);
-  assert.equal(threads[0]?.replies.length, 0, "no parent claims the orphan");
-  assert.equal(orphanReplies.length, 1, "the parent-less reply falls back to the flat replies area");
-  assert.equal(orphanReplies[0]?.id, "r1");
+  assert.equal(threads.length, 2, "both no-replyTo comments are roots");
+  assert.equal(orphanReplies.length, 0, "nothing is orphaned — orphans come from an unknown replyTo");
 });
 
 test("threadsOf routes a reply pointing at an unknown id to orphanReplies", () => {

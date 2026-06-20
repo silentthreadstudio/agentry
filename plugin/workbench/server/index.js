@@ -17678,7 +17678,11 @@ var WriteService = class {
       anchor: req.anchor,
       decision: req.decision,
       body: req.body,
-      resolved: false
+      resolved: false,
+      // Only stamp the reply fields when present, so a top-level comment's on-disk shape is byte-identical
+      // to before (no `origin`/`replyTo` keys) — keeps old sidecars and these writes indistinguishable.
+      ...req.replyTo !== void 0 ? { replyTo: req.replyTo } : {},
+      ...req.origin !== void 0 ? { origin: req.origin } : {}
     };
     this.writer.appendComment(req.run, req.gate, comment);
     return { id };
@@ -18360,12 +18364,16 @@ function handleComment(res, deps, runId, body) {
   if (!anchor.success) return reject(res, 400, "invalid_anchor");
   const decision = ReviewDecision.safeParse(body.decision);
   if (!decision.success) return reject(res, 400, "invalid_decision");
+  const replyTo = typeof body.replyTo === "string" && body.replyTo.length > 0 ? body.replyTo : void 0;
+  const origin = body.origin === "human" || body.origin === "agent" ? body.origin : void 0;
   const result = deps.writeService.addComment({
     run: runId,
     gate,
     anchor: anchor.data,
     decision: decision.data,
-    body: bodyText
+    body: bodyText,
+    ...replyTo !== void 0 ? { replyTo } : {},
+    ...origin !== void 0 ? { origin } : {}
   });
   deps.transport.push(runId, { type: "file-changed", path: `.review/${gate}.annotations.json` });
   sendJson(res, 200, result);
