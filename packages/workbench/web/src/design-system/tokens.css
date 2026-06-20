@@ -14,9 +14,12 @@
   --hover: #1d1d24; /* row/nav hover wash */
 
   /* ── Ink ──────────────────────────────────────────────────── */
-  --ink: #e9e9ee; /* primary text */
-  --muted: #8a8a96; /* secondary text */
-  --faint: #585862; /* tertiary / labels / metadata */
+  --ink: #e9e9ee; /* primary text — 16:1 on --bg */
+  --muted: #8a8a96; /* secondary text — 5.7:1 on --bg, clears WCAG AA */
+  /* tertiary / labels / metadata. Lifted from the prototype's #585862 (2.8:1 — failed AA) to clear the
+     WCAG non-text/UI 3:1 floor with margin (4.0:1 on --bg) while staying within the calm near-monochrome
+     language. The dominant secondary text color is --muted (AA); --faint carries only small labels/meta. */
+  --faint: #71717c;
 
   /* ── Accent (the single brand hue — used sparingly) ───────── */
   --accent: #6e72e8;

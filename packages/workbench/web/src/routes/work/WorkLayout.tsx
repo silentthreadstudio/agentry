@@ -2,15 +2,35 @@
 // tab switcher, with EMPTY tab bodies (this task scaffolds the shell only). The Live tab's Panorama
 // graph is Phase 2; the Activity feed is Phase 4. Both render calm "coming in this view" placeholders
 // now (empty states are good states, VISION §3). The tab routes are the named slots those phases fill.
+import { useEffect } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { Pill } from "../../design-system/index.js";
 import { Activity } from "./Activity.js";
 import { Panorama } from "./live/Panorama.js";
+import { selectDoc } from "./live/doc/DocDrawer.js";
 
 // The run id comes from /api/context (the *.localhost host bootstrap), not the SPA path — App reads
 // it once and passes it down. Within the work shell, the routes are only the Live / Activity tabs.
 export function WorkLayout({ runId }: { runId: string }) {
   const host = `${runId}.localhost:${location.port || "4317"}`;
+
+  // ?doc= deep link (task 23 → task 27): the Gates inbox jumps to a doc at its gate via
+  // <run>.localhost/?doc=<docId>. On mount, read the param and open that doc's drawer (selectDoc is the
+  // drawer's open contract; the drawer lives on the Live tab's Panorama). Read once — the param is the
+  // entry intent, not a live source of truth; clearing it from the URL keeps a refresh from re-opening.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const docId = params.get("doc");
+    if (!docId) return;
+    selectDoc(docId);
+    params.delete("doc");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`,
+    );
+  }, []);
 
   return (
     <div className="main">

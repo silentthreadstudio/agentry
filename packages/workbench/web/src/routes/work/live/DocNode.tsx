@@ -7,6 +7,7 @@
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import type { DocNode as DocNodeType, DocNodeData } from "./layout-dagre.js";
+import { useOpenCommentCount } from "./doc/comment-store.js";
 
 // FLOW's closed status, reached transitively through the read-model (DocNodeData.status is FLOW's
 // FlowTaskStatus) so the web package needn't depend on @agentry/flow directly — the type still ripples.
@@ -21,8 +22,12 @@ const STATUS_VIEW: Record<FlowTaskStatus, { label: string; dot: string; state: s
   todo: { label: "To do", dot: "s-todo", state: "dim" },
 };
 
-export function DocNode({ data }: NodeProps<DocNodeType>) {
+export function DocNode({ id, data }: NodeProps<DocNodeType>) {
   const view = STATUS_VIEW[data.status];
+  // Open review comments on this doc (AC5): the node id IS the docId (Panorama's selectDoc(n.id) and the
+  // gate sidecar both key on it), so the badge reads the same shared store the rail/bubble write to. > 0
+  // surfaces a small count so the panorama shows where a human is waited on, with no reload.
+  const openComments = useOpenCommentCount(data.runId, id);
   // hover-highlight overrides the resting visual: a dimmed node loses its lit/prog emphasis. When
   // nothing is hovered (highlight === undefined), the status-derived resting state stands.
   const highlightClass =
@@ -35,6 +40,14 @@ export function DocNode({ data }: NodeProps<DocNodeType>) {
       <div className="rn-top">
         <span className="rn-kind">Task</span>
         <span className="rn-st">
+          {openComments > 0 ? (
+            <span
+              className="rn-cmt"
+              aria-label={`${openComments} open ${openComments === 1 ? "comment" : "comments"}`}
+            >
+              {openComments}
+            </span>
+          ) : null}
           <span className={`sdot ${view.dot}`} aria-hidden="true" />
           {view.label}
         </span>

@@ -17,7 +17,17 @@ const DECISION_LABEL: Record<ReviewDecision, string> = {
   question: "question",
 };
 
-export function CommentRail({ runId, docId }: { runId: string; docId: string }) {
+export function CommentRail({
+  runId,
+  docId,
+  applyCommentMark,
+}: {
+  runId: string;
+  docId: string;
+  // Paints the in-editor `comment` highlight on a submitted span (AC5). Supplied by DocDrawer's
+  // commentRail slot; threaded to the SelectionBubble that owns the captured selection.
+  applyCommentMark?: (range: Range, commentId: string) => void;
+}) {
   useCommentRailStyles();
   const comments = useComments(runId, docId);
 
@@ -40,7 +50,7 @@ export function CommentRail({ runId, docId }: { runId: string; docId: string }) 
           ))
         )}
       </div>
-      <SelectionBubble runId={runId} docId={docId} />
+      <SelectionBubble runId={runId} docId={docId} applyCommentMark={applyCommentMark} />
     </div>
   );
 }

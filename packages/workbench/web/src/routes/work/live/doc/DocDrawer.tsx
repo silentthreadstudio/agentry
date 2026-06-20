@@ -19,9 +19,10 @@
 //     route may not exist yet — see the implementer's flag).
 //   • comment rail (task 18) + diff drawer (task 19) → named render-slot props, so they plug in WITHOUT
 //     editing this file.
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import type { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import type { DocModel } from "@agentry/workbench-shared";
@@ -31,8 +32,46 @@ import {
   tiptapToMd,
   type ProseMirrorDoc,
 } from "./markdown-serializer.js";
+import { CommentMark } from "./CommentMark.js";
 import { LockBar } from "./LockBar.js";
 import { SourceMode } from "./SourceMode.js";
+
+/**
+ * Paint the `comment` mark over a DOM `Range` in the open editor (AC5's in-editor highlight). The rail's
+ * SelectionBubble holds the captured Range; on a submitted comment it calls this to highlight the span and
+ * tag it with the comment id. The `comment` mark serializes to NOTHING (task 14), so the body round-trips
+ * unchanged — the highlight is UI-only. A no-op when the editor isn't ready or the range can't be mapped
+ * into ProseMirror coordinates (e.g. the selection landed outside the editable prose).
+ */
+export type ApplyCommentMark = (range: Range, commentId: string) => void;
+
+// The live editor of the open document, published by DocBody so the shell-level comment rail (a grid
+// sibling of the editor column) can paint the in-editor highlight without lifting the editor out of
+// DocBody. Mirrors the module-level `selectDoc` store pattern above — one source, no prop-drilling across
+// the grid boundary. Cleared when the body unmounts (drawer closes / doc switches).
+let liveEditor: Editor | null = null;
+
+function makeApplyCommentMark(): ApplyCommentMark {
+  return (range, commentId) => {
+    const editor = liveEditor;
+    if (!editor) return;
+    const { view } = editor;
+    let from: number;
+    let to: number;
+    try {
+      from = view.posAtDOM(range.startContainer, range.startOffset);
+      to = view.posAtDOM(range.endContainer, range.endOffset);
+    } catch {
+      return; // the range isn't inside the editor's document — nothing to mark
+    }
+    if (from === to) return;
+    editor
+      .chain()
+      .setTextSelection({ from: Math.min(from, to), to: Math.max(from, to) })
+      .setMark("comment", { id: commentId })
+      .run();
+  };
+}
 
 // ── The selection seam (the drawer-open trigger this task pins) ───────────────────────────────────────
 // A tiny module-level store: Panorama/DocNode call `selectDoc(id)` on a node click; the drawer subscribes
@@ -113,9 +152,10 @@ export interface DocDrawerProps {
   runId: string;
   /**
    * The comment rail (task 18) — rendered in the right column when provided. Receives the live docId so
-   * the rail can load that doc's review annotations. A no-op until task 18 supplies it.
+   * the rail can load that doc's review annotations, plus `applyCommentMark` so a submitted comment paints
+   * the in-editor highlight on its span (AC5). A no-op until task 18 supplies it.
    */
-  commentRail?: (ctx: { runId: string; docId: string }) => ReactNode;
+  commentRail?: (ctx: { runId: string; docId: string; applyCommentMark: ApplyCommentMark }) => ReactNode;
   /**
    * The diff drawer (task 19) — rendered as an overlay when provided. Receives the live docId. A no-op
    * until task 19 supplies it.
@@ -157,6 +197,21 @@ export function DocDrawer({ runId, commentRail, diffDrawer }: DocDrawerProps) {
     return () => ctrl.abort();
   }, [docId, reload]);
 
+  // Escape closes the drawer (a11y: a modal dialog must be dismissable from the keyboard). Bound while the
+  // drawer is open; the listener is window-level so it fires regardless of where focus sits inside it.
+  useEffect(() => {
+    if (docId == null) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") selectDoc(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [docId]);
+
+  // The shell-level rail paints the in-editor highlight through this — stable identity so the rail (and the
+  // SelectionBubble it mounts) doesn't re-subscribe each render; it reads the live editor via the module ref.
+  const applyCommentMark = useMemo(() => makeApplyCommentMark(), []);
+
   if (docId == null) return null;
 
   return (
@@ -181,7 +236,7 @@ export function DocDrawer({ runId, commentRail, diffDrawer }: DocDrawerProps) {
           <div className="dd-state" aria-busy="true" />
         )}
       </div>
-      {commentRail ? <div className="dd-rail">{commentRail({ runId, docId })}</div> : null}
+      {commentRail ? <div className="dd-rail">{commentRail({ runId, docId, applyCommentMark })}</div> : null}
       {diffDrawer ? diffDrawer({ runId, docId }) : null}
     </div>
   );
@@ -227,12 +282,24 @@ function DocBody({
 
   const editor = useEditor(
     {
-      extensions: [StarterKit, Link.configure({ openOnClick: false })],
+      // CommentMark is the UI-only `comment` mark (task 18): the in-editor highlight a submitted review
+      // comment paints on its span. It serializes to NOTHING (task 14), so registering it leaves the
+      // body's on-disk round-trip byte-stable — the highlight never reaches markdown.
+      extensions: [StarterKit, Link.configure({ openOnClick: false }), CommentMark],
       content: mdToTiptap(doc.body) as ProseMirrorDoc,
       editable,
     },
     [docId],
   );
+
+  // Publish this body's editor so the shell-level comment rail can paint the in-editor highlight (AC5).
+  // Cleared on unmount (drawer close / doc switch) so a stale editor is never marked.
+  useEffect(() => {
+    liveEditor = editor ?? null;
+    return () => {
+      if (liveEditor === editor) liveEditor = null;
+    };
+  }, [editor]);
 
   // When editability changes (e.g. after Take over re-fetches, or a read-only doc), reflect it into the
   // live editor.

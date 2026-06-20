@@ -4,13 +4,13 @@
 // the node badge then reflect it with no reload.
 //
 // ── Why it reads the DOM selection, not the Tiptap editor handle ──────────────────────────────────────
-// DocDrawer (task 16) owns the editor and exposes it only through render slots that pass `{ runId, docId }`
-// — not the `Editor` instance, and its extension list does not register the `comment` mark. This task may
-// not edit DocDrawer (pinned boundary). So the bubble anchors on the browser selection inside the rendered
-// `.dd-prose .ProseMirror` node: that is enough to build the 3-way anchor the server stores (originalText
-// = selected text, headingAnchor = nearest `##` above, startLine = body line of the selection). The
-// in-editor highlight (the `comment` MARK) is defined in CommentMark.ts and serializes to nothing, but it
-// is not live-applied here because the drawer's editor doesn't register it — see the implementer's flag.
+// DocDrawer owns the editor; it exposes it only through render slots. The bubble anchors on the browser
+// selection inside the rendered `.dd-prose .ProseMirror` node: that is enough to build the 3-way anchor the
+// server stores (originalText = selected text, headingAnchor = nearest `##` above, startLine = body line of
+// the selection). For the in-editor highlight (the `comment` MARK, defined in CommentMark.ts and registered
+// in DocDrawer's editor — task 27), DocDrawer passes down an `applyCommentMark(range, id)` callback through
+// the rail slot; the bubble fires it after the server mints the comment id, so the just-commented span
+// highlights in place. The mark serializes to nothing (task 14), so the body still round-trips unchanged.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReviewDecision } from "./review-types.js";
 import { addComment } from "./comment-store.js";
@@ -33,12 +33,16 @@ export function SelectionBubble({
   runId,
   docId,
   onPosted,
+  applyCommentMark,
 }: {
   runId: string;
   docId: string;
   // Lets the rail toast/refresh after a post (the rail re-renders from the store regardless; this is the
   // optional UX nudge). Kept a callback so the bubble stays decoupled from the rail.
   onPosted?: (message: string) => void;
+  // Paints the in-editor `comment` highlight on the just-commented span (AC5). DocDrawer supplies it; the
+  // bubble holds the captured Range, so it's the right place to fire the mark once the server mints the id.
+  applyCommentMark?: ((range: Range, commentId: string) => void) | undefined;
 }) {
   const [pos, setPos] = useState<BubblePos | null>(null);
   // The selection captured when the bubble opened — frozen so a click on a bubble button (which can clear
@@ -86,8 +90,12 @@ export function SelectionBubble({
     if (!snap) return;
     const prose = proseRoot(snap.range.commonAncestorContainer);
     const anchor = buildAnchor(prose, snap.range, snap.text);
+    // Keep the captured range across hide() (which clears `captured`) so the in-editor highlight can paint
+    // it once the server returns the comment id.
+    const markRange = snap.range;
     hide();
     const result = await addComment({ runId, docId, anchor, decision, body: "" });
+    if (result.ok && result.id) applyCommentMark?.(markRange, result.id);
     onPosted?.(result.message);
   }
 

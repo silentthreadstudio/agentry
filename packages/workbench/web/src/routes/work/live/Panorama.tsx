@@ -103,8 +103,8 @@ function PanoramaCanvas({ runId }: { runId: string }) {
   }, [graph]);
 
   const base = useMemo(
-    () => (graph ? layoutGraph(graph, activeBlocks) : { nodes: [], edges: [] }),
-    [graph, activeBlocks],
+    () => (graph ? layoutGraph(runId, graph, activeBlocks) : { nodes: [], edges: [] }),
+    [runId, graph, activeBlocks],
   );
 
   // hover-highlight: the hovered node + its direct neighbors stay lit; everything else dims. null = no
@@ -188,7 +188,9 @@ function PanoramaCanvas({ runId }: { runId: string }) {
           The comment rail (task 18) + diff drawer (task 19) plug into the drawer's pinned slots. */}
       <DocDrawer
         runId={runId}
-        commentRail={({ runId, docId }) => <CommentRail runId={runId} docId={docId} />}
+        commentRail={({ runId, docId, applyCommentMark }) => (
+          <CommentRail runId={runId} docId={docId} applyCommentMark={applyCommentMark} />
+        )}
         diffDrawer={({ runId, docId }) => <DiffDrawer runId={runId} docId={docId} />}
       />
     </div>

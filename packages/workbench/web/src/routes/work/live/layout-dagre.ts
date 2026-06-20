@@ -17,6 +17,7 @@ import type { Edge, Node } from "@xyflow/react";
 // (label, FLOW status) plus the per-render hover-highlight hint. `blocked` is a derived overlay flag
 // (the node is the target of an *active* blocks edge) — never a FLOW status value (no "blocked" status).
 export interface DocNodeData {
+  runId: string; // the run this node belongs to — lets the node read its open-comment count (badge, AC5)
   label: string;
   status: GraphModel["nodes"][number]["status"]; // FLOW's closed FlowTaskStatus (imported, not redeclared)
   blocked: boolean; // overlay: targeted by an active `blocks` edge — derived, not a status
@@ -54,11 +55,17 @@ const LAYOUT_RANKING_KINDS: ReadonlySet<GraphEdgeKind> = new Set(["derives", "de
 /**
  * Compute non-overlapping positions for a GraphModel and return React Flow nodes/edges ready to render.
  *
+ * @param runId       the run these nodes belong to — stamped onto each node's data so the node can read
+ *                    its open-comment count for the badge (AC5). Pure: the layout itself doesn't use it.
  * @param model       the run's read-model graph (nodes carry FLOW status; edges carry the typed kind)
  * @param activeBlocks ids of nodes whose in-progress state makes their outgoing `blocks` edges "active"
  *                     (the blocker is running). Used to derive the per-node `blocked` flag + edge glow.
  */
-export function layoutGraph(model: GraphModel, activeBlocks: ReadonlySet<string> = new Set()): PositionedGraph {
+export function layoutGraph(
+  runId: string,
+  model: GraphModel,
+  activeBlocks: ReadonlySet<string> = new Set(),
+): PositionedGraph {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "TB", ranksep: 64, nodesep: 38, marginx: 30, marginy: 20 });
   g.setDefaultEdgeLabel(() => ({}));
@@ -89,7 +96,7 @@ export function layoutGraph(model: GraphModel, activeBlocks: ReadonlySet<string>
       id: node.id,
       type: "doc",
       position,
-      data: { label: node.label, status: node.status, blocked: blockedTargets.has(node.id) },
+      data: { runId, label: node.label, status: node.status, blocked: blockedTargets.has(node.id) },
     };
   });
 

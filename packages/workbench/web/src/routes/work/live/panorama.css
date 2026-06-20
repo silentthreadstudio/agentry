@@ -81,6 +81,20 @@
   font-size: 11px;
   color: var(--muted);
 }
+/* open-comment count badge (AC5): the gate/review hue (--prog), a small count chip so the panorama shows
+   where a human is waited on. Pairs with an aria-label — never count-as-color-alone. */
+.rn-cmt {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font: 700 10px var(--mono);
+  color: var(--prog);
+  background: color-mix(in srgb, var(--prog) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--prog) 40%, transparent);
+}
 .rn-ttl {
   font-size: 14px;
   font-weight: 600;
