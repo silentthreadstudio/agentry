@@ -1,15 +1,15 @@
-// CommentRail — the review rail in the doc drawer's right column (task 18, ported from
+// CommentRail — the review rail in the docs workspace's right column (task 18, ported from
 // prototype-document.html's `.rail`). Lists the open document's comments (newest first), each with its
-// decision tint, the quoted span, the body, and Reply/Resolve actions. It also mounts the SelectionBubble
-// (the compose affordance) so the whole comment loop lives in this one slot — the rail is what DocDrawer's
-// `commentRail` slot renders, receiving `{ runId, docId }`.
+// decision tint, the quoted span, the body, and Reply/Resolve actions. It also mounts the RailComposer
+// (the in-rail compose affordance, opened by the editor's margin 💬 button via selection-store) so the
+// whole comment loop lives in this one slot — receiving `{ runId, docId }` from DocsWorkspace.
 //
-// SRP: the rail RENDERS comments from the shared comment-store; SelectionBubble WRITES to it; the node
-// badge READS the count from it. No comment state lives in this component — it subscribes to the store.
+// SRP: the rail RENDERS comments from the shared comment-store; RailComposer WRITES to it; the node badge
+// READS the count from it. No comment state lives in this component — it subscribes to the store.
 import { useEffect } from "react";
 import type { ReviewDecision } from "./review-types.js";
 import { fetchReview } from "../../../../api/client.js";
-import { SelectionBubble } from "./SelectionBubble.js";
+import { RailComposer } from "./RailComposer.js";
 import {
   hydrate,
   resolveComment,
@@ -66,11 +66,13 @@ export function CommentRail({
         <span className="dd-gatepill">gate · {docId}</span>
       </div>
       <div className="dd-rail-body">
+        {/* The composer renders here when the margin 💬 button captures a selection (selection-store). */}
+        <RailComposer runId={runId} docId={docId} applyCommentMark={applyCommentMark} />
         {comments.length === 0 ? (
           <div className="dd-rail-empty">
-            No comments on this document yet.
+            No comments yet.
             <br />
-            Select any text to request changes, ask, or approve.
+            Select any text in the document — a <b>💬</b> appears in the margin; click it to comment.
           </div>
         ) : (
           <>
@@ -88,7 +90,6 @@ export function CommentRail({
           </>
         )}
       </div>
-      <SelectionBubble runId={runId} docId={docId} applyCommentMark={applyCommentMark} />
     </div>
   );
 }

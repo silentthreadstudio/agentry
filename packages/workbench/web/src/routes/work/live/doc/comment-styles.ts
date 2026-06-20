@@ -74,20 +74,36 @@ const COMMENT_CSS = `
   margin-bottom:6px}
 .dd-orphans .dd-reply{margin:0 0 8px;border:1px solid var(--line);border-radius:var(--r-lg)}
 
-/* the floating selection composer — a small card: textarea + a row of decision buttons */
-.dd-bubble{position:fixed;z-index:90;display:flex;flex-direction:column;gap:7px;width:300px;
-  transform:translate(-50%,-118%);background:var(--panel2);border:1px solid var(--line2);
-  border-radius:var(--r-lg);padding:9px;box-shadow:0 16px 40px rgba(0,0,0,.55)}
-.dd-bubble-ta{width:100%;box-sizing:border-box;min-height:58px;resize:vertical;font:400 12.5px var(--sans);
-  color:var(--ink);background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-md);
-  padding:7px 9px;line-height:1.5}
-.dd-bubble-ta::placeholder{color:var(--faint)}
-.dd-bubble-ta:focus{outline:none;border-color:var(--prog)}
-.dd-bubble-row{display:flex;gap:3px;justify-content:space-between}
-.dd-bubble-btn{border:0;background:transparent;color:var(--ink);font-size:11.5px;font-weight:600;
-  padding:5px 8px;border-radius:var(--r-md);cursor:pointer;display:flex;align-items:center;gap:5px;
-  font-family:var(--sans);white-space:nowrap}
-.dd-bubble-btn:hover:not(:disabled){background:var(--hover)}
+/* the margin trigger — a small round 💬 button in the editor's right gutter, fixed to the selection's
+   vertical position. The ONLY floating element; it never overlaps the prose (it sits in the whitespace). */
+.dd-gutter-btn{position:fixed;z-index:90;width:30px;height:30px;border-radius:50%;display:grid;
+  place-items:center;font-size:14px;cursor:pointer;background:var(--panel2);border:1px solid var(--line2);
+  box-shadow:0 6px 18px rgba(0,0,0,.45);transition:transform .1s,border-color .12s;padding:0}
+.dd-gutter-btn:hover{transform:scale(1.08);border-color:var(--prog)}
+
+/* the rail composer — appears at the top of the review rail when the margin button captures a selection */
+.dd-composer{border:1px solid var(--prog);border-radius:var(--r-lg);
+  background:color-mix(in srgb,var(--prog) 7%,var(--panel));padding:11px;margin-bottom:11px;
+  box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.dd-composer-h{display:flex;align-items:center;margin-bottom:7px}
+.dd-composer-t{font:700 9.5px var(--sans);letter-spacing:.6px;text-transform:uppercase;color:var(--prog)}
+.dd-composer-x{margin-left:auto;border:0;background:transparent;color:var(--faint);font-size:16px;
+  line-height:1;cursor:pointer;padding:0 2px;font-family:var(--sans)}
+.dd-composer-x:hover{color:var(--ink)}
+.dd-composer-q{font:500 10.5px var(--mono);color:var(--faint);border-left:2px solid var(--prog);
+  padding-left:7px;margin-bottom:8px;word-break:break-word;max-height:54px;overflow:auto}
+.dd-composer-ta{width:100%;box-sizing:border-box;min-height:60px;resize:vertical;font:400 12.5px var(--sans);
+  color:var(--ink);background:var(--bg);border:1px solid var(--line2);border-radius:var(--r-md);
+  padding:8px 9px;line-height:1.5;margin-bottom:8px}
+.dd-composer-ta::placeholder{color:var(--faint)}
+.dd-composer-ta:focus{outline:none;border-color:var(--prog)}
+.dd-composer-row{display:flex;gap:4px;justify-content:space-between}
+
+/* decision buttons — shared by the composer row (named .dd-bubble-* for continuity with the prototype) */
+.dd-bubble-btn{border:1px solid var(--line2);background:var(--panel2);color:var(--ink);font-size:11.5px;
+  font-weight:600;padding:6px 9px;border-radius:var(--r-md);cursor:pointer;display:flex;align-items:center;
+  gap:5px;font-family:var(--sans);white-space:nowrap;flex:1;justify-content:center}
+.dd-bubble-btn:hover:not(:disabled){background:var(--hover);border-color:var(--prog)}
 .dd-bubble-btn:disabled{opacity:.5;cursor:default}
 .dd-bubble-btn.acc{color:var(--done)}
 .dd-bubble-btn.chg{color:var(--coral,var(--block))}

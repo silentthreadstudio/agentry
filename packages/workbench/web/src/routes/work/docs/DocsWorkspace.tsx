@@ -17,6 +17,7 @@ import { getWsClient } from "../../../api/ws-client.js";
 import { DocNavigator } from "./DocNavigator.js";
 import { DocEditor, useApplyCommentMark, type DocMeta } from "./DocEditor.js";
 import { DocsRail } from "./DocsRail.js";
+import { GutterCommentButton } from "../live/doc/GutterCommentButton.js";
 import {
   closeDocTab,
   selectDoc,
@@ -179,13 +180,17 @@ export function DocsWorkspace({ runId }: { runId: string }) {
 
         <div className="dw-edbody">
           {active ? (
-            <DocEditor
-              key={active}
-              runId={runId}
-              docId={active}
-              applyCommentMark={applyCommentMark}
-              onLoaded={(m) => onLoaded(active, m)}
-            />
+            <>
+              <DocEditor
+                key={active}
+                runId={runId}
+                docId={active}
+                applyCommentMark={applyCommentMark}
+                onLoaded={(m) => onLoaded(active, m)}
+              />
+              {/* The margin 💬 trigger — floats in the editor's right gutter on a text selection. */}
+              <GutterCommentButton runId={runId} docId={active} />
+            </>
           ) : (
             <div className="dw-empty">
               No document open.
