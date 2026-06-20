@@ -2,7 +2,7 @@
 // the instance, build a FRESH adapter, re-read → identical content. No orchestration state lives only
 // in the server. Also pins the tool-stamped version (AC4/AC5) and the closed-event append (ADR-002).
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -88,6 +88,43 @@ test("JsonReviewStore: comments survive a fresh adapter; resolved is preserved",
   assert.equal(back.length, 1);
   assert.equal(back[0]?.resolved, false);
   assert.equal(back[0]?.anchor.startLine, 12);
+});
+
+test("JsonReviewStore: a pre-Phase-2 sidecar (no origin field) still parses — back-compat (ADR-002)", () => {
+  // a legacy sidecar written before the reply lane existed: no `origin`, no `replyTo`.
+  const legacy = [
+    {
+      id: "c-legacy",
+      anchor: { originalText: "snippet", headingAnchor: "## Section", startLine: 7 },
+      decision: "approve",
+      body: "looks good",
+      resolved: false,
+    },
+  ];
+  const reviewDir = join(cwd, ".agentry", "work", RUN, ".review");
+  mkdirSync(reviewDir, { recursive: true });
+  writeFileSync(join(reviewDir, "spec.annotations.json"), JSON.stringify(legacy));
+
+  const back = new JsonReviewStore(cwd).read(RUN, "spec");
+  assert.equal(back.length, 1, "the legacy comment still parses through the extended schema");
+  assert.equal(back[0]?.origin, undefined, "absent origin stays absent (treated as human)");
+  assert.equal(back[0]?.replyTo, undefined);
+});
+
+test("JsonReviewStore: an agent reply (origin/replyTo) round-trips through a fresh adapter", () => {
+  const reply = {
+    id: "r1",
+    anchor: { originalText: "", headingAnchor: "", startLine: 0 },
+    decision: "question" as const,
+    body: "on it",
+    resolved: true,
+    origin: "agent" as const,
+    replyTo: "c-human",
+  };
+  new JsonReviewStore(cwd).write(RUN, "plan", [reply]);
+  const back = new JsonReviewStore(cwd).read(RUN, "plan");
+  assert.equal(back[0]?.origin, "agent");
+  assert.equal(back[0]?.replyTo, "c-human");
 });
 
 test("JsonRunStateStore: run state survives a fresh adapter", () => {

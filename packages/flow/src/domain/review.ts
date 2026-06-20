@@ -19,11 +19,29 @@ export const ReviewAnchor = z.object({
 });
 export type ReviewAnchor = z.infer<typeof ReviewAnchor>;
 
+// Who authored an entry on the `.review/` bus (ADR-002). The bus carries TWO message kinds on one
+// directory: the human's review comment (the default) and the agent's `channel_reply`. The marker is
+// what lets the bridge skip the agent's own replies (no echo loop) and lets open-gate read-models
+// keep the "waiting on you" list human-only. ABSENT ⇒ "human" — every pre-Phase-2 sidecar (no field)
+// parses as a human comment, so the addition is back-compatible.
+export const ReviewOrigin = z.enum(["human", "agent"]);
+export type ReviewOrigin = z.infer<typeof ReviewOrigin>;
+
 export const ReviewComment = z.object({
   id: z.string(),
   anchor: ReviewAnchor,
   decision: ReviewDecision,
   body: z.string(),
   resolved: z.boolean(), // distinguishes open from resolved comments (AC10: review_resolve marks one)
+  // ── Phase 2 reply lane (ADR-002) — both optional + additive so old sidecars still parse ──────────
+  origin: ReviewOrigin.optional(), // absent ⇒ human; "agent" marks a channel_reply (Phase 2b's rail)
+  replyTo: z.string().optional(), // the human comment id this reply answers (threading; agent only)
 });
 export type ReviewComment = z.infer<typeof ReviewComment>;
+
+// Whether a comment is human-authored. Origin is OPTIONAL on the shape (back-compat): an absent origin
+// is treated as human, so a pre-Phase-2 sidecar (no field) and an explicit `origin:"human"` are equal.
+// The bridge + open-gate read-models route on THIS, not on a bare `origin === "human"` check.
+export function isHumanComment(comment: ReviewComment): boolean {
+  return comment.origin !== "agent";
+}

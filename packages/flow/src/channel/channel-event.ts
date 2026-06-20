@@ -6,7 +6,7 @@
 //
 // `meta` keys MUST be snake_case (`run_id`, `comment_id`) — the host drops hyphenated keys, so a
 // kebab key would silently strip the context the conductor needs to act on the comment.
-import type { ReviewComment } from "../domain/review.js";
+import { isHumanComment, type ReviewComment } from "../domain/review.js";
 
 // The payload of one `notifications/claude/channel` notification — `content` is what Claude reads,
 // `meta` is the structured context the host surfaces in the `<channel …>` tag (snake_case only).
@@ -36,16 +36,14 @@ export function renderChannelContent(comment: ReviewComment): string {
   return `Review on "${quoteAnchor(comment.anchor.originalText)}": ${comment.body}`;
 }
 
-// Whether a comment is eligible to push: NOT already seen, and unresolved (`resolved !== true`).
-//
-// Human-origin filter (forward-compat, Phase 2): the `ReviewComment` shape carries no author/agent
-// marker today, so every unresolved comment is treated as human-origin. When Phase 2 marks agent
-// replies, gate them here (skip agent-authored) so the conductor's own replies never re-fire a push.
-// TODO(flow-channel Phase 2): skip agent-authored comments once the reply-marking field exists — do
-// NOT invent the schema field here; it lands with the reply tool.
+// Whether a comment is eligible to push: NOT already seen, unresolved (`resolved !== true`), and
+// HUMAN-origin. The human-origin gate (Phase 2, ADR-002) is what stops the echo loop: an agent's own
+// `channel_reply` lands on the SAME `.review/` bus marked `origin:"agent"`, so without this check the
+// bridge would re-push the reply back into the session as a `<channel>` — the agent answering itself.
 export function isPushable(comment: ReviewComment, seen: ReadonlySet<string>): boolean {
   if (seen.has(comment.id)) return false;
   if (comment.resolved === true) return false;
+  if (!isHumanComment(comment)) return false; // skip agent-authored replies — no echo loop
   return true;
 }
 

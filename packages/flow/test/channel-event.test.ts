@@ -77,6 +77,37 @@ test("isPushable: resolved is not pushable", () => {
   assert.equal(isPushable(comment({ resolved: true }), new Set()), false);
 });
 
+// ── ADR-002: the bridge skips agent-origin replies (no echo loop) ──────────────────────────────────
+test("isPushable: an agent-origin reply is NOT pushable (no echo loop)", () => {
+  assert.equal(isPushable(comment({ origin: "agent", replyTo: "c-human" }), new Set()), false);
+});
+
+test("diffNewComments skips an agent reply — only the human comment pushes", () => {
+  const comments = [
+    comment({ id: "human", body: "fix this" }),
+    comment({ id: "agent-reply", origin: "agent", replyTo: "human", body: "on it" }),
+  ];
+  const { notifications, newlySeen } = diffNewComments("run-x", "spec", comments, new Set());
+  assert.deepEqual(
+    notifications.map((n) => n.meta.comment_id),
+    ["human"],
+    "the agent's own reply is never re-pushed as a <channel>",
+  );
+  assert.deepEqual(newlySeen, ["human"]);
+});
+
+// ── back-compat: an old sidecar comment with no origin parses as human + still pushes ──────────────
+test("isPushable: a comment with no origin (old sidecar) is treated as human and pushes", () => {
+  const legacy = comment(); // the factory sets no origin — a pre-Phase-2 comment
+  assert.equal(legacy.origin, undefined, "no origin on a legacy comment");
+  assert.equal(isPushable(legacy, new Set()), true);
+});
+
+test("an explicit origin:\"human\" comment pushes the same as an absent origin", () => {
+  const { notifications } = diffNewComments("run-x", "spec", [comment({ origin: "human" })], new Set());
+  assert.equal(notifications.length, 1);
+});
+
 test("renderChannelContent truncates a long anchor quote", () => {
   const long = "x".repeat(500);
   const out = renderChannelContent(comment({ anchor: { originalText: long, headingAnchor: "h", startLine: 1 } }));

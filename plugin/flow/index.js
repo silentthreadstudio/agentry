@@ -28621,14 +28621,23 @@ var ReviewAnchor = external_exports.object({
   startLine: external_exports.number()
   // the line the comment was made at
 });
+var ReviewOrigin = external_exports.enum(["human", "agent"]);
 var ReviewComment = external_exports.object({
   id: external_exports.string(),
   anchor: ReviewAnchor,
   decision: ReviewDecision,
   body: external_exports.string(),
-  resolved: external_exports.boolean()
+  resolved: external_exports.boolean(),
   // distinguishes open from resolved comments (AC10: review_resolve marks one)
+  // ── Phase 2 reply lane (ADR-002) — both optional + additive so old sidecars still parse ──────────
+  origin: ReviewOrigin.optional(),
+  // absent ⇒ human; "agent" marks a channel_reply (Phase 2b's rail)
+  replyTo: external_exports.string().optional()
+  // the human comment id this reply answers (threading; agent only)
 });
+function isHumanComment(comment) {
+  return comment.origin !== "agent";
+}
 
 // src/persistence/review-store.ts
 var JsonReviewStore = class {
@@ -29298,6 +29307,30 @@ var ReviewService = class {
     this.reviews.write(input.run, input.gate, [...existing, comment]);
     return { id };
   }
+  // Append an agent reply (ADR-002 `channel_reply`) to the gate's sidecar — the agent→human ack/status
+  // lane that rides the SAME `.review/` bus as human comments. It is marked `origin:"agent"` so (1) the
+  // channel bridge skips it (no echo loop) and (2) open-gate read-models keep "waiting on you" human-only;
+  // `resolved:true` so the existing `!resolved` open-filter also drops it without a schema change. A reply
+  // has no review anchor/decision (ADR-002), so neutral placeholders satisfy the closed schema — the rail
+  // (Phase 2b) renders by `origin`, not by these fields. Returns the new reply's id.
+  reply(input) {
+    const id = mintCommentId();
+    const reply = {
+      id,
+      anchor: { originalText: "", headingAnchor: "", startLine: 0 },
+      // a reply has no span (ADR-002)
+      decision: "question",
+      // schema-required; not a verdict — a reply carries no review decision
+      body: input.body,
+      resolved: true,
+      // not an open human gate item — keeps it out of the "waiting on you" list
+      origin: "agent",
+      ...input.replyTo !== void 0 ? { replyTo: input.replyTo } : {}
+    };
+    const existing = this.reviews.read(input.run, input.gate);
+    this.reviews.write(input.run, input.gate, [...existing, reply]);
+    return { id };
+  }
   // Mark one comment resolved so it is distinguishable from open ones (AC10). Idempotent: resolving an
   // already-resolved comment succeeds (the post-state is the same). An unknown id is `not-found`.
   resolve(run, gate, id) {
@@ -29308,9 +29341,13 @@ var ReviewService = class {
     this.reviews.write(run, gate, next);
     return { ok: true, id };
   }
-  // The gate's comments — what the conductor reads AT the gate to see open vs. resolved annotations.
+  // The gate's review comments — what the conductor reads AT the gate to see open vs. resolved
+  // annotations. Agent replies (ADR-002 `channel_reply`) ride the same `.review/` bus but are NOT review
+  // annotations and must not pollute this read: they are filtered out by `origin:"agent"` so `review_list`
+  // (and "open items waiting on you" derived from it) stays human-only. The rail (Phase 2b) reads the raw
+  // sidecar to render replies; this application read is review-only.
   list(run, gate) {
-    return { comments: this.reviews.read(run, gate) };
+    return { comments: this.reviews.read(run, gate).filter(isHumanComment) };
   }
 };
 
@@ -29352,6 +29389,28 @@ function registerReviewTools(server, ctx) {
       inputSchema: { run: external_exports.string(), gate: external_exports.string() }
     },
     guard(async (args) => ok(service.list(args.run, args.gate)))
+  );
+}
+
+// src/tools/channel-reply-tools.ts
+function registerChannelReplyTools(server, ctx) {
+  const service = new ReviewService(ctx.reviews);
+  server.registerTool(
+    "channel_reply",
+    {
+      description: "Send a short reply/status back to the human in the Agentry Workbench conversation rail, in answer to a review comment. Use after addressing or acknowledging a <channel> review comment.",
+      inputSchema: {
+        run: external_exports.string(),
+        doc: external_exports.string(),
+        // the gate key (== docId) — the artifact the human commented on
+        body: external_exports.string(),
+        replyTo: external_exports.string().optional()
+        // the human comment id this answers (threading)
+      }
+    },
+    guard(
+      async (args) => ok(service.reply({ run: args.run, gate: args.doc, body: args.body, replyTo: args.replyTo }))
+    )
   );
 }
 
@@ -31062,6 +31121,7 @@ function renderChannelContent(comment) {
 function isPushable(comment, seen) {
   if (seen.has(comment.id)) return false;
   if (comment.resolved === true) return false;
+  if (!isHumanComment(comment)) return false;
   return true;
 }
 function diffNewComments(run, gate, comments, seen) {
@@ -31207,6 +31267,7 @@ async function main() {
   registerMonitorTools(server, services);
   registerAgentTools(server, services);
   registerReviewTools(server, services);
+  registerChannelReplyTools(server, services);
   await server.connect(new StdioServerTransport());
   const emit = async (n) => {
     await server.server.notification({

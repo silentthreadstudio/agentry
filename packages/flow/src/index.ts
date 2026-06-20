@@ -19,6 +19,7 @@ import { registerTaskTools } from "./tools/task-tools.js";
 import { registerMonitorTools } from "./tools/monitor-tools.js";
 import { registerAgentTools } from "./tools/agent-tools.js";
 import { registerReviewTools } from "./tools/review-tools.js";
+import { registerChannelReplyTools } from "./tools/channel-reply-tools.js";
 import { ChannelBridge } from "./channel/channel-bridge.js";
 import type { ChannelNotification } from "./channel/channel-event.js";
 
@@ -116,6 +117,7 @@ export async function main(): Promise<void> {
   registerMonitorTools(server, services);
   registerAgentTools(server, services);
   registerReviewTools(server, services);
+  registerChannelReplyTools(server, services); // ADR-002: the agent→human reply lane
 
   await server.connect(new StdioServerTransport());
 
