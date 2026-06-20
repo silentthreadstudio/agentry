@@ -23,6 +23,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolveSlug, type DocModel, type WsMessage } from "@agentry/workbench-shared";
 import { ReviewAnchor, ReviewDecision, type ReviewComment } from "@agentry/flow/domain/review";
+import { FlowTaskStatus } from "@agentry/flow/domain/status";
 import { computeVersion } from "@agentry/flow/domain/version";
 import type { WorkReader } from "../application/work-reader.js";
 import type { WriteService } from "../application/write-service.js";
@@ -238,6 +239,7 @@ export async function handlePostRequest(
 
   if (write.kind === "comment") return handleComment(res, deps, runId, body);
   if (write.kind === "resolve") return handleResolve(res, deps, runId, body);
+  if (write.kind === "status") return handleStatus(res, deps, runId, body);
   if (write.kind === "artifact") return handleArtifact(res, deps, runId, body);
   return handleTakeover(res, deps, runId, body);
 }
@@ -371,6 +373,24 @@ function handleResolve(res: ServerResponse, deps: WriteDeps, runId: string, body
   const result = deps.writeService.resolveComment({ run: runId, gate, commentId });
   if (!result.ok) return reject(res, 404, "unknown_comment");
   deps.transport.push(runId, { type: "file-changed", path: `.review/${gate}.annotations.json` });
+  sendJson(res, 200, { ok: true });
+  return true;
+}
+
+// POST /api/work/:id/status → set a task's lifecycle status (the human override — cleanup note 3). Body
+// { target: "task-<NNN>", status }. Validates the status against FLOW's closed union; a non-task target or
+// an out-of-vocab status is a 400, an absent task file a 404. On success, nudges watchers so the navigator
+// dots + graph re-tint (the client refetches the graph on any ws message).
+function handleStatus(res: ServerResponse, deps: WriteDeps, runId: string, body: unknown): boolean {
+  if (!isRecord(body)) return reject(res, 400, "invalid_body");
+  const taskNo = taskNoFromTakeover(body); // reuse: accepts `target: "task-<NNN>"`
+  if (taskNo === null) return reject(res, 400, "not_a_task");
+  const status = FlowTaskStatus.safeParse(body.status);
+  if (!status.success) return reject(res, 400, "invalid_status");
+
+  const outcome = deps.writeService.setStatus({ run: runId, taskNo, status: status.data });
+  if (!outcome.ok) return reject(res, 404, "not_found");
+  deps.transport.push(runId, { type: "file-changed", path: `tasks/${taskNo}` });
   sendJson(res, 200, { ok: true });
   return true;
 }
@@ -551,12 +571,12 @@ function matchWorkReview(path: string): { runId: string; docId: string } | null 
 // null. The matcher only recognizes the shape; the verb gate + body parse happen in the dispatcher.
 function matchWritePath(
   path: string,
-): { kind: "comment" | "resolve" | "artifact" | "takeover"; runId: string } | null {
-  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover)$/.exec(path);
+): { kind: "comment" | "resolve" | "artifact" | "takeover" | "status"; runId: string } | null {
+  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover|status)$/.exec(path);
   if (!m || m[1] === undefined || m[2] === undefined) return null;
   try {
     return {
-      kind: m[2] as "comment" | "resolve" | "artifact" | "takeover",
+      kind: m[2] as "comment" | "resolve" | "artifact" | "takeover" | "status",
       runId: decodeURIComponent(m[1]),
     };
   } catch {

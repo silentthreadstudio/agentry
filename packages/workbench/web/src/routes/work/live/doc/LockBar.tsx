@@ -1,10 +1,9 @@
-// LockBar — the lock-aware banner under the doc header (ADR-006 on the UI side; ported from
-// prototype-document.html's `.lockbar`). It reads ONE derived signal — whether the doc is locked — and
-// presents the matching affordance:
-//   • locked   → amber "Read-only — <lockedBy> is writing this now"  + the Take over action.
-//   • free     → green "Editable — version <v> in sync. Your edit is what the agent reads next turn."
+// LockBar — the lock-aware banner under the doc header (ADR-006 on the UI side). It reads ONE derived
+// signal — whether the doc is locked — and renders only the meaningful case:
+//   • locked → amber "Read-only — <lockedBy> is writing this now" + the Take over action.
+//   • free   → nothing (the editable/in-sync line was noise — the header pill already says "editable").
 // The lock itself is server-truth (a `status: in-progress` doc is locked by its assignee — ADR-006);
-// this bar only renders the state DocDrawer derives, it never decides editability on its own.
+// this bar only renders the state the editor derives, it never decides editability on its own.
 import { TakeOver } from "./TakeOver.js";
 
 export interface LockBarProps {
@@ -20,7 +19,7 @@ export interface LockBarProps {
   onTakenOver: () => void;
 }
 
-export function LockBar({ locked, lockedBy, version, runId, docId, onTakenOver }: LockBarProps) {
+export function LockBar({ locked, lockedBy, runId, docId, onTakenOver }: LockBarProps) {
   if (locked) {
     return (
       <div className="dd-lockbar" role="status">
@@ -35,12 +34,6 @@ export function LockBar({ locked, lockedBy, version, runId, docId, onTakenOver }
     );
   }
 
-  return (
-    <div className="dd-lockbar free" role="status">
-      <span>
-        ✓ Editable — version <b>{version || "—"}</b> in sync.{" "}
-        <span className="dd-lock-hint">Your edit is what the agent reads next turn.</span>
-      </span>
-    </div>
-  );
+  // Free doc → no banner (the header's "editable" pill already conveys it).
+  return null;
 }

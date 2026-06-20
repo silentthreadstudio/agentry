@@ -146,6 +146,21 @@ export class WriteService {
     return { ok: true };
   }
 
+  // Set a task's lifecycle status (the human override — cleanup note 3: agents sometimes don't move a
+  // task to done). Re-reads the task, writes its frontmatter with the new `status`, re-stamps the version.
+  // When the status leaves `in-progress`, the agent lock is released (`lockedBy` dropped) so the doc is
+  // free; setting it TO `in-progress` keeps any existing holder. `not-found` for an absent task file.
+  setStatus(req: { run: string; taskNo: string; status: FlowTaskStatus }): TakeOverOutcome {
+    const target: ArtifactTarget = { taskNo: req.taskNo };
+    const current = this.writer.readArtifact(req.run, target);
+    if (current === undefined) return { ok: false, reason: "not-found" };
+
+    const frontmatter: Record<string, unknown> = { ...current.frontmatter, status: req.status };
+    if (req.status !== "in-progress") delete frontmatter.lockedBy;
+    this.writer.writeArtifact(req.run, target, frontmatter, current.body);
+    return { ok: true };
+  }
+
   // The lock check (ADR-006): a task is locked when its on-disk `status === "in-progress"`, and the
   // holder is `lockedBy` (falling back to the assignee, then a generic label so the UI always has a
   // name). Run-root artifacts (spec/plan) carry no task lifecycle, so they are never lock-gated.

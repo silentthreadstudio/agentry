@@ -17,7 +17,6 @@
 // preserved via the module-level `liveEditor` ref, so the workspace's CommentRail paints without lifting
 // the editor out of this component.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -107,13 +106,30 @@ async function postArtifact(
   return { ok: res.ok, status: res.status, message };
 }
 
+// Set a task's FLOW status (POST /api/work/:id/status { target, status }). Returns whether it stuck; the
+// caller reloads the doc on success so the header pill / lock re-derive from the new frontmatter.
+async function postStatus(runId: string, target: string, status: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/work/${encodeURIComponent(runId)}/status`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ target, status }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // FLOW frontmatter is loose (`Record<string, unknown>`); read a few known fields defensively (read-only).
 function fmString(fm: Record<string, unknown>, key: string): string | null {
   const v = fm[key];
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
-type ViewMode = "read" | "edit" | "source";
+// Two view modes only: Read (rendered markdown) and Source (raw markdown — the edit path). The rich Edit
+// mode was removed (you edit in Source, or ask the agent for changes — cleanup note 2).
+type ViewMode = "read" | "source";
 
 /** What the workspace tab strip / rail need to know about a doc: its title + status (the dot). Published
  *  by DocEditor through `onLoaded` so the strip's tab can show the same status dot as the header pill. */
@@ -228,11 +244,13 @@ function DocBody({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  // The Read view renders this editor read-only (editing is Source-only now), so it's never `editable` —
+  // it exists to render markdown + carry the comment highlights. `editable` (below) gates Source's Save.
   const editor = useEditor(
     {
       extensions: [StarterKit, Link.configure({ openOnClick: false }), CommentMark],
       content: mdToTiptap(doc.body) as ProseMirrorDoc,
-      editable,
+      editable: false,
     },
     [docId],
   );
@@ -245,12 +263,7 @@ function DocBody({
     };
   }, [editor]);
 
-  useEffect(() => {
-    editor?.setEditable(editable);
-  }, [editor, editable]);
-
   const toRead = useCallback(() => setMode("read"), []);
-  const toEdit = useCallback(() => setMode("edit"), []);
   const toSource = useCallback(() => {
     if (editor) setRawBody(normalize(tiptapToMd(editor.getJSON() as ProseMirrorDoc)));
     setMode("source");
@@ -269,6 +282,15 @@ function DocBody({
     setFeedback(result.message);
     setSaving(false);
     if (result.ok) onReload();
+  }
+
+  // Set a task's status (the header select) — POST the new FLOW status, then reload so the header pill /
+  // lock state re-derive. A no-op if it didn't change. Tasks only (the select renders only for task docs).
+  async function changeStatus(next: string) {
+    if (next === status) return;
+    const ok = await postStatus(runId, docId, next);
+    setFeedback(ok ? `Status → ${next}.` : "Couldn't update status.");
+    if (ok) onReload();
   }
 
   // The Read view renders the rich editor's HTML, read-only (a non-editable EditorContent), so the rendered
@@ -297,18 +319,24 @@ function DocBody({
           </span>
         )}
         <span className="de-ver">{doc.version || "—"}</span>
+        {/* Task status override (cleanup note 3): agents sometimes don't move a task to done — let the
+            human set it. Only on task docs; writes the FLOW frontmatter `status` then reloads. */}
+        {docId.startsWith("task-") ? (
+          <select
+            className="de-status"
+            aria-label="Task status"
+            value={status ?? "todo"}
+            onChange={(e) => void changeStatus(e.target.value)}
+          >
+            <option value="todo">To do</option>
+            <option value="in-progress">In progress</option>
+            <option value="in-review">In review</option>
+            <option value="done">Done</option>
+          </select>
+        ) : null}
         <div className="de-seg" role="group" aria-label="View mode">
           <button type="button" className={`de-seg-b${mode === "read" ? " on" : ""}`} onClick={toRead}>
             Read
-          </button>
-          <button
-            type="button"
-            className={`de-seg-b${mode === "edit" ? " on" : ""}`}
-            onClick={toEdit}
-            disabled={!editable}
-            title={editable ? undefined : "This document is read-only"}
-          >
-            Edit
           </button>
           <button type="button" className={`de-seg-b${mode === "source" ? " on" : ""}`} onClick={toSource}>
             Source
@@ -327,13 +355,9 @@ function DocBody({
         />
       ) : null}
 
-      {mode !== "read" ? (
+      {mode === "source" ? (
         <div className="de-toolbar">
-          {mode === "edit" ? (
-            <RichToolbar editor={editor} disabled={!editable} />
-          ) : (
-            <span className="de-muted">raw markdown — serializer bypassed</span>
-          )}
+          <span className="de-muted">raw markdown — serializer bypassed</span>
           <span className="de-grow" />
           <button type="button" className="de-save" onClick={save} disabled={!editable || saving}>
             {saving ? "Saving…" : "Save"}
@@ -353,7 +377,8 @@ function DocBody({
             <SourceMode value={rawBody} onChange={setRawBody} readOnly={!editable} />
           </div>
         ) : (
-          <div className={`dd-prose${mode === "edit" && editable ? "" : " locked"}`}>
+          // Read view: the rendered markdown, always non-interactive (editing is Source-only now).
+          <div className="dd-prose locked">
             <EditorContent editor={editor} />
           </div>
         )}
@@ -366,48 +391,6 @@ function DocBody({
 // once and threads it down (stable identity across renders).
 export function useApplyCommentMark(): ApplyCommentMark {
   return useMemo(() => makeApplyCommentMark(), []);
-}
-
-// ── Rich toolbar — bold/italic/H2/bullet/code marks, aligned to the serializer schema ──
-function RichToolbar({ editor, disabled }: { editor: ReturnType<typeof useEditor>; disabled: boolean }) {
-  const [, force] = useState(0);
-  useEffect(() => {
-    if (!editor) return;
-    const bump = () => force((n) => n + 1);
-    editor.on("transaction", bump);
-    return () => {
-      editor.off("transaction", bump);
-    };
-  }, [editor]);
-
-  if (!editor) return null;
-  const can = !disabled && editor.isEditable;
-  const btn = (active: boolean, label: ReactNode, run: () => void, key: string) => (
-    <button
-      key={key}
-      type="button"
-      className={`dd-tb${active ? " on" : ""}`}
-      disabled={!can}
-      onClick={() => run()}
-    >
-      {label}
-    </button>
-  );
-
-  return (
-    <div className="dd-marks" role="group" aria-label="Formatting">
-      {btn(editor.isActive("bold"), <b>B</b>, () => editor.chain().focus().toggleBold().run(), "bold")}
-      {btn(editor.isActive("italic"), <i>I</i>, () => editor.chain().focus().toggleItalic().run(), "italic")}
-      {btn(
-        editor.isActive("heading", { level: 2 }),
-        "H2",
-        () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
-        "h2",
-      )}
-      {btn(editor.isActive("bulletList"), "•", () => editor.chain().focus().toggleBulletList().run(), "bullet")}
-      {btn(editor.isActive("code"), "</>", () => editor.chain().focus().toggleCode().run(), "code")}
-    </div>
-  );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────────────────────────────
@@ -454,6 +437,12 @@ const DOC_CSS = `
 .de-seg-b:hover:not(:disabled){color:var(--ink)}
 .de-seg-b.on{background:var(--raise);color:var(--ink)}
 .de-seg-b:disabled{opacity:.4;cursor:not-allowed}
+.de-status{appearance:none;font:600 11.5px var(--sans);color:var(--ink);background:var(--panel2);
+  border:1px solid var(--line2);border-radius:var(--r-md);padding:6px 26px 6px 11px;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238a8b98' stroke-width='3' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat;background-position:right 9px center}
+.de-status:hover{border-color:var(--accent-line)}
+.de-status:focus{outline:none;border-color:var(--accent-line)}
 
 .de-toolbar{display:flex;align-items:center;gap:8px;padding:7px 16px;border-bottom:1px solid var(--line);
   background:var(--panel)}

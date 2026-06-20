@@ -17736,6 +17736,19 @@ var WriteService = class {
     this.writer.writeArtifact(req.run, target, frontmatter, current.body);
     return { ok: true };
   }
+  // Set a task's lifecycle status (the human override — cleanup note 3: agents sometimes don't move a
+  // task to done). Re-reads the task, writes its frontmatter with the new `status`, re-stamps the version.
+  // When the status leaves `in-progress`, the agent lock is released (`lockedBy` dropped) so the doc is
+  // free; setting it TO `in-progress` keeps any existing holder. `not-found` for an absent task file.
+  setStatus(req) {
+    const target = { taskNo: req.taskNo };
+    const current = this.writer.readArtifact(req.run, target);
+    if (current === void 0) return { ok: false, reason: "not-found" };
+    const frontmatter = { ...current.frontmatter, status: req.status };
+    if (req.status !== "in-progress") delete frontmatter.lockedBy;
+    this.writer.writeArtifact(req.run, target, frontmatter, current.body);
+    return { ok: true };
+  }
   // The lock check (ADR-006): a task is locked when its on-disk `status === "in-progress"`, and the
   // holder is `lockedBy` (falling back to the assignee, then a generic label so the UI always has a
   // name). Run-root artifacts (spec/plan) carry no task lifecycle, so they are never lock-gated.
@@ -18308,6 +18321,7 @@ async function handlePostRequest(req, res, deps) {
   }
   if (write.kind === "comment") return handleComment(res, deps, runId, body);
   if (write.kind === "resolve") return handleResolve(res, deps, runId, body);
+  if (write.kind === "status") return handleStatus(res, deps, runId, body);
   if (write.kind === "artifact") return handleArtifact(res, deps, runId, body);
   return handleTakeover(res, deps, runId, body);
 }
@@ -18390,6 +18404,18 @@ function handleResolve(res, deps, runId, body) {
   const result = deps.writeService.resolveComment({ run: runId, gate, commentId });
   if (!result.ok) return reject(res, 404, "unknown_comment");
   deps.transport.push(runId, { type: "file-changed", path: `.review/${gate}.annotations.json` });
+  sendJson(res, 200, { ok: true });
+  return true;
+}
+function handleStatus(res, deps, runId, body) {
+  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
+  const taskNo = taskNoFromTakeover(body);
+  if (taskNo === null) return reject(res, 400, "not_a_task");
+  const status = FlowTaskStatus.safeParse(body.status);
+  if (!status.success) return reject(res, 400, "invalid_status");
+  const outcome = deps.writeService.setStatus({ run: runId, taskNo, status: status.data });
+  if (!outcome.ok) return reject(res, 404, "not_found");
+  deps.transport.push(runId, { type: "file-changed", path: `tasks/${taskNo}` });
   sendJson(res, 200, { ok: true });
   return true;
 }
@@ -18500,7 +18526,7 @@ function matchWorkReview(path) {
   }
 }
 function matchWritePath(path) {
-  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover)$/.exec(path);
+  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover|status)$/.exec(path);
   if (!m || m[1] === void 0 || m[2] === void 0) return null;
   try {
     return {

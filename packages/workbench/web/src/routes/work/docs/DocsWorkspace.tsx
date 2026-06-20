@@ -23,7 +23,7 @@ import {
   selectDoc,
   useDocTabs,
 } from "./doc-tabs.js";
-import { buildDocTree, docOrder } from "./doc-tree.js";
+import { buildDocTree } from "./doc-tree.js";
 import { useDocsWorkspaceStyles } from "./docs-styles.js";
 
 // FLOW status → the tab-strip status dot color (same hues as the navigator / mockup).
@@ -80,26 +80,6 @@ export function DocsWorkspace({ runId }: { runId: string }) {
     setMeta((prev) => (prev[id]?.title === m.title && prev[id]?.status === m.status ? prev : { ...prev, [id]: m }));
   }, []);
 
-  // ── Review-all walk-through (a stub, per the task's scope note) ──────────────────────────────────────
-  // The button is real (it opens the first doc and shows a prev/next strip); a full annotate-then-send
-  // flow is a follow-up. It walks the tree's flat doc order; prev/next focus the neighbor's tab.
-  const order = useMemo(() => (graph ? docOrder(graph) : []), [graph]);
-  const [walking, setWalking] = useState(false);
-  const startReview = useCallback(() => {
-    if (order.length === 0) return;
-    setWalking(true);
-    selectDoc(order[0] ?? null);
-  }, [order]);
-  const walkIndex = active ? order.indexOf(active) : -1;
-  const stepReview = useCallback(
-    (delta: number) => {
-      if (walkIndex === -1) return;
-      const next = order[walkIndex + delta];
-      if (next) selectDoc(next);
-    },
-    [order, walkIndex],
-  );
-
   // Label/dot for an open tab: prefer the loaded meta; fall back to the navigator tree's row, then the id.
   const treeItems = useMemo(() => (graph ? buildDocTree(graph).flatMap((g) => g.items) : []), [graph]);
   const tabView = useCallback(
@@ -115,7 +95,7 @@ export function DocsWorkspace({ runId }: { runId: string }) {
 
   return (
     <div className="dw-grid">
-      <DocNavigator runId={runId} graph={graph} activeDocId={active} onReviewAll={startReview} />
+      <DocNavigator graph={graph} activeDocId={active} />
 
       <div className="dw-ed">
         {open.length > 0 ? (
@@ -156,25 +136,6 @@ export function DocsWorkspace({ runId }: { runId: string }) {
                 </div>
               );
             })}
-          </div>
-        ) : null}
-
-        {walking && active ? (
-          <div className="dw-walk" role="status">
-            <b>Reviewing all docs</b>
-            <span>
-              {walkIndex + 1} / {order.length}
-            </span>
-            <span className="grow" />
-            <button type="button" onClick={() => stepReview(-1)} disabled={walkIndex <= 0}>
-              ‹ Prev
-            </button>
-            <button type="button" onClick={() => stepReview(1)} disabled={walkIndex >= order.length - 1}>
-              Next ›
-            </button>
-            <button type="button" onClick={() => setWalking(false)}>
-              Done
-            </button>
           </div>
         ) : null}
 

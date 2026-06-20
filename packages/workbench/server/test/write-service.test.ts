@@ -84,6 +84,25 @@ test("resolveComment flips a comment by id; ok:false for an unknown id", () => {
   assert.equal(svc.resolveComment({ run: "r", gate: "spec", commentId: "nope" }).ok, false);
 });
 
+// ── Task status override (cleanup note 3) ─────────────────────────────────────────────────────────────
+
+test("setStatus writes the new status and drops the lock when leaving in-progress", () => {
+  const fake = fakeWriter({
+    "task:003": { frontmatter: { status: "in-progress", lockedBy: "implementer" }, body: "# T3" },
+  });
+  const svc = new WriteService(fake.port);
+
+  assert.equal(svc.setStatus({ run: "r", taskNo: "003", status: "done" }).ok, true);
+  const stored = fake.store.get("task:003");
+  assert.equal(stored?.frontmatter.status, "done", "status is updated on disk");
+  assert.equal(stored?.frontmatter.lockedBy, undefined, "the agent lock is dropped when no longer in-progress");
+});
+
+test("setStatus returns not-found for an absent task", () => {
+  const svc = new WriteService(fakeWriter().port);
+  assert.equal(svc.setStatus({ run: "r", taskNo: "404", status: "todo" }).ok, false);
+});
+
 // ── AC6: optimistic concurrency ─────────────────────────────────────────────────────────────────────
 
 test("writeArtifact rejects a stale baseVersion (optimistic concurrency, AC6)", () => {
