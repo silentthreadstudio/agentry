@@ -23,6 +23,9 @@ import type { AgentState, FlowTaskStatus } from "@agentry/flow/domain/status";
 export interface RunSummary {
   run: string; // the run id (the .agentry/work/<run>/ folder name)
   title: string; // human-readable run title (the goal slug, expanded)
+  shape?: string; // routing shape: "one-shot" | "spec-first" | "decompose+verify"
+  kind?: string; // routing/spec kind: "feature" | "bug" | "refactor" | ...
+  summary?: string; // a one-line resume of the run's intent (extracted from the spec/plan body)
   taskCounts: Record<FlowTaskStatus, number>;
   agentCount: number; // agents currently in the run roster
   updatedAt: string; // ISO timestamp of the most recent change observed by the aggregator

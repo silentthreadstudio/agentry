@@ -1,17 +1,19 @@
-/* Component-level CSS for the design system — the bits inline styles cannot express (hover,
-   ::placeholder, active). Reads exclusively from tokens.css. Class names match the prototype's
-   so the visual language is 1:1. */
+/* Component-level CSS for the design system — the UI-v2 "expressive" language (design/ui-v2.html).
+   The bits inline styles cannot express (hover, ::placeholder, active, gradients, ::before bars).
+   Reads exclusively from tokens.css. Class names match the prototype's so the visual language is 1:1. */
 
 /* ── Card ─────────────────────────────────────────────────────── */
 .ds-card--interactive {
-  transition: border-color 0.14s, box-shadow 0.14s, transform 0.14s;
+  transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1), border-color 0.18s, box-shadow 0.18s;
 }
 .ds-card--interactive:hover {
+  transform: translateY(-3px);
   border-color: var(--line2);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+  /* the LIGHT hover shadow the mockup ships — ~18% black */
+  box-shadow: 0 12px 32px #0000002e;
 }
 .ds-card--interactive:active {
-  transform: translateY(1px);
+  transform: translateY(0);
 }
 
 /* ── Button ───────────────────────────────────────────────────── */
@@ -32,9 +34,9 @@
   background: var(--hover);
 }
 .ds-btn--primary {
-  border: 1px solid var(--ink);
+  border: 0;
   background: var(--ink);
-  color: #0d0d11;
+  color: #08080b;
 }
 .ds-btn--primary:hover {
   opacity: 0.9;
@@ -65,7 +67,7 @@
 /* ── App shell ────────────────────────────────────────────────── */
 .app {
   display: grid;
-  grid-template-columns: 212px 1fr;
+  grid-template-columns: 248px 1fr;
   height: 100vh;
 }
 
@@ -74,49 +76,58 @@
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--line);
-  background: var(--side-bg);
-  padding: 14px 12px;
+  background: linear-gradient(180deg, #0d0d1400, #09090d99);
+  padding: 20px 14px;
   min-height: 0;
 }
 .side .grow {
   flex: 1;
 }
-.logo {
+
+/* wordmark — text only, NO icon mark. Gradient-clipped title + uppercase sub-label. */
+.brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
-  margin-bottom: 14px;
+  gap: 12px;
+  padding: 6px 8px 22px;
 }
-.logo .m {
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: var(--ink);
-  color: #0d0d11;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 13px;
+.brand .wm {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
 }
-.logo b {
-  font-weight: 600;
-  letter-spacing: -0.1px;
+.brand .wm b {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  background: var(--grad-wordmark);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
-.navlbl {
-  font-size: 10px;
-  letter-spacing: 0.7px;
+.brand .wm i {
+  font-style: normal;
+  font: 600 9.5px var(--sans);
+  letter-spacing: 1.4px;
   text-transform: uppercase;
   color: var(--faint);
-  padding: 10px 9px 5px;
-  font-weight: 600;
 }
+
+.seclbl {
+  font: 700 9.5px var(--sans);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 14px 10px 7px;
+}
+
+/* nav — active state is a gradient pill + a left accent bar */
 .nav {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 9px;
-  border-radius: var(--r-md);
+  gap: 12px;
+  padding: 9px 11px;
+  border-radius: var(--r-lg);
   color: var(--muted);
   cursor: pointer;
   font-size: 13.5px;
@@ -127,66 +138,94 @@
   width: 100%;
   text-align: left;
   font-family: inherit;
+  position: relative;
+  margin-bottom: 2px;
 }
 .nav:hover {
   background: var(--hover);
-  color: var(--ink);
+  color: var(--ink2);
 }
 .nav.on {
-  background: var(--panel2);
-  color: var(--ink);
+  background: linear-gradient(92deg, #211f3d, #15151d);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px #322f55;
+}
+.nav.on::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(var(--v1), var(--mag));
 }
 .nav .ic {
-  width: 15px;
+  width: 17px;
   display: inline-grid;
   place-items: center;
   flex: none;
-  opacity: 0.85;
-  font-size: 13px;
+  opacity: 0.9;
+  font-size: 14px;
+  text-align: center;
+}
+.nav.on .ic {
+  color: var(--v2);
+  opacity: 1;
 }
 .nav .ct {
   margin-left: auto;
-  font-size: 11px;
+  font: 700 10.5px var(--sans);
   color: var(--faint);
-  background: var(--panel);
+}
+
+/* project card (the live-server pill at the foot of the sidebar) */
+.proj {
   border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 1px 7px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #15151d, #101015);
+  padding: 13px 14px;
+  position: relative;
+  overflow: hidden;
 }
-.nav.on .ct {
-  color: var(--muted);
+.proj::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #ffffff1a, transparent);
 }
-.runcard {
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  padding: 10px;
-  background: var(--panel);
-}
-.runcard .k {
-  font-size: 10px;
-  letter-spacing: 0.5px;
+.proj .k {
+  font: 700 9px var(--sans);
+  letter-spacing: 0.8px;
   text-transform: uppercase;
   color: var(--faint);
 }
-.runcard .n {
-  font-weight: 600;
-  margin: 3px 0 7px;
-  font-size: 13px;
+.proj .n {
+  font-weight: 700;
+  margin: 5px 0 4px;
+  font-size: 14px;
 }
-.runcard .row {
+.proj .row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   color: var(--muted);
   font-size: 11.5px;
 }
 .livedot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--done);
-  box-shadow: 0 0 0 3px rgba(70, 182, 126, 0.15);
+  box-shadow: 0 0 0 3px #4cc38a26;
   flex: none;
+  animation: livepulse 2s infinite;
+}
+@keyframes livepulse {
+  50% {
+    box-shadow: 0 0 0 6px #4cc38a00;
+  }
 }
 
 /* main column */
@@ -195,7 +234,16 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 34px 38px 48px;
+}
+
+/* the work shell (a <id>.localhost run host) reuses .head/.host for its compact top bar — keep those. */
 .head {
   display: flex;
   align-items: center;
@@ -221,22 +269,191 @@
   font-size: 11px;
   color: var(--faint);
 }
-.body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
 
-/* generic page padding (matches the prototype's .page) */
+/* generic page padding (the secondary pages use .page; the Works/work bodies pad via .body) */
 .page {
   padding: 22px 26px;
-  max-width: 1000px;
+}
+
+/* solo work shell (a <id>.localhost run host): the work view has NO sidebar, so it needs its own
+   full-height flex context. Without this the bare `.main` has no height and React Flow renders 0px. */
+.solo {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.solo > .main {
+  flex: 1;
+  min-height: 0;
+}
+/* the solo work shell keeps a scrollable body without the home's generous 34/38 padding */
+.solo > .main > .body {
+  padding: 0;
 }
 .muted {
   color: var(--muted);
 }
 .faint {
   color: var(--faint);
+}
+
+/* ── hero ─────────────────────────────────────────────────────── */
+.hero {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+.hero h1 {
+  font-size: 38px;
+  font-weight: 760;
+  letter-spacing: -1.4px;
+  margin: 0;
+  line-height: 1;
+  background: var(--grad-hero);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 440px;
+}
+.hero .grow {
+  flex: 1;
+}
+.kbd {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line2);
+  background: #11111799;
+  border-radius: 11px;
+  padding: 9px 13px;
+  color: var(--muted);
+  font-size: 12.5px;
+  min-width: 210px;
+}
+.kbd .k {
+  margin-left: auto;
+  font: 700 10px var(--mono);
+  color: var(--faint);
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.btn-new {
+  font: 700 13px var(--sans);
+  border-radius: 11px;
+  padding: 10px 17px;
+  border: 0;
+  cursor: pointer;
+  color: #fff;
+  background: var(--grad-brand);
+  box-shadow: 0 8px 26px #a463f047;
+}
+.btn-new:hover {
+  filter: brightness(1.06);
+}
+
+/* ── metrics — big expressive KPI tiles ───────────────────────── */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 34px;
+}
+.kpi {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 18px 19px;
+  overflow: hidden;
+  background: linear-gradient(165deg, #17171f, #101015);
+}
+.kpi .glow {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  filter: blur(46px);
+  opacity: 0.5;
+  right: -30px;
+  top: -40px;
+  pointer-events: none;
+}
+.kpi .k {
+  font: 700 10px var(--sans);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.kpi .v {
+  font-size: 34px;
+  font-weight: 740;
+  letter-spacing: -1.2px;
+  margin-top: 9px;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.kpi .v small {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.kpi .trend {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* ── section bar ──────────────────────────────────────────────── */
+.sec {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 2px 16px;
+}
+.sec h2 {
+  font-size: 16px;
+  font-weight: 680;
+  letter-spacing: -0.3px;
+  margin: 0;
+}
+.pillct {
+  font: 700 10.5px var(--sans);
+  color: var(--v2);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.seg {
+  margin-left: auto;
+  display: flex;
+  border: 1px solid var(--line2);
+  border-radius: 11px;
+  overflow: hidden;
+  background: #101016;
+}
+.seg button {
+  padding: 7px 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+}
+.seg button.on {
+  background: linear-gradient(180deg, #23213b, #1a1a22);
+  color: #fff;
 }
 
 /* ── work-level tabs (the work shell's Live / Activity switcher) ── */
@@ -263,36 +480,133 @@
   border-color: var(--line);
 }
 
-/* ── Works home ──────────────────────────────────────────────── */
+/* ── Works home — expressive cards ────────────────────────────── */
 .works-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(345px, 1fr));
+  gap: 17px;
+}
+/* the whole card is a flex column so the footer pins to the bottom on a tall card. The status-tinted
+   `aura` blob and the LIGHT hover shadow live in the .ds-card--interactive rules above. */
+.ds-card.work-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 19px 20px;
+  min-height: 210px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #16161e, #101015);
+}
+/* the status-tinted glow blob bleeding from the top-right corner */
+.work-card-aura {
+  position: absolute;
+  right: -40px;
+  top: -46px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  filter: blur(50px);
+  opacity: 0.28;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+.ds-card.work-card:hover .work-card-aura {
+  opacity: 0.42;
 }
 .work-card-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 12px;
 }
 .work-card-title {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.1px;
+  font-size: 16px;
+  font-weight: 680;
+  letter-spacing: -0.3px;
   line-height: 1.25;
+  /* clamp to two lines so a long title can't blow up the card height */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .work-card-run {
-  font: 500 11px var(--mono);
+  font: 600 10.5px var(--mono);
   color: var(--faint);
-  margin-top: 3px;
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the "little resume" — the run's intent, clamped to two lines */
+.work-card-summary {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink2);
+  opacity: 0.8;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* shape · kind badges */
+.work-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.work-badge {
+  font: 700 10px var(--sans);
+  letter-spacing: 0.2px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line2);
+  background: var(--panel2);
+  color: var(--muted);
+  text-transform: lowercase;
+}
+.work-badge.accent {
+  color: #fff;
+  background: linear-gradient(110deg, #2a2750, #1c1c34);
+  border: 1px solid var(--accent-line);
+}
+/* progress bar (done / total) pinned to the bottom */
+.work-card-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: auto;
+}
+.work-card-barwrap {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.work-bar {
+  flex: 1;
+  height: 7px;
+  border-radius: 999px;
+  background: #0c0c11;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.work-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--grad-bar);
+}
+.work-pctn {
+  font: 700 12px var(--sans);
+  color: var(--ink2);
 }
 .work-card-counts {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px 12px;
-  padding-top: 11px;
-  border-top: 1px solid var(--line);
+  align-items: center;
+  gap: 6px 12px;
 }
 .count {
   display: inline-flex;
@@ -303,18 +617,33 @@
 }
 .count b {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 700;
 }
 .work-card-foot {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-top: 11px;
+  gap: 10px;
   font-size: 11.5px;
   color: var(--muted);
 }
+.work-card-foot .grow {
+  flex: 1;
+}
+/* the agent avatar chip */
+.work-ava {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #2b2750, #1b1b30);
+  border: 1px solid var(--accent-line);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  font: 800 9px var(--sans);
+  flex: none;
+}
 
-/* a small responsive concession the prototype lacks: the 212px rail collapses on narrow widths.
+/* a small responsive concession the prototype lacks: the 248px rail collapses on narrow widths.
    The app is a desktop local tool, but reflow shouldn't break below ~720px. */
 @media (max-width: 720px) {
   .app {
@@ -331,7 +660,16 @@
     border-bottom: 1px solid var(--line);
   }
   .side .grow,
-  .side .runcard {
+  .side .proj {
     display: none;
+  }
+  .body {
+    padding: 22px 20px 40px;
+  }
+  .metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .hero {
+    flex-wrap: wrap;
   }
 }

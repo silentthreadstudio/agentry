@@ -15,6 +15,11 @@ import { FlowTaskStatus } from "@agentry/flow/domain/status";
 import type { Clock, RunFiles, WorkRepository } from "../domain/ports.js";
 import { buildGraph } from "../domain/graph.js";
 
+// A frontmatter value coerced to a non-empty string, else undefined (so omitted-vs-empty stays clean).
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
 // One parsed artifact as the reader hands it to the transport (frontmatter + body). The DocModel's
 // version/lock fields are stamped at the transport edge (Phase 3); Phase 1 ferries the parsed record.
 export interface ReaderDoc {
@@ -64,13 +69,46 @@ export class WorkReader {
   // The Works-list row: task tally by FLOW's closed status, the agent count, the title, and the
   // `updatedAt` stamp (from the injected clock, so the read is deterministic under test).
   private summarize(files: RunFiles): RunSummary {
+    const shape = files.routing?.shape ?? asString(files.spec?.frontmatter.shape);
+    const kind = files.routing?.kind ?? asString(files.spec?.frontmatter.kind);
     return {
       run: files.run,
       title: this.titleOf(files),
+      ...(shape ? { shape } : {}),
+      ...(kind ? { kind } : {}),
+      ...(this.summaryOf(files) ? { summary: this.summaryOf(files) } : {}),
       taskCounts: this.tallyTasks(files),
       agentCount: this.rosterCount(files.run), // from run-state.json via the injected counter (EventStore.roster)
       updatedAt: this.clock.now(),
     };
+  }
+
+  // A one-line "resume" of the run for the Works card — extracted from the spec body (else the plan),
+  // preferring the "**Intent.**" sentence, else the first real paragraph. Markdown syntax is stripped
+  // and the text is truncated, so the card shows prose, not raw markdown. Empty string ⇒ omitted.
+  private summaryOf(files: RunFiles): string {
+    const body = files.spec?.body ?? files.plan?.body ?? "";
+    if (!body) return "";
+    const intent = body.match(/\*\*Intent\.\*\*\s*([\s\S]*?)(?:\n\n|$)/i);
+    let text = intent?.[1] ?? "";
+    if (!text) {
+      // first non-heading, non-blank paragraph
+      for (const para of body.split(/\n\n+/)) {
+        const t = para.trim();
+        if (t && !t.startsWith("#") && !t.startsWith("---")) {
+          text = t;
+          break;
+        }
+      }
+    }
+    text = text
+      .replace(/`([^`]+)`/g, "$1") // inline code
+      .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
+      .replace(/\*([^*]+)\*/g, "$1") // italic
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links → text
+      .replace(/\s+/g, " ")
+      .trim();
+    return text.length > 180 ? `${text.slice(0, 177).trimEnd()}…` : text;
   }
 
   // Count tasks into FLOW's closed status buckets. Every bucket starts at 0 (so a status absent from

@@ -28510,8 +28510,14 @@ function assertSafeSegment(s) {
     throw new Error(`unsafe path segment: "${s}" contains a traversal sequence (.. / \\)`);
   }
 }
+var STEM_WORDS = 3;
+var STEM_MAX = 20;
 function slug(text) {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS);
+  while (words.length > 1 && words.join("-").length > STEM_MAX) {
+    words.pop();
+  }
+  return words.join("-").slice(0, STEM_MAX).replace(/-+$/g, "");
 }
 function shortId() {
   return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);

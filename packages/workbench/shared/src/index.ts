@@ -19,3 +19,6 @@ export type {
   TokenSeries,
   WsMessage,
 } from "./types.js";
+
+// The run-id → short subdomain-label helpers (a runtime util, not a type — both halves import it).
+export { resolveSlug, workSlug } from "./slug.js";

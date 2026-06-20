@@ -19,7 +19,8 @@ import { fetchGraph } from "../../../api/client.js";
 import { getWsClient } from "../../../api/ws-client.js";
 import { nodeTypes } from "./DocNode.js";
 import { edgeTypes, Legend, markerForKind } from "./edge-types.js";
-import { layoutGraph } from "./layout-dagre.js";
+import { ADR_GROUP_ID, layoutGraph } from "./layout-dagre.js";
+import type { DocNode } from "./layout-dagre.js";
 import { DocDrawer, selectDoc } from "./doc/DocDrawer.js";
 import { CommentRail } from "./doc/CommentRail.js";
 import { DiffDrawer } from "./doc/DiffDrawer.js";
@@ -51,6 +52,9 @@ export function Panorama({ runId }: { runId: string }) {
 function PanoramaCanvas({ runId }: { runId: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [hover, setHover] = useState<string | null>(null);
+  // The ADR "Decisions" group is collapsed by default; clicking it toggles expansion (BUG 4a/item 3).
+  // The flag feeds layoutGraph so Dagre re-runs over the collapsed/expanded shape — no-overlap in both.
+  const [adrExpanded, setAdrExpanded] = useState(false);
 
   // Fetch the graph; reused for the initial load and every live re-fetch. Aborts in flight on unmount.
   const abortRef = useRef<AbortController | null>(null);
@@ -103,9 +107,22 @@ function PanoramaCanvas({ runId }: { runId: string }) {
   }, [graph]);
 
   const base = useMemo(
-    () => (graph ? layoutGraph(runId, graph, activeBlocks) : { nodes: [], edges: [] }),
-    [runId, graph, activeBlocks],
+    () => (graph ? layoutGraph(runId, graph, activeBlocks, adrExpanded) : { nodes: [], edges: [] }),
+    [runId, graph, activeBlocks, adrExpanded],
   );
+
+  // The node click gate (BUG 4a): ONLY a backing-document node (`kind === "doc"`) opens the drawer. The
+  // routing root and the synthetic ADR group container carry no doc — clicking them must NOT call
+  // selectDoc (no 404 fetch). The group toggles its children instead; routing is inert.
+  const onNodeClick = useCallback((_e: unknown, n: DocNode) => {
+    const kind = n.data.kind;
+    if (kind === "group") {
+      setAdrExpanded((open) => !open);
+      return;
+    }
+    if (kind !== "doc") return; // routing (or any non-doc) → never opens a drawer
+    selectDoc(n.id);
+  }, []);
 
   // hover-highlight: the hovered node + its direct neighbors stay lit; everything else dims. null = no
   // hover (resting status-derived visuals). Computed here (the canvas knows adjacency); the node/edge
@@ -122,10 +139,13 @@ function PanoramaCanvas({ runId }: { runId: string }) {
 
   const nodes = useMemo(
     () =>
-      base.nodes.map((n) => ({
-        ...n,
-        data: { ...n.data, highlight: litSet ? litSet.has(n.id) : undefined },
-      })),
+      base.nodes.map((n): DocNode =>
+        // Only stamp `highlight` when something is hovered (litSet exists); otherwise leave it absent so
+        // the node renders its resting status-derived visual (exactOptionalPropertyTypes: never set undefined).
+        litSet
+          ? { ...n, data: { ...n.data, highlight: litSet.has(n.id) } }
+          : n,
+      ),
     [base.nodes, litSet],
   );
 
@@ -169,7 +189,7 @@ function PanoramaCanvas({ runId }: { runId: string }) {
         proOptions={{ hideAttribution: true }}
         onNodeMouseEnter={(_e, n) => setHover(n.id)}
         onNodeMouseLeave={() => setHover(null)}
-        onNodeClick={(_e, n) => selectDoc(n.id)}
+        onNodeClick={onNodeClick}
       >
         <Background color="#20202a" gap={26} size={1} />
         <Controls showInteractive={false} />

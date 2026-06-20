@@ -17,15 +17,25 @@ export function assertSafeSegment(s: string): void {
 
 // Lowercase, hyphenated, ascii-word slug of a free-text goal — the human-readable half of a run id.
 // Collapses everything that isn't [a-z0-9] to a single hyphen and trims leading/trailing hyphens, so
-// the result is always a clean single segment (no separators, no traversal). Bounded so the folder
-// name stays sane regardless of goal length.
+// the result is always a clean single segment (no separators, no traversal). Kept TERSE on purpose:
+// just the first few words of the goal, so `.agentry/work/<run>/` folders and their `*.localhost`
+// subdomains stay short and legible — the `-<shortId()>` suffix carries uniqueness, not the stem.
+const STEM_WORDS = 3; // first ~2-3 hyphen-words of the goal
+const STEM_MAX = 20; // hard cap on the stem length, before the suffix
 function slug(text: string): string {
-  return text
+  const words = text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 48)
-    .replace(/-+$/g, "");
+    .split("-")
+    .filter(Boolean)
+    .slice(0, STEM_WORDS);
+  // Trim whole words off the tail until the stem fits the cap — never cut mid-word (a partial word
+  // reads as noise), and never leave a trailing hyphen.
+  while (words.length > 1 && words.join("-").length > STEM_MAX) {
+    words.pop();
+  }
+  return words.join("-").slice(0, STEM_MAX).replace(/-+$/g, "");
 }
 
 // A short, collision-resistant id suffix (base36) — enough entropy to disambiguate two runs minted

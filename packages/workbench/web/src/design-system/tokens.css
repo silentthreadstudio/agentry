@@ -1,45 +1,68 @@
-/* Agentry Workbench design tokens — extracted verbatim from design/prototype-app.html (the
-   dark near-monochrome language: whitespace over borders, status = small dot + muted label, no
-   icon noise). This is the single source of visual truth; every primitive reads from these vars.
-   Do NOT hard-code colors/spacing in components — add a token here and reference it. */
+/* Agentry Workbench design tokens — the UI-v2 "expressive" language (design/ui-v2.html): deep layered
+   blacks, a violet→magenta accent family, a fixed mesh-gradient page background, and gradient-clipped
+   display text. This is the single source of visual truth; every primitive reads from these vars.
+   Do NOT hard-code colors/spacing in components — add a token here and reference it.
+
+   ── Remap, don't rename ──────────────────────────────────────────────────────────────────────────
+   The token NAMES other components already consume (--ink, --muted, --line, --panel, --accent,
+   --done/--prog/--rev/--block/--todo, --r-*, --sans/--mono, spacing) are KEPT; their VALUES are
+   remapped to the ui-v2 palette so the whole app shifts to the new language with no rename churn.
+   The new expressive tokens (--v1/--v2/--v3/--mag, the gradients, the mesh background) are ADDED. */
 
 :root {
-  /* ── Surfaces ─────────────────────────────────────────────── */
-  --bg: #0d0d11; /* app canvas */
-  --side-bg: #0f0f13; /* sidebar (a touch darker than canvas) */
-  --panel: #15151a; /* cards, run-card, inputs */
-  --panel2: #1a1a20; /* active nav, raised chips */
-  --line: #24242b; /* hairline borders / dividers */
-  --line2: #2f2f38; /* stronger borders (inputs, pills, hover) */
-  --hover: #1d1d24; /* row/nav hover wash */
+  /* ── Surfaces (the layered blacks) ────────────────────────── */
+  --bg: #08080b; /* app canvas (under the mesh) */
+  --bg2: #0b0b10; /* secondary canvas wash */
+  --side-bg: #09090d; /* sidebar (a touch darker than canvas) */
+  --panel: #121218; /* cards, inputs */
+  --panel2: #16161e; /* raised chips, segmented controls */
+  --raise: #1d1d27; /* highest raised surface */
+  --line: #1f1f28; /* hairline borders / dividers */
+  --line2: #2c2c38; /* stronger borders (inputs, pills, hover) */
+  --hover: #191921; /* row/nav hover wash */
 
   /* ── Ink ──────────────────────────────────────────────────── */
-  --ink: #e9e9ee; /* primary text — 16:1 on --bg */
-  --muted: #8a8a96; /* secondary text — 5.7:1 on --bg, clears WCAG AA */
-  /* tertiary / labels / metadata. Lifted from the prototype's #585862 (2.8:1 — failed AA) to clear the
-     WCAG non-text/UI 3:1 floor with margin (4.0:1 on --bg) while staying within the calm near-monochrome
-     language. The dominant secondary text color is --muted (AA); --faint carries only small labels/meta. */
-  --faint: #71717c;
+  --ink: #f2f2f6; /* primary text — high contrast on --bg */
+  --ink2: #cccdd6; /* secondary display ink (card summaries) */
+  --muted: #8a8b98; /* secondary text — clears WCAG AA on --bg */
+  /* tertiary / labels / metadata. Carries only small labels/meta — the dominant secondary text color
+     is --muted (AA). At #5f606b it clears the WCAG non-text/UI 3:1 floor on --bg. */
+  --faint: #5f606b;
 
-  /* ── Accent (the single brand hue — used sparingly) ───────── */
-  --accent: #6e72e8;
-  --accent-soft: #1b1b2e;
-  --accent-ink: #b9bbf2; /* accent text on accent-soft */
-  --accent-line: #2c2c52;
+  /* ── Accent (the violet→magenta brand family) ─────────────── */
+  --v1: #7c7ff2; /* periwinkle violet */
+  --v2: #a463f0; /* purple */
+  --v3: #5bd6e6; /* cyan (cool counterpoint) */
+  --mag: #e472c9; /* magenta */
+  --accent: #8b7ff5; /* the single accent hue (used sparingly) */
+  --accent-soft: #191930; /* accent chip background */
+  --accent-ink: #c3c0f7; /* accent text on accent-soft */
+  --accent-line: #363659; /* accent border */
+
+  /* ── Gradients (the expressive flourishes) ────────────────── */
+  --grad-brand: linear-gradient(120deg, var(--v1), var(--v2) 60%, var(--mag));
+  --grad-wordmark: linear-gradient(92deg, #fff, #cdbdfb);
+  --grad-hero: linear-gradient(96deg, #ffffff, #d6c8fb 55%, #f0b9e4);
+  --grad-bar: linear-gradient(90deg, var(--done), #86e6b9);
+  /* the fixed three-radial mesh that sits behind the whole app */
+  --mesh:
+    radial-gradient(1100px 620px at 82% -12%, #a463f022, transparent 62%),
+    radial-gradient(820px 520px at -8% 8%, #7c7ff21f, transparent 60%),
+    radial-gradient(680px 520px at 60% 116%, #e472c916, transparent 58%);
 
   /* ── Status hues (dot + muted label; never color alone) ───── */
-  --done: #46b67e;
-  --prog: #d4a23a; /* in-progress */
-  --rev: #5b8fd6; /* in-review */
-  --block: #e0685a; /* blocked */
-  --todo: #55555f;
+  --done: #4cc38a;
+  --prog: #ecb24a; /* in-progress */
+  --rev: #5b94e6; /* in-review */
+  --block: #e06a5c; /* blocked */
+  --todo: #4f505c;
 
   /* ── Type ─────────────────────────────────────────────────── */
   --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
-  --fs-base: 13.5px; /* the prototype's body size */
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
+  --fs-base: 13.5px; /* body size */
 
-  /* ── Spacing scale (the rhythm the prototype uses) ────────── */
+  /* ── Spacing scale ────────────────────────────────────────── */
   --sp-1: 4px;
   --sp-2: 7px;
   --sp-3: 10px;
@@ -54,8 +77,7 @@
   --r-lg: 10px;
   --r-xl: 12px;
 
-  /* ── Focus ring (a11y — visible keyboard focus, not in proto
-       but required: the prototype has no keyboard story) ─────── */
+  /* ── Focus ring (a11y — visible keyboard focus) ───────────── */
   --focus: var(--accent);
 }
 
@@ -71,10 +93,13 @@ body,
 }
 
 body {
-  background: var(--bg);
+  /* the fixed mesh-gradient page background layered over the deep canvas */
+  background: var(--mesh), var(--bg);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--sans);
   font-size: var(--fs-base);
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -89,7 +114,7 @@ body {
   outline: none;
 }
 
-/* Respect reduced-motion: the prototype's transitions are decorative. */
+/* Respect reduced-motion: the transitions/animations are decorative. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

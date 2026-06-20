@@ -1,58 +1,29 @@
-// Memory — read-only browse/search of the mem store (the /memory sidebar page). Consumes GET /api/memory →
-// MemReadRecord[] (task 21's mem-reader: facts + episodes across BOTH roots — project .agentry/memory +
-// global ~/.agentry/memory). SearchInput drives ?q=<text> (server-side filter). Each record shows its kind
-// (fact / episode), its origin (project / global), its body prose, and a provenance line. V1 NON-GOAL:
-// editing memory — this page has NO write affordance (no edit, no delete, no add). Dark + calm (AC8); empty
-// is a good state (VISION §3).
-import { useEffect, useState } from "react";
+// Memory — the moat browser (the /memory sidebar page, design/memory.html approved as-is). Consumes
+// GET /api/memory → MemReadRecord[] (task 21's mem-reader: facts + episodes across BOTH roots — project
+// .agentry/memory + global ~/.agentry/memory). Search drives ?q=<text> (server-side filter, debounced);
+// the kind segment (All/Facts/Episodes), the type chips, and the project/global segment filter the fetched
+// list CLIENT-SIDE. Six metric tiles are counts derived from the fetched list. The detail panel renders the
+// selected record's body as markdown (markdown-it, the renderer the doc serializer already bundles) plus
+// the frontmatter-derived meta pills, a "Why" callout, and a Provenance list. V1 NON-GOAL: editing memory —
+// no write affordance. The page title lives in App.tsx's PageHero; this is the body BELOW it.
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import MarkdownIt from "markdown-it";
 import { ApiError, fetchMemory } from "../api/client.js";
 import type { MemReadRecord } from "../api/client.js";
 import { EmptyState, SearchInput } from "../design-system/index.js";
+import { applyFilters, metricsFor, toMemRow, typeColor } from "./memory-view.js";
+import type { KindFilter, MemRow, OriginFilter } from "./memory-view.js";
+import "./memory.css";
 
-// ── View model (pure, exported for unit test) ──────────────────────────────────────────────────────────
-// A record's display shape: the singular kind label, the origin label, the body prose (the store keeps a
-// fact's text under `fields.text`, an episode's under `fields.task`), and a short provenance line from the
-// frontmatter fields a human scans for (the id, plus any `provenance`/`source`/`run`/`task` hint present).
-export interface MemRow {
-  id: string;
-  kind: "fact" | "episode";
-  origin: "global" | "project";
-  body: string;
-  provenance: string;
+/** The badge's tinted background — the type hue at low alpha over the panel (the mockup's #2a1714 etc). */
+function typeBadge(type: string): CSSProperties {
+  const c = typeColor(type);
+  return { color: c, background: `color-mix(in srgb, ${c} 16%, var(--panel))` };
 }
 
-const KIND_LABEL: Record<MemReadRecord["kind"], "fact" | "episode"> = { facts: "fact", episodes: "episode" };
-const BODY_FIELD: Record<MemReadRecord["kind"], string> = { facts: "text", episodes: "task" };
-
-/** A frontmatter value rendered as a short string, or "" when it isn't a scalar we can show inline. */
-function scalar(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return "";
-}
-
-export function toMemRow(record: MemReadRecord): MemRow {
-  const body = scalar(record.fields[BODY_FIELD[record.kind]]).trim();
-  const hint = ["provenance", "source", "run", "task", "commit"]
-    .map((k) => scalar(record.fields[k]).trim())
-    .find((v) => v.length > 0);
-  return {
-    id: record.id,
-    kind: KIND_LABEL[record.kind],
-    origin: record.origin,
-    body: body || "(no body)",
-    provenance: hint ? `${record.id} · ${hint}` : record.id,
-  };
-}
-
-// The mem-store's kind tones, echoing the prototype's tag palette (a fact = the green repo-fact tone, an
-// episode = the violet learning tone). Color is a *secondary* cue — the text label carries the meaning.
-const KIND_TONE: Record<MemRow["kind"], CSSProperties> = {
-  fact: { color: "#5db58a", background: "#122119" },
-  episode: { color: "#b98fe0", background: "#201730" },
-};
-const ORIGIN_TONE: CSSProperties = { color: "var(--muted)", border: "1px solid var(--line2)" };
+// ── Markdown (read-only render of local file content; markdown-it the doc layer already bundles) ─────────
+const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
 
 // ── Component ────────────────────────────────────────────────────────────────────────────────────────
 type LoadState =
@@ -63,6 +34,10 @@ type LoadState =
 export function Memory() {
   const [query, setQuery] = useState("");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
+  const [selected, setSelected] = useState<string | undefined>(undefined);
 
   // Debounced server-side search: every settled query fetches /api/memory?q=… (browse when empty). The mem
   // store is small and local, so a short debounce keeps keystrokes from stampeding the reader.
@@ -84,77 +59,223 @@ export function Memory() {
     };
   }, [query]);
 
-  const ready = state.kind === "ready";
+  const records = state.kind === "ready" ? state.records : [];
+  const allRows = useMemo(() => records.map(toMemRow), [records]);
+  const rows = useMemo(
+    () => applyFilters(allRows, kindFilter, typeFilter, originFilter),
+    [allRows, kindFilter, typeFilter, originFilter],
+  );
+  const metrics = useMemo(() => metricsFor(records), [records]);
+  // The distinct types present, for the chip row (data-driven so a never-seen type doesn't show a dead chip).
+  const types = useMemo(() => {
+    const seen = new Set(allRows.map((r) => r.type));
+    return [...seen].sort();
+  }, [allRows]);
+  const counts = useMemo(() => {
+    const project = allRows.filter((r) => r.origin === "project").length;
+    return { project, global: allRows.length - project };
+  }, [allRows]);
+
+  // The selected row, defaulting to the first in the filtered view (so the panel is never blank when the
+  // list has content). A selection that filters out falls back to the first visible row.
+  const selectedRow =
+    rows.find((r) => r.id === selected) ?? rows[0];
+
+  if (state.kind === "loading") {
+    return (
+      <div className="mem">
+        <EmptyState>Loading memory…</EmptyState>
+      </div>
+    );
+  }
+  if (state.kind === "error") {
+    return (
+      <div className="mem">
+        <EmptyState title="Can’t reach the server">{state.message}</EmptyState>
+      </div>
+    );
+  }
 
   return (
-    <div className="page">
-      <div style={{ marginBottom: 16 }}>
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Search facts & episodes…"
-          label="Search memory"
-        />
+    <div className="mem">
+      <div className="mem-metrics">
+        {metrics.map((m) => (
+          <div className="mem-kpi" key={m.k}>
+            <div className="k">
+              <span className="mem-sw" style={{ background: m.color }} />
+              {m.k}
+            </div>
+            <div className="v">{m.v}</div>
+          </div>
+        ))}
       </div>
 
-      {state.kind === "loading" ? (
-        <EmptyState>Loading memory…</EmptyState>
-      ) : state.kind === "error" ? (
-        <EmptyState title="Can’t reach the server">{state.message}</EmptyState>
-      ) : state.records.length === 0 ? (
+      <div className="mem-filters">
+        <div className="mem-search">
+          <SearchInput value={query} onChange={setQuery} placeholder="Search memory…" label="Search memory" />
+        </div>
+
+        <div className="mem-seg" role="group" aria-label="Filter by kind">
+          {(["all", "facts", "episodes"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={k === kindFilter ? "on" : ""}
+              aria-pressed={k === kindFilter}
+              onClick={() => setKindFilter(k)}
+            >
+              {k === "all" ? "All" : k === "facts" ? "Facts" : "Episodes"}
+            </button>
+          ))}
+        </div>
+
+        <div className="mem-chips" role="group" aria-label="Filter by type">
+          <button
+            type="button"
+            className={`mem-fchip${typeFilter === "all" ? " on" : ""}`}
+            aria-pressed={typeFilter === "all"}
+            onClick={() => setTypeFilter("all")}
+          >
+            all types
+          </button>
+          {types.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`mem-fchip${typeFilter === t ? " on" : ""}`}
+              aria-pressed={typeFilter === t}
+              onClick={() => setTypeFilter(t)}
+            >
+              <span className="mem-sw" style={{ background: typeColor(t) }} />
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div className="mem-seg" role="group" aria-label="Filter by store">
+          {(["project", "global"] as const).map((o) => (
+            <button
+              key={o}
+              type="button"
+              className={o === originFilter ? "on" : ""}
+              aria-pressed={o === originFilter}
+              onClick={() => setOriginFilter((cur) => (cur === o ? "all" : o))}
+            >
+              {o === "project" ? "Project" : "Global"} {counts[o]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
         <EmptyState title={query ? "No matches" : "No memory yet"}>
           {query
             ? `Nothing in memory matches “${query.trim()}”.`
             : "As Agentry learns, its curated facts and episodes appear here — read-only."}
         </EmptyState>
       ) : (
-        <>
-          {state.records.map((r) => (
-            <MemCard key={`${r.origin}/${r.kind}/${r.id}`} row={toMemRow(r)} />
-          ))}
-        </>
-      )}
+        <div className="mem-split">
+          <div className="mem-list" role="list">
+            {rows.map((r) => (
+              <button
+                key={`${r.origin}/${r.kind}/${r.id}`}
+                type="button"
+                role="listitem"
+                className={`mem-card${selectedRow?.id === r.id ? " on" : ""}`}
+                aria-pressed={selectedRow?.id === r.id}
+                onClick={() => setSelected(r.id)}
+              >
+                <div className="mem-mrow">
+                  <span className="mem-tbadge" style={typeBadge(r.type)}>
+                    {r.type}
+                  </span>
+                  <span className="mem-org">
+                    <span className="mem-sw" style={{ background: r.origin === "global" ? typeColor("episode") : typeColor("repo-fact") }} />
+                    {r.origin}
+                  </span>
+                </div>
+                <div className="mem-mtitle">{r.title}</div>
+                {r.tags.length > 0 ? (
+                  <div className="mem-mtags">
+                    {r.tags.slice(0, 4).map((t) => (
+                      <span className="mem-tag" key={t}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </button>
+            ))}
+          </div>
 
-      {ready ? (
-        <div style={FOOT}>
-          Read-only — memory is agent-curated (reflect / distill). The Workbench shows it; it never edits it.
+          {selectedRow ? <MemDetail row={selectedRow} /> : <div className="mem-detail mem-detail-empty">Select a record</div>}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
 
-function MemCard({ row }: { row: MemRow }) {
+function MemDetail({ row }: { row: MemRow }) {
+  const html = useMemo(() => md.render(row.body), [row.body]);
   return (
-    <div style={CARD}>
-      <div style={TAGS}>
-        <span style={{ ...TAG, ...KIND_TONE[row.kind] }}>{row.kind}</span>
-        <span style={{ ...TAG, ...ORIGIN_TONE }}>{row.origin}</span>
+    <div className="mem-detail">
+      <div className="mem-dhead">
+        <span className="mem-tbadge" style={typeBadge(row.type)}>
+          {row.type}
+        </span>
+        <span className="mem-org" style={{ marginLeft: 0 }}>
+          <span className="mem-sw" style={{ background: row.origin === "global" ? typeColor("episode") : typeColor("repo-fact") }} />
+          {row.origin} · {row.kind === "episodes" ? "episode" : "fact"}
+        </span>
       </div>
-      <div style={BODY}>{row.body}</div>
-      <div style={PROV}>{row.provenance}</div>
+      <div className="mem-dtitle">{row.title}</div>
+
+      <div className="mem-meta">
+        {row.confidence !== undefined ? (
+          <span className="mem-mpill">
+            confidence
+            <span className="mem-bar">
+              <i style={{ width: `${Math.round(Math.max(0, Math.min(1, row.confidence)) * 100)}%` }} />
+            </span>
+          </span>
+        ) : null}
+        {row.usefulness !== undefined ? (
+          <span className="mem-mpill">
+            usefulness <b>★ {row.usefulness}</b>
+          </span>
+        ) : null}
+        <span className="mem-mpill">
+          id <b>{row.id}</b>
+        </span>
+        {row.createdAt ? (
+          <span className="mem-mpill">
+            created <b>{row.createdAt}</b>
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mem-body">
+        {/* eslint-disable-next-line react/no-danger -- local, read-only mem file content; markdown-it html:false */}
+        <div className="mem-md" dangerouslySetInnerHTML={{ __html: html }} />
+
+        {row.why ? (
+          <div className="mem-why">
+            <b>Why it matters</b>
+            {row.why}
+          </div>
+        ) : null}
+
+        {row.provenance.length > 0 ? (
+          <div className="mem-prov">
+            <div className="k">Provenance</div>
+            {row.provenance.map((p) => (
+              <span className="p" key={p}>
+                {p}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
-
-// Inline styles on the design tokens (the prototype's .mfact / .tagk surfaces — styled inline because the
-// page CSS classes live in task 10's stylesheet, not this owned route file).
-const CARD: CSSProperties = {
-  border: "1px solid var(--line)",
-  borderRadius: 11,
-  background: "var(--panel)",
-  padding: "13px 14px",
-  marginBottom: 10,
-};
-const TAGS: CSSProperties = { display: "flex", alignItems: "center", gap: 8, marginBottom: 5 };
-const TAG: CSSProperties = {
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: ".4px",
-  textTransform: "uppercase",
-  padding: "2px 7px",
-  borderRadius: 6,
-};
-const BODY: CSSProperties = { fontSize: 13, color: "#c9c9d4", lineHeight: 1.55 };
-const PROV: CSSProperties = { font: "500 11px var(--mono)", color: "var(--faint)", marginTop: 7, wordBreak: "break-all" };
-const FOOT: CSSProperties = { fontSize: 11.5, color: "var(--faint)", marginTop: 6 };

@@ -15202,11 +15202,11 @@ import { createHash } from "node:crypto";
 function computeVersion(body, frontmatterSansVersion) {
   const sortedKeys = Object.keys(frontmatterSansVersion).sort();
   const canonicalFront = JSON.stringify(frontmatterSansVersion, sortedKeys);
-  const hash = createHash("sha256");
-  hash.update(canonicalFront, "utf8");
-  hash.update("\n", "utf8");
-  hash.update(body, "utf8");
-  return hash.digest("hex").slice(0, 16);
+  const hash2 = createHash("sha256");
+  hash2.update(canonicalFront, "utf8");
+  hash2.update("\n", "utf8");
+  hash2.update(body, "utf8");
+  return hash2.digest("hex").slice(0, 16);
 }
 
 // ../../flow/src/resolution/run-pointer.ts
@@ -17406,6 +17406,9 @@ function buildGraph(runFiles) {
 }
 
 // src/application/work-reader.ts
+function asString(v) {
+  return typeof v === "string" && v.length > 0 ? v : void 0;
+}
 var WorkReader = class {
   constructor(repository, clock, rosterCount = () => 0) {
     this.repository = repository;
@@ -17430,14 +17433,39 @@ var WorkReader = class {
   // The Works-list row: task tally by FLOW's closed status, the agent count, the title, and the
   // `updatedAt` stamp (from the injected clock, so the read is deterministic under test).
   summarize(files) {
+    const shape = files.routing?.shape ?? asString(files.spec?.frontmatter.shape);
+    const kind = files.routing?.kind ?? asString(files.spec?.frontmatter.kind);
     return {
       run: files.run,
       title: this.titleOf(files),
+      ...shape ? { shape } : {},
+      ...kind ? { kind } : {},
+      ...this.summaryOf(files) ? { summary: this.summaryOf(files) } : {},
       taskCounts: this.tallyTasks(files),
       agentCount: this.rosterCount(files.run),
       // from run-state.json via the injected counter (EventStore.roster)
       updatedAt: this.clock.now()
     };
+  }
+  // A one-line "resume" of the run for the Works card — extracted from the spec body (else the plan),
+  // preferring the "**Intent.**" sentence, else the first real paragraph. Markdown syntax is stripped
+  // and the text is truncated, so the card shows prose, not raw markdown. Empty string ⇒ omitted.
+  summaryOf(files) {
+    const body = files.spec?.body ?? files.plan?.body ?? "";
+    if (!body) return "";
+    const intent = body.match(/\*\*Intent\.\*\*\s*([\s\S]*?)(?:\n\n|$)/i);
+    let text = intent?.[1] ?? "";
+    if (!text) {
+      for (const para of body.split(/\n\n+/)) {
+        const t = para.trim();
+        if (t && !t.startsWith("#") && !t.startsWith("---")) {
+          text = t;
+          break;
+        }
+      }
+    }
+    text = text.replace(/`([^`]+)`/g, "$1").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
+    return text.length > 180 ? `${text.slice(0, 177).trimEnd()}\u2026` : text;
   }
   // Count tasks into FLOW's closed status buckets. Every bucket starts at 0 (so a status absent from
   // the run still reports 0, not a missing key); a task whose frontmatter `status` is malformed/absent
@@ -17964,21 +17992,41 @@ import { createReadStream, existsSync as existsSync8, statSync } from "node:fs";
 import { extname as extname2, join as join12, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// ../shared/src/slug.ts
+var MAX = 28;
+function hash(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36).padStart(6, "0").slice(-6);
+}
+function workSlug(runId) {
+  if (runId.length <= MAX) return runId;
+  const words = runId.split("-").filter(Boolean).slice(0, 2).join("-");
+  return `${words}-${hash(runId)}`;
+}
+function resolveSlug(label, runIds) {
+  if (runIds.includes(label)) return label;
+  return runIds.find((id) => workSlug(id) === label);
+}
+
 // src/transport/host-router.ts
 var HOME_LABELS = /* @__PURE__ */ new Set(["localhost", "workbench"]);
-function resolveRunContext(hostHeader) {
-  if (hostHeader === void 0 || hostHeader.length === 0) return { run: null };
+function parseHostLabel(hostHeader) {
+  if (hostHeader === void 0 || hostHeader.length === 0) return null;
   const host = hostHeader.split(":")[0] ?? "";
   const labels = host.split(".");
-  if (labels[labels.length - 1] !== "localhost") return { run: null };
+  if (labels[labels.length - 1] !== "localhost") return null;
   const leading = labels[0] ?? "";
-  if (HOME_LABELS.has(leading) || labels.length < 2) return { run: null };
+  if (HOME_LABELS.has(leading) || labels.length < 2) return null;
   try {
     assertSafeSegment(leading);
   } catch {
-    return { run: null };
+    return null;
   }
-  return { run: leading };
+  return leading;
 }
 
 // src/transport/routes.ts
@@ -18000,7 +18048,8 @@ function handleApiRequest(req, res, reader, context) {
   const graphId = matchWorkGraph(path);
   if (graphId !== null) {
     return guardGet(method, res, () => {
-      const read = reader.read(graphId);
+      const runId = resolveRun(reader, graphId);
+      const read = runId !== void 0 ? reader.read(runId) : void 0;
       if (!read) return sendJson(res, 404, { error: "unknown_run" });
       sendJson(res, 200, read.graph);
     });
@@ -18008,7 +18057,8 @@ function handleApiRequest(req, res, reader, context) {
   const doc = matchWorkDoc(path);
   if (doc !== null) {
     return guardGet(method, res, () => {
-      const read = reader.read(doc.runId);
+      const runId = resolveRun(reader, doc.runId);
+      const read = runId !== void 0 ? reader.read(runId) : void 0;
       if (!read) return sendJson(res, 404, { error: "unknown_run" });
       const found = read.docs.find((d) => d.id === doc.docId);
       if (!found) return sendJson(res, 404, { error: "unknown_doc" });
@@ -18074,6 +18124,11 @@ async function handlePostRequest(req, res, deps) {
     sendJson(res, 405, { error: "method_not_allowed" });
     return true;
   }
+  const runId = resolveRun(deps.reader, write.runId);
+  if (runId === void 0) {
+    sendJson(res, 404, { error: "unknown_run" });
+    return true;
+  }
   let body;
   try {
     body = await readJsonBody(req);
@@ -18081,9 +18136,9 @@ async function handlePostRequest(req, res, deps) {
     sendJson(res, 400, { error: "invalid_json" });
     return true;
   }
-  if (write.kind === "comment") return handleComment(res, deps, write.runId, body);
-  if (write.kind === "artifact") return handleArtifact(res, deps, write.runId, body);
-  return handleTakeover(res, deps, write.runId, body);
+  if (write.kind === "comment") return handleComment(res, deps, runId, body);
+  if (write.kind === "artifact") return handleArtifact(res, deps, runId, body);
+  return handleTakeover(res, deps, runId, body);
 }
 function handleComment(res, deps, runId, body) {
   if (!isRecord3(body)) return reject(res, 400, "invalid_body");
@@ -18181,6 +18236,9 @@ function listWorks(reader) {
     if (read) summaries.push(read.summary);
   }
   return summaries;
+}
+function resolveRun(reader, label) {
+  return resolveSlug(label, reader.listRuns());
 }
 function matchWorkGraph(path) {
   const m = /^\/api\/work\/([^/]+)\/graph$/.exec(path);
@@ -18314,7 +18372,9 @@ var CONTENT_TYPES = {
 };
 function createHttpHandler(reader, write, readers) {
   return function handler(req, res) {
-    const context = resolveRunContext(req.headers.host);
+    const label = parseHostLabel(req.headers.host);
+    const run = label !== null ? resolveSlug(label, reader.listRuns()) ?? null : null;
+    const context = { run };
     if (handleApiRequest(req, res, reader, context)) return;
     if (handleReaderRequest(req, res, readers)) return;
     void handlePostRequest(req, res, write).then((handled) => {
@@ -18383,11 +18443,11 @@ var import_websocket_server = __toESM(require_websocket_server(), 1);
 // src/transport/ws.ts
 var WS_PATH = "/ws";
 var WsTransport = class {
-  wss;
-  // run id → the set of open sockets subscribed to it. A bare-home connection (no run) is not registered
-  // for any run — it receives nothing (the Works home is poll/REST-driven in Phase 1).
-  byRun = /* @__PURE__ */ new Map();
-  constructor(server) {
+  // `resolveRun` turns the host's parsed label (slug or full id) into the FULL run id the socket
+  // subscribes under — the SAME id `push` is keyed by. Defaults to identity (the label IS the id) so
+  // existing tests that construct a bare `WsTransport(server)` keep their full-id-host behavior.
+  constructor(server, resolveRun2 = (label) => label) {
+    this.resolveRun = resolveRun2;
     this.wss = new import_websocket_server.default({ noServer: true });
     server.on("upgrade", (req, socket, head) => {
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -18395,10 +18455,15 @@ var WsTransport = class {
         socket.destroy();
         return;
       }
-      const { run } = resolveRunContext(req.headers.host);
+      const label = parseHostLabel(req.headers.host);
+      const run = label !== null ? this.resolveRun(label) : null;
       this.wss.handleUpgrade(req, socket, head, (ws) => this.register(ws, run));
     });
   }
+  wss;
+  // run id → the set of open sockets subscribed to it. A bare-home connection (no run) is not registered
+  // for any run — it receives nothing (the Works home is poll/REST-driven in Phase 1).
+  byRun = /* @__PURE__ */ new Map();
   // Register an accepted socket under its run. A connection with no run context (bare home) is accepted
   // but joins no run set, so it is never a `push` target — it stays open for the client's status check.
   register(ws, run) {
@@ -18458,7 +18523,7 @@ async function main() {
   const tokens = new TokenReader(new TranscriptReader(projectRoot));
   const memory = new MemReader(projectRoot);
   const reader = new WorkReader(repository, systemClock, (run) => events.roster(run).length);
-  const transport = new WsTransport(server);
+  const transport = new WsTransport(server, (label) => resolveSlug(label, reader.listRuns()) ?? null);
   server.on(
     "request",
     createHttpHandler(reader, { reader, writeService, transport }, { events, gates, tokens, memory })

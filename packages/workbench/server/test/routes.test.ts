@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { test } from "node:test";
 import type { Clock, RunFiles, WorkRepository } from "../src/domain/ports.js";
 import { WorkReader } from "../src/application/work-reader.js";
+import { workSlug } from "@agentry/workbench-shared";
 import { handleApiRequest } from "../src/transport/routes.js";
 import type { RunContext } from "../src/transport/host-router.js";
 
@@ -117,4 +118,49 @@ test("a non-GET to a known read path is 405", () => {
   handleApiRequest(fakeReq("/api/works", "POST"), res, reader(), home);
   assert.equal(captured.status, 405);
   assert.deepEqual(captured.body, { error: "method_not_allowed" });
+});
+
+// ── workSlug `:id` resolution (task 003) ──────────────────────────────────────────────────────────────
+// A long FLOW run id is served at its short `workSlug` subdomain, so the SPA running at
+// `<workSlug>.localhost` issues `/api/work/<workSlug>/...` paths. The `:id` segment must resolve back to
+// the FULL run id before the read; an exact-id path stays back-compat; an unresolvable label is a 404.
+const LONG_ID = "build-agentry-workbench-the-agentry-agent-center-5s9v6deiit";
+
+function longIdReader(): WorkReader {
+  const files = { ...sampleFiles(), run: LONG_ID };
+  return new WorkReader(fakeRepo(files), fixedClock);
+}
+
+test("GET /api/work/:id/graph resolves a workSlug segment to the full run", () => {
+  const { res, captured } = fakeRes();
+  const slug = workSlug(LONG_ID); // build-agentry-<hash> — shorter than the full id
+  assert.notEqual(slug, LONG_ID, "the long id must actually slugify (else this proves nothing)");
+  handleApiRequest(fakeReq(`/api/work/${slug}/graph`), res, longIdReader(), home);
+  assert.equal(captured.status, 200);
+  const graph = captured.body as { nodes: unknown[]; edges: unknown[] };
+  assert.ok(Array.isArray(graph.nodes) && graph.nodes.length > 0, "served the run's graph");
+});
+
+test("GET /api/work/:id/graph still resolves an exact full-id segment (back-compat)", () => {
+  const { res, captured } = fakeRes();
+  handleApiRequest(fakeReq(`/api/work/${LONG_ID}/graph`), res, longIdReader(), home);
+  assert.equal(captured.status, 200);
+  const graph = captured.body as { nodes: unknown[] };
+  assert.ok(Array.isArray(graph.nodes) && graph.nodes.length > 0, "the full id resolves to itself");
+});
+
+test("GET /api/work/:id/graph on a label matching no run is 404 (not a 500)", () => {
+  const { res, captured } = fakeRes();
+  handleApiRequest(fakeReq("/api/work/build-agentry-000000/graph"), res, longIdReader(), home);
+  assert.equal(captured.status, 404);
+  assert.deepEqual(captured.body, { error: "unknown_run" });
+});
+
+test("GET /api/work/:id/doc resolves a workSlug segment to the full run's doc", () => {
+  const { res, captured } = fakeRes();
+  const slug = workSlug(LONG_ID);
+  handleApiRequest(fakeReq(`/api/work/${slug}/doc/spec`), res, longIdReader(), home);
+  assert.equal(captured.status, 200);
+  const doc = captured.body as { body: string };
+  assert.equal(doc.body, "# Spec");
 });

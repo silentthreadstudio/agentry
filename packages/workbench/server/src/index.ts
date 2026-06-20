@@ -24,6 +24,7 @@ import { MemReader } from "./persistence/mem-reader.js";
 import type { Clock, RunChange } from "./domain/ports.js";
 import { createHttpHandler } from "./transport/http.js";
 import { WsTransport } from "./transport/ws.js";
+import { resolveSlug } from "@agentry/workbench-shared";
 
 // The project root, resolved exactly as FLOW resolves it (packages/flow/src/index.ts) so both layers see
 // the same `.agentry/` tree.
@@ -71,7 +72,10 @@ async function main(): Promise<void> {
   // Transports: the ws edge (constructed first so the http handler can push on a successful write) pushes
   // per-run change messages; the http edge serves the SPA + REST reads + the Phase-3 writes + the Phase-4
   // aggregation reads.
-  const transport = new WsTransport(server);
+  // The ws subscription key is the FULL run id: resolve the connecting host's label (a short `workSlug`
+  // or the full id, task 003) against the live run list, the SAME resolution the http routes use, so a
+  // workSlug-host socket joins the run that `push` is keyed by.
+  const transport = new WsTransport(server, (label) => resolveSlug(label, reader.listRuns()) ?? null);
   server.on(
     "request",
     createHttpHandler(reader, { reader, writeService, transport }, { events, gates, tokens, memory }),

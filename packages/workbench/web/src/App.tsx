@@ -1,29 +1,25 @@
-// The Workbench app shell — promotes the Phase-0 placeholder to the real router. Structure mirrors
-// design/prototype-app.html: a 212px sidebar (logo · nav · active-run card) + a main column the
-// routes fill. *.localhost routing (decided): the SPA reads /api/context to learn whether this host
-// is a run (<id>.localhost → the WorkLayout with Live/Activity) or the bare host (Works home +
-// secondary pages). The sidebar's nav and the work tabs are the named slots Phase 2/4 fill.
+// The Workbench app shell — the UI-v2 "Agent Center" language (design/ui-v2.html): a 248px sidebar
+// (text-only "Agentry Center" wordmark · Works/Memory/Gates nav with counts · live-server project card)
+// + a main column the routes fill over the fixed mesh-gradient background. *.localhost routing
+// (decided): the SPA reads /api/context to learn whether this host is a run (<id>.localhost → the
+// WorkLayout with Live/Activity) or the bare host (Works home + secondary pages).
 import { useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { fetchContext } from "./api/client.js";
-import { Agents } from "./routes/Agents.js";
 import { Gates } from "./routes/Gates.js";
 import { Memory } from "./routes/Memory.js";
-import { Tokens } from "./routes/Tokens.js";
 import { Works } from "./routes/Works.js";
 import { WorkLayout } from "./routes/work/WorkLayout.js";
 
 import "./design-system/tokens.css";
 import "./design-system/components.css";
 
-// The sidebar nav — matches the prototype's order. `to` is the route; `ic` is the prototype's
-// monochrome glyph (text, not an icon set — "no icon noise"). Secondary pages are scaffolded.
+// The sidebar nav — Works / Memory / Gates only (Agents/Tokens removed). `ic` is a monochrome glyph
+// (text, not an icon set); the active state's gradient pill + left bar are CSS (.nav.on).
 const NAV: { to: string; ic: string; label: string }[] = [
-  { to: "/", ic: "▦", label: "Works" },
-  { to: "/agents", ic: "◇", label: "Agents" },
-  { to: "/tokens", ic: "▣", label: "Tokens" },
+  { to: "/", ic: "◳", label: "Works" },
   { to: "/memory", ic: "✦", label: "Memory" },
-  { to: "/gates", ic: "◆", label: "Gates" },
+  { to: "/gates", ic: "◈", label: "Gates" },
 ];
 
 type Boot =
@@ -50,57 +46,51 @@ export function App() {
   }
 
   // A run host (<id>.localhost) goes straight to that run's work shell; tabs route under it.
+  // The `.solo` wrapper gives the work shell a full-height (100vh) flex context — WITHOUT it the
+  // bare `.main` collapses to content height and the React Flow canvas (height:100%) renders 0px
+  // (the "run link loads nothing" bug). The bare host gets its height from the `.app` grid instead.
   if (boot.run) {
     return (
       <BrowserRouter>
-        <Routes>
-          <Route path="/*" element={<WorkLayout runId={boot.run} />} />
-        </Routes>
+        <div className="solo">
+          <Routes>
+            <Route path="/*" element={<WorkLayout runId={boot.run} />} />
+          </Routes>
+        </div>
       </BrowserRouter>
     );
   }
 
-  // The bare host: the sidebar shell with Works home + the scaffolded secondary pages.
+  // The bare host: the sidebar shell with Works home + the scaffolded secondary pages. Each route
+  // owns its own hero (the gradient-clipped H1 + subtitle); the body just supplies padding + scroll.
   return (
     <BrowserRouter>
       <div className="app">
         <Sidebar />
-        <Routes>
-          <Route path="/" element={<MainColumn title="Works" sub="every run, at a glance"><Works /></MainColumn>} />
-          <Route
-            path="/agents"
-            element={
-              <MainColumn title="Agents" sub="the roster, live">
-                <Agents />
-              </MainColumn>
-            }
-          />
-          <Route
-            path="/tokens"
-            element={
-              <MainColumn title="Tokens" sub="usage & cost">
-                <Tokens />
-              </MainColumn>
-            }
-          />
-          <Route
-            path="/memory"
-            element={
-              <MainColumn title="Memory" sub="the moat — read-only">
-                <Memory />
-              </MainColumn>
-            }
-          />
-          <Route
-            path="/gates"
-            element={
-              <MainColumn title="Gates" sub="waiting on you">
-                <Gates />
-              </MainColumn>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <main className="main">
+          <div className="body">
+            <Routes>
+              <Route path="/" element={<Works />} />
+              <Route
+                path="/memory"
+                element={
+                  <PageHero title="Memory" sub="The moat — durable facts and episodes, read-only.">
+                    <Memory />
+                  </PageHero>
+                }
+              />
+              <Route
+                path="/gates"
+                element={
+                  <PageHero title="Gates" sub="Decisions waiting on you.">
+                    <Gates />
+                  </PageHero>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
+        </main>
       </div>
     </BrowserRouter>
   );
@@ -108,12 +98,14 @@ export function App() {
 
 function Sidebar() {
   return (
-    <div className="side">
-      <div className="logo">
-        <span className="m">a</span>
-        <b>Agent Center</b>
+    <aside className="side">
+      <div className="brand">
+        <div className="wm">
+          <b>Agentry Center</b>
+          <i>workbench</i>
+        </div>
       </div>
-      <div className="navlbl">Project · agentry</div>
+      <div className="seclbl">Workspace</div>
       <nav aria-label="Primary">
         {NAV.map((n) => (
           <NavLink
@@ -130,11 +122,20 @@ function Sidebar() {
         ))}
       </nav>
       <div className="grow" />
-    </div>
+      <div className="proj">
+        <div className="k">Project</div>
+        <div className="n">agentry</div>
+        <div className="row">
+          <span className="livedot" aria-hidden="true" /> server live
+        </div>
+      </div>
+    </aside>
   );
 }
 
-function MainColumn({
+// A lightweight hero for the secondary pages (Memory/Gates) — the gradient-clipped title + subtitle
+// matching the Works hero, without the search/new-run controls those pages don't need.
+function PageHero({
   title,
   sub,
   children,
@@ -144,13 +145,15 @@ function MainColumn({
   children: React.ReactNode;
 }) {
   return (
-    <div className="main">
-      <div className="head">
-        <h1>{title}</h1>
-        <span className="sub">{sub}</span>
-        <span className="grow" />
+    <>
+      <div className="hero">
+        <div>
+          <h1>{title}</h1>
+          <p>{sub}</p>
+        </div>
+        <div className="grow" />
       </div>
-      <div className="body">{children}</div>
-    </div>
+      {children}
+    </>
   );
 }

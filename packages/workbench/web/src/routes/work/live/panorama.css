@@ -15,109 +15,259 @@
   display: none;
 }
 
-/* ── custom node (DocNode) ──────────────────────────────────────────────────────────────── */
-.rf-node {
+/* ── Option-B card node (DocNode) ───────────────────────────────────────────────────────────
+   The card from design/node-mockups.html (Option B), remapped to the ui-v2 tokens: a header
+   (kind glyph + kind·id label + status pill), a title body, and a footer (meta + comment badge).
+   Visual state (dim/lit/prog/rev/blocked) rides on the outer border + the status pill. */
+.bn-node {
   width: 212px;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line2);
   border-radius: var(--r-xl);
-  padding: 12px 13px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38);
   transition: border-color 0.14s, box-shadow 0.14s, opacity 0.14s;
   cursor: pointer;
+  overflow: hidden;
 }
-.rf-node:hover {
-  border-color: var(--line2);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+.bn-node:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
 }
-.rf-node.dim {
+.bn-node.dim {
   opacity: 0.4;
 }
-.rf-node.lit {
+.bn-node.lit {
   border-color: var(--accent);
 }
-.rf-node.prog {
-  border-color: #3a3320;
+.bn-node.prog {
+  border-color: color-mix(in srgb, var(--prog) 45%, var(--line2));
   animation: rf-pulse 1.8s ease-in-out infinite;
 }
-.rf-node.rev {
-  border-color: #243246;
+.bn-node.rev {
+  border-color: color-mix(in srgb, var(--rev) 40%, var(--line2));
 }
-.rf-node.blocked {
+.bn-node.blocked {
   border-color: var(--block);
 }
 
 @keyframes rf-pulse {
   0%,
   100% {
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), 0 0 0 0 rgba(212, 162, 58, 0.22);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38), 0 0 0 0 color-mix(in srgb, var(--prog) 24%, transparent);
   }
   50% {
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), 0 0 0 4px rgba(212, 162, 58, 0.1);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38), 0 0 0 4px color-mix(in srgb, var(--prog) 10%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rf-node.prog {
+  .bn-node.prog {
     animation: none;
   }
 }
 
-.rn-top {
+/* header: glyph + kind·id + status pill */
+.bn-hd {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 7px;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
 }
-.rn-kind {
-  font-size: 10.5px;
+.bn-glyph {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  flex: none;
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  color: var(--muted);
+}
+.bn-glyph.accent {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-ink);
+}
+.bn-kind {
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
   color: var(--faint);
-  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.rn-st {
+/* status pill (right of the header) — hue per status, dot + label, never color alone */
+.bn-pill {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--muted);
-}
-/* open-comment count badge (AC5): the gate/review hue (--prog), a small count chip so the panorama shows
-   where a human is waited on. Pairs with an aria-label — never count-as-color-alone. */
-.rn-cmt {
-  display: inline-grid;
-  place-items: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
+  gap: 5px;
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: capitalize;
+  padding: 2px 8px;
   border-radius: 999px;
-  font: 700 10px var(--mono);
-  color: var(--prog);
-  background: color-mix(in srgb, var(--prog) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--prog) 40%, transparent);
+  color: var(--muted);
+  background: var(--panel2);
+  border: 1px solid var(--line2);
 }
-.rn-ttl {
-  font-size: 14px;
+.bn-pill.lit {
+  color: var(--done);
+  background: color-mix(in srgb, var(--done) 12%, transparent);
+  border-color: color-mix(in srgb, var(--done) 35%, transparent);
+}
+.bn-pill.prog {
+  color: var(--prog);
+  background: color-mix(in srgb, var(--prog) 12%, transparent);
+  border-color: color-mix(in srgb, var(--prog) 35%, transparent);
+}
+.bn-pill.rev {
+  color: var(--rev);
+  background: color-mix(in srgb, var(--rev) 12%, transparent);
+  border-color: color-mix(in srgb, var(--rev) 35%, transparent);
+}
+.bn-node.blocked .bn-pill {
+  color: var(--block);
+  background: color-mix(in srgb, var(--block) 12%, transparent);
+  border-color: color-mix(in srgb, var(--block) 35%, transparent);
+}
+
+/* body: the title */
+.bn-bd {
+  padding: 11px 13px;
+}
+.bn-ttl {
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.1px;
-  line-height: 1.2;
+  line-height: 1.3;
+  color: var(--ink);
 }
-.rn-foot {
+
+/* footer: meta line + comment badge */
+.bn-ft {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-top: 11px;
-  min-height: 18px;
-}
-.rn-who {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 9px 13px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
   color: var(--muted);
-  font-size: 11.5px;
 }
-.rn-block {
+.bn-faint {
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bn-block {
   color: var(--block);
   font-size: 11px;
+}
+/* open-comment count badge (AC5): the gate/review hue, a small chip so the panorama shows where a human
+   is waited on. Pairs with an aria-label — never count-as-color-alone. */
+.bn-cmt {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font: 700 10px var(--mono);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+}
+
+/* ── routing root pill (non-document — a decision, not a doc) ────────────────────────────────── */
+.bn-root {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: linear-gradient(180deg, var(--raise), var(--panel));
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 9px 16px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+  cursor: default;
+}
+.bn-root .bn-root-k {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.bn-root b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ── ADR "Decisions" group (non-document, expandable) ───────────────────────────────────────── */
+.bn-group {
+  width: 270px;
+  border: 1px dashed var(--line2);
+  border-radius: var(--r-xl);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.14s, opacity 0.14s;
+}
+.bn-group:hover,
+.bn-group.open {
+  border-color: var(--accent-line);
+}
+.bn-group.dim {
+  opacity: 0.4;
+}
+.bn-group.lit {
+  border-color: var(--accent);
+}
+.bn-glab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 2px 10px;
+}
+.bn-glab .bn-c {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+  color: var(--faint);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.bn-gttl {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  margin: 0 2px 4px;
+}
+.bn-gsub {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0 2px 10px;
+}
+.bn-gtoggle {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--faint);
 }
 
 /* status dots (the node header status pill) */

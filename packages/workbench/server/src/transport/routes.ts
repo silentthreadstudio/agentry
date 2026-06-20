@@ -21,7 +21,7 @@
 // use — task 9's `matchWorkGraph`), which on a browser equals the host-router run (ADR-002): the SPA
 // only ever issues a path whose id is its own `<id>.localhost` host.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { DocModel, WsMessage } from "@agentry/workbench-shared";
+import { resolveSlug, type DocModel, type WsMessage } from "@agentry/workbench-shared";
 import { ReviewAnchor, ReviewDecision, type ReviewComment } from "@agentry/flow/domain/review";
 import { computeVersion } from "@agentry/flow/domain/version";
 import type { WorkReader } from "../application/work-reader.js";
@@ -83,7 +83,10 @@ export function handleApiRequest(
   const graphId = matchWorkGraph(path);
   if (graphId !== null) {
     return guardGet(method, res, () => {
-      const read = reader.read(graphId);
+      // The `:id` segment may be a `workSlug` (task 003) or a full id — resolve it to the real run before
+      // reading. An unresolvable label is an unknown run (404), the same outcome a stale id already gives.
+      const runId = resolveRun(reader, graphId);
+      const read = runId !== undefined ? reader.read(runId) : undefined;
       if (!read) return sendJson(res, 404, { error: "unknown_run" });
       sendJson(res, 200, read.graph);
     });
@@ -91,11 +94,12 @@ export function handleApiRequest(
 
   const doc = matchWorkDoc(path);
   if (doc !== null) {
-    // The doc-fetch the write loop pairs with (unblocks task 16's DocDrawer): resolve the run, then the
-    // doc by its id within the run's `docs` (ids mirror buildGraph's node ids — task 8). 404s split so
-    // the client can tell an unknown run from an unknown doc within a known run.
+    // The doc-fetch the write loop pairs with (unblocks task 16's DocDrawer): resolve the run (slug or
+    // full id), then the doc by its id within the run's `docs` (ids mirror buildGraph's node ids — task
+    // 8). 404s split so the client can tell an unknown run from an unknown doc within a known run.
     return guardGet(method, res, () => {
-      const read = reader.read(doc.runId);
+      const runId = resolveRun(reader, doc.runId);
+      const read = runId !== undefined ? reader.read(runId) : undefined;
       if (!read) return sendJson(res, 404, { error: "unknown_run" });
       const found = read.docs.find((d) => d.id === doc.docId);
       if (!found) return sendJson(res, 404, { error: "unknown_doc" });
@@ -205,6 +209,15 @@ export async function handlePostRequest(
     return true;
   }
 
+  // The `:id` segment may be a `workSlug` (task 003) or the full id — resolve it to the real run so the
+  // write boundary (lock/version + the fresh-doc re-read) operates on the same id the GET routes use. An
+  // unresolvable label is an unknown run → 404, never a write against a non-existent run.
+  const runId = resolveRun(deps.reader, write.runId);
+  if (runId === undefined) {
+    sendJson(res, 404, { error: "unknown_run" });
+    return true;
+  }
+
   let body: unknown;
   try {
     body = await readJsonBody(req);
@@ -213,9 +226,9 @@ export async function handlePostRequest(
     return true;
   }
 
-  if (write.kind === "comment") return handleComment(res, deps, write.runId, body);
-  if (write.kind === "artifact") return handleArtifact(res, deps, write.runId, body);
-  return handleTakeover(res, deps, write.runId, body);
+  if (write.kind === "comment") return handleComment(res, deps, runId, body);
+  if (write.kind === "artifact") return handleArtifact(res, deps, runId, body);
+  return handleTakeover(res, deps, runId, body);
 }
 
 // POST /api/work/:id/comment → build the 3-way anchor + decision from the body, append via WriteService
@@ -371,6 +384,16 @@ function listWorks(reader: WorkReader): unknown[] {
     if (read) summaries.push(read.summary);
   }
   return summaries;
+}
+
+// Resolve a `:id` path segment (or a `?run=` value) to a FULL run id. The segment may be a short
+// `workSlug` subdomain label (task 003) — the SPA, running at `<workSlug>.localhost`, issues paths whose
+// id IS its host label — or the full run id itself (back-compat / terse ids). `resolveSlug` (shared)
+// scans the known runs: an exact id match OR a `workSlug` match wins; an unresolvable label is undefined
+// (the caller turns that into a 404, never a 500). The traversal safety stays the reader's
+// `assertSafeSegment` guard — `resolveSlug` only ever returns an id that is actually present.
+function resolveRun(reader: WorkReader, label: string): string | undefined {
+  return resolveSlug(label, reader.listRuns());
 }
 
 // Match `/api/work/:id/graph` → the (still-encoded) run id, or null. The id segment is `decodeURIComponent`d

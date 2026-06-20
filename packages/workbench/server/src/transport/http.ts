@@ -14,8 +14,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveSlug } from "@agentry/workbench-shared";
 import type { WorkReader } from "../application/work-reader.js";
-import { resolveRunContext } from "./host-router.js";
+import { parseHostLabel, type RunContext } from "./host-router.js";
 import {
   handleApiRequest,
   handlePostRequest,
@@ -67,7 +68,13 @@ const CONTENT_TYPES: Record<string, string> = {
 // the reader is — task 9's DI pattern).
 export function createHttpHandler(reader: WorkReader, write: WriteDeps, readers: ReaderDeps) {
   return function handler(req: IncomingMessage, res: ServerResponse): void {
-    const context = resolveRunContext(req.headers.host);
+    // Parse the host's run LABEL (pure), then resolve it to a FULL run id against the known runs — the
+    // label may be a short `workSlug` (task 003) or the full id itself (back-compat / terse ids). An
+    // unresolvable label (no matching run) is the Works home (no run), never a 500. The SPA reads the
+    // resolved full id off `/api/context`.
+    const label = parseHostLabel(req.headers.host);
+    const run = label !== null ? (resolveSlug(label, reader.listRuns()) ?? null) : null;
+    const context: RunContext = { run };
 
     // GET API + healthz first; a matched read route answers and we're done.
     if (handleApiRequest(req, res, reader, context)) return;
