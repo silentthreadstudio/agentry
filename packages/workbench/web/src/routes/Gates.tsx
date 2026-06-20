@@ -6,8 +6,8 @@
 // resolves a gate (resolving happens at the FLOW gate, in the doc).
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
-import { ApiError, fetchGates } from "../api/client.js";
-import type { OpenGateItem } from "../api/client.js";
+import { ApiError, fetchGates } from "../api/index.js";
+import type { OpenGateItem } from "../api/index.js";
 import { Button, EmptyState } from "../design-system/index.js";
 
 // ── View model ─────────────────────────────────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@
 // discards it (keep the before); Iterate posts a follow-up "please iterate" comment to the gate.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DocModel, WsMessage } from "@agentry/workbench-shared";
-import { getWsClient } from "../../../../api/ws-client.js";
+import { getWsClient } from "../../../../api/ws.js";
 import { normalize } from "./markdown-serializer.js";
 import { wordDiff, isUnchanged, type DiffOp } from "./word-diff.js";
 import { addComment } from "./comment-store.js";

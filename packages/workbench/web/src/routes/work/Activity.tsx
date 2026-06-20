@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import type { EventView } from "@agentry/workbench-shared";
-import { ApiError, fetchEvents } from "../../api/client.js";
+import { ApiError, fetchEvents } from "../../api/index.js";
 import { EmptyState } from "../../design-system/index.js";
 
 // ── View model: one EventView → a renderable timeline row ───────────────────────────────────────────────

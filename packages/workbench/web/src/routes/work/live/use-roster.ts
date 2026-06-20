@@ -8,8 +8,8 @@
 // tick their own elapsed display locally so the overlay map stays referentially stable — no graph re-diff).
 import { useEffect, useState } from "react";
 import type { AgentView, EventView } from "@agentry/workbench-shared";
-import { fetchAgents, fetchEvents } from "../../../api/client.js";
-import { getWsClient } from "../../../api/ws-client.js";
+import { fetchAgents, fetchEvents } from "../../../api/index.js";
+import { getWsClient } from "../../../api/ws.js";
 
 // One agent on a node: the role (the dispatched agent type) + when it entered (the timer base).
 export interface NodeAgent {

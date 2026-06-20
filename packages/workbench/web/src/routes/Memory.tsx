@@ -9,8 +9,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import MarkdownIt from "markdown-it";
-import { ApiError, fetchMemory } from "../api/client.js";
-import type { MemReadRecord } from "../api/client.js";
+import { ApiError, fetchMemory } from "../api/index.js";
+import type { MemReadRecord } from "../api/index.js";
 import { EmptyState, SearchInput } from "../design-system/index.js";
 import { applyFilters, metricsFor, toMemRow, typeColor } from "./memory-view.js";
 import type { KindFilter, MemRow, OriginFilter } from "./memory-view.js";

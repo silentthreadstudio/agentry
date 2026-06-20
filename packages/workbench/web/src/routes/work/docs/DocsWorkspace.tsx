@@ -12,8 +12,8 @@
 //     is built once and threaded to the rail so a submitted comment paints the in-editor highlight.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphModel } from "@agentry/workbench-shared";
-import { fetchGraph } from "../../../api/client.js";
-import { getWsClient } from "../../../api/ws-client.js";
+import { fetchGraph } from "../../../api/index.js";
+import { getWsClient } from "../../../api/ws.js";
 import { DocNavigator } from "./DocNavigator.js";
 import { DocEditor, useApplyCommentMark, type DocMeta } from "./DocEditor.js";
 import { DocsRail } from "./DocsRail.js";

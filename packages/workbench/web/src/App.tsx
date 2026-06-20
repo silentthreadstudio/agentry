@@ -5,7 +5,7 @@
 // WorkLayout with Live/Activity) or the bare host (Works home + secondary pages).
 import { useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { fetchContext } from "./api/client.js";
+import { fetchContext } from "./api/index.js";
 import { ApprovalsBanner } from "./routes/ApprovalsBanner.js";
 import { Gates } from "./routes/Gates.js";
 import { Memory } from "./routes/Memory.js";

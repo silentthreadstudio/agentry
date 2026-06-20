@@ -4,7 +4,7 @@
 // loose YAML frontmatter (the store's field contract: type/tags/why/provenance/confidence/usefulness/
 // createdAt + the body under text/task) to a display row, derives the six metric tiles, and applies the
 // three client-side filters (kind segment × type chip × origin segment). No I/O, no React.
-import type { MemReadRecord } from "../api/client.js";
+import type { MemReadRecord } from "../api/index.js";
 
 // The body field name per record kind (the reader re-attaches the prose here: a fact's `text`, an
 // episode's `task`).

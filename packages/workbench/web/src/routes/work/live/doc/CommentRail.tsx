@@ -13,8 +13,8 @@
 // badge READS the count. No comment state lives here — it subscribes to the store.
 import { useEffect, useMemo, useState } from "react";
 import type { ReviewDecision } from "./review-types.js";
-import { fetchReview } from "../../../../api/client.js";
-import { getWsClient } from "../../../../api/ws-client.js";
+import { fetchReview } from "../../../../api/index.js";
+import { getWsClient } from "../../../../api/ws.js";
 import { RailComposer } from "./RailComposer.js";
 import {
   addComment,

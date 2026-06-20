@@ -18,8 +18,8 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import type { GraphEdgeKind, GraphModel } from "@agentry/workbench-shared";
-import { fetchGraph } from "../../../api/client.js";
-import { getWsClient } from "../../../api/ws-client.js";
+import { fetchGraph } from "../../../api/index.js";
+import { getWsClient } from "../../../api/ws.js";
 import { AgentProvider, HoverProvider, nodeTypes } from "./DocNode.js";
 import { edgeTypes, Legend, markerForKind } from "./edge-types.js";
 import { AgentRoster } from "./AgentRoster.js";
