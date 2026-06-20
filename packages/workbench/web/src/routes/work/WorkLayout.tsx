@@ -1,24 +1,31 @@
-// WorkLayout — the work-level shell for a <id>.localhost host: the run header + the Live / Activity
-// tab switcher, with EMPTY tab bodies (this task scaffolds the shell only). The Live tab's Panorama
-// graph is Phase 2; the Activity feed is Phase 4. Both render calm "coming in this view" placeholders
-// now (empty states are good states, VISION §3). The tab routes are the named slots those phases fill.
+// WorkLayout — the work-level shell for a <id>.localhost host: the run header + the Live graph / Docs /
+// Activity tab switcher. The Live tab is the Panorama graph (Phase 2, the graph stays "home"); the Docs
+// tab (task 008) is the multi-doc workspace (navigator ⇄ tabs+editor ⇄ conversation rail); Activity is
+// the run's event timeline (Phase 4).
+//
+// ── The `?doc=` ↔ open-tab sync (task 008, evolved from the BUG-4b drawer sync) ───────────────────────
+// A doc opening used to mean a drawer over the graph; it now means a TAB in the Docs workspace. The active
+// doc tab is mirrored into a `?doc=` param ON the /docs route so:
+//   • the Gates inbox deep-link (<run>.localhost/?doc=<id>) opens that doc on arrival, on the Docs tab;
+//   • opening / switching docs is a same-host history entry — Back walks the doc history, never the host;
+//   • a refresh re-opens the active doc.
+// `selectDoc` (the open signal Panorama / DecisionsDrawer call) writes the tab store; this shell reflects
+// that store ⇄ the URL.
 import { useEffect, useRef } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Pill } from "../../design-system/index.js";
 import { Activity } from "./Activity.js";
 import { Panorama } from "./live/Panorama.js";
-import { selectDoc, useSelectedDoc } from "./live/doc/DocDrawer.js";
+import { DocsWorkspace } from "./docs/DocsWorkspace.js";
+import { selectDoc, useSelectedDoc } from "./docs/doc-tabs.js";
 
-// The current `?doc=` query value (or null) for this host, read from the live URL. The drawer mirrors its
-// open/close into this single param so opening a doc is an in-app, SAME-HOST history entry (BUG 4b): Back
-// closes the drawer / stays on the run host, it never jumps to the bare host.
+// The current `?doc=` query value (or null) for this host, read from the live URL.
 function docParam(): string | null {
   return new URLSearchParams(window.location.search).get("doc");
 }
 
 // Build a same-host URL for this host with `?doc=` set (id) or cleared (null), preserving the rest of the
-// query + the hash + the path. CRUCIALLY relative (pathname-based) — it never re-targets the host, so the
-// browser stays on <run>.localhost and no cross-host entry is pushed.
+// query + the hash + the path. Pathname-relative — it never re-targets the host.
 function urlWithDoc(id: string | null): string {
   const params = new URLSearchParams(window.location.search);
   if (id) params.set("doc", id);
@@ -27,50 +34,45 @@ function urlWithDoc(id: string | null): string {
   return `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
 }
 
-// The run id comes from /api/context (the *.localhost host bootstrap), not the SPA path — App reads
-// it once and passes it down. Within the work shell, the routes are only the Live / Activity tabs.
 export function WorkLayout({ runId }: { runId: string }) {
   const host = `${runId}.localhost:${location.port || "4317"}`;
 
   const docId = useSelectedDoc();
+  const navigate = useNavigate();
+  const routerLocation = useLocation();
   // True while a history mutation we just made is settling — so the matching state-sync effect doesn't
   // treat our own pushState/replaceState as a fresh user intent and loop.
   const syncing = useRef(false);
 
-  // ?doc= deep link (task 23 → task 27): the Gates inbox jumps to a doc at its gate via
-  // <run>.localhost/?doc=<docId>. On mount, read the param and open that doc's drawer (selectDoc is the
-  // drawer's open contract; the drawer lives on the Live tab's Panorama). `replaceState` rewrites the
-  // ENTRY url (in place — no extra entry) so the arriving `?doc=` becomes the current run-host state and a
-  // refresh re-opens the same doc, while Back from here leaves on the bare host (the legit deep-link prior).
+  // ?doc= deep link (the Gates inbox jumps to a doc at its gate via <run>.localhost/?doc=<docId>). On
+  // mount, read the param, open that doc's tab (selectDoc) and route to the Docs workspace. `replaceState`
+  // rewrites the ENTRY url in place so the arriving `?doc=` becomes the current state and a refresh
+  // re-opens the same doc, while Back from here leaves on the bare host (the legit deep-link prior).
   useEffect(() => {
     const initial = docParam();
     if (!initial) return;
     syncing.current = true;
     selectDoc(initial);
-    window.history.replaceState({ doc: initial }, "", urlWithDoc(initial));
+    navigate(`/docs${urlWithDocSearch(initial)}`, { replace: true });
     syncing.current = false;
     // run once: the param is the entry intent, not a live source of truth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // BUG 4b — the drawer's open/close IS browser history, same-host. Opening a doc PUSHES a `?doc=` entry
-  // on THIS host (never a cross-host URL — urlWithDoc is pathname-relative); closing it (or switching docs)
-  // updates the url. Because the open is a real history entry, the browser Back button now CLOSES the
-  // drawer and keeps you on the run, instead of falling through to the bare host. Node clicks reach here
-  // only through selectDoc (the gated Panorama handler), so they too stay same-host.
+  // The active doc tab IS browser history, same-host. Switching/opening a doc updates `?doc=` on the Docs
+  // route (a real entry), so Back walks the doc history and keeps you on the run. Only mirror once we're on
+  // /docs (a Live-tab node click navigates to /docs first, which lands here with docId set).
   useEffect(() => {
-    if (syncing.current) return; // this change came from a history event we're already reconciling
+    if (syncing.current) return;
+    if (!routerLocation.pathname.startsWith("/docs")) return;
     const current = docParam();
-    if (docId === current) return; // url already reflects the drawer state — nothing to push
+    if (docId === current) return;
     syncing.current = true;
-    if (docId) window.history.pushState({ doc: docId }, "", urlWithDoc(docId));
-    else window.history.pushState({ doc: null }, "", urlWithDoc(null));
+    window.history.pushState({ doc: docId }, "", urlWithDoc(docId));
     syncing.current = false;
-  }, [docId]);
+  }, [docId, routerLocation.pathname]);
 
-  // Back/Forward (popstate): reconcile the drawer to whatever `?doc=` the restored history entry carries.
-  // Pressing Back after opening a doc lands on the prior run-host entry (no `?doc=`) → the drawer closes,
-  // the canvas stays put. This is what makes Back "stay on the run" rather than leave the host (BUG 4b).
+  // Back/Forward (popstate): reconcile the open doc tab to whatever `?doc=` the restored entry carries.
   useEffect(() => {
     function onPop() {
       syncing.current = true;
@@ -89,7 +91,10 @@ export function WorkLayout({ runId }: { runId: string }) {
         <span className="grow" />
         <nav className="tabs" aria-label="Work views">
           <NavLink end to="" className={({ isActive }) => `tab${isActive ? " on" : ""}`}>
-            Live
+            Live graph
+          </NavLink>
+          <NavLink to="docs" className={({ isActive }) => `tab${isActive ? " on" : ""}`}>
+            Docs
           </NavLink>
           <NavLink to="activity" className={({ isActive }) => `tab${isActive ? " on" : ""}`}>
             Activity
@@ -99,12 +104,23 @@ export function WorkLayout({ runId }: { runId: string }) {
       </div>
       <div className="body">
         <Routes>
-          {/* Phase 2 fills the Live slot with the Panorama graph canvas. */}
+          {/* The graph stays home on the Live tab. */}
           <Route index element={<Panorama runId={runId} />} />
-          {/* Phase 4 fills the Activity slot with this run's event timeline. */}
+          {/* Task 008: the multi-doc workspace — the primary doc surface. */}
+          <Route path="docs" element={<DocsWorkspace runId={runId} />} />
+          {/* Phase 4: this run's event timeline. */}
           <Route path="activity" element={<Activity runId={runId} />} />
         </Routes>
       </div>
     </div>
   );
+}
+
+// The `?doc=` search suffix (with the leading `?`) for an id — used when building a router path string
+// (where `window.location` may not yet reflect the target route).
+function urlWithDocSearch(id: string | null): string {
+  const params = new URLSearchParams();
+  if (id) params.set("doc", id);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
 }

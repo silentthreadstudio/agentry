@@ -1,14 +1,15 @@
-// DocDrawer save-path byte-stability (AC4/AC6, the ADR-004↔006 link as THIS task composes it).
+// Doc-editor save-path byte-stability (AC4/AC6, the ADR-004↔006 link). (The editor moved from the retired
+// DocDrawer into the workspace's `DocEditor` in task 008; the save composition this guards is unchanged.)
 //
-// The acceptance: "a no-op edit save is byte-stable (normalize, no false rejection)". DocDrawer's save
-// computes the body it POSTs two ways — rich mode: `normalize(tiptapToMd(editor.getJSON()))` over a doc
-// loaded via `mdToTiptap(body)`; source mode: `normalize(rawBody)` seeded from `normalize(body)`. The
+// The acceptance: "a no-op edit save is byte-stable (normalize, no false rejection)". The editor's save
+// computes the body it POSTs two ways — rich/edit mode: `normalize(tiptapToMd(editor.getJSON()))` over a
+// doc loaded via `mdToTiptap(body)`; source mode: `normalize(rawBody)` seeded from `normalize(body)`. The
 // server then recomputes the version over that body and compares to the opaque `baseVersion` (ADR-006).
 //
-// This test asserts the COMPOSITION DocDrawer performs (not the serializer internals, which task 14
-// golden-tests) is byte-stable: a no-op rich-mode session and a no-op source-mode session each re-emit a
+// This test asserts the COMPOSITION the editor performs (not the serializer internals, which task 14
+// golden-tests) is byte-stable: a no-op edit-mode session and a no-op source-mode session each re-emit a
 // body byte-identical to the normalized on-disk body — so the server's recomputed version matches
-// `baseVersion` and the save is a clean no-op, never a false stale-rejection. If the drawer's save path
+// `baseVersion` and the save is a clean no-op, never a false stale-rejection. If the editor's save path
 // ever drops the `normalize` (the load-bearing line), this fails.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

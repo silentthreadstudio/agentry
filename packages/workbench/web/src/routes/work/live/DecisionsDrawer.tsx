@@ -8,7 +8,7 @@
 // `data.adrs` (pulled from the GraphModel during the collapse) — no re-fetch.
 import { useEffect, useSyncExternalStore } from "react";
 import type { AdrRef } from "./layout-dagre.js";
-import { selectDoc } from "./doc/DocDrawer.js";
+import { selectDoc } from "../docs/doc-tabs.js";
 
 // ── The open seam (mirrors DocDrawer's selectDoc store) ───────────────────────────────────────────────
 // Panorama calls `openDecisions(adrs)` on a group-node click; this drawer subscribes via `useDecisionsOpen`.
@@ -49,7 +49,7 @@ function rowView(adr: AdrRef): { key: string; title: string } {
   return { key, title };
 }
 
-export function DecisionsDrawer() {
+export function DecisionsDrawer({ onOpenDoc }: { onOpenDoc?: (() => void) | undefined } = {}) {
   useDecisionsStyles();
   const adrs = useDecisionsOpen();
 
@@ -66,11 +66,14 @@ export function DecisionsDrawer() {
 
   if (adrs === null) return null;
 
-  // A row hands off to the ADR's doc: open it in the normal DocDrawer, then close this list (one drawer
-  // at a time — the Decisions list is a router into the docs, not a peer view alongside them).
+  // A row hands off to the ADR's doc: open it as a tab in the Docs workspace, then close this list (the
+  // Decisions list is a router into the docs, not a peer view alongside them). `onOpenDoc` navigates to
+  // the Docs tab when the list was opened over the Live graph (omitted in the Docs-navigator's Graph mode,
+  // which is already on /docs).
   function openAdr(id: string) {
     closeDecisions();
     selectDoc(id);
+    onOpenDoc?.();
   }
 
   return (

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agentry Center — doc workspace (multi-doc)</title>
+<style>
+  :root{
+    --bg:#08080b; --bg2:#0b0b10; --panel:#101016; --panel2:#15151c; --raise:#1c1c25;
+    --line:#1e1e26; --line2:#2b2b36; --hover:#17171f;
+    --ink:#f2f2f6; --ink2:#d2d3dc; --muted:#8a8b98; --faint:#5f606b;
+    --v1:#7c7ff2; --v2:#a463f0; --mag:#e472c9;
+    --accent:#8b7ff5; --accent-soft:#191930; --accent-line:#34344f;
+    --done:#4cc38a; --prog:#ecb24a; --rev:#5b94e6; --block:#e06a5c; --todo:#52535f;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:13.5px/1.6 var(--sans);-webkit-font-smoothing:antialiased;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+  /* work top bar */
+  .wbar{display:flex;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0d0d12,#0a0a0e)}
+  .wbar .run{font-weight:650;letter-spacing:-.2px;font-size:14px}
+  .wbar .tabs{display:flex;gap:3px;margin-left:8px}
+  .wtab{padding:6px 12px;border-radius:8px;font-size:12.5px;color:var(--muted);cursor:pointer}
+  .wtab.on{background:var(--raise);color:#fff}
+  .grow{flex:1}
+  .hostpill{font:600 11px var(--mono);color:var(--faint);border:1px solid var(--line2);border-radius:8px;padding:5px 10px}
+
+  /* workspace grid: navigator | editor | conversation */
+  .grid{flex:1;display:grid;grid-template-columns:236px 1fr 348px;min-height:0}
+
+  /* navigator */
+  .nav{border-right:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;min-height:0}
+  .navhd{display:flex;align-items:center;gap:6px;padding:12px 13px 8px}
+  .navseg{display:flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:#101016;font-size:11.5px}
+  .navseg span{padding:5px 11px;color:var(--muted);cursor:pointer}
+  .navseg span.on{background:var(--raise);color:var(--ink)}
+  .navhd .grow{flex:1}
+  .tree{flex:1;overflow:auto;padding:6px 8px}
+  .grp{font:700 9.5px var(--sans);letter-spacing:.7px;text-transform:uppercase;color:var(--faint);padding:11px 9px 5px}
+  .item{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:8px;cursor:pointer;color:var(--ink2);font-size:12.5px}
+  .item:hover{background:var(--hover)}
+  .item.on{background:var(--accent-soft);color:#fff;box-shadow:inset 0 0 0 1px var(--accent-line)}
+  .item .g{width:15px;text-align:center;color:var(--faint);font-size:12px}
+  .item.on .g{color:var(--v2)}
+  .item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sd{width:7px;height:7px;border-radius:50%;flex:none}
+  .review{margin:8px;padding:10px;border:1px solid var(--accent-line);border-radius:11px;background:linear-gradient(160deg,#1a1730,#121218);text-align:center}
+  .review b{font-size:12px;color:#fff} .review p{margin:3px 0 8px;font-size:11px;color:var(--muted)}
+  .review button{width:100%;font:600 12px var(--sans);border:0;border-radius:9px;padding:8px;cursor:pointer;color:#fff;background:linear-gradient(120deg,var(--v1),var(--v2))}
+
+  /* editor pane */
+  .ed{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .tabbar{display:flex;align-items:stretch;gap:0;border-bottom:1px solid var(--line);background:var(--bg2);overflow-x:auto}
+  .dt{display:flex;align-items:center;gap:8px;padding:9px 13px;border-right:1px solid var(--line);font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+  .dt.on{background:var(--bg);color:var(--ink);box-shadow:inset 0 -2px 0 var(--v2)}
+  .dt .x{color:var(--faint);font-size:13px}
+  .dt .sd{width:6px;height:6px}
+  .ehd{display:flex;align-items:center;gap:11px;padding:13px 24px;border-bottom:1px solid var(--line)}
+  .ehd .glyph{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:12px;background:var(--accent-soft);border:1px solid var(--accent-line);color:#c3c0f7}
+  .ehd h2{margin:0;font-size:15px;font-weight:650;letter-spacing:-.2px}
+  .ehd .k{font:600 9.5px var(--sans);letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font:600 11px var(--sans);padding:4px 10px;border-radius:999px}
+  .pill.lock{color:var(--prog);background:#26200f;border:1px solid #463a1a}
+  .ver{font:600 11px var(--mono);color:var(--faint)}
+  .seg{display:flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--panel2)}
+  .seg span{padding:6px 11px;font-size:12px;color:var(--muted);cursor:pointer}
+  .seg span.on{background:var(--raise);color:var(--ink)}
+  .btn{font:600 12px var(--sans);border:1px solid var(--line2);background:var(--panel2);color:var(--ink2);border-radius:8px;padding:6px 11px;cursor:pointer}
+  .btn.takeover{color:var(--prog);border-color:#463a1a;background:#1f1a0d}
+  .docbody{flex:1;overflow:auto;padding:30px 0}
+  .prose{max-width:680px;margin:0 auto;padding:0 30px;font:15px/1.75 var(--sans);color:var(--ink2)}
+  .prose h1{font:680 26px/1.2 var(--sans);letter-spacing:-.6px;color:var(--ink);margin:0 0 18px}
+  .prose h2{font:650 17px var(--sans);color:var(--ink);margin:26px 0 11px}
+  .prose p{margin:0 0 15px} .prose ul{margin:0 0 15px;padding-left:20px}
+  .prose code{font:500 13px var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#d6c8fb}
+  .prose pre{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px;font:13px/1.6 var(--mono);color:var(--ink2);overflow:auto;margin:0 0 16px}
+  .cmt{background:#26200f88;border-bottom:2px solid var(--prog);border-radius:3px;padding:0 2px}
+
+  /* conversation rail */
+  .rail{border-left:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;min-height:0}
+  .railhd{display:flex;align-items:center;gap:9px;padding:13px 15px;border-bottom:1px solid var(--line)}
+  .railhd b{font-size:13px;font-weight:650} .railhd .c{font:600 10px var(--sans);color:var(--v2);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:999px;padding:2px 7px}
+  .askall{margin-left:auto;font:600 11px var(--sans);border:0;border-radius:8px;padding:6px 10px;cursor:pointer;color:#fff;background:linear-gradient(120deg,var(--v1),var(--v2))}
+  .thread{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+  .cc{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
+  .ct{display:flex;align-items:center;gap:8px;padding:10px 12px}
+  .ava{width:21px;height:21px;border-radius:50%;display:grid;place-items:center;font:800 9px var(--sans);flex:none}
+  .ava.you{background:linear-gradient(140deg,#2b2750,#1b1b30);border:1px solid var(--accent-line);color:#c3c0f7}
+  .ava.ag{background:linear-gradient(140deg,#10301f,#0c2417);border:1px solid #234a33;color:#7fdcae}
+  .who{font-weight:600;font-size:12px} .when{font-size:10.5px;color:var(--faint)}
+  .cstate{margin-left:auto;font:600 9px var(--sans);letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:5px}
+  .st-open{color:var(--prog);background:#26200f} .st-ans{color:var(--rev);background:#11203a}
+  .quote{margin:0 12px 9px;padding:6px 10px;border-left:2px solid var(--prog);background:#1a160c;border-radius:0 8px 8px 0;font-size:11.5px;color:var(--muted);font-style:italic}
+  .cbody{padding:0 12px 12px;font-size:12.5px;color:var(--ink2)}
+  .reply{border-top:1px solid var(--line);background:linear-gradient(180deg,#0d130f,#0b0d0c)}
+  .diff{margin:0 12px 11px;border:1px solid var(--line2);border-radius:9px;overflow:hidden;font:11.5px/1.5 var(--mono)}
+  .dl{padding:3px 10px;white-space:pre-wrap}
+  .del{background:#2a1414;color:#e89a92} .del::before{content:"− ";color:var(--block)}
+  .add{background:#11271b;color:#86e6b9} .add::before{content:"+ ";color:var(--done)}
+  .acts{display:flex;gap:7px;padding:0 12px 12px}
+  .acts button{flex:1;font:600 11.5px var(--sans);border-radius:8px;padding:8px;cursor:pointer;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2)}
+  .acts .accept{color:#fff;border:0;background:linear-gradient(120deg,#3aa978,#4cc38a)}
+  .askrow{border-top:1px solid var(--line);padding:10px 12px}
+  .askrow button{width:100%;font:600 11.5px var(--sans);border:0;border-radius:8px;padding:8px;cursor:pointer;color:#fff;background:linear-gradient(120deg,var(--v1),var(--v2))}
+</style>
+</head>
+<body>
+  <!-- work top bar -->
+  <div class="wbar">
+    <span class="run">build-agentry · workbench</span>
+    <div class="tabs"><span class="wtab">Live graph</span><span class="wtab on">Docs</span><span class="wtab">Activity</span></div>
+    <span class="grow"></span>
+    <span class="hostpill">build-agentry-hy7pda.localhost:4317</span>
+  </div>
+
+  <div class="grid">
+    <!-- navigator -->
+    <div class="nav">
+      <div class="navhd"><div class="navseg"><span class="on">Documents</span><span>Graph</span></div></div>
+      <div class="tree">
+        <div class="grp">Definition</div>
+        <div class="item on"><span class="g">§</span><span class="nm">Spec</span><span class="sd" style="background:var(--done)"></span></div>
+        <div class="item"><span class="g">▦</span><span class="nm">Plan</span><span class="sd" style="background:var(--done)"></span></div>
+        <div class="grp">Decisions · 7</div>
+        <div class="item"><span class="g">◇</span><span class="nm">001 · ports-and-adapters</span></div>
+        <div class="item"><span class="g">◇</span><span class="nm">003 · two-artifact dist</span></div>
+        <div class="item"><span class="g">◇</span><span class="nm">007 · flow live-types</span></div>
+        <div class="grp">Tasks · 27</div>
+        <div class="item"><span class="g">▤</span><span class="nm">014 · markdown-serializer</span><span class="sd" style="background:var(--prog)"></span></div>
+        <div class="item"><span class="g">▤</span><span class="nm">016 · DocDrawer</span><span class="sd" style="background:var(--prog)"></span></div>
+        <div class="item"><span class="g">▤</span><span class="nm">009 · transport + root</span><span class="sd" style="background:var(--done)"></span></div>
+        <div class="item"><span class="g">▤</span><span class="nm">026 · live verification</span><span class="sd" style="background:var(--block)"></span></div>
+      </div>
+      <div class="review"><b>Review all docs</b><p>Walk spec → plan → tasks, annotate, send once.</p><button>Start review →</button></div>
+    </div>
+
+    <!-- editor pane with tabs -->
+    <div class="ed">
+      <div class="tabbar">
+        <div class="dt on"><span class="sd" style="background:var(--done)"></span>Spec<span class="x">×</span></div>
+        <div class="dt"><span class="sd" style="background:var(--prog)"></span>014 · markdown-serializer<span class="x">×</span></div>
+        <div class="dt"><span class="sd" style="background:var(--accent)"></span>ADR 003<span class="x">×</span></div>
+      </div>
+      <div class="ehd">
+        <span class="glyph">§</span>
+        <span><div class="k">Spec</div><h2>@agentry/workbench — Agent Center V2</h2></span>
+        <span class="grow"></span>
+        <span class="pill" style="color:var(--done);background:#112a20;border:1px solid #234a33"><span class="sd" style="background:var(--done)"></span>editable</span>
+        <span class="ver">v e03d06a</span>
+        <span class="seg"><span class="on">Read</span><span>Edit</span><span>Source</span></span>
+      </div>
+      <div class="docbody">
+        <div class="prose">
+          <h1>Spec — @agentry/workbench</h1>
+          <p><b>Intent.</b> A per-project local web app where a human interacts with a run's work — read/edit/comment/approve the <span class="cmt">.agentry artifacts</span> and watch/steer the agents — rendered over the FLOW v1 file seams.</p>
+          <h2>Acceptance criteria</h2>
+          <ul><li>Works home lists every run with status/shape/agents.</li><li>Live renders the run as a React Flow graph with typed edges.</li><li>A node opens as a Tiptap document; in-progress is read-only with lockedBy.</li></ul>
+          <h2>Non-goals</h2>
+          <p>Channels/live-push (V2.1) · global cross-project scope · Yjs co-editing.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- conversation rail -->
+    <div class="rail">
+      <div class="railhd"><b>Conversation</b><span class="c">2</span><button class="askall">✦ Ask agent</button></div>
+      <div class="thread">
+        <div class="cc">
+          <div class="ct"><span class="ava you">YO</span><div class="who">You</div><span class="cstate st-ans">answered</span></div>
+          <div class="quote">“.agentry artifacts”</div>
+          <div class="cbody">Should read “.agentry/ files” for consistency.</div>
+          <div class="reply">
+            <div class="ct"><span class="ava ag">IM</span><div class="who">implementer <span class="when">· just now</span></div></div>
+            <div class="cbody" style="padding-top:0">Fixed the phrasing.</div>
+            <div class="diff"><div class="dl del">over real .agentry artifacts and watch</div><div class="dl add">over real .agentry/ files and watch</div></div>
+            <div class="acts"><button class="accept">✓ Accept</button><button>↻ Iterate</button><button>✕ Reject</button></div>
+          </div>
+        </div>
+        <div class="cc">
+          <div class="ct"><span class="ava you">YO</span><div class="who">You <span class="when">· 3m</span></div><span class="cstate st-open">open</span></div>
+          <div class="quote">“watch/steer the agents”</div>
+          <div class="cbody">Add a line on HOW steering works (the comment→agent loop).</div>
+          <div class="askrow"><button>✦ Ask agent to address</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

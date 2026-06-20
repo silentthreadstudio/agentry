@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agentry Center — doc viewer (redesign)</title>
+<style>
+  :root{
+    --bg:#08080b; --bg2:#0b0b10; --panel:#101016; --panel2:#15151c; --raise:#1c1c25;
+    --line:#1e1e26; --line2:#2b2b36; --hover:#17171f;
+    --ink:#f2f2f6; --ink2:#d2d3dc; --muted:#8a8b98; --faint:#5f606b;
+    --v1:#7c7ff2; --v2:#a463f0; --mag:#e472c9;
+    --accent:#8b7ff5; --accent-soft:#191930; --accent-line:#34344f;
+    --done:#4cc38a; --prog:#ecb24a; --rev:#5b94e6; --block:#e06a5c; --todo:#52535f;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.6 var(--sans);-webkit-font-smoothing:antialiased;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+  /* top bar */
+  .bar{display:flex;align-items:center;gap:14px;padding:13px 22px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0d0d12,#0a0a0e)}
+  .back{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px;cursor:pointer;border:1px solid var(--line2);border-radius:9px;padding:7px 11px}
+  .back:hover{color:var(--ink);background:var(--hover)}
+  .crumb{display:flex;align-items:center;gap:9px;min-width:0}
+  .glyph{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:12px;background:var(--accent-soft);border:1px solid var(--accent-line);color:#c3c0f7}
+  .crumb .t{font-weight:600;letter-spacing:-.2px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .crumb .k{font:600 10px var(--sans);letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
+  .grow{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;font:600 11px var(--sans);padding:5px 11px;border-radius:999px}
+  .pill.lock{color:var(--prog);background:#26200f;border:1px solid #463a1a}
+  .dot{width:7px;height:7px;border-radius:50%}
+  .ver{font:600 11px var(--mono);color:var(--faint)}
+  .btn{font:600 12.5px var(--sans);border-radius:9px;padding:8px 13px;cursor:pointer;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2)}
+  .btn:hover{border-color:var(--faint);background:var(--hover)}
+  .btn.takeover{color:var(--prog);border-color:#463a1a;background:#1f1a0d}
+  .btn.primary{border:0;color:#fff;background:linear-gradient(120deg,var(--v1),var(--v2) 60%,var(--mag))}
+  .seg{display:flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden;background:var(--panel2)}
+  .seg span{padding:7px 12px;font-size:12px;color:var(--muted);cursor:pointer}
+  .seg span.on{background:var(--raise);color:var(--ink)}
+
+  /* body: document + conversation rail */
+  .wrap{flex:1;display:grid;grid-template-columns:1fr 372px;min-height:0}
+  .docpane{overflow:auto;padding:38px 0}
+  .doc{max-width:720px;margin:0 auto;padding:0 40px}
+  .doc h1{font:680 30px/1.2 var(--sans);letter-spacing:-.8px;margin:0 0 6px}
+  .doc .meta{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 30px}
+  .mpill{font:600 11px var(--sans);color:var(--muted);background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:4px 10px;display:inline-flex;gap:7px;align-items:center}
+  .mpill b{color:var(--ink2)}
+  .prose{font:15px/1.75 var(--sans);color:var(--ink2)}
+  .prose h2{font:660 18px var(--sans);letter-spacing:-.3px;color:var(--ink);margin:30px 0 12px}
+  .prose p{margin:0 0 16px}
+  .prose code{font:500 13px var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#d6c8fb}
+  .prose pre{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 17px;overflow:auto;font:13px/1.6 var(--mono);color:var(--ink2);margin:0 0 18px}
+  .prose ul{margin:0 0 16px;padding-left:20px}
+  .prose li{margin:4px 0}
+  /* a commented span */
+  .cmt{background:linear-gradient(180deg,#26200f88,#26200f44);border-bottom:2px solid var(--prog);border-radius:3px;padding:0 2px;cursor:pointer}
+  /* selection bubble (floating) */
+  .bubble{position:absolute;left:300px;top:150px;display:flex;gap:4px;background:#15151d;border:1px solid var(--line2);border-radius:10px;padding:5px;box-shadow:0 12px 30px #000a}
+  .bubble button{font:600 11.5px var(--sans);border:0;background:transparent;color:var(--ink2);padding:6px 9px;border-radius:7px;cursor:pointer}
+  .bubble button:hover{background:var(--hover)}
+  .bubble .acc{color:var(--done)} .bubble .chg{color:var(--prog)}
+
+  /* conversation rail */
+  .rail{border-left:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;min-height:0}
+  .railhd{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line)}
+  .railhd b{font-size:13.5px;font-weight:650}
+  .railhd .c{font:600 10.5px var(--sans);color:var(--v2);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:999px;padding:2px 8px}
+  .railhd .grow{flex:1}
+  .askall{font:600 11.5px var(--sans);border:0;border-radius:8px;padding:7px 11px;cursor:pointer;color:#fff;background:linear-gradient(120deg,var(--v1),var(--v2));display:inline-flex;gap:6px;align-items:center}
+  .thread{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+
+  .c-card{border:1px solid var(--line);border-radius:13px;background:var(--panel);overflow:hidden}
+  .c-top{display:flex;align-items:center;gap:9px;padding:11px 13px}
+  .ava{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:800 9px var(--sans);flex:none}
+  .ava.you{background:linear-gradient(140deg,#2b2750,#1b1b30);border:1px solid var(--accent-line);color:#c3c0f7}
+  .ava.ag{background:linear-gradient(140deg,#10301f,#0c2417);border:1px solid #234a33;color:#7fdcae}
+  .c-who{font-weight:600;font-size:12.5px} .c-when{font-size:11px;color:var(--faint)}
+  .c-state{margin-left:auto;font:600 9.5px var(--sans);letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:5px}
+  .st-open{color:var(--prog);background:#26200f}
+  .st-ans{color:var(--rev);background:#11203a}
+  .st-acc{color:var(--done);background:#10261b}
+  .c-quote{margin:0 13px 10px;padding:7px 11px;border-left:2px solid var(--prog);background:#1a160c;border-radius:0 8px 8px 0;font-size:12px;color:var(--muted);font-style:italic}
+  .c-body{padding:0 13px 13px;font-size:13px;color:var(--ink2)}
+  .c-decision{display:inline-flex;align-items:center;gap:6px;font:600 10.5px var(--sans);color:var(--prog);margin-bottom:7px}
+
+  /* agent reply + diff */
+  .reply{border-top:1px solid var(--line);background:linear-gradient(180deg,#0d130f,#0b0d0c)}
+  .working{display:flex;align-items:center;gap:9px;padding:11px 13px;font-size:12.5px;color:var(--muted)}
+  .spin{width:13px;height:13px;border-radius:50%;border:2px solid #234a33;border-top-color:var(--done);animation:s .7s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .diff{margin:0 13px 13px;border:1px solid var(--line2);border-radius:10px;overflow:hidden;font:12px/1.55 var(--mono)}
+  .diff .dl{padding:3px 11px;white-space:pre-wrap}
+  .diff .del{background:#2a1414;color:#e89a92} .diff .del::before{content:"− ";color:var(--block)}
+  .diff .add{background:#11271b;color:#86e6b9} .diff .add::before{content:"+ ";color:var(--done)}
+  .actions{display:flex;gap:8px;padding:0 13px 13px}
+  .actions button{flex:1;font:600 12px var(--sans);border-radius:9px;padding:9px;cursor:pointer;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2)}
+  .actions .accept{color:#fff;border:0;background:linear-gradient(120deg,#3aa978,#4cc38a)}
+  .actions .iterate:hover,.actions .reject:hover{background:var(--hover)}
+</style>
+</head>
+<body>
+  <!-- top bar -->
+  <div class="bar">
+    <span class="back">← Graph</span>
+    <span class="crumb"><span class="glyph">▤</span><span><span class="k">Task · 014</span><div class="t">markdown-serializer + golden corpus</div></span></span>
+    <span class="grow"></span>
+    <span class="pill lock"><span class="dot" style="background:var(--prog)"></span>Locked · implementer editing</span>
+    <span class="ver">v 4129f23</span>
+    <span class="btn takeover">Take over</span>
+    <span class="seg"><span class="on">Read</span><span>Edit</span><span>Source</span></span>
+  </div>
+
+  <div class="wrap">
+    <!-- document -->
+    <div class="docpane">
+      <div class="doc">
+        <h1>markdown-serializer + golden corpus</h1>
+        <div class="meta">
+          <span class="mpill"><span class="dot" style="background:var(--prog)"></span> in progress</span>
+          <span class="mpill">owns <b>web/doc/markdown-serializer.ts</b></span>
+          <span class="mpill">phase <b>3</b></span>
+        </div>
+        <div class="prose">
+          <h2>Goal</h2>
+          <p>Build the ONE markdown↔Tiptap serializer module plus the golden round-trip corpus that asserts <code>tiptapToMd(mdToTiptap(x)) === normalize(x)</code> over real <span class="cmt">.agentry artifacts</span>. The tripwire against silent corruption.</p>
+          <h2>Approach</h2>
+          <p>Frontmatter is split off before the editor; only <code>body</code> round-trips. One module owns both directions. The comment mark serializes to nothing.</p>
+          <pre>mdToTiptap(body) → ProseMirrorDoc
+tiptapToMd(doc)  → body
+normalize(body)  → canonical, byte-stable</pre>
+          <h2>Acceptance</h2>
+          <ul><li>Round-trip identity holds for every corpus artifact.</li><li>A deliberately-lossy mapping fails a golden test.</li></ul>
+        </div>
+      </div>
+      <div class="bubble"><button class="acc">✓ Approve</button><button class="chg">✎ Request changes</button><button>💬 Comment</button></div>
+    </div>
+
+    <!-- conversation rail -->
+    <div class="rail">
+      <div class="railhd"><b>Conversation</b><span class="c">2</span><span class="grow"></span><button class="askall">✦ Ask agent</button></div>
+      <div class="thread">
+
+        <!-- comment → agent reply → diff (the loop) -->
+        <div class="c-card">
+          <div class="c-top"><span class="ava you">YO</span><span><div class="c-who">You</div></span><span class="c-state st-ans">answered</span></div>
+          <div class="c-quote">“.agentry artifacts”</div>
+          <div class="c-body"><span class="c-decision">✎ Request changes</span><br/>This should say “.agentry/ files” for consistency with the rest of the spec.</div>
+          <div class="reply">
+            <div class="c-top"><span class="ava ag">IM</span><span><div class="c-who">implementer <span class="c-when">· just now</span></div></span></div>
+            <div class="c-body" style="padding-top:0">Updated the phrasing and re-ran the golden suite — still green.</div>
+            <div class="diff">
+              <div class="dl del">over real .agentry artifacts. The tripwire</div>
+              <div class="dl add">over real .agentry/ files. The tripwire</div>
+            </div>
+            <div class="actions"><button class="accept">✓ Accept</button><button class="iterate">↻ Iterate</button><button class="reject">✕ Reject</button></div>
+          </div>
+        </div>
+
+        <!-- an open comment, not yet sent to an agent -->
+        <div class="c-card">
+          <div class="c-top"><span class="ava you">YO</span><span><div class="c-who">You <span class="c-when">· 3m ago</span></div></span><span class="c-state st-open">open</span></div>
+          <div class="c-quote">“normalize(body) → canonical, byte-stable”</div>
+          <div class="c-body">Can we add a note on WHY byte-stability matters here (the optimistic-concurrency link)?</div>
+          <div class="working" style="border-top:1px solid var(--line)"><button class="askall" style="width:100%;justify-content:center">✦ Ask agent to address</button></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</body>
+</html>
