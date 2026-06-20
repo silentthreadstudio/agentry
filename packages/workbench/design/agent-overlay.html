@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agentry — live agent overlay on the graph</title>
+<style>
+:root{
+  --bg:#08080b; --bg2:#0b0b10; --panel:#121218; --panel2:#16161e; --raise:#1d1d27;
+  --line:#1f1f28; --line2:#2c2c38; --hover:#191921;
+  --ink:#f2f2f6; --ink2:#cccdd6; --muted:#8a8b98; --faint:#5f606b;
+  --v1:#7c7ff2; --v2:#a463f0; --accent:#8b7ff5; --accent-soft:#191930; --accent-ink:#c3c0f7; --accent-line:#363659;
+  --done:#4cc38a; --prog:#ecb24a; --rev:#5b94e6; --block:#e06a5c; --todo:#4f505c;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+  --r-sm:6px; --r-md:8px; --r-lg:10px; --r-xl:12px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13.5px;
+  background-image:radial-gradient(1100px 600px at 80% -10%,#15122b 0%,transparent 60%),
+    radial-gradient(900px 500px at 0% 20%,#101826 0%,transparent 55%);}
+.stage{position:relative;height:100vh;overflow:hidden}
+
+/* top bar */
+.bar{position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;gap:12px;
+  padding:0 18px;border-bottom:1px solid var(--line);background:#0a0a0fcc;backdrop-filter:blur(8px);z-index:5}
+.bar .seg{display:flex;background:var(--panel2);border:1px solid var(--line2);border-radius:999px;padding:2px}
+.bar .seg b{font:600 11.5px var(--sans);padding:4px 12px;border-radius:999px}
+.bar .seg b.on{background:var(--raise);color:var(--ink)}
+.bar .seg b:not(.on){color:var(--muted)}
+.bar .live{margin-left:auto;display:flex;align-items:center;gap:6px;font:600 11px var(--sans);color:var(--done)}
+.bar .live i{width:7px;height:7px;border-radius:50%;background:var(--done);box-shadow:0 0 0 0 var(--done);
+  animation:beat 1.6s infinite}
+@keyframes beat{0%{box-shadow:0 0 0 0 #4cc38a66}70%{box-shadow:0 0 0 7px #4cc38a00}100%{box-shadow:0 0 0 0 #4cc38a00}}
+
+/* the canvas */
+.canvas{position:absolute;inset:46px 0 0 0}
+svg.edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+/* ── node card (Option B) ─────────────────────────────────── */
+.node{position:absolute;width:188px;background:var(--panel);border:1px solid var(--line2);
+  border-radius:var(--r-lg);padding:10px 11px;box-shadow:0 10px 26px #0006}
+.node .top{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.node .glyph{width:19px;height:19px;border-radius:5px;display:grid;place-items:center;font-size:10px;flex:none;
+  background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink)}
+.node .kind{font:700 8.5px var(--sans);letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
+.node .sd{margin-left:auto;width:8px;height:8px;border-radius:50%;flex:none}
+.node .ttl{font:650 12.5px var(--sans);color:var(--ink);letter-spacing:-.1px;margin-bottom:2px}
+.node .desc{font:400 10.5px var(--sans);color:var(--muted);line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* state tints */
+.node.done .sd{background:var(--done)}
+.node.todo{opacity:.72}.node.todo .sd{background:var(--todo)}
+.node.review .sd{background:var(--rev)}
+
+/* ── in-progress: pulsing ring + agent chip + live timer ──── */
+.node.work{border-color:color-mix(in srgb,var(--prog) 55%,var(--line2))}
+.node.work .sd{background:var(--prog)}
+.node.work::after{content:"";position:absolute;inset:-4px;border-radius:13px;border:1.5px solid var(--prog);
+  opacity:.0;animation:pulse 1.8s ease-out infinite;pointer-events:none}
+@keyframes pulse{0%{opacity:.55;transform:scale(1)}100%{opacity:0;transform:scale(1.04)}}
+.agentchip{display:flex;align-items:center;gap:6px;margin-top:8px;padding:5px 7px;border-radius:var(--r-md);
+  background:color-mix(in srgb,var(--accent) 13%,var(--panel2));border:1px solid var(--accent-line)}
+.agentchip .ava{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;flex:none;
+  font:800 9px var(--sans);color:var(--accent-ink);background:color-mix(in srgb,var(--accent) 22%,transparent);
+  border:1px solid var(--accent-line)}
+.agentchip .role{font:600 10.5px var(--sans);color:var(--ink)}
+.agentchip .timer{margin-left:auto;font:600 10px var(--mono);color:var(--prog);
+  background:color-mix(in srgb,var(--prog) 12%,transparent);border:1px solid color-mix(in srgb,var(--prog) 32%,transparent);
+  border-radius:999px;padding:2px 7px}
+
+/* ── blocked: red glow ────────────────────────────────────── */
+.node.blocked{border-color:color-mix(in srgb,var(--block) 60%,var(--line2));
+  animation:redglow 2s ease-in-out infinite}
+.node.blocked .sd{background:var(--block)}
+@keyframes redglow{0%,100%{box-shadow:0 10px 26px #0006,0 0 0 0 #e06a5c00}50%{box-shadow:0 10px 26px #0006,0 0 14px 1px #e06a5c4d}}
+.node.blocked .reason{margin-top:8px;font:600 10px var(--sans);color:var(--block);
+  display:flex;align-items:center;gap:5px}
+
+/* ── roster legend ────────────────────────────────────────── */
+.roster{position:absolute;left:18px;bottom:18px;width:236px;background:#0c0c12e6;border:1px solid var(--line2);
+  border-radius:var(--r-lg);padding:11px;backdrop-filter:blur(10px);box-shadow:0 14px 34px #0008;z-index:4}
+.roster h4{margin:0 0 8px;font:700 9.5px var(--sans);letter-spacing:.6px;text-transform:uppercase;color:var(--faint)}
+.rrow{display:flex;align-items:center;gap:8px;padding:6px 4px}
+.rrow + .rrow{border-top:1px solid var(--line)}
+.rrow .ava{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none;font:800 9px var(--sans)}
+.rrow.on .ava{color:var(--accent-ink);background:color-mix(in srgb,var(--accent) 20%,transparent);border:1px solid var(--accent-line)}
+.rrow.idle .ava{color:var(--faint);background:var(--panel2);border:1px solid var(--line2)}
+.rrow .who{font:650 11.5px var(--sans);color:var(--ink)}
+.rrow .meta{font:500 10px var(--sans);color:var(--muted)}
+.rrow .st{margin-left:auto;display:flex;align-items:center;gap:5px;font:600 10px var(--sans)}
+.rrow .st i{width:7px;height:7px;border-radius:50%}
+.rrow.work .st{color:var(--prog)} .rrow.work .st i{background:var(--prog)}
+.rrow.block .st{color:var(--block)} .rrow.block .st i{background:var(--block)}
+.rrow.idle .st{color:var(--faint)} .rrow.idle .st i{background:var(--todo)}
+
+/* legend for edges */
+.elegend{position:absolute;right:18px;bottom:18px;display:flex;flex-direction:column;gap:6px;
+  background:#0c0c12cc;border:1px solid var(--line2);border-radius:var(--r-md);padding:9px 11px;font-size:10.5px;color:var(--muted);z-index:4}
+.elegend div{display:flex;align-items:center;gap:7px}
+.elegend .ln{width:22px;height:0;border-top:2px solid var(--faint)}
+.elegend .ln.blk{border-top:2px dashed var(--block)}
+
+.note{position:absolute;top:56px;left:50%;transform:translateX(-50%);max-width:680px;text-align:center;
+  font-size:11.5px;color:var(--muted);background:#0c0c12cc;border:1px solid var(--line2);border-radius:var(--r-lg);
+  padding:8px 14px;z-index:5;line-height:1.6}
+.note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="bar">
+    <div class="seg"><b class="on">Live graph</b><b>Docs</b><b>Activity</b></div>
+    <span class="live"><i></i> live · 1 agent working</span>
+  </div>
+
+  <div class="note"><b>Live execution on the graph</b> — in-progress nodes pulse with the assigned agent + a running timer; a blocked node glows red and its blocks-edge animates; the roster (bottom-left) lists who's active. All driven by /api/agents + the ws event stream.</div>
+
+  <div class="canvas">
+    <!-- edges drawn under the nodes -->
+    <svg class="edges" viewBox="0 0 1100 640" preserveAspectRatio="none">
+      <defs>
+        <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7z" fill="#5f606b"/></marker>
+        <marker id="arrR" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7z" fill="#e06a5c"/></marker>
+      </defs>
+      <!-- derives: spec → plan -->
+      <path d="M250 120 L250 200" stroke="#3a3a48" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+      <!-- plan → tasks -->
+      <path d="M250 280 C250 330 470 320 470 372" stroke="#3a3a48" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+      <path d="M250 280 C250 360 250 360 250 372" stroke="#3a3a48" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+      <path d="M250 280 C250 330 760 320 760 372" stroke="#3a3a48" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+      <!-- blocks: task-003 (working) blocks task-005 (blocked) — animated red glow -->
+      <path class="blkedge" d="M558 410 L672 410" stroke="#e06a5c" stroke-width="2.5" stroke-dasharray="7 5" fill="none" marker-end="url(#arrR)"/>
+    </svg>
+
+    <!-- spec (done) -->
+    <div class="node done" style="left:156px;top:64px">
+      <div class="top"><span class="glyph">§</span><span class="kind">spec</span><span class="sd"></span></div>
+      <div class="ttl">Agent Center V2</div>
+      <div class="desc">Per-project local web app over the FLOW file seams.</div>
+    </div>
+    <!-- plan (done) -->
+    <div class="node done" style="left:156px;top:208px">
+      <div class="top"><span class="glyph">▦</span><span class="kind">plan</span><span class="sd"></span></div>
+      <div class="ttl">Architecture map</div>
+      <div class="desc">Server · web · shared; ports-and-adapters; dist-lockstep.</div>
+    </div>
+
+    <!-- task-001 (done) -->
+    <div class="node done" style="left:156px;top:380px">
+      <div class="top"><span class="glyph">▤</span><span class="kind">task-001</span><span class="sd"></span></div>
+      <div class="ttl">Server scaffold</div>
+      <div class="desc">Port-lock, host routing, chokidar watch.</div>
+    </div>
+
+    <!-- task-003 (in-progress, implementer working) -->
+    <div class="node work" style="left:376px;top:380px">
+      <div class="top"><span class="glyph">▤</span><span class="kind">task-003</span><span class="sd"></span></div>
+      <div class="ttl">Comment write boundary</div>
+      <div class="desc">Lock + optimistic concurrency on the artifact write.</div>
+      <div class="agentchip"><span class="ava">✳</span><span class="role">implementer</span><span class="timer">2m 14s</span></div>
+    </div>
+
+    <!-- task-005 (blocked by task-003) -->
+    <div class="node blocked" style="left:680px;top:380px">
+      <div class="top"><span class="glyph">▤</span><span class="kind">task-005</span><span class="sd"></span></div>
+      <div class="ttl">Diff / accept loop</div>
+      <div class="desc">Old-vs-new version with Accept / Reject / Iterate.</div>
+      <div class="reason">⛔ blocked by task-003</div>
+    </div>
+  </div>
+
+  <!-- roster legend -->
+  <div class="roster">
+    <h4>Agents · live</h4>
+    <div class="rrow on work">
+      <span class="ava">✳</span>
+      <div><div class="who">implementer</div><div class="meta">task-003 · since 2m</div></div>
+      <span class="st"><i></i>working</span>
+    </div>
+    <div class="rrow idle block">
+      <span class="ava">◇</span>
+      <div><div class="who">verifier</div><div class="meta">waiting on task-003</div></div>
+      <span class="st"><i></i>blocked</span>
+    </div>
+    <div class="rrow idle">
+      <span class="ava">✶</span>
+      <div><div class="who">architect</div><div class="meta">plan · done 6m ago</div></div>
+      <span class="st"><i></i>idle</span>
+    </div>
+  </div>
+
+  <div class="elegend">
+    <div><span class="ln"></span> derives / depends</div>
+    <div><span class="ln blk"></span> blocks (active)</div>
+  </div>
+</div>
+</body>
+</html>

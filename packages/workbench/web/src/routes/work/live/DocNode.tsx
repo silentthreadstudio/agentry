@@ -16,6 +16,7 @@ import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import type { DocNode as DocNodeType, DocNodeData } from "./layout-dagre.js";
 import { useOpenCommentCount } from "./doc/comment-store.js";
+import { formatElapsed, useNowTick, type NodeAgent } from "./use-roster.js";
 
 // ── Hover-highlight context (task 007: kill the node flicker) ───────────────────────────────────────
 // The hover-highlight (lit the hovered node + its neighbors, dim the rest) used to be stamped onto every
@@ -37,6 +38,21 @@ export const HoverProvider = HoverContext.Provider;
 function useHighlight(id: string): boolean | undefined {
   const { litSet } = useContext(HoverContext);
   return litSet ? litSet.has(id) : undefined;
+}
+
+// ── Agent overlay context (live agent tracking, doc 10 §3a) ─────────────────────────────────────────────
+// Like HoverContext: the live "who's working which node" map rides a context, NOT the node `data`, so the
+// node array stays referentially stable (the timer ticking never re-diffs the graph). Panorama provides the
+// `byNode` map from useRoster; the in-progress card reads its own entry and renders the agent chip + timer.
+export interface AgentOverlay {
+  byNode: ReadonlyMap<string, NodeAgent> | null;
+}
+export const AgentContext = createContext<AgentOverlay>({ byNode: null });
+export const AgentProvider = AgentContext.Provider;
+
+function useNodeAgent(id: string): NodeAgent | undefined {
+  const { byNode } = useContext(AgentContext);
+  return byNode?.get(id);
 }
 
 // FLOW's closed status, reached transitively through the read-model (DocNodeData.status is FLOW's
@@ -101,6 +117,9 @@ function DocCard({ id, data }: { id: string; data: DocNodeData }) {
   // Open review comments on this doc (AC5): the node id IS the docId (Panorama's selectDoc(n.id) and the
   // gate sidecar both key on it), so the badge reads the same shared store the rail/bubble write to.
   const openComments = useOpenCommentCount(data.runId, id);
+  // The agent working THIS node (live tracking): present only when an agent has entered it. Shown in the
+  // footer for an in-progress node — who's on it + how long. Read from AgentContext (stable node array).
+  const nodeAgent = useNodeAgent(id);
   // hover-highlight overrides the resting visual: a dimmed node loses its lit/prog emphasis. When nothing
   // is hovered (highlight === undefined), the status-derived resting state stands. Read from HoverContext
   // (task 007) instead of `data` so the node array stays stable across hovers.
@@ -127,6 +146,8 @@ function DocCard({ id, data }: { id: string; data: DocNodeData }) {
       <div className="bn-ft">
         {data.blocked ? (
           <span className="bn-block">blocked — waiting upstream</span>
+        ) : data.status === "in-progress" && nodeAgent ? (
+          <AgentChip agent={nodeAgent} />
         ) : data.status === "todo" ? (
           <span className="bn-faint">unassigned</span>
         ) : (
@@ -143,6 +164,20 @@ function DocCard({ id, data }: { id: string; data: DocNodeData }) {
       </div>
       <Handle type="source" position={Position.Bottom} />
     </div>
+  );
+}
+
+// The agent chip in an in-progress card's footer — the dispatched role + a live elapsed timer. The timer
+// ticks via `useNowTick` (a local 1s clock), so only this chip re-renders each second, never the graph.
+function AgentChip({ agent }: { agent: NodeAgent }) {
+  const now = useNowTick();
+  const elapsed = agent.sinceIso ? formatElapsed(agent.sinceIso, now) : "";
+  return (
+    <span className="bn-agent" title={`${agent.role} · working`}>
+      <span className="bn-agent-ava" aria-hidden="true">✳</span>
+      <span className="bn-agent-role">{agent.role}</span>
+      {elapsed ? <span className="bn-agent-timer">{elapsed}</span> : null}
+    </span>
   );
 }
 

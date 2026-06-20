@@ -20,8 +20,10 @@ import {
 import type { GraphEdgeKind, GraphModel } from "@agentry/workbench-shared";
 import { fetchGraph } from "../../../api/client.js";
 import { getWsClient } from "../../../api/ws-client.js";
-import { HoverProvider, nodeTypes } from "./DocNode.js";
+import { AgentProvider, HoverProvider, nodeTypes } from "./DocNode.js";
 import { edgeTypes, Legend, markerForKind } from "./edge-types.js";
+import { AgentRoster } from "./AgentRoster.js";
+import { useRoster } from "./use-roster.js";
 import { layoutGraph } from "./layout-dagre.js";
 import type { AdrRef, DocNode } from "./layout-dagre.js";
 import { selectDoc } from "../docs/doc-tabs.js";
@@ -178,6 +180,11 @@ function PanoramaCanvas({ runId }: { runId: string }) {
 
   const hoverValue = useMemo(() => ({ litSet }), [litSet]);
 
+  // Live agent overlay (doc 10 §3a): who's on which node + the roster. Fetched + ws-refreshed in the hook;
+  // the `byNode` map rides AgentContext (stable across timer ticks — the chip/panel tick their own clocks).
+  const roster = useRoster(runId);
+  const agentValue = useMemo(() => ({ byNode: roster.byNode }), [roster]);
+
   // Stabilize hover (task 007): as the cursor pans across the canvas it crosses node boundaries, firing
   // enter/leave in quick succession. Toggling hover id→null→id restarts the lit/dim CSS transitions and
   // flashes. Guard against no-op sets, and debounce the leave→null by a frame so an immediately-following
@@ -216,6 +223,7 @@ function PanoramaCanvas({ runId }: { runId: string }) {
   return (
     <div className="flowwrap">
       <HoverProvider value={hoverValue}>
+       <AgentProvider value={agentValue}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -244,7 +252,9 @@ function PanoramaCanvas({ runId }: { runId: string }) {
             }}
           />
         </ReactFlow>
+       </AgentProvider>
       </HoverProvider>
+      <AgentRoster agents={roster.agents} />
       <Legend />
       {/* Task 008: the drawer-over-graph is RETIRED. A doc-node click now opens the doc as a TAB in the
           Docs workspace (selectDoc + navigate to /docs); the editor / comment rail / diff drawer all live

@@ -51,6 +51,21 @@
 }
 .bn-node.blocked {
   border-color: var(--block);
+  animation: rf-redglow 2s ease-in-out infinite;
+}
+@keyframes rf-redglow {
+  0%,
+  100% {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38), 0 0 0 0 color-mix(in srgb, var(--block) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38), 0 0 13px 1px color-mix(in srgb, var(--block) 34%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bn-node.blocked {
+    animation: none;
+  }
 }
 
 @keyframes rf-pulse {
@@ -372,4 +387,150 @@
   width: 22px;
   height: 0;
   border-top-width: 2px;
+}
+
+/* ── live agent overlay (doc 10 §3a) ──────────────────────────────────────────────────────────────────── */
+/* the agent chip in an in-progress card's footer: role + a live elapsed timer */
+.bn-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 4px 3px 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid var(--accent-line);
+}
+.bn-agent-ava {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  font: 800 8px var(--sans);
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.bn-agent-role {
+  font: 600 10.5px var(--sans);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bn-agent-timer {
+  flex: none;
+  font: 600 9.5px var(--mono);
+  color: var(--prog);
+  background: color-mix(in srgb, var(--prog) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--prog) 30%, transparent);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+/* the roster panel docked bottom-left over the canvas */
+.ar-panel {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: 230px;
+  z-index: 4;
+  background: color-mix(in srgb, var(--bg) 90%, #000);
+  border: 1px solid var(--line2);
+  border-radius: var(--r-lg);
+  padding: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+}
+.ar-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.ar-t {
+  font: 700 9.5px var(--sans);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.ar-count {
+  margin-left: auto;
+  font: 600 10px var(--sans);
+  color: var(--prog);
+}
+.ar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 3px;
+}
+.ar-row + .ar-row {
+  border-top: 1px solid var(--line);
+}
+.ar-ava {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  font: 800 9px var(--sans);
+  color: var(--faint);
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+}
+.ar-row.working .ar-ava {
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: var(--accent-line);
+}
+.ar-who {
+  flex: 1;
+  min-width: 0;
+}
+.ar-role {
+  font: 650 11.5px var(--sans);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ar-meta {
+  font: 500 10px var(--sans);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ar-st {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 10px var(--sans);
+}
+.ar-st i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.ar-row.working .ar-st {
+  color: var(--prog);
+}
+.ar-row.working .ar-st i {
+  background: var(--prog);
+}
+.ar-row.blocked .ar-st {
+  color: var(--block);
+}
+.ar-row.blocked .ar-st i {
+  background: var(--block);
+}
+.ar-row.done .ar-st {
+  color: var(--done);
+}
+.ar-row.done .ar-st i {
+  background: var(--done);
 }
