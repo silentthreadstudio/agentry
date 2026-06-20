@@ -17765,29 +17765,11 @@ var WriteService = class {
     );
     return { ok: true, version };
   }
-  // Take over: the explicit lock transition the SERVER performs (the human claims the edit). Re-reads
-  // the task, then writes back its frontmatter with the lock released (`status` → `in-review`, the
-  // not-in-progress state a human edit moves to; `lockedBy` → the claimer), re-stamping the version.
-  // After this, `writeArtifact` against the same task passes the lock gate. A no-op body write keeps
-  // the body byte-identical so the take-over does not alter the prose (the lock flip is frontmatter).
-  takeOver(req) {
-    const target = { taskNo: req.taskNo };
-    const current = this.writer.readArtifact(req.run, target);
-    if (current === void 0) return { ok: false, reason: "not-found" };
-    const frontmatter = {
-      ...current.frontmatter,
-      status: "in-review",
-      // off `in-progress` → the lock gate now passes
-      lockedBy: req.by
-      // the human now holds the edit
-    };
-    this.writer.writeArtifact(req.run, target, frontmatter, current.body);
-    return { ok: true };
-  }
   // Set a task's lifecycle status (the human override — cleanup note 3: agents sometimes don't move a
-  // task to done). Re-reads the task, writes its frontmatter with the new `status`, re-stamps the version.
-  // When the status leaves `in-progress`, the agent lock is released (`lockedBy` dropped) so the doc is
-  // free; setting it TO `in-progress` keeps any existing holder. `not-found` for an absent task file.
+  // task to done). This is ALSO how a human unblocks an in-progress doc for editing: moving it off
+  // `in-progress` releases the lock (`lockedBy` dropped) so the doc becomes editable — there is no
+  // take-over. Re-reads the task, writes its frontmatter with the new `status`, re-stamps the version.
+  // Setting it TO `in-progress` keeps any existing holder. `not-found` for an absent task file.
   setStatus(req) {
     const target = { taskNo: req.taskNo };
     const current = this.writer.readArtifact(req.run, target);
@@ -18288,7 +18270,7 @@ function matchWorkReview(path) {
   }
 }
 function matchWritePath(path) {
-  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover|status)$/.exec(path);
+  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|status)$/.exec(path);
   if (!m || m[1] === void 0 || m[2] === void 0) return null;
   try {
     return { kind: m[2], runId: decodeURIComponent(m[1]) };
@@ -18343,7 +18325,7 @@ function targetFromDocId(raw) {
   }
   return null;
 }
-function taskNoFromTakeover(body) {
+function taskNoFromTarget(body) {
   const target = body.target;
   if (typeof target === "string" && target.startsWith("task-")) {
     const taskNo2 = target.slice("task-".length);
@@ -18477,8 +18459,6 @@ async function handlePostRequest(req, res, deps) {
       return handleStatus(res, deps, runId, body);
     case "artifact":
       return handleArtifact(res, deps, runId, body);
-    case "takeover":
-      return handleTakeover(res, deps, runId, body);
     default: {
       const _exhaustive = write.kind;
       return _exhaustive;
@@ -18526,7 +18506,7 @@ function handleResolve(res, deps, runId, body) {
 }
 function handleStatus(res, deps, runId, body) {
   if (!isRecord3(body)) return reject(res, 400, "invalid_body");
-  const taskNo = taskNoFromTakeover(body);
+  const taskNo = taskNoFromTarget(body);
   if (taskNo === null) return reject(res, 400, "not_a_task");
   const status = FlowTaskStatus.safeParse(body.status);
   if (!status.success) return reject(res, 400, "invalid_status");
@@ -18563,20 +18543,6 @@ function handleArtifact(res, deps, runId, body) {
     return reject(res, 409, "stale", { currentVersion: outcome.currentVersion });
   }
   return reject(res, 404, "not_found");
-}
-function handleTakeover(res, deps, runId, body) {
-  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
-  const taskNo = taskNoFromTakeover(body);
-  if (taskNo === null) return reject(res, 400, "invalid_target");
-  const rawBy = body.by;
-  const by = typeof rawBy === "string" && rawBy.length > 0 ? rawBy : "human";
-  const outcome = deps.writeService.takeOver({ run: runId, taskNo, by });
-  if (!outcome.ok) return reject(res, 404, "not_found");
-  const target = { taskNo };
-  const doc = reloadDoc(deps.reader, runId, target);
-  if (doc) deps.transport.push(runId, { type: "doc-updated", docId: docIdOf(target), doc });
-  sendJson(res, 200, { ok: true });
-  return true;
 }
 
 // src/persistence/permission-writer.ts

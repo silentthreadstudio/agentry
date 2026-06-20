@@ -90,7 +90,7 @@ export function createHttpHandler(
     // tried before the write/static path; a matched reader route answers here.
     if (handleReaderRequest(req, res, readers)) return;
 
-    // The body-consuming dispatchers are async. The write surface (POST /comment,/artifact,/takeover) and
+    // The body-consuming dispatchers are async. The write surface (POST /comment,/artifact,/status) and
     // the project-global permission relay (GET /api/permissions, POST /api/permissions/:id) each answer a
     // matched path, otherwise fall through to static-serving below. The permission relay is tried after
     // the run-scoped write surface (the paths don't overlap; order is just a stable ladder). A non-write,

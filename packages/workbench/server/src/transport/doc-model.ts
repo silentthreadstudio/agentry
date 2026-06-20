@@ -81,10 +81,10 @@ export function targetFromDocId(raw: unknown): ArtifactTarget | "read_only" | nu
   return null;
 }
 
-// Derive the task number for a takeover from the request body — accept the `docId` form
-// (`target: "task-<NNN>"`, the shape the web sends) or a legacy `{ taskNo }`. Only TASK docs are
-// take-overable (they alone carry status/lockedBy); a non-task `target` (spec/plan/adr-*) yields null.
-export function taskNoFromTakeover(body: Record<string, unknown>): string | null {
+// Derive the task number from a write request body — accept the `docId` form (`target: "task-<NNN>"`, the
+// shape the web sends) or a legacy `{ taskNo }`. Only TASK docs carry a number; a non-task `target`
+// (spec/plan/adr-*) yields null. Used by the status write (the only task-targeted mutation now).
+export function taskNoFromTarget(body: Record<string, unknown>): string | null {
   const target = body.target;
   if (typeof target === "string" && target.startsWith("task-")) {
     const taskNo = target.slice("task-".length);

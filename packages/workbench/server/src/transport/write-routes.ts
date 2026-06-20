@@ -7,7 +7,6 @@
 //   POST /api/work/:id/resolve   → { ok:true } | 404           — mark a comment resolved on disk (VISION §6)
 //   POST /api/work/:id/status    → { ok:true } | 404           — set a task's lifecycle status (human override)
 //   POST /api/work/:id/artifact  → DocModel | 409 | 404        — guarded artifact write (AC6/AC7)
-//   POST /api/work/:id/takeover  → { ok:true } | 404           — flip the edit lock (AC4)
 //
 // This module is the thin HTTP-shape adapter over `WriteService` (writes): it parses the path/body, calls
 // the service, and serializes the typed outcome. It holds no run state and does no fs/parse itself. The two
@@ -24,7 +23,7 @@ import type { ArtifactTarget } from "../persistence/flow-writer.js";
 import type { Transport } from "../domain/ports.js";
 import { isRecord, readJsonBody, reject, sendJson } from "./http-kit.js";
 import { matchWritePath, resolveRun } from "./route-match.js";
-import { docIdOf, reloadDoc, targetFromDocId, taskNoFromTakeover } from "./doc-model.js";
+import { docIdOf, reloadDoc, targetFromDocId, taskNoFromTarget } from "./doc-model.js";
 
 // The write-side dependencies the POST handlers need, threaded by the composition root alongside the
 // `WorkReader` task 9 already injects. `WriteService` enforces the invariants; `Transport` fans the
@@ -77,8 +76,6 @@ export async function handlePostRequest(
       return handleStatus(res, deps, runId, body);
     case "artifact":
       return handleArtifact(res, deps, runId, body);
-    case "takeover":
-      return handleTakeover(res, deps, runId, body);
     default: {
       const _exhaustive: never = write.kind;
       return _exhaustive;
@@ -148,7 +145,7 @@ function handleResolve(res: ServerResponse, deps: WriteDeps, runId: string, body
 // dots + graph re-tint (the client refetches the graph on any ws message).
 function handleStatus(res: ServerResponse, deps: WriteDeps, runId: string, body: unknown): boolean {
   if (!isRecord(body)) return reject(res, 400, "invalid_body");
-  const taskNo = taskNoFromTakeover(body); // reuse: accepts `target: "task-<NNN>"`
+  const taskNo = taskNoFromTarget(body); // reuse: accepts `target: "task-<NNN>"`
   if (taskNo === null) return reject(res, 400, "not_a_task");
   const status = FlowTaskStatus.safeParse(body.status);
   if (!status.success) return reject(res, 400, "invalid_status");
@@ -199,26 +196,3 @@ function handleArtifact(res: ServerResponse, deps: WriteDeps, runId: string, bod
   return reject(res, 404, "not_found"); // not-found
 }
 
-// POST /api/work/:id/takeover → flip the edit lock (AC4). The server performs the lock transition (the
-// human claiming the edit); ok→{ok:true}+push, not-found→404.
-function handleTakeover(res: ServerResponse, deps: WriteDeps, runId: string, body: unknown): boolean {
-  if (!isRecord(body)) return reject(res, 400, "invalid_body");
-  // Takeover applies to TASK docs only (only tasks carry status/lockedBy). The web sends the `docId`
-  // STRING as `target` ("task-<NNN>"); a legacy `{ taskNo }` is still accepted. Anything that is not a
-  // task doc (spec/plan/adr-*) is rejected — those carry no lock to take. `by` defaults to "human"
-  // (the generic takeover holder — single-user local workbench).
-  const taskNo = taskNoFromTakeover(body);
-  if (taskNo === null) return reject(res, 400, "invalid_target");
-  const rawBy = body.by;
-  const by = typeof rawBy === "string" && rawBy.length > 0 ? rawBy : "human";
-
-  const outcome = deps.writeService.takeOver({ run: runId, taskNo, by });
-  if (!outcome.ok) return reject(res, 404, "not_found");
-
-  // The lock flip is a frontmatter write — push the fresh doc so the editor reconciles the new lock state.
-  const target: ArtifactTarget = { taskNo };
-  const doc: DocModel | undefined = reloadDoc(deps.reader, runId, target);
-  if (doc) deps.transport.push(runId, { type: "doc-updated", docId: docIdOf(target), doc });
-  sendJson(res, 200, { ok: true });
-  return true;
-}

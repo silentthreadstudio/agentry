@@ -2,8 +2,8 @@
 // proven against a FAKE FlowWriterPort (no fs, no ws — the port purity ADR-001 buys), so the lock +
 // optimistic-concurrency gates are tested as observable behavior, not implementation:
 //   AC6 — a stale `baseVersion` is rejected; a fresh write bumps the version.
-//   AC4 — a write against `status===in-progress` is rejected with `lockedBy`; `takeOver` flips the
-//         lock, after which the write is allowed.
+//   AC4 — a write against `status===in-progress` is rejected with `lockedBy`; setStatus off in-progress
+//          releases the lock (the unblock path — take-over removed).
 //   AC5 — `addComment` appends a valid `ReviewComment` (3-way anchor) even when the doc is locked.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -157,7 +157,7 @@ test("writeArtifact returns not-found when the artifact is absent", () => {
   assert.equal(outcome.ok === false && outcome.reason, "not-found");
 });
 
-// ── AC4: the lock + take-over ─────────────────────────────────────────────────────────────────────
+// ── AC4: the lock + the status-change unblock (take-over removed) ────────────────────────────────────
 
 test("writeArtifact against status===in-progress is rejected with lockedBy (AC4)", () => {
   const front = { title: "T", status: "in-progress", lockedBy: "implementer" };
@@ -178,39 +178,29 @@ test("writeArtifact against status===in-progress is rejected with lockedBy (AC4)
   assert.equal(fake.store.get("task:015")?.body, body, "a locked doc is not written");
 });
 
-test("takeOver flips the lock, then the write is allowed (AC4)", () => {
+test("setStatus off in-progress releases the lock, then the write is allowed (the unblock path)", () => {
   const front = { title: "T", status: "in-progress", lockedBy: "implementer" };
   const body = "## meta\n\nthe task";
   const fake = fakeWriter({ "task:015": { frontmatter: front, body } });
   const svc = new WriteService(fake.port);
 
-  // 1. Take over — the explicit server lock transition (the human claims the edit).
-  const takeover = svc.takeOver({ run: "r", taskNo: "015", by: "human" });
-  assert.equal(takeover.ok, true);
-
-  // The lock is released and the body is byte-identical (the take-over flips frontmatter only).
+  // The human unblocks by changing the status (no take-over) — moving off in-progress drops the lock.
+  assert.equal(svc.setStatus({ run: "r", taskNo: "015", status: "in-review" }).ok, true);
   const after = fake.store.get("task:015");
   assert.equal(after?.frontmatter.status, "in-review", "status moved off in-progress");
-  assert.equal(after?.frontmatter.lockedBy, "human", "the human now holds the lock");
-  assert.equal(after?.body, body, "take-over does not alter the prose");
+  assert.equal(after?.frontmatter.lockedBy, undefined, "the agent lock is dropped");
+  assert.equal(after?.body, body, "the status change does not alter the prose");
 
-  // 2. The write now passes the lock gate (fresh baseVersion against the post-take-over state).
-  const fresh = computeVersion(body, { title: "T", status: "in-review", lockedBy: "human" });
+  // The write now passes the lock gate (fresh baseVersion against the post-unblock state).
+  const fresh = computeVersion(body, { title: "T", status: "in-review" });
   const outcome = svc.writeArtifact({
     run: "r",
     target: { taskNo: "015" },
     baseVersion: fresh,
-    newBody: "## meta\n\nedited after take-over",
+    newBody: "## meta\n\nedited after unblock",
   });
-
-  assert.equal(outcome.ok, true, "the write is allowed after take-over");
-  assert.equal(fake.store.get("task:015")?.body, "## meta\n\nedited after take-over");
-});
-
-test("takeOver returns not-found for an absent task", () => {
-  const svc = new WriteService(fakeWriter().port);
-  const outcome = svc.takeOver({ run: "r", taskNo: "099", by: "human" });
-  assert.equal(outcome.ok === false && outcome.reason, "not-found");
+  assert.equal(outcome.ok, true, "the write is allowed after the status unblock");
+  assert.equal(fake.store.get("task:015")?.body, "## meta\n\nedited after unblock");
 });
 
 // ── AC5: comments are allowed even when locked ──────────────────────────────────────────────────────

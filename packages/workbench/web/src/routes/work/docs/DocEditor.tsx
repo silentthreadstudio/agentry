@@ -29,7 +29,6 @@ import {
   type ProseMirrorDoc,
 } from "../live/doc/markdown-serializer.js";
 import { CommentMark } from "../live/doc/CommentMark.js";
-import { LockBar } from "../live/doc/LockBar.js";
 import { SourceMode } from "../live/doc/SourceMode.js";
 import { kindGlyphOf } from "./doc-tree.js";
 import { fetchDoc, fmString, postArtifact, postStatus } from "./doc-io.js";
@@ -286,17 +285,6 @@ function DocBody({
           </button>
         </div>
       </div>
-
-      {locked || !readOnly ? (
-        <LockBar
-          locked={locked}
-          lockedBy={lockedBy}
-          version={doc.version}
-          runId={runId}
-          docId={docId}
-          onTakenOver={onReload}
-        />
-      ) : null}
 
       {mode === "source" ? (
         <div className="de-toolbar">

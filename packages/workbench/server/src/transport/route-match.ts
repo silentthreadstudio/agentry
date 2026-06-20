@@ -7,7 +7,7 @@ import { resolveSlug } from "@agentry/workbench-shared";
 import type { WorkReader } from "../application/work-reader.js";
 
 // The write-path kinds the POST dispatcher serves — the closed set `matchWritePath` discriminates.
-export type WriteKind = "comment" | "resolve" | "artifact" | "takeover" | "status";
+export type WriteKind = "comment" | "resolve" | "artifact" | "status";
 
 // The `?run=<id>` query param decoded to a run id, or undefined when absent/empty. The URL layer already
 // percent-decodes the value; the traversal safety is the store's `runDir`/`assertSafeSegment` guard.
@@ -64,10 +64,10 @@ export function matchWorkReview(path: string): { runId: string; docId: string } 
   }
 }
 
-// Match a write path `/api/work/:id/{comment|resolve|artifact|takeover|status}` → its kind + the decoded
-// run id, or null. The matcher only recognizes the shape; the verb gate + body parse happen in the dispatcher.
+// Match a write path `/api/work/:id/{comment|resolve|artifact|status}` → its kind + the decoded run id, or
+// null. The matcher only recognizes the shape; the verb gate + body parse happen in the dispatcher.
 export function matchWritePath(path: string): { kind: WriteKind; runId: string } | null {
-  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|takeover|status)$/.exec(path);
+  const m = /^\/api\/work\/([^/]+)\/(comment|resolve|artifact|status)$/.exec(path);
   if (!m || m[1] === undefined || m[2] === undefined) return null;
   try {
     return { kind: m[2] as WriteKind, runId: decodeURIComponent(m[1]) };

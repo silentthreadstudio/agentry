@@ -13,11 +13,11 @@ import type { Clock, RunFiles, Transport, WorkRepository } from "../src/domain/p
 import { WorkReader } from "../src/application/work-reader.js";
 import type {
   AddCommentRequest,
-  TakeOverOutcome,
-  TakeOverRequest,
+  StatusOutcome,
   WriteArtifactOutcome,
   WriteArtifactRequest,
 } from "../src/application/write-service.js";
+import type { FlowTaskStatus } from "@agentry/flow/domain/status";
 import { handleApiRequest, handlePostRequest, type WriteDeps } from "../src/transport/routes.js";
 
 const fixedClock: Clock = { now: () => "2026-06-19T00:00:00.000Z" };
@@ -55,7 +55,7 @@ function recordingTransport(): Transport & { pushes: Array<{ run: string; messag
 interface StubWrite {
   addComment: (req: AddCommentRequest) => { id: string };
   writeArtifact: (req: WriteArtifactRequest) => WriteArtifactOutcome;
-  takeOver: (req: TakeOverRequest) => TakeOverOutcome;
+  setStatus: (req: { run: string; taskNo: string; status: FlowTaskStatus }) => StatusOutcome;
 }
 
 function deps(write: Partial<StubWrite>, transport = recordingTransport()): WriteDeps & {
@@ -65,7 +65,7 @@ function deps(write: Partial<StubWrite>, transport = recordingTransport()): Writ
   const writeService = {
     addComment: write.addComment ?? (() => ({ id: "c-stub" })),
     writeArtifact: write.writeArtifact ?? (() => ({ ok: false, reason: "not-found" }) as const),
-    takeOver: write.takeOver ?? (() => ({ ok: false, reason: "not-found" }) as const),
+    setStatus: write.setStatus ?? (() => ({ ok: false, reason: "not-found" }) as const),
   } as unknown as WriteDeps["writeService"];
   return { reader, writeService, transport };
 }
@@ -264,87 +264,62 @@ test("POST /artifact with an unknown/non-string target is 400, no write", async 
   assert.equal(called, false);
 });
 
-// ── POST /takeover ────────────────────────────────────────────────────────────────────────────────
+// ── POST /status (the task-status override — also the in-progress unblock path) ──────────────────────
 
-test("POST /takeover with a task-<NNN> docId flips the lock and returns { ok:true } (AC4)", async () => {
+test("POST /status with a task-<NNN> target sets the status and returns { ok:true }", async () => {
   const { res, captured } = fakeRes();
-  let seen: TakeOverRequest | undefined;
+  let seen: { run: string; taskNo: string; status: FlowTaskStatus } | undefined;
   const d = deps({
-    takeOver: (req) => {
+    setStatus: (req) => {
       seen = req;
       return { ok: true };
     },
   });
-  await handlePostRequest(
-    // The web sends the docId string as `target`; `by` is supplied here.
-    fakePost("/api/work/sample/takeover", { target: "task-001", by: "esteban" }),
-    res,
-    d,
-  );
+  await handlePostRequest(fakePost("/api/work/sample/status", { target: "task-001", status: "done" }), res, d);
   assert.equal(captured.status, 200);
   assert.deepEqual(captured.body, { ok: true });
   assert.equal(seen?.run, "sample");
-  assert.equal(seen?.taskNo, "001", "the task number is derived from the task-<NNN> docId");
-  assert.equal(seen?.by, "esteban");
+  assert.equal(seen?.taskNo, "001", "the task number is derived from the task-<NNN> target");
+  assert.equal(seen?.status, "done");
+  // The status write nudges watchers so the graph/navigator re-tint.
+  assert.ok(d.transport.pushes.some((p) => p.message.type === "file-changed"), "pushes a file-changed");
 });
 
-test("POST /takeover defaults `by` to \"human\" when absent (the web's shape)", async () => {
-  const { res, captured } = fakeRes();
-  let seen: TakeOverRequest | undefined;
-  await handlePostRequest(
-    fakePost("/api/work/sample/takeover", { target: "task-001" }),
-    res,
-    deps({
-      takeOver: (req) => {
-        seen = req;
-        return { ok: true };
-      },
-    }),
-  );
-  assert.equal(captured.status, 200);
-  assert.equal(seen?.by, "human", "absent `by` stamps the generic human takeover holder");
-});
-
-test("POST /takeover still accepts the legacy { taskNo } shape", async () => {
-  const { res, captured } = fakeRes();
-  let seen: TakeOverRequest | undefined;
-  await handlePostRequest(
-    fakePost("/api/work/sample/takeover", { taskNo: "001", by: "esteban" }),
-    res,
-    deps({
-      takeOver: (req) => {
-        seen = req;
-        return { ok: true };
-      },
-    }),
-  );
-  assert.equal(captured.status, 200);
-  assert.equal(seen?.taskNo, "001");
-});
-
-test("POST /takeover on an absent task is 404", async () => {
-  const { res, captured } = fakeRes();
-  await handlePostRequest(
-    fakePost("/api/work/sample/takeover", { target: "task-999", by: "esteban" }),
-    res,
-    deps({ takeOver: () => ({ ok: false, reason: "not-found" }) }),
-  );
-  assert.equal(captured.status, 404);
-  assert.equal((captured.body as { error: string }).error, "not_found");
-});
-
-test("POST /takeover on a non-task docId (spec/plan/adr-*) is 400, no flip", async () => {
+test("POST /status with an out-of-vocab status is 400, no write", async () => {
   const { res, captured } = fakeRes();
   let called = false;
   await handlePostRequest(
-    // Only tasks carry status/lockedBy — a run-root or adr doc has no lock to take.
-    fakePost("/api/work/sample/takeover", { target: "spec", by: "human" }),
+    fakePost("/api/work/sample/status", { target: "task-001", status: "bogus" }),
     res,
-    deps({ takeOver: () => ((called = true), { ok: true }) }),
+    deps({ setStatus: () => ((called = true), { ok: true }) }),
   );
   assert.equal(captured.status, 400);
-  assert.equal((captured.body as { error: string }).error, "invalid_target");
+  assert.equal((captured.body as { error: string }).error, "invalid_status");
   assert.equal(called, false);
+});
+
+test("POST /status on a non-task target (spec/plan/adr-*) is 400", async () => {
+  const { res, captured } = fakeRes();
+  let called = false;
+  await handlePostRequest(
+    fakePost("/api/work/sample/status", { target: "spec", status: "done" }),
+    res,
+    deps({ setStatus: () => ((called = true), { ok: true }) }),
+  );
+  assert.equal(captured.status, 400);
+  assert.equal((captured.body as { error: string }).error, "not_a_task");
+  assert.equal(called, false);
+});
+
+test("POST /status on an absent task is 404", async () => {
+  const { res, captured } = fakeRes();
+  await handlePostRequest(
+    fakePost("/api/work/sample/status", { target: "task-999", status: "done" }),
+    res,
+    deps({ setStatus: () => ({ ok: false, reason: "not-found" }) }),
+  );
+  assert.equal(captured.status, 404);
+  assert.equal((captured.body as { error: string }).error, "not_found");
 });
 
 // ── verb + body guards ──────────────────────────────────────────────────────────────────────────────

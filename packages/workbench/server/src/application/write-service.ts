@@ -9,9 +9,9 @@
 //                 the service recomputes the CURRENT on-disk version (FLOW's `computeVersion`) and
 //                 rejects when it differs (someone wrote in between). The client never computes a
 //                 version — FLOW owns the hash; the client only carries the token.
-// `takeOver` is the explicit server-performed lock transition (the human claiming the edit); only
-// after it succeeds is a write allowed. Comments are allowed even when locked — the lock gates *edits*,
-// not *annotations* (VISION §5).
+// An `in-progress` doc stays read-only (the lock) — the human unblocks it by changing its status
+// (`setStatus`), not by a take-over. Comments are allowed even when locked — the lock gates *edits*, not
+// *annotations* (VISION §5). Operations: `addComment` · `resolveComment` · `writeArtifact` · `setStatus`.
 //
 // PURE application (ADR-001): it depends only on the `FlowWriterPort` (the write adapter) — no
 // `node:http`/`ws`/`node:fs` type crosses it — so the whole boundary is unit-testable against a fake
@@ -48,14 +48,6 @@ export interface WriteArtifactRequest {
   newBody: string;
 }
 
-// Claim the edit: the explicit server-performed lock transition on a task (flip `lockedBy`/`status`
-// off `in-progress`), after which a write is allowed. `by` is the human claiming it.
-export interface TakeOverRequest {
-  run: string;
-  taskNo: string;
-  by: string;
-}
-
 // ── Outcomes (typed discriminated unions the route maps to ok()/err() — mirrors ReviewService) ──────
 
 // A write either succeeds with the freshly-stamped `version`, or is rejected for one of the two
@@ -66,9 +58,10 @@ export type WriteArtifactOutcome =
   | { ok: false; reason: "stale"; currentVersion: string } // baseVersion ≠ on-disk (AC6)
   | { ok: false; reason: "not-found" }; // the artifact no longer exists
 
-export type TakeOverOutcome =
-  | { ok: true } // the lock was released; a write is now allowed
-  | { ok: false; reason: "not-found" }; // no such task file to take over
+// A task-frontmatter mutation (setStatus) either lands or the task file is gone.
+export type StatusOutcome =
+  | { ok: true }
+  | { ok: false; reason: "not-found" };
 
 export class WriteService {
   constructor(private readonly writer: FlowWriterPort) {}
@@ -127,30 +120,12 @@ export class WriteService {
     return { ok: true, version };
   }
 
-  // Take over: the explicit lock transition the SERVER performs (the human claims the edit). Re-reads
-  // the task, then writes back its frontmatter with the lock released (`status` → `in-review`, the
-  // not-in-progress state a human edit moves to; `lockedBy` → the claimer), re-stamping the version.
-  // After this, `writeArtifact` against the same task passes the lock gate. A no-op body write keeps
-  // the body byte-identical so the take-over does not alter the prose (the lock flip is frontmatter).
-  takeOver(req: TakeOverRequest): TakeOverOutcome {
-    const target: ArtifactTarget = { taskNo: req.taskNo };
-    const current = this.writer.readArtifact(req.run, target);
-    if (current === undefined) return { ok: false, reason: "not-found" };
-
-    const frontmatter: Record<string, unknown> = {
-      ...current.frontmatter,
-      status: "in-review", // off `in-progress` → the lock gate now passes
-      lockedBy: req.by, // the human now holds the edit
-    };
-    this.writer.writeArtifact(req.run, target, frontmatter, current.body);
-    return { ok: true };
-  }
-
   // Set a task's lifecycle status (the human override — cleanup note 3: agents sometimes don't move a
-  // task to done). Re-reads the task, writes its frontmatter with the new `status`, re-stamps the version.
-  // When the status leaves `in-progress`, the agent lock is released (`lockedBy` dropped) so the doc is
-  // free; setting it TO `in-progress` keeps any existing holder. `not-found` for an absent task file.
-  setStatus(req: { run: string; taskNo: string; status: FlowTaskStatus }): TakeOverOutcome {
+  // task to done). This is ALSO how a human unblocks an in-progress doc for editing: moving it off
+  // `in-progress` releases the lock (`lockedBy` dropped) so the doc becomes editable — there is no
+  // take-over. Re-reads the task, writes its frontmatter with the new `status`, re-stamps the version.
+  // Setting it TO `in-progress` keeps any existing holder. `not-found` for an absent task file.
+  setStatus(req: { run: string; taskNo: string; status: FlowTaskStatus }): StatusOutcome {
     const target: ArtifactTarget = { taskNo: req.taskNo };
     const current = this.writer.readArtifact(req.run, target);
     if (current === undefined) return { ok: false, reason: "not-found" };
