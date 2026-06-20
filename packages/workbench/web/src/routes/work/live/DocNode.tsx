@@ -4,8 +4,9 @@
 //               a footer (agent avatar if known · version short-hash if known · open-comment badge).
 //   • routing → a distinct ROOT PILL ("routing · <shape>") — a decision, not a document (BUG 4a: it never
 //               opens a drawer; Panorama gates the click on `kind`).
-//   • group   → the "Decisions" ADR GROUP: a title + 2-line description + ADR count, expandable. Non-doc
-//               (BUG 4a); clicking toggles the children. When expanded the real ADR cards render alongside.
+//   • group   → the "Decisions" ADR GROUP: a single unified card — a title + 2-line description + ADR
+//               count. Non-doc (BUG 4a); clicking opens the Decisions drawer that lists the ADRs (no
+//               canvas-expand). The card itself never changes shape.
 //
 // Visual STATE — pulse (in-progress) / dim (todo) / lit (done) / blocked — is driven entirely by the FLOW
 // task status carried on the node data, plus the derived `blocked` overlay flag and the hover-highlight
@@ -131,15 +132,16 @@ function RoutingNode({ label }: { label: string }) {
   );
 }
 
-// ── ADR "Decisions" group (non-document, expandable — BUG 4a) ──────────────────────────────────────────
+// ── ADR "Decisions" group (non-document, single unified card — BUG 4a) ─────────────────────────────────
+// Always one card: title + 2-line description + ADR count. Clicking it opens the Decisions drawer (which
+// lists the ADRs and routes each to its doc) — there is no canvas-expand and the card never changes shape.
 function GroupNode({ data }: { data: DocNodeData }) {
   const count = data.adrCount ?? 0;
-  const expanded = data.expanded === true;
   const highlightClass =
     data.highlight === false ? "dim" : data.highlight === true ? "lit" : "";
-  const className = ["bn-group", expanded ? "open" : "", highlightClass].filter(Boolean).join(" ");
+  const className = ["bn-group", highlightClass].filter(Boolean).join(" ");
   return (
-    <div className={className} aria-expanded={expanded}>
+    <div className={className}>
       <Handle type="target" position={Position.Top} />
       <div className="bn-glab">
         <span aria-hidden="true">◇</span>
@@ -152,7 +154,7 @@ function GroupNode({ data }: { data: DocNodeData }) {
       <div className="bn-gsub">
         The recorded forks that shape the plan — each constrains the tasks below.
       </div>
-      <div className="bn-gtoggle">{expanded ? "click to collapse" : "click to expand"}</div>
+      <div className="bn-gtoggle">click to view</div>
       <Handle type="source" position={Position.Bottom} />
     </div>
   );

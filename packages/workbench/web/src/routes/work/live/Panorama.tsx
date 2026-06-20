@@ -19,9 +19,10 @@ import { fetchGraph } from "../../../api/client.js";
 import { getWsClient } from "../../../api/ws-client.js";
 import { nodeTypes } from "./DocNode.js";
 import { edgeTypes, Legend, markerForKind } from "./edge-types.js";
-import { ADR_GROUP_ID, layoutGraph } from "./layout-dagre.js";
-import type { DocNode } from "./layout-dagre.js";
+import { layoutGraph } from "./layout-dagre.js";
+import type { AdrRef, DocNode } from "./layout-dagre.js";
 import { DocDrawer, selectDoc } from "./doc/DocDrawer.js";
+import { DecisionsDrawer, openDecisions } from "./DecisionsDrawer.js";
 import { CommentRail } from "./doc/CommentRail.js";
 import { DiffDrawer } from "./doc/DiffDrawer.js";
 
@@ -52,9 +53,6 @@ export function Panorama({ runId }: { runId: string }) {
 function PanoramaCanvas({ runId }: { runId: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [hover, setHover] = useState<string | null>(null);
-  // The ADR "Decisions" group is collapsed by default; clicking it toggles expansion (BUG 4a/item 3).
-  // The flag feeds layoutGraph so Dagre re-runs over the collapsed/expanded shape — no-overlap in both.
-  const [adrExpanded, setAdrExpanded] = useState(false);
 
   // Fetch the graph; reused for the initial load and every live re-fetch. Aborts in flight on unmount.
   const abortRef = useRef<AbortController | null>(null);
@@ -107,17 +105,18 @@ function PanoramaCanvas({ runId }: { runId: string }) {
   }, [graph]);
 
   const base = useMemo(
-    () => (graph ? layoutGraph(runId, graph, activeBlocks, adrExpanded) : { nodes: [], edges: [] }),
-    [runId, graph, activeBlocks, adrExpanded],
+    () => (graph ? layoutGraph(runId, graph, activeBlocks) : { nodes: [], edges: [] }),
+    [runId, graph, activeBlocks],
   );
 
-  // The node click gate (BUG 4a): ONLY a backing-document node (`kind === "doc"`) opens the drawer. The
-  // routing root and the synthetic ADR group container carry no doc — clicking them must NOT call
-  // selectDoc (no 404 fetch). The group toggles its children instead; routing is inert.
+  // The node click gate (BUG 4a): ONLY a backing-document node (`kind === "doc"`) opens the doc drawer.
+  // The routing root and the synthetic ADR group container carry no doc — clicking them must NOT call
+  // selectDoc (no 404 fetch). The group opens the Decisions drawer (a list → each ADR's doc); routing is
+  // inert. There is no canvas-expand (task 006 removed the in-place toggle).
   const onNodeClick = useCallback((_e: unknown, n: DocNode) => {
     const kind = n.data.kind;
     if (kind === "group") {
-      setAdrExpanded((open) => !open);
+      openDecisions((n.data.adrs as AdrRef[] | undefined) ?? []);
       return;
     }
     if (kind !== "doc") return; // routing (or any non-doc) → never opens a drawer
@@ -213,6 +212,9 @@ function PanoramaCanvas({ runId }: { runId: string }) {
         )}
         diffDrawer={({ runId, docId }) => <DiffDrawer runId={runId} docId={docId} />}
       />
+      {/* Task 006: the ADR group node opens this list-of-decisions drawer (each row → selectDoc('adr-…')
+          → the normal DocDrawer above). No canvas-expand; the group is always a single unified card. */}
+      <DecisionsDrawer />
     </div>
   );
 }

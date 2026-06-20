@@ -5,15 +5,16 @@
 // Ported from design/prototype-app.html's `layout()` (the dark-monochrome canvas's TB Dagre pass).
 // The prototype hard-coded its DAG; here the same algorithm runs over the live `GraphModel`.
 //
-// ── ADR group transform (task 005, client-side) ────────────────────────────────────────────────────
+// ── ADR group transform (task 005/006, client-side) ────────────────────────────────────────────────
 // The server graph (buildGraph) emits one node per ADR (`adr-<key>`), each hung off the Plan with a
 // `derives` edge. That sprawls the canvas for a decompose run with many ADRs. Here — and ONLY here, the
 // server graph is never mutated — the individual ADRs are collapsed into ONE synthetic "Decisions"
-// GROUP node (`adr-group`) hung off the same producer the ADRs hung off. The group is non-document
-// (like routing): clicking it toggles expansion, it never opens a doc drawer. When EXPANDED, the
-// individual ADR nodes are re-introduced (each IS a doc → clicking opens `adr-<key>`), the plan→adr
-// derives edges are restored, and the plan→group edge is dropped. Dagre re-runs on every toggle, so the
-// layout has no overlap in either state. The transform is keyed off the `expanded` flag Panorama owns.
+// GROUP node (`adr-group`) hung off the same producer the ADRs hung off. The group is ALWAYS collapsed
+// to this single non-document card (there is NO canvas-expand, no toggle, no re-layout on click — task
+// 006 removed that): clicking the card opens the Decisions DRAWER (DecisionsDrawer), which lists the
+// ADRs and routes each row to its doc via `selectDoc('adr-<key>')`. The group node carries the ADR list
+// (id + label) so the drawer renders WITHOUT re-fetching. The N plan→adr derives edges collapse to one
+// plan→group derives edge; Dagre runs once over the collapsed shape (always no overlap).
 //
 // ── ELK escape hatch (VISION) ─────────────────────────────────────────────────────────────────────
 // Layout is isolated behind this one function so a future large-DAG ELK swap is a single-file change:
@@ -29,12 +30,19 @@ import type { Edge, Node } from "@xyflow/react";
 // and the click gate (BUG 4a): only a `doc` node has a backing document and may open the drawer.
 //   • doc     → spec / plan / adr-<key> / task-<NNN>: a card; clicking opens its doc.
 //   • routing → the graph root: a distinct pill; NON-document, never opens a drawer.
-//   • group   → the synthetic "Decisions" container: NON-document; clicking toggles ADR expansion.
+//   • group   → the synthetic "Decisions" container: NON-document; clicking opens the Decisions drawer.
 export type NodeKind = "doc" | "routing" | "group";
 
 // The synthetic group node's id. No server doc carries this id, so it can never collide with a real
 // `adr-<key>` doc; the click gate keys on `kind`, not the id, so the `adr-`-prefix overlap is harmless.
 export const ADR_GROUP_ID = "adr-group";
+
+// One ADR's identity for the Decisions drawer list — the id (→ `selectDoc(id)`) and its label (the row
+// title). Pulled from the GraphModel's adr nodes during the collapse, so the drawer needs no re-fetch.
+export interface AdrRef {
+  id: string;
+  label: string;
+}
 
 // ── The pinned node/edge data-prop contract (task 12 owns it; task 13's DocNode/edge-types plug in) ──
 // The React Flow `data` payload a DocNode receives. Carries the read-model fields the node renders
@@ -50,7 +58,7 @@ export interface DocNodeData {
   highlight?: boolean;
   // ── group-only fields (kind === "group"): the "Decisions" container's rollup ──
   adrCount?: number; // how many ADRs this group rolls up (the count chip)
-  expanded?: boolean; // whether the group is currently expanded (Panorama owns the flag)
+  adrs?: AdrRef[]; // the rolled-up ADRs (id + label) the Decisions drawer lists — no re-fetch needed
   [key: string]: unknown; // React Flow requires node data to be an index-signature record
 }
 
@@ -72,7 +80,7 @@ export interface PositionedGraph {
 
 // Per-kind box dimensions — must match the rendered widths/heights (panorama.css) so Dagre reserves the
 // right space and nodes never overlap. The routing pill is short; the ADR group is taller (title +
-// 2-line description + count), and grows when expanded though its rolled-up children take their own slots.
+// 2-line description + count). The group is always a single card (no expand), so this box is fixed.
 export const NODE_WIDTH = 212;
 export const NODE_HEIGHT = 96;
 const ROUTING_WIDTH = 220;
@@ -103,23 +111,21 @@ function boxOf(kind: NodeKind): { width: number; height: number } {
 }
 
 /**
- * Collapse the server graph's individual `adr-*` nodes into ONE synthetic "Decisions" group node when
- * `expanded` is false; pass the graph through unchanged (real ADR nodes + their plan→adr edges) when
- * `expanded` is true. PURE — the input GraphModel is never mutated; a new model is returned.
+ * Collapse the server graph's individual `adr-*` nodes into ONE synthetic "Decisions" group node. PURE —
+ * the input GraphModel is never mutated; a new model is returned.
  *
- * Collapsed: every `adr-*` node is dropped, replaced by one `adr-group` node; each edge that touched an
- * ADR is rewritten to touch the group instead (deduped — the plan→adr1 / plan→adr2 derives edges collapse
- * to a single plan→group derives edge). The group inherits the ADRs' producer (the Plan), so it hangs in
- * the same place the ADRs did.
- *
- * Expanded: the model passes through as-is (no group node) so the real ADR docs render and open.
+ * Every `adr-*` node is dropped, replaced by one `adr-group` node; each edge that touched an ADR is
+ * rewritten to touch the group instead (deduped — the plan→adr1 / plan→adr2 derives edges collapse to a
+ * single plan→group derives edge). The group inherits the ADRs' producer (the Plan), so it hangs in the
+ * same place the ADRs did. The group is ALWAYS this single card — there is no expanded passthrough mode
+ * (task 006 removed canvas-expand; the ADRs are listed in the Decisions drawer instead).
  *
  * A run with no ADRs returns the model untouched (no empty group).
  */
-export function applyAdrGroup(model: GraphModel, expanded: boolean): GraphModel {
+export function applyAdrGroup(model: GraphModel): GraphModel {
   const adrNodes = model.nodes.filter((n) => isAdrId(n.id));
-  if (adrNodes.length === 0 || expanded) {
-    // Nothing to collapse (or the group is expanded → show the real ADR nodes/edges unchanged).
+  if (adrNodes.length === 0) {
+    // Nothing to collapse — leave the model untouched (no empty group).
     return model;
   }
 
@@ -155,23 +161,25 @@ export function applyAdrGroup(model: GraphModel, expanded: boolean): GraphModel 
 /**
  * Compute non-overlapping positions for a GraphModel and return React Flow nodes/edges ready to render.
  * The ADR group transform (`applyAdrGroup`) runs FIRST so layout sizes/positions reflect the collapsed
- * or expanded shape; Dagre then runs over whichever shape resulted (re-run per toggle by Panorama).
+ * shape; Dagre then runs once over that single-group shape (always no overlap — the group never expands).
  *
  * @param runId       the run these nodes belong to — stamped onto each node's data so the node can read
  *                    its open-comment count for the badge (AC5). Pure: the layout itself doesn't use it.
  * @param model       the run's read-model graph (nodes carry FLOW status; edges carry the typed kind)
  * @param activeBlocks ids of nodes whose in-progress state makes their outgoing `blocks` edges "active"
  *                     (the blocker is running). Used to derive the per-node `blocked` flag + edge glow.
- * @param adrExpanded whether the ADR "Decisions" group is expanded (children visible). Default collapsed.
  */
 export function layoutGraph(
   runId: string,
   model: GraphModel,
   activeBlocks: ReadonlySet<string> = new Set(),
-  adrExpanded = false,
 ): PositionedGraph {
-  const adrCount = model.nodes.filter((n) => isAdrId(n.id)).length;
-  const view = applyAdrGroup(model, adrExpanded);
+  // The rolled-up ADRs (id + label) — stamped on the group node so the Decisions drawer lists them
+  // without re-fetching. Captured before the collapse drops the real adr-* nodes.
+  const adrs: AdrRef[] = model.nodes
+    .filter((n) => isAdrId(n.id))
+    .map((n) => ({ id: n.id, label: n.label }));
+  const view = applyAdrGroup(model);
 
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "TB", ranksep: 64, nodesep: 38, marginx: 30, marginy: 20 });
@@ -212,8 +220,8 @@ export function layoutGraph(
       blocked: blockedTargets.has(node.id),
     };
     if (kind === "group") {
-      data.adrCount = adrCount;
-      data.expanded = adrExpanded;
+      data.adrCount = adrs.length;
+      data.adrs = adrs;
     }
     return { id: node.id, type: "doc", position, data };
   });
