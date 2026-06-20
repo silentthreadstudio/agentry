@@ -3,7 +3,8 @@
 // graph is Phase 2; the Activity feed is Phase 4. Both render calm "coming in this view" placeholders
 // now (empty states are good states, VISION §3). The tab routes are the named slots those phases fill.
 import { NavLink, Route, Routes } from "react-router-dom";
-import { EmptyState, Pill } from "../../design-system/index.js";
+import { Pill } from "../../design-system/index.js";
+import { Activity } from "./Activity.js";
 import { Panorama } from "./live/Panorama.js";
 
 // The run id comes from /api/context (the *.localhost host bootstrap), not the SPA path — App reads
@@ -31,18 +32,10 @@ export function WorkLayout({ runId }: { runId: string }) {
         <Routes>
           {/* Phase 2 fills the Live slot with the Panorama graph canvas. */}
           <Route index element={<Panorama runId={runId} />} />
-          {/* Phase 4 fills the Activity slot with the event feed. */}
-          <Route path="activity" element={<ActivityPlaceholder />} />
+          {/* Phase 4 fills the Activity slot with this run's event timeline. */}
+          <Route path="activity" element={<Activity runId={runId} />} />
         </Routes>
       </div>
-    </div>
-  );
-}
-
-function ActivityPlaceholder() {
-  return (
-    <div className="page">
-      <EmptyState title="Activity">Everything Agentry has done in this run will stream here.</EmptyState>
     </div>
   );
 }

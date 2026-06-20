@@ -30,10 +30,18 @@ export interface RunRead {
   docs: ReaderDoc[];
 }
 
+// Counts the agents in a run's roster (run-state.json) for the summary's `agentCount`. The roster lives
+// in run-state.json, NOT the pinned `RunFiles` port, so it is injected as a small function rather than
+// read here — keeping WorkReader pure of fs/cwd (ADR-001). The composition root wires `EventStore.roster`
+// (the single roster reader) behind it, so the count and the Agents page derive from one source. Defaults
+// to 0 (the Phase-1 behavior) when no counter is wired — e.g. under the fake-repo unit tests.
+export type RosterCounter = (run: string) => number;
+
 export class WorkReader {
   constructor(
     private readonly repository: WorkRepository,
     private readonly clock: Clock,
+    private readonly rosterCount: RosterCounter = () => 0,
   ) {}
 
   // The run ids present — a thin pass-through the Works list iterates (each row is one `read`).
@@ -60,7 +68,7 @@ export class WorkReader {
       run: files.run,
       title: this.titleOf(files),
       taskCounts: this.tallyTasks(files),
-      agentCount: 0, // roster lives in run-state.json, not the pinned RunFiles port — see file note below
+      agentCount: this.rosterCount(files.run), // from run-state.json via the injected counter (EventStore.roster)
       updatedAt: this.clock.now(),
     };
   }

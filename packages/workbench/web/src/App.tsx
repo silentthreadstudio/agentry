@@ -6,7 +6,10 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { fetchContext } from "./api/client.js";
-import { Placeholder } from "./routes/Placeholder.js";
+import { Agents } from "./routes/Agents.js";
+import { Gates } from "./routes/Gates.js";
+import { Memory } from "./routes/Memory.js";
+import { Tokens } from "./routes/Tokens.js";
 import { Works } from "./routes/Works.js";
 import { WorkLayout } from "./routes/work/WorkLayout.js";
 
@@ -68,7 +71,7 @@ export function App() {
             path="/agents"
             element={
               <MainColumn title="Agents" sub="the roster, live">
-                <Placeholder title="Agents" line="The live agent roster arrives in this view." />
+                <Agents />
               </MainColumn>
             }
           />
@@ -76,7 +79,7 @@ export function App() {
             path="/tokens"
             element={
               <MainColumn title="Tokens" sub="usage & cost">
-                <Placeholder title="Tokens" line="Token usage and cost for your runs arrive in this view." />
+                <Tokens />
               </MainColumn>
             }
           />
@@ -84,7 +87,7 @@ export function App() {
             path="/memory"
             element={
               <MainColumn title="Memory" sub="the moat — read-only">
-                <Placeholder title="Memory" line="The agent-curated memory — read-only — arrives in this view." />
+                <Memory />
               </MainColumn>
             }
           />
@@ -92,7 +95,7 @@ export function App() {
             path="/gates"
             element={
               <MainColumn title="Gates" sub="waiting on you">
-                <Placeholder title="Gates" line="Decisions waiting on you arrive in this view." />
+                <Gates />
               </MainColumn>
             }
           />

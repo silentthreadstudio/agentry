@@ -16,6 +16,11 @@ import { ChokidarWatcher } from "./persistence/chokidar-watcher.js";
 import { FlowWriter } from "./persistence/flow-writer.js";
 import { WorkReader } from "./application/work-reader.js";
 import { WriteService } from "./application/write-service.js";
+import { EventStore } from "./application/event-store.js";
+import { GateInbox } from "./application/gate-inbox.js";
+import { TokenReader } from "./application/token-reader.js";
+import { TranscriptReader } from "./persistence/transcript-reader.js";
+import { MemReader } from "./persistence/mem-reader.js";
 import type { Clock, RunChange } from "./domain/ports.js";
 import { createHttpHandler } from "./transport/http.js";
 import { WsTransport } from "./transport/ws.js";
@@ -51,13 +56,26 @@ async function main(): Promise<void> {
   // side → the WriteService boundary (ADR-006) the POST routes call.
   const repository = new FsWorkRepository(projectRoot);
   const watcher = new ChokidarWatcher(projectRoot);
-  const reader = new WorkReader(repository, systemClock);
   const writeService = new WriteService(new FlowWriter(projectRoot));
 
+  // Phase-4 aggregation readers (the Activity / Agents / Gates / Tokens / Memory data). `EventStore` is
+  // the one timeline fold + the roster source; its `roster` doubles as the `RunSummary.agentCount` counter
+  // wired into the WorkReader (one roster read, not two). `TokenReader` folds the `TranscriptReader`'s
+  // samples; `MemReader` browses both mem roots read-only.
+  const events = new EventStore(repository, projectRoot);
+  const gates = new GateInbox(repository, projectRoot);
+  const tokens = new TokenReader(new TranscriptReader(projectRoot));
+  const memory = new MemReader(projectRoot);
+  const reader = new WorkReader(repository, systemClock, (run) => events.roster(run).length);
+
   // Transports: the ws edge (constructed first so the http handler can push on a successful write) pushes
-  // per-run change messages; the http edge serves the SPA + REST reads + the Phase-3 writes.
+  // per-run change messages; the http edge serves the SPA + REST reads + the Phase-3 writes + the Phase-4
+  // aggregation reads.
   const transport = new WsTransport(server);
-  server.on("request", createHttpHandler(reader, { reader, writeService, transport }));
+  server.on(
+    "request",
+    createHttpHandler(reader, { reader, writeService, transport }, { events, gates, tokens, memory }),
+  );
 
   // The live loop (AC7): a debounced run change → push a `file-changed` message per changed path to that
   // run's ws subscribers. The `WorkReader.read` confirms the run still resolves (a change in a vanished

@@ -2378,9 +2378,9 @@ var require_stringifyNumber = __commonJS({
     function stringifyNumber({ format, minFractionDigits, tag, value }) {
       if (typeof value === "bigint")
         return String(value);
-      const num = typeof value === "number" ? value : Number(value);
-      if (!isFinite(num))
-        return isNaN(num) ? ".nan" : num < 0 ? "-.inf" : ".inf";
+      const num2 = typeof value === "number" ? value : Number(value);
+      if (!isFinite(num2))
+        return isNaN(num2) ? ".nan" : num2 < 0 ? "-.inf" : ".inf";
       let n = Object.is(value, -0) ? "-0" : JSON.stringify(value);
       if (!format && minFractionDigits && (!tag || tag === "tag:yaml.org,2002:float") && /^-?\d/.test(n) && !n.includes("e")) {
         let i = n.indexOf(".");
@@ -2420,8 +2420,8 @@ var require_float = __commonJS({
       test: /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+$/,
       resolve: (str) => parseFloat(str),
       stringify(node) {
-        const num = Number(node.value);
-        return isFinite(num) ? num.toExponential() : stringifyNumber.stringifyNumber(node);
+        const num2 = Number(node.value);
+        return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
       }
     };
     var float = {
@@ -2860,8 +2860,8 @@ var require_float2 = __commonJS({
       test: /^[-+]?(?:[0-9][0-9_]*)?(?:\.[0-9_]*)?[eE][-+]?[0-9]+$/,
       resolve: (str) => parseFloat(str.replace(/_/g, "")),
       stringify(node) {
-        const num = Number(node.value);
-        return isFinite(num) ? num.toExponential() : stringifyNumber.stringifyNumber(node);
+        const num2 = Number(node.value);
+        return isFinite(num2) ? num2.toExponential() : stringifyNumber.stringifyNumber(node);
       }
     };
     var float = {
@@ -3063,23 +3063,23 @@ var require_timestamp = __commonJS({
     function parseSexagesimal(str, asBigInt) {
       const sign = str[0];
       const parts = sign === "-" || sign === "+" ? str.substring(1) : str;
-      const num = (n) => asBigInt ? BigInt(n) : Number(n);
-      const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num(60) + num(p), num(0));
-      return sign === "-" ? num(-1) * res : res;
+      const num2 = (n) => asBigInt ? BigInt(n) : Number(n);
+      const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num2(60) + num2(p), num2(0));
+      return sign === "-" ? num2(-1) * res : res;
     }
     function stringifySexagesimal(node) {
       let { value } = node;
-      let num = (n) => n;
+      let num2 = (n) => n;
       if (typeof value === "bigint")
-        num = (n) => BigInt(n);
+        num2 = (n) => BigInt(n);
       else if (isNaN(value) || !isFinite(value))
         return stringifyNumber.stringifyNumber(node);
       let sign = "";
       if (value < 0) {
         sign = "-";
-        value *= num(-1);
+        value *= num2(-1);
       }
-      const _60 = num(60);
+      const _60 = num2(60);
       const parts = [value % _60];
       if (value < 60) {
         parts.unshift(0);
@@ -7703,26 +7703,26 @@ var require_permessage_deflate = __commonJS({
             value = value[0];
             if (key === "client_max_window_bits") {
               if (value !== true) {
-                const num = +value;
-                if (!Number.isInteger(num) || num < 8 || num > 15) {
+                const num2 = +value;
+                if (!Number.isInteger(num2) || num2 < 8 || num2 > 15) {
                   throw new TypeError(
                     `Invalid value for parameter "${key}": ${value}`
                   );
                 }
-                value = num;
+                value = num2;
               } else if (!this._isServer) {
                 throw new TypeError(
                   `Invalid value for parameter "${key}": ${value}`
                 );
               }
             } else if (key === "server_max_window_bits") {
-              const num = +value;
-              if (!Number.isInteger(num) || num < 8 || num > 15) {
+              const num2 = +value;
+              if (!Number.isInteger(num2) || num2 < 8 || num2 > 15) {
                 throw new TypeError(
                   `Invalid value for parameter "${key}": ${value}`
                 );
               }
-              value = num;
+              value = num2;
             } else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
               if (value !== true) {
                 throw new TypeError(
@@ -8435,8 +8435,8 @@ var require_receiver = __commonJS({
           return;
         }
         const buf = this.consume(8);
-        const num = buf.readUInt32BE(0);
-        if (num > Math.pow(2, 53 - 32) - 1) {
+        const num2 = buf.readUInt32BE(0);
+        if (num2 > Math.pow(2, 53 - 32) - 1) {
           const error = this.createError(
             RangeError,
             "Unsupported WebSocket frame: payload length > 2^53 - 1",
@@ -8447,7 +8447,7 @@ var require_receiver = __commonJS({
           cb(error);
           return;
         }
-        this._payloadLength = num * Math.pow(2, 32) + buf.readUInt32BE(4);
+        this._payloadLength = num2 * Math.pow(2, 32) + buf.readUInt32BE(4);
         this.haveLength(cb);
       }
       /**
@@ -17407,9 +17407,10 @@ function buildGraph(runFiles) {
 
 // src/application/work-reader.ts
 var WorkReader = class {
-  constructor(repository, clock) {
+  constructor(repository, clock, rosterCount = () => 0) {
     this.repository = repository;
     this.clock = clock;
+    this.rosterCount = rosterCount;
   }
   // The run ids present — a thin pass-through the Works list iterates (each row is one `read`).
   listRuns() {
@@ -17433,8 +17434,8 @@ var WorkReader = class {
       run: files.run,
       title: this.titleOf(files),
       taskCounts: this.tallyTasks(files),
-      agentCount: 0,
-      // roster lives in run-state.json, not the pinned RunFiles port — see file note below
+      agentCount: this.rosterCount(files.run),
+      // from run-state.json via the injected counter (EventStore.roster)
       updatedAt: this.clock.now()
     };
   }
@@ -17566,9 +17567,392 @@ function mintCommentId() {
   return `c-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
 }
 
+// src/application/event-store.ts
+import { existsSync as existsSync4, readFileSync as readFileSync5 } from "node:fs";
+import { join as join8 } from "node:path";
+var EventStore = class {
+  // `cwd` (the project root) is threaded on every fs path — no ambient cwd, mirroring FsWorkRepository.
+  // The repository provides the run list (the SAME `.agentry/work/` listing the Works home uses), so the
+  // fold and the Works list never disagree about which runs exist.
+  constructor(repository, cwd) {
+    this.repository = repository;
+    this.cwd = cwd;
+  }
+  // The one fold. With no `runId`, fold EVERY run's events into a single cross-run timeline (the Agents
+  // projection); with a `runId`, fold ONLY that run (the per-work Activity feed). Both come from the SAME
+  // projection — the only difference is the set of runs scanned. Events arrive in file order per run; the
+  // cross-run timeline concatenates runs in `listRuns` order (sorted, stable).
+  timeline(runId) {
+    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
+    const views = [];
+    for (const run of runs) {
+      this.foldRun(run, views);
+    }
+    return views;
+  }
+  // The agent roster across runs (or one run): every recorded agent with its FLOW live state and the task
+  // it is on. Read from each run's `run-state.json`; a fresh/absent/foreign-shaped file contributes no
+  // agents (a run with no roster yet is valid, not an error). The view `id` is namespaced by run so the
+  // same agent role in two runs stays distinct in the cross-run view.
+  roster(runId) {
+    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
+    const views = [];
+    for (const run of runs) {
+      for (const entry of this.rosterOf(run)) {
+        views.push({
+          id: `${run}/${entry.agent}`,
+          role: entry.agent,
+          state: entry.state,
+          task: entry.assignedTask ?? null
+        });
+      }
+    }
+    return views;
+  }
+  // Fold one run's `events.jsonl` into the accumulator. Each kept line becomes one `EventView` with a
+  // stable feed key (run + line index — unique within the fold, stable across reads of an unchanged file).
+  // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session hook line) is dropped.
+  // A hook backstop line is projected into the closed `node-enter` shape so the feed renders one event
+  // vocabulary — its `kind` becomes the node label, its `agent` the actor (the hook's only structured fields).
+  foldRun(run, into) {
+    const log = join8(runDir(this.cwd, run), "events.jsonl");
+    if (!existsSync4(log)) return;
+    const lines = readFileSync5(log, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      const parsed = parseLogLine(line);
+      if (parsed.kind === "skip") return;
+      const event = parsed.kind === "flow" ? parsed.event : hookToEvent(parsed.line);
+      into.push({ id: `${run}#${index}`, event });
+    });
+  }
+  // Read one run's roster off `run-state.json`. The traversal-safe `runDir` asserts the run segment before
+  // any fs touch. A corrupt/absent file, or one whose `agents` isn't an object, yields no entries. Each
+  // agent's `state` is validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent
+  // rather than surfacing an ill-typed state.
+  rosterOf(run) {
+    const path = join8(runDir(this.cwd, run), "run-state.json");
+    if (!existsSync4(path)) return [];
+    let raw;
+    try {
+      raw = JSON.parse(readFileSync5(path, "utf8"));
+    } catch {
+      return [];
+    }
+    const agents = isRecord(raw) ? raw.agents : void 0;
+    if (!isRecord(agents)) return [];
+    const out = [];
+    for (const [agent, value] of Object.entries(agents)) {
+      if (!isRecord(value)) continue;
+      const state = AgentState.safeParse(value.state);
+      if (!state.success) continue;
+      const assignedTask = typeof value.assignedTask === "string" ? value.assignedTask : void 0;
+      out.push({ agent, state: state.data, ...assignedTask !== void 0 ? { assignedTask } : {} });
+    }
+    return out;
+  }
+  // The cross-run root the fold lists under (exposed for the route's empty-state check). `workRoot`
+  // mirrors FsWorkRepository's listing root, so an absent root simply yields no runs (a fresh project).
+  get root() {
+    return workRoot(this.cwd);
+  }
+};
+function hookToEvent(line) {
+  return { ts: line.ts, type: "node-enter", node: line.kind, agent: line.agent };
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/application/gate-inbox.ts
+import { existsSync as existsSync5, readFileSync as readFileSync6, readdirSync as readdirSync4 } from "node:fs";
+import { join as join9 } from "node:path";
+var GateInbox = class {
+  // `cwd` (the project root) is threaded on every fs path — no ambient cwd (mirrors FsWorkRepository).
+  constructor(repository, cwd) {
+    this.repository = repository;
+    this.cwd = cwd;
+  }
+  // The open waiting-on-you list across every run (or one run when `runId` is given). A gate is OPEN when
+  // its sidecar holds at least one unresolved comment. Runs are scanned in `listRuns` order (stable); a run
+  // with no `.review/` dir contributes nothing. `decision` is null while the gate is open — the read-model
+  // surfaces the comments, not a verdict (a verdict is reached at the FLOW gate, not derived here).
+  open(runId) {
+    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
+    const items = [];
+    for (const run of runs) {
+      for (const { gate, comments } of this.gatesOf(run)) {
+        const openComments = comments.filter((c) => !c.resolved);
+        if (openComments.length === 0) continue;
+        items.push({ run, gate, docId: gate, comments: openComments, decision: null });
+      }
+    }
+    return items;
+  }
+  // Every gate sidecar in one run: the `<gate>.annotations.json` files under `.review/`, each parsed into
+  // its `ReviewComment[]`. The gate name is the filename stem. An absent `.review/` dir ⇒ no gates.
+  gatesOf(run) {
+    const reviewDir = join9(runDir(this.cwd, run), ".review");
+    if (!existsSync5(reviewDir)) return [];
+    const out = [];
+    for (const file of readdirSync4(reviewDir).sort()) {
+      if (!file.endsWith(".annotations.json")) continue;
+      const gate = file.slice(0, -".annotations.json".length);
+      out.push({ gate, comments: this.readSidecar(join9(reviewDir, file)) });
+    }
+    return out;
+  }
+  // Parse one sidecar into validated `ReviewComment[]`. Reuses FLOW's closed schema; a non-array or a file
+  // that fails to parse reads as empty (the SAME tolerance FLOW's review store gives — a half-written
+  // sidecar never throws here). A single ill-formed comment drops the whole file to empty, matching FLOW.
+  readSidecar(file) {
+    try {
+      const raw = JSON.parse(readFileSync6(file, "utf8"));
+      if (!Array.isArray(raw)) return [];
+      return raw.map((c) => ReviewComment.parse(c));
+    } catch {
+      return [];
+    }
+  }
+};
+
+// src/application/token-reader.ts
+var TokenReader = class {
+  constructor(transcripts) {
+    this.transcripts = transcripts;
+  }
+  // The token series for one run: token usage bucketed by calendar day (UTC), accumulated so each point is
+  // the running total through that day — the shape the usage chart plots. Days are sorted ascending; a run
+  // with no samples returns a clean empty series (the graceful-degrade empty state).
+  series(run) {
+    const perDay = this.bucketByDay(this.transcripts.read(run));
+    const days = [...perDay.keys()].sort();
+    const timestamps = [];
+    const tokens = [];
+    let cumulative = 0;
+    for (const day of days) {
+      cumulative += perDay.get(day) ?? 0;
+      timestamps.push(day);
+      tokens.push(cumulative);
+    }
+    return { timestamps, tokens };
+  }
+  // Sum the samples into per-day totals keyed by the sample's UTC calendar day (the `YYYY-MM-DD` prefix of
+  // its ISO timestamp). A sample whose timestamp has no parseable day prefix is dropped (it can't be placed
+  // on the day axis) rather than corrupting a bucket.
+  bucketByDay(samples) {
+    const perDay = /* @__PURE__ */ new Map();
+    for (const { timestamp, tokens } of samples) {
+      const day = dayOf(timestamp);
+      if (day === null) continue;
+      perDay.set(day, (perDay.get(day) ?? 0) + tokens);
+    }
+    return perDay;
+  }
+};
+function dayOf(timestamp) {
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+// src/persistence/transcript-reader.ts
+import { existsSync as existsSync6, readFileSync as readFileSync7, readdirSync as readdirSync5 } from "node:fs";
+import { homedir } from "node:os";
+import { join as join10 } from "node:path";
+var TranscriptReader = class {
+  // `cwd` (the project root) locates the FLOW session pointers; `home` is the transcript root base
+  // (injectable so the reader is testable against a fixture tree without touching the real home dir).
+  constructor(cwd, home = homedir()) {
+    this.cwd = cwd;
+    this.home = home;
+  }
+  // The token-usage samples observed for one run, in time order. Resolves the run's sessions from the FLOW
+  // pointers, reads each session transcript, sums the per-line usage, and sorts by timestamp. An absent
+  // pointer dir, an absent transcript dir, or an unreadable file each degrade to fewer (or zero) samples —
+  // never a throw.
+  read(run) {
+    const sessions = this.sessionsForRun(run);
+    if (sessions.length === 0) return [];
+    const dir = this.transcriptDir();
+    if (dir === null || !existsSync6(dir)) return [];
+    const samples = [];
+    for (const session of sessions) {
+      const file = join10(dir, `${session}.jsonl`);
+      if (!existsSync6(file)) continue;
+      samples.push(...this.readTranscript(file));
+    }
+    return samples.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+  // Invert the FLOW session→run pointers: every `<cwd>/.agentry/run/sessions/<session>.json` whose
+  // `workId` is this run names a session whose transcript belongs to the run. A missing pointer dir, an
+  // unreadable pointer, or one with no matching `workId` simply contributes no session.
+  sessionsForRun(run) {
+    const dir = join10(this.cwd, ".agentry", "run", "sessions");
+    if (!existsSync6(dir)) return [];
+    const sessions = [];
+    for (const file of readdirSync5(dir)) {
+      if (!file.endsWith(".json")) continue;
+      try {
+        const ptr = JSON.parse(readFileSync7(join10(dir, file), "utf8"));
+        if (ptr && typeof ptr === "object" && ptr.workId === run) {
+          sessions.push(file.slice(0, -".json".length));
+        }
+      } catch {
+      }
+    }
+    return sessions;
+  }
+  // Read one session transcript into samples. Each assistant line with a `message.usage` becomes one
+  // sample: its `timestamp` + the sum of the four token fields. A line that doesn't parse, has no usage,
+  // or no timestamp is skipped — the stream stays readable past a malformed entry.
+  readTranscript(file) {
+    let text;
+    try {
+      text = readFileSync7(file, "utf8");
+    } catch {
+      return [];
+    }
+    const out = [];
+    for (const line of text.split("\n")) {
+      const sample = parseUsageLine(line);
+      if (sample !== null) out.push(sample);
+    }
+    return out;
+  }
+  // The transcript dir for this project: ~/.claude/projects/<project-slug>/, where the slug is the
+  // absolute cwd with every non-alphanumeric char replaced by `-` (Claude Code's layout). Returns null
+  // only if the base projects dir is itself absent (Claude Code never ran) — a degrade signal.
+  transcriptDir() {
+    const base = join10(this.home, ".claude", "projects");
+    if (!existsSync6(base)) return null;
+    return join10(base, projectSlug(this.cwd));
+  }
+};
+function parseUsageLine(line) {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) return null;
+  let raw;
+  try {
+    raw = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!isRecord2(raw)) return null;
+  const timestamp = raw.timestamp;
+  const message = raw.message;
+  if (typeof timestamp !== "string" || !isRecord2(message)) return null;
+  const usage = message.usage;
+  if (!isRecord2(usage)) return null;
+  const tokens = num(usage.input_tokens) + num(usage.output_tokens) + num(usage.cache_creation_input_tokens) + num(usage.cache_read_input_tokens);
+  if (tokens === 0) return null;
+  return { timestamp, tokens };
+}
+function projectSlug(cwd) {
+  return cwd.replace(/[^A-Za-z0-9]/g, "-");
+}
+function num(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/persistence/mem-reader.ts
+var import_yaml4 = __toESM(require_dist(), 1);
+import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync as readdirSync6 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { join as join11 } from "node:path";
+var FRONTMATTER4 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var BODY_KEY = { facts: "text", episodes: "task" };
+var MemReader = class {
+  roots;
+  // `cwd` (the project root) + `home` (the global root base, injectable for testing) resolve the two mem
+  // roots. The project root is included only when the project mem dir exists — a project that has never
+  // written memory contributes nothing rather than erroring.
+  constructor(cwd, home = homedir2()) {
+    this.roots = [
+      { origin: "global", dir: join11(home, ".agentry", "memory") },
+      { origin: "project", dir: join11(cwd, ".agentry", "memory") }
+    ];
+  }
+  // Every memory record across both roots (facts then episodes), each tagged with its kind + origin. A
+  // corrupt/unreadable file is skipped (never fatal). The READ-ONLY browse the panel lists from.
+  list() {
+    const records = [];
+    for (const { origin, dir } of this.roots) {
+      for (const kind of ["facts", "episodes"]) {
+        records.push(...this.readDir(origin, kind, join11(dir, kind)));
+      }
+    }
+    return records;
+  }
+  // One record by id, or undefined when absent. The id is the store's bare ulid (the `<slug>-<ulid>` file
+  // stem's ulid half); we match on the parsed record's own `id` field, so a renamed file still resolves.
+  read(id) {
+    return this.list().find((r) => r.id === id);
+  }
+  // A simple read-only search over both roots: a case-insensitive substring match against the record's
+  // body prose and its frontmatter values (the fields a human scans for). An empty query returns all
+  // records (the browse default). Search NEVER writes — it filters the in-memory `list()`.
+  search(query) {
+    const needle = query.trim().toLowerCase();
+    if (needle.length === 0) return this.list();
+    return this.list().filter((r) => recordText(r).toLowerCase().includes(needle));
+  }
+  // Read one kind dir under one root into records. Absent dir ⇒ no records. Each `.md` file is split with
+  // the store's frontmatter regex; a file with no fence, or one whose YAML fails to parse, is skipped (the
+  // store's "corrupt files are skipped, never fatal" tolerance).
+  readDir(origin, kind, dir) {
+    if (!existsSync7(dir)) return [];
+    const records = [];
+    for (const file of readdirSync6(dir).sort()) {
+      if (!file.endsWith(".md")) continue;
+      const record = this.parseRecord(origin, kind, join11(dir, file));
+      if (record !== null) records.push(record);
+    }
+    return records;
+  }
+  // Parse one record file into a `MemReadRecord`, or null when it can't be read as a fenced record. The
+  // frontmatter fields are kept loose (the store owns the field contract); the body prose is re-attached
+  // under the kind's body key. The `id` is the record's own frontmatter `id` (the store always writes it);
+  // a record with no `id` falls back to the file stem so it still has a stable key.
+  parseRecord(origin, kind, file) {
+    let text;
+    try {
+      text = readFileSync8(file, "utf8");
+    } catch {
+      return null;
+    }
+    const m = FRONTMATTER4.exec(text);
+    if (!m) return null;
+    let front;
+    try {
+      front = (0, import_yaml4.parse)(m[1] ?? "") ?? {};
+    } catch {
+      return null;
+    }
+    const body = (m[2] ?? "").trim();
+    const fields = { ...front, [BODY_KEY[kind]]: body };
+    const id = typeof front.id === "string" && front.id.length > 0 ? front.id : stemOf(file);
+    return { id, fields, kind, origin };
+  }
+};
+function recordText(record) {
+  const parts = [];
+  for (const value of Object.values(record.fields)) {
+    if (typeof value === "string") parts.push(value);
+    else if (typeof value === "number") parts.push(String(value));
+  }
+  return parts.join("\n");
+}
+function stemOf(file) {
+  const name = file.slice(file.lastIndexOf("/") + 1);
+  return name.endsWith(".md") ? name.slice(0, -".md".length) : name;
+}
+
 // src/transport/http.ts
-import { createReadStream, existsSync as existsSync4, statSync } from "node:fs";
-import { extname as extname2, join as join8, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
+import { createReadStream, existsSync as existsSync8, statSync } from "node:fs";
+import { extname as extname2, join as join12, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/transport/host-router.ts
@@ -17624,6 +18008,41 @@ function handleApiRequest(req, res, reader, context) {
   }
   return false;
 }
+function handleReaderRequest(req, res, deps) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const path = url.pathname;
+  const method = req.method ?? "GET";
+  const run = runParam(url);
+  if (path === "/api/events") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.events.timeline(run)));
+  }
+  if (path === "/api/agents") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.events.roster(run)));
+  }
+  if (path === "/api/gates") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.gates.open(run)));
+  }
+  if (path === "/api/tokens") {
+    return guardGet(
+      method,
+      res,
+      () => sendJson(res, 200, run !== void 0 ? deps.tokens.series(run) : { timestamps: [], tokens: [] })
+    );
+  }
+  if (path === "/api/memory") {
+    const q = url.searchParams.get("q");
+    return guardGet(
+      method,
+      res,
+      () => sendJson(res, 200, q !== null && q.length > 0 ? deps.memory.search(q) : deps.memory.list())
+    );
+  }
+  return false;
+}
+function runParam(url) {
+  const run = url.searchParams.get("run");
+  return run !== null && run.length > 0 ? run : void 0;
+}
 async function handlePostRequest(req, res, deps) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -17646,7 +18065,7 @@ async function handlePostRequest(req, res, deps) {
   return handleTakeover(res, deps, write.runId, body);
 }
 function handleComment(res, deps, runId, body) {
-  if (!isRecord(body)) return reject(res, 400, "invalid_body");
+  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
   const gate = body.gate;
   const bodyText = body.body;
   if (typeof gate !== "string" || gate.length === 0) return reject(res, 400, "missing_gate");
@@ -17667,7 +18086,7 @@ function handleComment(res, deps, runId, body) {
   return true;
 }
 function handleArtifact(res, deps, runId, body) {
-  if (!isRecord(body)) return reject(res, 400, "invalid_body");
+  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
   const mapped = targetFromDocId(body.target);
   if (mapped === "read_only") return reject(res, 409, "read_only");
   if (mapped === null) return reject(res, 400, "invalid_target");
@@ -17695,7 +18114,7 @@ function handleArtifact(res, deps, runId, body) {
   return reject(res, 404, "not_found");
 }
 function handleTakeover(res, deps, runId, body) {
-  if (!isRecord(body)) return reject(res, 400, "invalid_body");
+  if (!isRecord3(body)) return reject(res, 400, "invalid_body");
   const taskNo = taskNoFromTakeover(body);
   if (taskNo === null) return reject(res, 400, "invalid_target");
   const rawBy = body.by;
@@ -17822,7 +18241,7 @@ function guardGet(method, res, run) {
   run();
   return true;
 }
-function isRecord(value) {
+function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function reject(res, status, error, extra = {}) {
@@ -17838,13 +18257,13 @@ function sendJson(res, status, body) {
 function resolveWebRoot() {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (pluginRoot && pluginRoot.length > 0) {
-    return join8(pluginRoot, "workbench", "web");
+    return join12(pluginRoot, "workbench", "web");
   }
   const bundleDir = fileURLToPath(new URL(".", import.meta.url));
   return resolve3(bundleDir, "..", "web");
 }
 var WEB_ROOT = resolveWebRoot();
-var INDEX_HTML = join8(WEB_ROOT, "index.html");
+var INDEX_HTML = join12(WEB_ROOT, "index.html");
 var CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -17863,10 +18282,11 @@ var CONTENT_TYPES = {
   ".ttf": "font/ttf",
   ".map": "application/json; charset=utf-8"
 };
-function createHttpHandler(reader, write) {
+function createHttpHandler(reader, write, readers) {
   return function handler(req, res) {
     const context = resolveRunContext(req.headers.host);
     if (handleApiRequest(req, res, reader, context)) return;
+    if (handleReaderRequest(req, res, readers)) return;
     void handlePostRequest(req, res, write).then((handled) => {
       if (handled) return;
       if (req.method !== "GET" && req.method !== "HEAD") {
@@ -17881,11 +18301,11 @@ function createHttpHandler(reader, write) {
 function serveStatic(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const filePath = resolveStaticFile(url.pathname);
-  if (filePath && existsSync4(filePath) && statSync(filePath).isFile()) {
+  if (filePath && existsSync8(filePath) && statSync(filePath).isFile()) {
     sendFile(req, res, filePath);
     return;
   }
-  if (existsSync4(INDEX_HTML)) {
+  if (existsSync8(INDEX_HTML)) {
     sendFile(req, res, INDEX_HTML);
     return;
   }
@@ -17896,7 +18316,7 @@ function resolveStaticFile(pathname) {
   const decoded = safeDecode(pathname);
   if (decoded === null) return null;
   if (decoded === "/" || decoded === "") return INDEX_HTML;
-  const candidate = normalize2(join8(WEB_ROOT, decoded));
+  const candidate = normalize2(join12(WEB_ROOT, decoded));
   if (candidate !== WEB_ROOT && !candidate.startsWith(WEB_ROOT + sep2)) return null;
   return candidate;
 }
@@ -18002,10 +18422,17 @@ async function main() {
   writePidfile(projectRoot, { pid: process.pid, port, startedAt: systemClock.now() });
   const repository = new FsWorkRepository(projectRoot);
   const watcher = new ChokidarWatcher(projectRoot);
-  const reader = new WorkReader(repository, systemClock);
   const writeService = new WriteService(new FlowWriter(projectRoot));
+  const events = new EventStore(repository, projectRoot);
+  const gates = new GateInbox(repository, projectRoot);
+  const tokens = new TokenReader(new TranscriptReader(projectRoot));
+  const memory = new MemReader(projectRoot);
+  const reader = new WorkReader(repository, systemClock, (run) => events.roster(run).length);
   const transport = new WsTransport(server);
-  server.on("request", createHttpHandler(reader, { reader, writeService, transport }));
+  server.on(
+    "request",
+    createHttpHandler(reader, { reader, writeService, transport }, { events, gates, tokens, memory })
+  );
   watcher.subscribe((change) => {
     if (!reader.read(change.run)) return;
     for (const path of change.paths) {

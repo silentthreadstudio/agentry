@@ -16,7 +16,13 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorkReader } from "../application/work-reader.js";
 import { resolveRunContext } from "./host-router.js";
-import { handleApiRequest, handlePostRequest, type WriteDeps } from "./routes.js";
+import {
+  handleApiRequest,
+  handlePostRequest,
+  handleReaderRequest,
+  type ReaderDeps,
+  type WriteDeps,
+} from "./routes.js";
 
 // Resolve the built SPA's static root. `CLAUDE_PLUGIN_ROOT` (set by the plugin host) wins; otherwise the
 // web dir sits beside the server bundle (`<bundle>/../web`). Resolved once at module load — the layout
@@ -59,12 +65,16 @@ const CONTENT_TYPES: Record<string, string> = {
 // composition root attaches the returned handler to the port-locked server (`server.on("request",
 // handler)`). `write` carries the WriteService + Transport the POST routes need (threaded the same way
 // the reader is — task 9's DI pattern).
-export function createHttpHandler(reader: WorkReader, write: WriteDeps) {
+export function createHttpHandler(reader: WorkReader, write: WriteDeps, readers: ReaderDeps) {
   return function handler(req: IncomingMessage, res: ServerResponse): void {
     const context = resolveRunContext(req.headers.host);
 
     // GET API + healthz first; a matched read route answers and we're done.
     if (handleApiRequest(req, res, reader, context)) return;
+
+    // The Phase-4 aggregation reads (events/agents/gates/tokens/memory) — a separate GET dispatcher,
+    // tried before the write/static path; a matched reader route answers here.
+    if (handleReaderRequest(req, res, readers)) return;
 
     // The write surface (POST /comment,/artifact,/takeover) consumes the request body, so it is async;
     // it answers a matched write path, otherwise falls through to static-serving below. A non-write,

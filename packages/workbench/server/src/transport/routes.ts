@@ -26,6 +26,10 @@ import { ReviewAnchor, ReviewDecision } from "@agentry/flow/domain/review";
 import { computeVersion } from "@agentry/flow/domain/version";
 import type { WorkReader } from "../application/work-reader.js";
 import type { WriteService } from "../application/write-service.js";
+import type { EventStore } from "../application/event-store.js";
+import type { GateInbox } from "../application/gate-inbox.js";
+import type { TokenReader } from "../application/token-reader.js";
+import type { MemReader } from "../persistence/mem-reader.js";
 import type { ArtifactTarget } from "../persistence/flow-writer.js";
 import type { Transport } from "../domain/ports.js";
 import type { RunContext } from "./host-router.js";
@@ -37,6 +41,17 @@ export interface WriteDeps {
   reader: WorkReader;
   writeService: WriteService;
   transport: Transport;
+}
+
+// The Phase-4 read-aggregation services the five reader GET handlers fold (event-store/gate-inbox/
+// token-reader/mem-reader). Threaded by the composition root alongside the `WorkReader`, the same DI
+// pattern task 9 uses. These services are PURE of HTTP (ADR-001) — the handlers below are thin adapters
+// that call them and serialize JSON, holding no run state of their own.
+export interface ReaderDeps {
+  events: EventStore;
+  gates: GateInbox;
+  tokens: TokenReader;
+  memory: MemReader;
 }
 
 // `true` when this request was answered by a route, `false` when no API/healthz route matched (so the
@@ -89,6 +104,66 @@ export function handleApiRequest(
   }
 
   return false; // no API route matched — let the http layer serve static (or the POST dispatcher, see http.ts).
+}
+
+// ── Reader surface (Phase 4) ─────────────────────────────────────────────────────────────────────────
+// The five aggregation reads behind the Activity / Agents / Gates / Tokens / Memory pages. ADDITIVE to the
+// Phase-1 GET surface above — a SEPARATE dispatcher so task 9's pinned reads stay untouched; the http
+// layer tries it after `handleApiRequest` returns false. All five are GET-only (a write verb is 405, never
+// a silent fall-through). Host-scoped where it matters: `/api/events`, `/api/gates`, `/api/tokens` accept
+// `?run=<id>` to filter to one run; absent the param they fold across every run (the cross-run view).
+//
+//   GET /api/events[?run=<id>]  → EventView[]   — the folded timeline (one fold powers Activity + Agents)
+//   GET /api/agents[?run=<id>]  → AgentView[]   — the agent roster across runs (or one run)
+//   GET /api/gates[?run=<id>]   → OpenGateItem[] — the open waiting-on-you gate items
+//   GET /api/tokens?run=<id>    → TokenSeries   — the per-day token series for one run (empty if absent)
+//   GET /api/memory[?q=<text>]  → MemReadRecord[] — read-only browse/search over both mem roots
+export function handleReaderRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: ReaderDeps,
+): boolean {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const path = url.pathname;
+  const method = req.method ?? "GET";
+
+  // The `?run=<id>` filter (events/agents/gates/tokens). Undefined ⇒ the cross-run fold; a present value is
+  // the run to scope to. The run-segment safety is the store's `runDir` guard (`assertSafeSegment`), not
+  // this matcher — an empty `?run=` is treated as absent.
+  const run = runParam(url);
+
+  if (path === "/api/events") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.events.timeline(run)));
+  }
+  if (path === "/api/agents") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.events.roster(run)));
+  }
+  if (path === "/api/gates") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.gates.open(run)));
+  }
+  if (path === "/api/tokens") {
+    // Tokens is per-run: `?run=<id>` selects the run; absent it, there is no series (an empty one). The
+    // source may be absent — `TokenReader` degrades to a clean empty `TokenSeries` (plan §7.3).
+    return guardGet(method, res, () =>
+      sendJson(res, 200, run !== undefined ? deps.tokens.series(run) : { timestamps: [], tokens: [] }),
+    );
+  }
+  if (path === "/api/memory") {
+    // Read-only browse/search across both mem roots. `?q=<text>` filters; absent it, the full browse.
+    const q = url.searchParams.get("q");
+    return guardGet(method, res, () =>
+      sendJson(res, 200, q !== null && q.length > 0 ? deps.memory.search(q) : deps.memory.list()),
+    );
+  }
+
+  return false; // not a reader route — fall through to the write/static path.
+}
+
+// The `?run=<id>` query param decoded to a run id, or undefined when absent/empty. The URL layer already
+// percent-decodes the value; the traversal safety is the store's `runDir`/`assertSafeSegment` guard.
+function runParam(url: URL): string | undefined {
+  const run = url.searchParams.get("run");
+  return run !== null && run.length > 0 ? run : undefined;
 }
 
 // ── Write surface (Phase 3) ──────────────────────────────────────────────────────────────────────────
