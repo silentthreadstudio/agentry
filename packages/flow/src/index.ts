@@ -21,6 +21,7 @@ import { registerAgentTools } from "./tools/agent-tools.js";
 import { registerReviewTools } from "./tools/review-tools.js";
 import { registerChannelReplyTools } from "./tools/channel-reply-tools.js";
 import { ChannelBridge } from "./channel/channel-bridge.js";
+import { StatusBridge } from "./channel/status-bridge.js";
 import type { ChannelNotification } from "./channel/channel-event.js";
 import { PermissionRelay } from "./channel/permission-relay.js";
 import type { PermissionVerdictNotification } from "./channel/permission-event.js";
@@ -47,10 +48,12 @@ const PERMISSION_METHOD = "notifications/claude/channel/permission";
 // Tells Claude how to treat the channel events the bridge pushes — what the `<channel …>` tag means
 // and what to do with it. Carried on the server's `instructions` so it reaches the session on load.
 const CHANNEL_INSTRUCTIONS =
-  'Events tagged `<channel source="agentry-flow" run_id=… doc=… decision=…>` are live human review ' +
-  "comments left in the Agentry Workbench on a run's artifact. Read them and act: address the comment " +
-  "by editing the referenced doc (respecting locks/version) and/or resolving it. The run_id and doc " +
-  "identify which artifact; decision is approve|changes|question.";
+  'Events tagged `<channel source="agentry-flow" …>` are live human signals from the Agentry Workbench. ' +
+  "Two kinds: (1) REVIEW COMMENTS — attributes run_id/doc/comment_id/decision (approve|changes|question): " +
+  "a human commented on a run's artifact; address it by editing the referenced doc (respecting " +
+  "locks/version) and/or resolving it. (2) STATUS CHANGES — attributes run_id/task/status with kind=status: " +
+  "a human changed a task's lifecycle status (e.g. forced it to done, or back to todo to redo). Treat it as " +
+  "steering: re-read that task's status from the files and adjust what you do next accordingly.";
 
 // The shared service context every tool family receives — the file-store adapters (the only state
 // holders, AC6) plus the resolved cwd. T02–T05's `register*Tools` close over this; the run is NOT
@@ -169,14 +172,21 @@ export async function main(): Promise<void> {
   const bridge = new ChannelBridge(cwd, services.reviews, emit);
   bridge.start();
 
+  // The human→agent status channel: watch `<cwd>/.agentry/run/status-signals/*.json` (written by the
+  // Workbench on a HUMAN status change) and emit each as a `notifications/claude/channel` note via the
+  // same emit. Human-origin only — the agent's own task_status writes never produce a signal file.
+  const statusBridge = new StatusBridge(cwd, emit);
+  statusBridge.start();
+
   // Start the verdict watcher AFTER connect so an emitted verdict lands on a live transport (mirrors
   // the bridge). Watches `<cwd>/.agentry/run/permissions/*.verdict.json`; emits the verdict back for
   // any pending request id, then deletes both files.
   relay.start();
 
-  // Tear both watchers down on transport close so a server restart doesn't leak a dangling watcher.
+  // Tear all watchers down on transport close so a server restart doesn't leak a dangling watcher.
   server.server.onclose = () => {
     void bridge.stop();
+    void statusBridge.stop();
     void relay.stop();
   };
 }

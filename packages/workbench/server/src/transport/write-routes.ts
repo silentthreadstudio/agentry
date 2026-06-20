@@ -24,6 +24,7 @@ import type { Transport } from "../domain/ports.js";
 import { isRecord, readJsonBody, reject, sendJson } from "./http-kit.js";
 import { matchWritePath, resolveRun } from "./route-match.js";
 import { docIdOf, reloadDoc, targetFromDocId, taskNoFromTarget } from "./doc-model.js";
+import { writeStatusSignal } from "../persistence/status-signal-writer.js";
 
 // The write-side dependencies the POST handlers need, threaded by the composition root alongside the
 // `WorkReader` task 9 already injects. `WriteService` enforces the invariants; `Transport` fans the
@@ -32,6 +33,9 @@ export interface WriteDeps {
   reader: WorkReader;
   writeService: WriteService;
   transport: Transport;
+  // The project root — where the human status-change signal is dropped for FLOW's StatusBridge (the
+  // human→agent status channel). The SAME root the permission relay writes verdicts under.
+  projectRoot: string;
 }
 
 export async function handlePostRequest(
@@ -153,6 +157,14 @@ function handleStatus(res: ServerResponse, deps: WriteDeps, runId: string, body:
   const outcome = deps.writeService.setStatus({ run: runId, taskNo, status: status.data });
   if (!outcome.ok) return reject(res, 404, "not_found");
   deps.transport.push(runId, { type: "file-changed", path: `tasks/${taskNo}` });
+  // Drop a human-origin status signal for FLOW's StatusBridge → a live `<channel>` note to the agent. This
+  // is the human→agent status channel; it's the Workbench (human) writing it, so it's never the agent's own
+  // task_status. Best-effort — a signal-write failure must not fail the status change (the file is truth).
+  try {
+    writeStatusSignal(deps.projectRoot, { run: runId, task: `task-${taskNo}`, status: status.data });
+  } catch {
+    /* the status change already landed; the live channel note is the only thing missed */
+  }
   sendJson(res, 200, { ok: true });
   return true;
 }

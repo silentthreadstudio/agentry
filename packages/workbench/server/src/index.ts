@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     "request",
     createHttpHandler(
       reader,
-      { reader, writeService, transport },
+      { reader, writeService, transport, projectRoot },
       { events, gates, tokens, memory },
       { watcher: permissionWatcher, projectRoot },
     ),

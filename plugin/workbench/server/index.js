@@ -18147,7 +18147,7 @@ function stemOf(file) {
 
 // src/transport/http.ts
 import { createReadStream, existsSync as existsSync8, statSync } from "node:fs";
-import { extname as extname2, join as join14, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
+import { extname as extname2, join as join15, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ../shared/src/slug.ts
@@ -18427,6 +18427,23 @@ function handleReaderRequest(req, res, deps) {
   return false;
 }
 
+// src/persistence/status-signal-writer.ts
+import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join13 } from "node:path";
+function signalDir(projectRoot) {
+  return join13(projectRoot, ".agentry", "run", "status-signals");
+}
+function mintName() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`;
+}
+function writeStatusSignal(projectRoot, signal) {
+  const dir = signalDir(projectRoot);
+  mkdirSync4(dir, { recursive: true });
+  const payload = { ...signal, at: (/* @__PURE__ */ new Date()).toISOString() };
+  writeFileSync4(join13(dir, mintName()), `${JSON.stringify(payload, null, 2)}
+`);
+}
+
 // src/transport/write-routes.ts
 async function handlePostRequest(req, res, deps) {
   const url = new URL(req.url ?? "/", "http://localhost");
@@ -18513,6 +18530,10 @@ function handleStatus(res, deps, runId, body) {
   const outcome = deps.writeService.setStatus({ run: runId, taskNo, status: status.data });
   if (!outcome.ok) return reject(res, 404, "not_found");
   deps.transport.push(runId, { type: "file-changed", path: `tasks/${taskNo}` });
+  try {
+    writeStatusSignal(deps.projectRoot, { run: runId, task: `task-${taskNo}`, status: status.data });
+  } catch {
+  }
   sendJson(res, 200, { ok: true });
   return true;
 }
@@ -18546,14 +18567,14 @@ function handleArtifact(res, deps, runId, body) {
 }
 
 // src/persistence/permission-writer.ts
-import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join13 } from "node:path";
+import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join14 } from "node:path";
 function writeVerdict(projectRoot, requestId, behavior) {
   assertSafeSegment(requestId);
   const dir = permissionsDir(projectRoot);
-  mkdirSync4(dir, { recursive: true });
+  mkdirSync5(dir, { recursive: true });
   const record = { request_id: requestId, behavior };
-  writeFileSync4(join13(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
+  writeFileSync5(join14(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
 }
 
 // src/transport/permission-routes.ts
@@ -18596,13 +18617,13 @@ function handleVerdict(res, deps, requestId, body) {
 function resolveWebRoot() {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (pluginRoot && pluginRoot.length > 0) {
-    return join14(pluginRoot, "workbench", "web");
+    return join15(pluginRoot, "workbench", "web");
   }
   const bundleDir = fileURLToPath(new URL(".", import.meta.url));
   return resolve3(bundleDir, "..", "web");
 }
 var WEB_ROOT = resolveWebRoot();
-var INDEX_HTML = join14(WEB_ROOT, "index.html");
+var INDEX_HTML = join15(WEB_ROOT, "index.html");
 var CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -18657,7 +18678,7 @@ function resolveStaticFile(pathname) {
   const decoded = safeDecode(pathname);
   if (decoded === null) return null;
   if (decoded === "/" || decoded === "") return INDEX_HTML;
-  const candidate = normalize2(join14(WEB_ROOT, decoded));
+  const candidate = normalize2(join15(WEB_ROOT, decoded));
   if (candidate !== WEB_ROOT && !candidate.startsWith(WEB_ROOT + sep2)) return null;
   return candidate;
 }
@@ -18803,7 +18824,7 @@ async function main() {
     "request",
     createHttpHandler(
       reader,
-      { reader, writeService, transport },
+      { reader, writeService, transport, projectRoot },
       { events, gates, tokens, memory },
       { watcher: permissionWatcher, projectRoot }
     )

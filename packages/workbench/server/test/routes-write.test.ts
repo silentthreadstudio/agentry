@@ -5,7 +5,10 @@
 // doc-fetch DocModel shape. Evidence is the captured status + parsed JSON body + the pushed messages.
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import type { WsMessage } from "@agentry/workbench-shared";
 import { computeVersion } from "@agentry/flow/domain/version";
@@ -67,7 +70,9 @@ function deps(write: Partial<StubWrite>, transport = recordingTransport()): Writ
     writeArtifact: write.writeArtifact ?? (() => ({ ok: false, reason: "not-found" }) as const),
     setStatus: write.setStatus ?? (() => ({ ok: false, reason: "not-found" }) as const),
   } as unknown as WriteDeps["writeService"];
-  return { reader, writeService, transport };
+  // A temp project root so the status route's human-origin signal write lands in an isolated dir.
+  const projectRoot = mkdtempSync(join(tmpdir(), "wb-routes-"));
+  return { reader, writeService, transport, projectRoot };
 }
 
 // A fake POST request that emits the given JSON body over the data/end stream the handler consumes.
@@ -283,6 +288,15 @@ test("POST /status with a task-<NNN> target sets the status and returns { ok:tru
   assert.equal(seen?.status, "done");
   // The status write nudges watchers so the graph/navigator re-tint.
   assert.ok(d.transport.pushes.some((p) => p.message.type === "file-changed"), "pushes a file-changed");
+  // …and drops a human-origin status signal for FLOW's StatusBridge (the human→agent status channel).
+  const signals = readdirSync(join(d.projectRoot, ".agentry", "run", "status-signals"));
+  assert.equal(signals.length, 1, "one status signal written");
+  const sig = JSON.parse(readFileSync(join(d.projectRoot, ".agentry", "run", "status-signals", signals[0]!), "utf8"));
+  assert.deepEqual({ run: sig.run, task: sig.task, status: sig.status }, {
+    run: "sample",
+    task: "task-001",
+    status: "done",
+  });
 });
 
 test("POST /status with an out-of-vocab status is 400, no write", async () => {

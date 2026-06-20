@@ -31224,9 +31224,68 @@ var ChannelBridge = class {
   }
 };
 
-// src/channel/permission-relay.ts
-import { mkdirSync as mkdirSync7, readFileSync as readFileSync6, rmSync, writeFileSync as writeFileSync5 } from "node:fs";
+// src/channel/status-bridge.ts
+import { mkdirSync as mkdirSync7, readFileSync as readFileSync6, rmSync } from "node:fs";
 import { join as join8 } from "node:path";
+
+// src/channel/status-event.ts
+var StatusSignal = external_exports.object({
+  run: external_exports.string(),
+  task: external_exports.string(),
+  // the task node id, e.g. "task-003"
+  status: external_exports.string(),
+  // the new FLOW status (todo | in-progress | in-review | done)
+  at: external_exports.string().optional()
+  // ISO stamp the Workbench wrote it (display only)
+});
+function statusNotification(sig) {
+  return {
+    content: `Human set ${sig.task} status \u2192 ${sig.status} (run ${sig.run}).`,
+    meta: { run_id: sig.run, task: sig.task, status: sig.status, kind: "status" }
+  };
+}
+
+// src/channel/status-bridge.ts
+var StatusBridge = class {
+  constructor(cwd, emit) {
+    this.cwd = cwd;
+    this.emit = emit;
+  }
+  watcher;
+  // Start watching the status-signal dir. ignoreInitial is FALSE so a signal written while flow was down
+  // (between turns) still fires on startup — and is deleted after, so it never re-fires. The dir is created
+  // up front (chokidar on a missing dir reports ready but never watches — the macOS gotcha).
+  start() {
+    if (this.watcher !== void 0) return;
+    const dir = join8(this.cwd, ".agentry", "run", "status-signals");
+    mkdirSync7(dir, { recursive: true });
+    this.watcher = watch(dir, { ignoreInitial: false, persistent: true, depth: 0 });
+    this.watcher.on("add", (file) => void this.handle(file));
+  }
+  async stop() {
+    if (this.watcher === void 0) return;
+    await this.watcher.close();
+    this.watcher = void 0;
+  }
+  // Read + parse one signal file, emit the channel note, delete the file. A malformed file is dropped
+  // (no throw) so a stray/partial write never wedges the watcher.
+  async handle(file) {
+    if (!file.endsWith(".json")) return;
+    let signal;
+    try {
+      signal = StatusSignal.parse(JSON.parse(readFileSync6(file, "utf8")));
+    } catch {
+      rmSync(file, { force: true });
+      return;
+    }
+    await this.emit(statusNotification(signal));
+    rmSync(file, { force: true });
+  }
+};
+
+// src/channel/permission-relay.ts
+import { mkdirSync as mkdirSync8, readFileSync as readFileSync7, rmSync as rmSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join9 } from "node:path";
 
 // src/channel/permission-event.ts
 var PermissionRequestSchema = external_exports.object({
@@ -31270,7 +31329,7 @@ function parseVerdictFile(raw) {
 // src/channel/permission-relay.ts
 var VERDICT_SUFFIX = ".verdict.json";
 function permissionsDir(cwd) {
-  return join8(cwd, ".agentry", "run", "permissions");
+  return join9(cwd, ".agentry", "run", "permissions");
 }
 var PermissionRelay = class {
   constructor(cwd, emit) {
@@ -31296,7 +31355,7 @@ var PermissionRelay = class {
   start() {
     if (this.watcher !== void 0) return;
     const dir = permissionsDir(this.cwd);
-    mkdirSync7(dir, { recursive: true });
+    mkdirSync8(dir, { recursive: true });
     this.watcher = watch(dir, {
       ignoreInitial: false,
       persistent: true,
@@ -31326,9 +31385,9 @@ var PermissionRelay = class {
   onRequest(params) {
     this.pending.add(params.request_id);
     const dir = permissionsDir(this.cwd);
-    mkdirSync7(dir, { recursive: true });
+    mkdirSync8(dir, { recursive: true });
     const record2 = buildRequestFile(params, (/* @__PURE__ */ new Date()).toISOString());
-    writeFileSync5(join8(dir, `${params.request_id}.json`), JSON.stringify(record2, null, 2));
+    writeFileSync5(join9(dir, `${params.request_id}.json`), JSON.stringify(record2, null, 2));
   }
   // A verdict file appeared. Read + validate it; if its `request_id` is pending, emit the verdict,
   // drop the id, and delete both files. A malformed file or an unknown/stale id is ignored — we still
@@ -31336,17 +31395,17 @@ var PermissionRelay = class {
   async handleVerdict(filePath) {
     let raw;
     try {
-      raw = readFileSync6(filePath, "utf8");
+      raw = readFileSync7(filePath, "utf8");
     } catch {
       return;
     }
     const verdict = parseVerdictFile(raw);
     if (verdict === void 0) {
-      rmSync(filePath, { force: true });
+      rmSync2(filePath, { force: true });
       return;
     }
     if (!this.pending.has(verdict.request_id)) {
-      rmSync(filePath, { force: true });
+      rmSync2(filePath, { force: true });
       return;
     }
     this.pending.delete(verdict.request_id);
@@ -31355,8 +31414,8 @@ var PermissionRelay = class {
       params: { request_id: verdict.request_id, behavior: verdict.behavior }
     });
     const dir = permissionsDir(this.cwd);
-    rmSync(join8(dir, `${verdict.request_id}.json`), { force: true });
-    rmSync(filePath, { force: true });
+    rmSync2(join9(dir, `${verdict.request_id}.json`), { force: true });
+    rmSync2(filePath, { force: true });
   }
 };
 
@@ -31365,7 +31424,7 @@ var CHANNEL_CAPABILITY = "claude/channel";
 var CHANNEL_METHOD = "notifications/claude/channel";
 var PERMISSION_CAPABILITY = "claude/channel/permission";
 var PERMISSION_METHOD = "notifications/claude/channel/permission";
-var CHANNEL_INSTRUCTIONS = 'Events tagged `<channel source="agentry-flow" run_id=\u2026 doc=\u2026 decision=\u2026>` are live human review comments left in the Agentry Workbench on a run\'s artifact. Read them and act: address the comment by editing the referenced doc (respecting locks/version) and/or resolving it. The run_id and doc identify which artifact; decision is approve|changes|question.';
+var CHANNEL_INSTRUCTIONS = "Events tagged `<channel source=\"agentry-flow\" \u2026>` are live human signals from the Agentry Workbench. Two kinds: (1) REVIEW COMMENTS \u2014 attributes run_id/doc/comment_id/decision (approve|changes|question): a human commented on a run's artifact; address it by editing the referenced doc (respecting locks/version) and/or resolving it. (2) STATUS CHANGES \u2014 attributes run_id/task/status with kind=status: a human changed a task's lifecycle status (e.g. forced it to done, or back to todo to redo). Treat it as steering: re-read that task's status from the files and adjust what you do next accordingly.";
 function createServices(cwd) {
   return {
     cwd,
@@ -31428,9 +31487,12 @@ async function main() {
   };
   const bridge = new ChannelBridge(cwd, services.reviews, emit);
   bridge.start();
+  const statusBridge = new StatusBridge(cwd, emit);
+  statusBridge.start();
   relay.start();
   server.server.onclose = () => {
     void bridge.stop();
+    void statusBridge.stop();
     void relay.stop();
   };
 }

@@ -12,12 +12,10 @@ import { isHumanComment, type ReviewComment } from "../domain/review.js";
 // `meta` is the structured context the host surfaces in the `<channel …>` tag (snake_case only).
 export interface ChannelNotification {
   content: string;
-  meta: {
-    run_id: string;
-    doc: string;
-    comment_id: string;
-    decision: ReviewComment["decision"];
-  };
+  // The structured context surfaced as `<channel …>` attributes. Keys MUST be snake_case (the host drops
+  // hyphenated keys). A loose record so the one channel carries different event families — review comments
+  // (run_id/doc/comment_id/decision) and human status changes (run_id/task/status) — through one EmitFn.
+  meta: Record<string, string>;
 }
 
 // Quote-cap so a long anchor snippet doesn't dominate the channel content. The comment body carries
