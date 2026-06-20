@@ -57,17 +57,34 @@ export function ApprovalsBanner() {
     return unsubscribe;
   }, []);
 
-  const answer = useCallback((requestId: string, behavior: "allow" | "deny") => {
-    setSending((prev) => new Set(prev).add(requestId));
-    postVerdict(requestId, behavior).catch(() => {
-      // The write failed (e.g. a poisoned id, or the server is down) — un-disable so the user can retry.
-      setSending((prev) => {
-        const next = new Set(prev);
-        next.delete(requestId);
-        return next;
-      });
+  const clearSending = useCallback((requestId: string) => {
+    setSending((prev) => {
+      if (!prev.has(requestId)) return prev;
+      const next = new Set(prev);
+      next.delete(requestId);
+      return next;
     });
   }, []);
+
+  const answer = useCallback(
+    (requestId: string, behavior: "allow" | "deny") => {
+      setSending((prev) => new Set(prev).add(requestId));
+      postVerdict(requestId, behavior)
+        .then(() => {
+          // Optimistic clear: the verdict is written, so drop the row NOW rather than waiting solely on the
+          // ws `permission-removed`. chokidar can miss the request-file unlink (a request created+deleted in
+          // milliseconds), so that event may never arrive — without this the card would hang on "sending"
+          // forever. The ws `removed` stays the backup + still clears terminal-resolved cards.
+          setPending((prev) => prev.filter((r) => r.request_id !== requestId));
+          clearSending(requestId);
+        })
+        .catch(() => {
+          // The write failed (a poisoned id, or the server is down) — un-disable so the user can retry.
+          clearSending(requestId);
+        });
+    },
+    [clearSending],
+  );
 
   if (pending.length === 0) return null;
 

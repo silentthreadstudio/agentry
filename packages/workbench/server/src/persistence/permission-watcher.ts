@@ -17,7 +17,8 @@
 // session/project-level, so this is a SEPARATE watcher rooted at `.agentry/run/permissions/`.
 import { watch } from "chokidar";
 import type { FSWatcher } from "chokidar";
-import { basename } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import { permissionsDir } from "@agentry/flow/channel/permission-relay";
 import type { PermissionRequest } from "@agentry/workbench-shared";
 import { readRequestFile } from "./permission-reader.js";
@@ -30,15 +31,35 @@ export type PermissionEvent =
   | { kind: "added"; request: PermissionRequest }
   | { kind: "removed"; requestId: string };
 
+// Drop pending entries whose request file no longer exists — the phantom self-heal (chokidar can miss the
+// `unlink` for a request file created+deleted within milliseconds, the auto-approve case). Pure but for the
+// `exists` probe it's handed: MUTATES `pending` (removing the dead ids) and returns the removed request_ids
+// so the caller can emit `removed` for each. Exported for a deterministic unit test (no chokidar timing).
+export function prunePhantoms(
+  pending: Map<string, PermissionRequest>,
+  exists: (requestId: string) => boolean,
+): string[] {
+  const removed: string[] = [];
+  for (const id of [...pending.keys()]) {
+    if (!exists(id)) {
+      pending.delete(id);
+      removed.push(id);
+    }
+  }
+  return removed;
+}
+
 export class PermissionWatcher {
   private readonly fsWatcher: FSWatcher;
   private readonly handlers = new Set<(event: PermissionEvent) => void>();
   // The pending requests, keyed by request_id (== the `<id>.json` filename stem). The source of truth the
   // REST snapshot reads; the watcher keeps it in lockstep with the dir's request files.
   private readonly pending = new Map<string, PermissionRequest>();
+  private readonly dir: string;
 
   constructor(projectRoot: string) {
     const dir = permissionsDir(projectRoot);
+    this.dir = dir;
     // Watch the permissions dir, one level deep (request files are direct children). `ignoreInitial:
     // false` so requests already on disk at startup (FLOW raised them while the workbench was down, and
     // is still blocked waiting) seed the pending set — they must show in the banner immediately.
@@ -54,9 +75,15 @@ export class PermissionWatcher {
     return () => this.handlers.delete(handler);
   }
 
-  // The current pending requests — the seed for `GET /api/permissions`. A copy, newest last (insertion
-  // order == file-add order), so a caller can't mutate the internal map.
+  // The current pending requests — the seed for `GET /api/permissions`. SELF-HEALS against disk first:
+  // chokidar can drop the `unlink` for a request file that's created+deleted within milliseconds (the
+  // auto-approve case — FLOW writes the request, CC resolves it instantly, FLOW deletes it), leaving a
+  // PHANTOM in `pending` with no file behind it. So before answering, drop any pending whose `<id>.json`
+  // is gone — and emit `removed` for it, so a stuck banner card (one whose own unlink was also missed)
+  // clears too. Guarantees the snapshot reflects disk truth, never a phantom.
   current(): PermissionRequest[] {
+    const gone = prunePhantoms(this.pending, (id) => existsSync(join(this.dir, `${id}.json`)));
+    for (const id of gone) this.emit({ kind: "removed", requestId: id });
     return [...this.pending.values()];
   }
 

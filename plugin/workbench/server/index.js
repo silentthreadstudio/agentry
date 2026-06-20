@@ -17196,7 +17196,8 @@ var ChokidarWatcher = class {
 };
 
 // src/persistence/permission-watcher.ts
-import { basename as basename3 } from "node:path";
+import { existsSync as existsSync3 } from "node:fs";
+import { basename as basename3, join as join8 } from "node:path";
 
 // ../../flow/src/channel/permission-relay.ts
 import { join as join7 } from "node:path";
@@ -17266,14 +17267,26 @@ function isNonEmptyString(v) {
 
 // src/persistence/permission-watcher.ts
 var VERDICT_SUFFIX = ".verdict.json";
+function prunePhantoms(pending, exists) {
+  const removed = [];
+  for (const id of [...pending.keys()]) {
+    if (!exists(id)) {
+      pending.delete(id);
+      removed.push(id);
+    }
+  }
+  return removed;
+}
 var PermissionWatcher = class {
   fsWatcher;
   handlers = /* @__PURE__ */ new Set();
   // The pending requests, keyed by request_id (== the `<id>.json` filename stem). The source of truth the
   // REST snapshot reads; the watcher keeps it in lockstep with the dir's request files.
   pending = /* @__PURE__ */ new Map();
+  dir;
   constructor(projectRoot) {
     const dir = permissionsDir(projectRoot);
+    this.dir = dir;
     this.fsWatcher = watch(dir, { ignoreInitial: false, persistent: true, depth: 0 });
     this.fsWatcher.on("add", (path) => this.onUpsert(path));
     this.fsWatcher.on("change", (path) => this.onUpsert(path));
@@ -17284,9 +17297,15 @@ var PermissionWatcher = class {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
   }
-  // The current pending requests — the seed for `GET /api/permissions`. A copy, newest last (insertion
-  // order == file-add order), so a caller can't mutate the internal map.
+  // The current pending requests — the seed for `GET /api/permissions`. SELF-HEALS against disk first:
+  // chokidar can drop the `unlink` for a request file that's created+deleted within milliseconds (the
+  // auto-approve case — FLOW writes the request, CC resolves it instantly, FLOW deletes it), leaving a
+  // PHANTOM in `pending` with no file behind it. So before answering, drop any pending whose `<id>.json`
+  // is gone — and emit `removed` for it, so a stuck banner card (one whose own unlink was also missed)
+  // clears too. Guarantees the snapshot reflects disk truth, never a phantom.
   current() {
+    const gone = prunePhantoms(this.pending, (id) => existsSync3(join8(this.dir, `${id}.json`)));
+    for (const id of gone) this.emit({ kind: "removed", requestId: id });
     return [...this.pending.values()];
   }
   async close() {
@@ -17320,8 +17339,8 @@ var PermissionWatcher = class {
 
 // src/persistence/flow-writer.ts
 var import_yaml3 = __toESM(require_dist(), 1);
-import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join9 } from "node:path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join10 } from "node:path";
 
 // ../../flow/src/domain/review.ts
 var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
@@ -17352,8 +17371,8 @@ function isHumanComment(comment) {
 }
 
 // src/persistence/review-sidecar-source.ts
-import { existsSync as existsSync3, readFileSync as readFileSync5, readdirSync as readdirSync3 } from "node:fs";
-import { join as join8 } from "node:path";
+import { existsSync as existsSync4, readFileSync as readFileSync5, readdirSync as readdirSync3 } from "node:fs";
+import { join as join9 } from "node:path";
 var SIDECAR_SUFFIX = ".annotations.json";
 var FsReviewSidecarSource = class {
   constructor(cwd) {
@@ -17362,19 +17381,19 @@ var FsReviewSidecarSource = class {
   // The gate stems present under one run's `.review/` (sorted, stable), or `[]` when the dir is absent.
   // The stem is the filename minus the `.annotations.json` suffix — the gate key the inbox folds over.
   listGates(run) {
-    const dir = join8(runDir(this.cwd, run), ".review");
-    if (!existsSync3(dir)) return [];
+    const dir = join9(runDir(this.cwd, run), ".review");
+    if (!existsSync4(dir)) return [];
     return readdirSync3(dir).filter((file) => file.endsWith(SIDECAR_SUFFIX)).map((file) => file.slice(0, -SIDECAR_SUFFIX.length)).sort();
   }
   // One gate's validated `ReviewComment[]`, or `[]` when the sidecar is absent/corrupt. The single
   // parse-tolerant reader (see header) — every sidecar read in the package routes through here.
   commentsFor(run, gate) {
-    const file = join8(runDir(this.cwd, run), ".review", `${gate}${SIDECAR_SUFFIX}`);
+    const file = join9(runDir(this.cwd, run), ".review", `${gate}${SIDECAR_SUFFIX}`);
     return readSidecar(file);
   }
 };
 function readSidecar(file) {
-  if (!existsSync3(file)) return [];
+  if (!existsSync4(file)) return [];
   try {
     const raw = JSON.parse(readFileSync5(file, "utf8"));
     if (!Array.isArray(raw)) return [];
@@ -17392,12 +17411,12 @@ var FlowWriter = class {
   }
   readArtifact(run, target) {
     const path = this.artifactPath(run, target);
-    if (path === void 0 || !existsSync4(path)) return void 0;
+    if (path === void 0 || !existsSync5(path)) return void 0;
     return this.parse(readFileSync6(path, "utf8"));
   }
   writeArtifact(run, target, frontmatter, body) {
     const path = this.resolveWritePath(run, target);
-    mkdirSync3(join9(path, ".."), { recursive: true });
+    mkdirSync3(join10(path, ".."), { recursive: true });
     const { rendered, version } = this.render(frontmatter, body);
     writeFileSync3(path, rendered);
     return version;
@@ -17405,8 +17424,8 @@ var FlowWriter = class {
   appendComment(run, gate, comment) {
     assertSafeSegment(gate);
     const validated = ReviewComment.parse(comment);
-    const dir = join9(runDir(this.cwd, run), ".review");
-    const file = join9(dir, `${gate}.annotations.json`);
+    const dir = join10(runDir(this.cwd, run), ".review");
+    const file = join10(dir, `${gate}.annotations.json`);
     const existing = readSidecar(file);
     mkdirSync3(dir, { recursive: true });
     writeFileSync3(file, `${JSON.stringify([...existing, validated], null, 2)}
@@ -17416,7 +17435,7 @@ var FlowWriter = class {
   // SAME JsonReviewStore layout. Read-modify-write by id: absent id ⇒ false (no write), found ⇒ true.
   resolveComment(run, gate, commentId) {
     assertSafeSegment(gate);
-    const file = join9(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    const file = join10(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
     const existing = readSidecar(file);
     let found = false;
     const next = existing.map((c) => {
@@ -17465,13 +17484,13 @@ ${body}
   // undefined for a task whose file does not yet exist (an absent artifact reads as undefined).
   artifactPath(run, target) {
     const dir = runDir(this.cwd, run);
-    if ("kind" in target) return join9(dir, `${target.kind}.md`);
+    if ("kind" in target) return join10(dir, `${target.kind}.md`);
     assertSafeSegment(target.taskNo);
-    const tasksDir = join9(dir, "tasks");
-    if (!existsSync4(tasksDir)) return void 0;
+    const tasksDir = join10(dir, "tasks");
+    if (!existsSync5(tasksDir)) return void 0;
     const prefix = `${target.taskNo}-`;
     const file = readdirSync4(tasksDir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
-    return file ? join9(tasksDir, file) : void 0;
+    return file ? join10(tasksDir, file) : void 0;
   }
   // The path to WRITE a target. For a task we never write to a fresh name (the WriteService only
   // writes after a successful read at the same target, so the file exists) — but if FLOW renamed the
@@ -17483,13 +17502,13 @@ ${body}
     if ("taskNo" in target) {
       throw new Error(`flow-writer: no task file for ${target.taskNo} in run ${run} to write`);
     }
-    return join9(runDir(this.cwd, run), `${target.kind}.md`);
+    return join10(runDir(this.cwd, run), `${target.kind}.md`);
   }
 };
 
 // src/persistence/event-source.ts
-import { existsSync as existsSync5, readFileSync as readFileSync7 } from "node:fs";
-import { join as join10 } from "node:path";
+import { existsSync as existsSync6, readFileSync as readFileSync7 } from "node:fs";
+import { join as join11 } from "node:path";
 var FsEventSource = class {
   constructor(cwd) {
     this.cwd = cwd;
@@ -17497,15 +17516,15 @@ var FsEventSource = class {
   // `events.jsonl` split into lines, or `[]` when absent. The application indexes the lines (the feed key)
   // and runs FLOW's `parseLogLine` over each — this adapter does no line interpretation.
   eventLines(run) {
-    const log = join10(runDir(this.cwd, run), "events.jsonl");
-    if (!existsSync5(log)) return [];
+    const log = join11(runDir(this.cwd, run), "events.jsonl");
+    if (!existsSync6(log)) return [];
     return readFileSync7(log, "utf8").split("\n");
   }
   // `run-state.json` parsed to loose data, or `undefined` when absent/unparseable. A corrupt file reads as
   // `undefined` (the application surfaces it as an empty roster) rather than throwing.
   runState(run) {
-    const path = join10(runDir(this.cwd, run), "run-state.json");
-    if (!existsSync5(path)) return void 0;
+    const path = join11(runDir(this.cwd, run), "run-state.json");
+    if (!existsSync6(path)) return void 0;
     try {
       return JSON.parse(readFileSync7(path, "utf8"));
     } catch {
@@ -17951,9 +17970,9 @@ function dayOf(timestamp) {
 }
 
 // src/persistence/transcript-reader.ts
-import { existsSync as existsSync6, readFileSync as readFileSync8, readdirSync as readdirSync5 } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync as readdirSync5 } from "node:fs";
 import { homedir } from "node:os";
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 var TranscriptReader = class {
   // `cwd` (the project root) locates the FLOW session pointers; `home` is the transcript root base
   // (injectable so the reader is testable against a fixture tree without touching the real home dir).
@@ -17969,11 +17988,11 @@ var TranscriptReader = class {
     const sessions = this.sessionsForRun(run);
     if (sessions.length === 0) return [];
     const dir = this.transcriptDir();
-    if (dir === null || !existsSync6(dir)) return [];
+    if (dir === null || !existsSync7(dir)) return [];
     const samples = [];
     for (const session of sessions) {
-      const file = join11(dir, `${session}.jsonl`);
-      if (!existsSync6(file)) continue;
+      const file = join12(dir, `${session}.jsonl`);
+      if (!existsSync7(file)) continue;
       samples.push(...this.readTranscript(file));
     }
     return samples.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -17982,13 +18001,13 @@ var TranscriptReader = class {
   // `workId` is this run names a session whose transcript belongs to the run. A missing pointer dir, an
   // unreadable pointer, or one with no matching `workId` simply contributes no session.
   sessionsForRun(run) {
-    const dir = join11(this.cwd, ".agentry", "run", "sessions");
-    if (!existsSync6(dir)) return [];
+    const dir = join12(this.cwd, ".agentry", "run", "sessions");
+    if (!existsSync7(dir)) return [];
     const sessions = [];
     for (const file of readdirSync5(dir)) {
       if (!file.endsWith(".json")) continue;
       try {
-        const ptr = JSON.parse(readFileSync8(join11(dir, file), "utf8"));
+        const ptr = JSON.parse(readFileSync8(join12(dir, file), "utf8"));
         if (ptr && typeof ptr === "object" && ptr.workId === run) {
           sessions.push(file.slice(0, -".json".length));
         }
@@ -18018,9 +18037,9 @@ var TranscriptReader = class {
   // absolute cwd with every non-alphanumeric char replaced by `-` (Claude Code's layout). Returns null
   // only if the base projects dir is itself absent (Claude Code never ran) — a degrade signal.
   transcriptDir() {
-    const base = join11(this.home, ".claude", "projects");
-    if (!existsSync6(base)) return null;
-    return join11(base, projectSlug(this.cwd));
+    const base = join12(this.home, ".claude", "projects");
+    if (!existsSync7(base)) return null;
+    return join12(base, projectSlug(this.cwd));
   }
 };
 function parseUsageLine(line) {
@@ -18054,9 +18073,9 @@ function isRecord2(value) {
 
 // src/persistence/mem-reader.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync7, readFileSync as readFileSync9, readdirSync as readdirSync6 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync9, readdirSync as readdirSync6 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join12 } from "node:path";
+import { join as join13 } from "node:path";
 var FRONTMATTER4 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 var BODY_KEY = { facts: "text", episodes: "task" };
 var MemReader = class {
@@ -18066,8 +18085,8 @@ var MemReader = class {
   // written memory contributes nothing rather than erroring.
   constructor(cwd, home = homedir2()) {
     this.roots = [
-      { origin: "global", dir: join12(home, ".agentry", "memory") },
-      { origin: "project", dir: join12(cwd, ".agentry", "memory") }
+      { origin: "global", dir: join13(home, ".agentry", "memory") },
+      { origin: "project", dir: join13(cwd, ".agentry", "memory") }
     ];
   }
   // Every memory record across both roots (facts then episodes), each tagged with its kind + origin. A
@@ -18076,7 +18095,7 @@ var MemReader = class {
     const records = [];
     for (const { origin, dir } of this.roots) {
       for (const kind of ["facts", "episodes"]) {
-        records.push(...this.readDir(origin, kind, join12(dir, kind)));
+        records.push(...this.readDir(origin, kind, join13(dir, kind)));
       }
     }
     return records;
@@ -18098,11 +18117,11 @@ var MemReader = class {
   // the store's frontmatter regex; a file with no fence, or one whose YAML fails to parse, is skipped (the
   // store's "corrupt files are skipped, never fatal" tolerance).
   readDir(origin, kind, dir) {
-    if (!existsSync7(dir)) return [];
+    if (!existsSync8(dir)) return [];
     const records = [];
     for (const file of readdirSync6(dir).sort()) {
       if (!file.endsWith(".md")) continue;
-      const record = this.parseRecord(origin, kind, join12(dir, file));
+      const record = this.parseRecord(origin, kind, join13(dir, file));
       if (record !== null) records.push(record);
     }
     return records;
@@ -18146,8 +18165,8 @@ function stemOf(file) {
 }
 
 // src/transport/http.ts
-import { createReadStream, existsSync as existsSync8, statSync } from "node:fs";
-import { extname as extname2, join as join15, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
+import { createReadStream, existsSync as existsSync9, statSync } from "node:fs";
+import { extname as extname2, join as join16, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ../shared/src/slug.ts
@@ -18429,9 +18448,9 @@ function handleReaderRequest(req, res, deps) {
 
 // src/persistence/status-signal-writer.ts
 import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join13 } from "node:path";
+import { join as join14 } from "node:path";
 function signalDir(projectRoot) {
-  return join13(projectRoot, ".agentry", "run", "status-signals");
+  return join14(projectRoot, ".agentry", "run", "status-signals");
 }
 function mintName() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`;
@@ -18440,7 +18459,7 @@ function writeStatusSignal(projectRoot, signal) {
   const dir = signalDir(projectRoot);
   mkdirSync4(dir, { recursive: true });
   const payload = { ...signal, at: (/* @__PURE__ */ new Date()).toISOString() };
-  writeFileSync4(join13(dir, mintName()), `${JSON.stringify(payload, null, 2)}
+  writeFileSync4(join14(dir, mintName()), `${JSON.stringify(payload, null, 2)}
 `);
 }
 
@@ -18568,13 +18587,13 @@ function handleArtifact(res, deps, runId, body) {
 
 // src/persistence/permission-writer.ts
 import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join14 } from "node:path";
+import { join as join15 } from "node:path";
 function writeVerdict(projectRoot, requestId, behavior) {
   assertSafeSegment(requestId);
   const dir = permissionsDir(projectRoot);
   mkdirSync5(dir, { recursive: true });
   const record = { request_id: requestId, behavior };
-  writeFileSync5(join14(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
+  writeFileSync5(join15(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
 }
 
 // src/transport/permission-routes.ts
@@ -18617,13 +18636,13 @@ function handleVerdict(res, deps, requestId, body) {
 function resolveWebRoot() {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (pluginRoot && pluginRoot.length > 0) {
-    return join15(pluginRoot, "workbench", "web");
+    return join16(pluginRoot, "workbench", "web");
   }
   const bundleDir = fileURLToPath(new URL(".", import.meta.url));
   return resolve3(bundleDir, "..", "web");
 }
 var WEB_ROOT = resolveWebRoot();
-var INDEX_HTML = join15(WEB_ROOT, "index.html");
+var INDEX_HTML = join16(WEB_ROOT, "index.html");
 var CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -18663,11 +18682,11 @@ function createHttpHandler(reader, write, readers, permissions) {
 function serveStatic(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const filePath = resolveStaticFile(url.pathname);
-  if (filePath && existsSync8(filePath) && statSync(filePath).isFile()) {
+  if (filePath && existsSync9(filePath) && statSync(filePath).isFile()) {
     sendFile(req, res, filePath);
     return;
   }
-  if (existsSync8(INDEX_HTML)) {
+  if (existsSync9(INDEX_HTML)) {
     sendFile(req, res, INDEX_HTML);
     return;
   }
@@ -18678,7 +18697,7 @@ function resolveStaticFile(pathname) {
   const decoded = safeDecode(pathname);
   if (decoded === null) return null;
   if (decoded === "/" || decoded === "") return INDEX_HTML;
-  const candidate = normalize2(join15(WEB_ROOT, decoded));
+  const candidate = normalize2(join16(WEB_ROOT, decoded));
   if (candidate !== WEB_ROOT && !candidate.startsWith(WEB_ROOT + sep2)) return null;
   return candidate;
 }
