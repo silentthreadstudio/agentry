@@ -182,8 +182,11 @@ site's credibility hinges on linking to the **real** artifact, not a screenshot:
 
 - No backend, no auth, no DB, no analytics beyond (optionally) privacy-friendly page counts.
 - No CMS — content lives in components/markdown in-repo.
-- No blog/docs site yet (leave room; don't build it now).
-- No multi-page routing beyond the landing page + the embedded dashboard.
+- No blog yet (leave room; don't build it now).
+- A focused, in-repo `/docs` area is **in scope** (per ADR-001): five static, file-routed pages
+  under `base:/agentry` (overview + flow/memory/workbench/channels), additive to the landing page —
+  not a separate site, framework, or new dependency. (This supersedes the earlier "no docs site /
+  no multi-page routing" non-goals, which ADR-001 records and reverses.)
 - Don't touch `plugin/`, the memory MCP, or the eval harness internals — the site only *consumes* the
   dashboard output.
 
@@ -205,6 +208,12 @@ site's credibility hinges on linking to the **real** artifact, not a screenshot:
 - [ ] `deploy.yml` builds and publishes `packages/web` to GitHub Pages on push to `main`; site loads at the Pages
       URL with `base:/agentry` correct (no broken asset paths).
 - [ ] Responsive: 2-col splits collapse cleanly < 900px; readable on mobile.
+- [ ] The `/docs` area (ADR-001) ships: five static routes (`/docs`, `/docs/{flow,memory,workbench,channels}`)
+      build under `base:/agentry`; the overview carries the required-vs-optional layering story (Memory + Flow
+      mandatory, Workbench + Channels additive) and the degradation narrative; each concept page conveys its
+      facts and its diagram; a shared docs sub-nav (with `aria-current` + a base-path-correct back-link) and a
+      "Docs" link in the site nav are present; every internal href/img goes through `withBase()`; on-brand and
+      responsive (sub-nav collapses < 560px).
 - [ ] Footer claim ("built with `/agentry:go`") is true — the build was conducted through Agentry.
 
 ---

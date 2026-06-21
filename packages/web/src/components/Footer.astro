@@ -3,11 +3,13 @@
 // Carries: the truthful "built with /agentry:go — conducted end-to-end" line (the dogfood proof),
 // a small seeded constellation mark (§5 motif), the key links, and the v0.1 / pre-1.0 / MIT note.
 //
-// Base-path rule: internal links (home, install anchor, dashboard) go through the shared
-// withBase() helper; the in-page #install anchor stays bare; GitHub is absolute external. The
-// dashboard is a real static artifact copied to public/dashboard/ at build (§7), at withBase('dashboard/').
+// Base-path rule: internal links (home, install anchor, dashboard) go through the shared withBase()
+// helper. The Install link targets a LANDING section, so it's `withBase("")+"#install"` (= /agentry/#install),
+// NOT a bare `#install` — bare anchors go dead on the /docs/* routes that reuse this footer. GitHub is an
+// absolute external link. The dashboard is a static artifact copied to public/dashboard/ at build (§7).
 import { withBase } from "../lib/base.ts";
 const GITHUB = "https://github.com/Codestz/agentry";
+const home = withBase("");
 const dashboard = withBase("dashboard/");
 const year = new Date().getFullYear();
 ---
@@ -52,7 +54,7 @@ const year = new Date().getFullYear();
       <a href={GITHUB} target="_blank" rel="noopener noreferrer">
         GitHub <span class="ext" aria-hidden="true">↗</span>
       </a>
-      <a href="#install">Install</a>
+      <a href={`${home}#install`}>Install</a>
       <a href={dashboard}>Dashboard</a>
     </nav>
 

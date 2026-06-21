@@ -1,0 +1,68 @@
+---
+// DocDiagram.astro — a 16:9 dark-navy diagram presented on a panel with a caption.
+// Shared across the four concept pages so the diagrams read consistently.
+//
+// Base-path rule: the image src goes through withBase() (the caller passes a bare path
+// like "diagrams/flow.png"); never hand-write the /agentry prefix.
+import { withBase } from "../lib/base.ts";
+
+interface Props {
+  /** Bare public path, e.g. "diagrams/flow.png" — prefixed via withBase(). */
+  src: string;
+  /** Accessible description of the diagram. */
+  alt: string;
+  /** Visible caption under the panel. */
+  caption: string;
+}
+const { src, alt, caption } = Astro.props;
+---
+
+<figure class="diagram glass reveal">
+  <div class="diagram__frame">
+    <!-- 16:9 dark-navy diagram; lazy + async since these sit below the fold -->
+    <img
+      src={withBase(src)}
+      alt={alt}
+      width="1600"
+      height="900"
+      loading="lazy"
+      decoding="async"
+    />
+  </div>
+  <figcaption class="diagram__caption label">{caption}</figcaption>
+</figure>
+
+<style>
+  .diagram {
+    /* the glass primitive carries blur/border/radius; this adds the inner padding */
+    padding: 14px;
+    margin-block: 8px;
+  }
+
+  .diagram__frame {
+    /* lock the 16:9 box so the layout never jumps before the image loads */
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid var(--line-soft);
+    background: var(--bg-2);
+  }
+
+  .diagram__frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+
+  .diagram__caption {
+    margin-top: 12px;
+    padding-inline: 4px;
+    /* readable caption: --muted clears AA; --faint is reserved for decorative micro-labels */
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: none;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+</style>

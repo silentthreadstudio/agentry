@@ -1,0 +1,55 @@
+---
+// DocSection.astro — the shared page-header scaffold every docs page repeats verbatim:
+// a mono eyebrow (.label), an h1, and a lede paragraph, inside the standard .container.
+// Extracted (not speculatively) because all five docs pages render this exact shell — the
+// DRY threshold the plan set for adding this primitive. Page-specific content follows it
+// as a default slot, so each page stays pure composition with no duplicated header markup.
+//
+// No internal URLs here → no withBase() needed; callers own any links in their content.
+interface Props {
+  /** Mono uppercase eyebrow above the title (e.g. "Concept · Flow"). */
+  eyebrow: string;
+  /** The page <h1>. */
+  title: string;
+  /** The lede paragraph under the title. */
+  lede: string;
+}
+const { eyebrow, title, lede } = Astro.props;
+---
+
+<div class="container docsec">
+  <p class="docsec__eyebrow label">{eyebrow}</p>
+  <h1 class="docsec__title">{title}</h1>
+  <p class="docsec__lede muted">{lede}</p>
+  <slot />
+</div>
+
+<style>
+  .docsec {
+    /* breathing room under the sticky sub-nav; not the full 150px .section rhythm */
+    padding-block: 40px 96px;
+    max-width: 920px;
+  }
+
+  .docsec__eyebrow {
+    margin-bottom: 18px;
+  }
+
+  .docsec__title {
+    font-size: clamp(32px, 4.4vw, 52px);
+    margin-bottom: 22px;
+  }
+
+  .docsec__lede {
+    font-size: clamp(16px, 1.4vw, 19px);
+    line-height: 1.65;
+    max-width: 64ch;
+    margin-bottom: 8px;
+  }
+
+  @media (max-width: 900px) {
+    .docsec {
+      padding-block: 28px 64px;
+    }
+  }
+</style>

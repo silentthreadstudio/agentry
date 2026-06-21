@@ -13,13 +13,22 @@
 const base = import.meta.env.BASE_URL;
 const GITHUB = "https://github.com/Codestz/agentry";
 
-// The in-page section anchors (VISION §4.1: Proof · How it works · Pillars · Install).
-// "Proof" leads — it's the centerpiece (§4.7) and the north-star "show the receipts" (§1).
+// Slash-safe join with the base (same helper Base.astro uses): Docs is a REAL route, so it
+// must be base-prefixed — NOT a bare # anchor like the landing sections (which 404s under /agentry).
+const withBase = (path: string) => `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+const DOCS = withBase("docs");
+
+// The landing-section anchors (VISION §4.1: Proof · How it works · Pillars · Install). "Proof" leads —
+// the centerpiece (§4.7) + the north-star "show the receipts" (§1). These point at sections on the LANDING
+// page, so they must be `withBase("")+"#id"` (= /agentry/#proof), NOT a bare `#proof`: bare anchors only
+// resolve on the landing itself and go dead on the /docs/* routes that reuse this shared nav. The base-aware
+// form is a same-page jump on the landing and a cross-navigation everywhere else.
+const home = withBase("");
 const anchors = [
-  { href: "#proof", label: "Proof" },
-  { href: "#how", label: "How it works" },
-  { href: "#pillars", label: "Pillars" },
-  { href: "#install", label: "Install" },
+  { href: `${home}#proof`, label: "Proof" },
+  { href: `${home}#how`, label: "How it works" },
+  { href: `${home}#pillars`, label: "Pillars" },
+  { href: `${home}#install`, label: "Install" },
 ];
 ---
 
@@ -57,7 +66,7 @@ const anchors = [
       <span class="wordmark">Agentry</span>
     </a>
 
-    <!-- In-page anchors + GitHub. Bare # anchors are fine; GitHub is absolute external. -->
+    <!-- Landing-section anchors (base-aware, so they work from /docs/* too) + GitHub (absolute external). -->
     <ul class="links" role="list">
       {anchors.map((a) => (
         <li><a href={a.href}>{a.label}</a></li>
@@ -70,8 +79,12 @@ const anchors = [
       </li>
     </ul>
 
+    <!-- Docs: a REAL route (base-prefixed), not a landing anchor. Kept reachable past the
+         <900px collapse where the in-page anchor cluster hides. -->
+    <a class="nav__docs" href={DOCS}>Docs</a>
+
     <!-- Install CTA — the ONLY violet in the chrome (color discipline §5: violet = action). -->
-    <a class="btn btn-primary cta" href="#install">Install</a>
+    <a class="btn btn-primary cta" href={`${home}#install`}>Install</a>
   </nav>
 </header>
 
@@ -157,6 +170,27 @@ const anchors = [
   .ext {
     font-size: 0.85em;
     color: var(--faint);
+  }
+
+  /* Docs link: same cosmetics as the anchor cluster, but a standalone real-route link that
+     stays visible after the <900px collapse (it is NOT inside .links). */
+  .nav__docs {
+    display: inline-flex;
+    align-items: center;
+    /* carry the right-push when the .links cluster (which owns margin-left:auto) is hidden <900px */
+    margin-left: auto;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--muted);
+    transition: color 0.18s ease, background 0.18s ease;
+  }
+
+  .nav__docs:hover {
+    color: var(--ink);
+    background: var(--violet-dim);
   }
 
   /* Install CTA ----------------------------------------------------------- */

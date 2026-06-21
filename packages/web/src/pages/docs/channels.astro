@@ -1,0 +1,106 @@
+---
+// /docs/channels — Channels, live human↔agent comms (an additive layer). Pure composition:
+// Base → DocsNav(current="channels") → DocSection header → DocDiagram(channels.png) → prose.
+// Facts verbatim from the content map — the channel_reply name and the launch flag are EXACT
+// (copy, do not paraphrase).
+//
+// Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
+import Base from "../../layouts/Base.astro";
+import DocsNav from "../../components/DocsNav.astro";
+import DocSection from "../../components/DocSection.astro";
+import DocDiagram from "../../components/DocDiagram.astro";
+---
+
+<Base
+  title="Channels — Agentry Docs"
+  description="Channels add live human↔agent push over the file-watch loop — comments, threaded channel_reply, a permission relay to approve tool-use from the Workbench, and human status changes that steer the agent."
+>
+  <DocsNav current="channels" />
+
+  <DocSection
+    eyebrow="Concept · Channels"
+    title="Channels — live human↔agent comms"
+    lede="Channels turn the async file-watch loop into a live conversation: you can push a comment, reply in a thread, approve a tool call, or change a task's status and have the agent react — instead of waiting for its next turn."
+  >
+    <DocDiagram
+      src="diagrams/channels.png"
+      alt="Diagram of Channels: live push between a human and the agent over the file-watch loop — comments, threaded replies, a permission relay from the Workbench, and human status changes that steer the run."
+      caption="Live human↔agent push over the file-watch loop — comments, threaded replies, a permission relay, and status steering."
+    />
+
+    <div class="prose">
+      <p>
+        Channels are <strong>live human↔agent push over the file-watch loop</strong>. Where the loop on
+        its own delivers your edits on the agent's next turn, channels add a live signal. Four kinds:
+      </p>
+      <ul class="facts">
+        <li><strong>Comments</strong> — leave a note on a run's artifact and have it reach the agent.</li>
+        <li><strong>Threaded <code>channel_reply</code></strong> — reply in-thread so a back-and-forth stays attached to its context.</li>
+        <li><strong>A permission relay</strong> — approve tool-use from the Workbench, instead of only at the terminal.</li>
+        <li><strong>Human status changes that steer</strong> — force a task's status and the agent treats it as steering and adjusts what it does next.</li>
+      </ul>
+      <p>
+        Channels are an <strong>additive layer</strong> and a research preview: they need Claude Code
+        launched with the flag
+      </p>
+      <pre class="flag"><code>--dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
+      <p>
+        Without it, everything still works via the async file-watch loop — the files are truth, the agent
+        reads your edits on its next turn, and approvals fall back to the terminal.
+      </p>
+    </div>
+  </DocSection>
+</Base>
+
+<style>
+  .prose {
+    max-width: 760px;
+  }
+
+  .prose p {
+    color: var(--muted);
+    font-size: 16.5px;
+    line-height: 1.7;
+    margin-bottom: 18px;
+  }
+
+  .prose strong {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  .prose em {
+    font-style: italic;
+    color: var(--ink);
+  }
+
+  .facts {
+    list-style: disc;
+    padding-left: 22px;
+    margin-bottom: 18px;
+  }
+
+  .facts li {
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.65;
+    margin-bottom: 10px;
+  }
+
+  .facts strong {
+    color: var(--ink);
+  }
+
+  /* the launch flag: a mono block so the exact, copy-able string reads as a command */
+  .flag {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+</style>

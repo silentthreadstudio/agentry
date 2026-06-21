@@ -1,0 +1,67 @@
+---
+// /docs/workbench — the Workbench / Agent Center (an additive layer). Pure composition:
+// Base → DocsNav(current="workbench") → DocSection header → DocDiagram(workbench.png) → prose.
+// Facts verbatim from the content map — the :4317 / *.localhost strings are exact.
+//
+// Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
+import Base from "../../layouts/Base.astro";
+import DocsNav from "../../components/DocsNav.astro";
+import DocSection from "../../components/DocSection.astro";
+import DocDiagram from "../../components/DocDiagram.astro";
+---
+
+<Base
+  title="Workbench — Agentry Docs"
+  description="The Workbench is a per-project local Agent Center on :4317 with *.localhost host-routing — read, edit, comment, approve, and watch a live graph. It is additive: the terminal works without it."
+>
+  <DocsNav current="workbench" />
+
+  <DocSection
+    eyebrow="Concept · Workbench"
+    title="Workbench — the Agent Center"
+    lede="The Workbench is a local web view onto a run — a place to read the work, edit and comment on it, approve steps, and watch the agent graph move in real time. It is additive: nothing about a run depends on it being open."
+  >
+    <DocDiagram
+      src="diagrams/workbench.png"
+      alt="Diagram of the Workbench: a per-project local Agent Center served on port 4317 with per-project *.localhost host-routing, showing a live agent graph alongside read, edit, comment, and approve controls."
+      caption="A per-project local Agent Center on :4317 — read, edit, comment, approve, and watch a live graph."
+    />
+
+    <div class="prose">
+      <p>
+        The Workbench is a <strong>per-project local Agent Center on <code>:4317</code></strong>, served
+        with <strong><code>*.localhost</code> host-routing</strong> so each project gets its own
+        address on the one local server. From it you can <strong>read, edit, comment, and approve</strong>
+        the run's artifacts, and <strong>watch and steer a live graph</strong> of the agents as they work.
+      </p>
+      <p>
+        It is an <strong>additive layer</strong>, not a dependency: <strong>the terminal works without
+        it</strong>. Run the same task entirely from the command line and nothing is lost — the Workbench
+        adds a way to <em>see</em> and steer the run, not a way to make it possible.
+      </p>
+    </div>
+  </DocSection>
+</Base>
+
+<style>
+  .prose {
+    max-width: 760px;
+  }
+
+  .prose p {
+    color: var(--muted);
+    font-size: 16.5px;
+    line-height: 1.7;
+    margin-bottom: 18px;
+  }
+
+  .prose strong {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  .prose em {
+    font-style: italic;
+    color: var(--ink);
+  }
+</style>

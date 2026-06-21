@@ -1,0 +1,72 @@
+---
+// /docs/memory — Memory, the moat. Pure composition: Base → DocsNav(current="memory")
+// → DocSection header → DocDiagram(memory.png) → prose. Facts verbatim from the content map.
+// The diagram (diagrams/memory.png) is the copied asset (T1).
+//
+// Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
+import Base from "../../layouts/Base.astro";
+import DocsNav from "../../components/DocsNav.astro";
+import DocSection from "../../components/DocSection.astro";
+import DocDiagram from "../../components/DocDiagram.astro";
+---
+
+<Base
+  title="Memory — Agentry Docs"
+  description="Memory is Agentry's durable fact/episode store — a local stdio MCP over node:sqlite with project and global roots. It is the moat: each run starts warmer than the last."
+>
+  <DocsNav current="memory" />
+
+  <DocSection
+    eyebrow="Concept · Memory"
+    title="Memory — the moat"
+    lede="Memory is the durable store that lets a run remember. It graduates a run's lessons into recallable facts, so the next task starts warmer than the last — the compounding advantage Agentry is built around."
+  >
+    <DocDiagram
+      src="diagrams/memory.png"
+      alt="Diagram of Memory: a durable fact and episode store backed by node:sqlite, accessed as a local stdio MCP, with a project root and a global root."
+      caption="A durable fact/episode store — a local stdio MCP over node:sqlite, with project + global roots."
+    />
+
+    <div class="prose">
+      <p>
+        Memory is a <strong>durable fact/episode store</strong>: it keeps both the semantic facts a
+        project accumulates (conventions, gotchas, decisions) and the episodes a run produces, with the
+        provenance that earned them. It is exposed as a <strong>local stdio MCP over
+        <code>node:sqlite</code></strong> — no network service, no external database; it runs on your
+        machine and stores on your disk.
+      </p>
+      <p>
+        Recall is rooted in two scopes. A <strong>project root</strong> holds what is true for
+        <em>this</em> repository; a <strong>global root</strong> holds what is true across all your work.
+        A task pulls from both, so a lesson learned once is available everywhere it applies.
+      </p>
+      <p>
+        This is <strong>the moat</strong>. Capability you can buy; a store of what <em>your</em> work has
+        already taught the system, you can only accumulate — and it compounds with every run.
+      </p>
+    </div>
+  </DocSection>
+</Base>
+
+<style>
+  .prose {
+    max-width: 760px;
+  }
+
+  .prose p {
+    color: var(--muted);
+    font-size: 16.5px;
+    line-height: 1.7;
+    margin-bottom: 18px;
+  }
+
+  .prose strong {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  .prose em {
+    font-style: italic;
+    color: var(--ink);
+  }
+</style>
