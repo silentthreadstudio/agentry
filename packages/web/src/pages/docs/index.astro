@@ -1,257 +1,96 @@
 ---
 // /docs — the docs overview + the layering story (the highest-content-risk page).
-// Pure composition in Base: DocsNav (no `current` → the "← Docs" back-link marks "you are here"),
-// then DocSection's header scaffold, then the required-vs-optional table and the degradation
-// narrative. Facts are from the Spec's content-ownership map — not invented beyond them.
+// Composed through DocsLayout (the grouped sidebar shell): the header scaffold comes from
+// the layout props; the body is the required-vs-optional table + the degradation narrative.
+// Facts from the content map + the canonical mandatory-vs-additive framing (ADR-001 of web).
 //
 // Base-path rule (#1 404 trap): docs→docs links go through withBase("docs/<x>"); the one
-// cross-link to a LANDING section uses withBase("") + "#install" (a bare #install resolves to
-// nothing off the landing page). Same-page anchors would be bare #fragments, but there are none here.
-import Base from "../../layouts/Base.astro";
-import DocsNav from "../../components/DocsNav.astro";
-import DocSection from "../../components/DocSection.astro";
+// cross-link to a LANDING section uses withBase("") + "#install".
+import DocsLayout from "../../layouts/docs-layout/DocsLayout.astro";
 import { withBase } from "../../lib/base.ts";
 ---
 
-<Base
-  title="Docs — Agentry"
+<DocsLayout
+  title="How Agentry fits together"
   description="How Agentry fits together: a mandatory substrate (Memory + Flow) with additive layers (Workbench + Channels), and what still works when you turn the layers off."
+  eyebrow="Docs · Overview"
+  lede="Agentry is an adaptive agentic layer for Claude Code. It routes a task to the least process that wins, conducts the work with SDLC specialists, and gates the result with you — so the bar is held instead of hoped for."
 >
-  <DocsNav />
+  <div class="prose">
+    <p>
+      Every task enters through one front door — <code>/agentry:go</code> — and gets routed to the
+      <em>least process that wins</em>: a clear, reversible change runs <strong>one-shot</strong>;
+      an under-specified goal is shaped <strong>spec-first</strong> before any code; a multi-file,
+      structurally non-trivial change is run <strong>decompose+verify</strong> — sliced into bounded
+      tasks, built by specialists, and checked by an independent verifier. Agentry conducts that work
+      with SDLC specialists (product, architect, implementer, verifier, librarian) and gates the
+      result with you at the decision points that matter.
+    </p>
 
-  <DocSection
-    eyebrow="Docs · Overview"
-    title="How Agentry fits together"
-    lede="Agentry is an adaptive agentic layer for Claude Code. It routes a task to the least process that wins, conducts the work with SDLC specialists, and gates the result with you — so the bar is held instead of hoped for."
-  >
-    <div class="prose">
-      <p>
-        Every task enters through one front door — <code>/agentry:go</code> — and gets routed to the
-        <em>least process that wins</em>: a clear, reversible change runs <strong>one-shot</strong>;
-        an under-specified goal is shaped <strong>spec-first</strong> before any code; a multi-file,
-        structurally non-trivial change is run <strong>decompose+verify</strong> — sliced into bounded
-        tasks, built by specialists, and checked by an independent verifier. Agentry conducts that work
-        with SDLC specialists (product, architect, implementer, verifier, librarian) and gates the
-        result with you at the decision points that matter.
-      </p>
+    <h2 class="prose__h">The substrate and the layers</h2>
+    <p>
+      Four subsystems make this work, and they are not all equal. Two are the
+      <strong>mandatory substrate</strong> — the run does not function without them. Two are
+      <strong>additive layers</strong> — they make the work nicer to watch and steer, but the run is
+      complete without them. The table is the contract:
+    </p>
 
-      <h2 class="prose__h">The substrate and the layers</h2>
-      <p>
-        Four subsystems make this work, and they are not all equal. Two are the
-        <strong>mandatory substrate</strong> — the run does not function without them. Two are
-        <strong>additive layers</strong> — they make the work nicer to watch and steer, but the run is
-        complete without them. The table is the contract:
-      </p>
+    <table class="layers" aria-label="Required vs. optional subsystems">
+      <thead>
+        <tr>
+          <th scope="col">Subsystem</th>
+          <th scope="col">Role</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row"><a href={withBase("docs/memory")}>Memory</a></th>
+          <td>Durable fact/episode store — a local stdio MCP over <code>node:sqlite</code>, with project + global roots. The moat.</td>
+          <td><span class="badge badge--req">Required</span></td>
+        </tr>
+        <tr>
+          <th scope="row"><a href={withBase("docs/flow")}>Flow</a></th>
+          <td>The run-state engine — task lifecycle, append-only events, and review, recorded as plain files that are the source of truth.</td>
+          <td><span class="badge badge--req">Required</span></td>
+        </tr>
+        <tr>
+          <th scope="row"><a href={withBase("docs/workbench")}>Workbench</a></th>
+          <td>A per-project local Agent Center to read, edit, comment, approve, and watch a live graph.</td>
+          <td><span class="badge badge--opt">Optional · additive</span></td>
+        </tr>
+        <tr>
+          <th scope="row"><a href={withBase("docs/channels")}>Channels</a></th>
+          <td>Live human↔agent push — comments, replies, a permission relay, and status steering over the file-watch loop.</td>
+          <td><span class="badge badge--opt">Optional · additive</span></td>
+        </tr>
+      </tbody>
+    </table>
 
-      <table class="layers" aria-label="Required vs. optional subsystems">
-        <thead>
-          <tr>
-            <th scope="col">Subsystem</th>
-            <th scope="col">Role</th>
-            <th scope="col">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <th scope="row"><a href={withBase("docs/memory")}>Memory</a></th>
-            <td>Durable fact/episode store — a local stdio MCP over <code>node:sqlite</code>, with project + global roots. The moat.</td>
-            <td><span class="badge badge--req">Required</span></td>
-          </tr>
-          <tr>
-            <th scope="row"><a href={withBase("docs/flow")}>Flow</a></th>
-            <td>The run-state engine — task lifecycle, append-only events, and review, recorded as plain files that are the source of truth.</td>
-            <td><span class="badge badge--req">Required</span></td>
-          </tr>
-          <tr>
-            <th scope="row"><a href={withBase("docs/workbench")}>Workbench</a></th>
-            <td>A per-project local Agent Center to read, edit, comment, approve, and watch a live graph.</td>
-            <td><span class="badge badge--opt">Optional · additive</span></td>
-          </tr>
-          <tr>
-            <th scope="row"><a href={withBase("docs/channels")}>Channels</a></th>
-            <td>Live human↔agent push — comments, replies, a permission relay, and status steering over the file-watch loop.</td>
-            <td><span class="badge badge--opt">Optional · additive</span></td>
-          </tr>
-        </tbody>
-      </table>
+    <h2 class="prose__h">What still works when you turn the layers off</h2>
+    <p>
+      The additive layers degrade gracefully, because the substrate is files, not a live connection:
+    </p>
+    <ul class="facts">
+      <li>
+        <strong>Channels off</strong> → everything still works via the async file-watch loop: the
+        files are truth, the agent reads your edits on its next turn, and approvals fall back to the
+        terminal.
+      </li>
+      <li>
+        <strong>Workbench off</strong> → terminal-only. You drive the same run from the command line;
+        nothing in the substrate depends on the server being up.
+      </li>
+      <li>
+        <strong>Only Memory + Flow are required.</strong> Strip both optional layers and the run is
+        still complete — that is the line between substrate and convenience.
+      </li>
+    </ul>
 
-      <h2 class="prose__h">What still works when you turn the layers off</h2>
-      <p>
-        The additive layers degrade gracefully, because the substrate is files, not a live connection:
-      </p>
-      <ul class="degrade">
-        <li>
-          <strong>Channels off</strong> → everything still works via the async file-watch loop: the
-          files are truth, the agent reads your edits on its next turn, and approvals fall back to the
-          terminal.
-        </li>
-        <li>
-          <strong>Workbench off</strong> → terminal-only. You drive the same run from the command line;
-          nothing in the substrate depends on the server being up.
-        </li>
-        <li>
-          <strong>Only Memory + Flow are required.</strong> Strip both optional layers and the run is
-          still complete — that is the line between substrate and convenience.
-        </li>
-      </ul>
-
-      <p class="prose__cta">
-        New here? <a href={withBase("") + "#install"}>Install Agentry</a> and run your first task through
-        <code>/agentry:go</code> — then come back and read each subsystem in depth.
-      </p>
-    </div>
-  </DocSection>
-</Base>
-
-<style>
-  .prose {
-    max-width: 760px;
-  }
-
-  .prose p {
-    color: var(--muted);
-    font-size: 16.5px;
-    line-height: 1.7;
-    margin-bottom: 18px;
-  }
-
-  .prose strong {
-    color: var(--ink);
-    font-weight: 700;
-  }
-
-  .prose em {
-    font-style: italic;
-    color: var(--ink);
-  }
-
-  /* links are the action color (violet) — color discipline §5 */
-  .prose a {
-    color: var(--violet-2);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    text-decoration-color: var(--violet-dim);
-    transition: text-decoration-color 0.18s ease;
-  }
-
-  .prose a:hover {
-    text-decoration-color: var(--violet-2);
-  }
-
-  .prose__h {
-    font-size: clamp(22px, 2.4vw, 28px);
-    margin-top: 44px;
-    margin-bottom: 14px;
-  }
-
-  /* the required-vs-optional table */
-  .layers {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 8px 0 12px;
-    font-size: 15px;
-  }
-
-  .layers th,
-  .layers td {
-    text-align: left;
-    vertical-align: top;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .layers thead th {
-    color: var(--faint);
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .layers tbody th {
-    color: var(--ink);
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .layers td {
-    color: var(--muted);
-    line-height: 1.55;
-  }
-
-  /* status badges: semantic data colors carry the meaning (good = required substrate, cyan = additive) */
-  .badge {
-    display: inline-block;
-    padding: 3px 9px;
-    border-radius: 999px;
-    font-family: var(--mono);
-    font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-    border: 1px solid var(--line);
-  }
-
-  .badge--req {
-    color: var(--good);
-    border-color: color-mix(in srgb, var(--good) 40%, transparent);
-    background: color-mix(in srgb, var(--good) 10%, transparent);
-  }
-
-  .badge--opt {
-    color: var(--cyan);
-    border-color: color-mix(in srgb, var(--cyan) 40%, transparent);
-    background: color-mix(in srgb, var(--cyan) 10%, transparent);
-  }
-
-  .degrade {
-    list-style: disc;
-    padding-left: 22px;
-    margin-bottom: 18px;
-  }
-
-  .degrade li {
-    color: var(--muted);
-    font-size: 16px;
-    line-height: 1.65;
-    margin-bottom: 12px;
-  }
-
-  .degrade strong {
-    color: var(--ink);
-  }
-
-  .prose__cta {
-    margin-top: 32px;
-    padding-top: 20px;
-    border-top: 1px solid var(--line-soft);
-  }
-
-  @media (max-width: 560px) {
-    .layers,
-    .layers thead,
-    .layers tbody,
-    .layers tr,
-    .layers th,
-    .layers td {
-      display: block;
-    }
-
-    .layers thead {
-      display: none;
-    }
-
-    .layers tr {
-      padding: 12px 0;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .layers th,
-    .layers td {
-      padding: 4px 0;
-      border-bottom: none;
-      white-space: normal;
-    }
-  }
-</style>
+    <p class="prose__cta">
+      New here? Start with the <a href={withBase("docs/quickstart")}>Quickstart</a>, or
+      <a href={withBase("") + "#install"}>install Agentry</a> and run your first task through
+      <code>/agentry:go</code>.
+    </p>
+  </div>
+</DocsLayout>

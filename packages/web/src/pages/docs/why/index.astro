@@ -1,0 +1,66 @@
+---
+// /docs/why — the case for Agentry over dropping a model on a hard task and hoping. Three
+// concrete grounds, each traceable to a repo fact: right-sized orchestration (README routing
+// table), the durable memory moat (memory page / README), measured-not-asserted (links to
+// /docs/evals). Honest about maturity — no invented numbers or benchmarks.
+//
+// Base-path rule (#1 404 trap): every internal href goes through withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="why"
+  title="Why Agentry"
+  description="Why use Agentry over dropping a model on a hard task and hoping: right-sized orchestration that runs the least process that wins, a durable memory moat that compounds, and results measured rather than asserted."
+  eyebrow="Getting Started · Why Agentry"
+  lede="The model is the same. What Agentry adds is the conducting around it: the least process that wins, a memory that compounds, and a habit of measuring rather than asserting."
+>
+  <div class="prose">
+    <p>
+      The alternative to Agentry is the default: drop a capable model on a hard task and hope it
+      holds together. That works until the task has a hidden decision, several coupled parts, or a
+      lesson from last week that the model never saw. Agentry doesn't swap the model — it adds the
+      conducting around it. Three concrete reasons that matters:
+    </p>
+
+    <h2 class="prose__h">Right-sized orchestration</h2>
+    <p>
+      More process is not better process. Agentry routes every task to the <strong>least process
+      that wins</strong> and escalates only on evidence: a clear, reversible change is a single
+      bounded edit; an unclear "done = X" earns a spec; coupled parts with a real design fork earn
+      a full decompose, plan, verify, and assemble. A hidden decision fork vetoes a one-shot;
+      several coupled components earn a decompose — but nothing pays for ceremony it didn't need.
+    </p>
+
+    <h2 class="prose__h">The durable memory moat</h2>
+    <p>
+      Capability you can buy; the record of what <em>your</em> work has already taught the system,
+      you can only accumulate. Agentry graduates a run's lessons — conventions, gotchas, decisions —
+      into a durable store, and recall pulls them into the next task. So
+      <strong>each run starts warmer than the last</strong>, and the advantage compounds the more
+      you use it. See <a href={withBase("docs/memory")}>Memory</a> for how the store works.
+    </p>
+
+    <h2 class="prose__h">Measured, not asserted</h2>
+    <p>
+      "Trust me, it's better" is not an argument. Agentry ships a self-eval harness that runs the
+      system against its own acceptance criteria, so claims about routing and quality are checked
+      rather than asserted. If a behavior is supposed to hold, there's a run that shows it. See
+      <a href={withBase("docs/evals")}>Self-Eval</a> for how the harness measures it.
+    </p>
+
+    <div class="note">
+      <span class="note__key">Honest</span>
+      <span>Agentry is pre-1.0, and live channels are a research preview. The case here is built on what the repo does today — not on benchmarks it doesn't have.</span>
+    </div>
+
+    <div class="prose__cta">
+      <p>
+        Convinced enough to try it? <a href={withBase("docs/quickstart")}>Quickstart</a> is one
+        line away. Want the boundary first — when to reach for it and when not?
+        <a href={withBase("docs/when")}>When to use it</a>.
+      </p>
+    </div>
+  </div>
+</DocsLayout>

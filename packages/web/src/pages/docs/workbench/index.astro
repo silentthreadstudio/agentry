@@ -1,0 +1,68 @@
+---
+// /docs/workbench — the Workbench / Agent Center (an additive layer). Composed through
+// DocsLayout: header from props, body = DocDiagram(workbench.png) + prose. The :4317 /
+// *.localhost strings are exact. (Real screenshots are wired in by T5.)
+//
+// Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
+import DocShot from "../../../components/doc-shot/DocShot.astro";
+---
+
+<DocsLayout
+  current="workbench"
+  title="Workbench — the Agent Center"
+  description="The Workbench is a per-project local Agent Center on :4317 with *.localhost host-routing — read, edit, comment, approve, and watch a live graph. It is additive: the terminal works without it."
+  eyebrow="Capabilities · Workbench"
+  lede="The Workbench is a local web view onto a run — a place to read the work, edit and comment on it, approve steps, and watch the agent graph move in real time. It is additive: nothing about a run depends on it being open."
+>
+  <DocDiagram
+    src="diagrams/workbench.png"
+    alt="Diagram of the Workbench: a per-project local Agent Center served on port 4317 with per-project *.localhost host-routing, showing a live agent graph alongside read, edit, comment, and approve controls."
+    caption="A per-project local Agent Center on :4317 — read, edit, comment, approve, and watch a live graph."
+  />
+
+  <div class="prose">
+    <p>
+      The Workbench is a <strong>per-project local Agent Center on <code>:4317</code></strong>, served
+      with <strong><code>*.localhost</code> host-routing</strong> so each project gets its own
+      address on the one local server. From it you can <strong>read, edit, comment, and approve</strong>
+      the run's artifacts, and <strong>watch and steer a live graph</strong> of the agents as they work.
+    </p>
+    <p>
+      It is an <strong>additive layer</strong>, not a dependency: <strong>the terminal works without
+      it</strong>. Run the same task entirely from the command line and nothing is lost — the Workbench
+      adds a way to <em>see</em> and steer the run, not a way to make it possible.
+    </p>
+
+    <h2 class="prose__h">What it looks like</h2>
+    <p>
+      The <strong>Works home</strong> lists every run in the project with its status, shape, and
+      progress — the front door to everything the agents are doing:
+    </p>
+    <DocShot
+      src="shots/wb-home.png"
+      alt="The Workbench Works home: a grid of run cards each showing title, routed shape, and progress, above KPI tiles for active runs, in-progress tasks, agents live, and throughput."
+      caption="The Works home — every run in the project, with status, shape, and progress."
+    />
+    <p>
+      Open a run and the <strong>Live graph</strong> renders it as the task DAG — routing → spec →
+      plan → the bounded tasks — with typed edges and live execution overlay, so you can watch the
+      work move:
+    </p>
+    <DocShot
+      src="shots/wb-graph.png"
+      alt="The Workbench Live graph: a run rendered as a directed task graph with auto-layout, typed edges, a legend (derives, blocks, satisfies), and a minimap."
+      caption="The Live graph — the run as a typed task DAG with auto-layout, a legend, and a minimap."
+    />
+    <p>
+      Click any node and its artifact opens as a <strong>document</strong> you can read, edit, and
+      comment on — the spec, the plan, an ADR, a task — with the agent conversation in a side rail:
+    </p>
+    <DocShot
+      src="shots/wb-docs.png"
+      alt="The Workbench docs workspace: a run-document navigator (Definition, Decisions, Tasks) beside a rendered Spec document, with a conversation rail for comments and agent replies."
+      caption="The docs workspace — read, edit, and comment on a run's artifacts, with the conversation rail alongside."
+    />
+  </div>
+</DocsLayout>

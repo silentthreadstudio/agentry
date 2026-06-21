@@ -1,0 +1,47 @@
+---
+// /docs/channels — Channels, live human↔agent comms (an additive layer). Composed through
+// DocsLayout: header from props, body = DocDiagram(channels.png) + prose. The channel_reply
+// name and the launch flag are EXACT (copy, do not paraphrase).
+//
+// Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="channels"
+  title="Channels — live human↔agent comms"
+  description="Channels add live human↔agent push over the file-watch loop — comments, threaded channel_reply, a permission relay to approve tool-use from the Workbench, and human status changes that steer the agent."
+  eyebrow="Capabilities · Channels"
+  lede="Channels turn the async file-watch loop into a live conversation: you can push a comment, reply in a thread, approve a tool call, or change a task's status and have the agent react — instead of waiting for its next turn."
+>
+  <DocDiagram
+    src="diagrams/channels.png"
+    alt="Diagram of Channels: live push between a human and the agent over the file-watch loop — comments, threaded replies, a permission relay from the Workbench, and human status changes that steer the run."
+    caption="Live human↔agent push over the file-watch loop — comments, threaded replies, a permission relay, and status steering."
+  />
+
+  <div class="prose">
+    <p>
+      Channels are <strong>live human↔agent push over the file-watch loop</strong>. Where the loop on
+      its own delivers your edits on the agent's next turn, channels add a live signal. Four kinds:
+    </p>
+    <ul class="facts">
+      <li><strong>Comments</strong> — leave a note on a run's artifact and have it reach the agent.</li>
+      <li><strong>Threaded <code>channel_reply</code></strong> — reply in-thread so a back-and-forth stays attached to its context.</li>
+      <li><strong>A permission relay</strong> — approve tool-use from the Workbench, instead of only at the terminal.</li>
+      <li><strong>Human status changes that steer</strong> — force a task's status and the agent treats it as steering and adjusts what it does next.</li>
+    </ul>
+    <p>
+      Channels are an <strong>additive layer</strong> and a research preview: they need Claude Code
+      launched with the flag
+    </p>
+    <pre class="flag"><code>--dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
+    <p>
+      Without it, everything still works via the async file-watch loop — the files are truth, the agent
+      reads your edits on its next turn, and approvals fall back to the terminal. See
+      <a href={withBase("docs/permissions")}>Permissions</a> for how the relay approves a tool call.
+    </p>
+  </div>
+</DocsLayout>

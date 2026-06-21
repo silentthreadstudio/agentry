@@ -1,0 +1,77 @@
+---
+// /docs/troubleshooting — common failure modes + fixes, from real gotchas: channels not live
+// without the dev flag, the Workbench singleton on :4317, reload-gated plugin changes, and the
+// Node >= 24 requirement. Gotchas use .note--warn; the exact channel flag uses a .flag block.
+//
+// Base-path rule (#1 404 trap): every internal href goes through withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="troubleshooting"
+  title="Troubleshooting"
+  description="Common Agentry failure modes and their fixes — channels that don't seem live, the Workbench port, plugin changes that didn't take effect, and the Node version requirement."
+  eyebrow="Reference · Troubleshooting"
+  lede="The handful of things that trip people up first — what you see, why it happens, and the fix. Most are a launch flag, a reload, or a version away from working."
+>
+  <div class="prose">
+    <h2 class="prose__h">Channels don't seem live</h2>
+    <p>
+      You're seeing the channel MCP's instructions, but comments and approvals aren't reaching the
+      agent live. The cause: Claude Code was launched <strong>without the development-channels
+      flag</strong>. The MCP instructions load even without it, so <strong>seeing them does not prove
+      the channel is live</strong>. Relaunch with the flag:
+    </p>
+    <pre class="flag"><code>--dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
+    <div class="note note--warn">
+      <span class="note__key">Gotcha</span>
+      <span>
+        The instructions loading is not proof the channel is live. Until you relaunch with the flag,
+        everything falls back to the async file-watch loop. See
+        <a href={withBase("docs/channels")}>Channels</a>.
+      </span>
+    </div>
+
+    <h2 class="prose__h">The Workbench won't open / the port is busy</h2>
+    <p>
+      The Workbench is a <strong>singleton</strong> on <code>127.0.0.1:4317</code>. Running
+      <code>/agentry:workbench</code> a second time <strong>focuses the already-running server</strong> —
+      it never spawns a second one — so a "port busy" error usually means it's already up. Probe it:
+    </p>
+    <pre class="flag"><code><span class="flag__sigil">$ </span>curl http://127.0.0.1:4317/healthz</code></pre>
+    <div class="note note--warn">
+      <span class="note__key">Gotcha</span>
+      <span>
+        There is never a second Workbench process to kill. If <code>/healthz</code> answers, the
+        server is up — re-running the command just brings its window to the front. See the
+        <a href={withBase("docs/workbench")}>Workbench</a> page.
+      </span>
+    </div>
+
+    <h2 class="prose__h">Plugin changes didn't take effect</h2>
+    <p>
+      You edited an agent, command, skill, or MCP server, but the change isn't live in the session.
+      These changes are <strong>reload-gated</strong>: they only register on a reload/restart.
+    </p>
+    <div class="note note--warn">
+      <span class="note__key">Gotcha</span>
+      <span>
+        Agent / command / skill / MCP changes register only on a session restart. Restart the
+        session, then verify the change live.
+      </span>
+    </div>
+
+    <h2 class="prose__h">Node version errors</h2>
+    <p>
+      Agentry requires <strong>Node ≥ 24</strong>. The memory MCP uses <code>node:sqlite</code>, which
+      isn't available on older runtimes — so an older Node fails before anything useful happens.
+    </p>
+    <div class="note note--warn">
+      <span class="note__key">Gotcha</span>
+      <span>
+        Check with <code>node --version</code>. If it's below 24, upgrade Node before launching.
+      </span>
+    </div>
+  </div>
+</DocsLayout>

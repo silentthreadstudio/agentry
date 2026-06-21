@@ -1,0 +1,56 @@
+---
+// DocShot.astro — a real product screenshot presented in a bordered frame with a caption
+// (ADR-003). Distinct from DocDiagram (16:9 illustrations): a DocShot is an actual captured
+// UI image at its native ratio, framed so the dark app UI sits cleanly on the dark canvas.
+//
+// Base-path rule: the caller passes a BARE public path ("shots/wb-home.png"); withBase()
+// prefixes it here exactly once — never pre-prefix at the call site or the base doubles.
+// alt + caption are REQUIRED (a11y / AC5): describe what the screenshot shows.
+import { withBase } from "../../lib/base.ts";
+
+interface Props {
+  /** Bare public path, e.g. "shots/wb-home.png" — prefixed via withBase(). */
+  src: string;
+  /** Accessible description of what the screenshot shows (required). */
+  alt: string;
+  /** Visible caption under the frame (required). */
+  caption: string;
+}
+const { src, alt, caption } = Astro.props;
+---
+
+<figure class="docshot reveal">
+  <div class="docshot__frame">
+    <img src={withBase(src)} alt={alt} loading="lazy" decoding="async" />
+  </div>
+  <figcaption class="docshot__caption">{caption}</figcaption>
+</figure>
+
+<style>
+  .docshot {
+    margin-block: 18px 24px;
+  }
+
+  .docshot__frame {
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--bg-2);
+    /* a soft inner seat so the screenshot reads as a framed window over the canvas */
+    box-shadow: 0 18px 50px -24px rgba(0, 0, 0, 0.7);
+  }
+
+  .docshot__frame img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .docshot__caption {
+    margin-top: 12px;
+    padding-inline: 2px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+</style>

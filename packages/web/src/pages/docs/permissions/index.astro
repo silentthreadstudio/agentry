@@ -1,0 +1,70 @@
+---
+// /docs/permissions — how agent tool-use is approved across three surfaces: the terminal
+// prompt (default), the Workbench approval surface, and the channel permission relay.
+// Composed through DocsLayout: header from props, body = prose + a .steps list of the three
+// surfaces + a .note on the honest posture. The relay facts (terminal dialog stays open,
+// first-answer-wins, research preview) are sourced verbatim from README/CLAUDE.md.
+//
+// Base-path rule (#1 404 trap): every docs→docs link goes through withBase("docs/<x>").
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="permissions"
+  title="Permissions — approving agent tool-use"
+  description="How an agent's tool-use is approved in Agentry: the terminal permission prompt (the default), the Workbench approval surface, and the channel permission relay — local-first, with you in control of outward and irreversible actions."
+  eyebrow="Capabilities · Permissions"
+  lede="When an agent wants to run a tool, you decide. Agentry is local-first: you stay in control of outward and irreversible actions, and the same decision can reach you in three places — the terminal, the Workbench, or over a channel."
+>
+  <div class="prose">
+    <p>
+      A tool call that touches the outside world — or that can't be undone — is gated on your approval.
+      That approval can reach you on <strong>three surfaces</strong>. They are not three different
+      decisions: they are three <strong>views onto the same decision</strong>, and the first answer wins.
+    </p>
+
+    <ol class="steps">
+      <li>
+        <strong>The terminal permission prompt</strong> — the default. Claude Code asks at the command
+        line and you approve or deny there. This is the baseline path and it is always available; it
+        needs nothing else turned on.
+      </li>
+      <li>
+        <strong>The Workbench approval surface</strong> — when the <a href={withBase("docs/workbench")}>Workbench</a>
+        is open, a pending tool call shows up as an approval you can act on in the web view, alongside
+        the rest of the run. You stay in the same place where you read and steer the work.
+      </li>
+      <li>
+        <strong>The channel permission relay</strong> — a <a href={withBase("docs/channels")}>Channels</a>
+        feature. Claude Code sends a permission request over the channel; you approve or deny it from the
+        Workbench instead of the terminal. The <strong>terminal dialog stays open the whole time</strong>,
+        and <strong>whichever side answers first wins</strong> — so the relay never traps a decision in
+        one place.
+      </li>
+    </ol>
+
+    <h2 class="prose__h">The posture: local-first, you stay in control</h2>
+    <p>
+      Agentry is <strong>local-first</strong>. The gate exists so that <strong>you stay in control of
+      outward and irreversible actions</strong> — the work proceeds on its own where it is safe and
+      reversible, and stops for you where it isn't. The decision is yours by default, not the agent's.
+    </p>
+
+    <div class="note">
+      <span class="note__key">Note</span>
+      <p>
+        The channel permission relay is a <strong>research-preview convenience layered on top</strong> —
+        a nicer place to answer the same prompt, never a requirement. Turn channels off and approvals
+        fall back to the terminal dialog, exactly as before; nothing about staying in control depends on
+        the relay being live.
+      </p>
+    </div>
+
+    <p class="prose__cta">
+      The relay rides the live push layer — see <a href={withBase("docs/channels")}>Channels</a> for how
+      that loop works, and <a href={withBase("docs/security")}>Security</a> for the boundary around
+      outward actions.
+    </p>
+  </div>
+</DocsLayout>

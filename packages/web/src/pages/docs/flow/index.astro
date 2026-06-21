@@ -1,0 +1,56 @@
+---
+// /docs/flow — Flow, the run-state engine. Composed through DocsLayout: header from props,
+// body = DocDiagram(flow.png) + prose. Facts verbatim from the content map.
+//
+// Base-path rule (#1 404 trap): DocDiagram takes a BARE path and prefixes it via withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
+import DocShot from "../../../components/doc-shot/DocShot.astro";
+---
+
+<DocsLayout
+  current="flow"
+  title="Flow — the run-state engine"
+  description="Flow is Agentry's run-state engine: task lifecycle, append-only events, and review recorded as plain files in .agentry/work/ that are the source of truth — stateless and restart-safe."
+  eyebrow="Capabilities · Flow"
+  lede="Flow is the MCP that records what a run is doing. Its state lives on disk as plain files, so a run can be paused, inspected, and resumed without a daemon holding anything in memory."
+>
+  <DocDiagram
+    src="diagrams/flow.png"
+    alt="Diagram of Flow's run state: a run directory under .agentry/work containing task lifecycle, an append-only event log, a review sidecar, and a content-hash version."
+    caption="A run's state on disk — task lifecycle, events, review, and version — all under .agentry/work/<run>/."
+  />
+
+  <div class="prose">
+    <p>
+      Flow records run state to <code>.agentry/work/&lt;run&gt;/</code> as
+      <strong>plain files that are the source of truth</strong>. There is no separate database of
+      record and no server-held session: the files <em>are</em> the run. Four kinds of state live
+      there:
+    </p>
+    <ul class="facts">
+      <li><strong>Task lifecycle</strong> — each task's contract and its status as it moves todo → in-progress → in-review → done.</li>
+      <li><strong>Append-only events</strong> — a chronological log that is only ever added to, never rewritten.</li>
+      <li><strong>Review sidecar</strong> — comments and decisions on a run's artifacts, kept alongside the work.</li>
+      <li><strong>Content-hash version</strong> — a hash of the content so a stale read or a clobbering write is caught.</li>
+    </ul>
+    <p>
+      Because the truth is on disk and nothing is held in process, Flow is
+      <strong>stateless and restart-safe</strong>: kill the session, restart it tomorrow, and the run
+      resumes from exactly the files it left behind. Files are the truth; the agent reads them on its
+      next turn — and the Workbench and Channels layers simply render and push over those same seams.
+    </p>
+
+    <h2 class="prose__h">A run, rendered</h2>
+    <p>
+      Because the lifecycle and dependencies are recorded as files, any tool can render them. The
+      Workbench draws a run's Flow state as the task DAG — routing → spec → plan → the bounded tasks
+      it was sliced into, with their live status:
+    </p>
+    <DocShot
+      src="shots/wb-graph.png"
+      alt="A Flow run rendered as a task graph: routing feeds spec, spec feeds plan, and plan fans out into bounded tasks with typed dependency edges — each node showing its status."
+      caption="A Flow run rendered from its files — the task lifecycle and dependencies as a live graph."
+    />
+  </div>
+</DocsLayout>

@@ -1,0 +1,54 @@
+---
+// /docs/memory — Memory, the moat. Composed through DocsLayout: header from props, body =
+// DocDiagram(memory.png) + prose. Facts verbatim from the content map.
+//
+// Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
+import DocShot from "../../../components/doc-shot/DocShot.astro";
+---
+
+<DocsLayout
+  current="memory"
+  title="Memory — the moat"
+  description="Memory is Agentry's durable fact/episode store — a local stdio MCP over node:sqlite with project and global roots. It is the moat: each run starts warmer than the last."
+  eyebrow="Capabilities · Memory"
+  lede="Memory is the durable store that lets a run remember. It graduates a run's lessons into recallable facts, so the next task starts warmer than the last — the compounding advantage Agentry is built around."
+>
+  <DocDiagram
+    src="diagrams/memory.png"
+    alt="Diagram of Memory: a durable fact and episode store backed by node:sqlite, accessed as a local stdio MCP, with a project root and a global root."
+    caption="A durable fact/episode store — a local stdio MCP over node:sqlite, with project + global roots."
+  />
+
+  <div class="prose">
+    <p>
+      Memory is a <strong>durable fact/episode store</strong>: it keeps both the semantic facts a
+      project accumulates (conventions, gotchas, decisions) and the episodes a run produces, with the
+      provenance that earned them. It is exposed as a <strong>local stdio MCP over
+      <code>node:sqlite</code></strong> — no network service, no external database; it runs on your
+      machine and stores on your disk.
+    </p>
+    <p>
+      Recall is rooted in two scopes. A <strong>project root</strong> holds what is true for
+      <em>this</em> repository; a <strong>global root</strong> holds what is true across all your work.
+      A task pulls from both, so a lesson learned once is available everywhere it applies.
+    </p>
+    <p>
+      This is <strong>the moat</strong>. Capability you can buy; a store of what <em>your</em> work has
+      already taught the system, you can only accumulate — and it compounds with every run.
+    </p>
+
+    <h2 class="prose__h">Browse the store</h2>
+    <p>
+      The Workbench includes a read-only <strong>Memory browser</strong> — search and filter the
+      facts and episodes the store has accumulated, each with its confidence, provenance, and the
+      reason it was kept:
+    </p>
+    <DocShot
+      src="shots/wb-memory.png"
+      alt="The Workbench Memory browser: a master-detail view with totals (facts and episodes), a search box and type filters, a list of memory cards, and a detail panel showing a fact's confidence, creation date, and why-it-matters note."
+      caption="The Memory browser — search the durable store; each fact carries its confidence, provenance, and why it was kept."
+    />
+  </div>
+</DocsLayout>

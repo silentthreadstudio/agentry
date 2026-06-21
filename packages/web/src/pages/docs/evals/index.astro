@@ -1,0 +1,197 @@
+---
+// /docs/evals — Self-Eval, the centerpiece Reference page. Explains what the embedded eval
+// dashboard measures, HONESTLY: routing floor-conformance, the 0–2 decision-quality rubric,
+// the planted gold/poor controls, judge discrimination, and the "corrections log IS the
+// product" framing. Every number here is a REAL figure from run 829a (fixture routing-quick,
+// ×3 repeats) — do NOT invent or re-round.
+//
+// Caveats (N=6 / early-signal / directional-not-powered) are MANDATORY and kept prominent in
+// a .note. T5 wires the eval screenshots into the clearly-marked placeholder regions below —
+// this file authors the prose + the empty <h2> anchors; it inserts NO <img>/DocShot itself.
+//
+// Base-path rule (#1 404 trap): every internal href + the dashboard link goes through withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import DocShot from "../../../components/doc-shot/DocShot.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="evals"
+  title="Self-Eval — the meter that grades itself"
+  description="Agentry's self-eval harness measures routing floor-conformance and decision quality on its own real work, behind controls that run before any score is shown — and a corrections log that is the credibility core."
+  eyebrow="Reference · Self-Eval"
+  lede="Agentry ships with a self-eval harness that measures whether the conductor routed and decided well — on its own real work, not a proxy. The numbers below are early signal, directional not powered, and we say so plainly. The corrections log is the part to trust."
+>
+  <div class="prose">
+    <p>
+      The embedded dashboard measures two things about a run — <strong>did the conductor route
+      to the right shape</strong>, and <strong>were its decisions sound</strong> — plus the
+      <strong>controls</strong> that have to pass before any score is shown, and a
+      <strong>corrections log</strong> that records every time the meter was wrong. The figures
+      here are from the current run (run 829a, fixture <code>routing-quick</code>, ×3 repeats).
+    </p>
+
+    <div class="note">
+      <span class="note__key">Read first</span>
+      <span>
+        <strong>N=6. This is early signal — directional, not powered.</strong> Six tasks across
+        three repeats is enough to see a trend, not enough to claim a rate. Treat every number
+        below as a direction of travel, not a guarantee. Routing is read from the conductor's
+        <strong>real work artifacts</strong>, not a dispatch proxy.
+      </span>
+    </div>
+
+    <!-- ============================================================
+         T5 SCREENSHOT REGION · Routing
+         T5 inserts the routing/confusion-matrix dashboard shot directly
+         under this heading. Do NOT add <img>/DocShot here (T5 owns it).
+         ============================================================ -->
+    <h2 class="prose__h">Routing floor-conformance</h2>
+    <DocShot
+      src="shots/eval-routing.png"
+      alt="The Self-Eval dashboard Routing view: a confusion matrix with a clean diagonal (one-shot, spec-first, decompose each 2 of 2), accuracy-per-repeat bars (100%, 67%, 100%), and a per-task stability table."
+      caption="Routing view — the confusion matrix is a clean diagonal; the noisy repeat is drawn separately, not averaged away."
+    />
+    <p>
+      Each task has a <em>least-sufficient shape</em> — one-shot, spec-first, or decompose. Routing
+      conformance asks whether the conductor actually hit that floor. On run 829a:
+    </p>
+    <ul class="facts">
+      <li><strong>100% modal</strong> conformance — <strong>6/6 on the diagonal</strong> of the confusion matrix (every task landed on its expected shape).</li>
+      <li><strong>Per-repeat mean 88.9% ±15.7%</strong> (range 67%–100%) — the spread is the honest cost of N=6.</li>
+      <li><strong>Mis-routes: 0/18.</strong> The confusion matrix is a clean diagonal — one-shot, spec-first, and decompose each 2/2.</li>
+      <li><strong>Task stability: 4/6 unanimous</strong> across repeats; <strong>2 noisy</strong> (they flipped shape on some repeat).</li>
+    </ul>
+    <div class="note">
+      <span class="note__key">Caveat</span>
+      <span>
+        N=6, <strong>early-signal, directional — not powered</strong>. Routing here is extracted
+        from the conductor's <strong>real work artifacts</strong>, not a dispatch-pattern proxy
+        (see the corrections log for why that distinction is load-bearing).
+      </span>
+    </div>
+
+    <!-- ============================================================
+         T5 SCREENSHOT REGION · Decision quality
+         T5 inserts the rubric/decision-quality dashboard shot directly
+         under this heading. Do NOT add <img>/DocShot here (T5 owns it).
+         ============================================================ -->
+    <h2 class="prose__h">Decision quality</h2>
+    <DocShot
+      src="shots/eval-quality.png"
+      alt="The Self-Eval dashboard Decision quality view: a five-dimension rubric radar (fork surfacing, decision soundness, accountability, scope discipline, coherence), the planted gold-100% vs poor-20% judge-trust controls, and a table of judged artifacts."
+      caption="Decision quality view — the 0–2 rubric, the planted gold↔poor judge-trust controls, and every judged artifact."
+    />
+    <p>
+      Routing is necessary but not sufficient — a run can route right and still decide badly. A
+      judge scores the conductor's decisions against a rubric. Across 12 judged artifacts the
+      overall is <strong>97.5%</strong>, built from five dimensions scored 0–2 each:
+    </p>
+    <table class="layers">
+      <thead>
+        <tr><th>Dimension</th><th>Mean (0–2)</th></tr>
+      </thead>
+      <tbody>
+        <tr><th>Fork surfacing</th><td>2.00</td></tr>
+        <tr><th>Decision soundness</th><td>2.00</td></tr>
+        <tr><th>Accountability</th><td>1.92</td></tr>
+        <tr><th>Scope discipline</th><td>1.92</td></tr>
+        <tr><th>Coherence</th><td>1.92</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <span class="note__key">Anti-gaming</span>
+      <span>
+        The model's <strong>self-score is discarded</strong>. The overall is recomputed from the
+        rubric by the judge, so the system being graded cannot inflate its own grade.
+      </span>
+    </div>
+
+    <h2 class="prose__h">Controls — the gates before any score</h2>
+    <DocShot
+      src="shots/eval-controls.png"
+      alt="The Self-Eval dashboard Controls view: A/A negative, planted gold-vs-poor, and saturation guard — all marked passed, run before any score is shown."
+      caption="Controls view — A/A negative, gold↔poor discrimination, and the saturation guard, all passed before any score is shown."
+    />
+    <p>
+      A score is meaningless if the instrument can't tell good from bad. These controls run
+      <strong>before any score is shown</strong>; if a gate fails, the run's numbers don't count.
+      All passed on run 829a:
+    </p>
+    <ul class="facts">
+      <li><strong>A/A negative</strong> — the same input judged k=3 times agreed unanimously (judge stdev 0.000): the judge isn't noisy.</li>
+      <li><strong>Planted gold↔poor discrimination</strong> — a <strong>0.80 gap</strong> (planted GOLD scored 100%, planted POOR 20%): the judge can separate good from bad.</li>
+      <li><strong>Saturation guard</strong> — the floor spread is OK: the rubric isn't pinned at the ceiling for everything.</li>
+    </ul>
+    <p>
+      One more signal: the <strong>memory moat</strong> measure is <strong>1.0</strong> — recall is
+      surfacing the right prior decisions where they matter.
+    </p>
+
+    <!-- ============================================================
+         T5 SCREENSHOT REGION · Corrections log
+         T5 inserts the corrections-log dashboard shot directly under
+         this heading. Do NOT add <img>/DocShot here (T5 owns it).
+         ============================================================ -->
+    <h2 class="prose__h">The corrections log IS the product</h2>
+    <p>
+      This is the credibility core. <strong>Each entry is a time the meter disagreed with the
+      conductor — and the conductor was right.</strong> We fixed the meter, not the conductor. The
+      harness survived its own instrument being wrong <strong>6 times</strong>:
+    </p>
+    <DocShot
+      src="shots/eval-corrections.png"
+      alt="The Self-Eval dashboard Corrections log: six entries, each showing what the meter said, what the truth was, and the fix applied to the meter — headed 'the corrections log is the product'."
+      caption="Corrections log — six times the meter was wrong and the conductor was right; each one fixed the meter, not the conductor."
+    />
+    <table class="layers">
+      <thead>
+        <tr><th>Meter said</th><th>Truth was</th><th>Fix</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>Off-shape (by dispatch pattern)</th>
+          <td>The dispatch-pattern proxy was invalid</td>
+          <td>Switched to artifact-based shape extraction</td>
+        </tr>
+        <tr>
+          <th>Read failed at the events seam</th>
+          <td>The <code>events.jsonl</code> seam never existed</td>
+          <td>Read the work-folder artifacts instead</td>
+        </tr>
+        <tr>
+          <th>It was one-shot</th>
+          <td>Cap-timing deflated a decompose into one-shot</td>
+          <td>Artifact-aware early-terminate</td>
+        </tr>
+        <tr>
+          <th>It under-routed</th>
+          <td>Those "under-routes" were good decisions</td>
+          <td>Quality-gate: a shape mismatch only counts if output quality suffered</td>
+        </tr>
+        <tr>
+          <th>It was pagination</th>
+          <td>Pagination was mislabeled decompose</td>
+          <td>Re-labeled (two independent labelers agreed)</td>
+        </tr>
+        <tr>
+          <th>It was one-shot</th>
+          <td>A grace window deflated some decompose</td>
+          <td>Bumped the grace window to 120s</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      The point isn't that the meter was perfect — it's that when the meter and the conductor
+      disagreed, we audited and fixed the <em>meter</em>. A self-eval you can't catch lying to you
+      isn't a self-eval; this log is the audit trail that says we caught it.
+    </p>
+
+    <div class="prose__cta">
+      <p>
+        <a href={withBase("dashboard/")}>See the live dashboard</a> for the full confusion matrix,
+        per-dimension rubric scores, the control results, and every corrections-log entry.
+      </p>
+    </div>
+  </div>
+</DocsLayout>

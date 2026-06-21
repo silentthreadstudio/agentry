@@ -1,0 +1,76 @@
+---
+// /docs/install — both paths to a working install: the plain plugin install, and the
+// channels-enabled launch with the EXACT dev-channels flag (AC7). The flag is load-bearing
+// and copied verbatim from the repo (channels page / README / channel-launch-flag memory):
+// MCP instructions load WITHOUT it, so the flag is what proves the channel is actually live.
+//
+// Base-path rule (#1 404 trap): internal hrefs go through withBase(); commands are literal
+// strings (not links) and need no prefixing.
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="install"
+  title="Install"
+  description="Install Agentry as a Claude Code plugin in one line — then optionally launch with the development-channels flag to bring live human↔agent channels online. Requires Node ≥ 24."
+  eyebrow="Getting Started · Install"
+  lede="Two paths: the plain install gets you the full conducting and memory layer; the channels-enabled launch additionally brings live human↔agent push online. The first is all you need to start."
+>
+  <div class="prose">
+    <h2 class="prose__h">The plain install</h2>
+    <p>
+      Agentry installs as a Claude Code plugin from its GitHub repo. From a Claude Code session:
+    </p>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add Codestz/agentry
+<span class="flag__sigil" aria-hidden="true">$ </span>/plugin install agentry@agentry-dev</code></pre>
+    <p>
+      That's the whole setup. The conducting front door (<code>/agentry:go</code>), the SDLC
+      specialists, and the durable memory layer all run from here — entirely from the terminal,
+      no account and no build step. Head to <a href={withBase("docs/quickstart")}>Quickstart</a>
+      to hand it a first task.
+    </p>
+
+    <div class="note">
+      <span class="note__key">Requires</span>
+      <span>Node ≥ 24 — the memory engine uses Node's built-in <code>node:sqlite</code>, so there are no native modules to compile.</span>
+    </div>
+
+    <h2 class="prose__h">The channels-enabled launch</h2>
+    <p>
+      Channels add <strong>live human↔agent push</strong> — comments, threaded replies, a
+      permission relay, and status steering — on top of the install above. They are an additive
+      layer and a research preview: to bring them online, launch Claude Code with the
+      development-channels flag:
+    </p>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>claude --dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
+
+    <h3 class="prose__h prose__h--sub">Why the flag — and what happens without it</h3>
+    <p>
+      The flag is load-bearing in a subtle way: the channel's <strong>MCP instructions load
+      without it</strong>, so seeing them is <em>not</em> proof the channel is live. The flag is
+      what actually brings the channel up — it is the thing that proves the channel is running, not
+      just described.
+    </p>
+    <p>
+      Leaving the flag off is a <strong>graceful degradation</strong>, not a breakage. Everything
+      still works via the async file-watch loop: the files under <code>.agentry/work/</code> are
+      the source of truth, the agent reads your edits on its next turn, and tool-use approvals fall
+      back to the terminal. You only need the flag when you want the <em>live</em> push instead of
+      the next-turn loop.
+    </p>
+
+    <div class="note note--warn">
+      <span class="note__key">Preview</span>
+      <span>The <code>--dangerously-load-development-channels</code> flag is a research preview — copy it verbatim, and expect it to change before 1.0.</span>
+    </div>
+
+    <div class="prose__cta">
+      <p>
+        Next: <a href={withBase("docs/channels")}>Channels</a> for what live push gives you, and
+        <a href={withBase("docs/permissions")}>Permissions</a> for how the relay approves a tool
+        call from the Workbench.
+      </p>
+    </div>
+  </div>
+</DocsLayout>

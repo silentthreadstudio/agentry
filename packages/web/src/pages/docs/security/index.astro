@@ -1,0 +1,71 @@
+---
+// /docs/security — the posture, from repo facts. Local-first: Memory is a local stdio MCP over
+// node:sqlite (no network service, no external DB), the Workbench is localhost-only on :4317,
+// Flow state is plain local files. You stay in control of outward/irreversible actions via
+// permission prompts. Channels are a flagged research preview (the flag is a consent gate). No
+// telemetry backend in the static site. MIT, pre-1.0 — honest, no overclaim.
+//
+// Base-path rule (#1 404 trap): every internal href goes through withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="security"
+  title="Security — local-first, you in control"
+  description="Agentry's posture: memory, run state, and the Workbench all live on your machine — no network service, no external database, no telemetry backend. Outward and irreversible actions stay gated behind your approval."
+  eyebrow="Reference · Security"
+  lede="Agentry is local-first by construction. Your memory and run state are plain local files and a local database; the Workbench is localhost-only. Nothing leaves the machine without an action you can see and stop. It's MIT and pre-1.0 — we'd rather under-claim."
+>
+  <div class="prose">
+    <h2 class="prose__h">Local-first by construction</h2>
+    <p>
+      The parts of Agentry that hold your data run on your machine. There is no Agentry service to
+      sign in to and no backend that sees your work:
+    </p>
+    <ul class="facts">
+      <li><strong>Memory</strong> is a local stdio MCP backed by <code>node:sqlite</code> — a file on disk. There is <strong>no network service and no external database</strong>; the memory server talks to Claude Code over stdio, not over a socket.</li>
+      <li><strong>The Workbench</strong> is <strong>localhost-only</strong>, bound to <code>127.0.0.1:4317</code>. It isn't exposed to your network; it's a local view of local files.</li>
+      <li><strong>Flow run state</strong> is plain local files under <code>.agentry/work/</code>. The files are the source of truth — there's no remote of record.</li>
+    </ul>
+
+    <h2 class="prose__h">You stay in control of what leaves the machine</h2>
+    <p>
+      Agentry runs inside Claude Code, so outward and irreversible actions — running a command,
+      writing a file, opening a PR — go through <strong>Claude Code's permission prompts</strong>.
+      The agent proposes; you approve. Nothing irreversible happens silently on your behalf.
+    </p>
+    <p>
+      See <a href={withBase("docs/permissions")}>Permissions</a> for how approvals work, including
+      relaying an approval from the Workbench.
+    </p>
+
+    <h2 class="prose__h">Channels are a flagged research preview</h2>
+    <p>
+      The live <a href={withBase("docs/channels")}>Channels</a> layer is gated behind a deliberate
+      consent flag — it does not load unless you launch with it:
+    </p>
+    <pre class="flag"><code>--dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
+    <p>
+      The <code>dangerously-</code> prefix is intentional. The flag is a <strong>consent gate</strong>:
+      live push between a human and the agent is opt-in, and without the flag everything falls back
+      to the async file-watch loop.
+    </p>
+
+    <h2 class="prose__h">No telemetry, no analytics backend</h2>
+    <p>
+      This documentation site is <strong>static</strong> — there's no analytics or telemetry backend
+      behind it collecting what you read or do. The embedded
+      <a href={withBase("dashboard/")}>self-eval dashboard</a> is a static, pre-rendered view of a
+      run that already happened; it doesn't phone home.
+    </p>
+
+    <h2 class="prose__h">Maturity — say it plainly</h2>
+    <p>
+      Agentry is <strong>MIT-licensed and pre-1.0</strong>. The posture above describes how it's
+      built today, not a security guarantee or a certification. Treat the agent like any tool with
+      access to your machine: review what it proposes, and keep the irreversible actions behind a
+      prompt you read.
+    </p>
+  </div>
+</DocsLayout>

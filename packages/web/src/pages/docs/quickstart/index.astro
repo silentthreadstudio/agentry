@@ -1,0 +1,80 @@
+---
+// /docs/quickstart — the fastest path from installed to a first task. Composed through
+// DocsLayout: header from props, body = the install one-liner + the /agentry:go first run
+// + what to expect. Facts from README (install sequence, routing) and Install.astro.
+//
+// Base-path rule (#1 404 trap): every internal href goes through withBase(); commands are
+// literal strings (not links), so they need no prefixing.
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="quickstart"
+  title="Quickstart"
+  description="Install Agentry with one line, then hand a task to /agentry:go and let it route to the least process that wins. From installed to a first conducted run in minutes."
+  eyebrow="Getting Started · Quickstart"
+  lede="From nothing to your first conducted run. One line installs Agentry; one front door — /agentry:go — takes a task and picks the least process that wins."
+>
+  <div class="prose">
+    <p>
+      Agentry installs into Claude Code as a plugin and adds a single front door:
+      <code>/agentry:go &lt;task&gt;</code>. You don't pick a workflow — you hand it a task and it
+      routes to the <strong>least process that wins</strong>. Three steps:
+    </p>
+
+    <ol class="steps">
+      <li>
+        <strong>Install the plugin.</strong> From a Claude Code session, add Agentry from its
+        GitHub repo:
+        <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add Codestz/agentry</code></pre>
+        No account and no build step — see <a href={withBase("docs/install")}>Install</a> for the
+        channels-enabled launch and the full sequence.
+      </li>
+      <li>
+        <strong>Hand it a task.</strong> Describe what you want in plain language:
+        <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/agentry:go "add pagination to the users endpoint"</code></pre>
+      </li>
+      <li>
+        <strong>Stay in the loop.</strong> Agentry conducts the run and gates the forks with you —
+        you approve the shape and the decisions, it does the work.
+      </li>
+    </ol>
+
+    <h2 class="prose__h">What to expect</h2>
+    <p>
+      <code>/agentry:go</code> doesn't run a fixed pipeline. It sizes the process to the task and
+      escalates only on evidence:
+    </p>
+    <ul class="facts">
+      <li>
+        <strong>It recalls memory first.</strong> Before acting, it pulls what your earlier runs
+        taught it — the conventions, gotchas, and decisions that apply to this task — so the work
+        starts warmer than from cold.
+      </li>
+      <li>
+        <strong>It right-sizes the shape.</strong> A clear, reversible change goes
+        <strong>one-shot</strong> — a single bounded edit, then verify. An ask where "done = X"
+        isn't clear yet goes <strong>spec-first</strong>. Several coupled parts or a real design
+        fork earn <strong>decompose + verify</strong> — spec, plan, split, build, verify, assemble.
+      </li>
+      <li>
+        <strong>It gates with you.</strong> At each fork the conductor pauses for your call rather
+        than guessing — you stay in the loop the whole way.
+      </li>
+    </ul>
+
+    <div class="note">
+      <span class="note__key">Requires</span>
+      <span>Node ≥ 24 (the memory engine uses Node's built-in <code>node:sqlite</code>) and Claude Code.</span>
+    </div>
+
+    <div class="prose__cta">
+      <p>
+        Next: the full <a href={withBase("docs/install")}>Install</a> guide — including the
+        channels launch — or <a href={withBase("docs/why")}>Why Agentry</a> if you want the
+        case for it first.
+      </p>
+    </div>
+  </div>
+</DocsLayout>

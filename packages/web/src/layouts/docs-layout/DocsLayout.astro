@@ -1,0 +1,116 @@
+---
+// DocsLayout.astro — the shared shell for every /docs page (ADR-001). Wraps Base (head +
+// site nav + footer) with the two-column docs grid: the persistent grouped sidebar on the
+// left, the article (header scaffold + page slot + prev/next) on the right.
+//
+// Importing docs.css here (ADR-002) makes the shared prose classes available to every page's
+// slot content, so pages are pure content composition with no duplicated chrome or styles.
+//
+// Pinned props (the seam T2–T5 bind to): { current?, title, description?, eyebrow, lede }.
+// `title` is the visible h1; the <head> title is derived as "<title> · Agentry docs".
+import Base from "../Base.astro";
+import DocsSidebar from "../../components/docs-sidebar/DocsSidebar.astro";
+import { docsNeighbours, type DocsKey } from "../../lib/docs-nav.ts";
+import { withBase } from "../../lib/base.ts";
+import "../../styles/docs.css";
+
+interface Props {
+  /** Active route key — omit only on the overview index. */
+  current?: DocsKey;
+  /** The visible page <h1> (also seeds the <head> title). */
+  title: string;
+  /** Meta description; falls back to Base's measured default. */
+  description?: string;
+  /** Mono uppercase eyebrow above the title (e.g. "Getting Started · Quickstart"). */
+  eyebrow: string;
+  /** The lede paragraph under the title. */
+  lede: string;
+}
+const { current, title, description, eyebrow, lede } = Astro.props;
+
+// prev/next sequencing from the IA (only when the page is a keyed route, not the overview)
+const { prev, next } = current
+  ? docsNeighbours(current)
+  : { prev: null, next: null };
+---
+
+<Base title={`${title} · Agentry docs`} description={description}>
+  <div class="container docs-shell">
+    <DocsSidebar current={current} />
+
+    <article class="docs-main">
+      <header class="docs-head">
+        <p class="docs-head__eyebrow label">{eyebrow}</p>
+        <h1 class="docs-head__title">{title}</h1>
+        <p class="docs-head__lede muted">{lede}</p>
+      </header>
+
+      <slot />
+
+      {
+        (prev || next) && (
+          <nav class="docnav-seq" aria-label="Page navigation">
+            {prev && (
+              <a class="docnav-seq__link docnav-seq__link--prev" href={withBase(prev.href)}>
+                <span class="docnav-seq__dir">← Previous</span>
+                <span class="docnav-seq__label">{prev.label}</span>
+              </a>
+            )}
+            {next && (
+              <a class="docnav-seq__link docnav-seq__link--next" href={withBase(next.href)}>
+                <span class="docnav-seq__dir">Next →</span>
+                <span class="docnav-seq__label">{next.label}</span>
+              </a>
+            )}
+          </nav>
+        )
+      }
+    </article>
+  </div>
+</Base>
+
+<style>
+  /* two-column docs grid: fixed sidebar rail + fluid content. Generous top padding clears
+     the sticky site nav; not the full 150px .section rhythm. */
+  .docs-shell {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 56px;
+    padding-block: 40px 96px;
+    align-items: start;
+  }
+
+  .docs-main {
+    min-width: 0;
+    max-width: 820px;
+  }
+
+  .docs-head {
+    margin-bottom: 8px;
+  }
+
+  .docs-head__eyebrow {
+    margin-bottom: 18px;
+  }
+
+  .docs-head__title {
+    font-size: clamp(30px, 4vw, 46px);
+    margin-bottom: 20px;
+  }
+
+  .docs-head__lede {
+    font-size: clamp(16px, 1.4vw, 19px);
+    line-height: 1.65;
+    max-width: 64ch;
+    margin-bottom: 12px;
+  }
+
+  /* single column on narrow viewports: the sidebar (with its disclosure) stacks on top */
+  @media (max-width: 900px) {
+    .docs-shell {
+      grid-template-columns: 1fr;
+      gap: 0;
+      padding-block: 24px 64px;
+    }
+  }
+</style>

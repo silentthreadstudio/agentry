@@ -1,0 +1,194 @@
+---
+// DocsSidebar.astro — the persistent grouped left nav for /docs (ADR-001), driven entirely
+// by the typed docs-nav.ts source of truth (ADR-005). Overview link, then the three groups
+// in reading order. The active item is marked by the `current` route key + aria-current.
+//
+// Desktop: a sticky rail. Mobile (< 900px): collapses behind a disclosure toggle (the
+// co-located <script> below — reduced-motion-safe, no framework). Base-path rule: every
+// href goes through withBase() or it 404s under /agentry.
+import { withBase } from "../../lib/base.ts";
+import { docsGroups, DOCS_OVERVIEW, type DocsKey } from "../../lib/docs-nav.ts";
+
+interface Props {
+  /** Active route key — omit on the overview index. */
+  current?: DocsKey;
+}
+const { current } = Astro.props;
+const onOverview = current === undefined;
+---
+
+<nav class="docsidebar" aria-label="Documentation">
+  <button
+    class="docsidebar__toggle"
+    aria-expanded="false"
+    aria-controls="docsidebar-panel"
+  >
+    <span class="docsidebar__toggle-label">Documentation</span>
+    <span class="docsidebar__chev" aria-hidden="true">▾</span>
+  </button>
+
+  <div class="docsidebar__panel" id="docsidebar-panel">
+    <a
+      class:list={["docsidebar__overview", { "is-active": onOverview }]}
+      href={withBase(DOCS_OVERVIEW.href)}
+      aria-current={onOverview ? "page" : undefined}
+    >
+      {DOCS_OVERVIEW.label}
+    </a>
+
+    {
+      docsGroups.map((group) => (
+        <div class="docsidebar__group">
+          <p class="docsidebar__grouptitle label">{group.title}</p>
+          <ul class="docsidebar__list" role="list">
+            {group.items.map((item) => (
+              <li>
+                <a
+                  href={withBase(item.href)}
+                  class:list={["docsidebar__link", { "is-active": item.key === current }]}
+                  aria-current={item.key === current ? "page" : undefined}
+                >
+                  {item.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </div>
+</nav>
+
+<style>
+  /* desktop: a calm sticky rail under the site nav */
+  .docsidebar {
+    position: sticky;
+    top: 96px;
+    align-self: start;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    padding-right: 8px;
+  }
+
+  /* the mobile disclosure toggle is hidden on desktop */
+  .docsidebar__toggle {
+    display: none;
+  }
+
+  .docsidebar__overview {
+    display: block;
+    padding: 8px 12px;
+    margin-bottom: 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14.5px;
+    color: var(--muted);
+    transition: color 0.18s ease, background 0.18s ease;
+  }
+
+  .docsidebar__overview:hover {
+    color: var(--ink);
+    background: var(--violet-dim);
+  }
+
+  .docsidebar__group {
+    margin-bottom: 22px;
+  }
+
+  .docsidebar__grouptitle {
+    padding: 0 12px;
+    margin-bottom: 8px;
+    color: var(--faint);
+    font-size: 11px;
+  }
+
+  .docsidebar__list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    /* a hairline guide rail down the group */
+    border-left: 1px solid var(--line);
+    margin-left: 12px;
+  }
+
+  .docsidebar__link {
+    display: block;
+    padding: 7px 12px;
+    margin-left: -1px;
+    border-left: 1px solid transparent;
+    font-size: 14.5px;
+    color: var(--muted);
+    transition: color 0.18s ease, border-color 0.18s ease;
+  }
+
+  .docsidebar__link:hover {
+    color: var(--ink);
+  }
+
+  /* active item: amber spark on the guide rail (brand cue = "you are here") + brighter ink */
+  .docsidebar__link.is-active,
+  .docsidebar__overview.is-active {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .docsidebar__link.is-active {
+    border-left-color: var(--amber);
+  }
+
+  /* mobile: collapse to a disclosure under a full-width toggle */
+  @media (max-width: 900px) {
+    .docsidebar {
+      position: static;
+      max-height: none;
+      overflow: visible;
+      margin-bottom: 8px;
+      padding-right: 0;
+    }
+
+    .docsidebar__toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      min-height: 48px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      color: var(--ink);
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .docsidebar__chev {
+      color: var(--faint);
+      transition: transform 0.2s ease;
+    }
+
+    .docsidebar__toggle[aria-expanded="true"] .docsidebar__chev {
+      transform: rotate(180deg);
+    }
+
+    .docsidebar__panel {
+      display: none;
+      padding: 16px 4px 4px;
+    }
+
+    .docsidebar__panel.is-open {
+      display: block;
+    }
+  }
+</style>
+
+<script>
+  // Co-located view-logic: the mobile disclosure toggle. No framework — one listener,
+  // ARIA kept in sync, and it no-ops on desktop where the toggle is display:none.
+  const toggle = document.querySelector<HTMLButtonElement>(".docsidebar__toggle");
+  const panel = document.getElementById("docsidebar-panel");
+  toggle?.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", String(!open));
+    panel?.classList.toggle("is-open", !open);
+  });
+</script>

@@ -1,0 +1,49 @@
+---
+// /docs/changelog — hand-authored (NOT auto-generated). Two releases: v0.2 (current) and the
+// v0.1 → v0.1.2 line. Entries grouped Added / Changed, truthful to what shipped — no invented
+// features.
+//
+// Base-path rule (#1 404 trap): every internal href goes through withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="changelog"
+  title="Changelog"
+  description="What shipped in Agentry, by release — v0.2 (the docs & marketing site, the Workbench, the Flow MCP and channel bridge, and the self-eval harness) back to the initial v0.1 line."
+  eyebrow="Reference · Changelog"
+  lede="A hand-authored record of what shipped, newest first. It tracks releases, not commits — so it leans toward what changed for you, not every internal step."
+>
+  <div class="prose">
+    <h2 class="prose__h">v0.2 — current</h2>
+    <p>
+      The release that turns Agentry from a conductor-plus-memory core into a product you can see
+      and steer: a multi-page docs &amp; marketing site, a live Workbench, a run-state engine with a
+      live channel bridge, and a self-eval harness with a dashboard.
+    </p>
+
+    <h3 class="prose__h prose__h--sub">Added</h3>
+    <ul class="facts">
+      <li><strong>The docs &amp; marketing site</strong> — this multi-page <a href={withBase("docs")}>docs</a> area, covering Getting Started, Capabilities, and Reference.</li>
+      <li><strong>The <a href={withBase("docs/workbench")}>Workbench</a> (Agent Center V2)</strong> — a live graph of a run, a docs workspace, a comment/approve loop, and a Memory browser.</li>
+      <li><strong>The <a href={withBase("docs/flow")}>Flow</a> MCP v1</strong> — the run-state engine that records task lifecycle, append-only events, and review as plain files in <code>.agentry/work/</code>.</li>
+      <li><strong>The <a href={withBase("docs/channels")}>channel bridge</a></strong> — live comments, threaded replies, a permission relay, and human status changes that steer the run.</li>
+      <li><strong>The <a href={withBase("docs/evals")}>self-eval harness + dashboard</a></strong> — routing and decision-quality measures, controls, and a corrections log, with an embedded dashboard.</li>
+    </ul>
+
+    <h2 class="prose__h">v0.1 → v0.1.2 — initial Agentry</h2>
+    <p>
+      The first releases established the core: a right-sized conductor, the SDLC specialist roster,
+      durable memory, and the primer that warms a session.
+    </p>
+
+    <h3 class="prose__h prose__h--sub">Added</h3>
+    <ul class="facts">
+      <li><strong>The right-sized conductor</strong> — routes a task to the least process that wins (one-shot → spec-first → decompose + verify).</li>
+      <li><strong>The SDLC specialist roster</strong> — the explorer, architect, implementer, verifier, librarian, and the rest of the specialist agents.</li>
+      <li><strong>The memory MCP</strong> — durable facts and episodes the conductor can recall, so run #2 is warmer than run #1.</li>
+      <li><strong>The primer</strong> — a minimal session nudge that points the conductor at the repo's conventions and memory.</li>
+    </ul>
+  </div>
+</DocsLayout>

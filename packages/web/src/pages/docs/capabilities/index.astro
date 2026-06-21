@@ -1,0 +1,91 @@
+---
+// /docs/capabilities — the Capabilities hub: an index into the four subsystems, framed by
+// the mandatory-vs-additive line. Composed through DocsLayout: header from props, body =
+// the required-vs-optional table (REUSED from docs.css — .layers + .badge--req/--opt, NOT
+// re-styled) where each subsystem name links into its concept page, then the graceful-
+// degradation narrative. Mirrors the /docs overview, but here every row links into a page.
+//
+// Base-path rule (#1 404 trap): every docs→docs link goes through withBase("docs/<x>").
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="capabilities"
+  title="Capabilities — the four subsystems"
+  description="Agentry's four subsystems and how they layer: Memory + Flow are the mandatory substrate; Workbench + Channels are additive. Turn the additive layers off and the run still completes, because the files are the truth."
+  eyebrow="Capabilities · Overview"
+  lede="Four subsystems make Agentry work, and they are not all equal. Two are the mandatory substrate the run cannot function without; two are additive layers that make the work nicer to watch and steer. This page is the index into all four."
+>
+  <div class="prose">
+    <p>
+      Each subsystem has its own concept page — follow a name below to read it in depth. What this
+      hub frames is the <strong>line between them</strong>: which two are required, which two are
+      convenience, and what still works when you turn the convenience off. The table is the contract.
+    </p>
+
+    <table class="layers" aria-label="The four subsystems, required vs. additive">
+      <thead>
+        <tr>
+          <th scope="col">Subsystem</th>
+          <th scope="col">What it does</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row"><a href={withBase("docs/memory")}>Memory</a></th>
+          <td>The durable fact/episode store — a local stdio MCP over <code>node:sqlite</code> with project + global roots. The moat: run #2 is warmer than run #1.</td>
+          <td><span class="badge badge--req">Required</span></td>
+        </tr>
+        <tr>
+          <th scope="row"><a href={withBase("docs/flow")}>Flow</a></th>
+          <td>The run-state engine — task lifecycle, append-only events, and review, recorded as plain files in <code>.agentry/work/</code> that are the source of truth.</td>
+          <td><span class="badge badge--req">Required</span></td>
+        </tr>
+        <tr>
+          <th scope="row"><a href={withBase("docs/workbench")}>Workbench</a></th>
+          <td>A per-project local Agent Center — read, edit, comment, approve, and watch a live graph of the run on <code>:4317</code>.</td>
+          <td><span class="badge badge--opt">Optional · additive</span></td>
+        </tr>
+        <tr>
+          <th scope="row"><a href={withBase("docs/channels")}>Channels</a></th>
+          <td>Live human↔agent push over the file-watch loop — comments, threaded replies, a permission relay, and status steering. A research preview.</td>
+          <td><span class="badge badge--opt">Optional · additive</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 class="prose__h">Mandatory substrate vs. additive layers</h2>
+    <p>
+      <strong>Memory and Flow are the mandatory substrate</strong> — the run does not function without
+      them. Flow is where the run's state lives, as plain files; Memory is the always-on store that
+      makes each run warmer than the last. <strong>Workbench and Channels are additive</strong>: they
+      make a run nicer to <em>watch</em> and <em>steer</em>, but the run is complete without them. The
+      reason the line holds is that the substrate is <strong>files, not a live connection</strong>.
+    </p>
+
+    <h2 class="prose__h">What still works when you turn the layers off</h2>
+    <ul class="facts">
+      <li>
+        <strong>Channels off</strong> → everything still works via the <strong>async file-watch
+        loop</strong>: the files are truth, the agent reads your edits on its next turn, and tool
+        approvals fall back to the terminal dialog.
+      </li>
+      <li>
+        <strong>Workbench off</strong> → <strong>terminal-only</strong>. You conduct the same run from
+        the command line and nothing is lost; nothing in the substrate depends on the server being up.
+      </li>
+      <li>
+        <strong>Only Memory + Flow are required.</strong> Strip both additive layers and the run is
+        still complete — that is the line between substrate and convenience.
+      </li>
+    </ul>
+
+    <p class="prose__cta">
+      How a tool call gets approved across the terminal, the Workbench, and the channel relay is its
+      own subject — see <a href={withBase("docs/permissions")}>Permissions</a>. Or start with
+      <a href={withBase("docs/flow")}>Flow</a>, the engine the other three are built on.
+    </p>
+  </div>
+</DocsLayout>

@@ -1,0 +1,72 @@
+---
+// /docs/when — when to reach for Agentry AND when NOT. The floor is the load-bearing honesty:
+// a trivial, clear, reversible change should just be a one-shot; a plan for a one-liner is the
+// failure, not the diligence. Grounds: README routing table (one-shot / spec-first / decompose),
+// "least process that wins". Honest about the cost of process.
+//
+// Base-path rule (#1 404 trap): every internal href goes through withBase().
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="when"
+  title="When to use it"
+  description="When to reach for Agentry and when not: a trivial reversible change should stay a one-shot; spec-first when a design fork hides in the goal; decompose and verify when the work is multi-file or structurally non-trivial. Process has a cost — match it to the work."
+  eyebrow="Getting Started · When to use it"
+  lede="Agentry is biased to the floor on purpose. The point isn't to run process — it's to run the least process that wins. Here's where it earns its keep, and where it shouldn't get in the way."
+>
+  <div class="prose">
+    <p>
+      Process has a cost. A spec, a plan, and an independent verification pass are worth it when the
+      work is genuinely uncertain or coupled — and pure overhead when it isn't.
+      <strong>A plan for a one-liner is the failure, not the diligence.</strong> Agentry is built to
+      run the least process that wins, so the question is which shape a task earns.
+    </p>
+
+    <h2 class="prose__h">The floor: just one-shot it</h2>
+    <p>
+      A <strong>trivial, clear, reversible</strong> change with no hidden decision should be a single
+      bounded edit, then a quick verify — nothing more. Renaming a variable, fixing an obvious typo,
+      adjusting a constant: reach for <code>/agentry:go</code> if you like the recall and the
+      verify, but don't expect — or want — a spec and a plan to wrap a five-second change. The floor
+      is the default, and staying on it is the system working as intended.
+    </p>
+
+    <h2 class="prose__h">Spec-first: when a design fork hides in the goal</h2>
+    <p>
+      When "done = X" isn't actually clear — the ask is product-shaped, or a real decision is buried
+      in the goal — shape a <strong>Spec</strong> with observable acceptance criteria and gate it
+      before building. The signal is a fork you'd otherwise resolve silently mid-edit: which records
+      win on a tie, what the boundary of "better" is, which behavior is in scope. Surface it first;
+      a hidden decision fork is exactly what vetoes a one-shot.
+    </p>
+
+    <h2 class="prose__h">Decompose + verify: when it's multi-file or structurally non-trivial</h2>
+    <p>
+      When the work spans <strong>multiple coupled parts</strong> with real design forks, it earns
+      the full shape: spec → plan → split into bounded tasks → build → independent verify →
+      assemble. This is where the conducting pays for itself — bounded contracts keep parallel work
+      safe, and a separate verifier catches the "every task passed but the product is broken" gap.
+    </p>
+
+    <h2 class="prose__h">When not to reach for it</h2>
+    <ul class="facts">
+      <li><strong>The change is trivial and you're already in the file</strong> — just make the edit; let the floor stay the floor.</li>
+      <li><strong>You don't actually have a task yet</strong> — Agentry conducts work, it doesn't replace deciding what the work is.</li>
+      <li><strong>You want process for its own sake</strong> — ceremony a task didn't earn is cost, not rigor.</li>
+    </ul>
+
+    <div class="note">
+      <span class="note__key">Honest</span>
+      <span>The trade-off is real: more process buys safety on hard, coupled work and taxes simple work. Agentry's job is to spend it only where it pays.</span>
+    </div>
+
+    <div class="prose__cta">
+      <p>
+        Ready to hand it something? <a href={withBase("docs/quickstart")}>Quickstart</a>. Want the
+        deeper case for the approach? <a href={withBase("docs/why")}>Why Agentry</a>.
+      </p>
+    </div>
+  </div>
+</DocsLayout>

@@ -1,10 +1,11 @@
 ---
-// DocDiagram.astro — a 16:9 dark-navy diagram presented on a panel with a caption.
-// Shared across the four concept pages so the diagrams read consistently.
+// DocDiagram.astro — a 16:9 dark-navy ILLUSTRATION on a glass panel with a caption, shared
+// across the four concept pages so the diagrams read consistently. (Contrast DocShot: a real
+// captured screenshot at native ratio.)
 //
-// Base-path rule: the image src goes through withBase() (the caller passes a bare path
-// like "diagrams/flow.png"); never hand-write the /agentry prefix.
-import { withBase } from "../lib/base.ts";
+// Base-path rule: the image src goes through withBase() (caller passes a bare path like
+// "diagrams/flow.png"); never hand-write the /agentry prefix.
+import { withBase } from "../../lib/base.ts";
 
 interface Props {
   /** Bare public path, e.g. "diagrams/flow.png" — prefixed via withBase(). */
