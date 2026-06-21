@@ -1,0 +1,114 @@
+[
+  {
+    "id": "c-w4b68j5jsr",
+    "anchor": {
+      "originalText": "the reliability spine",
+      "headingAnchor": "Problem",
+      "startLine": 3
+    },
+    "decision": "changes",
+    "body": "Tighten the AC wording here.",
+    "resolved": true
+  },
+  {
+    "id": "c-z3exrb55fj",
+    "anchor": {
+      "originalText": "Works (home) lists every run in .agentry/work/ with status/shape/agents; opening one routes to <id>.localhost:<port> showing that work's Live + Activity.",
+      "headingAnchor": "Acceptance criteria (observable — verbatim from VISION §10)",
+      "startLine": 7
+    },
+    "decision": "question",
+    "body": "",
+    "resolved": true
+  },
+  {
+    "id": "c-l9h0m45az8",
+    "anchor": {
+      "originalText": "Works (home) lists every run in .agentry/work/ with status/shape/agents; opening one routes to <id>.localhost:<port> showing that work's Live + Activity.",
+      "headingAnchor": "Acceptance criteria (observable — verbatim from VISION §10)",
+      "startLine": 7
+    },
+    "decision": "approve",
+    "body": "",
+    "resolved": true
+  },
+  {
+    "id": "c-ur4i998hsu",
+    "anchor": {
+      "originalText": "read/edit/comment/approve the .agentry/ artifacts and watch/steer the agents — rendered and written over the FLOW v1 file seams. Files are truth; the Workbench is a live transport + lock layer, never a second datastore.",
+      "headingAnchor": "kind: feature shape: decompose+verify contract-of-record: packages/workbench/VISION.md",
+      "startLine": 4
+    },
+    "decision": "changes",
+    "body": "",
+    "resolved": true
+  },
+  {
+    "id": "c-4ouf3gdmi9",
+    "anchor": {
+      "originalText": "never a second datastore.",
+      "headingAnchor": "kind: feature shape: decompose+verify contract-of-record: packages/workbench/VISION.md",
+      "startLine": 4
+    },
+    "decision": "question",
+    "body": "",
+    "resolved": true
+  },
+  {
+    "id": "c-jlppm0gn4p",
+    "anchor": {
+      "originalText": "rendered and written over the FLOW v1 file seams. Files are truth; the Workbench is a live transport + lock layer, never a second datastore.",
+      "headingAnchor": "kind: feature shape: decompose+verify contract-of-record: packages/workbench/VISION.md",
+      "startLine": 4
+    },
+    "decision": "question",
+    "body": "",
+    "resolved": true
+  },
+  {
+    "id": "c-pzw6y6xl0w",
+    "anchor": {
+      "originalText": "Authoritative brief: packages/workbench/VISION.md (stack, IA, architecture — DECIDED, not re-litigated). Visual + interaction target: design/prototype-app.html, design/prototype-document.html (a constraint, match them). Seams rendered over: .docs/internal/13-the-flow-mcp.md (events.jsonl · task_status/lockedBy · .review sidecar · version hash). Design of record: .docs/internal/10-the-workbench.md.",
+      "headingAnchor": "kind: feature shape: decompose+verify contract-of-record: packages/workbench/VISION.md",
+      "startLine": 5
+    },
+    "decision": "question",
+    "body": "Hey is this working ?.",
+    "resolved": true
+  },
+  {
+    "id": "c-gmrxuyy2gk",
+    "anchor": {
+      "originalText": "Acceptance criteria (observable — verbatim from VISION §10)",
+      "headingAnchor": "Acceptance criteria (observable — verbatim from VISION §10)",
+      "startLine": 6
+    },
+    "decision": "question",
+    "body": "Hey",
+    "resolved": true
+  },
+  {
+    "id": "c-mzf2ch6i66",
+    "anchor": {
+      "originalText": "Agent Center V2)",
+      "headingAnchor": "kind: feature shape: decompose+verify contract-of-record: packages/workbench/VISION.md",
+      "startLine": 3
+    },
+    "decision": "question",
+    "body": "Do this work ?.",
+    "resolved": true
+  },
+  {
+    "id": "c-te17xf6p7q",
+    "anchor": {
+      "originalText": "",
+      "headingAnchor": "",
+      "startLine": 0
+    },
+    "decision": "question",
+    "body": "Yes — channel works end to end. Your comment arrived live in my session (source=plugin:agentry:flow, decision=question) and this is the reply going back via channel_reply. Loop confirmed: Workbench comment → flow MCP push → my context → reply → rail.",
+    "resolved": true,
+    "origin": "agent",
+    "replyTo": "c-mzf2ch6i66"
+  }
+]

@@ -1,18 +1,17 @@
 // WorkReader proof — the application fold (task 008). Two layers of evidence:
 //  1. against a FAKE WorkRepository, so the fold (summary tally, title, docs, graph delegation) is
 //     tested deterministically with no fs — the port purity ADR-001 buys.
-//  2. against the REAL FsWorkRepository on the fixture run, so `read` is proven to return a populated
-//     `RunSummary` + `GraphModel` for genuine on-disk data (the acceptance).
+//  2. against the REAL FsWorkRepository on the committed fixture run (copied into a temp `.agentry/work/`
+//     tree by the shared loader, so it is CI-portable — the live `.agentry/work/` is gitignored), so
+//     `read` is proven to return a populated `RunSummary` + `GraphModel` for genuine on-disk data (the
+//     acceptance).
 import assert from "node:assert/strict";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { rmSync } from "node:fs";
 import { test } from "node:test";
 import type { Clock, RunFiles, WorkRepository } from "../src/domain/ports.js";
 import { FsWorkRepository } from "../src/persistence/fs-work-repository.js";
 import { WorkReader } from "../src/application/work-reader.js";
-
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
-const FIXTURE_RUN = "build-agentry-workbench-the-agentry-agent-center-5s9v6deiit";
+import { FIXTURE_RUN, loadFixtureRun } from "./fixtures/load-fixture-run.js";
 
 // A frozen clock so `updatedAt` is deterministic under test.
 const fixedClock: Clock = { now: () => "2026-06-19T00:00:00.000Z" };
@@ -107,20 +106,25 @@ test("read returns undefined for an absent run", () => {
 });
 
 test("read on the REAL fixture run returns a populated summary + graph (acceptance)", () => {
-  const reader = new WorkReader(new FsWorkRepository(REPO_ROOT), fixedClock);
-  const result = reader.read(FIXTURE_RUN);
-  assert.ok(result, "the fixture run reads");
+  const cwd = loadFixtureRun();
+  try {
+    const reader = new WorkReader(new FsWorkRepository(cwd), fixedClock);
+    const result = reader.read(FIXTURE_RUN);
+    assert.ok(result, "the fixture run reads");
 
-  // Summary: tasks tallied, every bucket present, a real title, the clock stamp.
-  const total =
-    result.summary.taskCounts.todo +
-    result.summary.taskCounts["in-progress"] +
-    result.summary.taskCounts["in-review"] +
-    result.summary.taskCounts.done;
-  assert.ok(total > 0, "the fixture has tasks tallied into the summary");
-  assert.ok(result.summary.title.length > 0, "a non-empty title");
+    // Summary: tasks tallied, every bucket present, a real title, the clock stamp.
+    const total =
+      result.summary.taskCounts.todo +
+      result.summary.taskCounts["in-progress"] +
+      result.summary.taskCounts["in-review"] +
+      result.summary.taskCounts.done;
+    assert.ok(total > 0, "the fixture has tasks tallied into the summary");
+    assert.ok(result.summary.title.length > 0, "a non-empty title");
 
-  // Graph: the routing root + dependency edges (proof the merged deps reach buildGraph on real files).
-  assert.ok(result.graph.nodes.some((n) => n.id === "routing"), "routing root from events.jsonl");
-  assert.ok(result.graph.edges.some((e) => e.kind === "depends-on"), "depends-on edges from merged deps");
+    // Graph: the routing root + dependency edges (proof the merged deps reach buildGraph on real files).
+    assert.ok(result.graph.nodes.some((n) => n.id === "routing"), "routing root from events.jsonl");
+    assert.ok(result.graph.edges.some((e) => e.kind === "depends-on"), "depends-on edges from merged deps");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });

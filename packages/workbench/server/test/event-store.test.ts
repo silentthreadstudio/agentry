@@ -5,8 +5,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { test } from "node:test";
 import type { RunFiles, WorkRepository } from "../src/domain/ports.js";
 import { FsWorkRepository } from "../src/persistence/fs-work-repository.js";
@@ -14,8 +13,7 @@ import { EventStore } from "../src/application/event-store.js";
 import { GateInbox } from "../src/application/gate-inbox.js";
 import { FsEventSource } from "../src/persistence/event-source.js";
 import { FsReviewSidecarSource } from "../src/persistence/review-sidecar-source.js";
-
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+import { FIXTURE_RUN, loadFixtureRun } from "./fixtures/load-fixture-run.js";
 
 // A fake repository serving a fixed run list — EventStore/GateInbox read the files off disk (under `cwd`),
 // the repository only supplies which runs exist.
@@ -155,23 +153,38 @@ test("GateInbox.open(runId) filters to one run; a corrupt sidecar reads empty", 
   }
 });
 
-test("EventStore + GateInbox on the REAL repo runs (acceptance)", () => {
-  const repo = new FsWorkRepository(REPO_ROOT);
-  const store = new EventStore(repo, new FsEventSource(REPO_ROOT));
-  const inbox = new GateInbox(repo, new FsReviewSidecarSource(REPO_ROOT));
+test("EventStore + GateInbox on a REAL run (acceptance)", () => {
+  // The committed fixture run (a real decompose+verify run: events.jsonl + .review/ sidecars) copied into
+  // a temp `.agentry/work/` tree, so the readers run against genuine on-disk shapes that exist on a clean
+  // CI checkout (the live `.agentry/work/` is gitignored). Loader threads the temp cwd into every reader.
+  const realCwd = loadFixtureRun();
+  try {
+    const repo = new FsWorkRepository(realCwd);
+    const store = new EventStore(repo, new FsEventSource(realCwd));
+    const inbox = new GateInbox(repo, new FsReviewSidecarSource(realCwd));
 
-  // The cross-run timeline folds real events.jsonl into views — at least one routing-decision exists.
-  const timeline = store.timeline();
-  assert.ok(timeline.length > 0, "the real runs fold into a non-empty timeline");
+    // The cross-run timeline folds real events.jsonl into views — the fixture run's routing-decision
+    // line alone makes the timeline non-empty.
+    const timeline = store.timeline();
+    assert.ok(timeline.length > 0, "the real run folds into a non-empty timeline");
+    assert.ok(
+      timeline.every((entry) => entry.id.startsWith(`${FIXTURE_RUN}#`)),
+      "every folded line is namespaced by the fixture run",
+    );
 
-  // The roster reads real run-state.json — every recorded agent validates to a known state. We do NOT
-  // assert a non-zero count against the real tree: the repo's runs are mutable (a run may have no
-  // run-state.json, or none recording an agent), which made this flaky. The roster's "reads a recorded
-  // agent" guarantee is proven deterministically below against a temp fixture; here we only prove the
-  // real-tree read never produces an out-of-enum state.
-  const roster = store.roster();
-  assert.ok(Array.isArray(roster), "the real runs fold into a roster without throwing");
-  for (const agent of roster) assert.ok(["working", "blocked", "done"].includes(agent.state));
+    // The roster reads real run-state.json — every recorded agent validates to a known state. We do NOT
+    // assert a non-zero count: the fixture run may carry no run-state.json (a completed run need not), so
+    // here we only prove the real read never throws and never produces an out-of-enum state. The roster's
+    // "reads a recorded agent" guarantee is proven deterministically below against a temp fixture.
+    const roster = store.roster();
+    assert.ok(Array.isArray(roster), "the real run folds into a roster without throwing");
+    for (const agent of roster) assert.ok(["working", "blocked", "done"].includes(agent.state));
+
+    // The inbox scans real `.review/` sidecars — never throws (open list may be empty if all resolved).
+    assert.ok(Array.isArray(inbox.open()), "the inbox scans real sidecars without throwing");
+  } finally {
+    rmSync(realCwd, { recursive: true, force: true });
+  }
 
   // Deterministic roster proof: a temp fixture run that records one agent surfaces it (no real-tree dep).
   const cwd = seedProject({
@@ -187,7 +200,4 @@ test("EventStore + GateInbox on the REAL repo runs (acceptance)", () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
-
-  // The inbox scans real `.review/` sidecars — never throws (open list may be empty if all resolved).
-  assert.ok(Array.isArray(inbox.open()), "the inbox scans real sidecars without throwing");
 });
