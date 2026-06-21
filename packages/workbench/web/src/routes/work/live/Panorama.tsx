@@ -219,6 +219,23 @@ function PanoramaCanvas({ runId }: { runId: string }) {
       </div>
     );
   }
+  // Empty state (task #2): a fresh run with no artifacts yet renders nothing on the React Flow canvas — a
+  // blank void. Show a calm "nothing here yet" instead, so the graph reads as waiting, not broken. The live
+  // ws loop re-fetches as soon as the agent writes the first artifact, so this resolves to the graph on its own.
+  if (load.graph.nodes.length === 0) {
+    return (
+      <div className="flowwrap pano-empty">
+        <div className="pano-empty-card">
+          <span className="pano-empty-glyph" aria-hidden="true">◳</span>
+          <h2>No work yet</h2>
+          <p>
+            This run hasn’t produced any artifacts. The graph fills in live as the agent routes the task,
+            writes the spec and plan, and dispatches the work.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flowwrap">

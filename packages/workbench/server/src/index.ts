@@ -110,7 +110,11 @@ async function main(): Promise<void> {
   // run's ws subscribers. The `WorkReader.read` confirms the run still resolves (a change in a vanished
   // run is dropped); the parsed `doc-updated`/`diff-ready` projections are Phase 3.
   watcher.subscribe((change: RunChange) => {
-    if (!reader.read(change.run)) return; // run no longer resolves — nothing to push
+    // Project-global FIRST (before the run-resolves guard): the work tree moved — a new run appeared, a
+    // status flipped, an updatedAt bumped. Tell the bare-host Works home to refetch its list, so it goes
+    // live for BRAND-NEW runs too (which may not resolve via `reader.read` yet). A payload-free nudge.
+    transport.pushAll({ type: "works-changed" });
+    if (!reader.read(change.run)) return; // run no longer resolves — nothing run-scoped to push
     for (const path of change.paths) {
       transport.push(change.run, { type: "file-changed", path });
     }

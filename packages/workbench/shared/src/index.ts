@@ -20,6 +20,7 @@ export type {
   PermissionRequest,
   RunSummary,
   TokenSeries,
+  WorksChangedMessage,
   WsMessage,
 } from "./types.js";
 

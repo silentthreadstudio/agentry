@@ -534,3 +534,39 @@
 .ar-row.done .ar-st i {
   background: var(--done);
 }
+
+/* ── empty state (task #2): a fresh run with no artifacts yet ────────────────────────────────────────── */
+.flowwrap.pano-empty {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+}
+.pano-empty-card {
+  max-width: 380px;
+  text-align: center;
+}
+.pano-empty-glyph {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 16px;
+  border-radius: var(--r-xl);
+  font-size: 22px;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+}
+.pano-empty-card h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+}
+.pano-empty-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}

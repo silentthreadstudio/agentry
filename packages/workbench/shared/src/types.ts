@@ -141,6 +141,14 @@ export interface FileChangedMessage {
   path: string; // the changed file path, relative to the run root
 }
 
+// The work tree changed at the PROJECT level — a run appeared/vanished, or any run's state moved. NOT
+// run-scoped (it carries no run id): it's pushed to every client (`pushAll`), so the bare-host Works home
+// can refetch its list and go live for NEW runs, not only runs already open. A pure nudge — the client
+// re-reads /api/works; no payload, so the server never has to diff the whole list.
+export interface WorksChangedMessage {
+  type: "works-changed";
+}
+
 // A parsed document was updated — carries the doc id and the fresh read-model so the editor can
 // reconcile without a refetch.
 export interface DocUpdatedMessage {
@@ -174,6 +182,7 @@ export interface PermissionRemovedMessage {
 
 export type WsMessage =
   | FileChangedMessage
+  | WorksChangedMessage
   | DocUpdatedMessage
   | DiffReadyMessage
   | PermissionAddedMessage

@@ -3,9 +3,10 @@
 // of expressive run cards (status-tinted aura, badges, progress, agent avatar). Clicking a card navigates
 // the browser to that run's short host (http://<workSlug>.localhost:<port>) — the *.localhost short-URL
 // decision. Loading / empty / error are all designed (empty states are good states, VISION §3).
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RunSummary } from "@agentry/workbench-shared";
 import { ApiError, fetchWorks } from "../../api/index.js";
+import { getWsClient } from "../../api/ws.js";
 import { Card, EmptyState, SearchInput, StatusDot } from "../../ui/index.js";
 import {
   AURA_HUE,
@@ -34,20 +35,51 @@ export function Works() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<WorksFilter>("all");
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    fetchWorks(ctrl.signal)
+  // Load the works list — reused for the initial fetch and every live refetch. `quiet` (a live refetch)
+  // keeps the current list on failure instead of flipping the whole page to an error state, and never resets
+  // to "loading", so a refresh updates in place with no flash.
+  const load = useCallback((signal: AbortSignal, quiet = false) => {
+    fetchWorks(signal)
       .then((works) => setState({ kind: "ready", works }))
       .catch((err: unknown) => {
-        if (ctrl.signal.aborted) return;
+        if (signal.aborted || quiet) return;
         const message =
           err instanceof ApiError
             ? `Couldn’t reach the Workbench server (${err.status}).`
             : "Couldn’t load runs from the Workbench server.";
         setState({ kind: "error", message });
       });
-    return () => ctrl.abort();
   }, []);
+
+  // Initial load.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
+
+  // Live (task #1): the server pushes `works-changed` (project-global) whenever the work tree moves — a new
+  // run folder, a status flip, an updatedAt bump. Refetch the list (debounced) so the home goes live with no
+  // reload: new runs appear, tallies re-tint. Best-effort (`quiet`) — a transient refetch failure keeps the
+  // shown list rather than clobbering it.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let ctrl: AbortController | null = null;
+    const off = getWsClient().subscribe((msg) => {
+      if (msg.type !== "works-changed" || timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        ctrl?.abort();
+        ctrl = new AbortController();
+        load(ctrl.signal, true);
+      }, 250);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      ctrl?.abort();
+      off();
+    };
+  }, [load]);
 
   const works = state.kind === "ready" ? state.works : [];
   const kpis = useMemo(() => deriveKpis(works), [works]);

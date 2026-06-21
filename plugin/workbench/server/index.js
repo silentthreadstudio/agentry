@@ -18856,6 +18856,7 @@ async function main() {
     }
   });
   watcher.subscribe((change) => {
+    transport.pushAll({ type: "works-changed" });
     if (!reader.read(change.run)) return;
     for (const path of change.paths) {
       transport.push(change.run, { type: "file-changed", path });
