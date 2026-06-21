@@ -29,7 +29,18 @@ import { withBase } from "../../../lib/base.ts";
       <li><strong>The <a href={withBase("docs/workbench")}>Workbench</a> (Agent Center V2)</strong> — a live graph of a run, a docs workspace, a comment/approve loop, and a Memory browser.</li>
       <li><strong>The <a href={withBase("docs/flow")}>Flow</a> MCP v1</strong> — the run-state engine that records task lifecycle, append-only events, and review as plain files in <code>.agentry/work/</code>.</li>
       <li><strong>The <a href={withBase("docs/channels")}>channel bridge</a></strong> — live comments, threaded replies, a permission relay, and human status changes that steer the run.</li>
-      <li><strong>The <a href={withBase("docs/evals")}>self-eval harness + dashboard</a></strong> — routing and decision-quality measures, controls, and a corrections log, with an embedded dashboard.</li>
+      <li><strong>The <a href={withBase("docs/evals")}>self-eval harness + dashboard</a></strong> — routing and decision-quality measures, controls, and a corrections log, with an embedded dashboard. Now includes a <strong>flow-compliance</strong> probe that grades a run on observable Flow signals.</li>
+    </ul>
+
+    <h3 class="prose__h prose__h--sub">Changed</h3>
+    <ul class="facts">
+      <li><strong>Agentry enforces its own process.</strong> Above the one-shot floor, <code>/agentry:go</code> now opens a <a href={withBase("docs/flow")}>Flow</a> run and records the routing decision <em>before</em> work begins — so escalated work is resumable, gradeable, and visible in the Workbench, with a runtime guard that flags a bypass. The one-shot fast path is unchanged: trivial work still runs with zero ceremony.</li>
+      <li><strong>Install &amp; Channels docs</strong> now distinguish <code>--channels</code> (official, allowlisted channels) from <code>--dangerously-load-development-channels</code> (custom/preview channels, like Agentry's own bridge today).</li>
+    </ul>
+
+    <h3 class="prose__h prose__h--sub">Fixed</h3>
+    <ul class="facts">
+      <li><strong>Task documents</strong> no longer render with a doubled header in the Workbench (the architect now authors a single, clean task frontmatter).</li>
     </ul>
 
     <h2 class="prose__h">v0.1 → v0.1.2 — initial Agentry</h2>

@@ -6,6 +6,59 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-06-21
+
+The orchestration-substrate release: a durable run-state engine (Flow), a local
+Agent Center to watch and steer runs (Workbench), live human↔agent channels, a
+multi-page docs site — and a harness that now **enforces** its own process instead
+of merely describing it.
+
+### Added
+- **Flow MCP** — the run-state engine. Task lifecycle, an append-only event log, a
+  review sidecar, and content-hash versions, recorded as plain files under
+  `.agentry/work/<run>/` that are the source of truth — stateless and restart-safe.
+  The conductor opens a run (`run_start`), records routing and gates (`event_emit`),
+  writes gate artifacts (`artifact_write`), and slices tasks (`task_create` /
+  `task_assign` / `task_status`).
+- **Workbench** — a per-project local Agent Center on `:4317` (`*.localhost`
+  host-routing, one singleton server per project). A live React-Flow graph of the
+  run, a docs workspace to read/edit/comment/approve artifacts, a read-only Memory
+  browser, and Activity / Agents / Tokens / Gates pages — all rendered over the Flow
+  files, never a second datastore. Launch with `/agentry:workbench [run]`.
+- **Channels** — live human↔agent push over the file-watch loop: review comments,
+  threaded `channel_reply`, a permission relay (approve a tool call from the
+  Workbench), and forced task-status changes that steer the agent. Additive and
+  research-preview; degrades gracefully to the async file-watch loop when off.
+- **Docs & marketing site** (`packages/web`) — a multi-page `/docs` area (Quickstart,
+  Install, Why, When, Capabilities + Flow/Memory/Workbench/Channels/Permissions,
+  Self-Eval, Security, Changelog, Troubleshooting) with real Workbench/eval
+  screenshots, alongside the landing site.
+- **`flow-compliance` self-eval** — a probe that grades a run on observable Flow
+  signals (a routing-decision event before dispatch, spec before tasks, single
+  task frontmatter, no skipped-run flag).
+- **`flow-run-guard` hook** — flags a `flow-skipped` marker when a gate artifact is
+  written with no open run (the bypass), while leaving the one-shot floor untouched.
+
+### Changed
+- **The harness enforces its own process.** `/agentry:go` now makes `run_start` + the
+  routing event the first action above the one-shot floor; the node commands, the
+  eight agents, and the lifecycle skills are wired to Flow, the Workbench review loop,
+  and the channel permission relay — the mandate moved from skill prose into the
+  loaded command plus a runtime hook plus a measurement. The three routing modes and
+  the one-shot floor are preserved.
+
+### Fixed
+- **architect:** task contracts were authored with a second stacked `---` block on top
+  of Flow's own frontmatter, which rendered as a broken blob in the Workbench. Fixed at
+  the authoring convention (a plain-markdown `## Contract` body) and with a defensive
+  strip in Flow's task store.
+- **workbench tests:** three server tests read the gitignored live `.agentry/work/`
+  tree as their fixture and failed on a clean CI checkout — now sourced from a committed
+  fixture copied into a temp tree at setup.
+- **docs:** distinguish `--channels` (official, allowlisted channels) from
+  `--dangerously-load-development-channels` (custom/preview channels, like Agentry's own
+  bridge today).
+
 ## [0.1.2] — 2026-06-18
 
 ### Added
@@ -66,7 +119,8 @@ without the fix.
   - **Self-eval harness** — measures the system's own routing and decision
     quality instead of asserting it works.
 
-[Unreleased]: https://github.com/Codestz/agentry/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/Codestz/agentry/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Codestz/agentry/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Codestz/agentry/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Codestz/agentry/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Codestz/agentry/releases/tag/v0.1.0
