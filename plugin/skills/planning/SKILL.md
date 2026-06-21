@@ -46,9 +46,31 @@ Full treatment — contract derivation, overlap detection, finding propagation w
 
 ## Output
 
-A set of Task documents (doc-01 format) with structured frontmatter (`id`, `status`, `owner`, `satisfies`, `deps`, `contract.owns`, `contract.exposes`, `contract.excludes`) and the prose body, plus the criterion→task coverage matrix. Report any memory that shaped the decomposition in `used_memories`. Each task body carries its **must-not-touch** boundary, **pinned** names for any surface a sibling consumes, and the **leave-it-green** verify/build steps (discovered from the repo, never hardcoded) — see the reference.
+A set of Task documents, one per slice, **authored as plain markdown** — `## Goal` · `## Contract` · `## Acceptance` · `## Out of scope` — plus the criterion→task coverage matrix. The **Contract** section carries `owns`/`exposes`/`excludes`/`deps`/`satisfies` — as prose bullets, or a fenced `yaml` block *inside* `## Contract` — so coverage and parallel-safety stay machine-checkable. **Do not hand-write a `---` frontmatter block:** `task_create` is the single frontmatter authority (next paragraph); a leading `---` in the body stacks into a *double frontmatter* that renders as a broken blob in the Workbench. Each task body carries its **must-not-touch** boundary, **pinned** names for any surface a sibling consumes, and the **leave-it-green** verify/build steps (discovered from the repo, never hardcoded) — see the reference. Report any memory that shaped the decomposition in `used_memories`.
 
-**Emit each slice through FLOW — `task_create` per task.** When the split runs as part of an escalated run, write each Task contract via the **`flow` MCP** `task_create(run, …)` call (threading the `run` handle the conductor holds from `run_start`), not a raw hand-written file. One `task_create` per slice produces the `tasks/NNN-*.md` file with schema-validated frontmatter (`status: todo`, the closed status enum, the contract fields) — correct by construction, so the status vocabulary can't drift and a slice can't be emitted without its contract. (This is the planning half of the FLOW mandate; the conducting skill mandates `task_assign`/`task_status` for the lifecycle. As ever, this applies **above the one-shot floor only** — a one-shot writes no task files at all.)
+**Emit each slice through FLOW — `task_create(run, title, body)` per task.** When the split runs as part of an escalated run, write each Task contract via the **`flow` MCP** `task_create` call (threading the `run` handle the conductor holds from `run_start`), not a raw hand-written file. You supply the `title` and the **plain-markdown `body`**; Flow stamps the single frontmatter (`title`, `status: todo` from the closed status enum, the content-hash `version`) — correct by construction, so the status vocabulary can't drift. The **contract lives in the body's `## Contract` section, not in frontmatter** — Flow owns the one frontmatter block. (This is the planning half of the FLOW mandate; the conducting skill mandates `task_assign`/`task_status` for the lifecycle. As ever, this applies **above the one-shot floor only** — a one-shot writes no task files at all.)
+
+**Canonical task body** — exactly what you pass as `body` (Flow prepends the frontmatter; the body opens at `## Goal`, never `---`):
+
+~~~markdown
+## Goal
+<one-line outcome>
+
+## Contract
+```yaml
+owns:    [path/a.ts, path/b.ts]
+exposes: ["fnName(x) -> Y"]
+excludes: [path/c.ts]
+deps:    [T-001]
+satisfies: [AC2]
+```
+
+## Acceptance
+- <observable, independently checkable>
+
+## Out of scope
+<what this task must not touch>
+~~~
 
 ## Anti-patterns (refuse these)
 

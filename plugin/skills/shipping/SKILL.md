@@ -28,6 +28,10 @@ Each outward action carries a policy ∈ `{gate, auto}`:
 
 The discovery recipe for `<authorization-policy>` (and every other placeholder) lives in `references/last-mile.md`.
 
+### The Workbench channel grant — the human authorization at the gate
+
+An outward action stays `outward` and stays gated regardless of channel — a Workbench permission **grant** does not change the classification or invent a new gate. It is simply **how a human clears `authorize(action)`** from the Workbench: a channel permission grant for `push` / `pr-open` / `merge` *is* the human authorization that a `gate` policy requires, relayed in. It satisfies the same gate the conductor already owns — no grant, no outward action; a grant authorizes only the specific action it names, nothing more. This is the local-autonomous / outward-gated boundary unchanged, with the grant as one channel for the human's "yes."
+
 ## Composition with the two conductor modes
 
 The policy (`gate`/`auto`) is a **second axis, orthogonal to the conductor's interaction mode** (`interactive`/`auto-pilot`). Mode changes *who can clear a gate*; it never downgrades a `gate` to an `auto`. The four combinations:

@@ -33,6 +33,10 @@ Each task verified against its own `## Acceptance` in isolation, often with mock
 4. **Probe the seams deliberately** — the handoffs between tasks listed above. Feed the boundary the inputs the unit tests mocked.
 5. **Write the assemble verdict**: per-Spec-AC PASS/FAIL with cited evidence + any integration gotcha discovered.
 
+## The Workbench steering signal (forced status change)
+
+A `<channel source="agentry-flow">` event with `kind=status` (attributes `run_id` / `task` / `status`) is a human forcing a task's lifecycle status from the Workbench — e.g. marking it `done` to accept it as-is, or back to `todo` to redo it. Treat it as **steering, not noise**: re-read that task's status from the files (the files are the truth, not your in-memory plan) and adjust what you assemble next accordingly — a task forced `done` is now in scope for the seam check; one forced back to `todo` is not yet ready and its seams stay unverified.
+
 ## Tools (capability-first)
 
 - Run the product → prefer the repo's own run/serve/e2e command if present → fallback: invoke the entry point directly.

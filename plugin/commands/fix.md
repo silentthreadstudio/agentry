@@ -15,6 +15,7 @@ Load and follow the `conducting` skill. This run is **diagnose, not build** — 
 - **Discover the repro at runtime — don't assume the stack.** Find the project's own test runner, CI provider, and build/run commands from the repo (its config, its scripts, its memory); never assume a fixed toolchain.
 - **Dispatch the debug craft — don't re-implement it.** The fix loop lives in `implementing` (its "When fixing" discipline); the routing and kind axis live in `conducting`. You frame the run and sequence it; the implementer reproduces, fixes the smallest thing, and leaves a **regression test** so it can't return silently.
 - **Two failed attempts is a signal, not a cue to thrash** — re-reproduce, re-read the evidence, or surface that you need more context.
+- **When you escalate, open a Flow run first.** A one-line bug stays one-shot (no run, no ceremony). But the moment a fix routes *above* the one-shot floor — a tangled failure that decomposes — your first action is `run_start(goal)` through the Flow MCP if present, *before* any repro artifact or dispatch; thread the returned `run` into every later Flow call (`artifact_write`, `task_assign` / `task_status`, `event_emit`) so the debug run is resumable and visible in the Workbench (persisting under `.agentry/work/<id>/…`). See `go.md` for the canonical front-door framing.
 - **Close the loop.** Record the episode and offer to reflect so the store stays warm.
 
 Reproduce first, then fix.

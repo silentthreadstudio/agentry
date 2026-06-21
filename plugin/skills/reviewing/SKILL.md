@@ -50,6 +50,10 @@ Apply to every review, not just "security features" — input handling, auth, an
 
 A security failure is a **FAIL** regardless of feature-completeness.
 
+## The Workbench review loop (human review comments)
+
+A `<channel source="agentry-flow">` event is a live human review signal from the Workbench. A **review comment** carries `run_id` / `doc` / `comment_id` / `decision` (`approve` | `changes` | `question`). Address it, don't just acknowledge it: for `changes`, **edit the referenced doc** — respecting its locks and version — and/or call `review_resolve`; for `question`, answer via `channel_reply`; for `approve`, `review_resolve` and reply. A review **verdict** can run the other way too: surface its findings as `review_comment`s so they land in the Workbench review rail for a human to act on. The human comment is the bar; resolving it without addressing what it asked is rubber-stamping the steering away.
+
 ## Tools (capability-first)
 
 - Run the suite → prefer the repo's own test runner / task command if present → fallback: invoke the framework directly.

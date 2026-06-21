@@ -11,6 +11,6 @@ Brief for the verifier:
 - **Cite evidence/method** for every verdict — test counts, a command run, a trace, a screenshot path. **No bare PASS.** Use a browser MCP to verify UI behavior if present.
 - Name any gotcha discovered.
 
-Output: a **Verdict** (doc-01 Review): per-AC PASS/FAIL/UNVERIFIED + cited evidence + named gotchas.
+Output: a **Verdict** (doc-01 Review): per-AC PASS/FAIL/UNVERIFIED + cited evidence + named gotchas — recorded via the Flow MCP if present: the conductor moves the task with `task_status(run, …)` on the outcome and surfaces the verdict through `review_*`, so it lands in the Workbench review rail (persists under `.agentry/work/<id>/…`).
 
 After the verdict: the conductor harvests any named gotcha to memory (the verifier stays read-only). On needs-changes touching a shared seam, pause and re-thread the not-yet-started tasks on that seam.

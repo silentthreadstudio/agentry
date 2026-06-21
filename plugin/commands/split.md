@@ -11,4 +11,4 @@ Brief for the architect (using the `planning` craft):
 - Pre-fill each task's **Gotchas** from recalled memory for its `owns` files; make **Acceptance** independently checkable; fill Background + Out-of-scope.
 - Build the **criterion→task coverage matrix** — every Spec `AC` must trace to ≥1 task. Flag any uncovered criterion before the build.
 
-Output: one Task file per unit (doc-01 frontmatter + body) under `.agentry/work/<id>-<slug>/tasks/`, plus the coverage matrix.
+Output: one Task per unit written via the Flow MCP if present — `task_create(run, title, body)` per task, where `body` is plain markdown (the contract/Gotchas/Acceptance sections — Flow owns the frontmatter, so don't author a `---` block) — persists under `.agentry/work/<id>-<slug>/tasks/`, plus the coverage matrix.

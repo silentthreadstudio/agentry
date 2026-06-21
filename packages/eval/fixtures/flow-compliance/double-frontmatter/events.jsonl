@@ -1,0 +1,3 @@
+{"ts":"2026-06-19T22:09:39.686Z","type":"routing-decision","shape":"decompose+verify","kind":"feature"}
+{"ts":"2026-06-19T22:19:52.108Z","kind":"agent-started","agent":"agentry:implementer","agentId":"a584bb73ae442088d","session":"217e45e5"}
+{"ts":"2026-06-19T22:30:08.443Z","kind":"agent-done","agent":"agentry:implementer","agentId":"a584bb73ae442088d","session":"217e45e5"}

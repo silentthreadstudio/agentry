@@ -1,0 +1,6 @@
+{"ts":"2026-06-19T22:09:39.686Z","type":"routing-decision","shape":"decompose+verify","kind":"feature"}
+{"ts":"2026-06-19T22:18:10.330Z","type":"gate","gate":"plan","outcome":"reached"}
+{"ts":"2026-06-19T22:19:27.029Z","type":"gate","gate":"plan","outcome":"approved"}
+{"ts":"2026-06-19T22:19:52.108Z","kind":"agent-started","agent":"agentry:implementer","agentId":"a584bb73ae442088d","session":"217e45e5"}
+{"ts":"2026-06-19T22:30:08.443Z","kind":"agent-done","agent":"agentry:implementer","agentId":"a584bb73ae442088d","session":"217e45e5"}
+{"ts":"2026-06-20T00:59:25.699Z","type":"node-done","node":"assemble","durationMs":311107}

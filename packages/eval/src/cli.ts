@@ -35,6 +35,7 @@ import { loadPlantedFixtures, resolveInputs } from "./quality/command.ts";
 
 import { emitReport } from "./report/emit.ts";
 import { runMoatProbe } from "./moat/probe.ts";
+import { runFlowComplianceProbe } from "./flow-compliance/probe.ts";
 
 /**
  * The default runs-root, anchored to the SELFEVAL PACKAGE ROOT (`<selfeval>/runs`) — NOT to CWD. Computed from this
@@ -56,6 +57,8 @@ class UsageError extends Error {}
 export interface CliFlags {
   fixture?: string;
   fixtures?: string;
+  /** flow-compliance only — the run dir (`.agentry/work/<id>/`) to assert over. */
+  run?: string;
   runs?: string;
   k?: string;
   pluginDir?: string;
@@ -70,6 +73,7 @@ export interface CliFlags {
 const FLAGS: Record<string, keyof CliFlags> = {
   "--fixture": "fixture",
   "--fixtures": "fixtures",
+  "--run": "run",
   "--runs": "runs",
   "--k": "k",
   "--plugin-dir": "pluginDir",
@@ -253,6 +257,39 @@ async function runMoat(flags: CliFlags, runner = liveRunner): Promise<number> {
 }
 
 /**
+ * `run flow-compliance --run <dir>` — assert the ordered Flow-compliance contract over an ALREADY-PRODUCED run
+ * dir (`.agentry/work/<id>/`), ZERO API. Unlike the other `run` subcommands it drives no live runner: the probe
+ * is read-only over the trace (`events.jsonl` + work-folder artifacts, ADR-004), so this handler creates the
+ * eval run dir, wires the emitter seam for per-check `events.jsonl` lines, runs the probe, and writes the verdict
+ * artifact (`flow-compliance.json`). Echoes the verdict artifact path. Exit 0 even on a FAIL verdict — a probe
+ * that finds a violation succeeded at its job; the caller reads `pass` from the artifact.
+ */
+async function runFlowCompliance(flags: CliFlags): Promise<number> {
+  if (flags.run === undefined) throw new UsageError("run flow-compliance: --run <dir> is required");
+  const targetRunDir = resolve(flags.run);
+  const runsRoot = resolveRunsRoot(flags);
+  const runId = newRunId(flags.runId);
+
+  // Read-only over the trace ⇒ no `RunStore`/`RunConfig` (those carry a routing/quality/moat `RunKind`); just the
+  // emitter seam over a fresh run dir for the per-check `events.jsonl` lines + stdout progress.
+  const runDir = join(runsRoot, runId);
+  mkdirSync(runDir, { recursive: true });
+  const emitter = createEmitter(join(runDir, "events.jsonl"), (line) => process.stderr.write(line));
+  const observer: EvalObserver = { emit: emitter.emit };
+
+  const { artifact } = runFlowComplianceProbe({
+    runDir: targetRunDir,
+    outPath: join(runDir, "flow-compliance.json"),
+    observer,
+    runId,
+  });
+
+  process.stderr.write(`flow-compliance ${artifact.pass ? "PASS" : "FAIL"} over ${targetRunDir}\n`);
+  process.stdout.write(`${join(runDir, "flow-compliance.json")}\n`);
+  return 0;
+}
+
+/**
  * `trace <taskId>` — run the routing probe over the fixture with full capture into a run dir, then echo the path
  * to the requested task's captured `tasks/<taskId>/` directory (its `stream.jsonl` + `work/` + shape/timing). The
  * durable replacement for the throwaway `diag-<task>.ts` scripts: a stored, inspectable single-task capture.
@@ -360,7 +397,10 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
       if (sub === "moat") {
         return await runMoat(parseFlags(rest).flags, deps.runner);
       }
-      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "routing" | "quality" | "moat")`);
+      if (sub === "flow-compliance") {
+        return await runFlowCompliance(parseFlags(rest).flags);
+      }
+      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "routing" | "quality" | "moat" | "flow-compliance")`);
     }
 
     if (command === "trace") {

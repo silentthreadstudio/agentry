@@ -16,6 +16,18 @@ import { runDir } from "../resolution/run-pointer.js";
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 
+// Defensive normalization (ADR-002): a task body must never begin with its own `---…---` block —
+// Flow is the SOLE frontmatter authority, so a leading block would render a second, duplicate
+// frontmatter under Flow's own. Drop a block at position 0 (its keys are discarded, NOT merged)
+// before render. Mirrors FRONTMATTER's leading-block shape but anchored to position 0 only: a `---`
+// thematic break later in the body is untouched, a body with no leading block is byte-for-byte
+// unchanged, and re-applying it is a no-op (idempotent).
+const LEADING_FRONTMATTER = /^---\n[\s\S]*?\n---\n?/;
+
+function stripLeadingFrontmatter(body: string): string {
+  return body.replace(LEADING_FRONTMATTER, "");
+}
+
 export class TaskFileStore implements TaskStore {
   constructor(private readonly cwd: string) {}
 
@@ -55,7 +67,7 @@ export class TaskFileStore implements TaskStore {
       if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync(join(dir, f));
     }
     const file = `${task.taskNo}-${this.slugOf(task)}.md`;
-    writeFileSync(join(dir, file), this.render(task.frontmatter, task.body));
+    writeFileSync(join(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
   }
 
   readArtifact(run: string, kind: ArtifactKind): string | undefined {

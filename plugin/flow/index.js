@@ -28718,6 +28718,10 @@ function computeVersion(body, frontmatterSansVersion) {
 
 // src/persistence/task-file-store.ts
 var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var LEADING_FRONTMATTER = /^---\n[\s\S]*?\n---\n?/;
+function stripLeadingFrontmatter(body) {
+  return body.replace(LEADING_FRONTMATTER, "");
+}
 var TaskFileStore = class {
   constructor(cwd) {
     this.cwd = cwd;
@@ -28753,7 +28757,7 @@ var TaskFileStore = class {
       if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync(join5(dir, f));
     }
     const file = `${task.taskNo}-${this.slugOf(task)}.md`;
-    writeFileSync4(join5(dir, file), this.render(task.frontmatter, task.body));
+    writeFileSync4(join5(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
   }
   readArtifact(run, kind) {
     const file = join5(runDir(this.cwd, run), `${kind}.md`);

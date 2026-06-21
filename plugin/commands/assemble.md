@@ -3,7 +3,7 @@ description: Run the whole product against the Spec's acceptance criteria as obs
 argument-hint: [spec id — optional if a spec is active]
 ---
 
-Dispatch the **verifier** subagent (using the `integrating` craft) to assemble-check the whole product against the Spec's acceptance criteria.
+Dispatch the **verifier** subagent (using the `integrating` craft) to assemble-check the whole product against the Spec's acceptance criteria — reading the run's artifacts and tasks via the Flow MCP if present (`run_get` / `task_list`, the source of truth persisting under `.agentry/work/<id>/…`).
 
 Brief for the verifier:
 - Run the **whole product** end-to-end; judge each Spec `AC` by **observed behavior, not diffs**.

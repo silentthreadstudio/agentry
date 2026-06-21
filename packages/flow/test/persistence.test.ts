@@ -45,6 +45,62 @@ test("TaskFileStore stamps a version the caller never supplied, and it changes o
   assert.notEqual(v1, v2);
 });
 
+test("TaskFileStore: a task body that BEGINS with a ---…--- block has that leading block stripped before render (ADR-002 — exactly one Flow frontmatter)", () => {
+  const store = new TaskFileStore(cwd);
+  store.writeTask(RUN, {
+    taskNo: "010",
+    frontmatter: { title: "Defensive", status: "todo" },
+    body: "---\nstatus: SMUGGLED\nlockedBy: attacker\n---\nthe real brief",
+  });
+  const raw = readFileSync(
+    join(cwd, ".agentry", "work", RUN, "tasks", readdirSync(join(cwd, ".agentry", "work", RUN, "tasks")).find((f) => f.startsWith("010-"))!),
+    "utf8",
+  );
+  // exactly one frontmatter block (Flow's own) — count the `---` fence pairs
+  assert.equal(raw.match(/^---$/gm)?.length, 2, "exactly one ---…--- frontmatter block remains");
+  assert.doesNotMatch(raw, /SMUGGLED/, "the leading block's keys are dropped, not merged");
+  // the read body is the remainder only
+  assert.equal(new TaskFileStore(cwd).readTask(RUN, "010")?.body, "the real brief");
+});
+
+test("TaskFileStore: stripping a leading ---…--- block is idempotent (re-writing the stored body is a no-op)", () => {
+  const store = new TaskFileStore(cwd);
+  store.writeTask(RUN, {
+    taskNo: "011",
+    frontmatter: { title: "Idem" },
+    body: "---\nk: v\n---\nbody text",
+  });
+  const once = new TaskFileStore(cwd).readTask(RUN, "011");
+  assert.equal(once?.body, "body text");
+  // feed the already-stripped body back through — it must stay stable
+  store.writeTask(RUN, { taskNo: "011", frontmatter: { title: "Idem" }, body: once!.body });
+  assert.equal(new TaskFileStore(cwd).readTask(RUN, "011")?.body, "body text");
+});
+
+test("TaskFileStore: a mid-body --- thematic break is left untouched (strip applies only at position 0)", () => {
+  new TaskFileStore(cwd).writeTask(RUN, {
+    taskNo: "012",
+    frontmatter: { title: "Mid" },
+    body: "intro paragraph\n\n---\n\nsection after a thematic break",
+  });
+  assert.equal(
+    new TaskFileStore(cwd).readTask(RUN, "012")?.body,
+    "intro paragraph\n\n---\n\nsection after a thematic break",
+  );
+});
+
+test("TaskFileStore: a body with no leading block is unchanged through the strip", () => {
+  new TaskFileStore(cwd).writeTask(RUN, {
+    taskNo: "013",
+    frontmatter: { title: "Plain" },
+    body: "## Goal\n\njust prose, no frontmatter",
+  });
+  assert.equal(
+    new TaskFileStore(cwd).readTask(RUN, "013")?.body,
+    "## Goal\n\njust prose, no frontmatter",
+  );
+});
+
 test("TaskFileStore: one file per task number (a renamed task leaves no stale sibling)", () => {
   const store = new TaskFileStore(cwd);
   store.writeTask(RUN, { taskNo: "003", frontmatter: { title: "Old Title" }, body: "x" });
