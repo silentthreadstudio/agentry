@@ -19,11 +19,13 @@ import { withBase } from "../../../lib/base.ts";
     <h2 class="prose__h">Channels don't seem live</h2>
     <p>
       You're seeing the channel MCP's instructions, but comments and approvals aren't reaching the
-      agent live. The cause: Claude Code was launched <strong>without the development-channels
-      flag</strong>. The MCP instructions load even without it, so <strong>seeing them does not prove
-      the channel is live</strong>. Relaunch with the flag:
+      agent live. The cause: Claude Code was launched <strong>without a channel flag</strong>. The MCP
+      instructions load even without it, so <strong>seeing them does not prove the channel is
+      live</strong>. Because Agentry's bridge is a custom, research-preview channel (not on the
+      approved allowlist), relaunch it with the <em>development</em> flag — not <code>--channels</code>,
+      which only loads allowlisted channels:
     </p>
-    <pre class="flag"><code>--dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
+    <pre class="flag"><code>claude --dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
     <div class="note note--warn">
       <span class="note__key">Gotcha</span>
       <span>

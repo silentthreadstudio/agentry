@@ -13,7 +13,7 @@ import { withBase } from "../../../lib/base.ts";
 <DocsLayout
   current="install"
   title="Install"
-  description="Install Agentry as a Claude Code plugin in one line — then optionally launch with the development-channels flag to bring live human↔agent channels online. Requires Node ≥ 24."
+  description="Install Agentry as a Claude Code plugin in one line — then optionally launch with channels enabled to bring live human↔agent push online (--channels for official channels; the development flag for Agentry's research-preview bridge). Requires Node ≥ 24."
   eyebrow="Getting Started · Install"
   lede="Two paths: the plain install gets you the full conducting and memory layer; the channels-enabled launch additionally brings live human↔agent push online. The first is all you need to start."
 >
@@ -36,21 +36,52 @@ import { withBase } from "../../../lib/base.ts";
       <span>Node ≥ 24 — the memory engine uses Node's built-in <code>node:sqlite</code>, so there are no native modules to compile.</span>
     </div>
 
-    <h2 class="prose__h">The channels-enabled launch</h2>
+    <h2 class="prose__h">Bringing channels online</h2>
     <p>
       Channels add <strong>live human↔agent push</strong> — comments, threaded replies, a
       permission relay, and status steering — on top of the install above. They are an additive
-      layer and a research preview: to bring them online, launch Claude Code with the
-      development-channels flag:
+      layer and a research preview. <strong>How you launch depends on which channel you're
+      enabling</strong>, because every channel must clear Anthropic's approved allowlist to register.
+    </p>
+
+    <h3 class="prose__h prose__h--sub">Official channels — the normal way</h3>
+    <p>
+      A channel on the <strong>approved allowlist</strong> — the official set in
+      <code>claude-plugins-official</code> (Telegram, Discord, iMessage) — is enabled per session
+      with the <code>--channels</code> flag. No bypass, no warning; the channel is already trusted:
+    </p>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>claude --channels plugin:telegram@claude-plugins-official</code></pre>
+    <p>
+      This is the path a normal user takes for an officially-supported channel.
+    </p>
+
+    <h3 class="prose__h prose__h--sub">Agentry's channel bridge — the development flag</h3>
+    <p>
+      Agentry's own channel bridge is a <strong>custom, research-preview channel</strong>. It is
+      <em>not</em> yet on the approved allowlist, so <code>--channels</code> won't load it. You bring
+      it up with the development-channels flag, which bypasses the allowlist for that one entry after
+      a one-time confirmation prompt:
     </p>
     <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>claude --dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
 
-    <h3 class="prose__h prose__h--sub">Why the flag — and what happens without it</h3>
+    <div class="note">
+      <span class="note__key">Why two flags</span>
+      <span>
+        <code>--channels</code> enables a channel that is already on Anthropic's curated allowlist;
+        <code>--dangerously-load-development-channels</code> bypasses that allowlist per-entry, so you
+        can run a channel you're developing — or one not yet officially listed, like Agentry's bridge
+        today. The bypass is per-entry and skips the allowlist <em>only</em>; an organization's
+        <code>channelsEnabled</code> policy still applies, and you shouldn't point it at channels from
+        untrusted sources.
+      </span>
+    </div>
+
+    <h3 class="prose__h prose__h--sub">Why the flag is load-bearing — and what happens without it</h3>
     <p>
-      The flag is load-bearing in a subtle way: the channel's <strong>MCP instructions load
-      without it</strong>, so seeing them is <em>not</em> proof the channel is live. The flag is
-      what actually brings the channel up — it is the thing that proves the channel is running, not
-      just described.
+      For Agentry's bridge the flag is load-bearing in a subtle way: the channel's <strong>MCP
+      instructions load without it</strong>, so seeing them is <em>not</em> proof the channel is
+      live. The flag is what actually brings the channel up — it is the thing that proves the channel
+      is running, not just described.
     </p>
     <p>
       Leaving the flag off is a <strong>graceful degradation</strong>, not a breakage. Everything

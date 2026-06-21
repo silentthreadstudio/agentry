@@ -34,14 +34,23 @@ import { withBase } from "../../../lib/base.ts";
       <li><strong>Human status changes that steer</strong> — force a task's status and the agent treats it as steering and adjusts what it does next.</li>
     </ul>
     <p>
-      Channels are an <strong>additive layer</strong> and a research preview: they need Claude Code
-      launched with the flag
+      Channels are an <strong>additive layer</strong> and a research preview. How you launch one
+      depends on whether it's on Anthropic's approved allowlist. An <strong>official channel</strong>
+      (Telegram, Discord, iMessage) is enabled with <code>--channels</code>:
     </p>
-    <pre class="flag"><code>--dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
+    <pre class="flag"><code>claude --channels plugin:telegram@claude-plugins-official</code></pre>
     <p>
-      Without it, everything still works via the async file-watch loop — the files are truth, the agent
-      reads your edits on its next turn, and approvals fall back to the terminal. See
-      <a href={withBase("docs/permissions")}>Permissions</a> for how the relay approves a tool call.
+      Agentry's own channel bridge is a <strong>custom, research-preview channel</strong> — not yet
+      on the allowlist — so it needs the development flag, which bypasses the allowlist for that one
+      entry after a confirmation prompt:
+    </p>
+    <pre class="flag"><code>claude --dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
+    <p>
+      Either way, this is purely additive: <strong>without any channel flag, everything still works</strong>
+      via the async file-watch loop — the files are truth, the agent reads your edits on its next turn, and
+      approvals fall back to the terminal. See <a href={withBase("docs/install")}>Install</a> for the full
+      launch walkthrough and <a href={withBase("docs/permissions")}>Permissions</a> for how the relay
+      approves a tool call.
     </p>
   </div>
 </DocsLayout>
