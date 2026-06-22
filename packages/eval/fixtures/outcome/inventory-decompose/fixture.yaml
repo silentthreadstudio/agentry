@@ -1,0 +1,21 @@
+# A planted outcome fixture (ADR-003) — decompose+verify / feature.
+#
+# Task: build a small inventory library across THREE files that must agree on a shared contract — a store
+# (src/store.js), a report over it (src/report.js), and a barrel (src/index.js) wiring them together. The seed
+# ships three stubs that throw; getting the suite green requires all three parts to coordinate (the report reads
+# the store's shape). The HIDDEN oracle drives the public API end to end. golden PASSES, broken FAILS.
+id: inventory-decompose
+prompt: >-
+  Build a tiny inventory library exposed from `src/index.js`, split across three files. (1) `src/store.js`
+  exports `createStore()` returning an object with `add(sku, qty)` (adds qty to the running total for that sku,
+  starting from 0), `remove(sku, qty)` (subtracts, never going below 0), `quantity(sku)` (the current total, 0
+  for an unknown sku), and `skus()` (the array of skus that have ever been added). (2) `src/report.js` exports
+  `lowStock(store, threshold)` returning the array of skus (from `store.skus()`) whose `store.quantity(sku)` is
+  strictly below `threshold`, sorted ascending by sku. (3) `src/index.js` re-exports `createStore` and `lowStock`.
+  The three files ship as stubs that throw; implement all three so they agree. CommonJS exports throughout; no
+  dependencies.
+shape: decompose
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

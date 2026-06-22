@@ -1,0 +1,23 @@
+# A unified rightsizing fixture (ADR-004) — DECOMPOSE feature.
+#
+# Task: build a small paginator across THREE separable components with clean seams: a page-math module
+# (`pageCount`), a slicing module (`pageSlice`), and an assembler (`paginate`) that composes them into the public
+# result. The spec is clear (no undecided fork) but the work is genuinely multi-part — three units each with their
+# own contract, composable in parallel — so the floor is decompose, not one coherent edit.
+id: rs-pagination
+prompt: >-
+  Build a paginator in `src/`, exposed from `src/index.js` as `paginate(items, perPage, page)`. It must return
+  `{ page, perPage, pageCount, total, items }` where `items` is the slice for that 1-based page. Implement it in
+  three parts: `pageCount(total, perPage)` in `src/meta.js` (number of pages, rounding UP for a partial last page),
+  `pageSlice(items, perPage, page)` in `src/slice.js` (the items on that page; an out-of-range page yields an empty
+  slice), and `paginate(...)` in `src/index.js` composing them. So `paginate([1,2,3,4,5], 2, 1)` →
+  `{ page:1, perPage:2, pageCount:3, total:5, items:[1,2] }`, and page 3 → `items:[5]`. Keep CommonJS exports
+  across all three files; do not add dependencies.
+correct_floor: decompose
+rationale:
+  governing_signal: "Scope: 3 separable components with clean seams · Specificity: contract clear (no fork)"
+  seams: "page-math (pageCount), slicing (pageSlice), and the assembler (paginate) are three independent units each with its own contract — a multi-part build composable in parallel, not one coherent edit"
+labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

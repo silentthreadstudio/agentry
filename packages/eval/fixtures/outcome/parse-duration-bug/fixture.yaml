@@ -1,0 +1,18 @@
+# A planted outcome fixture (ADR-003) — one-shot / bug.
+#
+# Task: FIX a bug in `parseDuration(text)` in src/duration.js. The seed ships a working implementation that
+# handles seconds/minutes/hours but mishandles the hours unit (`h` multiplies by 360, not 3600). The agent fixes
+# it. The HIDDEN oracle (oracle/, never seeded) asserts every unit; the buggy seed FAILS it, golden PASSES it.
+id: parse-duration-bug
+prompt: >-
+  There is a bug in `parseDuration(text)` in `src/duration.js`. It converts a duration string like `"90s"`,
+  `"5m"`, or `"2h"` into a total number of SECONDS. Seconds and minutes are correct (`parseDuration("90s")` is
+  `90`, `parseDuration("5m")` is `300`), but the hours unit is wrong: `parseDuration("2h")` returns `720` when it
+  should return `7200` (2 * 3600). Fix the hours conversion so every unit is correct. Keep the existing function
+  signature and CommonJS export; do not change the supported units or add dependencies.
+shape: one-shot
+kind: bug
+oracle:
+  # TAP reporter pinned so the runner emits the stable `# pass / # tests` summary the oracle parser reads.
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

@@ -1,0 +1,22 @@
+# Floor-sensitive outcome fixture — cursor pagination over an in-memory list.
+#
+# THE TRAP: the boundary. A naive offset slice returns the page fine but always reports `nextCursor = start+size`,
+# so on the LAST page it hands back a non-null cursor that points past the end — a client paging on it loops
+# forever (or fetches an empty page expecting more). golden must return `nextCursor: null` once the list is
+# exhausted, and behave on empty input / a cursor already past the end.
+# broken/ = offset slice with `nextCursor: start+size` always — happy mid-list pages pass, every boundary fails.
+# golden/  = null nextCursor when the next offset would be at/after the end; empty page past the end.
+# The hidden oracle (oracle/, never seeded) tests BOTH a mid-list page AND the empty / last-page / past-end traps.
+id: cursor-paginate-spec
+prompt: >-
+  Implement `paginate(items, cursor, size)` in `src/paginate.js` (currently a stub that throws). It returns one
+  page of `items` as `{ page, nextCursor }`. `cursor` is the start index (treat `null`/`undefined` as 0); `page`
+  is the up-to-`size` slice starting there, in the original order. `nextCursor` is the index to pass next, or
+  `null` when this is the last page (no more items remain). A cursor at or past the end yields an empty page and
+  a `null` nextCursor; an empty list yields `{ page: [], nextCursor: null }`. Keep the CommonJS export. Do not
+  add dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

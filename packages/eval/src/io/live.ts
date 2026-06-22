@@ -17,7 +17,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createWriteStream, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Invocation, RunResult, Runner, Sandbox } from "./port.ts";
+import type { Invocation, RunCost, RunResult, Runner, Sandbox } from "./port.ts";
 import { producedTreeNonEmpty } from "./sandbox.ts";
 
 /**
@@ -73,6 +73,54 @@ function resultSubtypeOf(event: unknown): string | undefined {
   return typeof ev.subtype === "string" ? ev.subtype : undefined;
 }
 
+/** A finite number passes through; anything else (string, null, NaN, absent) ⇒ undefined — never coerce. */
+function numOrUndefined(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+/**
+ * The token/time/$ cost of a settled run, if this event is the final `result` envelope; else undefined
+ * (ADR-002). Reads the SAME envelope `resultSubtypeOf` reads, normalizing the CLI's snake_case
+ * (`usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens`, `total_cost_usd`,
+ * `duration_ms`, `num_turns`) into {@link RunCost}'s camelCase. Field names PINNED against a real captured
+ * `claude -p --output-format stream-json` `result` event. Tolerant of any missing/non-numeric field (a
+ * partial or future envelope yields a `RunCost` with only the fields it actually carried); returns a `RunCost`
+ * whenever the event IS a `result` (even if every field is absent — the run settled, so cost is "known empty").
+ */
+function costOf(event: unknown): RunCost | undefined {
+  if (typeof event !== "object" || event === null) return undefined;
+  const ev = event as {
+    type?: unknown;
+    total_cost_usd?: unknown;
+    duration_ms?: unknown;
+    num_turns?: unknown;
+    usage?: unknown;
+  };
+  if (ev.type !== "result") return undefined;
+  const usage =
+    typeof ev.usage === "object" && ev.usage !== null
+      ? (ev.usage as {
+          input_tokens?: unknown;
+          output_tokens?: unknown;
+          cache_read_input_tokens?: unknown;
+        })
+      : {};
+  const cost: RunCost = {};
+  const inputTokens = numOrUndefined(usage.input_tokens);
+  const outputTokens = numOrUndefined(usage.output_tokens);
+  const cacheReadTokens = numOrUndefined(usage.cache_read_input_tokens);
+  const totalCostUsd = numOrUndefined(ev.total_cost_usd);
+  const durationMs = numOrUndefined(ev.duration_ms);
+  const numTurns = numOrUndefined(ev.num_turns);
+  if (inputTokens !== undefined) cost.inputTokens = inputTokens;
+  if (outputTokens !== undefined) cost.outputTokens = outputTokens;
+  if (cacheReadTokens !== undefined) cost.cacheReadTokens = cacheReadTokens;
+  if (totalCostUsd !== undefined) cost.totalCostUsd = totalCostUsd;
+  if (durationMs !== undefined) cost.durationMs = durationMs;
+  if (numTurns !== undefined) cost.numTurns = numTurns;
+  return cost;
+}
+
 /** The minimal child surface the streaming capture drives — `spawn`'s real child satisfies it; tests fake it. */
 export type StreamChild = Pick<ChildProcessWithoutNullStreams, "stdout" | "stderr" | "kill" | "on">;
 
@@ -99,6 +147,12 @@ export interface CaptureOptions {
    * stays the hard ceiling fallback. Default false ⇒ behavior is governed by {@link noKillOnDispatch}.
    */
   terminateOnArtifact?: boolean;
+  /**
+   * RUN-TO-COMPLETION mode (ADR-002): when true, take NEITHER early-kill path (not kill-on-dispatch, not
+   * {@link terminateOnArtifact}) — let the headless build run until it settles on its trailing `result`
+   * envelope or {@link timeoutMs} fires. Overrides both kill flags. Default false ⇒ routing behavior unchanged.
+   */
+  runToCompletion?: boolean;
   /** Hard ceiling (ms): the child is killed at this cap regardless of mode if it has not settled/terminated. */
   timeoutMs?: number;
   /** Polling interval (ms) for the artifact watch; defaults to {@link DEFAULT_POLL_MS}. Test-injectable. */
@@ -156,9 +210,13 @@ function scanWorkArtifacts(workingDir: string): WorkArtifacts {
 
 /**
  * Stream-capture spawn (ADR-002/005): run `claude -p --output-format stream-json --verbose`, tee stdout
- * line-by-line to `streamPath`, and observe the trailing `result.subtype` when the run settles.
+ * line-by-line to `streamPath`, and observe the trailing `result` envelope when the run settles — its
+ * `subtype` and its token/time/$ {@link RunCost} (both absent on a killed run, which forfeits that envelope).
  *
- * Three termination modes:
+ * Termination modes:
+ *   - RUN-TO-COMPLETION ({@link CaptureOptions.runToCompletion}): take NEITHER early-kill path — no
+ *     kill-on-dispatch, no artifact poll — so the full headless build runs to its trailing `result` envelope
+ *     or `timeoutMs`. Overrides both kill flags; this is the outcome run's mode (ADR-002).
  *   - DEFAULT (kill-on-dispatch): `proc.kill()` the moment the first `tool_use name:"Agent"` event is seen
  *     (OQ2 early-terminate). A no-dispatch run is never killed; it closes normally and its `result` envelope
  *     is observed. A killed run's partial stream lacks the trailing `result`, so `resultSubtype` is undefined.
@@ -172,10 +230,13 @@ function scanWorkArtifacts(workingDir: string): WorkArtifacts {
  *     on its own is one-shot/degenerate (the natural close, never force-killed). `timeoutMs` is the hard
  *     ceiling fallback. This supersedes `noKillOnDispatch` for live routing runs (autopilot-design §3).
  *
- * Resolves with the observed `result.subtype` (or undefined) once the child closes.
+ * Resolves with the observed `result.subtype` (or undefined) once the child closes. The settled run's
+ * {@link RunCost} (ADR-002) is surfaced through the optional `onCost` side channel — parsed from the SAME
+ * `result` envelope `result.subtype` is read from, so the resolved value (and every existing caller) is
+ * unchanged. `onCost` fires once, when the trailing `result` envelope is seen; a killed run never fires it.
  *
  * `spawnFn` is injected only in tests (a fake child driving a synthetic NDJSON stream); production uses the
- * real `claude` spawn.
+ * real `claude` spawn. `onCost` is supplied only by {@link runCaptured} (to land cost on `RunResult`).
  */
 export function spawnClaudeStreaming(
   args: string[],
@@ -183,9 +244,14 @@ export function spawnClaudeStreaming(
   streamPath: string,
   options: CaptureOptions = {},
   spawnFn: SpawnFn = realSpawn,
+  onCost?: (cost: RunCost) => void,
 ): Promise<string | undefined> {
-  const onArtifact = options.terminateOnArtifact === true;
-  const noKill = onArtifact || options.noKillOnDispatch === true; // artifact mode also never kills on dispatch
+  // RUN-TO-COMPLETION (ADR-002) suppresses BOTH early-kill paths: no artifact poll, no kill-on-dispatch — the
+  // build runs to its trailing `result` envelope or the `timeoutMs` cap. Otherwise routing behavior is unchanged.
+  const toCompletion = options.runToCompletion === true;
+  const onArtifact = !toCompletion && options.terminateOnArtifact === true;
+  // never kill on dispatch in artifact, capped, OR run-to-completion mode (only the cap/settle ends those runs).
+  const noKill = toCompletion || onArtifact || options.noKillOnDispatch === true;
   const capMs = options.timeoutMs ?? DEFAULT_CAP_MS;
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
   const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
@@ -254,6 +320,13 @@ export function spawnClaudeStreaming(
       }
       const subtype = resultSubtypeOf(event);
       if (subtype !== undefined) resultSubtype = subtype;
+      // The trailing `result` envelope also carries the run's cost (ADR-002); parse it where we already read
+      // subtype and hand it to the optional side channel — the resolved value stays subtype-only (AC8: existing
+      // callers unchanged). A non-`result` event yields undefined and never fires the sink.
+      if (onCost !== undefined) {
+        const parsedCost = costOf(event);
+        if (parsedCost !== undefined) onCost(parsedCost);
+      }
       // Kill-on-dispatch ONLY in the default mode; capped/artifact modes let the conductor run on to emit artifacts.
       if (!noKill && isAgentDispatch(event)) {
         killOnce();
@@ -311,20 +384,28 @@ export async function runCaptured(
   const captureOptions: CaptureOptions = {
     ...(invocation.noKillOnDispatch !== undefined ? { noKillOnDispatch: invocation.noKillOnDispatch } : {}),
     ...(invocation.terminateOnArtifact !== undefined ? { terminateOnArtifact: invocation.terminateOnArtifact } : {}),
+    ...(invocation.runToCompletion !== undefined ? { runToCompletion: invocation.runToCompletion } : {}),
     ...(invocation.timeoutMs !== undefined ? { timeoutMs: invocation.timeoutMs } : {}),
   };
+  // Cost (ADR-002) is captured via the side channel: `spawnClaudeStreaming` resolves the subtype only (so its
+  // existing routing callers are unchanged), and hands the parsed `RunCost` here when the run settles.
+  let cost: RunCost | undefined;
   const resultSubtype = await spawnClaudeStreaming(
     args,
     sandbox,
     invocation.streamPath,
     captureOptions,
     spawnFn,
+    (parsed) => {
+      cost = parsed;
+    },
   );
   const result: RunResult = {
     streamPath: invocation.streamPath,
     producedTreeNonEmpty: producedTreeNonEmpty(sandbox.workingDir),
   };
   if (resultSubtype !== undefined) result.resultSubtype = resultSubtype;
+  if (cost !== undefined) result.cost = cost;
   return result;
 }
 

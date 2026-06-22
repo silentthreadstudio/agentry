@@ -1,0 +1,21 @@
+# Floor-sensitive outcome fixture — parse ONE CSV line into an array of fields.
+#
+# THE TRAP: quoting. A naive `line.split(",")` works for plain rows but shreds quoted fields that CONTAIN commas
+# (`a,"b,c",d`) and cannot un-escape doubled quotes (`"he said ""hi"""`). The agent must write a quote-aware
+# scanner, not a split.
+# broken/ = `line.split(",").map(trim)` — passes plain rows, fails every quoted-field case.
+# golden/  = a character scanner tracking in-quote state, collapsing `""` to a literal `"`.
+# The hidden oracle (oracle/, never seeded) tests BOTH plain rows AND the quoted-comma / escaped-quote traps.
+id: csv-parse-spec
+prompt: >-
+  Implement `parseLine(line)` in `src/csv.js` (currently a stub that throws). Parse a single CSV record into an
+  array of field strings, following RFC-4180-style quoting: a field may be wrapped in double quotes, a quoted
+  field may contain commas (which are NOT separators), and a doubled quote `""` inside a quoted field is a
+  literal `"`. Trim leading/trailing whitespace on each field. For example `parseLine('a,"b,c",d')` returns
+  `["a","b,c","d"]` and `parseLine('"he said ""hi"""')` returns `['he said "hi"']`. Keep the CommonJS export.
+  Do not add dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

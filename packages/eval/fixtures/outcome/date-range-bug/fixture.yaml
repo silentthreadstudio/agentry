@@ -1,0 +1,24 @@
+# One-shot outcome fixture — a working-but-WRONG date-range module the agent must fix.
+#
+# THE TRAP (the bug ships in the seed): the module computes day spans and range overlaps, but it is off-by-one on
+# INCLUSIVE ranges and gets the overlap BOUNDARY wrong. `daysBetween(a, b)` counts the gap between dates but the
+# contract wants the INCLUSIVE day count (Jan 1..Jan 1 is 1 day, Jan 1..Jan 3 is 3 days). `overlaps(r1, r2)`
+# treats merely-adjacent ranges (one ends the day the other begins) as overlapping, when adjacent ranges must NOT
+# overlap. The seed runs and looks plausible on the casual cases; it FAILS the inclusive-count, same-day, and
+# adjacent-boundary cases. broken/ = the seed's bug verbatim (the discrimination control's wrong overlay);
+# golden/ = the fix (inclusive day count + half-open overlap test). The seed itself is the broken state, so the
+# no-leakage control (untouched seed) FAILS, and golden PASSES.
+id: date-range-bug
+prompt: >-
+  `src/date-range.js` is a working-but-wrong date module. Fix the two bugs without changing the public API.
+  `daysBetween(a, b)` must return the INCLUSIVE number of whole days covered by the range from date `a` to date
+  `b` (both `Date`s, `a <= b`): a single day (`a` and `b` the same calendar day) is 1, and Jan 1 to Jan 3 is 3.
+  `overlaps(r1, r2)` (each range `{ start, end }` of `Date`s, inclusive) must return whether the two ranges share
+  at least one whole day — ranges that are merely ADJACENT (one ends the day before the other starts, OR they
+  touch only at a single boundary day with no shared day) follow the inclusive rule: ranges sharing a boundary
+  DAY overlap, but ranges that only abut (no shared day) do not. Keep the CommonJS export. Do not add dependencies.
+shape: one-shot
+kind: bug
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

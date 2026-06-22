@@ -1,0 +1,22 @@
+# Outcome fixture — groupBy(items, keyFn): group items into an object of arrays, keyed by keyFn(item).
+#
+# THE TRAP: a plain `{}` accumulator. Two failures it causes: (1) order is mostly fine, but (2) a computed key
+# that collides with an inherited Object.prototype member (e.g. "toString", "constructor") breaks the naive
+# `acc[k] = acc[k] || []` pattern — `acc["toString"]` is the INHERITED function (truthy), so `.push` is called on
+# a function and throws (prototype pollution / collision). Correct: accumulate in a null-prototype object (or Map)
+# and return own-keys only. broken/ = plain `{}` accumulator; passes ordinary keys but THROWS / mis-groups on the
+# "toString" key. golden/ uses Object.create(null). The hidden oracle tests ordinary grouping, order, AND the
+# prototype-collision trap.
+id: group-by-feature
+prompt: >-
+  Implement `groupBy(items, keyFn)` in `src/group-by.js` (currently a stub that throws). Return an object that
+  maps each group key (the string returned by `keyFn(item)`) to the array of items in that group, in their
+  original order. The returned object must behave correctly even when a key collides with a built-in member name
+  like `"toString"` or `"constructor"` (so use a null-prototype object or a Map internally — do not let prototype
+  members leak in). For example `groupBy([1, 2, 3, 4], n => n % 2 === 0 ? "even" : "odd")` returns
+  `{ odd: [1, 3], even: [2, 4] }`. Keep the CommonJS export. Do not add dependencies.
+shape: one-shot
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

@@ -9,8 +9,8 @@
 
 import { writeFileSync } from "node:fs";
 
-import type { Shape } from "../routing/shape.ts";
-import { SHAPES_BY_WEIGHT } from "../routing/shape.ts";
+import type { Shape } from "../conduct/shape.ts";
+import { SHAPES_BY_WEIGHT } from "../conduct/shape.ts";
 
 /** One warm run's result: the dispatched shape (null = degenerate/indeterminate) and whether recall landed the seed. */
 export interface WarmRun {

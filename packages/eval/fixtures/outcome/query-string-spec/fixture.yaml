@@ -1,0 +1,21 @@
+# Outcome fixture — parseQuery(qs): parse a URL query string into an object, with repeats, empties, and decoding.
+#
+# THE TRAP: a naive split that overwrites repeated keys and never URL-decodes. Correct behavior: a key that
+# appears more than once collects its values into an ARRAY (in order); a key with no value (`b=` or bare `c`)
+# maps to the empty string ""; and both keys and values are URL-decoded (`%20` -> space, `+` -> space).
+# broken/ = `split("&")` then `split("=")` into a plain object (last write wins, no decode). Passes the single
+# `a=1&b=2` case but FAILS repeats, empties, and decoding. golden/ handles all three. The hidden oracle tests
+# the happy path AND each trap.
+id: query-string-spec
+prompt: >-
+  Implement `parseQuery(qs)` in `src/query-string.js` (currently a stub that throws). Parse a URL query string
+  (no leading `?`) into an object. Rules: a key that appears multiple times collects its values into an array in
+  order (e.g. `parseQuery("a=1&a=2")` -> `{ a: ["1", "2"] }`); a single occurrence stays a string
+  (`parseQuery("a=1")` -> `{ a: "1" }`); a key with an empty or missing value maps to `""` (`"b="` and bare
+  `"c"` both -> `""`); and keys and values are URL-decoded, with `+` decoding to a space (`"a=%20"` -> `" "`,
+  `"a+b=c"` -> key `"a b"`). An empty input returns `{}`. Keep the CommonJS export. Do not add dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

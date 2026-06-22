@@ -1,0 +1,18 @@
+# A planted outcome fixture (ADR-003) — one-shot / bug.
+#
+# Task: FIX a bug in `isBalanced(text)` in src/brackets.js. The seed ships a stack-based checker that IGNORES a
+# closing bracket arriving with an EMPTY stack, so a stray closer like "a)" is wrongly accepted. The agent fixes
+# the empty-stack guard. The HIDDEN oracle asserts balanced/unbalanced cases; the buggy seed FAILS it.
+id: balanced-brackets-bug
+prompt: >-
+  There is a bug in `isBalanced(text)` in `src/brackets.js`. It should return `true` when every bracket in the
+  string `()[]{}` is correctly matched and nested, and `false` otherwise. It works for balanced input like
+  `"(a[b]{c})"` and for an unclosed opener like `"(a"` (returns `false`), but it mishandles a closing bracket that
+  arrives when no bracket is open: `isBalanced("a)")` and `isBalanced("(a)b)")` should both return `false`, but the
+  current code returns `true` (it ignores a closer when the stack is empty). Fix the empty-stack case. Keep the
+  signature and the CommonJS export; do not add dependencies.
+shape: one-shot
+kind: bug
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

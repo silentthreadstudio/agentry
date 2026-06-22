@@ -1,0 +1,18 @@
+# A planted outcome fixture (ADR-003) — one-shot / feature.
+#
+# Task: implement `clamp(n, lo, hi)` in src/clamp.js. The seed ships a stub that throws; the agent must clamp a
+# number into an inclusive [lo, hi] range. The HIDDEN oracle (oracle/, never seeded) holds the held-out node:test
+# suite that decides pass/fail. golden/ overlays a correct impl (PASSES); broken/ overlays a wrong one (FAILS).
+id: clamp-feature
+prompt: >-
+  Implement the `clamp(n, lo, hi)` function in `src/clamp.js` (currently a stub that throws). It returns `n`
+  unchanged when it already lies within the inclusive range `[lo, hi]`, returns `lo` when `n < lo`, and returns
+  `hi` when `n > hi`. For example `clamp(5, 0, 10)` returns `5`, `clamp(-3, 0, 10)` returns `0`, and
+  `clamp(42, 0, 10)` returns `10`. The bounds are inclusive, so `clamp(0, 0, 10)` returns `0`. Keep the existing
+  CommonJS export. Do not add dependencies.
+shape: one-shot
+kind: feature
+oracle:
+  # TAP reporter pinned so the runner emits the stable `# pass / # tests` summary the oracle parser reads.
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

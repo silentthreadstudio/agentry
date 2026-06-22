@@ -81,3 +81,17 @@ test("a workingDir with a conductor CODE edit (a sandbox source file) => non-emp
 
   assert.equal(producedTreeNonEmpty(wd), true);
 });
+
+test("an events.jsonl in a SIBLING of .agentry/work (e.g. .agentry/workspace) STILL counts as produced output", () => {
+  // The primer-log exclusion is scoped to the `.agentry/work/` subtree via a `startsWith(workSubtreeAbs + sep)`
+  // guard. The trailing separator is load-bearing: it prevents the prefix from leaking onto a SIBLING dir whose
+  // path shares the `.agentry/work` prefix (`.agentry/workspace`, `.agentry/work-tmp`, …). An events.jsonl there is
+  // genuine conductor output, NOT harness bookkeeping, so it must read as a non-empty produced tree.
+  const wd = freshWorkingDir();
+  writeFileSync(join(wd, "stream.jsonl"), '{"type":"system"}\n', "utf8");
+  const sibling = join(wd, ".agentry", "workspace", "some-task");
+  mkdirSync(sibling, { recursive: true });
+  writeFileSync(join(sibling, "events.jsonl"), '{"event":"real-output"}\n', "utf8");
+
+  assert.equal(producedTreeNonEmpty(wd), true);
+});

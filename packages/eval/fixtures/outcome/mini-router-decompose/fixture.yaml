@@ -1,0 +1,30 @@
+# Decompose outcome fixture — a path router across THREE coordinating files.
+#
+# THE TRAP: the integration seam between segment matching (`match.js`), param extraction (`params.js`), and the
+# router that registers routes + resolves a path (`router.js`). A naive router builds one regex per pattern and
+# returns the FIRST regex that matches — but a dynamic pattern's regex also matches a path a STATIC route should
+# win, the param names get mis-extracted, and a trailing slash defeats the match. The contract: register
+# `/users/:id`, match a concrete path and extract `{ id }`; a STATIC route beats a DYNAMIC one for the same path
+# (precedence); a trailing slash matches; no match returns a 404 result; first registered wins among equals.
+# broken/ = a naive single-regex matcher with no static-over-dynamic precedence and brittle trailing-slash/param
+# handling — the simple happy path works, the precedence + param + trailing-slash TRAP cases fail.
+# golden/  = segment-wise matching with static-beats-dynamic precedence, clean param extraction, trailing-slash
+# tolerance, and a 404 sentinel.
+# The hidden oracle (oracle/, never seeded) tests a basic match (happy) AND the param-extraction, precedence,
+# trailing-slash, and 404 TRAP cases.
+id: mini-router-decompose
+prompt: >-
+  Implement a tiny path router across the THREE files in `src/` (each currently a stub that throws), keeping them
+  as separate coordinating modules. `src/match.js` decides whether a registered route pattern matches a concrete
+  path, segment by segment (a `:name` segment matches any one segment; a literal segment must match exactly).
+  `src/params.js` extracts the named params from a matched pattern+path into a plain object. `src/router.js` is
+  the entry: `createRouter()` returns a router with `register(pattern, handler)` and `resolve(path)`. `resolve`
+  returns `{ handler, params }` for the best matching route, or `{ status: 404 }` when nothing matches. Rules: a
+  STATIC route (all literal segments) takes precedence over a DYNAMIC route that would also match the same path;
+  among otherwise-equal matches, the FIRST registered wins; a trailing slash on the path is ignored (so `/users`
+  and `/users/` match the same route). Keep the CommonJS exports. Do not add dependencies.
+shape: decompose
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

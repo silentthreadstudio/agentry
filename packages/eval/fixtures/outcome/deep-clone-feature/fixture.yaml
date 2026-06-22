@@ -1,0 +1,19 @@
+# Outcome fixture — deep-clone an object/array so the copy shares NO nested references with the original.
+#
+# THE TRAP: a shallow copy. `{...obj}` (or `Object.assign({}, obj)`) copies top-level keys but the nested
+# objects/arrays are still the SAME references — mutating `clone.a.b` mutates `original.a.b`. broken/ = shallow
+# spread; passes the top-level-independence check but FAILS every deep-mutation-isolation assertion.
+# golden/ = recursive clone of plain objects + arrays. The hidden oracle (oracle/, never seeded) tests BOTH the
+# value-equality happy path AND the deep-isolation trap (mutate the clone at depth, assert the original is intact).
+id: deep-clone-feature
+prompt: >-
+  Implement `deepClone(obj)` in `src/deep-clone.js` (currently a stub that throws). Return a DEEP copy of the
+  input: nested objects and arrays must be cloned recursively so that mutating the clone at ANY depth never
+  affects the original (and vice versa). Primitives are returned as-is. For example, given
+  `const o = { a: { b: 1 }, list: [1, [2]] }`, `deepClone(o)` returns an equal-by-value structure, but
+  `deepClone(o).a.b = 99` must leave `o.a.b === 1`. Keep the CommonJS export. Do not add dependencies.
+shape: one-shot
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

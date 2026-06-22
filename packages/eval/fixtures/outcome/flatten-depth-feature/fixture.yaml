@@ -1,0 +1,21 @@
+# Outcome fixture — flatten(arr, depth=Infinity): flatten nested arrays, respecting a finite depth, deep by default.
+#
+# THE TRAP: ignoring `depth`. Two plausible-naive bugs: (a) always flatten ONE level (depth is hardcoded to 1),
+# or (b) always flatten FULLY, ignoring the `depth` argument. Correct: default flattens all the way (Infinity),
+# but a finite `depth` flattens exactly that many levels and leaves deeper nesting intact.
+# broken/ = always-fully-deep recursion that ignores the `depth` parameter; passes the default-deep cases but
+# FAILS every "respect a finite depth" case. golden/ = depth-aware recursion. The hidden oracle tests BOTH the
+# default-deep happy path AND the finite-depth trap.
+id: flatten-depth-feature
+prompt: >-
+  Implement `flatten(arr, depth = Infinity)` in `src/flatten.js` (currently a stub that throws). Flatten nested
+  arrays up to `depth` levels: with the default (`Infinity`) it flattens completely; with a finite `depth` it
+  flattens exactly that many levels and leaves any deeper nesting intact. For example
+  `flatten([1, [2, [3, [4]]]])` returns `[1, 2, 3, 4]`, `flatten([1, [2, [3, [4]]]], 1)` returns
+  `[1, 2, [3, [4]]]`, and `flatten([1, [2, [3]]], 0)` returns `[1, [2, [3]]]`. Keep the CommonJS export.
+  Do not add dependencies (in particular, do not delegate to `Array.prototype.flat`).
+shape: one-shot
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

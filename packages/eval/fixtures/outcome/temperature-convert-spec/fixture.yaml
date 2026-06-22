@@ -1,0 +1,16 @@
+# A planted outcome fixture (ADR-003) — spec-first / feature.
+#
+# Task: implement `toFahrenheit(celsius)` in src/temperature.js. The goal is under-specified at the edges
+# (rounding? float precision?) — a design choice the agent settles — but the held-out oracle pins only the exact
+# integer-clean conversions where the formula is unambiguous. golden PASSES, broken FAILS.
+id: temperature-convert-spec
+prompt: >-
+  Implement `toFahrenheit(celsius)` in `src/temperature.js` (currently a stub that throws). It converts a
+  temperature in degrees Celsius to degrees Fahrenheit using `F = C * 9/5 + 32`. For example
+  `toFahrenheit(0)` is `32`, `toFahrenheit(100)` is `212`, `toFahrenheit(-40)` is `-40`, and `toFahrenheit(37)`
+  is `98.6`. Keep the CommonJS export; do not add dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

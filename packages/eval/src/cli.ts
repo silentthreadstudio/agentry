@@ -1,41 +1,37 @@
-// The unified self-eval CLI — the composition root (ADR-004 / T-F). A thin subcommand dispatcher that OWNS no
+// The unified self-eval CLI — the composition root (ADR-002 / T-10). A thin subcommand dispatcher that OWNS no
 // probe logic: it constructs the persistence layer (`RunStore` + `EvalEmitter`), bundles them into the injected
-// `EvalObserver`, and threads them into the existing routing/quality probes (reused via their public exports —
-// never rewritten, AC5). Four subcommands replace the old throwaway `diag-*.ts` / `quality-gate.ts` scripts:
+// `EvalObserver`, and threads them into the three PUBLIC probes (Moat · Right-sizing · Honesty) — reused via their
+// public exports, never rewritten.
 //
-//   selfeval run routing  --fixture <dir> [--runs k] [--k k] [--plugin-dir p] [--runs-root d] [--run-id id]
-//   selfeval run quality  [--from-run <id>] [--fixtures <dir>] [--k k] [--runs-root d]
-//   selfeval trace        <taskId> --fixture <dir> [--plugin-dir p] [--runs-root d] [--run-id id]
-//   selfeval replay       <id> [--runs-root d]
+// The public subcommand set is exactly { moat, rightsizing } over a live conduct, plus the zero-API `replay <id>` /
+// `report <id>` over a stored run. The HONESTY probe is NOT a standalone conduct: it rides the SAME conduct as
+// right-sizing (one unified conduct = one run dir, ADR-001). So `run rightsizing` drives the conduct ONCE, scores
+// the right-sizing artifact into `summary.json`, AND runs the (pure, no-reconduct) honesty probe over the SAME
+// records, writing its artifact as a sibling `honesty.json` in that run dir — exactly where T-08's report reader
+// (`report/honesty.ts`) looks for it. The decision-quality (`quality/`) probe is PARKED off the public set (ADR-002):
+// its code + tests stay, but it has no public subcommand and no report section.
 //
 // stdout carries ONLY the run dir / artifact path (script-friendly); progress goes to stderr + the per-run
 // `events.jsonl` via the emitter. Argument errors exit non-zero loudly (exit 2 for parse/usage, 1 for runtime).
-//
-// THE AC3 TOKEN-BLEED FIX lives in `run quality --from-run <id>`: it reconstructs the `QualityInput[]` from the
-// STORED routing artifacts (`readRunInputs`) and judges those — NO live conductor re-run, so only the judge
-// spends. Without `--from-run` it judges the planted fixtures as before.
 
-import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { newRunId } from "./store/runId.ts";
 import { createRunStore, type RunStore } from "./store/write.ts";
 import { createEmitter } from "./store/events.ts";
-import { readRunConfig, readRunInputs, rescoreRun } from "./store/read.ts";
+import { readRunConfig, rescoreRun } from "./store/read.ts";
 import { SCHEMA_VERSION, type EvalObserver, type RunConfig, type RunSummary } from "./store/schema.ts";
 
 import { liveRunner } from "./io/live.ts";
-import { runRoutingProbe } from "./routing/probe.ts";
-import { loadRoutingFixture } from "./routing/fixture.ts";
+import { realJudgeFn, DEFAULT_JUDGE_MODEL, type JudgeFn } from "./judge/index.ts";
+import { agentryCell, type Cell } from "./conduct/cell.ts";
 
-import { runQualityProbe, type QualityInput } from "./quality/probe.ts";
-import { realJudgeFn, type JudgeFn } from "./quality/judge.ts";
-import { loadPlantedFixtures, resolveInputs } from "./quality/command.ts";
+import { runRightsizingProbe } from "./rightsizing/probe.ts";
+import { runHonestyProbe } from "./honesty/probe.ts";
+import { runMoatProbe } from "./moat/probe.ts";
 
 import { emitReport } from "./report/emit.ts";
-import { runMoatProbe } from "./moat/probe.ts";
-import { runFlowComplianceProbe } from "./flow-compliance/probe.ts";
 
 /**
  * The default runs-root, anchored to the SELFEVAL PACKAGE ROOT (`<selfeval>/runs`) — NOT to CWD. Computed from this
@@ -50,6 +46,9 @@ const DEFAULT_RUNS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "r
 const DEFAULT_RESULTS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "results");
 const DEFAULT_CORRECTIONS = join(dirname(fileURLToPath(import.meta.url)), "..", "corrections.json");
 
+/** The sibling filename the honesty artifact is written under, INSIDE the unified rightsizing run dir (T-08 read contract). */
+const HONESTY_FILE = "honesty.json";
+
 /** A usage error — surfaced loudly and mapped to exit code 2 (a setup/argument bug, distinct from a runtime fault). */
 class UsageError extends Error {}
 
@@ -57,37 +56,50 @@ class UsageError extends Error {}
 export interface CliFlags {
   fixture?: string;
   fixtures?: string;
-  /** flow-compliance only — the run dir (`.agentry/work/<id>/`) to assert over. */
-  run?: string;
   runs?: string;
   k?: string;
   pluginDir?: string;
   runsRoot?: string;
   runId?: string;
-  fromRun?: string;
   resultsRoot?: string;
   correctionsPath?: string;
+  /** rightsizing only — the fixtures dir (one `<id>/` subdir per rightsizing fixture). */
+  fixturesDir?: string;
+  /** rightsizing only — restrict the matrix to one cell (`agentry`; the bare baseline is retired — ADR-003). */
+  cell?: string;
+  /** rightsizing only — model id pinned per CONDUCT run. */
+  model?: string;
+  /** rightsizing only — per-run hard ceiling (ms). */
+  timeout?: string;
+  /** rightsizing only — bounded matrix concurrency (default 1 = serial). */
+  concurrency?: string;
+  /** rightsizing only — model id pinned for every JUDGE call (defaults to {@link DEFAULT_JUDGE_MODEL}). */
+  judgeModel?: string;
 }
 
 /** Map of `--flag` → CliFlags key. A flag absent here is an unknown flag → loud UsageError. */
 const FLAGS: Record<string, keyof CliFlags> = {
   "--fixture": "fixture",
   "--fixtures": "fixtures",
-  "--run": "run",
   "--runs": "runs",
   "--k": "k",
   "--plugin-dir": "pluginDir",
   "--runs-root": "runsRoot",
   "--run-id": "runId",
-  "--from-run": "fromRun",
   "--results-root": "resultsRoot",
   "--corrections": "correctionsPath",
+  "--fixtures-dir": "fixturesDir",
+  "--cell": "cell",
+  "--model": "model",
+  "--timeout": "timeout",
+  "--concurrency": "concurrency",
+  "--judge-model": "judgeModel",
 };
 
 /**
- * Split a subcommand's argv into its leading POSITIONAL tokens (e.g. a `<taskId>` / `<id>`) and its `--flag value`
- * pairs. Positionals must precede flags. An unknown flag or a value-less flag throws a {@link UsageError} (a typo
- * is a setup bug surfaced loudly, mirroring the per-probe `command.ts` parsers).
+ * Split a subcommand's argv into its leading POSITIONAL tokens (e.g. an `<id>`) and its `--flag value` pairs.
+ * Positionals must precede flags. An unknown flag or a value-less flag throws a {@link UsageError} (a typo is a
+ * setup bug surfaced loudly, mirroring the per-probe parsers).
  */
 function parseFlags(argv: readonly string[]): { positionals: string[]; flags: CliFlags } {
   const positionals: string[] = [];
@@ -119,8 +131,7 @@ export function resolveRunsRoot(flags: CliFlags): string {
 
 /**
  * Construct the persistence layer for one run and bundle it into the injected {@link EvalObserver}. The store dir
- * is created (`beginRun` mkdirs it) so the emitter's `events.jsonl` has a parent to append to. Returns the store
- * (to call `finishRun` after the probe) and the run dir (echoed to stdout).
+ * is created (`beginRun` mkdirs it) so the emitter's `events.jsonl` has a parent to append to.
  */
 function openRun(runsRoot: string, runId: string, config: RunConfig): { store: RunStore; runDir: string; observer: EvalObserver } {
   const runDir = join(runsRoot, runId);
@@ -145,87 +156,80 @@ function summaryFor(config: RunConfig, taskCount: number, artifact: unknown): Ru
 }
 
 /**
- * `run routing` — drive the routing probe with full persistence into `runs/<id>/`. Constructs the run id (honoring
- * `--run-id`), the store + emitter (the observer), runs `runRoutingProbe` store-backed, and writes `summary.json`
- * from the probe's returned artifact. Echoes the run dir to stdout.
+ * `run rightsizing` — drive the UNIFIED conduct-and-judge probe (ADR-001) ONCE with full persistence into
+ * `runs/<id>/`, then run the (pure, no-reconduct) HONESTY probe over the SAME records and write its artifact as a
+ * sibling `honesty.json` in that SAME run dir (the T-08 read contract: one unified conduct = one run dir, with the
+ * rightsizing artifact in `summary.json` and the honesty artifact beside it). Echoes the run dir.
+ *
+ * The rightsizing probe runs the controls-first gate (judge-tokens only), and on a control abort emits an ABORTED
+ * artifact with NO records — the honesty probe is then driven with that same `abortVerdict` so its sibling artifact
+ * is correspondingly aborted (NO numbers), keeping the two halves of the one conduct consistent.
+ *
+ * `--cell`/`--fixture`/`--runs` are the matrix-cost slice filters (the de-risk run pins one fixture × k=1).
+ * `--concurrency` bounds matrix parallelism (default 1 = serial). The JUDGE is injectable (a canned fn in tests =
+ * zero API; the real `claude -p` judge in production), pinned to one judge model (`--judge-model`).
  */
-async function runRouting(flags: CliFlags, runner = liveRunner): Promise<number> {
-  if (flags.fixture === undefined) throw new UsageError("run routing: --fixture <dir> is required");
-  const fixtureDir = resolve(flags.fixture);
+async function runRightsizing(flags: CliFlags, runner = liveRunner, judge: JudgeFn = realJudgeFn): Promise<number> {
+  const fixturesDirRaw = flags.fixturesDir ?? flags.fixtures;
+  if (fixturesDirRaw === undefined) throw new UsageError("run rightsizing: --fixtures-dir <dir> is required");
+  const fixturesDir = resolve(fixturesDirRaw);
+  const cells = cellsFromFlag(flags.cell, flags.model);
   const runsRoot = resolveRunsRoot(flags);
   const runId = newRunId(flags.runId);
-  const runs = flags.runs !== undefined ? Number(flags.runs) : 1;
+  const k = flags.runs !== undefined ? Number(flags.runs) : 1;
+  const judgeModel = flags.judgeModel ?? DEFAULT_JUDGE_MODEL;
 
   const config: RunConfig = {
     runId,
-    kind: "routing",
-    fixtureDir,
-    ...(flags.k !== undefined ? { k: Number(flags.k) } : {}),
-    runs,
+    kind: "rightsizing",
+    fixtureDir: fixturesDir,
+    k,
+    ...(flags.model !== undefined ? { model: flags.model } : {}),
     ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
     startedAt: new Date().toISOString(),
   };
   const { store, runDir, observer } = openRun(runsRoot, runId, config);
 
-  const result = await runRoutingProbe({
-    fixtureDir,
+  const result = await runRightsizingProbe({
+    fixturesDir,
     runner,
+    judge,
+    judgeModel,
     outPath: join(runDir, "summary-artifact.json"), // the probe also writes its raw artifact here; summary.json wraps it.
     observer,
     runId,
-    runs,
-    ...(flags.k !== undefined ? { k: Number(flags.k) } : {}),
+    k,
+    ...(cells !== undefined ? { cell: cells[0] } : {}),
+    ...(flags.fixture !== undefined ? { fixtureFilter: flags.fixture } : {}),
+    ...(flags.concurrency !== undefined ? { concurrency: Number(flags.concurrency) } : {}),
+    ...(flags.model !== undefined ? { model: flags.model } : {}),
+    ...(flags.timeout !== undefined ? { timeoutMs: Number(flags.timeout) } : {}),
     ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
   });
 
-  store.finishRun(summaryFor(config, result.outcomes.length, result.artifact));
-  process.stdout.write(`${runDir}\n`);
-  return 0;
-}
+  store.finishRun(summaryFor(config, result.records.length, result.artifact));
 
-/**
- * `run quality` — judge artifacts and write a `decision-quality.json`. THE AC3 FIX: with `--from-run <id>`, the
- * inputs are reconstructed from the STORED routing run (`readRunInputs`) — no live conductor re-run, only the
- * judge spends. Without `--from-run`, the planted fixtures are judged (the self-contained smoke run). The judge
- * is injectable so a test drives zero-API; production uses the real `claude -p` judge.
- */
-async function runQuality(flags: CliFlags, judge: JudgeFn = realJudgeFn): Promise<number> {
-  if (flags.fixtures === undefined) throw new UsageError("run quality: --fixtures <dir> is required (the planted control ground truth)");
-  const fixturesDir = resolve(flags.fixtures);
-  const planted = loadPlantedFixtures(fixturesDir);
-
-  let inputs: QualityInput[];
-  let outPath: string;
-  if (flags.fromRun !== undefined) {
-    // AC3: reconstruct the judgeable inputs from the stored routing artifacts — zero conductor re-run. The reader
-    // validates the raw run-id (path-confinement) before joining, so pass runsRoot + the raw id and build outPath
-    // only after the read succeeds (a bad id is rejected by the reader first).
-    const runsRoot = resolveRunsRoot(flags);
-    inputs = readRunInputs(runsRoot, flags.fromRun);
-    outPath = join(runsRoot, flags.fromRun, "decision-quality.json");
-  } else {
-    // No source run ⇒ judge the planted fixtures as the inputs (a self-contained smoke run), reusing the
-    // quality command's own input resolver so the behavior matches the back-compat entrypoint.
-    inputs = resolveInputs({}, planted);
-    outPath = resolve("decision-quality.json");
-  }
-
-  const result = await runQualityProbe({
-    artifacts: inputs,
-    planted,
-    judge,
-    outPath,
-    ...(flags.k !== undefined ? { k: Number(flags.k) } : {}),
+  // HONESTY rides the SAME conduct (ADR-001): score the pure overclaim-gap over the SAME records (no re-conduct),
+  // writing the artifact beside the rightsizing summary as `honesty.json`. When the conduct's controls aborted the
+  // batch, thread the abort verdict through so the honesty artifact is correspondingly aborted (NO numbers). The
+  // unified conduct persists no escalated run dirs, so flow-compliance has no targets here — overclaim is the half
+  // a unified conduct emits; the flow-compliance census is fed separately by escalated conducts.
+  runHonestyProbe({
+    records: result.records,
+    ...(result.artifact.condition === "aborted" ? { abortVerdict: result.artifact.abortVerdict } : {}),
+    observer,
+    runId,
+    outPath: join(runDir, HONESTY_FILE),
   });
 
-  process.stdout.write(`${result.outPath}\n`);
+  process.stdout.write(`${runDir}\n`);
   return 0;
 }
 
 /**
  * `run moat` — drive the memory-hygiene (moat) probe with full persistence. Per fixture task it runs a warm
  * conductor with a fork-resolving fact seeded vs. an irrelevant decoy, and scores whether recalled memory makes
- * the task route lighter (compounding) — gated by seed-landing + decoy discrimination. Echoes the run dir.
+ * the task route lighter (compounding) — gated by seed-landing + decoy discrimination.
  */
 async function runMoat(flags: CliFlags, runner = liveRunner): Promise<number> {
   if (flags.fixture === undefined) throw new UsageError("run moat: --fixture <dir> is required");
@@ -257,91 +261,22 @@ async function runMoat(flags: CliFlags, runner = liveRunner): Promise<number> {
 }
 
 /**
- * `run flow-compliance --run <dir>` — assert the ordered Flow-compliance contract over an ALREADY-PRODUCED run
- * dir (`.agentry/work/<id>/`), ZERO API. Unlike the other `run` subcommands it drives no live runner: the probe
- * is read-only over the trace (`events.jsonl` + work-folder artifacts, ADR-004), so this handler creates the
- * eval run dir, wires the emitter seam for per-check `events.jsonl` lines, runs the probe, and writes the verdict
- * artifact (`flow-compliance.json`). Echoes the verdict artifact path. Exit 0 even on a FAIL verdict — a probe
- * that finds a violation succeeded at its job; the caller reads `pass` from the artifact.
+ * Resolve the `--cell` filter to the matrix cells. The public bench is Agentry-value-only (ADR-003): the bare
+ * baseline is retired, so the only valid value is `agentry` (the single Agentry arm). The cell label derives from
+ * the `--model` flag (`Agentry-<model>`) so a run at any model labels correctly. Absent `--cell` ⇒ the default
+ * matrix at the resolved model; `agentry` ⇒ the same single arm. Any other value is a loud usage error (a typo
+ * shouldn't silently run the wrong matrix).
  */
-async function runFlowCompliance(flags: CliFlags): Promise<number> {
-  if (flags.run === undefined) throw new UsageError("run flow-compliance: --run <dir> is required");
-  const targetRunDir = resolve(flags.run);
-  const runsRoot = resolveRunsRoot(flags);
-  const runId = newRunId(flags.runId);
-
-  // Read-only over the trace ⇒ no `RunStore`/`RunConfig` (those carry a routing/quality/moat `RunKind`); just the
-  // emitter seam over a fresh run dir for the per-check `events.jsonl` lines + stdout progress.
-  const runDir = join(runsRoot, runId);
-  mkdirSync(runDir, { recursive: true });
-  const emitter = createEmitter(join(runDir, "events.jsonl"), (line) => process.stderr.write(line));
-  const observer: EvalObserver = { emit: emitter.emit };
-
-  const { artifact } = runFlowComplianceProbe({
-    runDir: targetRunDir,
-    outPath: join(runDir, "flow-compliance.json"),
-    observer,
-    runId,
-  });
-
-  process.stderr.write(`flow-compliance ${artifact.pass ? "PASS" : "FAIL"} over ${targetRunDir}\n`);
-  process.stdout.write(`${join(runDir, "flow-compliance.json")}\n`);
-  return 0;
+function cellsFromFlag(cell: string | undefined, model: string | undefined): readonly Cell[] | undefined {
+  const arm = model !== undefined ? agentryCell(model) : agentryCell();
+  if (cell === undefined) return [arm];
+  if (cell === "agentry") return [arm];
+  throw new UsageError(`run rightsizing: --cell "${cell}" is not "agentry"`);
 }
 
 /**
- * `trace <taskId>` — run the routing probe over the fixture with full capture into a run dir, then echo the path
- * to the requested task's captured `tasks/<taskId>/` directory (its `stream.jsonl` + `work/` + shape/timing). The
- * durable replacement for the throwaway `diag-<task>.ts` scripts: a stored, inspectable single-task capture.
- *
- * NOTE: it runs the probe over the whole `--fixture` set (the routing package exposes no single-task entrypoint —
- * `runAndExtract` is internal), then surfaces the one task's stored artifacts. The `taskId` must exist in the
- * fixture; an unknown id is a loud usage error rather than a silent empty trace.
- */
-async function trace(positionals: string[], flags: CliFlags, runner = liveRunner): Promise<number> {
-  const taskId = positionals[0];
-  if (taskId === undefined) throw new UsageError("trace: a <taskId> positional argument is required");
-  if (flags.fixture === undefined) throw new UsageError("trace: --fixture <dir> is required");
-  const fixtureDir = resolve(flags.fixture);
-
-  // Fail loudly BEFORE running if the requested task isn't in the labeled set — a typo shouldn't burn a run.
-  const labeled = loadRoutingFixture(join(fixtureDir, "tasks.yaml"));
-  if (!labeled.some((t) => t.id === taskId)) {
-    throw new UsageError(`trace: task "${taskId}" not found in ${join(fixtureDir, "tasks.yaml")}`);
-  }
-
-  const runsRoot = resolveRunsRoot(flags);
-  const runId = newRunId(flags.runId);
-  const config: RunConfig = {
-    runId,
-    kind: "routing",
-    fixtureDir,
-    runs: 1,
-    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
-    startedAt: new Date().toISOString(),
-  };
-  const { store, runDir, observer } = openRun(runsRoot, runId, config);
-
-  const result = await runRoutingProbe({
-    fixtureDir,
-    runner,
-    outPath: join(runDir, "summary-artifact.json"),
-    observer,
-    runId,
-    runs: 1,
-    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
-  });
-  store.finishRun(summaryFor(config, result.outcomes.length, result.artifact));
-
-  // stdout = the path to the traced task's captured artifacts (single-run task ⇒ bare `tasks/<taskId>/`).
-  process.stdout.write(`${join(runDir, "tasks", taskId)}\n`);
-  return 0;
-}
-
-/**
- * `replay <id>` — offline re-analysis of a STORED run with ZERO API. Reads the run's config back and re-derives
- * each task's routing shape from the stored `work/` artifacts (`rescoreRun`), printing the re-derived shapes. No
- * runner, no judge, no live call — proof a persisted run is re-analyzable after the fact.
+ * `replay <id>` — offline re-analysis of a STORED run with ZERO API. Re-derives each task's routing shape from
+ * the stored `work/` artifacts (`rescoreRun`) — proof a persisted run is re-analyzable after the fact.
  */
 function replay(positionals: string[], flags: CliFlags): number {
   const runId = positionals[0];
@@ -361,8 +296,8 @@ function replay(positionals: string[], flags: CliFlags): number {
 
 /**
  * `report <id>` — generate the static dashboard for a STORED run with ZERO live API (doc 08 §6). Reads the run's
- * stored artifacts (`summary.json` / `events.jsonl` / `decision-quality.json`) + the curated corrections file + the
- * run-history index, and writes a self-contained `results/<date>/<id>/index.html`. Echoes the written path.
+ * stored artifacts + the curated corrections file + the run-history index, and writes a self-contained
+ * `results/<date>/<id>/index.html`. Echoes the written path.
  */
 function report(positionals: string[], flags: CliFlags): number {
   const runId = positionals[0];
@@ -388,24 +323,13 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
     const [command, sub, ...rest] = argv;
 
     if (command === "run") {
-      if (sub === "routing") {
-        return await runRouting(parseFlags(rest).flags, deps.runner);
-      }
-      if (sub === "quality") {
-        return await runQuality(parseFlags(rest).flags, deps.judge);
+      if (sub === "rightsizing") {
+        return await runRightsizing(parseFlags(rest).flags, deps.runner, deps.judge);
       }
       if (sub === "moat") {
         return await runMoat(parseFlags(rest).flags, deps.runner);
       }
-      if (sub === "flow-compliance") {
-        return await runFlowCompliance(parseFlags(rest).flags);
-      }
-      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "routing" | "quality" | "moat" | "flow-compliance")`);
-    }
-
-    if (command === "trace") {
-      const { positionals, flags } = parseFlags([sub, ...rest].filter((t): t is string => t !== undefined));
-      return await trace(positionals, flags, deps.runner);
+      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "moat" | "rightsizing")`);
     }
 
     if (command === "replay") {
@@ -419,7 +343,7 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
     }
 
     throw new UsageError(
-      `selfeval: unknown command "${command ?? ""}" (expected "run routing" | "run quality" | "trace <taskId>" | "replay <id>" | "report <id>")`,
+      `selfeval: unknown command "${command ?? ""}" (expected "run moat" | "run rightsizing" | "replay <id>" | "report <id>")`,
     );
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n`);

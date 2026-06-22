@@ -15,8 +15,13 @@
  */
 export const SCHEMA_VERSION = "1";
 
-/** The probe kinds a run can be — routing accuracy, decision quality, or memory-hygiene (the moat). */
-export type RunKind = "routing" | "quality" | "moat";
+/**
+ * The probe kinds a run can be. The PUBLIC set (ADR-001/002/003) is `moat` + `rightsizing` (the unified
+ * conduct-and-judge run, which the honesty artifact rides as a sibling `honesty.json`). `routing` / `quality` /
+ * `outcome` are retained kinds for back-compat with already-stored runs the offline `replay`/`report` readers may
+ * still open — the live CLI no longer writes them.
+ */
+export type RunKind = "routing" | "quality" | "moat" | "outcome" | "rightsizing";
 
 /**
  * The resolved parameters of one run — the reproducibility header written verbatim to `config.json` (ADR-001).

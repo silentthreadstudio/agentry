@@ -5,7 +5,7 @@
 # set the probe tests own: its size and floor layout never drift, so the tests can derive N + expected accuracy
 # from it rather than hard-code real-set numbers.
 #
-# Design constraints (must satisfy `loadRoutingFixture`'s strict validation — see src/routing/fixture.ts):
+# Design constraints (must satisfy `loadRoutingFixture`'s strict validation — see src/conduct/fixture-routing.ts):
 #   - 6 tasks (within the 6–60 bound);
 #   - task[0] floor is ONE-SHOT — the probe designates the first task as both the A/A unanimity case and the
 #     planted positive control, so its floor is the known-correct shape those gates check against;

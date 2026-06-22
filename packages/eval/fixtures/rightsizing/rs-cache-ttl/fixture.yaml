@@ -1,0 +1,29 @@
+# A unified rightsizing fixture (ADR-004) — MUST-ESCALATE trap (a second escalation, distinct from rs-dedupe-key).
+#
+# Task: "make `getRate` faster by caching it." Vague ('faster') + an undecided fork: caching introduces a
+# STALENESS window — how long is a cached value valid (TTL), and does a stale entry recompute or serve old data?
+# A one-shot cache silently picks "cache forever", which serves stale rates indefinitely (a correctness bug dressed
+# as a perf win). The floor is spec-first: the TTL/staleness policy must be decided, not guessed inside the edit.
+#
+# The oracle encodes the SPEC'd resolution: cache within a TTL window AND recompute once the entry is older than the
+# TTL (so the cache must be time-aware). The fixture passes `ttlMs` + a `now()` clock so the suite is deterministic
+# and the agent does not have to guess a magic number — the DECISION it must surface is "a TTL exists and stale
+# entries expire", which is exactly what golden does and broken (caches forever) does not.
+id: rs-cache-ttl
+prompt: >-
+  `getRate(code, opts)` in `src/rates.js` calls a slow `opts.fetch(code)` every time, which is expensive. Make it
+  faster by caching results. Caching introduces staleness: a cached rate must not be served forever. `opts` provides
+  `ttlMs` (how long a cached value stays valid) and `now()` (a millisecond clock); use them so a value is served
+  from cache while it is younger than `ttlMs` and recomputed via `opts.fetch` once it is older. Cache per `code`.
+  Keep the signature and the CommonJS export; do not add dependencies.
+correct_floor: spec-first
+trap: must-escalate
+rationale:
+  governing_signal: "Specificity: vague ('faster') · Decision-content: undecided fork (VETOES one-shot)"
+  decision_hidden: "the staleness policy — is there a TTL at all, what is it, and does a stale entry recompute or serve old data"
+  consequence: "the obvious one-shot ('cache forever') silently serves stale rates with no error — a correctness regression dressed up as a perf win; choosing the policy is the whole task, not an edit detail"
+  footprint_note: "one function — Scope reads small, but the staleness fork is load-bearing and must be decided in a spec, not inside the cache line"
+labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

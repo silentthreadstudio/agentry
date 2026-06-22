@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { readRunConfig, readRunInputs, rescoreRun } from "../src/store/read.ts";
-import { loadRoutingFixture } from "../src/routing/fixture.ts";
+import { loadRoutingFixture } from "../src/conduct/fixture-routing.ts";
 import type { RunConfig } from "../src/store/schema.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

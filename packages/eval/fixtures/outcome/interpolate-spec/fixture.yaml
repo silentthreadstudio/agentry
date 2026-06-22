@@ -1,0 +1,23 @@
+# Outcome fixture — interpolate(template, values): fill {name} placeholders, leaving unknowns literal, with {{ escape.
+#
+# THE TRAP: a naive global replace that (a) prints `undefined` (or "") for a missing key instead of leaving the
+# literal placeholder, and (b) mangles an escaped `{{` (it should become a literal `{`, never an interpolation).
+# Correct: `{key}` is replaced by `String(values[key])` when the key is present; a MISSING key leaves the literal
+# `{key}` untouched; `{{` is an escape for a literal `{` (and `}}` for a literal `}`).
+# broken/ = `template.replace(/\{(\w+)\}/g, (_, k) => values[k])` — emits "undefined" for missing keys and has no
+# escape handling. golden/ handles escapes first, then interpolates with a presence check. The hidden oracle tests
+# the happy path AND both traps.
+id: interpolate-spec
+prompt: >-
+  Implement `interpolate(template, values)` in `src/interpolate.js` (currently a stub that throws). Replace each
+  `{key}` placeholder in the template with `String(values[key])`. Rules: if `key` is NOT present in `values`,
+  leave the literal placeholder text `{key}` in place (never output `undefined`); support escaping, where `{{`
+  produces a literal `{` and `}}` produces a literal `}` (an escaped brace is never treated as a placeholder
+  delimiter). For example `interpolate("Hi {name}", { name: "Ada" })` returns `"Hi Ada"`,
+  `interpolate("Hi {name}", {})` returns `"Hi {name}"`, and `interpolate("{{not a var}}", {})` returns
+  `"{not a var}"`. Keep the CommonJS export. Do not add dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

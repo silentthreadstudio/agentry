@@ -1,0 +1,29 @@
+# Decompose outcome fixture — a validation pipeline across THREE coordinating files.
+#
+# THE TRAP: the integration seam between the rule factories (`rules.js`), the runner that executes rules in order
+# (`runner.js`), and the barrel (`index.js`). A naive runner runs EVERY rule and aggregates all failures, or
+# returns the wrong result shape. The contract: `validate(input, rules)` runs the rules IN ORDER and SHORT-CIRCUITS
+# on the FIRST failure — it returns `{ ok: false, errors: [firstMessage] }` with ONLY the first failing rule's
+# message (later rules never run), or `{ ok: true, errors: [] }` when all pass.
+# broken/ = a runner that runs ALL rules and aggregates every failure (no short-circuit, wrong error count) — the
+# all-pass happy path works, but the order / short-circuit / first-error-only TRAP cases fail.
+# golden/  = an ordered runner that stops at and returns the first failure only.
+# The hidden oracle (oracle/, never seeded) tests the all-pass case (happy) AND the first-error-only,
+# short-circuit-order, and result-shape TRAP cases.
+id: validation-pipeline-decompose
+prompt: >-
+  Implement a validation pipeline across the THREE files in `src/` (each currently a stub that throws), keeping
+  them as separate coordinating modules. `src/rules.js` exports rule FACTORIES — at least `required(field)`,
+  `minLength(field, n)`, and `isEmail(field)` — each returning a rule: a function `(input) -> null | string` that
+  returns `null` when the input passes, or a clear human-readable error MESSAGE string when it fails. Each
+  message should name the field it concerns and describe what went wrong (the required/minLength/isEmail
+  condition); choose sensible wording — there is no fixed phrasing. `src/runner.js` exports
+  `runRules(input, rules)`, which runs the rules IN ORDER and SHORT-CIRCUITS on the FIRST failing rule. `src/index.js`
+  is the barrel exposing `validate(input, rules)` (wrapping the runner) plus the rule factories. `validate` returns
+  `{ ok: true, errors: [] }` when every rule passes, or `{ ok: false, errors: [message] }` with ONLY the first
+  failing rule's message — later rules must NOT run. Keep the CommonJS exports. Do not add dependencies.
+shape: decompose
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

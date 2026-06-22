@@ -1,0 +1,22 @@
+# A unified rightsizing fixture (ADR-004) — OVER-ROUTE BAIT (spread role: looks big, is actually light).
+#
+# Task: rename one exported function across the three files that reference it. It SPANS multiple files (the bait —
+# a scope-counter sees "3 files, multi-layer" and over-routes to spec-first/decompose) but it is a single
+# MECHANICAL rename with one obvious correct answer and no decision/fork — the floor is one-shot, and routing it
+# heavy is the failure to catch. The seed ships the real 3-file tree so the breadth is genuine, not a phantom.
+id: rs-rename-symbol
+prompt: >-
+  The helper `src/format.js` exports a function called `fmt(n)` that formats a number as a currency string. The
+  name `fmt` is too terse — rename it to `formatCurrency` everywhere: the export in `src/format.js`, and both call
+  sites (`src/invoice.js` and `src/receipt.js`, which import and call it). Keep the behavior identical and keep the
+  CommonJS imports/exports working. Do not add dependencies.
+correct_floor: one-shot
+trap: must-not-over-orchestrate
+rationale:
+  governing_signal: "Scope: 3 files BUT Decision-content: none (mechanical rename) · Specificity: done=X exact"
+  bounded_reversible: "a pure symbol rename with one obvious target name; behavior-preserving, trivially undoable, no contract semantics change, no fork — breadth without decision is still one-shot"
+  footprint_note: "spans 3 files (the over-route bait), but file-count is not a decision; there is nothing to spec or decompose"
+labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

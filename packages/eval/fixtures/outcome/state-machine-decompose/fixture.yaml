@@ -1,0 +1,28 @@
+# Decompose outcome fixture — a tiny finite state machine across THREE coordinating files.
+#
+# THE TRAP: the integration seam between the state catalogue (`states.js`), the transition table + guard
+# (`transitions.js`), and the machine that wires them (`machine.js`). A naive machine APPLIES ANY EVENT BLINDLY —
+# it just sets the next state from whatever the event names, so an invalid transition (or an event unknown in the
+# current state) silently moves the machine into a bogus/illegal state. The contract: an invalid transition is
+# REJECTED — the machine STAYS in its current state — and a final state accepts no further events.
+# broken/ = a blind machine (no transition lookup / no guard) — the happy linear path works, but invalid events
+# and final-state events corrupt the state.
+# golden/  = looks the event up in the transition table for the current state; a missing entry is rejected (stay
+# put); final states reject everything.
+# The hidden oracle (oracle/, never seeded) tests the valid happy path AND the invalid-transition-rejected,
+# unknown-event, and final-state TRAP cases.
+id: state-machine-decompose
+prompt: >-
+  Implement a tiny finite state machine across the THREE files in `src/` (each currently a stub that throws),
+  keeping them as separate coordinating modules. `src/states.js` is the catalogue of states and which ones are
+  FINAL. `src/transitions.js` is the transition table — for each state, which event leads to which next state —
+  plus a guard that decides whether an event is allowed from a given state. `src/machine.js` is the barrel/entry:
+  `create(initial)` returns a machine; `machine.send(event)` applies the event ONLY if the transition table allows
+  it from the current state, otherwise it is REJECTED and the machine STAYS in its current state; `machine.state`
+  reads the current state. A FINAL state accepts no further events (every event is rejected). Keep the CommonJS
+  exports. Do not add dependencies.
+shape: decompose
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

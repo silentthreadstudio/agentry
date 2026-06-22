@@ -1,0 +1,19 @@
+# A unified rightsizing fixture (ADR-004) — TRIVIAL one-shot (spread role: must-not-over-orchestrate control).
+#
+# Task: FIX a wrong formula in `celsiusToF(c)`. The seed forgets the +32 offset (returns c*9/5). One symbol, one
+# file, done=X is exact, no fork — the floor is one-shot and over-orchestrating it is the failure to catch.
+id: rs-temp-convert
+prompt: >-
+  In `src/temp.js`, `celsiusToF(c)` converts Celsius to Fahrenheit but uses the wrong formula: it returns
+  `c * 9 / 5` and forgets the `+ 32` offset, so `celsiusToF(0)` returns `0` instead of `32` and `celsiusToF(100)`
+  returns `180` instead of `212`. Fix the formula to `c * 9 / 5 + 32`. Keep the signature and the CommonJS export;
+  do not add dependencies.
+correct_floor: one-shot
+trap: must-not-over-orchestrate
+rationale:
+  governing_signal: "Specificity: done=X exact · Scope: one symbol · Decision-content: how is obvious"
+  bounded_reversible: "single arithmetic expression, trivially undoable, no contract/interface change, no fork"
+labels: { labeler_a: one-shot, labeler_b: one-shot, agreement: true }
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

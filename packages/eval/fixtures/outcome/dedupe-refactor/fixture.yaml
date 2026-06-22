@@ -1,0 +1,25 @@
+# Decompose outcome fixture (refactor) — three modules each carrying a COPY-PASTED, drifted money formatter.
+#
+# THE TRAP: the seed ships the SAME helper (`formatMoney(cents)`) copy-pasted into three modules — and the copies
+# have DRIFTED, so the three modules format money inconsistently (one drops the thousands separator, one rounds
+# wrong / loses the cents padding). The task is the canonical refactor: extract ONE shared helper into its own
+# module and rewire ALL THREE callers to it, with the CANONICAL behavior preserved everywhere. The held-out oracle
+# asserts every module formats identically and correctly — so the drifted seed FAILS, and a refactor that leaves
+# even ONE caller on its old drifted copy also FAILS (the inconsistency is caught). broken/ = helper extracted but
+# one caller still uses its stale local copy. golden/ = one shared helper, all three callers rewired, behavior
+# canonical across the board.
+id: dedupe-refactor
+prompt: >-
+  `src/invoice.js`, `src/receipt.js`, and `src/report.js` each contain their OWN copy-pasted `formatMoney(cents)`
+  helper, and the copies have drifted so the three modules format the same amount differently. Refactor: extract a
+  SINGLE shared money formatter into `src/format-money.js` and rewire all three modules to use it, so they all
+  format money identically and correctly. The canonical format for an integer `cents` is a US dollar string with a
+  leading `$`, comma thousands separators, and exactly two decimal places — e.g. `123456` -> `"$1,234.56"`,
+  `5` -> `"$0.05"`, `0` -> `"$0.00"`, `100000000` -> `"$1,000,000.00"`. Each module keeps its public function
+  (`renderInvoice`, `renderReceipt`, `renderReport`) and its CommonJS export; preserve the canonical behavior in
+  every module. Do not add dependencies.
+shape: decompose
+kind: refactor
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

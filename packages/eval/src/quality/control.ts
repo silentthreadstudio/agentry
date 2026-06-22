@@ -11,6 +11,8 @@
 //                       hand-authored POOR artifact must score LOW, with GOLD clearly > POOR. A judge that
 //                       cannot separate a planted quality gap never catches a real one.
 
+import { stdev } from "../stats.ts";
+
 /**
  * The verdict string each control emits on failure. PINNED — the artifact and probe consume them verbatim, so
  * the literals are the contract and must never drift (design §3).
@@ -33,14 +35,6 @@ export interface AaJudgeResult {
 export interface DiscriminationResult {
   ok: boolean;
   verdict?: DiscriminationVerdict;
-}
-
-/** Population standard deviation of `xs` (0 for an empty/singleton set, and 0 when every value is identical). */
-function stdev(xs: readonly number[]): number {
-  if (xs.length === 0) return 0;
-  const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
-  const variance = xs.reduce((acc, x) => acc + (x - mean) ** 2, 0) / xs.length;
-  return Math.sqrt(variance);
 }
 
 /**

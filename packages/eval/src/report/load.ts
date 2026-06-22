@@ -1,16 +1,19 @@
 // The reporter's READ side (doc 08 §6) — reconstructs a {@link PageData} view-model from a STORED run with ZERO
-// live API. It reads the three artifacts a run persists — `summary.json` (routing aggregates), `events.jsonl`
-// (per-task shapes + timings), `decision-quality.json` (quality scores) — narrows them into the wire shape the
-// dashboard template consumes, and folds in the curated corrections log + the run-history index.
+// live API. The PUBLIC report ships exactly the three probes (moat → rightsizing → honesty) plus the Tasks
+// explorer; routing label-match and decision-quality are PARKED off the public path (ADR-002/ADR-003). It reads
+// the run's `summary.json` (for the per-task labels), `events.jsonl` (per-task shapes + timings), and the optional
+// `decision-quality.json` (ONLY the per-task overalls the Tasks drawer shows) — then folds in the three public
+// loaders, the curated corrections log, and the run-history index.
 //
 // SRP: parse + assemble only. No rendering (that's `render.ts`), no writing (that's `emit.ts`). It reuses the
 // store's `safeRunDir`/`readRunConfig` path-confinement rather than re-implementing it, and the sibling adapters
 // `corrections.ts` / `history.ts` for the two non-run-scoped sections — so this module stays focused on turning
 // ONE run's stored files into the run-scoped projection.
 //
-// Defensive by design: a pure-routing run (no `decision-quality.json`) yields an empty quality view rather than an
-// error; a one-shot task with no judged artifact gets `quality: null`. The store keeps the raw artifact `unknown`
-// (store/schema.ts), so the local raw shapes below narrow it field-by-field.
+// Defensive by design: a run without `decision-quality.json` yields no per-task quality (a one-shot task with no
+// judged artifact gets `quality: null`); a run without a public-probe run in the store yields a page whose
+// public sections degrade to empty states. The store keeps the raw artifact `unknown` (store/schema.ts), so the
+// local raw shapes below narrow it field-by-field.
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -21,25 +24,13 @@ import type {
   Correction,
   HistoryRow,
   PageData,
-  QualityData,
-  RoutingData,
   TaskData,
 } from "./model.ts";
 import { loadCorrections } from "./corrections.ts";
 import { loadHistory } from "./history.ts";
 import { loadMoat } from "./moat.ts";
-
-/** Canonical shape vocabulary in escalation order — the confusion matrix rows/cols. */
-const FLOORS = ["one-shot", "spec-first", "decompose"];
-
-/** Rubric key → display label (the order the radar + bars present). */
-const DIM_LABELS: Record<string, string> = {
-  forkSurfacing: "Fork surfacing",
-  decisionSoundness: "Decision soundness",
-  accountability: "Accountability",
-  scope: "Scope discipline",
-  coherence: "Coherence",
-};
+import { loadRightsizing } from "./rightsizing.ts";
+import { loadHonesty } from "./honesty.ts";
 
 /** Options for {@link buildPageData}: where the curated corrections file lives, and a stamped generation time. */
 export interface BuildOptions {
@@ -64,59 +55,46 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
   const routingRaw = summary.artifact as RawRoutingArtifact;
 
   const perTaskRuns = parseEvents(join(runDir, "events.jsonl")); // taskId → ordered {shape, ms}[]
-  const quality = readQuality(join(runDir, "decision-quality.json"));
+  const perTaskQuality = readPerTaskQuality(join(runDir, "decision-quality.json")); // taskId → per-repeat overall
 
-  const moat = loadMoat(runsRoot); // the latest scored moat run (its own run kind), surfaced beside routing/quality
+  // The three PUBLIC pillars — each its own run kind (or, for honesty, riding the rightsizing run dir), surfaced as
+  // the LATEST in the store. The IA leads moat → rightsizing → honesty (ADR-003); zero live API in every loader.
+  const moat = loadMoat(runsRoot); // the latest scored moat run — the categorical lead
+  const rightsizing = loadRightsizing(runsRoot); // the latest right-sizing run (three results-gated rates)
+  const honesty = loadHonesty(runsRoot); // the honesty artifact riding the latest right-sizing conduct
 
   return {
     meta: {
       runId: summary.runId,
       fixture: config.fixtureDir ? basename(config.fixtureDir) : "—",
       repeats: config.runs ?? 1,
+      // De-Sonnet (ADR-003): the model label flows from the run's `--model` flag, never a hardcoded "Sonnet".
+      model: config.model ?? "—",
       generatedAt: opts.generatedAt,
     },
-    routing: narrowRouting(routingRaw),
-    quality: quality.view,
-    tasks: buildTasks(routingRaw, perTaskRuns, quality.perTask),
+    ...(moat !== undefined ? { moat } : {}),
+    ...(rightsizing !== undefined ? { rightsizing } : {}),
+    ...(honesty !== undefined ? { honesty } : {}),
+    // routing/quality are PARKED off the PUBLIC path (ADR-002/ADR-003): the public report retired routing
+    // label-match and parked decision-quality, so neither view is attached here — only the three public probes
+    // (moat → rightsizing → honesty) + the Tasks explorer ship. The raw routing artifact is still read LOCALLY
+    // to label the per-task rows; it just never becomes a public `routing`/`quality` page section.
+    tasks: buildTasks(routingRaw, perTaskRuns, perTaskQuality),
     corrections: loadCorrections(opts.correctionsPath),
     history: loadHistory(runsRoot, summary.runId),
-    ...(moat !== undefined ? { moat } : {}),
-  };
-}
-
-// --- routing -----------------------------------------------------------------------------------------------------
-
-interface RawConfusionCell { labeledFloor: string; dispatched: string; count: number }
-interface RawStabilityRow { taskId: string; labeledFloor: string; modalShape: string; stability: number }
-interface RawRoutingArtifact {
-  accuracy?: number;
-  confusionMatrix?: RawConfusionCell[];
-  stabilityTable?: RawStabilityRow[];
-  noisyTasks?: string[];
-  overRoutes?: Array<{ taskId?: string }>;
-  underRoutes?: Array<{ taskId?: string }>;
-  accuracyDistribution?: { perRunAccuracy?: number[]; accuracyMean?: number; accuracyStd?: number };
-}
-
-/** Narrow the stored routing artifact into the {@link RoutingData} wire shape (confusion → keyed map). */
-function narrowRouting(a: RawRoutingArtifact): RoutingData {
-  const confusion: Record<string, number> = {};
-  for (const c of a.confusionMatrix ?? []) confusion[`${c.labeledFloor}|${c.dispatched}`] = c.count;
-  const dist = a.accuracyDistribution ?? {};
-  const acc = a.accuracy ?? 0;
-  return {
-    perRun: dist.perRunAccuracy ?? [acc],
-    mean: dist.accuracyMean ?? acc,
-    std: dist.accuracyStd ?? 0,
-    floors: FLOORS,
-    confusion,
-    noisy: a.noisyTasks ?? [],
-    overRoutes: (a.overRoutes ?? []).map((r) => r.taskId ?? "?"),
-    underRoutes: (a.underRoutes ?? []).map((r) => r.taskId ?? "?"),
   };
 }
 
 // --- tasks (events.jsonl + stability + quality) ------------------------------------------------------------------
+// The stored routing artifact is read ONLY to label the per-task rows (its stability table carries each task's
+// labeled floor + the noisy set). The routing label-match VIEW (confusion/accuracy) is retired off the public
+// path (ADR-002/ADR-003), so this raw shape narrows just the two fields `buildTasks` consumes — nothing more.
+
+interface RawStabilityRow { taskId: string; labeledFloor: string; modalShape: string; stability: number }
+interface RawRoutingArtifact {
+  stabilityTable?: RawStabilityRow[];
+  noisyTasks?: string[];
+}
 
 interface TaskRun { shape: string; ms: number }
 
@@ -172,48 +150,25 @@ function buildTasks(
 }
 
 // --- quality -----------------------------------------------------------------------------------------------------
+// Decision-quality is PARKED off the public path (ADR-002): no quality VIEW (overall/dims/controls) ships on the
+// public report. The stored `decision-quality.json` is read ONLY for the per-task overall scores the Tasks explorer
+// drawer still shows — never the aggregate quality section, which is retired.
 
 interface RawQualityFile {
-  scores?: Array<{ taskId: string; score: { dimensions: Record<string, number>; overall: number } }>;
-  overallMean?: number;
-  controls?: { aaStdev?: number; goldOverall?: number; poorOverall?: number };
+  scores?: Array<{ taskId: string; score: { overall: number } }>;
 }
 
-/** Read `decision-quality.json` (optional) into the {@link QualityData} view + a per-task overall map for the tasks. */
-function readQuality(qualityPath: string): { view: QualityData; perTask: Map<string, number[]> } {
-  const empty: QualityData = { overall: 0, dims: {}, controls: { gold: 0, poor: 0, aa: 0 } };
+/** Read `decision-quality.json` (optional) into a `taskId → per-repeat overall[]` map for the Tasks explorer rows. */
+function readPerTaskQuality(qualityPath: string): Map<string, number[]> {
   const perTask = new Map<string, number[]>();
-  if (!existsSync(qualityPath)) return { view: empty, perTask };
+  if (!existsSync(qualityPath)) return perTask;
 
   const raw = JSON.parse(readFileSync(qualityPath, "utf8")) as RawQualityFile;
-  const scores = raw.scores ?? [];
-  if (scores.length === 0) return { view: empty, perTask };
-
-  // per-dimension means (display-labeled) + per-task overall list (in stored order)
-  const dims: Record<string, number> = {};
-  for (const [key, label] of Object.entries(DIM_LABELS)) {
-    dims[label] = mean(scores.map((s) => s.score.dimensions[key] ?? 0));
-  }
-  for (const s of scores) {
+  for (const s of raw.scores ?? []) {
     if (!perTask.has(s.taskId)) perTask.set(s.taskId, []);
     perTask.get(s.taskId)!.push(s.score.overall);
   }
-
-  const view: QualityData = {
-    overall: raw.overallMean ?? mean(scores.map((s) => s.score.overall)),
-    dims,
-    controls: {
-      gold: raw.controls?.goldOverall ?? 0,
-      poor: raw.controls?.poorOverall ?? 0,
-      aa: raw.controls?.aaStdev ?? 0,
-    },
-  };
-  return { view, perTask };
-}
-
-/** Arithmetic mean of a non-empty list. */
-function mean(xs: number[]): number {
-  return xs.reduce((a, b) => a + b, 0) / xs.length;
+  return perTask;
 }
 
 // Re-export the two folded-in section types so consumers can import the whole contract from one place if they wish.

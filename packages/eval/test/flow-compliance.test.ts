@@ -6,8 +6,6 @@
 //   - pure assertions (`assertions.ts`) over synthetic traces — each of the four checks, pass + fail.
 //   - the probe (`probe.ts`) over the replay fixtures: PASS on the compliant run, FAIL on EACH of the four
 //     violations, with the failing check identified.
-//   - the CLI subcommand (`run flow-compliance --run <dir>`) end-to-end: emits a verdict artifact, exits 0,
-//     and writes per-check `events.jsonl` lines.
 //   - the AC7 REAL-TRACE assertion: the probe pointed at a real on-disk run dir
 //     (`.agentry/work/build-agentry-workbench-…/`) — a genuine `/agentry:go` trace, not a canned fixture.
 
@@ -18,8 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { main } from "../src/cli.ts";
-import { runFlowComplianceProbe } from "../src/flow-compliance/probe.ts";
+import { runFlowComplianceProbe } from "../src/honesty/flow-compliance/probe.ts";
 import {
   checkRunStartBeforeDispatch,
   checkSpecBeforeTasks,
@@ -28,8 +25,8 @@ import {
   countFrontmatterBlocks,
   runExists,
   runAllChecks,
-} from "../src/flow-compliance/assertions.ts";
-import type { RunTrace, TraceEvent } from "../src/flow-compliance/trace.ts";
+} from "../src/honesty/flow-compliance/assertions.ts";
+import type { RunTrace, TraceEvent } from "../src/honesty/flow-compliance/trace.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "..", "fixtures", "flow-compliance");
@@ -233,30 +230,9 @@ test("probe: skip-flag ⇒ FAIL on check 4 only", () => {
   assert.deepEqual(failing, ["no-skip-flag"]);
 });
 
-// --- the CLI subcommand end-to-end: a verdict artifact + a clean exit code ---------------------------------------
-
-test("run flow-compliance --run <dir> emits a verdict artifact and exits 0", async () => {
-  const runDir = stagedFixture("compliant");
-  const runsRoot = mkdtempSync(join(tmpdir(), "flowcomp-runs-"));
-
-  const code = await main(["run", "flow-compliance", "--run", runDir, "--runs-root", runsRoot, "--run-id", "fc-cli"]);
-  assert.equal(code, 0);
-
-  const artifactPath = join(runsRoot, "fc-cli", "flow-compliance.json");
-  assert.ok(existsSync(artifactPath), "verdict artifact written");
-  const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
-  assert.equal(artifact.pass, true);
-  assert.equal(artifact.checks.length, 4);
-
-  // events.jsonl carries one per-check lifecycle line.
-  const events = readFileSync(join(runsRoot, "fc-cli", "events.jsonl"), "utf8").trim().split("\n");
-  assert.equal(events.length, 4);
-  assert.ok(events.every((l) => JSON.parse(l).runId === "fc-cli"));
-});
-
-test("run flow-compliance without --run exits 2 (loud usage error)", async () => {
-  assert.equal(await main(["run", "flow-compliance", "--runs-root", mkdtempSync(join(tmpdir(), "flowcomp-runs-"))]), 2);
-});
+// (The former `run flow-compliance --run <dir>` CLI subcommand was removed by T-10: flow-compliance is no longer a
+// standalone public subcommand — it runs inside the honesty probe over escalated run dirs. The probe is covered
+// directly above (over the replay fixtures) and through the honesty surface in outcome-compliance.test.ts.)
 
 // --- AC7: the REAL-TRACE assertion — the probe over a genuine `/agentry:go` run on disk --------------------------
 

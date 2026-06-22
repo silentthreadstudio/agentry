@@ -1,0 +1,20 @@
+# Outcome fixture — debounce(fn, ms): coalesce a burst of calls into ONE trailing call after the quiet period.
+#
+# THE TRAP: a leading-edge or fire-every-call implementation. Correct trailing debounce fires fn exactly ONCE,
+# after `ms` of quiet, with the LATEST arguments — each new call within the window resets the timer.
+# broken/ = fires on the FIRST call immediately (leading edge) and never coalesces. Passes "fn eventually runs"
+# but FAILS the "exactly once, with the last args, only after the delay" trap.
+# The oracle drives time with a FAKE CLOCK (it overrides global setTimeout/clearTimeout before requiring the
+# module) — no real timers, fully deterministic. golden/ = classic clearTimeout + setTimeout trailing debounce.
+id: debounce-spec
+prompt: >-
+  Implement `debounce(fn, ms)` in `src/debounce.js` (currently a stub that throws). It returns a debounced
+  wrapper: calling the wrapper schedules `fn` to run after `ms` milliseconds, but if the wrapper is called again
+  before that delay elapses, the timer RESETS. So a rapid burst of calls results in `fn` being invoked exactly
+  ONCE — after the burst goes quiet for `ms` — and with the arguments from the LAST call. Use the global
+  `setTimeout`/`clearTimeout`. Keep the CommonJS export. Do not add dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

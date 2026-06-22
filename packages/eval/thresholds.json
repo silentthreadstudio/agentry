@@ -1,0 +1,21 @@
+{
+  "$comment": "Pre-registered, falsifiable success-condition targets — written BEFORE any run (ADR-001 §thresholds). The FORM ships now; the calibration NUMBERS are set by the first run, never invented in advance. Top-level keys are disjoint and per-dimension: `moat` is owned by T-06; `rightsizing` (target X) is owned by T-02. Do not cross-write keys — disjoint keys keep the two tasks parallel-safe.",
+  "moat": {
+    "W": {
+      "statement": "warm-vs-cold compounding clears the pre-registered moat Δ target: discrimination ≥ W (the relevant fact lightens the routed shape at least W more often than an irrelevant decoy does)",
+      "metric": "discrimination",
+      "delta": null,
+      "calibrationPending": true,
+      "note": "W is a pre-registered TARGET, not a claimed result. `delta` is set by the owner from the first calibration run (Phase D); until then `calibrationPending` is true. The artifact reports the honest measured discrimination regardless of this target — W never inflates the reported number."
+    }
+  },
+  "rightsizing": {
+    "X": {
+      "statement": "Agentry right-sizes its process: the right-sizing-success rate clears the pre-registered target (right-sizing-success ≥ X) AND no must-escalate trap is under-routed (zero-under-route-failure-on-traps)",
+      "metric": "rightSizingSuccessRate",
+      "value": null,
+      "calibrationPending": true,
+      "note": "X is a pre-registered TARGET, not a claimed result. `value` is set by the owner from the first calibration run (Phase D); until then `calibrationPending` is true and no pass/fail is computed. The artifact reports the honest measured rates regardless of this target — X never inflates the reported numbers."
+    }
+  }
+}

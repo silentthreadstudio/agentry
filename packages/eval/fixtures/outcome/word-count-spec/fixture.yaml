@@ -1,0 +1,19 @@
+# A planted outcome fixture (ADR-003) — spec-first / feature.
+#
+# Task: implement `wordCount(text)` in src/wordcount.js. The goal is deliberately UNDER-SPECIFIED (what is a
+# "word"? how is punctuation handled?) — a design choice the agent must settle — but the held-out oracle pins only
+# the UNAMBIGUOUS core: whitespace-separated tokens, collapsed runs, empty/whitespace-only ⇒ 0. golden PASSES,
+# broken FAILS.
+id: word-count-spec
+prompt: >-
+  Implement `wordCount(text)` in `src/wordcount.js` (currently a stub that throws) so it returns the number of
+  words in a string. A word is a maximal run of non-whitespace characters; words are separated by ANY run of
+  whitespace (spaces, tabs, newlines). Leading and trailing whitespace must not inflate the count, and a string
+  that is empty or only whitespace has `0` words. For example `wordCount("hello   world")` is `2`,
+  `wordCount("  one\ttwo\nthree  ")` is `3`, and `wordCount("   ")` is `0`. Keep the CommonJS export; no
+  dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

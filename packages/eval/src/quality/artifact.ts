@@ -10,6 +10,7 @@
 
 import { writeFileSync } from "node:fs";
 
+import { mean } from "../stats.ts";
 import { QUALITY_DIMENSIONS } from "./rubric.ts";
 import type { QualityScore } from "./judge.ts";
 
@@ -48,11 +49,6 @@ export interface QualityArtifact {
   overallMean?: number;
   /** The control evidence (A/A stability + planted discrimination); absent on an aborted run. */
   controls?: QualityControls;
-}
-
-/** Arithmetic mean (0 for an empty set). */
-function mean(xs: readonly number[]): number {
-  return xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
 /**

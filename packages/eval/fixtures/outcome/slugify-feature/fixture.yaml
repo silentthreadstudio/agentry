@@ -1,0 +1,21 @@
+# One planted outcome fixture (ADR-003) — the T1 exemplar/template.
+#
+# Task: implement `slugify(title)` in src/slugify.js. The seed ships a stub that throws; the agent must make it
+# turn a human title into a URL slug. The HIDDEN oracle (oracle/, never seeded) holds the held-out node:test
+# suite that decides pass/fail objectively. golden/ overlays a correct impl (PASSES the oracle); broken/
+# overlays a wrong impl (FAILS it) — the discrimination control.
+id: slugify-feature
+prompt: >-
+  Implement the `slugify(title)` function in `src/slugify.js` (currently a stub that throws). It must turn a
+  human-readable title into a URL slug: lowercase the text, trim leading/trailing whitespace, replace every run
+  of non-alphanumeric characters with a single hyphen, and strip leading/trailing hyphens. For example
+  `slugify("  Hello, World!  ")` returns `"hello-world"` and `slugify("Node.js  &  TS")` returns `"node-js-ts"`.
+  Keep the existing CommonJS export. Do not add dependencies.
+shape: one-shot
+kind: feature
+oracle:
+  # Run the held-out suite against the agent's built src/slugify.js. The TAP reporter is pinned so the runner
+  # emits the stable `# pass / # fail / # tests` summary the oracle parser reads (the default reporter prints
+  # `ℹ tests N`, which is cosmetic and version-sensitive — TAP is the contract).
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

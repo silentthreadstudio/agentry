@@ -1,0 +1,20 @@
+# A planted outcome fixture (ADR-003) — decompose+verify / bug.
+#
+# Task: FIX a cross-file pagination bug spread across three files. The seed is a working library EXCEPT the
+# total-pages math (src/meta.js) floors instead of ceils, dropping the final partial page — which also makes
+# src/paginate.js's "is this the last page?" flag wrong. The agent must fix the page-count math so the parts agree.
+# The HIDDEN oracle drives the public API; the buggy seed FAILS it, golden PASSES it.
+id: pagination-decompose
+prompt: >-
+  There is a pagination bug spread across `src/`. The library (exposed from `src/index.js`) paginates a list:
+  `pageCount(total, perPage)` in `src/meta.js` returns how many pages a list of `total` items needs at `perPage`
+  per page, and `pageInfo(total, perPage, page)` in `src/paginate.js` returns `{ page, pageCount, isLast }` where
+  `isLast` is true on the final page. The bug: `pageCount` uses `Math.floor`, so a list that doesn't divide evenly
+  drops its last partial page — `pageCount(10, 3)` returns `3` but should be `4`, and that wrong count also breaks
+  `pageInfo`'s `isLast`. Fix `pageCount` to round UP (ceil). Keep the signatures and CommonJS exports across all
+  three files; do not add dependencies.
+shape: decompose
+kind: bug
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

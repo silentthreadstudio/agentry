@@ -10,7 +10,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import type { RunSummary } from "../store/schema.ts";
-import type { MoatCensus, MoatData } from "./model.ts";
+import type { MoatCensus, MoatData, SuccessConditionView } from "./model.ts";
 
 /** The raw moat artifact as the probe persists it into a moat run's `summary.json#artifact` (the fields we read). */
 interface RawMoatArtifact {
@@ -20,6 +20,12 @@ interface RawMoatArtifact {
   discrimination?: number;
   seedLanding?: { landedCount?: number; total?: number };
   census?: MoatCensus[];
+  successCondition?: {
+    target?: { statement?: string; delta?: number | null; calibrationPending?: boolean };
+    observed?: number | null;
+    calibrationPending?: boolean;
+    pass?: boolean;
+  };
 }
 
 /**
@@ -59,7 +65,22 @@ export function loadMoat(runsRoot: string): MoatData | undefined {
     discrimination: a.discrimination ?? 0,
     seedLanding: { landedCount: a.seedLanding?.landedCount ?? 0, total: a.seedLanding?.total ?? 0 },
     census: a.census ?? [],
+    successCondition: narrowSuccessCondition(a),
   };
+}
+
+/** Narrow the moat's pre-registered success condition (the falsifiable W) — ALWAYS present on the public path. */
+function narrowSuccessCondition(a: RawMoatArtifact): SuccessConditionView {
+  const sc = a.successCondition ?? {};
+  const target = sc.target ?? {};
+  const view: SuccessConditionView = {
+    statement: target.statement ?? "discrimination ≥ W",
+    target: target.delta ?? null,
+    calibrationPending: sc.calibrationPending ?? target.calibrationPending ?? true,
+    observed: sc.observed ?? (a.discrimination ?? null),
+  };
+  if (sc.pass !== undefined) view.pass = sc.pass;
+  return view;
 }
 
 /** True iff `path` exists and is a regular file. */

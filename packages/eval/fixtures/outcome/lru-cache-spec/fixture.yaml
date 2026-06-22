@@ -1,0 +1,24 @@
+# Spec-first outcome fixture — an LRU cache with a hard capacity and recency-aware eviction.
+#
+# THE TRAP: eviction order. A naive cache evicts the FIRST-inserted key (FIFO) and never refreshes recency on a
+# `get`. The real contract is LEAST-RECENTLY-USED: every `get` AND every `set` makes a key the most-recently-used,
+# so the key evicted at capacity is the one untouched the longest; updating an existing key must NOT grow the size.
+# broken/ = a FIFO cache (insertion-order eviction, no refresh-on-get) — the happy path (store + read under
+# capacity) works, but it evicts the wrong key the moment a `get` should have rescued a key from eviction.
+# golden/  = a true LRU (refresh-on-get + refresh-on-set, evict the LRU key at capacity, in-place update).
+# The hidden oracle (oracle/, never seeded) tests basic store/get (happy) AND the refresh-on-get, FIFO-vs-LRU,
+# update-does-not-grow, and capacity-eviction TRAP cases.
+id: lru-cache-spec
+prompt: >-
+  Implement the `LRUCache` class in `src/lru-cache.js` (currently a stub that throws). The constructor takes a
+  positive integer `capacity`. It exposes `get(key)` — returns the stored value, or `undefined` if the key is
+  absent — and `set(key, value)` — stores the value. The cache holds at most `capacity` entries: when a `set`
+  would exceed capacity, the LEAST-RECENTLY-USED entry is evicted. Both `get` (on a hit) and `set` count as USES
+  that refresh a key's recency, so a key you just read is safe from the next eviction. Updating the value of an
+  existing key must NOT grow the cache size (and also refreshes its recency). Keep the existing CommonJS export.
+  Do not add dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

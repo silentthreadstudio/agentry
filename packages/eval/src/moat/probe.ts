@@ -8,13 +8,14 @@
 // owns the gated flow + the per-run orchestration; the pure scoring/gates live in artifact.ts / control.ts.
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 import type { Runner, Sandbox } from "../io/port.ts";
 import { liveRunner } from "../io/live.ts";
 import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
-import { extractShape, DegenerateRunError } from "../routing/extract.ts";
-import type { Shape } from "../routing/shape.ts";
+import { extractShape, DegenerateRunError } from "../conduct/extract.ts";
+import type { Shape } from "../conduct/shape.ts";
 import type { EvalObserver } from "../store/schema.ts";
 
 import { loadMoatFixture, type MoatTask } from "./fixture.ts";
@@ -41,6 +42,78 @@ const MOAT_DIRECTIVE =
   "For any genuine remaining escalation above a trivial one-shot, write the routing artifact to " +
   "`.agentry/work/<slug>/` (spec.md at minimum) before building. A settled/trivial one-shot writes no artifact.";
 
+/**
+ * The pre-registered moat Δ target `W` (ADR-001 §thresholds) — the FALSIFIABLE FORM, written before any run in the
+ * tracked `thresholds.json`. `delta` is the calibration number (`null` until the owner sets it from the first run —
+ * NEVER invented in advance); `calibrationPending` flags that pending state explicitly. This is a TARGET, not a
+ * claimed result: the artifact always reports the honest measured discrimination regardless of `W` (memory
+ * `moat-compounds-and-memory-rooting` — do not market the raw number).
+ */
+export interface MoatThreshold {
+  /** The human-readable falsifiable condition (`discrimination ≥ W`). */
+  statement: string;
+  /** Which measured quantity W gates — `discrimination` (compoundRate − decoyLightenRate). */
+  metric: string;
+  /** The Δ target number, or `null` when uncalibrated (set by the first run; never fabricated here). */
+  delta: number | null;
+  /** Explicitly true while `delta` is unset — so a reader never mistakes "not yet calibrated" for "no target". */
+  calibrationPending: boolean;
+}
+
+/**
+ * The pre-registered success condition carried ON THE PUBLIC ARTIFACT PATH (AC-THRESH). Unlike the routing
+ * artifact's `threshold: null` "unset" shape, this is NEVER a bare null: the registered target FORM is always
+ * present (`target` is the non-null {@link MoatThreshold} from `thresholds.json`). `pass` is computed only once a
+ * `delta` is calibrated — until then `calibrationPending` is true and `pass` is absent (no pass/fail against a
+ * number that doesn't exist yet), but the falsifiable condition is still on record.
+ */
+export interface MoatSuccessCondition {
+  /** The pre-registered target — always non-null (the form ships before any run). */
+  target: MoatThreshold;
+  /** The measured discrimination this run produced, or `null` on an aborted run (a gate fired ⇒ no number). */
+  observed: number | null;
+  /** True iff `target.delta` is uncalibrated — mirrors `target.calibrationPending`, surfaced for readers/consumers. */
+  calibrationPending: boolean;
+  /** Whether the measured discrimination cleared `W`; present ONLY when a `delta` is set AND a number was scored. */
+  pass?: boolean;
+}
+
+/** The path to the tracked, pre-registered `thresholds.json` at the package root (resolved relative to `src/moat/`). */
+const THRESHOLDS_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "thresholds.json");
+
+/**
+ * Load the pre-registered moat target `W` from the tracked `thresholds.json` (the single source — disjoint top-level
+ * keys keep it parallel-safe with T-02's `rightsizing`/`X`). Returns the registered {@link MoatThreshold} verbatim;
+ * throws if the file or the `moat.W` key is missing, since the FALSIFIABLE TARGET MUST EXIST before a run (AC-THRESH —
+ * the public path may never silently fall back to "no target").
+ */
+export function loadMoatThreshold(path: string = THRESHOLDS_PATH): MoatThreshold {
+  const raw = JSON.parse(readFileSync(path, "utf8")) as { moat?: { W?: MoatThreshold } };
+  const w = raw.moat?.W;
+  if (w === undefined || w === null) {
+    throw new Error(`thresholds.json is missing the pre-registered moat target (moat.W) at ${path}`);
+  }
+  return w;
+}
+
+/**
+ * Build the public-path success condition from the registered target and the measured discrimination. The target is
+ * ALWAYS present (never a bare null — AC-THRESH). `pass` is computed only when `W` is calibrated (`delta` non-null)
+ * AND a discrimination number was scored; on an aborted run (`observed === null`) or while calibration is pending,
+ * `pass` is absent — the honest "no pass/fail without a number" stance the routing artifact also takes.
+ */
+export function buildMoatSuccessCondition(target: MoatThreshold, observed: number | null): MoatSuccessCondition {
+  const condition: MoatSuccessCondition = {
+    target,
+    observed,
+    calibrationPending: target.calibrationPending,
+  };
+  if (target.delta !== null && observed !== null) {
+    condition.pass = observed >= target.delta;
+  }
+  return condition;
+}
+
 /** Options for one moat probe run. The `Runner` is injected (replay in tests = zero spend; live from the command). */
 export interface MoatProbeOptions {
   /** Directory holding `tasks.yaml` + `seeds/<id>/` (the moat fixture). */
@@ -57,11 +130,25 @@ export interface MoatProbeOptions {
   observer?: EvalObserver;
   /** The run id stamped onto emitted events (matches the store's `runs/<runId>/`). */
   runId?: string;
+  /**
+   * Override for the pre-registered `thresholds.json` location (the tracked package root by default). Tests point
+   * this at a fixture thresholds file; production reads the committed one — the public path NEVER runs without a
+   * registered target.
+   */
+  thresholdPath?: string;
 }
+
+/**
+ * The moat artifact AUGMENTED with the pre-registered success condition (AC-THRESH). The base {@link MoatArtifact}
+ * (owned by `artifact.ts`) is unchanged; the probe attaches `successCondition` — the pre-registered `W` + the run's
+ * measured discrimination + pass/fail — so the public path carries a falsifiable target and never a bare
+ * `threshold: null`.
+ */
+export type MoatPublicArtifact = MoatArtifact & { successCondition: MoatSuccessCondition };
 
 /** The result of a moat probe run: the emitted artifact, where it was written, and the per-task outcomes. */
 export interface MoatResult {
-  artifact: MoatArtifact;
+  artifact: MoatPublicArtifact;
   outPath: string;
   outcomes: readonly MoatOutcome[];
 }
@@ -139,6 +226,8 @@ async function runWarm(
 export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> {
   const model = opts.model ?? DEFAULT_MODEL;
   const tasks = loadMoatFixture(join(opts.fixtureDir, "tasks.yaml"));
+  // The pre-registered moat target W is loaded up front — the falsifiable target MUST EXIST before the run.
+  const target = loadMoatThreshold(opts.thresholdPath);
   const runId = opts.runId ?? "";
   const emit = (detail: string): void =>
     opts.observer?.emit?.({ kind: "task-done", runId, detail, ts: new Date().toISOString() });
@@ -168,8 +257,9 @@ export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> 
   const landing = seedLandingGuard(outcomes.map((o) => o.relevant.landed));
   if (!landing.ok) {
     opts.observer?.emit?.({ kind: "gate-fired", runId, detail: `seed-landing failed (${landing.landedCount}/${landing.total} landed)`, ts: new Date().toISOString() });
-    const artifact = buildAbortedArtifact(landing.verdict!);
-    return { artifact, outPath: writeArtifact(opts.outPath, artifact), outcomes };
+    // A gate fired ⇒ NO discrimination number, so `observed` is null and no pass/fail is computed — but the
+    // pre-registered target still ships on the public path (the falsifiable form is always on record).
+    return emitPublic(opts.outPath, buildAbortedArtifact(landing.verdict!), target, null, outcomes);
   }
 
   // GATE 2 — power: the relevant fact must compound where the decoy does not.
@@ -177,12 +267,30 @@ export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> 
   const disc = discriminationGuard(rows.map((r) => r.compounded), rows.map((r) => !r.decoyHeld));
   if (!disc.power) {
     opts.observer?.emit?.({ kind: "gate-fired", runId, detail: `discrimination failed: ${disc.verdict}`, ts: new Date().toISOString() });
-    const artifact = buildAbortedArtifact(disc.verdict!);
-    return { artifact, outPath: writeArtifact(opts.outPath, artifact), outcomes };
+    return emitPublic(opts.outPath, buildAbortedArtifact(disc.verdict!), target, null, outcomes);
   }
 
   const artifact = buildScoredArtifact(outcomes);
-  return { artifact, outPath: writeArtifact(opts.outPath, artifact), outcomes };
+  // Scored ⇒ the measured discrimination is the run's honest delta; pass/fail is computed against W only when W is
+  // calibrated (the artifact reports the real number regardless of the target — never inflated by it).
+  return emitPublic(opts.outPath, artifact, target, artifact.discrimination ?? null, outcomes);
+}
+
+/**
+ * Single exit point: attach the pre-registered success condition to the base artifact, write the AUGMENTED artifact
+ * (so `successCondition` is serialized to disk), and package the result. `observed` is the run's measured
+ * discrimination, or `null` when a gate fired (no number ⇒ no pass/fail, but the target still ships).
+ */
+function emitPublic(
+  outPath: string,
+  base: MoatArtifact,
+  target: MoatThreshold,
+  observed: number | null,
+  outcomes: readonly MoatOutcome[],
+): MoatResult {
+  const artifact: MoatPublicArtifact = { ...base, successCondition: buildMoatSuccessCondition(target, observed) };
+  writeArtifact(outPath, artifact);
+  return { artifact, outPath, outcomes };
 }
 
 /** Read a captured `stream.jsonl` into its assistant text + tool_result content and the tool-use sequence. */

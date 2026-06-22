@@ -1,0 +1,23 @@
+# Floor-sensitive outcome fixture (decompose) — an Emitter with a replay buffer coordinating buffered + live events.
+#
+# THE TRAP: the integration seam between THREE concerns — a replay buffer, de-dup by id, and live delivery — that
+# must be wired together. A naive Emitter is just a live pub/sub: a subscriber that joins LATE silently misses
+# every event emitted before it subscribed, and nothing de-dups by id. The contract: a late subscriber receives
+# the buffered events first IN ORDER, then live events after; an event whose id was already seen is never
+# delivered twice; and after `unsubscribe()` the subscriber receives nothing.
+# broken/ = a plain live pub/sub (no buffer, no de-dup) — the live happy path works, the late-join replay misses.
+# golden/  = buffers every (de-duped) event, replays the buffer to each new subscriber, then streams live ones.
+# The hidden oracle (oracle/, never seeded) tests live delivery (happy) AND late-join replay order, de-dup, unsub.
+id: event-replay-decompose
+prompt: >-
+  Implement `createEmitter()` in `src/emitter.js` (currently a stub that throws). It returns an object with
+  `emit(event)` and `subscribe(handler) -> unsubscribe`. Each `event` has a unique `id`. Requirements: the
+  emitter keeps a replay buffer of every event it has seen; a handler that subscribes LATE immediately receives
+  all buffered events IN EMISSION ORDER, then every live event emitted afterwards; an event whose `id` was
+  already emitted is ignored (never buffered or delivered twice); calling the returned `unsubscribe()` stops all
+  further delivery to that handler. Keep the CommonJS export. Do not add dependencies.
+shape: decompose
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

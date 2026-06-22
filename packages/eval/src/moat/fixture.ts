@@ -11,8 +11,8 @@ import { readFileSync } from "node:fs";
 
 import { parse as parseYaml } from "yaml";
 
-import type { Shape } from "../routing/shape.ts";
-import { SHAPES_BY_WEIGHT } from "../routing/shape.ts";
+import type { Shape } from "../conduct/shape.ts";
+import { SHAPES_BY_WEIGHT } from "../conduct/shape.ts";
 import type { FactSeed } from "./seed.ts";
 
 /** One moat task — the prompt + its cold floor + the relevant/decoy facts + an optional surfaced-signature phrase. */

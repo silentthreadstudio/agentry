@@ -24,9 +24,9 @@ import { isAbsolute, join, sep } from "node:path";
 
 import type { RunConfig } from "./schema.ts";
 import type { QualityInput } from "../quality/probe.ts";
-import { loadRoutingFixture } from "../routing/fixture.ts";
-import { extractShape } from "../routing/extract.ts";
-import type { Shape } from "../routing/shape.ts";
+import { loadRoutingFixture } from "../conduct/fixture-routing.ts";
+import { extractShape } from "../conduct/extract.ts";
+import type { Shape } from "../conduct/shape.ts";
 
 /** The separator the quality gate used to splice a task's `spec.md` and `plan.md` into one artifact text. */
 const SPEC_PLAN_SEPARATOR = "\n\n--- PLAN ---\n\n";

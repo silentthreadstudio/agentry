@@ -1,0 +1,24 @@
+# Floor-sensitive outcome fixture — retry-with-capped-exponential-backoff around an async fn.
+#
+# THE TRAP: error semantics. A naive retry loops up to `attempts` and re-throws a fresh generic error — so it
+# (1) retries a NON-retryable error it should have thrown immediately, and (2) SWALLOWS the original error type/
+# identity, surfacing a useless wrapper instead of the LAST real error. The contract: respect `isRetryable`
+# (throw a non-retryable error at once, no retry), stop at `attempts`, and surface the LAST error unchanged.
+# broken/ = loop that retries everything and throws `new Error("all attempts failed")` — happy retry-then-succeed
+#           passes, but the non-retryable and last-error traps fail.
+# golden/  = checks isRetryable, caps the backoff, re-throws the original last error.
+# The oracle injects a FAKE no-op `sleep` (no real timers) and tests succeed-on-Nth (happy) + the two error traps.
+id: retry-backoff-spec
+prompt: >-
+  Implement `retry(fn, opts)` in `src/retry.js` (currently a stub that throws). It calls the async `fn(attempt)`
+  and retries on failure with capped exponential backoff. `opts`: `attempts` (max total calls), `isRetryable(err)`
+  (default: everything is retryable), and an injectable `sleep(ms)` (default: a real delay) so callers/tests can
+  control timing. Rules: if `fn` rejects with a NON-retryable error, throw it immediately without retrying; retry
+  a retryable error with a delay of `min(maxMs, baseMs * 2**(attempt-1))` (defaults `baseMs=10`, `maxMs=1000`);
+  stop after `attempts` total calls and throw the LAST error UNCHANGED (same error object, not a wrapper); return
+  `fn`'s value on the first success. Keep the CommonJS export. Do not add dependencies.
+shape: spec-first
+kind: feature
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

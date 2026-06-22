@@ -1,0 +1,27 @@
+# A unified rightsizing fixture (ADR-004) — MUST-ESCALATE trap (spread role: floor >= spec-first).
+#
+# Task: add `dedupe(users)`. ONE function, one file — Scope alone reads one-shot — but "what makes two users the
+# same?" is an UNDECIDED FORK (by id? by email? case-folded? which copy wins?). The seed plants real data that
+# distinguishes the readings (same email, different case + different id), so the choice is load-bearing: a one-shot
+# guess silently merges or splits distinct users. The floor is spec-first (small footprint != small decision).
+#
+# The held-out oracle encodes the INTENDED resolution (the decision the spec must reach): two users are the same
+# iff their emails match CASE-INSENSITIVELY, and the FIRST occurrence is kept. Golden implements that; broken
+# implements the plausible-wrong reading (dedupe by `id`, which leaves the same person in twice).
+id: rs-dedupe-key
+prompt: >-
+  Add a `dedupe(users)` helper to `src/users.js` that removes duplicate user records from an array and returns a
+  new array. Each user is `{ id, email, name }`. The list can contain the same person entered twice with a
+  different id and a differently-cased email (e.g. `Ada@x.com` vs `ada@x.com`). Return the de-duplicated list.
+  Keep the CommonJS export; do not add dependencies.
+correct_floor: spec-first
+trap: must-escalate
+rationale:
+  governing_signal: "Decision-content: undecided fork (VETOES one-shot, override rule)"
+  decision_hidden: "what defines a 'duplicate' — by id? by email? case-folded? — and which copy is kept (first vs last)"
+  consequence: "the wrong key silently merges two distinct users OR leaves the same person in twice; the seed data is built so each reading gives a different result — a one-line guess corrupts data with no error"
+  footprint_note: "one function, one file — Scope alone reads one-shot, but the dedupe key is a load-bearing, unstated decision"
+labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000
