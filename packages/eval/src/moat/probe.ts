@@ -43,6 +43,18 @@ const MOAT_DIRECTIVE =
   "fork already settled by durable memory is NO LONGER undecided, so do not escalate on its account.";
 
 /**
+ * The `--mcp-config` JSON that loads Agentry's BUNDLED memory MCP into the conduct. `--plugin-dir` loads the
+ * plugin's skills/commands/agents but NOT its MCP servers, so without this the conductor has no `memory_recall`
+ * tool and the seed can never land. The mem server roots project memory at the conduct's cwd (the sandbox
+ * workingDir, where `seedFact` wrote), so a recalled fact resolves to the seeded one.
+ */
+function memMcpConfig(pluginDir: string): string {
+  return JSON.stringify({
+    mcpServers: { agentry_mem: { command: "node", args: [join(pluginDir, "plugin", "mem", "index.js")] } },
+  });
+}
+
+/**
  * The pre-registered moat Δ target `W` (ADR-001 §thresholds) — the FALSIFIABLE FORM, written before any run in the
  * tracked `thresholds.json`. `delta` is the calibration number (`null` until the owner sets it from the first run —
  * NEVER invented in advance); `calibrationPending` flags that pending state explicitly. This is a TARGET, not a
@@ -192,7 +204,9 @@ async function runWarm(
       model,
       streamPath,
       terminateOnArtifact: true,
-      ...(pluginDir !== undefined ? { pluginDir, permissionMode: "bypassPermissions" } : {}),
+      ...(pluginDir !== undefined
+        ? { pluginDir, permissionMode: "bypassPermissions", mcpConfig: memMcpConfig(pluginDir) }
+        : {}),
     },
     sandbox,
   );

@@ -36,6 +36,7 @@ export function buildArgs(invocation: Invocation): string[] {
     invocation.model,
   ];
   if (invocation.pluginDir) args.push("--plugin-dir", invocation.pluginDir);
+  if (invocation.mcpConfig) args.push("--mcp-config", invocation.mcpConfig);
   if (invocation.permissionMode) args.push("--permission-mode", invocation.permissionMode);
   if (invocation.allowedTools && invocation.allowedTools.length > 0) {
     args.push("--allowedTools", invocation.allowedTools.join(","));

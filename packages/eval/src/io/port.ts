@@ -80,6 +80,13 @@ export interface Invocation {
   allowedTools?: string[];
   permissionMode?: string;
   /**
+   * Extra MCP servers to load into the conduct, as the JSON `claude -p --mcp-config` accepts (inline string or a
+   * path). `--plugin-dir` loads the plugin's skills/commands/agents but NOT its MCP servers, so the moat probe
+   * passes the bundled mem server here to make `memory_recall` available — without it the conductor has no memory
+   * faculty at all (the seed can never land). Absent ⇒ only the host's globally-configured MCPs.
+   */
+  mcpConfig?: string;
+  /**
    * CAPPED / no-kill mode (autopilot-design §3): when true the runner does NOT kill on the first `Agent`
    * dispatch — it lets the conductor run and emit its work-folder routing artifacts, terminating only at
    * process settle OR `timeoutMs`. The artifact-based extractor reads the work folder for the shape, so the
