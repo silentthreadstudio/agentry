@@ -15,6 +15,7 @@ import type { Runner, Sandbox } from "../io/port.ts";
 import { liveRunner } from "../io/live.ts";
 import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
 import { extractShape, DegenerateRunError } from "../conduct/extract.ts";
+import { buildConductorPrompt } from "../conductor-prompt.ts";
 import type { Shape } from "../conduct/shape.ts";
 import type { EvalObserver } from "../store/schema.ts";
 
@@ -32,15 +33,14 @@ const DEFAULT_MODEL = "claude-opus-4-8[1m]";
 
 /**
  * The warm-run directive: prime memory FIRST, and let a recalled decision COLLAPSE a fork it already settled
- * (the compounding behavior under test). Sets only the MODE — the routing decision stays the conductor's.
+ * (the compounding behavior under test). Sets only the MODE — the routing decision stays the conductor's. APPENDED
+ * to the EXPANDED conductor prompt (`buildConductorPrompt`, which already supplies the auto-pilot framing), so this
+ * carries ONLY the moat-specific memory-priming — not a second auto-pilot block.
  */
 const MOAT_DIRECTIVE =
-  "\n\n[AUTO-PILOT MODE — AGENTRY_AUTOPILOT=1]: Operate per the conducting skill's auto-pilot mode. Do NOT block " +
-  "and do NOT call AskUserQuestion. FIRST, before routing, prime memory: call memory_resync, then memory_recall " +
-  "for this task. If recalled precedent DECIDES a fork this task would otherwise hide, APPLY that decision and " +
-  "cite it — a fork already settled by durable memory is NO LONGER undecided, so do not escalate on its account. " +
-  "For any genuine remaining escalation above a trivial one-shot, write the routing artifact to " +
-  "`.agentry/work/<slug>/` (spec.md at minimum) before building. A settled/trivial one-shot writes no artifact.";
+  "\n\n[MOAT — PRIME MEMORY FIRST]: Before routing, prime memory: call memory_resync, then memory_recall for this " +
+  "task. If recalled precedent DECIDES a fork this task would otherwise hide, APPLY that decision and cite it — a " +
+  "fork already settled by durable memory is NO LONGER undecided, so do not escalate on its account.";
 
 /**
  * The pre-registered moat Δ target `W` (ADR-001 §thresholds) — the FALSIFIABLE FORM, written before any run in the
@@ -182,7 +182,10 @@ async function runWarm(
   seedFact(sandbox.workingDir, fact, idSeed);
 
   const streamPath = join(sandbox.workingDir, "stream.jsonl");
-  const prompt = pluginDir !== undefined ? `/agentry:go ${task.prompt}${MOAT_DIRECTIVE}` : task.prompt;
+  // EXPANDED conductor prompt (NOT the `/agentry:go` slash form — that is a 0-turn no-op under `claude -p`, the
+  // measurement-validity bug `conductor-prompt.ts` exists to fix; the moat probe regressed to it). The model now
+  // actually runs, primes memory per the directive, and routes for real.
+  const prompt = pluginDir !== undefined ? buildConductorPrompt(pluginDir, task.prompt) + MOAT_DIRECTIVE : task.prompt;
   const result = await runner.run(
     {
       prompt,
