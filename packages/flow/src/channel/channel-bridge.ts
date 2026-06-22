@@ -54,6 +54,10 @@ export class ChannelBridge {
     private readonly cwd: string,
     private readonly reviews: ReviewStore,
     private readonly emit: EmitFn,
+    // Session-targeting gate: emit a run's comments only when this process owns the run. Default
+    // `() => true` preserves current behavior and every existing test; index.ts injects the real
+    // `shouldRouteToThisSession` so a comment on another session's run is dropped (not broadcast).
+    private readonly shouldEmit: (run: string) => boolean = () => true,
   ) {}
 
   // Start watching. Seeds existing sidecars (history → seen, no push) on the watcher's `ready` event,
@@ -107,7 +111,10 @@ export class ChannelBridge {
   // updated only for the comments actually pushed, so a future change re-evaluates the rest.
   private async handleChange(run: string, gate: string): Promise<void> {
     const { notifications, newlySeen } = diffNewComments(run, gate, this.readComments(run, gate), this.seen);
+    // Mark seen FIRST (even for a run we won't emit) so a not-ours comment is consumed once and never
+    // re-evaluated — only the OWNING session emits it; this process must not keep reconsidering it.
     for (const id of newlySeen) this.seen.add(id);
+    if (!this.shouldEmit(run)) return; // not this session's run → drop (the owner emits it)
     for (const notification of notifications) await this.emit(notification);
   }
 

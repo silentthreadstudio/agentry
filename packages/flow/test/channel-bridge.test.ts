@@ -110,6 +110,50 @@ test("a new unresolved comment added after start pushes exactly one channel", as
   });
 });
 
+// ── session-targeting gate (shouldEmit) ───────────────────────────────────────
+test("a comment on a NON-owned run is not emitted (shouldEmit=false)", async () => {
+  bridge = new ChannelBridge(cwd, store, (n) => void emitted.push(n), (run) => run === "mine");
+  bridge.start();
+  await settle();
+
+  store.write("not-mine", "spec", [comment({ id: "drop-me" })]);
+  // give an erroneous emit a chance to surface, then assert silence
+  await waitFor(() => emitted.length > 0, 500);
+  assert.equal(emitted.length, 0, "another session's run must not push into this session");
+});
+
+test("a comment on an OWNED run IS emitted (shouldEmit=true)", async () => {
+  bridge = new ChannelBridge(cwd, store, (n) => void emitted.push(n), (run) => run === "mine");
+  bridge.start();
+  await settle();
+
+  store.write("mine", "spec", [comment({ id: "keep" })]);
+  await waitFor(() => emitted.length >= 1);
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].meta.run_id, "mine");
+});
+
+test("a dropped (non-owned) comment is marked seen — it never re-emits even if later owned", async () => {
+  // First pass: the run is not ours, so the comment is dropped but recorded as seen. Then flip the
+  // gate to claim the run and rewrite the sidecar: the already-seen comment must NOT fire late.
+  let owned = false;
+  bridge = new ChannelBridge(cwd, store, (n) => void emitted.push(n), () => owned);
+  bridge.start();
+  await settle();
+
+  store.write("run-1", "spec", [comment({ id: "once" })]);
+  await waitFor(() => emitted.length > 0, 500);
+  assert.equal(emitted.length, 0, "not-ours comment is dropped");
+
+  owned = true; // now claim the run, then touch the sidecar again
+  store.write("run-1", "spec", [comment({ id: "once" }), comment({ id: "fresh" })]);
+  await waitFor(() => emitted.some((n) => n.meta.comment_id === "fresh"));
+
+  // only the genuinely-new "fresh" comment fires; "once" stays suppressed (seen on the dropped pass).
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].meta.comment_id, "fresh");
+});
+
 test("resolving a pushed comment (a sidecar rewrite) does not re-fire (AC3)", async () => {
   bridge = new ChannelBridge(cwd, store, (n) => void emitted.push(n));
   bridge.start();

@@ -26621,21 +26621,21 @@ var Protocol = class {
    * the error appropriately (e.g., by failing the task, logging, etc.). The Protocol layer
    * simply propagates the error.
    */
-  async _enqueueTaskMessage(taskId, message, sessionId) {
+  async _enqueueTaskMessage(taskId, message, sessionId2) {
     if (!this._taskStore || !this._taskMessageQueue) {
       throw new Error("Cannot enqueue task message: taskStore and taskMessageQueue are not configured");
     }
     const maxQueueSize = this._options?.maxTaskQueueSize;
-    await this._taskMessageQueue.enqueue(taskId, message, sessionId, maxQueueSize);
+    await this._taskMessageQueue.enqueue(taskId, message, sessionId2, maxQueueSize);
   }
   /**
    * Clears the message queue for a task and rejects any pending request resolvers.
    * @param taskId The task ID whose queue should be cleared
    * @param sessionId Optional session ID for binding the operation to a specific session
    */
-  async _clearTaskQueue(taskId, sessionId) {
+  async _clearTaskQueue(taskId, sessionId2) {
     if (this._taskMessageQueue) {
-      const messages = await this._taskMessageQueue.dequeueAll(taskId, sessionId);
+      const messages = await this._taskMessageQueue.dequeueAll(taskId, sessionId2);
       for (const message of messages) {
         if (message.type === "request" && isJSONRPCRequest(message.message)) {
           const requestId = message.message.id;
@@ -26678,7 +26678,7 @@ var Protocol = class {
       }, { once: true });
     });
   }
-  requestTaskStore(request, sessionId) {
+  requestTaskStore(request, sessionId2) {
     const taskStore = this._taskStore;
     if (!taskStore) {
       throw new Error("No task store configured");
@@ -26691,18 +26691,18 @@ var Protocol = class {
         return await taskStore.createTask(taskParams, request.id, {
           method: request.method,
           params: request.params
-        }, sessionId);
+        }, sessionId2);
       },
       getTask: async (taskId) => {
-        const task = await taskStore.getTask(taskId, sessionId);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
         }
         return task;
       },
       storeTaskResult: async (taskId, status, result) => {
-        await taskStore.storeTaskResult(taskId, status, result, sessionId);
-        const task = await taskStore.getTask(taskId, sessionId);
+        await taskStore.storeTaskResult(taskId, status, result, sessionId2);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (task) {
           const notification = TaskStatusNotificationSchema.parse({
             method: "notifications/tasks/status",
@@ -26715,18 +26715,18 @@ var Protocol = class {
         }
       },
       getTaskResult: (taskId) => {
-        return taskStore.getTaskResult(taskId, sessionId);
+        return taskStore.getTaskResult(taskId, sessionId2);
       },
       updateTaskStatus: async (taskId, status, statusMessage) => {
-        const task = await taskStore.getTask(taskId, sessionId);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, `Task "${taskId}" not found - it may have been cleaned up`);
         }
         if (isTerminal(task.status)) {
           throw new McpError(ErrorCode.InvalidParams, `Cannot update task "${taskId}" from terminal status "${task.status}" to "${status}". Terminal states (completed, failed, cancelled) cannot transition to other states.`);
         }
-        await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId);
-        const updatedTask = await taskStore.getTask(taskId, sessionId);
+        await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId2);
+        const updatedTask = await taskStore.getTask(taskId, sessionId2);
         if (updatedTask) {
           const notification = TaskStatusNotificationSchema.parse({
             method: "notifications/tasks/status",
@@ -26739,7 +26739,7 @@ var Protocol = class {
         }
       },
       listTasks: (cursor) => {
-        return taskStore.listTasks(cursor, sessionId);
+        return taskStore.listTasks(cursor, sessionId2);
       }
     };
   }
@@ -27090,8 +27090,8 @@ var Server = class extends Protocol {
     this._serverInfo = _serverInfo;
     this._loggingLevels = /* @__PURE__ */ new Map();
     this.LOG_LEVEL_SEVERITY = new Map(LoggingLevelSchema.options.map((level, index) => [level, index]));
-    this.isMessageIgnored = (level, sessionId) => {
-      const currentLevel = this._loggingLevels.get(sessionId);
+    this.isMessageIgnored = (level, sessionId2) => {
+      const currentLevel = this._loggingLevels.get(sessionId2);
       return currentLevel ? this.LOG_LEVEL_SEVERITY.get(level) < this.LOG_LEVEL_SEVERITY.get(currentLevel) : false;
     };
     this._capabilities = options?.capabilities ?? {};
@@ -27434,9 +27434,9 @@ var Server = class extends Protocol {
    * @param params
    * @param sessionId optional for stateless and backward compatibility
    */
-  async sendLoggingMessage(params, sessionId) {
+  async sendLoggingMessage(params, sessionId2) {
     if (this._capabilities.logging) {
-      if (!this.isMessageIgnored(params.level, sessionId)) {
+      if (!this.isMessageIgnored(params.level, sessionId2)) {
         return this.notification({ method: "notifications/message", params });
       }
     }
@@ -28235,8 +28235,8 @@ var McpServer = class {
    * @param params
    * @param sessionId optional for stateless and backward compatibility
    */
-  async sendLoggingMessage(params, sessionId) {
-    return this.server.sendLoggingMessage(params, sessionId);
+  async sendLoggingMessage(params, sessionId2) {
+    return this.server.sendLoggingMessage(params, sessionId2);
   }
   /**
    * Sends a resource list changed event to the client, if connected.
@@ -28498,7 +28498,7 @@ function parseLogLine(line) {
 }
 
 // src/resolution/run-pointer.ts
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // src/domain/ids.ts
@@ -28560,6 +28560,27 @@ function resolveRunFromSession(cwd, session_id) {
     return void 0;
   }
   return workId;
+}
+function sessionsBoundTo(cwd, run) {
+  const dir = join(cwd, ".agentry", "run", "sessions");
+  let files;
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const owners = [];
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+    const session_id = file.slice(0, -".json".length);
+    try {
+      assertSafeSegment(session_id);
+    } catch {
+      continue;
+    }
+    if (resolveRunFromSession(cwd, session_id) === run) owners.push(session_id);
+  }
+  return owners;
 }
 function writeSessionPointer(cwd, session_id, run) {
   assertSafeSegment(run);
@@ -28701,7 +28722,7 @@ var JsonRunStateStore = class {
 
 // src/persistence/task-file-store.ts
 var import_yaml = __toESM(require_dist2(), 1);
-import { existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync5, readdirSync, unlinkSync, writeFileSync as writeFileSync4 } from "node:fs";
+import { existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync5, readdirSync as readdirSync2, unlinkSync, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join5 } from "node:path";
 
 // src/domain/version.ts
@@ -28733,7 +28754,7 @@ var TaskFileStore = class {
     const dir = this.tasksDir(run);
     if (!existsSync4(dir)) return void 0;
     const prefix = `${taskNo}-`;
-    const file = readdirSync(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
+    const file = readdirSync2(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
     if (!file) return void 0;
     return this.parseTaskFile(join5(dir, file), taskNo);
   }
@@ -28741,7 +28762,7 @@ var TaskFileStore = class {
     const dir = this.tasksDir(run);
     if (!existsSync4(dir)) return [];
     const tasks = [];
-    for (const file of readdirSync(dir).sort()) {
+    for (const file of readdirSync2(dir).sort()) {
       if (!file.endsWith(".md")) continue;
       const taskNo = file.slice(0, file.indexOf("-"));
       const task = this.parseTaskFile(join5(dir, file), taskNo);
@@ -28753,7 +28774,7 @@ var TaskFileStore = class {
     const dir = this.tasksDir(run);
     mkdirSync5(dir, { recursive: true });
     const prefix = `${task.taskNo}-`;
-    for (const f of readdirSync(dir)) {
+    for (const f of readdirSync2(dir)) {
       if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync(join5(dir, f));
     }
     const file = `${task.taskNo}-${this.slugOf(task)}.md`;
@@ -28795,6 +28816,33 @@ ${body}
     return { taskNo, frontmatter, body: (m[2] ?? "").trim() };
   }
 };
+
+// src/resolution/process-identity.ts
+var operatedRuns = /* @__PURE__ */ new Set();
+var sessionId;
+function noteRunArg(run) {
+  if (run !== void 0 && run.length > 0) operatedRuns.add(run);
+}
+function noteSessionArg(session_id) {
+  if (sessionId === void 0 && session_id !== void 0 && session_id.length > 0) {
+    sessionId = session_id;
+  }
+}
+function knownRuns() {
+  return operatedRuns;
+}
+function knownSessionId() {
+  return sessionId;
+}
+
+// src/resolution/comment-routing.ts
+function shouldRouteToThisSession(run, deps) {
+  if (deps.myRuns.has(run)) return true;
+  const owners = deps.sessionsBoundTo(run);
+  if (deps.mySessionId !== void 0 && owners.includes(deps.mySessionId)) return true;
+  if (owners.length > 0) return false;
+  return true;
+}
 
 // src/domain/status.ts
 var FlowTaskStatus = external_exports.enum(["todo", "in-progress", "in-review", "done"]);
@@ -31165,10 +31213,11 @@ function parseSidecarPath(cwd, filePath) {
   return { run: rel, gate };
 }
 var ChannelBridge = class {
-  constructor(cwd, reviews, emit) {
+  constructor(cwd, reviews, emit, shouldEmit = () => true) {
     this.cwd = cwd;
     this.reviews = reviews;
     this.emit = emit;
+    this.shouldEmit = shouldEmit;
   }
   // Ids already pushed (or seeded as history). Keyed globally by comment id; ids are unique per
   // comment (minted by the review service), so a single set across runs/gates is sufficient and keeps
@@ -31219,6 +31268,7 @@ var ChannelBridge = class {
   async handleChange(run, gate) {
     const { notifications, newlySeen } = diffNewComments(run, gate, this.readComments(run, gate), this.seen);
     for (const id of newlySeen) this.seen.add(id);
+    if (!this.shouldEmit(run)) return;
     for (const notification of notifications) await this.emit(notification);
   }
   // Reuse the review store's validating parser (don't fork the shape). A missing/corrupt sidecar
@@ -31251,9 +31301,10 @@ function statusNotification(sig) {
 
 // src/channel/status-bridge.ts
 var StatusBridge = class {
-  constructor(cwd, emit) {
+  constructor(cwd, emit, shouldEmit = () => true) {
     this.cwd = cwd;
     this.emit = emit;
+    this.shouldEmit = shouldEmit;
   }
   watcher;
   // Start watching the status-signal dir. ignoreInitial is FALSE so a signal written while flow was down
@@ -31282,7 +31333,7 @@ var StatusBridge = class {
       rmSync(file, { force: true });
       return;
     }
-    await this.emit(statusNotification(signal));
+    if (this.shouldEmit(signal.run)) await this.emit(statusNotification(signal));
     rmSync(file, { force: true });
   }
 };
@@ -31440,6 +31491,8 @@ function createServices(cwd) {
 }
 function resolveRunContext(args, env = process.env) {
   const cwd = env.CLAUDE_PROJECT_DIR ?? env.AGENTRY_PROJECT_DIR ?? process.cwd();
+  noteRunArg(args.run);
+  noteSessionArg(args.session_id);
   if (args.run !== void 0 && args.run.length > 0) {
     return { cwd, run: args.run };
   }
@@ -31489,9 +31542,14 @@ async function main() {
       params: { content: n.content, meta: n.meta }
     });
   };
-  const bridge = new ChannelBridge(cwd, services.reviews, emit);
+  const shouldEmit = (run) => shouldRouteToThisSession(run, {
+    myRuns: knownRuns(),
+    mySessionId: knownSessionId(),
+    sessionsBoundTo: (r) => sessionsBoundTo(cwd, r)
+  });
+  const bridge = new ChannelBridge(cwd, services.reviews, emit, shouldEmit);
   bridge.start();
-  const statusBridge = new StatusBridge(cwd, emit);
+  const statusBridge = new StatusBridge(cwd, emit, shouldEmit);
   statusBridge.start();
   relay.start();
   server.server.onclose = () => {

@@ -19,6 +19,9 @@ export class StatusBridge {
   constructor(
     private readonly cwd: string,
     private readonly emit: EmitFn,
+    // Same session-targeting gate as ChannelBridge: a status signal carries `run`, so a status change
+    // on another session's run is dropped here too. Default `() => true` preserves existing behavior.
+    private readonly shouldEmit: (run: string) => boolean = () => true,
   ) {}
 
   // Start watching the status-signal dir. ignoreInitial is FALSE so a signal written while flow was down
@@ -49,7 +52,9 @@ export class StatusBridge {
       rmSync(file, { force: true });
       return;
     }
-    await this.emit(statusNotification(signal));
+    // Emit only when this process owns the run; either way DELETE the file (process-once) so a
+    // not-ours signal — consumed once by whichever process saw it first — never accumulates.
+    if (this.shouldEmit(signal.run)) await this.emit(statusNotification(signal));
     rmSync(file, { force: true });
   }
 }

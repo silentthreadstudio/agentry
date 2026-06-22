@@ -6,7 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { resolveRunContext } from "../src/index.js";
-import { resolveRunFromSession, runDir, workRoot, writeSessionPointer } from "../src/resolution/run-pointer.js";
+import {
+  resolveRunFromSession,
+  runDir,
+  sessionsBoundTo,
+  workRoot,
+  writeSessionPointer,
+} from "../src/resolution/run-pointer.js";
 
 let cwd: string;
 beforeEach(() => {
@@ -31,6 +37,31 @@ test("resolveRunFromSession rejects a poisoned pointer (traversal workId)", () =
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "evil.json"), JSON.stringify({ workId: "../../escape", updatedAt: "t" }));
   assert.equal(resolveRunFromSession(cwd, "evil"), undefined);
+});
+
+test("sessionsBoundTo returns the session ids whose pointer claims the run", () => {
+  writeSessionPointer(cwd, "sess-a", "run-1");
+  writeSessionPointer(cwd, "sess-b", "run-1");
+  writeSessionPointer(cwd, "sess-c", "run-2");
+  assert.deepEqual(sessionsBoundTo(cwd, "run-1").sort(), ["sess-a", "sess-b"]);
+  assert.deepEqual(sessionsBoundTo(cwd, "run-2"), ["sess-c"]);
+});
+
+test("sessionsBoundTo returns [] for a run nobody claims", () => {
+  writeSessionPointer(cwd, "sess-a", "run-1");
+  assert.deepEqual(sessionsBoundTo(cwd, "unclaimed"), []);
+});
+
+test("sessionsBoundTo tolerates a missing sessions dir (returns [])", () => {
+  assert.deepEqual(sessionsBoundTo(cwd, "run-1"), []);
+});
+
+test("sessionsBoundTo tolerates a bad-json pointer (skips it, no throw)", () => {
+  const dir = join(cwd, ".agentry", "run", "sessions");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "broken.json"), "{ not json");
+  writeSessionPointer(cwd, "sess-good", "run-1");
+  assert.deepEqual(sessionsBoundTo(cwd, "run-1"), ["sess-good"]);
 });
 
 test("resolveRunContext returns the explicit run arg (precedence 1)", () => {

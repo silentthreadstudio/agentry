@@ -12,7 +12,7 @@
 // Pointer seam (pinned — identical to the binder/emitter hooks):
 //   path:  <cwd>/.agentry/run/sessions/<session_id>.json   (one file per session)
 //   shape: { "workId": "<run>", "updatedAt": "<iso8601>" }  (atomic tmp-then-rename, last-write-wins)
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertSafeSegment } from "../domain/ids.js";
 
@@ -54,6 +54,33 @@ export function resolveRunFromSession(cwd: string, session_id: string): string |
     return undefined; // poisoned pointer — never let a traversal id escape
   }
   return workId;
+}
+
+// Which sessions claim a run — the "is this run claimed by anyone?" signal for comment routing. Scans
+// `<cwd>/.agentry/run/sessions/*.json` (pointers written by the work-id-binder hook) and returns the
+// session ids (filename minus `.json`) whose pointer `workId === run`. Tolerant: a missing dir / bad
+// json / poisoned pointer is treated as no claim (returns [] or skips the file — never throws). The
+// returned session segments are guarded (a traversal filename can never masquerade as a session id).
+export function sessionsBoundTo(cwd: string, run: string): string[] {
+  const dir = join(cwd, ".agentry", "run", "sessions");
+  let files: string[];
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return []; // no sessions dir yet → nobody has claimed any run
+  }
+  const owners: string[] = [];
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+    const session_id = file.slice(0, -".json".length);
+    try {
+      assertSafeSegment(session_id);
+    } catch {
+      continue; // a traversal filename is not a valid session id — skip it
+    }
+    if (resolveRunFromSession(cwd, session_id) === run) owners.push(session_id);
+  }
+  return owners;
 }
 
 // Write the session→run pointer — the SAME contract the binder writes (ADR-005 §4): atomic

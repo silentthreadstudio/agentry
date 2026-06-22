@@ -14,7 +14,9 @@ import { JsonReviewStore } from "./persistence/review-store.js";
 import { JsonRunStateStore } from "./persistence/run-state-store.js";
 import { TaskFileStore } from "./persistence/task-file-store.js";
 import type { EventLog, ReviewStore, RunStore, TaskStore } from "./domain/ports.js";
-import { resolveRunFromSession, workRoot } from "./resolution/run-pointer.js";
+import { resolveRunFromSession, sessionsBoundTo, workRoot } from "./resolution/run-pointer.js";
+import { knownRuns, knownSessionId, noteRunArg, noteSessionArg } from "./resolution/process-identity.js";
+import { shouldRouteToThisSession } from "./resolution/comment-routing.js";
 import { registerTaskTools } from "./tools/task-tools.js";
 import { registerMonitorTools } from "./tools/monitor-tools.js";
 import { registerAgentTools } from "./tools/agent-tools.js";
@@ -89,6 +91,12 @@ export function resolveRunContext(
   env: NodeJS.ProcessEnv = process.env,
 ): { cwd: string; run: string } {
   const cwd = env.CLAUDE_PROJECT_DIR ?? env.AGENTRY_PROJECT_DIR ?? process.cwd();
+
+  // Capture this process's identity at the chokepoint every tool runs through: the run it operated on
+  // and the session it serves. This fills the live signals the channel-routing gate reads at emit-time
+  // so a comment is pushed only to the session conducting that run (no-op for absent args).
+  noteRunArg(args.run);
+  noteSessionArg(args.session_id);
 
   // 1) Explicit run arg wins — the caller-threaded handle (the normal path).
   if (args.run !== undefined && args.run.length > 0) {
@@ -169,13 +177,25 @@ export async function main(): Promise<void> {
       params: { content: n.content, meta: n.meta },
     } as Parameters<typeof server.server.notification>[0]);
   };
-  const bridge = new ChannelBridge(cwd, services.reviews, emit);
+  // Session-targeting gate (shared by both bridges): emit a run's signals only when THIS process owns
+  // the run — operated on it (knownRuns), is bound to it (the persisted pointer), or it's an orphan
+  // with no owner (broadcast fallback). knownRuns()/knownSessionId() are read at emit-time (live, not
+  // captured once) so a run operated on after startup counts. This is the fix for the broadcast bug:
+  // a comment on run A no longer spams an unrelated session working on run C.
+  const shouldEmit = (run: string): boolean =>
+    shouldRouteToThisSession(run, {
+      myRuns: knownRuns(),
+      mySessionId: knownSessionId(),
+      sessionsBoundTo: (r) => sessionsBoundTo(cwd, r),
+    });
+
+  const bridge = new ChannelBridge(cwd, services.reviews, emit, shouldEmit);
   bridge.start();
 
   // The human→agent status channel: watch `<cwd>/.agentry/run/status-signals/*.json` (written by the
   // Workbench on a HUMAN status change) and emit each as a `notifications/claude/channel` note via the
   // same emit. Human-origin only — the agent's own task_status writes never produce a signal file.
-  const statusBridge = new StatusBridge(cwd, emit);
+  const statusBridge = new StatusBridge(cwd, emit, shouldEmit);
   statusBridge.start();
 
   // Start the verdict watcher AFTER connect so an emitted verdict lands on a live transport (mirrors
