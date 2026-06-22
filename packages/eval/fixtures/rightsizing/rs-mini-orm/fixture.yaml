@@ -1,0 +1,35 @@
+# A unified rightsizing fixture (ADR-004) — DECOMPOSE feature (a LARGE multi-component system, bigger than the
+# 3-module rs-job-queue and rs-event-replay).
+#
+# Task: build a tiny in-memory relational store across FIVE modules with cross-cutting seams — a schema
+# validator used by table inserts, an independent pure query layer, a relations layer enforcing referential
+# integrity ACROSS tables, and a db facade that consults relations on remove (RESTRICT). The contract is fully
+# specified (no undecided fork), but a system this size — five units, schema↔table coupling, referential
+# integrity spanning tables — warrants a plan + bounded tasks, not one coherent spec'd build. Floor: decompose.
+id: rs-mini-orm
+prompt: >-
+  Build a tiny in-memory relational store exposed from `src/index.js`, in FIVE modules. `src/schema.js` exports
+  `defineSchema(columns)` returning `{ validate(row) }`; `columns` maps a column name to
+  `{ type: "string"|"number"|"boolean", required?: boolean, default?: any }`. `validate(row)` applies defaults for
+  missing optional columns, then returns `{ ok, value, errors }` — `ok:false` with an `errors` array if a required
+  column is missing or a present column has the wrong type. `src/table.js` exports `createTable(schema)` returning
+  `{ insert(row), get(id), all(), remove(id) }`; `insert` validates the row via the schema and THROWS on invalid,
+  auto-assigns an incrementing integer `id` starting at 1, and stores the validated row; `get(id)` returns the row
+  or undefined; `all()` returns every row; `remove(id)` deletes it. `src/query.js` exports `select(rows, opts)` —
+  a PURE function where `opts.where` is an equality map (all keys must match), `opts.orderBy` is
+  `{ column, dir: "asc"|"desc" }`, and `opts.limit` caps the count; it returns the filtered+sorted+limited rows and
+  any opt may be absent. `src/relations.js` exports `createRelations()` returning
+  `{ link(childTable, column, parentTable), canRemove(parentTable, parentId, db) }`; `link` registers a foreign
+  key and `canRemove` returns false if ANY row in a linked child table references `parentId` via its FK column (a
+  referenced parent cannot be removed). `src/index.js` exports `createDb()` returning
+  `{ defineTable(name, columns), table(name), link(childTable, column, parentTable), remove(tableName, id) }`;
+  `remove` consults relations and THROWS if the row is still referenced (RESTRICT), otherwise removes it. Keep
+  CommonJS exports across all five files; do not add dependencies.
+correct_floor: decompose
+rationale:
+  governing_signal: "Scope: a 5-module relational store (schema + table + query + relations + index) with cross-cutting seams · Specificity: contract clear, no human-fork"
+  seams: "five units with real cross-cutting concerns — schema validation is consumed by table inserts (schema↔table coupling), the query layer is an independent pure component, referential integrity in the relations layer spans tables, and the db facade composes all four to enforce RESTRICT on remove — a system this size warrants a plan + bounded tasks, not one coherent spec'd build"
+labels: { labeler_a: decompose, labeler_b: decompose, agreement: true }
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000
