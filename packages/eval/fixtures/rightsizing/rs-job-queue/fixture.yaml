@@ -1,0 +1,26 @@
+# A unified rightsizing fixture (ADR-004) — SPEC-FIRST feature (a coherent 3-module build with real design
+# choices — retry policy + dead-letter — best spec'd before building; not a one-shot, not a full decompose).
+#
+# Task: build a small in-memory job queue across three modules (store + worker + index). It is a coherent
+# multi-module feature with genuine design choices (3-attempt retry, dead-letter handling, stats accounting),
+# best captured in a spec.md before building, but the contract is given and there is no human-fork to escalate
+# further. Floor: spec-first.
+id: rs-job-queue
+prompt: >-
+  Build a small in-memory job queue exposed from `src/index.js`, in THREE modules. `src/store.js` exports
+  `createStore()` returning `{ enqueue(job), dequeue(), size() }` — a FIFO where `dequeue()` returns `undefined`
+  when empty. `src/worker.js` exports `createWorker(store, handler)` returning `{ drain() }`; `drain()`
+  SYNCHRONOUSLY processes every queued job in FIFO order, calling `handler(job)` — if `handler` THROWS, retry the
+  same job up to 3 ATTEMPTS total, and if it still throws after the 3rd attempt set it aside as a DEAD LETTER (do
+  not lose it, do not reprocess it). `drain()` returns `{ processed, deadLettered }` (counts). `src/index.js`
+  exports `createQueue(handler)` returning `{ submit(job), drain(), stats() }`, wiring a store + worker; `stats()`
+  returns `{ processed, deadLettered, pending }` where `pending` is the number of jobs still in the store. Keep
+  CommonJS exports across all three files; do not add dependencies.
+correct_floor: spec-first
+rationale:
+  governing_signal: "Scope: a coherent 3-module feature (store + worker + index) with real design choices (3-attempt retry, dead-letter, stats accounting) · Specificity: contract clear, no human-fork"
+  seams: "the FIFO store, the worker's retry/dead-letter policy, and the index wiring are one coherent feature whose design (how many attempts, where dead letters go, what stats count) is best settled in a spec before building — more than a one-shot, but a single cohesive build, not three independent units to decompose"
+labels: { labeler_a: spec-first, labeler_b: spec-first, agreement: true }
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000
