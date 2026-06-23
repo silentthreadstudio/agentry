@@ -299,11 +299,17 @@ async function runWarm(
 
   const { text, tools } = readStream(streamPath);
   const recallFired = tools.some((t) => /memory_recall/.test(t));
-  // `signature` ties landing to a SPECIFIC fact (the relevant run). The decoy run passes no signature, so its
-  // landing just means "recall fired + non-empty" — the correct meaning for an irrelevant seed it shouldn't apply.
+  // A relevant run LANDED when its seeded decision provably SURFACED to the conductor — its distinctive signature
+  // appears in the run. The conductor may reach the seeded fact via the `memory_recall` MCP tool OR by reading the
+  // seeded fact in the project-memory store (`<workingDir>/.agentry/memory/facts/`, where the conductor's Read tool
+  // can also see it). BOTH are valid access to the project's durable memory, and the DECOY control attributes the
+  // routing effect to the relevant FACT's CONTENT, not the access mechanism (a fork the model resolves from its own
+  // priors leaks the decoy → discrimination catches it). Requiring the recall *tool_use* specifically was too narrow
+  // — it scored 0/18 even when the seeded decision demonstrably surfaced and the conductor applied it.
+  // A decoy carries no signature, so its landing keeps the looser "recall fired + non-empty" check — informational
+  // only (the score never reads a decoy's `landed`).
   const landed =
-    recallLanded(text, recallFired) &&
-    (signature !== undefined ? factSurfaced(text, signature) : true);
+    signature !== undefined ? factSurfaced(text, signature) : recallLanded(text, recallFired);
 
   // RESULT-QUALITY gate: the RELEVANT arm (signature set) that routed LIGHTER than the cold floor one-shot — so the
   // run settled and the produced tree exists to judge. Judge whether the code meets intent AND applies the recalled
