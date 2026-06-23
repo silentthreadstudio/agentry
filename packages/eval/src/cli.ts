@@ -71,7 +71,7 @@ export interface CliFlags {
   model?: string;
   /** rightsizing only — per-run hard ceiling (ms). */
   timeout?: string;
-  /** rightsizing only — bounded matrix concurrency (default 1 = serial). */
+  /** rightsizing + moat — bounded conduct concurrency (default 1 = serial). */
   concurrency?: string;
   /** rightsizing only — model id pinned for every JUDGE call (defaults to {@link DEFAULT_JUDGE_MODEL}). */
   judgeModel?: string;
@@ -230,6 +230,10 @@ async function runRightsizing(flags: CliFlags, runner = liveRunner, judge: Judge
  * `run moat` — drive the memory-hygiene (moat) probe with full persistence. Per fixture task it runs a warm
  * conductor with a fork-resolving fact seeded vs. an irrelevant decoy, and scores whether recalled memory makes
  * the task route lighter (compounding) — gated by seed-landing + decoy discrimination.
+ *
+ * `--concurrency <n>` bounds how many conducts run at once (default 1 = serial). The conducts are independent
+ * (each warm run prepares a fresh sandbox), so the matrix parallelizes without changing the scored numbers; keep it
+ * MODEST (3–4) on live runs (each conduct spawns subagents + a judge + the mem MCP — a high limit hits rate limits).
  */
 async function runMoat(flags: CliFlags, runner = liveRunner, judge: JudgeFn = realJudgeFn): Promise<number> {
   if (flags.fixture === undefined) throw new UsageError("run moat: --fixture <dir> is required");
@@ -259,6 +263,7 @@ async function runMoat(flags: CliFlags, runner = liveRunner, judge: JudgeFn = re
     observer,
     runId,
     runs: k,
+    ...(flags.concurrency !== undefined ? { concurrency: Number(flags.concurrency) } : {}),
     ...(flags.model !== undefined ? { model: flags.model } : {}),
     ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
   });

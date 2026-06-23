@@ -12,8 +12,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import type { Runner, Sandbox } from "../io/port.ts";
-import { liveRunner } from "../io/live.ts";
 import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
+import { mapPool } from "../pool.ts";
 import { extractShape, DegenerateRunError } from "../conduct/extract.ts";
 import { buildConductorPrompt } from "../conductor-prompt.ts";
 import type { Shape } from "../conduct/shape.ts";
@@ -188,6 +188,15 @@ export interface MoatProbeOptions {
    * so the published rates are stable means over repeats rather than a single high-variance k=1 draw. Defaults to 1.
    */
   runs?: number;
+  /**
+   * BOUNDED-CONCURRENCY for the conduct matrix (default 1 = the serial loop, preserving today's behavior). Every
+   * conduct is independent — each `runWarm` prepares a FRESH sandbox and is seeded with its OWN pre-assigned id-seed
+   * (so ULIDs never collide under parallelism) — so `concurrency > 1` runs that many conducts at once via
+   * {@link mapPool}, collecting the SAME outcomes (results land at their flat index, so the per-(task,repeat)
+   * reassembly is identical to serial). Keep this MODEST (3–4) on LIVE runs: each conduct spawns the conductor +
+   * subagents + a judge call + the mem MCP subprocess, so a high limit hits Opus API rate limits + heavy machine load.
+   */
+  concurrency?: number;
   /** Seed-landing rate FLOOR for GATE 1 (defaults to {@link DEFAULT_SEED_LANDING_FLOOR} = 0.5). */
   seedLandingFloor?: number;
   /** Plugin root to load Agentry from (`--plugin-dir`); absent ⇒ the bare prompt is run (replay tests). */
@@ -339,15 +348,19 @@ function asMoatFixtureView(task: MoatTask): OutcomeFixture {
 /**
  * Drive the moat probe end-to-end in the GATED order, writing the artifact to `opts.outPath`.
  *
- * Flow: per task → warm-relevant run + warm-decoy run → collect outcomes → seed-landing gate (every relevant run
- * must have recalled its seed) → discrimination gate (relevant compounds where the decoy does not) → score. A
- * gate failure aborts with the pinned verdict and NO compound number (mirrors routing's AC8 contract).
+ * Flow: FLATTEN every (task × repeat) into its relevant + decoy conducts → drive them through `mapPool` bounded by
+ * `concurrency` (default 1 = serial) → reassemble deterministically into per-(task,repeat) outcomes → seed-landing
+ * gate (every relevant run must have recalled its seed) → discrimination gate (relevant compounds where the decoy
+ * does not) → score. A gate failure aborts with the pinned verdict and NO compound number (mirrors routing's AC8
+ * contract). The flatten-then-reassemble keeps the outcome ordering — and so every downstream number — identical to
+ * a strictly serial run, regardless of `concurrency`.
  */
 export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> {
   const model = opts.model ?? DEFAULT_MODEL;
   const judge = opts.judge ?? realJudgeFn;
   const judgeModel = opts.judgeModel ?? DEFAULT_JUDGE_MODEL;
   const k = opts.runs ?? 1;
+  const concurrency = opts.concurrency ?? 1;
   const seedLandingFloor = opts.seedLandingFloor ?? DEFAULT_SEED_LANDING_FLOOR;
   const tasks = loadMoatFixture(join(opts.fixtureDir, "tasks.yaml"));
   // The pre-registered moat target W is loaded up front — the falsifiable target MUST EXIST before the run.
@@ -356,20 +369,47 @@ export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> 
   const emit = (detail: string): void =>
     opts.observer?.emit?.({ kind: "task-done", runId, detail, ts: new Date().toISOString() });
 
-  // Flat per-(task, repeat) outcomes — k repeats of each arm per task. A monotonic id-seed counter varies the seed
-  // per repeat AND per arm so no two seeded facts' ULIDs ever collide (the ULID-collision discipline at k>1).
-  const outcomes: MoatOutcome[] = [];
-  let idSeed = 0;
-  let i = 0;
-  for (const task of tasks) {
-    i++;
-    opts.observer?.emit?.({ kind: "task-started", runId, detail: `${i}/${tasks.length} ${task.id} (k=${k})`, ts: new Date().toISOString() });
+  // FLATTEN the matrix into independent CONDUCT work-items BEFORE launching. For each (task × repeat) there are TWO
+  // conducts — a RELEVANT one (carries the fact signature; gets result-judged) and a DECOY one (no signature). The
+  // id-seed is PRE-ASSIGNED here, in the SAME order the serial loop produced (relevant, decoy, relevant, decoy, …),
+  // so each seeded fact's ULID is unique under parallelism without relying on a wall clock or a shared mutable
+  // counter. Each item runs its own fresh sandbox (`runWarm`), so the items are parallel-safe; `mapPool` lands each
+  // result at its flat index, so the reassembly below is byte-for-byte identical to the serial output regardless of
+  // which worker finished first.
+  interface Conduct { taskIndex: number; repeat: number; arm: "relevant" | "decoy"; }
+  const conducts: Conduct[] = [];
+  tasks.forEach((_task, taskIndex) => {
     for (let repeat = 0; repeat < k; repeat++) {
-      // Two warm runs per repeat: distinct id-seeds keep the seeded facts' ULIDs from colliding. Only the relevant
-      // run gets the fact signature (landing must tie to THAT fact); the decoy's landing is "recalled non-empty".
-      const relevant = await runWarm(task, task.relevant, idSeed++, opts.runner, model, opts.pluginDir, opts.fixtureDir, task.factSignature, judge, judgeModel);
-      const decoy = await runWarm(task, task.decoy, idSeed++, opts.runner, model, opts.pluginDir, opts.fixtureDir, undefined, judge, judgeModel);
+      conducts.push({ taskIndex, repeat, arm: "relevant" });
+      conducts.push({ taskIndex, repeat, arm: "decoy" });
+    }
+  });
+  tasks.forEach((task, taskIndex) => {
+    opts.observer?.emit?.({ kind: "task-started", runId, detail: `${taskIndex + 1}/${tasks.length} ${task.id} (k=${k})`, ts: new Date().toISOString() });
+  });
 
+  // The flat index IS the pre-assigned id-seed (a simple incrementing counter over the flattened list) — no two
+  // conducts share one, so the seeded ULIDs never collide. Drive them through `mapPool` (bounded by `concurrency`,
+  // default 1 ⇒ strictly serial, byte-identical to the old `for` loop).
+  const warmResults = await mapPool(conducts, concurrency, async (c, idSeed) => {
+    const task = tasks[c.taskIndex]!;
+    const isRelevant = c.arm === "relevant";
+    const fact = isRelevant ? task.relevant : task.decoy;
+    // Only the RELEVANT run gets the fact signature (landing must tie to THAT fact); the decoy's landing is
+    // "recalled non-empty".
+    const signature = isRelevant ? task.factSignature : undefined;
+    return runWarm(task, fact, idSeed, opts.runner, model, opts.pluginDir, opts.fixtureDir, signature, judge, judgeModel);
+  });
+
+  // REASSEMBLE deterministically: pair each (task × repeat)'s relevant result with its decoy result into the
+  // per-(task,repeat) outcome, in task-major / repeat order — IDENTICAL to the serial output, so the gates +
+  // aggregation downstream consume the exact same outcomes and produce the same numbers.
+  const outcomes: MoatOutcome[] = [];
+  let cursor = 0;
+  for (const task of tasks) {
+    for (let repeat = 0; repeat < k; repeat++) {
+      const relevant = warmResults[cursor++]!; // relevant pushed first per (task,repeat)
+      const decoy = warmResults[cursor++]!; // decoy pushed second
       const outcome: MoatOutcome = {
         taskId: task.id,
         coldFloor: task.coldFloor,
@@ -385,7 +425,8 @@ export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> 
       };
       outcomes.push(outcome);
       const row = censusRow(outcome);
-      emit(`${i}/${tasks.length} ${task.id} r${repeat} → relevant ${relevant.shape ?? "—"} / decoy ${decoy.shape ?? "—"} (${row.compounded ? "compounded" : "held"})`);
+      // The per-(task,repeat) summary line. Under concurrency it can arrive out of finish-order; that's fine.
+      emit(`${task.id} r${repeat} → relevant ${relevant.shape ?? "—"} / decoy ${decoy.shape ?? "—"} (${row.compounded ? "compounded" : "held"})`);
     }
   }
 
