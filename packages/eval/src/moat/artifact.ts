@@ -17,6 +17,16 @@ import { mean, stdev } from "../stats.ts";
 export interface WarmRun {
   shape: Shape | null;
   landed: boolean;
+  /**
+   * RESULT-QUALITY gate (relevant arm only): when this run routed LIGHTER than the cold floor (it one-shot, so it
+   * settled and left a produced tree), the tree is judged for whether it meets intent AND applies the recalled
+   * decision — `true` iff the judged overall cleared the GOOD bar. ABSENT (undefined) on the decoy arm and on any
+   * relevant run that did NOT route lighter (nothing one-shot ⇒ no tree to judge ⇒ no result-gate to apply). A
+   * route-lighter relevant run is "compounded" ONLY when this is `true` — a lighter-but-BAD result is NOT a moat win.
+   */
+  resultGood?: boolean;
+  /** The judged overall (0..1) behind {@link resultGood}, carried for the census readout; absent when not judged. */
+  resultOverall?: number;
 }
 
 /** One task's full moat outcome: its cold floor + the two warm runs (relevant fork-resolver, irrelevant decoy). */
@@ -42,8 +52,14 @@ export interface MoatCensusRow {
   warmDecoy: Shape | null;
   landedRelevant: boolean;
   landedDecoy: boolean;
-  /** Relevant memory recalled AND routed lighter than the cold floor. */
+  /** Relevant memory recalled AND routed lighter than the cold floor AND the produced result was judged GOOD. */
   compounded: boolean;
+  /**
+   * The HONEST-failure signal: relevant memory recalled AND routed lighter than the cold floor BUT the produced
+   * result was judged BAD (`resultGood === false`). Memory lightened the route but the code failed — NOT a win, and
+   * never silently dropped or mis-counted as one.
+   */
+  lighterButBad: boolean;
   /** The decoy did NOT lighten the shape (the control held). */
   decoyHeld: boolean;
 }
@@ -60,8 +76,18 @@ export interface MoatTaskCensus {
   landedRepeats: number;
   /** Total relevant repeats run for this task (k). */
   repeats: number;
-  /** Fraction of LANDED relevant repeats that routed lighter than the cold floor; null when none landed (no basis). */
+  /**
+   * Fraction of LANDED relevant repeats that routed lighter AND produced a GOOD result (the results-gated compound);
+   * null when none landed (no basis). A lighter-but-BAD repeat is NOT counted here — it lands in
+   * {@link lighterButBadFraction} instead.
+   */
   relevantCompoundedFraction: number | null;
+  /**
+   * Fraction of LANDED relevant repeats that routed lighter than the cold floor but produced a BAD result (memory
+   * lightened the route, the code failed). The honest "lightened but broken" signal, surfaced so it is visible and
+   * never mis-counted as a compound. Null when none landed (no basis).
+   */
+  lighterButBadFraction: number | null;
   /** Fraction of decoy repeats that routed lighter than the cold floor (the control — should be ~0). */
   decoyLightenedFraction: number;
   /** Fraction of relevant repeats that landed their seed (this task's validity readout). */
@@ -91,6 +117,13 @@ export interface MoatArtifact {
    * excluded from BOTH numerator and denominator). `null` on abort; 0 when no relevant repeat landed.
    */
   compoundRate: number | null;
+  /**
+   * The HONEST-failure rate: relevant repeats that LANDED and routed lighter but produced a BAD result, over relevant
+   * repeats that LANDED (same denominator as {@link compoundRate} — the landed set). Surfaces the "memory lightened
+   * the route but the code failed" case so a route-only lighter count is never mistaken for a compound win; absent on
+   * abort, 0 when no relevant repeat landed.
+   */
+  lighterButBadRate?: number;
   /** Fraction of ALL decoy repeats that routed lighter than the cold floor — the false-positive base rate (no landing filter); absent on abort. */
   decoyLightenRate?: number;
   /** `compoundRate − decoyLightenRate` — the memory-attributable lightening (the clean signal); absent on abort. */
@@ -119,7 +152,6 @@ function lighterThanFloor(run: WarmRun, coldFloor: Shape): boolean {
 
 /** Build the per-(task, repeat) census row from one outcome (the compounding/decoy-held booleans the aggregator folds). */
 export function censusRow(o: MoatOutcome): MoatCensusRow {
-  const compounded = o.relevant.landed && lighterThanFloor(o.relevant, o.coldFloor);
   const decoyHeld = !lighterThanFloor(o.decoy, o.coldFloor);
   return {
     taskId: o.taskId,
@@ -128,14 +160,30 @@ export function censusRow(o: MoatOutcome): MoatCensusRow {
     warmDecoy: o.decoy.shape,
     landedRelevant: o.relevant.landed,
     landedDecoy: o.decoy.landed,
-    compounded,
+    compounded: relevantCompounded(o),
+    lighterButBad: relevantLighterButBad(o),
     decoyHeld,
   };
 }
 
-/** Whether ONE relevant repeat compounded — landed its seed AND routed lighter than the cold floor. */
+/**
+ * Whether ONE relevant repeat compounded — the RESULTS-GATED definition: landed its seed AND routed lighter than the
+ * cold floor AND the judged result was GOOD (`resultGood === true`). A lighter route alone is NOT enough — memory
+ * could lighten the route into a BROKEN one-shot; only a lighter route that PRODUCED a working result (applying the
+ * recalled decision) is a moat win. A relevant run that did not route lighter never carries `resultGood` (nothing
+ * one-shot to judge), so the `=== true` check correctly excludes it.
+ */
 function relevantCompounded(o: MoatOutcome): boolean {
-  return o.relevant.landed && lighterThanFloor(o.relevant, o.coldFloor);
+  return o.relevant.landed && lighterThanFloor(o.relevant, o.coldFloor) && o.relevant.resultGood === true;
+}
+
+/**
+ * Whether ONE relevant repeat LIGHTENED-BUT-FAILED — landed its seed AND routed lighter than the cold floor BUT the
+ * judged result was BAD (`resultGood === false`). The honest "memory lightened the route, the code failed" signal:
+ * counted distinctly from {@link relevantCompounded} so it is never silently dropped nor mis-scored as a win.
+ */
+function relevantLighterButBad(o: MoatOutcome): boolean {
+  return o.relevant.landed && lighterThanFloor(o.relevant, o.coldFloor) && o.relevant.resultGood === false;
 }
 
 /** Whether ONE decoy repeat lightened — routed lighter than the cold floor (the false-positive event). */
@@ -154,12 +202,14 @@ export function taskCensus(repeats: readonly MoatOutcome[]): MoatTaskCensus {
   const n = repeats.length;
   const landed = repeats.filter((o) => o.relevant.landed);
   const compoundedIndicators = landed.map((o) => (relevantCompounded(o) ? 1 : 0));
+  const lighterButBadIndicators = landed.map((o) => (relevantLighterButBad(o) ? 1 : 0));
   return {
     taskId: first.taskId,
     coldFloor: first.coldFloor,
     landedRepeats: landed.length,
     repeats: n,
     relevantCompoundedFraction: landed.length === 0 ? null : mean(compoundedIndicators),
+    lighterButBadFraction: landed.length === 0 ? null : mean(lighterButBadIndicators),
     decoyLightenedFraction: n === 0 ? 0 : repeats.filter(decoyLightened).length / n,
     seedLandedFraction: n === 0 ? 0 : landed.length / n,
     compoundedSpread: stdev(compoundedIndicators),
@@ -185,9 +235,12 @@ function groupByTask(outcomes: readonly MoatOutcome[]): MoatOutcome[][] {
 /**
  * Build the SCORED artifact from the flat per-(task, repeat) outcomes (the probe calls this only AFTER both gates
  * pass). The published rates aggregate over REPEATS, not tasks — so k>1 reports a stable rate, not a single draw:
- *   - `compoundRate`  = relevant repeats that LANDED and routed lighter / relevant repeats that LANDED. The
- *                       INDETERMINATE non-landed repeats are excluded from BOTH the numerator and the denominator
- *                       (recall never fired ⇒ no signal); 0 when no relevant repeat landed.
+ *   - `compoundRate`  = relevant repeats that LANDED, routed lighter, AND produced a GOOD result (the RESULTS-GATED
+ *                       win — a lighter route alone is not enough) / relevant repeats that LANDED. The INDETERMINATE
+ *                       non-landed repeats are excluded from BOTH numerator and denominator (recall never fired ⇒ no
+ *                       signal); 0 when no relevant repeat landed.
+ *   - `lighterButBadRate` = relevant repeats that LANDED and routed lighter but produced a BAD result / LANDED — the
+ *                       honest "memory lightened it, the code failed" signal, never folded into the compound win.
  *   - `decoyLightenRate` = ALL decoy repeats that routed lighter / ALL decoy repeats — the false-positive base rate
  *                       (no landing filter: an irrelevant fact lightening IS the control signal).
  *   - `seedLandingRate`  = relevant repeats that landed / ALL relevant repeats — the validity readout.
@@ -198,12 +251,14 @@ export function buildScoredArtifact(outcomes: readonly MoatOutcome[], runs = 1):
   const total = outcomes.length;
   const landed = outcomes.filter((o) => o.relevant.landed);
   const compoundRate = landed.length === 0 ? 0 : landed.filter(relevantCompounded).length / landed.length;
+  const lighterButBadRate = landed.length === 0 ? 0 : landed.filter(relevantLighterButBad).length / landed.length;
   const decoyLightenRate = total === 0 ? 0 : outcomes.filter(decoyLightened).length / total;
   const seedLandingRate = total === 0 ? 0 : landed.length / total;
 
   return {
     condition: "scored",
     compoundRate,
+    lighterButBadRate,
     decoyLightenRate,
     discrimination: compoundRate - decoyLightenRate,
     seedLandingRate,

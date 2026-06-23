@@ -72,23 +72,46 @@ test("discriminationGuard: decoy lightens as often as relevant ⇒ memory-agnost
 
 // --- scoring: census + artifact ----------------------------------------------------------------------------------
 
-/** The proven case: dedupe routes spec-first cold; relevant recall → one-shot (compounds); decoy → stays spec-first. */
+/**
+ * The proven case: dedupe routes spec-first cold; relevant recall → one-shot AND the result judged GOOD (applied the
+ * recalled decision) ⇒ compounds (the RESULTS-GATED win); decoy → stays spec-first. `resultGood: true` is the
+ * result-quality gate — a lighter route alone is not enough; the produced code had to work.
+ */
 const COMPOUND_OUTCOME: MoatOutcome = {
   taskId: "routing-dedupe-key",
   coldFloor: "spec-first",
-  relevant: { shape: "one-shot", landed: true },
+  relevant: { shape: "one-shot", landed: true, resultGood: true },
   decoy: { shape: "spec-first", landed: true },
 };
 
-test("censusRow: relevant lighter-than-floor + landed ⇒ compounded; decoy at floor ⇒ held", () => {
+/**
+ * THE NEW GATE: relevant memory landed AND routed lighter (one-shot) BUT the judged result was BAD — memory skipped
+ * the spec into a BROKEN one-shot. This is NOT a compound win; it is the honest `lighterButBad` signal.
+ */
+const LIGHTER_BUT_BAD: MoatOutcome = {
+  taskId: "routing-dedupe-key",
+  coldFloor: "spec-first",
+  relevant: { shape: "one-shot", landed: true, resultGood: false },
+  decoy: { shape: "spec-first", landed: true },
+};
+
+test("censusRow: relevant lighter + landed + result GOOD ⇒ compounded; decoy at floor ⇒ held", () => {
   const row = censusRow(COMPOUND_OUTCOME);
   assert.equal(row.compounded, true);
+  assert.equal(row.lighterButBad, false);
   assert.equal(row.decoyHeld, true);
 });
 
-test("censusRow: relevant lighter but seed did NOT land ⇒ not compounded (unattributable)", () => {
-  const row = censusRow({ ...COMPOUND_OUTCOME, relevant: { shape: "one-shot", landed: false } });
+test("censusRow: relevant landed + lighter but result BAD ⇒ NOT compounded, flagged lighterButBad (the result gate)", () => {
+  const row = censusRow(LIGHTER_BUT_BAD);
   assert.equal(row.compounded, false);
+  assert.equal(row.lighterButBad, true);
+});
+
+test("censusRow: relevant lighter but seed did NOT land ⇒ not compounded (unattributable)", () => {
+  const row = censusRow({ ...COMPOUND_OUTCOME, relevant: { shape: "one-shot", landed: false, resultGood: true } });
+  assert.equal(row.compounded, false);
+  assert.equal(row.lighterButBad, false);
 });
 
 test("censusRow: decoy lighter than floor ⇒ decoyHeld false (the control broke)", () => {
@@ -100,12 +123,38 @@ test("buildScoredArtifact: rates + discrimination computed from a single repeat 
   const a = buildScoredArtifact([COMPOUND_OUTCOME]);
   assert.equal(a.condition, "scored");
   assert.equal(a.compoundRate, 1);
+  assert.equal(a.lighterButBadRate, 0);
   assert.equal(a.decoyLightenRate, 0);
   assert.equal(a.discrimination, 1);
   assert.equal(a.seedLandingRate, 1);
   assert.deepEqual(a.seedLanding, { landedCount: 1, total: 1 });
   assert.equal(a.runs, 1);
   assert.equal(a.census?.length, 1);
+});
+
+test("buildScoredArtifact: landed+lighter but BAD result ⇒ NOT compounded, surfaced as lighterButBad (the result gate)", () => {
+  // The measurement hole the result gate closes: memory lightened the route into a BROKEN one-shot. Route-only this
+  // would have scored a compound win (compoundRate 1); results-gated it is compoundRate 0, lighterButBadRate 1.
+  const a = buildScoredArtifact([LIGHTER_BUT_BAD]);
+  assert.equal(a.condition, "scored");
+  assert.equal(a.compoundRate, 0);
+  assert.equal(a.lighterButBadRate, 1);
+  assert.equal(a.discrimination, 0); // 0 compound − 0 decoy
+  assert.equal(a.seedLandingRate, 1); // it DID land — the seed worked, the result didn't
+  const c = a.census![0]!;
+  assert.equal(c.relevantCompoundedFraction, 0);
+  assert.equal(c.lighterButBadFraction, 1);
+});
+
+test("buildScoredArtifact: landed+lighter+GOOD ⇒ compounded; landed+lighter+BAD ⇒ lighterButBad (the split)", () => {
+  // Two LANDED+lighter repeats of one task: one with a GOOD result (compounds), one BAD (lightened-but-broken).
+  const a = buildScoredArtifact([COMPOUND_OUTCOME, LIGHTER_BUT_BAD], 2);
+  assert.equal(a.compoundRate, 0.5);      // 1 good / 2 landed
+  assert.equal(a.lighterButBadRate, 0.5); // 1 bad  / 2 landed
+  const c = a.census![0]!;
+  assert.equal(c.relevantCompoundedFraction, 0.5);
+  assert.equal(c.lighterButBadFraction, 0.5);
+  assert.equal(c.landedRepeats, 2);
 });
 
 // --- k>1 AGGREGATION: rates over repeats, indeterminate non-landed repeats excluded ------------------------------
@@ -179,6 +228,7 @@ test("taskCensus: rolls k repeats into fractions + spread, landed-only compound 
   assert.equal(c.repeats, 3);
   assert.equal(c.landedRepeats, 2);
   assert.equal(c.relevantCompoundedFraction, 1); // both LANDED repeats compounded ⇒ 1, the missed one is excluded
+  assert.equal(c.lighterButBadFraction, 0); // both landed repeats produced GOOD results ⇒ no lighter-but-bad
   assert.equal(c.compoundedSpread, 0); // a unanimous landed set ⇒ zero spread
   assert.equal(round(c.seedLandedFraction), 0.67);
 });

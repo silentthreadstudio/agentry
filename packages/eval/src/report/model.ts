@@ -125,8 +125,10 @@ export interface MoatCensus {
   taskId: string;
   /** The shape the task routes to with empty memory. */
   coldFloor: string;
-  /** Fraction of this task's LANDED relevant repeats that routed lighter than the cold floor; null when none landed. */
+  /** Fraction of this task's LANDED relevant repeats that routed lighter AND produced a GOOD result; null when none landed. */
   relevantCompoundedFraction: number | null;
+  /** Fraction of this task's LANDED relevant repeats that routed lighter but produced a BAD result (lightened-but-broken); null when none landed. */
+  lighterButBadFraction: number | null;
   /** Fraction of this task's decoy repeats that routed lighter (the control — should be ~0). */
   decoyLightenedFraction: number;
   /** Fraction of this task's relevant repeats that recalled their seed (this task's validity readout). */
@@ -145,8 +147,10 @@ export interface MoatData {
   runId: string;
   /** The repeat count k this run used (1 = a single high-variance draw). */
   runs: number;
-  /** GIVEN recall fired, the fraction of LANDED relevant repeats that routed lighter than the cold floor. */
+  /** GIVEN recall fired, the fraction of LANDED relevant repeats that routed lighter AND produced a GOOD result (results-gated). */
   compoundRate: number;
+  /** Fraction of LANDED relevant repeats that routed lighter but produced a BAD result — memory lightened it, the code failed. */
+  lighterButBadRate: number;
   /** Fraction of ALL decoy repeats that routed lighter (the false-positive base rate — should be ~0). */
   decoyLightenRate: number;
   /** `compoundRate − decoyLightenRate` — the memory-attributable lightening (the clean signal). */

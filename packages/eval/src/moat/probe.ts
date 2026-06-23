@@ -17,7 +17,13 @@ import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
 import { extractShape, DegenerateRunError } from "../conduct/extract.ts";
 import { buildConductorPrompt } from "../conductor-prompt.ts";
 import type { Shape } from "../conduct/shape.ts";
+import { SHAPES_BY_WEIGHT } from "../conduct/shape.ts";
 import type { EvalObserver } from "../store/schema.ts";
+import { judgeWithRubric, makeRubric, realJudgeFn, DEFAULT_JUDGE_MODEL, type JudgeFn, type Rubric } from "../judge/index.ts";
+import { OUTCOME_DIMENSIONS, RUBRIC_TEXT } from "../conduct/outcome-rubric.ts";
+import { summarizeProducedResult } from "../conduct/result.ts";
+import type { OutcomeFixture } from "../conduct/fixture.ts";
+import { RESULT_GOOD_THRESHOLD } from "../rightsizing/score.ts";
 
 import { loadMoatFixture, type MoatTask } from "./fixture.ts";
 import { seedFact, type FactSeed } from "./seed.ts";
@@ -30,6 +36,37 @@ import {
 
 /** The model pinned per run (the command discovers it from env/config; a generic default here). */
 const DEFAULT_MODEL = "claude-opus-4-8[1m]";
+
+/**
+ * The RESULT-QUALITY rubric the moat probe judges a relevant one-shot's produced tree against. It REUSES the shared
+ * outcome rubric DATA (the same 4 anchored dimensions + `/8` normalization the rightsizing probe scores by, so
+ * `RESULT_GOOD_THRESHOLD` reads identically across both probes) — the APPLY-THE-DECISION clause is threaded into the
+ * judge's SUBJECT context per call (the recalled fact text), not baked into the rubric, so the rubric stays the
+ * shared value while the judge can still assess "did the code apply the recalled decision".
+ */
+const MOAT_RESULT_RUBRIC: Rubric = makeRubric(OUTCOME_DIMENSIONS, RUBRIC_TEXT);
+
+/**
+ * The apply-the-decision clause prepended to the judge's TASK context for a moat result judgement. A moat compound
+ * is only a win if the one-shot result both meets the task intent AND correctly APPLIES the recalled decision a
+ * lighter route was justified by — so the judge is told the decision and instructed to score `meetsIntent`/`correct`
+ * DOWN when the produced code ignores or contradicts it (a lighter route that dropped the decision is not a win).
+ */
+function moatJudgeTaskContext(taskPrompt: string, decisionText: string): string {
+  return (
+    `${taskPrompt}\n\n` +
+    `[RECALLED DECISION THE RESULT MUST APPLY]: ${decisionText}\n` +
+    "The build routed LIGHTER than its cold baseline because this prior decision settled a fork the task would " +
+    "otherwise have to resolve. Score the result GOOD only if the produced code both does what the task asked AND " +
+    "correctly applies this recalled decision; if the code ignores or contradicts the decision, score meetsIntent " +
+    "and correct DOWN accordingly (a lighter route that dropped the decision is NOT a working compound)."
+  );
+}
+
+/** Index in the shared weight order (one-shot=0, spec-first=1, decompose=2) — lighter-than-floor reads this. */
+function shapeWeight(shape: Shape): number {
+  return SHAPES_BY_WEIGHT.indexOf(shape);
+}
 
 /**
  * The warm-run directive: prime memory FIRST, and let a recalled decision COLLAPSE a fork it already settled
@@ -134,6 +171,14 @@ export interface MoatProbeOptions {
   fixtureDir: string;
   /** The runner to drive each warm run through — live or replay. */
   runner: Runner;
+  /**
+   * The judge seam (T-01) the RESULT-QUALITY gate scores a relevant one-shot's produced tree through. INJECTED — a
+   * canned fn in tests (zero API), the real `claude -p` judge in production. Defaults to {@link realJudgeFn}, mirroring
+   * the rightsizing probe, so the public path judges for real while tests stay offline.
+   */
+  judge?: JudgeFn;
+  /** Model id pinned for every JUDGE call (the result-quality judge); the caller discovers it from env/config. */
+  judgeModel?: string;
   /** Where the artifact JSON is written. */
   outPath: string;
   /** Model id to pin per run (defaults to {@link DEFAULT_MODEL}). */
@@ -174,17 +219,27 @@ export interface MoatResult {
   outcomes: readonly MoatOutcome[];
 }
 
-/** What one warm run yields: the routed shape (or null), whether the seed landed, and the stream path (provenance). */
+/** What one warm run yields: the routed shape (or null), whether the seed landed, the stream path, and the optional result-quality. */
 interface WarmOutcome {
   shape: Shape | null;
   landed: boolean;
   streamPath: string;
+  /** Judged-GOOD verdict over the produced tree (relevant arm that routed lighter only); absent otherwise. */
+  resultGood?: boolean;
+  /** The judged overall behind {@link resultGood} (carried for the census); absent otherwise. */
+  resultOverall?: number;
 }
 
 /**
  * Run ONE warm conductor run: fresh sandbox, seed the task's codebase + the given fact into the workingDir's
  * project memory (the root `claude -p` reads), route the task, and extract both the routed shape and whether
  * recall landed the seed. A degenerate run (no determinable shape) yields `shape: null` rather than crashing.
+ *
+ * RESULT-QUALITY gate (RELEVANT arm only — `signature !== undefined`): when the run routed LIGHTER than the task's
+ * cold floor (it one-shot, so `terminateOnArtifact` never fired and the run SETTLED, leaving a produced tree), the
+ * tree is judged for whether it meets intent AND applies the recalled decision. `resultGood` (judged overall ≥
+ * {@link RESULT_GOOD_THRESHOLD}) rides the outcome so a lighter-but-BROKEN one-shot is not scored as a compound win.
+ * The decoy arm and any relevant run that did NOT route lighter need no judging (no tree one-shot to assess).
  */
 async function runWarm(
   task: MoatTask,
@@ -195,6 +250,8 @@ async function runWarm(
   pluginDir: string | undefined,
   fixtureDir: string,
   signature: string | undefined,
+  judge: JudgeFn,
+  judgeModel: string,
 ): Promise<WarmOutcome> {
   const sandbox: Sandbox = prepareSandbox();
   const seedDir = join(fixtureDir, "seeds", task.id);
@@ -239,7 +296,44 @@ async function runWarm(
     recallLanded(text, recallFired) &&
     (signature !== undefined ? factSurfaced(text, signature) : true);
 
+  // RESULT-QUALITY gate: the RELEVANT arm (signature set) that routed LIGHTER than the cold floor one-shot — so the
+  // run settled and the produced tree exists to judge. Judge whether the code meets intent AND applies the recalled
+  // decision; resultGood = judged overall cleared the GOOD bar. (No artifact terminated the one-shot, so the tree is
+  // there; a relevant run that escalated or a decoy run is not judged — nothing one-shot to assess.)
+  const isRelevant = signature !== undefined;
+  if (isRelevant && shape !== null && shapeWeight(shape) < shapeWeight(task.coldFloor)) {
+    const produced = summarizeProducedResult(sandbox.workingDir, asMoatFixtureView(task));
+    const judged = await judgeWithRubric(
+      MOAT_RESULT_RUBRIC,
+      moatJudgeTaskContext(task.prompt, fact.text),
+      produced.text,
+      { judge, model: judgeModel },
+    );
+    return { shape, landed, streamPath, resultGood: judged.overall >= RESULT_GOOD_THRESHOLD, resultOverall: judged.overall };
+  }
+
   return { shape, landed, streamPath };
+}
+
+/**
+ * Adapt a {@link MoatTask} to the {@link OutcomeFixture} VIEW {@link summarizeProducedResult} reads — it consumes
+ * ONLY `id` (for the result's provenance) and never the oracle/overlay fields, so those are inert placeholders here
+ * (the moat probe has no oracle path — it judges the produced tree, not a held-out test), mirroring rightsizing's
+ * `asOutcomeFixtureView` thin projection.
+ */
+function asMoatFixtureView(task: MoatTask): OutcomeFixture {
+  return {
+    id: task.id,
+    prompt: task.prompt,
+    shape: task.coldFloor,
+    kind: "feature",
+    oracleCmd: "",
+    oracleTimeoutMs: 0,
+    seedDir: "",
+    oracleDir: "",
+    goldenDir: "",
+    brokenDir: "",
+  };
 }
 
 /**
@@ -251,6 +345,8 @@ async function runWarm(
  */
 export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> {
   const model = opts.model ?? DEFAULT_MODEL;
+  const judge = opts.judge ?? realJudgeFn;
+  const judgeModel = opts.judgeModel ?? DEFAULT_JUDGE_MODEL;
   const k = opts.runs ?? 1;
   const seedLandingFloor = opts.seedLandingFloor ?? DEFAULT_SEED_LANDING_FLOOR;
   const tasks = loadMoatFixture(join(opts.fixtureDir, "tasks.yaml"));
@@ -271,13 +367,20 @@ export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> 
     for (let repeat = 0; repeat < k; repeat++) {
       // Two warm runs per repeat: distinct id-seeds keep the seeded facts' ULIDs from colliding. Only the relevant
       // run gets the fact signature (landing must tie to THAT fact); the decoy's landing is "recalled non-empty".
-      const relevant = await runWarm(task, task.relevant, idSeed++, opts.runner, model, opts.pluginDir, opts.fixtureDir, task.factSignature);
-      const decoy = await runWarm(task, task.decoy, idSeed++, opts.runner, model, opts.pluginDir, opts.fixtureDir, undefined);
+      const relevant = await runWarm(task, task.relevant, idSeed++, opts.runner, model, opts.pluginDir, opts.fixtureDir, task.factSignature, judge, judgeModel);
+      const decoy = await runWarm(task, task.decoy, idSeed++, opts.runner, model, opts.pluginDir, opts.fixtureDir, undefined, judge, judgeModel);
 
       const outcome: MoatOutcome = {
         taskId: task.id,
         coldFloor: task.coldFloor,
-        relevant: { shape: relevant.shape, landed: relevant.landed },
+        // Carry the RESULT-QUALITY verdict (relevant one-shot only) so the results-gated compound can read it: a
+        // landed+lighter repeat is a win ONLY when resultGood === true (a lighter-but-broken one-shot is not).
+        relevant: {
+          shape: relevant.shape,
+          landed: relevant.landed,
+          ...(relevant.resultGood !== undefined ? { resultGood: relevant.resultGood } : {}),
+          ...(relevant.resultOverall !== undefined ? { resultOverall: relevant.resultOverall } : {}),
+        },
         decoy: { shape: decoy.shape, landed: decoy.landed },
       };
       outcomes.push(outcome);

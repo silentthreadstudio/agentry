@@ -17,6 +17,7 @@ interface RawMoatArtifact {
   condition?: string;
   runs?: number;
   compoundRate?: number;
+  lighterButBadRate?: number;
   decoyLightenRate?: number;
   discrimination?: number;
   seedLandingRate?: number;
@@ -65,12 +66,15 @@ export function loadMoat(runsRoot: string): MoatData | undefined {
     runId: best.runId,
     runs: a.runs ?? 1,
     compoundRate: a.compoundRate ?? 0,
+    lighterButBadRate: a.lighterButBadRate ?? 0,
     decoyLightenRate: a.decoyLightenRate ?? 0,
     discrimination: a.discrimination ?? 0,
     // Back-compat: a pre-k artifact has no seedLandingRate; derive it from the raw landing counts.
     seedLandingRate: a.seedLandingRate ?? (seedLanding.total === 0 ? 0 : seedLanding.landedCount / seedLanding.total),
     seedLanding,
-    census: a.census ?? [],
+    // Back-compat: a pre-results-gated artifact's census rows have no `lighterButBadFraction`; default it to null
+    // (no basis) so the template can read it uniformly.
+    census: (a.census ?? []).map((c) => ({ ...c, lighterButBadFraction: c.lighterButBadFraction ?? null })),
     successCondition: narrowSuccessCondition(a),
   };
 }

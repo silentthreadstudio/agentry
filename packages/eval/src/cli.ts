@@ -231,12 +231,13 @@ async function runRightsizing(flags: CliFlags, runner = liveRunner, judge: Judge
  * conductor with a fork-resolving fact seeded vs. an irrelevant decoy, and scores whether recalled memory makes
  * the task route lighter (compounding) — gated by seed-landing + decoy discrimination.
  */
-async function runMoat(flags: CliFlags, runner = liveRunner): Promise<number> {
+async function runMoat(flags: CliFlags, runner = liveRunner, judge: JudgeFn = realJudgeFn): Promise<number> {
   if (flags.fixture === undefined) throw new UsageError("run moat: --fixture <dir> is required");
   const fixtureDir = resolve(flags.fixture);
   const runsRoot = resolveRunsRoot(flags);
   const runId = newRunId(flags.runId);
   const k = flags.runs !== undefined ? Number(flags.runs) : 1;
+  const judgeModel = flags.judgeModel ?? DEFAULT_JUDGE_MODEL;
 
   const config: RunConfig = {
     runId,
@@ -252,6 +253,8 @@ async function runMoat(flags: CliFlags, runner = liveRunner): Promise<number> {
   const result = await runMoatProbe({
     fixtureDir,
     runner,
+    judge,
+    judgeModel,
     outPath: join(runDir, "summary-artifact.json"),
     observer,
     runId,
@@ -332,7 +335,7 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
         return await runRightsizing(parseFlags(rest).flags, deps.runner, deps.judge);
       }
       if (sub === "moat") {
-        return await runMoat(parseFlags(rest).flags, deps.runner);
+        return await runMoat(parseFlags(rest).flags, deps.runner, deps.judge);
       }
       throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "moat" | "rightsizing")`);
     }
