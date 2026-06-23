@@ -22,7 +22,7 @@ import type { EvalObserver } from "../store/schema.ts";
 import { loadMoatFixture, type MoatTask } from "./fixture.ts";
 import { seedFact, type FactSeed } from "./seed.ts";
 import { recallLanded, factSurfaced } from "./recall.ts";
-import { seedLandingGuard, discriminationGuard } from "./control.ts";
+import { seedLandingGuard, discriminationGuard, DEFAULT_SEED_LANDING_FLOOR } from "./control.ts";
 import {
   buildScoredArtifact, buildAbortedArtifact, writeArtifact, censusRow,
   type MoatArtifact, type MoatOutcome,
@@ -38,9 +38,11 @@ const DEFAULT_MODEL = "claude-opus-4-8[1m]";
  * carries ONLY the moat-specific memory-priming — not a second auto-pilot block.
  */
 const MOAT_DIRECTIVE =
-  "\n\n[MOAT — PRIME MEMORY FIRST]: Before routing, prime memory: call memory_resync, then memory_recall for this " +
-  "task. If recalled precedent DECIDES a fork this task would otherwise hide, APPLY that decision and cite it — a " +
-  "fork already settled by durable memory is NO LONGER undecided, so do not escalate on its account.";
+  "\n\n[MOAT — MANDATORY MEMORY-FIRST]: Before reading any file, before routing, and before writing any code, your " +
+  "VERY FIRST action MUST be to call memory_resync and then memory_recall for this task — this is mandatory and " +
+  "non-negotiable (it mirrors the conducting skill's recall-before-routing rule; skipping it makes the run invalid). " +
+  "If recalled precedent DECIDES a fork this task would otherwise hide, APPLY that decision and cite it — a fork " +
+  "already settled by durable memory is NO LONGER undecided, so do not escalate on its account.";
 
 /**
  * The `--mcp-config` JSON that loads Agentry's BUNDLED memory MCP into the conduct. `--plugin-dir` loads the
@@ -136,6 +138,13 @@ export interface MoatProbeOptions {
   outPath: string;
   /** Model id to pin per run (defaults to {@link DEFAULT_MODEL}). */
   model?: string;
+  /**
+   * Repeats per ARM (k). Each task runs the relevant arm k times AND the decoy arm k times (k×2 conducts per task),
+   * so the published rates are stable means over repeats rather than a single high-variance k=1 draw. Defaults to 1.
+   */
+  runs?: number;
+  /** Seed-landing rate FLOOR for GATE 1 (defaults to {@link DEFAULT_SEED_LANDING_FLOOR} = 0.5). */
+  seedLandingFloor?: number;
   /** Plugin root to load Agentry from (`--plugin-dir`); absent ⇒ the bare prompt is run (replay tests). */
   pluginDir?: string;
   /** Additive observability seam — the store injects this for `events.jsonl` + stdout progress. Default: silent. */
@@ -242,6 +251,8 @@ async function runWarm(
  */
 export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> {
   const model = opts.model ?? DEFAULT_MODEL;
+  const k = opts.runs ?? 1;
+  const seedLandingFloor = opts.seedLandingFloor ?? DEFAULT_SEED_LANDING_FLOOR;
   const tasks = loadMoatFixture(join(opts.fixtureDir, "tasks.yaml"));
   // The pre-registered moat target W is loaded up front — the falsifiable target MUST EXIST before the run.
   const target = loadMoatThreshold(opts.thresholdPath);
@@ -249,48 +260,54 @@ export async function runMoatProbe(opts: MoatProbeOptions): Promise<MoatResult> 
   const emit = (detail: string): void =>
     opts.observer?.emit?.({ kind: "task-done", runId, detail, ts: new Date().toISOString() });
 
+  // Flat per-(task, repeat) outcomes — k repeats of each arm per task. A monotonic id-seed counter varies the seed
+  // per repeat AND per arm so no two seeded facts' ULIDs ever collide (the ULID-collision discipline at k>1).
   const outcomes: MoatOutcome[] = [];
+  let idSeed = 0;
   let i = 0;
   for (const task of tasks) {
     i++;
-    opts.observer?.emit?.({ kind: "task-started", runId, detail: `${i}/${tasks.length} ${task.id}`, ts: new Date().toISOString() });
-    // Two warm runs per task: distinct id-seeds keep the two seeded facts' ULIDs from colliding. Only the
-    // relevant run gets the fact signature (landing must tie to THAT fact); the decoy's landing is "recalled non-empty".
-    const relevant = await runWarm(task, task.relevant, 2 * i, opts.runner, model, opts.pluginDir, opts.fixtureDir, task.factSignature);
-    const decoy = await runWarm(task, task.decoy, 2 * i + 1, opts.runner, model, opts.pluginDir, opts.fixtureDir, undefined);
+    opts.observer?.emit?.({ kind: "task-started", runId, detail: `${i}/${tasks.length} ${task.id} (k=${k})`, ts: new Date().toISOString() });
+    for (let repeat = 0; repeat < k; repeat++) {
+      // Two warm runs per repeat: distinct id-seeds keep the seeded facts' ULIDs from colliding. Only the relevant
+      // run gets the fact signature (landing must tie to THAT fact); the decoy's landing is "recalled non-empty".
+      const relevant = await runWarm(task, task.relevant, idSeed++, opts.runner, model, opts.pluginDir, opts.fixtureDir, task.factSignature);
+      const decoy = await runWarm(task, task.decoy, idSeed++, opts.runner, model, opts.pluginDir, opts.fixtureDir, undefined);
 
-    const outcome: MoatOutcome = {
-      taskId: task.id,
-      coldFloor: task.coldFloor,
-      relevant: { shape: relevant.shape, landed: relevant.landed },
-      decoy: { shape: decoy.shape, landed: decoy.landed },
-    };
-    outcomes.push(outcome);
-    const row = censusRow(outcome);
-    emit(`${i}/${tasks.length} ${task.id} → relevant ${relevant.shape ?? "—"} / decoy ${decoy.shape ?? "—"} (${row.compounded ? "compounded" : "held"})`);
+      const outcome: MoatOutcome = {
+        taskId: task.id,
+        coldFloor: task.coldFloor,
+        relevant: { shape: relevant.shape, landed: relevant.landed },
+        decoy: { shape: decoy.shape, landed: decoy.landed },
+      };
+      outcomes.push(outcome);
+      const row = censusRow(outcome);
+      emit(`${i}/${tasks.length} ${task.id} r${repeat} → relevant ${relevant.shape ?? "—"} / decoy ${decoy.shape ?? "—"} (${row.compounded ? "compounded" : "held"})`);
+    }
   }
 
-  // GATE 1 — validity: every relevant warm run must have landed its seed, or the measurement is invalid.
-  const landing = seedLandingGuard(outcomes.map((o) => o.relevant.landed));
+  // GATE 1 — validity: the seed-landing RATE over relevant repeats must clear the floor (a majority must have
+  // exercised memory), or the measurement is too weak to trust.
+  const landing = seedLandingGuard(outcomes.map((o) => o.relevant.landed), seedLandingFloor);
   if (!landing.ok) {
-    opts.observer?.emit?.({ kind: "gate-fired", runId, detail: `seed-landing failed (${landing.landedCount}/${landing.total} landed)`, ts: new Date().toISOString() });
+    opts.observer?.emit?.({ kind: "gate-fired", runId, detail: `seed-landing rate ${landing.landedCount}/${landing.total} below floor ${landing.floor}`, ts: new Date().toISOString() });
     // A gate fired ⇒ NO discrimination number, so `observed` is null and no pass/fail is computed — but the
     // pre-registered target still ships on the public path (the falsifiable form is always on record).
     return emitPublic(opts.outPath, buildAbortedArtifact(landing.verdict!), target, null, outcomes);
   }
 
-  // GATE 2 — power: the relevant fact must compound where the decoy does not.
-  const rows = outcomes.map(censusRow);
-  const disc = discriminationGuard(rows.map((r) => r.compounded), rows.map((r) => !r.decoyHeld));
+  // GATE 2 — power: evaluate over the AGGREGATED rates — the relevant fact must compound (over its landed repeats)
+  // where the decoy does not. Score first so the gate reads the same aggregate the artifact publishes.
+  const scored = buildScoredArtifact(outcomes, k);
+  const disc = discriminationGuard(scored.compoundRate ?? 0, scored.decoyLightenRate ?? 0);
   if (!disc.power) {
     opts.observer?.emit?.({ kind: "gate-fired", runId, detail: `discrimination failed: ${disc.verdict}`, ts: new Date().toISOString() });
     return emitPublic(opts.outPath, buildAbortedArtifact(disc.verdict!), target, null, outcomes);
   }
 
-  const artifact = buildScoredArtifact(outcomes);
   // Scored ⇒ the measured discrimination is the run's honest delta; pass/fail is computed against W only when W is
   // calibrated (the artifact reports the real number regardless of the target — never inflated by it).
-  return emitPublic(opts.outPath, artifact, target, artifact.discrimination ?? null, outcomes);
+  return emitPublic(opts.outPath, scored, target, scored.discrimination ?? null, outcomes);
 }
 
 /**

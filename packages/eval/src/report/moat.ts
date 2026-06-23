@@ -15,9 +15,11 @@ import type { MoatCensus, MoatData, SuccessConditionView } from "./model.ts";
 /** The raw moat artifact as the probe persists it into a moat run's `summary.json#artifact` (the fields we read). */
 interface RawMoatArtifact {
   condition?: string;
+  runs?: number;
   compoundRate?: number;
   decoyLightenRate?: number;
   discrimination?: number;
+  seedLandingRate?: number;
   seedLanding?: { landedCount?: number; total?: number };
   census?: MoatCensus[];
   successCondition?: {
@@ -58,12 +60,16 @@ export function loadMoat(runsRoot: string): MoatData | undefined {
   if (best === undefined) return undefined;
 
   const a = best.raw;
+  const seedLanding = { landedCount: a.seedLanding?.landedCount ?? 0, total: a.seedLanding?.total ?? 0 };
   return {
     runId: best.runId,
+    runs: a.runs ?? 1,
     compoundRate: a.compoundRate ?? 0,
     decoyLightenRate: a.decoyLightenRate ?? 0,
     discrimination: a.discrimination ?? 0,
-    seedLanding: { landedCount: a.seedLanding?.landedCount ?? 0, total: a.seedLanding?.total ?? 0 },
+    // Back-compat: a pre-k artifact has no seedLandingRate; derive it from the raw landing counts.
+    seedLandingRate: a.seedLandingRate ?? (seedLanding.total === 0 ? 0 : seedLanding.landedCount / seedLanding.total),
+    seedLanding,
     census: a.census ?? [],
     successCondition: narrowSuccessCondition(a),
   };

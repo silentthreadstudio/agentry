@@ -15,13 +15,20 @@
 export type SeedLandingVerdict = "seed-did-not-land";
 export type DiscriminationVerdict = "no-compounding-detected" | "memory-agnostic-lightening";
 
-/** Result of the seed-landing validity gate. `ok` iff every warm-relevant run recalled the seed. */
+/** The default seed-landing rate FLOOR — the instrument must have exercised memory on a MAJORITY of relevant runs. */
+export const DEFAULT_SEED_LANDING_FLOOR = 0.5;
+
+/** Result of the seed-landing validity gate. `ok` iff the landing RATE cleared the floor. */
 export interface SeedLandingResult {
   ok: boolean;
   verdict?: SeedLandingVerdict;
   /** How many of the relevant runs landed their seed (for the artifact / diagnostics). */
   landedCount: number;
   total: number;
+  /** The measured landing rate (`landedCount / total`; 0 when there were no relevant runs). */
+  rate: number;
+  /** The floor the rate had to clear (for diagnostics). */
+  floor: number;
 }
 
 /** Result of the discrimination power gate. `power` iff relevant compounds and the decoy does not (enough). */
@@ -33,31 +40,34 @@ export interface DiscriminationResult {
 }
 
 /**
- * VALIDITY gate. Every warm-relevant run must have landed its seed (recall non-empty). A single miss invalidates
- * the run: an unseeded warm run can't show compounding, so a partial seed set would bias the rate. Strict by
- * design (like routing's A/A unanimity) — relax to a threshold later via a param if needed.
+ * VALIDITY gate — a RATE FLOOR over the warm-relevant repeats. With k>1 the per-run recall is stochastic, so an
+ * all-or-nothing rule would abort on a single transient miss; instead the landing RATE must clear `floor` (default
+ * {@link DEFAULT_SEED_LANDING_FLOOR} = 0.5 — the instrument must have exercised memory on a MAJORITY of relevant
+ * repeats, or the measurement is too weak to trust). The mandatory-recall directive keeps this high; the floor is a
+ * safety net. Below the floor (or with no relevant runs) ⇒ `seed-did-not-land`, no score.
  */
-export function seedLandingGuard(landed: readonly boolean[]): SeedLandingResult {
+export function seedLandingGuard(
+  landed: readonly boolean[],
+  floor: number = DEFAULT_SEED_LANDING_FLOOR,
+): SeedLandingResult {
   const landedCount = landed.filter(Boolean).length;
   const total = landed.length;
-  const ok = total > 0 && landedCount === total;
-  return ok ? { ok, landedCount, total } : { ok, verdict: "seed-did-not-land", landedCount, total };
+  const rate = total === 0 ? 0 : landedCount / total;
+  const ok = total > 0 && rate >= floor;
+  return ok
+    ? { ok, landedCount, total, rate, floor }
+    : { ok, verdict: "seed-did-not-land", landedCount, total, rate, floor };
 }
 
 /**
- * POWER gate. `compounded[i]`/`decoyLightened[i]` are the per-task outcomes: did the RELEVANT fact make task i
- * route lighter than its cold floor, and did the DECOY also lighten it? The instrument has discriminating power
- * iff at least one task compounded AND the decoy lightens strictly less often than the relevant fact does — i.e.
- * the lightening is attributable to the RELEVANT memory, not to merely being a warm run.
+ * POWER gate, evaluated over the AGGREGATED rates (k-aware). `compoundRate` is "given recall fired, how often the
+ * relevant fact collapsed the fork" (over the LANDED relevant repeats); `decoyLightenRate` is the irrelevant-fact
+ * false-positive base rate (over ALL decoy repeats). The instrument has discriminating power iff SOMETHING compounded
+ * AND the relevant fact lightens strictly MORE than the decoy does — i.e. the lightening is attributable to the
+ * RELEVANT memory, not to merely being a warm run. Nothing compounds ⇒ `no-compounding-detected`; the decoy lightens
+ * at least as often ⇒ `memory-agnostic-lightening`.
  */
-export function discriminationGuard(
-  compounded: readonly boolean[],
-  decoyLightened: readonly boolean[],
-): DiscriminationResult {
-  const n = compounded.length;
-  const compoundRate = n === 0 ? 0 : compounded.filter(Boolean).length / n;
-  const decoyLightenRate = n === 0 ? 0 : decoyLightened.filter(Boolean).length / n;
-
+export function discriminationGuard(compoundRate: number, decoyLightenRate: number): DiscriminationResult {
   if (compoundRate === 0) {
     return { power: false, verdict: "no-compounding-detected", compoundRate, decoyLightenRate };
   }

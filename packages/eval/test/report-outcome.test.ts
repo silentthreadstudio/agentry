@@ -136,12 +136,14 @@ function pageWith(rightsizing?: RightsizingData, honesty?: HonestyData, moat?: M
 function moatData(): MoatData {
   return {
     runId: "moat-test",
+    runs: 3,
     compoundRate: 1,
     decoyLightenRate: 0,
     discrimination: 1,
-    seedLanding: { landedCount: 1, total: 1 },
+    seedLandingRate: 1,
+    seedLanding: { landedCount: 3, total: 3 },
     census: [
-      { taskId: "rs-dedupe", coldFloor: "spec-first", warmRelevant: "one-shot", warmDecoy: "spec-first", compounded: true, decoyHeld: true },
+      { taskId: "rs-dedupe", coldFloor: "spec-first", relevantCompoundedFraction: 1, decoyLightenedFraction: 0, seedLandedFraction: 1, compoundedSpread: 0, landedRepeats: 3, repeats: 3 },
     ],
     successCondition: { statement: "discrimination ≥ W", target: null, calibrationPending: true, observed: 1 },
   };

@@ -116,35 +116,46 @@ export interface HistoryRow {
   cur: boolean;
 }
 
-/** One row of the moat census — a task's compounding behavior (relevant vs. decoy warm run). */
+/**
+ * One row of the moat census — a task's compounding behavior over its k repeats (relevant vs. decoy warm runs),
+ * carried as FRACTIONS + a spread so the headline is never a bare single-draw point (the honesty rule).
+ */
 export interface MoatCensus {
   /** The labeled task id. */
   taskId: string;
   /** The shape the task routes to with empty memory. */
   coldFloor: string;
-  /** Shape dispatched with the fork-resolving fact recalled. */
-  warmRelevant: string | null;
-  /** Shape dispatched with the irrelevant decoy recalled. */
-  warmDecoy: string | null;
-  /** Relevant memory recalled AND routed lighter than the cold floor. */
-  compounded: boolean;
-  /** The decoy did NOT lighten the shape (the discrimination control held). */
-  decoyHeld: boolean;
+  /** Fraction of this task's LANDED relevant repeats that routed lighter than the cold floor; null when none landed. */
+  relevantCompoundedFraction: number | null;
+  /** Fraction of this task's decoy repeats that routed lighter (the control — should be ~0). */
+  decoyLightenedFraction: number;
+  /** Fraction of this task's relevant repeats that recalled their seed (this task's validity readout). */
+  seedLandedFraction: number;
+  /** Population stdev of the per-repeat compounded indicator over the landed relevant repeats (the spread). */
+  compoundedSpread: number;
+  /** How many relevant repeats landed their seed (the compound denominator for this task). */
+  landedRepeats: number;
+  /** Total relevant repeats run for this task (k). */
+  repeats: number;
 }
 
 /** The memory-hygiene (moat) projection — does recalled memory make a task route lighter? From the latest moat run. */
 export interface MoatData {
   /** The moat run this data came from (a different run than routing/quality — the latest scored moat run). */
   runId: string;
-  /** Fraction of tasks where a recalled relevant decision routed the task lighter than its cold floor. */
+  /** The repeat count k this run used (1 = a single high-variance draw). */
+  runs: number;
+  /** GIVEN recall fired, the fraction of LANDED relevant repeats that routed lighter than the cold floor. */
   compoundRate: number;
-  /** Fraction of tasks where the irrelevant decoy ALSO lightened (the contrast — should be ~0). */
+  /** Fraction of ALL decoy repeats that routed lighter (the false-positive base rate — should be ~0). */
   decoyLightenRate: number;
   /** `compoundRate − decoyLightenRate` — the memory-attributable lightening (the clean signal). */
   discrimination: number;
-  /** How many relevant warm runs recalled their seed (the validity readout). */
+  /** Relevant repeats that recalled their seed, over all relevant repeats (the validity readout). */
+  seedLandingRate: number;
+  /** Raw landing counts behind {@link seedLandingRate} (the auditable denominator). */
   seedLanding: { landedCount: number; total: number };
-  /** Per-task census. */
+  /** Per-task census (the k repeats rolled into fractions + spread). */
   census: MoatCensus[];
   /** The pre-registered falsifiable target W (discrimination ≥ W) — ALWAYS present on the public path (AC-THRESH). */
   successCondition: SuccessConditionView;

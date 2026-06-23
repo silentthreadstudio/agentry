@@ -236,11 +236,14 @@ async function runMoat(flags: CliFlags, runner = liveRunner): Promise<number> {
   const fixtureDir = resolve(flags.fixture);
   const runsRoot = resolveRunsRoot(flags);
   const runId = newRunId(flags.runId);
+  const k = flags.runs !== undefined ? Number(flags.runs) : 1;
 
   const config: RunConfig = {
     runId,
     kind: "moat",
     fixtureDir,
+    k,
+    ...(flags.model !== undefined ? { model: flags.model } : {}),
     ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
     startedAt: new Date().toISOString(),
   };
@@ -252,6 +255,8 @@ async function runMoat(flags: CliFlags, runner = liveRunner): Promise<number> {
     outPath: join(runDir, "summary-artifact.json"),
     observer,
     runId,
+    runs: k,
+    ...(flags.model !== undefined ? { model: flags.model } : {}),
     ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
   });
 

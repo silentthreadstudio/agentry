@@ -518,9 +518,9 @@ const SAMPLE_RUNS = [
 ];
 
 const SAMPLE_MOAT = {
-  runId: "20260617-182721-83d4", compoundRate: 1, decoyLightenRate: 0, discrimination: 1,
-  seedLanding: { landedCount: 1, total: 1 },
-  census: [{ taskId: "routing-dedupe-key", coldFloor: "spec-first", warmRelevant: "one-shot", warmDecoy: "spec-first", compounded: true, decoyHeld: true }],
+  runId: "20260617-182721-83d4", runs: 3, compoundRate: 1, decoyLightenRate: 0, discrimination: 1,
+  seedLandingRate: 1, seedLanding: { landedCount: 3, total: 3 },
+  census: [{ taskId: "routing-dedupe-key", coldFloor: "spec-first", relevantCompoundedFraction: 1, decoyLightenedFraction: 0, seedLandedFraction: 1, compoundedSpread: 0, landedRepeats: 3, repeats: 3 }],
   successCondition: { statement: "discrimination ≥ W", target: null, calibrationPending: true, observed: 1 },
 };
 
@@ -635,24 +635,26 @@ document.getElementById("rn-tbl").innerHTML =
   const el = document.getElementById("moat-body");
   if(!MOAT){ el.innerHTML = '<div class="card"><p class="empty">No scored moat run in the store yet — run <b>selfeval run moat</b>.</p></div>'; return; }
   const sl = MOAT.seedLanding || { landedCount: 0, total: 0 };
+  const k = MOAT.runs || 1;
+  const cf = (v)=> v==null ? "—" : pct(v);   // compound fractions can be null (no landed repeat ⇒ no basis)
   el.innerHTML = `
     <div class="kpis">
-      <div class="kpi"><div class="k-lab">Compound rate</div><div class="k-val good">${pct(MOAT.compoundRate)}</div><div class="k-sub">tasks routed lighter via recall</div></div>
+      <div class="kpi"><div class="k-lab">Compound rate</div><div class="k-val good">${pct(MOAT.compoundRate)}</div><div class="k-sub">landed repeats routed lighter · ${k} run${k===1?'':'s'}</div></div>
       <div class="kpi"><div class="k-lab">Discrimination</div><div class="k-val good">${MOAT.discrimination.toFixed(2)}</div><div class="k-sub">compound − decoy (memory-attributable)</div></div>
       <div class="kpi"><div class="k-lab">Decoy lightened</div><div class="k-val ${MOAT.decoyLightenRate>0?'bad':'good'}">${pct(MOAT.decoyLightenRate)}</div><div class="k-sub">control — should be 0%</div></div>
-      <div class="kpi"><div class="k-lab">Seed landing</div><div class="k-val good">${sl.landedCount} / ${sl.total}</div><div class="k-sub">relevant seeds recalled</div></div>
+      <div class="kpi"><div class="k-lab">Seed landing</div><div class="k-val good">${pct(MOAT.seedLandingRate)}</div><div class="k-sub">${sl.landedCount} / ${sl.total} relevant seeds recalled</div></div>
     </div>
     <div class="card" style="margin-top:16px">
       <h3>Per-task census</h3>
-      <p class="cap">cold floor → warm (relevant) vs warm (decoy) · compounded = relevant routes lighter AND decoy holds</p>
+      <p class="cap">over ${k} repeat${k===1?'':'s'} per arm · compounded = fraction of LANDED relevant repeats that route lighter (± spread) · decoy should be 0%</p>
       <table class="tbl">
-        <tr><th>Task</th><th>Cold floor</th><th>Warm · relevant</th><th>Warm · decoy</th><th>Compounded</th></tr>
+        <tr><th>Task</th><th>Cold floor</th><th>Seed landing</th><th>Compounded (landed)</th><th>Decoy lightened</th></tr>
         ${MOAT.census.map(c=>`<tr>
           <td>${c.taskId.replace(/^routing-/,"")}</td>
           <td><span class="tag ${shapeCls(c.coldFloor)}">${c.coldFloor}</span></td>
-          <td><span class="tag ${shapeCls(c.warmRelevant)}">${c.warmRelevant||"—"}</span></td>
-          <td><span class="tag ${shapeCls(c.warmDecoy)}">${c.warmDecoy||"—"}</span></td>
-          <td><span class="tag ${c.compounded?'ok':'noisy'}">${c.compounded?'yes ✓':'no'}</span></td>
+          <td>${pct(c.seedLandedFraction)} <span class="cap">(${c.landedRepeats}/${c.repeats})</span></td>
+          <td><span class="tag ${c.relevantCompoundedFraction>0?'ok':'noisy'}">${cf(c.relevantCompoundedFraction)}</span> <span class="cap">± ${(c.compoundedSpread||0).toFixed(2)}</span></td>
+          <td><span class="tag ${c.decoyLightenedFraction>0?'noisy':'ok'}">${pct(c.decoyLightenedFraction)}</span></td>
         </tr>`).join("")}
       </table>
       <p class="cap" style="margin-top:14px;color:var(--muted)">${successLine(MOAT.successCondition)}</p>

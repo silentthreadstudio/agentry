@@ -11,6 +11,7 @@ import { writeFileSync } from "node:fs";
 
 import type { Shape } from "../conduct/shape.ts";
 import { SHAPES_BY_WEIGHT } from "../conduct/shape.ts";
+import { mean, stdev } from "../stats.ts";
 
 /** One warm run's result: the dispatched shape (null = degenerate/indeterminate) and whether recall landed the seed. */
 export interface WarmRun {
@@ -29,7 +30,11 @@ export interface MoatOutcome {
   decoy: WarmRun;
 }
 
-/** Per-task census row in the scored artifact — the readable trace of each task's compounding behavior. */
+/**
+ * Per-(task, repeat) census row — the readable trace of ONE repeat's compounding behavior. With k>1 a task has k of
+ * these per arm; the aggregator rolls them up into a {@link MoatTaskCensus}. Per-repeat conducting is stochastic, so
+ * this single-draw view is never the headline; it is the raw grain the rates and the spread are computed from.
+ */
 export interface MoatCensusRow {
   taskId: string;
   coldFloor: Shape;
@@ -41,6 +46,28 @@ export interface MoatCensusRow {
   compounded: boolean;
   /** The decoy did NOT lighten the shape (the control held). */
   decoyHeld: boolean;
+}
+
+/**
+ * Per-task census in the scored artifact — the k repeats of one task rolled into FRACTIONS (never a bare point —
+ * the honesty rule). Conducting is stochastic, so each fraction carries the count it was computed over plus a spread
+ * readout so a reader sees the variance behind the headline.
+ */
+export interface MoatTaskCensus {
+  taskId: string;
+  coldFloor: Shape;
+  /** How many relevant repeats LANDED their seed (the compound denominator for this task). */
+  landedRepeats: number;
+  /** Total relevant repeats run for this task (k). */
+  repeats: number;
+  /** Fraction of LANDED relevant repeats that routed lighter than the cold floor; null when none landed (no basis). */
+  relevantCompoundedFraction: number | null;
+  /** Fraction of decoy repeats that routed lighter than the cold floor (the control — should be ~0). */
+  decoyLightenedFraction: number;
+  /** Fraction of relevant repeats that landed their seed (this task's validity readout). */
+  seedLandedFraction: number;
+  /** Population stdev of the per-repeat compounded indicator over the LANDED relevant repeats (the spread). */
+  compoundedSpread: number;
 }
 
 /** The early-signal caveat — small N is directional, not a powered estimate. PINNED. */
@@ -58,16 +85,24 @@ export interface MoatArtifact {
   condition: "aborted" | "scored";
   /** The pinned verdict of the gate that aborted the run (only on `condition === "aborted"`). */
   abortVerdict?: string;
-  /** Fraction of tasks where the recalled relevant decision routed the task lighter than its cold floor; `null` on abort. */
+  /**
+   * GIVEN recall fired, how often the recalled fact collapsed the fork: relevant repeats that LANDED and routed
+   * lighter than the cold floor, over relevant repeats that LANDED (the INDETERMINATE non-landed repeats are
+   * excluded from BOTH numerator and denominator). `null` on abort; 0 when no relevant repeat landed.
+   */
   compoundRate: number | null;
-  /** Fraction of tasks where the irrelevant DECOY also lightened the shape (should be ~0); absent on abort. */
+  /** Fraction of ALL decoy repeats that routed lighter than the cold floor — the false-positive base rate (no landing filter); absent on abort. */
   decoyLightenRate?: number;
   /** `compoundRate − decoyLightenRate` — the memory-attributable lightening (the clean signal); absent on abort. */
   discrimination?: number;
-  /** How many warm-relevant runs recalled their seed (the validity readout); absent on abort. */
+  /** Relevant repeats that landed their seed, over ALL relevant repeats — the validity readout; absent on abort. */
+  seedLandingRate?: number;
+  /** Raw landing counts behind {@link seedLandingRate} (the auditable denominator); absent on abort. */
   seedLanding?: { landedCount: number; total: number };
-  /** Per-task census; absent on abort. */
-  census?: MoatCensusRow[];
+  /** The repeat count k this run used (1 = a single high-variance draw); absent on abort. */
+  runs?: number;
+  /** Per-task census (the k repeats rolled into fractions + spread); absent on abort. */
+  census?: MoatTaskCensus[];
   /** Always-present directional caveat. */
   earlySignalCaveat: string;
 }
@@ -82,7 +117,7 @@ function lighterThanFloor(run: WarmRun, coldFloor: Shape): boolean {
   return run.shape !== null && weight(run.shape) < weight(coldFloor);
 }
 
-/** Build the per-task census row from an outcome (the compounding/decoy-held booleans the scorer also aggregates). */
+/** Build the per-(task, repeat) census row from one outcome (the compounding/decoy-held booleans the aggregator folds). */
 export function censusRow(o: MoatOutcome): MoatCensusRow {
   const compounded = o.relevant.landed && lighterThanFloor(o.relevant, o.coldFloor);
   const decoyHeld = !lighterThanFloor(o.decoy, o.coldFloor);
@@ -98,26 +133,83 @@ export function censusRow(o: MoatOutcome): MoatCensusRow {
   };
 }
 
+/** Whether ONE relevant repeat compounded — landed its seed AND routed lighter than the cold floor. */
+function relevantCompounded(o: MoatOutcome): boolean {
+  return o.relevant.landed && lighterThanFloor(o.relevant, o.coldFloor);
+}
+
+/** Whether ONE decoy repeat lightened — routed lighter than the cold floor (the false-positive event). */
+function decoyLightened(o: MoatOutcome): boolean {
+  return lighterThanFloor(o.decoy, o.coldFloor);
+}
+
 /**
- * Build the SCORED artifact (the probe calls this only AFTER both gates pass). `compoundRate` is the fraction of
- * tasks whose recalled relevant decision routed them lighter than the cold floor; `decoyLightenRate` is the
- * fraction where the irrelevant decoy ALSO lightened (the contrast — should be ~0); `discrimination` is the
- * memory-attributable difference. The per-task census is the readable trace.
+ * Roll a task's k repeats (all the outcomes sharing its `taskId`) into a {@link MoatTaskCensus} of fractions + a
+ * spread. The compound fraction is computed over the LANDED relevant repeats ONLY — a non-landed repeat is
+ * INDETERMINATE (recall never fired, so it says nothing about compounding), excluded from numerator AND denominator;
+ * `null` when no relevant repeat landed (no basis). Decoy and seed-landing fractions span ALL repeats.
  */
-export function buildScoredArtifact(outcomes: readonly MoatOutcome[]): MoatArtifact {
-  const rows = outcomes.map(censusRow);
-  const n = rows.length;
-  const compoundRate = n === 0 ? 0 : rows.filter((r) => r.compounded).length / n;
-  const decoyLightenRate = n === 0 ? 0 : rows.filter((r) => !r.decoyHeld).length / n;
-  const landedCount = outcomes.filter((o) => o.relevant.landed).length;
+export function taskCensus(repeats: readonly MoatOutcome[]): MoatTaskCensus {
+  const first = repeats[0]!;
+  const n = repeats.length;
+  const landed = repeats.filter((o) => o.relevant.landed);
+  const compoundedIndicators = landed.map((o) => (relevantCompounded(o) ? 1 : 0));
+  return {
+    taskId: first.taskId,
+    coldFloor: first.coldFloor,
+    landedRepeats: landed.length,
+    repeats: n,
+    relevantCompoundedFraction: landed.length === 0 ? null : mean(compoundedIndicators),
+    decoyLightenedFraction: n === 0 ? 0 : repeats.filter(decoyLightened).length / n,
+    seedLandedFraction: n === 0 ? 0 : landed.length / n,
+    compoundedSpread: stdev(compoundedIndicators),
+  };
+}
+
+/** Group a flat list of per-(task, repeat) outcomes into per-task buckets, preserving first-seen task order. */
+function groupByTask(outcomes: readonly MoatOutcome[]): MoatOutcome[][] {
+  const order: string[] = [];
+  const byId = new Map<string, MoatOutcome[]>();
+  for (const o of outcomes) {
+    let bucket = byId.get(o.taskId);
+    if (bucket === undefined) {
+      bucket = [];
+      byId.set(o.taskId, bucket);
+      order.push(o.taskId);
+    }
+    bucket.push(o);
+  }
+  return order.map((id) => byId.get(id)!);
+}
+
+/**
+ * Build the SCORED artifact from the flat per-(task, repeat) outcomes (the probe calls this only AFTER both gates
+ * pass). The published rates aggregate over REPEATS, not tasks — so k>1 reports a stable rate, not a single draw:
+ *   - `compoundRate`  = relevant repeats that LANDED and routed lighter / relevant repeats that LANDED. The
+ *                       INDETERMINATE non-landed repeats are excluded from BOTH the numerator and the denominator
+ *                       (recall never fired ⇒ no signal); 0 when no relevant repeat landed.
+ *   - `decoyLightenRate` = ALL decoy repeats that routed lighter / ALL decoy repeats — the false-positive base rate
+ *                       (no landing filter: an irrelevant fact lightening IS the control signal).
+ *   - `seedLandingRate`  = relevant repeats that landed / ALL relevant repeats — the validity readout.
+ *   - `discrimination`   = compoundRate − decoyLightenRate.
+ * The per-task census carries each task's fractions + a spread so the headline is never a bare point.
+ */
+export function buildScoredArtifact(outcomes: readonly MoatOutcome[], runs = 1): MoatArtifact {
+  const total = outcomes.length;
+  const landed = outcomes.filter((o) => o.relevant.landed);
+  const compoundRate = landed.length === 0 ? 0 : landed.filter(relevantCompounded).length / landed.length;
+  const decoyLightenRate = total === 0 ? 0 : outcomes.filter(decoyLightened).length / total;
+  const seedLandingRate = total === 0 ? 0 : landed.length / total;
 
   return {
     condition: "scored",
     compoundRate,
     decoyLightenRate,
     discrimination: compoundRate - decoyLightenRate,
-    seedLanding: { landedCount, total: n },
-    census: rows,
+    seedLandingRate,
+    seedLanding: { landedCount: landed.length, total },
+    runs,
+    census: groupByTask(outcomes).map(taskCensus),
     earlySignalCaveat: MOAT_CAVEAT,
   };
 }
