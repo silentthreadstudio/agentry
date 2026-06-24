@@ -1,0 +1,11 @@
+# A tiny BUG-PRONE bench fixture (the Axis-D escaped-defect set). The obvious solution (sum/length) divides by zero
+# on the empty input — a subtle bug the hidden oracle catches. bugProne: true marks it for the escaped-defect axis.
+id: bm-bug
+prompt: >-
+  Add an `average(xs)` helper to `src/avg.js` that returns the arithmetic mean of the numbers in `xs`. For an EMPTY
+  array it must return 0 (not NaN). Export it via the CommonJS export.
+fork: "the empty-array case — return 0, not the NaN that sum/length yields"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/avg.test.js
+  timeoutMs: 30000

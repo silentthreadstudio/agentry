@@ -1,0 +1,11 @@
+# A tiny bench fixture (the bench-mini corpus) — a TRIVIAL, NOT-bug-prone feature, mirrored on rs-clamp.
+# Task: ADD a `clamp(n, lo, hi)` helper. Fully specified, additive to one file — no hidden fork.
+id: bm-clamp
+prompt: >-
+  Add a `clamp(n, lo, hi)` helper to `src/num.js` (which already exports `toFixed2`). `clamp` must return `lo` when
+  `n` is below `lo`, `hi` when `n` is above `hi`, and `n` otherwise. Export it alongside the existing `toFixed2`.
+fork: "none — the contract is fully given (additive single function, no fork)"
+bugProne: false
+oracle:
+  cmd: node --test --test-reporter=tap oracle/num.test.js
+  timeoutMs: 30000
