@@ -227,20 +227,117 @@ export interface HonestyData {
   complianceCensus?: ComplianceCensusView[];
 }
 
+// ── BENCH — the value-axis quality bench (the new public LEAD; subsumes rightsizing + honesty) ────────────────────
+// The bench reads Agentry's actual work and derives FOUR absolute axes from one conduct per fixture (no baseline, no
+// routing label-match). The template renders a 4-axis SCORECARD (TIER 1, persuasive) over a per-task census +
+// controls drill-down (TIER 2). Every field below is populated by `load-bench.ts` AND read by `template.html`, or it
+// is dead weight — the data/view lockstep the whole reporter is built on.
+
+/** One axis's aggregate — mean±std over the n records that carried this axis's score (mirrors `BenchAxes`/`AxisStats`). */
+export interface BenchAxisStat {
+  /** The mean overall (0..1) over the `n` records that carried this axis's score. */
+  mean: number;
+  /** The population standard deviation of those overalls (the spread the headline must not hide). */
+  std: number;
+  /** The denominator — how many records carried this axis's score (an absent signal is excluded, never a 0). */
+  n: number;
+}
+
+/** The FOUR measured axes, narrowed for the wire (mirrors `bench/score.ts BenchAxes`, all ABSOLUTE). */
+export interface BenchAxesView {
+  /** Axis A — the *thinking*: mean±std of the judged decision trail ("Decisions are sound"). */
+  decisionQuality: BenchAxisStat;
+  /** Axis B — the *output*: mean±std of the judged produced code tree ("Code is clean & coherent"). */
+  codeQuality: BenchAxisStat;
+  /** Axis B (correctness) — fraction whose held-out oracle PASSED ("…and correct"). */
+  correctnessPassRate: number;
+  /** Axis C — fraction that said done on not-good/incorrect work, → 0 ("Never claims done on bad work"). */
+  overclaimRate: number;
+  /** Axis D — over bug-prone records only, fraction of shipped bugs the oracle catches, → 0 ("Catches its own bugs"). */
+  escapedDefectRate: number;
+  /** Axis D (process) — fraction of all records where the separate verifier fired. */
+  verifyFireRate: number;
+}
+
+/** One per-task census row — the readable Tier-2 trace of every record's four signals (mirrors `BenchCensusRow`). */
+export interface BenchCensusView {
+  /** The fixture id (the task identity). */
+  fixtureId: string;
+  /** The 0-based repeat index (the matrix variance unit). */
+  repeat: number;
+  /** Axis A judged decision overall (0..1), or null when no decision trail was judged (a one-shot). */
+  decisionOverall: number | null;
+  /** Axis B judged code overall (0..1), or null when no produced tree was judged. */
+  codeOverall: number | null;
+  /** The held-out oracle correctness verdict, or null when no oracle ran. */
+  oraclePass: boolean | null;
+  /** Whether the agent self-reported done (paired with the judged/oracle signals for honesty + escaped-defect). */
+  selfReportedDone: boolean;
+  /** Whether the separate verifier fired, or null when not observed. */
+  verifyFired: boolean | null;
+  /** Whether this fixture is the bug-prone (Axis-D) set. */
+  bugProne: boolean;
+  /** Whether a defect escaped (bugProne && done && oracle failed), or null on a non-bugProne record. */
+  escapedDefect: boolean | null;
+}
+
+/** One descriptive value item in the SHOWCASE strip — "what you also get, demonstrated" (curated, not scored). */
+export interface ShowcaseItem {
+  /** The headline (e.g. "Auditable structure"). */
+  title: string;
+  /** One-to-two-line plain-English description of the value. */
+  blurb: string;
+  /** Which value pillar it belongs to — drives the strip's icon/accent. */
+  kind: "structure" | "memory" | "specialists" | "workbench";
+}
+
 /**
- * The complete injected page payload — exactly `window.__SELFEVAL__`. The PUBLIC story leads RIGHT-SIZING → HONESTY:
- * right-sizing carries the three results-gated rates; honesty carries the overclaim-gap + flow-compliance. There is
- * NO bare-vs-Agentry delta (de-bare) and NO kind section (decision B — kind is parked, internal-only).
- * `routing`/`quality` are PARKED — OPTIONAL and OFF the public path (ADR-002/ADR-003): the public report retired
- * routing label-match and parked decision-quality, so the public `buildPageData` no longer populates them and no
- * public template section reads them. The types are KEPT (mirroring parked `quality/` code) so a dev/parked reader
- * may still attach them; `tasks` remains for the Tasks explorer.
+ * The BENCH projection — the new PUBLIC LEAD. The bench conducts Agentry once per fixture and derives four ABSOLUTE
+ * value axes from that single run (no baseline, no routing label-match). `condition` discriminates exactly like the
+ * other probes: a `"scored"` run carries the `axes` + `census` (and `controlsPassed: true` — a scored artifact IS
+ * the proof its controls passed, since any firing aborts before scoring); an `"aborted"` run carries only
+ * `abortVerdict` and `controlsPassed: false` (the gate fired ⇒ no numbers). The `showcase` (the descriptive value
+ * strip) and the small-N caveat are ALWAYS present (they ship even on an abort — the method is the credibility spine).
+ */
+export interface BenchData {
+  /** The bench run this data came from (its own `kind: "bench"` run — the latest in the store). */
+  runId: string;
+  /** "scored" ⇒ axes + census present; "aborted" ⇒ a control gate fired, only `abortVerdict` is set. */
+  condition: "scored" | "aborted";
+  /** The firing control's verdict (only on `condition === "aborted"`). */
+  abortVerdict?: string;
+  /** True iff the credibility controls (A/A + gold↔broken discrimination, code + decision judge) all passed. */
+  controlsPassed: boolean;
+  /** The four measured axes; ABSENT on an aborted run (no number when a gate fires). */
+  axes?: BenchAxesView;
+  /** The per-task census (the Tier-2 readable trace); ABSENT on an aborted run. */
+  census?: BenchCensusView[];
+  /** How many fixtures the bench ran (the honest N behind the early-signal caveat); 0 on an abort. */
+  fixtures: number;
+  /** Repeats per fixture (k) — census rows = fixtures × repeats. */
+  repeats: number;
+  /** The descriptive value strip (structure/memory/specialists/workbench) — ALWAYS present, curated, not scored. */
+  showcase: ShowcaseItem[];
+}
+
+/**
+ * The complete injected page payload — exactly `window.__SELFEVAL__`. The PUBLIC story now LEADS with the BENCH (the
+ * value-axis quality bench: four absolute axes + the showcase strip), which SUBSUMES the earlier rightsizing +
+ * honesty probes (Axis B ≈ rightsizing result-quality, Axis C ≈ honesty/overclaim). There is NO bare-vs-Agentry
+ * delta (de-bare) and NO routing label-match.
+ *
+ * `rightsizing`/`honesty` are now OPTIONAL and OFF the public lead — the public `buildPageData` no longer populates
+ * them (the bench replaces them); the types + loaders are KEPT for a later cleanup, so a dev reader may still attach
+ * them. `routing`/`quality` remain PARKED (ADR-002/ADR-003). `tasks/corrections/history` remain (Tier-2 explorer +
+ * the corrections-log credibility centerpiece + the run-history index).
  */
 export interface PageData {
   meta: PageMeta;
-  /** PUBLIC LEAD — the latest right-sizing run's projection (three results-gated rates + indeterminate), else absent. */
+  /** PUBLIC LEAD — the latest bench run's projection (four absolute value axes + showcase), else absent. */
+  bench?: BenchData;
+  /** SUBSUMED (optional, off the public lead) — the prior right-sizing projection; bench replaces it. Loader kept. */
   rightsizing?: RightsizingData;
-  /** PUBLIC #2 — the latest honesty run's projection (overclaim-gap + flow-compliance), else absent. */
+  /** SUBSUMED (optional, off the public lead) — the prior honesty projection; bench's Axis C replaces it. Loader kept. */
   honesty?: HonestyData;
   /** PARKED (optional, off the public path) — the retired routing label-match probe; a dev reader may still attach it. */
   routing?: RoutingData;

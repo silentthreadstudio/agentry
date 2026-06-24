@@ -28,8 +28,7 @@ import type {
 } from "./model.ts";
 import { loadCorrections } from "./corrections.ts";
 import { loadHistory } from "./history.ts";
-import { loadRightsizing } from "./rightsizing.ts";
-import { loadHonesty } from "./honesty.ts";
+import { loadBench } from "./load-bench.ts";
 
 /** Options for {@link buildPageData}: where the curated corrections file lives, and a stamped generation time. */
 export interface BuildOptions {
@@ -56,10 +55,11 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
   const perTaskRuns = parseEvents(join(runDir, "events.jsonl")); // taskId → ordered {shape, ms}[]
   const perTaskQuality = readPerTaskQuality(join(runDir, "decision-quality.json")); // taskId → per-repeat overall
 
-  // The two PUBLIC pillars — rightsizing (its own run kind) and honesty (riding the rightsizing run dir), surfaced
-  // as the LATEST in the store. The IA leads rightsizing → honesty; zero live API in every loader.
-  const rightsizing = loadRightsizing(runsRoot); // the latest right-sizing run (three results-gated rates)
-  const honesty = loadHonesty(runsRoot); // the honesty artifact riding the latest right-sizing conduct
+  // The PUBLIC LEAD — the BENCH (the value-axis quality bench, its own `kind:"bench"` run), surfaced as the LATEST
+  // in the store. The bench SUBSUMES the earlier rightsizing + honesty probes (Axis B ≈ rightsizing result-quality,
+  // Axis C ≈ honesty/overclaim), so the public page leads with it and no longer attaches rightsizing/honesty (their
+  // loaders are kept for a later cleanup, just not on the public lead). Zero live API in the loader.
+  const bench = loadBench(runsRoot); // the latest bench run (four absolute value axes + the showcase strip)
 
   return {
     meta: {
@@ -70,12 +70,10 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
       model: config.model ?? "—",
       generatedAt: opts.generatedAt,
     },
-    ...(rightsizing !== undefined ? { rightsizing } : {}),
-    ...(honesty !== undefined ? { honesty } : {}),
-    // routing/quality are PARKED off the PUBLIC path (ADR-002/ADR-003): the public report retired routing
-    // label-match and parked decision-quality, so neither view is attached here — only the two public probes
-    // (rightsizing → honesty) + the Tasks explorer ship. The raw routing artifact is still read LOCALLY to label
-    // the per-task rows; it just never becomes a public `routing`/`quality` page section.
+    ...(bench !== undefined ? { bench } : {}),
+    // rightsizing/honesty are SUBSUMED by the bench and no longer attached on the public lead; routing/quality stay
+    // PARKED off the public path (ADR-002/ADR-003). The raw routing artifact is still read LOCALLY to label the
+    // per-task rows; it just never becomes a public page section.
     tasks: buildTasks(routingRaw, perTaskRuns, perTaskQuality),
     corrections: loadCorrections(opts.correctionsPath),
     history: loadHistory(runsRoot, summary.runId),

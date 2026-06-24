@@ -3,21 +3,23 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Agentry · Self-Eval Workbench</title>
+<title>Agentry · Value Bench</title>
 <style>
   :root {
-    /* neutral near-black canvas · amber brand spark · violet = ACTION only · semantic data colors */
-    --bg: #0d0d11;
+    /* neutral near-black canvas · amber brand spark · violet = ACTION only · semantic data colors.
+       BRAND tokens (--amber/--violet/--violet-2/--good/--coral/--cyan/--bad/--action/--grad) are drift-checked
+       against packages/web/src/styles/tokens.css — their VALUES must not change. Neutrals are free to evolve. */
+    --bg: #0c0c10;
     --bg-2: #08080b;
     --shell: #0a0a0e;
-    --panel: #15151b;
-    --panel-2: #1d1d25;
+    --panel: #14141a;
+    --panel-2: #1c1c24;
     --panel-3: #25252f;
-    --line: #27272f;
+    --line: #26262f;
     --line-soft: #1b1b21;
-    --ink: #e9e9ee;
-    --muted: #9a9aa6;
-    --faint: #5f5f6b;
+    --ink: #ececf1;
+    --muted: #9a9aa7;
+    --faint: #7e7e89;  /* ≥4.5:1 on panel/bg-2/shell — captions, spread lines & dates stay WCAG AA at 11–12px */
     --amber: #f4a93c;        /* brand spark */
     --amber-2: #f7bd5e;
     --violet: #8b5cf6;       /* ACTION accent only */
@@ -25,30 +27,40 @@
     --violet-dim: rgba(139,92,246,.14);
     --good: #46c98a;         /* data: correct/pass */
     --good-dim: rgba(70,201,138,.14);
-    --coral: #ef8a5c;        /* data: noisy/caution */
+    --coral: #ef8a5c;        /* data: caution */
     --warn-dim: rgba(239,138,92,.15);
     --bad: #f0604d;          /* data: fail */
     --bad-dim: rgba(240,96,77,.14);
-    --cyan: #56b6c2;         /* data: one-shot category */
+    --cyan: #56b6c2;         /* data: process/info category */
+    --cyan-dim: rgba(86,182,194,.14);
     --action: linear-gradient(135deg, #8b5cf6, #7c3aed);  /* purple = actions */
     --grad: linear-gradient(120deg, #f4a93c 0%, #ef8a5c 45%, #8b5cf6 100%); /* brand mark/constellation only */
     --grad-soft: var(--violet-dim);
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --radius: 16px;
+    --radius-sm: 11px;
+    --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 40px -28px rgba(0,0,0,.9);
+    --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--violet-2);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans);
-    font-size: 14px; -webkit-font-smoothing: antialiased; }
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: #2a2552; border-radius: 6px; border: 2px solid var(--bg); }
   ::-webkit-scrollbar-thumb:hover { background: #3a3470; }
+  a { color: var(--violet-2); }
+
+  /* visible, consistent focus ring for every interactive element (a11y) */
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 8px; }
 
   /* ---------------- app shell ---------------- */
-  .app { display: grid; grid-template-columns: 252px 1fr; height: 100vh; }
+  .app { display: grid; grid-template-columns: 250px 1fr; min-height: 100vh; }
 
-  aside { background: var(--shell); border-right: 1px solid var(--line); display: flex; flex-direction: column; position: relative; }
-  .brand { display: flex; align-items: center; gap: 12px; padding: 19px 18px 15px; position: relative; }
+  aside { background: var(--shell); border-right: 1px solid var(--line); display: flex; flex-direction: column;
+    position: sticky; top: 0; height: 100vh; }
+  .brand { display: flex; align-items: center; gap: 12px; padding: 20px 18px 16px; }
   .brand .logo { width: 38px; height: 38px; border-radius: 10px; flex: none; position: relative;
     background: radial-gradient(120% 120% at 25% 20%, rgba(244,169,60,.22), transparent 60%), var(--panel);
     border: 1px solid var(--line); overflow: hidden; }
@@ -56,21 +68,13 @@
   .brand .ttl { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; line-height: 1.1; }
   .brand .ttl small { display: block; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; margin-top: 3px; }
 
-  .runpick { margin: 4px 12px 14px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 10px; cursor: pointer; transition: .15s; }
-  .runpick:hover { border-color: var(--violet); }
-  .runpick .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
-  .runpick .val { font-family: var(--mono); font-size: 12.5px; margin-top: 4px; display: flex; align-items: center; justify-content: space-between; }
-  .runpick .val b { font-weight: 600; color: var(--violet-2); }
-  .runpick .caret { color: var(--muted); }
-
-  nav { padding: 4px 10px; display: flex; flex-direction: column; gap: 2px; }
-  nav .grp { font-size: 9.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); padding: 15px 10px 6px; }
-  nav button { all: unset; display: flex; align-items: center; gap: 11px; padding: 8px 11px; border-radius: 9px;
+  nav { padding: 4px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  nav .grp { font-size: 9.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); padding: 16px 10px 6px; }
+  nav button { all: unset; display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px;
     color: var(--muted); cursor: pointer; font-size: 13.5px; position: relative; transition: .12s; }
   nav button:hover { background: var(--panel); color: var(--ink); }
   nav button.active { background: var(--grad-soft); color: var(--ink); font-weight: 600; }
-  nav button.active::before { content: ""; position: absolute; left: -10px; top: 7px; bottom: 7px; width: 3px;
+  nav button.active::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px;
     border-radius: 3px; background: var(--action); }
   nav button .ico { width: 16px; text-align: center; opacity: .9; }
   nav button .badge { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint);
@@ -82,160 +86,164 @@
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 6px; box-shadow: 0 0 0 3px var(--good-dim); }
 
   /* ---------------- main ---------------- */
-  main { overflow-y: auto; background: radial-gradient(120% 50% at 85% -15%, rgba(139,92,246,.05), transparent 55%), var(--bg); }
-  .topbar { position: sticky; top: 0; z-index: 5; background: rgba(10,10,14,.88); backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--line); padding: 14px 30px; display: flex; align-items: center; gap: 14px; }
-  .topbar h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  main { background: radial-gradient(120% 50% at 85% -15%, rgba(139,92,246,.05), transparent 55%), var(--bg); }
+  .topbar { position: sticky; top: 0; z-index: 5; background: rgba(10,10,14,.9); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line); padding: 13px 30px; display: flex; align-items: center; gap: 14px; }
+  .topbar h1 { font-size: 15.5px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   .topbar .crumb { color: var(--faint); font-size: 12.5px; font-family: var(--mono); }
   .topbar .spacer { flex: 1; }
   .chip { font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--panel);
     border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; }
   .chip b { color: var(--ink); font-weight: 600; }
-  .btn { font-size: 12.5px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: 9px; padding: 7px 14px; cursor: pointer; font-weight: 500; transition: .15s; }
-  .btn:hover { border-color: var(--violet); }
-  .btn.primary { background: var(--action); color: #fff; border: none; font-weight: 700; }
-  .btn.primary:hover { filter: brightness(1.12); }
 
-  .content { padding: 24px 30px 80px; max-width: 1280px; }
-  .view { display: none; animation: fade .28s ease; }
-  .view.active { display: block; }
+  .content { padding: 26px 30px 90px; max-width: 1240px; }
+  .view { display: none; }
+  .view.active { display: block; animation: fade .26s ease; }
   @keyframes fade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
+  /* section eyebrow + lede */
+  .tier-head { margin: 0 0 18px; }
+  .tier-head .eyebrow { font-size: 10.5px; text-transform: uppercase; letter-spacing: .16em; color: var(--amber); font-weight: 700; }
+  .tier-head h2 { font-size: 23px; font-weight: 800; letter-spacing: -0.02em; margin: 8px 0 6px; line-height: 1.1; }
+  .tier-head p { font-size: 13px; color: var(--muted); margin: 0; max-width: 70ch; line-height: 1.6; }
+
   /* hero band */
-  .hero { position: relative; overflow: hidden; border-radius: 18px; border: 1px solid var(--line);
-    background: linear-gradient(120deg, #15151c 0%, #121217 55%, #17141e 100%); padding: 26px 30px; margin-bottom: 18px; }
-  .hero .constel { position: absolute; inset: 0; opacity: .3; pointer-events: none; }
-  .hero .inner { position: relative; display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; align-items: center; }
+  .hero { position: relative; overflow: hidden; border-radius: var(--radius); border: 1px solid var(--line);
+    background: linear-gradient(120deg, #14141c 0%, #111117 55%, #16131e 100%); padding: 30px 32px; margin-bottom: 18px;
+    box-shadow: var(--shadow); }
+  .hero .constel { position: absolute; inset: 0; opacity: .28; pointer-events: none; }
+  .hero .inner { position: relative; display: grid; grid-template-columns: 1.55fr 1fr; gap: 28px; align-items: center; }
   .hero .eyebrow { font-size: 10.5px; text-transform: uppercase; letter-spacing: .16em; color: var(--amber); font-weight: 700; }
-  .hero .big { font-size: 58px; font-weight: 850; letter-spacing: -0.03em; line-height: .95; margin: 10px 0 4px; color: var(--ink); }
-  .hero .big small { font-size: 20px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
-  .hero .second { font-size: 14px; color: var(--ink); font-weight: 500; }
-  .hero .second b { color: var(--coral); font-family: var(--mono); }
-  .hero .method { font-size: 12.5px; color: var(--muted); margin-top: 14px; max-width: 90%; line-height: 1.55; }
-  .hero .method b { color: var(--ink); }
-  .hero .ctrlbox { background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
-  .hero .ctrlbox .ch { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 12px; display: flex; justify-content: space-between; }
-  .hero .ctrlbox .ch b { color: var(--good); }
-  .ctrl-line { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 12.5px; font-family: var(--mono); border-top: 1px solid var(--line-soft); }
+  .hero .big { font-size: 40px; font-weight: 850; letter-spacing: -0.025em; line-height: 1.04; margin: 12px 0 8px; color: var(--ink); }
+  .hero .lede { font-size: 13.5px; color: var(--muted); line-height: 1.6; max-width: 50ch; }
+  .hero .lede b { color: var(--ink); }
+  .verdict-box { background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .verdict-box .vh { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 13px; display: flex; justify-content: space-between; align-items: center; }
+  .verdict-box .vh b { color: var(--good); font-family: var(--mono); }
+  .ctrl-line { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 12.5px; font-family: var(--mono); border-top: 1px solid var(--line-soft); }
   .ctrl-line:first-of-type { border-top: none; }
-  .ctrl-line .ck { width: 16px; height: 16px; border-radius: 50%; background: var(--good-dim); color: var(--good); display: grid; place-items: center; font-size: 10px; flex: none; }
+  .ctrl-line .ck { width: 17px; height: 17px; border-radius: 50%; background: var(--good-dim); color: var(--good); display: grid; place-items: center; font-size: 10px; flex: none; }
+  .ctrl-line .ck.x { background: var(--bad-dim); color: var(--bad); }
   .ctrl-line .cv { margin-left: auto; color: var(--muted); }
 
-  /* KPI row */
-  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  .kpi { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; overflow: hidden; }
-  .kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--line); }
-  .kpi .k-lab { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); }
-  .kpi .k-val { font-size: 31px; font-weight: 800; letter-spacing: -0.02em; margin-top: 9px; line-height: 1; }
-  .kpi .k-val small { font-size: 14px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
-  .kpi .k-sub { font-size: 11.5px; color: var(--faint); margin-top: 8px; font-family: var(--mono); }
-  .amber { color: var(--amber); } .violet { color: var(--good); }
-  .good { color: var(--good); } .warn { color: var(--coral); } .bad { color: var(--bad); }
+  /* SCORECARD — the 4-axis tier-1 grid */
+  .scorecard { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  @media (min-width: 1100px) { .scorecard { grid-template-columns: repeat(4, 1fr); } }
+  .axis { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px 20px 18px; overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; }
+  .axis::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--axc, var(--good)); opacity: .85; }
+  .axis .ax-top { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+  .axis .ax-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none;
+    background: var(--axdim, var(--good-dim)); color: var(--axc, var(--good)); }
+  .axis .ax-name { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; line-height: 1.25; }
+  .axis .ax-val { font-size: 38px; font-weight: 850; letter-spacing: -0.03em; line-height: 1; color: var(--axc, var(--ink)); font-variant-numeric: tabular-nums; }
+  .axis .ax-val small { font-size: 15px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+  .axis .ax-claim { font-size: 13px; font-weight: 650; color: var(--ink); margin-top: 11px; line-height: 1.35; }
+  .axis .ax-spread { font-size: 11.5px; color: var(--faint); margin-top: auto; padding-top: 12px; font-family: var(--mono); }
+  .axis .ax-arrow { font-size: 10px; color: var(--faint); font-family: var(--mono); margin-left: 6px; }
 
-  /* cards / grid */
-  .grid { display: grid; gap: 16px; margin-top: 16px; }
-  .g-2 { grid-template-columns: 1fr 1fr; }
-  .g-12-1 { grid-template-columns: 1.5fr 1fr; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
-  .card.glow { background: linear-gradient(180deg, rgba(255,255,255,.025), transparent 40%), var(--panel); }
-  .card > h3 { font-size: 13.5px; margin: 0 0 3px; font-weight: 650; display: flex; align-items: center; justify-content: space-between; }
-  .card > .cap { font-size: 11.5px; color: var(--faint); margin: 0 0 16px; font-family: var(--mono); }
+  /* SHOWCASE strip */
+  .showcase { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  @media (min-width: 1100px) { .showcase { grid-template-columns: repeat(4, 1fr); } }
+  .show-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px 18px; }
+  .show-card .sc-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; margin-bottom: 11px;
+    background: var(--scdim, var(--violet-dim)); color: var(--scc, var(--violet-2)); }
+  .show-card .sc-ttl { font-size: 13px; font-weight: 700; margin-bottom: 5px; }
+  .show-card .sc-blurb { font-size: 12px; color: var(--muted); line-height: 1.55; }
 
-  /* bars */
-  .bars { display: flex; flex-direction: column; gap: 11px; }
-  .bar-row { display: grid; grid-template-columns: 138px 1fr; align-items: center; gap: 12px; }
+  /* caveat callout */
+  .caveat { background: var(--warn-dim); border: 1px solid rgba(239,138,92,.3); border-left: 3px solid var(--coral);
+    border-radius: 12px; padding: 14px 18px; font-size: 12.5px; color: var(--muted); line-height: 1.6; display: flex; gap: 12px; }
+  .caveat .ci { color: var(--coral); flex: none; font-size: 15px; line-height: 1.3; }
+  .caveat b { color: var(--ink); }
+
+  /* generic cards */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; box-shadow: var(--shadow); }
+  .card > h3 { font-size: 14px; margin: 0 0 3px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+  .card > .cap { font-size: 12px; color: var(--faint); margin: 0 0 16px; font-family: var(--mono); }
+  .section-gap { margin-top: 26px; }
+  .stack { display: grid; gap: 18px; }
+
+  /* bars (controls + axis distribution) */
+  .bars { display: flex; flex-direction: column; gap: 12px; }
+  .bar-row { display: grid; grid-template-columns: 168px 1fr; align-items: center; gap: 14px; }
   .bar-row .blab { font-size: 12px; color: var(--muted); text-align: right; font-family: var(--mono); }
-  .track { position: relative; height: 23px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
-  .fill { height: 100%; border-radius: 6px; transition: width .85s cubic-bezier(.2,.8,.2,1); }
-  .bval { position: absolute; top: 0; height: 23px; display: flex; align-items: center; font-size: 11px; font-weight: 700; font-family: var(--mono); }
-
-  /* confusion heatmap */
-  table.mtx { border-collapse: separate; border-spacing: 5px; width: 100%; }
-  table.mtx th { color: var(--muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; padding: 4px; }
-  table.mtx td.rl { color: var(--muted); font-family: var(--mono); font-size: 11.5px; text-align: right; padding-right: 8px; }
-  table.mtx td.cell { text-align: center; border-radius: 9px; height: 48px; font-family: var(--mono); font-weight: 700; font-size: 15px; }
+  .track { position: relative; height: 24px; background: var(--panel-2); border-radius: 7px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 7px; transition: width .85s cubic-bezier(.2,.8,.2,1); }
+  .bval { position: absolute; top: 0; height: 24px; display: flex; align-items: center; font-size: 11px; font-weight: 700; font-family: var(--mono); }
 
   /* tables */
   table.tbl { border-collapse: collapse; width: 100%; }
+  table.tbl caption { caption-side: top; text-align: left; font-size: 12px; color: var(--faint); font-family: var(--mono); padding-bottom: 12px; }
   table.tbl th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: .05em; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+    letter-spacing: .05em; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   table.tbl td { padding: 11px 10px; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); font-size: 12.5px; }
-  table.tbl tr.clk { cursor: pointer; transition: .1s; }
-  table.tbl tr.clk:hover td { background: var(--panel-2); }
   table.tbl tr:last-child td { border-bottom: none; }
-  .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; font-family: var(--mono); }
+  table.tbl tr.clk { cursor: pointer; transition: .1s; }
+  table.tbl tr.clk:hover td, table.tbl tr.clk:focus-visible td { background: var(--panel-2); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; font-family: var(--mono); white-space: nowrap; }
   .tag.ok { background: var(--good-dim); color: var(--good); }
-  .tag.noisy { background: var(--warn-dim); color: var(--coral); }
-  .tag.os { background: rgba(86,182,194,.15); color: var(--cyan); }
-  .tag.sf { background: rgba(244,169,60,.15); color: var(--amber); }
-  .tag.dc { background: rgba(70,201,138,.14); color: var(--good); }
+  .tag.bad { background: var(--bad-dim); color: var(--bad); }
+  .tag.warn { background: var(--warn-dim); color: var(--coral); }
+  .tag.info { background: var(--cyan-dim); color: var(--cyan); }
+  .tag.neutral { background: var(--panel-2); color: var(--muted); }
   .pill { font-family: var(--mono); font-size: 11px; padding: 2px 9px; border-radius: 6px; background: var(--panel-2); color: var(--muted); }
+  .good { color: var(--good); } .warn { color: var(--coral); } .bad { color: var(--bad); }
+  .info { color: var(--cyan); } .amber { color: var(--amber); } .muted { color: var(--muted); }
+  .fmono { font-family: var(--mono); }
+  .empty { color: var(--faint); font-family: var(--mono); font-size: 12.5px; padding: 10px 0; }
+
+  /* abort banner */
+  .abort { border: 1px solid rgba(240,96,77,.4); border-left: 3px solid var(--bad); background: var(--bad-dim); }
+  .quote { background: var(--bg-2); border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: 9px;
+    padding: 13px 15px; font-size: 12.5px; color: var(--muted); line-height: 1.65; font-family: var(--mono); }
+  .quote.bad { border-left-color: var(--bad); }
 
   /* corrections timeline */
   .timeline { position: relative; padding-left: 26px; }
   .timeline::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
   .tl-item { position: relative; padding: 0 0 22px; }
+  .tl-item:last-child { padding-bottom: 0; }
   .tl-item::before { content: ""; position: absolute; left: -23px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--shell); border: 2px solid var(--good); }
   .tl-item.high::before { border-color: var(--bad); box-shadow: 0 0 0 4px var(--bad-dim); }
   .tl-date { font-family: var(--mono); font-size: 11px; color: var(--faint); }
-  .tl-h { font-weight: 650; font-size: 13.5px; margin: 3px 0 7px; }
-  .tl-body { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
+  .tl-h { font-weight: 650; font-size: 13.5px; margin: 3px 0 8px; }
+  .tl-body { font-size: 12.5px; color: var(--muted); display: grid; gap: 5px; }
   .tl-body .ln { display: flex; gap: 8px; }
   .tl-body .ln b { color: var(--bad); font-weight: 600; min-width: 52px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding-top: 1px; }
   .tl-body .ln.t b { color: var(--good); }
   .tl-body .ln.f b { color: var(--amber); }
 
-  /* radar */
-  .radar-wrap { display: grid; grid-template-columns: 220px 1fr; align-items: center; gap: 18px; }
-
-  /* live monitor */
-  .live-top { display: flex; align-items: center; gap: 22px; margin-bottom: 18px; }
-  .ring { --p: 0; width: 96px; height: 96px; border-radius: 50%; flex: none;
-    background: conic-gradient(from -90deg, var(--violet-2) 0%, var(--violet) calc(var(--p) * 1%), var(--panel-2) 0); display: grid; place-items: center; }
-  .ring .inner { width: 74px; height: 74px; border-radius: 50%; background: var(--panel); display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 18px; }
-  .live-meta { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-  .live-meta .l { color: var(--ink); font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-  .stream { background: var(--bg-2); border: 1px solid var(--line); border-radius: 11px; padding: 14px 16px;
-    font-family: var(--mono); font-size: 12px; height: 280px; overflow-y: auto; line-height: 1.7; }
-  .stream .ev { white-space: pre-wrap; }
-  .stream .t { color: var(--faint); }
-  .stream .start { color: var(--cyan); }
-  .stream .done { color: var(--good); }
-  .taskgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 14px; }
-  .tgrid-cell { background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 9px; text-align: center; font-family: var(--mono); font-size: 10.5px; color: var(--faint); transition: .3s; }
-  .tgrid-cell.run { border-color: var(--violet); color: var(--violet-2); box-shadow: 0 0 0 3px rgba(139,92,246,.12); }
-  .tgrid-cell.done { border-color: var(--good); color: var(--good); background: var(--good-dim); }
-
   /* drawer */
   .scrim { position: fixed; inset: 0; background: rgba(8,6,20,.66); opacity: 0; pointer-events: none; transition: .25s; z-index: 20; }
   .scrim.open { opacity: 1; pointer-events: auto; }
-  .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 560px; max-width: 92vw; background: var(--panel);
+  .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 540px; max-width: 92vw; background: var(--panel);
     border-left: 1px solid var(--line); transform: translateX(100%); transition: transform .3s cubic-bezier(.2,.8,.2,1); z-index: 21; overflow-y: auto; }
   .drawer.open { transform: none; }
   .drawer .dh { padding: 20px 24px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0;
     background: linear-gradient(180deg, var(--panel-2), var(--panel)); }
-  .drawer .dh .x { float: right; cursor: pointer; color: var(--muted); font-size: 20px; line-height: 1; }
-  .drawer .dh h2 { margin: 0; font-size: 17px; font-family: var(--mono); }
+  .drawer .dh .x { all: unset; float: right; cursor: pointer; color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+  .drawer .dh .x:hover { color: var(--ink); background: var(--panel-3); }
+  .drawer .dh h2 { margin: 0; font-size: 16px; font-family: var(--mono); }
   .drawer .db { padding: 20px 24px 40px; }
-  .drawer .kv { display: grid; grid-template-columns: 130px 1fr; gap: 8px 12px; font-size: 12.5px; margin-bottom: 18px; }
+  .drawer .kv { display: grid; grid-template-columns: 132px 1fr; gap: 9px 12px; font-size: 12.5px; margin-bottom: 18px; }
   .drawer .kv dt { color: var(--faint); font-family: var(--mono); }
   .drawer .kv dd { margin: 0; font-family: var(--mono); }
   .drawer h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--amber); margin: 22px 0 9px; }
-  .quote { background: var(--bg-2); border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: 9px;
-    padding: 13px 15px; font-size: 12.5px; color: var(--muted); line-height: 1.65; }
-  .repeats { display: flex; gap: 8px; }
-  .rep { flex: 1; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px; text-align: center; }
-  .rep .rn { font-size: 10px; color: var(--faint); font-family: var(--mono); }
-  .rep .rs { font-size: 11.5px; font-family: var(--mono); margin-top: 5px; font-weight: 600; }
 
-  .muted { color: var(--muted); } .fmono { font-family: var(--mono); }
-  .empty { color: var(--faint); font-family: var(--mono); font-size: 12.5px; padding: 8px 0; }
-
-  /* section banner — the method-first callout above each probe view */
-  .banner { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--violet);
-    border-radius: 12px; padding: 15px 20px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
-  .banner b { color: var(--ink); }
+  /* responsive: collapse the sidebar to a top strip on narrow screens */
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; }
+    aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
+    .brand { padding: 14px 18px; }
+    nav { flex-direction: row; flex-wrap: wrap; padding: 0 12px 10px; }
+    nav .grp { display: none; }
+    .side-foot { display: none; }
+    .hero .inner { grid-template-columns: 1fr; }
+    .bar-row { grid-template-columns: 120px 1fr; }
+    .content { padding: 20px 18px 70px; }
+  }
 </style>
 </head>
 <body>
@@ -244,184 +252,128 @@
   <!-- SIDEBAR -->
   <aside>
     <div class="brand">
-      <div class="logo"><svg viewBox="0 0 38 38" id="logo-constel"></svg></div>
-      <div class="ttl">Agentry<small>Self-Eval</small></div>
+      <div class="logo"><svg viewBox="0 0 38 38" id="logo-constel" aria-hidden="true"></svg></div>
+      <div class="ttl">Agentry<small>Value Bench</small></div>
     </div>
 
-    <div class="runpick" id="runpick">
-      <div class="lbl">Active run</div>
-      <div class="val"><b id="rp-id">20260617-115857-829a</b><span class="caret">⌄</span></div>
-    </div>
-
-    <nav id="nav">
-      <div class="grp">Analyze</div>
-      <button data-view="overview" class="active"><span class="ico">◎</span> Overview</button>
-      <button data-view="rightsizing"><span class="ico">⚖</span> Right-sizing <span class="badge" id="nav-rightsizing">—</span></button>
-      <button data-view="honesty"><span class="ico">◈</span> Honesty <span class="badge" id="nav-honesty">—</span></button>
-      <button data-view="tasks"><span class="ico">▤</span> Tasks <span class="badge" id="nav-tasks">6</span></button>
+    <nav id="nav" aria-label="Sections">
+      <div class="grp">Summary</div>
+      <button data-view="summary" class="active"><span class="ico" aria-hidden="true">◎</span> Scorecard</button>
+      <div class="grp">Drill-down</div>
+      <button data-view="census"><span class="ico" aria-hidden="true">▤</span> Per-task census <span class="badge" id="nav-census">—</span></button>
+      <button data-view="distribution"><span class="ico" aria-hidden="true">▦</span> Axis distribution</button>
+      <button data-view="controls"><span class="ico" aria-hidden="true">⛉</span> Controls</button>
       <div class="grp">Trust</div>
-      <button data-view="corrections"><span class="ico">⚑</span> Corrections log <span class="badge" id="nav-corrections">6</span></button>
-      <button data-view="controls"><span class="ico">⛉</span> Controls</button>
-      <div class="grp">Operate</div>
-      <button data-view="live"><span class="ico">◴</span> Live monitor</button>
-      <button data-view="runs"><span class="ico">≣</span> Run history <span class="badge" id="nav-runs">3</span></button>
+      <button data-view="corrections"><span class="ico" aria-hidden="true">⚑</span> Corrections log <span class="badge" id="nav-corrections">—</span></button>
+      <button data-view="runs"><span class="ico" aria-hidden="true">≣</span> Run history <span class="badge" id="nav-runs">—</span></button>
     </nav>
 
     <div class="side-foot">
-      <div class="row"><span><span class="dot"></span>store healthy</span><span>v0.1</span></div>
-      <div class="row"><span>memory</span><span>34 facts · 10 ep</span></div>
+      <div class="row"><span><span class="dot"></span>store healthy</span><span>v0.2</span></div>
+      <div class="row"><span>bench run</span><span id="foot-run">—</span></div>
     </div>
   </aside>
 
   <!-- MAIN -->
   <main>
     <div class="topbar">
-      <h1 id="view-title">Overview</h1>
-      <span class="crumb" id="view-crumb">/ run 829a</span>
+      <h1 id="view-title">Value Bench</h1>
+      <span class="crumb" id="view-crumb">/ summary</span>
       <span class="spacer"></span>
-      <span class="chip">fixture <b id="tb-fixture">routing-quick</b></span>
       <span class="chip">model <b id="tb-model">—</b></span>
-      <span class="chip" id="tb-repeats">×3 repeats</span>
-      <button class="btn">Export</button>
-      <button class="btn primary">Re-run</button>
+      <span class="chip" id="tb-fixtures">— fixtures</span>
+      <span class="chip" id="tb-repeats">×— repeats</span>
     </div>
 
     <div class="content">
 
-      <!-- OVERVIEW -->
-      <section class="view active" data-view="overview">
+      <!-- ================= TIER 1 — SUMMARY ================= -->
+      <section class="view active" data-view="summary" aria-label="Summary scorecard">
         <div class="hero">
-          <svg class="constel" id="hero-constel" preserveAspectRatio="xMidYMid slice"></svg>
+          <svg class="constel" id="hero-constel" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
           <div class="inner">
             <div>
-              <div class="eyebrow" id="hero-eyebrow">Right-sizing · least process that ships</div>
-              <div class="big" id="hero-big">lighter &amp; good<small> &nbsp;results-gated</small></div>
-              <div class="second" id="hero-second">a lighter-than-label route that shipped good work is a WIN — the only real miss is routing too light and the result suffering</div>
-              <div class="method" id="hero-method">
-                <b>Value-only, two probes: Right-sizing → Honesty.</b> Early-signal — directional, not
-                powered. Every number is read from the conductor's <b>real work artifacts</b>, never a proxy, and
-                gated behind controls that <b>abort the batch</b> before a fooled number ships. Where the meter and
-                the conductor disagreed, the conductor was right — see the Corrections log.
-              </div>
+              <div class="eyebrow">Value bench · absolute, no baseline</div>
+              <h2 class="big" id="hero-big">Work you can trust unreviewed</h2>
+              <p class="lede" id="hero-lede">
+                We conduct Agentry once per task and judge its <b>real work</b> on four axes — the
+                <b>decisions</b> it made, the <b>code</b> it shipped, that it <b>never lies about being done</b>,
+                and that its own <b>verifier catches its bugs</b>. Every number is read from the conductor's
+                artifacts, never a self-report, behind controls that <b>abort the batch</b> before a fooled number ships.
+              </p>
             </div>
-            <div class="ctrlbox">
-              <div class="ch">Controls <b>gate every number ✓</b></div>
-              <div class="ctrl-line"><span class="ck">✓</span> A/A negative <span class="cv">no false signal</span></div>
-              <div class="ctrl-line"><span class="ck">✓</span> Planted gold↔poor <span class="cv">judge discriminates</span></div>
-              <div class="ctrl-line"><span class="ck">✓</span> Decoy contrast <span class="cv">memory-attributable</span></div>
-            </div>
+            <div class="verdict-box" id="hero-verdict"></div>
           </div>
         </div>
 
-        <div class="kpis" style="grid-template-columns:repeat(2,1fr)">
-          <div class="kpi"><div class="k-lab">Right-sizing success</div><div class="k-val good" id="kpi-rs">—</div><div class="k-sub" id="kpi-rs-sub">least process that still shipped good work</div></div>
-          <div class="kpi"><div class="k-lab">Overclaim gap</div><div class="k-val good" id="kpi-honesty">—</div><div class="k-sub" id="kpi-honesty-sub">said DONE but judged below the bar · lower is better</div></div>
-        </div>
+        <div class="scorecard" id="scorecard"></div>
 
-        <div class="banner" style="margin-top:16px;border-color:var(--amber);background:var(--warn-dim)">
-          <b>Early-signal · N~10 · directional.</b> This bench is read as a <b>direction, not a settled benchmark</b>.
-          The credibility anchor is the method — value-only (no bare-vs-Agentry head-to-head), three probes, each
-          gated on real shipped work behind controls that abort before a fooled number is shown.
+        <div class="section-gap"></div>
+        <div class="tier-head" id="showcase-head">
+          <div class="eyebrow">Demonstrated, not scored</div>
+          <h2>What you also get</h2>
+          <p>Beyond the four numbers: the qualitative value the bench shows in the artifact trail of every run.</p>
         </div>
+        <div class="showcase" id="showcase"></div>
+
+        <div class="section-gap"></div>
+        <div class="caveat" id="caveat"></div>
       </section>
 
-      <!-- RIGHT-SIZING -->
-      <section class="view" data-view="rightsizing">
-        <div class="banner">
-          <b>Right-sizing: did the conductor route to the least process that still shipped a good result?</b> One
-          unified conduct per task, read twice — the routed <b>shape</b> (from real work artifacts) and the judged
-          <b>result</b> (a quality rubric, never a self-report). A lighter-than-label route that <b>shipped good
-          work is a WIN</b> — the only real miss is routing TOO light and the result suffering (under-route-failure).
-          The published rates are <b>results-gated</b>, never bare label-match accuracy. A task with no judgeable
-          settled result is <b>indeterminate</b> — its own category, never folded into the miss rate. If a control
-          gate fired, the batch <b>aborts</b> and no score is shown — only the verdict.
+      <!-- ================= TIER 2 — CENSUS ================= -->
+      <section class="view" data-view="census" aria-label="Per-task census">
+        <div class="tier-head">
+          <div class="eyebrow">Drill-down · the readable trace</div>
+          <h2>Per-task census</h2>
+          <p>One row per (task × repeat). Every axis signal, in the open — click a row for the full record. A blank cell is an honest absent signal (a one-shot wrote no decision trail; a degenerate run left no tree), never a silent zero.</p>
         </div>
-        <div class="banner" style="margin-top:12px;border-color:var(--amber);background:var(--warn-dim)" id="rs-smalln">
-          <b>Early-signal · N~10 · directional.</b> This first run is ~8–10 fully-dual fixtures — read it as a
-          <b>direction, not a settled benchmark</b>. The credibility anchor is the method, not the number: the
-          controls below make it impossible to fool ourselves (a non-discriminating judge or a degenerate fixture
-          <b>aborts the batch</b> before any rate is shown), and the result is gated on real shipped work.
-        </div>
-        <div id="rightsizing-body"></div>
+        <div class="card"><div id="census-body"></div></div>
       </section>
 
-      <!-- HONESTY -->
-      <section class="view" data-view="honesty">
-        <div class="banner">
-          <b>Honesty: does Agentry tell the truth about its own work and follow its own process?</b> Two signals over
-          the same conduct, <b>no head-to-head comparison</b> (the bench is value-only). The <b>overclaim gap</b> —
-          how often it said DONE but the judge rated the work below the quality bar (lower is better; the precision
-          metric). And <b>flow-compliance</b> — did each escalated run follow its own ladder (run-before-dispatch,
-          spec-before-tasks, no skip flag)? If an upstream gate fired, the batch <b>aborts</b> and no number is shown.
+      <!-- ================= TIER 2 — DISTRIBUTION ================= -->
+      <section class="view" data-view="distribution" aria-label="Axis distribution">
+        <div class="tier-head">
+          <div class="eyebrow">Drill-down · spread, not a point</div>
+          <h2>Axis distribution</h2>
+          <p>Each axis as a bar with its mean and the denominator it was measured over — so the headline can never hide the spread or the small N behind it.</p>
         </div>
-        <div id="honesty-body"></div>
+        <div class="card"><div id="distribution-body"></div></div>
       </section>
 
-      <!-- TASKS -->
-      <section class="view" data-view="tasks">
-        <div class="card">
-          <h3>Task explorer</h3>
-          <p class="cap">6 labeled tasks · click for shape-per-repeat, timing, the fork, and the judged decision</p>
-          <table class="tbl" id="tk-tbl"></table>
+      <!-- ================= TIER 2 — CONTROLS ================= -->
+      <section class="view" data-view="controls" aria-label="Controls">
+        <div class="tier-head">
+          <div class="eyebrow">Drill-down · the meter can't flatter itself</div>
+          <h2>Controls — the gates before any score</h2>
+          <p>Before a single conduct spends, both judges must prove themselves: agree with themselves on a re-judge (A/A), and separate planted-good from planted-bad work (discrimination). If a gate fires, the batch aborts and no number is shown.</p>
         </div>
+        <div class="card"><div id="controls-body"></div></div>
       </section>
 
-      <!-- CORRECTIONS -->
-      <section class="view" data-view="corrections">
-        <div class="hero" style="margin-bottom:16px;padding:22px 30px">
-          <svg class="constel" id="cr-constel" preserveAspectRatio="xMidYMid slice"></svg>
+      <!-- ================= TRUST — CORRECTIONS ================= -->
+      <section class="view" data-view="corrections" aria-label="Corrections log">
+        <div class="hero" style="margin-bottom:18px;padding:24px 30px">
+          <svg class="constel" id="cr-constel" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
           <div style="position:relative">
             <div class="eyebrow" style="color:var(--violet-2)">The corrections log is the product</div>
-            <div class="method" style="max-width:75%;margin-top:10px;font-size:13.5px">
+            <p class="lede" style="margin-top:10px;max-width:74ch">
               Each entry is a time the meter disagreed with the conductor — and the conductor was right. We fixed the
               <b>meter</b>, not the conductor. This is why the headline is believable: it survived its own instrument
-              being wrong <b id="cr-count">6 times</b>.
-            </div>
+              being wrong <b id="cr-count">— times</b>.
+            </p>
           </div>
         </div>
         <div class="card"><div class="timeline" id="cr-tl"></div></div>
       </section>
 
-      <!-- CONTROLS -->
-      <section class="view" data-view="controls">
-        <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
-          <div class="kpi"><div class="k-lab">A/A negative</div><div class="k-val good">PASS</div><div class="k-sub">k=3 unanimous · no false signal</div></div>
-          <div class="kpi"><div class="k-lab">Planted positive</div><div class="k-val good">PASS</div><div class="k-sub">gold 100% ↔ poor 20%</div></div>
-          <div class="kpi"><div class="k-lab">Saturation guard</div><div class="k-val good">PASS</div><div class="k-sub">floor spread intact</div></div>
+      <!-- ================= TRUST — RUNS ================= -->
+      <section class="view" data-view="runs" aria-label="Run history">
+        <div class="tier-head">
+          <div class="eyebrow">Trust · capture-once, analyze-many</div>
+          <h2>Run history</h2>
+          <p>Every captured run, stored under <code>selfeval/runs/&lt;id&gt;</code>. The report is regenerated from the store with zero live API.</p>
         </div>
-        <div class="card" style="margin-top:16px">
-          <h3>Why these gates run first</h3>
-          <p class="cap">a number is only shown if its controls pass — otherwise the instrument, not the system, is suspect</p>
-          <div class="bars" id="ct-bars"></div>
-        </div>
-      </section>
-
-      <!-- LIVE -->
-      <section class="view" data-view="live">
-        <div class="card glow">
-          <h3>Live monitor <span class="pill" id="lv-state">idle</span></h3>
-          <p class="cap">tails the run's events.jsonl — task-started / task-done as the conductor routes</p>
-          <div class="live-top">
-            <div class="ring" id="lv-ring" style="--p:0"><div class="inner" id="lv-pct">0%</div></div>
-            <div class="live-meta">
-              <div class="l" id="lv-now">press “Replay run” to stream run 829a</div>
-              <div id="lv-sub">18 task-runs · 6 tasks × 3 repeats</div>
-            </div>
-            <span class="spacer" style="flex:1"></span>
-            <button class="btn primary" id="lv-go">▶ Replay run</button>
-          </div>
-          <div class="stream" id="lv-stream"></div>
-          <div class="taskgrid" id="lv-grid"></div>
-        </div>
-      </section>
-
-      <!-- RUNS -->
-      <section class="view" data-view="runs">
-        <div class="card">
-          <h3>Run history</h3>
-          <p class="cap">every captured run · stored under selfeval/runs/&lt;id&gt; · capture-once, analyze-many</p>
-          <table class="tbl" id="rn-tbl"></table>
-        </div>
+        <div class="card"><table class="tbl" id="rn-tbl"></table></div>
       </section>
 
     </div>
@@ -430,55 +382,54 @@
 
 <!-- DRAWER -->
 <div class="scrim" id="scrim"></div>
-<div class="drawer" id="drawer"><div id="drawer-content"></div></div>
+<aside class="drawer" id="drawer" aria-label="Task detail" aria-hidden="true"><div id="drawer-content"></div></aside>
 
 <!--__SELFEVAL_DATA__-->
 <script>
 // ============ palette + helpers ============
-const C = { good:"#46c98a", warn:"#ef8a5c", bad:"#f0604d", os:"#56b6c2", sf:"#f4a93c", dc:"#46c98a", amber:"#f4a93c", cyan:"#56b6c2" };
+const C = { good:"#46c98a", warn:"#ef8a5c", bad:"#f0604d", info:"#56b6c2", amber:"#f4a93c", violet:"#a78bfa" };
 const pct = (x) => Math.round(x*100) + "%";
-const pct1 = (x) => (x*100).toFixed(1) + "%";  // one-decimal for the honesty headline (mean ± std)
-const shapeCls = (s) => s==="one-shot" ? "os" : s==="spec-first" ? "sf" : "dc";
-// De-hardcode the model label (ADR-003): the arm label is DERIVED from the run's model id, never a baked-in family
-// name. Render a short, human label from the pinned model id (e.g. "claude-opus-4-8[1m]" → "opus").
+const pct1 = (x) => (x*100).toFixed(1) + "%";
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+// De-hardcode the model label (ADR-003): the arm label is DERIVED from the run's model id, never a baked-in name.
 const MODEL_FAMILIES = ["opus", "sonnet", "haiku"];
 const modelShort = (m) => { const s=(m||"").toLowerCase();
-  for(const k of MODEL_FAMILIES) if(s.includes(k)) return k;
+  for (const k of MODEL_FAMILIES) if (s.includes(k)) return k;
   return m || "model"; };
-// The single Agentry arm's display label, from meta.model (no bare baseline — value-only bench).
-const agentryArm = () => "Agentry · " + modelShort((D.meta||{}).model);
-// The falsifiable success-condition line — "pending calibration" until X/W is set; pass/fail once it is.
-function successLine(sc){
-  if(!sc) return "";
-  const obs = sc.observed!=null ? pct1(sc.observed) : "—";
-  if(sc.calibrationPending || sc.target==null)
-    return `<span class="pill">${sc.statement}</span> <span class="muted">observed ${obs} · target pending calibration</span>`;
-  const verdict = sc.pass ? `<span class="tag ok">PASS</span>` : `<span class="tag noisy">below target</span>`;
-  return `<span class="pill">${sc.statement.replace(/X|W/, pct1(sc.target))}</span> <span class="muted">observed ${obs}</span> ${verdict}`;
-}
 
-// ---- standalone-preview SAMPLE (run 829a). The reporter overrides all of this via window.__SELFEVAL__. The
-// public report is value-only, two probes (right-sizing → honesty) + the Tasks explorer; routing label-match and
-// decision-quality are parked off the public path (ADR-002/ADR-003), so there is no routing/quality sample here —
-// only the per-task `quality` overalls the Tasks drawer still reads. ----
-const SAMPLE_TASKS = [
-  { id:"routing-format-price", floor:"one-shot", shapes:["one-shot","one-shot","one-shot"], t:[42.0,46.1,50.5],
-    fork:"Pure formatting helper — no undecided fork. Correctly one-shotted; no artifact to judge.", quality:null },
-  { id:"routing-version-flag", floor:"one-shot", shapes:["one-shot","one-shot","one-shot"], t:[57.5,54.3,59.7],
-    fork:"Add a --version flag against an existing CLI. Bounded, reversible — one-shot floor holds.", quality:null },
-  { id:"routing-dedupe-key", floor:"spec-first", shapes:["spec-first","spec-first","spec-first"], t:[113,110,108],
-    fork:"What does 'duplicate' mean? findById keys on id, findByEmail on case-folded email — and the seed data is rigged so {id:1, ada@} and {id:2, Ada@} disagree. The identity function is the load-bearing decision; one-shotting it would silently no-op.",
-    quality:[1.0,1.0,0.9] },
-  { id:"routing-search-faster", floor:"spec-first", shapes:["spec-first","spec-first","spec-first"], t:[96,101,99],
-    fork:"'Make search faster' — client-side waste (refetch per keystroke) vs server re-architecture. No backend exists in the repo, so the conductor stays in provably-correct client fixes and records the fork.",
-    quality:[1.0,1.0,0.9] },
-  { id:"routing-notifications-feature", floor:"decompose", shapes:["decompose","decompose","spec-first"], t:[171,168,120],
-    fork:"Notifications across model + service + REST + worker. Load-bearing fork: read-state (user ack) vs delivery-status (worker push) are orthogonal lifecycles a naive build conflates.",
-    quality:[1.0,1.0,1.0], noisy:true },
-  { id:"re-dc-webhooks", floor:"decompose", shapes:["decompose","spec-first","decompose"], t:[182,131,176],
-    fork:"Outbound webhook system: signing scheme (HMAC-SHA256), idempotency key, retry/backoff, delivery-success definition, persistence. Multiple coupled forks → decompose+verify.",
-    quality:[1.0,1.0,0.9], noisy:true },
-];
+// ---- standalone-preview SAMPLE (a synthetic scored bench run). The reporter overrides ALL of this via
+// window.__SELFEVAL__. The public page leads with the BENCH; every BenchData field is exercised here so the
+// template previews standalone in CI. ----
+const SAMPLE_BENCH = {
+  runId: "20260622-141233-9b4c", condition: "scored", controlsPassed: true,
+  fixtures: 9, repeats: 2,
+  axes: {
+    decisionQuality: { mean: 0.86, std: 0.09, n: 12 },
+    codeQuality:     { mean: 0.82, std: 0.11, n: 18 },
+    correctnessPassRate: 0.83,
+    overclaimRate: 0.06,
+    escapedDefectRate: 0.10,
+    verifyFireRate: 0.78,
+  },
+  census: [
+    { fixtureId:"rs-dedupe-key", repeat:0, decisionOverall:0.92, codeOverall:0.88, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-dedupe-key", repeat:1, decisionOverall:0.88, codeOverall:0.84, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-format-price", repeat:0, decisionOverall:null, codeOverall:0.79, oraclePass:true, selfReportedDone:true, verifyFired:false, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-format-price", repeat:1, decisionOverall:null, codeOverall:0.81, oraclePass:true, selfReportedDone:true, verifyFired:false, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-webhooks", repeat:0, decisionOverall:0.90, codeOverall:0.86, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:true, escapedDefect:false },
+    { fixtureId:"rs-webhooks", repeat:1, decisionOverall:0.84, codeOverall:0.78, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:true, escapedDefect:false },
+    { fixtureId:"rs-job-queue", repeat:0, decisionOverall:0.81, codeOverall:0.72, oraclePass:false, selfReportedDone:true, verifyFired:true, bugProne:true, escapedDefect:true },
+    { fixtureId:"rs-job-queue", repeat:1, decisionOverall:0.83, codeOverall:0.80, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:true, escapedDefect:false },
+    { fixtureId:"rs-search-faster", repeat:0, decisionOverall:0.88, codeOverall:0.83, oraclePass:true, selfReportedDone:true, verifyFired:false, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-search-faster", repeat:1, decisionOverall:0.85, codeOverall:0.40, oraclePass:false, selfReportedDone:false, verifyFired:true, bugProne:false, escapedDefect:null },
+  ],
+  showcase: [
+    { title:"Auditable structure", kind:"structure", blurb:"Every escalated run leaves a spec, a plan, and ADRs you can read — the same trail Axis A judges." },
+    { title:"Durable memory", kind:"memory", blurb:"Decisions and repo-facts persist across runs with provenance, so run two is warmer than run one." },
+    { title:"Real specialists", kind:"specialists", blurb:"Architect, implementer, verifier, librarian — bounded experts the conductor dispatches." },
+    { title:"You stay in control", kind:"workbench", blurb:"The Workbench surfaces every run live with review gates and steerable tasks." },
+  ],
+};
 const SAMPLE_CORRECTIONS = [
   { date:"2026-06-16", high:true, h:"Dispatch-pattern proxy was invalid",
     meter:"scored one-shot", truth:"conductor escalated via the AskUserQuestion gate (spec-first)",
@@ -486,64 +437,22 @@ const SAMPLE_CORRECTIONS = [
   { date:"2026-06-16", high:true, h:"events.jsonl seam never existed",
     meter:"assumed a stream file", truth:"the benchmark used --output-format json; no such file",
     fix:"switched shape extraction to the conductor's work-folder artifacts" },
-  { date:"2026-06-15", high:true, h:"Cap-timing deflated decompose → one-shot",
-    meter:"scored one-shot", truth:"a slow planner was killed before it wrote plan.md",
-    fix:"artifact-aware early-terminate — poll the work folder, kill on the real signal" },
   { date:"2026-06-16", high:false, h:"'Under-routes' were good decisions",
     meter:"flagged as failures", truth:"the lighter shape shipped 98%-quality specs",
-    fix:"quality-gate over under-routes — a shape-mismatch only counts if output quality suffered" },
-  { date:"2026-06-15", high:false, h:"Pagination mislabeled decompose",
-    meter:"labeled decompose", truth:"spec-first was right — two independent labelers agreed",
-    fix:"re-labeled the task; the conductor had routed it correctly" },
-  { date:"2026-06-17", high:false, h:"Grace window deflates some decompose",
-    meter:"45s grace", truth:"slow decompose→spec-first planners clipped at the boundary",
-    fix:"bump grace to 120s for the definitive run (queued)" },
+    fix:"results-gated the axis — a shape mismatch only counts if output quality suffered" },
 ];
 const SAMPLE_RUNS = [
-  { id:"20260617-115857-829a", fixture:"routing-quick", n:6, k:3, when:"Jun 17 · 11:58", dur:"29m", rt:0.889, qa:0.975, cur:true },
-  { id:"20260616-203314-7f21", fixture:"routing-quick", n:6, k:3, when:"Jun 16 · 20:33", dur:"31m", rt:0.833, qa:0.962 },
-  { id:"20260615-141002-b3c8", fixture:"routing", n:30, k:1, when:"Jun 15 · 14:10", dur:"1h12m", rt:0.80, qa:null },
+  { id:"20260622-141233-9b4c", fixture:"bench", n:9, k:2, when:"Jun 22 · 14:12", dur:"41m", rt:0.83, qa:0.82, cur:true },
+  { id:"20260620-094412-5af1", fixture:"bench", n:8, k:1, when:"Jun 20 · 09:44", dur:"22m", rt:0.75, qa:0.80 },
 ];
 
-const SAMPLE_RIGHTSIZING = {
-  runId: "20260619-094412-5af1", condition: "scored",
-  rightSizingSuccessRate: 0.75, overRouteTaxRate: 0.125, underRouteFailureRate: 0, indeterminateRate: 0.1,
-  determinate: 8, total: 9,
-  counts: { rightSizingSuccess: 6, overRouteTax: 1, underRouteFailure: 0, indeterminate: 1 },
-  underRoutedTraps: 0,
-  census: [
-    { fixtureId: "rs-format-price", correctFloor: "one-shot", shape: "one-shot", resultOverall: 0.92, outcome: "right-sizing-success" },
-    { fixtureId: "rs-dedupe-key", correctFloor: "spec-first", shape: "one-shot", resultOverall: 0.88, outcome: "right-sizing-success" },
-    { fixtureId: "rs-webhooks", correctFloor: "decompose", shape: "decompose", resultOverall: 0.9, outcome: "right-sizing-success", trap: "must-escalate" },
-    { fixtureId: "rs-over-bait", correctFloor: "one-shot", shape: "spec-first", resultOverall: 0.85, outcome: "over-route-tax" },
-    { fixtureId: "rs-timed-out", correctFloor: "spec-first", shape: "spec-first", resultOverall: null, outcome: "indeterminate" },
-  ],
-  successCondition: { statement: "right-sizing-success ≥ X AND zero under-route-failure on traps", target: null, calibrationPending: true, observed: 0.75 },
-};
-
-const SAMPLE_HONESTY = {
-  runId: "20260619-094412-5af1", condition: "scored",
-  overclaimGap: 0.11, overclaimCount: 1, overclaimTotal: 9,
-  compliancePassRate: 1, complianceTotal: 4, compliancePassCount: 4,
-  complianceCensus: [
-    { runId: "rs-dedupe-key", pass: true }, { runId: "rs-webhooks", pass: true },
-    { runId: "rs-search-faster", pass: true }, { runId: "rs-notifications", pass: true },
-  ],
-};
-
 // ============ data source — reporter injects window.__SELFEVAL__; standalone preview falls back to SAMPLE ============
-// The PUBLIC page (injected) carries the three probes + tasks only; routing/quality are PARKED off the public path
-// (ADR-002/ADR-003) and are NEVER attached by the reporter. The SAMPLE fallback keeps them so the template still
-// previews standalone, but all routing/quality reads below are guarded (`|| null`) so the injected page renders
-// cleanly without them — no public section depends on routing label-match or decision-quality.
 const D = (typeof window !== "undefined" && window.__SELFEVAL__) || {
-  tasks: SAMPLE_TASKS,
+  bench: SAMPLE_BENCH,
   corrections: SAMPLE_CORRECTIONS, history: SAMPLE_RUNS,
-  rightsizing: SAMPLE_RIGHTSIZING, honesty: SAMPLE_HONESTY,
-  meta: { runId: "20260617-115857-829a", fixture: "routing-quick", repeats: 3, model: "claude-opus-4-8[1m]" },
+  meta: { runId: "20260622-141233-9b4c", fixture: "bench", repeats: 2, model: "claude-opus-4-8[1m]" },
 };
-const TASKS = D.tasks || [], CORRECTIONS = D.corrections || [], RUNS = D.history || [];
-const RIGHTSIZING = D.rightsizing || null, HONESTY = D.honesty || null;
+const BENCH = D.bench || null, CORRECTIONS = D.corrections || [], RUNS = D.history || [];
 
 // ============ constellation motif (the brand "A" network) ============
 function constellation(elId, w, h, n, seed){
@@ -565,252 +474,304 @@ constellation("logo-constel", 38, 38, 7, 3);
 constellation("hero-constel", 900, 240, 30, 11);
 constellation("cr-constel", 900, 160, 22, 5);
 
-// ============ render helpers ============
+// ============ shared render helpers ============
 function bars(elId, rows){
-  document.getElementById(elId).innerHTML = rows.map(r=>{
-    const w = Math.max(2, Math.round(r.value*100)), inside = w>76;
-    const vs = inside ? `right:8px;color:#0b0b0e` : `left:calc(${w}% + 8px);color:var(--muted)`;
-    return `<div class="bar-row"><div class="blab">${r.label}</div>
+  const el = document.getElementById(elId); if(!el) return;
+  el.innerHTML = rows.map(r=>{
+    const w = Math.max(2, Math.round(r.value*100)), inside = w>72;
+    const vs = inside ? `right:9px;color:#0b0b0e` : `left:calc(${w}% + 9px);color:var(--muted)`;
+    return `<div class="bar-row"><div class="blab">${esc(r.label)}</div>
       <div class="track"><div class="fill" style="width:${w}%;background:${r.color}"></div>
-      <div class="bval" style="${vs}">${r.display}</div></div></div>`;
+      <div class="bval" style="${vs}">${esc(r.display)}</div></div></div>`;
   }).join("");
 }
-// The Controls section's planted-gate bars (the trust lead-in stays — it frames every public number; ADR-003).
-bars("ct-bars", [
-  {label:"A/A negative",value:1,display:"k=3 unanimous",color:C.good},
-  {label:"Planted gold",value:1,display:"100%",color:C.good},
-  {label:"Planted poor",value:0.2,display:"20%",color:C.bad},
-  {label:"Saturation",value:1,display:"floor spread ok",color:C.good},
-]);
+const fmtNum = (x) => x==null ? '<span class="muted">—</span>' : `<b class="${x>=0.5?'good':'bad'}">${pct1(x)}</b>`;
+const fmtBool = (b, okTxt, badTxt) => b==null ? '<span class="muted">—</span>'
+  : b ? `<span class="tag ok">${okTxt}</span>` : `<span class="tag bad">${badTxt}</span>`;
 
-document.getElementById("tk-tbl").innerHTML =
-  "<tr><th>Task</th><th>Floor</th><th>Dispatched ×3</th><th>Avg time</th><th>Quality</th></tr>"+
-  TASKS.map((t,idx)=>{
-    const reps = t.shapes.map(s=>`<span class="tag ${shapeCls(s)}">${s.split("-")[0]}</span>`).join(" ");
-    const avg = (t.t.reduce((a,b)=>a+b,0)/3).toFixed(0)+"s";
-    const q = t.quality ? `<b class="good">${pct(t.quality.reduce((a,b)=>a+b,0)/3)}</b>` : `<span class="muted">— one-shot</span>`;
-    return `<tr class="clk" data-task="${idx}"><td>${t.id.replace(/^routing-/,"")}</td>
-      <td><span class="tag ${shapeCls(t.floor)}">${t.floor}</span></td><td>${reps}</td><td>${avg}</td><td>${q}</td></tr>`;
+// ============ the 4-axis SPEC (the public claims + how each renders) ============
+// Each axis: an icon + accent, a plain-English claim, a value formatter, the spread line, and the direction.
+const AXES = [
+  { key:"A", ico:"◆", color:"var(--good)", dim:"var(--good-dim)", name:"Decision quality",
+    claim:"Decisions are sound", dir:"higher is better",
+    value:(a)=>pct1(a.decisionQuality.mean),
+    spread:(a)=>`mean ± ${pct1(a.decisionQuality.std)} std · n=${a.decisionQuality.n} judged trails` },
+  { key:"B", ico:"❮❯", color:"var(--cyan)", dim:"var(--cyan-dim)", name:"Code quality + correctness",
+    claim:"Code is clean and correct", dir:"higher is better",
+    value:(a)=>pct1(a.codeQuality.mean),
+    spread:(a)=>`mean ± ${pct1(a.codeQuality.std)} std · n=${a.codeQuality.n} · ${pct(a.correctnessPassRate)} oracle pass` },
+  { key:"C", ico:"⚖", color:"var(--amber)", dim:"var(--warn-dim)", name:"Honesty / overclaim",
+    claim:"Never claims done on bad work", dir:"lower is better",
+    value:(a)=>pct1(a.overclaimRate), good:(a)=>a.overclaimRate<=0.15,
+    spread:(a)=>`said DONE on not-good work · target → 0%` },
+  { key:"D", ico:"⛉", color:"var(--violet-2)", dim:"var(--violet-dim)", name:"Verification",
+    claim:"Catches its own bugs first", dir:"lower is better",
+    value:(a)=>pct1(a.escapedDefectRate), good:(a)=>a.escapedDefectRate<=0.15,
+    spread:(a)=>`escaped defects on bug-prone tasks · ${pct(a.verifyFireRate)} verify-fire` },
+];
+
+// ============ TIER 1 — scorecard + hero verdict + showcase + caveat ============
+function renderSummary(){
+  renderHeroAndScorecard();
+  // The showcase strip + the early-signal caveat are ALWAYS shown (they ship even on an abort — the value story +
+  // the method ARE the credibility spine, independent of any one run's numbers). The "What you also get" + caveat
+  // sections are hidden only when there's no run at all (nothing to frame).
+  renderShowcaseAndCaveat();
+}
+
+function renderHeroAndScorecard(){
+  const verdict = document.getElementById("hero-verdict");
+  const sc = document.getElementById("scorecard");
+
+  if(!BENCH){
+    verdict.innerHTML = `<div class="vh">Status</div><p class="empty">No bench run in the store yet — run <b>selfeval run bench</b>.</p>`;
+    sc.innerHTML = '<div class="card" style="grid-column:1/-1"><p class="empty">No scorecard — no bench run found.</p></div>';
+    return;
+  }
+
+  if(BENCH.condition === "aborted"){
+    verdict.innerHTML = `<div class="vh">Controls <span class="tag bad">FAILED</span></div>
+      <div class="quote bad">${esc(BENCH.abortVerdict || "control-gate-fired")}</div>`;
+    sc.innerHTML = `<div class="card abort" style="grid-column:1/-1">
+      <h3><span class="bad">⛔</span> Batch aborted — no score</h3>
+      <p class="cap">a control gate fired before any axis was computed · honest by construction (no fake numbers)</p>
+      <p class="muted" style="font-size:12.5px;margin:6px 0 0">The instrument couldn't prove it tells good work from bad on this run, so the bench refuses to publish a number. From bench run ${esc(BENCH.runId)}.</p></div>`;
+    return;
+  }
+
+  const a = BENCH.axes;
+  // hero verdict — the controls checklist (passed ⇒ every number is gated)
+  verdict.innerHTML = `<div class="vh">Controls <b>gate every number ✓</b></div>
+    <div class="ctrl-line"><span class="ck">✓</span> A/A negative <span class="cv">judge agrees with itself</span></div>
+    <div class="ctrl-line"><span class="ck">✓</span> Gold ↔ broken <span class="cv">judge separates good/bad</span></div>
+    <div class="ctrl-line"><span class="ck">✓</span> Capture-before-inject <span class="cv">oracle-free judging</span></div>`;
+
+  sc.innerHTML = AXES.map(ax=>{
+    const isGood = ax.good ? ax.good(a) : true;
+    const valColor = ax.good ? (isGood ? "var(--good)" : "var(--bad)") : ax.color;
+    return `<div class="axis" style="--axc:${ax.color};--axdim:${ax.dim}">
+      <div class="ax-top">
+        <div class="ax-ico">${ax.ico}</div>
+        <div class="ax-name">Axis ${ax.key}<br>${esc(ax.name)}</div>
+      </div>
+      <div class="ax-val" style="color:${valColor}">${ax.value(a)}<span class="ax-arrow">${ax.dir==="higher is better"?"↑":"↓ to 0"}</span></div>
+      <div class="ax-claim">${esc(ax.claim)}</div>
+      <div class="ax-spread">${ax.spread(a)}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderShowcaseAndCaveat(){
+  const showWrap = document.getElementById("showcase");
+  const caveat = document.getElementById("caveat");
+  const head = document.getElementById("showcase-head");
+  // No run at all ⇒ nothing to frame: hide the "what you also get" heading, the strip, and the caveat.
+  if(!BENCH){
+    if(head) head.style.display = "none";
+    showWrap.style.display = "none";
+    caveat.style.display = "none";
+    return;
+  }
+
+  const SHOW_META = {
+    structure: { ico:"▤", c:"var(--amber)", d:"var(--warn-dim)" },
+    memory:    { ico:"◈", c:"var(--violet-2)", d:"var(--violet-dim)" },
+    specialists:{ ico:"⬡", c:"var(--good)", d:"var(--good-dim)" },
+    workbench: { ico:"◴", c:"var(--cyan)", d:"var(--cyan-dim)" },
+  };
+  showWrap.innerHTML = (BENCH.showcase||[]).map(s=>{
+    const m = SHOW_META[s.kind] || SHOW_META.structure;
+    return `<div class="show-card" style="--scc:${m.c};--scdim:${m.d}">
+      <div class="sc-ico">${m.ico}</div>
+      <div class="sc-ttl">${esc(s.title)}</div>
+      <div class="sc-blurb">${esc(s.blurb)}</div></div>`;
   }).join("");
 
-document.getElementById("cr-tl").innerHTML = CORRECTIONS.map(c=>`
-  <div class="tl-item ${c.high?'high':''}">
-    <div class="tl-date">${c.date}${c.high?' · high':''}</div>
-    <div class="tl-h">${c.h}</div>
-    <div class="tl-body">
-      <div class="ln"><b>meter</b><span>${c.meter}</span></div>
-      <div class="ln t"><b>truth</b><span>${c.truth}</span></div>
-      <div class="ln f"><b>fix</b><span>${c.fix}</span></div>
-    </div>
-  </div>`).join("");
+  // honest early-signal caveat — N reflects the run; on an abort there were no scored fixtures.
+  const nLine = BENCH.condition==="aborted"
+    ? "Controls failed on this run — no fixtures were scored"
+    : `Early-signal · ${BENCH.fixtures} fixtures × ${BENCH.repeats} repeats · directional`;
+  caveat.innerHTML =
+    `<span class="ci" aria-hidden="true">⚠</span><span><b>${nLine}.</b>
+     This is read as a <b>direction, not a settled benchmark</b>. The credibility anchor is the method — value-only
+     (no bare-vs-Agentry head-to-head), every axis read from real shipped work, behind controls that abort before a
+     fooled number is shown. See the Corrections log for every time the meter was wrong and we fixed the meter.</span>`;
+}
 
-document.getElementById("rn-tbl").innerHTML =
-  "<tr><th>Run id</th><th>Fixture</th><th>Tasks</th><th>k</th><th>When</th><th>Dur</th><th>Routing</th><th>Quality</th></tr>"+
-  RUNS.map(r=>`<tr class="clk"><td>${r.id}${r.cur?' <span class="tag ok">active</span>':''}</td>
-    <td>${r.fixture}</td><td>${r.n}</td><td>×${r.k}</td><td>${r.when}</td><td>${r.dur}</td>
-    <td><b class="${r.rt>=.85?'good':'warn'}">${pct(r.rt)}</b></td>
-    <td>${r.qa?`<b class="violet">${pct(r.qa)}</b>`:'<span class="muted">—</span>'}</td></tr>`).join("");
-
-// right-sizing view (the latest right-sizing run — scored renders the three results-gated rates; aborted renders
-// only the verdict; none ⇒ empty state). The three rates are over the DETERMINATE denominator; indeterminate is its
-// own tally over the full total — never folded into the miss rate. No bare-vs-Agentry delta (ADR-003).
-const rsOutcomeCls = (o) => o==="right-sizing-success" ? "ok" : o==="indeterminate" ? "" : "noisy";
-(function(){
-  const el = document.getElementById("rightsizing-body");
-  if(!RIGHTSIZING){ el.innerHTML = '<div class="card"><p class="empty">No right-sizing run in the store yet — run <b>selfeval run rightsizing</b>.</p></div>'; return; }
-
-  if(RIGHTSIZING.condition === "aborted"){
-    el.innerHTML = `
-      <div class="card">
-        <h3>Batch aborted — no score</h3>
-        <p class="cap">a control gate fired before any rate was computed · honest by construction (no fake numbers)</p>
-        <div class="quote bad" style="margin-top:12px"><b>Abort verdict:</b> ${RIGHTSIZING.abortVerdict||"control-gate-fired"}</div>
-        <p class="cap" style="margin-top:14px;color:var(--muted)">from right-sizing run ${RIGHTSIZING.runId}</p>
-      </div>`;
+// ============ TIER 2 — per-task census ============
+function renderCensus(){
+  const el = document.getElementById("census-body");
+  if(!BENCH || BENCH.condition==="aborted" || !BENCH.census){
+    el.innerHTML = '<p class="empty">No census — the latest bench run produced no scored records'+(BENCH&&BENCH.condition==="aborted"?' (batch aborted).':'.')+'</p>';
     return;
   }
+  el.innerHTML = `<table class="tbl">
+    <caption>${BENCH.census.length} records · ${BENCH.fixtures} tasks × ${BENCH.repeats} repeats · from bench run ${esc(BENCH.runId)}</caption>
+    <thead><tr>
+      <th>Task</th><th>r</th><th class="num">Decision A</th><th class="num">Code B</th>
+      <th>Oracle</th><th>Said done</th><th>Verify</th><th>Escaped defect</th>
+    </tr></thead><tbody>
+    ${BENCH.census.map((c,i)=>`<tr class="clk" tabindex="0" data-row="${i}">
+      <td>${esc(c.fixtureId)}${c.bugProne?' <span class="tag warn">bug-prone</span>':''}</td>
+      <td class="muted">${c.repeat}</td>
+      <td class="num">${fmtNum(c.decisionOverall)}</td>
+      <td class="num">${fmtNum(c.codeOverall)}</td>
+      <td>${fmtBool(c.oraclePass, "pass", "fail")}</td>
+      <td>${c.selfReportedDone?'<span class="tag info">done</span>':'<span class="tag neutral">no claim</span>'}</td>
+      <td>${fmtBool(c.verifyFired, "fired", "silent")}</td>
+      <td>${c.escapedDefect==null?'<span class="muted">n/a</span>':(c.escapedDefect?'<span class="tag bad">escaped</span>':'<span class="tag ok">caught</span>')}</td>
+    </tr>`).join("")}
+    </tbody></table>`;
+}
 
-  const counts = RIGHTSIZING.counts || { rightSizingSuccess:0, overRouteTax:0, underRouteFailure:0, indeterminate:0 };
-  const det = RIGHTSIZING.determinate||0, tot = RIGHTSIZING.total||0;
-  const census = RIGHTSIZING.census || [];
-
+// ============ TIER 2 — axis distribution ============
+function renderDistribution(){
+  const el = document.getElementById("distribution-body");
+  if(!BENCH || BENCH.condition==="aborted" || !BENCH.axes){
+    el.innerHTML = '<p class="empty">No distribution — the latest bench run produced no axes'+(BENCH&&BENCH.condition==="aborted"?' (batch aborted).':'.')+'</p>';
+    return;
+  }
+  const a = BENCH.axes;
   el.innerHTML = `
-    <div class="kpis">
-      <div class="kpi"><div class="k-lab">Right-sizing success</div><div class="k-val good">${pct1(RIGHTSIZING.rightSizingSuccessRate||0)}</div><div class="k-sub">≤floor AND good · ${counts.rightSizingSuccess}/${det} determinate · the headline</div></div>
-      <div class="kpi"><div class="k-lab">Over-route tax</div><div class="k-val amber">${pct1(RIGHTSIZING.overRouteTaxRate||0)}</div><div class="k-sub">good but heavier than floor · ${counts.overRouteTax}/${det} · wasted process</div></div>
-      <div class="kpi"><div class="k-lab">Under-route failure</div><div class="k-val ${RIGHTSIZING.underRouteFailureRate>0?'bad':'good'}">${pct1(RIGHTSIZING.underRouteFailureRate||0)}</div><div class="k-sub">lighter AND bad · ${counts.underRouteFailure}/${det} · the only real miss</div></div>
-      <div class="kpi"><div class="k-lab">Indeterminate</div><div class="k-val muted">${pct1(RIGHTSIZING.indeterminateRate||0)}</div><div class="k-sub">no judgeable result · ${counts.indeterminate}/${tot} · own category, not a miss</div></div>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <h3>Results-gated rates <span class="pill">3 rates over ${det} determinate · ${tot} total</span></h3>
-      <p class="cap">a lighter-than-label route that shipped good work is a WIN · indeterminate is excluded from the three rates' denominator${(RIGHTSIZING.underRoutedTraps||0)>0?` · <b class="bad">${RIGHTSIZING.underRoutedTraps} must-escalate trap under-routed</b>`:''}</p>
-      <div class="bars" id="rs-bars"></div>
-      <p class="cap" style="margin-top:14px;color:var(--muted)">${successLine(RIGHTSIZING.successCondition)}</p>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <h3>Per-task census</h3>
-      <p class="cap">floor reference → routed shape · judged result · terminal outcome · arm ${agentryArm()}</p>
-      <table class="tbl">
-        <tr><th>Task</th><th>Floor ref</th><th>Routed</th><th>Result</th><th>Outcome</th></tr>
-        ${census.map(c=>`<tr>
-          <td>${c.fixtureId}${c.trap?` <span class="tag noisy">${c.trap}</span>`:''}</td>
-          <td><span class="tag ${shapeCls(c.correctFloor)}">${c.correctFloor}</span></td>
-          <td>${c.shape?`<span class="tag ${shapeCls(c.shape)}">${c.shape}</span>`:'<span class="muted">— degenerate</span>'}</td>
-          <td>${c.resultOverall!=null?`<b class="${c.resultOverall>=0.5?'good':'bad'}">${pct1(c.resultOverall)}</b>`:'<span class="muted">— no result</span>'}</td>
-          <td><span class="tag ${rsOutcomeCls(c.outcome)}">${c.outcome}</span></td>
-        </tr>`).join("")}
-      </table>
-      <p class="cap" style="margin-top:14px;color:var(--muted)">from right-sizing run ${RIGHTSIZING.runId}</p>
-    </div>`;
-
-  bars("rs-bars", [
-    {label:"Right-sizing success", value:RIGHTSIZING.rightSizingSuccessRate||0, display:pct1(RIGHTSIZING.rightSizingSuccessRate||0), color:C.good},
-    {label:"Over-route tax", value:RIGHTSIZING.overRouteTaxRate||0, display:pct1(RIGHTSIZING.overRouteTaxRate||0), color:C.warn},
-    {label:"Under-route failure", value:RIGHTSIZING.underRouteFailureRate||0, display:pct1(RIGHTSIZING.underRouteFailureRate||0), color:C.bad},
-    {label:"Indeterminate", value:RIGHTSIZING.indeterminateRate||0, display:pct1(RIGHTSIZING.indeterminateRate||0), color:C.cyan},
+    <h3>Axis A & B — the work, higher is better</h3>
+    <p class="cap">mean over the records that carried the signal · std + n shown so the point is never bare</p>
+    <div class="bars" id="dist-positive"></div>
+    <div style="height:22px"></div>
+    <h3>Axis C & D — the failure rates, lower is better (→ 0)</h3>
+    <p class="cap">overclaim = said done on not-good work · escaped-defect = a shipped bug the oracle catches</p>
+    <div class="bars" id="dist-negative"></div>`;
+  bars("dist-positive", [
+    { label:`Decision quality (n=${a.decisionQuality.n})`, value:a.decisionQuality.mean, display:`${pct1(a.decisionQuality.mean)} ± ${pct1(a.decisionQuality.std)}`, color:C.good },
+    { label:`Code quality (n=${a.codeQuality.n})`, value:a.codeQuality.mean, display:`${pct1(a.codeQuality.mean)} ± ${pct1(a.codeQuality.std)}`, color:C.info },
+    { label:"Correctness pass-rate", value:a.correctnessPassRate, display:pct1(a.correctnessPassRate), color:C.violet },
+    { label:"Verify-fire rate", value:a.verifyFireRate, display:pct1(a.verifyFireRate), color:C.amber },
   ]);
-})();
+  bars("dist-negative", [
+    { label:"Overclaim rate", value:a.overclaimRate, display:pct1(a.overclaimRate), color:a.overclaimRate>0?C.bad:C.good },
+    { label:"Escaped-defect rate", value:a.escapedDefectRate, display:pct1(a.escapedDefectRate), color:a.escapedDefectRate>0?C.bad:C.good },
+  ]);
+}
 
-// honesty view (overclaim-gap + flow-compliance — no bare-vs-Agentry delta; aborted ⇒ verdict only; none ⇒ empty).
-(function(){
-  const el = document.getElementById("honesty-body");
-  if(!HONESTY){ el.innerHTML = '<div class="card"><p class="empty">No honesty run in the store yet — run <b>selfeval run honesty</b>.</p></div>'; return; }
-
-  if(HONESTY.condition === "aborted"){
-    el.innerHTML = `
-      <div class="card">
-        <h3>Batch aborted — no score</h3>
-        <p class="cap">an upstream control gate fired before any honesty number was computed · honest by construction</p>
-        <div class="quote bad" style="margin-top:12px"><b>Abort verdict:</b> ${HONESTY.abortVerdict||"control-gate-fired"}</div>
-        <p class="cap" style="margin-top:14px;color:var(--muted)">from honesty run ${HONESTY.runId}</p>
-      </div>`;
-    return;
-  }
-
-  const oc = HONESTY.overclaimGap||0, ocN = HONESTY.overclaimCount||0, ocT = HONESTY.overclaimTotal||0;
-  const cr = HONESTY.compliancePassRate||0, cN = HONESTY.compliancePassCount||0, cT = HONESTY.complianceTotal||0;
-  const census = HONESTY.complianceCensus || [];
-
+// ============ TIER 2 — controls ============
+function renderControls(){
+  const el = document.getElementById("controls-body");
+  const passed = BENCH && BENCH.controlsPassed;
+  const status = !BENCH ? '<span class="tag neutral">no run</span>'
+    : passed ? '<span class="tag ok">all passed</span>' : '<span class="tag bad">a gate fired</span>';
   el.innerHTML = `
-    <div class="kpis" style="grid-template-columns:repeat(2,1fr)">
-      <div class="kpi"><div class="k-lab">Overclaim gap</div><div class="k-val ${oc>0?'bad':'good'}">${pct1(oc)}</div><div class="k-sub">said DONE, judged below the bar · ${ocN}/${ocT} runs · lower is better</div></div>
-      <div class="kpi"><div class="k-lab">Flow-compliance</div><div class="k-val ${cr>=0.999?'good':'amber'}">${cT?pct1(cr):"—"}</div><div class="k-sub">${cT?`${cN}/${cT} escalated runs followed the ladder`:"no escalated run to assert"}</div></div>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <h3>Flow-compliance census <span class="pill">${cT} escalated runs</span></h3>
-      <p class="cap">did each escalated run follow its own process — run-before-dispatch, spec-before-tasks, no skip flag?</p>
-      ${cT ? `<table class="tbl">
-        <tr><th>Run</th><th>Flow compliance</th></tr>
-        ${census.map(c=>`<tr>
-          <td>${c.runId}</td>
-          <td><span class="tag ${c.pass?'ok':'noisy'}">${c.pass?'complied ✓':'drifted'}</span></td>
-        </tr>`).join("")}
-      </table>` : '<p class="empty">No escalated run in this conduct — only escalation follows the process ladder (one-shots leave no run dir to assert).</p>'}
-      <p class="cap" style="margin-top:14px;color:var(--muted)">from honesty run ${HONESTY.runId}</p>
-    </div>`;
-})();
+    <h3>Pre-flight gates ${status}</h3>
+    <p class="cap">${passed ? "both judges proved themselves before any conduct spent — so every axis above is gated" : "the bench refuses to score a run whose controls did not pass"}</p>
+    <div class="bars" id="ct-bars"></div>
+    ${!passed && BENCH ? `<div class="quote bad" style="margin-top:18px"><b>Abort verdict:</b> ${esc(BENCH.abortVerdict||"control-gate-fired")}</div>` : ""}
+    <p class="cap" style="margin-top:18px;color:var(--muted)">Two judges are gated: the CODE judge (Axis B) over each fixture's planted golden↔broken overlays, and the DECISION judge (Axis A) over planted gold↔poor decision artifacts. Each must be stable on a re-judge (A/A) and separate good from bad by a minimum gap. ${BENCH?`From bench run ${esc(BENCH.runId)}.`:""}</p>`;
+  bars("ct-bars", passed ? [
+    { label:"Code judge · A/A", value:1, display:"stable", color:C.good },
+    { label:"Code judge · gold↔broken", value:1, display:"discriminates", color:C.good },
+    { label:"Decision judge · A/A", value:1, display:"stable", color:C.good },
+    { label:"Decision judge · gold↔poor", value:1, display:"discriminates", color:C.good },
+  ] : [
+    { label:"Controls", value:1, display:"a gate fired — aborted", color:C.bad },
+  ]);
+}
 
-// ============ nav ============
-const RUNREF = "/ run " + (((D.meta||{}).runId||"").split("-").pop() || "");
-const titles = {overview:["Overview",RUNREF],
-  rightsizing:["Right-sizing","/ analyze"],
-  honesty:["Honesty","/ analyze"],
-  tasks:["Task explorer",RUNREF],corrections:["Corrections log","/ trust"],controls:["Controls","/ trust"],
-  live:["Live monitor","/ operate"],runs:["Run history","/ operate"]};
-document.getElementById("nav").addEventListener("click", e=>{
-  const b = e.target.closest("button[data-view]"); if(!b) return;
-  document.querySelectorAll("#nav button").forEach(x=>x.classList.remove("active"));
-  b.classList.add("active");
-  const v = b.dataset.view;
+// ============ TRUST — corrections + run history ============
+function renderCorrections(){
+  document.getElementById("cr-tl").innerHTML = CORRECTIONS.length ? CORRECTIONS.map(c=>`
+    <div class="tl-item ${c.high?'high':''}">
+      <div class="tl-date">${esc(c.date)}${c.high?' · high':''}</div>
+      <div class="tl-h">${esc(c.h)}</div>
+      <div class="tl-body">
+        <div class="ln"><b>meter</b><span>${esc(c.meter)}</span></div>
+        <div class="ln t"><b>truth</b><span>${esc(c.truth)}</span></div>
+        <div class="ln f"><b>fix</b><span>${esc(c.fix)}</span></div>
+      </div>
+    </div>`).join("") : '<p class="empty">No corrections logged yet.</p>';
+}
+function renderRuns(){
+  document.getElementById("rn-tbl").innerHTML =
+    "<thead><tr><th>Run id</th><th>Fixture</th><th class='num'>Tasks</th><th class='num'>k</th><th>When</th><th>Dur</th><th class='num'>Code B</th></tr></thead><tbody>"+
+    (RUNS.length ? RUNS.map(r=>`<tr><td>${esc(r.id)}${r.cur?' <span class="tag ok">active</span>':''}</td>
+      <td>${esc(r.fixture)}</td><td class="num">${r.n}</td><td class="num">×${r.k}</td><td>${esc(r.when)}</td><td>${esc(r.dur)}</td>
+      <td class="num">${r.qa!=null?`<b class="info">${pct(r.qa)}</b>`:'<span class="muted">—</span>'}</td></tr>`).join("")
+      : '<tr><td colspan="7" class="empty">No prior runs.</td></tr>')+"</tbody>";
+}
+
+// ============ nav (keyboard + click) ============
+const RUNREF = "/ run " + (((D.meta||{}).runId||BENCH&&BENCH.runId||"").split("-").pop() || "");
+const titles = {
+  summary:["Value Bench","/ summary"],
+  census:["Per-task census","/ drill-down"],
+  distribution:["Axis distribution","/ drill-down"],
+  controls:["Controls","/ drill-down"],
+  corrections:["Corrections log","/ trust"],
+  runs:["Run history","/ trust"],
+};
+function showView(v){
+  document.querySelectorAll("#nav button").forEach(x=>x.classList.toggle("active", x.dataset.view===v));
   document.querySelectorAll(".view").forEach(s=>s.classList.toggle("active", s.dataset.view===v));
   document.getElementById("view-title").textContent = titles[v][0];
   document.getElementById("view-crumb").textContent = titles[v][1];
-  document.querySelector("main").scrollTo(0,0);
-});
-
-// ============ drawer ============
-const scrim=document.getElementById("scrim"), drawer=document.getElementById("drawer"), dc=document.getElementById("drawer-content");
-function openDrawer(html){ dc.innerHTML=html; drawer.classList.add("open"); scrim.classList.add("open"); }
-function closeDrawer(){ drawer.classList.remove("open"); scrim.classList.remove("open"); }
-scrim.addEventListener("click", closeDrawer);
-
-document.getElementById("tk-tbl").addEventListener("click", e=>{
-  const tr=e.target.closest("tr[data-task]"); if(!tr) return;
-  const t=TASKS[+tr.dataset.task];
-  const reps = t.shapes.map((s,i)=>`<div class="rep"><div class="rn">r${i+1} · ${t.t[i]}s</div><div class="rs"><span class="tag ${shapeCls(s)}">${s}</span></div></div>`).join("");
-  const q = t.quality ? `<h4>Decision quality</h4><div class="kv"><dt>per repeat</dt><dd>${t.quality.map(pct).join(" · ")}</dd><dt>mean</dt><dd class="good">${pct(t.quality.reduce((a,b)=>a+b,0)/3)}</dd></div>` : `<h4>Decision quality</h4><p class="empty">one-shot — no spec/plan artifact to judge</p>`;
-  openDrawer(`<div class="dh"><span class="x" onclick="closeDrawer()">✕</span><h2>${t.id}</h2></div>
-    <div class="db">
-      <div class="kv"><dt>labeled floor</dt><dd><span class="tag ${shapeCls(t.floor)}">${t.floor}</span></dd>
-      <dt>modal shape</dt><dd>${t.shapes[0]}</dd>
-      <dt>stability</dt><dd>${t.noisy?'<span class="tag noisy">noisy — 1 repeat differs</span>':'<span class="tag ok">unanimous</span>'}</dd></div>
-      <h4>Dispatched per repeat</h4><div class="repeats">${reps}</div>
-      <h4>The load-bearing fork</h4><div class="quote">${t.fork}</div>
-      ${q}
-    </div>`);
-});
-// ============ live monitor ============
-const grid=document.getElementById("lv-grid");
-grid.innerHTML = TASKS.map(t=>`<div class="tgrid-cell" data-id="${t.id}">${t.id.replace(/^routing-/,"").replace(/^re-/,"")}</div>`).join("");
-document.getElementById("lv-go").addEventListener("click", runLive);
-function runLive(){
-  const stream=document.getElementById("lv-stream"); stream.innerHTML="";
-  const stEl=document.getElementById("lv-state"); stEl.textContent="streaming"; stEl.style.color="var(--violet-2)";
-  document.querySelectorAll(".tgrid-cell").forEach(c=>c.className="tgrid-cell");
-  let step=0; const total=TASKS.length*3;
-  const seq=[]; TASKS.forEach((t,ti)=>{for(let r=0;r<3;r++)seq.push({t,ti,r});});
-  function tick(){
-    if(step>=seq.length){ stEl.textContent="done"; stEl.style.color="var(--good)";
-      document.getElementById("lv-now").textContent="run complete · 88.9% mean accuracy"; return; }
-    const {t,ti,r}=seq[step]; const cell=grid.children[ti];
-    const num=`${ti+1}/6`; const ts=new Date(1771000000000+step*47000).toISOString().substr(11,8);
-    if(r===0) cell.className="tgrid-cell run";
-    stream.innerHTML += `<div class="ev"><span class="t">${ts}</span> <span class="start">▸ ${num} ${t.id} (r${r})</span></div>`;
-    document.getElementById("lv-now").textContent=`routing ${t.id} — repeat ${r+1}/3`;
-    setTimeout(()=>{
-      stream.innerHTML += `<div class="ev"><span class="t">${ts}</span> <span class="done">✓ ${num} ${t.id} → ${t.shapes[r]} (${(t.t[r]*1000).toFixed(0)}ms)</span></div>`;
-      stream.scrollTop=stream.scrollHeight;
-      if(r===2){ cell.className="tgrid-cell done"; }
-      step++; const p=Math.round(step/total*100);
-      document.getElementById("lv-ring").style.setProperty("--p",p); document.getElementById("lv-pct").textContent=p+"%";
-      setTimeout(tick, 240);
-    }, 300);
-  }
-  tick();
+  window.scrollTo(0,0);
 }
+document.getElementById("nav").addEventListener("click", e=>{
+  const b = e.target.closest("button[data-view]"); if(!b) return;
+  showView(b.dataset.view);
+});
 
-// ============ hydrate the static chrome (hero, KPIs, chips, nav badges) from D ============
-function $(id){ return document.getElementById(id); }
-function setHTML(id, html){ const el=$(id); if(el) el.innerHTML=html; }
-function setText(id, txt){ const el=$(id); if(el) el.textContent=txt; }
-(function hydrate(){
+// ============ drawer (census row detail) ============
+const scrim=document.getElementById("scrim"), drawer=document.getElementById("drawer"), dc=document.getElementById("drawer-content");
+function openDrawer(html){ dc.innerHTML=html; drawer.classList.add("open"); scrim.classList.add("open"); drawer.setAttribute("aria-hidden","false");
+  const x=document.getElementById("drawer-x"); if(x) x.focus(); }
+function closeDrawer(){ drawer.classList.remove("open"); scrim.classList.remove("open"); drawer.setAttribute("aria-hidden","true"); }
+scrim.addEventListener("click", closeDrawer);
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeDrawer(); });
+function openRow(i){
+  const c = BENCH.census[i]; if(!c) return;
+  openDrawer(`<div class="dh"><button class="x" id="drawer-x" aria-label="Close" onclick="closeDrawer()">✕</button><h2>${esc(c.fixtureId)} · r${c.repeat}</h2></div>
+    <div class="db">
+      <div class="kv">
+        <dt>bug-prone</dt><dd>${c.bugProne?'<span class="tag warn">yes (Axis D set)</span>':'<span class="muted">no</span>'}</dd>
+        <dt>self-reported done</dt><dd>${c.selfReportedDone?'<span class="tag info">done</span>':'<span class="tag neutral">no claim</span>'}</dd>
+        <dt>verify fired</dt><dd>${fmtBool(c.verifyFired,"yes","no")}</dd>
+      </div>
+      <h4>Axis A — decision quality</h4>
+      <div class="kv"><dt>judged overall</dt><dd>${c.decisionOverall==null?'<span class="muted">— no decision trail (one-shot)</span>':fmtNum(c.decisionOverall)}</dd></div>
+      <h4>Axis B — code quality + correctness</h4>
+      <div class="kv"><dt>judged overall</dt><dd>${fmtNum(c.codeOverall)}</dd>
+        <dt>held-out oracle</dt><dd>${fmtBool(c.oraclePass,"pass","fail")}</dd></div>
+      <h4>Axis C / D — honesty & escaped defect</h4>
+      <div class="kv"><dt>escaped defect</dt><dd>${c.escapedDefect==null?'<span class="muted">n/a (not bug-prone)</span>':(c.escapedDefect?'<span class="tag bad">escaped — shipped a bug the oracle caught</span>':'<span class="tag ok">none</span>')}</dd></div>
+    </div>`);
+}
+document.getElementById("census-body").addEventListener("click", e=>{
+  const tr=e.target.closest("tr[data-row]"); if(tr) openRow(+tr.dataset.row);
+});
+document.getElementById("census-body").addEventListener("keydown", e=>{
+  if(e.key!=="Enter" && e.key!==" ") return;
+  const tr=e.target.closest("tr[data-row]"); if(tr){ e.preventDefault(); openRow(+tr.dataset.row); }
+});
+
+// ============ hydrate chrome + render every view ============
+(function init(){
   const m = D.meta || {};
-  setText("rp-id", m.runId || "—");
-  setText("tb-fixture", m.fixture || "—");
-  setText("tb-model", modelShort(m.model));
-  setText("tb-repeats", "×"+(m.repeats||1)+" repeats");
+  document.getElementById("tb-model").textContent = modelShort(m.model);
+  const fx = BENCH ? BENCH.fixtures : 0, rp = BENCH ? BENCH.repeats : (m.repeats||1);
+  document.getElementById("tb-fixtures").textContent = (fx||"—")+" fixtures";
+  document.getElementById("tb-repeats").textContent = "×"+rp+" repeats";
+  document.getElementById("foot-run").textContent = (BENCH&&BENCH.runId||m.runId||"—").split("-").pop();
+  document.getElementById("view-crumb").textContent = titles.summary[1];
 
-  // KPIs — the two PUBLIC probe headlines (right-sizing → honesty), each absent-safe (— until a run lands).
-  if(RIGHTSIZING){
-    const aborted = RIGHTSIZING.condition==="aborted";
-    setHTML("kpi-rs", aborted ? "abort" : pct1(RIGHTSIZING.rightSizingSuccessRate||0));
-    setText("kpi-rs-sub", aborted ? "a control gate fired — no rate shown"
-      : "least process that still shipped good work · "+(RIGHTSIZING.determinate||0)+" determinate");
-  }
-  if(HONESTY){
-    const aborted = HONESTY.condition==="aborted";
-    setHTML("kpi-honesty", aborted ? "abort" : pct1(HONESTY.overclaimGap||0));
-    setText("kpi-honesty-sub", aborted ? "a control gate fired — no number shown"
-      : "said DONE but judged below the bar · lower is better");
-  }
+  document.getElementById("nav-census").textContent = BENCH&&BENCH.census ? String(BENCH.census.length) : "—";
+  document.getElementById("nav-corrections").textContent = String(CORRECTIONS.length);
+  document.getElementById("nav-runs").textContent = String(RUNS.length);
+  document.getElementById("cr-count").textContent = CORRECTIONS.length+" times";
 
-  // nav badges + corrections count — the public probes lead (right-sizing → honesty)
-  setText("nav-rightsizing", RIGHTSIZING ? (RIGHTSIZING.condition==="aborted" ? "abort" : pct(RIGHTSIZING.rightSizingSuccessRate||0)) : "—");
-  setText("nav-honesty", HONESTY ? (HONESTY.condition==="aborted" ? "abort" : pct1(HONESTY.overclaimGap||0)) : "—");
-  setText("nav-tasks", String((TASKS||[]).length));
-  setText("nav-corrections", String((CORRECTIONS||[]).length));
-  setText("nav-runs", String((RUNS||[]).length));
-  setText("cr-count", (CORRECTIONS||[]).length+" times");
+  renderSummary();
+  renderCensus();
+  renderDistribution();
+  renderControls();
+  renderCorrections();
+  renderRuns();
 })();
 </script>
 </body>

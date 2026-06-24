@@ -1,14 +1,12 @@
-// Tests for the re-led report IA (T-08, ADR-003 + ADR-002) — the public report ships EXACTLY two probes,
-// RIGHT-SIZING → HONESTY, with NO bare-vs-Agentry delta and NO hardcoded "Sonnet". Routing label-match and
-// decision-quality are PARKED off the public path (ADR-002): their nav buttons and `<section>`s are GONE from the
-// public IA, and the public page data carries no `routing`/`quality` field. Driven from SYNTHETIC right-sizing +
-// honesty runs on disk with ZERO API spend. The synthetic `RightsizingArtifact` is built by the REAL
-// `buildScoredArtifact`/`buildAbortedArtifact` (so the loader is tested against the actual stored shape, not a
-// hand-rolled guess), written into a fake `runs/<id>/summary.json` (kind "rightsizing") + a sibling `honesty.json`,
-// then read back by `loadRightsizing` / `loadHonesty` and rendered by `renderPage`. Asserts the load-bearing figures
-// appear (the three results-gated rates + the indeterminate tally; the overclaim-gap + flow-compliance; the small-N
-// framing; the model-derived arm label), the hero leads with RIGHT-SIZING, the retired Routing/Decision-quality
-// public sections are absent, and — for an aborted batch — the abort verdict instead of numbers. NO delta; NO "Sonnet".
+// Tests for the value-axis BENCH report (Phase 4 of the reshape) — the public report now LEADS with the four-axis
+// value bench, which SUBSUMES the earlier rightsizing + honesty probes. Driven from a SYNTHETIC `kind:"bench"` run on
+// disk with ZERO API spend. The synthetic `BenchArtifact` is built by the REAL `buildBenchArtifact` /
+// `buildAbortedBenchArtifact` (so the loader is tested against the actual stored shape, not a hand-rolled guess),
+// written into a fake `runs/<id>/summary.json` (kind "bench"), then read back by `loadBench` and rendered by
+// `renderPage`. Asserts the load-bearing axis figures appear (decision/code mean+std+n, correctness, overclaim,
+// escaped-defect), the showcase strip + the early-signal caveat ship, the controls-passed flag rides a scored run,
+// and — for an aborted batch — the abort verdict instead of numbers. The render-zero-API + corrections regressions
+// stay. No bare-vs-Agentry delta; no hardcoded "Sonnet".
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -17,18 +15,16 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
-  buildScoredArtifact,
-  buildAbortedArtifact,
-  type RightsizingArtifact,
-  type RightsizingRunRecord,
-} from "../src/rightsizing/score.ts";
-import { buildOverclaim, type OverclaimRecord } from "../src/honesty/overclaim.ts";
+  buildBenchArtifact,
+  buildAbortedBenchArtifact,
+  type BenchArtifact,
+  type BenchRecord,
+} from "../src/bench/score.ts";
 import type { Score } from "../src/judge/engine.ts";
 import type { RunSummary } from "../src/store/schema.ts";
-import { loadRightsizing } from "../src/report/rightsizing.ts";
-import { loadHonesty } from "../src/report/honesty.ts";
+import { loadBench } from "../src/report/load-bench.ts";
 import { renderPage } from "../src/report/render.ts";
-import type { RightsizingData, HonestyData, PageData } from "../src/report/model.ts";
+import type { BenchData, PageData } from "../src/report/model.ts";
 
 // --- fixtures ----------------------------------------------------------------------------------------------------
 
@@ -38,272 +34,223 @@ function score(overall: number): Score {
 }
 
 /**
- * A spread of records exercising every terminal outcome of the results-gated scorer (ADR-001):
- *   - one-shot at a one-shot floor + good   ⇒ right-sizing-success
- *   - one-shot at a spec-first floor + good  ⇒ right-sizing-success (a lighter-than-label WIN)
- *   - decompose at a one-shot floor + good   ⇒ over-route-tax (heavier than floor)
- *   - one-shot at a spec-first floor + bad   ⇒ under-route-failure (the only real miss)
- *   - no result (timed out)                  ⇒ indeterminate (own category, off the rates' denominator)
+ * A spread of bench records exercising every axis path:
+ *   - rs-dedupe (×2): decision + code judged, oracle pass, done                ⇒ A & B counted, no overclaim
+ *   - rs-format (×2): ONE-SHOT (no decision trail), code judged, oracle pass   ⇒ excluded from Axis A's denominator
+ *   - rs-webhooks (bug-prone): done, oracle pass                               ⇒ no escaped defect
+ *   - rs-jobq (bug-prone): done, oracle FAIL                                   ⇒ escaped defect (Axis D) + overclaim
  */
-function rightsizingRecords(): RightsizingRunRecord[] {
+function benchRecords(): BenchRecord[] {
   return [
-    { fixtureId: "rs-format", correctFloor: "one-shot", shape: "one-shot", result: score(0.9), selfReportedDone: true },
-    { fixtureId: "rs-dedupe", correctFloor: "spec-first", shape: "one-shot", result: score(0.85), selfReportedDone: true },
-    { fixtureId: "rs-bait", correctFloor: "one-shot", shape: "decompose", result: score(0.8), selfReportedDone: true },
-    { fixtureId: "rs-miss", correctFloor: "spec-first", shape: "one-shot", result: score(0.2), selfReportedDone: true },
-    { fixtureId: "rs-timeout", correctFloor: "spec-first", selfReportedDone: false }, // no shape AND no result ⇒ indeterminate
+    { fixtureId: "rs-dedupe", repeat: 0, bugProne: false, selfReportedDone: true, decisionScore: score(0.92), codeScore: score(0.88), oraclePass: true, verifyFired: true },
+    { fixtureId: "rs-dedupe", repeat: 1, bugProne: false, selfReportedDone: true, decisionScore: score(0.88), codeScore: score(0.84), oraclePass: true, verifyFired: true },
+    { fixtureId: "rs-format", repeat: 0, bugProne: false, selfReportedDone: true, codeScore: score(0.79), oraclePass: true, verifyFired: false }, // one-shot: no decisionScore
+    { fixtureId: "rs-format", repeat: 1, bugProne: false, selfReportedDone: true, codeScore: score(0.81), oraclePass: true, verifyFired: false },
+    { fixtureId: "rs-webhooks", repeat: 0, bugProne: true, selfReportedDone: true, decisionScore: score(0.90), codeScore: score(0.86), oraclePass: true, verifyFired: true },
+    { fixtureId: "rs-jobq", repeat: 0, bugProne: true, selfReportedDone: true, decisionScore: score(0.81), codeScore: score(0.72), oraclePass: false, verifyFired: true }, // escaped defect + overclaim
   ];
 }
 
-/** Honesty overclaim records — `rs-miss` said DONE but judged below the bar ⇒ one overclaim. */
-function honestyOverclaim(): OverclaimRecord[] {
-  return rightsizingRecords().map((r) => ({
-    fixtureId: r.fixtureId,
-    ...(r.selfReportedDone !== undefined ? { selfReportedDone: r.selfReportedDone } : {}),
-    ...(r.result !== undefined ? { result: r.result } : {}),
-  }));
-}
-
-/** A scored honesty artifact JSON (overclaim + flow-compliance), as the honesty probe persists it to `honesty.json`. */
-function honestyArtifact(): unknown {
-  const overclaim = buildOverclaim(honestyOverclaim());
-  return {
-    condition: "scored",
-    overclaim,
-    compliance: {
-      total: 2,
-      passCount: 2,
-      compliancePassRate: 1,
-      census: [
-        { runId: "rs-dedupe", pass: true },
-        { runId: "rs-bait", pass: true },
-      ],
-    },
-  };
-}
-
 /**
- * Write a fake right-sizing run to disk: `runs/<runId>/summary.json` (kind "rightsizing") carrying the artifact
- * verbatim, plus an optional sibling `honesty.json`. Returns the `runsRoot` the loaders scan. `model` flows into
- * `config.model` (the de-Sonnet source for the arm label).
+ * Write a fake bench run to disk: `runs/<runId>/summary.json` (kind "bench") + `config.json`, carrying the artifact
+ * verbatim. Returns the `runsRoot` the loader scans. `model`/`k` flow into `config` (the de-Sonnet arm label + the
+ * census repeat count).
  */
 function makeRun(
-  artifact: RightsizingArtifact,
+  artifact: BenchArtifact,
   startedAt: string,
-  opts: { runId?: string; model?: string; honesty?: unknown } = {},
+  opts: { runId?: string; model?: string; k?: number } = {},
 ): string {
-  const runId = opts.runId ?? "rs-test";
-  const root = mkdtempSync(join(tmpdir(), "selfeval-rs-"));
+  const runId = opts.runId ?? "bench-test";
+  const root = mkdtempSync(join(tmpdir(), "selfeval-bench-"));
   const runsRoot = join(root, "runs");
   const runDir = join(runsRoot, runId);
   mkdirSync(runDir, { recursive: true });
 
+  const config = {
+    runId,
+    kind: "bench" as RunSummary["kind"],
+    startedAt,
+    ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.k ? { k: opts.k } : {}),
+  };
   const summary: RunSummary = {
     runId,
-    kind: "rightsizing" as RunSummary["kind"], // the store enum gains "rightsizing" (store task); widened here
+    kind: "bench" as RunSummary["kind"],
     schemaVersion: "1",
-    config: { runId, kind: "rightsizing" as RunSummary["kind"], startedAt, ...(opts.model ? { model: opts.model } : {}) },
-    taskCount: 5,
+    config,
+    taskCount: artifact.census?.length ?? 0,
     finishedAt: startedAt,
     artifact,
   };
   writeFileSync(join(runDir, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  if (opts.honesty !== undefined) {
-    writeFileSync(join(runDir, "honesty.json"), `${JSON.stringify(opts.honesty, null, 2)}\n`, "utf8");
-  }
+  writeFileSync(join(runDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
   return runsRoot;
 }
 
 /**
- * Drop the built sections into a minimal `PageData` so `renderPage` exercises the real template. Mirrors the PUBLIC
- * page the reporter actually produces: routing/quality are PARKED off the public path (ADR-002/ADR-003), so they are
- * NOT attached here — only the two public probes + the Tasks explorer ride. The page must render cleanly without any
- * routing/quality field present.
+ * Drop the bench section into a minimal `PageData` so `renderPage` exercises the real template. Mirrors the PUBLIC
+ * page the reporter actually produces: the bench LEADS, and rightsizing/honesty/routing/quality are NOT attached
+ * (subsumed / parked). The page must render cleanly with only the bench + the Tasks/corrections/history sections.
  */
-function pageWith(rightsizing?: RightsizingData, honesty?: HonestyData): PageData {
+function pageWith(bench?: BenchData): PageData {
   return {
-    meta: { runId: "r", fixture: "f", repeats: 2, model: "claude-opus-4-8[1m]", generatedAt: "2026-06-19T00:00:00.000Z" },
-    ...(rightsizing ? { rightsizing } : {}),
-    ...(honesty ? { honesty } : {}),
+    meta: { runId: "r", fixture: "f", repeats: 2, model: "claude-opus-4-8[1m]", generatedAt: "2026-06-22T00:00:00.000Z" },
+    ...(bench ? { bench } : {}),
     tasks: [],
     corrections: [],
     history: [],
   };
 }
 
-// --- loader: right-sizing scored ---------------------------------------------------------------------------------
+// --- loader: bench scored ----------------------------------------------------------------------------------------
 
-test("loadRightsizing: narrows a scored run into the three rates + indeterminate tally + census", () => {
-  const artifact = buildScoredArtifact(rightsizingRecords());
-  const runsRoot = makeRun(artifact, "2026-06-19T00:00:00.000Z");
+test("loadBench: narrows a scored run into the four axes + per-task census + controlsPassed", () => {
+  const artifact = buildBenchArtifact(benchRecords());
+  const runsRoot = makeRun(artifact, "2026-06-22T00:00:00.000Z", { k: 2 });
 
-  const data = loadRightsizing(runsRoot);
-  assert.ok(data, "expected a scored RightsizingData");
+  const data = loadBench(runsRoot);
+  assert.ok(data, "expected a scored BenchData");
   assert.equal(data!.condition, "scored");
+  // a scored artifact IS the proof its controls passed (any gate firing aborts before scoring)
+  assert.equal(data!.controlsPassed, true);
 
-  // 4 determinate (the 5th is indeterminate), 5 total
-  assert.equal(data!.determinate, 4);
-  assert.equal(data!.total, 5);
-  // two right-sizing-success (incl. the lighter-than-label win), over 4 determinate
-  assert.equal(data!.counts!.rightSizingSuccess, 2);
-  assert.equal(data!.rightSizingSuccessRate, 0.5);
-  // one over-route-tax, one under-route-failure
-  assert.equal(data!.counts!.overRouteTax, 1);
-  assert.equal(data!.counts!.underRouteFailure, 1);
-  // indeterminate is its OWN tally over the full total (1/5), never folded into the rates
-  assert.equal(data!.counts!.indeterminate, 1);
-  assert.equal(data!.indeterminateRate, 0.2);
-  // the census carries every task with its terminal outcome
-  assert.equal(data!.census!.length, 5);
-  assert.ok(data!.census!.some((r) => r.outcome === "indeterminate" && r.shape === null));
-  // the pre-registered success condition is ALWAYS present (the falsifiable form ships; thresholds.json is calibrated)
-  assert.ok(data!.successCondition);
-  assert.equal(data!.successCondition.calibrationPending, false);
+  // Axis A — decision quality counted over the 4 records that carried a decisionScore (the 2 one-shots excluded)
+  assert.equal(data!.axes!.decisionQuality.n, 4);
+  // Axis B — code quality counted over all 6 records (every record carried a codeScore)
+  assert.equal(data!.axes!.codeQuality.n, 6);
+  // correctness pass-rate: 5 of 6 oracles passed (rs-jobq failed)
+  assert.equal(Math.round(data!.axes!.correctnessPassRate * 100) / 100, 0.83);
+  // overclaim: rs-jobq said done on a failing oracle ⇒ 1/6
+  assert.ok(data!.axes!.overclaimRate > 0 && data!.axes!.overclaimRate < 0.2);
+  // escaped defect: over the 2 bug-prone records, rs-jobq escaped ⇒ 1/2 = 0.5
+  assert.equal(data!.axes!.escapedDefectRate, 0.5);
+
+  // the census carries every (task × repeat) record, with the absent decision signal as null (the one-shots)
+  assert.equal(data!.census!.length, 6);
+  assert.ok(data!.census!.some((r) => r.fixtureId === "rs-format" && r.decisionOverall === null));
+  assert.ok(data!.census!.some((r) => r.fixtureId === "rs-jobq" && r.escapedDefect === true));
+
+  // honest N: 4 distinct fixtures, k from config
+  assert.equal(data!.fixtures, 4);
+  assert.equal(data!.repeats, 2);
+  // the showcase strip is ALWAYS present (the value story ships with every run)
+  assert.equal(data!.showcase.length, 4);
+  assert.deepEqual(
+    data!.showcase.map((s) => s.kind).sort(),
+    ["memory", "specialists", "structure", "workbench"],
+  );
 });
 
-test("loadRightsizing: no right-sizing run in the store ⇒ undefined (page renders without the section)", () => {
+test("loadBench: no bench run in the store ⇒ undefined (page renders without the section)", () => {
   const runsRoot = mkdtempSync(join(tmpdir(), "selfeval-empty-"));
-  assert.equal(loadRightsizing(join(runsRoot, "runs")), undefined);
+  assert.equal(loadBench(join(runsRoot, "runs")), undefined);
 });
 
-test("loadRightsizing: picks the LATEST right-sizing run by startedAt", () => {
-  const older = buildScoredArtifact(rightsizingRecords());
-  const runsRoot = makeRun(older, "2026-06-18T00:00:00.000Z", { runId: "old-run" });
+test("loadBench: picks the LATEST bench run by startedAt", () => {
+  const older = buildBenchArtifact(benchRecords());
+  const runsRoot = makeRun(older, "2026-06-21T00:00:00.000Z", { runId: "old-run" });
   // a newer aborted run lands in the same store
   const newerDir = join(runsRoot, "new-run");
   mkdirSync(newerDir, { recursive: true });
   const newerSummary: RunSummary = {
-    runId: "new-run", kind: "rightsizing" as RunSummary["kind"], schemaVersion: "1",
-    config: { runId: "new-run", kind: "rightsizing" as RunSummary["kind"], startedAt: "2026-06-20T00:00:00.000Z" },
-    taskCount: 1, finishedAt: "2026-06-20T00:00:00.000Z",
-    artifact: buildAbortedArtifact("controls-did-not-discriminate"),
+    runId: "new-run", kind: "bench" as RunSummary["kind"], schemaVersion: "1",
+    config: { runId: "new-run", kind: "bench" as RunSummary["kind"], startedAt: "2026-06-23T00:00:00.000Z" },
+    taskCount: 0, finishedAt: "2026-06-23T00:00:00.000Z",
+    artifact: buildAbortedBenchArtifact("bench-code-judge-discrimination: gap too small"),
   };
   writeFileSync(join(newerDir, "summary.json"), `${JSON.stringify(newerSummary, null, 2)}\n`, "utf8");
 
-  const data = loadRightsizing(runsRoot);
+  const data = loadBench(runsRoot);
   assert.equal(data!.runId, "new-run");
   assert.equal(data!.condition, "aborted");
+  assert.equal(data!.controlsPassed, false);
 });
 
-// --- loader: right-sizing aborted --------------------------------------------------------------------------------
+// --- loader: bench aborted ---------------------------------------------------------------------------------------
 
-test("loadRightsizing: narrows an aborted run into the verdict, with NO rates", () => {
-  const artifact = buildAbortedArtifact("controls-did-not-discriminate");
-  const runsRoot = makeRun(artifact, "2026-06-19T00:00:00.000Z");
+test("loadBench: narrows an aborted run into the verdict, with NO axes and controlsPassed=false", () => {
+  const artifact = buildAbortedBenchArtifact("bench-decision-judge-aa: judge unstable");
+  const runsRoot = makeRun(artifact, "2026-06-22T00:00:00.000Z");
 
-  const data = loadRightsizing(runsRoot);
+  const data = loadBench(runsRoot);
   assert.equal(data!.condition, "aborted");
-  assert.equal(data!.abortVerdict, "controls-did-not-discriminate");
-  assert.equal(data!.rightSizingSuccessRate, undefined);
+  assert.equal(data!.abortVerdict, "bench-decision-judge-aa: judge unstable");
+  assert.equal(data!.controlsPassed, false);
+  assert.equal(data!.axes, undefined);
   assert.equal(data!.census, undefined);
-  // even an aborted run still ships the falsifiable target form
-  assert.ok(data!.successCondition);
+  // even an aborted run still ships the showcase strip (the value story survives an abort)
+  assert.equal(data!.showcase.length, 4);
 });
 
-// --- loader: honesty ---------------------------------------------------------------------------------------------
+// --- render: the bench-led IA ------------------------------------------------------------------------------------
 
-test("loadHonesty: reads the sibling honesty.json riding the latest right-sizing run", () => {
-  const artifact = buildScoredArtifact(rightsizingRecords());
-  const runsRoot = makeRun(artifact, "2026-06-19T00:00:00.000Z", { honesty: honestyArtifact() });
+test("renderPage: a scored bench run injects the four axes as the page payload (no delta — value-only)", () => {
+  const artifact = buildBenchArtifact(benchRecords());
+  const runsRoot = makeRun(artifact, "2026-06-22T00:00:00.000Z", { k: 2 });
+  const html = renderPage(pageWith(loadBench(runsRoot)!));
 
-  const data = loadHonesty(runsRoot);
-  assert.ok(data, "expected a scored HonestyData");
-  assert.equal(data!.condition, "scored");
-  // one overclaim (rs-miss said DONE, judged 0.2 < 0.5) over 5 records
-  assert.equal(data!.overclaimCount, 1);
-  assert.equal(data!.overclaimTotal, 5);
-  assert.equal(data!.overclaimGap, 0.2);
-  // flow-compliance: 2/2 escalated runs complied
-  assert.equal(data!.compliancePassRate, 1);
-  assert.equal(data!.complianceCensus!.length, 2);
-});
+  // the public IA leads with the bench scorecard + drill-down views
+  assert.match(html, /data-view="summary"/);
+  assert.match(html, /data-view="census"/);
+  assert.match(html, /data-view="distribution"/);
+  assert.match(html, /data-view="controls"/);
 
-test("loadHonesty: a right-sizing run with no sibling honesty.json ⇒ undefined", () => {
-  const artifact = buildScoredArtifact(rightsizingRecords());
-  const runsRoot = makeRun(artifact, "2026-06-19T00:00:00.000Z"); // no honesty file
-  assert.equal(loadHonesty(runsRoot), undefined);
-});
-
-// --- render: the re-led IA ---------------------------------------------------------------------------------------
-
-test("renderPage: a scored right-sizing run injects the three rates as the page payload (no delta — de-bared)", () => {
-  const artifact = buildScoredArtifact(rightsizingRecords());
-  const runsRoot = makeRun(artifact, "2026-06-19T00:00:00.000Z");
-  const html = renderPage(pageWith(loadRightsizing(runsRoot)!));
-
-  // the public sections lead Right-sizing → Honesty (moat is removed — Phase 1 of the bench reshape)
-  assert.match(html, /data-view="rightsizing"/);
-  assert.match(html, /data-view="honesty"/);
-  // moat is gone from the IA entirely — no section, no nav button
+  // the retired probes are GONE from the public IA — no nav buttons, no `<section>`s
   assert.doesNotMatch(html, /data-view="moat"/);
-  // right-sizing appears before honesty (the IA order in the nav)
-  const navRs = html.indexOf('data-view="rightsizing"');
-  const navHon = html.indexOf('data-view="honesty"');
-  assert.ok(navRs < navHon, "nav order must be rightsizing → honesty");
-
-  // ADR-002 parking: the retired Routing label-match + Decision-quality probes are GONE from the PUBLIC IA — no nav
-  // buttons, no `<section>`s, no per-probe badges. (The Tasks explorer + Run-history columns are a different concern.)
+  assert.doesNotMatch(html, /data-view="rightsizing"/);
+  assert.doesNotMatch(html, /data-view="honesty"/);
   assert.doesNotMatch(html, /data-view="routing"/);
   assert.doesNotMatch(html, /data-view="quality"/);
-  assert.doesNotMatch(html, /id="nav-routing"/);
-  assert.doesNotMatch(html, /id="nav-quality"/);
 
-  // the synthetic right-sizing data is the injected payload, not the baked sample
+  // the synthetic bench data is the injected payload, not the baked sample
   assert.match(html, /window\.__SELFEVAL__ = .*"condition":"scored"/);
-  assert.match(html, /"rightSizingSuccessRate":0\.5/);
-  assert.match(html, /"indeterminateRate":0\.2/);
+  assert.match(html, /"controlsPassed":true/);
+  assert.match(html, /"decisionQuality":/);
+  assert.match(html, /"escapedDefectRate":0\.5/);
 
-  // de-bare (ADR-003): no head-to-head delta wire field anywhere on the page
-  assert.equal(/"delta":/.test(html), false, "no delta wire field on the de-bared page");
-  // small-N framing surfaced on the right-sizing section
-  assert.match(html, /Early-signal · N~10 · directional/);
+  // value-only (ADR-003): no head-to-head delta wire field anywhere on the page
+  assert.equal(/"delta":/.test(html), false, "no delta wire field on the value-only page");
   // de-Sonnet: no hardcoded "Sonnet" literal in the rendered output
   assert.doesNotMatch(html, /Sonnet/);
 });
 
-test("renderPage: an aborted right-sizing run renders the abort verdict instead of rates", () => {
-  const artifact = buildAbortedArtifact("controls-did-not-discriminate");
-  const runsRoot = makeRun(artifact, "2026-06-19T00:00:00.000Z");
-  const html = renderPage(pageWith(loadRightsizing(runsRoot)!));
+test("renderPage: an aborted bench run renders the abort verdict instead of axes", () => {
+  const artifact = buildAbortedBenchArtifact("bench-code-judge-discrimination: gap 0.06 < 0.20");
+  const runsRoot = makeRun(artifact, "2026-06-22T00:00:00.000Z");
+  const html = renderPage(pageWith(loadBench(runsRoot)!));
 
-  assert.match(html, /Batch aborted/);
-  assert.match(html, /controls-did-not-discriminate/);
   assert.match(html, /"condition":"aborted"/);
+  assert.match(html, /"controlsPassed":false/);
+  assert.match(html, /bench-code-judge-discrimination/);
+  // the abort verdict rides the page payload; the template renders the aborted state from it (no fake axes)
+  assert.equal(/"escapedDefectRate":/.test(html), false, "an aborted run carries no axes");
 });
 
-test("renderPage: a honesty run injects overclaim-gap + flow-compliance (no delta)", () => {
-  const artifact = buildScoredArtifact(rightsizingRecords());
-  const runsRoot = makeRun(artifact, "2026-06-19T00:00:00.000Z", { honesty: honestyArtifact() });
-  const html = renderPage(pageWith(loadRightsizing(runsRoot)!, loadHonesty(runsRoot)!));
+// --- render: zero-API standalone + corrections regressions -------------------------------------------------------
 
-  assert.match(html, /"overclaimGap":0\.2/);
-  assert.match(html, /"compliancePassRate":1/);
-  assert.equal(/"delta":/.test(html), false, "honesty carries no bare-vs-Agentry delta");
-});
-
-// --- hero: the public report LEADS with right-sizing (moat removed — Phase 1) ------------------------------------
-
-test("renderPage: the Overview hero leads with RIGHT-SIZING, not the moat or routing", () => {
-  const html = renderPage(pageWith(loadRightsizing(makeRun(buildScoredArtifact(rightsizingRecords()), "2026-06-19T00:00:00.000Z"))!));
-
-  // the default hero eyebrow is RIGHT-SIZING framing — never the removed moat nor the retired routing label-match
-  assert.match(html, /id="hero-eyebrow"[^>]*>Right-sizing/);
-  assert.doesNotMatch(html, /id="hero-eyebrow"[^>]*>The moat/);
-  assert.doesNotMatch(html, /id="hero-eyebrow"[^>]*>Routing/);
-  // moat is gone — no moat wire field is ever attached to the public page
-  assert.equal(/"compoundRate":/.test(html), false, "no moat compoundRate wire field on the public page");
-  assert.doesNotMatch(html, /data-view="moat"/);
-  // no routing/quality view object is ever attached to the public page
-  assert.equal(/"floors":\[/.test(html), false, "no routing confusion/floors wire field on the public page");
-});
-
-// --- regression: no public-section data ⇒ the page still renders --------------------------------------------------
-
-test("renderPage: a page with no public-probe data still renders (sections degrade to empty states)", () => {
-  const html = renderPage(pageWith()); // no moat / rightsizing / honesty / routing / quality
-  assert.match(html, /data-view="rightsizing"/);
-  assert.doesNotMatch(html, /window\.__SELFEVAL__ = .*"rightsizing"/);
-  // even with NOTHING attached, the page carries no routing/quality field (parked off the public path)
+test("renderPage: a page with no bench data still renders (sections degrade to empty states)", () => {
+  const html = renderPage(pageWith()); // no bench / rightsizing / honesty / routing / quality
+  // the scorecard + drill-down views are present in the template chrome even with nothing attached
+  assert.match(html, /data-view="summary"/);
+  assert.match(html, /data-view="census"/);
+  // the injected payload carries no bench field
+  assert.doesNotMatch(html, /window\.__SELFEVAL__ = .*"bench":/);
+  // still no routing/quality field (parked off the public path)
   assert.doesNotMatch(html, /window\.__SELFEVAL__ = .*"routing":/);
   assert.doesNotMatch(html, /window\.__SELFEVAL__ = .*"quality":/);
+});
+
+test("renderPage: the corrections log is a first-class trust section in the bench IA", () => {
+  const page = pageWith(loadBench(makeRun(buildBenchArtifact(benchRecords()), "2026-06-22T00:00:00.000Z"))!);
+  page.corrections = [
+    { date: "2026-06-16", high: true, h: "Dispatch-pattern proxy was invalid", meter: "scored one-shot", truth: "the conductor escalated", fix: "read the artifacts, not the tool pattern" },
+  ];
+  const html = renderPage(page);
+
+  // the corrections nav + the "corrections log is the product" framing survive into the bench report
+  assert.match(html, /data-view="corrections"/);
+  assert.match(html, /corrections log is the product/i);
+  // the injected correction rides the payload
+  assert.match(html, /"Dispatch-pattern proxy was invalid"/);
 });
