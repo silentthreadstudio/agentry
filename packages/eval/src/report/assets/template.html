@@ -256,7 +256,6 @@
     <nav id="nav">
       <div class="grp">Analyze</div>
       <button data-view="overview" class="active"><span class="ico">◎</span> Overview</button>
-      <button data-view="moat"><span class="ico">⛁</span> Memory moat <span class="badge" id="nav-moat">1.0</span></button>
       <button data-view="rightsizing"><span class="ico">⚖</span> Right-sizing <span class="badge" id="nav-rightsizing">—</span></button>
       <button data-view="honesty"><span class="ico">◈</span> Honesty <span class="badge" id="nav-honesty">—</span></button>
       <button data-view="tasks"><span class="ico">▤</span> Tasks <span class="badge" id="nav-tasks">6</span></button>
@@ -295,11 +294,11 @@
           <svg class="constel" id="hero-constel" preserveAspectRatio="xMidYMid slice"></svg>
           <div class="inner">
             <div>
-              <div class="eyebrow" id="hero-eyebrow">The moat · memory compounds</div>
-              <div class="big" id="hero-big">warm &gt; cold<small> &nbsp;categorical</small></div>
-              <div class="second" id="hero-second">a recalled decision routes the task lighter — a plain session can't</div>
+              <div class="eyebrow" id="hero-eyebrow">Right-sizing · least process that ships</div>
+              <div class="big" id="hero-big">lighter &amp; good<small> &nbsp;results-gated</small></div>
+              <div class="second" id="hero-second">a lighter-than-label route that shipped good work is a WIN — the only real miss is routing too light and the result suffering</div>
               <div class="method" id="hero-method">
-                <b>Value-only, three probes: Moat → Right-sizing → Honesty.</b> Early-signal — directional, not
+                <b>Value-only, two probes: Right-sizing → Honesty.</b> Early-signal — directional, not
                 powered. Every number is read from the conductor's <b>real work artifacts</b>, never a proxy, and
                 gated behind controls that <b>abort the batch</b> before a fooled number ships. Where the meter and
                 the conductor disagreed, the conductor was right — see the Corrections log.
@@ -314,8 +313,7 @@
           </div>
         </div>
 
-        <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
-          <div class="kpi"><div class="k-lab">Memory moat</div><div class="k-val good" id="kpi-moat">—</div><div class="k-sub" id="kpi-moat-sub">compound − decoy · memory-attributable lightening</div></div>
+        <div class="kpis" style="grid-template-columns:repeat(2,1fr)">
           <div class="kpi"><div class="k-lab">Right-sizing success</div><div class="k-val good" id="kpi-rs">—</div><div class="k-sub" id="kpi-rs-sub">least process that still shipped good work</div></div>
           <div class="kpi"><div class="k-lab">Overclaim gap</div><div class="k-val good" id="kpi-honesty">—</div><div class="k-sub" id="kpi-honesty-sub">said DONE but judged below the bar · lower is better</div></div>
         </div>
@@ -325,16 +323,6 @@
           The credibility anchor is the method — value-only (no bare-vs-Agentry head-to-head), three probes, each
           gated on real shipped work behind controls that abort before a fooled number is shown.
         </div>
-      </section>
-
-      <!-- MOAT -->
-      <section class="view" data-view="moat">
-        <div class="banner">
-          <b>The moat: does memory compound?</b> Each task runs warm TWICE — once with a fork-resolving decision in
-          memory, once with an irrelevant decoy. It scores ONLY if the relevant fact makes the task route lighter
-          <b>where the decoy does not</b> — ruling out "warm runs just route lighter." Falsifiable by construction.
-        </div>
-        <div id="moat-body"></div>
       </section>
 
       <!-- RIGHT-SIZING -->
@@ -470,9 +458,9 @@ function successLine(sc){
 }
 
 // ---- standalone-preview SAMPLE (run 829a). The reporter overrides all of this via window.__SELFEVAL__. The
-// public report is value-only, three probes (moat → right-sizing → honesty) + the Tasks explorer; routing
-// label-match and decision-quality are parked off the public path (ADR-002/ADR-003), so there is no routing/quality
-// sample here — only the per-task `quality` overalls the Tasks drawer still reads. ----
+// public report is value-only, two probes (right-sizing → honesty) + the Tasks explorer; routing label-match and
+// decision-quality are parked off the public path (ADR-002/ADR-003), so there is no routing/quality sample here —
+// only the per-task `quality` overalls the Tasks drawer still reads. ----
 const SAMPLE_TASKS = [
   { id:"routing-format-price", floor:"one-shot", shapes:["one-shot","one-shot","one-shot"], t:[42.0,46.1,50.5],
     fork:"Pure formatting helper — no undecided fork. Correctly one-shotted; no artifact to judge.", quality:null },
@@ -517,13 +505,6 @@ const SAMPLE_RUNS = [
   { id:"20260615-141002-b3c8", fixture:"routing", n:30, k:1, when:"Jun 15 · 14:10", dur:"1h12m", rt:0.80, qa:null },
 ];
 
-const SAMPLE_MOAT = {
-  runId: "20260617-182721-83d4", runs: 3, compoundRate: 1, lighterButBadRate: 0, decoyLightenRate: 0, discrimination: 1,
-  seedLandingRate: 1, seedLanding: { landedCount: 3, total: 3 },
-  census: [{ taskId: "routing-dedupe-key", coldFloor: "spec-first", relevantCompoundedFraction: 1, lighterButBadFraction: 0, decoyLightenedFraction: 0, seedLandedFraction: 1, compoundedSpread: 0, landedRepeats: 3, repeats: 3 }],
-  successCondition: { statement: "discrimination ≥ W", target: null, calibrationPending: true, observed: 1 },
-};
-
 const SAMPLE_RIGHTSIZING = {
   runId: "20260619-094412-5af1", condition: "scored",
   rightSizingSuccessRate: 0.75, overRouteTaxRate: 0.125, underRouteFailureRate: 0, indeterminateRate: 0.1,
@@ -558,11 +539,11 @@ const SAMPLE_HONESTY = {
 const D = (typeof window !== "undefined" && window.__SELFEVAL__) || {
   tasks: SAMPLE_TASKS,
   corrections: SAMPLE_CORRECTIONS, history: SAMPLE_RUNS,
-  moat: SAMPLE_MOAT, rightsizing: SAMPLE_RIGHTSIZING, honesty: SAMPLE_HONESTY,
+  rightsizing: SAMPLE_RIGHTSIZING, honesty: SAMPLE_HONESTY,
   meta: { runId: "20260617-115857-829a", fixture: "routing-quick", repeats: 3, model: "claude-opus-4-8[1m]" },
 };
 const TASKS = D.tasks || [], CORRECTIONS = D.corrections || [], RUNS = D.history || [];
-const MOAT = D.moat || null, RIGHTSIZING = D.rightsizing || null, HONESTY = D.honesty || null;
+const RIGHTSIZING = D.rightsizing || null, HONESTY = D.honesty || null;
 
 // ============ constellation motif (the brand "A" network) ============
 function constellation(elId, w, h, n, seed){
@@ -629,40 +610,6 @@ document.getElementById("rn-tbl").innerHTML =
     <td>${r.fixture}</td><td>${r.n}</td><td>×${r.k}</td><td>${r.when}</td><td>${r.dur}</td>
     <td><b class="${r.rt>=.85?'good':'warn'}">${pct(r.rt)}</b></td>
     <td>${r.qa?`<b class="violet">${pct(r.qa)}</b>`:'<span class="muted">—</span>'}</td></tr>`).join("");
-
-// moat view (the latest scored moat run, or an empty state)
-(function(){
-  const el = document.getElementById("moat-body");
-  if(!MOAT){ el.innerHTML = '<div class="card"><p class="empty">No scored moat run in the store yet — run <b>selfeval run moat</b>.</p></div>'; return; }
-  const sl = MOAT.seedLanding || { landedCount: 0, total: 0 };
-  const k = MOAT.runs || 1;
-  const cf = (v)=> v==null ? "—" : pct(v);   // compound fractions can be null (no landed repeat ⇒ no basis)
-  el.innerHTML = `
-    <div class="kpis">
-      <div class="kpi"><div class="k-lab">Compound rate</div><div class="k-val good">${pct(MOAT.compoundRate)}</div><div class="k-sub">landed repeats routed lighter AND result GOOD · ${k} run${k===1?'':'s'}</div></div>
-      <div class="kpi"><div class="k-lab">Lightened but broken</div><div class="k-val ${MOAT.lighterButBadRate>0?'bad':'good'}">${pct(MOAT.lighterButBadRate||0)}</div><div class="k-sub">memory lightened the route, the code failed</div></div>
-      <div class="kpi"><div class="k-lab">Discrimination</div><div class="k-val good">${MOAT.discrimination.toFixed(2)}</div><div class="k-sub">compound − decoy (memory-attributable)</div></div>
-      <div class="kpi"><div class="k-lab">Decoy lightened</div><div class="k-val ${MOAT.decoyLightenRate>0?'bad':'good'}">${pct(MOAT.decoyLightenRate)}</div><div class="k-sub">control — should be 0%</div></div>
-      <div class="kpi"><div class="k-lab">Seed landing</div><div class="k-val good">${pct(MOAT.seedLandingRate)}</div><div class="k-sub">${sl.landedCount} / ${sl.total} relevant seeds recalled</div></div>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <h3>Per-task census</h3>
-      <p class="cap">over ${k} repeat${k===1?'':'s'} per arm · compounded = fraction of LANDED relevant repeats that route lighter AND produce a GOOD result (± spread) · lightened-but-broken is route-lighter with a BAD result · decoy should be 0%</p>
-      <table class="tbl">
-        <tr><th>Task</th><th>Cold floor</th><th>Seed landing</th><th>Compounded (landed)</th><th>Lightened but bad</th><th>Decoy lightened</th></tr>
-        ${MOAT.census.map(c=>`<tr>
-          <td>${c.taskId.replace(/^routing-/,"")}</td>
-          <td><span class="tag ${shapeCls(c.coldFloor)}">${c.coldFloor}</span></td>
-          <td>${pct(c.seedLandedFraction)} <span class="cap">(${c.landedRepeats}/${c.repeats})</span></td>
-          <td><span class="tag ${c.relevantCompoundedFraction>0?'ok':'noisy'}">${cf(c.relevantCompoundedFraction)}</span> <span class="cap">± ${(c.compoundedSpread||0).toFixed(2)}</span></td>
-          <td><span class="tag ${c.lighterButBadFraction>0?'noisy':'ok'}">${cf(c.lighterButBadFraction)}</span></td>
-          <td><span class="tag ${c.decoyLightenedFraction>0?'noisy':'ok'}">${pct(c.decoyLightenedFraction)}</span></td>
-        </tr>`).join("")}
-      </table>
-      <p class="cap" style="margin-top:14px;color:var(--muted)">${successLine(MOAT.successCondition)}</p>
-      <p class="cap" style="margin-top:6px;color:var(--muted)">from moat run ${MOAT.runId}</p>
-    </div>`;
-})();
 
 // right-sizing view (the latest right-sizing run — scored renders the three results-gated rates; aborted renders
 // only the verdict; none ⇒ empty state). The three rates are over the DETERMINATE denominator; indeterminate is its
@@ -766,7 +713,6 @@ const rsOutcomeCls = (o) => o==="right-sizing-success" ? "ok" : o==="indetermina
 // ============ nav ============
 const RUNREF = "/ run " + (((D.meta||{}).runId||"").split("-").pop() || "");
 const titles = {overview:["Overview",RUNREF],
-  moat:["Memory moat","/ analyze"],
   rightsizing:["Right-sizing","/ analyze"],
   honesty:["Honesty","/ analyze"],
   tasks:["Task explorer",RUNREF],corrections:["Corrections log","/ trust"],controls:["Controls","/ trust"],
@@ -844,20 +790,7 @@ function setText(id, txt){ const el=$(id); if(el) el.textContent=txt; }
   setText("tb-model", modelShort(m.model));
   setText("tb-repeats", "×"+(m.repeats||1)+" repeats");
 
-  // HERO — leads with the MOAT (ADR-003): the only CATEGORICAL edge (warm beats cold; a plain session can't), so it
-  // headlines, never routing label-match. The categorical framing holds even before a scored moat run; once one
-  // exists, the discrimination number (memory-attributable lightening) sharpens the eyebrow.
-  if(MOAT){
-    setText("hero-eyebrow", "The moat · memory compounds · discrimination "+MOAT.discrimination.toFixed(2));
-    setHTML("hero-second", "a recalled decision routes the task lighter where an irrelevant decoy does not — "
-      +"<b>"+pct(MOAT.compoundRate)+"</b> compound vs <b>"+pct(MOAT.decoyLightenRate)+"</b> decoy");
-  }
-
-  // KPIs — the three PUBLIC probe headlines (moat → right-sizing → honesty), each absent-safe (— until a run lands).
-  if(MOAT){
-    setHTML("kpi-moat", MOAT.discrimination.toFixed(2));
-    setText("kpi-moat-sub", pct(MOAT.compoundRate)+" compound − "+pct(MOAT.decoyLightenRate)+" decoy");
-  }
+  // KPIs — the two PUBLIC probe headlines (right-sizing → honesty), each absent-safe (— until a run lands).
   if(RIGHTSIZING){
     const aborted = RIGHTSIZING.condition==="aborted";
     setHTML("kpi-rs", aborted ? "abort" : pct1(RIGHTSIZING.rightSizingSuccessRate||0));
@@ -871,8 +804,7 @@ function setText(id, txt){ const el=$(id); if(el) el.textContent=txt; }
       : "said DONE but judged below the bar · lower is better");
   }
 
-  // nav badges + corrections count — the public probes lead (moat → right-sizing → honesty)
-  setText("nav-moat", MOAT ? MOAT.compoundRate.toFixed(1) : "—");
+  // nav badges + corrections count — the public probes lead (right-sizing → honesty)
   setText("nav-rightsizing", RIGHTSIZING ? (RIGHTSIZING.condition==="aborted" ? "abort" : pct(RIGHTSIZING.rightSizingSuccessRate||0)) : "—");
   setText("nav-honesty", HONESTY ? (HONESTY.condition==="aborted" ? "abort" : pct1(HONESTY.overclaimGap||0)) : "—");
   setText("nav-tasks", String((TASKS||[]).length));

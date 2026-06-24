@@ -1,10 +1,10 @@
 // Tests for the unified self-eval CLI composition root (cli.ts / T-10). ZERO live API by construction: every test
 // drives `main(argv, { runner, judge })` with an INJECTED fake runner (overlays a canned solution, no `claude -p`)
 // and/or an INJECTED content-keyed judge (no `claude -p`), and asserts the composition — the store tree, the
-// UNIFIED rightsizing+honesty run dir (the sibling `honesty.json`), the moat run, the offline replay, and loud
-// argument errors — without a single network/subprocess call.
+// UNIFIED rightsizing+honesty run dir (the sibling `honesty.json`), the offline replay, and loud argument errors —
+// without a single network/subprocess call.
 //
-// The public subcommand set is exactly { run moat, run rightsizing } over a live conduct, plus zero-API
+// The public subcommand set is exactly { run rightsizing } over a live conduct, plus zero-API
 // `replay <id>` / `report <id>`. The HONESTY artifact is NOT a standalone conduct — it rides the SAME conduct as
 // rightsizing, persisted as a sibling `honesty.json` in that one run dir (T-08's read contract).
 //
@@ -223,10 +223,6 @@ test("an unknown run subcommand exits 2", async () => {
 
 test("run rightsizing without --fixtures-dir exits 2", async () => {
   assert.equal(await main(["run", "rightsizing", "--runs-root", freshRunsRoot()]), 2);
-});
-
-test("run moat without --fixture exits 2", async () => {
-  assert.equal(await main(["run", "moat", "--runs-root", freshRunsRoot()]), 2);
 });
 
 test("an unknown flag exits 2", async () => {

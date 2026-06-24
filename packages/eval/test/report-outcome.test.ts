@@ -1,5 +1,5 @@
-// Tests for the re-led report IA (T-08, ADR-003 + ADR-002) — the public report ships EXACTLY three probes,
-// MOAT → RIGHT-SIZING → HONESTY, with NO bare-vs-Agentry delta and NO hardcoded "Sonnet". Routing label-match and
+// Tests for the re-led report IA (T-08, ADR-003 + ADR-002) — the public report ships EXACTLY two probes,
+// RIGHT-SIZING → HONESTY, with NO bare-vs-Agentry delta and NO hardcoded "Sonnet". Routing label-match and
 // decision-quality are PARKED off the public path (ADR-002): their nav buttons and `<section>`s are GONE from the
 // public IA, and the public page data carries no `routing`/`quality` field. Driven from SYNTHETIC right-sizing +
 // honesty runs on disk with ZERO API spend. The synthetic `RightsizingArtifact` is built by the REAL
@@ -7,8 +7,8 @@
 // hand-rolled guess), written into a fake `runs/<id>/summary.json` (kind "rightsizing") + a sibling `honesty.json`,
 // then read back by `loadRightsizing` / `loadHonesty` and rendered by `renderPage`. Asserts the load-bearing figures
 // appear (the three results-gated rates + the indeterminate tally; the overclaim-gap + flow-compliance; the small-N
-// framing; the model-derived arm label), the hero leads with the MOAT, the retired Routing/Decision-quality public
-// sections are absent, and — for an aborted batch — the abort verdict instead of numbers. NO delta; NO "Sonnet".
+// framing; the model-derived arm label), the hero leads with RIGHT-SIZING, the retired Routing/Decision-quality
+// public sections are absent, and — for an aborted batch — the abort verdict instead of numbers. NO delta; NO "Sonnet".
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -28,7 +28,7 @@ import type { RunSummary } from "../src/store/schema.ts";
 import { loadRightsizing } from "../src/report/rightsizing.ts";
 import { loadHonesty } from "../src/report/honesty.ts";
 import { renderPage } from "../src/report/render.ts";
-import type { RightsizingData, HonestyData, MoatData, PageData } from "../src/report/model.ts";
+import type { RightsizingData, HonestyData, PageData } from "../src/report/model.ts";
 
 // --- fixtures ----------------------------------------------------------------------------------------------------
 
@@ -117,35 +117,17 @@ function makeRun(
 /**
  * Drop the built sections into a minimal `PageData` so `renderPage` exercises the real template. Mirrors the PUBLIC
  * page the reporter actually produces: routing/quality are PARKED off the public path (ADR-002/ADR-003), so they are
- * NOT attached here — only the three public probes + the Tasks explorer ride. An optional `moat` lets a test assert
- * the moat-led hero. The page must render cleanly without any routing/quality field present.
+ * NOT attached here — only the two public probes + the Tasks explorer ride. The page must render cleanly without any
+ * routing/quality field present.
  */
-function pageWith(rightsizing?: RightsizingData, honesty?: HonestyData, moat?: MoatData): PageData {
+function pageWith(rightsizing?: RightsizingData, honesty?: HonestyData): PageData {
   return {
     meta: { runId: "r", fixture: "f", repeats: 2, model: "claude-opus-4-8[1m]", generatedAt: "2026-06-19T00:00:00.000Z" },
-    ...(moat ? { moat } : {}),
     ...(rightsizing ? { rightsizing } : {}),
     ...(honesty ? { honesty } : {}),
     tasks: [],
     corrections: [],
     history: [],
-  };
-}
-
-/** A scored moat projection — the categorical lead (warm-vs-cold discrimination). */
-function moatData(): MoatData {
-  return {
-    runId: "moat-test",
-    runs: 3,
-    compoundRate: 1,
-    decoyLightenRate: 0,
-    discrimination: 1,
-    seedLandingRate: 1,
-    seedLanding: { landedCount: 3, total: 3 },
-    census: [
-      { taskId: "rs-dedupe", coldFloor: "spec-first", relevantCompoundedFraction: 1, decoyLightenedFraction: 0, seedLandedFraction: 1, compoundedSpread: 0, landedRepeats: 3, repeats: 3 },
-    ],
-    successCondition: { statement: "discrimination ≥ W", target: null, calibrationPending: true, observed: 1 },
   };
 }
 
@@ -174,9 +156,9 @@ test("loadRightsizing: narrows a scored run into the three rates + indeterminate
   // the census carries every task with its terminal outcome
   assert.equal(data!.census!.length, 5);
   assert.ok(data!.census!.some((r) => r.outcome === "indeterminate" && r.shape === null));
-  // the pre-registered success condition is ALWAYS present (the falsifiable form ships even uncalibrated)
+  // the pre-registered success condition is ALWAYS present (the falsifiable form ships; thresholds.json is calibrated)
   assert.ok(data!.successCondition);
-  assert.equal(data!.successCondition.calibrationPending, true);
+  assert.equal(data!.successCondition.calibrationPending, false);
 });
 
 test("loadRightsizing: no right-sizing run in the store ⇒ undefined (page renders without the section)", () => {
@@ -249,15 +231,15 @@ test("renderPage: a scored right-sizing run injects the three rates as the page 
   const runsRoot = makeRun(artifact, "2026-06-19T00:00:00.000Z");
   const html = renderPage(pageWith(loadRightsizing(runsRoot)!));
 
-  // the public sections lead Moat → Right-sizing → Honesty
-  assert.match(html, /data-view="moat"/);
+  // the public sections lead Right-sizing → Honesty (moat is removed — Phase 1 of the bench reshape)
   assert.match(html, /data-view="rightsizing"/);
   assert.match(html, /data-view="honesty"/);
-  // moat appears before right-sizing, which appears before honesty (the IA order in the nav)
-  const navMoat = html.indexOf('data-view="moat"');
+  // moat is gone from the IA entirely — no section, no nav button
+  assert.doesNotMatch(html, /data-view="moat"/);
+  // right-sizing appears before honesty (the IA order in the nav)
   const navRs = html.indexOf('data-view="rightsizing"');
   const navHon = html.indexOf('data-view="honesty"');
-  assert.ok(navMoat < navRs && navRs < navHon, "nav order must be moat → rightsizing → honesty");
+  assert.ok(navRs < navHon, "nav order must be rightsizing → honesty");
 
   // ADR-002 parking: the retired Routing label-match + Decision-quality probes are GONE from the PUBLIC IA — no nav
   // buttons, no `<section>`s, no per-probe badges. (The Tasks explorer + Run-history columns are a different concern.)
@@ -299,16 +281,18 @@ test("renderPage: a honesty run injects overclaim-gap + flow-compliance (no delt
   assert.equal(/"delta":/.test(html), false, "honesty carries no bare-vs-Agentry delta");
 });
 
-// --- hero: the public report LEADS with the moat (ADR-003) -------------------------------------------------------
+// --- hero: the public report LEADS with right-sizing (moat removed — Phase 1) ------------------------------------
 
-test("renderPage: the Overview hero leads with the MOAT, not routing (the categorical edge headlines)", () => {
-  const html = renderPage(pageWith(undefined, undefined, moatData()));
+test("renderPage: the Overview hero leads with RIGHT-SIZING, not the moat or routing", () => {
+  const html = renderPage(pageWith(loadRightsizing(makeRun(buildScoredArtifact(rightsizingRecords()), "2026-06-19T00:00:00.000Z"))!));
 
-  // the default hero eyebrow is MOAT framing — never the retired routing label-match framing
-  assert.match(html, /id="hero-eyebrow"[^>]*>The moat/);
+  // the default hero eyebrow is RIGHT-SIZING framing — never the removed moat nor the retired routing label-match
+  assert.match(html, /id="hero-eyebrow"[^>]*>Right-sizing/);
+  assert.doesNotMatch(html, /id="hero-eyebrow"[^>]*>The moat/);
   assert.doesNotMatch(html, /id="hero-eyebrow"[^>]*>Routing/);
-  // the injected moat projection is the page payload (categorical warm-vs-cold), so the hero hydrates from it
-  assert.match(html, /window\.__SELFEVAL__ = .*"compoundRate":1/);
+  // moat is gone — no moat wire field is ever attached to the public page
+  assert.equal(/"compoundRate":/.test(html), false, "no moat compoundRate wire field on the public page");
+  assert.doesNotMatch(html, /data-view="moat"/);
   // no routing/quality view object is ever attached to the public page
   assert.equal(/"floors":\[/.test(html), false, "no routing confusion/floors wire field on the public page");
 });

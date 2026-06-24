@@ -193,9 +193,9 @@ test("RIGHTSIZING_SUCCESS_THRESHOLD ships the falsifiable FORM (object present, 
   assert.notEqual(RIGHTSIZING_SUCCESS_THRESHOLD, null);
   assert.equal(RIGHTSIZING_SUCCESS_THRESHOLD.metric, "rightSizingSuccessRate");
   assert.equal(typeof RIGHTSIZING_SUCCESS_THRESHOLD.statement, "string");
-  // the tracked thresholds.json ships the form pending calibration (the number is set by the first run):
-  assert.equal(RIGHTSIZING_SUCCESS_THRESHOLD.value, null);
-  assert.equal(RIGHTSIZING_SUCCESS_THRESHOLD.calibrationPending, true);
+  // the tracked thresholds.json was calibrated from the first run (X=0.8); the form ships with a real number:
+  assert.equal(RIGHTSIZING_SUCCESS_THRESHOLD.value, 0.8);
+  assert.equal(RIGHTSIZING_SUCCESS_THRESHOLD.calibrationPending, false);
 });
 
 test("successCondition computes no pass/fail while X is uncalibrated, but carries the form", () => {

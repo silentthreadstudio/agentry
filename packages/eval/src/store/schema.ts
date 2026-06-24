@@ -16,10 +16,10 @@
 export const SCHEMA_VERSION = "1";
 
 /**
- * The probe kinds a run can be. The PUBLIC set (ADR-001/002/003) is `moat` + `rightsizing` (the unified
- * conduct-and-judge run, which the honesty artifact rides as a sibling `honesty.json`). `routing` / `quality` /
- * `outcome` are retained kinds for back-compat with already-stored runs the offline `replay`/`report` readers may
- * still open — the live CLI no longer writes them.
+ * The probe kinds a run can be. The PUBLIC set is `rightsizing` (the unified conduct-and-judge run, which the
+ * honesty artifact rides as a sibling `honesty.json`). `routing` / `quality` / `moat` / `outcome` are retained kinds
+ * for back-compat with already-stored runs the offline `replay`/`report` readers may still open — the live CLI no
+ * longer writes them. `moat` in particular stays in the union so a historical moat run dir reads without error.
  */
 export type RunKind = "routing" | "quality" | "moat" | "outcome" | "rightsizing";
 

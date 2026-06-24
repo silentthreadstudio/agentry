@@ -1,9 +1,9 @@
 // The unified self-eval CLI — the composition root (ADR-002 / T-10). A thin subcommand dispatcher that OWNS no
 // probe logic: it constructs the persistence layer (`RunStore` + `EvalEmitter`), bundles them into the injected
-// `EvalObserver`, and threads them into the three PUBLIC probes (Moat · Right-sizing · Honesty) — reused via their
-// public exports, never rewritten.
+// `EvalObserver`, and threads them into the PUBLIC probes (Right-sizing · Honesty) — reused via their public
+// exports, never rewritten.
 //
-// The public subcommand set is exactly { moat, rightsizing } over a live conduct, plus the zero-API `replay <id>` /
+// The public subcommand set is exactly { rightsizing } over a live conduct, plus the zero-API `replay <id>` /
 // `report <id>` over a stored run. The HONESTY probe is NOT a standalone conduct: it rides the SAME conduct as
 // right-sizing (one unified conduct = one run dir, ADR-001). So `run rightsizing` drives the conduct ONCE, scores
 // the right-sizing artifact into `summary.json`, AND runs the (pure, no-reconduct) honesty probe over the SAME
@@ -29,7 +29,6 @@ import { agentryCell, type Cell } from "./conduct/cell.ts";
 
 import { runRightsizingProbe } from "./rightsizing/probe.ts";
 import { runHonestyProbe } from "./honesty/probe.ts";
-import { runMoatProbe } from "./moat/probe.ts";
 
 import { emitReport } from "./report/emit.ts";
 
@@ -71,7 +70,7 @@ export interface CliFlags {
   model?: string;
   /** rightsizing only — per-run hard ceiling (ms). */
   timeout?: string;
-  /** rightsizing + moat — bounded conduct concurrency (default 1 = serial). */
+  /** rightsizing only — bounded conduct concurrency (default 1 = serial). */
   concurrency?: string;
   /** rightsizing only — model id pinned for every JUDGE call (defaults to {@link DEFAULT_JUDGE_MODEL}). */
   judgeModel?: string;
@@ -227,53 +226,6 @@ async function runRightsizing(flags: CliFlags, runner = liveRunner, judge: Judge
 }
 
 /**
- * `run moat` — drive the memory-hygiene (moat) probe with full persistence. Per fixture task it runs a warm
- * conductor with a fork-resolving fact seeded vs. an irrelevant decoy, and scores whether recalled memory makes
- * the task route lighter (compounding) — gated by seed-landing + decoy discrimination.
- *
- * `--concurrency <n>` bounds how many conducts run at once (default 1 = serial). The conducts are independent
- * (each warm run prepares a fresh sandbox), so the matrix parallelizes without changing the scored numbers; keep it
- * MODEST (3–4) on live runs (each conduct spawns subagents + a judge + the mem MCP — a high limit hits rate limits).
- */
-async function runMoat(flags: CliFlags, runner = liveRunner, judge: JudgeFn = realJudgeFn): Promise<number> {
-  if (flags.fixture === undefined) throw new UsageError("run moat: --fixture <dir> is required");
-  const fixtureDir = resolve(flags.fixture);
-  const runsRoot = resolveRunsRoot(flags);
-  const runId = newRunId(flags.runId);
-  const k = flags.runs !== undefined ? Number(flags.runs) : 1;
-  const judgeModel = flags.judgeModel ?? DEFAULT_JUDGE_MODEL;
-
-  const config: RunConfig = {
-    runId,
-    kind: "moat",
-    fixtureDir,
-    k,
-    ...(flags.model !== undefined ? { model: flags.model } : {}),
-    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
-    startedAt: new Date().toISOString(),
-  };
-  const { store, runDir, observer } = openRun(runsRoot, runId, config);
-
-  const result = await runMoatProbe({
-    fixtureDir,
-    runner,
-    judge,
-    judgeModel,
-    outPath: join(runDir, "summary-artifact.json"),
-    observer,
-    runId,
-    runs: k,
-    ...(flags.concurrency !== undefined ? { concurrency: Number(flags.concurrency) } : {}),
-    ...(flags.model !== undefined ? { model: flags.model } : {}),
-    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
-  });
-
-  store.finishRun(summaryFor(config, result.outcomes.length, result.artifact));
-  process.stdout.write(`${runDir}\n`);
-  return 0;
-}
-
-/**
  * Resolve the `--cell` filter to the matrix cells. The public bench is Agentry-value-only (ADR-003): the bare
  * baseline is retired, so the only valid value is `agentry` (the single Agentry arm). The cell label derives from
  * the `--model` flag (`Agentry-<model>`) so a run at any model labels correctly. Absent `--cell` ⇒ the default
@@ -339,10 +291,7 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
       if (sub === "rightsizing") {
         return await runRightsizing(parseFlags(rest).flags, deps.runner, deps.judge);
       }
-      if (sub === "moat") {
-        return await runMoat(parseFlags(rest).flags, deps.runner, deps.judge);
-      }
-      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "moat" | "rightsizing")`);
+      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "rightsizing")`);
     }
 
     if (command === "replay") {
@@ -356,7 +305,7 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
     }
 
     throw new UsageError(
-      `selfeval: unknown command "${command ?? ""}" (expected "run moat" | "run rightsizing" | "replay <id>" | "report <id>")`,
+      `selfeval: unknown command "${command ?? ""}" (expected "run rightsizing" | "replay <id>" | "report <id>")`,
     );
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n`);

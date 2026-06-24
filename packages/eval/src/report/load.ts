@@ -1,6 +1,6 @@
 // The reporter's READ side (doc 08 §6) — reconstructs a {@link PageData} view-model from a STORED run with ZERO
-// live API. The PUBLIC report ships exactly the three probes (moat → rightsizing → honesty) plus the Tasks
-// explorer; routing label-match and decision-quality are PARKED off the public path (ADR-002/ADR-003). It reads
+// live API. The PUBLIC report ships the two probes (rightsizing → honesty) plus the Tasks explorer; routing
+// label-match and decision-quality are PARKED off the public path (ADR-002/ADR-003). It reads
 // the run's `summary.json` (for the per-task labels), `events.jsonl` (per-task shapes + timings), and the optional
 // `decision-quality.json` (ONLY the per-task overalls the Tasks drawer shows) — then folds in the three public
 // loaders, the curated corrections log, and the run-history index.
@@ -28,7 +28,6 @@ import type {
 } from "./model.ts";
 import { loadCorrections } from "./corrections.ts";
 import { loadHistory } from "./history.ts";
-import { loadMoat } from "./moat.ts";
 import { loadRightsizing } from "./rightsizing.ts";
 import { loadHonesty } from "./honesty.ts";
 
@@ -57,9 +56,8 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
   const perTaskRuns = parseEvents(join(runDir, "events.jsonl")); // taskId → ordered {shape, ms}[]
   const perTaskQuality = readPerTaskQuality(join(runDir, "decision-quality.json")); // taskId → per-repeat overall
 
-  // The three PUBLIC pillars — each its own run kind (or, for honesty, riding the rightsizing run dir), surfaced as
-  // the LATEST in the store. The IA leads moat → rightsizing → honesty (ADR-003); zero live API in every loader.
-  const moat = loadMoat(runsRoot); // the latest scored moat run — the categorical lead
+  // The two PUBLIC pillars — rightsizing (its own run kind) and honesty (riding the rightsizing run dir), surfaced
+  // as the LATEST in the store. The IA leads rightsizing → honesty; zero live API in every loader.
   const rightsizing = loadRightsizing(runsRoot); // the latest right-sizing run (three results-gated rates)
   const honesty = loadHonesty(runsRoot); // the honesty artifact riding the latest right-sizing conduct
 
@@ -72,13 +70,12 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
       model: config.model ?? "—",
       generatedAt: opts.generatedAt,
     },
-    ...(moat !== undefined ? { moat } : {}),
     ...(rightsizing !== undefined ? { rightsizing } : {}),
     ...(honesty !== undefined ? { honesty } : {}),
     // routing/quality are PARKED off the PUBLIC path (ADR-002/ADR-003): the public report retired routing
-    // label-match and parked decision-quality, so neither view is attached here — only the three public probes
-    // (moat → rightsizing → honesty) + the Tasks explorer ship. The raw routing artifact is still read LOCALLY
-    // to label the per-task rows; it just never becomes a public `routing`/`quality` page section.
+    // label-match and parked decision-quality, so neither view is attached here — only the two public probes
+    // (rightsizing → honesty) + the Tasks explorer ship. The raw routing artifact is still read LOCALLY to label
+    // the per-task rows; it just never becomes a public `routing`/`quality` page section.
     tasks: buildTasks(routingRaw, perTaskRuns, perTaskQuality),
     corrections: loadCorrections(opts.correctionsPath),
     history: loadHistory(runsRoot, summary.runId),

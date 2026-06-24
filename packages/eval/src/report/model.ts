@@ -117,60 +117,11 @@ export interface HistoryRow {
 }
 
 /**
- * One row of the moat census — a task's compounding behavior over its k repeats (relevant vs. decoy warm runs),
- * carried as FRACTIONS + a spread so the headline is never a bare single-draw point (the honesty rule).
- */
-export interface MoatCensus {
-  /** The labeled task id. */
-  taskId: string;
-  /** The shape the task routes to with empty memory. */
-  coldFloor: string;
-  /** Fraction of this task's LANDED relevant repeats that routed lighter AND produced a GOOD result; null when none landed. */
-  relevantCompoundedFraction: number | null;
-  /** Fraction of this task's LANDED relevant repeats that routed lighter but produced a BAD result (lightened-but-broken); null when none landed. */
-  lighterButBadFraction: number | null;
-  /** Fraction of this task's decoy repeats that routed lighter (the control — should be ~0). */
-  decoyLightenedFraction: number;
-  /** Fraction of this task's relevant repeats that recalled their seed (this task's validity readout). */
-  seedLandedFraction: number;
-  /** Population stdev of the per-repeat compounded indicator over the landed relevant repeats (the spread). */
-  compoundedSpread: number;
-  /** How many relevant repeats landed their seed (the compound denominator for this task). */
-  landedRepeats: number;
-  /** Total relevant repeats run for this task (k). */
-  repeats: number;
-}
-
-/** The memory-hygiene (moat) projection — does recalled memory make a task route lighter? From the latest moat run. */
-export interface MoatData {
-  /** The moat run this data came from (a different run than routing/quality — the latest scored moat run). */
-  runId: string;
-  /** The repeat count k this run used (1 = a single high-variance draw). */
-  runs: number;
-  /** GIVEN recall fired, the fraction of LANDED relevant repeats that routed lighter AND produced a GOOD result (results-gated). */
-  compoundRate: number;
-  /** Fraction of LANDED relevant repeats that routed lighter but produced a BAD result — memory lightened it, the code failed. */
-  lighterButBadRate: number;
-  /** Fraction of ALL decoy repeats that routed lighter (the false-positive base rate — should be ~0). */
-  decoyLightenRate: number;
-  /** `compoundRate − decoyLightenRate` — the memory-attributable lightening (the clean signal). */
-  discrimination: number;
-  /** Relevant repeats that recalled their seed, over all relevant repeats (the validity readout). */
-  seedLandingRate: number;
-  /** Raw landing counts behind {@link seedLandingRate} (the auditable denominator). */
-  seedLanding: { landedCount: number; total: number };
-  /** Per-task census (the k repeats rolled into fractions + spread). */
-  census: MoatCensus[];
-  /** The pre-registered falsifiable target W (discrimination ≥ W) — ALWAYS present on the public path (AC-THRESH). */
-  successCondition: SuccessConditionView;
-}
-
-/**
- * The pre-registered falsifiable success condition both probes carry (AC-THRESH). It is ALWAYS present on the public
- * path — the registered FORM ships before any run; only the calibration number (`target`) is null while pending.
- * `observed` is the run's measured headline (or null on an aborted run — no number when a gate fires); `pass` is set
- * only once the target is calibrated AND a run was scored. Both the rightsizing (X) and moat (W) conditions narrow
- * into this same view shape so the template renders the falsifiable framing uniformly.
+ * The pre-registered falsifiable success condition the rightsizing probe carries (AC-THRESH). It is ALWAYS present
+ * on the public path — the registered FORM ships before any run; only the calibration number (`target`) is null
+ * while pending. `observed` is the run's measured headline (or null on an aborted run — no number when a gate
+ * fires); `pass` is set only once the target is calibrated AND a run was scored. The rightsizing (X) condition
+ * narrows into this view shape so the template renders the falsifiable framing uniformly.
  */
 export interface SuccessConditionView {
   /** The human-readable falsifiable statement (e.g. "right-sizing-success ≥ X AND zero under-route-failure on traps"). */
@@ -277,22 +228,19 @@ export interface HonestyData {
 }
 
 /**
- * The complete injected page payload — exactly `window.__SELFEVAL__`. The PUBLIC story leads MOAT → RIGHT-SIZING →
- * HONESTY (ADR-003 IA re-lead): the moat is the only CATEGORICAL edge (warm beats cold; a plain session can't), so
- * it headlines; right-sizing carries the three results-gated rates; honesty carries the overclaim-gap +
- * flow-compliance. There is NO bare-vs-Agentry delta (de-bare) and NO kind section (decision B — kind is parked,
- * internal-only). `routing`/`quality` are PARKED — OPTIONAL and OFF the public path (ADR-002/ADR-003): the public
- * report retired routing label-match and parked decision-quality, so the public `buildPageData` no longer populates
- * them and no public template section reads them. The types are KEPT (mirroring parked `quality/` code) so a
- * dev/parked reader may still attach them; `tasks` remains for the Tasks explorer.
+ * The complete injected page payload — exactly `window.__SELFEVAL__`. The PUBLIC story leads RIGHT-SIZING → HONESTY:
+ * right-sizing carries the three results-gated rates; honesty carries the overclaim-gap + flow-compliance. There is
+ * NO bare-vs-Agentry delta (de-bare) and NO kind section (decision B — kind is parked, internal-only).
+ * `routing`/`quality` are PARKED — OPTIONAL and OFF the public path (ADR-002/ADR-003): the public report retired
+ * routing label-match and parked decision-quality, so the public `buildPageData` no longer populates them and no
+ * public template section reads them. The types are KEPT (mirroring parked `quality/` code) so a dev/parked reader
+ * may still attach them; `tasks` remains for the Tasks explorer.
  */
 export interface PageData {
   meta: PageMeta;
-  /** PUBLIC LEAD — the latest scored moat run's projection, when one exists in the store (else absent). */
-  moat?: MoatData;
-  /** PUBLIC #2 — the latest right-sizing run's projection (three results-gated rates + indeterminate), else absent. */
+  /** PUBLIC LEAD — the latest right-sizing run's projection (three results-gated rates + indeterminate), else absent. */
   rightsizing?: RightsizingData;
-  /** PUBLIC #3 — the latest honesty run's projection (overclaim-gap + flow-compliance), else absent. */
+  /** PUBLIC #2 — the latest honesty run's projection (overclaim-gap + flow-compliance), else absent. */
   honesty?: HonestyData;
   /** PARKED (optional, off the public path) — the retired routing label-match probe; a dev reader may still attach it. */
   routing?: RoutingData;

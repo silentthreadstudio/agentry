@@ -1,6 +1,6 @@
 // AC-CONTRACT — the UNIFORM PROBE CONTRACT conformance test (ADR-002 §the uniform probe contract). This is the S5
-// gate that makes future probes mechanical: it asserts that ALL THREE public probes (moat, rightsizing, honesty)
-// expose the SAME five-stage shape —
+// gate that makes future probes mechanical: it asserts that the public probes (rightsizing, honesty) expose the
+// SAME five-stage shape —
 //
 //   1. fixture       — a strict loader/validator (`load*Fixture`) the probe reads its corpus through.
 //   2. probe         — a `run*Probe` gated orchestrator.
@@ -25,16 +25,6 @@ import { test } from "node:test";
 
 // ── Stage imports, per probe ───────────────────────────────────────────────────────────────────────────────────
 
-// MOAT
-import { loadMoatFixture } from "../src/moat/fixture.ts";
-import { runMoatProbe } from "../src/moat/probe.ts";
-import {
-  buildAbortedArtifact as buildMoatAborted,
-  buildScoredArtifact as buildMoatScored,
-} from "../src/moat/artifact.ts";
-import { seedLandingGuard, discriminationGuard } from "../src/moat/control.ts";
-import { loadMoat } from "../src/report/moat.ts";
-
 // RIGHT-SIZING
 import { loadRightsizingFixture } from "../src/rightsizing/fixture.ts";
 import { runRightsizingProbe } from "../src/rightsizing/probe.ts";
@@ -53,10 +43,9 @@ import { loadHonesty } from "../src/report/honesty.ts";
 // ── 1. fixture — every probe reads its corpus through a strict loader/validator ──────────────────────────────────
 
 test("CONTRACT stage 1 (fixture): each public probe exposes a strict fixture loader", () => {
-  // moat + rightsizing load a planted corpus; honesty's "fixture" is the per-run records (a pure builder over them)
+  // rightsizing loads a planted corpus; honesty's "fixture" is the per-run records (a pure builder over them)
   // plus the escalated run dirs the flow-compliance probe reads (its loader is the trace reader, exercised via the
   // probe). The contract requires a callable corpus loader for each.
-  assert.equal(typeof loadMoatFixture, "function", "moat: loadMoatFixture");
   assert.equal(typeof loadRightsizingFixture, "function", "rightsizing: loadRightsizingFixture");
   assert.equal(typeof buildOverclaim, "function", "honesty: buildOverclaim (the per-run records reader)");
   assert.equal(typeof runFlowComplianceProbe, "function", "honesty: runFlowComplianceProbe (reads the escalated run dir)");
@@ -65,7 +54,6 @@ test("CONTRACT stage 1 (fixture): each public probe exposes a strict fixture loa
 // ── 2. probe — every probe exposes a `run*Probe` gated orchestrator ──────────────────────────────────────────────
 
 test("CONTRACT stage 2 (probe): each public probe exposes a run*Probe orchestrator", () => {
-  assert.equal(typeof runMoatProbe, "function", "moat: runMoatProbe");
   assert.equal(typeof runRightsizingProbe, "function", "rightsizing: runRightsizingProbe");
   assert.equal(typeof runHonestyProbe, "function", "honesty: runHonestyProbe");
 });
@@ -73,13 +61,6 @@ test("CONTRACT stage 2 (probe): each public probe exposes a run*Probe orchestrat
 // ── 3. artifact — a two-terminal builder: `scored` carries numbers, `aborted` carries only the verdict ───────────
 
 test("CONTRACT stage 3 (artifact): each probe's artifact has the uniform two terminal conditions", () => {
-  // MOAT: aborted ⇒ condition "aborted" + verdict + NO compound number; scored ⇒ condition "scored".
-  const moatAborted = buildMoatAborted("seed-did-not-land");
-  assert.equal(moatAborted.condition, "aborted");
-  assert.equal(moatAborted.abortVerdict, "seed-did-not-land");
-  assert.equal(moatAborted.compoundRate, null, "moat aborted: NO compound number");
-  assert.equal(buildMoatScored([]).condition, "scored");
-
   // RIGHT-SIZING: aborted ⇒ condition "aborted" + verdict + NO rates/census; scored ⇒ condition "scored".
   const rsAborted = buildRightsizingAborted("rightsizing-judge-cannot-discriminate");
   assert.equal(rsAborted.condition, "aborted");
@@ -104,12 +85,6 @@ test("CONTRACT stage 4 (controls): a fired control yields an aborted artifact wi
   const rsAborted = buildRightsizingAborted(cannotSeparate.verdict!);
   assert.equal(rsAborted.condition, "aborted");
   assert.equal(rsAborted.rates, undefined);
-
-  // moat: its own controls fire the same way (seed-landing / discrimination), mapping to an aborted artifact.
-  const seedFail = seedLandingGuard([false, false]);
-  assert.equal(seedFail.ok, false, "moat seed-landing control must fire when nothing landed");
-  assert.equal(typeof discriminationGuard, "function", "moat exposes its discrimination control");
-  assert.equal(buildMoatAborted(seedFail.verdict!).compoundRate, null);
 });
 
 test("CONTRACT stage 4 (controls): honesty RIDES the upstream abort — threads it through with NO numbers", () => {
@@ -131,14 +106,12 @@ test("CONTRACT stage 4 (controls): honesty RIDES the upstream abort — threads 
 // ── 5. report-section — every probe has a zero-API `load*` reader that narrows the stored artifact ───────────────
 
 test("CONTRACT stage 5 (report-section): each public probe exposes a zero-API report reader", () => {
-  assert.equal(typeof loadMoat, "function", "moat: report/moat.ts loadMoat");
   assert.equal(typeof loadRightsizing, "function", "rightsizing: report/rightsizing.ts loadRightsizing");
   assert.equal(typeof loadHonesty, "function", "honesty: report/honesty.ts loadHonesty");
 
   // Zero-API by construction: pointed at an empty/absent runs root, each reader returns `undefined` (the dashboard
   // omits the section) rather than throwing or calling a model.
   const emptyRoot = `${process.env.TMPDIR ?? "/tmp"}/selfeval-contract-empty-${process.pid}`;
-  assert.equal(loadMoat(emptyRoot), undefined);
   assert.equal(loadRightsizing(emptyRoot), undefined);
   assert.equal(loadHonesty(emptyRoot), undefined);
 });
