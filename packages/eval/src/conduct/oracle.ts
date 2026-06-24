@@ -1,4 +1,5 @@
-// The hidden-oracle injection seam, a LOOSE FUNCTIONAL FLOOR (ADR-001, moved from `outcome/oracle.ts`). After the
+// The hidden-oracle injection seam, a LOOSE FUNCTIONAL FLOOR (ADR-001). A SHARED conduct primitive (it lives in
+// `conduct/` so the bench probe consumes it without importing a probe's folder). After the
 // conduct-and-judge run settles AND the agent-visible tree has been captured (ADR-001: capture-before-inject),
 // `injectOracle` copies the held-out `oracle/` subtree into the SAME sandbox working dir, then `runOracle` executes
 // the fixture's `oracle.cmd` inside it and parses `{passed, total, pass}` from the test runner's output. One

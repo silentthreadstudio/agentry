@@ -1,5 +1,6 @@
-// The compliance + self-report adapter (ADR-001, moved from `outcome/compliance.ts`) — a THIN bridge between the
-// captured Agentry run and the score signals beyond the oracle: `shapeAwareCompliance` (the precision verdict over
+// The compliance + self-report adapter (ADR-001) — a SHARED conduct primitive (it lives in `conduct/` so the bench
+// probe consumes `extractSelfReportedDone` without importing a probe's folder). A THIN bridge between the captured
+// Agentry run and the score signals beyond the oracle: `shapeAwareCompliance` (the precision verdict over
 // the agent's captured `.agentry/work/<run>/`) and `extractSelfReportedDone` (whether the agent claimed completion
 // in its transcript — the overclaim signal the honesty probe, T-05, consumes over the per-run records). It reuses
 // the EXISTING flow-compliance probe VERBATIM (`runFlowComplianceProbe`, read-only over the work folder, zero API)

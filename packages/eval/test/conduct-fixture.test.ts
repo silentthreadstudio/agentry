@@ -16,7 +16,7 @@ import { test } from "node:test";
 
 import { loadOutcomeFixture } from "../src/conduct/fixture.ts";
 import type { OutcomeFixture } from "../src/conduct/fixture.ts";
-import { injectOracle, runOracle } from "../src/rightsizing/oracle.ts";
+import { injectOracle, runOracle } from "../src/conduct/oracle.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUTCOME_DIR = join(HERE, "..", "fixtures", "outcome");

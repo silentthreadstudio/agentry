@@ -1,15 +1,11 @@
 // The unified self-eval CLI — the composition root (ADR-002 / T-10). A thin subcommand dispatcher that OWNS no
 // probe logic: it constructs the persistence layer (`RunStore` + `EvalEmitter`), bundles them into the injected
-// `EvalObserver`, and threads them into the PUBLIC probes (Right-sizing · Honesty) — reused via their public
-// exports, never rewritten.
+// `EvalObserver`, and threads them into the BENCH probe — reused via its public export, never rewritten.
 //
-// The public subcommand set is exactly { rightsizing } over a live conduct, plus the zero-API `replay <id>` /
-// `report <id>` over a stored run. The HONESTY probe is NOT a standalone conduct: it rides the SAME conduct as
-// right-sizing (one unified conduct = one run dir, ADR-001). So `run rightsizing` drives the conduct ONCE, scores
-// the right-sizing artifact into `summary.json`, AND runs the (pure, no-reconduct) honesty probe over the SAME
-// records, writing its artifact as a sibling `honesty.json` in that run dir — exactly where T-08's report reader
-// (`report/honesty.ts`) looks for it. The decision-quality (`quality/`) probe is PARKED off the public set (ADR-002):
-// its code + tests stay, but it has no public subcommand and no report section.
+// The public subcommand set is exactly { bench } over a live conduct, plus the zero-API `replay <id>` /
+// `report <id>` over a stored run. The bench conducts Agentry ONCE per fixture and derives ALL FOUR value axes
+// (decision · code+correctness · honesty/overclaim · verification) from that single run, writing its artifact into
+// the run's `summary.json` — there is no separate honesty rider.
 //
 // stdout carries ONLY the run dir / artifact path (script-friendly); progress goes to stderr + the per-run
 // `events.jsonl` via the emitter. Argument errors exit non-zero loudly (exit 2 for parse/usage, 1 for runtime).
@@ -25,10 +21,7 @@ import { SCHEMA_VERSION, type EvalObserver, type RunConfig, type RunSummary } fr
 
 import { liveRunner } from "./io/live.ts";
 import { realJudgeFn, DEFAULT_JUDGE_MODEL, type JudgeFn } from "./judge/index.ts";
-import { agentryCell, type Cell } from "./conduct/cell.ts";
 
-import { runRightsizingProbe } from "./rightsizing/probe.ts";
-import { runHonestyProbe } from "./honesty/probe.ts";
 import { runBenchProbe } from "./bench/probe.ts";
 
 import { emitReport } from "./report/emit.ts";
@@ -46,9 +39,6 @@ const DEFAULT_RUNS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "r
 const DEFAULT_RESULTS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "results");
 const DEFAULT_CORRECTIONS = join(dirname(fileURLToPath(import.meta.url)), "..", "corrections.json");
 
-/** The sibling filename the honesty artifact is written under, INSIDE the unified rightsizing run dir (T-08 read contract). */
-const HONESTY_FILE = "honesty.json";
-
 /** A usage error — surfaced loudly and mapped to exit code 2 (a setup/argument bug, distinct from a runtime fault). */
 class UsageError extends Error {}
 
@@ -63,17 +53,15 @@ export interface CliFlags {
   runId?: string;
   resultsRoot?: string;
   correctionsPath?: string;
-  /** rightsizing only — the fixtures dir (one `<id>/` subdir per rightsizing fixture). */
+  /** bench only — the fixtures dir (one `<id>/` subdir per bench fixture). */
   fixturesDir?: string;
-  /** rightsizing only — restrict the matrix to one cell (`agentry`; the bare baseline is retired — ADR-003). */
-  cell?: string;
-  /** rightsizing only — model id pinned per CONDUCT run. */
+  /** bench only — model id pinned per CONDUCT run. */
   model?: string;
-  /** rightsizing only — per-run hard ceiling (ms). */
+  /** bench only — per-run hard ceiling (ms). */
   timeout?: string;
-  /** rightsizing only — bounded conduct concurrency (default 1 = serial). */
+  /** bench only — bounded conduct concurrency (default 1 = serial). */
   concurrency?: string;
-  /** rightsizing only — model id pinned for every JUDGE call (defaults to {@link DEFAULT_JUDGE_MODEL}). */
+  /** bench only — model id pinned for every JUDGE call (defaults to {@link DEFAULT_JUDGE_MODEL}). */
   judgeModel?: string;
 }
 
@@ -89,7 +77,6 @@ const FLAGS: Record<string, keyof CliFlags> = {
   "--results-root": "resultsRoot",
   "--corrections": "correctionsPath",
   "--fixtures-dir": "fixturesDir",
-  "--cell": "cell",
   "--model": "model",
   "--timeout": "timeout",
   "--concurrency": "concurrency",
@@ -156,81 +143,9 @@ function summaryFor(config: RunConfig, taskCount: number, artifact: unknown): Ru
 }
 
 /**
- * `run rightsizing` — drive the UNIFIED conduct-and-judge probe (ADR-001) ONCE with full persistence into
- * `runs/<id>/`, then run the (pure, no-reconduct) HONESTY probe over the SAME records and write its artifact as a
- * sibling `honesty.json` in that SAME run dir (the T-08 read contract: one unified conduct = one run dir, with the
- * rightsizing artifact in `summary.json` and the honesty artifact beside it). Echoes the run dir.
- *
- * The rightsizing probe runs the controls-first gate (judge-tokens only), and on a control abort emits an ABORTED
- * artifact with NO records — the honesty probe is then driven with that same `abortVerdict` so its sibling artifact
- * is correspondingly aborted (NO numbers), keeping the two halves of the one conduct consistent.
- *
- * `--cell`/`--fixture`/`--runs` are the matrix-cost slice filters (the de-risk run pins one fixture × k=1).
- * `--concurrency` bounds matrix parallelism (default 1 = serial). The JUDGE is injectable (a canned fn in tests =
- * zero API; the real `claude -p` judge in production), pinned to one judge model (`--judge-model`).
- */
-async function runRightsizing(flags: CliFlags, runner = liveRunner, judge: JudgeFn = realJudgeFn): Promise<number> {
-  const fixturesDirRaw = flags.fixturesDir ?? flags.fixtures;
-  if (fixturesDirRaw === undefined) throw new UsageError("run rightsizing: --fixtures-dir <dir> is required");
-  const fixturesDir = resolve(fixturesDirRaw);
-  const cells = cellsFromFlag(flags.cell, flags.model);
-  const runsRoot = resolveRunsRoot(flags);
-  const runId = newRunId(flags.runId);
-  const k = flags.runs !== undefined ? Number(flags.runs) : 1;
-  const judgeModel = flags.judgeModel ?? DEFAULT_JUDGE_MODEL;
-
-  const config: RunConfig = {
-    runId,
-    kind: "rightsizing",
-    fixtureDir: fixturesDir,
-    k,
-    ...(flags.model !== undefined ? { model: flags.model } : {}),
-    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
-    startedAt: new Date().toISOString(),
-  };
-  const { store, runDir, observer } = openRun(runsRoot, runId, config);
-
-  const result = await runRightsizingProbe({
-    fixturesDir,
-    runner,
-    judge,
-    judgeModel,
-    outPath: join(runDir, "summary-artifact.json"), // the probe also writes its raw artifact here; summary.json wraps it.
-    observer,
-    runId,
-    k,
-    ...(cells !== undefined ? { cell: cells[0] } : {}),
-    ...(flags.fixture !== undefined ? { fixtureFilter: flags.fixture } : {}),
-    ...(flags.concurrency !== undefined ? { concurrency: Number(flags.concurrency) } : {}),
-    ...(flags.model !== undefined ? { model: flags.model } : {}),
-    ...(flags.timeout !== undefined ? { timeoutMs: Number(flags.timeout) } : {}),
-    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
-  });
-
-  store.finishRun(summaryFor(config, result.records.length, result.artifact));
-
-  // HONESTY rides the SAME conduct (ADR-001): score the pure overclaim-gap over the SAME records (no re-conduct),
-  // writing the artifact beside the rightsizing summary as `honesty.json`. When the conduct's controls aborted the
-  // batch, thread the abort verdict through so the honesty artifact is correspondingly aborted (NO numbers). The
-  // unified conduct persists no escalated run dirs, so flow-compliance has no targets here — overclaim is the half
-  // a unified conduct emits; the flow-compliance census is fed separately by escalated conducts.
-  runHonestyProbe({
-    records: result.records,
-    ...(result.artifact.condition === "aborted" ? { abortVerdict: result.artifact.abortVerdict } : {}),
-    observer,
-    runId,
-    outPath: join(runDir, HONESTY_FILE),
-  });
-
-  process.stdout.write(`${runDir}\n`);
-  return 0;
-}
-
-/**
  * `run bench` — drive the conduct-once → FOUR-axis value bench (the reshape plan) ONCE with full persistence into
- * `runs/<id>/`. MIRRORS {@link runRightsizing} in structure (require `--fixtures-dir`; open the run; thread the
- * filters/knobs into the probe; wrap the returned artifact into `summary.json`; echo the run dir) — the difference
- * is the bench probe owns ALL four axes from the one conduct, so there is NO honesty rider to write beside it.
+ * `runs/<id>/` (require `--fixtures-dir`; open the run; thread the filters/knobs into the probe; wrap the returned
+ * artifact into `summary.json`; echo the run dir). The bench probe owns ALL four axes from the one conduct.
  *
  * The JUDGE is injectable (a canned content-keyed fn in tests = zero API; the real `claude -p` judge in production),
  * pinned to one judge model (`--judge-model`, default {@link DEFAULT_JUDGE_MODEL}). `--fixture` restricts the matrix
@@ -282,20 +197,6 @@ async function runBench(flags: CliFlags, runner = liveRunner, judge: JudgeFn = r
 }
 
 /**
- * Resolve the `--cell` filter to the matrix cells. The public bench is Agentry-value-only (ADR-003): the bare
- * baseline is retired, so the only valid value is `agentry` (the single Agentry arm). The cell label derives from
- * the `--model` flag (`Agentry-<model>`) so a run at any model labels correctly. Absent `--cell` ⇒ the default
- * matrix at the resolved model; `agentry` ⇒ the same single arm. Any other value is a loud usage error (a typo
- * shouldn't silently run the wrong matrix).
- */
-function cellsFromFlag(cell: string | undefined, model: string | undefined): readonly Cell[] | undefined {
-  const arm = model !== undefined ? agentryCell(model) : agentryCell();
-  if (cell === undefined) return [arm];
-  if (cell === "agentry") return [arm];
-  throw new UsageError(`run rightsizing: --cell "${cell}" is not "agentry"`);
-}
-
-/**
  * `replay <id>` — offline re-analysis of a STORED run with ZERO API. Re-derives each task's routing shape from
  * the stored `work/` artifacts (`rescoreRun`) — proof a persisted run is re-analyzable after the fact.
  */
@@ -344,13 +245,10 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
     const [command, sub, ...rest] = argv;
 
     if (command === "run") {
-      if (sub === "rightsizing") {
-        return await runRightsizing(parseFlags(rest).flags, deps.runner, deps.judge);
-      }
       if (sub === "bench") {
         return await runBench(parseFlags(rest).flags, deps.runner, deps.judge);
       }
-      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "rightsizing" | "bench")`);
+      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "bench")`);
     }
 
     if (command === "replay") {
@@ -364,7 +262,7 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
     }
 
     throw new UsageError(
-      `selfeval: unknown command "${command ?? ""}" (expected "run rightsizing" | "run bench" | "replay <id>" | "report <id>")`,
+      `selfeval: unknown command "${command ?? ""}" (expected "run bench" | "replay <id>" | "report <id>")`,
     );
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n`);

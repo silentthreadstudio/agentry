@@ -1,10 +1,7 @@
-// Tests for the READ side of the artifact store (read.ts / T-E) — the AC3 token-bleed fix. Pure fs, ZERO API
-// spend by construction: every test builds a fake `runs/<id>/` tree on disk (a `config.json` pointing at a tiny
-// temp fixture dir + stored `tasks/<id>/work/<slug>/spec.md` files), then drives `readRunInputs`/`readRunConfig`/
-// `rescoreRun` and asserts they reconstruct the quality-gate input / shape from disk WITHOUT any live call.
-//
-// The test reuses the real `routing-mini/tasks.yaml` (the probe tests' stable synthetic set) as the fixture the
-// run is parameterized with, so the recovered `taskPrompt` is checked against the actual labeled prompt.
+// Tests for the READ side of the artifact store (read.ts / T-E). Pure fs, ZERO API spend by construction: every
+// test builds a fake `runs/<id>/` tree on disk (a `config.json` pointing at a tiny temp fixture dir + stored
+// `tasks/<id>/work/<slug>/spec.md` files), then drives `readRunConfig`/`rescoreRun` and asserts they reconstruct
+// the config / shape from disk WITHOUT any live call.
 
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -13,8 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { readRunConfig, readRunInputs, rescoreRun } from "../src/store/read.ts";
-import { loadRoutingFixture } from "../src/conduct/fixture-routing.ts";
+import { readRunConfig, rescoreRun } from "../src/store/read.ts";
 import type { RunConfig } from "../src/store/schema.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -70,69 +66,6 @@ test("readRunConfig parses the stored reproducibility header back from config.js
   assert.equal(config.fixtureDir, fixtureDir);
 });
 
-test("readRunInputs reconstructs QualityInput[] from stored spec.md with the fixture prompt — ZERO live call", () => {
-  const { fixtureDir, runsRoot, runId } = makeStoredRun({
-    "mini-search-tuning": { spec: "# spec\nmake search faster\n" },
-  });
-  // The expected prompt comes straight from the (real) fixture the run points at — no live regeneration.
-  const expectedPrompt = loadRoutingFixture(join(fixtureDir, "tasks.yaml")).find(
-    (t) => t.id === "mini-search-tuning",
-  )!.prompt;
-
-  const inputs = readRunInputs(runsRoot, runId);
-
-  assert.equal(inputs.length, 1);
-  assert.deepEqual(inputs[0], {
-    taskId: "mini-search-tuning",
-    taskPrompt: expectedPrompt,
-    artifactText: "# spec\nmake search faster\n",
-  });
-});
-
-test("readRunInputs concatenates spec.md + plan.md with the gate's separator when both are stored", () => {
-  const { runsRoot, runId } = makeStoredRun({
-    "mini-pagination-stack": { spec: "# spec\nthe spec\n", plan: "# plan\nthe plan\n" },
-  });
-
-  const inputs = readRunInputs(runsRoot, runId);
-
-  assert.equal(inputs.length, 1);
-  assert.equal(
-    inputs[0]!.artifactText,
-    "# spec\nthe spec\n\n\n--- PLAN ---\n\n# plan\nthe plan\n",
-  );
-});
-
-test("readRunInputs skips a task with no captured work/ (a one-shot produced nothing to judge)", () => {
-  // mini-format-decimals gets NO work/ entry (one-shot); mini-search-tuning does.
-  const { runDir, runsRoot, runId } = makeStoredRun({
-    "mini-search-tuning": { spec: "# spec\nkept\n" },
-  });
-  // Also create a bare task dir with no work/ to prove it is skipped, not errored.
-  mkdirSync(join(runDir, "tasks", "mini-format-decimals"), { recursive: true });
-
-  const inputs = readRunInputs(runsRoot, runId);
-
-  assert.equal(inputs.length, 1);
-  assert.equal(inputs[0]!.taskId, "mini-search-tuning");
-});
-
-test("readRunInputs strips the `.r<i>` multi-run suffix to resolve the fixture prompt", () => {
-  const { fixtureDir, runsRoot, runId } = makeStoredRun({
-    "mini-search-tuning.r2": { spec: "# spec\nrepeat 2\n" },
-  });
-  const expectedPrompt = loadRoutingFixture(join(fixtureDir, "tasks.yaml")).find(
-    (t) => t.id === "mini-search-tuning",
-  )!.prompt;
-
-  const inputs = readRunInputs(runsRoot, runId);
-
-  assert.equal(inputs.length, 1);
-  // taskId resolves to the base labeled id; the prompt comes from that labeled task.
-  assert.equal(inputs[0]!.taskId, "mini-search-tuning");
-  assert.equal(inputs[0]!.taskPrompt, expectedPrompt);
-});
-
 test("rescoreRun re-derives each stored task's shape offline from the work/ tree — no live run", () => {
   const { runsRoot, runId } = makeStoredRun({
     // a spec-only work tree ⇒ spec-first; a plan-bearing tree ⇒ decompose.
@@ -159,11 +92,6 @@ test("the readers reject a path-traversing run-id (`..`, separator, absolute) wi
       `readRunConfig should reject ${JSON.stringify(badId)}`,
     );
     assert.throws(
-      () => readRunInputs(runsRoot, badId),
-      /invalid run-id/,
-      `readRunInputs should reject ${JSON.stringify(badId)}`,
-    );
-    assert.throws(
       () => rescoreRun(runsRoot, badId),
       /invalid run-id/,
       `rescoreRun should reject ${JSON.stringify(badId)}`,
@@ -186,7 +114,8 @@ test("a normal `YYYYMMDD-HHMMSS-<rand4>` run-id is accepted (the guard rejects o
 
   assert.doesNotThrow(() => readRunConfig(runsRoot, runId));
   assert.equal(readRunConfig(runsRoot, runId).runId, runId);
-  const inputs = readRunInputs(runsRoot, runId);
-  assert.equal(inputs.length, 1);
-  assert.equal(inputs[0]!.taskId, "mini-search-tuning");
+  // And the same legitimately-formed run is re-scorable offline through the guard unharmed.
+  const rescored = rescoreRun(runsRoot, runId);
+  assert.equal(rescored.length, 1);
+  assert.equal(rescored[0]!.taskId, "mini-search-tuning");
 });

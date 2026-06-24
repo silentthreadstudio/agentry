@@ -1,9 +1,8 @@
 // The reporter's READ side (doc 08 §6) — reconstructs a {@link PageData} view-model from a STORED run with ZERO
-// live API. The PUBLIC report ships the two probes (rightsizing → honesty) plus the Tasks explorer; routing
-// label-match and decision-quality are PARKED off the public path (ADR-002/ADR-003). It reads
-// the run's `summary.json` (for the per-task labels), `events.jsonl` (per-task shapes + timings), and the optional
-// `decision-quality.json` (ONLY the per-task overalls the Tasks drawer shows) — then folds in the three public
-// loaders, the curated corrections log, and the run-history index.
+// live API. The PUBLIC report LEADS with the value-axis BENCH plus the Tasks explorer. It reads the run's
+// `summary.json` (for the per-task labels), `events.jsonl` (per-task shapes + timings), and the optional
+// `decision-quality.json` (ONLY the per-task overalls the Tasks drawer shows) — then folds in the bench loader,
+// the curated corrections log, and the run-history index.
 //
 // SRP: parse + assemble only. No rendering (that's `render.ts`), no writing (that's `emit.ts`). It reuses the
 // store's `safeRunDir`/`readRunConfig` path-confinement rather than re-implementing it, and the sibling adapters

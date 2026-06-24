@@ -45,8 +45,8 @@ import { summarizeProducedResult } from "../conduct/result.ts";
 import type { OutcomeFixture } from "../conduct/fixture.ts";
 import { runCell, type RunCellOptions } from "../conduct/runner.ts";
 import { AGENTRY_CELL, type Cell } from "../conduct/cell.ts";
-import { injectOracle, runOracle, relativeFilesUnder } from "../rightsizing/oracle.ts";
-import { extractSelfReportedDone } from "../rightsizing/compliance.ts";
+import { injectOracle, runOracle, relativeFilesUnder } from "../conduct/oracle.ts";
+import { extractSelfReportedDone } from "../conduct/compliance.ts";
 
 import { CODE_RUBRIC, DECISION_RUBRIC } from "./rubric.ts";
 import { CONTROLS_DIR, loadBenchFixtures, type BenchFixture } from "./fixture.ts";

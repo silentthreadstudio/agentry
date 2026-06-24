@@ -1,7 +1,7 @@
 // SHARED CONDUCT INFRA (relocated by T-10 into the NEUTRAL `src/conduct/` home). `extractShape` + `extractKind` +
-// `DegenerateRunError` are the canonical extractor T-03 evolved; they are consumed by the live moat probe and
-// `store/read.ts` (the offline rescore) as well as the rightsizing probe, so the canonical copy lives here and
-// `rightsizing/extract.ts` re-exports it — no probe (or the store) imports another probe's folder.
+// `DegenerateRunError` are the canonical extractor T-03 evolved; they are consumed by `store/read.ts` (the offline
+// rescore) and the bench probe's neighbours, so the canonical copy lives here — no probe (or the store) imports
+// another probe's folder.
 //
 // The shape-extractor (ADR-001, moved from `routing/extract.ts` + `routing/extract-kind.ts`) — infer the routed
 // `Shape` from the conductor's SETTLED WORK-FOLDER ARTIFACTS, not the subagent-dispatch pattern. The dispatch

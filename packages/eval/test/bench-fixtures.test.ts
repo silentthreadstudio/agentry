@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { loadBenchFixtures, type BenchFixture } from "../src/bench/fixture.ts";
-import { injectOracle, runOracle } from "../src/rightsizing/oracle.ts";
+import { injectOracle, runOracle } from "../src/conduct/oracle.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH_DIR = join(HERE, "..", "fixtures", "bench");
