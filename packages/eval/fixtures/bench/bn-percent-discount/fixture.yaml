@@ -1,0 +1,14 @@
+# BUG-PRONE bench fixture (Axis-D escaped-defect set) — tiered bulk pricing. The obvious chained `if` ladder gets
+# the TIER BOUNDARY wrong (strict `>` vs `>=`), so an order of EXACTLY the threshold quantity misses its discount
+# tier — a classic off-by-one the held-out oracle probes at each boundary. Works in integer cents (no float money).
+id: bn-percent-discount
+prompt: >-
+  Add `priceCents(unitCents, qty)` to `src/pricing.js`. It returns the total price in integer cents for `qty` units
+  at `unitCents` each, applying a bulk discount by tier: qty of 100 or more → 20% off; 50 or more → 10% off; 10 or
+  more → 5% off; fewer than 10 → no discount. The discount applies to the WHOLE order subtotal; round the final
+  total to the nearest cent (round half up). `qty` is a positive integer. Keep the CommonJS export; no dependencies.
+fork: "none — the tiers are given; the trap is the boundary (qty EXACTLY at a threshold like 50 or 100 must get that tier — strict > drops it) plus rounding the whole-order total"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

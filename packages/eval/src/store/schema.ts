@@ -17,11 +17,12 @@ export const SCHEMA_VERSION = "1";
 
 /**
  * The probe kinds a run can be. The PUBLIC set is `rightsizing` (the unified conduct-and-judge run, which the
- * honesty artifact rides as a sibling `honesty.json`). `routing` / `quality` / `moat` / `outcome` are retained kinds
- * for back-compat with already-stored runs the offline `replay`/`report` readers may still open — the live CLI no
- * longer writes them. `moat` in particular stays in the union so a historical moat run dir reads without error.
+ * honesty artifact rides as a sibling `honesty.json`) and `bench` (the conduct-once → four-axis value bench).
+ * `routing` / `quality` / `moat` / `outcome` are retained kinds for back-compat with already-stored runs the
+ * offline `replay`/`report` readers may still open — the live CLI no longer writes them. `moat` in particular stays
+ * in the union so a historical moat run dir reads without error.
  */
-export type RunKind = "routing" | "quality" | "moat" | "outcome" | "rightsizing";
+export type RunKind = "routing" | "quality" | "moat" | "outcome" | "rightsizing" | "bench";
 
 /**
  * The resolved parameters of one run — the reproducibility header written verbatim to `config.json` (ADR-001).

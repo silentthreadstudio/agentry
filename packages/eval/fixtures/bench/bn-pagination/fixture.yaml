@@ -1,0 +1,17 @@
+# MULTI-FILE bench fixture with real seams — a tiny in-memory record store, a pure pagination query, and an index
+# barrel that composes them. The contract is fully specified (no undecided fork); the value is the three clean
+# seams (storage / query / composition). bugProne: false.
+id: bn-pagination
+prompt: >-
+  Build a paginated record store in `src/`, exposed from `src/index.js`. Three parts: `src/store.js` exports
+  `createStore()` returning `{ add(record), all() }` (an in-memory list preserving insertion order); `src/page.js`
+  exports a PURE `paginate(items, { page, size })` that returns `{ items, page, size, total, totalPages, hasNext,
+  hasPrev }` — `page` is 1-based, the returned `items` is the slice for that page, `total` is the full count,
+  `totalPages` is `ceil(total/size)` (and 0 when there are no items), `hasNext`/`hasPrev` reflect whether
+  neighboring pages exist; `src/index.js` exports `listPage(store, opts)` that paginates `store.all()` via
+  `paginate`. Keep CommonJS exports across all three files; do not add dependencies.
+fork: "none — the pagination contract is fully given (1-based pages, ceil totalPages, hasNext/hasPrev defined)"
+bugProne: false
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

@@ -29,6 +29,7 @@ import { agentryCell, type Cell } from "./conduct/cell.ts";
 
 import { runRightsizingProbe } from "./rightsizing/probe.ts";
 import { runHonestyProbe } from "./honesty/probe.ts";
+import { runBenchProbe } from "./bench/probe.ts";
 
 import { emitReport } from "./report/emit.ts";
 
@@ -226,6 +227,61 @@ async function runRightsizing(flags: CliFlags, runner = liveRunner, judge: Judge
 }
 
 /**
+ * `run bench` — drive the conduct-once → FOUR-axis value bench (the reshape plan) ONCE with full persistence into
+ * `runs/<id>/`. MIRRORS {@link runRightsizing} in structure (require `--fixtures-dir`; open the run; thread the
+ * filters/knobs into the probe; wrap the returned artifact into `summary.json`; echo the run dir) — the difference
+ * is the bench probe owns ALL four axes from the one conduct, so there is NO honesty rider to write beside it.
+ *
+ * The JUDGE is injectable (a canned content-keyed fn in tests = zero API; the real `claude -p` judge in production),
+ * pinned to one judge model (`--judge-model`, default {@link DEFAULT_JUDGE_MODEL}). `--fixture` restricts the matrix
+ * to one fixture; `--runs`/`--k` set the repeat count k (default 1); `--concurrency` bounds matrix parallelism
+ * (default 1 = serial). The Axis-A decision controls default to `<fixturesDir>/_controls/` (the probe SKIPS that gate
+ * when the dir is absent, so the bench runs before those controls are authored).
+ */
+async function runBench(flags: CliFlags, runner = liveRunner, judge: JudgeFn = realJudgeFn): Promise<number> {
+  const fixturesDirRaw = flags.fixturesDir ?? flags.fixtures;
+  if (fixturesDirRaw === undefined) throw new UsageError("run bench: --fixtures-dir <dir> is required");
+  const fixturesDir = resolve(fixturesDirRaw);
+  const runsRoot = resolveRunsRoot(flags);
+  const runId = newRunId(flags.runId);
+  const k = flags.k !== undefined ? Number(flags.k) : flags.runs !== undefined ? Number(flags.runs) : 1;
+  const judgeModel = flags.judgeModel ?? DEFAULT_JUDGE_MODEL;
+
+  const config: RunConfig = {
+    runId,
+    kind: "bench",
+    fixtureDir: fixturesDir,
+    k,
+    ...(flags.model !== undefined ? { model: flags.model } : {}),
+    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
+    startedAt: new Date().toISOString(),
+  };
+  const { store, runDir, observer } = openRun(runsRoot, runId, config);
+
+  const result = await runBenchProbe({
+    fixturesDir,
+    runner,
+    judge,
+    judgeModel,
+    decisionControlsDir: join(fixturesDir, "_controls"),
+    outPath: join(runDir, "summary-artifact.json"), // the probe also writes its raw artifact here; summary.json wraps it.
+    observer,
+    runId,
+    k,
+    ...(flags.fixture !== undefined ? { fixtureFilter: flags.fixture } : {}),
+    ...(flags.concurrency !== undefined ? { concurrency: Number(flags.concurrency) } : {}),
+    ...(flags.model !== undefined ? { model: flags.model } : {}),
+    ...(flags.timeout !== undefined ? { timeoutMs: Number(flags.timeout) } : {}),
+    ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
+  });
+
+  store.finishRun(summaryFor(config, result.records.length, result.artifact));
+
+  process.stdout.write(`${runDir}\n`);
+  return 0;
+}
+
+/**
  * Resolve the `--cell` filter to the matrix cells. The public bench is Agentry-value-only (ADR-003): the bare
  * baseline is retired, so the only valid value is `agentry` (the single Agentry arm). The cell label derives from
  * the `--model` flag (`Agentry-<model>`) so a run at any model labels correctly. Absent `--cell` ⇒ the default
@@ -291,7 +347,10 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
       if (sub === "rightsizing") {
         return await runRightsizing(parseFlags(rest).flags, deps.runner, deps.judge);
       }
-      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "rightsizing")`);
+      if (sub === "bench") {
+        return await runBench(parseFlags(rest).flags, deps.runner, deps.judge);
+      }
+      throw new UsageError(`selfeval: unknown "run" subcommand "${sub ?? ""}" (expected "rightsizing" | "bench")`);
     }
 
     if (command === "replay") {
@@ -305,7 +364,7 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
     }
 
     throw new UsageError(
-      `selfeval: unknown command "${command ?? ""}" (expected "run rightsizing" | "replay <id>" | "report <id>")`,
+      `selfeval: unknown command "${command ?? ""}" (expected "run rightsizing" | "run bench" | "replay <id>" | "report <id>")`,
     );
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n`);

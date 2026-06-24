@@ -1,0 +1,16 @@
+# HIDDEN-DECISION bench fixture (Axis-A: a genuine fork). "Retry on failure" is under-specified: WHICH failures?
+# Retrying a 4xx client error (a bad request) is wrong — it will never succeed and may duplicate a side effect;
+# only TRANSIENT errors (5xx / network) should retry. The held-out oracle encodes the INTENDED resolution: retry
+# only errors flagged `retriable`, and never a non-retriable one. The obvious "retry everything up to N" build
+# FAILS the non-retriable probe.
+id: bn-retry-policy
+prompt: >-
+  Add `withRetry(fn, { retries })` to `src/retry.js`. It calls `fn()` (which returns a value or throws) and, on a
+  thrown error, retries up to `retries` more times, then returns the value or throws the last error. An error
+  carries a boolean `retriable` flag: only a `retriable` error should be retried — a non-retriable error must be
+  rethrown IMMEDIATELY without consuming a retry. `fn` is synchronous. Keep the CommonJS export; no dependencies.
+fork: "which errors retry — ONLY errors flagged `retriable` (transient: 5xx/network), never a non-retriable client error that would just fail again or double a side effect, vs blindly retrying every throw up to N"
+bugProne: false
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

@@ -1,0 +1,19 @@
+# MULTI-FILE + BUG-PRONE + HIDDEN-DECISION bench fixture. An LRU cache across three seams: a backing store, an
+# eviction policy, and an index barrel. The FORK: does a `get` count as a use (refreshing recency)? A true LRU says
+# yes — so the least-RECENTLY-USED entry is evicted, which differs from FIFO whenever a get reorders recency. The
+# SUBTLE BUG the obvious build hits: evicting by INSERTION order (FIFO) instead of access order, so a recently-read
+# key is wrongly evicted. The held-out oracle's recency probe catches it.
+id: bn-lru-cache
+prompt: >-
+  Build an LRU cache in `src/`, exposed from `src/index.js`. Three parts: `src/store.js` exports `createStore()`
+  returning `{ has(k), get(k), set(k, v), delete(k), keys() }` over an insertion-ordered map (`keys()` yields keys
+  in insertion order); `src/policy.js` exports a PURE `lruVictim(orderedKeys)` returning the key to evict (the
+  FRONT of the recency order); `src/index.js` exports `createLRU(capacity)` returning `{ get(k), set(k, v), size() }`
+  — `get` returns the value or `undefined` AND, on a hit, marks the key most-recently-used; `set` inserts/updates
+  and marks the key most-recently-used, evicting the least-recently-used key (via `lruVictim`) when inserting a NEW
+  key would exceed `capacity`. Keep CommonJS exports across all three files; do not add dependencies.
+fork: "does a `get` count as a use? — a true LRU refreshes recency on read so the least-RECENTLY-USED key is evicted (differs from FIFO once a get reorders recency), vs evicting by insertion order and dropping a key that was just read"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

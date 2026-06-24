@@ -1,0 +1,16 @@
+# BUG-PRONE bench fixture (Axis-D escaped-defect set) — parse ONE CSV line into fields. The obvious `line.split(",")`
+# is wrong two ways the held-out oracle probes: a quoted field can CONTAIN a comma ("a,b" is one field), and a
+# trailing comma yields a final EMPTY field that naive trimming/splitting drops. The correct build respects quotes
+# and preserves empty trailing fields.
+id: bn-csv-parse
+prompt: >-
+  Add `parseLine(line)` to `src/csv.js` that parses a SINGLE CSV record line into an array of string fields.
+  Fields are comma-separated. A field may be wrapped in double quotes, in which case it can contain commas (which
+  are NOT separators) and a doubled `""` denotes a literal quote inside the field; the surrounding quotes are
+  stripped from the returned value. An empty field (including a trailing one after a final comma) is preserved as
+  an empty string. Keep the CommonJS export; do not add dependencies.
+fork: "none — the CSV quoting rules are given; the trap is the obvious split(',') that ignores quotes and drops the trailing empty field"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

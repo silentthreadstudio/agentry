@@ -1,0 +1,17 @@
+# HIDDEN-DECISION + BUG-PRONE bench fixture — "add N business days to a date" carries a fork AND a subtle bug. The
+# FORK: when the START date is itself a weekend, does day-counting begin from the next business day, and is the
+# start day ever counted? The held-out oracle fixes the resolution: count ONLY business days actually stepped over,
+# never the start day, and a weekend start rolls to the next business day before counting. The SUBTLE BUG the
+# obvious loop hits: stepping `n` calendar days and skipping weekends inconsistently yields an off-by-one across a
+# weekend. Dates are handled in UTC (no machine-tz dependence) so the oracle is deterministic everywhere.
+id: bn-due-date
+prompt: >-
+  Add `addBusinessDays(isoDate, n)` to `src/dates.js`. `isoDate` is a `YYYY-MM-DD` string; `n` is a non-negative
+  integer count of BUSINESS days (Mon–Fri) to add. Return the resulting date as a `YYYY-MM-DD` string. Stepping
+  must skip Saturdays and Sundays so they never count toward `n`. `addBusinessDays(date, 0)` returns the same date
+  unchanged. Treat all dates in UTC. Keep the CommonJS export; do not add dependencies.
+fork: "weekend/boundary semantics — which days count: never the start day, weekends never consumed by n, and n=0 is a no-op even on a weekend — vs naively adding n calendar days and subtracting weekends (off-by-one across a Fri→Mon boundary)"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

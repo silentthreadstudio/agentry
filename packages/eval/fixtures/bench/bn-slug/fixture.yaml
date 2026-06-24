@@ -1,0 +1,13 @@
+# TRIVIAL bench fixture (the no-fork, correct-to-one-shot control). A fully-specified, additive single-function
+# slugify with no hidden decision and no subtle edge that the obvious solution misses. bugProne: false.
+id: bn-slug
+prompt: >-
+  Add a `slugify(title)` helper to `src/slug.js` (which already exports `truncate`). `slugify` lowercases the
+  title, replaces every run of non-alphanumeric characters with a single hyphen, and trims any leading/trailing
+  hyphens. So `"  Hello, World!  "` → `"hello-world"`. Export it alongside the existing `truncate`. Keep the
+  CommonJS export; do not add dependencies.
+fork: "none — fully specified, additive single function, no hidden decision"
+bugProne: false
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

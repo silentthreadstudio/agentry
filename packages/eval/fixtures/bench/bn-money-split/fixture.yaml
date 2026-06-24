@@ -1,0 +1,16 @@
+# BUG-PRONE bench fixture (Axis-D escaped-defect set) — splitting money. The obvious solution divides a float and
+# rounds each share, which LOSES or GAINS a cent: 1000 / 3 = 333.33… → three shares of 333.33 sum to 999.99, not
+# 1000. The correct build works in integer cents and distributes the leftover remainder one cent at a time. The
+# held-out oracle's subtle-bug probe asserts the shares sum EXACTLY back to the total.
+id: bn-money-split
+prompt: >-
+  Add `splitAmount(totalCents, n)` to `src/money.js`. It splits an integer amount of money (in CENTS) into `n`
+  shares as evenly as possible and returns an array of `n` integer-cent amounts. The shares must sum EXACTLY back
+  to `totalCents` (never lose or gain a cent to rounding), and any leftover cents are distributed to the EARLIEST
+  shares (so the earlier shares are at most one cent larger). Keep the existing `formatCents` export and the
+  CommonJS export; do not add dependencies.
+fork: "the indivisible remainder — where the leftover cents go (earliest shares) so the parts sum back exactly, vs. float-rounding each share independently and losing a cent"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

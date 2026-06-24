@@ -1,0 +1,17 @@
+# MULTI-FILE bench fixture with real seams — an append-only account ledger, a pure balance reducer, and an index
+# barrel that replays the ledger into a per-account balance map. Distinct from the rightsizing counter: it folds
+# PER KEY (account), not a single scalar. Fully specified, no fork. bugProne: false.
+id: bn-event-log
+prompt: >-
+  Build an account ledger in `src/`, exposed from `src/index.js`. Three parts: `src/ledger.js` exports
+  `createLedger()` returning `{ post(entry), entries() }` (an append-only list of `{ account, amount }` entries,
+  `amount` an integer in cents, positive for a credit, negative for a debit); `src/reducer.js` exports a PURE
+  `applyEntry(balances, entry)` that returns a NEW balances object with `entry.amount` added to `entry.account`
+  (treating a missing account as 0) — it must NOT mutate the input; `src/index.js` exports `balances(ledger)` that
+  folds every entry via `applyEntry` over an empty `{}` and returns the final per-account balance map. Keep
+  CommonJS exports across all three files; do not add dependencies.
+fork: "none — the ledger contract is fully given (integer cents, per-account fold, pure non-mutating reducer)"
+bugProne: false
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

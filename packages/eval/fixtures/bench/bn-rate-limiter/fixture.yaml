@@ -1,0 +1,16 @@
+# HIDDEN-DECISION bench fixture (Axis-A: a genuine fork the spec must surface). "Limit to N per window" is
+# under-specified: a FIXED window (reset every interval) and a SLIDING window (count the trailing interval) give
+# DIFFERENT verdicts for the same request stream — and a fixed window lets a burst of 2N through across a boundary.
+# The held-out oracle encodes the INTENDED resolution: a SLIDING window over the trailing interval. The obvious
+# fixed-window build passes the simple cases but FAILS the boundary-burst probe.
+id: bn-rate-limiter
+prompt: >-
+  Add a rate limiter to `src/limiter.js`. `createLimiter({ limit, windowMs, now })` returns `{ allow(key) }`.
+  `allow(key)` returns `true` if this key has been allowed FEWER than `limit` times within the trailing `windowMs`
+  ending at `now()`, and records the hit; otherwise it returns `false` and records nothing. `now()` is the injected
+  clock (ms). Keep the CommonJS export; do not add dependencies.
+fork: "the window semantics — a SLIDING window over the trailing windowMs (the spec's 'within the trailing window') vs a FIXED window that resets each interval and lets a 2×limit burst slip across a boundary"
+bugProne: false
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000
