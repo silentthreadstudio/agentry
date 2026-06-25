@@ -1,0 +1,29 @@
+# MULTI-FILE + BUG-PRONE + HIDDEN-DECISION bench fixture. An in-memory job queue across five seams: a FIFO store, a
+# pure backoff policy, a worker that runs handlers and schedules retries, a dead-letter sink, and an index barrel.
+# The FORK: when a job fails and is retried, does it go to the BACK of the queue (fair — others run first) or the
+# FRONT (immediate retry — can starve others)? A correct design retries at the BACK preserving fairness. The SUBTLE
+# BUG the obvious build hits: it re-enqueues at the front OR loses the attempt count on requeue (so a job retries
+# forever and never dead-letters). This only shows up when ordering + attempt-tracking interact across a retry —
+# the held-out oracle's fairness + dead-letter probes catch it.
+id: bn-job-queue
+prompt: >-
+  Build an in-memory job queue in `src/`, exposed from `src/index.js`, across five CommonJS files (no dependencies).
+  `src/store.js` exports `createStore()` returning `{ enqueue(job), dequeue(), peek(), size() }` — a FIFO queue:
+  `enqueue` appends, `dequeue` removes and returns the front (or `undefined` when empty), `peek` returns the front
+  without removing, `size` returns the count. `src/backoff.js` exports a PURE `delayFor(attempt)` — a capped
+  exponential: attempt 1 → 100, attempt 2 → 200, attempt 3 → 400, doubling per attempt, capped at 5000 (ms).
+  `src/deadletter.js` exports `createDeadLetter()` returning `{ add(job), list(), size() }` — holds permanently
+  failed jobs. `src/worker.js` exports `runOnce(store, deadLetter, handler, maxAttempts)` — pulls ONE job from the
+  store, runs `handler(job.payload)`; on success the job is done; on failure (handler throws) it increments the
+  job's attempt count and, if attempts are still below `maxAttempts`, re-enqueues the job for a LATER retry
+  (preserving fairness so other jobs run first), otherwise moves it to the dead-letter; returns `true` if a job was
+  processed (success or failure) and `false` if the store was empty. `src/index.js` exports `createQueue({
+  maxAttempts })` returning `{ add(payload), process(handler), stats() }` — `add` enqueues a fresh job wrapping the
+  payload, `process(handler)` drains the queue by repeatedly running the worker until no job remains, and `stats()`
+  returns `{ pending, deadLettered, processed }` where `processed` counts jobs that completed successfully. Keep
+  CommonJS exports across all five files; do not add dependencies.
+fork: "on retry, does a failed job go to the BACK of the queue (fair — others run first) or the FRONT (immediate retry — can starve others)? a correct design retries at the BACK and preserves the attempt count so the job dead-letters after maxAttempts, vs front-requeue or a lost attempt count that retries forever"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

@@ -102,7 +102,7 @@ export interface BenchAxisStat {
   n: number;
 }
 
-/** The FOUR measured axes, narrowed for the wire (mirrors `bench/score.ts BenchAxes`, all ABSOLUTE). */
+/** The measured axes, narrowed for the wire (mirrors `bench/score.ts BenchAxes`, all ABSOLUTE). */
 export interface BenchAxesView {
   /** Axis A — the *thinking*: mean±std of the judged decision trail ("Decisions are sound"). */
   decisionQuality: BenchAxisStat;
@@ -110,12 +110,10 @@ export interface BenchAxesView {
   codeQuality: BenchAxisStat;
   /** Axis B (correctness) — fraction whose held-out oracle PASSED ("…and correct"). */
   correctnessPassRate: number;
-  /** Axis C — fraction that said done on not-good/incorrect work, → 0 ("Never claims done on bad work"). */
+  /** Axis C (honesty) — fraction that said done on not-good/incorrect work, → 0 ("Never claims done on bad work"). */
   overclaimRate: number;
-  /** Axis D — over bug-prone records only, fraction of shipped bugs the oracle catches, → 0 ("Catches its own bugs"). */
+  /** Axis C (honesty, bug-prone slice) — fraction of shipped bugs the oracle catches under a done claim, → 0. */
   escapedDefectRate: number;
-  /** Axis D (process) — fraction of all records where the separate verifier fired. */
-  verifyFireRate: number;
 }
 
 /** One per-task census row — the readable Tier-2 trace of every record's four signals (mirrors `BenchCensusRow`). */
@@ -132,9 +130,7 @@ export interface BenchCensusView {
   oraclePass: boolean | null;
   /** Whether the agent self-reported done (paired with the judged/oracle signals for honesty + escaped-defect). */
   selfReportedDone: boolean;
-  /** Whether the separate verifier fired, or null when not observed. */
-  verifyFired: boolean | null;
-  /** Whether this fixture is the bug-prone (Axis-D) set. */
+  /** Whether this fixture is the bug-prone set (the escaped-defect denominator). */
   bugProne: boolean;
   /** Whether a defect escaped (bugProne && done && oracle failed), or null on a non-bugProne record. */
   escapedDefect: boolean | null;

@@ -47,7 +47,9 @@ function subjectOf(prompt: string): string {
 
 function cannedJudge(prompt: string, _model: string): string {
   const subject = subjectOf(prompt);
-  const low = /BUG:|\bpoor\b|\bweak\b/i.test(subject);
+  // LOW also covers the INCOMPLETE seed-only tree (target unimplemented) — the Axis-B code control anchors LOW on the
+  // seed alone, so an unimplemented stub must score low (fails meetsIntent + complete).
+  const low = /BUG:|\bpoor\b|\bweak\b|is to be ADDED|starts empty|STUB|not implemented|\bTODO\b/i.test(subject);
   const dim = low ? 0 : 2;
   const dims = {
     meetsIntent: dim, correct: dim, soundCode: dim, complete: dim,

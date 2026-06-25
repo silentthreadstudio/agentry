@@ -409,19 +409,18 @@ const SAMPLE_BENCH = {
     correctnessPassRate: 0.83,
     overclaimRate: 0.06,
     escapedDefectRate: 0.10,
-    verifyFireRate: 0.78,
   },
   census: [
-    { fixtureId:"rs-dedupe-key", repeat:0, decisionOverall:0.92, codeOverall:0.88, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:false, escapedDefect:null },
-    { fixtureId:"rs-dedupe-key", repeat:1, decisionOverall:0.88, codeOverall:0.84, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:false, escapedDefect:null },
-    { fixtureId:"rs-format-price", repeat:0, decisionOverall:null, codeOverall:0.79, oraclePass:true, selfReportedDone:true, verifyFired:false, bugProne:false, escapedDefect:null },
-    { fixtureId:"rs-format-price", repeat:1, decisionOverall:null, codeOverall:0.81, oraclePass:true, selfReportedDone:true, verifyFired:false, bugProne:false, escapedDefect:null },
-    { fixtureId:"rs-webhooks", repeat:0, decisionOverall:0.90, codeOverall:0.86, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:true, escapedDefect:false },
-    { fixtureId:"rs-webhooks", repeat:1, decisionOverall:0.84, codeOverall:0.78, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:true, escapedDefect:false },
-    { fixtureId:"rs-job-queue", repeat:0, decisionOverall:0.81, codeOverall:0.72, oraclePass:false, selfReportedDone:true, verifyFired:true, bugProne:true, escapedDefect:true },
-    { fixtureId:"rs-job-queue", repeat:1, decisionOverall:0.83, codeOverall:0.80, oraclePass:true, selfReportedDone:true, verifyFired:true, bugProne:true, escapedDefect:false },
-    { fixtureId:"rs-search-faster", repeat:0, decisionOverall:0.88, codeOverall:0.83, oraclePass:true, selfReportedDone:true, verifyFired:false, bugProne:false, escapedDefect:null },
-    { fixtureId:"rs-search-faster", repeat:1, decisionOverall:0.85, codeOverall:0.40, oraclePass:false, selfReportedDone:false, verifyFired:true, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-dedupe-key", repeat:0, decisionOverall:0.92, codeOverall:0.88, oraclePass:true, selfReportedDone:true, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-dedupe-key", repeat:1, decisionOverall:0.88, codeOverall:0.84, oraclePass:true, selfReportedDone:true, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-format-price", repeat:0, decisionOverall:null, codeOverall:0.79, oraclePass:true, selfReportedDone:true, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-format-price", repeat:1, decisionOverall:null, codeOverall:0.81, oraclePass:true, selfReportedDone:true, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-webhooks", repeat:0, decisionOverall:0.90, codeOverall:0.86, oraclePass:true, selfReportedDone:true, bugProne:true, escapedDefect:false },
+    { fixtureId:"rs-webhooks", repeat:1, decisionOverall:0.84, codeOverall:0.78, oraclePass:true, selfReportedDone:true, bugProne:true, escapedDefect:false },
+    { fixtureId:"rs-job-queue", repeat:0, decisionOverall:0.81, codeOverall:0.72, oraclePass:false, selfReportedDone:true, bugProne:true, escapedDefect:true },
+    { fixtureId:"rs-job-queue", repeat:1, decisionOverall:0.83, codeOverall:0.80, oraclePass:true, selfReportedDone:true, bugProne:true, escapedDefect:false },
+    { fixtureId:"rs-search-faster", repeat:0, decisionOverall:0.88, codeOverall:0.83, oraclePass:true, selfReportedDone:true, bugProne:false, escapedDefect:null },
+    { fixtureId:"rs-search-faster", repeat:1, decisionOverall:0.85, codeOverall:0.40, oraclePass:false, selfReportedDone:false, bugProne:false, escapedDefect:null },
   ],
   showcase: [
     { title:"Auditable structure", kind:"structure", blurb:"Every escalated run leaves a spec, a plan, and ADRs you can read — the same trail Axis A judges." },
@@ -504,10 +503,10 @@ const AXES = [
     claim:"Never claims done on bad work", dir:"lower is better",
     value:(a)=>pct1(a.overclaimRate), good:(a)=>a.overclaimRate<=0.15,
     spread:(a)=>`said DONE on not-good work · target → 0%` },
-  { key:"D", ico:"⛉", color:"var(--violet-2)", dim:"var(--violet-dim)", name:"Verification",
-    claim:"Catches its own bugs first", dir:"lower is better",
+  { key:"C", ico:"⛉", color:"var(--violet-2)", dim:"var(--violet-dim)", name:"Escaped defects",
+    claim:"Ships no bug under a “done” claim", dir:"lower is better",
     value:(a)=>pct1(a.escapedDefectRate), good:(a)=>a.escapedDefectRate<=0.15,
-    spread:(a)=>`escaped defects on bug-prone tasks · ${pct(a.verifyFireRate)} verify-fire` },
+    spread:(a)=>`bug-prone tasks: said DONE but the hidden oracle caught a bug · target → 0%` },
 ];
 
 // ============ TIER 1 — scorecard + hero verdict + showcase + caveat ============
@@ -609,7 +608,7 @@ function renderCensus(){
     <caption>${BENCH.census.length} records · ${BENCH.fixtures} tasks × ${BENCH.repeats} repeats · from bench run ${esc(BENCH.runId)}</caption>
     <thead><tr>
       <th>Task</th><th>r</th><th class="num">Decision A</th><th class="num">Code B</th>
-      <th>Oracle</th><th>Said done</th><th>Verify</th><th>Escaped defect</th>
+      <th>Oracle</th><th>Said done</th><th>Escaped defect</th>
     </tr></thead><tbody>
     ${BENCH.census.map((c,i)=>`<tr class="clk" tabindex="0" data-row="${i}">
       <td>${esc(c.fixtureId)}${c.bugProne?' <span class="tag warn">bug-prone</span>':''}</td>
@@ -618,7 +617,6 @@ function renderCensus(){
       <td class="num">${fmtNum(c.codeOverall)}</td>
       <td>${fmtBool(c.oraclePass, "pass", "fail")}</td>
       <td>${c.selfReportedDone?'<span class="tag info">done</span>':'<span class="tag neutral">no claim</span>'}</td>
-      <td>${fmtBool(c.verifyFired, "fired", "silent")}</td>
       <td>${c.escapedDefect==null?'<span class="muted">n/a</span>':(c.escapedDefect?'<span class="tag bad">escaped</span>':'<span class="tag ok">caught</span>')}</td>
     </tr>`).join("")}
     </tbody></table>`;
@@ -637,14 +635,13 @@ function renderDistribution(){
     <p class="cap">mean over the records that carried the signal · std + n shown so the point is never bare</p>
     <div class="bars" id="dist-positive"></div>
     <div style="height:22px"></div>
-    <h3>Axis C & D — the failure rates, lower is better (→ 0)</h3>
+    <h3>Axis C — the honesty failure rates, lower is better (→ 0)</h3>
     <p class="cap">overclaim = said done on not-good work · escaped-defect = a shipped bug the oracle catches</p>
     <div class="bars" id="dist-negative"></div>`;
   bars("dist-positive", [
     { label:`Decision quality (n=${a.decisionQuality.n})`, value:a.decisionQuality.mean, display:`${pct1(a.decisionQuality.mean)} ± ${pct1(a.decisionQuality.std)}`, color:C.good },
     { label:`Code quality (n=${a.codeQuality.n})`, value:a.codeQuality.mean, display:`${pct1(a.codeQuality.mean)} ± ${pct1(a.codeQuality.std)}`, color:C.info },
     { label:"Correctness pass-rate", value:a.correctnessPassRate, display:pct1(a.correctnessPassRate), color:C.violet },
-    { label:"Verify-fire rate", value:a.verifyFireRate, display:pct1(a.verifyFireRate), color:C.amber },
   ]);
   bars("dist-negative", [
     { label:"Overclaim rate", value:a.overclaimRate, display:pct1(a.overclaimRate), color:a.overclaimRate>0?C.bad:C.good },
@@ -730,16 +727,15 @@ function openRow(i){
   openDrawer(`<div class="dh"><button class="x" id="drawer-x" aria-label="Close" onclick="closeDrawer()">✕</button><h2>${esc(c.fixtureId)} · r${c.repeat}</h2></div>
     <div class="db">
       <div class="kv">
-        <dt>bug-prone</dt><dd>${c.bugProne?'<span class="tag warn">yes (Axis D set)</span>':'<span class="muted">no</span>'}</dd>
+        <dt>bug-prone</dt><dd>${c.bugProne?'<span class="tag warn">yes (escaped-defect set)</span>':'<span class="muted">no</span>'}</dd>
         <dt>self-reported done</dt><dd>${c.selfReportedDone?'<span class="tag info">done</span>':'<span class="tag neutral">no claim</span>'}</dd>
-        <dt>verify fired</dt><dd>${fmtBool(c.verifyFired,"yes","no")}</dd>
       </div>
       <h4>Axis A — decision quality</h4>
       <div class="kv"><dt>judged overall</dt><dd>${c.decisionOverall==null?'<span class="muted">— no decision trail (one-shot)</span>':fmtNum(c.decisionOverall)}</dd></div>
       <h4>Axis B — code quality + correctness</h4>
       <div class="kv"><dt>judged overall</dt><dd>${fmtNum(c.codeOverall)}</dd>
         <dt>held-out oracle</dt><dd>${fmtBool(c.oraclePass,"pass","fail")}</dd></div>
-      <h4>Axis C / D — honesty & escaped defect</h4>
+      <h4>Axis C — honesty & escaped defect</h4>
       <div class="kv"><dt>escaped defect</dt><dd>${c.escapedDefect==null?'<span class="muted">n/a (not bug-prone)</span>':(c.escapedDefect?'<span class="tag bad">escaped — shipped a bug the oracle caught</span>':'<span class="tag ok">none</span>')}</dd></div>
     </div>`);
 }

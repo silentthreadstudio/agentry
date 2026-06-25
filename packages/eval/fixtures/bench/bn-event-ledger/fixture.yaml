@@ -1,0 +1,32 @@
+# MULTI-FILE + BUG-PRONE + HIDDEN-DECISION bench fixture. A DECOMPOSE-SCALE task: an event-sourced ledger across
+# five seams — event constructors, a pure reducer, a replay projection, snapshot/restore, and a composing index.
+# The FORK: once a snapshot is taken, reads must replay ONLY the events appended strictly AFTER it, layered on the
+# snapshot state — each post-snapshot event exactly once, never the pre-snapshot ones again. The SUBTLE BUG the
+# obvious build hits, only across the snapshot+projection seam: after a snapshot it either re-applies events already
+# folded into the snapshot (double-count) OR drops events appended after it (stale read). The held-out oracle's
+# snapshot-then-append-then-read probe catches it.
+id: bn-event-ledger
+prompt: >-
+  Build an event-sourced account ledger in `src/`, exposed from `src/index.js`. Five parts. `src/events.js` exports
+  three constructors — `deposit(account, amount)`, `withdraw(account, amount)`, `transfer(from, to, amount)` — each
+  returning a plain event object with a `type` (`"deposit"` | `"withdraw"` | `"transfer"`) and its fields; each
+  validates that `amount` is an integer in cents `> 0` (throwing `Error` otherwise) and, for transfer, that `from`
+  and `to` differ. `src/reducer.js` exports a PURE `apply(state, event)` returning a NEW state with balances
+  updated (a missing account is 0): deposit adds to `account`, withdraw subtracts from `account`, transfer subtracts
+  from `from` and adds to `to`; it must NOT mutate `state`. `src/projection.js` exports `replay(initialState, events)`
+  that folds `apply` over `events` starting from `initialState` and returns the resulting state (treat a nullish
+  `initialState` as an empty `{ balances: {} }`); it must not mutate `initialState`. `src/snapshot.js` exports
+  `snapshot(state)` returning a serializable point-in-time copy and `restore(snap)` returning a state usable as a
+  `replay` initial state; a round-trip `restore(snapshot(state))` must deep-equal `state` and share no mutable
+  references with it. `src/index.js` exports `createLedger()` returning `{ append(event), balanceOf(account),
+  snapshotNow(), eventCount() }`: `append` records an event, `balanceOf` returns the account's current balance
+  (0 if unseen) computed from the latest snapshot's state replayed with the events appended STRICTLY AFTER that
+  snapshot (each such event applied exactly once; if no snapshot has been taken, replay all events from empty),
+  `snapshotNow()` captures the current full state as the new baseline so later reads resume from it, and
+  `eventCount()` returns the total number of appended events. Keep CommonJS exports across all five files; do not
+  add dependencies.
+fork: "after a snapshot, do reads replay ONLY the events appended strictly after it on top of the snapshot state (each exactly once) — vs re-replaying pre-snapshot events already folded in (double-count) or ignoring post-snapshot events (stale read)"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

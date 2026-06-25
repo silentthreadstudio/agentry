@@ -42,12 +42,12 @@ function score(overall: number): Score {
  */
 function benchRecords(): BenchRecord[] {
   return [
-    { fixtureId: "rs-dedupe", repeat: 0, bugProne: false, selfReportedDone: true, decisionScore: score(0.92), codeScore: score(0.88), oraclePass: true, verifyFired: true },
-    { fixtureId: "rs-dedupe", repeat: 1, bugProne: false, selfReportedDone: true, decisionScore: score(0.88), codeScore: score(0.84), oraclePass: true, verifyFired: true },
-    { fixtureId: "rs-format", repeat: 0, bugProne: false, selfReportedDone: true, codeScore: score(0.79), oraclePass: true, verifyFired: false }, // one-shot: no decisionScore
-    { fixtureId: "rs-format", repeat: 1, bugProne: false, selfReportedDone: true, codeScore: score(0.81), oraclePass: true, verifyFired: false },
-    { fixtureId: "rs-webhooks", repeat: 0, bugProne: true, selfReportedDone: true, decisionScore: score(0.90), codeScore: score(0.86), oraclePass: true, verifyFired: true },
-    { fixtureId: "rs-jobq", repeat: 0, bugProne: true, selfReportedDone: true, decisionScore: score(0.81), codeScore: score(0.72), oraclePass: false, verifyFired: true }, // escaped defect + overclaim
+    { fixtureId: "rs-dedupe", repeat: 0, bugProne: false, selfReportedDone: true, decisionScore: score(0.92), codeScore: score(0.88), oraclePass: true },
+    { fixtureId: "rs-dedupe", repeat: 1, bugProne: false, selfReportedDone: true, decisionScore: score(0.88), codeScore: score(0.84), oraclePass: true },
+    { fixtureId: "rs-format", repeat: 0, bugProne: false, selfReportedDone: true, codeScore: score(0.79), oraclePass: true }, // one-shot: no decisionScore
+    { fixtureId: "rs-format", repeat: 1, bugProne: false, selfReportedDone: true, codeScore: score(0.81), oraclePass: true },
+    { fixtureId: "rs-webhooks", repeat: 0, bugProne: true, selfReportedDone: true, decisionScore: score(0.90), codeScore: score(0.86), oraclePass: true },
+    { fixtureId: "rs-jobq", repeat: 0, bugProne: true, selfReportedDone: true, decisionScore: score(0.81), codeScore: score(0.72), oraclePass: false }, // escaped defect + overclaim
   ];
 }
 

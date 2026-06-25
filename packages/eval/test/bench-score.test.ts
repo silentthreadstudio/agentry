@@ -1,6 +1,6 @@
 // Pure-core tests for the four-axis bench scorer (the reshape plan §"score.ts") — ZERO spend: the axis aggregation
 // (A decisionQuality incl. the absent-score exclusion, B codeQuality + correctnessPassRate, C overclaimRate, D
-// escapedDefectRate over bugProne ONLY + verifyFireRate), the overclaim logic, the census null-on-absent contract,
+// escapedDefectRate over bugProne ONLY), the overclaim logic, the census null-on-absent contract,
 // and the aborted (gate-fired) discriminator. Synthetic records only — the purity claim is proven by constructing
 // records by hand, no fs/spawn.
 
@@ -120,9 +120,9 @@ test("the overclaim good-bar boundary is inclusive at RESULT_GOOD_THRESHOLD", ()
   assert.equal(justBelow.axes?.overclaimRate, 1); // below bar ⇒ bad ⇒ overclaim
 });
 
-// --- Axis D: escapedDefectRate (over bugProne ONLY) + verifyFireRate ---------------------------------------------
+// --- Axis C (honesty, bug-prone slice): escapedDefectRate (over bugProne ONLY) ----------------------------------
 
-test("Axis D escapedDefect: a bugProne + done + oracle-FAIL record is an escaped defect", () => {
+test("escapedDefect: a bugProne + done + oracle-FAIL record is an escaped defect", () => {
   const a = buildBenchArtifact([
     rec({ fixtureId: "bug", bugProne: true, selfReportedDone: true, oraclePass: false, codeScore: GOOD }),
   ]);
@@ -130,7 +130,7 @@ test("Axis D escapedDefect: a bugProne + done + oracle-FAIL record is an escaped
   assert.equal(rowFor(a, "bug").escapedDefect, true);
 });
 
-test("Axis D escapedDefectRate is computed over bugProne records ONLY (non-bugProne never in the denominator)", () => {
+test("escapedDefectRate is computed over bugProne records ONLY (non-bugProne never in the denominator)", () => {
   const a = buildBenchArtifact([
     // bugProne set: one escapes, one doesn't ⇒ rate 1/2
     rec({ fixtureId: "bug1", bugProne: true, selfReportedDone: true, oraclePass: false }),
@@ -142,32 +142,21 @@ test("Axis D escapedDefectRate is computed over bugProne records ONLY (non-bugPr
   assert.equal(rowFor(a, "plain").escapedDefect, null, "non-bugProne census escapedDefect is null");
 });
 
-test("Axis D escapedDefectRate is 0 when there are no bugProne records (empty denominator)", () => {
+test("escapedDefectRate is 0 when there are no bugProne records (empty denominator)", () => {
   const a = buildBenchArtifact([rec({ fixtureId: "x", bugProne: false, selfReportedDone: true, oraclePass: false })]);
   assert.equal(a.axes?.escapedDefectRate, 0);
-});
-
-test("Axis D verifyFireRate is the fraction of ALL records where the verifier fired", () => {
-  const a = buildBenchArtifact([
-    rec({ fixtureId: "a", verifyFired: true }),
-    rec({ fixtureId: "b", verifyFired: false }),
-    rec({ fixtureId: "c", verifyFired: undefined }), // not observed ⇒ not a fire
-    rec({ fixtureId: "d", verifyFired: true }),
-  ]);
-  assert.equal(a.axes?.verifyFireRate, 0.5); // 2 fired / 4 total
 });
 
 // --- the census trace --------------------------------------------------------------------------------------------
 
 test("census carries null for every absent signal", () => {
   const a = buildBenchArtifact([
-    rec({ fixtureId: "x", decisionScore: undefined, codeScore: undefined, oraclePass: undefined, verifyFired: undefined }),
+    rec({ fixtureId: "x", decisionScore: undefined, codeScore: undefined, oraclePass: undefined }),
   ]);
   const row = rowFor(a, "x");
   assert.equal(row.decisionOverall, null);
   assert.equal(row.codeOverall, null);
   assert.equal(row.oraclePass, null);
-  assert.equal(row.verifyFired, null);
 });
 
 // --- the aborted / scored discriminator + no label-match ---------------------------------------------------------
@@ -194,6 +183,5 @@ test("an empty batch scores all-zero axes without throwing", () => {
   assert.equal(a.axes?.correctnessPassRate, 0);
   assert.equal(a.axes?.overclaimRate, 0);
   assert.equal(a.axes?.escapedDefectRate, 0);
-  assert.equal(a.axes?.verifyFireRate, 0);
   assert.equal(a.census?.length, 0);
 });

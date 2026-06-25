@@ -108,6 +108,24 @@ test("parseScore: still throws loudly when there is no JSON object at all", () =
   assert.throws(() => parseScore(FOUR_DIM, "I cannot evaluate this."), /did not return valid JSON/);
 });
 
+// --- robustness: a long rationale can run past the output budget and TRUNCATE the JSON tail; the GRADE (dimensions,
+//     emitted FIRST) must survive — a mangled rationale must not discard a valid verdict --------------------------
+
+test("parseScore: recovers the dimensions when a long rationale truncates the JSON tail", () => {
+  // The model emitted a valid dimensions block, then a rationale string the output budget cut mid-sentence — so the
+  // closing `"` + `}` never arrive. The full parse fails; the dimensions-only recovery salvages the grade.
+  const truncated = `{"dimensions":{"a":2,"b":1,"c":2,"d":1},"rationale":"The implementation handles the empty case and the`;
+  const score = parseScore(FOUR_DIM, truncated);
+  assert.equal(score.overall, 0.75); // 6/8 — the grade survives
+  assert.equal(score.rationale, ""); // the truncated rationale is dropped, not faked
+});
+
+test("parseScore: a truncated tail with a malformed dimensions block still throws loudly", () => {
+  // Recovery only salvages a BALANCED, valid dimensions block; a dimensions block that is itself cut stays a hard fail.
+  const garbled = `{"dimensions":{"a":2,"b":1,"c":`;
+  assert.throws(() => parseScore(FOUR_DIM, garbled), /did not return valid JSON/);
+});
+
 test("parseScore: a missing dimension is rejected (all rubric dims required)", () => {
   assert.throws(() => parseScore(FOUR_DIM, JSON.stringify({ dimensions: { a: 2, b: 2, c: 2 } })), /"d"/);
 });

@@ -1,0 +1,34 @@
+# MULTI-FILE + BUG-PRONE + HIDDEN-DECISION bench fixture. A synchronous request/response middleware pipeline across
+# five seams: a context object, a composer, the concrete middlewares, error→response mapping, and an index barrel. The
+# FORK: the ORDER + short-circuit semantics — auth MUST run before rateLimit and validate (you don't rate-limit or
+# validate an unauthenticated request), and a middleware that short-circuits (auth fails → 401) MUST halt the chain so
+# downstream middlewares (validate/rateLimit/responder) never run. The SUBTLE BUG the obvious build hits: running the
+# middlewares in the wrong order (rateLimit/validate before auth) OR `next()` not actually halting after a short-circuit
+# (responder still runs and overwrites the 401). It only manifests across the compose+ordering seam, never in one unit.
+id: bn-middleware-pipeline
+prompt: >-
+  Build a synchronous request/response middleware pipeline in `src/`, exposed from `src/index.js`. Five parts.
+  `src/context.js` exports `createContext(request)` returning a mutable context `ctx` with `{ request, response, state }`
+  where `request` is the passed object, `response` starts as `{ status: 200, body: null }`, and `state` starts as `{}`;
+  it also exports a helper `send(ctx, status, body)` that sets `ctx.response = { status, body }`. `src/compose.js` exports
+  a PURE `compose(middlewares)` that takes an ordered array of middleware (each is `(ctx, next) => void`, synchronous)
+  and returns a single `run(ctx)` function: calling `run(ctx)` invokes the first middleware with a `next` that invokes
+  the rest in order; a middleware that does NOT call `next()` short-circuits — the remaining middlewares in the chain
+  MUST NOT run; `next()` must be safe to call at most once per middleware (calling it twice throws). `src/middlewares.js`
+  exports four middleware factories: `auth()` — if `ctx.request.headers.authorization` is missing/falsy it calls
+  `send(ctx, 401, "unauthorized")` and short-circuits (does NOT call next); otherwise it sets `ctx.state.user` and calls
+  next. `validate()` — if `ctx.request.body` is missing/falsy it calls `send(ctx, 400, "bad request")` and short-circuits;
+  otherwise calls next. `rateLimit(limit)` — increments a per-process counter keyed by `ctx.state.user`; if the count
+  exceeds `limit` it calls `send(ctx, 429, "rate limited")` and short-circuits; otherwise calls next. `responder()` — sets
+  `send(ctx, 200, { ok: true, user: ctx.state.user, echo: ctx.request.body })` and calls next (terminal). `src/errors.js`
+  exports `errorResponse(err)` mapping an Error with a `.status` to `{ status: err.status, body: err.message }`, defaulting
+  to `{ status: 500, body: "internal error" }`. `src/index.js` exports `createApp(middlewareOrder)` returning
+  `{ handle(request) }`: it builds the context, composes the middlewares in the GIVEN order, runs them, maps any thrown
+  error via `errorResponse`, and returns `ctx.response`. The REQUIRED ordering when wiring a full app is
+  `[auth(), rateLimit(limit), validate(), responder()]` — auth first, then rateLimit, then validate, then responder — and
+  a short-circuit at any stage MUST stop every later stage. Keep CommonJS exports across all five files; no dependencies.
+fork: "the middleware ORDER + true short-circuit — auth must run before rateLimit/validate (never rate-limit or validate an unauthenticated request) and a short-circuiting middleware must halt the chain so downstream (responder) never overwrites its 401/400/429, vs running stages in the wrong order or letting next() fall through after a short-circuit"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

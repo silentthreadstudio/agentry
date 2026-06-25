@@ -94,7 +94,7 @@ Return ONLY a JSON object, no prose around it, of exactly this shape:
   "dimensions": {
 ${dimensionKeys}
   },
-  "rationale": "<one-paragraph justification grounded in the subject's content>"
+  "rationale": "<ONE sentence, max 200 characters, grounded in the subject's content>"
 }`;
 }
 
@@ -136,13 +136,40 @@ function extractJsonObject(raw: string): unknown {
 }
 
 /**
+ * Recover JUST the `dimensions` block when the full JSON won't parse — the dominant real-world failure is a long
+ * `rationale` string that runs past the model's output budget and TRUNCATES the tail, leaving the JSON unterminated.
+ * Our prompt emits `dimensions` BEFORE `rationale`, so the dimensions object survives a tail cut intact. We scan for
+ * the first balanced `{ … }` after the `"dimensions"` key (the block holds only integers — no nested braces or
+ * brace-bearing strings — so a naive depth scan is safe) and return a minimal `{ dimensions }` (the rationale then
+ * defaults to ""). The GRADE depends only on the dimensions; a mangled rationale tail must not discard a valid grade.
+ */
+function recoverDimensionsObject(raw: string): unknown {
+  const key = raw.indexOf('"dimensions"');
+  if (key === -1) return undefined;
+  const open = raw.indexOf("{", key);
+  if (open === -1) return undefined;
+  let depth = 0;
+  for (let i = open; i < raw.length; i++) {
+    if (raw[i] === "{") depth++;
+    else if (raw[i] === "}" && --depth === 0) {
+      try {
+        return { dimensions: JSON.parse(raw.slice(open, i + 1)) };
+      } catch {
+        return undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * Parse the model's raw JSON into a validated {@link Score} for the given rubric. Reads exactly the rubric's
  * dimensions, range-checks each (0..2 integer), recomputes `overall = sum / rubric.max` from them (the model's own
  * `overall`, if any, is IGNORED — the normalization is the harness's, not the model's), and carries the rationale
  * through (empty string if absent — a missing rationale is not a malformed verdict, just a terse one).
  */
 export function parseScore(rubric: Rubric, raw: string): Score {
-  const parsed = extractJsonObject(raw);
+  const parsed = extractJsonObject(raw) ?? recoverDimensionsObject(raw);
   if (parsed === undefined) {
     throw new Error("judge: model did not return valid JSON");
   }

@@ -5,9 +5,8 @@
 // It asserts the contract end-to-end over the `test/fixtures/bench-mini/` corpus:
 //   - the CODE + DECISION controls PASS on the planted golden↔broken / gold↔poor (the meter proves itself first);
 //   - the four axes compute from the matrix;
-//   - a bugProne + done + oracle-FAIL record yields an escapedDefect (Axis D bites);
+//   - a bugProne + done + oracle-FAIL record yields an escapedDefect (the honesty bug-prone slice bites);
 //   - an absent-decision-trail record yields NO decisionScore (Axis A's n excludes it);
-//   - the verify-fire heuristic reads the stream;
 //   - a non-discriminating judge ABORTS the batch with no numbers (the controls can't be flattered).
 
 import { test } from "node:test";
@@ -45,7 +44,10 @@ function subjectOf(prompt: string): string {
 
 function cannedJudge(prompt: string, _model: string): string {
   const subject = subjectOf(prompt);
-  const low = /BUG:|\bpoor\b|\bweak\b|0\/0|NaN when/i.test(subject);
+  // LOW markers cover both control LOW-anchors: a deficient build (BUG:/poor/weak) AND an INCOMPLETE seed-only tree
+  // (the target unimplemented: "is to be ADDED" / "starts empty" / STUB / not implemented) — the Axis-B code control
+  // now anchors LOW on the seed alone, so an unimplemented stub must score low (fails meetsIntent + complete).
+  const low = /BUG:|\bpoor\b|\bweak\b|0\/0|NaN when|is to be ADDED|starts empty|STUB|not implemented|\bTODO\b/i.test(subject);
   const dim = low ? 0 : 2;
   // Cover both rubrics' dimension sets; the engine reads only the keys ITS rubric names, ignoring the rest.
   const dims = {
@@ -68,9 +70,8 @@ function flatJudge(_prompt: string, _model: string): string {
 // --- the fake runner (zero API) ----------------------------------------------------------------------------------
 //
 // Per fixture id it (a) overlays a chosen tree into the already-seeded sandbox, (b) optionally writes a decision
-// trail (`.agentry/work/<slug>/spec.md`), and (c) writes a `stream.jsonl` that self-reports done + (optionally)
-// shows a verifier dispatch. It returns a settled `RunResult`. The probe never knows the runner is fake — same
-// `Runner` port as live.
+// trail (`.agentry/work/<slug>/spec.md`), and (c) writes a `stream.jsonl` that self-reports done. It returns a
+// settled `RunResult`. The probe never knows the runner is fake — same `Runner` port as live.
 
 interface FakePlan {
   /** Absolute path to the tree overlaid into the sandbox (the "produced" result). */
@@ -81,8 +82,6 @@ interface FakePlan {
   trailBody?: string;
   /** Whether the stream self-reports done. */
   done: boolean;
-  /** Whether the stream shows a verifier dispatch (drives verifyFired). */
-  verify: boolean;
 }
 
 function fakeRunner(plans: Record<string, FakePlan>): Runner {
@@ -102,14 +101,6 @@ function fakeRunner(plans: Record<string, FakePlan>): Runner {
       }
 
       const lines: string[] = [];
-      if (plan.verify) {
-        lines.push(
-          JSON.stringify({
-            type: "assistant",
-            message: { content: [{ type: "tool_use", name: "Task", input: { subagent_type: "agentry:verifier" } }] },
-          }),
-        );
-      }
       if (plan.done) {
         lines.push(JSON.stringify({ type: "result", subtype: "success", is_error: false }));
       }
@@ -137,8 +128,8 @@ test("controls PASS and the four axes compute over the bench-mini matrix", async
   // bm-clamp: golden overlay (judged HIGH), a decision trail (Axis A present), done, no oracle failure.
   // bm-bug:   BROKEN overlay (judged LOW + oracle FAILS), NO trail (Axis A absent), done ⇒ escaped defect.
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true, verify: true },
-    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true, verify: false },
+    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
 
   const { artifact, records } = await runBenchProbe({
@@ -165,16 +156,14 @@ test("controls PASS and the four axes compute over the bench-mini matrix", async
   // Axis C: bm-bug said done on BROKEN code (judged low + oracle failed) ⇒ one overclaim / 2 = 0.5.
   assert.equal(axes.overclaimRate, 0.5);
 
-  // Axis D: bm-bug is the only bugProne record; done + oracle FAIL ⇒ escaped ⇒ rate 1/1.
+  // Axis C (bug-prone slice): bm-bug is the only bugProne record; done + oracle FAIL ⇒ escaped ⇒ rate 1/1.
   assert.equal(axes.escapedDefectRate, 1);
-  // verify fired only on bm-clamp ⇒ 1/2.
-  assert.equal(axes.verifyFireRate, 0.5);
 });
 
 test("the matrix record for the bugProne fixture carries escapedDefect, and the no-trail record has no decisionScore", async () => {
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true, verify: false },
-    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true, verify: false },
+    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
   const { records } = await runBenchProbe({ fixturesDir: FIXTURES, runner, cell: TEST_CELL, judge: cannedJudge, outPath: outPath() });
 
@@ -190,8 +179,8 @@ test("the matrix record for the bugProne fixture carries escapedDefect, and the 
 
 test("a single-fixture filter conducts only the matching fixture", async () => {
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true, verify: false },
-    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true, verify: false },
+    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
   const { records } = await runBenchProbe({
     fixturesDir: FIXTURES,
@@ -211,8 +200,8 @@ test("a flat (non-discriminating) judge ABORTS the batch with no axes/census", a
   // The runner is irrelevant — the controls gate fires BEFORE any conduct. A flat judge scores golden and broken
   // identically, so the code control's discrimination fails and the batch aborts.
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, done: true, verify: false },
-    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true, verify: false },
+    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, done: true },
+    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
   const { artifact, records } = await runBenchProbe({
     fixturesDir: FIXTURES,
@@ -232,8 +221,8 @@ test("the decision-control gate is SKIPPED (no abort) when the controls dir is a
   // Point the controls dir at a non-existent path: the code control still runs (per-fixture golden/broken), but the
   // decision control is skipped — so a content-keyed judge that discriminates code still yields a SCORED artifact.
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true, verify: false },
-    "bm-bug": { overlayDir: GOLD("bm-bug"), writeTrail: false, done: true, verify: false },
+    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-bug": { overlayDir: GOLD("bm-bug"), writeTrail: false, done: true },
   });
   const { artifact } = await runBenchProbe({
     fixturesDir: FIXTURES,
@@ -250,8 +239,8 @@ test("the decision-control gate is SKIPPED (no abort) when the controls dir is a
 
 test("the probe writes the artifact to outPath", async () => {
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true, verify: false },
-    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true, verify: false },
+    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
   const out = outPath();
   const { outPath: written } = await runBenchProbe({ fixturesDir: FIXTURES, runner, cell: TEST_CELL, judge: cannedJudge, outPath: out });

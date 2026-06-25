@@ -1,0 +1,27 @@
+# MULTI-FILE + BUG-PRONE + HIDDEN-DECISION bench fixture. A task scheduler over a dependency DAG across five seams:
+# a graph, a pure toposort, cycle detection, a runner, and the composing barrel. The FORK: a dependency cycle MUST
+# be detected and rejected BEFORE running (not run partially, not infinite-loop), AND the run order must be
+# DETERMINISTIC with a stated tie-break (independent tasks run in insertion order). The SUBTLE BUG the obvious build
+# hits: no cycle detection (a cyclic graph silently drops tasks / returns partial results) or a non-deterministic
+# order so a task can run before a dependency. It only manifests across the toposort+cycle+runner seam.
+id: bn-dag-scheduler
+prompt: >-
+  Build a task scheduler over a dependency DAG in `src/`, exposed from `src/index.js`. Five parts:
+  `src/graph.js` exports `createGraph()` returning `{ addTask(id, deps), nodes(), depsOf(id), indegree(id) }`
+  over an insertion-ordered model (`nodes()` yields ids in the order they were added; `depsOf(id)` returns the
+  declared dependency ids; `indegree(id)` returns the count of declared deps). `src/toposort.js` exports a PURE
+  `toposort(graph)` returning a deterministic run order (array of ids) — ties (nodes ready at the same time) MUST
+  be broken by INSERTION order, i.e. the order tasks were added via `addTask`, so independent tasks always run in
+  the same order regardless of how dependents were declared; do NOT rely on object key order or Set iteration.
+  `src/cycle.js` exports a PURE `findCycle(graph)` returning the list of ids forming a cycle, or `null` when the
+  graph is acyclic. `src/runner.js` exports `runOrder(order, tasks, depsOf)` that runs each task id in `order`,
+  passing it an object of its dependencies' results (`{ [depId]: result }`), and returns `{ [id]: result }`.
+  `src/index.js` exports `createScheduler()` returning `{ add(id, deps, fn), run() }` — `run()` MUST detect a
+  cycle FIRST and reject it by throwing an Error whose message contains "cycle" BEFORE running any task; on an
+  acyclic graph it toposorts deterministically, runs in order, and returns `{ results }`. Keep CommonJS exports
+  across all five files; do not add dependencies.
+fork: "must a dependency cycle be detected and rejected before anything runs (vs run partially / hang), and is the run order deterministic with a stated tie-break (independent tasks in insertion order, never object-key/Set order)?"
+bugProne: true
+oracle:
+  cmd: node --test --test-reporter=tap oracle/*.test.js
+  timeoutMs: 30000

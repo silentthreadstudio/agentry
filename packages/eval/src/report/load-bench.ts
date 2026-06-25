@@ -33,7 +33,6 @@ interface RawBenchArtifact {
     correctnessPassRate?: number;
     overclaimRate?: number;
     escapedDefectRate?: number;
-    verifyFireRate?: number;
   };
   census?: Array<{
     fixtureId?: string;
@@ -42,7 +41,6 @@ interface RawBenchArtifact {
     codeOverall?: number | null;
     oraclePass?: boolean | null;
     selfReportedDone?: boolean;
-    verifyFired?: boolean | null;
     bugProne?: boolean;
     escapedDefect?: boolean | null;
   }>;
@@ -134,7 +132,6 @@ function narrowBench(runId: string, a: RawBenchArtifact, repeats: number): Bench
     codeOverall: c.codeOverall ?? null,
     oraclePass: c.oraclePass ?? null,
     selfReportedDone: c.selfReportedDone ?? false,
-    verifyFired: c.verifyFired ?? null,
     bugProne: c.bugProne ?? false,
     escapedDefect: c.escapedDefect ?? null,
   }));
@@ -164,7 +161,6 @@ function narrowAxes(raw: RawBenchArtifact["axes"]): BenchAxesView {
     correctnessPassRate: a.correctnessPassRate ?? 0,
     overclaimRate: a.overclaimRate ?? 0,
     escapedDefectRate: a.escapedDefectRate ?? 0,
-    verifyFireRate: a.verifyFireRate ?? 0,
   };
 }
 

@@ -3,8 +3,8 @@
 // `mapPool` → pure score — and COMPOSES the existing spine (no new runner capability): `runCell` drives ONE conduct
 // to SETTLE; `summarizeProducedResult` renders the oracle-free produced tree; `judgeWithRubric` scores it; the
 // `injectOracle`+`runOracle` pair runs the held-out correctness floor; `extractSelfReportedDone` reads the overclaim
-// signal. The single addition over rightsizing is that this probe derives FOUR signals from the one conduct (A: the
-// decision trail, B: the code + oracle, C: overclaim, D: escaped-defect + verify-fire) rather than one shape + one
+// signal. The single addition over rightsizing is that this probe derives several signals from the one conduct (A: the
+// decision trail, B: the code + oracle, C: honesty = overclaim + escaped-defect) rather than one shape + one
 // result, and it gates TWO judges (a CODE control and a DECISION control) before any conduct spends.
 //
 // THE CAPTURE-BEFORE-INJECT ORDER IS THE CONTRACT (ADR-001): every read of the agent-visible tree (the decision
@@ -13,8 +13,8 @@
 // score.
 //
 // CONTROLS-FIRST (the credibility spine): before any conduct spends, BOTH judges must prove themselves —
-//   - the CODE judge (Axis B): overlay each fixture's golden/broken onto a fresh seed (no `claude -p`), judge, and
-//     gate on aaStability(golden) + discrimination(golden, broken). A flattering code judge aborts the batch.
+//   - the CODE judge (Axis B): judge each fixture's seed+golden (HIGH) vs seed-alone (LOW, target unimplemented) —
+//     no `claude -p` — gating on aaStability(golden) + discrimination(golden, seed). A flattering code judge aborts.
 //   - the DECISION judge (Axis A): judge a small set of planted gold/poor DECISION artifacts from the corpus's
 //     `_controls/` dir, gating on aaStability(gold) + discrimination(gold, poor). If the controls dir is ABSENT the
 //     decision-control gate is SKIPPED with a noted caveat — so the probe still runs before Phase 3 authors them.
@@ -182,8 +182,8 @@ export async function runBenchProbe(opts: BenchProbeOptions): Promise<BenchProbe
 
 /**
  * The CONTROLS-FIRST gate, judge-driven and zero conduct spend. Runs BOTH gates serially and first:
- *   1. CODE judge (Axis B) — for EACH fixture, overlay golden/broken onto a fresh seed and judge with CODE_RUBRIC;
- *      gate aaStability(golden ×controlK) + discrimination(mean golden, mean broken).
+ *   1. CODE judge (Axis B) — for EACH fixture, judge seed+golden vs seed-alone with CODE_RUBRIC;
+ *      gate aaStability(golden ×controlK) + discrimination(mean golden, mean seed).
  *   2. DECISION judge (Axis A) — judge the planted gold/poor DECISION artifacts with DECISION_RUBRIC; gate
  *      aaStability(gold ×controlK) + discrimination(mean gold, mean poor). SKIPPED (with no verdict) when the
  *      controls dir is absent — so the probe runs before Phase 3 authors the planted controls.
@@ -203,7 +203,11 @@ async function runControls(
   // flakes false-negative even when the means separate. Floored independently of the matrix `k` (mirrors rightsizing).
   const controlK = Math.max(k, DEFAULT_CONTROL_REPEATS);
 
-  // 1. CODE judge (Axis B) — per fixture, gold = seed+golden, broken = seed+broken.
+  // 1. CODE judge (Axis B) — per fixture, gold = seed+golden (complete, HIGH), poor = seed ALONE (incomplete stub,
+  //    LOW). We anchor LOW on the seed, NOT on `broken/`: a `broken` build is clean-but-functionally-wrong (the
+  //    judge rightly rates it MEDIUM on CODE QUALITY), so it can't drop below brokenMax — that's the ORACLE's job
+  //    (correctness), and `broken/` is reserved for it + Axis D. The seed (target unimplemented) is genuinely poor
+  //    CODE (fails meetsIntent + complete), so gold↔seed proves the CODE-QUALITY judge discriminates good from poor.
   for (const fixture of fixtures) {
     const goldScores: number[] = [];
     for (let i = 0; i < controlK; i++) {
@@ -212,13 +216,13 @@ async function runControls(
     const aa = aaStability(goldScores, tol, CODE_JUDGE_SUBJECT);
     if (!aa.ok) return aa.verdict!;
 
-    const brokenScores: number[] = [];
+    const poorScores: number[] = [];
     for (let i = 0; i < controlK; i++) {
-      brokenScores.push((await judgeCodeOverlay(fixture, fixture.brokenDir, opts)).overall);
+      poorScores.push((await judgeCodeOverlay(fixture, null, opts)).overall);
     }
     const disc = discrimination(
       mean(goldScores),
-      mean(brokenScores),
+      mean(poorScores),
       goldMin,
       brokenMax,
       minGap,
@@ -280,19 +284,20 @@ function judgeDecision(artifactText: string, opts: BenchProbeOptions): Promise<S
 }
 
 /**
- * Produce a CODE control overlay tree WITHOUT a conduct run and judge it with the CODE rubric. Seeds a fresh
- * sandbox from the fixture's `seed/`, overlays `overlayDir` (`golden/` or `broken/`), renders it oracle-free with
- * `summarizeProducedResult`, and judges it. The sandbox is torn down in a `finally`. Spends only judge-tokens.
+ * Produce a CODE control tree WITHOUT a conduct run and judge it with the CODE rubric. Seeds a fresh sandbox from
+ * the fixture's `seed/`, optionally overlays `overlayDir` (`golden/`), renders it oracle-free with
+ * `summarizeProducedResult`, and judges it. Pass `overlayDir = null` to judge the SEED ALONE — the incomplete
+ * starting tree (target stubbed) — as the discrimination LOW anchor. The sandbox is torn down in a `finally`.
  */
 async function judgeCodeOverlay(
   fixture: BenchFixture,
-  overlayDir: string,
+  overlayDir: string | null,
   opts: BenchProbeOptions,
 ): Promise<Score> {
   const sandbox = prepareSandbox();
   try {
     if (existsSync(fixture.seedDir)) seedSandbox(sandbox.workingDir, fixture.seedDir);
-    seedSandbox(sandbox.workingDir, overlayDir);
+    if (overlayDir !== null) seedSandbox(sandbox.workingDir, overlayDir);
     const produced = summarizeProducedResult(sandbox.workingDir, asOutcomeFixtureView(fixture));
     return await judgeWithRubric(CODE_RUBRIC, fixture.prompt, produced.text, judgeOpts(opts));
   } finally {
@@ -304,7 +309,7 @@ async function judgeCodeOverlay(
  * Run ONE matrix cell (fixture × repeat) through the conduct-once → four-axis pipeline and build the
  * {@link BenchRecord}. The ORDER is the contract AND the oracle-hiding guarantee:
  *   runCell (conduct to SETTLE) → CAPTURE (assert no oracle leak; read the decision trail; render the produced tree;
- *     read the self-report + verify-fire) → JUDGE A (decision trail, if any) → JUDGE B (produced tree) → OPTIONAL
+ *     read the self-report) → JUDGE A (decision trail, if any) → JUDGE B (produced tree) → OPTIONAL
  *     CORRECTNESS (inject + run oracle) → escapedDefect → assemble. Everything that reads the agent-visible tree
  *     happens BEFORE the oracle is injected, so both judged inputs are oracle-free. Sandbox torn down in `finally`.
  */
@@ -325,10 +330,9 @@ async function runMatrixCell(
     // trail (e.g. a one-shot) ⇒ no decisionScore (the record is excluded from Axis A, never scored as a 0).
     const decisionTrail = readDecisionTrail(sandboxDir);
 
-    // (c) render the produced (oracle-free) tree, then (d) the self-report + (e) the verify-fire signal.
+    // (c) render the produced (oracle-free) tree, then (d) the self-report.
     const produced = summarizeProducedResult(sandboxDir, asOutcomeFixtureView(fixture));
     const selfReportedDone = extractSelfReportedDone(result.streamPath);
-    const verifyFired = readVerifyFired(result.streamPath);
 
     // JUDGE A — only when a decision trail exists.
     const decisionScore =
@@ -353,7 +357,6 @@ async function runMatrixCell(
       ...(decisionScore !== undefined ? { decisionScore } : {}),
       codeScore,
       oraclePass,
-      verifyFired,
       escapedDefect,
       ...(result.cost !== undefined ? { cost: result.cost } : {}),
     };
@@ -400,41 +403,6 @@ function readDecisionTrail(sandboxDir: string): string {
     .sort((a, b) => a.path.localeCompare(b.path))
     .map((s) => `--- ${s.path} ---\n${s.content}`)
     .join("\n\n");
-}
-
-/**
- * The VERIFY-FIRE heuristic (Axis D process signal): did the run's stream show the conductor dispatch the verifier
- * OR run a verify/assemble step? Parses the teed `stream.jsonl` and returns true iff EITHER:
- *   - a `tool_use` block dispatches the verifier agent — a `Task`/`Agent` tool whose `input.subagent_type` (or its
- *     prompt/description) names `agentry:verifier`; OR
- *   - a `verify` / `assemble` skill marker appears in the stream — a Skill/SlashCommand tool_use naming
- *     `agentry:verify` / `agentry:assemble`, or that marker in the assistant text.
- * A missing/unreadable stream ⇒ false (no transcript made no verify claim). This is a PROCESS signal (did the
- * separate-verifier step happen), distinct from whether the work was actually correct (the oracle owns that).
- */
-function readVerifyFired(streamPath: string): boolean {
-  if (!existsSync(streamPath)) return false;
-  const VERIFY_RE = /agentry:(verifier|verify|assemble)|\bverifier\b/i;
-  for (const line of readFileSync(streamPath, "utf8").split("\n")) {
-    if (!line.trim()) continue;
-    let ev: { message?: { content?: unknown } };
-    try {
-      ev = JSON.parse(line) as typeof ev;
-    } catch {
-      continue;
-    }
-    const content = ev.message?.content;
-    if (!Array.isArray(content)) continue;
-    for (const block of content as Array<Record<string, unknown>>) {
-      if (block.type === "text" && typeof block.text === "string" && VERIFY_RE.test(block.text)) return true;
-      if (block.type === "tool_use") {
-        // The tool name itself (a Skill/SlashCommand named for verify/assemble) or its input (a Task dispatch whose
-        // subagent_type / prompt names the verifier) — JSON-stringify the block so any nested field is matched.
-        if (VERIFY_RE.test(JSON.stringify(block))) return true;
-      }
-    }
-  }
-  return false;
 }
 
 /** The judge options threaded to every {@link judgeWithRubric} call — the injected seam + the pinned judge model. */
