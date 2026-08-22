@@ -1,49 +1,45 @@
-// Composition root for the Agentry Workbench local service (Phase 1) — ADR-001's `index.ts` wiring.
+// Composition root for the Agentry Workbench local service — ADR-001's `index.ts` wiring.
 //
 // The lifecycle: acquire the singleton port-lock (ADR-002); if another instance already holds it, print
 // that and exit 0 (a second invocation must NEVER spawn a second server — AC1). If we got the lock, write
-// the advisory pidfile, wire the ports-and-adapters tree (FsWorkRepository + ChokidarWatcher + WorkReader),
-// attach the http handler + the ws transport to the bound server, wire the watcher → ws push loop (the
-// live half of AC7), and start. On SIGINT/SIGTERM, remove the pidfile and close the watcher cleanly.
+// the advisory pidfile, build a tree per served project, attach the http handler + the ws transport to the
+// bound server, wire each project's watchers → the ws push loop (the live half of AC7), and start. On
+// SIGINT/SIGTERM, remove the pidfile and close every watcher cleanly.
 //
-// The project root (the cwd the `.agentry/` tree lives under) is resolved the SAME way FLOW resolves its
-// root — `CLAUDE_PROJECT_DIR ?? AGENTRY_PROJECT_DIR ?? process.cwd()` — so the workbench reads the same
-// runs FLOW writes. No hardcoded paths.
+// MULTI-PROJECT (M1). The root used to be fixed at spawn — `CLAUDE_PROJECT_DIR ?? AGENTRY_PROJECT_DIR ??
+// cwd` — which, combined with a globally-singleton port, meant the FIRST repo to start the server owned
+// it: `/agentry:workbench` in a second repo probed `/healthz`, saw `ok`, and focused a server showing
+// someone else's runs under the wrong project name. Now the server serves every root in the registry
+// (`~/.agentry/workbench/projects.json`), the startup root is registered and becomes the default, and a
+// request names its project with `?project=<slug>`. A new repo JOINS the running server by POSTing
+// `/api/projects` instead of losing the race.
 import { bindPortLock } from "./instance/port-lock.js";
 import { removePidfile, writePidfile } from "./instance/pidfile.js";
-import { FsWorkRepository } from "./persistence/fs-work-repository.js";
-import { ChokidarWatcher } from "./persistence/chokidar-watcher.js";
-import { PermissionWatcher, type PermissionEvent } from "./persistence/permission-watcher.js";
-import { FlowWriter } from "./persistence/flow-writer.js";
-import { FsEventSource } from "./persistence/event-source.js";
-import { FsReviewSidecarSource } from "./persistence/review-sidecar-source.js";
-import { WorkReader } from "./application/work-reader.js";
-import { WriteService } from "./application/write-service.js";
-import { EventStore } from "./application/event-store.js";
-import { GateInbox } from "./application/gate-inbox.js";
-import { TokenReader } from "./application/token-reader.js";
-import { TranscriptReader } from "./persistence/transcript-reader.js";
-import { MemReader } from "./persistence/mem-reader.js";
+import { readRegistry, registerRoot } from "./instance/registry.js";
+import { createProject, slugsFor, type Project } from "./application/project.js";
 import type { Clock, RunChange } from "./domain/ports.js";
 import { createHttpHandler } from "./transport/http.js";
+import { runKey, type ProjectSource } from "./transport/projects.js";
 import { WsTransport } from "./transport/ws.js";
 import { resolveSlug } from "@agentry/workbench-shared";
+import { resolve } from "node:path";
 
-// The project root, resolved exactly as FLOW resolves it (packages/flow/src/index.ts) so both layers see
-// the same `.agentry/` tree.
-function resolveProjectRoot(): string {
-  return process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd();
+// The root this server was STARTED from — the default project when a request names none. Resolved
+// exactly as FLOW resolves its root (packages/flow/src/index.ts) so both layers see the same `.agentry/`.
+function resolveStartupRoot(): string {
+  return resolve(process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd());
 }
 
 // The single source of "now" injected into the application layer (the read-models' `updatedAt`).
 const systemClock: Clock = { now: () => new Date().toISOString() };
 
 async function main(): Promise<void> {
-  const projectRoot = resolveProjectRoot();
+  const startupRoot = resolveStartupRoot();
 
   const lock = await bindPortLock();
   if (lock.status === "already-up") {
-    // Another instance holds the port-lock — focus it, don't spawn a second (ADR-002, AC1).
+    // Another instance holds the port-lock — focus it, don't spawn a second (ADR-002, AC1). It serves
+    // this root too as soon as the command registers it (POST /api/projects).
     console.log("workbench already running on http://127.0.0.1:4317 — focusing the existing instance");
     process.exit(0);
   }
@@ -54,85 +50,100 @@ async function main(): Promise<void> {
 
   // Advisory metadata for the /agentry:workbench command (liveness + deep-link). The bind is the lock;
   // this file is just who/where/when.
-  writePidfile(projectRoot, { pid: process.pid, port, startedAt: systemClock.now() });
+  writePidfile(startupRoot, { pid: process.pid, port, startedAt: systemClock.now() });
 
-  // Wire the ports-and-adapters tree: fs read side + watcher → the application reader; the fs write
-  // side → the WriteService boundary (ADR-006) the POST routes call.
-  const repository = new FsWorkRepository(projectRoot);
-  const watcher = new ChokidarWatcher(projectRoot);
-  const writeService = new WriteService(new FlowWriter(projectRoot));
+  // ── the served projects ───────────────────────────────────────────────────────────────────────────
+  // The startup root is registered (so a fresh machine works) and always sorts FIRST: it is the default
+  // project, the one a request that names none gets. Every other registered root is served alongside it.
+  registerRoot(startupRoot, systemClock.now());
+  const byRoot = new Map<string, Project>();
+  const bySlug = new Map<string, Project>();
 
-  // The project-global permission relay (Phase 3b): watch `.agentry/run/permissions/*.json` (FLOW's
-  // request files) for pending tool-approval prompts. NOT under `.agentry/work/`, so a SEPARATE watcher
-  // from the run-tree one above. Its `current()` seeds `GET /api/permissions`; its events drive the
-  // approvals banner via `pushAll` (wired below, after the transport exists).
-  const permissionWatcher = new PermissionWatcher(projectRoot);
+  function rebuild(roots: string[]): void {
+    const ordered = [startupRoot, ...roots.filter((r) => r !== startupRoot)];
+    const slugs = slugsFor(ordered);
+    for (const root of ordered) {
+      const slug = slugs.get(root) ?? root;
+      const existing = byRoot.get(root);
+      if (existing) {
+        // Keep the live tree (its watchers are already wired); only re-slug if a collision appeared.
+        bySlug.delete(existing.slug);
+        const reslugged: Project = { ...existing, slug };
+        byRoot.set(root, reslugged);
+        bySlug.set(slug, reslugged);
+        continue;
+      }
+      const project = createProject(root, slug, systemClock);
+      byRoot.set(root, project);
+      bySlug.set(slug, project);
+      wireLive(project);
+    }
+  }
 
-  // Phase-4 aggregation readers (the Activity / Agents / Gates / Tokens / Memory data). `EventStore` is
-  // the one timeline fold + the roster source; its `roster` doubles as the `RunSummary.agentCount` counter
-  // wired into the WorkReader (one roster read, not two). `TokenReader` folds the `TranscriptReader`'s
-  // samples; `MemReader` browses both mem roots read-only.
-  const events = new EventStore(repository, new FsEventSource(projectRoot));
-  const gates = new GateInbox(repository, new FsReviewSidecarSource(projectRoot));
-  const tokens = new TokenReader(new TranscriptReader(projectRoot));
-  const memory = new MemReader(projectRoot);
-  const reader = new WorkReader(repository, systemClock, (run) => events.roster(run).length);
+  // The ws transport must exist before a project's watchers can push, but the resolver it needs closes
+  // over the project map — so it is constructed first and the map is captured by reference.
+  const transport = new WsTransport(server, (label, projectSlug) => {
+    const project = projectSlug !== null ? bySlug.get(projectSlug) : bySlug.get(orderedSlugs()[0] ?? "");
+    if (!project) return null;
+    const run = resolveSlug(label, project.reader.listRuns());
+    return run !== undefined ? runKey(project.slug, run) : null;
+  });
 
-  // Transports: the ws edge (constructed first so the http handler can push on a successful write) pushes
-  // per-run change messages; the http edge serves the SPA + REST reads + the Phase-3 writes + the Phase-4
-  // aggregation reads.
-  // The ws subscription key is the FULL run id: resolve the connecting host's label (a short `workSlug`
-  // or the full id, task 003) against the live run list, the SAME resolution the http routes use, so a
-  // workSlug-host socket joins the run that `push` is keyed by.
-  const transport = new WsTransport(server, (label) => resolveSlug(label, reader.listRuns()) ?? null);
-  server.on(
-    "request",
-    createHttpHandler(
-      reader,
-      { reader, writeService, transport, projectRoot },
-      { events, gates, tokens, memory },
-      { watcher: permissionWatcher, projectRoot },
-    ),
+  const orderedSlugs = (): string[] => [...bySlug.keys()];
+
+  // A project's live loops: run-tree changes → per-run pushes (+ a payload-free nudge so a Works list
+  // goes live for BRAND-NEW runs), and permission requests → a project-global broadcast.
+  function wireLive(project: Project): void {
+    project.watcher.subscribe((change: RunChange) => {
+      transport.pushAll({ type: "works-changed" });
+      if (!project.reader.read(change.run)) return; // run no longer resolves — nothing run-scoped to push
+      for (const path of change.paths) {
+        transport.push(runKey(project.slug, change.run), { type: "file-changed", path });
+      }
+    });
+    project.permissionWatcher.subscribe((event) => {
+      if (event.kind === "added") {
+        transport.pushAll({ type: "permission-added", request: event.request });
+      } else {
+        transport.pushAll({ type: "permission-removed", requestId: event.requestId });
+      }
+    });
+  }
+
+  rebuild(readRegistry().map((p) => p.root));
+
+  const projects: ProjectSource = {
+    list: () => [...bySlug.values()],
+    resolve: (slug) => (slug === null || slug.length === 0 ? byRoot.get(startupRoot) : bySlug.get(slug)),
+    register: (root) => {
+      const abs = resolve(root);
+      const existing = byRoot.get(abs);
+      if (existing) return existing;
+      rebuild(registerRoot(abs, systemClock.now()).map((p) => p.root));
+      const added = byRoot.get(abs);
+      if (!added) throw new Error(`failed to register project root: ${abs}`);
+      // A newly-joined project changes the switcher's list for every open client.
+      transport.pushAll({ type: "works-changed" });
+      return added;
+    },
+  };
+
+  server.on("request", createHttpHandler(projects, transport));
+
+  console.log(
+    `workbench server listening on http://127.0.0.1:${port} — serving ${bySlug.size} project(s): ${orderedSlugs().join(", ")} (default: ${startupRoot})`,
   );
 
-  // The approvals live loop (Phase 3b): a request file appears/resolves → broadcast it to EVERY connected
-  // client (`pushAll`, not `push` — permissions belong to no run, and the banner mounts on the base host
-  // and every run host alike). The watcher already coalesces add/change into a single `added` per id.
-  permissionWatcher.subscribe((event: PermissionEvent) => {
-    if (event.kind === "added") {
-      transport.pushAll({ type: "permission-added", request: event.request });
-    } else {
-      transport.pushAll({ type: "permission-removed", requestId: event.requestId });
-    }
-  });
-
-  // The live loop (AC7): a debounced run change → push a `file-changed` message per changed path to that
-  // run's ws subscribers. The `WorkReader.read` confirms the run still resolves (a change in a vanished
-  // run is dropped); the parsed `doc-updated`/`diff-ready` projections are Phase 3.
-  watcher.subscribe((change: RunChange) => {
-    // Project-global FIRST (before the run-resolves guard): the work tree moved — a new run appeared, a
-    // status flipped, an updatedAt bumped. Tell the bare-host Works home to refetch its list, so it goes
-    // live for BRAND-NEW runs too (which may not resolve via `reader.read` yet). A payload-free nudge.
-    transport.pushAll({ type: "works-changed" });
-    if (!reader.read(change.run)) return; // run no longer resolves — nothing run-scoped to push
-    for (const path of change.paths) {
-      transport.push(change.run, { type: "file-changed", path });
-    }
-  });
-
-  console.log(`workbench server listening on http://127.0.0.1:${port} (project root: ${projectRoot})`);
-
-  // Graceful shutdown: drop the pidfile, stop the watcher + ws, close the server.
+  // Graceful shutdown: drop the pidfile, stop every watcher + ws, close the server.
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`workbench server shutting down (${signal})`);
-    removePidfile(projectRoot);
+    removePidfile(startupRoot);
     transport.close();
-    void Promise.allSettled([watcher.close(), permissionWatcher.close()]).finally(() =>
-      server.close(() => process.exit(0)),
-    );
+    const closing = [...byRoot.values()].flatMap((p) => [p.watcher.close(), p.permissionWatcher.close()]);
+    void Promise.allSettled(closing).finally(() => server.close(() => process.exit(0)));
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));

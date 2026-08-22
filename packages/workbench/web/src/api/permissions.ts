@@ -3,13 +3,15 @@
 // verdict file FLOW relays to Claude Code. First answer wins; the banner clears off the ws unlink event.
 import type { PermissionRequest } from "@agentry/workbench-shared";
 import { ApiError, getJson } from "./http.js";
+import { apiPath } from "./http.js";
 
 export function fetchPermissions(signal?: AbortSignal): Promise<PermissionRequest[]> {
   return getJson<PermissionRequest[]>("/api/permissions", signal);
 }
 
 export async function postVerdict(requestId: string, behavior: "allow" | "deny"): Promise<void> {
-  const res = await fetch(`/api/permissions/${encodeURIComponent(requestId)}`, {
+  const res = await fetch(
+apiPath(`/api/permissions/${encodeURIComponent(requestId)}`), {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({ behavior }),

@@ -2,7 +2,8 @@
 // fetchers are split by resource (works/graph/context/events/gates/review/memory/permissions) over the
 // shared http core; the ws push client lives in `ws.ts`. Pages import from here, not the resource files,
 // so a resource can be reshaped without touching every call site.
-export { ApiError } from "./http.js";
+export { ApiError, currentProject, selectProject, apiPath } from "./http.js";
+export { fetchProjects, type ProjectEntry, type ProjectList } from "./projects.js";
 export { fetchWorks } from "./works.js";
 export { fetchGraph } from "./graph.js";
 export { fetchContext, type AppContext } from "./context.js";

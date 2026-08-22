@@ -17,11 +17,12 @@ import { parseHostLabel } from "./host-router.js";
 // other path is rejected, so the http server's other concerns are untouched.
 const WS_PATH = "/ws";
 
-// Resolve a host LABEL (a `workSlug` or a full id, task 003) to the FULL run id this socket subscribes
-// to, or null when it resolves to no run. The subscription key MUST be the full id: `push` is called by
-// the watcher loop + the write routes with the full id, so a socket registered under a raw slug would
-// never receive its run's messages. Injected by the composition root (it holds the run list).
-export type ResolveRun = (label: string) => string | null;
+// Resolve a run LABEL (a `workSlug` or a full id, task 003) WITHIN a project to the subscription KEY this
+// socket joins, or null when it resolves to no run. The key must match what `push` is called with — the
+// composition root's `runKey(projectSlug, fullRunId)` — so a socket registered under a raw slug, or under
+// the right run in the wrong project, would never receive its changes. Injected by the composition root
+// (it holds the projects and their run lists).
+export type ResolveRun = (label: string, project: string | null) => string | null;
 
 export class WsTransport implements Transport {
   private readonly wss: WebSocketServer;
@@ -56,7 +57,7 @@ export class WsTransport implements Transport {
       // `*.localhost` alias still works — it just falls through to the Host branch.
       const queryLabel = url.searchParams.get("run");
       const label = queryLabel !== null && queryLabel.length > 0 ? queryLabel : parseHostLabel(req.headers.host);
-      const run = label !== null ? this.resolveRun(label) : null;
+      const run = label !== null ? this.resolveRun(label, url.searchParams.get("project")) : null;
       this.wss.handleUpgrade(req, socket, head, (ws) => this.register(ws, run));
     });
   }

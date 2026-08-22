@@ -12,7 +12,7 @@
 // actually serving instead of a hardcoded string.
 import { useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
-import { fetchContext } from "./api/index.js";
+import { fetchContext, fetchProjects, selectProject, type ProjectEntry } from "./api/index.js";
 import { getWsClient } from "./api/ws.js";
 import { ApprovalsBanner } from "./routes/approvals/ApprovalsBanner.js";
 import { Gates } from "./routes/gates/Gates.js";
@@ -190,14 +190,61 @@ function Sidebar({ project }: { project: string | undefined }) {
         ))}
       </nav>
       <div className="grow" />
-      <div className="proj">
-        <div className="k">Project</div>
-        <div className="n">{project ?? "workspace"}</div>
-        <div className="row">
-          <span className="livedot" aria-hidden="true" /> server live
-        </div>
-      </div>
+      <ProjectCard project={project} />
     </aside>
+  );
+}
+
+// The project card, and the switcher when this server serves more than one root. Which project is on
+// screen used to be a hardcoded string, which lied whenever the server had been started from another
+// repo — the port is a global singleton, the root is not. It now names what the server reports, and lets
+// you move between the registered projects.
+//
+// Switching does a full page load on purpose. It is a rare, deliberate action, and every open view holds
+// per-project state (the run list, a graph, an open doc, the socket); reloading is the honest way to drop
+// all of it at once rather than teaching each view to re-key itself.
+function ProjectCard({ project }: { project: string | undefined }) {
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchProjects(ctrl.signal)
+      .then((list) => setProjects(list.projects))
+      .catch(() => {
+        /* older server, or none — the card still names the current project */
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  const onSwitch = (slug: string) => {
+    if (slug === project) return;
+    selectProject(slug);
+    window.location.assign("/");
+  };
+
+  return (
+    <div className="proj">
+      <div className="k">Project</div>
+      {projects.length > 1 ? (
+        <select
+          className="n proj-switch"
+          aria-label="Switch project"
+          value={project ?? ""}
+          onChange={(e) => onSwitch(e.target.value)}
+        >
+          {projects.map((p) => (
+            <option key={p.slug} value={p.slug} title={p.root}>
+              {p.slug}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <div className="n">{project ?? "workspace"}</div>
+      )}
+      <div className="row">
+        <span className="livedot" aria-hidden="true" /> server live
+      </div>
+    </div>
   );
 }
 

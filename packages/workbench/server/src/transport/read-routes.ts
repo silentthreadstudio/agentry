@@ -27,6 +27,7 @@ export function handleApiRequest(
   reader: WorkReader,
   context: RunContext,
   projectRoot?: string,
+  projectSlug?: string,
 ): boolean {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -54,7 +55,9 @@ export function handleApiRequest(
       const requested = runParam(url);
       const run = requested !== undefined ? resolveRun(reader, requested) : (context.run ?? undefined);
       sendJson(res, 200, {
-        ...(projectRoot !== undefined ? { project: basename(projectRoot), root: projectRoot } : {}),
+        ...(projectRoot !== undefined
+          ? { project: projectSlug ?? basename(projectRoot), root: projectRoot }
+          : {}),
         ...(run !== undefined && run !== null ? { run } : {}),
       });
     });

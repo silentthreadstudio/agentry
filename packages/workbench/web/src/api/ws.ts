@@ -6,6 +6,7 @@
 // This module owns transport (connect, reconnect-with-backoff, parse, dispatch) only — it holds no
 // view state. Pages call `subscribe()` to receive typed messages and wire them into their own store.
 import type { WsMessage } from "@agentry/workbench-shared";
+import { currentProject } from "./http.js";
 
 export type WsListener = (msg: WsMessage) => void;
 export type WsStatusListener = (status: WsStatus) => void;
@@ -30,8 +31,14 @@ function runLabelFromPath(): string | null {
 
 function wsUrl(run: string | null): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const query = run !== null ? `?run=${encodeURIComponent(run)}` : "";
-  return `${proto}//${location.host}${WS_PATH}${query}`;
+  // The socket is scoped by BOTH: a run id is only unique within a project, so the server keys
+  // subscriptions on the pair. Same seam as every REST call (`apiPath`).
+  const params = new URLSearchParams();
+  if (run !== null) params.set("run", run);
+  const project = currentProject();
+  if (project !== null) params.set("project", project);
+  const query = params.toString();
+  return `${proto}//${location.host}${WS_PATH}${query ? `?${query}` : ""}`;
 }
 
 /**

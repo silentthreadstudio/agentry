@@ -21,10 +21,11 @@ import { normalize } from "./markdown-serializer.js";
 import { wordDiff, isUnchanged, type DiffOp } from "./word-diff.js";
 import { addComment } from "./comment-store.js";
 import { useDiffStyles } from "./diff-styles.js";
+import { apiPath } from "../../../../api/http.js";
 
 async function fetchDoc(runId: string, docId: string, signal: AbortSignal): Promise<DocModel> {
   const res = await fetch(
-    `/api/work/${encodeURIComponent(runId)}/doc/${encodeURIComponent(docId)}`,
+apiPath(`/api/work/${encodeURIComponent(runId)}/doc/${encodeURIComponent(docId)}`),
     { headers: { accept: "application/json" }, signal },
   );
   if (!res.ok) throw new Error(`doc ${docId} → ${res.status} ${res.statusText}`);
@@ -41,7 +42,8 @@ async function postArtifact(
 ): Promise<{ ok: boolean; message: string }> {
   let res: Response;
   try {
-    res = await fetch(`/api/work/${encodeURIComponent(runId)}/artifact`, {
+    res = await fetch(
+apiPath(`/api/work/${encodeURIComponent(runId)}/artifact`), {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ target: docId, baseVersion, newBody }),

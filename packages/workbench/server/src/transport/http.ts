@@ -15,7 +15,8 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveSlug } from "@agentry/workbench-shared";
-import type { WorkReader } from "../application/work-reader.js";
+import type { Transport } from "../domain/ports.js";
+import { handleProjectsRequest, runKey, type ProjectSource } from "./projects.js";
 import { parseHostLabel, type RunContext } from "./host-router.js";
 import {
   handleApiRequest,
@@ -66,15 +67,54 @@ const CONTENT_TYPES: Record<string, string> = {
 
 // Build the http request handler bound to the application reader (+ the Phase-3 write deps). The
 // composition root attaches the returned handler to the port-locked server (`server.on("request",
-// handler)`). `write` carries the WriteService + Transport the POST routes need (threaded the same way
-// the reader is — task 9's DI pattern).
-export function createHttpHandler(
-  reader: WorkReader,
-  write: WriteDeps,
-  readers: ReaderDeps,
-  permissions: PermissionDeps,
-) {
+// handler)`).
+//
+// The handler is MULTI-PROJECT: one server serves every registered project root and each request names
+// the one it means with `?project=<slug>` (absent ⇒ the root the server was started from). The route
+// matchers are untouched — only where their deps come from changed, from a single spawn-time tree to a
+// per-request lookup. Naming an unregistered project is a 404, not a filesystem read: the registry is
+// the guardrail.
+export function createHttpHandler(projects: ProjectSource, transport: Transport) {
   return function handler(req: IncomingMessage, res: ServerResponse): void {
+    const url = new URL(req.url ?? "/", "http://localhost");
+
+    // `/api/projects` is the only project-independent API: it lists what this server serves (the sidebar
+    // switcher) and registers a new root (POST, used by `/agentry:workbench` so opening the Workbench in
+    // a second repo JOINS this server instead of finding it "already up" and showing the wrong project).
+    if (handleProjectsRequest(req, res, url, projects)) return;
+
+    const requested = url.searchParams.get("project");
+    const project = projects.resolve(requested);
+    if (project === undefined) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "unknown_project", project: requested }));
+      return;
+    }
+
+    const reader = project.reader;
+    // Push keys are project-scoped: two projects can hold a run with the same id, and a socket watching
+    // one of them must not receive the other's changes.
+    const scoped: Transport = {
+      push: (run, message) => transport.push(runKey(project.slug, run), message),
+      pushAll: (message) => transport.pushAll(message),
+    };
+    const write: WriteDeps = {
+      reader,
+      writeService: project.writeService,
+      transport: scoped,
+      projectRoot: project.root,
+    };
+    const readers: ReaderDeps = {
+      events: project.events,
+      gates: project.gates,
+      tokens: project.tokens,
+      memory: project.memory,
+    };
+    const permissions: PermissionDeps = {
+      watcher: project.permissionWatcher,
+      projectRoot: project.root,
+    };
+
     // Parse the host's run LABEL (pure), then resolve it to a FULL run id against the known runs — the
     // label may be a short `workSlug` (task 003) or the full id itself (back-compat / terse ids). An
     // unresolvable label (no matching run) is the Works home (no run), never a 500. The SPA reads the
@@ -87,14 +127,14 @@ export function createHttpHandler(
     // to the canonical path form so one origin serves everything (one WS, one storage bucket, no full
     // page reload between runs). Only the root is redirected — an asset or `/api/*` request under a run
     // host still serves in place, so an already-loaded alias page keeps working.
-    if (run !== null && req.method === "GET" && new URL(req.url ?? "/", "http://localhost").pathname === "/") {
+    if (run !== null && req.method === "GET" && url.pathname === "/") {
       res.writeHead(302, { location: `/work/${encodeURIComponent(label ?? run)}` });
       res.end();
       return;
     }
 
     // GET API + healthz first; a matched read route answers and we're done.
-    if (handleApiRequest(req, res, reader, context, write.projectRoot)) return;
+    if (handleApiRequest(req, res, reader, context, project.root, project.slug)) return;
 
     // The Phase-4 aggregation reads (events/agents/gates/tokens/memory) — a separate GET dispatcher,
     // tried before the write/static path; a matched reader route answers here.

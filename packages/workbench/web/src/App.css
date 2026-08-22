@@ -143,6 +143,32 @@
   margin: 5px 0 4px;
   font-size: 14px;
 }
+/* the switcher wears the project name's type — a control that reads as the label it replaces, with the
+   native select chrome stripped back to a caret the card's own surface carries. */
+.proj-switch {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  padding: 0 16px 0 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--faint) 50%),
+    linear-gradient(135deg, var(--faint) 50%, transparent 50%);
+  background-position: right 6px center, right 2px center;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.proj-switch:focus-visible {
+  outline: 2px solid var(--accent, #8b7cf6);
+  outline-offset: 2px;
+}
+.proj-switch option {
+  background: #15151d;
+  color: #e8e8f0;
+}
 .proj .row {
   display: flex;
   align-items: center;

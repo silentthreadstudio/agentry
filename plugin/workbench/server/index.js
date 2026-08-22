@@ -11046,19 +11046,19 @@ import { createServer } from "node:http";
 var WORKBENCH_PORT = 4317;
 var LOOPBACK_HOST = "127.0.0.1";
 function bindPortLock(port = WORKBENCH_PORT) {
-  return new Promise((resolve4, reject2) => {
+  return new Promise((resolve6, reject2) => {
     const server = createServer();
     const onError = (err) => {
       server.removeListener("listening", onListening);
       if (err.code === "EADDRINUSE") {
-        resolve4({ status: "already-up" });
+        resolve6({ status: "already-up" });
         return;
       }
       reject2(err);
     };
     const onListening = () => {
       server.removeListener("error", onError);
-      resolve4({ status: "bound", server });
+      resolve6({ status: "bound", server });
     };
     server.once("error", onError);
     server.once("listening", onListening);
@@ -11084,10 +11084,46 @@ function removePidfile(projectRoot) {
   rmSync(pidfilePath(projectRoot), { force: true });
 }
 
+// src/instance/registry.ts
+import { mkdirSync as mkdirSync2, readFileSync as readFileSync2, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join as join2, resolve } from "node:path";
+function registryPath() {
+  return join2(homedir(), ".agentry", "workbench", "projects.json");
+}
+function readRegistry() {
+  try {
+    const parsed = JSON.parse(readFileSync2(registryPath(), "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return [];
+    const list = parsed.projects;
+    if (!Array.isArray(list)) return [];
+    return list.filter(
+      (p) => typeof p === "object" && p !== null && typeof p.root === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+function registerRoot(root, now) {
+  const abs = resolve(root);
+  const current = readRegistry();
+  if (current.some((p) => p.root === abs)) return current;
+  const next = [...current, { root: abs, addedAt: now }];
+  const target = registryPath();
+  mkdirSync2(dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
+  writeFileSync2(tmp, JSON.stringify({ projects: next }, null, 2));
+  renameSync2(tmp, target);
+  return next;
+}
+
+// src/application/project.ts
+import { basename as basename4 } from "node:path";
+
 // src/persistence/fs-work-repository.ts
 var import_yaml2 = __toESM(require_dist(), 1);
-import { existsSync as existsSync2, readFileSync as readFileSync3, readdirSync as readdirSync2 } from "node:fs";
-import { join as join4 } from "node:path";
+import { existsSync as existsSync2, readFileSync as readFileSync4, readdirSync as readdirSync2 } from "node:fs";
+import { join as join5 } from "node:path";
 
 // ../../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
 var external_exports = {};
@@ -15194,8 +15230,8 @@ function parseLogLine(line) {
 
 // ../../flow/src/persistence/task-file-store.ts
 var import_yaml = __toESM(require_dist(), 1);
-import { existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, readdirSync, unlinkSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join3 } from "node:path";
+import { existsSync, mkdirSync as mkdirSync3, readFileSync as readFileSync3, readdirSync, unlinkSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join4 } from "node:path";
 
 // ../../flow/src/domain/version.ts
 import { createHash } from "node:crypto";
@@ -15210,7 +15246,7 @@ function computeVersion(body, frontmatterSansVersion) {
 }
 
 // ../../flow/src/resolution/run-pointer.ts
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
 
 // ../../flow/src/domain/ids.ts
 function assertSafeSegment(s) {
@@ -15227,11 +15263,11 @@ function formatTaskNo(n) {
 
 // ../../flow/src/resolution/run-pointer.ts
 function workRoot(cwd) {
-  return join2(cwd, ".agentry", "work");
+  return join3(cwd, ".agentry", "work");
 }
 function runDir(cwd, run) {
   assertSafeSegment(run);
-  return join2(workRoot(cwd), run);
+  return join3(workRoot(cwd), run);
 }
 
 // ../../flow/src/persistence/task-file-store.ts
@@ -15245,7 +15281,7 @@ var TaskFileStore = class {
     this.cwd = cwd;
   }
   tasksDir(run) {
-    return join3(runDir(this.cwd, run), "tasks");
+    return join4(runDir(this.cwd, run), "tasks");
   }
   readTask(run, taskNo) {
     const dir = this.tasksDir(run);
@@ -15253,7 +15289,7 @@ var TaskFileStore = class {
     const prefix = `${taskNo}-`;
     const file = readdirSync(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
     if (!file) return void 0;
-    return this.parseTaskFile(join3(dir, file), taskNo);
+    return this.parseTaskFile(join4(dir, file), taskNo);
   }
   listTasks(run) {
     const dir = this.tasksDir(run);
@@ -15262,31 +15298,31 @@ var TaskFileStore = class {
     for (const file of readdirSync(dir).sort()) {
       if (!file.endsWith(".md")) continue;
       const taskNo = file.slice(0, file.indexOf("-"));
-      const task = this.parseTaskFile(join3(dir, file), taskNo);
+      const task = this.parseTaskFile(join4(dir, file), taskNo);
       if (task) tasks.push(task);
     }
     return tasks;
   }
   writeTask(run, task) {
     const dir = this.tasksDir(run);
-    mkdirSync2(dir, { recursive: true });
+    mkdirSync3(dir, { recursive: true });
     const prefix = `${task.taskNo}-`;
     for (const f of readdirSync(dir)) {
-      if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync(join3(dir, f));
+      if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync(join4(dir, f));
     }
     const file = `${task.taskNo}-${this.slugOf(task)}.md`;
-    writeFileSync2(join3(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
+    writeFileSync3(join4(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
   }
   readArtifact(run, kind) {
-    const file = join3(runDir(this.cwd, run), `${kind}.md`);
+    const file = join4(runDir(this.cwd, run), `${kind}.md`);
     if (!existsSync(file)) return void 0;
-    const m = FRONTMATTER.exec(readFileSync2(file, "utf8"));
-    return m ? (m[2] ?? "").trim() : readFileSync2(file, "utf8");
+    const m = FRONTMATTER.exec(readFileSync3(file, "utf8"));
+    return m ? (m[2] ?? "").trim() : readFileSync3(file, "utf8");
   }
   writeArtifact(run, kind, body) {
     const dir = runDir(this.cwd, run);
-    mkdirSync2(dir, { recursive: true });
-    writeFileSync2(join3(dir, `${kind}.md`), this.render({ kind }, body));
+    mkdirSync3(dir, { recursive: true });
+    writeFileSync3(join4(dir, `${kind}.md`), this.render({ kind }, body));
   }
   // Render frontmatter + body, stamping a tool-computed `version` (AC4/AC5). Any caller-supplied
   // `version` is dropped first, then recomputed over (body, frontmatter-sans-version) — so the
@@ -15307,7 +15343,7 @@ ${body}
     return slug || "task";
   }
   parseTaskFile(path, taskNo) {
-    const m = FRONTMATTER.exec(readFileSync2(path, "utf8"));
+    const m = FRONTMATTER.exec(readFileSync3(path, "utf8"));
     if (!m) return void 0;
     const frontmatter = (0, import_yaml.parse)(m[1] ?? "") ?? {};
     return { taskNo, frontmatter, body: (m[2] ?? "").trim() };
@@ -15338,9 +15374,9 @@ var FsWorkRepository = class {
     return {
       run,
       routing: this.readRouting(dir),
-      spec: this.readArtifactFile(join4(dir, "spec.md")),
-      plan: this.readArtifactFile(join4(dir, "plan.md")),
-      adrs: this.readAdrs(join4(dir, "adr")),
+      spec: this.readArtifactFile(join5(dir, "spec.md")),
+      plan: this.readArtifactFile(join5(dir, "plan.md")),
+      adrs: this.readAdrs(join5(dir, "adr")),
       tasks: this.readTasks(run)
     };
   }
@@ -15348,9 +15384,9 @@ var FsWorkRepository = class {
   // (the graph root, VISION §4). Read via FLOW's `parseLogLine` (the closed vocabulary), so a malformed
   // or absent line yields null rather than throwing.
   readRouting(dir) {
-    const log = join4(dir, "events.jsonl");
+    const log = join5(dir, "events.jsonl");
     if (!existsSync2(log)) return null;
-    for (const line of readFileSync3(log, "utf8").split("\n")) {
+    for (const line of readFileSync4(log, "utf8").split("\n")) {
       const parsed = parseLogLine(line);
       if (parsed.kind === "flow" && parsed.event.type === "routing-decision") {
         return { shape: parsed.event.shape, kind: parsed.event.kind };
@@ -15362,7 +15398,7 @@ var FsWorkRepository = class {
   // `FRONTMATTER` regex: a file with no frontmatter fence is all body (empty frontmatter), never a throw.
   readArtifactFile(path) {
     if (!existsSync2(path)) return null;
-    return this.parseArtifact(readFileSync3(path, "utf8"));
+    return this.parseArtifact(readFileSync4(path, "utf8"));
   }
   // The adr/*.md records, id-keyed via their own frontmatter `id` downstream (buildGraph). Sorted by
   // filename (the `NNN-*.md` prefix) so adr order is stable. Absent dir ⇒ no adrs.
@@ -15371,7 +15407,7 @@ var FsWorkRepository = class {
     const out = [];
     for (const file of readdirSync2(adrDir).sort()) {
       if (!file.endsWith(".md")) continue;
-      out.push(this.parseArtifact(readFileSync3(join4(adrDir, file), "utf8")));
+      out.push(this.parseArtifact(readFileSync4(join5(adrDir, file), "utf8")));
     }
     return out;
   }
@@ -15577,10 +15613,10 @@ var ReaddirpStream = class extends Readable {
   }
   async _formatEntry(dirent, path) {
     let entry;
-    const basename5 = this._isDirent ? dirent.name : dirent;
+    const basename6 = this._isDirent ? dirent.name : dirent;
     try {
-      const fullPath = presolve(pjoin(path, basename5));
-      entry = { path: prelative(this._root, fullPath), fullPath, basename: basename5 };
+      const fullPath = presolve(pjoin(path, basename6));
+      entry = { path: prelative(this._root, fullPath), fullPath, basename: basename6 };
       entry[this._statsProp] = this._isDirent ? dirent : await this._stat(fullPath);
     } catch (err) {
       this._onError(err);
@@ -16121,9 +16157,9 @@ var NodeFsHandler = class {
   _watchWithNodeFs(path, listener) {
     const opts = this.fsw.options;
     const directory = sp.dirname(path);
-    const basename5 = sp.basename(path);
+    const basename6 = sp.basename(path);
     const parent = this.fsw._getWatchedDir(directory);
-    parent.add(basename5);
+    parent.add(basename6);
     const absolutePath = sp.resolve(path);
     const options = {
       persistent: opts.persistent
@@ -16133,7 +16169,7 @@ var NodeFsHandler = class {
     let closer;
     if (opts.usePolling) {
       const enableBin = opts.interval !== opts.binaryInterval;
-      options.interval = enableBin && isBinaryPath(basename5) ? opts.binaryInterval : opts.interval;
+      options.interval = enableBin && isBinaryPath(basename6) ? opts.binaryInterval : opts.interval;
       closer = setFsWatchFileListener(path, absolutePath, options, {
         listener,
         rawEmitter: this.fsw._emitRaw
@@ -16155,11 +16191,11 @@ var NodeFsHandler = class {
     if (this.fsw.closed) {
       return;
     }
-    const dirname3 = sp.dirname(file);
-    const basename5 = sp.basename(file);
-    const parent = this.fsw._getWatchedDir(dirname3);
+    const dirname4 = sp.dirname(file);
+    const basename6 = sp.basename(file);
+    const parent = this.fsw._getWatchedDir(dirname4);
     let prevStats = stats;
-    if (parent.has(basename5))
+    if (parent.has(basename6))
       return;
     const listener = async (path, newStats) => {
       if (!this.fsw._throttle(THROTTLE_MODE_WATCH, file, 5))
@@ -16184,9 +16220,9 @@ var NodeFsHandler = class {
             prevStats = newStats2;
           }
         } catch (error) {
-          this.fsw._remove(dirname3, basename5);
+          this.fsw._remove(dirname4, basename6);
         }
-      } else if (parent.has(basename5)) {
+      } else if (parent.has(basename6)) {
         const at = newStats.atimeMs;
         const mt = newStats.mtimeMs;
         if (!at || at <= mt || mt !== prevStats.mtimeMs) {
@@ -16281,7 +16317,7 @@ var NodeFsHandler = class {
         this._addToNodeFs(path, initialAdd, wh, depth + 1);
       }
     }).on(EV.ERROR, this._boundHandleError);
-    return new Promise((resolve4, reject2) => {
+    return new Promise((resolve6, reject2) => {
       if (!stream)
         return reject2();
       stream.once(STR_END, () => {
@@ -16290,7 +16326,7 @@ var NodeFsHandler = class {
           return;
         }
         const wasThrottled = throttler ? throttler.clear() : false;
-        resolve4(void 0);
+        resolve6(void 0);
         previous.getChildren().filter((item) => {
           return item !== directory && !current.has(item);
         }).forEach((item) => {
@@ -17201,10 +17237,10 @@ var ChokidarWatcher = class {
 
 // src/persistence/permission-watcher.ts
 import { existsSync as existsSync3 } from "node:fs";
-import { basename as basename3, join as join8 } from "node:path";
+import { basename as basename3, join as join9 } from "node:path";
 
 // ../../flow/src/channel/permission-relay.ts
-import { join as join7 } from "node:path";
+import { join as join8 } from "node:path";
 
 // ../../flow/src/channel/permission-event.ts
 var PermissionRequestSchema = external_exports.object({
@@ -17228,15 +17264,15 @@ var PermissionVerdictFileSchema = external_exports.object({
 
 // ../../flow/src/channel/permission-relay.ts
 function permissionsDir(cwd) {
-  return join7(cwd, ".agentry", "run", "permissions");
+  return join8(cwd, ".agentry", "run", "permissions");
 }
 
 // src/persistence/permission-reader.ts
-import { readFileSync as readFileSync4 } from "node:fs";
+import { readFileSync as readFileSync5 } from "node:fs";
 function readRequestFile(path) {
   let raw;
   try {
-    raw = readFileSync4(path, "utf8");
+    raw = readFileSync5(path, "utf8");
   } catch {
     return void 0;
   }
@@ -17308,7 +17344,7 @@ var PermissionWatcher = class {
   // is gone — and emit `removed` for it, so a stuck banner card (one whose own unlink was also missed)
   // clears too. Guarantees the snapshot reflects disk truth, never a phantom.
   current() {
-    const gone = prunePhantoms(this.pending, (id) => existsSync3(join8(this.dir, `${id}.json`)));
+    const gone = prunePhantoms(this.pending, (id) => existsSync3(join9(this.dir, `${id}.json`)));
     for (const id of gone) this.emit({ kind: "removed", requestId: id });
     return [...this.pending.values()];
   }
@@ -17343,8 +17379,8 @@ var PermissionWatcher = class {
 
 // src/persistence/flow-writer.ts
 var import_yaml3 = __toESM(require_dist(), 1);
-import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join10 } from "node:path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync7, readdirSync as readdirSync4, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join11 } from "node:path";
 
 // ../../flow/src/domain/review.ts
 var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
@@ -17375,8 +17411,8 @@ function isHumanComment(comment) {
 }
 
 // src/persistence/review-sidecar-source.ts
-import { existsSync as existsSync4, readFileSync as readFileSync5, readdirSync as readdirSync3 } from "node:fs";
-import { join as join9 } from "node:path";
+import { existsSync as existsSync4, readFileSync as readFileSync6, readdirSync as readdirSync3 } from "node:fs";
+import { join as join10 } from "node:path";
 var SIDECAR_SUFFIX = ".annotations.json";
 var FsReviewSidecarSource = class {
   constructor(cwd) {
@@ -17385,21 +17421,21 @@ var FsReviewSidecarSource = class {
   // The gate stems present under one run's `.review/` (sorted, stable), or `[]` when the dir is absent.
   // The stem is the filename minus the `.annotations.json` suffix — the gate key the inbox folds over.
   listGates(run) {
-    const dir = join9(runDir(this.cwd, run), ".review");
+    const dir = join10(runDir(this.cwd, run), ".review");
     if (!existsSync4(dir)) return [];
     return readdirSync3(dir).filter((file) => file.endsWith(SIDECAR_SUFFIX)).map((file) => file.slice(0, -SIDECAR_SUFFIX.length)).sort();
   }
   // One gate's validated `ReviewComment[]`, or `[]` when the sidecar is absent/corrupt. The single
   // parse-tolerant reader (see header) — every sidecar read in the package routes through here.
   commentsFor(run, gate) {
-    const file = join9(runDir(this.cwd, run), ".review", `${gate}${SIDECAR_SUFFIX}`);
+    const file = join10(runDir(this.cwd, run), ".review", `${gate}${SIDECAR_SUFFIX}`);
     return readSidecar(file);
   }
 };
 function readSidecar(file) {
   if (!existsSync4(file)) return [];
   try {
-    const raw = JSON.parse(readFileSync5(file, "utf8"));
+    const raw = JSON.parse(readFileSync6(file, "utf8"));
     if (!Array.isArray(raw)) return [];
     return raw.map((c) => ReviewComment.parse(c));
   } catch {
@@ -17416,30 +17452,30 @@ var FlowWriter = class {
   readArtifact(run, target) {
     const path = this.artifactPath(run, target);
     if (path === void 0 || !existsSync5(path)) return void 0;
-    return this.parse(readFileSync6(path, "utf8"));
+    return this.parse(readFileSync7(path, "utf8"));
   }
   writeArtifact(run, target, frontmatter, body) {
     const path = this.resolveWritePath(run, target);
-    mkdirSync3(join10(path, ".."), { recursive: true });
+    mkdirSync4(join11(path, ".."), { recursive: true });
     const { rendered, version } = this.render(frontmatter, body);
-    writeFileSync3(path, rendered);
+    writeFileSync4(path, rendered);
     return version;
   }
   appendComment(run, gate, comment) {
     assertSafeSegment(gate);
     const validated = ReviewComment.parse(comment);
-    const dir = join10(runDir(this.cwd, run), ".review");
-    const file = join10(dir, `${gate}.annotations.json`);
+    const dir = join11(runDir(this.cwd, run), ".review");
+    const file = join11(dir, `${gate}.annotations.json`);
     const existing = readSidecar(file);
-    mkdirSync3(dir, { recursive: true });
-    writeFileSync3(file, `${JSON.stringify([...existing, validated], null, 2)}
+    mkdirSync4(dir, { recursive: true });
+    writeFileSync4(file, `${JSON.stringify([...existing, validated], null, 2)}
 `);
   }
   // Flip `resolved:true` on the comment with `commentId` in the gate sidecar, rewriting the file in the
   // SAME JsonReviewStore layout. Read-modify-write by id: absent id ⇒ false (no write), found ⇒ true.
   resolveComment(run, gate, commentId) {
     assertSafeSegment(gate);
-    const file = join10(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    const file = join11(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
     const existing = readSidecar(file);
     let found = false;
     const next = existing.map((c) => {
@@ -17448,7 +17484,7 @@ var FlowWriter = class {
       return { ...c, resolved: true };
     });
     if (!found) return false;
-    writeFileSync3(file, `${JSON.stringify(next, null, 2)}
+    writeFileSync4(file, `${JSON.stringify(next, null, 2)}
 `);
     return true;
   }
@@ -17488,13 +17524,13 @@ ${body}
   // undefined for a task whose file does not yet exist (an absent artifact reads as undefined).
   artifactPath(run, target) {
     const dir = runDir(this.cwd, run);
-    if ("kind" in target) return join10(dir, `${target.kind}.md`);
+    if ("kind" in target) return join11(dir, `${target.kind}.md`);
     assertSafeSegment(target.taskNo);
-    const tasksDir = join10(dir, "tasks");
+    const tasksDir = join11(dir, "tasks");
     if (!existsSync5(tasksDir)) return void 0;
     const prefix = `${target.taskNo}-`;
     const file = readdirSync4(tasksDir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
-    return file ? join10(tasksDir, file) : void 0;
+    return file ? join11(tasksDir, file) : void 0;
   }
   // The path to WRITE a target. For a task we never write to a fresh name (the WriteService only
   // writes after a successful read at the same target, so the file exists) — but if FLOW renamed the
@@ -17506,13 +17542,13 @@ ${body}
     if ("taskNo" in target) {
       throw new Error(`flow-writer: no task file for ${target.taskNo} in run ${run} to write`);
     }
-    return join10(runDir(this.cwd, run), `${target.kind}.md`);
+    return join11(runDir(this.cwd, run), `${target.kind}.md`);
   }
 };
 
 // src/persistence/event-source.ts
-import { existsSync as existsSync6, readFileSync as readFileSync7 } from "node:fs";
-import { join as join11 } from "node:path";
+import { existsSync as existsSync6, readFileSync as readFileSync8 } from "node:fs";
+import { join as join12 } from "node:path";
 var FsEventSource = class {
   constructor(cwd) {
     this.cwd = cwd;
@@ -17520,22 +17556,217 @@ var FsEventSource = class {
   // `events.jsonl` split into lines, or `[]` when absent. The application indexes the lines (the feed key)
   // and runs FLOW's `parseLogLine` over each — this adapter does no line interpretation.
   eventLines(run) {
-    const log = join11(runDir(this.cwd, run), "events.jsonl");
+    const log = join12(runDir(this.cwd, run), "events.jsonl");
     if (!existsSync6(log)) return [];
-    return readFileSync7(log, "utf8").split("\n");
+    return readFileSync8(log, "utf8").split("\n");
   }
   // `run-state.json` parsed to loose data, or `undefined` when absent/unparseable. A corrupt file reads as
   // `undefined` (the application surfaces it as an empty roster) rather than throwing.
   runState(run) {
-    const path = join11(runDir(this.cwd, run), "run-state.json");
+    const path = join12(runDir(this.cwd, run), "run-state.json");
     if (!existsSync6(path)) return void 0;
     try {
-      return JSON.parse(readFileSync7(path, "utf8"));
+      return JSON.parse(readFileSync8(path, "utf8"));
     } catch {
       return void 0;
     }
   }
 };
+
+// src/persistence/transcript-reader.ts
+import { existsSync as existsSync7, readFileSync as readFileSync9, readdirSync as readdirSync5 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { join as join13 } from "node:path";
+var TranscriptReader = class {
+  // `cwd` (the project root) locates the FLOW session pointers; `home` is the transcript root base
+  // (injectable so the reader is testable against a fixture tree without touching the real home dir).
+  constructor(cwd, home = homedir2()) {
+    this.cwd = cwd;
+    this.home = home;
+  }
+  // The token-usage samples observed for one run, in time order. Resolves the run's sessions from the FLOW
+  // pointers, reads each session transcript, sums the per-line usage, and sorts by timestamp. An absent
+  // pointer dir, an absent transcript dir, or an unreadable file each degrade to fewer (or zero) samples —
+  // never a throw.
+  read(run) {
+    const sessions = this.sessionsForRun(run);
+    if (sessions.length === 0) return [];
+    const dir = this.transcriptDir();
+    if (dir === null || !existsSync7(dir)) return [];
+    const samples = [];
+    for (const session of sessions) {
+      const file = join13(dir, `${session}.jsonl`);
+      if (!existsSync7(file)) continue;
+      samples.push(...this.readTranscript(file));
+    }
+    return samples.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+  // Invert the FLOW session→run pointers: every `<cwd>/.agentry/run/sessions/<session>.json` whose
+  // `workId` is this run names a session whose transcript belongs to the run. A missing pointer dir, an
+  // unreadable pointer, or one with no matching `workId` simply contributes no session.
+  sessionsForRun(run) {
+    const dir = join13(this.cwd, ".agentry", "run", "sessions");
+    if (!existsSync7(dir)) return [];
+    const sessions = [];
+    for (const file of readdirSync5(dir)) {
+      if (!file.endsWith(".json")) continue;
+      try {
+        const ptr = JSON.parse(readFileSync9(join13(dir, file), "utf8"));
+        if (ptr && typeof ptr === "object" && ptr.workId === run) {
+          sessions.push(file.slice(0, -".json".length));
+        }
+      } catch {
+      }
+    }
+    return sessions;
+  }
+  // Read one session transcript into samples. Each assistant line with a `message.usage` becomes one
+  // sample: its `timestamp` + the sum of the four token fields. A line that doesn't parse, has no usage,
+  // or no timestamp is skipped — the stream stays readable past a malformed entry.
+  readTranscript(file) {
+    let text;
+    try {
+      text = readFileSync9(file, "utf8");
+    } catch {
+      return [];
+    }
+    const out = [];
+    for (const line of text.split("\n")) {
+      const sample = parseUsageLine(line);
+      if (sample !== null) out.push(sample);
+    }
+    return out;
+  }
+  // The transcript dir for this project: ~/.claude/projects/<project-slug>/, where the slug is the
+  // absolute cwd with every non-alphanumeric char replaced by `-` (Claude Code's layout). Returns null
+  // only if the base projects dir is itself absent (Claude Code never ran) — a degrade signal.
+  transcriptDir() {
+    const base = join13(this.home, ".claude", "projects");
+    if (!existsSync7(base)) return null;
+    return join13(base, projectSlug(this.cwd));
+  }
+};
+function parseUsageLine(line) {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) return null;
+  let raw;
+  try {
+    raw = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!isRecord(raw)) return null;
+  const timestamp = raw.timestamp;
+  const message = raw.message;
+  if (typeof timestamp !== "string" || !isRecord(message)) return null;
+  const usage = message.usage;
+  if (!isRecord(usage)) return null;
+  const tokens = num(usage.input_tokens) + num(usage.output_tokens) + num(usage.cache_creation_input_tokens) + num(usage.cache_read_input_tokens);
+  if (tokens === 0) return null;
+  return { timestamp, tokens };
+}
+function projectSlug(cwd) {
+  return cwd.replace(/[^A-Za-z0-9]/g, "-");
+}
+function num(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/persistence/mem-reader.ts
+var import_yaml4 = __toESM(require_dist(), 1);
+import { existsSync as existsSync8, readFileSync as readFileSync10, readdirSync as readdirSync6 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { join as join14 } from "node:path";
+var FRONTMATTER4 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var BODY_KEY = { facts: "text", episodes: "task" };
+var MemReader = class {
+  roots;
+  // `cwd` (the project root) + `home` (the global root base, injectable for testing) resolve the two mem
+  // roots. The project root is included only when the project mem dir exists — a project that has never
+  // written memory contributes nothing rather than erroring.
+  constructor(cwd, home = homedir3()) {
+    this.roots = [
+      { origin: "global", dir: join14(home, ".agentry", "memory") },
+      { origin: "project", dir: join14(cwd, ".agentry", "memory") }
+    ];
+  }
+  // Every memory record across both roots (facts then episodes), each tagged with its kind + origin. A
+  // corrupt/unreadable file is skipped (never fatal). The READ-ONLY browse the panel lists from.
+  list() {
+    const records = [];
+    for (const { origin, dir } of this.roots) {
+      for (const kind of ["facts", "episodes"]) {
+        records.push(...this.readDir(origin, kind, join14(dir, kind)));
+      }
+    }
+    return records;
+  }
+  // One record by id, or undefined when absent. The id is the store's bare ulid (the `<slug>-<ulid>` file
+  // stem's ulid half); we match on the parsed record's own `id` field, so a renamed file still resolves.
+  read(id) {
+    return this.list().find((r) => r.id === id);
+  }
+  // A simple read-only search over both roots: a case-insensitive substring match against the record's
+  // body prose and its frontmatter values (the fields a human scans for). An empty query returns all
+  // records (the browse default). Search NEVER writes — it filters the in-memory `list()`.
+  search(query) {
+    const needle = query.trim().toLowerCase();
+    if (needle.length === 0) return this.list();
+    return this.list().filter((r) => recordText(r).toLowerCase().includes(needle));
+  }
+  // Read one kind dir under one root into records. Absent dir ⇒ no records. Each `.md` file is split with
+  // the store's frontmatter regex; a file with no fence, or one whose YAML fails to parse, is skipped (the
+  // store's "corrupt files are skipped, never fatal" tolerance).
+  readDir(origin, kind, dir) {
+    if (!existsSync8(dir)) return [];
+    const records = [];
+    for (const file of readdirSync6(dir).sort()) {
+      if (!file.endsWith(".md")) continue;
+      const record = this.parseRecord(origin, kind, join14(dir, file));
+      if (record !== null) records.push(record);
+    }
+    return records;
+  }
+  // Parse one record file into a `MemReadRecord`, or null when it can't be read as a fenced record. The
+  // frontmatter fields are kept loose (the store owns the field contract); the body prose is re-attached
+  // under the kind's body key. The `id` is the record's own frontmatter `id` (the store always writes it);
+  // a record with no `id` falls back to the file stem so it still has a stable key.
+  parseRecord(origin, kind, file) {
+    let text;
+    try {
+      text = readFileSync10(file, "utf8");
+    } catch {
+      return null;
+    }
+    const m = FRONTMATTER4.exec(text);
+    if (!m) return null;
+    let front;
+    try {
+      front = (0, import_yaml4.parse)(m[1] ?? "") ?? {};
+    } catch {
+      return null;
+    }
+    const body = (m[2] ?? "").trim();
+    const fields = { ...front, [BODY_KEY[kind]]: body };
+    const id = typeof front.id === "string" && front.id.length > 0 ? front.id : stemOf(file);
+    return { id, fields, kind, origin };
+  }
+};
+function recordText(record) {
+  const parts = [];
+  for (const value of Object.values(record.fields)) {
+    if (typeof value === "string") parts.push(value);
+    else if (typeof value === "number") parts.push(String(value));
+  }
+  return parts.join("\n");
+}
+function stemOf(file) {
+  const name = file.slice(file.lastIndexOf("/") + 1);
+  return name.endsWith(".md") ? name.slice(0, -".md".length) : name;
+}
 
 // ../../flow/src/domain/status.ts
 var FlowTaskStatus = external_exports.enum(["todo", "in-progress", "in-review", "done"]);
@@ -17879,11 +18110,11 @@ var EventStore = class {
   // surfacing an ill-typed state.
   rosterOf(run) {
     const raw = this.source.runState(run);
-    const agents = isRecord(raw) ? raw.agents : void 0;
-    if (!isRecord(agents)) return [];
+    const agents = isRecord2(raw) ? raw.agents : void 0;
+    if (!isRecord2(agents)) return [];
     const out = [];
     for (const [agent, value] of Object.entries(agents)) {
-      if (!isRecord(value)) continue;
+      if (!isRecord2(value)) continue;
       const state = AgentState.safeParse(value.state);
       if (!state.success) continue;
       const assignedTask = typeof value.assignedTask === "string" ? value.assignedTask : void 0;
@@ -17895,7 +18126,7 @@ var EventStore = class {
 function hookToEvent(line) {
   return { ts: line.ts, type: "node-enter", node: line.kind, agent: line.agent };
 }
-function isRecord(value) {
+function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -17973,204 +18204,48 @@ function dayOf(timestamp) {
   return parsed.toISOString().slice(0, 10);
 }
 
-// src/persistence/transcript-reader.ts
-import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync as readdirSync5 } from "node:fs";
-import { homedir } from "node:os";
-import { join as join12 } from "node:path";
-var TranscriptReader = class {
-  // `cwd` (the project root) locates the FLOW session pointers; `home` is the transcript root base
-  // (injectable so the reader is testable against a fixture tree without touching the real home dir).
-  constructor(cwd, home = homedir()) {
-    this.cwd = cwd;
-    this.home = home;
-  }
-  // The token-usage samples observed for one run, in time order. Resolves the run's sessions from the FLOW
-  // pointers, reads each session transcript, sums the per-line usage, and sorts by timestamp. An absent
-  // pointer dir, an absent transcript dir, or an unreadable file each degrade to fewer (or zero) samples —
-  // never a throw.
-  read(run) {
-    const sessions = this.sessionsForRun(run);
-    if (sessions.length === 0) return [];
-    const dir = this.transcriptDir();
-    if (dir === null || !existsSync7(dir)) return [];
-    const samples = [];
-    for (const session of sessions) {
-      const file = join12(dir, `${session}.jsonl`);
-      if (!existsSync7(file)) continue;
-      samples.push(...this.readTranscript(file));
-    }
-    return samples.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  }
-  // Invert the FLOW session→run pointers: every `<cwd>/.agentry/run/sessions/<session>.json` whose
-  // `workId` is this run names a session whose transcript belongs to the run. A missing pointer dir, an
-  // unreadable pointer, or one with no matching `workId` simply contributes no session.
-  sessionsForRun(run) {
-    const dir = join12(this.cwd, ".agentry", "run", "sessions");
-    if (!existsSync7(dir)) return [];
-    const sessions = [];
-    for (const file of readdirSync5(dir)) {
-      if (!file.endsWith(".json")) continue;
-      try {
-        const ptr = JSON.parse(readFileSync8(join12(dir, file), "utf8"));
-        if (ptr && typeof ptr === "object" && ptr.workId === run) {
-          sessions.push(file.slice(0, -".json".length));
-        }
-      } catch {
-      }
-    }
-    return sessions;
-  }
-  // Read one session transcript into samples. Each assistant line with a `message.usage` becomes one
-  // sample: its `timestamp` + the sum of the four token fields. A line that doesn't parse, has no usage,
-  // or no timestamp is skipped — the stream stays readable past a malformed entry.
-  readTranscript(file) {
-    let text;
-    try {
-      text = readFileSync8(file, "utf8");
-    } catch {
-      return [];
-    }
-    const out = [];
-    for (const line of text.split("\n")) {
-      const sample = parseUsageLine(line);
-      if (sample !== null) out.push(sample);
-    }
-    return out;
-  }
-  // The transcript dir for this project: ~/.claude/projects/<project-slug>/, where the slug is the
-  // absolute cwd with every non-alphanumeric char replaced by `-` (Claude Code's layout). Returns null
-  // only if the base projects dir is itself absent (Claude Code never ran) — a degrade signal.
-  transcriptDir() {
-    const base = join12(this.home, ".claude", "projects");
-    if (!existsSync7(base)) return null;
-    return join12(base, projectSlug(this.cwd));
-  }
-};
-function parseUsageLine(line) {
-  const trimmed = line.trim();
-  if (trimmed.length === 0) return null;
-  let raw;
-  try {
-    raw = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  if (!isRecord2(raw)) return null;
-  const timestamp = raw.timestamp;
-  const message = raw.message;
-  if (typeof timestamp !== "string" || !isRecord2(message)) return null;
-  const usage = message.usage;
-  if (!isRecord2(usage)) return null;
-  const tokens = num(usage.input_tokens) + num(usage.output_tokens) + num(usage.cache_creation_input_tokens) + num(usage.cache_read_input_tokens);
-  if (tokens === 0) return null;
-  return { timestamp, tokens };
+// src/application/project.ts
+function createProject(root, slug, clock) {
+  const repository = new FsWorkRepository(root);
+  const events = new EventStore(repository, new FsEventSource(root));
+  return {
+    slug,
+    root,
+    reader: new WorkReader(repository, clock, (run) => events.roster(run).length),
+    writeService: new WriteService(new FlowWriter(root)),
+    events,
+    gates: new GateInbox(repository, new FsReviewSidecarSource(root)),
+    tokens: new TokenReader(new TranscriptReader(root)),
+    memory: new MemReader(root),
+    watcher: new ChokidarWatcher(root),
+    permissionWatcher: new PermissionWatcher(root)
+  };
 }
-function projectSlug(cwd) {
-  return cwd.replace(/[^A-Za-z0-9]/g, "-");
+function slugsFor(roots) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const root of roots) {
+    const name = basename4(root);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const slugs = /* @__PURE__ */ new Map();
+  for (const root of roots) {
+    const name = basename4(root);
+    slugs.set(root, (counts.get(name) ?? 0) > 1 ? `${name}-${shortHash(root)}` : name);
+  }
+  return slugs;
 }
-function num(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-function isRecord2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-// src/persistence/mem-reader.ts
-var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync8, readFileSync as readFileSync9, readdirSync as readdirSync6 } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { join as join13 } from "node:path";
-var FRONTMATTER4 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var BODY_KEY = { facts: "text", episodes: "task" };
-var MemReader = class {
-  roots;
-  // `cwd` (the project root) + `home` (the global root base, injectable for testing) resolve the two mem
-  // roots. The project root is included only when the project mem dir exists — a project that has never
-  // written memory contributes nothing rather than erroring.
-  constructor(cwd, home = homedir2()) {
-    this.roots = [
-      { origin: "global", dir: join13(home, ".agentry", "memory") },
-      { origin: "project", dir: join13(cwd, ".agentry", "memory") }
-    ];
+function shortHash(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
-  // Every memory record across both roots (facts then episodes), each tagged with its kind + origin. A
-  // corrupt/unreadable file is skipped (never fatal). The READ-ONLY browse the panel lists from.
-  list() {
-    const records = [];
-    for (const { origin, dir } of this.roots) {
-      for (const kind of ["facts", "episodes"]) {
-        records.push(...this.readDir(origin, kind, join13(dir, kind)));
-      }
-    }
-    return records;
-  }
-  // One record by id, or undefined when absent. The id is the store's bare ulid (the `<slug>-<ulid>` file
-  // stem's ulid half); we match on the parsed record's own `id` field, so a renamed file still resolves.
-  read(id) {
-    return this.list().find((r) => r.id === id);
-  }
-  // A simple read-only search over both roots: a case-insensitive substring match against the record's
-  // body prose and its frontmatter values (the fields a human scans for). An empty query returns all
-  // records (the browse default). Search NEVER writes — it filters the in-memory `list()`.
-  search(query) {
-    const needle = query.trim().toLowerCase();
-    if (needle.length === 0) return this.list();
-    return this.list().filter((r) => recordText(r).toLowerCase().includes(needle));
-  }
-  // Read one kind dir under one root into records. Absent dir ⇒ no records. Each `.md` file is split with
-  // the store's frontmatter regex; a file with no fence, or one whose YAML fails to parse, is skipped (the
-  // store's "corrupt files are skipped, never fatal" tolerance).
-  readDir(origin, kind, dir) {
-    if (!existsSync8(dir)) return [];
-    const records = [];
-    for (const file of readdirSync6(dir).sort()) {
-      if (!file.endsWith(".md")) continue;
-      const record = this.parseRecord(origin, kind, join13(dir, file));
-      if (record !== null) records.push(record);
-    }
-    return records;
-  }
-  // Parse one record file into a `MemReadRecord`, or null when it can't be read as a fenced record. The
-  // frontmatter fields are kept loose (the store owns the field contract); the body prose is re-attached
-  // under the kind's body key. The `id` is the record's own frontmatter `id` (the store always writes it);
-  // a record with no `id` falls back to the file stem so it still has a stable key.
-  parseRecord(origin, kind, file) {
-    let text;
-    try {
-      text = readFileSync9(file, "utf8");
-    } catch {
-      return null;
-    }
-    const m = FRONTMATTER4.exec(text);
-    if (!m) return null;
-    let front;
-    try {
-      front = (0, import_yaml4.parse)(m[1] ?? "") ?? {};
-    } catch {
-      return null;
-    }
-    const body = (m[2] ?? "").trim();
-    const fields = { ...front, [BODY_KEY[kind]]: body };
-    const id = typeof front.id === "string" && front.id.length > 0 ? front.id : stemOf(file);
-    return { id, fields, kind, origin };
-  }
-};
-function recordText(record) {
-  const parts = [];
-  for (const value of Object.values(record.fields)) {
-    if (typeof value === "string") parts.push(value);
-    else if (typeof value === "number") parts.push(String(value));
-  }
-  return parts.join("\n");
-}
-function stemOf(file) {
-  const name = file.slice(file.lastIndexOf("/") + 1);
-  return name.endsWith(".md") ? name.slice(0, -".md".length) : name;
+  return (h >>> 0).toString(36).padStart(6, "0").slice(-6);
 }
 
 // src/transport/http.ts
 import { createReadStream, existsSync as existsSync9, statSync } from "node:fs";
-import { extname as extname2, join as join16, normalize as normalize2, resolve as resolve3, sep as sep2 } from "node:path";
+import { extname as extname2, join as join17, normalize as normalize2, resolve as resolve4, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ../shared/src/slug.ts
@@ -18196,26 +18271,6 @@ function resolveSlug(label, runIds) {
   return runIds.find((id) => id.toLowerCase() === lower || workSlug(id).toLowerCase() === lower);
 }
 
-// src/transport/host-router.ts
-var HOME_LABELS = /* @__PURE__ */ new Set(["localhost", "workbench"]);
-function parseHostLabel(hostHeader) {
-  if (hostHeader === void 0 || hostHeader.length === 0) return null;
-  const host = hostHeader.split(":")[0] ?? "";
-  const labels = host.split(".");
-  if (labels[labels.length - 1] !== "localhost") return null;
-  const leading = labels[0] ?? "";
-  if (HOME_LABELS.has(leading) || labels.length < 2) return null;
-  try {
-    assertSafeSegment(leading);
-  } catch {
-    return null;
-  }
-  return leading;
-}
-
-// src/transport/read-routes.ts
-import { basename as basename4 } from "node:path";
-
 // src/transport/http-kit.ts
 function guardGet(method, res, run) {
   if (method !== "GET") {
@@ -18238,7 +18293,7 @@ function sendJson(res, status, body) {
 }
 var MAX_BODY_BYTES = 4 * 1024 * 1024;
 function readJsonBody(req) {
-  return new Promise((resolve4, rejectPromise) => {
+  return new Promise((resolve6, rejectPromise) => {
     let size = 0;
     const chunks = [];
     req.on("data", (chunk) => {
@@ -18252,9 +18307,9 @@ function readJsonBody(req) {
     });
     req.on("end", () => {
       const text = Buffer.concat(chunks).toString("utf8").trim();
-      if (text.length === 0) return resolve4({});
+      if (text.length === 0) return resolve6({});
       try {
-        resolve4(JSON.parse(text));
+        resolve6(JSON.parse(text));
       } catch {
         rejectPromise(new Error("invalid_json"));
       }
@@ -18262,6 +18317,53 @@ function readJsonBody(req) {
     req.on("error", rejectPromise);
   });
 }
+
+// src/transport/projects.ts
+function runKey(projectSlug2, run) {
+  return `${projectSlug2}::${run}`;
+}
+function handleProjectsRequest(req, res, url, projects) {
+  if (url.pathname !== "/api/projects") return false;
+  const method = req.method ?? "GET";
+  if (method === "POST") {
+    void readJsonBody(req).then((body) => {
+      const root = typeof body === "object" && body !== null ? body.root : void 0;
+      if (typeof root !== "string" || root.length === 0) {
+        return sendJson(res, 400, { error: "root_required" });
+      }
+      const project = projects.register(root);
+      sendJson(res, 200, { slug: project.slug, root: project.root });
+    });
+    return true;
+  }
+  return guardGet(method, res, () => {
+    const list = projects.list();
+    sendJson(res, 200, {
+      projects: list.map((p) => ({ slug: p.slug, root: p.root })),
+      default: list[0]?.slug
+    });
+  });
+}
+
+// src/transport/host-router.ts
+var HOME_LABELS = /* @__PURE__ */ new Set(["localhost", "workbench"]);
+function parseHostLabel(hostHeader) {
+  if (hostHeader === void 0 || hostHeader.length === 0) return null;
+  const host = hostHeader.split(":")[0] ?? "";
+  const labels = host.split(".");
+  if (labels[labels.length - 1] !== "localhost") return null;
+  const leading = labels[0] ?? "";
+  if (HOME_LABELS.has(leading) || labels.length < 2) return null;
+  try {
+    assertSafeSegment(leading);
+  } catch {
+    return null;
+  }
+  return leading;
+}
+
+// src/transport/read-routes.ts
+import { basename as basename5 } from "node:path";
 
 // src/transport/route-match.ts
 function runParam(url) {
@@ -18365,7 +18467,7 @@ function taskNoFromTarget(body) {
 }
 
 // src/transport/read-routes.ts
-function handleApiRequest(req, res, reader, context, projectRoot) {
+function handleApiRequest(req, res, reader, context, projectRoot, projectSlug2) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
   const method = req.method ?? "GET";
@@ -18378,7 +18480,7 @@ function handleApiRequest(req, res, reader, context, projectRoot) {
       const requested = runParam(url);
       const run = requested !== void 0 ? resolveRun(reader, requested) : context.run ?? void 0;
       sendJson(res, 200, {
-        ...projectRoot !== void 0 ? { project: basename4(projectRoot), root: projectRoot } : {},
+        ...projectRoot !== void 0 ? { project: projectSlug2 ?? basename5(projectRoot), root: projectRoot } : {},
         ...run !== void 0 && run !== null ? { run } : {}
       });
     });
@@ -18460,19 +18562,19 @@ function handleReaderRequest(req, res, deps) {
 }
 
 // src/persistence/status-signal-writer.ts
-import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join14 } from "node:path";
+import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join15 } from "node:path";
 function signalDir(projectRoot) {
-  return join14(projectRoot, ".agentry", "run", "status-signals");
+  return join15(projectRoot, ".agentry", "run", "status-signals");
 }
 function mintName() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`;
 }
 function writeStatusSignal(projectRoot, signal) {
   const dir = signalDir(projectRoot);
-  mkdirSync4(dir, { recursive: true });
+  mkdirSync5(dir, { recursive: true });
   const payload = { ...signal, at: (/* @__PURE__ */ new Date()).toISOString() };
-  writeFileSync4(join14(dir, mintName()), `${JSON.stringify(payload, null, 2)}
+  writeFileSync5(join15(dir, mintName()), `${JSON.stringify(payload, null, 2)}
 `);
 }
 
@@ -18599,14 +18701,14 @@ function handleArtifact(res, deps, runId, body) {
 }
 
 // src/persistence/permission-writer.ts
-import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join15 } from "node:path";
+import { mkdirSync as mkdirSync6, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join16 } from "node:path";
 function writeVerdict(projectRoot, requestId, behavior) {
   assertSafeSegment(requestId);
   const dir = permissionsDir(projectRoot);
-  mkdirSync5(dir, { recursive: true });
+  mkdirSync6(dir, { recursive: true });
   const record = { request_id: requestId, behavior };
-  writeFileSync5(join15(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
+  writeFileSync6(join16(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
 }
 
 // src/transport/permission-routes.ts
@@ -18649,13 +18751,13 @@ function handleVerdict(res, deps, requestId, body) {
 function resolveWebRoot() {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (pluginRoot && pluginRoot.length > 0) {
-    return join16(pluginRoot, "workbench", "web");
+    return join17(pluginRoot, "workbench", "web");
   }
   const bundleDir = fileURLToPath(new URL(".", import.meta.url));
-  return resolve3(bundleDir, "..", "web");
+  return resolve4(bundleDir, "..", "web");
 }
 var WEB_ROOT = resolveWebRoot();
-var INDEX_HTML = join16(WEB_ROOT, "index.html");
+var INDEX_HTML = join17(WEB_ROOT, "index.html");
 var CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -18674,17 +18776,47 @@ var CONTENT_TYPES = {
   ".ttf": "font/ttf",
   ".map": "application/json; charset=utf-8"
 };
-function createHttpHandler(reader, write, readers, permissions) {
+function createHttpHandler(projects, transport) {
   return function handler(req, res) {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (handleProjectsRequest(req, res, url, projects)) return;
+    const requested = url.searchParams.get("project");
+    const project = projects.resolve(requested);
+    if (project === void 0) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "unknown_project", project: requested }));
+      return;
+    }
+    const reader = project.reader;
+    const scoped = {
+      push: (run2, message) => transport.push(runKey(project.slug, run2), message),
+      pushAll: (message) => transport.pushAll(message)
+    };
+    const write = {
+      reader,
+      writeService: project.writeService,
+      transport: scoped,
+      projectRoot: project.root
+    };
+    const readers = {
+      events: project.events,
+      gates: project.gates,
+      tokens: project.tokens,
+      memory: project.memory
+    };
+    const permissions = {
+      watcher: project.permissionWatcher,
+      projectRoot: project.root
+    };
     const label = parseHostLabel(req.headers.host);
     const run = label !== null ? resolveSlug(label, reader.listRuns()) ?? null : null;
     const context = { run };
-    if (run !== null && req.method === "GET" && new URL(req.url ?? "/", "http://localhost").pathname === "/") {
+    if (run !== null && req.method === "GET" && url.pathname === "/") {
       res.writeHead(302, { location: `/work/${encodeURIComponent(label ?? run)}` });
       res.end();
       return;
     }
-    if (handleApiRequest(req, res, reader, context, write.projectRoot)) return;
+    if (handleApiRequest(req, res, reader, context, project.root, project.slug)) return;
     if (handleReaderRequest(req, res, readers)) return;
     void handlePostRequest(req, res, write).then((handled) => handled ? true : handlePermissionRequest(req, res, permissions)).then((handled) => {
       if (handled) return;
@@ -18715,7 +18847,7 @@ function resolveStaticFile(pathname) {
   const decoded = safeDecode(pathname);
   if (decoded === null) return null;
   if (decoded === "/" || decoded === "") return INDEX_HTML;
-  const candidate = normalize2(join16(WEB_ROOT, decoded));
+  const candidate = normalize2(join17(WEB_ROOT, decoded));
   if (candidate !== WEB_ROOT && !candidate.startsWith(WEB_ROOT + sep2)) return null;
   return candidate;
 }
@@ -18766,7 +18898,7 @@ var WsTransport = class {
       }
       const queryLabel = url.searchParams.get("run");
       const label = queryLabel !== null && queryLabel.length > 0 ? queryLabel : parseHostLabel(req.headers.host);
-      const run = label !== null ? this.resolveRun(label) : null;
+      const run = label !== null ? this.resolveRun(label, url.searchParams.get("project")) : null;
       this.wss.handleUpgrade(req, socket, head, (ws) => this.register(ws, run));
     });
   }
@@ -18833,12 +18965,13 @@ var WsTransport = class {
 };
 
 // src/index.ts
-function resolveProjectRoot() {
-  return process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd();
+import { resolve as resolve5 } from "node:path";
+function resolveStartupRoot() {
+  return resolve5(process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd());
 }
 var systemClock = { now: () => (/* @__PURE__ */ new Date()).toISOString() };
 async function main() {
-  const projectRoot = resolveProjectRoot();
+  const startupRoot = resolveStartupRoot();
   const lock = await bindPortLock();
   if (lock.status === "already-up") {
     console.log("workbench already running on http://127.0.0.1:4317 \u2014 focusing the existing instance");
@@ -18847,51 +18980,80 @@ async function main() {
   const server = lock.server;
   const address = server.address();
   const port = typeof address === "object" && address !== null ? address.port : 4317;
-  writePidfile(projectRoot, { pid: process.pid, port, startedAt: systemClock.now() });
-  const repository = new FsWorkRepository(projectRoot);
-  const watcher = new ChokidarWatcher(projectRoot);
-  const writeService = new WriteService(new FlowWriter(projectRoot));
-  const permissionWatcher = new PermissionWatcher(projectRoot);
-  const events = new EventStore(repository, new FsEventSource(projectRoot));
-  const gates = new GateInbox(repository, new FsReviewSidecarSource(projectRoot));
-  const tokens = new TokenReader(new TranscriptReader(projectRoot));
-  const memory = new MemReader(projectRoot);
-  const reader = new WorkReader(repository, systemClock, (run) => events.roster(run).length);
-  const transport = new WsTransport(server, (label) => resolveSlug(label, reader.listRuns()) ?? null);
-  server.on(
-    "request",
-    createHttpHandler(
-      reader,
-      { reader, writeService, transport, projectRoot },
-      { events, gates, tokens, memory },
-      { watcher: permissionWatcher, projectRoot }
-    )
+  writePidfile(startupRoot, { pid: process.pid, port, startedAt: systemClock.now() });
+  registerRoot(startupRoot, systemClock.now());
+  const byRoot = /* @__PURE__ */ new Map();
+  const bySlug = /* @__PURE__ */ new Map();
+  function rebuild(roots) {
+    const ordered = [startupRoot, ...roots.filter((r) => r !== startupRoot)];
+    const slugs = slugsFor(ordered);
+    for (const root of ordered) {
+      const slug = slugs.get(root) ?? root;
+      const existing = byRoot.get(root);
+      if (existing) {
+        bySlug.delete(existing.slug);
+        const reslugged = { ...existing, slug };
+        byRoot.set(root, reslugged);
+        bySlug.set(slug, reslugged);
+        continue;
+      }
+      const project = createProject(root, slug, systemClock);
+      byRoot.set(root, project);
+      bySlug.set(slug, project);
+      wireLive(project);
+    }
+  }
+  const transport = new WsTransport(server, (label, projectSlug2) => {
+    const project = projectSlug2 !== null ? bySlug.get(projectSlug2) : bySlug.get(orderedSlugs()[0] ?? "");
+    if (!project) return null;
+    const run = resolveSlug(label, project.reader.listRuns());
+    return run !== void 0 ? runKey(project.slug, run) : null;
+  });
+  const orderedSlugs = () => [...bySlug.keys()];
+  function wireLive(project) {
+    project.watcher.subscribe((change) => {
+      transport.pushAll({ type: "works-changed" });
+      if (!project.reader.read(change.run)) return;
+      for (const path of change.paths) {
+        transport.push(runKey(project.slug, change.run), { type: "file-changed", path });
+      }
+    });
+    project.permissionWatcher.subscribe((event) => {
+      if (event.kind === "added") {
+        transport.pushAll({ type: "permission-added", request: event.request });
+      } else {
+        transport.pushAll({ type: "permission-removed", requestId: event.requestId });
+      }
+    });
+  }
+  rebuild(readRegistry().map((p) => p.root));
+  const projects = {
+    list: () => [...bySlug.values()],
+    resolve: (slug) => slug === null || slug.length === 0 ? byRoot.get(startupRoot) : bySlug.get(slug),
+    register: (root) => {
+      const abs = resolve5(root);
+      const existing = byRoot.get(abs);
+      if (existing) return existing;
+      rebuild(registerRoot(abs, systemClock.now()).map((p) => p.root));
+      const added = byRoot.get(abs);
+      if (!added) throw new Error(`failed to register project root: ${abs}`);
+      transport.pushAll({ type: "works-changed" });
+      return added;
+    }
+  };
+  server.on("request", createHttpHandler(projects, transport));
+  console.log(
+    `workbench server listening on http://127.0.0.1:${port} \u2014 serving ${bySlug.size} project(s): ${orderedSlugs().join(", ")} (default: ${startupRoot})`
   );
-  permissionWatcher.subscribe((event) => {
-    if (event.kind === "added") {
-      transport.pushAll({ type: "permission-added", request: event.request });
-    } else {
-      transport.pushAll({ type: "permission-removed", requestId: event.requestId });
-    }
-  });
-  watcher.subscribe((change) => {
-    transport.pushAll({ type: "works-changed" });
-    if (!reader.read(change.run)) return;
-    for (const path of change.paths) {
-      transport.push(change.run, { type: "file-changed", path });
-    }
-  });
-  console.log(`workbench server listening on http://127.0.0.1:${port} (project root: ${projectRoot})`);
   let shuttingDown = false;
   const shutdown = (signal) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`workbench server shutting down (${signal})`);
-    removePidfile(projectRoot);
+    removePidfile(startupRoot);
     transport.close();
-    void Promise.allSettled([watcher.close(), permissionWatcher.close()]).finally(
-      () => server.close(() => process.exit(0))
-    );
+    const closing = [...byRoot.values()].flatMap((p) => [p.watcher.close(), p.permissionWatcher.close()]);
+    void Promise.allSettled(closing).finally(() => server.close(() => process.exit(0)));
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));

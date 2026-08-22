@@ -4,11 +4,12 @@
 // module beside the view rather than spread into the shared client. The view (DocEditor.tsx) imports these
 // and owns only orchestration + render.
 import type { DocModel } from "@agentry/workbench-shared";
+import { apiPath } from "../../../api/http.js";
 
 // GET /api/work/:id/doc/:docId → DocModel.
 export async function fetchDoc(runId: string, docId: string, signal: AbortSignal): Promise<DocModel> {
   const res = await fetch(
-    `/api/work/${encodeURIComponent(runId)}/doc/${encodeURIComponent(docId)}`,
+apiPath(`/api/work/${encodeURIComponent(runId)}/doc/${encodeURIComponent(docId)}`),
     { headers: { accept: "application/json" }, signal },
   );
   if (!res.ok) {
@@ -31,7 +32,8 @@ export async function postArtifact(
   baseVersion: string,
   newBody: string,
 ): Promise<SaveResult> {
-  const res = await fetch(`/api/work/${encodeURIComponent(runId)}/artifact`, {
+  const res = await fetch(
+apiPath(`/api/work/${encodeURIComponent(runId)}/artifact`), {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({ target, baseVersion, newBody }),
@@ -48,7 +50,8 @@ export async function postArtifact(
 // caller reloads the doc on success so the header pill / lock re-derive from the new frontmatter.
 export async function postStatus(runId: string, target: string, status: string): Promise<boolean> {
   try {
-    const res = await fetch(`/api/work/${encodeURIComponent(runId)}/status`, {
+    const res = await fetch(
+apiPath(`/api/work/${encodeURIComponent(runId)}/status`), {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ target, status }),
