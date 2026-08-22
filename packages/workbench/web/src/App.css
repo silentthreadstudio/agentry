@@ -180,7 +180,7 @@
   padding: 34px 38px 48px;
 }
 
-/* the work shell (a <id>.localhost run host) reuses .head/.host for its compact top bar. */
+/* the work shell reuses .head/.host for its compact top bar. */
 .head {
   display: flex;
   align-items: center;
@@ -212,21 +212,10 @@
   padding: 22px 26px;
 }
 
-/* solo work shell (a <id>.localhost run host): NO sidebar, so it needs its own full-height flex context.
-   Without this the bare .main has no height and React Flow renders 0px. */
-.solo {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.solo > .main {
-  flex: 1;
-  min-height: 0;
-}
-.solo > .main > .body {
-  padding: 0;
-}
+/* The run view mounts its own `.main` straight into the `.app` grid (see App.tsx `Shell`): it owns its
+   top bar, tabs and scrolling, and its React Flow canvas is height:100%, so it needs the grid row's
+   height rather than `.body`'s padded, scrolling box. No separate 100vh context is needed any more —
+   the sidebar stays mounted beside it. */
 .muted {
   color: var(--muted);
 }

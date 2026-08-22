@@ -4,7 +4,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { RunSummary } from "@agentry/workbench-shared";
-import { deriveKpis, isActiveRun, tasksTotal } from "../routes/works/works-view.js";
+import { workSlug } from "@agentry/workbench-shared";
+import { deriveKpis, isActiveRun, runHref, tasksTotal } from "../routes/works/works-view.js";
 
 function run(over: Partial<RunSummary> & { run: string }): RunSummary {
   return {
@@ -59,4 +60,30 @@ test("isActiveRun is true for todo/in-progress/in-review work and false when onl
 test("tasksTotal sums every lifecycle bucket; a zero-task run totals 0", () => {
   assert.equal(tasksTotal({ todo: 1, "in-progress": 2, "in-review": 3, done: 4 }), 10);
   assert.equal(tasksTotal({ todo: 0, "in-progress": 0, "in-review": 0, done: 0 }), 0);
+});
+
+// ── path routing (M1) ───────────────────────────────────────────────────────────────────────────────
+// runHref used to build a cross-origin URL (`http://<slug>.localhost:4317/`). Two things broke: browsers
+// lower-case the Host header, so any run id with an uppercase character resolved to no run and bounced
+// the user back to the Works home; and every run was a separate origin (reload, new socket, new storage).
+// It is a path now — one origin, and the id survives verbatim.
+
+test("runHref is an in-app path, not a cross-origin host", () => {
+  assert.equal(runHref("sample"), "/work/sample");
+});
+
+test("runHref preserves case (a subdomain could not)", () => {
+  assert.equal(runHref("M7"), "/work/M7");
+});
+
+test("runHref shortens a long run id through workSlug and stays a path", () => {
+  const long = "build-agentry-workbench-the-agentry-agent-center-5s9v6deiit";
+  const href = runHref(long);
+  assert.equal(href, `/work/${workSlug(long)}`);
+  assert.ok(href.startsWith("/work/"));
+  assert.ok(!href.includes("localhost"));
+});
+
+test("runHref percent-encodes a label so an odd id cannot break the route", () => {
+  assert.equal(runHref("a b"), "/work/a%20b");
 });

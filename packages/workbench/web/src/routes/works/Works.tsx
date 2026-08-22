@@ -1,9 +1,10 @@
 // Works home — the bare-localhost landing (UI-v2 "expressive" language, design/ui-v2.html): a gradient
 // hero, four KPI metric tiles derived from /api/works, a section bar with a segmented filter, and a grid
-// of expressive run cards (status-tinted aura, badges, progress, agent avatar). Clicking a card navigates
-// the browser to that run's short host (http://<workSlug>.localhost:<port>) — the *.localhost short-URL
-// decision. Loading / empty / error are all designed (empty states are good states, VISION §3).
+// of expressive run cards (status-tinted aura, badges, progress, agent avatar). Clicking a card routes
+// in-app to that run (`/work/<workSlug>`) — same origin, no reload, so the socket and the sidebar
+// survive the move. Loading / empty / error are all designed (empty states are good states, VISION §3).
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type { RunSummary } from "@agentry/workbench-shared";
 import { ApiError, fetchWorks } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
@@ -192,6 +193,7 @@ export function Works() {
 }
 
 function WorkCard({ work }: { work: RunSummary }) {
+  const navigate = useNavigate();
   const status = primaryStatus(work.taskCounts);
   const total = tasksTotal(work.taskCounts);
   const done = work.taskCounts.done ?? 0;
@@ -203,7 +205,7 @@ function WorkCard({ work }: { work: RunSummary }) {
       className="work-card"
       ariaLabel={`Open run ${work.title}`}
       onClick={() => {
-        location.href = runHref(work.run);
+        navigate(runHref(work.run));
       }}
       // override the Card primitive's flat --panel BASE with the expressive gradient surface (inline
       // wins over the .work-card class; the rest of the card's layout lives in components.css).

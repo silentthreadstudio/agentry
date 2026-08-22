@@ -164,3 +164,52 @@ test("GET /api/work/:id/doc resolves a workSlug segment to the full run's doc", 
   const doc = captured.body as { body: string };
   assert.equal(doc.body, "# Spec");
 });
+
+// ── path routing + project identity (M1) ────────────────────────────────────────────────────────────
+// The two defects these pin down were BOTH silent in the UI: a lower-cased run label resolved to no run
+// (so the SPA rendered the Works home instead of the run, with no error anywhere), and the served project
+// was invisible to the client (so a second repo's workbench "focused" the first repo's server and showed
+// its runs under the wrong name).
+
+test("GET /api/context?run= resolves a label to the full run id (path routing's bootstrap)", () => {
+  const { res, captured } = fakeRes();
+  handleApiRequest(fakeReq("/api/context?run=sample"), res, reader(), home);
+  assert.equal(captured.status, 200);
+  assert.deepEqual(captured.body, { run: "sample" });
+});
+
+test("GET /api/context?run= resolves a CASE-FOLDED label (browsers lower-case the Host header)", () => {
+  const upper = { ...sampleFiles(), run: "M7" };
+  const upperReader = new WorkReader(fakeRepo(upper), fixedClock);
+  const { res, captured } = fakeRes();
+  handleApiRequest(fakeReq("/api/context?run=m7"), res, upperReader, home);
+  assert.equal(captured.status, 200);
+  assert.deepEqual(captured.body, { run: "M7" });
+});
+
+test("GET /api/context?run= wins over the host-derived run (the path is the primary address)", () => {
+  const { res, captured } = fakeRes();
+  handleApiRequest(fakeReq("/api/context?run=sample"), res, reader(), { run: "stale-host-run" });
+  assert.deepEqual(captured.body, { run: "sample" });
+});
+
+test("GET /api/context?run= on an unknown label reports no run rather than 500-ing", () => {
+  const { res, captured } = fakeRes();
+  handleApiRequest(fakeReq("/api/context?run=ghost"), res, reader(), home);
+  assert.equal(captured.status, 200);
+  assert.deepEqual(captured.body, {});
+});
+
+test("GET /api/context reports the project the server is ACTUALLY serving", () => {
+  const { res, captured } = fakeRes();
+  handleApiRequest(fakeReq("/api/context"), res, reader(), home, "/Users/x/Projects/lifeos");
+  assert.deepEqual(captured.body, { project: "lifeos", root: "/Users/x/Projects/lifeos" });
+});
+
+test("a case-folded label resolves through a workSlug too", () => {
+  const long = { ...sampleFiles(), run: "Build-Agentry-Workbench-The-Agentry-Agent-Center" };
+  const longReader = new WorkReader(fakeRepo(long), fixedClock);
+  const { res, captured } = fakeRes();
+  handleApiRequest(fakeReq(`/api/context?run=${workSlug(long.run).toLowerCase()}`), res, longReader, home);
+  assert.deepEqual(captured.body, { run: long.run });
+});

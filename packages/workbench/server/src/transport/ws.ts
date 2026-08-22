@@ -1,7 +1,7 @@
-// ws — the WebSocket edge implementing the `Transport` port (ADR-001). Clients connect to `/ws` on a
-// `<id>.localhost` host; the connection's run is resolved from its `Host` header (host-router, ADR-002),
-// so a socket is subscribed to exactly its run's changes — the web ws-client opens one connection per
-// host, never sends a subscribe frame, so the Host IS the subscription key. `push(run, msg)` fans a
+// ws — the WebSocket edge implementing the `Transport` port (ADR-001). Clients connect to `/ws?run=<label>`;
+// the connection's run is resolved from that label (or, for the `*.localhost` back-compat alias, from the
+// `Host` header via host-router), so a socket is subscribed to exactly its run's changes — the web
+// ws-client opens one connection per run and never sends a subscribe frame. `push(run, msg)` fans a
 // `WsMessage` out to every open socket bound to that run.
 //
 // The composition root attaches this to the port-locked http server (a single `upgrade` listener), wires
@@ -50,7 +50,12 @@ export class WsTransport implements Transport {
         socket.destroy(); // not our endpoint — drop the handshake
         return;
       }
-      const label = parseHostLabel(req.headers.host);
+      // The subscription label is `?run=<label>` FIRST, the `Host` label second. Path routing made the
+      // query the primary channel: the SPA now lives at ONE origin (`/work/<slug>`), so the host no
+      // longer carries the run and a host-only lookup would subscribe every socket to nothing. The
+      // `*.localhost` alias still works — it just falls through to the Host branch.
+      const queryLabel = url.searchParams.get("run");
+      const label = queryLabel !== null && queryLabel.length > 0 ? queryLabel : parseHostLabel(req.headers.host);
       const run = label !== null ? this.resolveRun(label) : null;
       this.wss.handleUpgrade(req, socket, head, (ws) => this.register(ws, run));
     });

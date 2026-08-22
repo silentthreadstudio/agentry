@@ -15577,10 +15577,10 @@ var ReaddirpStream = class extends Readable {
   }
   async _formatEntry(dirent, path) {
     let entry;
-    const basename4 = this._isDirent ? dirent.name : dirent;
+    const basename5 = this._isDirent ? dirent.name : dirent;
     try {
-      const fullPath = presolve(pjoin(path, basename4));
-      entry = { path: prelative(this._root, fullPath), fullPath, basename: basename4 };
+      const fullPath = presolve(pjoin(path, basename5));
+      entry = { path: prelative(this._root, fullPath), fullPath, basename: basename5 };
       entry[this._statsProp] = this._isDirent ? dirent : await this._stat(fullPath);
     } catch (err) {
       this._onError(err);
@@ -16121,9 +16121,9 @@ var NodeFsHandler = class {
   _watchWithNodeFs(path, listener) {
     const opts = this.fsw.options;
     const directory = sp.dirname(path);
-    const basename4 = sp.basename(path);
+    const basename5 = sp.basename(path);
     const parent = this.fsw._getWatchedDir(directory);
-    parent.add(basename4);
+    parent.add(basename5);
     const absolutePath = sp.resolve(path);
     const options = {
       persistent: opts.persistent
@@ -16133,7 +16133,7 @@ var NodeFsHandler = class {
     let closer;
     if (opts.usePolling) {
       const enableBin = opts.interval !== opts.binaryInterval;
-      options.interval = enableBin && isBinaryPath(basename4) ? opts.binaryInterval : opts.interval;
+      options.interval = enableBin && isBinaryPath(basename5) ? opts.binaryInterval : opts.interval;
       closer = setFsWatchFileListener(path, absolutePath, options, {
         listener,
         rawEmitter: this.fsw._emitRaw
@@ -16156,10 +16156,10 @@ var NodeFsHandler = class {
       return;
     }
     const dirname3 = sp.dirname(file);
-    const basename4 = sp.basename(file);
+    const basename5 = sp.basename(file);
     const parent = this.fsw._getWatchedDir(dirname3);
     let prevStats = stats;
-    if (parent.has(basename4))
+    if (parent.has(basename5))
       return;
     const listener = async (path, newStats) => {
       if (!this.fsw._throttle(THROTTLE_MODE_WATCH, file, 5))
@@ -16184,9 +16184,9 @@ var NodeFsHandler = class {
             prevStats = newStats2;
           }
         } catch (error) {
-          this.fsw._remove(dirname3, basename4);
+          this.fsw._remove(dirname3, basename5);
         }
-      } else if (parent.has(basename4)) {
+      } else if (parent.has(basename5)) {
         const at = newStats.atimeMs;
         const mt = newStats.mtimeMs;
         if (!at || at <= mt || mt !== prevStats.mtimeMs) {
@@ -18190,7 +18190,10 @@ function workSlug(runId) {
 }
 function resolveSlug(label, runIds) {
   if (runIds.includes(label)) return label;
-  return runIds.find((id) => workSlug(id) === label);
+  const exactSlug = runIds.find((id) => workSlug(id) === label);
+  if (exactSlug !== void 0) return exactSlug;
+  const lower = label.toLowerCase();
+  return runIds.find((id) => id.toLowerCase() === lower || workSlug(id).toLowerCase() === lower);
 }
 
 // src/transport/host-router.ts
@@ -18209,6 +18212,9 @@ function parseHostLabel(hostHeader) {
   }
   return leading;
 }
+
+// src/transport/read-routes.ts
+import { basename as basename4 } from "node:path";
 
 // src/transport/http-kit.ts
 function guardGet(method, res, run) {
@@ -18359,7 +18365,7 @@ function taskNoFromTarget(body) {
 }
 
 // src/transport/read-routes.ts
-function handleApiRequest(req, res, reader, context) {
+function handleApiRequest(req, res, reader, context, projectRoot) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
   const method = req.method ?? "GET";
@@ -18368,11 +18374,14 @@ function handleApiRequest(req, res, reader, context) {
     return guardGet(method, res, () => sendJson(res, 200, listWorks(reader)));
   }
   if (path === "/api/context") {
-    return guardGet(
-      method,
-      res,
-      () => sendJson(res, 200, context.run ? { run: context.run } : {})
-    );
+    return guardGet(method, res, () => {
+      const requested = runParam(url);
+      const run = requested !== void 0 ? resolveRun(reader, requested) : context.run ?? void 0;
+      sendJson(res, 200, {
+        ...projectRoot !== void 0 ? { project: basename4(projectRoot), root: projectRoot } : {},
+        ...run !== void 0 && run !== null ? { run } : {}
+      });
+    });
   }
   const graphId = matchWorkGraph(path);
   if (graphId !== null) {
@@ -18670,7 +18679,12 @@ function createHttpHandler(reader, write, readers, permissions) {
     const label = parseHostLabel(req.headers.host);
     const run = label !== null ? resolveSlug(label, reader.listRuns()) ?? null : null;
     const context = { run };
-    if (handleApiRequest(req, res, reader, context)) return;
+    if (run !== null && req.method === "GET" && new URL(req.url ?? "/", "http://localhost").pathname === "/") {
+      res.writeHead(302, { location: `/work/${encodeURIComponent(label ?? run)}` });
+      res.end();
+      return;
+    }
+    if (handleApiRequest(req, res, reader, context, write.projectRoot)) return;
     if (handleReaderRequest(req, res, readers)) return;
     void handlePostRequest(req, res, write).then((handled) => handled ? true : handlePermissionRequest(req, res, permissions)).then((handled) => {
       if (handled) return;
@@ -18750,7 +18764,8 @@ var WsTransport = class {
         socket.destroy();
         return;
       }
-      const label = parseHostLabel(req.headers.host);
+      const queryLabel = url.searchParams.get("run");
+      const label = queryLabel !== null && queryLabel.length > 0 ? queryLabel : parseHostLabel(req.headers.host);
       const run = label !== null ? this.resolveRun(label) : null;
       this.wss.handleUpgrade(req, socket, head, (ws) => this.register(ws, run));
     });

@@ -29,9 +29,20 @@ export function workSlug(runId: string): string {
   return `${words}-${hash(runId)}`;
 }
 
-/** Resolve a requested subdomain label back to a full run id, given the known run ids. Accepts an exact
- *  id match (short/terse ids, back-compat) OR a `workSlug` match. Returns undefined if nothing matches. */
+/** Resolve a requested label (a path segment or a subdomain label) back to a full run id, given the
+ *  known run ids. Accepts an exact id match (short/terse ids, back-compat) OR a `workSlug` match.
+ *
+ *  Matching is EXACT-FIRST, then CASE-INSENSITIVE. The case-insensitive pass is load-bearing, not
+ *  politeness: DNS labels are case-insensitive and browsers lower-case the `Host` header, so a run id
+ *  carrying any uppercase character (`M7`) arrives as `m7` and an exact-only compare silently resolves
+ *  to NO run — the SPA then renders the Works home instead of the run, with no error anywhere. Exact
+ *  wins first so two runs differing only in case still resolve deterministically to the one asked for.
+ *  Returns undefined if nothing matches. */
 export function resolveSlug(label: string, runIds: readonly string[]): string | undefined {
   if (runIds.includes(label)) return label;
-  return runIds.find((id) => workSlug(id) === label);
+  const exactSlug = runIds.find((id) => workSlug(id) === label);
+  if (exactSlug !== undefined) return exactSlug;
+
+  const lower = label.toLowerCase();
+  return runIds.find((id) => id.toLowerCase() === lower || workSlug(id).toLowerCase() === lower);
 }

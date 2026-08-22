@@ -18,6 +18,7 @@ import { Activity } from "./activity/Activity.js";
 import { Panorama } from "./live/Panorama.js";
 import { DocsWorkspace } from "./docs/DocsWorkspace.js";
 import { selectDoc, useSelectedDoc } from "./docs/doc-tabs.js";
+import { runHref } from "../works/works-view.js";
 
 // The current `?doc=` query value (or null) for this host, read from the live URL.
 function docParam(): string | null {
@@ -35,7 +36,8 @@ function urlWithDoc(id: string | null): string {
 }
 
 export function WorkLayout({ runId }: { runId: string }) {
-  const host = `${runId}.localhost:${location.port || "4317"}`;
+  // The address shown in the compact top bar — the canonical in-app path for this run, not a host.
+  const host = `${location.host}${runHref(runId)}`;
 
   const docId = useSelectedDoc();
   const navigate = useNavigate();

@@ -1,16 +1,25 @@
 // The Workbench app shell — the UI-v2 "Agent Center" language (design/ui-v2.html): a 248px sidebar
 // (text-only "Agentry Center" wordmark · Works/Memory/Gates nav with counts · live-server project card)
-// + a main column the routes fill over the fixed mesh-gradient background. *.localhost routing
-// (decided): the SPA reads /api/context to learn whether this host is a run (<id>.localhost → the
-// WorkLayout with Live/Activity) or the bare host (Works home + secondary pages).
+// + a main column the routes fill over the fixed mesh-gradient background.
+//
+// Routing is PATH-based: `/` is the Works home and `/work/<slug>` is a run, both under ONE origin, so
+// moving between runs is client-side navigation — no reload, no second WebSocket, no per-run storage
+// bucket. The `<slug>.localhost` form still resolves (the server 302s it to the path), and a run that
+// arrives via `/api/context` anyway is forwarded to its canonical path below.
+//
+// `/api/context` is still read once at boot, but now for the PROJECT: the fixed port is a global
+// singleton while the project root is per-process, so the sidebar must name the project the server is
+// actually serving instead of a hardcoded string.
 import { useEffect, useState } from "react";
-import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { fetchContext } from "./api/index.js";
+import { getWsClient } from "./api/ws.js";
 import { ApprovalsBanner } from "./routes/approvals/ApprovalsBanner.js";
 import { Gates } from "./routes/gates/Gates.js";
 import { Memory } from "./routes/memory/Memory.js";
 import { Works } from "./routes/works/Works.js";
 import { WorkLayout } from "./routes/work/WorkLayout.js";
+import { runHref } from "./routes/works/works-view.js";
 
 import "./ui/tokens.css";
 import "./App.css";
@@ -25,18 +34,18 @@ const NAV: { to: string; ic: string; label: string }[] = [
 
 type Boot =
   | { kind: "loading" }
-  | { kind: "ready"; run: string | undefined };
+  | { kind: "ready"; project: string | undefined; aliasRun: string | undefined };
 
 export function App() {
   const [boot, setBoot] = useState<Boot>({ kind: "loading" });
 
   useEffect(() => {
     const ctrl = new AbortController();
-    fetchContext(ctrl.signal)
-      .then((ctx) => setBoot({ kind: "ready", run: ctx.run }))
-      // No server yet (or bare host): fall back to the Works home rather than blocking the UI.
+    fetchContext(undefined, ctrl.signal)
+      .then((ctx) => setBoot({ kind: "ready", project: ctx.project, aliasRun: ctx.run }))
+      // No server yet: fall back to the Works home rather than blocking the UI.
       .catch(() => {
-        if (!ctrl.signal.aborted) setBoot({ kind: "ready", run: undefined });
+        if (!ctrl.signal.aborted) setBoot({ kind: "ready", project: undefined, aliasRun: undefined });
       });
     return () => ctrl.abort();
   }, []);
@@ -46,35 +55,45 @@ export function App() {
     return <div className="app" aria-busy="true" />;
   }
 
-  // A run host (<id>.localhost) goes straight to that run's work shell; tabs route under it.
-  // The `.solo` wrapper gives the work shell a full-height (100vh) flex context — WITHOUT it the
-  // bare `.main` collapses to content height and the React Flow canvas (height:100%) renders 0px
-  // (the "run link loads nothing" bug). The bare host gets its height from the `.app` grid instead.
-  if (boot.run) {
-    return (
-      <BrowserRouter>
-        <div className="solo">
-          <Routes>
-            <Route path="/*" element={<WorkLayout runId={boot.run} />} />
-          </Routes>
-        </div>
-        {/* The approvals banner floats over the run shell (a fixed overlay) — permission prompts are
-            project-global and time-sensitive, so it appears regardless of the active tab. */}
-        <ApprovalsBanner />
-      </BrowserRouter>
-    );
-  }
+  // A `<slug>.localhost` alias page that reached the SPA without being redirected (a deep asset path,
+  // say) is forwarded to its canonical path once React is up — one origin from here on.
+  const aliasTarget =
+    boot.aliasRun !== undefined && !window.location.pathname.startsWith("/work/")
+      ? runHref(boot.aliasRun)
+      : undefined;
 
-  // The bare host: the sidebar shell with Works home + the scaffolded secondary pages. Each route
-  // owns its own hero (the gradient-clipped H1 + subtitle); the body just supplies padding + scroll.
+  // One shell for everything: Works home, the secondary pages, AND a run. Keeping the sidebar mounted
+  // over a run is the point of path routing — you can leave a run (or hop to another) without a reload.
   return (
     <BrowserRouter>
-      <div className="app">
-        <Sidebar />
+      <Shell project={boot.project} aliasTarget={aliasTarget} />
+    </BrowserRouter>
+  );
+}
+
+// The routed shell. Split out of `App` only so it can call `useLocation` (which must run inside the
+// router): the run view manages its own scrolling and full-height canvas, so `.body`'s page padding is
+// dropped for it via the `flush` modifier rather than being fought inside the run layout.
+function Shell({ project, aliasTarget }: { project: string | undefined; aliasTarget: string | undefined }) {
+  const onWork = useLocation().pathname.startsWith("/work/");
+
+  // The run view supplies its OWN `.main` (top bar + tabs + a full-height body its React Flow canvas
+  // fills), so it is mounted as a direct child of the `.app` grid rather than nested inside the page
+  // shell's `.main > .body`. Nesting it there gave the inner column no height and the canvas rendered
+  // 0px — the same "run link loads nothing" symptom the old separate-origin `.solo` wrapper existed to
+  // avoid. The sidebar stays mounted either way: that is what path routing buys.
+  return (
+    <div className="app">
+      <Sidebar project={project} />
+      {onWork ? (
+        <Routes>
+          <Route path="/work/:slug/*" element={<WorkRoute />} />
+        </Routes>
+      ) : (
         <main className="main">
           <div className="body">
             <Routes>
-              <Route path="/" element={<Works />} />
+              <Route path="/" element={aliasTarget ? <Navigate to={aliasTarget} replace /> : <Works />} />
               <Route
                 path="/memory"
                 element={
@@ -95,15 +114,57 @@ export function App() {
             </Routes>
           </div>
         </main>
-        {/* Same global approvals overlay on the bare host (Works / Memory / Gates) — a tool may need
-            approval while the user is on a secondary page, not inside a run. */}
-        <ApprovalsBanner />
-      </div>
-    </BrowserRouter>
+      )}
+      {/* The approvals overlay is project-global and time-sensitive, so it floats over every route —
+          a tool may need approval while you are on a secondary page rather than inside a run. */}
+      <ApprovalsBanner />
+    </div>
   );
 }
 
-function Sidebar() {
+// One run, addressed by its `/work/<slug>` path segment. The slug is resolved to the FULL run id before
+// the layout mounts, because everything downstream (ws subscription keys, doc ids, write routes) is
+// keyed by the full id. An unresolvable slug is a dead link, not a crash — say so and offer the way back.
+function WorkRoute() {
+  const slug = useParams().slug ?? "";
+  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; run: string | undefined }>({
+    kind: "loading",
+  });
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setState({ kind: "loading" });
+    fetchContext(slug, ctrl.signal)
+      .then((ctx) => setState({ kind: "ready", run: ctx.run }))
+      .catch(() => {
+        if (!ctrl.signal.aborted) setState({ kind: "ready", run: undefined });
+      });
+    return () => ctrl.abort();
+  }, [slug]);
+
+  // The socket outlives route changes (the approvals banner keeps a subscriber alive), so moving between
+  // runs must re-point it — otherwise the new run's live updates never arrive.
+  useEffect(() => {
+    getWsClient().retarget();
+  }, [slug]);
+
+  if (state.kind === "loading") return <main className="main" aria-busy="true" />;
+  if (state.run === undefined) {
+    return (
+      <main className="main">
+        <div className="body">
+          <h1>Run not found</h1>
+          <p className="muted">
+            No run matches <code>{slug}</code> in this project. <a href="/">Back to Works</a>
+          </p>
+        </div>
+      </main>
+    );
+  }
+  return <WorkLayout runId={state.run} />;
+}
+
+function Sidebar({ project }: { project: string | undefined }) {
   return (
     <aside className="side">
       <div className="brand">
@@ -131,7 +192,7 @@ function Sidebar() {
       <div className="grow" />
       <div className="proj">
         <div className="k">Project</div>
-        <div className="n">agentry</div>
+        <div className="n">{project ?? "workspace"}</div>
         <div className="row">
           <span className="livedot" aria-hidden="true" /> server live
         </div>

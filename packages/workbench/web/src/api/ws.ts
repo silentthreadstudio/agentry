@@ -13,9 +13,25 @@ export type WsStatus = "connecting" | "open" | "closed";
 
 const WS_PATH = "/ws";
 
-function wsUrl(): string {
+// The run this socket subscribes to, read from the PATH (`/work/<slug>`). Identity used to live in the
+// host (`<slug>.localhost`), so one origin meant one run and the socket needed no label; under path
+// routing a single origin serves every run, so the label must travel on the URL — and it must be able to
+// CHANGE without a page load, because moving between runs is now client-side navigation.
+function runLabelFromPath(): string | null {
+  const m = /^\/work\/([^/]+)/.exec(location.pathname);
+  const raw = m?.[1];
+  if (raw === undefined || raw.length === 0) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function wsUrl(run: string | null): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}${WS_PATH}`;
+  const query = run !== null ? `?run=${encodeURIComponent(run)}` : "";
+  return `${proto}//${location.host}${WS_PATH}${query}`;
 }
 
 /**
@@ -31,6 +47,9 @@ export function createWsClient() {
   let retry = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let closedByUs = false;
+  // The label the OPEN socket subscribed with — compared against the URL on `retarget` so an in-app
+  // move from one run to another re-subscribes instead of quietly streaming the previous run's changes.
+  let subscribedRun: string | null = null;
 
   function setStatus(next: WsStatus) {
     status = next;
@@ -40,7 +59,8 @@ export function createWsClient() {
   function connect() {
     closedByUs = false;
     setStatus("connecting");
-    const sock = new WebSocket(wsUrl());
+    subscribedRun = runLabelFromPath();
+    const sock = new WebSocket(wsUrl(subscribedRun));
     socket = sock;
 
     sock.onopen = () => {
@@ -104,6 +124,24 @@ export function createWsClient() {
       return () => statusListeners.delete(listener);
     },
     getStatus: (): WsStatus => status,
+    /**
+     * Re-point the connection at the run the URL now names. Called after client-side navigation between
+     * runs: the socket is long-lived (a project-global subscriber like the approvals banner keeps it open
+     * across route changes), so without this it would stay bound to the run it was opened on and the new
+     * run's live updates would never arrive.
+     */
+    retarget(): void {
+      const next = runLabelFromPath();
+      if (next === subscribedRun) return;
+      if (listeners.size === 0) {
+        subscribedRun = next; // nothing listening — the next connect() picks the new label up anyway
+        return;
+      }
+      closedByUs = true;
+      socket?.close();
+      socket = null;
+      connect();
+    },
     close,
   };
 }

@@ -1,9 +1,10 @@
 // Gates view-model + styles — the gate-inbox derivations + deep-link helpers + inline styles, kept out of
 // Gates.tsx (then pure render). Pure (unit-testable, no React/JSX): one OpenGateItem → a renderable GateRow
-// (headline + open-comment summary + the jump-to-doc-at-gate deep link). `runHost` mirrors works-view's
-// runHref so a gate jump and a Works-card click land on the identical host.
+// (headline + open-comment summary + the jump-to-doc-at-gate deep link). The link reuses works-view's
+// `runHref` so a gate jump and a Works-card click land on the identical route.
 import type { CSSProperties } from "react";
 import type { OpenGateItem } from "../../api/index.js";
+import { runHref } from "../works/works-view.js";
 
 export interface GateRow {
   run: string;
@@ -11,24 +12,17 @@ export interface GateRow {
   docId: string;
   headline: string;
   detail: string;
-  href: string; // the jump-to-doc-at-gate target (cross-host deep link)
+  href: string; // the jump-to-doc-at-gate target (an in-app route path)
 }
 
-/** The host a run's work shell is reached on — same scheme/host/port, only the subdomain becomes <run>. */
-export function runHost(runId: string, loc: Pick<Location, "protocol" | "hostname" | "port"> = location): string {
-  const baseHost = loc.hostname.replace(/^[^.]+\.(?=localhost$)/, "");
-  const host = `${runId}.${baseHost}${loc.port ? `:${loc.port}` : ""}`;
-  return `${loc.protocol}//${host}/`;
+/** The in-app path that opens the doc at the gate: the run's work route with `?doc=<docId>`. Navigate,
+ *  don't re-implement the drawer — the work shell reads the param to open the gate's document. Same
+ *  origin as the inbox, so opening a gate is a route change rather than a page load. */
+export function gateHref(item: Pick<OpenGateItem, "run" | "docId">): string {
+  return `${runHref(item.run)}?doc=${encodeURIComponent(item.docId)}`;
 }
 
-/** The deep link that opens the doc at the gate: the run's work host with `?doc=<docId>`. Navigate, don't
- *  re-implement the drawer — the work shell reads the param to open the gate's document. */
-export function gateHref(item: Pick<OpenGateItem, "run" | "docId">, loc?: Pick<Location, "protocol" | "hostname" | "port">): string {
-  const base = runHost(item.run, loc ?? location);
-  return `${base}?doc=${encodeURIComponent(item.docId)}`;
-}
-
-export function toGateRow(item: OpenGateItem, loc?: Pick<Location, "protocol" | "hostname" | "port">): GateRow {
+export function toGateRow(item: OpenGateItem): GateRow {
   const open = item.comments.length;
   const first = item.comments[0]?.body?.trim();
   const detail =
@@ -41,7 +35,7 @@ export function toGateRow(item: OpenGateItem, loc?: Pick<Location, "protocol" | 
     docId: item.docId,
     headline: `${item.gate} gate · ${item.run}`,
     detail,
-    href: gateHref(item, loc),
+    href: gateHref(item),
   };
 }
 

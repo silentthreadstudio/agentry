@@ -83,8 +83,18 @@ export function createHttpHandler(
     const run = label !== null ? (resolveSlug(label, reader.listRuns()) ?? null) : null;
     const context: RunContext = { run };
 
+    // A `*.localhost` run host is a BACK-COMPAT ALIAS now, not the addressing scheme: bounce its root
+    // to the canonical path form so one origin serves everything (one WS, one storage bucket, no full
+    // page reload between runs). Only the root is redirected — an asset or `/api/*` request under a run
+    // host still serves in place, so an already-loaded alias page keeps working.
+    if (run !== null && req.method === "GET" && new URL(req.url ?? "/", "http://localhost").pathname === "/") {
+      res.writeHead(302, { location: `/work/${encodeURIComponent(label ?? run)}` });
+      res.end();
+      return;
+    }
+
     // GET API + healthz first; a matched read route answers and we're done.
-    if (handleApiRequest(req, res, reader, context)) return;
+    if (handleApiRequest(req, res, reader, context, write.projectRoot)) return;
 
     // The Phase-4 aggregation reads (events/agents/gates/tokens/memory) — a separate GET dispatcher,
     // tried before the write/static path; a matched reader route answers here.

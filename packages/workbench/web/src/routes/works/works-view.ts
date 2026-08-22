@@ -56,13 +56,16 @@ export function deriveKpis(works: RunSummary[]): Kpis {
 
 // ── Card view-logic + vocabularies ──────────────────────────────────────────────────────────────────
 
-/** The host a run card opens: same host + port, only the subdomain changes (bare → <workSlug>). The slug
- *  is the short, stable label both halves compute; the server resolves it back to the run id. */
+/** The in-app PATH a run card opens: `/work/<workSlug>`. The slug is the short, stable label both halves
+ *  compute; the server resolves it back to the full run id.
+ *
+ *  This is a path, not a host, and that is the whole point. Addressing a run by subdomain made every run
+ *  a separate ORIGIN — a full page reload, a fresh WebSocket, its own storage — and it silently broke:
+ *  browsers lower-case the `Host` header, so any run id carrying an uppercase character resolved to no
+ *  run and bounced the user back to the Works home with no error. A path keeps one origin and preserves
+ *  the id exactly as written. */
 export function runHref(runId: string): string {
-  const { protocol, hostname, port } = location;
-  const baseHost = hostname.replace(/^[^.]+\.(?=localhost$)/, ""); // strip any existing run subdomain
-  const host = `${workSlug(runId)}.${baseHost}${port ? `:${port}` : ""}`;
-  return `${protocol}//${host}/`;
+  return `/work/${encodeURIComponent(workSlug(runId))}`;
 }
 
 // The card's headline status: the most "live" bucket that has work, so the eye lands on what's moving.

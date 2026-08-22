@@ -1,11 +1,12 @@
 // Gates — the waiting-on-you inbox (the /gates sidebar page). Consumes GET /api/gates → OpenGateItem[] (task
 // 20's gate-inbox: every gate with at least one UNRESOLVED review comment). Each row jumps to the doc at the
-// gate — it NAVIGATES the browser to that run's work host with the doc encoded in the URL; it does NOT
-// re-implement the DocDrawer (the drawer lives on the run host, behind selectDoc). Dark + calm (AC8); the
+// gate — it ROUTES in-app to that run's work view with the doc encoded in the URL; it does NOT
+// re-implement the DocDrawer (the drawer lives in the work view, behind selectDoc). Dark + calm (AC8); the
 // empty state — "nothing waiting on you" — is a good state (VISION §3). Read-only inbox: it routes, it never
 // resolves a gate. The view-model (OpenGateItem → GateRow), the deep-link helpers, and the inline styles
 // live in `gates-view`.
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ApiError, fetchGates } from "../../api/index.js";
 import type { OpenGateItem } from "../../api/index.js";
 import { Button, EmptyState } from "../../ui/index.js";
@@ -55,8 +56,9 @@ export function Gates() {
 }
 
 function GateInboxRow({ row }: { row: GateRow }) {
+  const navigate = useNavigate();
   const open = () => {
-    location.href = row.href;
+    navigate(row.href);
   };
   return (
     <div style={GATE}>

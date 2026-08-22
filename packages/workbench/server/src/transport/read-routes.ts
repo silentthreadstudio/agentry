@@ -4,17 +4,19 @@
 //   GET  /api/works                → RunSummary[]                 — the Works home list (AC2)
 //   GET  /api/work/:id/graph       → GraphModel                  — one run's dependency/derivation graph
 //   GET  /api/work/:id/doc/:docId  → DocModel                    — one doc the editor opens (the write-loop's read half)
-//   GET  /api/context              → { run?: string }            — the SPA's run bootstrap (the host's run id)
+//   GET  /api/context[?run=label]  → { project?, root?, run? }   — the SPA's bootstrap: which PROJECT this
+//                                                                  server serves + which run is addressed
 // 404 on an unknown run/doc; 405 on a verb the path does not serve.
 //
 // This module is the thin HTTP-shape adapter over `WorkReader`: it parses the path, calls the reader, and
 // serializes JSON. It holds no run state and does no fs/parse itself. The run for a path is the `:id`
 // segment (task 9's `matchWorkGraph` resolution), which on a browser equals the host-router run (ADR-002).
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { basename } from "node:path";
 import type { WorkReader } from "../application/work-reader.js";
 import type { RunContext } from "./host-router.js";
 import { guardGet, sendJson } from "./http-kit.js";
-import { matchWorkDoc, matchWorkGraph, resolveRun } from "./route-match.js";
+import { matchWorkDoc, matchWorkGraph, resolveRun, runParam } from "./route-match.js";
 import { toDocModel } from "./doc-model.js";
 
 // `true` when this request was answered by a route, `false` when no API/healthz route matched (so the
@@ -24,6 +26,7 @@ export function handleApiRequest(
   res: ServerResponse,
   reader: WorkReader,
   context: RunContext,
+  projectRoot?: string,
 ): boolean {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -36,11 +39,25 @@ export function handleApiRequest(
   }
 
   if (path === "/api/context") {
-    // The run-id bootstrap: which run (if any) this host belongs to (host-router context). The SPA reads
-    // it to open straight into a run; bare-home hosts get `{}` (no run).
-    return guardGet(method, res, () =>
-      sendJson(res, 200, context.run ? { run: context.run } : {}),
-    );
+    // The SPA's bootstrap: WHICH PROJECT this server is serving, and which run (if any) is being asked
+    // for. Two things here are load-bearing:
+    //
+    //  - `?run=<label>` wins over the host-derived context. The path (`/work/<slug>`) is the primary way
+    //    to address a run now; the `*.localhost` host is a back-compat alias. The label resolves the same
+    //    way every other route resolves one (`resolveRun`), so a slug, a full id, or a case-folded host
+    //    label all land on the same run.
+    //  - `project`/`root` are reported so the SPA renders the project it is ACTUALLY being served instead
+    //    of a hardcoded name. The port is a global singleton but the root is per-process, so a second
+    //    repo's `/agentry:workbench` would "focus" the first repo's server and silently show someone
+    //    else's runs under the wrong label. The client (and the command) compare this.
+    return guardGet(method, res, () => {
+      const requested = runParam(url);
+      const run = requested !== undefined ? resolveRun(reader, requested) : (context.run ?? undefined);
+      sendJson(res, 200, {
+        ...(projectRoot !== undefined ? { project: basename(projectRoot), root: projectRoot } : {}),
+        ...(run !== undefined && run !== null ? { run } : {}),
+      });
+    });
   }
 
   const graphId = matchWorkGraph(path);
