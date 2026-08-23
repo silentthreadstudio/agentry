@@ -194,6 +194,48 @@ button{font:inherit;color:inherit;cursor:pointer}
 .chints .h{border:1px solid var(--line);border-radius:var(--r-sm);padding:2px 6px;font:600 10.5px var(--mono);color:var(--faint)}
 .chints .sp{margin-left:auto}
 
+/* ══ new work — a MODAL, unlike the doc pane, and deliberately so ════════════
+   The doc pane is scoped to the board because you read it *alongside* a live conversation. Creating
+   work is the opposite: you are composing, not monitoring, and nothing behind it needs your attention
+   for those few seconds. So this one is centred, over everything, and takes the keyboard. */
+.mscrim{position:fixed;inset:0;background:#05050899;backdrop-filter:blur(3px);display:none;z-index:60}
+.mscrim.on{display:block}
+.modal{position:fixed;top:12vh;left:50%;transform:translateX(-50%);width:min(640px,92vw);z-index:61;
+  background:linear-gradient(180deg,#14141c,#0e0e13);border:1px solid var(--line2);border-radius:18px;
+  box-shadow:0 40px 90px #000a;display:none;flex-direction:column;overflow:hidden}
+.modal.on{display:flex}
+.mhd{display:flex;align-items:center;gap:10px;padding:16px 20px 13px;border-bottom:1px solid var(--line)}
+.mhd .t{font-weight:650;font-size:14px}
+.mhd .proj{margin-left:auto;display:flex;align-items:center;gap:7px;border:1px solid var(--line2);
+  border-radius:var(--r-lg);background:var(--panel);padding:5px 9px;font-size:12px;color:var(--muted);cursor:pointer}
+.mhd .proj .sq{width:16px;height:16px;border-radius:4px;background:var(--grad-brand);display:grid;place-items:center;
+  font:700 8px var(--sans);color:#12101c}
+.mbody{padding:18px 20px 6px;display:flex;flex-direction:column;gap:14px}
+.tin{border:0;background:transparent;color:var(--ink);font:600 19px/1.35 var(--sans);width:100%;padding:0;letter-spacing:-.3px}
+.tin::placeholder{color:#4b4c58}
+.din{border:1px solid var(--line);border-radius:var(--r-xl);background:#0d0d12;color:var(--ink2);
+  font:13px/1.6 var(--sans);width:100%;padding:11px 13px;resize:none;min-height:96px}
+.din::placeholder{color:var(--faint)}
+.frow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.flbl{font:700 8.5px var(--sans);letter-spacing:.9px;text-transform:uppercase;color:var(--faint);width:100%}
+.kchip{border:1px solid var(--line2);background:var(--panel2);border-radius:999px;padding:4px 11px;font-size:12px;color:var(--muted)}
+.kchip.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}
+
+/* The destination IS the assignment decision, so it is explained, not left as two bare radio labels:
+   "ready" means *conductor, take this* — it right-sizes and starts. That is the whole product in one
+   control, and a user who does not understand it will use the board wrong. */
+.dest{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.dopt{border:1px solid var(--line2);border-radius:var(--r-xl);background:var(--panel);padding:11px 13px;cursor:pointer}
+.dopt .dt{font-weight:650;font-size:13px;display:flex;align-items:center;gap:7px}
+.dopt .dd{color:var(--faint);font-size:11.5px;margin-top:4px;line-height:1.45}
+.dopt.on{border-color:var(--accent-line);background:linear-gradient(180deg,#16142a,#101015)}
+.dopt.on .dt{color:var(--accent-ink)}
+.dot2{width:7px;height:7px;border-radius:50%;flex:none}
+.mft{display:flex;align-items:center;gap:9px;padding:14px 20px 16px;border-top:1px solid var(--line);margin-top:8px}
+.mft .hint{font:11px var(--mono);color:var(--faint)}
+.mft .sp{margin-left:auto}
+.ghost{border:1px solid var(--line2);background:var(--panel2);border-radius:var(--r-lg);padding:8px 13px;font-size:12.5px;color:var(--muted)}
+
 /* ══ doc pane (opens over the board when a card's doc is summoned) ═══════════ */
 /* The doc is a PANE OVER THE BOARD, never a modal over the app. Two reasons, both load-bearing: the
    conversation must stay live while you read (the whole point is talking about the doc you're looking
@@ -270,7 +312,7 @@ button{font:inherit;color:inherit;cursor:pointer}
     </div>
     <div class="grow"></div>
     <div class="seg">
-      <button class="on">Board</button><button>Graph</button><button>Timeline</button>
+      <button class="on">Board</button><button>Timeline</button>
     </div>
     <button class="btn">+ New work</button>
   </div>
@@ -507,6 +549,46 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 
 
+<div class="mscrim" id="mscrim"></div>
+<section class="modal" id="modal" role="dialog" aria-label="New work">
+  <div class="mhd">
+    <span class="t">New work</span>
+    <button class="proj"><span class="sq">AG</span>agentry <span style="color:var(--faint)">▾</span></button>
+  </div>
+
+  <div class="mbody">
+    <input class="tin" id="mtitle" placeholder="What needs to happen?" autofocus />
+    <textarea class="din" placeholder="Context the agents should start from — constraints, links, what done looks like. Markdown, @task-004, @memory:… all work here."></textarea>
+
+    <div class="frow">
+      <span class="flbl">Kind</span>
+      <button class="kchip on">feature</button><button class="kchip">bug</button><button class="kchip">refactor</button>
+      <button class="kchip">perf</button><button class="kchip">docs</button><button class="kchip">design</button>
+    </div>
+
+    <div>
+      <span class="flbl" style="display:block;margin-bottom:7px">Where does it go</span>
+      <div class="dest">
+        <div class="dopt on" data-dest="backlog">
+          <div class="dt"><span class="dot2" style="background:var(--todo)"></span>Backlog</div>
+          <div class="dd">Captured, not started. Sits until you decide it's next.</div>
+        </div>
+        <div class="dopt" data-dest="ready">
+          <div class="dt"><span class="dot2" style="background:var(--v1)"></span>Ready</div>
+          <div class="dd">Hands it to the conductor — it right-sizes the work and starts, gating you at each decision.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mft">
+    <span class="hint">⌘ + Enter to create</span>
+    <span class="sp"></span>
+    <button class="ghost" id="mcancel">Cancel</button>
+    <button class="btn" id="mcreate">Add to backlog</button>
+  </div>
+</section>
+
 <script>
   const doc = document.getElementById('doc'), scrim = document.getElementById('scrim');
   const open  = () => { doc.classList.add('on');  scrim.classList.add('on'); };
@@ -524,6 +606,24 @@ button{font:inherit;color:inherit;cursor:pointer}
     document.querySelector('.cbox .ph').textContent = 'About @spec — ';
   });
 
+  // New work — a focused composer. The destination choice drives the primary action's label, because
+  // "Add to backlog" and "Start now" are genuinely different commitments and the button should say which.
+  const modal = document.getElementById('modal'), mscrim = document.getElementById('mscrim');
+  const openModal = () => { modal.classList.add('on'); mscrim.classList.add('on'); document.getElementById('mtitle').focus(); };
+  const closeModal = () => { modal.classList.remove('on'); mscrim.classList.remove('on'); };
+  document.querySelector('.head .btn').addEventListener('click', openModal);
+  document.getElementById('mcancel').addEventListener('click', closeModal);
+  mscrim.addEventListener('click', closeModal);
+  document.querySelectorAll('.dopt').forEach(o => o.addEventListener('click', () => {
+    document.querySelectorAll('.dopt').forEach(x => x.classList.remove('on'));
+    o.classList.add('on');
+    document.getElementById('mcreate').textContent = o.dataset.dest === 'ready' ? 'Start now' : 'Add to backlog';
+  }));
+  document.querySelectorAll('.kchip').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('.kchip').forEach(x => x.classList.remove('on'));
+    c.classList.add('on');
+  }));
+
   // Chat modes: collapsed ⇄ rail ⇄ focus.
   const setMode = m => {
     document.body.dataset.chat = m;
@@ -532,7 +632,7 @@ button{font:inherit;color:inherit;cursor:pointer}
   document.querySelectorAll('.modes button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
   document.querySelector('.spine').addEventListener('click', () => setMode('rail'));
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') close();
+    if (e.key === 'Escape') { close(); closeModal(); }
     // ⌘\ cycles the split, the way an editor toggles its panel
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
       const order = ['collapsed', 'rail', 'focus'];
