@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agentry Workspace — UI v3 mock</title>
+<style>
+/* ══ tokens — lifted verbatim from web/src/ui/tokens.css so this mock reads as the real product ══ */
+:root{
+  --bg:#08080b; --bg2:#0b0b10; --side-bg:#09090d; --panel:#121218; --panel2:#16161e; --raise:#1d1d27;
+  --line:#1f1f28; --line2:#2c2c38; --hover:#191921;
+  --ink:#f2f2f6; --ink2:#cccdd6; --muted:#8a8b98; --faint:#5f606b;
+  --v1:#7c7ff2; --v2:#a463f0; --v3:#5bd6e6; --mag:#e472c9;
+  --accent:#8b7ff5; --accent-soft:#191930; --accent-ink:#c3c0f7; --accent-line:#363659;
+  --grad-brand:linear-gradient(120deg,var(--v1),var(--v2) 60%,var(--mag));
+  --grad-wordmark:linear-gradient(92deg,#fff,#cdbdfb);
+  --grad-hero:linear-gradient(96deg,#ffffff,#d6c8fb 55%,#f0b9e4);
+  --mesh:
+    radial-gradient(1100px 620px at 82% -12%,#a463f022,transparent 62%),
+    radial-gradient(820px 520px at -8% 8%,#7c7ff21f,transparent 60%),
+    radial-gradient(680px 520px at 60% 116%,#e472c916,transparent 58%);
+  --done:#4cc38a; --prog:#ecb24a; --rev:#5b94e6; --block:#e06a5c; --todo:#4f505c;
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,system-ui,sans-serif;
+  --r-sm:6px; --r-md:8px; --r-lg:10px; --r-xl:12px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:var(--mesh),var(--bg); background-attachment:fixed; color:var(--ink);
+  font-family:var(--sans); font-size:13.5px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  display:grid; height:100vh; overflow:hidden;
+  transition:grid-template-columns .22s cubic-bezier(.4,0,.2,1);
+}
+/* Three chat modes. The board and the conversation are the two halves of the workspace, and which one
+   leads changes through the day: watching a fleet run is board-led, thinking a problem through is
+   chat-led. So the split is a control, not a fixed decision. */
+body[data-chat="collapsed"]{grid-template-columns:232px 1fr 52px}
+body[data-chat="rail"]{grid-template-columns:232px 1fr 372px}
+body[data-chat="focus"]{grid-template-columns:232px minmax(0,1fr) minmax(0,58%)}
+/* collapsed: the rail becomes a spine — you still see that something is happening */
+body[data-chat="collapsed"] .stream,
+body[data-chat="collapsed"] .composer,
+body[data-chat="collapsed"] .railhd .meta{display:none}
+body[data-chat="collapsed"] .railhd{flex-direction:column;gap:12px;padding:14px 0;border-bottom:0}
+body[data-chat="collapsed"] .spine{display:flex}
+.spine{display:none;flex-direction:column;align-items:center;gap:10px;padding-top:6px}
+.spine .vt{writing-mode:vertical-rl;font:700 9px var(--sans);letter-spacing:1.2px;text-transform:uppercase;color:var(--faint)}
+.spine .badge{min-width:18px;height:18px;border-radius:9px;background:var(--accent-soft);border:1px solid var(--accent-line);
+  color:var(--accent-ink);font:700 10px var(--mono);display:grid;place-items:center}
+/* focus: the conversation leads. The board does NOT become five squeezed columns — at this width they
+   clip, and a board whose last two columns are off-screen is not peripheral awareness, it is hiding.
+   It becomes a DIGEST instead: the two columns that change minute-to-minute keep their cards, the three
+   that don't collapse to a count you can still glance at. */
+body[data-chat="focus"] .board{display:flex;flex-direction:column;gap:4px;padding:12px 16px 18px}
+body[data-chat="focus"] .col{flex:none}
+body[data-chat="focus"] .colhd{padding:7px 3px 6px;border-bottom:1px solid var(--line)}
+body[data-chat="focus"] .stack{padding-left:9px;gap:7px}
+body[data-chat="focus"] .col[data-digest] .stack{display:none}
+body[data-chat="focus"] .col[data-digest] .colhd{opacity:.6;border-bottom:0;padding:4px 3px}
+body[data-chat="focus"] .card{padding:9px 11px}
+body[data-chat="focus"] .card .ttl{font-size:12.5px}
+body[data-chat="focus"] .card .bar,
+body[data-chat="focus"] .card .meta .chip.mono{display:none}
+body[data-chat="focus"] .card .pres{margin-top:7px;padding-top:7px}
+body[data-chat="focus"] .warnbar{margin:0 16px 10px;font-size:11.5px}
+body[data-chat="focus"] .stream{padding:20px 26px}
+body[data-chat="focus"] .msg{max-width:74%;font-size:13px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer}
+
+/* ══ sidebar ═════════════════════════════════════════════════════════════════ */
+.side{background:linear-gradient(180deg,#0d0d1400,#09090d99);border-right:1px solid var(--line);
+  padding:18px 13px;display:flex;flex-direction:column;min-height:0}
+.wm b{display:block;font-size:15px;letter-spacing:-.3px;
+  background:var(--grad-wordmark);-webkit-background-clip:text;background-clip:text;color:transparent}
+.wm i{display:block;font-style:normal;font:700 8.5px var(--sans);letter-spacing:1.4px;color:var(--faint);text-transform:uppercase}
+
+/* the project switcher — the JIRA-shaped affordance: the workspace holds many projects */
+.projsel{margin:16px 0 6px;border:1px solid var(--line2);border-radius:var(--r-lg);background:var(--panel);
+  padding:9px 11px;display:flex;align-items:center;gap:9px;cursor:pointer}
+.projsel:hover{border-color:var(--accent-line)}
+.projsel .sq{width:22px;height:22px;border-radius:var(--r-sm);background:var(--grad-brand);
+  display:grid;place-items:center;font:700 10px var(--sans);color:#12101c;flex:none}
+.projsel .nm{font-weight:650;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.projsel .cv{color:var(--faint);font-size:10px}
+
+.seclbl{font:700 8.5px var(--sans);letter-spacing:1.1px;text-transform:uppercase;color:var(--faint);
+  margin:18px 0 7px;padding-left:9px}
+.nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-lg);
+  color:var(--muted);text-decoration:none;font-size:13px;position:relative}
+.nav .ic{width:15px;text-align:center;opacity:.75}
+.nav:hover{background:var(--hover);color:var(--ink)}
+.nav.on{color:var(--ink);background:linear-gradient(90deg,#1b1830,#14141b)}
+.nav.on::before{content:"";position:absolute;left:-13px;top:7px;bottom:7px;width:2px;border-radius:2px;background:var(--grad-brand)}
+.nav .ct{margin-left:auto;font:600 10.5px var(--mono);color:var(--faint)}
+.grow{flex:1}
+.roster{border:1px solid var(--line);border-radius:var(--r-xl);background:linear-gradient(180deg,#15151d,#101015);padding:11px 12px}
+.roster .k{font:700 8.5px var(--sans);letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+.who{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:var(--muted)}
+.who .av{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font:700 8px var(--sans);flex:none}
+
+/* ══ board ═══════════════════════════════════════════════════════════════════ */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;position:relative}
+.head{display:flex;align-items:center;gap:14px;padding:17px 22px 13px;border-bottom:1px solid var(--line)}
+.head h1{margin:0;font-size:19px;letter-spacing:-.4px;
+  background:var(--grad-hero);-webkit-background-clip:text;background-clip:text;color:transparent}
+.head .sub{color:var(--faint);font-size:12px}
+.seg{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-lg);padding:2px}
+.seg button{border:0;background:transparent;color:var(--muted);padding:5px 11px;border-radius:var(--r-md);font-size:12px}
+.seg button.on{background:var(--raise);color:var(--ink)}
+.btn{border:1px solid var(--accent-line);border-radius:var(--r-lg);background:linear-gradient(180deg,#2a2540,#1b1830);
+  color:#e9e6ff;font:600 12.5px var(--sans);padding:8px 13px}
+.btn:hover{border-color:#6d5bd0aa}
+
+.board{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(212px,1fr));gap:12px;
+  padding:16px 22px 22px;overflow:auto;position:relative}
+.col{display:flex;flex-direction:column;min-height:0}
+.colhd{display:flex;align-items:center;gap:8px;padding:0 3px 10px}
+.colhd .dot{width:7px;height:7px;border-radius:50%}
+.colhd .t{font:700 10px var(--sans);letter-spacing:.9px;text-transform:uppercase;color:var(--muted)}
+.colhd .n{margin-left:auto;font:600 10.5px var(--mono);color:var(--faint)}
+.stack{display:flex;flex-direction:column;gap:9px;overflow:auto;padding:0 0 8px 9px;margin-left:-9px}
+
+.card{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#16161e,#101015);
+  padding:11px 12px;position:relative;cursor:pointer;transition:border-color .12s,transform .12s}
+.card:hover{border-color:var(--line2);transform:translateY(-1px)}
+.card .ttl{font-size:13px;font-weight:600;line-height:1.4;color:var(--ink2)}
+.card .meta{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:10.5px;color:var(--faint)}
+.card .meta .sp{margin-left:auto}
+.chip{border:1px solid var(--line2);border-radius:999px;padding:2px 7px;font:600 9.5px var(--sans);
+  letter-spacing:.3px;color:var(--muted);background:var(--panel2)}
+.chip.mono{font-family:var(--mono);letter-spacing:0}
+.chip.blocked{border-color:#e06a5c44;color:#eda096;background:#e06a5c14}
+.chip.gate{border-color:#5b94e644;color:#a8c6f2;background:#5b94e614}
+.chip.kind{border-color:var(--accent-line);color:var(--accent-ink);background:var(--accent-soft)}
+
+/* progress + presence */
+.bar{height:3px;border-radius:3px;background:#ffffff0f;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--done),#86e6b9)}
+.pres{display:flex;align-items:center;gap:6px;margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)}
+.av{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:700 8px var(--sans);flex:none}
+.av.impl{background:#1e3a2c;color:#7fe0ae;box-shadow:0 0 0 1px #4cc38a55}
+.av.ver{background:#1b2b45;color:#9dc2f5;box-shadow:0 0 0 1px #5b94e655}
+.av.arch{background:#221b3d;color:#bdb0f7;box-shadow:0 0 0 1px #8b7ff555}
+.av.po{background:#3a2a1b;color:#efc38f;box-shadow:0 0 0 1px #ecb24a55}
+.pres .act{font-size:10.5px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pulse{width:5px;height:5px;border-radius:50%;background:var(--done);flex:none;animation:p 1.8s ease-in-out infinite}
+@keyframes p{0%,100%{opacity:.35}50%{opacity:1}}
+
+/* the two things a generic kanban can't do */
+/* the overlap tether — the two cards that own the same file are physically tied together, so the
+   collision is visible in the board's own geometry rather than only in a banner above it */
+.pair{position:relative;display:flex;flex-direction:column;gap:9px}
+.pair::before{content:"";position:absolute;left:-7px;top:14px;bottom:14px;width:2px;border-radius:2px;
+  background:repeating-linear-gradient(180deg,#e06a5c 0 4px,transparent 4px 8px)}
+.warnbar{display:flex;align-items:center;gap:7px;margin:0 22px 12px;padding:8px 11px;border-radius:var(--r-lg);
+  border:1px solid #e06a5c33;background:#e06a5c12;color:#eda096;font-size:12px}
+.warnbar b{color:#f3bdb4;font-weight:650}
+
+/* ══ chat rail ═══════════════════════════════════════════════════════════════ */
+.rail{border-left:1px solid var(--line);background:linear-gradient(180deg,#0c0c1200,#09090d88);
+  display:flex;flex-direction:column;min-height:0}
+.railhd{display:flex;align-items:center;gap:9px;padding:15px 16px 12px;border-bottom:1px solid var(--line)}
+.railhd .t{font-weight:650;font-size:13px}
+.railhd .s{color:var(--faint);font-size:11px}
+.modes{display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-md);padding:2px}
+.modes button{border:0;background:transparent;color:var(--faint);padding:3px 7px;border-radius:var(--r-sm);font-size:11px;line-height:1}
+.modes button:hover{color:var(--ink)}
+.modes button.on{background:var(--raise);color:var(--accent-ink)}
+.stream{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;justify-content:flex-end;gap:9px;padding:16px}
+.sys{display:flex;gap:8px;align-items:flex-start;color:var(--muted);font-size:11.5px;padding:1px 2px}
+.sys .g{color:var(--faint);flex:none;width:13px;text-align:center}
+.sys b{color:var(--ink2);font-weight:600}
+.msg{max-width:86%;border:1px solid var(--line);border-radius:13px;padding:9px 12px;font-size:12.5px;line-height:1.5}
+.msg.you{align-self:flex-end;background:linear-gradient(180deg,#1b1b26,#14141b)}
+.msg.bot{align-self:flex-start;background:linear-gradient(180deg,#16161e,#101015);border-color:#6d5bd033}
+.msg .who{font:700 8.5px var(--sans);letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-bottom:3px}
+.ref{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--accent-line);background:var(--accent-soft);
+  color:var(--accent-ink);border-radius:var(--r-sm);padding:1px 6px;font:600 11px var(--mono);cursor:pointer}
+.ref:hover{border-color:var(--accent)}
+.gatecard{align-self:flex-start;width:100%;border:1px solid #5b94e63d;border-radius:13px;
+  background:linear-gradient(180deg,#141a26,#101015);padding:11px 12px}
+.gatecard .k{font:700 8.5px var(--sans);letter-spacing:.9px;text-transform:uppercase;color:#a8c6f2;margin-bottom:5px}
+.gatecard .q{font-size:12.5px;color:var(--ink2)}
+.acts{display:flex;gap:7px;margin-top:10px}
+.acts button{border:1px solid var(--line2);background:var(--panel2);border-radius:var(--r-md);padding:5px 10px;font-size:11.5px;color:var(--muted)}
+.acts button.pri{border-color:#4cc38a55;background:#4cc38a16;color:#8fe3b8}
+.acts button:hover{border-color:var(--accent-line);color:var(--ink)}
+.composer{border-top:1px solid var(--line);padding:11px 14px 14px}
+.cbox{border:1px solid var(--line2);border-radius:var(--r-xl);background:#0f0f14;padding:9px 11px}
+.cbox .ph{color:var(--faint);font-size:12.5px}
+.chints{display:flex;gap:6px;margin-top:9px;align-items:center}
+.chints .h{border:1px solid var(--line);border-radius:var(--r-sm);padding:2px 6px;font:600 10.5px var(--mono);color:var(--faint)}
+.chints .sp{margin-left:auto}
+
+/* ══ doc pane (opens over the board when a card's doc is summoned) ═══════════ */
+/* The doc is a PANE OVER THE BOARD, never a modal over the app. Two reasons, both load-bearing: the
+   conversation must stay live while you read (the whole point is talking about the doc you're looking
+   at), and a scrim over the whole window makes the workspace feel modal when it isn't — you are still
+   watching agents work behind it. So it is scoped to the main column and the rail is never dimmed. */
+.scrim{position:absolute;inset:0;background:#05050866;backdrop-filter:blur(1.5px);display:none;z-index:40}
+.scrim.on{display:block}
+.doc{position:absolute;top:0;right:0;bottom:0;width:min(660px,72%);background:linear-gradient(180deg,#101017,#0b0b10);
+  border-left:1px solid var(--line2);z-index:41;display:none;flex-direction:column;box-shadow:-34px 0 70px #0009;
+  transition:width .2s cubic-bezier(.4,0,.2,1)}
+.doc.on{display:flex}
+.doc.wide{width:100%;border-left:0}
+.dochd{display:flex;align-items:center;gap:10px;padding:15px 20px;border-bottom:1px solid var(--line)}
+.dochd .t{font-weight:650}
+.dochd .x{margin-left:auto;border:1px solid var(--line2);background:var(--panel2);border-radius:var(--r-md);padding:3px 9px;color:var(--muted)}
+.docbody{flex:1;overflow:auto;padding:20px 24px 30px}
+.docbody h2{font-size:15px;margin:20px 0 8px;letter-spacing:-.2px}
+.docbody h2:first-child{margin-top:0}
+.docbody p{color:var(--ink2);font-size:13px}
+.docbody ul{color:var(--ink2);font-size:13px;padding-left:18px}
+/* the "richer blocks" — a doc can inline the workspace's own objects */
+.block{border:1px solid var(--line);border-radius:var(--r-xl);background:var(--panel);padding:11px 13px;margin:12px 0}
+.block .bk{font:700 8.5px var(--sans);letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.block.mem{border-color:var(--accent-line);background:linear-gradient(180deg,#16142a,#101015)}
+.block.mem .bk{color:var(--accent-ink)}
+.block.task{border-color:#4cc38a33}
+.hl{background:#8b7ff51f;border-bottom:1px solid var(--accent-line);border-radius:2px;padding:0 2px;cursor:pointer}
+.cmt{border-left:2px solid var(--accent);background:#8b7ff50e;padding:8px 11px;border-radius:0 var(--r-md) var(--r-md) 0;margin:10px 0;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body data-chat="rail">
+
+<!-- ═════ sidebar: the workspace holds many projects ═════ -->
+<aside class="side">
+  <div class="wm"><b>Agentry</b><i>workspace</i></div>
+
+  <div class="projsel" title="Switch project">
+    <span class="sq">AG</span>
+    <span class="nm">agentry</span>
+    <span class="cv">▾</span>
+  </div>
+
+  <div class="seclbl">Project</div>
+  <nav>
+    <a class="nav on" href="#"><span class="ic">▦</span>Board<span class="ct">14</span></a>
+    <a class="nav" href="#"><span class="ic">≡</span>Backlog<span class="ct">9</span></a>
+    <a class="nav" href="#"><span class="ic">◈</span>Gates<span class="ct">2</span></a>
+    <a class="nav" href="#"><span class="ic">✦</span>Memory<span class="ct">55</span></a>
+  </nav>
+
+  <div class="seclbl">Workspace</div>
+  <nav>
+    <a class="nav" href="#"><span class="ic">◳</span>All projects<span class="ct">3</span></a>
+    <a class="nav" href="#"><span class="ic">⚙</span>Settings</a>
+  </nav>
+
+  <div class="grow"></div>
+
+  <div class="roster">
+    <div class="k">On shift</div>
+    <div class="who"><span class="av impl">IM</span>implementer<span class="pulse" style="margin-left:auto"></span></div>
+    <div class="who"><span class="av ver">VE</span>verifier<span class="pulse" style="margin-left:auto"></span></div>
+    <div class="who"><span class="av arch">AR</span>architect</div>
+    <div class="who"><span class="av po">PO</span>product-owner</div>
+  </div>
+</aside>
+
+<!-- ═════ board ═════ -->
+<main class="main" id="main">
+  <div class="head">
+    <div>
+      <h1>Board</h1>
+      <div class="sub">agentry · every piece of work, from intent to shipped</div>
+    </div>
+    <div class="grow"></div>
+    <div class="seg">
+      <button class="on">Board</button><button>Graph</button><button>Timeline</button>
+    </div>
+    <button class="btn">+ New work</button>
+  </div>
+
+  <div class="warnbar">
+    <span>⚠</span>
+    <span><b>Contract overlap</b> — “session middleware” and “auth guard refactor” are both in progress and both own <code style="font-family:var(--mono)">auth/middleware.ts</code>. One will clobber the other.</span>
+  </div>
+
+  <div class="board">
+    <!-- BACKLOG — durable intent that has not become a run -->
+    <section class="col" data-digest>
+      <div class="colhd"><span class="dot" style="background:var(--todo)"></span><span class="t">Backlog</span><span class="n">9</span></div>
+      <div class="stack">
+        <article class="card">
+          <div class="ttl">Onboarding wizard should ask how deep to go</div>
+          <div class="meta"><span class="chip kind">feature</span><span class="sp">added 2d ago</span></div>
+        </article>
+        <article class="card">
+          <div class="ttl">Release notes for the multi-project change</div>
+          <div class="meta"><span class="chip kind">docs</span><span class="sp">added 2d ago</span></div>
+        </article>
+        <article class="card">
+          <div class="ttl">Verify loop is expensive — cap the retries</div>
+          <div class="meta"><span class="chip kind">perf</span><span class="sp">added 5d ago</span></div>
+        </article>
+        <article class="card">
+          <div class="ttl">Design pass on the gates inbox</div>
+          <div class="meta"><span class="chip kind">design</span><span class="sp">added 6d ago</span></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- READY — “conductor, take this”. Dropping here IS the assignment. -->
+    <section class="col" data-digest>
+      <div class="colhd"><span class="dot" style="background:var(--v1)"></span><span class="t">Ready</span><span class="n">2</span></div>
+      <div class="stack">
+        <article class="card" style="border-color:var(--accent-line)">
+          <div class="ttl">Import backlog items from GitHub issues</div>
+          <div class="meta"><span class="chip kind">feature</span><span class="chip">queued</span><span class="sp">picks up next</span></div>
+        </article>
+        <article class="card">
+          <div class="ttl">Memory: capture corrections as preferences</div>
+          <div class="meta"><span class="chip kind">feature</span><span class="sp">queued</span></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- RUNNING — the card IS a run: tasks, agents on them, live -->
+    <section class="col">
+      <div class="colhd"><span class="dot" style="background:var(--prog)"></span><span class="t">Running</span><span class="n">2</span></div>
+      <div class="stack">
+        <div class="pair">
+        <article class="card" data-doc="1" style="border-color:#ecb24a3d">
+          <div class="ttl">Session middleware + token refresh</div>
+          <div class="meta">
+            <span class="chip kind">decompose+verify</span>
+            <span class="chip mono">7 tasks</span>
+            <span class="sp">T-004</span>
+          </div>
+          <div class="bar"><i style="width:57%"></i></div>
+          <div class="pres">
+            <span class="av impl">IM</span>
+            <span class="act">implementer · <code style="font-family:var(--mono)">auth/middleware.ts</code></span>
+            <span class="pulse" style="margin-left:auto"></span>
+            <span style="font:600 10px var(--mono);color:var(--faint)">4m</span>
+          </div>
+        </article>
+
+        <article class="card" style="border-color:#e06a5c3d">
+          <div class="ttl">Auth guard refactor</div>
+          <div class="meta"><span class="chip kind">refactor</span><span class="chip mono">3 tasks</span><span class="sp">T-002</span></div>
+          <div class="bar"><i style="width:31%"></i></div>
+          <div class="pres">
+            <span class="av impl">IM</span>
+            <span class="act">implementer · <code style="font-family:var(--mono)">auth/middleware.ts</code></span>
+            <span class="pulse" style="margin-left:auto"></span>
+            <span style="font:600 10px var(--mono);color:var(--faint)">1m</span>
+          </div>
+        </article>
+        </div>
+
+        <article class="card">
+          <div class="ttl">Docs site nav restructure</div>
+          <div class="meta"><span class="chip blocked">blocked by T-004</span><span class="sp">waiting</span></div>
+          <div class="bar"><i style="width:12%;background:#3a3a46"></i></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- IN REVIEW — a gate is waiting on a human -->
+    <section class="col">
+      <div class="colhd"><span class="dot" style="background:var(--rev)"></span><span class="t">In review</span><span class="n">2</span></div>
+      <div class="stack">
+        <article class="card" data-doc="1" style="border-color:#5b94e63d">
+          <div class="ttl">Path routing + multi-project</div>
+          <div class="meta"><span class="chip gate">gate · spec</span><span class="sp">waiting on you</span></div>
+          <div class="pres">
+            <span class="av ver">VE</span><span class="act">verifier · 12 criteria checked</span>
+          </div>
+        </article>
+        <article class="card">
+          <div class="ttl">Eval: harder bench fixtures</div>
+          <div class="meta"><span class="chip gate">gate · plan</span><span class="sp">waiting on you</span></div>
+          <div class="pres"><span class="av arch">AR</span><span class="act">architect · plan + 2 ADRs</span></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- DONE -->
+    <section class="col" data-digest>
+      <div class="colhd"><span class="dot" style="background:var(--done)"></span><span class="t">Done</span><span class="n">3</span></div>
+      <div class="stack">
+        <article class="card" style="opacity:.72">
+          <div class="ttl">Memory priming for workers</div>
+          <div class="meta"><span class="chip mono">6 tasks</span><span class="sp">shipped 1h ago</span></div>
+          <div class="bar"><i style="width:100%"></i></div>
+        </article>
+        <article class="card" style="opacity:.72">
+          <div class="ttl">Conductor thread + new work</div>
+          <div class="meta"><span class="chip mono">4 tasks</span><span class="sp">shipped 2h ago</span></div>
+          <div class="bar"><i style="width:100%"></i></div>
+        </article>
+        <article class="card" style="opacity:.6">
+          <div class="ttl">Workbench: one server, many projects</div>
+          <div class="meta"><span class="chip mono">9 tasks</span><span class="sp">shipped today</span></div>
+          <div class="bar"><i style="width:100%"></i></div>
+        </article>
+      </div>
+    </section>
+  </div>
+<!-- ═════ doc pane — summoned from a card or an @chip ═════ -->
+<div class="scrim" id="scrim"></div>
+<section class="doc" id="doc">
+  <div class="dochd">
+    <span class="chip kind">spec</span>
+    <span class="t">Session middleware + token refresh</span>
+    <button class="x" id="wide" title="Widen">⤢</button>
+    <button class="x" id="discuss" title="Discuss in the conversation">Discuss</button>
+    <button class="x" id="close">Close</button>
+  </div>
+  <div class="docbody">
+    <h2>Job to be done</h2>
+    <p>A signed-in user should stay signed in across a token expiry without noticing, and an expired refresh token should end the session cleanly rather than looping.</p>
+
+    <h2>Acceptance criteria</h2>
+    <ul>
+      <li>AC1 — a request with an expired access token but a valid refresh token succeeds, and issues a new pair.</li>
+      <li>AC2 — a request with <span class="hl">an expired refresh token returns 401 and clears the session cookie</span>.</li>
+      <li>AC3 — concurrent requests during a refresh do not each trigger their own refresh.</li>
+    </ul>
+
+    <div class="cmt">
+      <b style="color:var(--accent-ink)">you</b> · on “an expired refresh token…” — should this redirect, or just 401 and let the client decide?
+      <div style="margin-top:6px;color:var(--ink2)"><b style="color:var(--accent-ink)">conductor</b> · 401 only. Redirecting from an API couples it to one client.</div>
+    </div>
+
+    <div class="block mem">
+      <div class="bk">✦ Recalled memory · shaped this spec</div>
+      <div style="color:var(--ink2);font-size:12.5px">Concurrent refresh needs a single-flight lock — the last time this shipped without one, every parallel request minted a new token pair and invalidated the others.</div>
+    </div>
+
+    <div class="block task">
+      <div class="bk">Task · 004 — in progress</div>
+      <div style="color:var(--ink2);font-size:12.5px;font-weight:600">Session middleware</div>
+      <div style="margin-top:7px;display:flex;gap:6px;align-items:center">
+        <span class="av impl">IM</span>
+        <span style="font-size:11.5px;color:var(--muted)">owns <code style="font-family:var(--mono)">auth/middleware.ts</code> · exposes <code style="font-family:var(--mono)">requireSession()</code></span>
+      </div>
+    </div>
+
+    <h2>Non-goals</h2>
+    <ul><li>Refresh-token rotation policy (separate decision — see <span class="ref">@adr-003</span>).</li></ul>
+  </div>
+</section>
+</main>
+
+<!-- ═════ chat rail — ambient, not a destination ═════ -->
+<aside class="rail">
+  <div class="railhd">
+    <div class="spine">
+      <span class="badge">3</span>
+      <span class="vt">Conductor</span>
+    </div>
+    <div class="meta">
+      <div class="t">Conductor</div>
+      <div class="s">session middleware + token refresh</div>
+    </div>
+    <div class="grow meta"></div>
+    <div class="modes">
+      <button data-mode="collapsed" title="Collapse to a spine">⟩</button>
+      <button data-mode="rail" class="on" title="Rail — board leads">▥</button>
+      <button data-mode="focus" title="Focus — conversation leads">⟨</button>
+    </div>
+  </div>
+
+  <div class="stream">
+    <div class="sys"><span class="g">◆</span><div>routed <b>decompose+verify</b> — 3 components, one real fork</div></div>
+    <div class="sys"><span class="g">→</span><div>architect produced <span class="ref">@plan</span> + <span class="ref">@adr-003</span></div></div>
+    <div class="sys"><span class="g">✓</span><div>gate passed · plan approved by you</div></div>
+    <div class="sys"><span class="g">→</span><div>dispatched <b>implementer</b> on <span class="ref">@task-004</span></div></div>
+
+    <div class="msg you">
+      <div class="who">you</div>
+      Careful — <span class="ref">@task-002</span> touches the same file. Do that one first.
+    </div>
+
+    <div class="msg bot">
+      <div class="who">conductor</div>
+      Confirmed: both contracts own <code style="font-family:var(--mono)">auth/middleware.ts</code>. I've held T-004 and put T-002 through first. Recall said this seam bit us before —
+      <span class="ref">@memory:middleware-order</span>
+    </div>
+
+    <div class="gatecard">
+      <div class="k">Gate · spec</div>
+      <div class="q">“Done = a session survives a token refresh without re-auth, and an expired refresh logs out cleanly.” Approve to start the build.</div>
+      <div class="acts">
+        <button class="pri">Approve</button><button>Request changes</button><button>Open spec</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="composer">
+    <div class="cbox">
+      <div class="ph">Message the conductor…</div>
+      <div class="chints">
+        <span class="h">@ docs · tasks · memory</span>
+        <span class="h">/ verify</span>
+        <span class="h sp">⏎</span>
+      </div>
+    </div>
+  </div>
+</aside>
+
+
+
+<script>
+  const doc = document.getElementById('doc'), scrim = document.getElementById('scrim');
+  const open  = () => { doc.classList.add('on');  scrim.classList.add('on'); };
+  const close = () => { doc.classList.remove('on','wide'); scrim.classList.remove('on'); };
+
+  // A card or an @chip summons the doc — structure is on demand, not a tab you live in.
+  document.querySelectorAll('.card, .ref').forEach(el => el.addEventListener('click', open));
+  document.getElementById('close').addEventListener('click', close);
+  document.getElementById('wide').addEventListener('click', () => doc.classList.toggle('wide'));
+  scrim.addEventListener('click', close);
+
+  // "Discuss" hands the doc to the conversation instead of making you retype what you're looking at.
+  document.getElementById('discuss').addEventListener('click', () => {
+    setMode('focus');
+    document.querySelector('.cbox .ph').textContent = 'About @spec — ';
+  });
+
+  // Chat modes: collapsed ⇄ rail ⇄ focus.
+  const setMode = m => {
+    document.body.dataset.chat = m;
+    document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  };
+  document.querySelectorAll('.modes button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  document.querySelector('.spine').addEventListener('click', () => setMode('rail'));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') close();
+    // ⌘\ cycles the split, the way an editor toggles its panel
+    if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+      const order = ['collapsed', 'rail', 'focus'];
+      setMode(order[(order.indexOf(document.body.dataset.chat) + 1) % 3]);
+    }
+  });
+</script>
+</body>
+</html>
