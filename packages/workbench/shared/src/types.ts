@@ -61,11 +61,30 @@ export interface BoardCard {
   shape?: string; // routing shape, on a run card
   taskCounts?: Record<FlowTaskStatus, number>;
   agentCount?: number;
+  /** Who is on this run right now — the presence row. Read from FLOW's roster, never a second source. */
+  agents?: AgentView[];
+  /** Tasks whose `deps` are not yet done, with the blockers that hold them. */
+  blocked?: { task: string; by: string[] }[];
+  /** True when this card takes part in a `BoardConflict` — the card tints, the banner explains. */
+  conflict?: boolean;
   updatedAt: string;
+}
+
+/** Two tasks running at once that declare the SAME file in `contract.owns`. This is the silent-clobber
+ *  failure the planning skill exists to prevent — one agent's write lands on top of the other's and
+ *  nothing warns anybody. Surfacing it is the board's most valuable signal, and nothing else in this
+ *  space draws it. */
+export interface BoardConflict {
+  files: string[]; // the paths both contracts claim
+  cards: string[]; // the board cards involved (run ids)
+  tasks: string[]; // "<run>/<taskNo>" refs, so the banner can name the actual tasks
 }
 
 export interface BoardModel {
   columns: Record<BoardColumn, BoardCard[]>;
+  /** Cross-card contract overlaps, board-wide — two agents in two different runs on one file is the
+   *  case that actually bites, so this is not scoped to a single run. */
+  conflicts: BoardConflict[];
 }
 
 // ── Graph model ───────────────────────────────────────────────────────────────────────────────────
@@ -140,6 +159,12 @@ export interface AgentView {
   role: string; // the dispatched agent type / role
   state: AgentState; // FLOW's closed live state (imported, not redeclared)
   task: string | null; // the task it is working, or null
+  /** When it entered this state (ISO-8601) — the elapsed timer's only honest source. Absent on a
+   *  roster written before FLOW stamped it; the UI shows no timer rather than inventing one. */
+  since?: string;
+  /** The first path its task declares in `contract.owns` — "who is touching what", the single most
+   *  useful thing to show beside a live agent. Absent when the task declares no contract. */
+  file?: string;
 }
 
 // ── Token series ──────────────────────────────────────────────────────────────────────────────────

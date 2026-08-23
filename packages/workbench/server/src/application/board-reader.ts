@@ -9,9 +9,10 @@
 // `backlog` and `ready` are states of a backlog ITEM. `running` / `in-review` / `done` are derived from
 // a RUN's task tally. A card is an item until a session claims it; from then on the card IS the run and
 // carries the item id as provenance. There is no ticket→run mapping table, and no card appears twice.
-import type { BoardCard, BoardColumn, BoardModel } from "@agentry/workbench-shared";
+import type { AgentView, BoardCard, BoardColumn, BoardConflict, BoardModel } from "@agentry/workbench-shared";
 import type { BacklogItem } from "@agentry/flow/domain/backlog";
-import type { WorkReader } from "./work-reader.js";
+import { parseContract, sharedFiles } from "../domain/contract.js";
+import type { ReaderDoc, WorkReader } from "./work-reader.js";
 
 /** What the reader needs from the backlog — structural, so a fake in a test needs one method. */
 export interface BacklogSource {
@@ -26,14 +27,30 @@ const EMPTY_COLUMNS = (): Record<BoardColumn, BoardCard[]> => ({
   done: [],
 });
 
+/** The roster source — FLOW's own, injected so presence has exactly ONE origin (AC9). */
+export interface RosterSource {
+  roster(runId?: string): AgentView[];
+}
+
+/** A task as the overlap/blocking passes see it: its number, status, and declared contract. */
+interface TaskFacts {
+  run: string;
+  taskNo: string;
+  status: string;
+  owns: string[];
+  deps: string[];
+}
+
 export class BoardReader {
   constructor(
     private readonly reader: WorkReader,
     private readonly backlog: BacklogSource,
+    private readonly roster?: RosterSource,
   ) {}
 
   read(): BoardModel {
     const columns = EMPTY_COLUMNS();
+    const allTasks: TaskFacts[] = [];
 
     // Runs first, indexed by id, so an item can find the run it spawned.
     const runCards = new Map<string, BoardCard>();
@@ -41,6 +58,9 @@ export class BoardReader {
       const read = this.reader.read(runId);
       if (!read) continue; // vanished between list and read — drop it rather than 500 the board
       const summary = read.summary;
+      const tasks = taskFactsOf(runId, read.docs);
+      allTasks.push(...tasks);
+      const blocked = blockedIn(tasks);
       runCards.set(runId, {
         id: runId,
         column: runColumn(summary.taskCounts),
@@ -52,8 +72,26 @@ export class BoardReader {
         ...(summary.summary !== undefined ? { summary: summary.summary } : {}),
         taskCounts: summary.taskCounts,
         agentCount: summary.agentCount,
+        ...(blocked.length > 0 ? { blocked } : {}),
         updatedAt: summary.updatedAt,
       });
+    }
+
+    // Presence: who is on which run, straight from FLOW's roster (AC9 — no second source of agent
+    // truth). Each agent is joined to the first file its task declares, which is the one thing worth
+    // showing beside a live agent: who is touching what.
+    if (this.roster !== undefined) {
+      const byRun = new Map<string, AgentView[]>();
+      for (const agent of this.roster.roster()) {
+        const run = agent.id.split("/")[0] ?? "";
+        const file = agent.task === null ? undefined : ownsOf(allTasks, run, agent.task)[0];
+        const view: AgentView = { ...agent, ...(file !== undefined ? { file } : {}) };
+        byRun.set(run, [...(byRun.get(run) ?? []), view]);
+      }
+      for (const [run, agents] of byRun) {
+        const card = runCards.get(run);
+        if (card) card.agents = agents;
+      }
     }
 
     for (const item of this.backlog.list()) {
@@ -83,14 +121,96 @@ export class BoardReader {
       });
     }
 
+    // Contract overlap, board-wide. Two agents in two DIFFERENT runs editing one file is the case that
+    // actually bites, so this is not scoped within a run.
+    const conflicts = overlapsAmong(allTasks);
+    for (const conflict of conflicts) {
+      for (const id of conflict.cards) {
+        const card = runCards.get(id);
+        if (card) card.conflict = true;
+      }
+    }
+
     for (const card of runCards.values()) columns[card.column].push(card);
 
     // Newest first within a column — the same axis the Works list used, so the eye lands where it did.
     for (const column of Object.values(columns)) {
       column.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     }
-    return { columns };
+    return { columns, conflicts };
   }
+}
+
+// ── the two overlays ────────────────────────────────────────────────────────────────────────────────
+
+/** Parse each task doc into the facts the overlays need. `deps` merges both places the planner writes
+ *  them: FLOW's frontmatter and the `## Contract` block. */
+function taskFactsOf(run: string, docs: readonly ReaderDoc[]): TaskFacts[] {
+  const facts: TaskFacts[] = [];
+  for (const doc of docs) {
+    if (!doc.id.startsWith("task-")) continue;
+    const contract = parseContract(doc.body);
+    const frontDeps = Array.isArray(doc.frontmatter.deps)
+      ? doc.frontmatter.deps.map((d) => String(d))
+      : [];
+    facts.push({
+      run,
+      taskNo: doc.id.slice("task-".length),
+      status: typeof doc.frontmatter.status === "string" ? doc.frontmatter.status : "todo",
+      owns: contract.owns,
+      deps: [...new Set([...frontDeps, ...contract.deps])].map(normalizeTaskNo).filter(Boolean),
+    });
+  }
+  return facts;
+}
+
+/** `deps: [1, 3]` and `deps: ["003"]` both mean task 003 — the same normalization buildGraph does. */
+function normalizeTaskNo(raw: string): string {
+  const trimmed = raw.trim().replace(/^["']|["']$/g, "");
+  return /^\d+$/.test(trimmed) ? trimmed.padStart(3, "0") : trimmed;
+}
+
+/** Tasks whose deps are not all done, with the blockers holding them. A dep that names no known task is
+ *  ignored rather than reported as a blocker — a typo should not invent a blockage. */
+function blockedIn(tasks: readonly TaskFacts[]): { task: string; by: string[] }[] {
+  const byNo = new Map(tasks.map((t) => [t.taskNo, t]));
+  const blocked: { task: string; by: string[] }[] = [];
+  for (const task of tasks) {
+    if (task.status === "done") continue;
+    const by = task.deps.filter((d) => {
+      const dep = byNo.get(d);
+      return dep !== undefined && dep.status !== "done";
+    });
+    if (by.length > 0) blocked.push({ task: task.taskNo, by });
+  }
+  return blocked;
+}
+
+/** Every pair of CONCURRENT tasks (both in-progress) whose owns sets intersect. Only in-progress
+ *  counts: two tasks that own the same file but run at different times are a sequence, not a clobber. */
+function overlapsAmong(tasks: readonly TaskFacts[]): BoardConflict[] {
+  const live = tasks.filter((t) => t.status === "in-progress" && t.owns.length > 0);
+  const conflicts: BoardConflict[] = [];
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length; j++) {
+      const a = live[i]!;
+      const b = live[j]!;
+      const files = sharedFiles(a.owns, b.owns);
+      if (files.length === 0) continue;
+      conflicts.push({
+        files,
+        cards: [...new Set([a.run, b.run])],
+        tasks: [`${a.run}/${a.taskNo}`, `${b.run}/${b.taskNo}`],
+      });
+    }
+  }
+  return conflicts;
+}
+
+/** The files a given run's task declares. */
+function ownsOf(tasks: readonly TaskFacts[], run: string, taskRef: string): string[] {
+  const no = normalizeTaskNo(taskRef.replace(/^task-/, ""));
+  return tasks.find((t) => t.run === run && t.taskNo === no)?.owns ?? [];
 }
 
 /**

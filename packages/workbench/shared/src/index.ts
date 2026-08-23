@@ -7,6 +7,7 @@ export type {
   BacklogItem,
   BoardCard,
   BoardColumn,
+  BoardConflict,
   BoardModel,
   DiffReadyMessage,
   DocLock,

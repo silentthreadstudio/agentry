@@ -17,6 +17,16 @@ import { AgentState } from "../domain/status.js";
 export interface AgentEntry {
   state: AgentState;
   assignedTask?: string;
+  /**
+   * When this agent ENTERED its current state (ISO-8601). Stamped only when the state actually
+   * changes, so "working since 14:02" keeps meaning "has been working for 4 minutes" rather than
+   * resetting every time something re-records the same state.
+   *
+   * It exists because the Workbench shows an elapsed timer beside a live agent, and an elapsed time
+   * with no recorded start can only be invented. Optional: a roster written before this field existed
+   * still parses, and the UI simply shows no timer for it.
+   */
+  since?: string;
 }
 
 // The run-state json shape this family owns. Loose `Record` at the port; this is the typed view.
@@ -47,7 +57,7 @@ export class AgentService {
    * written (the rejection precedes any store touch). Per ADR-004, `blocked` is a valid AGENT state
    * here (it is not a task status). Preserves an existing `assignedTask` (T02 owns that write).
    */
-  setState(run: string, agent: string, state: string): AgentStateOutcome {
+  setState(run: string, agent: string, state: string, now: () => string = () => new Date().toISOString()): AgentStateOutcome {
     if (agent.trim().length === 0) {
       return { ok: false, reason: "bad-input", field: "agent", rule: "a non-empty agent id" };
     }
@@ -63,7 +73,11 @@ export class AgentService {
 
     const roster = this.roster(run);
     const existing = roster.agents[agent];
-    roster.agents[agent] = { ...existing, state: parsed.data };
+    // Only a CHANGE of state restamps `since` — re-recording the same state must not reset the clock,
+    // or a chatty agent would always look like it just started.
+    const changed = existing?.state !== parsed.data;
+    const since = changed || existing?.since === undefined ? now() : existing.since;
+    roster.agents[agent] = { ...existing, state: parsed.data, since };
     this.runs.writeRunState(run, roster as unknown as Record<string, unknown>);
     return { ok: true, agent, state: parsed.data };
   }
@@ -72,12 +86,13 @@ export class AgentService {
    * The current roster: every recorded agent with its live `state` and optional `assignedTask`. An
    * empty/absent run-state reads as an empty roster (a run with no agents yet is valid, not an error).
    */
-  listRoster(run: string): Array<{ agent: string; state: AgentState; assignedTask?: string }> {
+  listRoster(run: string): Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> {
     const { agents } = this.roster(run);
     return Object.entries(agents).map(([agent, entry]) => ({
       agent,
       state: entry.state,
       ...(entry.assignedTask !== undefined ? { assignedTask: entry.assignedTask } : {}),
+      ...(entry.since !== undefined ? { since: entry.since } : {}),
     }));
   }
 }

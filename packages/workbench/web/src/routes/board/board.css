@@ -361,3 +361,118 @@
   color: var(--muted);
   cursor: pointer;
 }
+
+/* ── the two signals a generic kanban cannot draw ─────────────────────────────────────────────────
+   A blocked task and a contract overlap are both things the board KNOWS from FLOW's own files, and
+   both are invisible everywhere else. They are styled to be noticed without shouting: one chip, one
+   banner, and a tint on the cards that are actually in danger. */
+.bcard .chip.blocked {
+  border-color: #e06a5c44;
+  color: #eda096;
+  background: #e06a5c14;
+}
+.bcard.conflict {
+  border-color: #e06a5c55;
+}
+.board-conflict {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid #e06a5c33;
+  background: #e06a5c12;
+  color: #eda096;
+  font-size: 12.5px;
+}
+.board-conflict b {
+  color: #f3bdb4;
+  font-weight: 650;
+}
+
+/* ── presence: who is on this run, right now ──────────────────────────────────────────────────── */
+.presence {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+}
+.presence .who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.presence .av {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 700 8px var(--sans);
+  flex: none;
+  background: var(--panel2);
+  color: var(--muted);
+}
+/* the agent's FLOW state, not its role — a blocked agent must read as blocked at a glance */
+.presence .av.working {
+  background: #1e3a2c;
+  color: #7fe0ae;
+  box-shadow: 0 0 0 1px #4cc38a55;
+}
+.presence .av.blocked {
+  background: #3a2320;
+  color: #eda096;
+  box-shadow: 0 0 0 1px #e06a5c55;
+}
+.presence .av.done {
+  background: #1b2b45;
+  color: #9dc2f5;
+  box-shadow: 0 0 0 1px #5b94e655;
+}
+.presence .act {
+  font-size: 10.5px;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.presence .act code {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+.presence .pulse {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--done);
+  flex: none;
+  animation: agentry-pulse 1.8s ease-in-out infinite;
+}
+@keyframes agentry-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.presence .ago {
+  margin-left: auto;
+  font: 600 10px var(--mono);
+  color: var(--faint);
+  flex: none;
+}
+/* a reduced-motion preference must not leave a permanently-dim dot — freeze it fully visible instead */
+@media (prefers-reduced-motion: reduce) {
+  .presence .pulse {
+    animation: none;
+    opacity: 1;
+  }
+}

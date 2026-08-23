@@ -29380,7 +29380,7 @@ var AgentService = class {
    * written (the rejection precedes any store touch). Per ADR-004, `blocked` is a valid AGENT state
    * here (it is not a task status). Preserves an existing `assignedTask` (T02 owns that write).
    */
-  setState(run, agent, state) {
+  setState(run, agent, state, now = () => (/* @__PURE__ */ new Date()).toISOString()) {
     if (agent.trim().length === 0) {
       return { ok: false, reason: "bad-input", field: "agent", rule: "a non-empty agent id" };
     }
@@ -29395,7 +29395,9 @@ var AgentService = class {
     }
     const roster = this.roster(run);
     const existing = roster.agents[agent];
-    roster.agents[agent] = { ...existing, state: parsed.data };
+    const changed = existing?.state !== parsed.data;
+    const since = changed || existing?.since === void 0 ? now() : existing.since;
+    roster.agents[agent] = { ...existing, state: parsed.data, since };
     this.runs.writeRunState(run, roster);
     return { ok: true, agent, state: parsed.data };
   }
@@ -29408,7 +29410,8 @@ var AgentService = class {
     return Object.entries(agents).map(([agent, entry]) => ({
       agent,
       state: entry.state,
-      ...entry.assignedTask !== void 0 ? { assignedTask: entry.assignedTask } : {}
+      ...entry.assignedTask !== void 0 ? { assignedTask: entry.assignedTask } : {},
+      ...entry.since !== void 0 ? { since: entry.since } : {}
     }));
   }
 };

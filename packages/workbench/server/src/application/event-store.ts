@@ -54,6 +54,7 @@ export class EventStore {
           role: entry.agent,
           state: entry.state,
           task: entry.assignedTask ?? null,
+          ...(entry.since !== undefined ? { since: entry.since } : {}),
         });
       }
     }
@@ -78,18 +79,26 @@ export class EventStore {
   // returns `undefined`), or one whose `agents` isn't an object, yields no entries. Each agent's `state` is
   // validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent rather than
   // surfacing an ill-typed state.
-  private rosterOf(run: string): Array<{ agent: string; state: AgentState; assignedTask?: string }> {
+  private rosterOf(run: string): Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> {
     const raw = this.source.runState(run);
     const agents = isRecord(raw) ? raw.agents : undefined;
     if (!isRecord(agents)) return [];
 
-    const out: Array<{ agent: string; state: AgentState; assignedTask?: string }> = [];
+    const out: Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> = [];
     for (const [agent, value] of Object.entries(agents)) {
       if (!isRecord(value)) continue;
       const state = AgentState.safeParse(value.state);
       if (!state.success) continue;
       const assignedTask = typeof value.assignedTask === "string" ? value.assignedTask : undefined;
-      out.push({ agent, state: state.data, ...(assignedTask !== undefined ? { assignedTask } : {}) });
+      // `since` is additive (FLOW stamps it on a state CHANGE); a roster written before it existed
+      // simply carries none, and the UI shows no timer rather than inventing a start time.
+      const since = typeof value.since === "string" ? value.since : undefined;
+      out.push({
+        agent,
+        state: state.data,
+        ...(assignedTask !== undefined ? { assignedTask } : {}),
+        ...(since !== undefined ? { since } : {}),
+      });
     }
     return out;
   }

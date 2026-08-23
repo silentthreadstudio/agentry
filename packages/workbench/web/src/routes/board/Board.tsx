@@ -13,7 +13,18 @@ import type { BoardCard, BoardColumn, BoardModel } from "@agentry/workbench-shar
 import { ApiError, fetchBoard, patchBacklogItem } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 import { EmptyState } from "../../ui/index.js";
-import { COLUMNS, canDrop, countChips, progressOf, refusalReason, totalCards } from "./board-view.js";
+import {
+  COLUMNS,
+  blockedLabel,
+  canDrop,
+  conflictText,
+  countChips,
+  elapsedOf,
+  initialsOf,
+  progressOf,
+  refusalReason,
+  totalCards,
+} from "./board-view.js";
 import { NewWork } from "./NewWork.js";
 import { runHref } from "../works/works-view.js";
 
@@ -106,6 +117,15 @@ export function Board() {
         </div>
       ) : null}
 
+      {state.board.conflicts.map((c) => (
+        <div className="board-conflict" role="alert" key={c.tasks.join("|")}>
+          <span aria-hidden="true">⚠</span>
+          <span>
+            <b>Contract overlap</b> — {conflictText(c)}
+          </span>
+        </div>
+      ))}
+
       <div className="board">
         {COLUMNS.map((col) => (
           <section
@@ -184,13 +204,15 @@ function Card({
   const navigate = useNavigate();
   const progress = progressOf(card);
   const chips = countChips(card);
+  const blocked = blockedLabel(card);
+  const agents = card.agents ?? [];
   // Only a run can be opened — an item has nothing to look at yet, which is the honest signal that it
   // has not started.
   const open = card.run !== undefined ? () => navigate(runHref(card.run as string)) : undefined;
 
   return (
     <article
-      className={`bcard${card.origin === "run" ? " run" : ""}`}
+      className={`bcard${card.origin === "run" ? " run" : ""}${card.conflict === true ? " conflict" : ""}`}
       draggable={card.origin === "item"}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -214,6 +236,7 @@ function Card({
             from backlog
           </span>
         ) : null}
+        {blocked !== null ? <span className="chip blocked">{blocked}</span> : null}
       </div>
       {progress !== null ? (
         <div className="bar">
@@ -227,6 +250,24 @@ function Card({
               <b>{c.n}</b> {c.label}
             </span>
           ))}
+        </div>
+      ) : null}
+      {agents.length > 0 ? (
+        <div className="presence">
+          {agents.map((a) => {
+            const elapsed = elapsedOf(a);
+            return (
+              <span className="who" key={a.id} title={`${a.role} · ${a.state}`}>
+                <span className={`av ${a.state}`}>{initialsOf(a)}</span>
+                <span className="act">
+                  {a.role}
+                  {a.file !== undefined ? <code> · {a.file}</code> : null}
+                </span>
+                {a.state === "working" ? <span className="pulse" /> : null}
+                {elapsed !== null ? <span className="ago">{elapsed}</span> : null}
+              </span>
+            );
+          })}
         </div>
       ) : null}
     </article>

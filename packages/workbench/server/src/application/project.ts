@@ -64,7 +64,7 @@ export function createProject(root: string, slug: string, clock: Clock): Project
     memory: new MemReader(root),
     starter: new RunStarter(root),
     backlog,
-    board: new BoardReader(reader, backlog.service),
+    board: new BoardReader(reader, backlog.service, events),
     watcher: new ChokidarWatcher(root),
     permissionWatcher: new PermissionWatcher(root),
   };

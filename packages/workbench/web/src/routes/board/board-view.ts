@@ -1,6 +1,6 @@
 // board-view — the board's column vocabulary and card view-logic. Pure; no React, no fetch (the same
 // view-model split Works/Gates/Activity use), so the ordering and drop rules are unit-testable.
-import type { BoardCard, BoardColumn } from "@agentry/workbench-shared";
+import type { AgentView, BoardCard, BoardColumn, BoardConflict } from "@agentry/workbench-shared";
 
 /** The columns, in lifecycle order. This array IS the board's left-to-right reading order. */
 export const COLUMNS: { key: BoardColumn; label: string; hue: string }[] = [
@@ -55,4 +55,41 @@ export function countChips(card: BoardCard): { label: string; n: number }[] {
 /** Total cards on the board — the header's "N pieces of work". */
 export function totalCards(columns: Record<BoardColumn, BoardCard[]>): number {
   return Object.values(columns).reduce((sum, list) => sum + list.length, 0);
+}
+
+
+/** Initials for an agent avatar — two letters of the role, which is what makes the roster scannable
+ *  without a legend (IM implementer, VE verifier, AR architect). */
+export function initialsOf(agent: AgentView): string {
+  return agent.role.slice(0, 2).toUpperCase();
+}
+
+/** How long an agent has been in its current state, as a compact label ("4m", "2h"), or null when the
+ *  roster carries no `since` — an elapsed time with no recorded start can only be invented, so we show
+ *  nothing rather than guess. */
+export function elapsedOf(agent: AgentView, now: number = Date.now()): string | null {
+  if (agent.since === undefined) return null;
+  const started = Date.parse(agent.since);
+  if (Number.isNaN(started)) return null;
+  const seconds = Math.max(0, Math.floor((now - started) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}
+
+/** The banner text for a contract overlap. Names the FILE, because that is the thing that will be
+ *  clobbered, and the runs, because that is where you go to stop it. */
+export function conflictText(conflict: BoardConflict): string {
+  const files = conflict.files.join(", ");
+  return `${conflict.cards.join(" and ")} are both in progress and both own ${files}. One will clobber the other.`;
+}
+
+/** The blocked chip's label, naming the blocker — "blocked by 004" beats a bare "blocked". */
+export function blockedLabel(card: BoardCard): string | null {
+  const first = card.blocked?.[0];
+  if (!first) return null;
+  const more = (card.blocked?.length ?? 0) - 1;
+  return `blocked by ${first.by.join(", ")}${more > 0 ? ` (+${more} more)` : ""}`;
 }

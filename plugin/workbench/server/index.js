@@ -18558,7 +18558,8 @@ var EventStore = class {
           id: `${run}/${entry.agent}`,
           role: entry.agent,
           state: entry.state,
-          task: entry.assignedTask ?? null
+          task: entry.assignedTask ?? null,
+          ...entry.since !== void 0 ? { since: entry.since } : {}
         });
       }
     }
@@ -18591,7 +18592,13 @@ var EventStore = class {
       const state = AgentState.safeParse(value.state);
       if (!state.success) continue;
       const assignedTask = typeof value.assignedTask === "string" ? value.assignedTask : void 0;
-      out.push({ agent, state: state.data, ...assignedTask !== void 0 ? { assignedTask } : {} });
+      const since = typeof value.since === "string" ? value.since : void 0;
+      out.push({
+        agent,
+        state: state.data,
+        ...assignedTask !== void 0 ? { assignedTask } : {},
+        ...since !== void 0 ? { since } : {}
+      });
     }
     return out;
   }
@@ -18678,6 +18685,46 @@ function dayOf(timestamp) {
   return parsed.toISOString().slice(0, 10);
 }
 
+// src/domain/contract.ts
+var SECTION = /^##\s+Contract\s*$/im;
+var NEXT_SECTION = /^##\s+/m;
+function section(body) {
+  const start = SECTION.exec(body);
+  if (!start) return "";
+  const rest = body.slice(start.index + start[0].length);
+  const end = NEXT_SECTION.exec(rest);
+  return end ? rest.slice(0, end.index) : rest;
+}
+function listOf(text, key) {
+  const inline = new RegExp(`^${key}:\\s*\\[(.*?)\\]\\s*$`, "im").exec(text);
+  if (inline) {
+    return inline[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  }
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => new RegExp(`^${key}:\\s*$`, "i").test(l.trim()));
+  if (start === -1) return [];
+  const items = [];
+  for (const line of lines.slice(start + 1)) {
+    const item = /^\s+-\s+(.*)$/.exec(line);
+    if (item) {
+      items.push(item[1].trim().replace(/^["']|["']$/g, "").replace(/^`|`$/g, ""));
+      continue;
+    }
+    if (line.trim().length === 0) continue;
+    break;
+  }
+  return items;
+}
+function parseContract(body) {
+  const text = section(body);
+  if (text.length === 0) return { owns: [], deps: [] };
+  return { owns: listOf(text, "owns"), deps: listOf(text, "deps") };
+}
+function sharedFiles(a, b) {
+  const set = new Set(a.map((p) => p.trim()).filter(Boolean));
+  return [...new Set(b.map((p) => p.trim()).filter((p) => p.length > 0 && set.has(p)))];
+}
+
 // src/application/board-reader.ts
 var EMPTY_COLUMNS = () => ({
   backlog: [],
@@ -18687,17 +18734,22 @@ var EMPTY_COLUMNS = () => ({
   done: []
 });
 var BoardReader = class {
-  constructor(reader, backlog) {
+  constructor(reader, backlog, roster) {
     this.reader = reader;
     this.backlog = backlog;
+    this.roster = roster;
   }
   read() {
     const columns = EMPTY_COLUMNS();
+    const allTasks = [];
     const runCards = /* @__PURE__ */ new Map();
     for (const runId of this.reader.listRuns()) {
       const read = this.reader.read(runId);
       if (!read) continue;
       const summary = read.summary;
+      const tasks = taskFactsOf(runId, read.docs);
+      allTasks.push(...tasks);
+      const blocked = blockedIn(tasks);
       runCards.set(runId, {
         id: runId,
         column: runColumn(summary.taskCounts),
@@ -18709,8 +18761,22 @@ var BoardReader = class {
         ...summary.summary !== void 0 ? { summary: summary.summary } : {},
         taskCounts: summary.taskCounts,
         agentCount: summary.agentCount,
+        ...blocked.length > 0 ? { blocked } : {},
         updatedAt: summary.updatedAt
       });
+    }
+    if (this.roster !== void 0) {
+      const byRun = /* @__PURE__ */ new Map();
+      for (const agent of this.roster.roster()) {
+        const run = agent.id.split("/")[0] ?? "";
+        const file = agent.task === null ? void 0 : ownsOf(allTasks, run, agent.task)[0];
+        const view = { ...agent, ...file !== void 0 ? { file } : {} };
+        byRun.set(run, [...byRun.get(run) ?? [], view]);
+      }
+      for (const [run, agents] of byRun) {
+        const card = runCards.get(run);
+        if (card) card.agents = agents;
+      }
     }
     for (const item of this.backlog.list()) {
       const spawned = item.runs.map((r) => runCards.get(r)).find((c) => c !== void 0);
@@ -18730,13 +18796,75 @@ var BoardReader = class {
         updatedAt: item.updatedAt
       });
     }
+    const conflicts = overlapsAmong(allTasks);
+    for (const conflict of conflicts) {
+      for (const id of conflict.cards) {
+        const card = runCards.get(id);
+        if (card) card.conflict = true;
+      }
+    }
     for (const card of runCards.values()) columns[card.column].push(card);
     for (const column of Object.values(columns)) {
       column.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     }
-    return { columns };
+    return { columns, conflicts };
   }
 };
+function taskFactsOf(run, docs) {
+  const facts = [];
+  for (const doc of docs) {
+    if (!doc.id.startsWith("task-")) continue;
+    const contract = parseContract(doc.body);
+    const frontDeps = Array.isArray(doc.frontmatter.deps) ? doc.frontmatter.deps.map((d) => String(d)) : [];
+    facts.push({
+      run,
+      taskNo: doc.id.slice("task-".length),
+      status: typeof doc.frontmatter.status === "string" ? doc.frontmatter.status : "todo",
+      owns: contract.owns,
+      deps: [.../* @__PURE__ */ new Set([...frontDeps, ...contract.deps])].map(normalizeTaskNo).filter(Boolean)
+    });
+  }
+  return facts;
+}
+function normalizeTaskNo(raw) {
+  const trimmed = raw.trim().replace(/^["']|["']$/g, "");
+  return /^\d+$/.test(trimmed) ? trimmed.padStart(3, "0") : trimmed;
+}
+function blockedIn(tasks) {
+  const byNo = new Map(tasks.map((t) => [t.taskNo, t]));
+  const blocked = [];
+  for (const task of tasks) {
+    if (task.status === "done") continue;
+    const by = task.deps.filter((d) => {
+      const dep = byNo.get(d);
+      return dep !== void 0 && dep.status !== "done";
+    });
+    if (by.length > 0) blocked.push({ task: task.taskNo, by });
+  }
+  return blocked;
+}
+function overlapsAmong(tasks) {
+  const live = tasks.filter((t) => t.status === "in-progress" && t.owns.length > 0);
+  const conflicts = [];
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length; j++) {
+      const a = live[i];
+      const b = live[j];
+      const files = sharedFiles(a.owns, b.owns);
+      if (files.length === 0) continue;
+      conflicts.push({
+        files,
+        cards: [.../* @__PURE__ */ new Set([a.run, b.run])],
+        tasks: [`${a.run}/${a.taskNo}`, `${b.run}/${b.taskNo}`]
+      });
+    }
+  }
+  return conflicts;
+}
+function ownsOf(tasks, run, taskRef) {
+  const no = normalizeTaskNo(taskRef.replace(/^task-/, ""));
+  return tasks.find((t) => t.run === run && t.taskNo === no)?.owns ?? [];
+}
 function runColumn(counts) {
   const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
   if ((counts["in-review"] ?? 0) > 0) return "in-review";
@@ -18761,7 +18889,7 @@ function createProject(root, slug3, clock) {
     memory: new MemReader(root),
     starter: new RunStarter(root),
     backlog,
-    board: new BoardReader(reader, backlog.service),
+    board: new BoardReader(reader, backlog.service, events),
     watcher: new ChokidarWatcher(root),
     permissionWatcher: new PermissionWatcher(root)
   };
