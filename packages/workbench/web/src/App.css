@@ -7,8 +7,44 @@
 /* ── app grid + sidebar ─────────────────────────────────────────── */
 .app {
   display: grid;
-  grid-template-columns: 248px 1fr;
+  grid-template-columns: 248px minmax(0, 1fr) var(--rail-w, 360px);
   height: 100vh;
+  transition: grid-template-columns 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* The rail's width is the app's layout, not the rail's own business — the grid owns it, so the board
+   reflows rather than the conversation overlapping it. `data-chat` is set by the rail on <body>. */
+body[data-chat="collapsed"] .app {
+  --rail-w: 52px;
+}
+body[data-chat="rail"] .app {
+  --rail-w: 360px;
+}
+body[data-chat="focus"] .app {
+  --rail-w: minmax(0, 58%);
+}
+/* Focus mode: the board becomes a DIGEST rather than five squeezed columns. At this width they clip,
+   and a board whose last columns are off-screen is hiding, not informing (doc 18 AC13). The columns
+   that change minute-to-minute keep their cards; the rest collapse to a count. */
+body[data-chat="focus"] .board {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+body[data-chat="focus"] .bcol {
+  flex: none;
+}
+body[data-chat="focus"] .bcolhd {
+  padding: 7px 5px 6px;
+  border-bottom: 1px solid var(--line);
+}
+body[data-chat="focus"] .bcol[data-digest] .stack,
+body[data-chat="focus"] .bcol[data-digest] .bstack {
+  display: none;
+}
+body[data-chat="focus"] .bcol[data-digest] .bcolhd {
+  opacity: 0.6;
+  border-bottom: 0;
+  padding: 4px 5px;
 }
 .side {
   display: flex;
@@ -363,4 +399,116 @@
   .hero {
     flex-wrap: wrap;
   }
+}
+
+/* ── the conversation rail ─────────────────────────────────────────────────────────────────────────
+   A column beside the work, never a page. Its width is the app grid's business (see .app above); this
+   is only what lives inside it. */
+.rail {
+  border-left: 1px solid var(--line);
+  background: linear-gradient(180deg, #0c0c1200, #09090d88);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.railhd {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 15px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.railhd .t {
+  font-weight: 650;
+  font-size: 13px;
+}
+.railhd .s {
+  color: var(--faint);
+  font-size: 11px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.railhd .grow {
+  flex: 1;
+}
+.modes {
+  display: flex;
+  gap: 2px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 2px;
+}
+.modes button {
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  padding: 3px 7px;
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.modes button:hover {
+  color: var(--ink);
+}
+.modes button.on {
+  background: var(--raise);
+  color: var(--accent-ink);
+}
+
+/* collapsed: a spine, not a closed panel. It still reports that something arrived — which is the whole
+   difference between "collapsed" and "closed". */
+.rail.collapsed {
+  align-items: center;
+}
+.spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+}
+.spine .vt {
+  writing-mode: vertical-rl;
+  font: 700 9px var(--sans);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.spine:hover .vt {
+  color: var(--muted);
+}
+.spine .badge {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent-ink);
+  font: 700 10px var(--mono);
+  display: grid;
+  place-items: center;
+}
+.rail-empty {
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--faint);
+  font-size: 12px;
+}
+.rail-empty b {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
 }

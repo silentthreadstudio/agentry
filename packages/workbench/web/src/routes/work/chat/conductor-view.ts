@@ -7,10 +7,13 @@
 // thread stays legible next to the graph and the docs on the same dark surface.
 import type { CSSProperties } from "react";
 
+/** The thread fills whatever column it is dropped into. `flex: 1` rather than `height: 100%`: it lives
+ *  inside the rail's flex column now, where a percentage height resolves against an auto-height parent
+ *  and silently clips the composer off the bottom. */
 export const CONVO: CSSProperties = {
+  flex: 1,
   display: "flex",
   flexDirection: "column",
-  height: "100%",
   minHeight: 0,
 };
 
@@ -26,7 +29,7 @@ export const STREAM: CSSProperties = {
   flexDirection: "column",
   justifyContent: "flex-end",
   gap: 10,
-  padding: "22px 26px",
+  padding: "18px 16px",
 };
 
 const BUBBLE_BASE: CSSProperties = {
@@ -68,7 +71,7 @@ export const COMPOSER: CSSProperties = {
   display: "flex",
   alignItems: "flex-end",
   gap: 10,
-  padding: "12px 26px 16px",
+  padding: "12px 16px 14px",
   borderTop: "1px solid var(--line)",
 };
 

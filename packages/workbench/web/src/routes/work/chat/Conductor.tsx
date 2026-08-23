@@ -20,7 +20,7 @@ import { BUBBLE, BUBBLE_AGENT, BUBBLE_META, COMPOSER, CONVO, INPUT, SEND, STREAM
 // The sidecar this thread lives in — the path the ws `file-changed` nudge carries when the agent replies.
 const THREAD_PATH = `.review/${CONDUCTOR_GATE}.annotations.json`;
 
-export function Conductor({ runId }: { runId: string }) {
+export function Conductor({ runId, onIncoming }: { runId: string; onIncoming?: () => void }) {
   const messages = useComments(runId, CONDUCTOR_GATE);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -49,9 +49,12 @@ export function Conductor({ runId }: { runId: string }) {
   // `file-changed`. Re-seed on that path only — every other file change in the run is somebody else's.
   useEffect(() => {
     return getWsClient().subscribe((msg) => {
-      if (msg.type === "file-changed" && msg.path === THREAD_PATH) seed();
+      if (msg.type === "file-changed" && msg.path === THREAD_PATH) {
+        seed();
+        onIncoming?.(); // lets a collapsed rail show an unread count instead of going quiet
+      }
     });
-  }, [seed]);
+  }, [seed, onIncoming]);
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
@@ -119,7 +122,7 @@ export function Conductor({ runId }: { runId: string }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Message the conductor — steer the run, answer a question, add a constraint…"
+          placeholder="Message the conductor…"
           aria-label="Message the conductor"
           rows={2}
         />

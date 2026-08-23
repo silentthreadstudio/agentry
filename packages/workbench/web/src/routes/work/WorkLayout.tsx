@@ -15,7 +15,7 @@ import { useEffect, useRef } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Pill } from "../../ui/index.js";
 import { Activity } from "./activity/Activity.js";
-import { Conductor } from "./chat/Conductor.js";
+import { focusRun } from "../rail/rail-state.js";
 import { Panorama } from "./live/Panorama.js";
 import { DocsWorkspace } from "./docs/DocsWorkspace.js";
 import { selectDoc, useSelectedDoc } from "./docs/doc-tabs.js";
@@ -37,6 +37,13 @@ function urlWithDoc(id: string | null): string {
 }
 
 export function WorkLayout({ runId }: { runId: string }) {
+  // Opening a run points the conversation rail at it — so the conversation follows what you are looking
+  // at, with no separate "talk about this" control to find. The focus outlives leaving the run, which is
+  // what lets you go back to the board and keep talking about it.
+  useEffect(() => {
+    focusRun(runId);
+  }, [runId]);
+
   // The address shown in the compact top bar — the canonical in-app path for this run, not a host.
   const host = `${location.host}${runHref(runId)}`;
 
@@ -102,9 +109,6 @@ export function WorkLayout({ runId }: { runId: string }) {
           <NavLink to="activity" className={({ isActive }) => `tab${isActive ? " on" : ""}`}>
             Activity
           </NavLink>
-          <NavLink to="conductor" className={({ isActive }) => `tab${isActive ? " on" : ""}`}>
-            Conductor
-          </NavLink>
         </nav>
         <Pill tone="route">{host}</Pill>
       </div>
@@ -116,8 +120,6 @@ export function WorkLayout({ runId }: { runId: string }) {
           <Route path="docs" element={<DocsWorkspace runId={runId} />} />
           {/* Phase 4: this run's event timeline. */}
           <Route path="activity" element={<Activity runId={runId} />} />
-          {/* The run-level conversation: talk to the session conducting this work (no doc span needed). */}
-          <Route path="conductor" element={<Conductor runId={runId} />} />
         </Routes>
       </div>
     </div>

@@ -140,6 +140,9 @@ export function Board() {
           <section
             key={col.key}
             className={`bcol${over === col.key ? " over" : ""}`}
+            // In focus mode the columns that do not change minute-to-minute collapse to a count, so the
+            // conversation can take the width without the board clipping (AC13).
+            {...(col.key === "running" || col.key === "in-review" ? {} : { "data-digest": "" })}
             onDragOver={(e) => {
               if (!dragging) return;
               const welcome = canDrop(dragging, col.key);

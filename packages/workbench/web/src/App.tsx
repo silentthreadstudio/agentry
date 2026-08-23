@@ -15,6 +15,7 @@ import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation, useParams
 import { fetchContext, fetchProjects, selectProject, type ProjectEntry } from "./api/index.js";
 import { getWsClient } from "./api/ws.js";
 import { ApprovalsBanner } from "./routes/approvals/ApprovalsBanner.js";
+import { ConductorRail } from "./routes/rail/ConductorRail.js";
 import { Gates } from "./routes/gates/Gates.js";
 import { Memory } from "./routes/memory/Memory.js";
 import { Board } from "./routes/board/Board.js";
@@ -115,6 +116,10 @@ function Shell({ project, aliasTarget }: { project: string | undefined; aliasTar
           </div>
         </main>
       )}
+      {/* The conversation is AMBIENT: a column beside the work, not a page you navigate to. It is
+          present on the board and inside a run alike, because the point is talking about what you are
+          looking at while you look at it. */}
+      <ConductorRail />
       {/* The approvals overlay is project-global and time-sensitive, so it floats over every route —
           a tool may need approval while you are on a secondary page rather than inside a run. */}
       <ApprovalsBanner />
