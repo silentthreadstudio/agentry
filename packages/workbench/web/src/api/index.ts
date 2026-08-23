@@ -5,6 +5,7 @@
 export { ApiError, currentProject, selectProject, apiPath } from "./http.js";
 export { fetchProjects, type ProjectEntry, type ProjectList } from "./projects.js";
 export { fetchWorks } from "./works.js";
+export { startRun } from "./runs.js";
 export { fetchGraph } from "./graph.js";
 export { fetchContext, type AppContext } from "./context.js";
 export { fetchEvents, fetchAgents } from "./events.js";

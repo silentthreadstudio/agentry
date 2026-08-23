@@ -205,3 +205,29 @@ test("a non-reader path is not handled (falls through)", () => {
     assert.equal(captured.status, 0, "untouched — the reader dispatcher didn't answer");
   });
 });
+
+// ── the conductor thread is a conversation, not a gate (M2) ─────────────────────────────────────────
+// A run-level message to the conductor rides the same `.review/` bus as a review comment. It must NOT
+// appear in the waiting-on-you inbox: an unanswered message is waiting on the AGENT, and the Gates page
+// means the human. Without this the inbox fills up with your own messages.
+test("GateInbox skips the reserved conductor thread", () => {
+  const repository = {
+    listRuns: () => ["r1"],
+    readRun: () => undefined,
+  } as unknown as WorkRepository;
+  const sidecars: ReviewSidecarSource = {
+    listGates: () => ["_conductor", "spec"],
+    commentsFor: (_run: string, gate: string) => [
+      {
+        id: `${gate}-1`,
+        anchor: { originalText: gate === "_conductor" ? "" : "a span", headingAnchor: "", startLine: 0 },
+        decision: "question" as const,
+        body: "text",
+        resolved: false,
+      },
+    ],
+  };
+
+  const gates = new GateInbox(repository, sidecars).open().map((g) => g.gate);
+  assert.deepEqual(gates, ["spec"], "the conductor thread is a conversation, not a decision waiting on you");
+});

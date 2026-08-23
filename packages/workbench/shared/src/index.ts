@@ -24,5 +24,10 @@ export type {
   WsMessage,
 } from "./types.js";
 
-// The run-id → short subdomain-label helpers (a runtime util, not a type — both halves import it).
+// The run-id → short label helpers (a runtime util, not a type — both halves import it).
 export { resolveSlug, workSlug } from "./slug.js";
+
+// The conductor thread — the reserved `.review/` gate a human uses to TALK to a run rather than annotate
+// a document. Re-exported from FLOW (the owner of the review vocabulary) rather than restated, so the web
+// client and the server cannot drift on the gate name that routes a message into the conducting session.
+export { CONDUCTOR_GATE, anchorlessSpan, isConductorThread } from "@agentry/flow/domain/review";

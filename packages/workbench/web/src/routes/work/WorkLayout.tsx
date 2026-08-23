@@ -15,6 +15,7 @@ import { useEffect, useRef } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Pill } from "../../ui/index.js";
 import { Activity } from "./activity/Activity.js";
+import { Conductor } from "./chat/Conductor.js";
 import { Panorama } from "./live/Panorama.js";
 import { DocsWorkspace } from "./docs/DocsWorkspace.js";
 import { selectDoc, useSelectedDoc } from "./docs/doc-tabs.js";
@@ -101,6 +102,9 @@ export function WorkLayout({ runId }: { runId: string }) {
           <NavLink to="activity" className={({ isActive }) => `tab${isActive ? " on" : ""}`}>
             Activity
           </NavLink>
+          <NavLink to="conductor" className={({ isActive }) => `tab${isActive ? " on" : ""}`}>
+            Conductor
+          </NavLink>
         </nav>
         <Pill tone="route">{host}</Pill>
       </div>
@@ -112,6 +116,8 @@ export function WorkLayout({ runId }: { runId: string }) {
           <Route path="docs" element={<DocsWorkspace runId={runId} />} />
           {/* Phase 4: this run's event timeline. */}
           <Route path="activity" element={<Activity runId={runId} />} />
+          {/* The run-level conversation: talk to the session conducting this work (no doc span needed). */}
+          <Route path="conductor" element={<Conductor runId={runId} />} />
         </Routes>
       </div>
     </div>

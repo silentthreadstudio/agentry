@@ -5,6 +5,7 @@
 // survive the move. Loading / empty / error are all designed (empty states are good states, VISION §3).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { startRun } from "../../api/index.js";
 import type { RunSummary } from "@agentry/workbench-shared";
 import { ApiError, fetchWorks } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
@@ -108,6 +109,7 @@ export function Works() {
             label="Search runs"
           />
         ) : null}
+        <NewWork />
       </div>
 
       {state.kind === "ready" && works.length > 0 ? (
@@ -264,5 +266,66 @@ function WorkCard({ work }: { work: RunSummary }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+// NewWork — the goal box that starts a run from here.
+//
+// Everything else in this UI acts on work that already exists, which made the Workbench a place to watch
+// and annotate rather than to direct. This is the one control that creates something: a goal in, a run
+// out (FLOW's `run_start`, reused server-side), then straight into that run so the next thing you do is
+// look at it. The conducting session picks the run up from the files — nothing here dispatches an agent.
+function NewWork() {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [goal, setGoal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const text = goal.trim();
+    if (text.length === 0 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { run } = await startRun(text);
+      setGoal("");
+      setOpen(false);
+      navigate(runHref(run));
+    } catch {
+      setError("Couldn't start the run.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="newwork-open" onClick={() => setOpen(true)}>
+        + New work
+      </button>
+    );
+  }
+
+  return (
+    <div className="newwork">
+      <input
+        autoFocus
+        className="newwork-input"
+        value={goal}
+        onChange={(e) => setGoal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void submit();
+          if (e.key === "Escape") setOpen(false);
+        }}
+        placeholder="What should the agents work on?"
+        aria-label="Goal for the new run"
+        aria-invalid={error !== null}
+      />
+      <button type="button" className="newwork-go" onClick={() => void submit()} disabled={busy || goal.trim().length === 0}>
+        {busy ? "Starting…" : "Start"}
+      </button>
+      {error !== null ? <span className="newwork-error" role="alert">{error}</span> : null}
+    </div>
   );
 }

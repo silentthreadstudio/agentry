@@ -23,6 +23,7 @@ import {
   handlePermissionRequest,
   handlePostRequest,
   handleReaderRequest,
+  handleRunStartRequest,
   type PermissionDeps,
   type ReaderDeps,
   type WriteDeps,
@@ -146,6 +147,7 @@ export function createHttpHandler(projects: ProjectSource, transport: Transport)
     // the run-scoped write surface (the paths don't overlap; order is just a stable ladder). A non-write,
     // non-GET request lands at the 405 after both dispatchers resolve false.
     void handlePostRequest(req, res, write)
+      .then((handled) => (handled ? true : handleRunStartRequest(req, res, { starter: project.starter, transport })))
       .then((handled) => (handled ? true : handlePermissionRequest(req, res, permissions)))
       .then((handled) => {
         if (handled) return;

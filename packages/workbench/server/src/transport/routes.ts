@@ -5,4 +5,5 @@
 export { handleApiRequest } from "./read-routes.js";
 export { handleReaderRequest, type ReaderDeps } from "./reader-routes.js";
 export { handlePostRequest, type WriteDeps } from "./write-routes.js";
+export { handleRunStartRequest, type RunStartDeps } from "./run-routes.js";
 export { handlePermissionRequest, type PermissionDeps } from "./permission-routes.js";

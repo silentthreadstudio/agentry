@@ -11,7 +11,7 @@
 // SAME tolerance FLOW's `JsonReviewStore.read` gives, now consolidated in `FsReviewSidecarSource`). A
 // comment is OPEN when `resolved === false`; a gate with no open comments is not in the inbox.
 import type { GateItem } from "@agentry/workbench-shared";
-import { ReviewComment, isHumanComment } from "@agentry/flow/domain/review";
+import { ReviewComment, isConductorThread, isHumanComment } from "@agentry/flow/domain/review";
 import type { ReviewSidecarSource, WorkRepository } from "../domain/ports.js";
 
 // The inbox carries the run alongside each gate item so the Gates page can deep-link into the right run.
@@ -38,6 +38,10 @@ export class GateInbox {
     const items: OpenGateItem[] = [];
     for (const run of runs) {
       for (const gate of this.sidecars.listGates(run)) {
+        // The run-level conductor thread rides the same `.review/` bus but is NOT a gate: an unanswered
+        // message to the conductor is waiting on the AGENT, not on the human, and this inbox means the
+        // latter. Without this it would fill the "waiting on you" list with your own messages.
+        if (isConductorThread(gate)) continue;
         const comments = this.sidecars.commentsFor(run, gate);
         // Waiting-on-you = unresolved HUMAN comments only. Agent replies (`origin:"agent"`, Phase 2b)
         // already carry `resolved:true`, but filter them explicitly so a malformed unresolved reply can

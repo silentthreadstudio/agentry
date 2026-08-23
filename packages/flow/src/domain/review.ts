@@ -45,3 +45,27 @@ export type ReviewComment = z.infer<typeof ReviewComment>;
 export function isHumanComment(comment: ReviewComment): boolean {
   return comment.origin !== "agent";
 }
+
+// ── The conductor thread (a run-level conversation, not a review of a span) ─────────────────────────
+// A human sometimes just needs to SAY something to the run — steer it, answer a question, add a
+// constraint — with no document span to anchor to. That message rides the same `.review/` bus (so it
+// reaches the conducting session through the existing channel bridge, and the agent answers on the same
+// rail via `channel_reply`) under this reserved gate name.
+//
+// The gate is reserved, not magic: it is an ordinary sidecar file, so nothing in the read/write path
+// needs a special case. What it DOES need is to stay out of the "waiting on you" inbox — an unanswered
+// message to the conductor is waiting on the AGENT, not on the human, and the Gates page means the
+// latter.
+export const CONDUCTOR_GATE = "_conductor";
+
+/** Whether a gate name addresses the run-level conductor thread rather than a document's review. */
+export function isConductorThread(gate: string): boolean {
+  return gate === CONDUCTOR_GATE;
+}
+
+/** The neutral anchor for a message with no document span. Mirrors the placeholder `reply()` already
+ *  uses (ADR-002): the schema requires an anchor, a run-level message has none, and consumers render by
+ *  `origin`/emptiness rather than by these fields. */
+export function anchorlessSpan(): ReviewAnchor {
+  return { originalText: "", headingAnchor: "", startLine: 0 };
+}

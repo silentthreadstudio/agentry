@@ -30,8 +30,14 @@ function quoteAnchor(originalText: string): string {
 
 // Render the human-facing channel content: a short quote of the span + the comment body, so Claude
 // sees both *what* was commented on and *what was said* (e.g. `Review on "the auth guard": tighten this`).
+//
+// A comment with NO span (the run-level conductor thread — a human talking to the run rather than
+// annotating a document) renders as the message itself. Quoting an empty anchor would produce
+// `Review on "": …`, which reads as a review of nothing and buries the actual instruction.
 export function renderChannelContent(comment: ReviewComment): string {
-  return `Review on "${quoteAnchor(comment.anchor.originalText)}": ${comment.body}`;
+  const span = comment.anchor.originalText.trim();
+  if (span.length === 0) return `Message to the conductor: ${comment.body}`;
+  return `Review on "${quoteAnchor(span)}": ${comment.body}`;
 }
 
 // Whether a comment is eligible to push: NOT already seen, unresolved (`resolved !== true`), and

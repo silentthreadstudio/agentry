@@ -31168,7 +31168,9 @@ function quoteAnchor(originalText) {
   return `${trimmed.slice(0, QUOTE_MAX - 1)}\u2026`;
 }
 function renderChannelContent(comment) {
-  return `Review on "${quoteAnchor(comment.anchor.originalText)}": ${comment.body}`;
+  const span = comment.anchor.originalText.trim();
+  if (span.length === 0) return `Message to the conductor: ${comment.body}`;
+  return `Review on "${quoteAnchor(span)}": ${comment.body}`;
 }
 function isPushable(comment, seen) {
   if (seen.has(comment.id)) return false;

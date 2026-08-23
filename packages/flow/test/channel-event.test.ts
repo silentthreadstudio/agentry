@@ -119,3 +119,37 @@ test("commentIds collects every id (the seed records history without pushing)", 
   const ids = commentIds([comment({ id: "a" }), comment({ id: "b" })]);
   assert.deepEqual(ids, ["a", "b"]);
 });
+
+// ── the conductor thread (a run-level message, no document span) ────────────────────────────────────
+// A human sometimes needs to TELL the run something rather than annotate a document. That message rides
+// the same `.review/` bus under the reserved `_conductor` gate, with the anchorless placeholder — so what
+// matters here is that the channel content reads as an instruction, not as a review of an empty span.
+
+test("an anchorless comment renders as a message to the conductor, not a review of nothing", () => {
+  const content = renderChannelContent(
+    comment({ anchor: { originalText: "", headingAnchor: "", startLine: 0 }, body: "run migrations first" }),
+  );
+  assert.equal(content, "Message to the conductor: run migrations first");
+  assert.doesNotMatch(content, /Review on ""/, 'an empty span must never render as Review on ""');
+});
+
+test("a whitespace-only anchor is still treated as anchorless", () => {
+  const content = renderChannelContent(
+    comment({ anchor: { originalText: "   \n ", headingAnchor: "", startLine: 0 }, body: "hold task 4" }),
+  );
+  assert.equal(content, "Message to the conductor: hold task 4");
+});
+
+test("a comment WITH a span still renders as a span review (the existing path is untouched)", () => {
+  assert.equal(renderChannelContent(comment()), 'Review on "the auth guard": tighten this');
+});
+
+test("a run-level message is pushable like any human comment (it must reach the session)", () => {
+  const msg = comment({ anchor: { originalText: "", headingAnchor: "", startLine: 0 }, origin: "human" });
+  assert.equal(isPushable(msg, new Set()), true);
+});
+
+test("the agent's reply on the conductor thread is NOT pushed back (no echo loop)", () => {
+  const reply = comment({ id: "r1", anchor: { originalText: "", headingAnchor: "", startLine: 0 }, origin: "agent" });
+  assert.equal(isPushable(reply, new Set()), false);
+});
