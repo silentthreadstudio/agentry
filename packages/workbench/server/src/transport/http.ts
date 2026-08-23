@@ -23,6 +23,7 @@ import {
   handlePermissionRequest,
   handlePostRequest,
   handleReaderRequest,
+  handleRunResetRequest,
   handleRunStartRequest,
   handleBacklogRequest,
   type PermissionDeps,
@@ -151,6 +152,16 @@ export function createHttpHandler(projects: ProjectSource, transport: Transport)
     void handlePostRequest(req, res, write)
       .then((handled) => (handled ? true : handleRunStartRequest(req, res, { starter: project.starter, transport })))
       .then((handled) => (handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })))
+      .then((handled) =>
+        handled
+          ? true
+          : handleRunResetRequest(req, res, {
+              reader,
+              writeService: project.writeService,
+              backlog: project.backlog.service,
+              transport: scoped,
+            }),
+      )
       .then((handled) => (handled ? true : handlePermissionRequest(req, res, permissions)))
       .then((handled) => {
         if (handled) return;

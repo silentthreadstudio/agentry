@@ -11,22 +11,39 @@ export const COLUMNS: { key: BoardColumn; label: string; hue: string }[] = [
   { key: "done", label: "Done", hue: "var(--done)" },
 ];
 
-/** Where a card can be dragged. Only an ITEM moves between backlog and ready — those are states of the
- *  item itself, a patch away. A run's column is DERIVED from its tasks, so dragging a run card would be
- *  asking the board to lie about what the run is doing; the drop is refused with a reason instead. */
+/**
+ * Where a card can be dragged.
+ *
+ *  - an ITEM moves between Backlog and Ready — those are states of the item itself, one patch away.
+ *  - a RUN can be dropped on Ready only, and that means RESET (doc 18 Q2): its tasks go back to `todo`
+ *    and its item back to `ready`. Every other column is refused, because a run's column is derived
+ *    from its tasks — dropping it elsewhere would ask the board to display something the run is not
+ *    doing.
+ */
 export function canDrop(card: BoardCard, target: BoardColumn): boolean {
-  if (card.origin !== "item") return false;
-  return target === "backlog" || target === "ready";
+  if (card.origin === "item") return target === "backlog" || target === "ready";
+  return target === "ready";
+}
+
+/** Whether this drop is the reset path — a run going back on the shelf, which needs confirming first. */
+export function isReset(card: BoardCard, target: BoardColumn): boolean {
+  return card.origin === "run" && target === "ready";
+}
+
+/** The confirm text for a reset. Says exactly what happens AND what does not, because "reset" could
+ *  reasonably be read as "kill it", and it is not that. */
+export function resetPrompt(card: BoardCard): string {
+  return `Put "${card.title}" back on the shelf?\n\nIts tasks return to to-do and it can be claimed again. Nothing is deleted, and any agent working right now is not stopped.`;
 }
 
 /** Why a drop was refused — shown while the card is still in the air, rather than letting it spring
  *  back unexplained. Uses the column's DISPLAY label: the raw key reads as a verb mid-sentence
  *  ("not running") and names something the user never sees written that way. */
 export function refusalReason(card: BoardCard, target: BoardColumn): string {
-  if (card.origin === "run") {
-    return "A run's column comes from its tasks — move the work, not the card.";
-  }
   const label = COLUMNS.find((c) => c.key === target)?.label ?? target;
+  if (card.origin === "run") {
+    return `A run's column comes from its tasks. Drop it on Ready to put it back on the shelf, not ${label}.`;
+  }
   return `An item can only sit in Backlog or Ready, not ${label}.`;
 }
 

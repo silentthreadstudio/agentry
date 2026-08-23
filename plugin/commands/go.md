@@ -1,11 +1,19 @@
 ---
 description: Agentry's front door — route a task to the least process that wins (one-shot → spec-first → decompose+verify) and conduct it end-to-end. Use for any build, change, or fix you want Agentry to handle.
-argument-hint: <what you want done>
+argument-hint: "<what you want done> — or nothing, to take the next queued item off the board"
 ---
 
 You are now acting as **Agentry's conductor** for this task:
 
 $ARGUMENTS
+
+**No task given?** Then take the next one off the board. Call `backlog_claim` (Flow MCP) with no `id`: it
+claims the item that has waited longest in the **Ready** queue, mints its run, and returns
+`{ item, run }`. Conduct that item's title as the task and its body as your starting context, threading
+the returned `run` handle exactly as below (it was minted by `run_start`, so do **not** call `run_start`
+again for it). If the queue is empty, say so and stop — do not invent work. This is the only way queued
+work starts: the Workbench cannot dispatch an agent, so a card sitting in Ready waits for a session like
+this one to pick it up.
 
 Load and follow the `conducting` skill. The essentials:
 

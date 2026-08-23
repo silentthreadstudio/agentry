@@ -19377,6 +19377,39 @@ function handleArtifact(res, deps, runId, body) {
 }
 
 // src/transport/run-routes.ts
+var RESET_PATH = /^\/api\/work\/([^/]+)\/reset$/;
+async function handleRunResetRequest(req, res, deps) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const match = RESET_PATH.exec(url.pathname);
+  if (match === null) return false;
+  if ((req.method ?? "GET") !== "POST") {
+    sendJson(res, 405, { error: "method_not_allowed" });
+    return true;
+  }
+  let label;
+  try {
+    label = decodeURIComponent(match[1] ?? "");
+  } catch {
+    sendJson(res, 400, { error: "bad_run" });
+    return true;
+  }
+  const run = resolveSlug(label, deps.reader.listRuns());
+  const read = run !== void 0 ? deps.reader.read(run) : void 0;
+  if (run === void 0 || read === void 0) {
+    sendJson(res, 404, { error: "unknown_run" });
+    return true;
+  }
+  const taskNos = read.docs.filter((d) => d.id.startsWith("task-")).map((d) => d.id.slice("task-".length));
+  let reset = 0;
+  for (const taskNo of taskNos) {
+    if (deps.writeService.setStatus({ run, taskNo, status: "todo" }).ok) reset += 1;
+  }
+  const item = deps.backlog.list().find((i) => i.runs.includes(run));
+  if (item !== void 0) deps.backlog.update({ id: item.id, status: "ready" });
+  deps.transport.pushAll({ type: "works-changed" });
+  sendJson(res, 200, { ok: true, run, tasks: reset, ...item !== void 0 ? { item: item.id } : {} });
+  return true;
+}
 async function handleRunStartRequest(req, res, deps) {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname !== "/api/runs") return false;
@@ -19580,7 +19613,14 @@ function createHttpHandler(projects, transport) {
     }
     if (handleApiRequest(req, res, reader, context, project.root, project.slug)) return;
     if (handleReaderRequest(req, res, readers)) return;
-    void handlePostRequest(req, res, write).then((handled) => handled ? true : handleRunStartRequest(req, res, { starter: project.starter, transport })).then((handled) => handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })).then((handled) => handled ? true : handlePermissionRequest(req, res, permissions)).then((handled) => {
+    void handlePostRequest(req, res, write).then((handled) => handled ? true : handleRunStartRequest(req, res, { starter: project.starter, transport })).then((handled) => handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })).then(
+      (handled) => handled ? true : handleRunResetRequest(req, res, {
+        reader,
+        writeService: project.writeService,
+        backlog: project.backlog.service,
+        transport: scoped
+      })
+    ).then((handled) => handled ? true : handlePermissionRequest(req, res, permissions)).then((handled) => {
       if (handled) return;
       if (req.method !== "GET" && req.method !== "HEAD") {
         res.writeHead(405, { "content-type": "application/json" });

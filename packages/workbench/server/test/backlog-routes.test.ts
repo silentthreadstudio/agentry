@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { BacklogAdapter } from "../src/persistence/backlog-adapter.js";
-import { handleBacklogRequest } from "../src/transport/routes.js";
+import { handleBacklogRequest, handleRunResetRequest } from "../src/transport/routes.js";
 import type { Clock } from "../src/domain/ports.js";
 
 let root: string;
@@ -170,4 +170,71 @@ test("there is NO http route that claims an item — starting work is a session'
   await handleBacklogRequest(req("/api/backlog"), listed.res, d);
   const items = (listed.got.body as { items: { status: string; runs: string[] }[] }).items;
   assert.deepEqual(items[0]?.runs, [], "queued, not started");
+});
+
+// ── reset, not cancel (doc 18 Q2 / AC7) ────────────────────────────────────────────────────────────
+// Dropping a run card back onto Ready RESETS it: tasks return to todo and the item returns to ready.
+// It kills nothing. An agent writing right now keeps writing, and the run's artifacts and history
+// survive — killing a live agent mid-write is not what a drag on a board should ever mean.
+test("reset returns every task to todo and hands the item back to ready", async () => {
+  const statuses: { taskNo: string; status: string }[] = [];
+  const updated: { id: string; status: string }[] = [];
+  const deps = {
+    reader: {
+      listRuns: () => ["r-1"],
+      read: () => ({ docs: [{ id: "task-001" }, { id: "task-002" }, { id: "spec" }] }),
+    },
+    writeService: {
+      setStatus: (r: { taskNo: string; status: "todo" }) => {
+        statuses.push({ taskNo: r.taskNo, status: r.status });
+        return { ok: true };
+      },
+    },
+    backlog: {
+      list: () => [{ id: "b-src", runs: ["r-1"], status: "claimed" }],
+      update: (i: { id: string; status: "ready" }) => updated.push(i),
+    },
+    transport: { push: () => {}, pushAll: () => {} },
+  };
+
+  const { res: r, got } = res();
+  assert.equal(await handleRunResetRequest(req("/api/work/r-1/reset", "POST"), r, deps as never), true);
+  assert.equal(got.status, 200);
+  assert.deepEqual(statuses, [
+    { taskNo: "001", status: "todo" },
+    { taskNo: "002", status: "todo" },
+  ]);
+  assert.deepEqual(updated, [{ id: "b-src", status: "ready" }], "back to ready, not backlog — you still want it");
+  assert.deepEqual(got.body, { ok: true, run: "r-1", tasks: 2, item: "b-src" });
+});
+
+test("a run with no originating item resets its tasks and touches no backlog", async () => {
+  const deps = {
+    reader: { listRuns: () => ["r-1"], read: () => ({ docs: [{ id: "task-001" }] }) },
+    writeService: { setStatus: () => ({ ok: true }) },
+    backlog: {
+      list: () => [],
+      update: () => assert.fail("must not patch an item that does not exist"),
+    },
+    transport: { push: () => {}, pushAll: () => {} },
+  };
+  const { res: r, got } = res();
+  await handleRunResetRequest(req("/api/work/r-1/reset", "POST"), r, deps as never);
+  assert.deepEqual(got.body, { ok: true, run: "r-1", tasks: 1 });
+});
+
+test("resetting an unknown run is a 404, and a GET is a 405", async () => {
+  const deps = {
+    reader: { listRuns: () => [], read: () => undefined },
+    writeService: { setStatus: () => ({ ok: true }) },
+    backlog: { list: () => [], update: () => {} },
+    transport: { push: () => {}, pushAll: () => {} },
+  };
+  const a = res();
+  await handleRunResetRequest(req("/api/work/ghost/reset", "POST"), a.res, deps as never);
+  assert.equal(a.got.status, 404);
+
+  const b = res();
+  await handleRunResetRequest(req("/api/work/r-1/reset", "GET"), b.res, deps as never);
+  assert.equal(b.got.status, 405);
 });

@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { BoardCard, BoardColumn, BoardModel } from "@agentry/workbench-shared";
-import { ApiError, fetchBoard, patchBacklogItem } from "../../api/index.js";
+import { ApiError, fetchBoard, patchBacklogItem, resetRun } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 import { EmptyState } from "../../ui/index.js";
 import {
@@ -19,10 +19,12 @@ import {
   canDrop,
   conflictText,
   countChips,
+  isReset,
   elapsedOf,
   initialsOf,
   progressOf,
   refusalReason,
+  resetPrompt,
   totalCards,
 } from "./board-view.js";
 import { NewWork } from "./NewWork.js";
@@ -74,7 +76,14 @@ export function Board() {
     if (!card || card.column === target || !canDrop(card, target)) return;
     setRefusal(null);
     try {
-      await patchBacklogItem(card.id, { status: target === "ready" ? "ready" : "backlog" });
+      if (isReset(card, target)) {
+        // A reset is not a move — it rewinds real work, so it asks first. The prompt spells out that
+        // nothing is deleted and no agent is stopped, because "reset" reads like "kill it" otherwise.
+        if (!window.confirm(resetPrompt(card))) return;
+        await resetRun(card.run ?? card.id);
+      } else {
+        await patchBacklogItem(card.id, { status: target === "ready" ? "ready" : "backlog" });
+      }
       load(); // the ws nudge will also fire; refetching now makes the move feel immediate
     } catch {
       setRefusal("Couldn't move that — the server rejected the change.");
@@ -213,7 +222,7 @@ function Card({
   return (
     <article
       className={`bcard${card.origin === "run" ? " run" : ""}${card.conflict === true ? " conflict" : ""}`}
-      draggable={card.origin === "item"}
+      draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={open}

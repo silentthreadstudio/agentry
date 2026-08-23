@@ -14,8 +14,10 @@ import {
   countChips,
   elapsedOf,
   initialsOf,
+  isReset,
   progressOf,
   refusalReason,
+  resetPrompt,
   totalCards,
 } from "../routes/board/board-view.js";
 
@@ -55,16 +57,32 @@ test("an item cannot be dropped into a run column — it has no run to be in", (
   }
 });
 
-test("a run card cannot be dragged anywhere — its column is derived, not chosen", () => {
-  for (const col of ["backlog", "ready", "running", "in-review", "done"] as const) {
+test("a run can only be dropped on Ready — that drop means RESET, not a move", () => {
+  assert.equal(canDrop(run(), "ready"), true);
+  for (const col of ["backlog", "running", "in-review", "done"] as const) {
     assert.equal(canDrop(run(), col), false);
   }
 });
 
+test("a run onto Ready is the reset path; an item onto Ready is not", () => {
+  assert.equal(isReset(run(), "ready"), true);
+  assert.equal(isReset(item(), "ready"), false);
+  assert.equal(isReset(run(), "backlog"), false);
+});
+
+test("the reset prompt says what happens AND what does not — it is not a kill", () => {
+  const text = resetPrompt(run({ title: "Session middleware" }));
+  assert.match(text, /Session middleware/);
+  assert.match(text, /to-do/);
+  assert.match(text, /Nothing is deleted/);
+  assert.match(text, /not stopped/, "'reset' reads like 'kill it' unless you say otherwise");
+});
+
 test("a refusal explains itself, and says something different for a run than for an item", () => {
-  const forRun = refusalReason(run(), "backlog");
+  const forRun = refusalReason(run(), "done");
   const forItem = refusalReason(item(), "in-review");
   assert.match(forRun, /comes from its tasks/);
+  assert.match(forRun, /Drop it on Ready/, "a refusal that names the one thing you CAN do");
   assert.match(forItem, /Backlog or Ready/);
   assert.match(forItem, /In review/, "the column's DISPLAY label, not the raw key");
   assert.notEqual(forRun, forItem);
