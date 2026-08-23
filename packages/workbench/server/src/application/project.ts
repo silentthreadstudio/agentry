@@ -23,6 +23,7 @@ import { WriteService } from "./write-service.js";
 import { EventStore } from "./event-store.js";
 import { GateInbox } from "./gate-inbox.js";
 import { TokenReader } from "./token-reader.js";
+import { BoardReader } from "./board-reader.js";
 import type { Clock } from "../domain/ports.js";
 
 export interface Project {
@@ -35,6 +36,8 @@ export interface Project {
   gates: GateInbox;
   tokens: TokenReader;
   memory: MemReader;
+  /** Every item + run in exactly one column (doc 18). */
+  board: BoardReader;
   /** Starts NEW work in this project (FLOW's `run_start`, reused). */
   starter: RunStarter;
   /** The project's backlog — durable intent that has not become a run yet (doc 18). */
@@ -48,17 +51,20 @@ export interface Project {
 export function createProject(root: string, slug: string, clock: Clock): Project {
   const repository = new FsWorkRepository(root);
   const events = new EventStore(repository, new FsEventSource(root));
+  const reader = new WorkReader(repository, clock, (run) => events.roster(run).length);
+  const backlog = new BacklogAdapter(root, clock);
   return {
     slug,
     root,
-    reader: new WorkReader(repository, clock, (run) => events.roster(run).length),
+    reader,
     writeService: new WriteService(new FlowWriter(root)),
     events,
     gates: new GateInbox(repository, new FsReviewSidecarSource(root)),
     tokens: new TokenReader(new TranscriptReader(root)),
     memory: new MemReader(root),
     starter: new RunStarter(root),
-    backlog: new BacklogAdapter(root, clock),
+    backlog,
+    board: new BoardReader(reader, backlog.service),
     watcher: new ChokidarWatcher(root),
     permissionWatcher: new PermissionWatcher(root),
   };

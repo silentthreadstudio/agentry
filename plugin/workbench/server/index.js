@@ -18678,21 +18678,90 @@ function dayOf(timestamp) {
   return parsed.toISOString().slice(0, 10);
 }
 
+// src/application/board-reader.ts
+var EMPTY_COLUMNS = () => ({
+  backlog: [],
+  ready: [],
+  running: [],
+  "in-review": [],
+  done: []
+});
+var BoardReader = class {
+  constructor(reader, backlog) {
+    this.reader = reader;
+    this.backlog = backlog;
+  }
+  read() {
+    const columns = EMPTY_COLUMNS();
+    const runCards = /* @__PURE__ */ new Map();
+    for (const runId of this.reader.listRuns()) {
+      const read = this.reader.read(runId);
+      if (!read) continue;
+      const summary = read.summary;
+      runCards.set(runId, {
+        id: runId,
+        column: runColumn(summary.taskCounts),
+        title: summary.title,
+        origin: "run",
+        run: runId,
+        ...summary.kind !== void 0 ? { kind: summary.kind } : {},
+        ...summary.shape !== void 0 ? { shape: summary.shape } : {},
+        ...summary.summary !== void 0 ? { summary: summary.summary } : {},
+        taskCounts: summary.taskCounts,
+        agentCount: summary.agentCount,
+        updatedAt: summary.updatedAt
+      });
+    }
+    for (const item of this.backlog.list()) {
+      const spawned = item.runs.map((r) => runCards.get(r)).find((c) => c !== void 0);
+      if (spawned !== void 0) {
+        spawned.item = item.id;
+        if (spawned.kind === void 0) spawned.kind = item.kind;
+        continue;
+      }
+      const column = item.status === "done" ? "done" : item.status === "backlog" ? "backlog" : "ready";
+      columns[column].push({
+        id: item.id,
+        column,
+        title: item.title,
+        kind: item.kind,
+        origin: "item",
+        item: item.id,
+        updatedAt: item.updatedAt
+      });
+    }
+    for (const card of runCards.values()) columns[card.column].push(card);
+    for (const column of Object.values(columns)) {
+      column.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    }
+    return { columns };
+  }
+};
+function runColumn(counts) {
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  if ((counts["in-review"] ?? 0) > 0) return "in-review";
+  if (total > 0 && (counts.done ?? 0) === total) return "done";
+  return "running";
+}
+
 // src/application/project.ts
 function createProject(root, slug3, clock) {
   const repository = new FsWorkRepository(root);
   const events = new EventStore(repository, new FsEventSource(root));
+  const reader = new WorkReader(repository, clock, (run) => events.roster(run).length);
+  const backlog = new BacklogAdapter(root, clock);
   return {
     slug: slug3,
     root,
-    reader: new WorkReader(repository, clock, (run) => events.roster(run).length),
+    reader,
     writeService: new WriteService(new FlowWriter(root)),
     events,
     gates: new GateInbox(repository, new FsReviewSidecarSource(root)),
     tokens: new TokenReader(new TranscriptReader(root)),
     memory: new MemReader(root),
     starter: new RunStarter(root),
-    backlog: new BacklogAdapter(root, clock),
+    backlog,
+    board: new BoardReader(reader, backlog.service),
     watcher: new ChokidarWatcher(root),
     permissionWatcher: new PermissionWatcher(root)
   };
@@ -18997,6 +19066,9 @@ function handleReaderRequest(req, res, deps) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
   const method = req.method ?? "GET";
+  if (url.pathname === "/api/board") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.board.read()));
+  }
   const run = runParam(url);
   if (path === "/api/events") {
     return guardGet(method, res, () => sendJson(res, 200, deps.events.timeline(run)));
@@ -19360,6 +19432,7 @@ function createHttpHandler(projects, transport) {
       projectRoot: project.root
     };
     const readers = {
+      board: project.board,
       events: project.events,
       gates: project.gates,
       tokens: project.tokens,

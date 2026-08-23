@@ -107,6 +107,7 @@ export function createHttpHandler(projects: ProjectSource, transport: Transport)
       projectRoot: project.root,
     };
     const readers: ReaderDeps = {
+      board: project.board,
       events: project.events,
       gates: project.gates,
       tokens: project.tokens,

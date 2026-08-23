@@ -4,6 +4,10 @@
 // no shapes of its own (mirrors @agentry/core's barrel).
 export type {
   AgentView,
+  BacklogItem,
+  BoardCard,
+  BoardColumn,
+  BoardModel,
   DiffReadyMessage,
   DocLock,
   DocModel,

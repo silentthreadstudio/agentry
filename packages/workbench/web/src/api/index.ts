@@ -6,6 +6,8 @@ export { ApiError, currentProject, selectProject, apiPath } from "./http.js";
 export { fetchProjects, type ProjectEntry, type ProjectList } from "./projects.js";
 export { fetchWorks } from "./works.js";
 export { startRun } from "./runs.js";
+export { fetchBoard } from "./board.js";
+export { createBacklogItem, fetchBacklog, patchBacklogItem } from "./backlog.js";
 export { fetchGraph } from "./graph.js";
 export { fetchContext, type AppContext } from "./context.js";
 export { fetchEvents, fetchAgents } from "./events.js";
@@ -26,6 +28,10 @@ export {
 // type from the same place as its fetcher).
 export type {
   AgentView,
+  BacklogItem,
+  BoardCard,
+  BoardColumn,
+  BoardModel,
   EventView,
   GateItem,
   PermissionRequest,

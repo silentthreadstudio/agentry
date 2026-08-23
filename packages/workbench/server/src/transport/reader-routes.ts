@@ -4,6 +4,7 @@
 // fall-through). Host-scoped where it matters: `/api/events`, `/api/gates`, `/api/tokens` accept
 // `?run=<id>` to filter to one run; absent the param they fold across every run (the cross-run view).
 //
+//   GET /api/board              → BoardModel    — every item + run, in exactly one column
 //   GET /api/events[?run=<id>]  → EventView[]   — the folded timeline (one fold powers Activity + Agents)
 //   GET /api/agents[?run=<id>]  → AgentView[]   — the agent roster across runs (or one run)
 //   GET /api/gates[?run=<id>]   → OpenGateItem[] — the open waiting-on-you gate items
@@ -15,6 +16,7 @@
 // serialize JSON, holding no run state of their own.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ReviewComment } from "@agentry/flow/domain/review";
+import type { BoardReader } from "../application/board-reader.js";
 import type { EventStore } from "../application/event-store.js";
 import type { GateInbox } from "../application/gate-inbox.js";
 import type { TokenReader } from "../application/token-reader.js";
@@ -26,6 +28,8 @@ import { matchWorkReview, runParam } from "./route-match.js";
 // token-reader/mem-reader). Threaded by the composition root alongside the `WorkReader`, the same DI
 // pattern task 9 uses.
 export interface ReaderDeps {
+  /** The workspace board — every item and run in exactly one column (doc 18 AC4). */
+  board: BoardReader;
   events: EventStore;
   gates: GateInbox;
   tokens: TokenReader;
@@ -40,6 +44,10 @@ export function handleReaderRequest(
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
   const method = req.method ?? "GET";
+
+  if (url.pathname === "/api/board") {
+    return guardGet(method, res, () => sendJson(res, 200, deps.board.read()));
+  }
 
   // The `?run=<id>` filter (events/agents/gates/tokens). Undefined ⇒ the cross-run fold; a present value is
   // the run to scope to. The run-segment safety is the store's `runDir` guard (`assertSafeSegment`), not

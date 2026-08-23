@@ -15,6 +15,11 @@
 import type { FlowEvent } from "@agentry/flow/domain/events";
 import type { ReviewComment, ReviewDecision } from "@agentry/flow/domain/review";
 import type { AgentState, FlowTaskStatus } from "@agentry/flow/domain/status";
+import type { BacklogItem } from "@agentry/flow/domain/backlog";
+
+// The backlog item, straight from FLOW — re-exported, never re-declared (ADR-005 tier 1): a schema
+// change there must ripple here as a compile error, not a silent desync.
+export type { BacklogItem };
 
 // ── Run summary ───────────────────────────────────────────────────────────────────────────────────
 // The top-of-app glance at a run: which run, its task tally by lifecycle status, and how many agents
@@ -29,6 +34,38 @@ export interface RunSummary {
   taskCounts: Record<FlowTaskStatus, number>;
   agentCount: number; // agents currently in the run roster
   updatedAt: string; // ISO timestamp of the most recent change observed by the aggregator
+}
+
+// ── Board model ───────────────────────────────────────────────────────────────────────────────────
+// The workspace board: every piece of work in a project, in exactly one column. The column is derived
+// SERVER-SIDE from stored state (doc 18 AC4) — a client that inferred it could disagree with disk, and
+// two views of the same run disagreeing is the failure this read-model exists to prevent.
+//
+// One lifecycle, not two: `backlog`/`ready` are states of a BACKLOG ITEM, the rest are derived from a
+// RUN's task tally. A card is an item until a session claims it; from then on the card IS the run and
+// carries the item id as provenance.
+export type BoardColumn = "backlog" | "ready" | "running" | "in-review" | "done";
+
+export interface BoardCard {
+  id: string; // the card's stable key: the item id, or the run id once claimed
+  column: BoardColumn;
+  title: string;
+  kind?: string; // feature | bug | refactor | ... (permissive, mirrors core's Kind)
+  /** What this card IS right now — intent, or the run it became. */
+  origin: "item" | "run";
+  /** The backlog item this run came from, when it came from one. Provenance, not identity. */
+  item?: string;
+  /** The run id, on a run card. */
+  run?: string;
+  summary?: string;
+  shape?: string; // routing shape, on a run card
+  taskCounts?: Record<FlowTaskStatus, number>;
+  agentCount?: number;
+  updatedAt: string;
+}
+
+export interface BoardModel {
+  columns: Record<BoardColumn, BoardCard[]>;
 }
 
 // ── Graph model ───────────────────────────────────────────────────────────────────────────────────

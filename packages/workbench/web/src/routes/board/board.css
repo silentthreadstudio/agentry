@@ -1,0 +1,363 @@
+/* Board — the workspace home. Lifted from the v3 mock (design/ui-v3-workspace.html) and bound to the
+   real tokens; nothing here hardcodes a color. */
+
+.board-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.board-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 4px 2px 16px;
+}
+.board-head h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: -0.5px;
+  background: var(--grad-hero);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.board-head p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.board-head .grow {
+  flex: 1;
+}
+
+/* A refused drop is EXPLAINED, never a card silently springing back — the user's mental model of what
+   the board allows is built here. */
+.board-refusal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 12.5px;
+}
+.board-refusal button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.board {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(196px, 1fr));
+  gap: 12px;
+  overflow: auto;
+}
+.bcol {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--r-xl);
+  padding: 2px;
+  transition: background 0.12s;
+}
+/* the drop target — a wash rather than an outline, so the board doesn't jump while dragging */
+.bcol.over {
+  background: #8b7ff50f;
+}
+.bcolhd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 5px 10px;
+}
+.bcolhd .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.bcolhd .t {
+  font: 700 10px var(--sans);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bcolhd .n {
+  margin-left: auto;
+  font: 600 10.5px var(--mono);
+  color: var(--faint);
+}
+.bstack {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  overflow: auto;
+  padding: 0 3px 8px;
+}
+
+.bcard {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #16161e, #101015);
+  padding: 11px 12px;
+  transition:
+    border-color 0.12s,
+    transform 0.12s;
+}
+.bcard[draggable="true"] {
+  cursor: grab;
+}
+.bcard[role="button"] {
+  cursor: pointer;
+}
+.bcard:hover {
+  border-color: var(--line2);
+  transform: translateY(-1px);
+}
+.bcard .ttl {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink2);
+}
+.bcard .meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+.bcard .chip {
+  border: 1px solid var(--line2);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font: 600 9.5px var(--sans);
+  letter-spacing: 0.3px;
+  color: var(--muted);
+  background: var(--panel2);
+}
+.bcard .chip.kind {
+  border-color: var(--accent-line);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.bcard .chip.from {
+  border-style: dashed;
+}
+.bcard .bar {
+  height: 3px;
+  border-radius: 3px;
+  background: #ffffff0f;
+  overflow: hidden;
+  margin-top: 10px;
+}
+.bcard .bar i {
+  display: block;
+  height: 100%;
+  background: var(--grad-bar);
+}
+.bcard .counts {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.bcard .counts b {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* ── New work ───────────────────────────────────────────────────────────────────────────────────── */
+.newwork-open {
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, #2a2540, #1b1830);
+  color: #e9e6ff;
+  font: 600 12.5px var(--sans);
+  padding: 9px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.newwork-open:hover {
+  border-color: #6d5bd0aa;
+}
+.newwork-open:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Unlike the doc drawer, this one IS a modal: you compose work, you don't monitor while you do it. */
+.mscrim {
+  position: fixed;
+  inset: 0;
+  background: #05050899;
+  backdrop-filter: blur(3px);
+  z-index: 60;
+}
+.modal {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, 92vw);
+  z-index: 61;
+  background: linear-gradient(180deg, #14141c, #0e0e13);
+  border: 1px solid var(--line2);
+  border-radius: 18px;
+  box-shadow: 0 40px 90px #000a;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mhd {
+  padding: 16px 20px 13px;
+  border-bottom: 1px solid var(--line);
+}
+.mhd .t {
+  font-weight: 650;
+  font-size: 14px;
+}
+.mbody {
+  padding: 18px 20px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tin {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 600 19px/1.35 var(--sans);
+  width: 100%;
+  padding: 0;
+  letter-spacing: -0.3px;
+}
+.tin::placeholder {
+  color: #4b4c58;
+}
+.din {
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: #0d0d12;
+  color: var(--ink2);
+  font: 13px/1.6 var(--sans);
+  width: 100%;
+  padding: 11px 13px;
+  resize: none;
+  min-height: 96px;
+}
+.din::placeholder {
+  color: var(--faint);
+}
+.frow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.flbl {
+  font: 700 8.5px var(--sans);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.flbl.block {
+  display: block;
+  margin-bottom: 7px;
+}
+.kchip {
+  border: 1px solid var(--line2);
+  background: var(--panel2);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.kchip.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* The destination IS the assignment decision, so it is explained rather than left as two bare labels. */
+.dest {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.dopt {
+  border: 1px solid var(--line2);
+  border-radius: var(--r-xl);
+  background: var(--panel);
+  padding: 11px 13px;
+  cursor: pointer;
+  text-align: left;
+  display: block;
+}
+.dopt .dt {
+  font-weight: 650;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+}
+.dopt .dd {
+  display: block;
+  color: var(--faint);
+  font-size: 11.5px;
+  margin-top: 4px;
+  line-height: 1.45;
+}
+.dopt.on {
+  border-color: var(--accent-line);
+  background: linear-gradient(180deg, #16142a, #101015);
+}
+.dopt.on .dt {
+  color: var(--accent-ink);
+}
+.dot2 {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.mft {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+}
+.mft .hint {
+  font: 11px var(--mono);
+  color: var(--faint);
+}
+.mft .err {
+  color: #f87171;
+  font-size: 12px;
+}
+.mft .grow {
+  flex: 1;
+}
+.ghost {
+  border: 1px solid var(--line2);
+  background: var(--panel2);
+  border-radius: var(--r-lg);
+  padding: 8px 13px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+}

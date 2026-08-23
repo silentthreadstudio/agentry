@@ -17,7 +17,7 @@ import { getWsClient } from "./api/ws.js";
 import { ApprovalsBanner } from "./routes/approvals/ApprovalsBanner.js";
 import { Gates } from "./routes/gates/Gates.js";
 import { Memory } from "./routes/memory/Memory.js";
-import { Works } from "./routes/works/Works.js";
+import { Board } from "./routes/board/Board.js";
 import { WorkLayout } from "./routes/work/WorkLayout.js";
 import { runHref } from "./routes/works/works-view.js";
 
@@ -27,7 +27,7 @@ import "./App.css";
 // The sidebar nav — Works / Memory / Gates only (Agents/Tokens removed). `ic` is a monochrome glyph
 // (text, not an icon set); the active state's gradient pill + left bar are CSS (.nav.on).
 const NAV: { to: string; ic: string; label: string }[] = [
-  { to: "/", ic: "◳", label: "Works" },
+  { to: "/", ic: "▦", label: "Board" },
   { to: "/memory", ic: "✦", label: "Memory" },
   { to: "/gates", ic: "◈", label: "Gates" },
 ];
@@ -93,7 +93,7 @@ function Shell({ project, aliasTarget }: { project: string | undefined; aliasTar
         <main className="main">
           <div className="body">
             <Routes>
-              <Route path="/" element={aliasTarget ? <Navigate to={aliasTarget} replace /> : <Works />} />
+              <Route path="/" element={aliasTarget ? <Navigate to={aliasTarget} replace /> : <Board />} />
               <Route
                 path="/memory"
                 element={
