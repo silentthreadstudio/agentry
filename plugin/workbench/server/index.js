@@ -15372,8 +15372,8 @@ ${body}
   }
   slugOf(task) {
     const title = typeof task.frontmatter.title === "string" ? task.frontmatter.title : "";
-    const slug2 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
-    return slug2 || "task";
+    const slug3 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
+    return slug3 || "task";
   }
   parseTaskFile(path, taskNo) {
     const m = FRONTMATTER.exec(readFileSync4(path, "utf8"));
@@ -18025,21 +18025,219 @@ var JsonRunStateStore = class {
   }
 };
 
+// ../../flow/src/persistence/backlog-store.ts
+var import_yaml5 = __toESM(require_dist(), 1);
+import { existsSync as existsSync12, mkdirSync as mkdirSync9, readFileSync as readFileSync15, readdirSync as readdirSync8, unlinkSync as unlinkSync2, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join18 } from "node:path";
+
+// ../../flow/src/domain/backlog.ts
+var BacklogStatus = external_exports.enum(["backlog", "ready", "claimed", "done"]);
+var BacklogItem = external_exports.object({
+  id: external_exports.string(),
+  title: external_exports.string(),
+  /** Permissive on purpose, mirroring `Kind` in @agentry/core: accept an unknown kind rather than
+   *  reject it, so adding one later cannot throw on an old record. */
+  kind: external_exports.string().default("feature"),
+  status: BacklogStatus.default("backlog"),
+  createdAt: external_exports.string(),
+  updatedAt: external_exports.string(),
+  /** Runs spawned from this item — usually 0 or 1, but a re-run appends rather than replaces. */
+  runs: external_exports.array(external_exports.string()).default([]),
+  /** The context an agent starts from: markdown, `@task-…` / `@memory:…` references. */
+  body: external_exports.string().default("")
+});
+var STEM_WORDS2 = 3;
+var STEM_MAX2 = 20;
+function slug2(text) {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS2);
+  while (words.length > 1 && words.join("-").length > STEM_MAX2) words.pop();
+  return words.join("-").slice(0, STEM_MAX2).replace(/-+$/g, "");
+}
+function shortId2() {
+  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+}
+function mintBacklogId(title) {
+  const id = `b-${slug2(title) || "item"}-${shortId2()}`;
+  assertSafeSegment(id);
+  return id;
+}
+function isReady(item) {
+  return item.status === "ready";
+}
+
+// ../../flow/src/persistence/backlog-store.ts
+var FRONTMATTER5 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var LEADING_FRONTMATTER2 = /^---\n[\s\S]*?\n---\n?/;
+var FsBacklogStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  dir() {
+    return join18(this.cwd, ".agentry", "backlog");
+  }
+  file(id) {
+    assertSafeSegment(id);
+    return join18(this.dir(), `${id}.md`);
+  }
+  read(id) {
+    const file = this.file(id);
+    if (!existsSync12(file)) return void 0;
+    try {
+      return this.parse(readFileSync15(file, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+  /** Every item, newest first. A file that fails to parse is SKIPPED, never fatal: one bad item must
+   *  not take the whole board down. */
+  list() {
+    const dir = this.dir();
+    if (!existsSync12(dir)) return [];
+    const items = [];
+    for (const name of readdirSync8(dir)) {
+      if (!name.endsWith(".md")) continue;
+      try {
+        items.push(this.parse(readFileSync15(join18(dir, name), "utf8")));
+      } catch {
+      }
+    }
+    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  write(item) {
+    const validated = BacklogItem.parse(item);
+    mkdirSync9(this.dir(), { recursive: true });
+    writeFileSync8(this.file(validated.id), this.render(validated));
+  }
+  remove(id) {
+    const file = this.file(id);
+    if (existsSync12(file)) unlinkSync2(file);
+  }
+  // ── shape ────────────────────────────────────────────────────────────────────────────────────────
+  // The body lives BELOW the frontmatter (not as a `body:` yaml field) so an item reads as a document:
+  // `cat` it, edit it in any editor, diff it in a PR.
+  render(item) {
+    const { body, ...frontmatter } = item;
+    const yaml = (0, import_yaml5.stringify)(frontmatter);
+    return `---
+${yaml}---
+
+${body.replace(LEADING_FRONTMATTER2, "").trim()}
+`;
+  }
+  parse(text) {
+    const m = FRONTMATTER5.exec(text);
+    if (!m || m[1] === void 0) throw new Error("backlog item has no frontmatter");
+    const frontmatter = (0, import_yaml5.parse)(m[1]);
+    return BacklogItem.parse({ ...frontmatter, body: (m[2] ?? "").trim() });
+  }
+};
+
+// src/persistence/flow-services.ts
+function createFlowServices(root) {
+  return {
+    cwd: root,
+    tasks: new TaskFileStore(root),
+    events: new JsonlEventLog(root),
+    reviews: new JsonReviewStore(root),
+    runs: new JsonRunStateStore(root),
+    backlog: new FsBacklogStore(root)
+  };
+}
+
 // src/persistence/run-starter.ts
 var RunStarter = class {
   service;
   constructor(root) {
-    this.service = new RunService({
-      cwd: root,
-      tasks: new TaskFileStore(root),
-      events: new JsonlEventLog(root),
-      reviews: new JsonReviewStore(root),
-      runs: new JsonRunStateStore(root)
-    });
+    this.service = new RunService(createFlowServices(root));
   }
   /** Mint a run for `goal` and lay down its scaffold. Returns the run id the SPA navigates to. */
   start(goal) {
     return this.service.start({ goal });
+  }
+};
+
+// ../../flow/src/application/backlog-service.ts
+var BacklogService = class {
+  constructor(store, runs, now) {
+    this.store = store;
+    this.runs = runs;
+    this.now = now;
+  }
+  add(input) {
+    const ts = this.now();
+    const item = BacklogItem.parse({
+      id: mintBacklogId(input.title),
+      title: input.title,
+      kind: input.kind ?? "feature",
+      status: input.ready === true ? "ready" : "backlog",
+      createdAt: ts,
+      updatedAt: ts,
+      runs: [],
+      body: input.body ?? ""
+    });
+    this.store.write(item);
+    return item;
+  }
+  list(status) {
+    const all = this.store.list();
+    return status === void 0 ? all : all.filter((i) => i.status === status);
+  }
+  /** Patch an item. Absent fields are left alone — this is a patch, not a replace, so a caller that
+   *  knows only the new status cannot accidentally blank the body. */
+  update(input) {
+    const current = this.store.read(input.id);
+    if (!current) return void 0;
+    const next = BacklogItem.parse({
+      ...current,
+      ...input.title !== void 0 ? { title: input.title } : {},
+      ...input.body !== void 0 ? { body: input.body } : {},
+      ...input.kind !== void 0 ? { kind: input.kind } : {},
+      ...input.status !== void 0 ? { status: input.status } : {},
+      updatedAt: this.now()
+    });
+    this.store.write(next);
+    return next;
+  }
+  /**
+   * Take an item and mint its run — the intent→work transition, and the ONLY one.
+   *
+   * With no id, claims the oldest READY item (the queue is FIFO: the thing that has waited longest goes
+   * first, which is what a queue means and what `/agentry:go` with no argument expects). The run is
+   * minted through the existing `RunService.start`, so a claimed run is indistinguishable from one a
+   * session started directly — same id shape, same scaffold, same layout.
+   */
+  claim(id, sessionId) {
+    let item;
+    if (id !== void 0 && id.length > 0) {
+      item = this.store.read(id);
+      if (!item) return { ok: false, reason: "not_found" };
+      if (!isReady(item)) return { ok: false, reason: "not_ready" };
+    } else {
+      const queue = this.list("ready").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      item = queue[0];
+      if (!item) return { ok: false, reason: "empty_queue" };
+    }
+    const { run } = this.runs.start({
+      goal: item.title,
+      ...sessionId !== void 0 && sessionId.length > 0 ? { session_id: sessionId } : {}
+    });
+    const claimed = BacklogItem.parse({
+      ...item,
+      status: "claimed",
+      runs: [...item.runs, run],
+      updatedAt: this.now()
+    });
+    this.store.write(claimed);
+    return { ok: true, item: claimed, run };
+  }
+};
+
+// src/persistence/backlog-adapter.ts
+var BacklogAdapter = class {
+  service;
+  constructor(root, clock) {
+    const services = createFlowServices(root);
+    this.service = new BacklogService(services.backlog, new RunService(services), () => clock.now());
   }
 };
 
@@ -18481,11 +18679,11 @@ function dayOf(timestamp) {
 }
 
 // src/application/project.ts
-function createProject(root, slug2, clock) {
+function createProject(root, slug3, clock) {
   const repository = new FsWorkRepository(root);
   const events = new EventStore(repository, new FsEventSource(root));
   return {
-    slug: slug2,
+    slug: slug3,
     root,
     reader: new WorkReader(repository, clock, (run) => events.roster(run).length),
     writeService: new WriteService(new FlowWriter(root)),
@@ -18494,6 +18692,7 @@ function createProject(root, slug2, clock) {
     tokens: new TokenReader(new TranscriptReader(root)),
     memory: new MemReader(root),
     starter: new RunStarter(root),
+    backlog: new BacklogAdapter(root, clock),
     watcher: new ChokidarWatcher(root),
     permissionWatcher: new PermissionWatcher(root)
   };
@@ -18521,8 +18720,8 @@ function shortHash(s) {
 }
 
 // src/transport/http.ts
-import { createReadStream, existsSync as existsSync12, statSync } from "node:fs";
-import { extname as extname2, join as join20, normalize as normalize2, resolve as resolve4, sep as sep2 } from "node:path";
+import { createReadStream, existsSync as existsSync13, statSync } from "node:fs";
+import { extname as extname2, join as join21, normalize as normalize2, resolve as resolve4, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ../shared/src/slug.ts
@@ -18839,19 +19038,19 @@ function handleReaderRequest(req, res, deps) {
 }
 
 // src/persistence/status-signal-writer.ts
-import { mkdirSync as mkdirSync9, writeFileSync as writeFileSync8 } from "node:fs";
-import { join as join18 } from "node:path";
+import { mkdirSync as mkdirSync10, writeFileSync as writeFileSync9 } from "node:fs";
+import { join as join19 } from "node:path";
 function signalDir(projectRoot) {
-  return join18(projectRoot, ".agentry", "run", "status-signals");
+  return join19(projectRoot, ".agentry", "run", "status-signals");
 }
 function mintName() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`;
 }
 function writeStatusSignal(projectRoot, signal) {
   const dir = signalDir(projectRoot);
-  mkdirSync9(dir, { recursive: true });
+  mkdirSync10(dir, { recursive: true });
   const payload = { ...signal, at: (/* @__PURE__ */ new Date()).toISOString() };
-  writeFileSync8(join18(dir, mintName()), `${JSON.stringify(payload, null, 2)}
+  writeFileSync9(join19(dir, mintName()), `${JSON.stringify(payload, null, 2)}
 `);
 }
 
@@ -18997,15 +19196,80 @@ async function handleRunStartRequest(req, res, deps) {
   return true;
 }
 
+// src/transport/backlog-routes.ts
+var ITEM_PATH = /^\/api\/backlog\/([^/]+)$/;
+async function handleBacklogRequest(req, res, deps) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const method = req.method ?? "GET";
+  if (url.pathname === "/api/backlog") {
+    if (method === "GET") {
+      const status = url.searchParams.get("status") ?? void 0;
+      return guardGet(
+        method,
+        res,
+        () => sendJson(res, 200, { items: deps.backlog.service.list(status) })
+      );
+    }
+    if (method === "POST") {
+      const body2 = asRecord(await readJsonBody(req));
+      const title = typeof body2.title === "string" ? body2.title.trim() : "";
+      if (title.length === 0) {
+        sendJson(res, 400, { error: "missing_title" });
+        return true;
+      }
+      const item2 = deps.backlog.service.add({
+        title,
+        ...typeof body2.body === "string" ? { body: body2.body } : {},
+        ...typeof body2.kind === "string" ? { kind: body2.kind } : {},
+        ...body2.ready === true ? { ready: true } : {}
+      });
+      deps.transport.pushAll({ type: "works-changed" });
+      sendJson(res, 200, item2);
+      return true;
+    }
+    sendJson(res, 405, { error: "method_not_allowed" });
+    return true;
+  }
+  const match = ITEM_PATH.exec(url.pathname);
+  if (match === null) return false;
+  if (method !== "POST") {
+    sendJson(res, 405, { error: "method_not_allowed" });
+    return true;
+  }
+  let id;
+  try {
+    id = decodeURIComponent(match[1] ?? "");
+  } catch {
+    sendJson(res, 400, { error: "bad_id" });
+    return true;
+  }
+  const body = asRecord(await readJsonBody(req));
+  const item = deps.backlog.service.update({
+    id,
+    ...typeof body.title === "string" ? { title: body.title } : {},
+    ...typeof body.body === "string" ? { body: body.body } : {},
+    ...typeof body.kind === "string" ? { kind: body.kind } : {},
+    ...typeof body.status === "string" ? { status: body.status } : {}
+  });
+  if (!item) {
+    sendJson(res, 404, { error: "unknown_item" });
+    return true;
+  }
+  deps.transport.pushAll({ type: "works-changed" });
+  sendJson(res, 200, item);
+  return true;
+}
+var asRecord = (v) => typeof v === "object" && v !== null ? v : {};
+
 // src/persistence/permission-writer.ts
-import { mkdirSync as mkdirSync10, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join19 } from "node:path";
+import { mkdirSync as mkdirSync11, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join20 } from "node:path";
 function writeVerdict(projectRoot, requestId, behavior) {
   assertSafeSegment(requestId);
   const dir = permissionsDir(projectRoot);
-  mkdirSync10(dir, { recursive: true });
+  mkdirSync11(dir, { recursive: true });
   const record = { request_id: requestId, behavior };
-  writeFileSync9(join19(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
+  writeFileSync10(join20(dir, `${requestId}.verdict.json`), JSON.stringify(record, null, 2));
 }
 
 // src/transport/permission-routes.ts
@@ -19048,13 +19312,13 @@ function handleVerdict(res, deps, requestId, body) {
 function resolveWebRoot() {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (pluginRoot && pluginRoot.length > 0) {
-    return join20(pluginRoot, "workbench", "web");
+    return join21(pluginRoot, "workbench", "web");
   }
   const bundleDir = fileURLToPath(new URL(".", import.meta.url));
   return resolve4(bundleDir, "..", "web");
 }
 var WEB_ROOT = resolveWebRoot();
-var INDEX_HTML = join20(WEB_ROOT, "index.html");
+var INDEX_HTML = join21(WEB_ROOT, "index.html");
 var CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -19115,7 +19379,7 @@ function createHttpHandler(projects, transport) {
     }
     if (handleApiRequest(req, res, reader, context, project.root, project.slug)) return;
     if (handleReaderRequest(req, res, readers)) return;
-    void handlePostRequest(req, res, write).then((handled) => handled ? true : handleRunStartRequest(req, res, { starter: project.starter, transport })).then((handled) => handled ? true : handlePermissionRequest(req, res, permissions)).then((handled) => {
+    void handlePostRequest(req, res, write).then((handled) => handled ? true : handleRunStartRequest(req, res, { starter: project.starter, transport })).then((handled) => handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })).then((handled) => handled ? true : handlePermissionRequest(req, res, permissions)).then((handled) => {
       if (handled) return;
       if (req.method !== "GET" && req.method !== "HEAD") {
         res.writeHead(405, { "content-type": "application/json" });
@@ -19129,11 +19393,11 @@ function createHttpHandler(projects, transport) {
 function serveStatic(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const filePath = resolveStaticFile(url.pathname);
-  if (filePath && existsSync12(filePath) && statSync(filePath).isFile()) {
+  if (filePath && existsSync13(filePath) && statSync(filePath).isFile()) {
     sendFile(req, res, filePath);
     return;
   }
-  if (existsSync12(INDEX_HTML)) {
+  if (existsSync13(INDEX_HTML)) {
     sendFile(req, res, INDEX_HTML);
     return;
   }
@@ -19144,7 +19408,7 @@ function resolveStaticFile(pathname) {
   const decoded = safeDecode(pathname);
   if (decoded === null) return null;
   if (decoded === "/" || decoded === "") return INDEX_HTML;
-  const candidate = normalize2(join20(WEB_ROOT, decoded));
+  const candidate = normalize2(join21(WEB_ROOT, decoded));
   if (candidate !== WEB_ROOT && !candidate.startsWith(WEB_ROOT + sep2)) return null;
   return candidate;
 }
@@ -19285,18 +19549,18 @@ async function main() {
     const ordered = [startupRoot, ...roots.filter((r) => r !== startupRoot)];
     const slugs = slugsFor(ordered);
     for (const root of ordered) {
-      const slug2 = slugs.get(root) ?? root;
+      const slug3 = slugs.get(root) ?? root;
       const existing = byRoot.get(root);
       if (existing) {
         bySlug.delete(existing.slug);
-        const reslugged = { ...existing, slug: slug2 };
+        const reslugged = { ...existing, slug: slug3 };
         byRoot.set(root, reslugged);
-        bySlug.set(slug2, reslugged);
+        bySlug.set(slug3, reslugged);
         continue;
       }
-      const project = createProject(root, slug2, systemClock);
+      const project = createProject(root, slug3, systemClock);
       byRoot.set(root, project);
-      bySlug.set(slug2, project);
+      bySlug.set(slug3, project);
       wireLive(project);
     }
   }
@@ -19326,7 +19590,7 @@ async function main() {
   rebuild(readRegistry().map((p) => p.root));
   const projects = {
     list: () => [...bySlug.values()],
-    resolve: (slug2) => slug2 === null || slug2.length === 0 ? byRoot.get(startupRoot) : bySlug.get(slug2),
+    resolve: (slug3) => slug3 === null || slug3.length === 0 ? byRoot.get(startupRoot) : bySlug.get(slug3),
     register: (root) => {
       const abs = resolve5(root);
       const existing = byRoot.get(abs);

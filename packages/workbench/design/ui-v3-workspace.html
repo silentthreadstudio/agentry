@@ -106,9 +106,6 @@ button{font:inherit;color:inherit;cursor:pointer}
 .head h1{margin:0;font-size:19px;letter-spacing:-.4px;
   background:var(--grad-hero);-webkit-background-clip:text;background-clip:text;color:transparent}
 .head .sub{color:var(--faint);font-size:12px}
-.seg{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-lg);padding:2px}
-.seg button{border:0;background:transparent;color:var(--muted);padding:5px 11px;border-radius:var(--r-md);font-size:12px}
-.seg button.on{background:var(--raise);color:var(--ink)}
 .btn{border:1px solid var(--accent-line);border-radius:var(--r-lg);background:linear-gradient(180deg,#2a2540,#1b1830);
   color:#e9e6ff;font:600 12.5px var(--sans);padding:8px 13px}
 .btn:hover{border-color:#6d5bd0aa}
@@ -311,9 +308,6 @@ button{font:inherit;color:inherit;cursor:pointer}
       <div class="sub">agentry · every piece of work, from intent to shipped</div>
     </div>
     <div class="grow"></div>
-    <div class="seg">
-      <button class="on">Board</button><button>Timeline</button>
-    </div>
     <button class="btn">+ New work</button>
   </div>
 
@@ -575,7 +569,7 @@ button{font:inherit;color:inherit;cursor:pointer}
         </div>
         <div class="dopt" data-dest="ready">
           <div class="dt"><span class="dot2" style="background:var(--v1)"></span>Ready</div>
-          <div class="dd">Hands it to the conductor — it right-sizes the work and starts, gating you at each decision.</div>
+          <div class="dd">Queued for the conductor. The next session claims it, right-sizes the work, and gates you at each decision.</div>
         </div>
       </div>
     </div>
@@ -617,7 +611,7 @@ button{font:inherit;color:inherit;cursor:pointer}
   document.querySelectorAll('.dopt').forEach(o => o.addEventListener('click', () => {
     document.querySelectorAll('.dopt').forEach(x => x.classList.remove('on'));
     o.classList.add('on');
-    document.getElementById('mcreate').textContent = o.dataset.dest === 'ready' ? 'Start now' : 'Add to backlog';
+    document.getElementById('mcreate').textContent = o.dataset.dest === 'ready' ? 'Queue for the conductor' : 'Add to backlog';
   }));
   document.querySelectorAll('.kchip').forEach(c => c.addEventListener('click', () => {
     document.querySelectorAll('.kchip').forEach(x => x.classList.remove('on'));

@@ -10,10 +10,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { JsonlEventLog } from "./persistence/event-log.js";
+import { FsBacklogStore } from "./persistence/backlog-store.js";
 import { JsonReviewStore } from "./persistence/review-store.js";
 import { JsonRunStateStore } from "./persistence/run-state-store.js";
 import { TaskFileStore } from "./persistence/task-file-store.js";
-import type { EventLog, ReviewStore, RunStore, TaskStore } from "./domain/ports.js";
+import type { BacklogStore, EventLog, ReviewStore, RunStore, TaskStore } from "./domain/ports.js";
 import { resolveRunFromSession, sessionsBoundTo, workRoot } from "./resolution/run-pointer.js";
 import { knownRuns, knownSessionId, noteRunArg, noteSessionArg } from "./resolution/process-identity.js";
 import { shouldRouteToThisSession } from "./resolution/comment-routing.js";
@@ -22,6 +23,7 @@ import { registerMonitorTools } from "./tools/monitor-tools.js";
 import { registerAgentTools } from "./tools/agent-tools.js";
 import { registerReviewTools } from "./tools/review-tools.js";
 import { registerChannelReplyTools } from "./tools/channel-reply-tools.js";
+import { registerBacklogTools } from "./tools/backlog-tools.js";
 import { ChannelBridge } from "./channel/channel-bridge.js";
 import { StatusBridge } from "./channel/status-bridge.js";
 import type { ChannelNotification } from "./channel/channel-event.js";
@@ -66,6 +68,9 @@ export interface FlowServices {
   events: EventLog;
   reviews: ReviewStore;
   runs: RunStore;
+  /** The project's backlog — the one store that is not run-scoped, because an item exists before any
+   *  run does (doc 18 §3.1). */
+  backlog: BacklogStore;
 }
 
 // Build the file-store services over a cwd. Centralized so `main` and tests construct them identically.
@@ -76,6 +81,7 @@ export function createServices(cwd: string): FlowServices {
     events: new JsonlEventLog(cwd),
     reviews: new JsonReviewStore(cwd),
     runs: new JsonRunStateStore(cwd),
+    backlog: new FsBacklogStore(cwd),
   };
 }
 
@@ -145,6 +151,7 @@ export async function main(): Promise<void> {
   );
   registerTaskTools(server, services);
   registerMonitorTools(server, services);
+  registerBacklogTools(server, services);
   registerAgentTools(server, services);
   registerReviewTools(server, services);
   registerChannelReplyTools(server, services); // ADR-002: the agent→human reply lane

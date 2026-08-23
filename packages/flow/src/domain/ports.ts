@@ -7,6 +7,7 @@
 // is NO ambient "current run" in any port — the server is stateless w.r.t. the session (ADR-005 NO
 // branch); the caller threads `run` on every call. Plain values only cross these ports — no
 // `node:fs` types leak across (the domain stays pure).
+import type { BacklogItem } from "./backlog.js";
 import type { FlowEvent } from "./events.js";
 import type { ReviewComment } from "./review.js";
 
@@ -62,4 +63,13 @@ export interface RunStore {
 export interface RunIndex {
   /** Reserved: rebuild the derived index from the file stores. Unused in v1 (ADR-001). */
   rebuild(run: string): void;
+}
+
+// The backlog — durable intent, keyed by item id rather than by run, because an item exists BEFORE any
+// run does (doc 18 §3.1). The only FLOW port that is not run-scoped, and deliberately so.
+export interface BacklogStore {
+  read(id: string): BacklogItem | undefined;
+  list(): BacklogItem[];
+  write(item: BacklogItem): void;
+  remove(id: string): void;
 }

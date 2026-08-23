@@ -17,6 +17,7 @@ import { FsReviewSidecarSource } from "../persistence/review-sidecar-source.js";
 import { TranscriptReader } from "../persistence/transcript-reader.js";
 import { MemReader } from "../persistence/mem-reader.js";
 import { RunStarter } from "../persistence/run-starter.js";
+import { BacklogAdapter } from "../persistence/backlog-adapter.js";
 import { WorkReader } from "./work-reader.js";
 import { WriteService } from "./write-service.js";
 import { EventStore } from "./event-store.js";
@@ -36,6 +37,8 @@ export interface Project {
   memory: MemReader;
   /** Starts NEW work in this project (FLOW's `run_start`, reused). */
   starter: RunStarter;
+  /** The project's backlog — durable intent that has not become a run yet (doc 18). */
+  backlog: BacklogAdapter;
   watcher: ChokidarWatcher;
   permissionWatcher: PermissionWatcher;
 }
@@ -55,6 +58,7 @@ export function createProject(root: string, slug: string, clock: Clock): Project
     tokens: new TokenReader(new TranscriptReader(root)),
     memory: new MemReader(root),
     starter: new RunStarter(root),
+    backlog: new BacklogAdapter(root, clock),
     watcher: new ChokidarWatcher(root),
     permissionWatcher: new PermissionWatcher(root),
   };

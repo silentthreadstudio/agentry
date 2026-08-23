@@ -28628,9 +28628,116 @@ var JsonlEventLog = class {
   }
 };
 
-// src/persistence/review-store.ts
-import { existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+// src/persistence/backlog-store.ts
+var import_yaml = __toESM(require_dist2(), 1);
+import { existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, readdirSync as readdirSync2, unlinkSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join3 } from "node:path";
+
+// src/domain/backlog.ts
+var BacklogStatus = external_exports.enum(["backlog", "ready", "claimed", "done"]);
+var BacklogItem = external_exports.object({
+  id: external_exports.string(),
+  title: external_exports.string(),
+  /** Permissive on purpose, mirroring `Kind` in @agentry/core: accept an unknown kind rather than
+   *  reject it, so adding one later cannot throw on an old record. */
+  kind: external_exports.string().default("feature"),
+  status: BacklogStatus.default("backlog"),
+  createdAt: external_exports.string(),
+  updatedAt: external_exports.string(),
+  /** Runs spawned from this item — usually 0 or 1, but a re-run appends rather than replaces. */
+  runs: external_exports.array(external_exports.string()).default([]),
+  /** The context an agent starts from: markdown, `@task-…` / `@memory:…` references. */
+  body: external_exports.string().default("")
+});
+var STEM_WORDS2 = 3;
+var STEM_MAX2 = 20;
+function slug2(text) {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS2);
+  while (words.length > 1 && words.join("-").length > STEM_MAX2) words.pop();
+  return words.join("-").slice(0, STEM_MAX2).replace(/-+$/g, "");
+}
+function shortId2() {
+  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+}
+function mintBacklogId(title) {
+  const id = `b-${slug2(title) || "item"}-${shortId2()}`;
+  assertSafeSegment(id);
+  return id;
+}
+function isReady(item) {
+  return item.status === "ready";
+}
+
+// src/persistence/backlog-store.ts
+var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var LEADING_FRONTMATTER = /^---\n[\s\S]*?\n---\n?/;
+var FsBacklogStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  dir() {
+    return join3(this.cwd, ".agentry", "backlog");
+  }
+  file(id) {
+    assertSafeSegment(id);
+    return join3(this.dir(), `${id}.md`);
+  }
+  read(id) {
+    const file = this.file(id);
+    if (!existsSync2(file)) return void 0;
+    try {
+      return this.parse(readFileSync3(file, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+  /** Every item, newest first. A file that fails to parse is SKIPPED, never fatal: one bad item must
+   *  not take the whole board down. */
+  list() {
+    const dir = this.dir();
+    if (!existsSync2(dir)) return [];
+    const items = [];
+    for (const name of readdirSync2(dir)) {
+      if (!name.endsWith(".md")) continue;
+      try {
+        items.push(this.parse(readFileSync3(join3(dir, name), "utf8")));
+      } catch {
+      }
+    }
+    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  write(item) {
+    const validated = BacklogItem.parse(item);
+    mkdirSync3(this.dir(), { recursive: true });
+    writeFileSync2(this.file(validated.id), this.render(validated));
+  }
+  remove(id) {
+    const file = this.file(id);
+    if (existsSync2(file)) unlinkSync(file);
+  }
+  // ── shape ────────────────────────────────────────────────────────────────────────────────────────
+  // The body lives BELOW the frontmatter (not as a `body:` yaml field) so an item reads as a document:
+  // `cat` it, edit it in any editor, diff it in a PR.
+  render(item) {
+    const { body, ...frontmatter } = item;
+    const yaml = (0, import_yaml.stringify)(frontmatter);
+    return `---
+${yaml}---
+
+${body.replace(LEADING_FRONTMATTER, "").trim()}
+`;
+  }
+  parse(text) {
+    const m = FRONTMATTER.exec(text);
+    if (!m || m[1] === void 0) throw new Error("backlog item has no frontmatter");
+    const frontmatter = (0, import_yaml.parse)(m[1]);
+    return BacklogItem.parse({ ...frontmatter, body: (m[2] ?? "").trim() });
+  }
+};
+
+// src/persistence/review-store.ts
+import { existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join4 } from "node:path";
 
 // src/domain/review.ts
 var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
@@ -28667,13 +28774,13 @@ var JsonReviewStore = class {
   }
   gateFile(run, gate) {
     assertSafeSegment(gate);
-    return join3(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    return join4(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
   }
   read(run, gate) {
     const file = this.gateFile(run, gate);
-    if (!existsSync2(file)) return [];
+    if (!existsSync3(file)) return [];
     try {
-      const raw = JSON.parse(readFileSync3(file, "utf8"));
+      const raw = JSON.parse(readFileSync4(file, "utf8"));
       if (!Array.isArray(raw)) return [];
       return raw.map((c) => ReviewComment.parse(c));
     } catch {
@@ -28683,31 +28790,31 @@ var JsonReviewStore = class {
   write(run, gate, comments) {
     const validated = comments.map((c) => ReviewComment.parse(c));
     const file = this.gateFile(run, gate);
-    mkdirSync3(join3(runDir(this.cwd, run), ".review"), { recursive: true });
-    writeFileSync2(file, `${JSON.stringify(validated, null, 2)}
+    mkdirSync4(join4(runDir(this.cwd, run), ".review"), { recursive: true });
+    writeFileSync3(file, `${JSON.stringify(validated, null, 2)}
 `);
   }
 };
 
 // src/persistence/run-state-store.ts
-import { existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join4 } from "node:path";
+import { existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join5 } from "node:path";
 var JsonRunStateStore = class {
   constructor(cwd) {
     this.cwd = cwd;
   }
   statePath(run) {
-    return join4(runDir(this.cwd, run), "run-state.json");
+    return join5(runDir(this.cwd, run), "run-state.json");
   }
   // Create `.agentry/work/<run>/` (asserts the run segment via runDir). Idempotent.
   ensureRun(run) {
-    mkdirSync4(runDir(this.cwd, run), { recursive: true });
+    mkdirSync5(runDir(this.cwd, run), { recursive: true });
   }
   readRunState(run) {
     const path = this.statePath(run);
-    if (!existsSync3(path)) return void 0;
+    if (!existsSync4(path)) return void 0;
     try {
-      const raw = JSON.parse(readFileSync4(path, "utf8"));
+      const raw = JSON.parse(readFileSync5(path, "utf8"));
       return typeof raw === "object" && raw !== null ? raw : void 0;
     } catch {
       return void 0;
@@ -28715,15 +28822,15 @@ var JsonRunStateStore = class {
   }
   writeRunState(run, state) {
     this.ensureRun(run);
-    writeFileSync3(this.statePath(run), `${JSON.stringify(state, null, 2)}
+    writeFileSync4(this.statePath(run), `${JSON.stringify(state, null, 2)}
 `);
   }
 };
 
 // src/persistence/task-file-store.ts
-var import_yaml = __toESM(require_dist2(), 1);
-import { existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync5, readdirSync as readdirSync2, unlinkSync, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join5 } from "node:path";
+var import_yaml2 = __toESM(require_dist2(), 1);
+import { existsSync as existsSync5, mkdirSync as mkdirSync6, readFileSync as readFileSync6, readdirSync as readdirSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join6 } from "node:path";
 
 // src/domain/version.ts
 import { createHash } from "node:crypto";
@@ -28738,58 +28845,58 @@ function computeVersion(body, frontmatterSansVersion) {
 }
 
 // src/persistence/task-file-store.ts
-var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var LEADING_FRONTMATTER = /^---\n[\s\S]*?\n---\n?/;
+var FRONTMATTER2 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var LEADING_FRONTMATTER2 = /^---\n[\s\S]*?\n---\n?/;
 function stripLeadingFrontmatter(body) {
-  return body.replace(LEADING_FRONTMATTER, "");
+  return body.replace(LEADING_FRONTMATTER2, "");
 }
 var TaskFileStore = class {
   constructor(cwd) {
     this.cwd = cwd;
   }
   tasksDir(run) {
-    return join5(runDir(this.cwd, run), "tasks");
+    return join6(runDir(this.cwd, run), "tasks");
   }
   readTask(run, taskNo) {
     const dir = this.tasksDir(run);
-    if (!existsSync4(dir)) return void 0;
+    if (!existsSync5(dir)) return void 0;
     const prefix = `${taskNo}-`;
-    const file = readdirSync2(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
+    const file = readdirSync3(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
     if (!file) return void 0;
-    return this.parseTaskFile(join5(dir, file), taskNo);
+    return this.parseTaskFile(join6(dir, file), taskNo);
   }
   listTasks(run) {
     const dir = this.tasksDir(run);
-    if (!existsSync4(dir)) return [];
+    if (!existsSync5(dir)) return [];
     const tasks = [];
-    for (const file of readdirSync2(dir).sort()) {
+    for (const file of readdirSync3(dir).sort()) {
       if (!file.endsWith(".md")) continue;
       const taskNo = file.slice(0, file.indexOf("-"));
-      const task = this.parseTaskFile(join5(dir, file), taskNo);
+      const task = this.parseTaskFile(join6(dir, file), taskNo);
       if (task) tasks.push(task);
     }
     return tasks;
   }
   writeTask(run, task) {
     const dir = this.tasksDir(run);
-    mkdirSync5(dir, { recursive: true });
+    mkdirSync6(dir, { recursive: true });
     const prefix = `${task.taskNo}-`;
-    for (const f of readdirSync2(dir)) {
-      if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync(join5(dir, f));
+    for (const f of readdirSync3(dir)) {
+      if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync2(join6(dir, f));
     }
     const file = `${task.taskNo}-${this.slugOf(task)}.md`;
-    writeFileSync4(join5(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
+    writeFileSync5(join6(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
   }
   readArtifact(run, kind) {
-    const file = join5(runDir(this.cwd, run), `${kind}.md`);
-    if (!existsSync4(file)) return void 0;
-    const m = FRONTMATTER.exec(readFileSync5(file, "utf8"));
-    return m ? (m[2] ?? "").trim() : readFileSync5(file, "utf8");
+    const file = join6(runDir(this.cwd, run), `${kind}.md`);
+    if (!existsSync5(file)) return void 0;
+    const m = FRONTMATTER2.exec(readFileSync6(file, "utf8"));
+    return m ? (m[2] ?? "").trim() : readFileSync6(file, "utf8");
   }
   writeArtifact(run, kind, body) {
     const dir = runDir(this.cwd, run);
-    mkdirSync5(dir, { recursive: true });
-    writeFileSync4(join5(dir, `${kind}.md`), this.render({ kind }, body));
+    mkdirSync6(dir, { recursive: true });
+    writeFileSync5(join6(dir, `${kind}.md`), this.render({ kind }, body));
   }
   // Render frontmatter + body, stamping a tool-computed `version` (AC4/AC5). Any caller-supplied
   // `version` is dropped first, then recomputed over (body, frontmatter-sans-version) — so the
@@ -28799,20 +28906,20 @@ var TaskFileStore = class {
     const version2 = computeVersion(body, front);
     const stamped = { ...front, version: version2 };
     return `---
-${(0, import_yaml.stringify)(stamped)}---
+${(0, import_yaml2.stringify)(stamped)}---
 
 ${body}
 `;
   }
   slugOf(task) {
     const title = typeof task.frontmatter.title === "string" ? task.frontmatter.title : "";
-    const slug2 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
-    return slug2 || "task";
+    const slug3 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
+    return slug3 || "task";
   }
   parseTaskFile(path, taskNo) {
-    const m = FRONTMATTER.exec(readFileSync5(path, "utf8"));
+    const m = FRONTMATTER2.exec(readFileSync6(path, "utf8"));
     if (!m) return void 0;
-    const frontmatter = (0, import_yaml.parse)(m[1] ?? "") ?? {};
+    const frontmatter = (0, import_yaml2.parse)(m[1] ?? "") ?? {};
     return { taskNo, frontmatter, body: (m[2] ?? "").trim() };
   }
 };
@@ -28924,8 +29031,8 @@ var TaskService = class {
   // The on-disk path the create result reports — `tasks/NNN-<slug>.md`. The slug mirrors the store's
   // own `slugOf` (title → hyphenated ascii-word), so the reported path matches the file the store wrote.
   taskPath(taskNo, title) {
-    const slug2 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "") || "task";
-    return `tasks/${taskNo}-${slug2}.md`;
+    const slug3 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "") || "task";
+    return `tasks/${taskNo}-${slug3}.md`;
   }
 };
 
@@ -28962,6 +29069,7 @@ var notFound = (what, id) => FlowError.parse({
   why: `No ${what} was found for "${id}".`,
   fix: `Pass an existing ${what} \u2014 call run_start to mint a run, or list/get first to obtain a valid id, then retry.`
 });
+var invalidState = (what, why, fix) => FlowError.parse({ code: "invalid-state", what, why, fix });
 var internal = () => FlowError.parse({
   code: "internal",
   what: "An unexpected internal error occurred.",
@@ -29463,6 +29571,149 @@ function registerChannelReplyTools(server, ctx) {
     guard(
       async (args) => ok(service.reply({ run: args.run, gate: args.doc, body: args.body, replyTo: args.replyTo }))
     )
+  );
+}
+
+// src/application/backlog-service.ts
+var BacklogService = class {
+  constructor(store, runs, now) {
+    this.store = store;
+    this.runs = runs;
+    this.now = now;
+  }
+  add(input) {
+    const ts = this.now();
+    const item = BacklogItem.parse({
+      id: mintBacklogId(input.title),
+      title: input.title,
+      kind: input.kind ?? "feature",
+      status: input.ready === true ? "ready" : "backlog",
+      createdAt: ts,
+      updatedAt: ts,
+      runs: [],
+      body: input.body ?? ""
+    });
+    this.store.write(item);
+    return item;
+  }
+  list(status) {
+    const all = this.store.list();
+    return status === void 0 ? all : all.filter((i) => i.status === status);
+  }
+  /** Patch an item. Absent fields are left alone — this is a patch, not a replace, so a caller that
+   *  knows only the new status cannot accidentally blank the body. */
+  update(input) {
+    const current = this.store.read(input.id);
+    if (!current) return void 0;
+    const next = BacklogItem.parse({
+      ...current,
+      ...input.title !== void 0 ? { title: input.title } : {},
+      ...input.body !== void 0 ? { body: input.body } : {},
+      ...input.kind !== void 0 ? { kind: input.kind } : {},
+      ...input.status !== void 0 ? { status: input.status } : {},
+      updatedAt: this.now()
+    });
+    this.store.write(next);
+    return next;
+  }
+  /**
+   * Take an item and mint its run — the intent→work transition, and the ONLY one.
+   *
+   * With no id, claims the oldest READY item (the queue is FIFO: the thing that has waited longest goes
+   * first, which is what a queue means and what `/agentry:go` with no argument expects). The run is
+   * minted through the existing `RunService.start`, so a claimed run is indistinguishable from one a
+   * session started directly — same id shape, same scaffold, same layout.
+   */
+  claim(id, sessionId2) {
+    let item;
+    if (id !== void 0 && id.length > 0) {
+      item = this.store.read(id);
+      if (!item) return { ok: false, reason: "not_found" };
+      if (!isReady(item)) return { ok: false, reason: "not_ready" };
+    } else {
+      const queue = this.list("ready").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      item = queue[0];
+      if (!item) return { ok: false, reason: "empty_queue" };
+    }
+    const { run } = this.runs.start({
+      goal: item.title,
+      ...sessionId2 !== void 0 && sessionId2.length > 0 ? { session_id: sessionId2 } : {}
+    });
+    const claimed = BacklogItem.parse({
+      ...item,
+      status: "claimed",
+      runs: [...item.runs, run],
+      updatedAt: this.now()
+    });
+    this.store.write(claimed);
+    return { ok: true, item: claimed, run };
+  }
+};
+
+// src/tools/backlog-tools.ts
+function registerBacklogTools(server, ctx) {
+  const runService = new RunService(ctx);
+  const service = new BacklogService(ctx.backlog, runService, () => (/* @__PURE__ */ new Date()).toISOString());
+  server.registerTool(
+    "backlog_add",
+    {
+      description: "Add an item to this project's backlog \u2014 durable intent that has not become a run yet. Use to capture work to do later. Set ready:true to queue it for the conductor instead of parking it.",
+      inputSchema: {
+        title: external_exports.string(),
+        body: external_exports.string().optional(),
+        kind: external_exports.string().optional(),
+        ready: external_exports.boolean().optional()
+      }
+    },
+    guard(async (args) => ok(service.add(args)))
+  );
+  server.registerTool(
+    "backlog_list",
+    {
+      description: "List this project's backlog items, newest first. Filter by status to read the queue (status:'ready') or what is parked (status:'backlog').",
+      inputSchema: { status: BacklogStatus.optional() }
+    },
+    guard(async (args) => ok({ items: service.list(args.status) }))
+  );
+  server.registerTool(
+    "backlog_update",
+    {
+      description: "Patch a backlog item \u2014 retitle it, rewrite its context, or move it between backlog/ready/claimed/done. Absent fields are left alone.",
+      inputSchema: {
+        id: external_exports.string(),
+        title: external_exports.string().optional(),
+        body: external_exports.string().optional(),
+        kind: external_exports.string().optional(),
+        status: BacklogStatus.optional()
+      }
+    },
+    guard(async (args) => {
+      const item = service.update(args);
+      return item ? ok(item) : err(notFound("backlog item", args.id));
+    })
+  );
+  server.registerTool(
+    "backlog_claim",
+    {
+      description: "Take a backlog item and mint its run \u2014 the intent\u2192work transition. With no id, claims the item that has waited longest in the ready queue. This is how a conducting session picks up queued work.",
+      inputSchema: { id: external_exports.string().optional(), session_id: external_exports.string().optional() }
+    },
+    guard(async (args) => {
+      const outcome = service.claim(args.id, args.session_id);
+      if (outcome.ok) return ok({ item: outcome.item, run: outcome.run });
+      if (outcome.reason === "not_found") return err(notFound("backlog item", args.id ?? ""));
+      return err(
+        outcome.reason === "empty_queue" ? invalidState(
+          "the ready queue",
+          "nothing is queued",
+          "Move an item to ready first \u2014 backlog_update with status:'ready'."
+        ) : invalidState(
+          "this backlog item",
+          "only a ready item can be claimed",
+          "Set it ready first \u2014 backlog_update with status:'ready'."
+        )
+      );
+    })
   );
 }
 
@@ -31157,7 +31408,7 @@ function watch(paths, options = {}) {
 }
 
 // src/channel/channel-bridge.ts
-import { mkdirSync as mkdirSync6 } from "node:fs";
+import { mkdirSync as mkdirSync7 } from "node:fs";
 import { basename as basename3, dirname as dirname3, relative as relative3, sep } from "node:path";
 
 // src/channel/channel-event.ts
@@ -31231,7 +31482,7 @@ var ChannelBridge = class {
   start() {
     if (this.watcher !== void 0) return;
     const root = workRoot(this.cwd);
-    mkdirSync6(root, { recursive: true });
+    mkdirSync7(root, { recursive: true });
     this.watcher = watch(root, {
       ignoreInitial: false,
       // we WANT the initial scan — it drives the seed via `add` before `ready`
@@ -31281,8 +31532,8 @@ var ChannelBridge = class {
 };
 
 // src/channel/status-bridge.ts
-import { mkdirSync as mkdirSync7, readFileSync as readFileSync6, rmSync } from "node:fs";
-import { join as join8 } from "node:path";
+import { mkdirSync as mkdirSync8, readFileSync as readFileSync7, rmSync } from "node:fs";
+import { join as join9 } from "node:path";
 
 // src/channel/status-event.ts
 var StatusSignal = external_exports.object({
@@ -31314,8 +31565,8 @@ var StatusBridge = class {
   // up front (chokidar on a missing dir reports ready but never watches — the macOS gotcha).
   start() {
     if (this.watcher !== void 0) return;
-    const dir = join8(this.cwd, ".agentry", "run", "status-signals");
-    mkdirSync7(dir, { recursive: true });
+    const dir = join9(this.cwd, ".agentry", "run", "status-signals");
+    mkdirSync8(dir, { recursive: true });
     this.watcher = watch(dir, { ignoreInitial: false, persistent: true, depth: 0 });
     this.watcher.on("add", (file) => void this.handle(file));
   }
@@ -31330,7 +31581,7 @@ var StatusBridge = class {
     if (!file.endsWith(".json")) return;
     let signal;
     try {
-      signal = StatusSignal.parse(JSON.parse(readFileSync6(file, "utf8")));
+      signal = StatusSignal.parse(JSON.parse(readFileSync7(file, "utf8")));
     } catch {
       rmSync(file, { force: true });
       return;
@@ -31341,8 +31592,8 @@ var StatusBridge = class {
 };
 
 // src/channel/permission-relay.ts
-import { mkdirSync as mkdirSync8, readFileSync as readFileSync7, rmSync as rmSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join9 } from "node:path";
+import { mkdirSync as mkdirSync9, readFileSync as readFileSync8, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join10 } from "node:path";
 
 // src/channel/permission-event.ts
 var PermissionRequestSchema = external_exports.object({
@@ -31386,7 +31637,7 @@ function parseVerdictFile(raw) {
 // src/channel/permission-relay.ts
 var VERDICT_SUFFIX = ".verdict.json";
 function permissionsDir(cwd) {
-  return join9(cwd, ".agentry", "run", "permissions");
+  return join10(cwd, ".agentry", "run", "permissions");
 }
 var PermissionRelay = class {
   constructor(cwd, emit) {
@@ -31412,7 +31663,7 @@ var PermissionRelay = class {
   start() {
     if (this.watcher !== void 0) return;
     const dir = permissionsDir(this.cwd);
-    mkdirSync8(dir, { recursive: true });
+    mkdirSync9(dir, { recursive: true });
     this.watcher = watch(dir, {
       ignoreInitial: false,
       persistent: true,
@@ -31442,9 +31693,9 @@ var PermissionRelay = class {
   onRequest(params) {
     this.pending.add(params.request_id);
     const dir = permissionsDir(this.cwd);
-    mkdirSync8(dir, { recursive: true });
+    mkdirSync9(dir, { recursive: true });
     const record2 = buildRequestFile(params, (/* @__PURE__ */ new Date()).toISOString());
-    writeFileSync5(join9(dir, `${params.request_id}.json`), JSON.stringify(record2, null, 2));
+    writeFileSync6(join10(dir, `${params.request_id}.json`), JSON.stringify(record2, null, 2));
   }
   // A verdict file appeared. Read + validate it; if its `request_id` is pending, emit the verdict,
   // drop the id, and delete both files. A malformed file or an unknown/stale id is ignored — we still
@@ -31452,7 +31703,7 @@ var PermissionRelay = class {
   async handleVerdict(filePath) {
     let raw;
     try {
-      raw = readFileSync7(filePath, "utf8");
+      raw = readFileSync8(filePath, "utf8");
     } catch {
       return;
     }
@@ -31471,7 +31722,7 @@ var PermissionRelay = class {
       params: { request_id: verdict.request_id, behavior: verdict.behavior }
     });
     const dir = permissionsDir(this.cwd);
-    rmSync2(join9(dir, `${verdict.request_id}.json`), { force: true });
+    rmSync2(join10(dir, `${verdict.request_id}.json`), { force: true });
     rmSync2(filePath, { force: true });
   }
 };
@@ -31488,7 +31739,8 @@ function createServices(cwd) {
     tasks: new TaskFileStore(cwd),
     events: new JsonlEventLog(cwd),
     reviews: new JsonReviewStore(cwd),
-    runs: new JsonRunStateStore(cwd)
+    runs: new JsonRunStateStore(cwd),
+    backlog: new FsBacklogStore(cwd)
   };
 }
 function resolveRunContext(args, env = process.env) {
@@ -31526,6 +31778,7 @@ async function main() {
   );
   registerTaskTools(server, services);
   registerMonitorTools(server, services);
+  registerBacklogTools(server, services);
   registerAgentTools(server, services);
   registerReviewTools(server, services);
   registerChannelReplyTools(server, services);

@@ -14,22 +14,13 @@
 // `session_id` is deliberately NOT passed: the Workbench is not a Claude session, so it must not claim the
 // session→run pointer. The conducting session binds itself on its first write (the work-id-binder hook).
 import { RunService } from "@agentry/flow/application/run-service";
-import { JsonlEventLog } from "@agentry/flow/persistence/event-log";
-import { JsonReviewStore } from "@agentry/flow/persistence/review-store";
-import { JsonRunStateStore } from "@agentry/flow/persistence/run-state-store";
-import { TaskFileStore } from "@agentry/flow/persistence/task-file-store";
+import { createFlowServices } from "./flow-services.js";
 
 export class RunStarter {
   private readonly service: RunService;
 
   constructor(root: string) {
-    this.service = new RunService({
-      cwd: root,
-      tasks: new TaskFileStore(root),
-      events: new JsonlEventLog(root),
-      reviews: new JsonReviewStore(root),
-      runs: new JsonRunStateStore(root),
-    });
+    this.service = new RunService(createFlowServices(root));
   }
 
   /** Mint a run for `goal` and lay down its scaffold. Returns the run id the SPA navigates to. */
