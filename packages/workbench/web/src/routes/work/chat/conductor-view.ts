@@ -14,12 +14,17 @@ export const CONVO: CSSProperties = {
   minHeight: 0,
 };
 
+/** The message stream sits ABOVE the composer and grows upward. `justify-content: flex-end` is the
+ *  load-bearing bit: without it a short conversation pins to the top of a tall empty column and the
+ *  first message floats alone, disconnected from the box you type in. With it, the thread always meets
+ *  the composer — and once it overflows, `flex-end` is a no-op and normal scrolling takes over. */
 export const STREAM: CSSProperties = {
   flex: 1,
   minHeight: 0,
   overflowY: "auto",
   display: "flex",
   flexDirection: "column",
+  justifyContent: "flex-end",
   gap: 10,
   padding: "22px 26px",
 };

@@ -87,8 +87,11 @@ export function Conductor({ runId }: { runId: string }) {
     }
   };
 
-  // Oldest first: a conversation reads down. The store hands the rail newest-first (its own ordering).
-  const ordered = [...messages].reverse();
+  // The store is CHRONOLOGICAL (both `insert` and `hydrate` append, matching the on-disk sidecar's
+  // append order), which is already what a conversation wants: oldest at the top, newest above the
+  // composer. The comment rail reverses for its own newest-first list — that is the rail's display
+  // choice, not the store's order. Do not reverse here.
+  const ordered = messages;
 
   return (
     <div style={CONVO}>
