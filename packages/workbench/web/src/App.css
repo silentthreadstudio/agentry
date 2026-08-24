@@ -780,3 +780,69 @@ body[data-chat="focus"] .bcol[data-digest] .bcolhd {
   font-size: 10.5px;
   color: var(--muted);
 }
+
+/* ── gates in the conversation ─────────────────────────────────────────────────────────────────────
+   The agent has stopped and is waiting. That outranks anything already said in the thread, so it sits
+   above it — and it is actionable here rather than a badge you must go elsewhere to clear. */
+.railgates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 0;
+  flex: none;
+}
+.railgate {
+  border: 1px solid #5b94e63d;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #141a26, #101015);
+  padding: 11px 12px;
+}
+.railgate .k {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 700 8.5px var(--sans);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #a8c6f2;
+  margin-bottom: 6px;
+}
+.railgate .k .n {
+  margin-left: auto;
+  font-family: var(--mono);
+  letter-spacing: 0;
+  color: var(--faint);
+  text-transform: none;
+}
+.railgate .q {
+  font-size: 12.5px;
+  color: var(--ink2);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.railgate .acts {
+  display: flex;
+  gap: 7px;
+  margin-top: 10px;
+}
+.railgate .acts button {
+  border: 1px solid var(--line2);
+  background: var(--panel2);
+  border-radius: var(--r-md);
+  padding: 5px 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.railgate .acts button.pri {
+  border-color: #4cc38a55;
+  background: #4cc38a16;
+  color: #8fe3b8;
+}
+.railgate .acts button:hover {
+  border-color: var(--accent-line);
+  color: var(--ink);
+}

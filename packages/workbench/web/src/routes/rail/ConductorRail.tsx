@@ -16,6 +16,7 @@
 // rather than inventing a cross-run feed that has no file behind it.
 import { useEffect, useState } from "react";
 import { Conductor } from "./Conductor.js";
+import { RailGates } from "./RailGates.js";
 import { MODES, type RailMode, loadMode, saveMode, useFocusedRun } from "./rail-state.js";
 
 export function ConductorRail() {
@@ -90,7 +91,12 @@ export function ConductorRail() {
           <span>Open a run and the conversation with its conductor appears here.</span>
         </div>
       ) : (
-        <Conductor runId={focused} onIncoming={() => setUnread((n) => n + 1)} />
+        <>
+          {/* What is waiting on you sits ABOVE the thread: a gate is the agent having stopped, which
+              outranks anything already said. */}
+          <RailGates run={focused} />
+          <Conductor runId={focused} onIncoming={() => setUnread((n) => n + 1)} />
+        </>
       )}
     </aside>
   );
