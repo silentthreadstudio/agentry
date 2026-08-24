@@ -11,8 +11,9 @@
 // singleton while the project root is per-process, so the sidebar must name the project the server is
 // actually serving instead of a hardcoded string.
 import { useEffect, useState } from "react";
-import { BrowserRouter, NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
-import { fetchContext } from "./api/index.js";
+import { BrowserRouter, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import type { BoardCard } from "@agentry/workbench-shared";
+import { fetchBoard, fetchContext } from "./api/index.js";
 import { getWsClient } from "./api/ws.js";
 import { ApprovalsBanner } from "./routes/approvals/ApprovalsBanner.js";
 import { ConductorRail } from "./routes/rail/ConductorRail.js";
@@ -22,10 +23,12 @@ import { useWorkspaceCounts, type WorkspaceCounts } from "./routes/shell/workspa
 import { Gates } from "./routes/gates/Gates.js";
 import { Memory } from "./routes/memory/Memory.js";
 import { Board } from "./routes/board/Board.js";
+import { RunView } from "./routes/board/RunView.js";
+import { runHref } from "./routes/board/board-view.js";
+import { focusRun } from "./routes/rail/rail-state.js";
 import { Backlog } from "./routes/shell/Backlog.js";
 import { Projects } from "./routes/shell/Projects.js";
 import { Settings } from "./routes/shell/Settings.js";
-import { runHref } from "./routes/board/board-view.js";
 
 import "./ui/tokens.css";
 import "./App.css";
@@ -98,7 +101,7 @@ function Shell({ project, aliasTarget }: { project: string | undefined; aliasTar
         <div className="body">
           <Routes>
             <Route path="/" element={aliasTarget ? <Navigate to={aliasTarget} replace /> : <Board />} />
-            <Route path="/work/:slug/*" element={<BoardWithRun />} />
+            <Route path="/work/:slug/*" element={<RunRoute />} />
             <Route
               path="/backlog"
               element={
@@ -152,11 +155,39 @@ function Shell({ project, aliasTarget }: { project: string | undefined; aliasTar
   );
 }
 
-/** `/work/<slug>` — the board, with that run's pane already open. A deep link into a run therefore keeps
- *  its context (the other columns, the conversation) instead of replacing the screen. */
-function BoardWithRun() {
+/** `/work/<slug>` — the run fills the WORK COLUMN, with the conversation still live beside it.
+ *
+ *  This is the second of the workspace's two columns switching its content, not a new screen: the
+ *  sidebar and the conversation are untouched, so opening a ticket to review it does not cost you the
+ *  thread you were having about it. */
+function RunRoute() {
   const slug = useParams().slug ?? "";
-  return <Board openSlug={slug} />;
+  const navigate = useNavigate();
+  const [card, setCard] = useState<BoardCard | null>(null);
+
+  // The card carries the title and column the header shows. Resolved from the board's own read-model so
+  // there is ONE definition of what a card is; a slug that matches nothing still opens (the documents
+  // are addressed by slug server-side) with a minimal header rather than an error page.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchBoard(ctrl.signal)
+      .then((board) => {
+        const match = Object.values(board.columns)
+          .flat()
+          .find((c) => c.run !== undefined && runHref(c.run).endsWith(`/${slug}`));
+        setCard(match ?? { id: slug, column: "running", title: slug, origin: "run", run: slug, updatedAt: "" });
+      })
+      .catch(() => setCard({ id: slug, column: "running", title: slug, origin: "run", run: slug, updatedAt: "" }));
+    return () => ctrl.abort();
+  }, [slug]);
+
+  // Opening a run focuses the conversation on it, so the rail follows what you are reviewing.
+  useEffect(() => {
+    if (card?.run) focusRun(card.run);
+  }, [card]);
+
+  if (card === null) return <div aria-busy="true" />;
+  return <RunView card={card} onClose={() => navigate("/")} />;
 }
 
 function Sidebar({ project }: { project: string | undefined }) {

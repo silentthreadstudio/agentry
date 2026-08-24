@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { BoardCard, BoardColumn, BoardModel } from "@agentry/workbench-shared";
 import { ApiError, fetchBoard, patchBacklogItem, resetRun } from "../../api/index.js";
+import { useNavigate } from "react-router-dom";
 import { getWsClient } from "../../api/ws.js";
 import { EmptyState } from "../../ui/index.js";
 import {
@@ -26,11 +27,11 @@ import {
   progressOf,
   refusalReason,
   resetPrompt,
+  runHref,
   totalCards,
 } from "./board-view.js";
 import { NewWork } from "./NewWork.js";
-import { runHref } from "./board-view.js";
-import { RunPane } from "./RunPane.js";
+import { RunView } from "./RunView.js";
 
 import "./board.css";
 
@@ -39,24 +40,12 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; board: BoardModel };
 
-export function Board({ openSlug }: { openSlug?: string } = {}) {
+export function Board() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [dragging, setDragging] = useState<BoardCard | null>(null);
   const [over, setOver] = useState<BoardColumn | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  // The card being previewed. A pane, not a route: the board (and the conversation about it) stays put.
-  const [preview, setPreview] = useState<BoardCard | null>(null);
-
-  // `/work/<slug>` lands here with a run to open. Resolving it against the board's own cards keeps ONE
-  // source for what a card is; a slug with no matching card (a stale link, another project's run) simply
-  // shows the board rather than an error page for something that may just have been renamed.
-  useEffect(() => {
-    if (openSlug === undefined || state.kind !== "ready") return;
-    const match = Object.values(state.board.columns)
-      .flat()
-      .find((c) => c.run !== undefined && (c.run === openSlug || runHref(c.run).endsWith(`/${openSlug}`)));
-    if (match) setPreview((current) => current ?? match);
-  }, [openSlug, state]);
+  const navigate = useNavigate();
 
   const load = useCallback((signal?: AbortSignal) => {
     fetchBoard(signal)
@@ -207,7 +196,7 @@ export function Board({ openSlug }: { openSlug?: string } = {}) {
                   key={card.id}
                   card={card}
                   onDragStart={() => setDragging(card)}
-                  onOpen={() => setPreview(card)}
+                  onOpen={() => card.run !== undefined && navigate(runHref(card.run))}
                   onDragEnd={() => {
                     // Clears on cancel (Esc, drop outside a column) as well as on a real drop —
                     // otherwise a column stays highlighted with nothing being dragged.
@@ -221,7 +210,6 @@ export function Board({ openSlug }: { openSlug?: string } = {}) {
         ))}
       </div>
 
-      {preview !== null ? <RunPane card={preview} onClose={() => setPreview(null)} /> : null}
     </div>
   );
 }
