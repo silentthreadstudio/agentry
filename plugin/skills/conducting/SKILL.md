@@ -112,6 +112,14 @@ not draw it, but **what you write is what it shows**, so two habits are not opti
   watching the board believe nothing is happening. Same for `task_assign`: the assignee is what puts a
   name on the card before the agent's first write.
 
+- **Deferred work is FILED, not just mentioned.** When you decide something is out of scope, or a verifier
+  surfaces a follow-up, or the user says "later" — `backlog_add` it. Saying it in prose loses it the moment
+  the session ends: a commit message is not a queue and memory is not a to-do list. The board is where a
+  human looks to answer *what is next*, so work that only exists in your reply is work nobody will pick up.
+  File it with enough context to be startable cold (`backlog_list` shows what is already there, so you
+  reinforce an existing item rather than filing a near-duplicate; `backlog_update` moves one to `ready`
+  when it is genuinely next). Filing is cheap and reversible — dropping a follow-up is neither.
+
 Presence (who is working, and for how long) is recorded by a hook, not by you — you do not need to call
 `agent_state` for an agent to appear.
 

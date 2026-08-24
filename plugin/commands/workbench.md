@@ -1,9 +1,9 @@
 ---
-description: Open the Agentry Workbench — the Agent Center. Focuses the running server (or starts it, once), registers this project with it, and opens the deep link. Pass a work id to jump straight into that run; omit it for the Works home.
-argument-hint: "[work] — a run/work id to open (optional; omit for the Works home)"
+description: Open the Agentry Workbench — the Agent Center. Focuses the running server (or starts it, once), registers this project with it, and opens the deep link. Pass a work id to jump straight into that run; omit it for the board.
+argument-hint: "[work] — a run/work id to open (optional; omit for the board)"
 ---
 
-Open the **Agentry Workbench** for this project. `$ARGUMENTS` is the optional `[work]` — a run/work id to deep-link into; when empty, open the **Works home**.
+Open the **Agentry Workbench** for this project. `$ARGUMENTS` is the optional `[work]` — a run/work id to deep-link into; when empty, open the **board** — every piece of work in this project, from intent to shipped.
 
 This command is **focus-or-start**: the fixed port `:4317` is the singleton lock, so there is **exactly one** Workbench server per machine. Probe first; only start if nothing is up; a second invocation always *focuses* the running one and never spawns a second server.
 
