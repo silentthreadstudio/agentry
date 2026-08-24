@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The Agentry Workbench web half — a React + Vite SPA that `vite build`s into the committed plugin payload at plugin/workbench/web/ (the server static-serves it). Phase 0 is a placeholder shell proving the Vite artifact + dist-lockstep (ADR-003); the real router/sidebar/tabs land in Phase 1.",
+  "description": "The Agentry Workbench web half \u2014 a React + Vite SPA that `vite build`s into the committed plugin payload at plugin/workbench/web/ (the server static-serves it). Phase 0 is a placeholder shell proving the Vite artifact + dist-lockstep (ADR-003); the real router/sidebar/tabs land in Phase 1.",
   "engines": {
     "node": ">=24"
   },
@@ -17,13 +17,11 @@
   "dependencies": {
     "@agentry/workbench-shared": "workspace:*",
     "@codemirror/lang-markdown": "^6.3.4",
-    "@dagrejs/dagre": "^1.1.4",
     "@tiptap/extension-link": "^2.11.5",
     "@tiptap/pm": "^2.11.5",
     "@tiptap/react": "^2.11.5",
     "@tiptap/starter-kit": "^2.11.5",
     "@uiw/react-codemirror": "^4.23.10",
-    "@xyflow/react": "^12.3.5",
     "markdown-it": "^14.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

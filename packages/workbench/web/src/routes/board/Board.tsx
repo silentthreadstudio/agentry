@@ -8,7 +8,6 @@
 // that inferred a column from a task tally could disagree with disk the moment either side moved. This
 // component renders what it is given and owns only interaction: drag, open, and the refusal message.
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import type { BoardCard, BoardColumn, BoardModel } from "@agentry/workbench-shared";
 import { ApiError, fetchBoard, patchBacklogItem, resetRun } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
@@ -18,6 +17,7 @@ import {
   blockedLabel,
   canDrop,
   conflictText,
+  cardNote,
   countChips,
   isReset,
   elapsedOf,
@@ -28,7 +28,8 @@ import {
   totalCards,
 } from "./board-view.js";
 import { NewWork } from "./NewWork.js";
-import { runHref } from "../works/works-view.js";
+import { runHref } from "./board-view.js";
+import { RunPane } from "./RunPane.js";
 
 import "./board.css";
 
@@ -37,11 +38,24 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; board: BoardModel };
 
-export function Board() {
+export function Board({ openSlug }: { openSlug?: string } = {}) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [dragging, setDragging] = useState<BoardCard | null>(null);
   const [over, setOver] = useState<BoardColumn | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  // The card being previewed. A pane, not a route: the board (and the conversation about it) stays put.
+  const [preview, setPreview] = useState<BoardCard | null>(null);
+
+  // `/work/<slug>` lands here with a run to open. Resolving it against the board's own cards keeps ONE
+  // source for what a card is; a slug with no matching card (a stale link, another project's run) simply
+  // shows the board rather than an error page for something that may just have been renamed.
+  useEffect(() => {
+    if (openSlug === undefined || state.kind !== "ready") return;
+    const match = Object.values(state.board.columns)
+      .flat()
+      .find((c) => c.run !== undefined && (c.run === openSlug || runHref(c.run).endsWith(`/${openSlug}`)));
+    if (match) setPreview((current) => current ?? match);
+  }, [openSlug, state]);
 
   const load = useCallback((signal?: AbortSignal) => {
     fetchBoard(signal)
@@ -58,12 +72,15 @@ export function Board() {
     return () => ctrl.abort();
   }, [load]);
 
-  // Live: any change to the work tree — a new item, a task status flip, a run appearing — broadcasts
-  // `works-changed`. Refetching the whole board is cheap (it is one read of files already in page cache)
-  // and keeps the client from maintaining a second, drifting copy of the fold.
+  // Live: a change to the WORK TREE — a new item, a task status flip, a run appearing — broadcasts
+  // `works-changed`, and refetching the fold is cheap (one read of files already in page cache).
+  //
+  // Deliberately NOT `file-changed`. That fires for every write inside a run, including a chat message
+  // landing on the conversation's `.review/` sidecar — so reloading on it made the whole board flash
+  // each time you sent a message. A message is not a board change.
   useEffect(() => {
     return getWsClient().subscribe((msg) => {
-      if (msg.type === "works-changed" || msg.type === "file-changed") load();
+      if (msg.type === "works-changed") load();
     });
   }, [load]);
 
@@ -140,6 +157,7 @@ export function Board() {
           <section
             key={col.key}
             className={`bcol${over === col.key ? " over" : ""}`}
+            data-col={col.key}
             // In focus mode the columns that do not change minute-to-minute collapse to a count, so the
             // conversation can take the width without the board clipping (AC13).
             {...(col.key === "running" || col.key === "in-review" ? {} : { "data-digest": "" })}
@@ -188,6 +206,7 @@ export function Board() {
                   key={card.id}
                   card={card}
                   onDragStart={() => setDragging(card)}
+                  onOpen={() => setPreview(card)}
                   onDragEnd={() => {
                     // Clears on cancel (Esc, drop outside a column) as well as on a real drop —
                     // otherwise a column stays highlighted with nothing being dragged.
@@ -200,31 +219,39 @@ export function Board() {
           </section>
         ))}
       </div>
+
+      {preview !== null ? <RunPane card={preview} onClose={() => setPreview(null)} /> : null}
     </div>
   );
 }
 
 function Card({
   card,
+  onOpen,
   onDragStart,
   onDragEnd,
 }: {
   card: BoardCard;
+  onOpen: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
-  const navigate = useNavigate();
   const progress = progressOf(card);
   const chips = countChips(card);
   const blocked = blockedLabel(card);
   const agents = card.agents ?? [];
-  // Only a run can be opened — an item has nothing to look at yet, which is the honest signal that it
-  // has not started.
-  const open = card.run !== undefined ? () => navigate(runHref(card.run as string)) : undefined;
+  const note = cardNote(card);
+  // A gate is the one thing on this board that is waiting on YOU rather than on an agent, so an
+  // in-review card says which artifact is at the gate rather than only that it is in review.
+  const gate = card.column === "in-review";
+  // Only a run can be previewed — an item has no artifacts yet, which is the honest signal that it has
+  // not started. Opening PREVIEWS it in a pane rather than navigating away; the full run view (graph,
+  // activity, the editor) is one click further, from inside the pane.
+  const open = card.run !== undefined ? onOpen : undefined;
 
   return (
     <article
-      className={`bcard${card.origin === "run" ? " run" : ""}${card.conflict === true ? " conflict" : ""}`}
+      className={`bcard${card.origin === "run" ? " run" : ""}${card.conflict === true ? " conflict" : ""}${blocked !== null ? " blocked-run" : ""}`}
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -248,7 +275,9 @@ function Card({
             from backlog
           </span>
         ) : null}
+        {gate ? <span className="chip gate">gate</span> : null}
         {blocked !== null ? <span className="chip blocked">{blocked}</span> : null}
+        {note.length > 0 ? <span className="note">{note}</span> : null}
       </div>
       {progress !== null ? (
         <div className="bar">

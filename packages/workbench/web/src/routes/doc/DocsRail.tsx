@@ -7,8 +7,8 @@
 // header, not two), and the agent-comms loop is now LIVE (the margin Comment button + inline replies +
 // FLOW's channel_reply), so the disabled stub button is retired.
 import type { ApplyCommentMark } from "./DocEditor.js";
-import { CommentRail } from "../live/doc/CommentRail.js";
-import { DiffDrawer } from "../live/doc/DiffDrawer.js";
+import { CommentRail } from "./CommentRail.js";
+import { DiffDrawer } from "./DiffDrawer.js";
 import { useDocsRailStyles } from "./docs-styles.js";
 
 export function DocsRail({

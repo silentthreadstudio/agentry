@@ -153,6 +153,128 @@ body[data-chat="focus"] .bcol[data-digest] .bcolhd {
 }
 
 /* project card (the live-server pill at the foot of the sidebar) */
+/* The project selector — top of the sidebar, where you look first to answer "which workspace am I in".
+   It reads as a control (a pressable card with a caret), not the status readout it used to be. */
+.projsel {
+  margin: 16px 0 6px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.projsel:hover {
+  border-color: var(--accent-line);
+}
+.projsel .sq {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  background: var(--grad-brand);
+  display: grid;
+  place-items: center;
+  font: 700 10px var(--sans);
+  color: #12101c;
+  flex: none;
+}
+.projsel .nm {
+  font-weight: 650;
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  appearance: none;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.projsel select.nm {
+  padding-right: 14px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--faint) 50%),
+    linear-gradient(135deg, var(--faint) 50%, transparent 50%);
+  background-position: right 4px center, right 0 center;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.projsel option {
+  background: #15151d;
+  color: #e8e8f0;
+}
+.projsel .livedot {
+  flex: none;
+}
+
+/* the on-shift roster — who is working across the whole project, wherever you are in the app */
+.roster {
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: linear-gradient(180deg, #15151d, #101015);
+  padding: 11px 12px;
+}
+.roster .k {
+  font: 700 8.5px var(--sans);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 8px;
+}
+.roster .idle {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.roster .who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.roster .who .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roster .who .pulse {
+  margin-left: auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--done);
+  flex: none;
+  animation: agentry-pulse 1.8s ease-in-out infinite;
+}
+.roster .av {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 700 8px var(--sans);
+  flex: none;
+  background: var(--panel2);
+  color: var(--muted);
+}
+.roster .av.working {
+  background: #1e3a2c;
+  color: #7fe0ae;
+}
+.roster .av.blocked {
+  background: #3a2320;
+  color: #eda096;
+}
+.roster .av.done {
+  background: #1b2b45;
+  color: #9dc2f5;
+}
+
 .proj {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -511,4 +633,145 @@ body[data-chat="focus"] .bcol[data-digest] .bcolhd {
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
+}
+
+/* ── project switcher ──────────────────────────────────────────────────────────────────────────────
+   A popover, not a native select. Two projects can share a basename, so the PATH is the thing that
+   tells them apart — and a select can only ever show the name. */
+.projsel-wrap {
+  position: relative;
+  margin: 16px 0 6px;
+}
+.projsel {
+  width: 100%;
+  border: 1px solid var(--line2);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.projsel:hover:not(:disabled),
+.projsel.open {
+  border-color: var(--accent-line);
+}
+.projsel:disabled {
+  cursor: default;
+}
+.projsel .sq {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  background: var(--grad-brand);
+  display: grid;
+  place-items: center;
+  font: 700 10px var(--sans);
+  color: #12101c;
+  flex: none;
+}
+.projsel .nm {
+  font-weight: 650;
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.projsel .cv {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.projpop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  border: 1px solid var(--line2);
+  border-radius: var(--r-xl);
+  background: linear-gradient(180deg, #16161e, #101015);
+  box-shadow: 0 24px 60px #000a;
+  padding: 5px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.projopt {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* the cursor is keyboard AND mouse — hovering moves it, so ↑↓ and the pointer never disagree */
+.projopt.cursor {
+  background: var(--hover);
+}
+.projopt .sq {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  display: grid;
+  place-items: center;
+  font: 700 8.5px var(--sans);
+  color: var(--muted);
+  flex: none;
+}
+.projopt.on .sq {
+  background: var(--grad-brand);
+  border-color: transparent;
+  color: #12101c;
+}
+.projopt .txt {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.projopt .n {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink2);
+}
+.projopt .p {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* truncate from the LEFT — the distinguishing tail of a path is what matters */
+  text-align: left;
+}
+.projopt .tick {
+  color: var(--accent-ink);
+  font-size: 11px;
+  flex: none;
+}
+.projfoot {
+  border-top: 1px solid var(--line);
+  margin-top: 5px;
+  padding: 8px 9px 5px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.projfoot code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
 }

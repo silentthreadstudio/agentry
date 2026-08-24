@@ -14,7 +14,9 @@ export type RailMode = (typeof MODES)[number];
 
 const MODE_KEY = "agentry.workbench.rail";
 const RUN_KEY = "agentry.workbench.focusedRun";
-const FOCUS_EVENT = "agentry:focus-run";
+/** Announced when the rail is pointed at a different run. The ws client listens for it so the live
+ *  socket follows the conversation; this module deliberately does NOT reach into transport itself. */
+export const FOCUS_EVENT = "agentry:focus-run";
 
 export function loadMode(): RailMode {
   try {
@@ -50,7 +52,9 @@ export function focusRun(run: string): void {
   } catch {
     /* storage unavailable — the rail falls back to no focus */
   }
-  // Storage writes fire no event in the tab that made them, so the rail is told directly.
+  // Storage writes fire no event in the tab that made them, so listeners are told directly. The ws
+  // client is one of them: the socket is scoped by run and the rail's run is not in the URL, so a focus
+  // change has to re-point it or the thread goes one-way.
   window.dispatchEvent(new CustomEvent(FOCUS_EVENT, { detail: run }));
 }
 

@@ -4,7 +4,7 @@
 // module beside the view rather than spread into the shared client. The view (DocEditor.tsx) imports these
 // and owns only orchestration + render.
 import type { DocModel } from "@agentry/workbench-shared";
-import { apiPath } from "../../../api/http.js";
+import { apiPath } from "../../api/http.js";
 
 // GET /api/work/:id/doc/:docId → DocModel.
 export async function fetchDoc(runId: string, docId: string, signal: AbortSignal): Promise<DocModel> {

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { GraphModel } from "@agentry/workbench-shared";
-import { buildDocTree, kindGlyphOf } from "../routes/work/docs/doc-tree.js";
+import { buildDocTree, kindGlyphOf } from "../routes/doc/doc-tree.js";
 
 // A representative run graph: routing root + the synthetic adr-group are NON-documents (must be excluded);
 // spec/plan/adr-*/task-* are the docs. Node order is deliberately NOT spec-then-plan, to prove the sort.

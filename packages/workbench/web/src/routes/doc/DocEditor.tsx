@@ -27,9 +27,9 @@ import {
   normalize,
   tiptapToMd,
   type ProseMirrorDoc,
-} from "../live/doc/markdown-serializer.js";
-import { CommentMark } from "../live/doc/CommentMark.js";
-import { SourceMode } from "../live/doc/SourceMode.js";
+} from "./markdown-serializer.js";
+import { CommentMark } from "./CommentMark.js";
+import { SourceMode } from "./SourceMode.js";
 import { kindGlyphOf } from "./doc-tree.js";
 import { fetchDoc, fmString, postArtifact, postStatus } from "./doc-io.js";
 import { useDocEditorStyles } from "./doc-editor-styles.js";

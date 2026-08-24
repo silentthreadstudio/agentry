@@ -11,26 +11,41 @@
 // singleton while the project root is per-process, so the sidebar must name the project the server is
 // actually serving instead of a hardcoded string.
 import { useEffect, useState } from "react";
-import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
-import { fetchContext, fetchProjects, selectProject, type ProjectEntry } from "./api/index.js";
+import { BrowserRouter, NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { fetchContext } from "./api/index.js";
 import { getWsClient } from "./api/ws.js";
 import { ApprovalsBanner } from "./routes/approvals/ApprovalsBanner.js";
 import { ConductorRail } from "./routes/rail/ConductorRail.js";
+import { OnShift } from "./routes/shell/OnShift.js";
+import { ProjectSwitcher } from "./routes/shell/ProjectSwitcher.js";
+import { useWorkspaceCounts, type WorkspaceCounts } from "./routes/shell/workspace-counts.js";
 import { Gates } from "./routes/gates/Gates.js";
 import { Memory } from "./routes/memory/Memory.js";
 import { Board } from "./routes/board/Board.js";
-import { WorkLayout } from "./routes/work/WorkLayout.js";
-import { runHref } from "./routes/works/works-view.js";
+import { Backlog } from "./routes/shell/Backlog.js";
+import { Projects } from "./routes/shell/Projects.js";
+import { Settings } from "./routes/shell/Settings.js";
+import { runHref } from "./routes/board/board-view.js";
 
 import "./ui/tokens.css";
 import "./App.css";
 
-// The sidebar nav — Works / Memory / Gates only (Agents/Tokens removed). `ic` is a monochrome glyph
-// (text, not an icon set); the active state's gradient pill + left bar are CSS (.nav.on).
-const NAV: { to: string; ic: string; label: string }[] = [
-  { to: "/", ic: "▦", label: "Board" },
-  { to: "/memory", ic: "✦", label: "Memory" },
-  { to: "/gates", ic: "◈", label: "Gates" },
+// The sidebar's two sections. `ic` is a monochrome glyph (text, not an icon set); the active state's
+// gradient pill + left bar are CSS (.nav.on). `count` names which workspace number rides beside the
+// entry — the counts are the point, not decoration: "Gates 2" tells you something is waiting without
+// making you open the page to find out.
+type NavItem = { to: string; ic: string; label: string; count?: keyof WorkspaceCounts };
+
+const PROJECT_NAV: NavItem[] = [
+  { to: "/", ic: "▦", label: "Board", count: "board" },
+  { to: "/backlog", ic: "≡", label: "Backlog", count: "backlog" },
+  { to: "/gates", ic: "◈", label: "Gates", count: "gates" },
+  { to: "/memory", ic: "✦", label: "Memory", count: "memory" },
+];
+
+const WORKSPACE_NAV: NavItem[] = [
+  { to: "/projects", ic: "◳", label: "All projects", count: "projects" },
+  { to: "/settings", ic: "⚙", label: "Settings" },
 ];
 
 type Boot =
@@ -72,184 +87,117 @@ export function App() {
   );
 }
 
-// The routed shell. Split out of `App` only so it can call `useLocation` (which must run inside the
-// router): the run view manages its own scrolling and full-height canvas, so `.body`'s page padding is
-// dropped for it via the `flush` modifier rather than being fought inside the run layout.
+// The routed shell — split out of `App` only so it can use the router's hooks.
 function Shell({ project, aliasTarget }: { project: string | undefined; aliasTarget: string | undefined }) {
-  const onWork = useLocation().pathname.startsWith("/work/");
-
-  // The run view supplies its OWN `.main` (top bar + tabs + a full-height body its React Flow canvas
-  // fills), so it is mounted as a direct child of the `.app` grid rather than nested inside the page
-  // shell's `.main > .body`. Nesting it there gave the inner column no height and the canvas rendered
-  // 0px — the same "run link loads nothing" symptom the old separate-origin `.solo` wrapper existed to
-  // avoid. The sidebar stays mounted either way: that is what path routing buys.
+  // One shell, one column. The run VIEW is gone: `/work/<slug>` is the board with that run's pane open,
+  // so a link into a run no longer takes you away from the board or from the conversation about it.
   return (
     <div className="app">
       <Sidebar project={project} />
-      {onWork ? (
-        <Routes>
-          <Route path="/work/:slug/*" element={<WorkRoute />} />
-        </Routes>
-      ) : (
-        <main className="main">
-          <div className="body">
-            <Routes>
-              <Route path="/" element={aliasTarget ? <Navigate to={aliasTarget} replace /> : <Board />} />
-              <Route
-                path="/memory"
-                element={
-                  <PageHero title="Memory" sub="The moat — durable facts and episodes, read-only.">
-                    <Memory />
-                  </PageHero>
-                }
-              />
-              <Route
-                path="/gates"
-                element={
-                  <PageHero title="Gates" sub="Decisions waiting on you.">
-                    <Gates />
-                  </PageHero>
-                }
-              />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </div>
-        </main>
-      )}
-      {/* The conversation is AMBIENT: a column beside the work, not a page you navigate to. It is
-          present on the board and inside a run alike, because the point is talking about what you are
-          looking at while you look at it. */}
+      <main className="main">
+        <div className="body">
+          <Routes>
+            <Route path="/" element={aliasTarget ? <Navigate to={aliasTarget} replace /> : <Board />} />
+            <Route path="/work/:slug/*" element={<BoardWithRun />} />
+            <Route
+              path="/backlog"
+              element={
+                <PageHero title="Backlog" sub="Captured, not started — read it, then queue what is next.">
+                  <Backlog />
+                </PageHero>
+              }
+            />
+            <Route
+              path="/projects"
+              element={
+                <PageHero title="All projects" sub="Every root this server is serving.">
+                  <Projects current={project} />
+                </PageHero>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <PageHero title="Settings" sub="What this workspace is, and where to change it.">
+                  <Settings />
+                </PageHero>
+              }
+            />
+            <Route
+              path="/memory"
+              element={
+                <PageHero title="Memory" sub="The moat — durable facts and episodes, read-only.">
+                  <Memory />
+                </PageHero>
+              }
+            />
+            <Route
+              path="/gates"
+              element={
+                <PageHero title="Gates" sub="Decisions waiting on you.">
+                  <Gates />
+                </PageHero>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+      </main>
+
+      {/* The conversation is AMBIENT: a column beside the work, not a page you navigate to. */}
       <ConductorRail />
-      {/* The approvals overlay is project-global and time-sensitive, so it floats over every route —
-          a tool may need approval while you are on a secondary page rather than inside a run. */}
+      {/* The approvals overlay is project-global and time-sensitive, so it floats over every route. */}
       <ApprovalsBanner />
     </div>
   );
 }
 
-// One run, addressed by its `/work/<slug>` path segment. The slug is resolved to the FULL run id before
-// the layout mounts, because everything downstream (ws subscription keys, doc ids, write routes) is
-// keyed by the full id. An unresolvable slug is a dead link, not a crash — say so and offer the way back.
-function WorkRoute() {
+/** `/work/<slug>` — the board, with that run's pane already open. A deep link into a run therefore keeps
+ *  its context (the other columns, the conversation) instead of replacing the screen. */
+function BoardWithRun() {
   const slug = useParams().slug ?? "";
-  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; run: string | undefined }>({
-    kind: "loading",
-  });
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setState({ kind: "loading" });
-    fetchContext(slug, ctrl.signal)
-      .then((ctx) => setState({ kind: "ready", run: ctx.run }))
-      .catch(() => {
-        if (!ctrl.signal.aborted) setState({ kind: "ready", run: undefined });
-      });
-    return () => ctrl.abort();
-  }, [slug]);
-
-  // The socket outlives route changes (the approvals banner keeps a subscriber alive), so moving between
-  // runs must re-point it — otherwise the new run's live updates never arrive.
-  useEffect(() => {
-    getWsClient().retarget();
-  }, [slug]);
-
-  if (state.kind === "loading") return <main className="main" aria-busy="true" />;
-  if (state.run === undefined) {
-    return (
-      <main className="main">
-        <div className="body">
-          <h1>Run not found</h1>
-          <p className="muted">
-            No run matches <code>{slug}</code> in this project. <a href="/">Back to Works</a>
-          </p>
-        </div>
-      </main>
-    );
-  }
-  return <WorkLayout runId={state.run} />;
+  return <Board openSlug={slug} />;
 }
 
 function Sidebar({ project }: { project: string | undefined }) {
+  const counts = useWorkspaceCounts();
   return (
     <aside className="side">
       <div className="brand">
         <div className="wm">
-          <b>Agentry Center</b>
-          <i>workbench</i>
+          <b>Agentry</b>
+          <i>workspace</i>
         </div>
       </div>
+
+      {/* The project selector sits at the TOP, where you look first: which workspace am I in? */}
+      <ProjectSwitcher current={project} />
+
+      <div className="seclbl">Project</div>
+      <Nav items={PROJECT_NAV} counts={counts} />
+
       <div className="seclbl">Workspace</div>
-      <nav aria-label="Primary">
-        {NAV.map((n) => (
-          <NavLink
-            key={n.to}
-            to={n.to}
-            end={n.to === "/"}
-            className={({ isActive }) => `nav${isActive ? " on" : ""}`}
-          >
-            <span className="ic" aria-hidden="true">
-              {n.ic}
-            </span>
-            {n.label}
-          </NavLink>
-        ))}
-      </nav>
+      <Nav items={WORKSPACE_NAV} counts={counts} />
+
       <div className="grow" />
-      <ProjectCard project={project} />
+      <OnShift />
     </aside>
   );
 }
 
-// The project card, and the switcher when this server serves more than one root. Which project is on
-// screen used to be a hardcoded string, which lied whenever the server had been started from another
-// repo — the port is a global singleton, the root is not. It now names what the server reports, and lets
-// you move between the registered projects.
-//
-// Switching does a full page load on purpose. It is a rare, deliberate action, and every open view holds
-// per-project state (the run list, a graph, an open doc, the socket); reloading is the honest way to drop
-// all of it at once rather than teaching each view to re-key itself.
-function ProjectCard({ project }: { project: string | undefined }) {
-  const [projects, setProjects] = useState<ProjectEntry[]>([]);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    fetchProjects(ctrl.signal)
-      .then((list) => setProjects(list.projects))
-      .catch(() => {
-        /* older server, or none — the card still names the current project */
-      });
-    return () => ctrl.abort();
-  }, []);
-
-  const onSwitch = (slug: string) => {
-    if (slug === project) return;
-    selectProject(slug);
-    window.location.assign("/");
-  };
-
+function Nav({ items, counts }: { items: NavItem[]; counts: WorkspaceCounts }) {
   return (
-    <div className="proj">
-      <div className="k">Project</div>
-      {projects.length > 1 ? (
-        <select
-          className="n proj-switch"
-          aria-label="Switch project"
-          value={project ?? ""}
-          onChange={(e) => onSwitch(e.target.value)}
-        >
-          {projects.map((p) => (
-            <option key={p.slug} value={p.slug} title={p.root}>
-              {p.slug}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <div className="n">{project ?? "workspace"}</div>
-      )}
-      <div className="row">
-        <span className="livedot" aria-hidden="true" /> server live
-      </div>
-    </div>
+    <nav aria-label="Primary">
+      {items.map((n) => (
+        <NavLink key={n.to} to={n.to} end={n.to === "/"} className={({ isActive }) => `nav${isActive ? " on" : ""}`}>
+          <span className="ic" aria-hidden="true">
+            {n.ic}
+          </span>
+          {n.label}
+          {n.count !== undefined && counts[n.count] > 0 ? <span className="ct">{counts[n.count]}</span> : null}
+        </NavLink>
+      ))}
+    </nav>
   );
 }
 

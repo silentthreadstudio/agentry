@@ -30,10 +30,17 @@ export const STREAM: CSSProperties = {
   justifyContent: "flex-end",
   gap: 10,
   padding: "18px 16px",
+  // In focus mode the rail is more than half the window. Without a reading width the thread stretches
+  // to fill it and the bubbles pool against one edge with a lake of empty space between them; with it
+  // the conversation stays a column and simply centres as the rail grows.
+  width: "100%",
+  maxWidth: 820,
+  marginLeft: "auto",
+  marginRight: "auto",
 };
 
 const BUBBLE_BASE: CSSProperties = {
-  maxWidth: "min(680px, 78%)",
+  maxWidth: "82%",
   borderRadius: 14,
   padding: "10px 13px",
   fontSize: 13.5,
@@ -71,6 +78,10 @@ export const COMPOSER: CSSProperties = {
   display: "flex",
   alignItems: "flex-end",
   gap: 10,
+  width: "100%",
+  maxWidth: 820,
+  marginLeft: "auto",
+  marginRight: "auto",
   padding: "12px 16px 14px",
   borderTop: "1px solid var(--line)",
 };

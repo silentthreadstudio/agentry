@@ -10,7 +10,7 @@ import { useState } from "react";
 import type { ReviewDecision } from "./review-types.js";
 import { addComment } from "./comment-store.js";
 import { closeComposer, usePendingComment } from "./selection-store.js";
-import type { ApplyCommentMark } from "../../docs/DocEditor.js";
+import type { ApplyCommentMark } from "./DocEditor.js";
 
 const DECISIONS: ReadonlyArray<{ decision: ReviewDecision; label: string; cls: string }> = [
   { decision: "changes", label: "✎ Request changes", cls: "chg" },

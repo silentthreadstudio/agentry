@@ -9,8 +9,8 @@ import {
   openCommentCount,
   threadsOf,
   type UiComment,
-} from "../routes/work/live/doc/comment-store.js";
-import type { DiskComment } from "../routes/work/live/doc/comment-store.js";
+} from "../routes/doc/comment-store.js";
+import type { DiskComment } from "../routes/doc/comment-store.js";
 
 const anchor = { originalText: "x", headingAnchor: "h", startLine: 1 };
 

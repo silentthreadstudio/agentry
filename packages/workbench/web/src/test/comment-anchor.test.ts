@@ -4,8 +4,8 @@
 // (`buildAnchor`) is a thin structure-reader over the same core.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { computeAnchor } from "../routes/work/live/doc/anchor.js";
-import { tiptapToMd, type ProseMirrorDoc } from "../routes/work/live/doc/markdown-serializer.js";
+import { computeAnchor } from "../routes/doc/anchor.js";
+import { tiptapToMd, type ProseMirrorDoc } from "../routes/doc/markdown-serializer.js";
 
 // A doc rendered as blocks: h1 title, an h2 section, a paragraph under it, a second h2, a paragraph.
 const BLOCKS = [

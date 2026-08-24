@@ -5,7 +5,7 @@
 export { ApiError, currentProject, selectProject, apiPath } from "./http.js";
 export { fetchProjects, type ProjectEntry, type ProjectList } from "./projects.js";
 export { fetchWorks } from "./works.js";
-export { resetRun, startRun } from "./runs.js";
+export { resetRun } from "./runs.js";
 export { fetchBoard } from "./board.js";
 export { createBacklogItem, fetchBacklog, patchBacklogItem } from "./backlog.js";
 export { fetchGraph } from "./graph.js";

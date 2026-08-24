@@ -4,7 +4,7 @@
 // `runHref` so a gate jump and a Works-card click land on the identical route.
 import type { CSSProperties } from "react";
 import type { OpenGateItem } from "../../api/index.js";
-import { runHref } from "../works/works-view.js";
+import { runHref } from "../board/board-view.js";
 
 export interface GateRow {
   run: string;

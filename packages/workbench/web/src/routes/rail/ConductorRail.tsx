@@ -15,7 +15,7 @@
 // you were just looking at. With nothing focused there is no conversation to show, and the rail says so
 // rather than inventing a cross-run feed that has no file behind it.
 import { useEffect, useState } from "react";
-import { Conductor } from "../work/chat/Conductor.js";
+import { Conductor } from "./Conductor.js";
 import { MODES, type RailMode, loadMode, saveMode, useFocusedRun } from "./rail-state.js";
 
 export function ConductorRail() {

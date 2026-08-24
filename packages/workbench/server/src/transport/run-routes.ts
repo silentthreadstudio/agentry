@@ -1,21 +1,15 @@
-// run-routes — starting new work from the Workbench.
+// run-routes — run-level writes that are not doc edits.
 //
-//   POST /api/runs            { goal }  → { run }
-//   POST /api/work/:id/reset            → { ok, tasks }   — put a run's work back on the shelf
+//   POST /api/work/:id/reset  → { ok, tasks }   — put a run's work back on the shelf
 //
-// A separate dispatcher from the run-SCOPED write surface (`write-routes`, everything under
-// `/api/work/:id/…`) because this one has no run yet — it makes one. Same shape as the other
-// dispatchers: it claims its path or returns false so the ladder continues.
+// There is deliberately no route that CREATES a run. The board creates backlog items, and a run comes
+// from a session claiming one (doc 18 §3.2): the Workbench has no model, cannot dispatch, and an
+// endpoint that minted a run from the dashboard would be a second way to start work carrying none of
+// the claim path's meaning. `POST /api/runs` existed briefly in slice 2 and was removed with it.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { RunStarter } from "../persistence/run-starter.js";
 import type { Transport } from "../domain/ports.js";
 import { resolveSlug } from "@agentry/workbench-shared";
-import { readJsonBody, sendJson } from "./http-kit.js";
-
-export interface RunStartDeps {
-  starter: RunStarter;
-  transport: Transport;
-}
+import { sendJson } from "./http-kit.js";
 
 /** What a reset needs: the run's tasks (to know what to put back), the write boundary, and the backlog
  *  (to hand the intent back). Typed structurally so a test needs three small fakes, not the world. */
@@ -81,33 +75,5 @@ export async function handleRunResetRequest(
 
   deps.transport.pushAll({ type: "works-changed" });
   sendJson(res, 200, { ok: true, run, tasks: reset, ...(item !== undefined ? { item: item.id } : {}) });
-  return true;
-}
-
-/** Whether the dispatcher answered. Async because it consumes the body (mirrors handlePostRequest). */
-export async function handleRunStartRequest(
-  req: IncomingMessage,
-  res: ServerResponse,
-  deps: RunStartDeps,
-): Promise<boolean> {
-  const url = new URL(req.url ?? "/", "http://localhost");
-  if (url.pathname !== "/api/runs") return false;
-  if ((req.method ?? "GET") !== "POST") {
-    sendJson(res, 405, { error: "method_not_allowed" });
-    return true;
-  }
-
-  const body = await readJsonBody(req);
-  const goal = typeof body === "object" && body !== null ? (body as { goal?: unknown }).goal : undefined;
-  if (typeof goal !== "string" || goal.trim().length === 0) {
-    sendJson(res, 400, { error: "missing_goal" });
-    return true;
-  }
-
-  const { run } = deps.starter.start(goal.trim());
-  // A new run changes the Works list for every open client. The run-tree watcher fires too, but only
-  // once its debounce lands — this makes the card appear immediately, which is what "New work" promises.
-  deps.transport.pushAll({ type: "works-changed" });
-  sendJson(res, 200, { run });
   return true;
 }

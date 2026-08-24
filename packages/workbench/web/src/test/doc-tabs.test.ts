@@ -9,7 +9,7 @@ import {
   closeDocTab,
   openDocTab,
   selectDoc,
-} from "../routes/work/docs/doc-tabs.js";
+} from "../routes/doc/doc-tabs.js";
 
 // Read the store's open ids via the public mutators' effect: openDocTab(null) clears active without
 // closing, so we reconstruct the open list by walking closeDocTab. To keep tests independent, reset.

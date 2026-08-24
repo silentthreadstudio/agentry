@@ -17805,6 +17805,117 @@ function stemOf(file) {
   return name.endsWith(".md") ? name.slice(0, -".md".length) : name;
 }
 
+// ../../flow/src/domain/backlog.ts
+var BacklogStatus = external_exports.enum(["backlog", "ready", "claimed", "done"]);
+var BacklogItem = external_exports.object({
+  id: external_exports.string(),
+  title: external_exports.string(),
+  /** Permissive on purpose, mirroring `Kind` in @agentry/core: accept an unknown kind rather than
+   *  reject it, so adding one later cannot throw on an old record. */
+  kind: external_exports.string().default("feature"),
+  status: BacklogStatus.default("backlog"),
+  createdAt: external_exports.string(),
+  updatedAt: external_exports.string(),
+  /** Runs spawned from this item — usually 0 or 1, but a re-run appends rather than replaces. */
+  runs: external_exports.array(external_exports.string()).default([]),
+  /** The context an agent starts from: markdown, `@task-…` / `@memory:…` references. */
+  body: external_exports.string().default("")
+});
+var STEM_WORDS2 = 3;
+var STEM_MAX2 = 20;
+function slug2(text) {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS2);
+  while (words.length > 1 && words.join("-").length > STEM_MAX2) words.pop();
+  return words.join("-").slice(0, STEM_MAX2).replace(/-+$/g, "");
+}
+function shortId2() {
+  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+}
+function mintBacklogId(title) {
+  const id = `b-${slug2(title) || "item"}-${shortId2()}`;
+  assertSafeSegment(id);
+  return id;
+}
+function isReady(item) {
+  return item.status === "ready";
+}
+
+// ../../flow/src/application/backlog-service.ts
+var BacklogService = class {
+  constructor(store, runs, now) {
+    this.store = store;
+    this.runs = runs;
+    this.now = now;
+  }
+  add(input) {
+    const ts = this.now();
+    const item = BacklogItem.parse({
+      id: mintBacklogId(input.title),
+      title: input.title,
+      kind: input.kind ?? "feature",
+      status: input.ready === true ? "ready" : "backlog",
+      createdAt: ts,
+      updatedAt: ts,
+      runs: [],
+      body: input.body ?? ""
+    });
+    this.store.write(item);
+    return item;
+  }
+  list(status) {
+    const all = this.store.list();
+    return status === void 0 ? all : all.filter((i) => i.status === status);
+  }
+  /** Patch an item. Absent fields are left alone — this is a patch, not a replace, so a caller that
+   *  knows only the new status cannot accidentally blank the body. */
+  update(input) {
+    const current = this.store.read(input.id);
+    if (!current) return void 0;
+    const next = BacklogItem.parse({
+      ...current,
+      ...input.title !== void 0 ? { title: input.title } : {},
+      ...input.body !== void 0 ? { body: input.body } : {},
+      ...input.kind !== void 0 ? { kind: input.kind } : {},
+      ...input.status !== void 0 ? { status: input.status } : {},
+      updatedAt: this.now()
+    });
+    this.store.write(next);
+    return next;
+  }
+  /**
+   * Take an item and mint its run — the intent→work transition, and the ONLY one.
+   *
+   * With no id, claims the oldest READY item (the queue is FIFO: the thing that has waited longest goes
+   * first, which is what a queue means and what `/agentry:go` with no argument expects). The run is
+   * minted through the existing `RunService.start`, so a claimed run is indistinguishable from one a
+   * session started directly — same id shape, same scaffold, same layout.
+   */
+  claim(id, sessionId) {
+    let item;
+    if (id !== void 0 && id.length > 0) {
+      item = this.store.read(id);
+      if (!item) return { ok: false, reason: "not_found" };
+      if (!isReady(item)) return { ok: false, reason: "not_ready" };
+    } else {
+      const queue = this.list("ready").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      item = queue[0];
+      if (!item) return { ok: false, reason: "empty_queue" };
+    }
+    const { run } = this.runs.start({
+      goal: item.title,
+      ...sessionId !== void 0 && sessionId.length > 0 ? { session_id: sessionId } : {}
+    });
+    const claimed = BacklogItem.parse({
+      ...item,
+      status: "claimed",
+      runs: [...item.runs, run],
+      updatedAt: this.now()
+    });
+    this.store.write(claimed);
+    return { ok: true, item: claimed, run };
+  }
+};
+
 // ../../flow/src/application/run-service.ts
 var SPEC_SCAFFOLD = [
   "# Spec",
@@ -18029,43 +18140,6 @@ var JsonRunStateStore = class {
 var import_yaml5 = __toESM(require_dist(), 1);
 import { existsSync as existsSync12, mkdirSync as mkdirSync9, readFileSync as readFileSync15, readdirSync as readdirSync8, unlinkSync as unlinkSync2, writeFileSync as writeFileSync8 } from "node:fs";
 import { join as join18 } from "node:path";
-
-// ../../flow/src/domain/backlog.ts
-var BacklogStatus = external_exports.enum(["backlog", "ready", "claimed", "done"]);
-var BacklogItem = external_exports.object({
-  id: external_exports.string(),
-  title: external_exports.string(),
-  /** Permissive on purpose, mirroring `Kind` in @agentry/core: accept an unknown kind rather than
-   *  reject it, so adding one later cannot throw on an old record. */
-  kind: external_exports.string().default("feature"),
-  status: BacklogStatus.default("backlog"),
-  createdAt: external_exports.string(),
-  updatedAt: external_exports.string(),
-  /** Runs spawned from this item — usually 0 or 1, but a re-run appends rather than replaces. */
-  runs: external_exports.array(external_exports.string()).default([]),
-  /** The context an agent starts from: markdown, `@task-…` / `@memory:…` references. */
-  body: external_exports.string().default("")
-});
-var STEM_WORDS2 = 3;
-var STEM_MAX2 = 20;
-function slug2(text) {
-  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS2);
-  while (words.length > 1 && words.join("-").length > STEM_MAX2) words.pop();
-  return words.join("-").slice(0, STEM_MAX2).replace(/-+$/g, "");
-}
-function shortId2() {
-  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-}
-function mintBacklogId(title) {
-  const id = `b-${slug2(title) || "item"}-${shortId2()}`;
-  assertSafeSegment(id);
-  return id;
-}
-function isReady(item) {
-  return item.status === "ready";
-}
-
-// ../../flow/src/persistence/backlog-store.ts
 var FRONTMATTER5 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 var LEADING_FRONTMATTER2 = /^---\n[\s\S]*?\n---\n?/;
 var FsBacklogStore = class {
@@ -18143,94 +18217,6 @@ function createFlowServices(root) {
     backlog: new FsBacklogStore(root)
   };
 }
-
-// src/persistence/run-starter.ts
-var RunStarter = class {
-  service;
-  constructor(root) {
-    this.service = new RunService(createFlowServices(root));
-  }
-  /** Mint a run for `goal` and lay down its scaffold. Returns the run id the SPA navigates to. */
-  start(goal) {
-    return this.service.start({ goal });
-  }
-};
-
-// ../../flow/src/application/backlog-service.ts
-var BacklogService = class {
-  constructor(store, runs, now) {
-    this.store = store;
-    this.runs = runs;
-    this.now = now;
-  }
-  add(input) {
-    const ts = this.now();
-    const item = BacklogItem.parse({
-      id: mintBacklogId(input.title),
-      title: input.title,
-      kind: input.kind ?? "feature",
-      status: input.ready === true ? "ready" : "backlog",
-      createdAt: ts,
-      updatedAt: ts,
-      runs: [],
-      body: input.body ?? ""
-    });
-    this.store.write(item);
-    return item;
-  }
-  list(status) {
-    const all = this.store.list();
-    return status === void 0 ? all : all.filter((i) => i.status === status);
-  }
-  /** Patch an item. Absent fields are left alone — this is a patch, not a replace, so a caller that
-   *  knows only the new status cannot accidentally blank the body. */
-  update(input) {
-    const current = this.store.read(input.id);
-    if (!current) return void 0;
-    const next = BacklogItem.parse({
-      ...current,
-      ...input.title !== void 0 ? { title: input.title } : {},
-      ...input.body !== void 0 ? { body: input.body } : {},
-      ...input.kind !== void 0 ? { kind: input.kind } : {},
-      ...input.status !== void 0 ? { status: input.status } : {},
-      updatedAt: this.now()
-    });
-    this.store.write(next);
-    return next;
-  }
-  /**
-   * Take an item and mint its run — the intent→work transition, and the ONLY one.
-   *
-   * With no id, claims the oldest READY item (the queue is FIFO: the thing that has waited longest goes
-   * first, which is what a queue means and what `/agentry:go` with no argument expects). The run is
-   * minted through the existing `RunService.start`, so a claimed run is indistinguishable from one a
-   * session started directly — same id shape, same scaffold, same layout.
-   */
-  claim(id, sessionId) {
-    let item;
-    if (id !== void 0 && id.length > 0) {
-      item = this.store.read(id);
-      if (!item) return { ok: false, reason: "not_found" };
-      if (!isReady(item)) return { ok: false, reason: "not_ready" };
-    } else {
-      const queue = this.list("ready").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      item = queue[0];
-      if (!item) return { ok: false, reason: "empty_queue" };
-    }
-    const { run } = this.runs.start({
-      goal: item.title,
-      ...sessionId !== void 0 && sessionId.length > 0 ? { session_id: sessionId } : {}
-    });
-    const claimed = BacklogItem.parse({
-      ...item,
-      status: "claimed",
-      runs: [...item.runs, run],
-      updatedAt: this.now()
-    });
-    this.store.write(claimed);
-    return { ok: true, item: claimed, run };
-  }
-};
 
 // src/persistence/backlog-adapter.ts
 var BacklogAdapter = class {
@@ -18887,7 +18873,6 @@ function createProject(root, slug3, clock) {
     gates: new GateInbox(repository, new FsReviewSidecarSource(root)),
     tokens: new TokenReader(new TranscriptReader(root)),
     memory: new MemReader(root),
-    starter: new RunStarter(root),
     backlog,
     board: new BoardReader(reader, backlog.service, events),
     watcher: new ChokidarWatcher(root),
@@ -19410,24 +19395,6 @@ async function handleRunResetRequest(req, res, deps) {
   sendJson(res, 200, { ok: true, run, tasks: reset, ...item !== void 0 ? { item: item.id } : {} });
   return true;
 }
-async function handleRunStartRequest(req, res, deps) {
-  const url = new URL(req.url ?? "/", "http://localhost");
-  if (url.pathname !== "/api/runs") return false;
-  if ((req.method ?? "GET") !== "POST") {
-    sendJson(res, 405, { error: "method_not_allowed" });
-    return true;
-  }
-  const body = await readJsonBody(req);
-  const goal = typeof body === "object" && body !== null ? body.goal : void 0;
-  if (typeof goal !== "string" || goal.trim().length === 0) {
-    sendJson(res, 400, { error: "missing_goal" });
-    return true;
-  }
-  const { run } = deps.starter.start(goal.trim());
-  deps.transport.pushAll({ type: "works-changed" });
-  sendJson(res, 200, { run });
-  return true;
-}
 
 // src/transport/backlog-routes.ts
 var ITEM_PATH = /^\/api\/backlog\/([^/]+)$/;
@@ -19613,7 +19580,7 @@ function createHttpHandler(projects, transport) {
     }
     if (handleApiRequest(req, res, reader, context, project.root, project.slug)) return;
     if (handleReaderRequest(req, res, readers)) return;
-    void handlePostRequest(req, res, write).then((handled) => handled ? true : handleRunStartRequest(req, res, { starter: project.starter, transport })).then((handled) => handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })).then(
+    void handlePostRequest(req, res, write).then((handled) => handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })).then(
       (handled) => handled ? true : handleRunResetRequest(req, res, {
         reader,
         writeService: project.writeService,

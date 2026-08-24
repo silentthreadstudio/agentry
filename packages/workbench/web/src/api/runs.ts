@@ -1,18 +1,7 @@
-// POST /api/runs → start NEW work in this project. The server reuses FLOW's `run_start`, so a run
-// created here is indistinguishable from one a session minted: same id shape, same `.agentry/work/<run>/`
-// layout, same `spec.md` scaffold. The conducting session picks it up from the files.
+// Run-scoped writes the board performs. Creating a run directly is NOT here: the board creates backlog
+// ITEMS, and a run comes from a session claiming one (doc 18 §3.2). An endpoint that minted a run from
+// the dashboard would be a second, competing way to start work with none of the claim path's meaning.
 import { ApiError, apiPath } from "./http.js";
-
-export async function startRun(goal: string, signal?: AbortSignal): Promise<{ run: string }> {
-  const res = await fetch(apiPath("/api/runs"), {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ goal }),
-    ...(signal ? { signal } : {}),
-  });
-  if (!res.ok) throw new ApiError(`/api/runs → ${res.status} ${res.statusText}`, res.status);
-  return (await res.json()) as { run: string };
-}
 
 /** Put a run's work back on the shelf: tasks to `todo`, its backlog item back to `ready`.
  *

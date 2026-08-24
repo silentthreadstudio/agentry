@@ -10,8 +10,8 @@ import {
   hydrate,
   openCommentCount,
   snapshotForTest,
-} from "../routes/work/live/doc/comment-store.js";
-import type { DiskComment } from "../routes/work/live/doc/comment-store.js";
+} from "../routes/doc/comment-store.js";
+import type { DiskComment } from "../routes/doc/comment-store.js";
 
 const anchor = { originalText: "x", headingAnchor: "h", startLine: 1 };
 const disk = (id: string, resolved = false): DiskComment => ({

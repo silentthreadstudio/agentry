@@ -16,12 +16,12 @@
 // discards it (keep the before); Iterate posts a follow-up "please iterate" comment to the gate.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DocModel, WsMessage } from "@agentry/workbench-shared";
-import { getWsClient } from "../../../../api/ws.js";
+import { getWsClient } from "../../api/ws.js";
 import { normalize } from "./markdown-serializer.js";
 import { wordDiff, isUnchanged, type DiffOp } from "./word-diff.js";
 import { addComment } from "./comment-store.js";
 import { useDiffStyles } from "./diff-styles.js";
-import { apiPath } from "../../../../api/http.js";
+import { apiPath } from "../../api/http.js";
 
 async function fetchDoc(runId: string, docId: string, signal: AbortSignal): Promise<DocModel> {
   const res = await fetch(

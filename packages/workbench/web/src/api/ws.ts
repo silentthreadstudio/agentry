@@ -7,6 +7,7 @@
 // view state. Pages call `subscribe()` to receive typed messages and wire them into their own store.
 import type { WsMessage } from "@agentry/workbench-shared";
 import { currentProject } from "./http.js";
+import { FOCUS_EVENT, focusedRun } from "../routes/rail/rail-state.js";
 
 export type WsListener = (msg: WsMessage) => void;
 export type WsStatusListener = (status: WsStatus) => void;
@@ -14,19 +15,26 @@ export type WsStatus = "connecting" | "open" | "closed";
 
 const WS_PATH = "/ws";
 
-// The run this socket subscribes to, read from the PATH (`/work/<slug>`). Identity used to live in the
-// host (`<slug>.localhost`), so one origin meant one run and the socket needed no label; under path
-// routing a single origin serves every run, so the label must travel on the URL — and it must be able to
-// CHANGE without a page load, because moving between runs is now client-side navigation.
-function runLabelFromPath(): string | null {
+// The run this socket subscribes to.
+//
+// The URL path (`/work/<slug>`) names it while you are inside a run. But the conversation rail is now
+// AMBIENT — it sits beside the board too, talking about a focused run that the URL says nothing about —
+// and its live updates ride the same run-scoped socket. Deriving the subscription from the path alone
+// therefore left the socket bound to NO run on the board, so an agent's reply never arrived: the message
+// you sent appeared (the optimistic insert) and nothing ever came back.
+//
+// So the path wins when you are in a run, and the rail's focused run is the fallback everywhere else.
+function currentRunLabel(): string | null {
   const m = /^\/work\/([^/]+)/.exec(location.pathname);
   const raw = m?.[1];
-  if (raw === undefined || raw.length === 0) return null;
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
+  if (raw !== undefined && raw.length > 0) {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
   }
+  return focusedRun();
 }
 
 function wsUrl(run: string | null): string {
@@ -63,10 +71,17 @@ export function createWsClient() {
     for (const l of statusListeners) l(next);
   }
 
+  // The rail can point at a different run without the URL changing, so the socket follows the focus
+  // event rather than the rail calling into transport — the dependency points one way, from transport
+  // to state, and never back.
+  if (typeof window !== "undefined") {
+    window.addEventListener(FOCUS_EVENT, () => client.retarget());
+  }
+
   function connect() {
     closedByUs = false;
     setStatus("connecting");
-    subscribedRun = runLabelFromPath();
+    subscribedRun = currentRunLabel();
     const sock = new WebSocket(wsUrl(subscribedRun));
     socket = sock;
 
@@ -114,7 +129,7 @@ export function createWsClient() {
     setStatus("closed");
   }
 
-  return {
+  const client = {
     /** Subscribe to typed push messages. Opens the connection on first subscriber. Returns an unsubscribe. */
     subscribe(listener: WsListener): () => void {
       listeners.add(listener);
@@ -138,7 +153,7 @@ export function createWsClient() {
      * run's live updates would never arrive.
      */
     retarget(): void {
-      const next = runLabelFromPath();
+      const next = currentRunLabel();
       if (next === subscribedRun) return;
       if (listeners.size === 0) {
         subscribedRun = next; // nothing listening — the next connect() picks the new label up anyway
@@ -151,6 +166,8 @@ export function createWsClient() {
     },
     close,
   };
+
+  return client;
 }
 
 export type WsClient = ReturnType<typeof createWsClient>;

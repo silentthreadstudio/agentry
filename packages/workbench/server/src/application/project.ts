@@ -16,7 +16,6 @@ import { FsEventSource } from "../persistence/event-source.js";
 import { FsReviewSidecarSource } from "../persistence/review-sidecar-source.js";
 import { TranscriptReader } from "../persistence/transcript-reader.js";
 import { MemReader } from "../persistence/mem-reader.js";
-import { RunStarter } from "../persistence/run-starter.js";
 import { BacklogAdapter } from "../persistence/backlog-adapter.js";
 import { WorkReader } from "./work-reader.js";
 import { WriteService } from "./write-service.js";
@@ -38,8 +37,6 @@ export interface Project {
   memory: MemReader;
   /** Every item + run in exactly one column (doc 18). */
   board: BoardReader;
-  /** Starts NEW work in this project (FLOW's `run_start`, reused). */
-  starter: RunStarter;
   /** The project's backlog — durable intent that has not become a run yet (doc 18). */
   backlog: BacklogAdapter;
   watcher: ChokidarWatcher;
@@ -62,7 +59,6 @@ export function createProject(root: string, slug: string, clock: Clock): Project
     gates: new GateInbox(repository, new FsReviewSidecarSource(root)),
     tokens: new TokenReader(new TranscriptReader(root)),
     memory: new MemReader(root),
-    starter: new RunStarter(root),
     backlog,
     board: new BoardReader(reader, backlog.service, events),
     watcher: new ChokidarWatcher(root),

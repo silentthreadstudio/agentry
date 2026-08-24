@@ -1,6 +1,7 @@
 // board-view — the board's column vocabulary and card view-logic. Pure; no React, no fetch (the same
 // view-model split Works/Gates/Activity use), so the ordering and drop rules are unit-testable.
 import type { AgentView, BoardCard, BoardColumn, BoardConflict } from "@agentry/workbench-shared";
+import { workSlug } from "@agentry/workbench-shared";
 
 /** The columns, in lifecycle order. This array IS the board's left-to-right reading order. */
 export const COLUMNS: { key: BoardColumn; label: string; hue: string }[] = [
@@ -109,4 +110,50 @@ export function blockedLabel(card: BoardCard): string | null {
   if (!first) return null;
   const more = (card.blocked?.length ?? 0) - 1;
   return `blocked by ${first.by.join(", ")}${more > 0 ? ` (+${more} more)` : ""}`;
+}
+
+
+/** A compact relative age ("just now", "4m ago", "2d ago"). The mock's cards carry one on every column
+ *  and it is not decoration: a backlog item added six weeks ago and one added this morning are different
+ *  things, and a board that shows neither makes you open both to find out. */
+export function relativeTime(iso: string, now: number = Date.now()): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "";
+  const seconds = Math.max(0, Math.floor((now - then) / 1000));
+  if (seconds < 45) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${Math.max(1, minutes)}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days < 30 ? `${days}d ago` : `${Math.floor(days / 30)}mo ago`;
+}
+
+/** The trailing note on a card, which differs by column because the useful fact differs: an item's age,
+ *  a queued item's position, a blocked run's state, a shipped run's ship time. */
+export function cardNote(card: BoardCard, now?: number): string {
+  const when = relativeTime(card.updatedAt, now);
+  switch (card.column) {
+    case "backlog":
+      return when === "" ? "" : `added ${when}`;
+    case "ready":
+      return "picks up next";
+    case "in-review":
+      return "waiting on you";
+    case "done":
+      return when === "" ? "" : `shipped ${when}`;
+    default:
+      return card.blocked !== undefined && card.blocked.length > 0 ? "waiting" : when;
+  }
+}
+
+
+/** The in-app PATH a run opens at: `/work/<workSlug>`. The slug is the short, stable label both halves
+ *  compute; the server resolves it back to the full run id.
+ *
+ *  A path, not a host, and that is the whole point: addressing a run by subdomain made every run its own
+ *  ORIGIN (a reload, a fresh socket, its own storage) and it silently broke — browsers lower-case the
+ *  Host header, so any run id with an uppercase character resolved to no run at all. */
+export function runHref(runId: string): string {
+  return `/work/${encodeURIComponent(workSlug(runId))}`;
 }

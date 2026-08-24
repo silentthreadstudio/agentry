@@ -3,7 +3,7 @@
 // re-joining the ops reproduces each side exactly (no lost whitespace — the property the panes rely on).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isUnchanged, wordDiff } from "../routes/work/live/doc/word-diff.js";
+import { isUnchanged, wordDiff } from "../routes/doc/word-diff.js";
 
 // Re-join the ops as the `before` side sees them (equal + del) and the `after` side (equal + add).
 function rebuildBefore(ops: ReturnType<typeof wordDiff>): string {
