@@ -157,3 +157,14 @@ export function cardNote(card: BoardCard, now?: number): string {
 export function runHref(runId: string): string {
   return `/work/${encodeURIComponent(workSlug(runId))}`;
 }
+
+
+/** The task a run is currently on — the one an agent holds, else the lowest-numbered unfinished one.
+ *  The mock shows it because "which task is this run actually on" is the question a running card raises
+ *  and a progress bar alone cannot answer. */
+export function currentTask(card: BoardCard): string | null {
+  const held = card.agents?.find((a) => a.task !== null && a.task !== undefined)?.task;
+  if (held) return `T-${held.replace(/^task-/, "")}`;
+  const blocked = card.blocked?.[0]?.task;
+  return blocked ? `T-${blocked}` : null;
+}

@@ -11122,7 +11122,7 @@ import { basename as basename4 } from "node:path";
 
 // src/persistence/fs-work-repository.ts
 var import_yaml2 = __toESM(require_dist(), 1);
-import { existsSync as existsSync2, readFileSync as readFileSync5, readdirSync as readdirSync3 } from "node:fs";
+import { existsSync as existsSync2, readFileSync as readFileSync5, readdirSync as readdirSync3, statSync } from "node:fs";
 import { join as join5 } from "node:path";
 
 // ../../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
@@ -15477,6 +15477,37 @@ var FsWorkRepository = class {
     const frontmatter = (0, import_yaml2.parse)(m[1] ?? "") ?? {};
     return { frontmatter, body: (m[2] ?? "").trim() };
   }
+  /**
+   * The newest mtime in the run's tree — spec/plan, every task and ADR, the event log and the review
+   * sidecars. Walked rather than cached: a board read is a handful of `stat` calls over files the OS has
+   * in cache anyway, and a cache here would be one more thing that can disagree with disk.
+   */
+  lastModified(run) {
+    const dir = runDir(this.cwd, run);
+    if (!existsSync2(dir)) return void 0;
+    let newest = 0;
+    const walk = (path, depth) => {
+      let entries;
+      try {
+        entries = readdirSync3(path, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const child = join5(path, entry.name);
+        if (entry.isDirectory()) {
+          if (depth > 0) walk(child, depth - 1);
+          continue;
+        }
+        try {
+          newest = Math.max(newest, statSync(child).mtimeMs);
+        } catch {
+        }
+      }
+    };
+    walk(dir, 1);
+    return newest === 0 ? void 0 : new Date(newest).toISOString();
+  }
 };
 
 // ../../../node_modules/.pnpm/chokidar@5.0.0/node_modules/chokidar/index.js
@@ -18341,7 +18372,7 @@ var WorkReader = class {
     };
   }
   // The Works-list row: task tally by FLOW's closed status, the agent count, the title, and the
-  // `updatedAt` stamp (from the injected clock, so the read is deterministic under test).
+  // `updatedAt` stamp (the run's own last change; the injected clock is only the fallback).
   summarize(files) {
     const shape = files.routing?.shape ?? asString(files.spec?.frontmatter.shape);
     const kind = files.routing?.kind ?? asString(files.spec?.frontmatter.kind);
@@ -18354,7 +18385,10 @@ var WorkReader = class {
       taskCounts: this.tallyTasks(files),
       agentCount: this.rosterCount(files.run),
       // from run-state.json via the injected counter (EventStore.roster)
-      updatedAt: this.clock.now()
+      // The run's OWN last change, falling back to the read clock only when the repository cannot
+      // tell us (a fake in a test). Stamping the clock unconditionally made every card claim it had
+      // changed "just now" — a false fact rather than a missing one.
+      updatedAt: this.repository.lastModified?.(files.run) ?? this.clock.now()
     };
   }
   // A one-line "resume" of the run for the Works card — extracted from the spec body (else the plan),
@@ -18902,7 +18936,7 @@ function shortHash(s) {
 }
 
 // src/transport/http.ts
-import { createReadStream, existsSync as existsSync13, statSync } from "node:fs";
+import { createReadStream, existsSync as existsSync13, statSync as statSync2 } from "node:fs";
 import { extname as extname2, join as join21, normalize as normalize2, resolve as resolve4, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19601,7 +19635,7 @@ function createHttpHandler(projects, transport) {
 function serveStatic(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const filePath = resolveStaticFile(url.pathname);
-  if (filePath && existsSync13(filePath) && statSync(filePath).isFile()) {
+  if (filePath && existsSync13(filePath) && statSync2(filePath).isFile()) {
     sendFile(req, res, filePath);
     return;
   }

@@ -19,6 +19,7 @@ import {
   conflictText,
   cardNote,
   countChips,
+  currentTask,
   isReset,
   elapsedOf,
   initialsOf,
@@ -244,6 +245,7 @@ function Card({
   // A gate is the one thing on this board that is waiting on YOU rather than on an agent, so an
   // in-review card says which artifact is at the gate rather than only that it is in review.
   const gate = card.column === "in-review";
+  const task = currentTask(card);
   // Only a run can be previewed — an item has no artifacts yet, which is the honest signal that it has
   // not started. Opening PREVIEWS it in a pane rather than navigating away; the full run view (graph,
   // activity, the editor) is one click further, from inside the pane.
@@ -275,6 +277,7 @@ function Card({
             from backlog
           </span>
         ) : null}
+        {task !== null ? <span className="chip mono">{task}</span> : null}
         {gate ? <span className="chip gate">gate</span> : null}
         {blocked !== null ? <span className="chip blocked">{blocked}</span> : null}
         {note.length > 0 ? <span className="note">{note}</span> : null}

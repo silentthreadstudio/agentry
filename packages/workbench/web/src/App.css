@@ -587,16 +587,23 @@ body[data-chat="focus"] .bcol[data-digest] .bcolhd {
 .rail.collapsed {
   align-items: center;
 }
+/* The spine fills the rail and CENTRES its label. Anchored to the top it read as clipped text running
+   off the edge rather than as a deliberate vertical label. */
 .spine {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 14px 0;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 0;
   border: 0;
   background: transparent;
   cursor: pointer;
   width: 100%;
+  height: 100%;
+}
+.rail.collapsed {
+  padding: 0;
 }
 .spine .vt {
   writing-mode: vertical-rl;
@@ -755,8 +762,6 @@ body[data-chat="focus"] .bcol[data-digest] .bcolhd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl; /* truncate from the LEFT — the distinguishing tail of a path is what matters */
-  text-align: left;
 }
 .projopt .tick {
   color: var(--accent-ink);

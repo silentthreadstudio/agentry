@@ -9,16 +9,15 @@
 // and live beside it, because the point of an ambient conversation is talking about the thing you are
 // currently looking at. Escape or the scrim closes it and the board is exactly where you left it.
 //
-// It is READ-ONLY on purpose. Editing, the comment rail, the graph and the timeline all still live in
-// the full run view, one click away. A preview that quietly became an editor would be a worse version
-// of the thing it links to.
+// It is READ-ONLY for now, and that is a phase boundary rather than a design position: phase 2 moves the
+// editor and the comment rail in here, at which point the pane IS the doc surface. There is deliberately
+// no "open the full view" escape hatch, because there is no longer a full view to escape to — an action
+// that navigates to the page you are already on is worse than no action.
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import MarkdownIt from "markdown-it";
 import type { BoardCard, GraphModel } from "@agentry/workbench-shared";
 import { fetchGraph } from "../../api/index.js";
 import { fetchDoc } from "../doc/doc-io.js";
-import { runHref } from "./board-view.js";
 
 // A preview renders trusted local files (the run's own artifacts), so linkify/typographer are the only
 // niceties worth having; HTML stays OFF regardless — nothing should be able to inject markup into the
@@ -36,7 +35,6 @@ function docOrder(graph: GraphModel): { id: string; label: string }[] {
 
 export function RunPane({ card, onClose }: { card: BoardCard; onClose: () => void }) {
   const run = card.run ?? card.id;
-  const navigate = useNavigate();
   const [docs, setDocs] = useState<{ id: string; label: string }[]>([]);
   const [docId, setDocId] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);
@@ -89,9 +87,6 @@ export function RunPane({ card, onClose }: { card: BoardCard; onClose: () => voi
           <div className="grow" />
           <button type="button" className="ghost" onClick={() => setWide((w) => !w)} title="Widen">
             ⤢
-          </button>
-          <button type="button" className="ghost" onClick={() => navigate(runHref(run))}>
-            Open full view
           </button>
           <button type="button" className="ghost" onClick={close}>
             Close

@@ -67,7 +67,7 @@ export class WorkReader {
   }
 
   // The Works-list row: task tally by FLOW's closed status, the agent count, the title, and the
-  // `updatedAt` stamp (from the injected clock, so the read is deterministic under test).
+  // `updatedAt` stamp (the run's own last change; the injected clock is only the fallback).
   private summarize(files: RunFiles): RunSummary {
     const shape = files.routing?.shape ?? asString(files.spec?.frontmatter.shape);
     const kind = files.routing?.kind ?? asString(files.spec?.frontmatter.kind);
@@ -79,7 +79,10 @@ export class WorkReader {
       ...(this.summaryOf(files) ? { summary: this.summaryOf(files) } : {}),
       taskCounts: this.tallyTasks(files),
       agentCount: this.rosterCount(files.run), // from run-state.json via the injected counter (EventStore.roster)
-      updatedAt: this.clock.now(),
+      // The run's OWN last change, falling back to the read clock only when the repository cannot
+      // tell us (a fake in a test). Stamping the clock unconditionally made every card claim it had
+      // changed "just now" — a false fact rather than a missing one.
+      updatedAt: this.repository.lastModified?.(files.run) ?? this.clock.now(),
     };
   }
 

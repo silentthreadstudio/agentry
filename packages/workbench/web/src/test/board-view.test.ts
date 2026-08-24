@@ -14,8 +14,11 @@ import {
   countChips,
   elapsedOf,
   initialsOf,
+  cardNote,
+  currentTask,
   isReset,
   progressOf,
+  relativeTime,
   refusalReason,
   resetPrompt,
   totalCards,
@@ -168,4 +171,42 @@ test("more than one blocked task is summarised, not truncated silently", () => {
 
 test("a card with nothing blocked has no chip", () => {
   assert.equal(blockedLabel(item()), null);
+});
+
+// ── phase 1 screenshot-pass fixes ──────────────────────────────────────────────────────────────────
+test("relativeTime reads at the scales a board actually spans", () => {
+  const now = Date.parse("2026-08-23T12:00:00.000Z");
+  const ago = (iso: string) => relativeTime(iso, now);
+  assert.equal(ago("2026-08-23T11:59:40.000Z"), "just now");
+  assert.equal(ago("2026-08-23T11:20:00.000Z"), "40m ago");
+  assert.equal(ago("2026-08-22T15:00:00.000Z"), "21h ago");
+  assert.equal(ago("2026-08-21T12:00:00.000Z"), "2d ago");
+  assert.equal(ago("2026-06-21T12:00:00.000Z"), "2mo ago");
+});
+
+test("an unparseable timestamp yields no age rather than 'NaN ago'", () => {
+  assert.equal(relativeTime("not a date"), "");
+});
+
+test("the note differs per column, because the useful fact differs", () => {
+  const at = "2026-08-22T12:00:00.000Z";
+  const now = Date.parse("2026-08-23T12:00:00.000Z");
+  assert.match(cardNote(item({ column: "backlog", updatedAt: at }), now), /^added /);
+  assert.equal(cardNote(item({ column: "ready", updatedAt: at }), now), "picks up next");
+  assert.equal(cardNote(run({ column: "in-review", updatedAt: at }), now), "waiting on you");
+  assert.match(cardNote(run({ column: "done", updatedAt: at }), now), /^shipped /);
+});
+
+test("a blocked run says it is waiting rather than showing its age", () => {
+  assert.equal(cardNote(run({ column: "running", blocked: [{ task: "002", by: ["001"] }] })), "waiting");
+});
+
+test("currentTask names the task an agent actually holds", () => {
+  const card = run({ agents: [{ id: "r/impl", role: "implementer", state: "working", task: "004" }] });
+  assert.equal(currentTask(card), "T-004");
+});
+
+test("with no agent it falls back to the blocked task, else nothing", () => {
+  assert.equal(currentTask(run({ blocked: [{ task: "007", by: ["003"] }] })), "T-007");
+  assert.equal(currentTask(run()), null);
 });

@@ -23,7 +23,7 @@
 // it UNDER the lifecycle fields (lifecycle wins on a key clash; `status` lives in both, FLOW's is truth).
 // FLOW writes `deps: [1, 3]` as bare integers; this adapter surfaces them faithfully (no re-padding —
 // `buildGraph` re-pads via FLOW's `formatTaskNo`).
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type {
@@ -145,5 +145,38 @@ export class FsWorkRepository implements WorkRepository {
     if (!m) return null;
     const frontmatter = (parseYaml(m[1] ?? "") ?? {}) as Record<string, unknown>;
     return { frontmatter, body: (m[2] ?? "").trim() };
+  }
+
+  /**
+   * The newest mtime in the run's tree — spec/plan, every task and ADR, the event log and the review
+   * sidecars. Walked rather than cached: a board read is a handful of `stat` calls over files the OS has
+   * in cache anyway, and a cache here would be one more thing that can disagree with disk.
+   */
+  lastModified(run: string): string | undefined {
+    const dir = runDir(this.cwd, run);
+    if (!existsSync(dir)) return undefined;
+    let newest = 0;
+    const walk = (path: string, depth: number): void => {
+      let entries: import("node:fs").Dirent[];
+      try {
+        entries = readdirSync(path, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const child = join(path, entry.name);
+        if (entry.isDirectory()) {
+          if (depth > 0) walk(child, depth - 1);
+          continue;
+        }
+        try {
+          newest = Math.max(newest, statSync(child).mtimeMs);
+        } catch {
+          /* a file that vanished mid-walk simply does not count */
+        }
+      }
+    };
+    walk(dir, 1); // run root + one level (tasks/, adr/, .review/)
+    return newest === 0 ? undefined : new Date(newest).toISOString();
   }
 }

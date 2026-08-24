@@ -47,7 +47,11 @@ export interface ArtifactFile {
 // and parses one run dir into the plain `RunFiles` the application folds into read-models. The fs
 // adapter (`FsWorkRepository`) implements it; the domain never touches the disk.
 export interface WorkRepository {
-  listRuns(): string[]; // the run ids present under .agentry/work/
+  listRuns(): string[];
+  /** When this run's files last changed (ISO-8601), or undefined when that cannot be determined.
+   *  The read-model needs the run's OWN modification time: stamping the read clock instead makes every
+   *  card claim it changed "just now", which is not a missing fact but a false one. */
+  lastModified?(run: string): string | undefined; // the run ids present under .agentry/work/
   readRun(run: string): RunFiles | undefined; // parsed run dir, or undefined when the run is absent
 }
 

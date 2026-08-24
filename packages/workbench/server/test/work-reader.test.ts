@@ -128,3 +128,25 @@ test("read on the REAL fixture run returns a populated summary + graph (acceptan
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// ── the run's own age (phase 1 screenshot pass) ────────────────────────────────────────────────────
+// `updatedAt` used to be `clock.now()`, so every board card claimed it had changed "just now" no matter
+// when the run last moved. A relative age that is always "just now" is not a missing fact, it is a false
+// one — and the board leans on it in four columns.
+test("updatedAt is the run's OWN last change when the repository can tell us", () => {
+  const files = sampleFiles();
+  const repo = {
+    listRuns: () => [files.run],
+    readRun: () => files,
+    lastModified: () => "2026-08-01T10:00:00.000Z",
+  };
+  const read = new WorkReader(repo, fixedClock).read(files.run);
+  assert.equal(read?.summary.updatedAt, "2026-08-01T10:00:00.000Z");
+});
+
+test("it falls back to the clock only when the repository cannot say", () => {
+  const files = sampleFiles();
+  const repo = { listRuns: () => [files.run], readRun: () => files };
+  const read = new WorkReader(repo, fixedClock).read(files.run);
+  assert.equal(read?.summary.updatedAt, fixedClock.now());
+});

@@ -11,6 +11,16 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchProjects, selectProject, type ProjectEntry } from "../../api/index.js";
 
+/** Keep the END of a path — the part that distinguishes two same-named projects — and elide the front.
+ *  Done here rather than with CSS `direction: rtl`, which reorders the punctuation and leaves a stray
+ *  slash dangling at the wrong end. */
+function shortenPath(path: string, max = 34): string {
+  if (path.length <= max) return path;
+  const tail = path.slice(-(max - 1));
+  const cut = tail.indexOf("/");
+  return `…${cut > 0 ? tail.slice(cut) : tail}`;
+}
+
 export function ProjectSwitcher({ current }: { current: string | undefined }) {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [open, setOpen] = useState(false);
@@ -121,7 +131,7 @@ export function ProjectSwitcher({ current }: { current: string | undefined }) {
                 {/* The path is the point: two projects can share a name, and this is what tells them
                     apart. Truncated from the LEFT so the distinguishing tail stays visible. */}
                 <span className="p" title={p.root}>
-                  {p.root}
+                  {shortenPath(p.root)}
                 </span>
               </span>
               {p.slug === current ? (
