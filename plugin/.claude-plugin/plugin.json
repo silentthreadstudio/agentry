@@ -1,6 +1,6 @@
 {
   "name": "agentry",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "An adaptive agentic layer for Claude Code: right-sized orchestration, SDLC specialists, and durable memory that compounds across sessions.",
   "author": {
     "name": "Esteban Estrada",
@@ -20,11 +20,15 @@
   "mcpServers": {
     "mem": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mem/index.js"]
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mem/index.js"
+      ]
     },
     "flow": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/flow/index.js"]
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/flow/index.js"
+      ]
     }
   }
 }
