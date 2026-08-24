@@ -1,19 +1,19 @@
 // WorkReader — the application service that folds ONE run's parsed files into the read-models the
 // transport serves (task 9's `routes`/`ws` call these). PURE of HTTP/ws (ADR-001): it depends only on
-// the `WorkRepository` port (the parsed files), the pure `buildGraph` (the graph), and the `Clock`
+// the `WorkRepository` port (the parsed files), the pure `buildDocIndex` (the doc list), and the `Clock`
 // (the deterministic `updatedAt` stamp) — no `node:http`/`ws` type crosses it, so it is unit-testable
 // against a fake repository.
 //
-// `read(runId)` returns `{ summary, graph, docs }`:
+// `read(runId)` returns `{ summary, docIndex, docs }`:
 //   - summary: the `RunSummary` for the Works list (AC2) — task tally by FLOW's closed status, the
 //     agent count, the title, and the `updatedAt` stamp.
-//   - graph:   the `GraphModel` via `buildGraph` (the dependency/derivation graph for an opened run).
+//   - docIndex: the run's documents in reading order via `buildDocIndex` (what the run view's tabs show).
 //   - docs:    the run's parsed artifacts (spec/plan/adrs/tasks) keyed for the editor; Phase 1 ferries
 //     the parsed records so task 9 can serve them without re-reading the disk.
-import type { GraphModel, RunSummary } from "@agentry/workbench-shared";
+import type { RunDoc, RunSummary } from "@agentry/workbench-shared";
 import { FlowTaskStatus } from "@agentry/flow/domain/status";
 import type { Clock, RunFiles, WorkRepository } from "../domain/ports.js";
-import { buildGraph } from "../domain/graph.js";
+import { buildDocIndex } from "../domain/doc-index.js";
 
 // A frontmatter value coerced to a non-empty string, else undefined (so omitted-vs-empty stays clean).
 function asString(v: unknown): string | undefined {
@@ -23,15 +23,15 @@ function asString(v: unknown): string | undefined {
 // One parsed artifact as the reader hands it to the transport (frontmatter + body). The DocModel's
 // version/lock fields are stamped at the transport edge (Phase 3); Phase 1 ferries the parsed record.
 export interface ReaderDoc {
-  id: string; // stable doc id: "spec" | "plan" | "adr-<key>" | "task-<NNN>" (mirrors buildGraph's node ids)
+  id: string; // stable doc id: "spec" | "plan" | "adr-<key>" | "task-<NNN>" (mirrors buildDocIndex's ids)
   frontmatter: Record<string, unknown>;
   body: string;
 }
 
-// The bundle the transport serves for one run: the list-row summary, the canvas graph, and the docs.
+// The bundle the transport serves for one run: the list-row summary, the document index, and the docs.
 export interface RunRead {
   summary: RunSummary;
-  graph: GraphModel;
+  docIndex: RunDoc[];
   docs: ReaderDoc[];
 }
 
@@ -55,13 +55,13 @@ export class WorkReader {
   }
 
   // Fold one run into its read-models, or undefined when the run is absent (task 9 turns that into a
-  // 404). The graph and the summary derive from the SAME parsed `RunFiles`, so they never disagree.
+  // 404). The doc index and the summary derive from the SAME parsed `RunFiles`, so they never disagree.
   read(runId: string): RunRead | undefined {
     const files = this.repository.readRun(runId);
     if (!files) return undefined;
     return {
       summary: this.summarize(files),
-      graph: buildGraph(files),
+      docIndex: buildDocIndex(files),
       docs: this.docsOf(files),
     };
   }
@@ -116,7 +116,7 @@ export class WorkReader {
 
   // Count tasks into FLOW's closed status buckets. Every bucket starts at 0 (so a status absent from
   // the run still reports 0, not a missing key); a task whose frontmatter `status` is malformed/absent
-  // falls into `todo` — the same not-started default `buildGraph` uses, kept consistent here.
+  // falls into `todo` — the same not-started default `buildDocIndex` uses, kept consistent here.
   private tallyTasks(files: RunFiles): Record<FlowTaskStatus, number> {
     const counts: Record<FlowTaskStatus, number> = {
       todo: 0,
@@ -142,8 +142,8 @@ export class WorkReader {
   }
 
   // The run's docs for the editor: spec, plan, each adr, AND each task — keyed with the SAME ids
-  // buildGraph mints for its nodes, so a graph click maps straight to a doc. Tasks are keyed
-  // `task-<NNN>` (matching buildGraph's `taskId`), so `GET /doc/task-NNN` resolves and a task write
+  // buildDocIndex mints for its entries, so a tab click maps straight to a doc. Tasks are keyed
+  // `task-<NNN>` (matching buildDocIndex's ids), so `GET /doc/task-NNN` resolves and a task write
   // can push a fresh DocModel. The doc's lock/version are derived at the transport edge from the
   // ferried frontmatter (`toDocModel`/`lockOf`): a task whose `status: in-progress` reports locked by
   // its `lockedBy` (the SAME derivation spec/plan/adr docs already use — no second lock path here).

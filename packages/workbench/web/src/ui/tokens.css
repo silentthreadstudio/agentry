@@ -24,10 +24,13 @@
   /* ── Ink ──────────────────────────────────────────────────── */
   --ink: #f2f2f6; /* primary text — high contrast on --bg */
   --ink2: #cccdd6; /* secondary display ink (card summaries) */
-  --muted: #8a8b98; /* secondary text — clears WCAG AA on --bg */
-  /* tertiary / labels / metadata. Carries only small labels/meta — the dominant secondary text color
-     is --muted (AA). At #5f606b it clears the WCAG non-text/UI 3:1 floor on --bg. */
-  --faint: #5f606b;
+  /* Secondary and tertiary ink. Both clear WCAG AA (4.5:1) against the LIGHTEST surface they ever sit
+     on (--raise #1d1d27), not merely against --bg — the old values were measured on the canvas alone and
+     dropped to 4.95 / 2.68 on a raised card, so --faint was failing everywhere it was actually used.
+     Lifting --faint alone would have collapsed it into --muted, so the whole ladder moved and the three
+     tiers stay visibly distinct: 6.5 / 4.5 on the worst case. */
+  --muted: #a0a1b0; /* secondary text */
+  --faint: #828493; /* tertiary — small labels, metadata */
 
   /* ── Accent (the violet→magenta brand family) ─────────────── */
   --v1: #7c7ff2; /* periwinkle violet */
@@ -55,7 +58,7 @@
   --prog: #ecb24a; /* in-progress */
   --rev: #5b94e6; /* in-review */
   --block: #e06a5c; /* blocked */
-  --todo: #4f505c;
+  --todo: #6b6c7c; /* lifted to clear the 3:1 non-text floor — it is a status DOT, and a dot you cannot see is not a status */
 
   /* ── Type ─────────────────────────────────────────────────── */
   --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;

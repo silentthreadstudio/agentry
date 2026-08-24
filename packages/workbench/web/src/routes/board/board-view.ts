@@ -26,6 +26,25 @@ export function canDrop(card: BoardCard, target: BoardColumn): boolean {
   return target === "ready";
 }
 
+/**
+ * Where ←/→ moves a focused card — the keyboard equivalent of a drag.
+ *
+ * Drag-and-drop is mouse-only, so without this the board's one write action is unreachable by keyboard:
+ * you could tab to every card and open it, and never move one. It walks COLUMNS from where the card is
+ * and returns the first column in that direction the card is actually allowed to enter (so an item in
+ * Backlog goes → Ready, and a run — which may only go back to Ready — reaches it from anywhere), or null
+ * when there is nowhere to go, which is what tells the caller to do nothing rather than beep.
+ */
+export function keyboardTarget(card: BoardCard, dir: -1 | 1): BoardColumn | null {
+  const from = COLUMNS.findIndex((c) => c.key === card.column);
+  if (from < 0) return null;
+  for (let i = from + dir; i >= 0 && i < COLUMNS.length; i += dir) {
+    const col = COLUMNS[i];
+    if (col !== undefined && canDrop(card, col.key)) return col.key;
+  }
+  return null;
+}
+
 /** Whether this drop is the reset path — a run going back on the shelf, which needs confirming first. */
 export function isReset(card: BoardCard, target: BoardColumn): boolean {
   return card.origin === "run" && target === "ready";
@@ -58,7 +77,7 @@ export function progressOf(card: BoardCard): number | null {
 }
 
 /** The count chips a run card shows — lifecycle order, zeroes omitted. */
-export const COUNT_ORDER: { key: "in-progress" | "in-review" | "todo" | "done"; label: string }[] = [
+const COUNT_ORDER: { key: "in-progress" | "in-review" | "todo" | "done"; label: string }[] = [
   { key: "in-progress", label: "in progress" },
   { key: "in-review", label: "in review" },
   { key: "todo", label: "to do" },

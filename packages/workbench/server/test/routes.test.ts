@@ -1,6 +1,6 @@
 // routes proof (task 009) — the Phase-1 REST surface against a real WorkReader over a FAKE repository
 // (no fs, the port purity ADR-001 buys). Asserts the PINNED endpoint behavior the web api-client
-// consumes: /healthz, /api/works (RunSummary[]), /api/work/:id/graph (GraphModel, 404 unknown),
+// consumes: /healthz, /api/works (RunSummary[]), /api/work/:id/docs (RunDoc[], 404 unknown),
 // /api/context (host-router run, or {}). Evidence is the captured status + parsed JSON body.
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -77,18 +77,21 @@ test("GET /api/works returns the RunSummary list", () => {
   assert.equal(works[0]?.title, "The Plan");
 });
 
-test("GET /api/work/:id/graph returns a GraphModel with nodes + edges", () => {
+test("GET /api/work/:id/docs returns the run's documents in reading order", () => {
   const { res, captured } = fakeRes();
-  handleApiRequest(fakeReq("/api/work/sample/graph"), res, reader(), home);
+  handleApiRequest(fakeReq("/api/work/sample/docs"), res, reader(), home);
   assert.equal(captured.status, 200);
-  const graph = captured.body as { nodes: unknown[]; edges: unknown[] };
-  assert.ok(Array.isArray(graph.nodes) && graph.nodes.length > 0, "has nodes");
-  assert.ok(Array.isArray(graph.edges), "has edges array");
+  const docs = captured.body as { id: string; label: string; status: string }[];
+  assert.ok(Array.isArray(docs) && docs.length > 0, "has documents");
+  assert.ok(
+    docs.every((d) => typeof d.id === "string" && typeof d.label === "string" && typeof d.status === "string"),
+    "every entry is a complete { id, label, status }",
+  );
 });
 
-test("GET /api/work/:id/graph on an unknown run is 404", () => {
+test("GET /api/work/:id/docs on an unknown run is 404", () => {
   const { res, captured } = fakeRes();
-  handleApiRequest(fakeReq("/api/work/nope/graph"), res, reader(), home);
+  handleApiRequest(fakeReq("/api/work/nope/docs"), res, reader(), home);
   assert.equal(captured.status, 404);
   assert.deepEqual(captured.body, { error: "unknown_run" });
 });
@@ -131,27 +134,27 @@ function longIdReader(): WorkReader {
   return new WorkReader(fakeRepo(files), fixedClock);
 }
 
-test("GET /api/work/:id/graph resolves a workSlug segment to the full run", () => {
+test("GET /api/work/:id/docs resolves a workSlug segment to the full run", () => {
   const { res, captured } = fakeRes();
   const slug = workSlug(LONG_ID); // build-agentry-<hash> — shorter than the full id
   assert.notEqual(slug, LONG_ID, "the long id must actually slugify (else this proves nothing)");
-  handleApiRequest(fakeReq(`/api/work/${slug}/graph`), res, longIdReader(), home);
+  handleApiRequest(fakeReq(`/api/work/${slug}/docs`), res, longIdReader(), home);
   assert.equal(captured.status, 200);
-  const graph = captured.body as { nodes: unknown[]; edges: unknown[] };
-  assert.ok(Array.isArray(graph.nodes) && graph.nodes.length > 0, "served the run's graph");
+  const docs = captured.body as unknown[];
+  assert.ok(Array.isArray(docs) && docs.length > 0, "served the run's documents");
 });
 
-test("GET /api/work/:id/graph still resolves an exact full-id segment (back-compat)", () => {
+test("GET /api/work/:id/docs still resolves an exact full-id segment (back-compat)", () => {
   const { res, captured } = fakeRes();
-  handleApiRequest(fakeReq(`/api/work/${LONG_ID}/graph`), res, longIdReader(), home);
+  handleApiRequest(fakeReq(`/api/work/${LONG_ID}/docs`), res, longIdReader(), home);
   assert.equal(captured.status, 200);
-  const graph = captured.body as { nodes: unknown[] };
-  assert.ok(Array.isArray(graph.nodes) && graph.nodes.length > 0, "the full id resolves to itself");
+  const docs = captured.body as unknown[];
+  assert.ok(Array.isArray(docs) && docs.length > 0, "the full id resolves to itself");
 });
 
-test("GET /api/work/:id/graph on a label matching no run is 404 (not a 500)", () => {
+test("GET /api/work/:id/docs on a label matching no run is 404 (not a 500)", () => {
   const { res, captured } = fakeRes();
-  handleApiRequest(fakeReq("/api/work/build-agentry-000000/graph"), res, longIdReader(), home);
+  handleApiRequest(fakeReq("/api/work/build-agentry-000000/docs"), res, longIdReader(), home);
   assert.equal(captured.status, 404);
   assert.deepEqual(captured.body, { error: "unknown_run" });
 });

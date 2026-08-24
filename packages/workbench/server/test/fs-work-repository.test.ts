@@ -44,7 +44,7 @@ test("readRun parses a run dir into RunFiles matching FLOW's on-disk shapes", ()
     assert.ok(files, "the fixture run parses");
     assert.equal(files.run, FIXTURE_RUN);
 
-    // routing: lifted from the first routing-decision line of events.jsonl (the graph root).
+    // routing: lifted from the first routing-decision line of events.jsonl (the run's routing decision).
     assert.deepEqual(files.routing, { shape: "decompose+verify", kind: "feature" });
 
     // spec/plan: frontmatter + body via FLOW's FRONTMATTER regex (frontmatter, not stripped to body).
@@ -64,14 +64,14 @@ test("readRun parses a run dir into RunFiles matching FLOW's on-disk shapes", ()
   }
 });
 
-test("readRun merges the task-meta block so buildGraph's fields (deps/status) are on frontmatter", () => {
+test("readRun merges the task-meta block so buildDocIndex's fields (deps/status) are on frontmatter", () => {
   const { repo, cleanup } = withFixtureRepo();
   try {
     const files = repo.readRun(FIXTURE_RUN);
     assert.ok(files, "the fixture run parses");
 
     // The lifecycle block gives `status`/`title`; the lifted meta block gives `deps` — both must land on
-    // ONE frontmatter for buildGraph. Task 009 depends on [6, 7, 8] (bare integers, surfaced faithfully).
+    // ONE frontmatter for the readers. Task 009 depends on [6, 7, 8] (bare integers, surfaced faithfully).
     const t9 = files.tasks.find((t) => t.taskNo === "009");
     assert.ok(t9, "task 009 present");
     assert.equal(typeof t9.frontmatter.status, "string", "status from the lifecycle block");

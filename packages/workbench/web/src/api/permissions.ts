@@ -10,8 +10,7 @@ export function fetchPermissions(signal?: AbortSignal): Promise<PermissionReques
 }
 
 export async function postVerdict(requestId: string, behavior: "allow" | "deny"): Promise<void> {
-  const res = await fetch(
-apiPath(`/api/permissions/${encodeURIComponent(requestId)}`), {
+  const res = await fetch(apiPath(`/api/permissions/${encodeURIComponent(requestId)}`), {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({ behavior }),

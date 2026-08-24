@@ -23,7 +23,7 @@ export interface RegisteredProject {
   addedAt: string;
 }
 
-export function registryPath(): string {
+function registryPath(): string {
   return join(homedir(), ".agentry", "workbench", "projects.json");
 }
 

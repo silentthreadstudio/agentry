@@ -14,33 +14,26 @@
 // navigator inside a column that already sits beside the conversation — three levels of chrome for one
 // document. The navigator's job is done here by the tab strip.
 import { useCallback, useEffect, useState } from "react";
-import type { BoardCard, GraphModel } from "@agentry/workbench-shared";
-import { fetchGraph } from "../../api/index.js";
+import type { BoardCard, RunDoc } from "@agentry/workbench-shared";
+import { fetchDocIndex } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 import { CommentRail } from "../doc/CommentRail.js";
 import { DocEditor, useApplyCommentMark } from "../doc/DocEditor.js";
-
-/** The docs a run has, in reading order: spec, plan, ADRs, then tasks by number. */
-function docOrder(graph: GraphModel): { id: string; label: string }[] {
-  const rank = (id: string) => (id === "spec" ? 0 : id === "plan" ? 1 : id.startsWith("adr") ? 2 : 3);
-  return graph.nodes
-    .filter((n) => n.id !== "routing" && n.id !== "adr-group")
-    .map((n) => ({ id: n.id, label: n.label }))
-    .sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id));
-}
+import { GutterCommentButton } from "../doc/GutterCommentButton.js";
 
 export function RunView({ card, onClose }: { card: BoardCard; onClose: () => void }) {
   const run = card.run ?? card.id;
-  const [docs, setDocs] = useState<{ id: string; label: string }[]>([]);
+  const [docs, setDocs] = useState<RunDoc[]>([]);
   const [docId, setDocId] = useState<string | null>(null);
   const [comments, setComments] = useState(true);
   const applyCommentMark = useApplyCommentMark();
 
   const loadDocs = useCallback(
     (signal?: AbortSignal) => {
-      fetchGraph(run, signal)
-        .then((graph) => {
-          const list = docOrder(graph);
+      // The server owns the reading order (spec → plan → ADRs → tasks), so the strip and any other
+      // consumer open the same document first.
+      fetchDocIndex(run, signal)
+        .then((list) => {
           setDocs(list);
           // Open the spec first — it is what the run is FOR. Falling back to whatever exists keeps a
           // scaffold-only run usable instead of showing an empty pane.
@@ -118,6 +111,11 @@ export function RunView({ card, onClose }: { card: BoardCard; onClose: () => voi
           <>
             <div className="panedoc">
               <DocEditor runId={run} docId={docId} applyCommentMark={applyCommentMark} />
+              {/* The only way to START a comment. It was mounted inside `DocsWorkspace`, which this view
+                  replaced — so for a while you could read and resolve threads but never open one. It lives
+                  beside the editor rather than inside it because it positions against `.de-body`'s gutter,
+                  which is the editor's box, not the prose's. */}
+              <GutterCommentButton runId={run} docId={docId} />
             </div>
             {/* Comments are where gates get answered, so they are ON by default and collapsible rather
                 than hidden behind a mode — a gate you cannot see is a gate you cannot clear. */}

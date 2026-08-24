@@ -18,7 +18,7 @@ export interface GateRow {
 /** The in-app path that opens the doc at the gate: the run's work route with `?doc=<docId>`. Navigate,
  *  don't re-implement the drawer — the work shell reads the param to open the gate's document. Same
  *  origin as the inbox, so opening a gate is a route change rather than a page load. */
-export function gateHref(item: Pick<OpenGateItem, "run" | "docId">): string {
+function gateHref(item: Pick<OpenGateItem, "run" | "docId">): string {
   return `${runHref(item.run)}?doc=${encodeURIComponent(item.docId)}`;
 }
 

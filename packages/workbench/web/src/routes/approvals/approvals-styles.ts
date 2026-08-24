@@ -1,5 +1,5 @@
 // approvals-styles — the ApprovalsBanner's injected CSS, split out to the house *-styles.ts pattern
-// (comment-styles / diff-styles / docs-styles). The ui-v2 language: a layered-black card with the accent
+// (comment-styles, doc-editor-styles). The ui-v2 language: a layered-black card with the accent
 // border-glow, fixed bottom-right so it floats over any route without shifting layout. The one place a
 // touch of urgency is sanctioned — Allow uses the accent, Deny a restrained red (--block). Every color
 // reads a tokens.css var; no new palette.

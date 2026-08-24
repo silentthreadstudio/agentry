@@ -92,29 +92,15 @@ export interface BoardModel {
 }
 
 // ── Graph model ───────────────────────────────────────────────────────────────────────────────────
-// The dependency/relationship graph the React Flow canvas renders. A pure read-model: nodes are tasks
-// (carrying FLOW's closed task status), edges are the four typed relationships between them.
-
-// The relationship an edge expresses. `derives` = produced-from (spec→plan→task); `depends-on` = the
-// task dep order; `blocks` = the inverse a blocked task draws; `satisfies` = a task closing an
-// acceptance criterion. A closed union — a fifth kind is a compile error, not a silent render.
-export type GraphEdgeKind = "derives" | "depends-on" | "blocks" | "satisfies";
-
-export interface GraphNode {
-  id: string; // stable node id (the task number / artifact key)
+// One entry in a run's document index — what the run view's tab strip renders and what
+// `GET /api/work/:id/doc/:docId` resolves. A pure read-model.
+//
+// This replaced `GraphModel` (nodes + four typed edge kinds) when the React Flow canvas was deleted:
+// nothing read the edges any more, so the contract stopped carrying them.
+export interface RunDoc {
+  id: string; // stable doc id: "spec" | "plan" | "adr-<key>" | "task-<NNN>"
   label: string; // display label
   status: FlowTaskStatus; // FLOW's closed lifecycle status (imported, not redeclared)
-}
-
-export interface GraphEdge {
-  from: string; // source node id
-  to: string; // target node id
-  kind: GraphEdgeKind;
-}
-
-export interface GraphModel {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
 }
 
 // ── Document model ────────────────────────────────────────────────────────────────────────────────

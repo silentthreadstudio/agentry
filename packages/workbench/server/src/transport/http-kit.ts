@@ -42,7 +42,7 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
 // write payloads are small markdown bodies). An empty body parses to `{}` (a bodyless POST is a 400 at
 // the field checks, not here). Rejects (throws) on overflow or malformed JSON — the dispatcher maps it
 // to 400.
-export const MAX_BODY_BYTES = 4 * 1024 * 1024; // 4 MiB — generous for a doc body, bounded against abuse.
+const MAX_BODY_BYTES = 4 * 1024 * 1024; // 4 MiB — generous for a doc body, bounded against abuse.
 export function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, rejectPromise) => {
     let size = 0;

@@ -12,7 +12,7 @@
 // the service, and serializes the typed outcome. It holds no run state and does no fs/parse itself. The two
 // write invariants (lock + optimistic concurrency) are enforced wholly inside `WriteService` (ADR-006) —
 // the client is never trusted here; the route only maps the outcome to an HTTP envelope. The run for a
-// write is the path `:id` segment (the SAME resolution the GET routes use — task 9's `matchWorkGraph`).
+// write is the path `:id` segment (the SAME resolution the GET routes use — task 9's `matchWorkDocIndex`).
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { type DocModel, type WsMessage } from "@agentry/workbench-shared";
 import { ReviewAnchor, ReviewDecision } from "@agentry/flow/domain/review";
@@ -146,7 +146,7 @@ function handleResolve(res: ServerResponse, deps: WriteDeps, runId: string, body
 // POST /api/work/:id/status → set a task's lifecycle status (the human override — cleanup note 3). Body
 // { target: "task-<NNN>", status }. Validates the status against FLOW's closed union; a non-task target or
 // an out-of-vocab status is a 400, an absent task file a 404. On success, nudges watchers so the navigator
-// dots + graph re-tint (the client refetches the graph on any ws message).
+// dots + tab re-tint (the client refetches the doc index on any ws message).
 function handleStatus(res: ServerResponse, deps: WriteDeps, runId: string, body: unknown): boolean {
   if (!isRecord(body)) return reject(res, 400, "invalid_body");
   const taskNo = taskNoFromTarget(body); // reuse: accepts `target: "task-<NNN>"`

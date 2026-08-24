@@ -1,6 +1,6 @@
 // selection-store — the shared "a comment is being composed" signal between the editor column (where the
 // margin 💬 button lives) and the review rail (where the composer renders). The two are grid SIBLINGS in
-// DocsWorkspace, so neither can prop-drill to the other; this module store is the seam (same pattern as
+// RunView, so neither can prop-drill to the other; this module store is the seam (same pattern as
 // comment-store). The GutterCommentButton captures a selection and calls `openComposer`; the rail's
 // RailComposer reads it via `usePendingComment` and renders the composer anchored to that quote.
 //

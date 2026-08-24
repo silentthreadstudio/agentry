@@ -15276,9 +15276,6 @@ function mintRun(goal) {
   assertSafeSegment(run);
   return run;
 }
-function formatTaskNo(n) {
-  return String(n).padStart(3, "0");
-}
 
 // ../../flow/src/resolution/run-pointer.ts
 function workRoot(cwd) {
@@ -18262,32 +18259,13 @@ var BacklogAdapter = class {
 var FlowTaskStatus = external_exports.enum(["todo", "in-progress", "in-review", "done"]);
 var AgentState = external_exports.enum(["working", "blocked", "done"]);
 
-// src/domain/graph.ts
-var ROOT_ID = "routing";
+// src/domain/doc-index.ts
 var SPEC_ID = "spec";
 var PLAN_ID = "plan";
-var taskId = (taskNo) => `task-${taskNo}`;
 var adrId = (key) => `adr-${key}`;
 function statusOf(frontmatter) {
   const parsed = FlowTaskStatus.safeParse(frontmatter.status);
   return parsed.success ? parsed.data : "todo";
-}
-function asKeyList(value) {
-  if (!Array.isArray(value)) return [];
-  const keys = [];
-  for (const item of value) {
-    if (typeof item === "number" && Number.isFinite(item)) keys.push(String(item));
-    else if (typeof item === "string" && item.length > 0) keys.push(item);
-  }
-  return keys;
-}
-function indexTasks(tasks) {
-  const byNo = /* @__PURE__ */ new Map();
-  for (const t of tasks) byNo.set(t.taskNo, t);
-  return byNo;
-}
-function depKey(raw) {
-  return /^\d+$/.test(raw) ? formatTaskNo(Number(raw)) : raw;
 }
 function adrKey(frontmatter, index) {
   const id = frontmatter.id;
@@ -18295,55 +18273,24 @@ function adrKey(frontmatter, index) {
   if (typeof id === "string" && id.length > 0) return id;
   return String(index);
 }
-function buildGraph(runFiles) {
-  const nodes = [];
-  const edges = [];
-  const hasRoot = runFiles.routing !== null;
-  const hasSpec = runFiles.spec !== null;
-  const hasPlan = runFiles.plan !== null;
-  if (hasRoot && runFiles.routing) {
-    nodes.push({ id: ROOT_ID, label: `routing: ${runFiles.routing.shape}`, status: "done" });
-  }
-  if (hasSpec) nodes.push({ id: SPEC_ID, label: "spec", status: "done" });
-  if (hasPlan) nodes.push({ id: PLAN_ID, label: "plan", status: "done" });
-  const adrKeys = [];
+function buildDocIndex(runFiles) {
+  const docs = [];
+  if (runFiles.spec !== null) docs.push({ id: SPEC_ID, label: "spec", status: "done" });
+  if (runFiles.plan !== null) docs.push({ id: PLAN_ID, label: "plan", status: "done" });
   runFiles.adrs.forEach((adr, i) => {
     const key = adrKey(adr.frontmatter, i);
-    adrKeys.push(key);
     const title = typeof adr.frontmatter.title === "string" ? adr.frontmatter.title : key;
-    nodes.push({ id: adrId(key), label: `adr ${key}: ${title}`, status: "done" });
+    docs.push({ id: adrId(key), label: `adr ${key}: ${title}`, status: "done" });
   });
   for (const task of runFiles.tasks) {
     const title = typeof task.frontmatter.title === "string" ? task.frontmatter.title : task.taskNo;
-    nodes.push({ id: taskId(task.taskNo), label: `${task.taskNo} ${title}`, status: statusOf(task.frontmatter) });
+    docs.push({
+      id: `task-${task.taskNo}`,
+      label: `${task.taskNo} ${title}`,
+      status: statusOf(task.frontmatter)
+    });
   }
-  if (hasRoot && hasSpec) edges.push({ from: ROOT_ID, to: SPEC_ID, kind: "derives" });
-  if (hasSpec && hasPlan) edges.push({ from: SPEC_ID, to: PLAN_ID, kind: "derives" });
-  const leafProducer = hasPlan ? PLAN_ID : hasSpec ? SPEC_ID : hasRoot ? ROOT_ID : null;
-  if (leafProducer) {
-    for (const key of adrKeys) edges.push({ from: leafProducer, to: adrId(key), kind: "derives" });
-    for (const task of runFiles.tasks) edges.push({ from: leafProducer, to: taskId(task.taskNo), kind: "derives" });
-  }
-  const byNo = indexTasks(runFiles.tasks);
-  for (const task of runFiles.tasks) {
-    for (const rawDep of asKeyList(task.frontmatter.deps)) {
-      const dep = depKey(rawDep);
-      const upstream = byNo.get(dep);
-      if (!upstream) continue;
-      edges.push({ from: taskId(task.taskNo), to: taskId(dep), kind: "depends-on" });
-      if (statusOf(upstream.frontmatter) !== "done") {
-        edges.push({ from: taskId(dep), to: taskId(task.taskNo), kind: "blocks" });
-      }
-    }
-  }
-  if (hasSpec) {
-    for (const task of runFiles.tasks) {
-      if (asKeyList(task.frontmatter.satisfies).length > 0) {
-        edges.push({ from: taskId(task.taskNo), to: SPEC_ID, kind: "satisfies" });
-      }
-    }
-  }
-  return { nodes, edges };
+  return docs;
 }
 
 // src/application/work-reader.ts
@@ -18361,13 +18308,13 @@ var WorkReader = class {
     return this.repository.listRuns();
   }
   // Fold one run into its read-models, or undefined when the run is absent (task 9 turns that into a
-  // 404). The graph and the summary derive from the SAME parsed `RunFiles`, so they never disagree.
+  // 404). The doc index and the summary derive from the SAME parsed `RunFiles`, so they never disagree.
   read(runId) {
     const files = this.repository.readRun(runId);
     if (!files) return void 0;
     return {
       summary: this.summarize(files),
-      graph: buildGraph(files),
+      docIndex: buildDocIndex(files),
       docs: this.docsOf(files)
     };
   }
@@ -18413,7 +18360,7 @@ var WorkReader = class {
   }
   // Count tasks into FLOW's closed status buckets. Every bucket starts at 0 (so a status absent from
   // the run still reports 0, not a missing key); a task whose frontmatter `status` is malformed/absent
-  // falls into `todo` — the same not-started default `buildGraph` uses, kept consistent here.
+  // falls into `todo` — the same not-started default `buildDocIndex` uses, kept consistent here.
   tallyTasks(files) {
     const counts = {
       todo: 0,
@@ -18437,8 +18384,8 @@ var WorkReader = class {
     return files.run;
   }
   // The run's docs for the editor: spec, plan, each adr, AND each task — keyed with the SAME ids
-  // buildGraph mints for its nodes, so a graph click maps straight to a doc. Tasks are keyed
-  // `task-<NNN>` (matching buildGraph's `taskId`), so `GET /doc/task-NNN` resolves and a task write
+  // buildDocIndex mints for its entries, so a tab click maps straight to a doc. Tasks are keyed
+  // `task-<NNN>` (matching buildDocIndex's ids), so `GET /doc/task-NNN` resolves and a task write
   // can push a fresh DocModel. The doc's lock/version are derived at the transport edge from the
   // ferried frontmatter (`toDocModel`/`lockOf`): a task whose `status: in-progress` reports locked by
   // its `lockedBy` (the SAME derivation spec/plan/adr docs already use — no second lock path here).
@@ -19077,8 +19024,8 @@ function runParam(url) {
 function resolveRun(reader, label) {
   return resolveSlug(label, reader.listRuns());
 }
-function matchWorkGraph(path) {
-  const m = /^\/api\/work\/([^/]+)\/graph$/.exec(path);
+function matchWorkDocIndex(path) {
+  const m = /^\/api\/work\/([^/]+)\/docs$/.exec(path);
   if (!m || m[1] === void 0) return null;
   try {
     return decodeURIComponent(m[1]);
@@ -19189,13 +19136,13 @@ function handleApiRequest(req, res, reader, context, projectRoot, projectSlug2) 
       });
     });
   }
-  const graphId = matchWorkGraph(path);
-  if (graphId !== null) {
+  const docIndexId = matchWorkDocIndex(path);
+  if (docIndexId !== null) {
     return guardGet(method, res, () => {
-      const runId = resolveRun(reader, graphId);
+      const runId = resolveRun(reader, docIndexId);
       const read = runId !== void 0 ? reader.read(runId) : void 0;
       if (!read) return sendJson(res, 404, { error: "unknown_run" });
-      sendJson(res, 200, read.graph);
+      sendJson(res, 200, read.docIndex);
     });
   }
   const doc = matchWorkDoc(path);

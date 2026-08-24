@@ -23,6 +23,7 @@ import {
   countChips,
   currentTask,
   isReset,
+  keyboardTarget,
   elapsedOf,
   initialsOf,
   progressOf,
@@ -75,12 +76,11 @@ export function Board() {
     });
   }, [load]);
 
-  const drop = async (target: BoardColumn) => {
-    const card = dragging;
-    setDragging(null);
-    setOver(null);
-    // An unwelcome column never reaches here — it refused the dragover, so the browser fires no drop
-    // (that refusal is shown on hover instead). This guard is belt-and-braces, not the message path.
+  // The ONE move path — drag and keyboard both land here, so a card cannot behave differently
+  // depending on which one you used (the reset confirm in particular).
+  const move = async (card: BoardCard | null, target: BoardColumn) => {
+    // An unwelcome column never reaches here from a drag — it refused the dragover, so the browser fires
+    // no drop (that refusal is shown on hover instead). The guard is what the KEYBOARD path leans on.
     if (!card || card.column === target || !canDrop(card, target)) return;
     setRefusal(null);
     try {
@@ -96,6 +96,13 @@ export function Board() {
     } catch {
       setRefusal("Couldn't move that — the server rejected the change.");
     }
+  };
+
+  const drop = (target: BoardColumn) => {
+    const card = dragging;
+    setDragging(null);
+    setOver(null);
+    return move(card, target);
   };
 
   if (state.kind === "loading") return <div className="board-wrap" aria-busy="true" />;
@@ -197,6 +204,10 @@ export function Board() {
                   key={card.id}
                   card={card}
                   onDragStart={() => setDragging(card)}
+                  onMove={(dir) => {
+                    const target = keyboardTarget(card, dir);
+                    if (target !== null) void move(card, target);
+                  }}
                   onOpen={() => card.run !== undefined && navigate(runHref(card.run))}
                   onDragEnd={() => {
                     // Clears on cancel (Esc, drop outside a column) as well as on a real drop —
@@ -218,11 +229,13 @@ export function Board() {
 function Card({
   card,
   onOpen,
+  onMove,
   onDragStart,
   onDragEnd,
 }: {
   card: BoardCard;
   onOpen: () => void;
+  onMove: (dir: -1 | 1) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
@@ -240,6 +253,14 @@ function Card({
   // not started. Opening PREVIEWS it in a pane rather than navigating away; the full run view (graph,
   // activity, the editor) is one click further, from inside the pane.
   const open = card.run !== undefined ? onOpen : undefined;
+  // Every card is focusable, not only the openable ones: a backlog ITEM has no run to open, and if focus
+  // skipped it there would be no way to reach ←/→ and move it. Drag is the mouse affordance; the arrows
+  // are the same action, and an action only one input device can perform is not an action everyone has.
+  const label = [
+    open ? `Open run ${card.title}` : card.title,
+    `in ${COLUMNS.find((c) => c.key === card.column)?.label ?? card.column}`,
+    "left and right arrows move it",
+  ].join(", ");
 
   return (
     <article
@@ -252,11 +273,16 @@ function Card({
         if (open && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
           open();
+          return;
+        }
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault(); // otherwise the column scrolls sideways under the card that just left it
+          onMove(e.key === "ArrowLeft" ? -1 : 1);
         }
       }}
       role={open ? "button" : undefined}
-      tabIndex={open ? 0 : undefined}
-      aria-label={open ? `Open run ${card.title}` : card.title}
+      tabIndex={0}
+      aria-label={label}
     >
       <div className="ttl">{card.title}</div>
       <div className="meta">

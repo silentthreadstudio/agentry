@@ -6,11 +6,11 @@ import { type Server, createServer } from "node:http";
 
 // The workbench's reserved fixed local port. The port number is the lock identity — not configurable
 // here (ADR-002 pins :4317); the composition root attaches its request handler to the bound server.
-export const WORKBENCH_PORT = 4317;
+const WORKBENCH_PORT = 4317;
 
 // Loopback address the bind/probe use directly. ADR-002: the health probe must use 127.0.0.1, never a
 // `*.localhost` name (subdomain resolution is a browser behavior; a probe can't rely on it).
-export const LOOPBACK_HOST = "127.0.0.1";
+const LOOPBACK_HOST = "127.0.0.1";
 
 // Outcome of attempting to acquire the singleton lock. A discriminated union, not a throw the caller
 // must catch blindly: "bound" carries the server handle to attach to; "already-up" is the EADDRINUSE

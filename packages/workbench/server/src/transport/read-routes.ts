@@ -2,7 +2,7 @@
 // api-client (task 10) consumes exactly these:
 //   GET  /healthz                  → 200 {status:"ok"}           — the liveness probe (ADR-002's focus-or-start)
 //   GET  /api/works                → RunSummary[]                 — the Works home list (AC2)
-//   GET  /api/work/:id/graph       → GraphModel                  — one run's dependency/derivation graph
+//   GET  /api/work/:id/docs        → RunDoc[]                    — one run's documents, in reading order
 //   GET  /api/work/:id/doc/:docId  → DocModel                    — one doc the editor opens (the write-loop's read half)
 //   GET  /api/context[?run=label]  → { project?, root?, run? }   — the SPA's bootstrap: which PROJECT this
 //                                                                  server serves + which run is addressed
@@ -10,13 +10,13 @@
 //
 // This module is the thin HTTP-shape adapter over `WorkReader`: it parses the path, calls the reader, and
 // serializes JSON. It holds no run state and does no fs/parse itself. The run for a path is the `:id`
-// segment (task 9's `matchWorkGraph` resolution), which on a browser equals the host-router run (ADR-002).
+// segment (task 9's `matchWorkDocIndex` resolution), which on a browser equals the host-router run (ADR-002).
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename } from "node:path";
 import type { WorkReader } from "../application/work-reader.js";
 import type { RunContext } from "./host-router.js";
 import { guardGet, sendJson } from "./http-kit.js";
-import { matchWorkDoc, matchWorkGraph, resolveRun, runParam } from "./route-match.js";
+import { matchWorkDoc, matchWorkDocIndex, resolveRun, runParam } from "./route-match.js";
 import { toDocModel } from "./doc-model.js";
 
 // `true` when this request was answered by a route, `false` when no API/healthz route matched (so the
@@ -63,15 +63,15 @@ export function handleApiRequest(
     });
   }
 
-  const graphId = matchWorkGraph(path);
-  if (graphId !== null) {
+  const docIndexId = matchWorkDocIndex(path);
+  if (docIndexId !== null) {
     return guardGet(method, res, () => {
       // The `:id` segment may be a `workSlug` (task 003) or a full id — resolve it to the real run before
       // reading. An unresolvable label is an unknown run (404), the same outcome a stale id already gives.
-      const runId = resolveRun(reader, graphId);
+      const runId = resolveRun(reader, docIndexId);
       const read = runId !== undefined ? reader.read(runId) : undefined;
       if (!read) return sendJson(res, 404, { error: "unknown_run" });
-      sendJson(res, 200, read.graph);
+      sendJson(res, 200, read.docIndex);
     });
   }
 
@@ -93,7 +93,7 @@ export function handleApiRequest(
   return false; // no API route matched — let the http layer serve static (or the POST dispatcher, see http.ts).
 }
 
-// The Works list: one RunSummary per run, derived from the SAME `read` the graph route uses (so the list
+// The Works list: one RunSummary per run, derived from the SAME `read` the docs route uses (so the list
 // row and the opened run never disagree). A run that vanishes between `listRuns` and `read` (a race with
 // a deletion) is simply dropped from the list rather than 500-ing the whole page.
 function listWorks(reader: WorkReader): unknown[] {

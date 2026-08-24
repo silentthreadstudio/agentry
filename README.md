@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <code>v0.1 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
+  <code>v0.2 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
 </p>
 
 ---
@@ -132,16 +132,30 @@ dump. Writes pass a write-bar; stale facts decay; a graduation pipeline turns **
 payoff: the second time Agentry meets a decision it settled before, it recalls it, applies it, and routes the task
 lighter — spec-first becomes one-shot. **Run #2 is warmer than run #1.**
 
-## Workbench — the Agent Center (optional)
+## Workbench — the multi-agent workspace (optional)
 
-The Workbench is a per-project local web app for *acting on* a run's work — a second client beside the chat
-session, over the same `.agentry/` files. Read, **edit, comment on, and approve** the spec / plan / tasks, and
-**watch and steer** the agents on a live graph of the run. Your edits are authoritative: the agent reads them
-back next turn.
+The Workbench is a local web app for *acting on* the work — a second client beside the chat session, over the
+same `.agentry/` files. **v0.2 turned it from a viewer into a workspace.** It answers one question the terminal
+can't: *what is moving, and what needs me* — across every project, every run, and every agent at once.
 
-One server per project on a fixed port (`:4317`); each run gets its own URL by host-routing
-(`<run>.localhost:4317`, no `/etc/hosts` edit). Launch or focus it with `/agentry:workbench [run]`. It is **stateless
-over the files** — kill it and the run is untouched; the `.agentry/` tree is the state.
+- **A board, not a list.** Backlog items and runs sit on ONE lifecycle — `Backlog → Ready → Running → In review
+  → Done`. A run's column is folded from its tasks server-side, so the board can never disagree with disk.
+- **New work is captured, not dispatched.** The Workbench has no model; it queues an item, and the next
+  conducting session claims it. A button that said "Start now" would promise something it cannot do.
+- **The conductor rail.** The conversation is *ambient* — a persistent column beside the work, in three widths
+  (a spine with an unread count · the rail · focus). Not a tab you navigate to.
+- **Presence you can trust.** ON SHIFT shows who is working on what, with a live timer, recorded by a
+  `SubagentStart`/`SubagentStop` hook — the harness reports it, so a model cannot forget to.
+- **Contract-overlap warnings.** Two in-progress tasks that both `own` a file are flagged *before* one clobbers
+  the other.
+- **Read, edit, comment, resolve** — select a span of a spec/plan/task, comment on it, and the agent reads it
+  back next turn. Saves are version-checked; a stale write is rejected, never merged silently.
+
+**One server, many projects** on a fixed port (`:4317`). Running `/agentry:workbench` inside a repo registers
+that repo with the server and switches to it; the project switcher shows every registered root by name *and*
+path. Runs are path-routed (`/work/<run>`) — v0.1's `<run>.localhost` host-routing was reversed in ADR-008
+after browsers case-folded the `Host` header and silently broke every run link. It is **stateless over the
+files** — kill it and the run is untouched; the `.agentry/` tree is the state.
 
 **Optional:** you can conduct an entire run from the terminal and never open it.
 
@@ -193,11 +207,13 @@ every number gated by controls and read from real work artifacts, never a proxy.
 
 ```bash
 cd packages/eval && npm install
-npm run selfeval -- run routing  --fixture fixtures/routing-quick --runs 3 --plugin-dir ../..
-npm run selfeval -- run quality  --from-run <run-id>      # judges stored specs — zero re-run
-npm run selfeval -- run moat     --fixture fixtures/moat   --plugin-dir ../..
-npm run selfeval -- report       <run-id>                 # → a self-contained dashboard HTML
+npm run selfeval -- run bench --fixtures-dir fixtures/bench --plugin-dir ../..
+npm run selfeval -- replay <run-id>    # offline re-analysis of a stored run — zero API
+npm run selfeval -- report <run-id>    # → a self-contained dashboard HTML
 ```
+
+One conducted run per fixture yields every axis — decision quality, code correctness, honesty/overclaim, and
+verification — so the probes share a run instead of each paying for their own.
 
 ## Repo layout & dev
 
@@ -213,7 +229,7 @@ every commit. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full dev setup 
 
 ## Maturity & license
 
-**v0.1, pre-1.0.** The shape is settled and the core paths are exercised, but contracts can still change between
+**v0.2, pre-1.0.** The shape is settled and the core paths are exercised, but contracts can still change between
 versions and the channels layer rides Claude Code's research preview. Use it, file issues, expect some churn.
 
 MIT.

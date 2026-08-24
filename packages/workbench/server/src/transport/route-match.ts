@@ -26,11 +26,11 @@ export function resolveRun(reader: WorkReader, label: string): string | undefine
   return resolveSlug(label, reader.listRuns());
 }
 
-// Match `/api/work/:id/graph` → the (still-decoded) run id, or null. The id segment is `decodeURIComponent`d
+// Match `/api/work/:id/docs` → the (still-decoded) run id, or null. The id segment is `decodeURIComponent`d
 // so a percent-encoded run id round-trips; the host-router/WorkReader's `assertSafeSegment` is the guard,
 // not this matcher.
-export function matchWorkGraph(path: string): string | null {
-  const m = /^\/api\/work\/([^/]+)\/graph$/.exec(path);
+export function matchWorkDocIndex(path: string): string | null {
+  const m = /^\/api\/work\/([^/]+)\/docs$/.exec(path);
   if (!m || m[1] === undefined) return null;
   try {
     return decodeURIComponent(m[1]);
@@ -40,7 +40,7 @@ export function matchWorkGraph(path: string): string | null {
 }
 
 // Match `/api/work/:id/doc/:docId` → the decoded run + doc ids, or null. Same decode discipline as
-// `matchWorkGraph`; the run/doc safety is the host-router/reader guard, not this matcher.
+// `matchWorkDocIndex`; the run/doc safety is the host-router/reader guard, not this matcher.
 export function matchWorkDoc(path: string): { runId: string; docId: string } | null {
   const m = /^\/api\/work\/([^/]+)\/doc\/([^/]+)$/.exec(path);
   if (!m || m[1] === undefined || m[2] === undefined) return null;

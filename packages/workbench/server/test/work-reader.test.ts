@@ -1,9 +1,9 @@
 // WorkReader proof — the application fold (task 008). Two layers of evidence:
-//  1. against a FAKE WorkRepository, so the fold (summary tally, title, docs, graph delegation) is
+//  1. against a FAKE WorkRepository, so the fold (summary tally, title, docs, doc-index delegation) is
 //     tested deterministically with no fs — the port purity ADR-001 buys.
 //  2. against the REAL FsWorkRepository on the committed fixture run (copied into a temp `.agentry/work/`
 //     tree by the shared loader, so it is CI-portable — the live `.agentry/work/` is gitignored), so
-//     `read` is proven to return a populated `RunSummary` + `GraphModel` for genuine on-disk data (the
+//     `read` is proven to return a populated `RunSummary` + doc index for genuine on-disk data (the
 //     acceptance).
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
@@ -51,17 +51,16 @@ test("read returns a RunSummary with task tally by FLOW's closed status", () => 
   assert.deepEqual(result.summary.taskCounts, { todo: 1, "in-progress": 1, "in-review": 0, done: 1 });
 });
 
-test("read returns a GraphModel derived from the same files (buildGraph delegation)", () => {
+test("read returns a doc index derived from the same files (buildDocIndex delegation)", () => {
   const reader = new WorkReader(fakeRepo(sampleFiles()), fixedClock);
   const result = reader.read("sample");
   assert.ok(result, "the run reads");
-  // The graph carries the routing root + a node per task — proof buildGraph ran on these files.
-  assert.ok(result.graph.nodes.some((n) => n.id === "routing"), "routing root node");
-  assert.ok(result.graph.nodes.some((n) => n.id === "task-002"), "a task node");
-  assert.ok(result.graph.edges.length > 0, "edges derived");
+  // The index carries an entry per artifact — proof buildDocIndex ran on these files.
+  assert.ok(result.docIndex.some((d) => d.id === "spec"), "the spec");
+  assert.ok(result.docIndex.some((d) => d.id === "task-002"), "a task");
 });
 
-test("read ferries docs keyed with buildGraph's node ids (spec/plan/adr/task)", () => {
+test("read ferries docs keyed with buildDocIndex's ids (spec/plan/adr/task)", () => {
   const reader = new WorkReader(fakeRepo(sampleFiles()), fixedClock);
   const result = reader.read("sample");
   assert.ok(result, "the run reads");
@@ -69,7 +68,7 @@ test("read ferries docs keyed with buildGraph's node ids (spec/plan/adr/task)", 
   assert.deepEqual(
     ids,
     ["spec", "plan", "adr-ADR-001", "task-001", "task-002", "task-003"],
-    "spec/plan/adr THEN a task-<NNN> doc per task, keys mirroring buildGraph's node ids",
+    "spec/plan/adr THEN a task-<NNN> doc per task, keys mirroring buildDocIndex's ids",
   );
 });
 
@@ -105,7 +104,7 @@ test("read returns undefined for an absent run", () => {
   assert.equal(reader.read("missing"), undefined);
 });
 
-test("read on the REAL fixture run returns a populated summary + graph (acceptance)", () => {
+test("read on the REAL fixture run returns a populated summary + doc index (acceptance)", () => {
   const cwd = loadFixtureRun();
   try {
     const reader = new WorkReader(new FsWorkRepository(cwd), fixedClock);
@@ -121,9 +120,9 @@ test("read on the REAL fixture run returns a populated summary + graph (acceptan
     assert.ok(total > 0, "the fixture has tasks tallied into the summary");
     assert.ok(result.summary.title.length > 0, "a non-empty title");
 
-    // Graph: the routing root + dependency edges (proof the merged deps reach buildGraph on real files).
-    assert.ok(result.graph.nodes.some((n) => n.id === "routing"), "routing root from events.jsonl");
-    assert.ok(result.graph.edges.some((e) => e.kind === "depends-on"), "depends-on edges from merged deps");
+    // Doc index: an entry per real artifact on disk, with FLOW's status carried through.
+    assert.ok(result.docIndex.some((d) => d.id === "spec"), "the spec from disk");
+    assert.ok(result.docIndex.some((d) => d.id.startsWith("task-")), "a task from disk");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -1,6 +1,6 @@
 // doc-editor-styles — the DocEditor chrome styles (header + status select + source toolbar + prose),
-// injected once. Extracted from DocEditor.tsx to match the house pattern (comment-styles / docs-styles /
-// diff-styles all live in dedicated *-styles modules). Every color reads a tokens.css variable (no new
+// injected once. Extracted from DocEditor.tsx to match the house pattern (comment-styles and the other
+// *-styles modules). Every color reads a tokens.css variable (no new
 // palette). The `.dd-prose .ProseMirror …` descendant selectors stay here (the rail + comment marks key
 // on them) — the read view and the comment highlights share this one prose styling.
 import { useEffect } from "react";

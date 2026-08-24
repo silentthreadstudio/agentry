@@ -18,6 +18,7 @@ import {
   cardNote,
   currentTask,
   isReset,
+  keyboardTarget,
   progressOf,
   relativeTime,
   refusalReason,
@@ -228,4 +229,35 @@ test("assignments fold by agent — one row per person, not one per task", () =>
 
 test("a card with no assignments folds to nothing", () => {
   assert.deepEqual(assignedByAgent(run()), []);
+});
+
+// Keyboard parity with drag (doc 19 a11y). Drag-and-drop is mouse-only, so these arrows ARE the board's
+// write action for anyone not using a mouse — and they must obey exactly the same `canDrop` rules.
+test("→ moves a backlog item to Ready, ← moves it back", () => {
+  assert.equal(keyboardTarget(item({ column: "backlog" }), 1), "ready");
+  assert.equal(keyboardTarget(item({ column: "ready" }), -1), "backlog");
+});
+
+test("an item never lands in a column it cannot be dropped into", () => {
+  // → from Ready would be Running, which an item cannot enter — so there is nowhere to go, not a
+  // silent slide into a column the drag rules forbid.
+  assert.equal(keyboardTarget(item({ column: "ready" }), 1), null);
+  assert.equal(keyboardTarget(item({ column: "backlog" }), -1), null);
+});
+
+test("a run reaches Ready — its one legal move — by walking left past the columns it cannot enter", () => {
+  assert.equal(keyboardTarget(run({ column: "running" }), -1), "ready");
+  assert.equal(keyboardTarget(run({ column: "done" }), -1), "ready");
+  assert.equal(keyboardTarget(run({ column: "running" }), 1), null);
+});
+
+test("every keyboard target agrees with canDrop — one rule, two input devices", () => {
+  for (const from of COLUMNS) {
+    for (const card of [item({ column: from.key }), run({ column: from.key })]) {
+      for (const dir of [-1, 1] as const) {
+        const target = keyboardTarget(card, dir);
+        if (target !== null) assert.ok(canDrop(card, target), `${card.origin} ${from.key} ${dir} → ${target}`);
+      }
+    }
+  }
 });
