@@ -185,6 +185,84 @@ checkBundle(
   { srcSubdir: "server/src" },
 );
 
+// 6b. No workspace package may re-invoke a SIBLING package's script of the same name.
+//
+// `packages/workbench` used to orchestrate `pnpm --filter @agentry/workbench-web build && … -server build`.
+// But web and server are workspace packages in their own right, so `pnpm -r build` reached them directly
+// AND through the orchestrator: each artifact built TWICE, concurrently (nothing declares an ordering edge
+// between them), into the same output directory. It was invisible for months because the builds are
+// content-deterministic — two racing writers happened to produce identical bytes.
+//
+// It stopped being harmless when `.srchash` started carrying a hash of the whole dist DIRECTORY: a
+// `writeStamp` landing mid-build now snapshots a transient tree, and that stamp then hard-fails for
+// everyone. So this is a gate, not a style note.
+// The packages `pnpm -r` actually selects — read from pnpm-workspace.yaml, not by walking the tree. The
+// walk was wrong: `packages/eval/fixtures/**` holds seed projects with their own package.json that pnpm
+// never sees, and a guard that checks a different set than the command it guards is guarding nothing.
+// Only the trailing-`*` glob form this repo uses is supported; anything else is reported rather than
+// silently skipped, so a future glob style cannot quietly shrink the checked set.
+const workspaceManifests = () => {
+  const yaml = readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8");
+  const globs = [];
+  for (const line of yaml.split("\n")) {
+    const m = /^\s*-\s*['"]?([^'"#]+?)['"]?\s*$/.exec(line);
+    if (!m || !m[1].startsWith("packages/")) continue;
+    globs.push(m[1]);
+  }
+  const found = [];
+  for (const glob of globs) {
+    if (!glob.endsWith("/*")) {
+      warn(`pnpm-workspace.yaml glob "${glob}" is not the supported <dir>/* form — double-run check skipped it`);
+      continue;
+    }
+    const dir = join(ROOT, glob.slice(0, -2));
+    if (!existsSync(dir)) continue;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === "node_modules") continue;
+      const manifest = join(dir, entry.name, "package.json");
+      if (existsSync(manifest)) found.push(manifest);
+    }
+  }
+  return found;
+};
+
+const manifests = workspaceManifests().map((file) => {
+  try {
+    return { file, pkg: JSON.parse(readFileSync(file, "utf8")) };
+  } catch {
+    return null;
+  }
+}).filter((m) => m !== null);
+
+const scriptOwners = new Map(); // script name → Set of package names that define it
+for (const { pkg } of manifests) {
+  for (const name of Object.keys(pkg.scripts ?? {})) {
+    if (!scriptOwners.has(name)) scriptOwners.set(name, new Set());
+    scriptOwners.get(name).add(pkg.name);
+  }
+}
+
+let doubleRun = 0;
+for (const { pkg } of manifests) {
+  for (const [name, body] of Object.entries(pkg.scripts ?? {})) {
+    if (typeof body !== "string") continue;
+    // `pnpm --filter <target> [--filter <target>…] <name>` — the target also defining `name` means
+    // `pnpm -r <name>` runs it twice.
+    for (const match of body.matchAll(/--filter\s+(\S+)/g)) {
+      const target = match[1];
+      if (target === pkg.name) continue;
+      if (!body.includes(` ${name}`) && !body.endsWith(name)) continue;
+      if (scriptOwners.get(name)?.has(target) !== true) continue;
+      doubleRun += 1;
+      err(
+        `${pkg.name}'s "${name}" re-invokes ${target}'s "${name}" — pnpm -r ${name} then runs it twice, ` +
+          `concurrently, with no ordering edge; drop the wrapper and let -r reach the package directly`,
+      );
+    }
+  }
+}
+if (doubleRun === 0) ok("no double-run scripts", `${manifests.length} package(s) checked`);
+
 // 7. hooks.json — events MUST nest under a top-level "hooks" key. The bare form
 // (events at the root) parses as valid JSON but silently fails to load — no hook
 // ever fires, including SessionStart, with no error anywhere. Catch it here.
