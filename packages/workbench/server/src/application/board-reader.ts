@@ -39,6 +39,8 @@ interface TaskFacts {
   status: string;
   owns: string[];
   deps: string[];
+  /** The agent the Task family assigned this to, if any (FLOW's `lockedBy`). */
+  lockedBy?: string;
 }
 
 export class BoardReader {
@@ -61,6 +63,7 @@ export class BoardReader {
       const tasks = taskFactsOf(runId, read.docs);
       allTasks.push(...tasks);
       const blocked = blockedIn(tasks);
+      const assigned = assignedIn(tasks);
       runCards.set(runId, {
         id: runId,
         column: runColumn(summary.taskCounts),
@@ -73,6 +76,7 @@ export class BoardReader {
         taskCounts: summary.taskCounts,
         agentCount: summary.agentCount,
         ...(blocked.length > 0 ? { blocked } : {}),
+        ...(assigned.length > 0 ? { assigned } : {}),
         updatedAt: summary.updatedAt,
       });
     }
@@ -90,7 +94,14 @@ export class BoardReader {
       }
       for (const [run, agents] of byRun) {
         const card = runCards.get(run);
-        if (card) card.agents = agents;
+        if (!card) continue;
+        card.agents = agents;
+        // An agent that is actually PRESENT outranks its own assignment row — otherwise a working agent
+        // would appear twice, once live and once as "assigned".
+        const present = new Set(agents.map((a) => a.role));
+        const stillWaiting = (card.assigned ?? []).filter((a) => !present.has(a.to));
+        if (stillWaiting.length > 0) card.assigned = stillWaiting;
+        else delete card.assigned;
       }
     }
 
@@ -153,11 +164,13 @@ function taskFactsOf(run: string, docs: readonly ReaderDoc[]): TaskFacts[] {
     const frontDeps = Array.isArray(doc.frontmatter.deps)
       ? doc.frontmatter.deps.map((d) => String(d))
       : [];
+    const lockedBy = typeof doc.frontmatter.lockedBy === "string" ? doc.frontmatter.lockedBy : undefined;
     facts.push({
       run,
       taskNo: doc.id.slice("task-".length),
       status: typeof doc.frontmatter.status === "string" ? doc.frontmatter.status : "todo",
       owns: contract.owns,
+      ...(lockedBy !== undefined ? { lockedBy } : {}),
       deps: [...new Set([...frontDeps, ...contract.deps])].map(normalizeTaskNo).filter(Boolean),
     });
   }
@@ -184,6 +197,15 @@ function blockedIn(tasks: readonly TaskFacts[]): { task: string; by: string[] }[
     if (by.length > 0) blocked.push({ task: task.taskNo, by });
   }
   return blocked;
+}
+
+/** Tasks that have been GIVEN to an agent but whose agent is not working yet. Dispatch and the agent's
+ *  first write are seconds to minutes apart, and in that window a card with nothing on it reads as
+ *  "nobody is on this" when somebody already is. */
+function assignedIn(tasks: readonly TaskFacts[]): { task: string; to: string }[] {
+  return tasks
+    .filter((t) => t.lockedBy !== undefined && t.status !== "done")
+    .map((t) => ({ task: t.taskNo, to: t.lockedBy as string }));
 }
 
 /** Every pair of CONCURRENT tasks (both in-progress) whose owns sets intersect. Only in-progress

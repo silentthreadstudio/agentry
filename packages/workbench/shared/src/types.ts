@@ -65,6 +65,10 @@ export interface BoardCard {
   agents?: AgentView[];
   /** Tasks whose `deps` are not yet done, with the blockers that hold them. */
   blocked?: { task: string; by: string[] }[];
+  /** Tasks with a `lockedBy` holder who is not (yet) in the roster — staffed, but not started. Dispatch
+   *  and first write are seconds to minutes apart, and a card that shows nothing in between reads as
+   *  "nobody is on this" when somebody already is. */
+  assigned?: { task: string; to: string }[];
   /** True when this card takes part in a `BoardConflict` — the card tints, the banner explains. */
   conflict?: boolean;
   updatedAt: string;

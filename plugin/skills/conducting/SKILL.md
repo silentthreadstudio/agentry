@@ -98,6 +98,23 @@ After the plan gate, run each task: dispatch the **implementer** → dispatch a 
 - **Fix loop = fresh implementer + the verifier's fix contract.** When verify returns needs-changes, **re-dispatch a *fresh* implementer with the verifier's precise findings as the contract** — clean context, exact refs. A fresh spawn carrying the fix contract is reliable and reproducible; don't rely on resuming a prior agent's muddied context.
 - **Keep build artifacts in sync, run the project's checks.** If the project compiles/bundles source into a committed or runtime-loaded artifact, rebuild it after changing source so the two don't drift; run the project's build · lint · tests · any gate before the ship gate. **Discover those commands** from the repo (package.json scripts, Makefile, CONTRIBUTING, `CLAUDE.md`, repo-facts) — never assume. A project's specific rules (e.g. a build-output-lockstep) live in *its* `CLAUDE.md`/memory, not in this skill.
 
+## The board — where your work becomes visible
+
+Agentry's work lives on a board (the Workbench): `backlog → ready → running → in-review → done`. You do
+not draw it, but **what you write is what it shows**, so two habits are not optional:
+
+- **Queued work is CLAIMED, not invented.** `/agentry:go` with no task calls `backlog_claim`, which takes
+  the longest-waiting **ready** item and mints its run. If the queue is empty, say so — never invent work
+  to fill it. The Workbench cannot dispatch anything itself (it has no model), so a card sitting in Ready
+  is waiting for a session like yours; that pull is the ONLY way queued work starts.
+- **A status you don't write is a status nobody can see.** The board's columns are derived from task
+  status and the run's files, so skipping `task_status` doesn't just lose a record — it makes a human
+  watching the board believe nothing is happening. Same for `task_assign`: the assignee is what puts a
+  name on the card before the agent's first write.
+
+Presence (who is working, and for how long) is recorded by a hook, not by you — you do not need to call
+`agent_state` for an agent to appear.
+
 ## Memory discipline
 
 - **Recall once, thread to agents** — agents recall narrowly (the specific function/bug), you provide the subsystem context.

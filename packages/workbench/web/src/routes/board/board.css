@@ -696,3 +696,12 @@
   font-size: 10.5px;
   color: var(--faint);
 }
+
+/* Assigned-but-not-started: a commitment, not motion. Dimmed and pulse-less so it never reads as an
+   agent already at work — the difference between "someone will" and "someone is". */
+.presence .who.waiting {
+  opacity: 0.62;
+}
+.presence .who.waiting .av {
+  box-shadow: 0 0 0 1px var(--line2);
+}

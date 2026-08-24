@@ -168,3 +168,15 @@ export function currentTask(card: BoardCard): string | null {
   const blocked = card.blocked?.[0]?.task;
   return blocked ? `T-${blocked}` : null;
 }
+
+
+/** Assignments folded by agent: one row per person, listing their tasks. Three identical
+ *  "implementer · assigned T-00x" lines say the same thing three times and push the rest of the card
+ *  off screen; "implementer · assigned T-001, T-002, T-003" says it once. */
+export function assignedByAgent(card: BoardCard): { to: string; tasks: string[] }[] {
+  const byAgent = new Map<string, string[]>();
+  for (const a of card.assigned ?? []) {
+    byAgent.set(a.to, [...(byAgent.get(a.to) ?? []), a.task]);
+  }
+  return [...byAgent].map(([to, tasks]) => ({ to, tasks: tasks.sort() }));
+}

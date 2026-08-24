@@ -18,6 +18,7 @@ import {
   blockedLabel,
   canDrop,
   conflictText,
+  assignedByAgent,
   cardNote,
   countChips,
   currentTask,
@@ -229,6 +230,7 @@ function Card({
   const chips = countChips(card);
   const blocked = blockedLabel(card);
   const agents = card.agents ?? [];
+  const assigned = assignedByAgent(card);
   const note = cardNote(card);
   // A gate is the one thing on this board that is waiting on YOU rather than on an agent, so an
   // in-review card says which artifact is at the gate rather than only that it is in review.
@@ -284,7 +286,7 @@ function Card({
           ))}
         </div>
       ) : null}
-      {agents.length > 0 ? (
+      {agents.length > 0 || assigned.length > 0 ? (
         <div className="presence">
           {agents.map((a) => {
             const elapsed = elapsedOf(a);
@@ -300,6 +302,15 @@ function Card({
               </span>
             );
           })}
+          {/* Staffed but not started — dimmed, because it is a commitment rather than motion. */}
+          {assigned.map((a) => (
+            <span className="who waiting" key={a.to} title={`${a.to} assigned to ${a.tasks.length} task(s)`}>
+              <span className="av">{a.to.slice(0, 2).toUpperCase()}</span>
+              <span className="act">
+                {a.to} · assigned <code>{a.tasks.map((t) => `T-${t}`).join(", ")}</code>
+              </span>
+            </span>
+          ))}
         </div>
       ) : null}
     </article>

@@ -18770,6 +18770,7 @@ var BoardReader = class {
       const tasks = taskFactsOf(runId, read.docs);
       allTasks.push(...tasks);
       const blocked = blockedIn(tasks);
+      const assigned = assignedIn(tasks);
       runCards.set(runId, {
         id: runId,
         column: runColumn(summary.taskCounts),
@@ -18782,6 +18783,7 @@ var BoardReader = class {
         taskCounts: summary.taskCounts,
         agentCount: summary.agentCount,
         ...blocked.length > 0 ? { blocked } : {},
+        ...assigned.length > 0 ? { assigned } : {},
         updatedAt: summary.updatedAt
       });
     }
@@ -18795,7 +18797,12 @@ var BoardReader = class {
       }
       for (const [run, agents] of byRun) {
         const card = runCards.get(run);
-        if (card) card.agents = agents;
+        if (!card) continue;
+        card.agents = agents;
+        const present = new Set(agents.map((a) => a.role));
+        const stillWaiting = (card.assigned ?? []).filter((a) => !present.has(a.to));
+        if (stillWaiting.length > 0) card.assigned = stillWaiting;
+        else delete card.assigned;
       }
     }
     for (const item of this.backlog.list()) {
@@ -18836,11 +18843,13 @@ function taskFactsOf(run, docs) {
     if (!doc.id.startsWith("task-")) continue;
     const contract = parseContract(doc.body);
     const frontDeps = Array.isArray(doc.frontmatter.deps) ? doc.frontmatter.deps.map((d) => String(d)) : [];
+    const lockedBy = typeof doc.frontmatter.lockedBy === "string" ? doc.frontmatter.lockedBy : void 0;
     facts.push({
       run,
       taskNo: doc.id.slice("task-".length),
       status: typeof doc.frontmatter.status === "string" ? doc.frontmatter.status : "todo",
       owns: contract.owns,
+      ...lockedBy !== void 0 ? { lockedBy } : {},
       deps: [.../* @__PURE__ */ new Set([...frontDeps, ...contract.deps])].map(normalizeTaskNo).filter(Boolean)
     });
   }
@@ -18862,6 +18871,9 @@ function blockedIn(tasks) {
     if (by.length > 0) blocked.push({ task: task.taskNo, by });
   }
   return blocked;
+}
+function assignedIn(tasks) {
+  return tasks.filter((t) => t.lockedBy !== void 0 && t.status !== "done").map((t) => ({ task: t.taskNo, to: t.lockedBy }));
 }
 function overlapsAmong(tasks) {
   const live = tasks.filter((t) => t.status === "in-progress" && t.owns.length > 0);

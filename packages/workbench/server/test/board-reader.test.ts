@@ -228,3 +228,33 @@ test("a board with no roster source still reads — presence is optional, not re
   const board = new BoardReader(reader([runFiles("r-1", ["in-progress"])]), items([])).read();
   assert.equal(board.columns.running[0]?.agents, undefined);
 });
+
+// ── assignment before the first write (doc 19 H2) ──────────────────────────────────────────────────
+// Dispatch and an agent's first write are seconds to minutes apart. A card showing nothing in that
+// window reads as "nobody is on this" when somebody already is.
+test("a task with lockedBy shows an assignee even with an empty roster", () => {
+  const files = runFiles("r-1", ["todo"]);
+  files.tasks[0]!.frontmatter.lockedBy = "agentry:implementer";
+  const board = new BoardReader(reader([files]), items([])).read();
+  assert.deepEqual(board.columns.running[0]?.assigned, [{ task: "001", to: "agentry:implementer" }]);
+});
+
+test("once the agent is actually PRESENT the assignment row gives way — never both at once", () => {
+  const files = runFiles("r-1", ["in-progress"]);
+  files.tasks[0]!.frontmatter.lockedBy = "agentry:implementer";
+  const board = new BoardReader(
+    reader([files]),
+    items([]),
+    roster([{ id: "r-1/agentry:implementer", role: "agentry:implementer", state: "working", task: "001" }]),
+  ).read();
+  const card = board.columns.running[0];
+  assert.equal(card?.agents?.length, 1);
+  assert.equal(card?.assigned, undefined, "a working agent must not also appear as merely assigned");
+});
+
+test("a DONE task's assignment is not surfaced — the commitment is discharged", () => {
+  const files = runFiles("r-1", ["done"]);
+  files.tasks[0]!.frontmatter.lockedBy = "agentry:implementer";
+  const board = new BoardReader(reader([files]), items([])).read();
+  assert.equal(board.columns.done[0]?.assigned, undefined);
+});

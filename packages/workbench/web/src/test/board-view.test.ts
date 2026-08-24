@@ -14,6 +14,7 @@ import {
   countChips,
   elapsedOf,
   initialsOf,
+  assignedByAgent,
   cardNote,
   currentTask,
   isReset,
@@ -209,4 +210,22 @@ test("currentTask names the task an agent actually holds", () => {
 test("with no agent it falls back to the blocked task, else nothing", () => {
   assert.equal(currentTask(run({ blocked: [{ task: "007", by: ["003"] }] })), "T-007");
   assert.equal(currentTask(run()), null);
+});
+
+test("assignments fold by agent — one row per person, not one per task", () => {
+  const card = run({
+    assigned: [
+      { task: "001", to: "implementer" },
+      { task: "003", to: "implementer" },
+      { task: "002", to: "verifier" },
+    ],
+  });
+  assert.deepEqual(assignedByAgent(card), [
+    { to: "implementer", tasks: ["001", "003"] },
+    { to: "verifier", tasks: ["002"] },
+  ]);
+});
+
+test("a card with no assignments folds to nothing", () => {
+  assert.deepEqual(assignedByAgent(run()), []);
 });
