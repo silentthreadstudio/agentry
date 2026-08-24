@@ -5,7 +5,7 @@
 // message, not a silent spring-back — a board that ignores you teaches nothing.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { BoardCard } from "@agentry/workbench-shared";
+import type { BoardCard, RunDoc } from "@agentry/workbench-shared";
 import {
   COLUMNS,
   blockedLabel,
@@ -17,6 +17,7 @@ import {
   assignedByAgent,
   cardNote,
   currentTask,
+  docTabLabel,
   isReset,
   keyboardTarget,
   progressOf,
@@ -260,4 +261,39 @@ test("every keyboard target agrees with canDrop — one rule, two input devices"
       }
     }
   }
+});
+
+// The run view's tab strip. It printed raw doc ids, so the tabs read `spec`, `task-003`, `adr-ADR-001`
+// — the keys the server routes on, not names anyone chose to read.
+const doc = (id: string, label: string): RunDoc => ({ id, label, status: "done" });
+
+test("spec and plan tabs read as their kind, not as their routing id", () => {
+  assert.equal(docTabLabel(doc("spec", "spec")), "Spec");
+  assert.equal(docTabLabel(doc("plan", "plan")), "Plan");
+});
+
+test("a task tab is its number and its title, with the number printed once", () => {
+  assert.equal(docTabLabel(doc("task-001", "001 Data layer: cursor query")), "001 · Data layer: cursor query");
+});
+
+test("an ADR tab is its key and its title — the key from the id, the title after the colon", () => {
+  assert.equal(docTabLabel(doc("adr-ADR-001", "adr ADR-001: stateless over files")), "ADR-001 · stateless over files");
+});
+
+test("a titleless ADR or task reads as the bare key rather than trailing a naked separator", () => {
+  assert.equal(docTabLabel(doc("adr-ADR-002", "adr ADR-002:")), "ADR-002");
+  assert.equal(docTabLabel(doc("task-004", "004 ")), "004");
+});
+
+test("an id we cannot abbreviate keeps the server's label, and the id only when there is none", () => {
+  assert.equal(docTabLabel(doc("notes", "Scratch notes")), "Scratch notes");
+  assert.equal(docTabLabel(doc("notes", "")), "notes");
+});
+
+// The server substitutes the KEY when frontmatter carries no `title:` — so a titleless ADR arrives as
+// "adr ADR-002: ADR-002". Rendering that faithfully gives "ADR-002 · ADR-002", a separator whose only job
+// is to repeat what it separates. Missing and empty are the same fact and must read the same way.
+test("a document whose title is just its key again reads as the bare key", () => {
+  assert.equal(docTabLabel({ id: "adr-ADR-002", label: "adr ADR-002: ADR-002", status: "done" }), "ADR-002");
+  assert.equal(docTabLabel({ id: "task-004", label: "004 004", status: "todo" }), "004");
 });

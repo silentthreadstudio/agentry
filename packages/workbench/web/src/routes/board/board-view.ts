@@ -1,6 +1,6 @@
 // board-view — the board's column vocabulary and card view-logic. Pure; no React, no fetch (the same
 // view-model split Works/Gates/Activity use), so the ordering and drop rules are unit-testable.
-import type { AgentView, BoardCard, BoardColumn, BoardConflict } from "@agentry/workbench-shared";
+import type { AgentView, BoardCard, BoardColumn, BoardConflict, RunDoc } from "@agentry/workbench-shared";
 import { workSlug } from "@agentry/workbench-shared";
 
 /** The columns, in lifecycle order. This array IS the board's left-to-right reading order. */
@@ -198,4 +198,37 @@ export function assignedByAgent(card: BoardCard): { to: string; tasks: string[] 
     byAgent.set(a.to, [...(byAgent.get(a.to) ?? []), a.task]);
   }
   return [...byAgent].map(([to, tasks]) => ({ to, tasks: tasks.sort() }));
+}
+
+/** The run view's tab label — the human reading of a doc, where the strip used to print the raw id.
+ *
+ *  Spec and Plan read as their kind; an ADR or a task reads as "<key> · <title>", taking the key from the
+ *  id (which is canonical) and the title from the server label, which prefixes it with the same key in a
+ *  machine form ("adr ADR-001: …", "001 …") that would otherwise be printed twice.
+ *
+ *  A titleless document collapses to the bare key, and it reaches that state two different ways. An
+ *  EMPTY `title:` leaves the split empty, so the tab would read "ADR-001 · " with nothing after it. A
+ *  MISSING `title:` is worse: the server substitutes the key as the title, so the tab would read
+ *  "ADR-001 · ADR-001" — a separator earning its keep by repeating what it separates. Both are the same
+ *  fact (this document has no title) and both should read the same way.
+ *
+ *  An unknown id falls through to the server label, because a doc kind we do not know how to abbreviate
+ *  is still better named by the server than by its id — and to the id when even that is empty, since a
+ *  tab with no text at all cannot be clicked on purpose. */
+export function docTabLabel(doc: RunDoc): string {
+  if (doc.id === "spec") return "Spec";
+  if (doc.id === "plan") return "Plan";
+  if (doc.id.startsWith("adr-")) {
+    const key = doc.id.slice("adr-".length);
+    const colon = doc.label.indexOf(":");
+    const title = colon >= 0 ? doc.label.slice(colon + 1).trim() : doc.label;
+    return title && title !== key ? `${key} · ${title}` : key;
+  }
+  if (doc.id.startsWith("task-")) {
+    const key = doc.id.slice("task-".length);
+    const space = doc.label.indexOf(" ");
+    const title = space >= 0 ? doc.label.slice(space + 1).trim() : doc.label;
+    return title && title !== key ? `${key} · ${title}` : key;
+  }
+  return doc.label || doc.id;
 }

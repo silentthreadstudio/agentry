@@ -20,6 +20,7 @@ import { getWsClient } from "../../api/ws.js";
 import { CommentRail } from "../doc/CommentRail.js";
 import { DocEditor, useApplyCommentMark } from "../doc/DocEditor.js";
 import { GutterCommentButton } from "../doc/GutterCommentButton.js";
+import { docTabLabel } from "./board-view.js";
 
 export function RunView({ card, onClose }: { card: BoardCard; onClose: () => void }) {
   const run = card.run ?? card.id;
@@ -98,7 +99,7 @@ export function RunView({ card, onClose }: { card: BoardCard; onClose: () => voi
               onClick={() => setDocId(d.id)}
               title={d.label}
             >
-              {d.id}
+              {docTabLabel(d)}
             </button>
           ))}
         </nav>
