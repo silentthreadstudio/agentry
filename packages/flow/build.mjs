@@ -7,9 +7,8 @@
 // - The createRequire banner lets esbuild's __require resolve real requires for bundled CommonJS
 //   deps (e.g. `yaml`, `zod`) under ESM output — without it, their internal require() throws
 //   "Dynamic require not supported" at startup.
-import { writeFileSync } from "node:fs";
 import { build } from "esbuild";
-import { bundleSrcHash } from "../../scripts/lib/src-hash.mjs";
+import { writeStamp } from "../../scripts/lib/src-hash.mjs";
 
 await build({
   entryPoints: ["src/index.ts"],
@@ -23,9 +22,10 @@ await build({
   outfile: "../../plugin/flow/index.js",
 });
 
-// Stamp the source content-hash next to the bundle so dist-lockstep is verifiable without mtimes. Covers this
-// package's own src AND every @agentry/* workspace dep esbuild inlines (e.g. @agentry/core's dist) — so a
-// transitive dep change can't leave the committed bundle stale while the gate reports green.
-writeFileSync("../../plugin/flow/.srchash", bundleSrcHash("."));
+// Stamp next to the bundle so dist-lockstep is verifiable without mtimes. Two hashes: the SOURCE hash (this
+// package's own src AND every @agentry/* workspace dep esbuild inlines, so a transitive dep change can't leave
+// the committed bundle stale while the gate reports green) and the hash of the just-written bundle bytes, so a
+// stamp committed without its rebuilt bundle can't read green either. Must run AFTER build().
+writeStamp("../../plugin/flow/.srchash", ".");
 
 console.log("built plugin/flow/index.js");

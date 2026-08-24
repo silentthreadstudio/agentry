@@ -5,7 +5,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleSrcHash } from "./lib/src-hash.mjs";
+import { bundleSrcHash, distHash, parseStamp } from "./lib/src-hash.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // The shipped plugin payload lives in `plugin/` (marketplace `source: "./plugin"`) = CLAUDE_PLUGIN_ROOT.
@@ -103,12 +103,25 @@ if (existsSync(skillsDir)) {
   ok("skills", `${dirs.length} validated`);
 }
 
-// 6. dist-lockstep — each committed plugin bundle must track its package src (warn if it looks stale).
-// The MCP src lives in the package; the SHIPPED bundle is built into plugin/<label>/ (committed with the
-// payload). Content-hash compare, not mtime: git doesn't preserve mtimes, so a checkout/squash-merge would
-// otherwise trip a false "dist is stale". build.mjs stamps plugin/<label>/.srchash; recompute + compare.
-// bundleSrcHash covers the package's own src AND every @agentry/* workspace dep esbuild inlines (e.g.
-// @agentry/core's dist) — so a transitive dep change can't leave the bundle stale yet report green.
+// 6. dist-lockstep — each committed plugin bundle must track its package src, AND be the bundle its stamp
+// was taken over. The MCP src lives in the package; the SHIPPED bundle is built into plugin/<label>/
+// (committed with the payload). Content-hash compare, not mtime: git doesn't preserve mtimes, so a
+// checkout/squash-merge would otherwise trip a false "dist is stale". build.mjs stamps plugin/<label>/.srchash
+// with BOTH hashes (see scripts/lib/src-hash.mjs); this recomputes + compares both:
+//
+//   - `src`  vs bundleSrcHash — covers the package's own src AND every @agentry/* workspace dep esbuild
+//     inlines, so a transitive dep change can't leave the bundle stale yet report green. → WARN.
+//   - `dist` vs distHash — reads the committed bundle bytes themselves. → ERROR.
+//
+// The severity split is deliberate. A src mismatch is a normal working state: you just edited source and
+// haven't rebuilt yet, and the developer already knows it — a warning is the right nudge. A dist mismatch
+// cannot happen in the course of ordinary work: rebuilding rewrites both hashes together, so the only ways to
+// reach it are a `.srchash` committed WITHOUT its rebuilt bundle (partial stage, a revert that took only the
+// bundle, a squash that dropped it) or a hand-edited bundle. That is precisely the silent failure this gate
+// exists to catch — and a warning that lets the commit through would leave the hole open. It fails the gate.
+//
+// A stamp that carries no dist hash (the pre-verification format — a bare src hash) is NOT green: it has
+// never been dist-verified, so green would be a claim the file cannot support. Warn and ask for a rebuild.
 //
 // `opts` is forwarded verbatim to bundleSrcHash (additive — mem/flow pass none, so their behavior is
 // byte-identical). `label` drives ONLY the summary row (`dist-lockstep (${label})`); warning paths are
@@ -126,10 +139,18 @@ const checkBundle = (pkgDir, distPath, srchashPath, label, opts = {}) => {
     warn(`plugin/${distRel} missing — build + commit before the bundle can run (dist-lockstep)`);
     return;
   }
-  const stamped = existsSync(srchashPath) ? readFileSync(srchashPath, "utf8").trim() : "";
-  const current = bundleSrcHash(pkgDir, opts);
-  if (!stamped) warn(`plugin/${dir}/.srchash missing — rebuild so dist-lockstep is verifiable`);
-  else if (stamped !== current)
+  if (!existsSync(srchashPath)) {
+    warn(`plugin/${dir}/.srchash missing — rebuild so dist-lockstep is verifiable`);
+    return;
+  }
+  // null = not a verifiable stamp (the old src-only format, or malformed) — it makes no claim about the bytes.
+  const stamp = parseStamp(readFileSync(srchashPath, "utf8"));
+  if (!stamp)
+    warn(`plugin/${dir}/.srchash predates dist verification (src hash only — it says nothing about the committed bundle bytes) — rebuild + commit (dist-lockstep)`);
+  // The dist dir is the stamp's own directory: one file for mem/flow/server, a Vite tree for web.
+  else if (stamp.dist !== distHash(dirname(distPath)))
+    err(`plugin/${dir} bundle does NOT match its .srchash stamp — the stamp was committed without its rebuilt bundle, the bundle was hand-edited, or a file was added/removed under it; rebuild + commit (dist-lockstep)`);
+  else if (stamp.src !== bundleSrcHash(pkgDir, opts))
     warn(`plugin/${dir} is stale (${label} src or a bundled @agentry/* dep changed since last build) — rebuild + commit (dist-lockstep)`);
   else ok(`dist-lockstep (${label})`, "up to date");
 };

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node -e \"import('node:fs').then(({writeFileSync})=>import('../../../scripts/lib/src-hash.mjs').then(({bundleSrcHash})=>writeFileSync('../../../plugin/workbench/web/.srchash',bundleSrcHash('..',{srcSubdir:'web/src',skipWorkspaceDeps:true}))))\"",
+    "build": "vite build && node -e \"import('../../../scripts/lib/src-hash.mjs').then(({writeStamp})=>writeStamp('../../../plugin/workbench/web/.srchash','..',{srcSubdir:'web/src',skipWorkspaceDeps:true}))\"",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test 'src/test/**/*.test.ts'"
