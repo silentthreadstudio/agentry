@@ -45,6 +45,19 @@ export const AgentryConfig = z.object({
       captureCorrections: z.boolean().default(false),
     })
     .default({}),
+
+  /** How `/agentry:merge` treats the push once a task lands: `ask` (the default) asks each time,
+   *  `auto` pushes, `never` leaves it local. Any other value is refused, never read as `auto`. */
+  merge: z
+    .object({ push: z.enum(["ask", "auto", "never"]).default("ask") })
+    .strict()
+    .default({}),
+
+  /** How many builder lanes may write at once: `/agentry:exec` refuses a new one at the limit. */
+  lanes: z
+    .object({ maxWriters: z.number().int().positive().default(3) })
+    .strict()
+    .default({}),
 });
 export type AgentryConfig = z.infer<typeof AgentryConfig>;
 

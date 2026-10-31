@@ -1,6 +1,6 @@
 // The shared good/bad table for the harness keys (plan R1b §2.1): process.json `gate`, `extensions`,
-// `conductor` (and the lifecycle `write` keys). Each case is run
-// through the plugin's validator (`spec-keys.test.mjs`) and, side by side with
+// `conductor` (and the lifecycle `write` keys), config.json `merge`, `lanes`. Each case is run
+// through the plugin's validator (`spec-keys.test.mjs`, `config.test.mjs`) and, side by side with
 // core's zod, in `packages/core/test/keys-parity.test.ts`: both must give the same verdict, naming
 // the same paths. `bad` lists every path a bad case must name (`gate.command[1]`); a good case has
 // none. Synthetic shapes only.
@@ -215,6 +215,42 @@ export const PROCESS_CASES = [
     bad: ["lifecycle.write.handoff"],
   },
 ];
+
+export const CONFIG_CASES = [
+  // good
+  { name: "no keys", value: {} },
+  { name: "an empty merge block", value: { merge: {} } },
+  { name: "push ask", value: { merge: { push: "ask" } } },
+  { name: "push auto", value: { merge: { push: "auto" } } },
+  { name: "push never", value: { merge: { push: "never" } } },
+  { name: "an empty lanes block", value: { lanes: {} } },
+  { name: "one writer", value: { lanes: { maxWriters: 1 } } },
+  { name: "many writers", value: { lanes: { maxWriters: 12 } } },
+  { name: "beside other keys", value: { memory: { prime: "all" }, merge: { push: "never" } } },
+  // bad
+  { name: "an unknown push", value: { merge: { push: "yes" } }, bad: ["merge.push"] },
+  { name: "an empty push", value: { merge: { push: "" } }, bad: ["merge.push"] },
+  { name: "an upper-case push", value: { merge: { push: "AUTO" } }, bad: ["merge.push"] },
+  { name: "push as true", value: { merge: { push: true } }, bad: ["merge.push"] },
+  { name: "merge as a string", value: { merge: "ask" }, bad: ["merge"] },
+  { name: "merge as null", value: { merge: null }, bad: ["merge"] },
+  { name: "a misspelled push", value: { merge: { pushh: "auto" } }, bad: ["merge.pushh"] },
+  { name: "zero writers", value: { lanes: { maxWriters: 0 } }, bad: ["lanes.maxWriters"] },
+  { name: "negative writers", value: { lanes: { maxWriters: -1 } }, bad: ["lanes.maxWriters"] },
+  { name: "fractional writers", value: { lanes: { maxWriters: 2.5 } }, bad: ["lanes.maxWriters"] },
+  { name: "writers as a string", value: { lanes: { maxWriters: "3" } }, bad: ["lanes.maxWriters"] },
+  { name: "writers as null", value: { lanes: { maxWriters: null } }, bad: ["lanes.maxWriters"] },
+  { name: "lanes as a list", value: { lanes: [3] }, bad: ["lanes"] },
+  { name: "a misspelled maxWriters", value: { lanes: { max: 3 } }, bad: ["lanes.max"] },
+  {
+    name: "a __proto__ key in merge",
+    json: '{ "merge": { "__proto__": { "push": "auto" } } }',
+    bad: ["merge.__proto__"],
+  },
+];
+
+/** The config value of a case. */
+export const configOf = (c) => (c.json ? JSON.parse(c.json) : structuredClone(c.value));
 
 /** A validator message's path: the text before its first space (`gate.command[1] should be …`). */
 export const pathOf = (message) => message.split(" ")[0];

@@ -1,12 +1,20 @@
 // The harness keys hold one verdict in both validators (plan R1b §2.1): every case of the shared table
 // (`plugin/scripts/test/key-cases.mjs`) goes through core's zod and the plugin's dependency-free
-// validator (`spec.mjs` for process.json), which must accept the
+// validator (`spec.mjs` for process.json, `lib/config.mjs` for config.json), which must accept the
 // same cases and name the same paths.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ZodError } from "zod";
+import { checkConfig } from "../../../plugin/scripts/lib/config.mjs";
 import { validateSpec } from "../../../plugin/scripts/lib/process/spec.mjs";
-import { PROCESS_CASES, pathOf, processOf } from "../../../plugin/scripts/test/key-cases.mjs";
+import {
+  CONFIG_CASES,
+  PROCESS_CASES,
+  configOf,
+  pathOf,
+  processOf,
+} from "../../../plugin/scripts/test/key-cases.mjs";
+import { AgentryConfig } from "../src/config.js";
 import { ProcessSpec } from "../src/process.js";
 
 interface Case {
@@ -36,7 +44,7 @@ function agree(c: Case, plugin: string[], zod: string[]) {
 }
 
 test("the shared table is large enough and has both verdicts (plan R1b §2.1: ≥ 40 cases)", () => {
-  const all: Case[] = PROCESS_CASES;
+  const all: Case[] = [...PROCESS_CASES, ...CONFIG_CASES];
   assert.ok(all.length >= 40, `${all.length} cases`);
   assert.ok(all.some((c) => c.bad) && all.some((c) => !c.bad));
 });
@@ -47,4 +55,17 @@ test("process.json harness keys: zod and spec.mjs give the same verdict on every
     const plugin = validateSpec(value).problems.map((p: { message: string }) => pathOf(p.message));
     agree(c, plugin, zodPaths(ProcessSpec.safeParse(value).error));
   }
+});
+
+test("config.json merge and lanes: zod and config.mjs give the same verdict on every case", () => {
+  for (const c of CONFIG_CASES as Case[]) {
+    const value = configOf(c);
+    agree(c, checkConfig(value).map(pathOf), zodPaths(AgentryConfig.safeParse(value).error));
+  }
+});
+
+test("the config defaults agree: push ask, three writers", () => {
+  const parsed = AgentryConfig.parse({});
+  assert.deepEqual(parsed.merge, { push: "ask" });
+  assert.deepEqual(parsed.lanes, { maxWriters: 3 });
 });

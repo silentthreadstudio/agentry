@@ -25,6 +25,10 @@ Current keys:
 | `memory.prime` | `conductor` | Who gets ranked durable facts injected before working: `off` (nobody) · `conductor` (the main session, on each prompt) · `all` (also every dispatched subagent, ~200–400 tokens each). |
 | `memory.primeLimit` | `5` | Most facts a single priming injection may carry (recall is few-and-ranked, never a dump). |
 | `memory.captureCorrections` | `false` | Distill a `preference` fact when you correct or rewrite the agent's output. Off by default: it writes durable memory as a side effect of ordinary conversation. |
+| `merge.push` | `ask` | What `/agentry:merge` does once a task lands: `ask` (ask each time) · `auto` (push) · `never` (keep it local). Any other value is refused, never read as `auto`. |
+| `lanes.maxWriters` | `3` | How many builder lanes may write at once; `/agentry:exec` refuses a new one at the limit and names the open ones. A whole number above 0. |
+
+`merge` and `lanes` are read strictly by the lane scripts (`scripts/lib/config.mjs`): an unknown key, a wrong type or an out-of-range value in either block stops the step with an error naming it, in whichever file it sits.
 
 ## 2. Set a key (only when `$ARGUMENTS` is given)
 
