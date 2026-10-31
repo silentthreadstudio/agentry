@@ -3,8 +3,8 @@
 //
 //   boardReport({ root, spec, model })          -> BoardReport (core's `--json` shape, without status)
 //   statusView({ root, spec, model })           -> StatusView
-// The "work" kind is the lifecycle's (else the first kind with a parent); "now" is `status.now` (else
-// that parent's kind). Worktrees and decision drafts join when the ledger and drafts land (T8a/T9).
+// The "work" kind is the lifecycle's (else the leaf of the parent tree, ties by name); "now" is
+// `status.now` (else that parent's kind). Worktrees and decision drafts join when the ledger and drafts land (T8a/T9).
 import { join } from "node:path";
 import { check } from "./check.mjs";
 import * as git from "./git.mjs";
@@ -14,10 +14,29 @@ import { refKinds, resolve } from "./rules/structure.mjs";
 const parentField = (kind) =>
   Object.entries(kind?.fields ?? {}).find(([, f]) => f.role === "parent");
 
-/** The kind the work happens in (tasks): the lifecycle's, else the first kind with a parent field. */
+/** The kind the work happens in (tasks): the lifecycle's, else the leaf of the parent tree (a kind with a
+ *  parent field that no other kind's parent field refs and that holds no children list), else any kind
+ *  with a parent field. Ties go by
+ *  kind name, so the order kinds are declared in never changes the answer. */
 export function workKind(spec) {
-  const kinds = Object.keys(spec.kinds);
-  return spec.lifecycle?.kind ?? kinds.find((k) => parentField(spec.kinds[k])) ?? kinds[0];
+  if (spec.lifecycle?.kind) return spec.lifecycle.kind;
+  const kinds = Object.keys(spec.kinds).sort();
+  const withParent = kinds.filter((k) => parentField(spec.kinds[k]));
+  const parents = new Set(
+    withParent.flatMap((k) => {
+      const ref = parentField(spec.kinds[k])[1].ref;
+      return Array.isArray(ref) ? ref : [ref];
+    }),
+  );
+  // A kind that holds a children list sits above the kinds it lists, so it is never the leaf.
+  const holdsChildren = (k) =>
+    Object.values(spec.kinds[k]?.fields ?? {}).some((f) => f.role === "children");
+  return (
+    withParent.find((k) => !parents.has(k) && !holdsChildren(k)) ??
+    withParent.find((k) => !parents.has(k)) ??
+    withParent[0] ??
+    kinds[0]
+  );
 }
 
 /** An item's title: its first plain-text or link field with a value (a name, a "what", a question). */

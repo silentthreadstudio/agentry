@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { check } from "../lib/process/check.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
-import { statusView } from "../lib/process/status.mjs";
+import { statusView, workKind } from "../lib/process/status.mjs";
 
 const table = (heading, header, rows) => [
   `## ${heading}`,
@@ -205,6 +205,17 @@ for (const [name, board] of Object.entries(BOARDS))
     const base = observe(loaded, NAMES);
     for (const order of ORDERS)
       assert.deepEqual(observe(loaded, order), base, `kinds declared as ${order.join(",")}`);
+  });
+
+for (const [name, board] of Object.entries(BOARDS))
+  test(`${name} board without lifecycle.kind: status is the same under ${ORDERS.length} kind orders`, () => {
+    const loaded = load(board);
+    const { lifecycle, ...rest } = loaded.spec;
+    const bare = { ...loaded, spec: rest };
+    const base = observe(bare, NAMES);
+    assert.equal(workKind(rest), "task", "the leaf of the parent tree is the work kind");
+    for (const order of ORDERS)
+      assert.deepEqual(observe(bare, order), base, `kinds declared as ${order.join(",")}`);
   });
 
 test("a rank is the lowest of an item's parents', else the highest of its children's", () => {
