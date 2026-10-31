@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "name": "Write sample",
+  "root": "board",
+  "kinds": {
+    "sprint": {
+      "label": "Sprint",
+      "at": { "table": "BOARD.md", "heading": "Sprints" },
+      "id": { "column": "Sprint" },
+      "fields": { "status": { "column": "Status" } },
+      "status": {
+        "field": "status",
+        "values": { "todo": "planned", "doing": "active", "done": "done" }
+      },
+      "file": {
+        "glob": "sprints/{id}_*.md",
+        "required": true,
+        "sections": { "members": { "heading": "Tasks", "as": "table", "column": "Task" } }
+      }
+    },
+    "task": {
+      "label": "Task",
+      "at": { "table": "BOARD.md", "heading": "Tasks" },
+      "id": { "column": "Task" },
+      "fields": {
+        "sprint": { "column": "Sprint", "type": "ref", "ref": "sprint", "role": "parent" },
+        "status": { "column": "Status" },
+        "deps": { "column": "Deps", "type": "list", "ref": "task" },
+        "risky": { "column": "Flag", "type": "flag", "mark": "*" },
+        "note": { "column": "Note" }
+      },
+      "status": {
+        "field": "status",
+        "values": { "todo": "planned", "doing": "active", "done": "done" }
+      },
+      "create": {
+        "ask": ["sprint", "note", "deps", "risky"],
+        "id": "ask",
+        "rows": [
+          {
+            "in": "self",
+            "at": "after-last:sprint",
+            "cells": {
+              "Task": "{id}",
+              "Sprint": "{sprint}",
+              "Status": "todo",
+              "Deps": "{deps}",
+              "Flag": "{risky}",
+              "Note": "{note}"
+            }
+          },
+          {
+            "in": "parent.file:members",
+            "at": "end",
+            "cells": { "Task": "{id}", "What": "{note}", "Deps": "{deps}" }
+          }
+        ],
+        "blocks": [
+          {
+            "file": "TASKS.md",
+            "under": "Sprint {sprint}",
+            "text": "- **{id}** ({sprint}): {note}, added {today}"
+          }
+        ]
+      }
+    }
+  },
+  "rules": [
+    { "rule": "ids-unique" },
+    { "rule": "refs-resolve" },
+    { "rule": "members-listed", "kind": "sprint", "section": "members", "member": "task" }
+  ]
+}
