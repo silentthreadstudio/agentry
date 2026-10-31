@@ -66,14 +66,24 @@ test("refs-resolve flags a missing sprint and a dependency on no listed kind", (
   ]);
 });
 
-test("refs-resolve flags an id that matches two kinds of the field's ref list", () => {
+test("refs-resolve takes the first kind of the ref list when an id is shared by two kinds", () => {
   const model = makeModel([
     sprint("X", "todo"),
-    task("X", "X", "todo"),
+    { kind: "milestone", id: "X", sprints: ["X"] },
     task("T2", "X", "todo", { deps: ["X"] }),
   ]);
+  assert.deepEqual(run(rule("refs-resolve"), model, {}), []);
+});
+
+test("refs-resolve flags an id listed twice within the kind it resolves to", () => {
+  const model = makeModel([
+    sprint("S1", "todo"),
+    task("X", "S1", "todo"),
+    task("X", "S1", "todo"),
+    task("T2", "S1", "todo", { deps: ["X"] }),
+  ]);
   const found = run(rule("refs-resolve"), model, {}).filter((f) => f.id === "T2");
-  assert.deepEqual(messages(found), ["T2: deps 'X' matches more than one kind"]);
+  assert.deepEqual(messages(found), ["T2: deps 'X' matches more than one task"]);
 });
 
 test("file-required passes when the file is read, and skips ids the kind exempts", () => {

@@ -39,8 +39,15 @@ export function finding(rule, item, message) {
 
 export const refKinds = (field) => [field?.ref].flat().filter(Boolean);
 
+// The items an id names, in the first of `kinds` (the field's `ref` order) that has it: an id shared by
+// two kinds (a milestone and a sprint both called "M1") reads as the kind the field lists first.
 export function resolve(model, id, kinds) {
-  return (model.index[id] ?? []).filter((item) => kinds.includes(item.kind));
+  const hits = model.index[id] ?? [];
+  for (const kind of kinds) {
+    const found = hits.filter((item) => item.kind === kind);
+    if (found.length) return found;
+  }
+  return [];
 }
 
 export function parentOf(model, item) {
@@ -112,13 +119,12 @@ const refsResolve = {
         for (const [name, field] of refs) {
           for (const value of [item.fields[name]].flat()) {
             if (!value || field.also?.includes(value)) continue;
-            const hits = new Set(resolve(model, value, refKinds(field)).map((hit) => hit.kind));
-            if (hits.size === 0) {
+            const hits = resolve(model, value, refKinds(field));
+            if (hits.length === 0) {
               out.push(finding("refs-resolve", item, `${name} '${value}' is not on the board`));
-            } else if (hits.size > 1) {
-              out.push(
-                finding("refs-resolve", item, `${name} '${value}' matches more than one kind`),
-              );
+            } else if (hits.length > 1) {
+              const what = `${name} '${value}' matches more than one ${hits[0].kind}`;
+              out.push(finding("refs-resolve", item, what));
             }
           }
         }

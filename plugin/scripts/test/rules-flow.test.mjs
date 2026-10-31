@@ -41,6 +41,18 @@ test("deps-done reads a sprint or a milestone as a dependency through its phase"
   ]);
 });
 
+test("deps-done reads a shared id as the first kind of the ref list (sprint before milestone)", () => {
+  const model = makeModel([
+    { kind: "milestone", id: "S1", phase: "done", sprints: ["S1"] },
+    sprint("S1", "doing"),
+    sprint("S2", "doing"),
+    task("T1", "S2", "doing", { deps: ["S1"] }),
+  ]);
+  assert.deepEqual(messages(run(rule("deps-done"), model, { kind: "task", field: "deps" })), [
+    "T1: doing, but depends on S1 (sprint, doing)",
+  ]);
+});
+
 test("deps-done accepts a done sprint dependency, and infers the field when none is given", () => {
   const model = makeModel([
     sprint("S1", "done"),
