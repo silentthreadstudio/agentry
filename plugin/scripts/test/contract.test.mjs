@@ -205,3 +205,14 @@ test("find-contract.mjs: an option without its value is a usage error", () => {
     assert.match(res.stderr, /^usage: find-contract\.mjs/);
   }
 });
+
+test("find-contract.mjs: an invalid process file is reported on stderr, then the lookup falls back", () => {
+  const root = repo({
+    ".agentry/process.json": '{"version": 1, "name": "X"}',
+    "docs/TASKS.md": "- **KX-06** owns the gate.\n",
+  });
+  const res = spawnSync("node", [CLI, "KX-06", "--root", root], { encoding: "utf8" });
+  assert.equal(res.status, 0);
+  assert.equal(JSON.parse(res.stdout).source, "discovered");
+  assert.match(res.stderr, /process\.json: not used \(the process file is missing "root"/);
+});
