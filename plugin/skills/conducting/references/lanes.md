@@ -42,9 +42,10 @@ Dispatch it with `isolation: "worktree"`.
 
 ### 3. The build brief
 
-The first line is exact; the marker is how hooks tie the dispatch to the task. Every dispatch starts with it,
-including each re-dispatch (a fix round, a `NEEDS_CONTEXT` round, a verifier sent back for a missing
-`Verdict:` line): it is a new dispatch whose first line is the marker.
+The first line is exact; the marker is how hooks tie the dispatch to the task. Every dispatch starts with its
+role's marker (`role=build` for builders, `role=verify` for verifiers), including each re-dispatch (a fix round,
+a `NEEDS_CONTEXT` round, a verifier sent back for a missing `Verdict:` line): it is a new dispatch whose first
+line is the marker.
 
 ```text
 agentry-task: <id> role=build
@@ -72,7 +73,7 @@ isn't available.
 | Status | Do |
 | :--- | :--- |
 | `DONE`, `DONE_WITH_CONCERNS` | Verify. Pass the concerns to the verifier and into the handoff. |
-| `NEEDS_CONTEXT` | If the missing fact is already in the contract block, the repo or recalled memory, supply it and re-dispatch once: a new dispatch, marker line first, then the build brief, then the fact appended at the end. Otherwise stop and ask the owner. |
+| `NEEDS_CONTEXT` | If the missing fact is already in the contract block, the repo or recalled memory, supply it and re-dispatch once: a new dispatch, marker line first, then the build brief, then the fact appended at the end. If the first builder committed anything, append the same `git reset --hard <first builder's branch>` line as the fix round (§6). Otherwise stop and ask the owner. |
 | `BLOCKED` | Stop and report what blocks it and the smallest unblock. |
 
 Never widen the contract: a file outside it or a decision it never made goes to the owner.
@@ -92,12 +93,12 @@ Read and run there; edit nothing, commit nothing.
 Builder's report: <status and concerns>
 For each acceptance item: PASS, FAIL or UNVERIFIED, with the evidence (the command and its output, file:line,
 a screenshot path). Check that the branch changes only the owned files.
-Your last instruction: the final line of your report is exactly `Verdict: PASS | PASS WITH NOTES | FAIL`,
-after `used_memories` and anything else.
+Your last instruction: the final line of your report is exactly one of `Verdict: PASS`, `Verdict: PASS WITH
+NOTES` or `Verdict: FAIL`, after `used_memories` and anything else.
 ```
 
-A report without that last line is not a verdict: send it back once for the line, as a new dispatch whose
-first line is the marker.
+A report without that last line is not a verdict: send it back once as a new dispatch: the verify marker
+first, the same verify brief, then its earlier report appended with "end with the `Verdict:` line".
 
 ### 6. One fix round
 
