@@ -181,12 +181,12 @@ function linkTree(spec, kinds) {
     byId[name] = new Map(items.toReversed().map((item) => [item.id, item])); // first row wins
   const find = (id, refs) => byId[[refs ?? []].flat().find((k) => byId[k]?.has(id))]?.get(id);
   const childrenOf = new Map();
-  const parentOf = new Map();
+  const parentsOf = new Map();
   const adopt = (parent, child) => {
     if (!parent.children.includes(child.id)) parent.children.push(child.id);
     child.parent ??= parent.id;
     childrenOf.set(parent, (childrenOf.get(parent) ?? new Set()).add(child));
-    if (!parentOf.has(child)) parentOf.set(child, parent);
+    parentsOf.set(child, (parentsOf.get(child) ?? new Set()).add(parent));
   };
   const orderKinds = new Set();
   for (const [name, kind] of Object.entries(spec.kinds ?? {})) {
@@ -221,13 +221,22 @@ function linkTree(spec, kinds) {
   const all = Object.values(kinds).flatMap((k) => k.items);
   for (const item of all) derive(item, new Set());
   // Rank = row order of a parent kind (sprint); its children take its rank, its parents their last.
+  // Settled to a fixed point, children before parents, so the order the kinds are declared in never
+  // changes a rank.
   for (const k of orderKinds)
     for (const [i, item] of (kinds[k]?.items ?? []).entries()) item.rank = i;
-  for (const item of all.filter((i) => !orderKinds.has(i.kind))) {
-    const ranks = [...(childrenOf.get(item) ?? [])].map((c) => c.rank).filter(Number.isInteger);
-    const rank = parentOf.get(item)?.rank ?? (ranks.length ? Math.max(...ranks) : undefined);
-    if (rank !== undefined) item.rank = rank;
-  }
+  const unranked = all.filter((i) => !orderKinds.has(i.kind));
+  const settle = (related, pick) => {
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const item of unranked.filter((i) => i.rank === undefined)) {
+        const ranks = [...(related.get(item) ?? [])].map((x) => x.rank).filter(Number.isInteger);
+        if (ranks.length) [item.rank, moved] = [pick(...ranks), true];
+      }
+    }
+  };
+  settle(parentsOf, Math.min);
+  settle(childrenOf, Math.max);
 }
 
 /** The pinned seam: `readProcess({ root, spec }) -> Model`, where `root` is the git root. */

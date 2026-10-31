@@ -297,3 +297,20 @@ test("loadSpec: a missing process file is a problem; readProcess takes a null sp
   const m = readProcess({ root: FIXTURES, spec });
   assert.deepEqual([m.kinds, m.index, m.problems], [{}, {}, []]);
 });
+
+test("ranks do not depend on the order the kinds are declared in", () => {
+  const { spec } = loadSpec(join(FIXTURES, "table-board", "process.json"));
+  spec.kinds.question.fields.blocks.role = "children"; // a kind holding a children list of tasks
+  const ranks = (order) => {
+    const kinds = Object.fromEntries(order.map((k) => [k, spec.kinds[k]]));
+    const m = readProcess({ root: join(FIXTURES, "table-board"), spec: { ...spec, kinds } });
+    return Object.fromEntries(
+      Object.entries(m.kinds).map(([k, v]) => [k, v.items.map((i) => [i.id, i.rank])]),
+    );
+  };
+  const names = Object.keys(spec.kinds);
+  const last = ranks(names);
+  assert.deepEqual(ranks(["question", ...names.filter((k) => k !== "question")]), last);
+  assert.deepEqual(ranks(names.toReversed()), last);
+  assert.equal(last.task.find(([id]) => id === "W3")[1], 2, "W3 keeps its sprint's rank");
+});
