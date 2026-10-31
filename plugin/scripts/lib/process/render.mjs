@@ -23,18 +23,23 @@ export const fit = (text, n) => {
 const pad = (text, n) => fit(text, n).padEnd(n);
 const widest = (xs) => Math.max(0, ...xs.map((x) => [...x].length));
 
-/** `text` as lines of at most `n` columns, broken between words; only a word wider than `n` is split. */
-export function wrapText(text, n) {
+/** `text` as lines of at most `n` columns, broken between words; only a word wider than `n` is split.
+ *  With `rest`, the lines after the first are `rest` wide and a word wider than that overflows whole. */
+export function wrapText(text, n, rest) {
   const out = [];
+  const room = (i) => (i === 0 ? n : (rest ?? n));
   for (const word of String(text).split(/\s+/).filter(Boolean)) {
-    let rest = [...word];
     const last = out.at(-1);
-    if (last !== undefined && [...last].length + 1 + rest.length <= n) {
+    if (last !== undefined && [...last].length + 1 + [...word].length <= room(out.length - 1)) {
       out[out.length - 1] = `${last} ${word}`;
       continue;
     }
-    for (; rest.length > n; rest = rest.slice(n)) out.push(rest.slice(0, n).join(""));
-    out.push(rest.join(""));
+    let chars = [...word];
+    const width = room(out.length);
+    if (out.length === 0 || rest === undefined)
+      for (; chars.length > width; chars = chars.slice(width))
+        out.push(chars.slice(0, width).join(""));
+    out.push(chars.join(""));
   }
   return out.length ? out : [""];
 }
@@ -80,7 +85,7 @@ export function findingLines(findings, s) {
   const m = Math.min(room, widest(rows.map((x) => x.message)));
   const indent = " ".repeat(2 + r + 2 + i + 2);
   return rows.flatMap((x) => {
-    const [first, ...rest] = wrapText(x.message, m);
+    const [first, ...rest] = wrapText(x.message, m, WIDTH - indent.length);
     const tail = x.at ? `  ${s.dim(x.at)}` : "";
     const head = `${s.red("✗")} ${pad(x.rule, r)}  ${s.bold(pad(x.id, i))}  ${pad(first, m)}${tail}`;
     return [head.trimEnd(), ...rest.map((l) => indent + l)];

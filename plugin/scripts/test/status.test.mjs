@@ -173,6 +173,28 @@ test("a long finding wraps onto indented lines at word breaks, never cut", () =>
   );
 });
 
+test("a continuation line uses the full width, so a 39-character path stays whole", () => {
+  const path = "sprints/P2b_getaway_legend_build_001.md";
+  assert.equal(path.length, 39);
+  const message = `the sprint file is missing: expected ${path} but found nothing there at all`;
+  const findings = [{ rule: "file-exists", id: "P2b", message, file: "BOARD.md", line: 49 }];
+  const report = { ok: false, name: "W", rules: 1, items: { task: 1 }, findings };
+  const lines = renderCheck({ spec: { rules: [] }, report, work: "task" }).split("\n");
+  assert.ok(
+    lines.some((l) => l.includes(path)),
+    lines.join("\n"),
+  );
+  assert.ok(
+    lines.every((l) => [...l].length <= WIDTH),
+    lines.join("\n"),
+  );
+});
+
+test("wrapText gives later lines their own width and lets a long word overflow them", () => {
+  assert.deepEqual(wrapText("aa bb cc dd ee", 5, 8), ["aa bb", "cc dd ee"]);
+  assert.deepEqual(wrapText("aa bbbbbbbbbbbb cc", 5, 8), ["aa", "bbbbbbbbbbbb", "cc"]);
+});
+
 test("--why wraps a long finding the same way", () => {
   const long =
     "verify, but depends on F13-T2 (task, verify) and on a second item that is also waiting";
