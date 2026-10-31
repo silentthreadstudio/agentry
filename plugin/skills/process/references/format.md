@@ -56,7 +56,8 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
   - row: `{ "in": "self" | "parent.file:<section>", "at": "end" | "after-last:<field>", "cells": { "<header>": "<template>" } }`
   - block: `{ "file": "TASKS.md", "under": "<heading template>" | "ask", "text": "<template>" }`
   - templates fill `{id}`, `{<field>}`, `{parent.<field>}` and `{today}`. A kind without `create` cannot be
-    added by `new`.
+    added by `new`. A parent given as an `also` value (`LATER`) is no item: its file's rows and any block
+    that names `{parent.…}` are skipped, and `add` says which.
 
 Kind order matters once: when two links claim the same child (a task's `sprint` ref and an epic's `tasks`
 list), the link in the kind listed first decides the child's order. List a grouping kind such as `epic`

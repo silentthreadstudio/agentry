@@ -190,6 +190,34 @@ test("add on a board made from the templates: headings given with their # marks"
   assert.deepEqual(findings(root), []);
 });
 
+test("add takes an `also` literal as the parent: its own row is written, the parent's places skipped", () => {
+  const root = mkdtempSync(join(tmpdir(), "agentry-cli-"));
+  temps.push(root);
+  cpSync(TEMPLATES, join(root, "docs", "work"), { recursive: true });
+  const spec = JSON.parse(readFileSync(join(TEMPLATES, "process.json"), "utf8"));
+  spec.kinds.task.fields.sprint.also = ["LATER"];
+  writeFileSync(join(root, "process.json"), JSON.stringify(spec));
+  const tasks = text(root, "docs/work/TASKS.md");
+  const result = addTask(root, { id: "T9", sprint: "LATER", what: "Someday", deps: "" });
+  assert.equal(result.exit, 0, result.out);
+  assert.match(text(root, "docs/work/BOARD.md"), /\| T9 \| LATER \| Someday \| todo \|/);
+  assert.equal(text(root, "docs/work/TASKS.md"), tasks, "no sprint heading to write under");
+  assert.match(result.out, /skipped the block under "## \{sprint\} · \{parent\.name\}": LATER/);
+  assert.deepEqual(findings(root), []);
+});
+
+test("add with an `also` parent skips the parent-file row and writes a block that needs no parent", () => {
+  const root = copy("write");
+  const spec = JSON.parse(text(root, "process.json"));
+  spec.kinds.task.fields.sprint.also = ["LATER"];
+  writeFileSync(join(root, "process.json"), JSON.stringify(spec));
+  writeFileSync(join(root, "board/TASKS.md"), `${text(root, "board/TASKS.md")}\n## Sprint LATER\n`);
+  const result = addTask(root, { id: "W8", sprint: "LATER", note: "Parked" });
+  assert.equal(result.exit, 0, result.out);
+  assert.match(result.out, /skipped the row in LATER's file: LATER is not an item/);
+  assert.match(text(root, "board/TASKS.md"), /## Sprint LATER\n\n- \*\*W8\*\* \(LATER\): Parked/);
+});
+
 test("add skips the parent-file row for a sprint that has no file, and says so", () => {
   const root = copy("write");
   writeFileSync(

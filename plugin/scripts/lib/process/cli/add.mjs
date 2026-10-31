@@ -1,6 +1,8 @@
 // board add <kind> --json '{"id": "…", …}' — write a new item at every `create` location of its kind:
 // each row (own table, or the parent's file) and each block (plan F13 §2.2, §2.4). The id is passed in
-// (`next-id` proposes it); a duplicate id is refused. All files are edited as one step, or none.
+// (`next-id` proposes it); a duplicate id is refused. All files are edited as one step, or none. A
+// parent given as one of its field's `also` values (LATER) is no item: the parent-file rows and the
+// blocks that name `{parent.…}` are skipped, and the output says so.
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written, 2 = usage or refusal
 import { join } from "node:path";
@@ -40,23 +42,28 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   if (model.kinds[kindName]?.items.some((i) => i.id === id))
     return fail(`${kindName} "${id}" is already on the board`);
 
-  // The parent item: the id held by the field with `role: parent`, looked up in the kinds it refs.
+  // The parent item: the id held by the field with `role: parent`, looked up in the kinds it refs. A
+  // value the field's `also` lists (a parking word such as LATER) is `{ also }`: no item, no file.
   const parentField = Object.entries(kind.fields ?? {}).find(([, d]) => d.role === "parent");
   const parentOf = () => {
-    if (!parentField) return fail(`${kindName} has no parent field`);
+    if (!parentField) throw new WriteError(`${kindName} has no parent field`);
     const [name, def] = parentField;
     const wanted = show(given[name]);
+    if (def.also?.includes(wanted)) return { also: wanted };
     const found = [def.ref]
       .flat()
       .flatMap((k) => model.kinds[k]?.items ?? [])
       .find((i) => i.id === wanted);
-    return found ?? fail(`${name} "${wanted}" is not on the board`);
+    if (!found) throw new WriteError(`${name} "${wanted}" is not on the board`);
+    return found;
   };
   let parent;
   const parentItem = () => {
     parent ??= parentOf();
     return parent;
   };
+  // A `{parent.…}` placeholder when the parent is an `also` value: the place that needs it is skipped.
+  class NoParent extends WriteError {}
 
   const values = { today, ...given, id };
   const known = new Set([...Object.keys(kind.fields ?? {}), ...(create.ask ?? []), "id", "today"]);
@@ -64,7 +71,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
     template.replace(/\{([\w.]+)\}/g, (_, name) => {
       if (name.startsWith("parent.")) {
         const p = parentItem();
-        if (p.exit) throw new WriteError(p.out);
+        if (p.also) throw new NoParent(`${p.also} is not an item on the board`);
         const key = name.slice("parent.".length);
         return show(
           p.fields[key] ?? (key === "id" ? p.id : undefined),
@@ -100,7 +107,10 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
       } else {
         const section = row.in.slice("parent.file:".length);
         const p = parentItem();
-        if (p.exit) throw new WriteError(p.out);
+        if (p.also) {
+          notes.push(`skipped the row in ${p.also}'s file: ${p.also} is not an item on the board`);
+          continue;
+        }
         const def = spec.kinds[p.kind].file?.sections?.[section];
         if (def?.as !== "table")
           throw new WriteError(`${p.kind} section "${section}" is not a table`);
@@ -118,12 +128,21 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
       );
     }
     for (const block of create.blocks ?? []) {
-      const under = block.under === "ask" ? given.under : render(block.under);
+      let under;
+      let lines;
+      try {
+        under = block.under === "ask" ? given.under : render(block.under);
+        lines = render(block.text);
+      } catch (error) {
+        if (!(error instanceof NoParent)) throw error;
+        notes.push(`skipped the block under "${block.under}": ${error.message}`);
+        continue;
+      }
       if (typeof under !== "string" || !under)
         throw new WriteError('--json needs an "under" heading for the block');
       place(
         block.file,
-        (text) => appendBlock(text, { under, block: render(block.text) }),
+        (text) => appendBlock(text, { under, block: lines }),
         `block under "${under}"`,
       );
     }
