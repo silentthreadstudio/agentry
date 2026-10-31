@@ -29,3 +29,8 @@ skills-lock.json
 packages/eval/runs/
 # self-eval generated dashboards — `selfeval report <id>` output; regenerable from a run, carries a generatedAt stamp
 packages/eval/results/
+
+# local agent instructions (never committed)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
