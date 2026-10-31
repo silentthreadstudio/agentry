@@ -590,3 +590,22 @@ test("param-less rules with nothing to check are refused, like file-required", (
   ]);
   assert.deepEqual(messages(withTree({ rule: "refs-resolve" })), [], "task.sprint refs sprint");
 });
+
+test("a table kind names its id column; a table section names its column", () => {
+  const noId = spec("kinds.task.id");
+  assert.deepEqual(messages(noId), ['kinds.task.id needs a "column"']);
+  const noColumn = withTree({ rule: "ids-unique" });
+  noColumn.kinds.sprint.file.sections.tasks = { heading: "Tasks", as: "table" };
+  assert.deepEqual(messages(noColumn), ['kinds.sprint.file.sections.tasks needs a "column"']);
+});
+
+test("a files kind's filename pattern must hold {id}", () => {
+  const files = (id) => {
+    const s = spec("kinds.task.at", { files: "tasks/*.md", id });
+    Reflect.deleteProperty(s.kinds.task, "id");
+    return messages(s);
+  };
+  assert.deepEqual(files("filename:{id}.md"), []);
+  assert.equal(files("filename:task.md").length, 1);
+  assert.deepEqual(files("frontmatter:id"), []);
+});
