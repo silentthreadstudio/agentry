@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { escapesRoot, parseSpec, validateSpec } from "../lib/process/spec.mjs";
+import { checkOnBoard, escapesRoot, parseSpec, validateSpec } from "../lib/process/spec.mjs";
+import { SPEC, makeModel, sprint, task } from "./rules-model.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const fixture = (name) => readFileSync(join(FIXTURES, name, "process.json"), "utf8");
@@ -367,4 +368,27 @@ test("escapesRoot normalises the path against the spec root", () => {
   assert.equal(escapesRoot("docs/board", "../../../x.md"), true);
   assert.equal(escapesRoot(".", "a/../../x.md"), true);
   assert.equal(escapesRoot(".", "/etc/passwd"), true);
+});
+
+test("parked's parking value is a parent the kind can hold: an item on the board or an also value", () => {
+  const entry = (parking) => ({ rule: "parked", kind: "task", parking });
+  const board = (parking) => {
+    const spec = { ...structuredClone(SPEC), rules: [entry(parking)] };
+    const items = [sprint("S1", "doing"), sprint("LATER", "todo"), task("T1", "S1", "todo")];
+    return checkOnBoard(spec, makeModel(items, spec)).map((p) => p.message);
+  };
+  assert.deepEqual(board("LATER"), []);
+  assert.deepEqual(board("EXTRA"), [], "an also value of the parent field");
+  assert.deepEqual(board("LATR"), [
+    'rules[0].parking names "LATR", neither a sprint on the board nor an "also" value of task.sprint',
+  ]);
+  assert.equal(board("T1").length, 1, "a task is no sprint");
+  const lost = { ...structuredClone(SPEC), rules: [entry("LATR")] };
+  const model = makeModel([task("T1", "S1", "todo")], lost);
+  model.kinds.sprint.located = false;
+  assert.deepEqual(checkOnBoard(lost, model), [], "a parent kind not found is not judged");
+  const orphan = messages(withTree({ rule: "parked", kind: "sprint", parking: "LATER" }));
+  assert.ok(
+    orphan.includes('rules[1].parking needs a parent, and sprint has no field with role "parent"'),
+  );
 });

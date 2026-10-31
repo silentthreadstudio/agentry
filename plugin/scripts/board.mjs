@@ -11,6 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gitRootOf } from "./lib/process/contract.mjs";
 import { loadSpec, readProcess } from "./lib/process/read.mjs";
+import { checkOnBoard } from "./lib/process/spec.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "lib", "process", "cli");
 const subs = () => readdirSync(CLI).map((f) => f.replace(/\.mjs$/, ""));
@@ -62,8 +63,7 @@ async function main(argv) {
   const { argv: args, error } = options(argv, mod.flags ?? {});
   if (error) return { exit: 2, out: `${error}\nusage: ${mod.usage ?? sub}` };
   if (mod.noSpec) return mod.run(args, { root, processPath });
-  const { spec, problems } = loadSpec(processPath, { root });
-  if (!spec || problems.length) {
+  const refuse = (problems) => {
     const shown = relative(root, processPath).startsWith("..")
       ? processPath
       : relative(root, processPath);
@@ -73,8 +73,13 @@ async function main(argv) {
       exit: 2,
       out: [`✗ ${shown}: cannot use the process file`, ...lines].join("\n") + hint,
     };
-  }
-  return mod.run(args, { root, processPath, spec, model: readProcess({ root, spec }) });
+  };
+  const { spec, problems } = loadSpec(processPath, { root });
+  if (!spec || problems.length) return refuse(problems);
+  const model = readProcess({ root, spec });
+  const late = checkOnBoard(spec, model, { file: processPath });
+  if (late.length) return refuse(late);
+  return mod.run(args, { root, processPath, spec, model });
 }
 
 const { exit, out } = await main(process.argv.slice(2));

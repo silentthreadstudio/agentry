@@ -119,7 +119,7 @@ const parked = {
   id: "parked",
   params: {
     kind: KIND,
-    parking: { type: "string", required: true },
+    parking: { type: "parent", required: true },
     field: { type: "field", is: "deps", pick: true },
     except: EXCEPT,
   },

@@ -186,6 +186,7 @@ test("a broken board with a wrong-typed or unknown rule param is exit 2, never O
     [{ rule: "deps-done", kind: "task", feild: "deps" }, /rules\[0\]\.feild is not a param/],
     [{ rule: "parked", kind: "task", parking: "LATER", skip: "PRE" }, /rules\[0\]\.skip is not/],
     [{ rule: "deps-done", kind: "question" }, /rules\[0\] is missing "field", and no question/],
+    [{ rule: "parked", kind: "task", parking: "LATR" }, /rules\[0\]\.parking names "LATR"/],
   ];
   for (const [rule, expected] of cases) {
     const out = checkWith("evidence-board", [rule]);
@@ -228,6 +229,7 @@ const WRONG = {
   kind: [7, "nope", null, ...BUILTINS],
   field: [7, "nope", null, ...BUILTINS],
   section: [7, "nope", null, ...BUILTINS],
+  parent: [7, null, [], {}],
   except: ["x", [], { nope: ["a"] }, { id: "x" }, ...BUILTINS.map((b) => ({ [b]: ["a"] }))],
 };
 

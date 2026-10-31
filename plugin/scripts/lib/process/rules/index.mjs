@@ -5,8 +5,9 @@
 // name -> { type, required?, default?, values?, of?, is?, pick?, only? }. Types: "string", "strings"
 // (a list of strings), "enum" (one of `values`), "kind" (a kind the file declares), "field" (a field
 // of the entry's kind, of the type `is` names in `FIELD`: a value never reads a field the rule cannot
-// use), "section" (a section of the entry's kind's own file, or `of: "parent"` of its parent kind's)
-// and "except" ({ <field or "id">: [values] }). `pick`: left out, a field param takes the first field
+// use), "section" (a section of the entry's kind's own file, or `of: "parent"` of its parent kind's),
+// "parent" (a value the kind's parent field can hold: an item of the kind it refs, or an `also`
+// value; the board decides, `checkOnBoard`) and "except" ({ <field or "id">: [values] }). `pick`: left out, a field param takes the first field
 // of the kind that fits. `only`: { <param>: [values] }, the param is used only while that one holds
 // one of them. `spec.mjs` checks every entry against it; `check.mjs` fills the defaults, so a rule
 // never runs with a param it did not declare.

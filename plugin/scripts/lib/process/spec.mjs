@@ -148,6 +148,10 @@ function describe(field, name) {
 // name, `targets` the names of the kinds the rule checks.
 const fieldsOf = (kind) => (isObject(kind?.fields) ? kind.fields : {});
 const sectionsOf = (kind) => (isObject(kind?.file?.sections) ? kind.file.sections : {});
+// A kind's field with role "parent", as [name, field], and the kinds it refs.
+const parentOf = (kind) => Object.entries(fieldsOf(kind)).find(([, f]) => f?.role === "parent");
+const refsOf = (field) => [field?.ref ?? []].flat().filter((k) => typeof k === "string");
+const noParent = (name) => `needs a parent, and ${name} has no field with role "parent"`;
 const named = (test) => (v, at, bad, ctx, p) => {
   if (typeof v !== "string") return bad(at, "should be a string");
   const problem = test(v, ctx, p);
@@ -171,14 +175,16 @@ const PARAM = {
     if (!kind) return false;
     if (p.of === "kind")
       return !has(sectionsOf(kind), v) && `names no section "${v}" of the ${name} file`;
-    const parent = Object.values(fieldsOf(kind)).find((f) => f?.role === "parent");
-    if (!parent) return `needs a parent, and ${name} has no field with role "parent"`;
-    const refs = [parent.ref ?? []].flat().filter((k) => typeof k === "string");
+    const parent = parentOf(kind);
+    if (!parent) return noParent(name);
+    const refs = refsOf(parent[1]);
     return (
       !refs.some((k) => has(sectionsOf(own(kinds, k)), v)) &&
       `names no section "${v}" of the ${refs.join(" or ")} file`
     );
   }),
+  // Which parent values exist is the board's to say: `checkOnBoard`.
+  parent: named((v, { kind, name }) => kind && !parentOf(kind) && noParent(name)),
   except: (v, at, bad, { kinds, targets }) => {
     if (!isObject(v)) return bad(at, "should be an object");
     for (const [k, x] of Object.entries(v)) {
@@ -295,6 +301,28 @@ export function validateSpec(value, { file } = {}) {
   if (!isObject(value)) return { spec: null, problems };
   crossCheck(value, bad);
   return { spec: value, problems };
+}
+
+/** What only the board can tell of a valid process file's rules: a "parent" param (parked.parking)
+ *  names an `also` value of its kind's parent field or an item of a kind that field refs. Problems as
+ *  `validateSpec` gives them; a parent kind the reader did not find is not judged. */
+export function checkOnBoard(spec, model, { file } = {}) {
+  const problems = [];
+  spec.rules.forEach((entry, i) => {
+    for (const [p, def] of Object.entries(ruleOf(entry.rule)?.params ?? {})) {
+      if (def.type !== "parent" || !has(entry, p)) continue;
+      const value = entry[p];
+      const [name, field] = parentOf(own(spec.kinds, entry.kind)) ?? [];
+      const refs = refsOf(field);
+      if (!field || field.also?.includes(value)) continue;
+      if (refs.some((k) => !own(model.kinds, k)?.located)) continue;
+      if ((own(model.index, value) ?? []).some((item) => refs.includes(item.kind))) continue;
+      const what = `neither a ${refs.join(" or ")} on the board nor an "also" value of ${entry.kind}.${name}`;
+      const message = `rules[${i}].${p} names "${value}", ${what}`;
+      problems.push({ rule: "spec", message, ...(file ? { file } : {}) });
+    }
+  });
+  return problems;
 }
 
 /** Parse the process file's text, then validate it. */
