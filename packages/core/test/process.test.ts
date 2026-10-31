@@ -107,6 +107,10 @@ test("a rule without `rule` fails at rules.<n>.rule", () => {
   assert.ok(issuePaths(bad).includes("rules.1.rule"));
 });
 
+test("a spec with no kinds fails at kinds, as the plugin's reader says", () => {
+  assert.ok(issuePaths({ ...filesBoard, kinds: {} }).includes("kinds"));
+});
+
 test("an unsupported version is rejected", () => {
   assert.ok(issuePaths({ ...filesBoard, version: 2 }).includes("version"));
 });

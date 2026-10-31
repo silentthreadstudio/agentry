@@ -165,7 +165,9 @@ export const ProcessSpec = z
     version: z.literal(1),
     name: z.string(),
     root: z.string(),
-    kinds: z.record(ProcessKind),
+    kinds: z
+      .record(ProcessKind)
+      .refine((kinds) => Object.keys(kinds).length > 0, "should name at least one kind"),
     rules: z.array(Rule),
     lifecycle: Lifecycle.optional(),
     drafts: Drafts.optional(),
