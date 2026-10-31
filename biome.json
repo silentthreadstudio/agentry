@@ -38,11 +38,7 @@
   },
   "overrides": [
     {
-      "include": [
-        "**/test/**",
-        "**/*.test.ts",
-        "**/*.test.mjs"
-      ],
+      "include": ["**/test/**", "**/*.test.ts", "**/*.test.mjs"],
       "linter": {
         "rules": {
           "style": {
