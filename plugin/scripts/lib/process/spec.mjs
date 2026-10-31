@@ -135,13 +135,15 @@ function crossCheck(spec, bad) {
     !escapesRoot(root, path) ||
     bad(at, `"${path}" leaves the repository`);
   for (const [name, k] of entries(kinds)) {
+    if (!isObject(k)) continue; // reported by the shape check
     const at = `kinds.${name}`;
-    for (const [f, def] of entries(k.fields)) {
+    const fields = isObject(k.fields) ? k.fields : {};
+    for (const [f, def] of Object.entries(fields)) {
       for (const ref of [def?.ref ?? []].flat()) known(ref, `${at}.fields.${f}.ref`);
       if (def?.role && !def.ref) bad(`${at}.fields.${f}`, `has role "${def.role}" but no "ref"`);
     }
     if (isObject(k.at) && "table" in k.at && !k.id?.column) bad(`${at}.id`, 'needs a "column"');
-    if (typeof k.status?.field === "string" && !(k.status.field in (k.fields ?? {})))
+    if (typeof k.status?.field === "string" && !(k.status.field in fields))
       bad(`${at}.status.field`, `names no field "${k.status.field}"`);
     for (const [s, def] of entries(k.file?.sections))
       if (def?.as === "table" && !def.column) bad(`${at}.file.sections.${s}`, 'needs a "column"');
