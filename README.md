@@ -220,7 +220,6 @@ verification — so the probes share a run instead of each paying for their own.
 ```
 plugin/            the shipped plugin (agents · commands · skills · hooks · mem · flow · workbench)
 packages/          TypeScript dev sources (core · memory · flow · workbench · web · eval)
-.docs/internal/    the design docs — read these before changing behavior
 ```
 
 Two standing rules if you hack on the bundles: any change to a `packages/*/src` that ships must rebuild and commit

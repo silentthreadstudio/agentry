@@ -47,7 +47,7 @@ export interface RunResult {
 /**
  * The Sandbox a run executes inside — a fresh temp working dir + two fresh, relocated memory roots, plus the
  * env that points `claude -p` at them. This port owns the TYPE so it is defined once and not duplicated
- * (CLAUDE.md); `io/sandbox.ts` owns building one. The Runner RECEIVES a prepared Sandbox; it never builds one.
+ * (CONTRIBUTING.md); `io/sandbox.ts` owns building one. The Runner RECEIVES a prepared Sandbox; it never builds one.
  */
 export interface Sandbox {
   /** Fresh temp working dir the agent runs in (its produced tree is rooted here). */
@@ -62,7 +62,7 @@ export interface Sandbox {
 
 /**
  * What to run, independent of WHERE it runs (the Sandbox). Model and `pluginDir` are DISCOVERED from
- * config/env by the caller and passed in — the Runner hard-codes nothing (CLAUDE.md generic constraint).
+ * config/env by the caller and passed in — the Runner hard-codes nothing (CONTRIBUTING.md code bar).
  */
 export interface Invocation {
   /** The full prompt handed to `claude -p` (the routing task). */

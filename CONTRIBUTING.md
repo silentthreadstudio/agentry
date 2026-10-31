@@ -12,6 +12,9 @@ it runs. This guide gets you set up and explains what a change is held to. For *
 - **`packages/`** — dev-only TypeScript, a pnpm workspace:
   - `core` — `@agentry/core`, the single source of truth for contract types.
   - `memory` — `@agentry/memory`, the durable memory MCP (builds into `plugin/mem/`).
+  - `flow` — the flow MCP (builds into `plugin/flow/`).
+  - `workbench` — the Workbench server and web app (build into `plugin/workbench/`).
+  - `web` — the docs site.
   - `eval` — the self-evaluation harness (routing · decision-quality · memory-moat · reporter).
 - `.claude-plugin/marketplace.json` — the marketplace manifest (stays at the repo root).
 - `scripts/check-plugin.mjs` — the structure + dist-lockstep gate.
@@ -24,9 +27,10 @@ version is pinned in the root `package.json` `packageManager` field).
 ```bash
 corepack enable
 pnpm install
-pnpm -r build         # core (tsc) + the memory MCP bundle → plugin/mem/index.js
+pnpm -r build         # every package; the shipped bundles land in plugin/
 pnpm -r typecheck
-pnpm -r test          # core · memory · eval — all offline, no API spend
+pnpm -r test          # every package — all offline, no API spend
+pnpm lint             # biome: lint, format, import order
 node scripts/check-plugin.mjs   # the gate (also `pnpm check`)
 ```
 
@@ -48,17 +52,26 @@ Work on one package with `pnpm --filter @agentry/memory <script>`.
 
 - **Run `node scripts/check-plugin.mjs` (`pnpm check`) before every commit** — it catches namespacing +
   structure drift.
-- **Dist-lockstep** — any `packages/memory/src` change ⇒ `pnpm --filter @agentry/memory build` and commit the
-  updated `plugin/mem/index.js` (+ `.srchash`) in the **same** change. The gate verifies it by content hash.
+- **Dist-lockstep** — any change to a bundled package's sources (`memory`, `flow`, `workbench`) ⇒ `pnpm build`
+  and commit the updated `plugin/` bundle (+ its `.srchash`) in the **same** change. The gate verifies it by
+  content hash.
 - **Reload-gated** — agent/command/skill/hook/MCP changes register only on a Claude Code reload/restart;
   verify live after a restart.
-- All packages must `typecheck` + `test` green; CI runs the gate + all three packages on every push/PR.
+- All packages must `typecheck`, `test` and `lint` green; CI runs the gate and the packages on every push/PR.
+
+## Commits
+
+- [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`, imperative, lowercase, no
+  trailing period, at most 72 characters. One logical change per commit; a body only when the why isn't obvious.
+- Commits and PRs carry their human author only: no AI co-author trailers, session links or "Generated with" lines.
+- Never commit secrets, `node_modules`, local agent state (`.agentry/`) or agent instruction files (`CLAUDE.md`,
+  `CLAUDE.local.md`, `.claude/`).
 
 ## Pull requests
 
 - Branch from `main`; keep the change focused.
 - Describe **what** changed and **why**; link any issue. The PR template prompts for this.
-- Make sure CI is green (gate + typecheck + tests).
+- Make sure CI is green (gate, typecheck, tests, lint).
 
 ## Reporting bugs / requesting features
 
