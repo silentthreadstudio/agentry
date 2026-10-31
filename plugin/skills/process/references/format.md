@@ -25,8 +25,8 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
 
 - **`label`** — the display name. **`note`** — free text.
 - **`at`** — where the items are. Either rows of a table, `{ "table": "BOARD.md", "heading": "Tasks" }`
-  (the heading text exactly, any level; the first table under it), or one file per item,
-  `{ "files": "stories/*.md", "id": "frontmatter:id" }` or `"id": "filename:{id}.md"`.
+  (the heading text, any level, with or without its `#` marks, spaces collapsed; the first table under it), or
+  one file per item, `{ "files": "stories/*.md", "id": "frontmatter:id" }` or `"id": "filename:{id}.md"`.
 - **`id`** — `column` (table kinds), optional `match` (regex, group 1 is the id, e.g. `^(\\S+)` for a cell
   like `M1 · First release`) and `prefix` (display only, e.g. `D` for decisions numbered `1, 2…`).
 - **`fields`** — `{ "<name>": Field }`, each read from a column header (or a frontmatter key):

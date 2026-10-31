@@ -103,6 +103,18 @@ test("a shuffled column order reads the same items", () => {
   assert.deepEqual(shuffled.kinds.task.items, model("table-board").kinds.task.items);
 });
 
+test("headings in the process file may carry their # marks", () => {
+  const root = join(FIXTURES, "table-board");
+  const { spec } = loadSpec(join(root, "process.json"));
+  for (const kind of Object.values(spec.kinds))
+    if (kind.at.heading) kind.at.heading = `## ${kind.at.heading}`;
+  for (const def of Object.values(spec.kinds.sprint.file.sections))
+    def.heading = `#  ${def.heading}`;
+  const marked = readProcess({ root, spec });
+  assert.deepEqual(marked.problems, []);
+  assert.deepEqual(marked.kinds, model("table-board").kinds);
+});
+
 test("derived: children gives a milestone its phase from its sprints", () => {
   const m = model("table-board");
   assert.equal(item(m, "milestone", "M1").phase, "active", "A1 done + A2 doing");

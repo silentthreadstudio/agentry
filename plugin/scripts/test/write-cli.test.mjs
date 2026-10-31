@@ -14,6 +14,7 @@ import { run as set } from "../lib/process/cli/set.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
+const TEMPLATES = join(FIXTURES, "..", "..", "..", "skills", "process", "templates");
 const temps = [];
 after(() => {
   for (const dir of temps) rmSync(dir, { recursive: true, force: true });
@@ -171,6 +172,22 @@ test("add on table-board, then check: findings are unchanged", () => {
     /\| Q-03 \| Open the door\? \| open \| W6 \| {2}\|\n/,
   );
   assert.deepEqual(findings(root), baseline);
+});
+
+test("add on a board made from the templates: headings given with their # marks", () => {
+  const root = mkdtempSync(join(tmpdir(), "agentry-cli-"));
+  temps.push(root);
+  cpSync(TEMPLATES, join(root, "docs", "work"), { recursive: true });
+  cpSync(join(TEMPLATES, "process.json"), join(root, "process.json"));
+  const task = addTask(root, { id: "T2", sprint: "S1", what: "The second task", deps: "T1" });
+  assert.equal(task.exit, 0, task.out);
+  const sprint = addTask(root, { id: "S2", name: "Second sprint" }, "sprint");
+  assert.equal(sprint.exit, 0, sprint.out);
+  const tasks = text(root, "docs/work/TASKS.md");
+  assert.match(tasks, /call it done\n\n### T2 · The second task\n- \*\*Owns:\*\* …\n/);
+  assert.match(tasks, /\n\n## S2 · Second sprint\n$/);
+  assert.match(text(root, "docs/work/BOARD.md"), /\| S2 \| Second sprint \| todo \| {2}\|\n/);
+  assert.deepEqual(findings(root), []);
 });
 
 test("add skips the parent-file row for a sprint that has no file, and says so", () => {

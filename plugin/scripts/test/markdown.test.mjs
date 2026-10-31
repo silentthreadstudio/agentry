@@ -58,6 +58,13 @@ test("a section runs to the next heading of the same or a higher level", () => {
   assert.equal(section(doc, "Missing"), null);
 });
 
+test("a heading may be given with its # marks and loose spaces", () => {
+  assert.equal(section(doc, "## Handoff")?.line, 16);
+  assert.equal(section(doc, "#Tasks")?.line, 3);
+  assert.equal(section("#  Task   contracts  #\n", "# Task contracts")?.line, 1);
+  assert.equal(section(doc, "### Handoff")?.line, 16, "the level given is not checked");
+});
+
 test("tables map header names to raw cells, with escaped pipes and short rows", () => {
   const [table] = tables(doc);
   assert.equal(tables(doc).length, 1, "the fenced table is not a table");
