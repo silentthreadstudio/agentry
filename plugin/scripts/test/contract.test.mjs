@@ -206,6 +206,24 @@ test("find-contract.mjs: an option without its value is a usage error", () => {
   }
 });
 
+test("find-contract.mjs: an unknown option is a usage error; --flag=value reads as --flag value", () => {
+  const root = repo({ "TASKS.md": "- **KX-06** owns the gate.\n" });
+  const run = (...args) => spawnSync("node", [CLI, ...args], { encoding: "utf8", cwd: root });
+  for (const args of [
+    ["KX-06", "--bogus"],
+    ["--bogus", "KX-06"],
+    ["KX-06", "--kind=task", "-x"],
+  ]) {
+    const res = run(...args);
+    assert.equal(res.status, 2, args.join(" "));
+    assert.match(res.stderr, /^unknown option "(--bogus|-x)"\nusage: find-contract\.mjs/);
+  }
+  const res = run("KX-06", `--root=${root}`, "--kind=task");
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(JSON.parse(res.stdout).file, "TASKS.md");
+  assert.equal(run("KX-06", "--kind=").status, 2, "an empty value is no value");
+});
+
 test("find-contract.mjs: an invalid process file is reported on stderr, then the lookup falls back", () => {
   const root = repo({
     ".agentry/process.json": '{"version": 1, "name": "X"}',

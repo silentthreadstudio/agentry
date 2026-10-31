@@ -5,13 +5,15 @@
 // run(argv, { spec, model }) -> { exit, out }
 import { own } from "../spec.mjs";
 
+export const usage = "next-id <kind>";
+export const flags = {};
 const NUMBER = /\{n(?::0(\d+))?\}/;
 
 export function run(argv, { spec, model }) {
   const name = argv.find((a) => !a.startsWith("--"));
   const kind = own(spec.kinds, name);
   if (!kind)
-    return { exit: 2, out: `usage: next-id <kind> (kinds: ${Object.keys(spec.kinds).join(", ")})` };
+    return { exit: 2, out: `usage: ${usage} (kinds: ${Object.keys(spec.kinds).join(", ")})` };
   const pattern = kind.create?.id;
   if (!pattern || pattern === "ask")
     return {

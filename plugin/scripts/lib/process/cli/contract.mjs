@@ -4,11 +4,14 @@
 // run(argv, { root, spec }) -> { exit, out }
 import { findContract } from "../contract.mjs";
 
+export const usage = "contract <id> [--kind <kind>]";
+export const flags = { "--kind": true };
+
 export function run(argv, { root, spec }) {
   const at = argv.indexOf("--kind");
   const kind = at < 0 ? "task" : argv[at + 1];
   const id = argv.find((a, i) => !a.startsWith("--") && (at < 0 || i !== at + 1));
-  if (!id || !kind) return { exit: 2, out: "usage: contract <id> [--kind <kind>]" };
+  if (!id || !kind) return { exit: 2, out: `usage: ${usage}` };
   const result = findContract({ root, spec, id, kind });
   return { exit: result.status === "found" ? 0 : 1, out: JSON.stringify(result) };
 }

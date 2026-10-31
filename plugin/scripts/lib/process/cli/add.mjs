@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, appendBlock, applyAll, insertRow } from "../write.mjs";
 
+export const usage = 'add <kind> --json \'{"id": "…", …}\'';
+export const flags = { "--json": true };
 const fail = (out) => ({ exit: 2, out });
 const isoToday = () => new Date().toLocaleDateString("sv-SE");
 
@@ -22,8 +24,7 @@ function show(value, def) {
 export function run(argv, { root, spec, model, today = isoToday() }) {
   const kindName = argv.find((a) => !a.startsWith("--"));
   const json = argv[argv.indexOf("--json") + 1];
-  if (!kindName || argv.indexOf("--json") < 0 || json === undefined)
-    return fail('usage: add <kind> --json \'{"id": "…", …}\'');
+  if (!kindName || argv.indexOf("--json") < 0 || json === undefined) return fail(`usage: ${usage}`);
   const kind = own(spec.kinds, kindName);
   if (!kind)
     return fail(`unknown kind "${kindName}" (kinds: ${Object.keys(spec.kinds).join(", ")})`);

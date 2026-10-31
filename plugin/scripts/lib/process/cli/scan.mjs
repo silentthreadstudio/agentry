@@ -17,6 +17,8 @@ import { fit } from "../render.mjs";
 import { escapesRoot } from "../spec.mjs";
 
 export const noSpec = true;
+export const usage = "scan [<dir>] [--json]";
+export const flags = { "--json": false };
 const WIDTH = 100;
 const SAMPLE = 4;
 const OUTSIDE = "a symlink out of the repository; not read";

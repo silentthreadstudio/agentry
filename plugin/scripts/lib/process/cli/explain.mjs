@@ -12,6 +12,8 @@ import { columns } from "../render.mjs";
 import { CATALOG } from "../rules/index.mjs";
 import { boardReport } from "../status.mjs";
 
+export const usage = "explain [--json]";
+export const flags = { "--json": false };
 const WIDTH = 100;
 
 // A table kind's header names that neither the id nor any field reads.

@@ -234,6 +234,36 @@ test("scan needs no process file and lists every table with its row count", () =
   assert.ok(cols(out.stdout) <= 100);
 });
 
+test("an option the subcommand does not take is a usage error with its usage line", () => {
+  const cases = [
+    [["check", "--bogus"], /^unknown option "--bogus"\nusage: check \[--json\] \[--why <id>\]\n$/],
+    [["--bogus"], /^unknown option "--bogus"\nusage: status /],
+    [["scan", "--bogus"], /^unknown option "--bogus"\nusage: scan /],
+    [["explain", "--why", "W3"], /^unknown option "--why"\nusage: explain \[--json\]/],
+    [["set", "task", "W1", "status=done", "--force"], /^unknown option "--force"\nusage: set /],
+    [["check", "--json=yes"], /^--json takes no value\nusage: check /],
+  ];
+  for (const [args, expected] of cases) {
+    const out = run("table-board", ...args);
+    assert.equal(out.status, 2, args.join(" "));
+    assert.match(out.stderr, expected, args.join(" "));
+    assert.equal(out.stdout, "", args.join(" "));
+  }
+});
+
+test("--flag=value reads as --flag value, the router's options included", () => {
+  const why = run("table-board", "check", "--why=W3");
+  assert.equal(why.stdout, run("table-board", "check", "--why", "W3").stdout);
+  assert.match(why.stdout, /^W3 /);
+  const root = join(FIXTURES, "table-board");
+  const argv = [BOARD, "check", `--root=${root}`, `--process=${join(root, "process.json")}`];
+  const out = spawnSync("node", argv, { encoding: "utf8" });
+  assert.equal(out.status, 0, out.stderr);
+  const empty = spawnSync("node", [BOARD, "check", "--root="], { encoding: "utf8" });
+  assert.equal(empty.status, 2);
+  assert.match(empty.stderr, /^--root needs a value/);
+});
+
 test("--why with no id is a usage error, not a plain run", () => {
   for (const sub of ["check", "status"])
     for (const args of [["--why"], ["--why", "--json"]]) {

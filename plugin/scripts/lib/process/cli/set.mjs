@@ -6,12 +6,14 @@ import { join } from "node:path";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, apply, setCell, setKey } from "../write.mjs";
 
+export const usage = "set <kind> <id> <field>=<value>";
+export const flags = {};
 const fail = (out) => ({ exit: 2, out });
 
 export function run(argv, { root, spec, model }) {
   const [kindName, id, assignment] = argv.filter((a) => !a.startsWith("--"));
   const at = assignment?.indexOf("=") ?? -1;
-  if (!kindName || !id || at < 1) return fail("usage: set <kind> <id> <field>=<value>");
+  if (!kindName || !id || at < 1) return fail(`usage: ${usage}`);
   const fieldName = assignment.slice(0, at);
   const value = assignment.slice(at + 1);
   const kind = own(spec.kinds, kindName);
