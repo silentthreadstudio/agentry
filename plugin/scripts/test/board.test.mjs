@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { check } from "../lib/process/check.mjs";
+import { explain } from "../lib/process/cli/explain.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -291,6 +292,28 @@ test("explain lists every kind with its count and every catalog rule on or off",
   assert.ok(cols(out.stdout) <= 100);
   const data = JSON.parse(run("table-board", "explain", "--json").stdout);
   assert.equal(data.rules.length, 8 + data.rules.filter((r) => !r.on).length);
+});
+
+test("explain counts unknown status words named like built-ins as plain words", () => {
+  const root = mkdtempSync(join(tmpdir(), "agentry-explain-"));
+  try {
+    cpSync(join(FIXTURES, "table-board"), root, { recursive: true });
+    const board = join(root, "docs", "board", "BOARD.md");
+    const text = readFileSync(board, "utf8")
+      .replace("| W4 | A2 | todo |", "| W4 | A2 | toString |")
+      .replace("| W5 | B1 | todo |", "| W5 | B1 | __proto__ |")
+      .replace("| X-01 | TRK | doing |", "| X-01 | TRK | toString |");
+    writeFileSync(board, text);
+    const { spec } = loadSpec(join(root, "process.json"));
+    const data = explain({ root, spec, model: readProcess({ root, spec }) });
+    const task = data.kinds.find((k) => k.kind === "task");
+    assert.deepEqual(Object.entries(task.unknownStatus), [
+      ["toString", 2],
+      ["__proto__", 1],
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("next-id: the next number of the pattern; exit 2 when ids are asked", () => {

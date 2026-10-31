@@ -33,10 +33,11 @@ export function explain({ root, spec, model }) {
   const kinds = Object.entries(spec.kinds).map(([name, kind]) => {
     const { items, located } = model.kinds[name];
     const of = (rule) => basics.filter((f) => f.rule === rule && f.kind === name);
-    const unknown = {};
+    // A Map, so a status word such as `toString` or `__proto__` counts as a plain word.
+    const unknown = new Map();
     for (const f of of("status-known")) {
-      const item = items.find((i) => i.id === f.id && i.kind === name);
-      unknown[item?.status ?? ""] = (unknown[item?.status ?? ""] ?? 0) + 1;
+      const word = items.find((i) => i.id === f.id && i.kind === name)?.status ?? "";
+      unknown.set(word, (unknown.get(word) ?? 0) + 1);
     }
     const at = kind.at.table ? `${kind.at.table} › ${kind.at.heading}` : kind.at.files;
     return {
@@ -46,7 +47,7 @@ export function explain({ root, spec, model }) {
       items: items.length,
       ...(kind.file ? { files: items.filter((i) => i.own).length } : {}),
       unmapped: unmapped(root, spec, kind),
-      unknownStatus: unknown,
+      unknownStatus: Object.fromEntries(unknown),
       unresolved: of("refs-resolve").map((f) => `${f.id}: ${f.message}`),
       problems: model.problems.filter((p) => p.kind === name).map((p) => p.message),
     };
