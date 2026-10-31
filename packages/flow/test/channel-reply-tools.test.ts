@@ -20,7 +20,10 @@ class CapturingServer {
 }
 
 let cwd: string;
-let call: (tool: string, args?: unknown) => Promise<{ content: { text: string }[]; isError?: boolean }>;
+let call: (
+  tool: string,
+  args?: unknown,
+) => Promise<{ content: { text: string }[]; isError?: boolean }>;
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "flow-channel-reply-"));
@@ -50,14 +53,20 @@ const DOC = "plan";
 
 // ── the core promise: a reply appends an agent-origin entry with replyTo, on the .review/ bus ──────
 test("channel_reply appends an agent-origin entry with replyTo to the .review/ sidecar", async () => {
-  const { id } = payloadOf(await call("channel_reply", { run: RUN, doc: DOC, body: "on it", replyTo: "c-human-42" }));
+  const { id } = payloadOf(
+    await call("channel_reply", { run: RUN, doc: DOC, body: "on it", replyTo: "c-human-42" }),
+  );
   assert.ok(id, "the reply gets an id back");
 
   const file = join(cwd, ".agentry", "work", RUN, ".review", `${DOC}.annotations.json`);
   const raw = JSON.parse(readFileSync(file, "utf8"));
   assert.equal(raw.length, 1);
   assert.equal(raw[0].id, id);
-  assert.equal(raw[0].origin, "agent", "marked agent-origin so the bridge skips it + read-models stay human-only");
+  assert.equal(
+    raw[0].origin,
+    "agent",
+    "marked agent-origin so the bridge skips it + read-models stay human-only",
+  );
   assert.equal(raw[0].replyTo, "c-human-42", "threads to the human comment it answers");
   assert.equal(raw[0].body, "on it");
   assert.equal(raw[0].resolved, true, "not an open human gate item");
@@ -65,7 +74,9 @@ test("channel_reply appends an agent-origin entry with replyTo to the .review/ s
 
 // ── replyTo is optional: a bare status reply omits it ──────────────────────────────────────────────
 test("channel_reply without replyTo omits the field (a free-standing status reply)", async () => {
-  const { id } = payloadOf(await call("channel_reply", { run: RUN, doc: DOC, body: "done — take another look" }));
+  const { id } = payloadOf(
+    await call("channel_reply", { run: RUN, doc: DOC, body: "done — take another look" }),
+  );
   const file = join(cwd, ".agentry", "work", RUN, ".review", `${DOC}.annotations.json`);
   const raw = JSON.parse(readFileSync(file, "utf8"));
   assert.equal(raw[0].id, id);
@@ -76,7 +87,13 @@ test("channel_reply without replyTo omits the field (a free-standing status repl
 // ── the reply lands on the SAME bus as the human comments (one sidecar, two message kinds) ─────────
 test("a human comment and an agent reply co-exist in one sidecar; review_list shows only the human one", async () => {
   const { id: human } = payloadOf(
-    await call("review_comment", { run: RUN, gate: DOC, anchor: { originalText: "x", headingAnchor: "h", startLine: 1 }, decision: "changes", body: "fix this" }),
+    await call("review_comment", {
+      run: RUN,
+      gate: DOC,
+      anchor: { originalText: "x", headingAnchor: "h", startLine: 1 },
+      decision: "changes",
+      body: "fix this",
+    }),
   );
   await call("channel_reply", { run: RUN, doc: DOC, body: "acknowledged", replyTo: human });
 

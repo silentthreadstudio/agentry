@@ -7,8 +7,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { mdToTiptap, normalize, tiptapToMd } from "../routes/doc/markdown-serializer.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -35,7 +35,11 @@ for (const name of CORPUS) {
     const twice = normalize(once);
     assert.equal(twice, once, `${name}: normalize(normalize(x)) must equal normalize(x)`);
     // And re-parsing the canonical form leaves it byte-identical — a no-op editor session is stable.
-    assert.equal(tiptapToMd(mdToTiptap(once)), once, `${name}: a canonical body survives the round-trip`);
+    assert.equal(
+      tiptapToMd(mdToTiptap(once)),
+      once,
+      `${name}: a canonical body survives the round-trip`,
+    );
   });
 }
 

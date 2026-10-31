@@ -151,7 +151,12 @@ function listItems(tokens: Token[], start: number, end: number): TiptapNode[] {
 }
 
 // Find the index of the close token matching the open at `openIdx`, honoring nesting of the same pair.
-function matchingClose(tokens: Token[], openIdx: number, openType: string, closeType: string): number {
+function matchingClose(
+  tokens: Token[],
+  openIdx: number,
+  openType: string,
+  closeType: string,
+): number {
   let depth = 0;
   for (let i = openIdx; i < tokens.length; i++) {
     const t = tokens[i]?.type;
@@ -261,7 +266,10 @@ function block(node: TiptapNode, indent: string): string {
       return `\`\`\`${lang}\n${code}\n\`\`\``;
     }
     case "blockquote": {
-      const inner = (node.content ?? []).map((n) => block(n, "")).filter((s) => s.length > 0).join("\n\n");
+      const inner = (node.content ?? [])
+        .map((n) => block(n, ""))
+        .filter((s) => s.length > 0)
+        .join("\n\n");
       // Prefix every line with "> " (blank quoted lines stay ">").
       return inner
         .split("\n")

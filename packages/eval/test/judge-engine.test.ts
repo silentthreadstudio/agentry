@@ -7,13 +7,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  judgeWithRubric,
-  parseScore,
-  buildJudgePrompt,
-  makeRubric,
-  overallFromDimensions,
   type JudgeFn,
   type Rubric,
+  buildJudgePrompt,
+  judgeWithRubric,
+  makeRubric,
+  overallFromDimensions,
+  parseScore,
 } from "../src/judge/index.ts";
 
 /** A judge fn that returns a fixed JSON string regardless of prompt — the canned-score seam. */
@@ -127,7 +127,10 @@ test("parseScore: a truncated tail with a malformed dimensions block still throw
 });
 
 test("parseScore: a missing dimension is rejected (all rubric dims required)", () => {
-  assert.throws(() => parseScore(FOUR_DIM, JSON.stringify({ dimensions: { a: 2, b: 2, c: 2 } })), /"d"/);
+  assert.throws(
+    () => parseScore(FOUR_DIM, JSON.stringify({ dimensions: { a: 2, b: 2, c: 2 } })),
+    /"d"/,
+  );
 });
 
 test("parseScore: non-JSON output is rejected loudly", () => {

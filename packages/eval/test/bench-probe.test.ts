@@ -9,17 +9,17 @@
 //   - an absent-decision-trail record yields NO decisionScore (Axis A's n excludes it);
 //   - a non-discriminating judge ABORTS the batch with no numbers (the controls can't be flattered).
 
-import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { runBenchProbe } from "../src/bench/probe.ts";
-import { seedSandbox } from "../src/io/sandbox.ts";
 import type { Cell } from "../src/conduct/cell.ts";
 import type { Invocation, RunResult, Runner, Sandbox } from "../src/io/port.ts";
+import { seedSandbox } from "../src/io/sandbox.ts";
 
 // A NON-plugin test cell: the fake runner ignores the plugin, so this avoids `runCell`'s pluginDir requirement. Its
 // identity promptWrap hands the raw fixture prompt straight through, which the fake runner keys on to route.
@@ -47,12 +47,22 @@ function cannedJudge(prompt: string, _model: string): string {
   // LOW markers cover both control LOW-anchors: a deficient build (BUG:/poor/weak) AND an INCOMPLETE seed-only tree
   // (the target unimplemented: "is to be ADDED" / "starts empty" / STUB / not implemented) — the Axis-B code control
   // now anchors LOW on the seed alone, so an unimplemented stub must score low (fails meetsIntent + complete).
-  const low = /BUG:|\bpoor\b|\bweak\b|0\/0|NaN when|is to be ADDED|starts empty|STUB|not implemented|\bTODO\b/i.test(subject);
+  const low =
+    /BUG:|\bpoor\b|\bweak\b|0\/0|NaN when|is to be ADDED|starts empty|STUB|not implemented|\bTODO\b/i.test(
+      subject,
+    );
   const dim = low ? 0 : 2;
   // Cover both rubrics' dimension sets; the engine reads only the keys ITS rubric names, ignoring the rest.
   const dims = {
-    meetsIntent: dim, correct: dim, soundCode: dim, complete: dim,
-    forkSurfacing: dim, decisionSoundness: dim, accountability: dim, scope: dim, coherence: dim,
+    meetsIntent: dim,
+    correct: dim,
+    soundCode: dim,
+    complete: dim,
+    forkSurfacing: dim,
+    decisionSoundness: dim,
+    accountability: dim,
+    scope: dim,
+    coherence: dim,
   };
   return JSON.stringify({ dimensions: dims, rationale: low ? "weak" : "strong" });
 }
@@ -61,8 +71,15 @@ function cannedJudge(prompt: string, _model: string): string {
 function flatJudge(_prompt: string, _model: string): string {
   const dim = 2;
   const dims = {
-    meetsIntent: dim, correct: dim, soundCode: dim, complete: dim,
-    forkSurfacing: dim, decisionSoundness: dim, accountability: dim, scope: dim, coherence: dim,
+    meetsIntent: dim,
+    correct: dim,
+    soundCode: dim,
+    complete: dim,
+    forkSurfacing: dim,
+    decisionSoundness: dim,
+    accountability: dim,
+    scope: dim,
+    coherence: dim,
   };
   return JSON.stringify({ dimensions: dims, rationale: "flat" });
 }
@@ -97,7 +114,11 @@ function fakeRunner(plans: Record<string, FakePlan>): Runner {
       if (plan.writeTrail) {
         const slugDir = join(sandbox.workingDir, ".agentry", "work", id);
         mkdirSync(slugDir, { recursive: true });
-        writeFileSync(join(slugDir, "spec.md"), plan.trailBody ?? "# spec\nA decision artifact.\n", "utf8");
+        writeFileSync(
+          join(slugDir, "spec.md"),
+          plan.trailBody ?? "# spec\nA decision artifact.\n",
+          "utf8",
+        );
       }
 
       const lines: string[] = [];
@@ -106,7 +127,11 @@ function fakeRunner(plans: Record<string, FakePlan>): Runner {
       }
       writeFileSync(invocation.streamPath, lines.join("\n"), "utf8");
 
-      return Promise.resolve({ streamPath: invocation.streamPath, producedTreeNonEmpty: true, resultSubtype: "success" });
+      return Promise.resolve({
+        streamPath: invocation.streamPath,
+        producedTreeNonEmpty: true,
+        resultSubtype: "success",
+      });
     },
   };
 }
@@ -120,7 +145,8 @@ const GOLD = (id: string) => join(FIXTURES, id, "golden");
 const BROKEN = (id: string) => join(FIXTURES, id, "broken");
 
 // A clearly-good decision trail (high markers) for the bm-clamp matrix cell.
-const GOOD_TRAIL = "# Spec: clamp\n\n## Decisions surfaced\nBoundary semantics chosen; override hint given. Crisp scope.\n";
+const GOOD_TRAIL =
+  "# Spec: clamp\n\n## Decisions surfaced\nBoundary semantics chosen; override hint given. Crisp scope.\n";
 
 // --- the happy path: controls pass + the four axes compute --------------------------------------------------------
 
@@ -128,7 +154,12 @@ test("controls PASS and the four axes compute over the bench-mini matrix", async
   // bm-clamp: golden overlay (judged HIGH), a decision trail (Axis A present), done, no oracle failure.
   // bm-bug:   BROKEN overlay (judged LOW + oracle FAILS), NO trail (Axis A absent), done ⇒ escaped defect.
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-clamp": {
+      overlayDir: GOLD("bm-clamp"),
+      writeTrail: true,
+      trailBody: GOOD_TRAIL,
+      done: true,
+    },
     "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
 
@@ -162,10 +193,21 @@ test("controls PASS and the four axes compute over the bench-mini matrix", async
 
 test("the matrix record for the bugProne fixture carries escapedDefect, and the no-trail record has no decisionScore", async () => {
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-clamp": {
+      overlayDir: GOLD("bm-clamp"),
+      writeTrail: true,
+      trailBody: GOOD_TRAIL,
+      done: true,
+    },
     "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
-  const { records } = await runBenchProbe({ fixturesDir: FIXTURES, runner, cell: TEST_CELL, judge: cannedJudge, outPath: outPath() });
+  const { records } = await runBenchProbe({
+    fixturesDir: FIXTURES,
+    runner,
+    cell: TEST_CELL,
+    judge: cannedJudge,
+    outPath: outPath(),
+  });
 
   const bug = records.find((r) => r.fixtureId === "bm-bug")!;
   assert.equal(bug.escapedDefect, true);
@@ -179,7 +221,12 @@ test("the matrix record for the bugProne fixture carries escapedDefect, and the 
 
 test("a single-fixture filter conducts only the matching fixture", async () => {
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-clamp": {
+      overlayDir: GOLD("bm-clamp"),
+      writeTrail: true,
+      trailBody: GOOD_TRAIL,
+      done: true,
+    },
     "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
   const { records } = await runBenchProbe({
@@ -221,7 +268,12 @@ test("the decision-control gate is SKIPPED (no abort) when the controls dir is a
   // Point the controls dir at a non-existent path: the code control still runs (per-fixture golden/broken), but the
   // decision control is skipped — so a content-keyed judge that discriminates code still yields a SCORED artifact.
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-clamp": {
+      overlayDir: GOLD("bm-clamp"),
+      writeTrail: true,
+      trailBody: GOOD_TRAIL,
+      done: true,
+    },
     "bm-bug": { overlayDir: GOLD("bm-bug"), writeTrail: false, done: true },
   });
   const { artifact } = await runBenchProbe({
@@ -232,18 +284,33 @@ test("the decision-control gate is SKIPPED (no abort) when the controls dir is a
     decisionControlsDir: join(tmpdir(), "no-such-controls-dir-xyz"),
     outPath: outPath(),
   });
-  assert.equal(artifact.condition, "scored", "absent decision controls ⇒ skip the gate, still score");
+  assert.equal(
+    artifact.condition,
+    "scored",
+    "absent decision controls ⇒ skip the gate, still score",
+  );
 });
 
 // --- the probe writes its artifact to disk -----------------------------------------------------------------------
 
 test("the probe writes the artifact to outPath", async () => {
   const runner = fakeRunner({
-    "bm-clamp": { overlayDir: GOLD("bm-clamp"), writeTrail: true, trailBody: GOOD_TRAIL, done: true },
+    "bm-clamp": {
+      overlayDir: GOLD("bm-clamp"),
+      writeTrail: true,
+      trailBody: GOOD_TRAIL,
+      done: true,
+    },
     "bm-bug": { overlayDir: BROKEN("bm-bug"), writeTrail: false, done: true },
   });
   const out = outPath();
-  const { outPath: written } = await runBenchProbe({ fixturesDir: FIXTURES, runner, cell: TEST_CELL, judge: cannedJudge, outPath: out });
+  const { outPath: written } = await runBenchProbe({
+    fixturesDir: FIXTURES,
+    runner,
+    cell: TEST_CELL,
+    judge: cannedJudge,
+    outPath: out,
+  });
   assert.equal(written, out);
   assert.ok(existsSync(out), "the artifact JSON is on disk");
 });

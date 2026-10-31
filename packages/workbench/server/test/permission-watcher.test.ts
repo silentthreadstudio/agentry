@@ -25,7 +25,10 @@ test("prunePhantoms drops pending entries whose file is gone, returns their ids"
 
 test("prunePhantoms is a no-op when every file still exists", () => {
   const pending = new Map([["a", req("a")]]);
-  assert.deepEqual(prunePhantoms(pending, () => true), []);
+  assert.deepEqual(
+    prunePhantoms(pending, () => true),
+    [],
+  );
   assert.equal(pending.size, 1);
 });
 

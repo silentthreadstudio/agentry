@@ -7,9 +7,9 @@
 // reason — there is no runtime seam to assert on, and a unit test of `apiPath` would prove the helper
 // works while saying nothing about the call sites that forget it.
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..");

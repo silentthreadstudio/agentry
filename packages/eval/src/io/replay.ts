@@ -57,7 +57,9 @@ export function replaySequenceRunner(fixturePaths: readonly string[]): Runner {
       const path = fixturePaths[i];
       if (path === undefined) {
         return Promise.reject(
-          new Error(`replaySequenceRunner exhausted: ${fixturePaths.length} fixture(s), call #${i + 1}`),
+          new Error(
+            `replaySequenceRunner exhausted: ${fixturePaths.length} fixture(s), call #${i + 1}`,
+          ),
         );
       }
       i++;

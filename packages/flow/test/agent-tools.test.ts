@@ -8,8 +8,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { type FlowServices, createServices } from "../src/index.js";
 import { registerAgentTools } from "../src/tools/agent-tools.js";
-import { createServices, type FlowServices } from "../src/index.js";
 
 const RUN = "agents-run-001";
 const AGENT = "agentry:implementer";
@@ -17,7 +17,10 @@ const AGENT = "agentry:implementer";
 // A minimal capture-server: records each registered tool's handler so a test can invoke it directly.
 // We assert on the tool's MCP envelope (the public surface), not on any internal.
 function captureServer() {
-  const handlers = new Map<string, (args: unknown) => Promise<{ isError?: boolean; content: { text: string }[] }>>();
+  const handlers = new Map<
+    string,
+    (args: unknown) => Promise<{ isError?: boolean; content: { text: string }[] }>
+  >();
   const server = {
     registerTool(name: string, _schema: unknown, handler: (args: unknown) => Promise<never>) {
       handlers.set(name, handler as never);
@@ -33,7 +36,10 @@ function payload(result: { content: { text: string }[] }): Record<string, unknow
 
 let cwd: string;
 let ctx: FlowServices;
-let call: (name: string, args: unknown) => Promise<{ isError?: boolean; content: { text: string }[] }>;
+let call: (
+  name: string,
+  args: unknown,
+) => Promise<{ isError?: boolean; content: { text: string }[] }>;
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "flow-agents-"));
@@ -79,7 +85,9 @@ test("the roster round-trips through the run-state json (a fresh service re-read
   await call("agent_state", { run: RUN, agent: AGENT, state: "working" });
 
   // Read the live run-state json straight off disk — the recorded state is persisted there.
-  const onDisk = JSON.parse(readFileSync(join(cwd, ".agentry", "work", RUN, "run-state.json"), "utf8"));
+  const onDisk = JSON.parse(
+    readFileSync(join(cwd, ".agentry", "work", RUN, "run-state.json"), "utf8"),
+  );
   assert.equal(onDisk.agents[AGENT].state, "working");
 
   // A brand-new services/tools instance (server killed) re-reads the same roster (AC6-style durability).
@@ -134,30 +142,33 @@ test("a blank agent id is rejected (bad-input) and nothing is written", async ()
   assert.equal(existsSync(join(cwd, ".agentry", "work", RUN, "run-state.json")), false);
 });
 
-
 // ── the elapsed-timer source ───────────────────────────────────────────────────────────────────────
 test("re-recording the SAME state does not reset `since` — the clock is not restarted by chatter", async () => {
   await call("agent_state", { run: RUN, agent: AGENT, state: "working" });
-  const first = (payload(await call("agent_roster", { run: RUN })) as { agents: { since: string }[] }).agents[0]
-    ?.since;
+  const first = (
+    payload(await call("agent_roster", { run: RUN })) as { agents: { since: string }[] }
+  ).agents[0]?.since;
 
   await new Promise((r) => setTimeout(r, 5));
   await call("agent_state", { run: RUN, agent: AGENT, state: "working" });
-  const second = (payload(await call("agent_roster", { run: RUN })) as { agents: { since: string }[] }).agents[0]
-    ?.since;
+  const second = (
+    payload(await call("agent_roster", { run: RUN })) as { agents: { since: string }[] }
+  ).agents[0]?.since;
 
   assert.equal(second, first, "same state ⇒ same start time, so 'working for 4m' stays true");
 });
 
 test("a CHANGE of state restamps `since` — the timer measures the current state, not the agent", async () => {
   await call("agent_state", { run: RUN, agent: AGENT, state: "working" });
-  const working = (payload(await call("agent_roster", { run: RUN })) as { agents: { since: string }[] }).agents[0]
-    ?.since;
+  const working = (
+    payload(await call("agent_roster", { run: RUN })) as { agents: { since: string }[] }
+  ).agents[0]?.since;
 
   await new Promise((r) => setTimeout(r, 5));
   await call("agent_state", { run: RUN, agent: AGENT, state: "done" });
-  const done = (payload(await call("agent_roster", { run: RUN })) as { agents: { since: string }[] }).agents[0]
-    ?.since;
+  const done = (
+    payload(await call("agent_roster", { run: RUN })) as { agents: { since: string }[] }
+  ).agents[0]?.since;
 
   assert.notEqual(done, working);
 });

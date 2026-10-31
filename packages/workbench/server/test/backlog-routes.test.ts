@@ -6,14 +6,14 @@
 // to start work on its own. A future route that does this would silently break that promise, so the
 // last test pins it.
 import assert from "node:assert/strict";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import type { Clock } from "../src/domain/ports.js";
 import { BacklogAdapter } from "../src/persistence/backlog-adapter.js";
 import { handleBacklogRequest, handleRunResetRequest } from "../src/transport/routes.js";
-import type { Clock } from "../src/domain/ports.js";
 
 let root: string;
 const clock: Clock = { now: () => new Date().toISOString() };
@@ -21,7 +21,11 @@ let pushed: number;
 
 const deps = () => ({
   backlog: new BacklogAdapter(root, clock),
-  transport: { pushAll: () => { pushed += 1; } },
+  transport: {
+    pushAll: () => {
+      pushed += 1;
+    },
+  },
 });
 
 function req(url: string, method = "GET", body?: unknown): IncomingMessage {
@@ -74,7 +78,11 @@ test("GET /api/backlog on a cold project is an empty list, not a 404", async () 
 test("POST /api/backlog creates an item and returns it", async () => {
   const d = deps();
   const { res: r, got } = res();
-  await handleBacklogRequest(req("/api/backlog", "POST", { title: "Cap the verify retries", kind: "perf" }), r, d);
+  await handleBacklogRequest(
+    req("/api/backlog", "POST", { title: "Cap the verify retries", kind: "perf" }),
+    r,
+    d,
+  );
   assert.equal(got.status, 200);
   const item = got.body as { id: string; title: string; kind: string; status: string };
   assert.equal(item.title, "Cap the verify retries");
@@ -85,7 +93,11 @@ test("POST /api/backlog creates an item and returns it", async () => {
 
 test("POST with ready:true queues it for the conductor", async () => {
   const { res: r, got } = res();
-  await handleBacklogRequest(req("/api/backlog", "POST", { title: "Queue me", ready: true }), r, deps());
+  await handleBacklogRequest(
+    req("/api/backlog", "POST", { title: "Queue me", ready: true }),
+    r,
+    deps(),
+  );
   assert.equal((got.body as { status: string }).status, "ready");
 });
 
@@ -113,7 +125,11 @@ test("an item written through the API is readable back through it (files are tru
 test("GET /api/backlog?status= filters", async () => {
   const d = deps();
   await handleBacklogRequest(req("/api/backlog", "POST", { title: "Parked" }), res().res, d);
-  await handleBacklogRequest(req("/api/backlog", "POST", { title: "Queued", ready: true }), res().res, d);
+  await handleBacklogRequest(
+    req("/api/backlog", "POST", { title: "Queued", ready: true }),
+    res().res,
+    d,
+  );
 
   const { res: r, got } = res();
   await handleBacklogRequest(req("/api/backlog?status=ready"), r, d);
@@ -125,7 +141,11 @@ test("GET /api/backlog?status= filters", async () => {
 test("POST /api/backlog/:id patches — a status move keeps the body", async () => {
   const d = deps();
   const created = res();
-  await handleBacklogRequest(req("/api/backlog", "POST", { title: "Move me", body: "context worth keeping" }), created.res, d);
+  await handleBacklogRequest(
+    req("/api/backlog", "POST", { title: "Move me", body: "context worth keeping" }),
+    created.res,
+    d,
+  );
   const id = (created.got.body as { id: string }).id;
 
   const { res: r, got } = res();
@@ -155,7 +175,11 @@ test("an unrelated path is not claimed by this dispatcher", async () => {
 test("there is NO http route that claims an item — starting work is a session's move", async () => {
   const d = deps();
   const created = res();
-  await handleBacklogRequest(req("/api/backlog", "POST", { title: "Do not auto-start", ready: true }), created.res, d);
+  await handleBacklogRequest(
+    req("/api/backlog", "POST", { title: "Do not auto-start", ready: true }),
+    created.res,
+    d,
+  );
 
   for (const path of ["/api/backlog/claim", "/api/backlog/next"]) {
     const { res: r } = res();
@@ -198,13 +222,20 @@ test("reset returns every task to todo and hands the item back to ready", async 
   };
 
   const { res: r, got } = res();
-  assert.equal(await handleRunResetRequest(req("/api/work/r-1/reset", "POST"), r, deps as never), true);
+  assert.equal(
+    await handleRunResetRequest(req("/api/work/r-1/reset", "POST"), r, deps as never),
+    true,
+  );
   assert.equal(got.status, 200);
   assert.deepEqual(statuses, [
     { taskNo: "001", status: "todo" },
     { taskNo: "002", status: "todo" },
   ]);
-  assert.deepEqual(updated, [{ id: "b-src", status: "ready" }], "back to ready, not backlog — you still want it");
+  assert.deepEqual(
+    updated,
+    [{ id: "b-src", status: "ready" }],
+    "back to ready, not backlog — you still want it",
+  );
   assert.deepEqual(got.body, { ok: true, run: "r-1", tasks: 2, item: "b-src" });
 });
 

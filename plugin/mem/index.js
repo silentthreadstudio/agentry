@@ -28584,7 +28584,8 @@ var MemoryService = class {
     const scored = [];
     for (const hit of this.index.search(input.query, limit * 4)) {
       const fact = this.facts.get(hit.id);
-      if (fact && fact.status === "active") scored.push({ fact, score: recallScore(fact, hit.relevance) });
+      if (fact && fact.status === "active")
+        scored.push({ fact, score: recallScore(fact, hit.relevance) });
     }
     scored.sort((a, b) => b.score - a.score);
     return { memories: scored.slice(0, limit) };
@@ -28597,7 +28598,8 @@ var MemoryService = class {
     });
   }
   update(id, patch) {
-    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
+    if (id.trim() === "")
+      return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
     if (!fact) return { ok: false, reason: "not-found", id };
     this.save({ ...fact, ...this.clean(patch), updatedAt: this.iso() });
@@ -28623,7 +28625,13 @@ var MemoryService = class {
         this.save(
           input.outcome === "pass" ? (
             // cited + helped: boost and clear strikes — a used fact is alive
-            { ...fact, usefulness: fact.usefulness + 1, confidence: Math.min(1, fact.confidence + 0.05), decay: 0, updatedAt: ts }
+            {
+              ...fact,
+              usefulness: fact.usefulness + 1,
+              confidence: Math.min(1, fact.confidence + 0.05),
+              decay: 0,
+              updatedAt: ts
+            }
           ) : (
             // suspect: lower confidence, but it was relevant/used — don't strike toward archive
             { ...fact, confidence: Math.max(0, fact.confidence - 0.1), decay: 0, updatedAt: ts }
@@ -28734,10 +28742,12 @@ var MemoryService = class {
    * (carrying the actual status so the adapter can distinguish the two for the caller).
    */
   recover(id) {
-    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
+    if (id.trim() === "")
+      return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
     if (!fact) return { ok: false, reason: "not-found", id };
-    if (fact.status !== "archived") return { ok: false, reason: "invalid-state", id, status: fact.status };
+    if (fact.status !== "archived")
+      return { ok: false, reason: "invalid-state", id, status: fact.status };
     const restored = { ...fact, status: "active", decay: 0, updatedAt: this.iso() };
     delete restored.archivedAt;
     this.save(restored);
@@ -28746,7 +28756,8 @@ var MemoryService = class {
   }
   /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */
   forget(id) {
-    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
+    if (id.trim() === "")
+      return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     if (this.facts.delete(id)) {
       this.store.deleteFact(originOf(id), id);
       return { ok: true, id, kind: "fact" };
@@ -28803,7 +28814,8 @@ var MemoryService = class {
   }
   clean(patch) {
     const out = {};
-    for (const [k, v] of Object.entries(patch)) if (v !== void 0) out[k] = v;
+    for (const [k, v] of Object.entries(patch))
+      if (v !== void 0) out[k] = v;
     return out;
   }
 };
@@ -28863,7 +28875,15 @@ var SqliteTextIndex = class {
 };
 
 // src/persistence/file-store.ts
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
 import { join as join2 } from "node:path";
 
 // ../core/dist/enums.js

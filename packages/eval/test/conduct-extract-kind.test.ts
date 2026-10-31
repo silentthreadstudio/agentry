@@ -77,7 +77,11 @@ test("a spec.md whose frontmatter omits `kind` (an unlabeled / pre-ADR-005 spec)
 
 test("a spec.md with NO frontmatter block => null (not a crash)", () => {
   const wd = freshWorkingDir();
-  writeFileSync(join(workSlugDir(wd, "feature-x"), "spec.md"), "# Spec\n\njust prose, no frontmatter\n", "utf8");
+  writeFileSync(
+    join(workSlugDir(wd, "feature-x"), "spec.md"),
+    "# Spec\n\njust prose, no frontmatter\n",
+    "utf8",
+  );
 
   assert.equal(extractKind(wd), null);
 });

@@ -1,3 +1,5 @@
+import { sep } from "node:path";
+import { workRoot } from "@agentry/flow/resolution/run-pointer";
 // ChokidarWatcher — the live-loop trigger (AC7, the `Watcher` port). Watches the `.agentry/work/`
 // tree and emits DEBOUNCED, run-keyed `RunChange` events: a batch of file changes within one run,
 // coalesced over a short window into a single notification per run. Phase 1 wires the subscription to
@@ -9,8 +11,6 @@
 // `ignoreInitial` suppresses the add-storm of the initial scan, so a subscriber sees only live changes.
 import { watch } from "chokidar";
 import type { FSWatcher } from "chokidar";
-import { sep } from "node:path";
-import { workRoot } from "@agentry/flow/resolution/run-pointer";
 import type { RunChange, Watcher } from "../domain/ports.js";
 
 // The debounce window: changes within this many ms of each other coalesce into one event per run.
@@ -28,7 +28,10 @@ export class ChokidarWatcher implements Watcher {
   private readonly debounceMs: number;
 
   // Per-run pending batch: the coalesced set of changed run-relative paths and its flush timer.
-  private readonly pending = new Map<string, { paths: Set<string>; timer: ReturnType<typeof setTimeout> }>();
+  private readonly pending = new Map<
+    string,
+    { paths: Set<string>; timer: ReturnType<typeof setTimeout> }
+  >();
 
   constructor(cwd: string, options: ChokidarWatcherOptions = {}) {
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;

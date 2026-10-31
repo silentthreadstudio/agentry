@@ -39,7 +39,11 @@ test("never exceeds the concurrency limit (tracks live workers)", async () => {
     return n;
   });
   assert.ok(peak <= limit, `peak concurrency ${peak} must not exceed limit ${limit}`);
-  assert.equal(peak, limit, "with more items than the limit, the pool should saturate to the limit");
+  assert.equal(
+    peak,
+    limit,
+    "with more items than the limit, the pool should saturate to the limit",
+  );
 });
 
 test("limit >= items.length runs them all at once (bounded to items.length, not the limit)", async () => {

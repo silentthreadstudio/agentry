@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { computeAnchor } from "../routes/doc/anchor.js";
-import { tiptapToMd, type ProseMirrorDoc } from "../routes/doc/markdown-serializer.js";
+import { type ProseMirrorDoc, tiptapToMd } from "../routes/doc/markdown-serializer.js";
 
 // A doc rendered as blocks: h1 title, an h2 section, a paragraph under it, a second h2, a paragraph.
 const BLOCKS = [
@@ -65,7 +65,11 @@ test("the comment mark serializes to nothing — a commented span round-trips un
         type: "paragraph",
         content: [
           { type: "text", text: "The " },
-          { type: "text", text: "lifecycle event stream", marks: [{ type: "comment", attrs: { id: "c1" } }] },
+          {
+            type: "text",
+            text: "lifecycle event stream",
+            marks: [{ type: "comment", attrs: { id: "c1" } }],
+          },
           { type: "text", text: " is append-only." },
         ],
       },

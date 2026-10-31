@@ -1,3 +1,4 @@
+import { CONDUCTOR_GATE, anchorlessSpan } from "@agentry/workbench-shared";
 // Conductor — the run-level conversation: say something to the run without annotating a document.
 //
 // Everything the Workbench could do to a run until now had to be ANCHORED to a document span. That is the
@@ -10,12 +11,20 @@
 // shows up here as the other side of the thread. Reused wholesale: `comment-store` for the optimistic
 // write + hydrate, `fetchReview` for the on-disk seed, the ws `file-changed` loop for live updates.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CONDUCTOR_GATE, anchorlessSpan } from "@agentry/workbench-shared";
 import { fetchReview } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 import { EmptyState } from "../../ui/index.js";
 import { addComment, hydrate, useComments } from "../doc/comment-store.js";
-import { BUBBLE, BUBBLE_AGENT, BUBBLE_META, COMPOSER, CONVO, INPUT, SEND, STREAM } from "./conductor-view.js";
+import {
+  BUBBLE,
+  BUBBLE_AGENT,
+  BUBBLE_META,
+  COMPOSER,
+  CONVO,
+  INPUT,
+  SEND,
+  STREAM,
+} from "./conductor-view.js";
 
 // The sidecar this thread lives in — the path the ws `file-changed` nudge carries when the agent replies.
 const THREAD_PATH = `.review/${CONDUCTOR_GATE}.annotations.json`;
@@ -126,12 +135,20 @@ export function Conductor({ runId, onIncoming }: { runId: string; onIncoming?: (
           aria-label="Message the conductor"
           rows={2}
         />
-        <button type="button" style={SEND} onClick={() => void send()} disabled={sending || draft.trim().length === 0}>
+        <button
+          type="button"
+          style={SEND}
+          onClick={() => void send()}
+          disabled={sending || draft.trim().length === 0}
+        >
           {sending ? "Sending…" : "Send"}
         </button>
       </div>
       {error !== null ? (
-        <div role="alert" style={{ color: "var(--bad, #f87171)", fontSize: 12, padding: "0 4px 8px" }}>
+        <div
+          role="alert"
+          style={{ color: "var(--bad, #f87171)", fontSize: 12, padding: "0 4px 8px" }}
+        >
           {error}
         </div>
       ) : null}

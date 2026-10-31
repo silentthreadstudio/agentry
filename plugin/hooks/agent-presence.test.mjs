@@ -21,8 +21,15 @@ const RUN = "r-1";
 let root;
 
 function run(input) {
-  const res = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(input), encoding: "utf8" });
-  assert.equal(res.status, 0, "the hook must always exit 0 — presence may never disrupt a subagent");
+  const res = spawnSync(process.execPath, [SCRIPT], {
+    input: JSON.stringify(input),
+    encoding: "utf8",
+  });
+  assert.equal(
+    res.status,
+    0,
+    "the hook must always exit 0 — presence may never disrupt a subagent",
+  );
   return res;
 }
 
@@ -61,7 +68,9 @@ test("a presence write MERGES — an assignment written by the Task family survi
   mkdirSync(join(root, ".agentry", "work", RUN), { recursive: true });
   writeFileSync(
     join(root, ".agentry", "work", RUN, "run-state.json"),
-    JSON.stringify({ agents: { "agentry:implementer": { state: "working", assignedTask: "004" } } }),
+    JSON.stringify({
+      agents: { "agentry:implementer": { state: "working", assignedTask: "004" } },
+    }),
   );
 
   fire("SubagentStop");
@@ -87,7 +96,10 @@ test("a state CHANGE restamps `since` — the timer measures the current state",
 test("two agents on one run coexist rather than overwriting each other", () => {
   fire("SubagentStart", "agentry:implementer");
   fire("SubagentStart", "agentry:verifier");
-  assert.deepEqual(Object.keys(roster()?.agents ?? {}).sort(), ["agentry:implementer", "agentry:verifier"]);
+  assert.deepEqual(Object.keys(roster()?.agents ?? {}).sort(), [
+    "agentry:implementer",
+    "agentry:verifier",
+  ]);
 });
 
 test("other agents' entries survive one agent's write", () => {
@@ -122,5 +134,9 @@ test("a non-Agentry repo, a missing agent type, and a corrupt roster are all sur
   mkdirSync(join(root, ".agentry", "work", RUN), { recursive: true });
   writeFileSync(join(root, ".agentry", "work", RUN, "run-state.json"), "{ not json");
   fire("SubagentStart");
-  assert.equal(roster()?.agents["agentry:implementer"].state, "working", "a corrupt roster starts fresh");
+  assert.equal(
+    roster()?.agents["agentry:implementer"].state,
+    "working",
+    "a corrupt roster starts fresh",
+  );
 });

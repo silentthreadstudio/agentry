@@ -1,4 +1,7 @@
 ---
+import DocsSidebar from "../../components/docs-sidebar/DocsSidebar.astro";
+import { withBase } from "../../lib/base.ts";
+import { type DocsKey, docsNeighbours } from "../../lib/docs-nav.ts";
 // DocsLayout.astro — the shared shell for every /docs page (ADR-001). Wraps Base (head +
 // site nav + footer) with the two-column docs grid: the persistent grouped sidebar on the
 // left, the article (header scaffold + page slot + prev/next) on the right.
@@ -9,9 +12,6 @@
 // Pinned props (the seam T2–T5 bind to): { current?, title, description?, eyebrow, lede }.
 // `title` is the visible h1; the <head> title is derived as "<title> · Agentry docs".
 import Base from "../Base.astro";
-import DocsSidebar from "../../components/docs-sidebar/DocsSidebar.astro";
-import { docsNeighbours, type DocsKey } from "../../lib/docs-nav.ts";
-import { withBase } from "../../lib/base.ts";
 import "../../styles/docs.css";
 
 interface Props {
@@ -29,9 +29,7 @@ interface Props {
 const { current, title, description, eyebrow, lede } = Astro.props;
 
 // prev/next sequencing from the IA (only when the page is a keyed route, not the overview)
-const { prev, next } = current
-  ? docsNeighbours(current)
-  : { prev: null, next: null };
+const { prev, next } = current ? docsNeighbours(current) : { prev: null, next: null };
 ---
 
 <Base title={`${title} · Agentry docs`} description={description}>

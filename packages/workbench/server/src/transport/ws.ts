@@ -8,8 +8,8 @@
 // the watcher → `push` loop, and closes it on shutdown. This module owns the socket registry only; it
 // holds no run-read state (the watcher loop calls `push` with the already-projected message).
 import type { Server } from "node:http";
-import { WebSocketServer, type WebSocket } from "ws";
 import type { WsMessage } from "@agentry/workbench-shared";
+import { type WebSocket, WebSocketServer } from "ws";
 import type { Transport } from "../domain/ports.js";
 import { parseHostLabel } from "./host-router.js";
 
@@ -56,7 +56,10 @@ export class WsTransport implements Transport {
       // longer carries the run and a host-only lookup would subscribe every socket to nothing. The
       // `*.localhost` alias still works — it just falls through to the Host branch.
       const queryLabel = url.searchParams.get("run");
-      const label = queryLabel !== null && queryLabel.length > 0 ? queryLabel : parseHostLabel(req.headers.host);
+      const label =
+        queryLabel !== null && queryLabel.length > 0
+          ? queryLabel
+          : parseHostLabel(req.headers.host);
       const run = label !== null ? this.resolveRun(label, url.searchParams.get("project")) : null;
       this.wss.handleUpgrade(req, socket, head, (ws) => this.register(ws, run));
     });

@@ -1,3 +1,4 @@
+import type { PermissionRequest } from "@agentry/workbench-shared";
 // ApprovalsBanner — the human side of the permission relay (Phase 3b; channels.md §"Relay permission
 // prompts"). A GLOBAL, prominent overlay that appears ANYWHERE in the app when the agent has relayed a
 // tool-approval prompt and is BLOCKED waiting on a verdict. It mounts once at the app shell (both the
@@ -16,11 +17,10 @@
 //   • Permissions are project-global (no run), so this subscribes to the one shared ws client on every
 //     host; the server broadcasts these messages to all sockets.
 import { useCallback, useEffect, useState } from "react";
-import type { PermissionRequest } from "@agentry/workbench-shared";
 import { fetchPermissions, postVerdict } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
-import { applyPermissionMessage, mergeSnapshot } from "./permissions-store.js";
 import { useApprovalsStyles } from "./approvals-styles.js";
+import { applyPermissionMessage, mergeSnapshot } from "./permissions-store.js";
 
 export function ApprovalsBanner() {
   useApprovalsStyles();

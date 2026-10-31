@@ -12,11 +12,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import type { PermissionRequest } from "@agentry/workbench-shared";
 import { permissionsDir } from "@agentry/flow/channel/permission-relay";
+import type { PermissionRequest } from "@agentry/workbench-shared";
 import { parseRequestFile } from "../src/persistence/permission-reader.js";
-import { PermissionWatcher, type PermissionEvent } from "../src/persistence/permission-watcher.js";
-import { handlePermissionRequest, type PermissionDeps } from "../src/transport/routes.js";
+import { type PermissionEvent, PermissionWatcher } from "../src/persistence/permission-watcher.js";
+import { type PermissionDeps, handlePermissionRequest } from "../src/transport/routes.js";
 
 let root: string; // temp project root (its .agentry/run/permissions is the watched dir)
 let permDir: string;
@@ -173,7 +173,11 @@ function deps(snapshot: PermissionRequest[]): PermissionDeps {
 
 test("GET /api/permissions returns the pending snapshot", async () => {
   const { res, captured } = fakeRes();
-  const handled = await handlePermissionRequest(fakeGet("/api/permissions"), res, deps([sampleRequest()]));
+  const handled = await handlePermissionRequest(
+    fakeGet("/api/permissions"),
+    res,
+    deps([sampleRequest()]),
+  );
   assert.equal(handled, true);
   assert.equal(captured.status, 200);
   assert.deepEqual((captured.body as PermissionRequest[])[0]?.request_id, "abcde");
@@ -200,17 +204,29 @@ test("POST /api/permissions/:id writes a correct verdict file and returns ok", a
 
 test("POST /api/permissions/:id with a deny behavior writes behavior:deny", async () => {
   const { res } = fakeRes();
-  await handlePermissionRequest(fakePost("/api/permissions/wxyzz", { behavior: "deny" }), res, deps([]));
+  await handlePermissionRequest(
+    fakePost("/api/permissions/wxyzz", { behavior: "deny" }),
+    res,
+    deps([]),
+  );
   const verdict = JSON.parse(readFileSync(join(permDir, "wxyzz.verdict.json"), "utf8"));
   assert.equal(verdict.behavior, "deny");
 });
 
 test("POST with an invalid behavior is 400, no verdict file", async () => {
   const { res, captured } = fakeRes();
-  await handlePermissionRequest(fakePost("/api/permissions/abcde", { behavior: "maybe" }), res, deps([]));
+  await handlePermissionRequest(
+    fakePost("/api/permissions/abcde", { behavior: "maybe" }),
+    res,
+    deps([]),
+  );
   assert.equal(captured.status, 400);
   assert.equal((captured.body as { error: string }).error, "invalid_behavior");
-  assert.equal(existsSync(join(permDir, "abcde.verdict.json")), false, "no file on a rejected verdict");
+  assert.equal(
+    existsSync(join(permDir, "abcde.verdict.json")),
+    false,
+    "no file on a rejected verdict",
+  );
 });
 
 test("POST with a traversal-unsafe id is 400, never a write outside the dir", async () => {
@@ -254,7 +270,15 @@ test("parseRequestFile returns the request for a well-formed file", () => {
 
 test("parseRequestFile returns undefined for malformed / partial files (never throws)", () => {
   assert.equal(parseRequestFile("{not json"), undefined, "bad JSON");
-  assert.equal(parseRequestFile(JSON.stringify({ request_id: "abcde" })), undefined, "missing fields");
-  assert.equal(parseRequestFile(JSON.stringify({ ...sampleRequest(), request_id: 1 })), undefined, "non-string id");
+  assert.equal(
+    parseRequestFile(JSON.stringify({ request_id: "abcde" })),
+    undefined,
+    "missing fields",
+  );
+  assert.equal(
+    parseRequestFile(JSON.stringify({ ...sampleRequest(), request_id: 1 })),
+    undefined,
+    "non-string id",
+  );
   assert.equal(parseRequestFile("[]"), undefined, "not an object");
 });

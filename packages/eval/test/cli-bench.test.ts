@@ -13,12 +13,12 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { main } from "../src/cli.ts";
-import { seedSandbox } from "../src/io/sandbox.ts";
 import type { Invocation, RunResult, Runner, Sandbox } from "../src/io/port.ts";
+import { seedSandbox } from "../src/io/sandbox.ts";
 import type { JudgeFn } from "../src/judge/index.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -49,17 +49,28 @@ function cannedJudge(prompt: string, _model: string): string {
   const subject = subjectOf(prompt);
   // LOW also covers the INCOMPLETE seed-only tree (target unimplemented) — the Axis-B code control anchors LOW on the
   // seed alone, so an unimplemented stub must score low (fails meetsIntent + complete).
-  const low = /BUG:|\bpoor\b|\bweak\b|is to be ADDED|starts empty|STUB|not implemented|\bTODO\b/i.test(subject);
+  const low =
+    /BUG:|\bpoor\b|\bweak\b|is to be ADDED|starts empty|STUB|not implemented|\bTODO\b/i.test(
+      subject,
+    );
   const dim = low ? 0 : 2;
   const dims = {
-    meetsIntent: dim, correct: dim, soundCode: dim, complete: dim,
-    forkSurfacing: dim, decisionSoundness: dim, accountability: dim, scope: dim, coherence: dim,
+    meetsIntent: dim,
+    correct: dim,
+    soundCode: dim,
+    complete: dim,
+    forkSurfacing: dim,
+    decisionSoundness: dim,
+    accountability: dim,
+    scope: dim,
+    coherence: dim,
   };
   return JSON.stringify({ dimensions: dims, rationale: low ? "weak" : "strong" });
 }
 
 // A clearly-good decision trail (no low markers) so a decisionScore is produced and judged HIGH.
-const GOOD_TRAIL = "# Spec: clamp\n\n## Decisions surfaced\nBoundary semantics chosen; override hint given. Crisp scope.\n";
+const GOOD_TRAIL =
+  "# Spec: clamp\n\n## Decisions surfaced\nBoundary semantics chosen; override hint given. Crisp scope.\n";
 
 /**
  * A fake runner that PLANTS the bm-clamp golden solution into the sandbox (so the captured produced tree judges HIGH
@@ -75,8 +86,16 @@ function goldenPlantRunner(): Runner {
       mkdirSync(slugDir, { recursive: true });
       writeFileSync(join(slugDir, "spec.md"), GOOD_TRAIL, "utf8");
 
-      writeFileSync(invocation.streamPath, `${JSON.stringify({ type: "result", subtype: "success", is_error: false })}\n`, "utf8");
-      return Promise.resolve({ streamPath: invocation.streamPath, producedTreeNonEmpty: true, resultSubtype: "success" });
+      writeFileSync(
+        invocation.streamPath,
+        `${JSON.stringify({ type: "result", subtype: "success", is_error: false })}\n`,
+        "utf8",
+      );
+      return Promise.resolve({
+        streamPath: invocation.streamPath,
+        producedTreeNonEmpty: true,
+        resultSubtype: "success",
+      });
     },
   };
 }
@@ -90,12 +109,18 @@ test("run bench writes a complete runs/<id>/ with kind=bench and a scored summar
 
   const code = await main(
     [
-      "run", "bench",
-      "--fixtures-dir", BENCH_MINI_DIR,
-      "--fixture", "bm-clamp", // restrict the matrix to the one trivial fixture (the loader still validates the corpus)
-      "--plugin-dir", PKG_ROOT, // the Agentry cell declares loadsPlugin; the fake runner ignores the path, runCell just requires it present
-      "--runs-root", runsRoot,
-      "--run-id", "cli-bench",
+      "run",
+      "bench",
+      "--fixtures-dir",
+      BENCH_MINI_DIR,
+      "--fixture",
+      "bm-clamp", // restrict the matrix to the one trivial fixture (the loader still validates the corpus)
+      "--plugin-dir",
+      PKG_ROOT, // the Agentry cell declares loadsPlugin; the fake runner ignores the path, runCell just requires it present
+      "--runs-root",
+      runsRoot,
+      "--run-id",
+      "cli-bench",
     ],
     { runner, judge },
   );
@@ -140,7 +165,20 @@ test("run bench stdout is exactly the run dir (script-friendly)", async () => {
   };
   try {
     const code = await main(
-      ["run", "bench", "--fixtures-dir", BENCH_MINI_DIR, "--fixture", "bm-clamp", "--plugin-dir", PKG_ROOT, "--runs-root", runsRoot, "--run-id", "cli-bench-stdout"],
+      [
+        "run",
+        "bench",
+        "--fixtures-dir",
+        BENCH_MINI_DIR,
+        "--fixture",
+        "bm-clamp",
+        "--plugin-dir",
+        PKG_ROOT,
+        "--runs-root",
+        runsRoot,
+        "--run-id",
+        "cli-bench-stdout",
+      ],
       { runner, judge: cannedJudge },
     );
     assert.equal(code, 0);
@@ -148,5 +186,8 @@ test("run bench stdout is exactly the run dir (script-friendly)", async () => {
     (process.stdout.write as unknown as typeof orig) = orig;
   }
   assert.equal(written.join(""), `${join(runsRoot, "cli-bench-stdout")}\n`);
-  assert.ok(existsSync(join(runsRoot, "cli-bench-stdout", "summary.json")), "the run dir holds a summary.json");
+  assert.ok(
+    existsSync(join(runsRoot, "cli-bench-stdout", "summary.json")),
+    "the run dir holds a summary.json",
+  );
 });

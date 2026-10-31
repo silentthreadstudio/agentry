@@ -1,3 +1,4 @@
+import type { ReviewAnchor, ReviewComment, ReviewDecision } from "@agentry/flow/domain/review";
 // WriteService — the SINGLE server-side write boundary (ADR-006). Every write the Workbench performs
 // passes through here, and the two clobber-safety invariants are enforced HERE, server-side, with the
 // client never trusted:
@@ -20,8 +21,11 @@
 // is a typed `stale` outcome, not an exception). It reuses FLOW's shapes (ADR-005/007) — never
 // redeclaring `ReviewComment`/`ReviewAnchor`/`ReviewDecision`/`FlowTaskStatus`.
 import { FlowTaskStatus } from "@agentry/flow/domain/status";
-import type { ReviewAnchor, ReviewComment, ReviewDecision } from "@agentry/flow/domain/review";
-import type { ArtifactTarget, CurrentArtifact, FlowWriterPort } from "../persistence/flow-writer.js";
+import type {
+  ArtifactTarget,
+  CurrentArtifact,
+  FlowWriterPort,
+} from "../persistence/flow-writer.js";
 
 // ── Request shapes (PINNED — task 17's POST routes construct these) ─────────────────────────────────
 
@@ -59,9 +63,7 @@ export type WriteArtifactOutcome =
   | { ok: false; reason: "not-found" }; // the artifact no longer exists
 
 // A task-frontmatter mutation (setStatus) either lands or the task file is gone.
-export type StatusOutcome =
-  | { ok: true }
-  | { ok: false; reason: "not-found" };
+export type StatusOutcome = { ok: true } | { ok: false; reason: "not-found" };
 
 export class WriteService {
   constructor(private readonly writer: FlowWriterPort) {}

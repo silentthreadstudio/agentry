@@ -11683,8 +11683,8 @@ var require_resolve_flow_scalar = __commonJS({
     };
     function parseCharCode(source, offset, length, onError) {
       const cc = source.substr(offset, length);
-      const ok3 = cc.length === length && /^[0-9a-fA-F]+$/.test(cc);
-      const code = ok3 ? parseInt(cc, 16) : NaN;
+      const ok2 = cc.length === length && /^[0-9a-fA-F]+$/.test(cc);
+      const code = ok2 ? parseInt(cc, 16) : NaN;
       try {
         return String.fromCodePoint(code);
       } catch {
@@ -28431,1294 +28431,9 @@ var StdioServerTransport = class {
   }
 };
 
-// src/persistence/event-log.ts
-import { appendFileSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2 } from "node:fs";
-import { join as join2 } from "node:path";
-
-// src/domain/events.ts
-var RoutingDecisionEvent = external_exports.object({
-  ts: external_exports.string(),
-  type: external_exports.literal("routing-decision"),
-  shape: external_exports.enum(["one-shot", "spec-first", "decompose+verify"]),
-  kind: external_exports.enum(["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"])
-});
-var GateEvent = external_exports.object({
-  ts: external_exports.string(),
-  type: external_exports.literal("gate"),
-  gate: external_exports.enum(["spec", "plan", "ship"]),
-  outcome: external_exports.enum(["reached", "approved", "changes"])
-});
-var NodeEnterEvent = external_exports.object({
-  ts: external_exports.string(),
-  type: external_exports.literal("node-enter"),
-  node: external_exports.string(),
-  agent: external_exports.string().optional()
-});
-var NodeDoneEvent = external_exports.object({
-  ts: external_exports.string(),
-  type: external_exports.literal("node-done"),
-  node: external_exports.string(),
-  durationMs: external_exports.number()
-});
-var FlowEvent = external_exports.discriminatedUnion("type", [
-  RoutingDecisionEvent,
-  GateEvent,
-  NodeEnterEvent,
-  NodeDoneEvent
-]);
-var HookBackstopLine = external_exports.object({
-  ts: external_exports.string(),
-  kind: external_exports.string(),
-  agent: external_exports.string().optional(),
-  agentId: external_exports.string().optional(),
-  session: external_exports.string().optional()
-});
-function parseLogLine(line) {
-  const trimmed = line.trim();
-  if (trimmed.length === 0) return { kind: "skip" };
-  let raw;
-  try {
-    raw = JSON.parse(trimmed);
-  } catch {
-    return { kind: "skip" };
-  }
-  if (typeof raw !== "object" || raw === null) return { kind: "skip" };
-  const obj = raw;
-  if ("type" in obj) {
-    const parsed = FlowEvent.safeParse(obj);
-    return parsed.success ? { kind: "flow", event: parsed.data } : { kind: "skip" };
-  }
-  if ("kind" in obj) {
-    const agent = obj.agent;
-    if (typeof agent !== "string" || agent.length === 0) return { kind: "skip" };
-    const parsed = HookBackstopLine.safeParse(obj);
-    return parsed.success ? { kind: "hook", line: parsed.data } : { kind: "skip" };
-  }
-  return { kind: "skip" };
-}
-
-// src/resolution/run-pointer.ts
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-
-// src/domain/ids.ts
-function assertSafeSegment(s) {
-  if (s.length === 0 || s.trim().length === 0) {
-    throw new Error("unsafe path segment: empty");
-  }
-  if (s.includes("..") || s.includes("/") || s.includes("\\")) {
-    throw new Error(`unsafe path segment: "${s}" contains a traversal sequence (.. / \\)`);
-  }
-}
-var STEM_WORDS = 3;
-var STEM_MAX = 20;
-function slug(text) {
-  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS);
-  while (words.length > 1 && words.join("-").length > STEM_MAX) {
-    words.pop();
-  }
-  return words.join("-").slice(0, STEM_MAX).replace(/-+$/g, "");
-}
-function shortId() {
-  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-}
-function mintRun(goal) {
-  const stem = slug(goal) || "run";
-  const run = `${stem}-${shortId()}`;
-  assertSafeSegment(run);
-  return run;
-}
-function formatTaskNo(n) {
-  return String(n).padStart(3, "0");
-}
-
-// src/resolution/run-pointer.ts
-function workRoot(cwd) {
-  return join(cwd, ".agentry", "work");
-}
-function runDir(cwd, run) {
-  assertSafeSegment(run);
-  return join(workRoot(cwd), run);
-}
-function pointerPath(cwd, session_id) {
-  assertSafeSegment(session_id);
-  return join(cwd, ".agentry", "run", "sessions", `${session_id}.json`);
-}
-function resolveRunFromSession(cwd, session_id) {
-  let ptr;
-  try {
-    ptr = JSON.parse(readFileSync(pointerPath(cwd, session_id), "utf8"));
-  } catch {
-    return void 0;
-  }
-  if (typeof ptr !== "object" || ptr === null) return void 0;
-  const workId = ptr.workId;
-  if (typeof workId !== "string" || workId.length === 0) return void 0;
-  try {
-    assertSafeSegment(workId);
-  } catch {
-    return void 0;
-  }
-  return workId;
-}
-function sessionsBoundTo(cwd, run) {
-  const dir = join(cwd, ".agentry", "run", "sessions");
-  let files;
-  try {
-    files = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  const owners = [];
-  for (const file of files) {
-    if (!file.endsWith(".json")) continue;
-    const session_id = file.slice(0, -".json".length);
-    try {
-      assertSafeSegment(session_id);
-    } catch {
-      continue;
-    }
-    if (resolveRunFromSession(cwd, session_id) === run) owners.push(session_id);
-  }
-  return owners;
-}
-function writeSessionPointer(cwd, session_id, run) {
-  assertSafeSegment(run);
-  const target = pointerPath(cwd, session_id);
-  const dir = join(cwd, ".agentry", "run", "sessions");
-  mkdirSync(dir, { recursive: true });
-  const tmp = `${target}.${process.pid}.tmp`;
-  const body = JSON.stringify({ workId: run, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-  writeFileSync(tmp, body);
-  renameSync(tmp, target);
-}
-
-// src/persistence/event-log.ts
-var JsonlEventLog = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  logPath(run) {
-    return join2(runDir(this.cwd, run), "events.jsonl");
-  }
-  // Validate through the closed FLOW union (a malformed event can never reach the stream — the
-  // schema enforcement of AC8's typed vocabulary), then append exactly one line.
-  append(run, event) {
-    const validated = FlowEvent.parse(event);
-    const dir = runDir(this.cwd, run);
-    mkdirSync2(dir, { recursive: true });
-    appendFileSync(this.logPath(run), `${JSON.stringify(validated)}
-`);
-  }
-  // Return the raw lines (newest-relevant left to the reader). `since` filters by the `ts` field
-  // lexicographically — ISO-8601 timestamps sort chronologically, so a string compare is correct.
-  tail(run, since) {
-    const path = this.logPath(run);
-    if (!existsSync(path)) return [];
-    const lines = readFileSync2(path, "utf8").split("\n").filter((l) => l.trim().length > 0);
-    if (since === void 0) return lines;
-    return lines.filter((line) => {
-      try {
-        const ts = JSON.parse(line).ts;
-        return typeof ts === "string" && ts >= since;
-      } catch {
-        return false;
-      }
-    });
-  }
-};
-
-// src/persistence/backlog-store.ts
-var import_yaml = __toESM(require_dist2(), 1);
-import { existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, readdirSync as readdirSync2, unlinkSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join3 } from "node:path";
-
-// src/domain/backlog.ts
-var BacklogStatus = external_exports.enum(["backlog", "ready", "claimed", "done"]);
-var BacklogItem = external_exports.object({
-  id: external_exports.string(),
-  title: external_exports.string(),
-  /** Permissive on purpose, mirroring `Kind` in @agentry/core: accept an unknown kind rather than
-   *  reject it, so adding one later cannot throw on an old record. */
-  kind: external_exports.string().default("feature"),
-  status: BacklogStatus.default("backlog"),
-  createdAt: external_exports.string(),
-  updatedAt: external_exports.string(),
-  /** Runs spawned from this item — usually 0 or 1, but a re-run appends rather than replaces. */
-  runs: external_exports.array(external_exports.string()).default([]),
-  /** The context an agent starts from: markdown, `@task-…` / `@memory:…` references. */
-  body: external_exports.string().default("")
-});
-var STEM_WORDS2 = 3;
-var STEM_MAX2 = 20;
-function slug2(text) {
-  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS2);
-  while (words.length > 1 && words.join("-").length > STEM_MAX2) words.pop();
-  return words.join("-").slice(0, STEM_MAX2).replace(/-+$/g, "");
-}
-function shortId2() {
-  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-}
-function mintBacklogId(title) {
-  const id = `b-${slug2(title) || "item"}-${shortId2()}`;
-  assertSafeSegment(id);
-  return id;
-}
-function isReady(item) {
-  return item.status === "ready";
-}
-
-// src/persistence/backlog-store.ts
-var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var LEADING_FRONTMATTER = /^---\n[\s\S]*?\n---\n?/;
-var FsBacklogStore = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  dir() {
-    return join3(this.cwd, ".agentry", "backlog");
-  }
-  file(id) {
-    assertSafeSegment(id);
-    return join3(this.dir(), `${id}.md`);
-  }
-  read(id) {
-    const file = this.file(id);
-    if (!existsSync2(file)) return void 0;
-    try {
-      return this.parse(readFileSync3(file, "utf8"));
-    } catch {
-      return void 0;
-    }
-  }
-  /** Every item, newest first. A file that fails to parse is SKIPPED, never fatal: one bad item must
-   *  not take the whole board down. */
-  list() {
-    const dir = this.dir();
-    if (!existsSync2(dir)) return [];
-    const items = [];
-    for (const name of readdirSync2(dir)) {
-      if (!name.endsWith(".md")) continue;
-      try {
-        items.push(this.parse(readFileSync3(join3(dir, name), "utf8")));
-      } catch {
-      }
-    }
-    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-  write(item) {
-    const validated = BacklogItem.parse(item);
-    mkdirSync3(this.dir(), { recursive: true });
-    writeFileSync2(this.file(validated.id), this.render(validated));
-  }
-  remove(id) {
-    const file = this.file(id);
-    if (existsSync2(file)) unlinkSync(file);
-  }
-  // ── shape ────────────────────────────────────────────────────────────────────────────────────────
-  // The body lives BELOW the frontmatter (not as a `body:` yaml field) so an item reads as a document:
-  // `cat` it, edit it in any editor, diff it in a PR.
-  render(item) {
-    const { body, ...frontmatter } = item;
-    const yaml = (0, import_yaml.stringify)(frontmatter);
-    return `---
-${yaml}---
-
-${body.replace(LEADING_FRONTMATTER, "").trim()}
-`;
-  }
-  parse(text) {
-    const m = FRONTMATTER.exec(text);
-    if (!m || m[1] === void 0) throw new Error("backlog item has no frontmatter");
-    const frontmatter = (0, import_yaml.parse)(m[1]);
-    return BacklogItem.parse({ ...frontmatter, body: (m[2] ?? "").trim() });
-  }
-};
-
-// src/persistence/review-store.ts
-import { existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join4 } from "node:path";
-
-// src/domain/review.ts
-var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
-var ReviewAnchor = external_exports.object({
-  originalText: external_exports.string(),
-  // the exact snippet the comment was made against
-  headingAnchor: external_exports.string(),
-  // the nearest section heading
-  startLine: external_exports.number()
-  // the line the comment was made at
-});
-var ReviewOrigin = external_exports.enum(["human", "agent"]);
-var ReviewComment = external_exports.object({
-  id: external_exports.string(),
-  anchor: ReviewAnchor,
-  decision: ReviewDecision,
-  body: external_exports.string(),
-  resolved: external_exports.boolean(),
-  // distinguishes open from resolved comments (AC10: review_resolve marks one)
-  // ── Phase 2 reply lane (ADR-002) — both optional + additive so old sidecars still parse ──────────
-  origin: ReviewOrigin.optional(),
-  // absent ⇒ human; "agent" marks a channel_reply (Phase 2b's rail)
-  replyTo: external_exports.string().optional()
-  // the human comment id this reply answers (threading; agent only)
-});
-function isHumanComment(comment) {
-  return comment.origin !== "agent";
-}
-
-// src/persistence/review-store.ts
-var JsonReviewStore = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  gateFile(run, gate) {
-    assertSafeSegment(gate);
-    return join4(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
-  }
-  read(run, gate) {
-    const file = this.gateFile(run, gate);
-    if (!existsSync3(file)) return [];
-    try {
-      const raw = JSON.parse(readFileSync4(file, "utf8"));
-      if (!Array.isArray(raw)) return [];
-      return raw.map((c) => ReviewComment.parse(c));
-    } catch {
-      return [];
-    }
-  }
-  write(run, gate, comments) {
-    const validated = comments.map((c) => ReviewComment.parse(c));
-    const file = this.gateFile(run, gate);
-    mkdirSync4(join4(runDir(this.cwd, run), ".review"), { recursive: true });
-    writeFileSync3(file, `${JSON.stringify(validated, null, 2)}
-`);
-  }
-};
-
-// src/persistence/run-state-store.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join5 } from "node:path";
-var JsonRunStateStore = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  statePath(run) {
-    return join5(runDir(this.cwd, run), "run-state.json");
-  }
-  // Create `.agentry/work/<run>/` (asserts the run segment via runDir). Idempotent.
-  ensureRun(run) {
-    mkdirSync5(runDir(this.cwd, run), { recursive: true });
-  }
-  readRunState(run) {
-    const path = this.statePath(run);
-    if (!existsSync4(path)) return void 0;
-    try {
-      const raw = JSON.parse(readFileSync5(path, "utf8"));
-      return typeof raw === "object" && raw !== null ? raw : void 0;
-    } catch {
-      return void 0;
-    }
-  }
-  writeRunState(run, state) {
-    this.ensureRun(run);
-    writeFileSync4(this.statePath(run), `${JSON.stringify(state, null, 2)}
-`);
-  }
-};
-
-// src/persistence/task-file-store.ts
-var import_yaml2 = __toESM(require_dist2(), 1);
-import { existsSync as existsSync5, mkdirSync as mkdirSync6, readFileSync as readFileSync6, readdirSync as readdirSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join6 } from "node:path";
-
-// src/domain/version.ts
-import { createHash } from "node:crypto";
-function computeVersion(body, frontmatterSansVersion) {
-  const sortedKeys = Object.keys(frontmatterSansVersion).sort();
-  const canonicalFront = JSON.stringify(frontmatterSansVersion, sortedKeys);
-  const hash = createHash("sha256");
-  hash.update(canonicalFront, "utf8");
-  hash.update("\n", "utf8");
-  hash.update(body, "utf8");
-  return hash.digest("hex").slice(0, 16);
-}
-
-// src/persistence/task-file-store.ts
-var FRONTMATTER2 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var LEADING_FRONTMATTER2 = /^---\n[\s\S]*?\n---\n?/;
-function stripLeadingFrontmatter(body) {
-  return body.replace(LEADING_FRONTMATTER2, "");
-}
-var TaskFileStore = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  tasksDir(run) {
-    return join6(runDir(this.cwd, run), "tasks");
-  }
-  readTask(run, taskNo) {
-    const dir = this.tasksDir(run);
-    if (!existsSync5(dir)) return void 0;
-    const prefix = `${taskNo}-`;
-    const file = readdirSync3(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
-    if (!file) return void 0;
-    return this.parseTaskFile(join6(dir, file), taskNo);
-  }
-  listTasks(run) {
-    const dir = this.tasksDir(run);
-    if (!existsSync5(dir)) return [];
-    const tasks = [];
-    for (const file of readdirSync3(dir).sort()) {
-      if (!file.endsWith(".md")) continue;
-      const taskNo = file.slice(0, file.indexOf("-"));
-      const task = this.parseTaskFile(join6(dir, file), taskNo);
-      if (task) tasks.push(task);
-    }
-    return tasks;
-  }
-  writeTask(run, task) {
-    const dir = this.tasksDir(run);
-    mkdirSync6(dir, { recursive: true });
-    const prefix = `${task.taskNo}-`;
-    for (const f of readdirSync3(dir)) {
-      if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync2(join6(dir, f));
-    }
-    const file = `${task.taskNo}-${this.slugOf(task)}.md`;
-    writeFileSync5(join6(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
-  }
-  readArtifact(run, kind) {
-    const file = join6(runDir(this.cwd, run), `${kind}.md`);
-    if (!existsSync5(file)) return void 0;
-    const m = FRONTMATTER2.exec(readFileSync6(file, "utf8"));
-    return m ? (m[2] ?? "").trim() : readFileSync6(file, "utf8");
-  }
-  writeArtifact(run, kind, body) {
-    const dir = runDir(this.cwd, run);
-    mkdirSync6(dir, { recursive: true });
-    writeFileSync5(join6(dir, `${kind}.md`), this.render({ kind }, body));
-  }
-  // Render frontmatter + body, stamping a tool-computed `version` (AC4/AC5). Any caller-supplied
-  // `version` is dropped first, then recomputed over (body, frontmatter-sans-version) — so the
-  // caller can never set the version and a body edit always yields a different one.
-  render(frontmatter, body) {
-    const { version: _dropped, ...front } = frontmatter;
-    const version2 = computeVersion(body, front);
-    const stamped = { ...front, version: version2 };
-    return `---
-${(0, import_yaml2.stringify)(stamped)}---
-
-${body}
-`;
-  }
-  slugOf(task) {
-    const title = typeof task.frontmatter.title === "string" ? task.frontmatter.title : "";
-    const slug3 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
-    return slug3 || "task";
-  }
-  parseTaskFile(path, taskNo) {
-    const m = FRONTMATTER2.exec(readFileSync6(path, "utf8"));
-    if (!m) return void 0;
-    const frontmatter = (0, import_yaml2.parse)(m[1] ?? "") ?? {};
-    return { taskNo, frontmatter, body: (m[2] ?? "").trim() };
-  }
-};
-
-// src/resolution/process-identity.ts
-var operatedRuns = /* @__PURE__ */ new Set();
-var sessionId;
-function noteRunArg(run) {
-  if (run !== void 0 && run.length > 0) operatedRuns.add(run);
-}
-function noteSessionArg(session_id) {
-  if (sessionId === void 0 && session_id !== void 0 && session_id.length > 0) {
-    sessionId = session_id;
-  }
-}
-function knownRuns() {
-  return operatedRuns;
-}
-function knownSessionId() {
-  return sessionId;
-}
-
-// src/resolution/comment-routing.ts
-function shouldRouteToThisSession(run, deps) {
-  if (deps.myRuns.has(run)) return true;
-  const owners = deps.sessionsBoundTo(run);
-  if (deps.mySessionId !== void 0 && owners.includes(deps.mySessionId)) return true;
-  if (owners.length > 0) return false;
-  return true;
-}
-
-// src/domain/status.ts
-var FlowTaskStatus = external_exports.enum(["todo", "in-progress", "in-review", "done"]);
-var AgentState = external_exports.enum(["working", "blocked", "done"]);
-
-// src/application/task-service.ts
-var TaskService = class {
-  constructor(store) {
-    this.store = store;
-  }
-  // Create the next task file. The number is derived from the existing files (pure-file scan, ADR-001):
-  // max existing NNN + 1, zero-padded. `status` seeds to "todo" (the enum's entry state, ADR-004).
-  create(run, title, body) {
-    const taskNo = this.nextTaskNo(run);
-    const frontmatter = { title, status: "todo" };
-    return { ...this.writeTask(run, { taskNo, frontmatter, body }), path: this.taskPath(taskNo, title) };
-  }
-  // Assign an agent: set `lockedBy` (+ `assignee`, the human-readable alias) on the task frontmatter.
-  // lockedBy is ALWAYS populated here (AC3) — there is no path that assigns without setting it. The
-  // existing frontmatter/body are preserved; only the assignment fields change, then the store re-stamps.
-  assign(run, taskNo, agent) {
-    const task = this.store.readTask(run, taskNo);
-    if (!task) return { ok: false, reason: "not-found", id: taskNo };
-    const frontmatter = { ...task.frontmatter, lockedBy: agent, assignee: agent };
-    const written = this.writeTask(run, { taskNo, frontmatter, body: task.body });
-    return { ok: true, value: { ...written, lockedBy: agent } };
-  }
-  // Move a task to a new lifecycle status. `status` is already validated against the closed enum at
-  // the zod boundary (AC2), so it is always one of {todo,in-progress,in-review,done} here. Preserves
-  // the rest of the frontmatter/body; the store re-stamps the version (AC5).
-  status(run, taskNo, status) {
-    const task = this.store.readTask(run, taskNo);
-    if (!task) return { ok: false, reason: "not-found", id: taskNo };
-    const frontmatter = { ...task.frontmatter, status };
-    const written = this.writeTask(run, { taskNo, frontmatter, body: task.body });
-    return { ok: true, value: { ...written, status } };
-  }
-  get(run, taskNo) {
-    const task = this.store.readTask(run, taskNo);
-    if (!task) return { ok: false, reason: "not-found", id: taskNo };
-    return { ok: true, value: { task } };
-  }
-  list(run) {
-    return { tasks: this.store.listTasks(run) };
-  }
-  // Write a run-root artifact (spec.md|plan.md). Same version-stamping write path as a task (AC4) —
-  // the store stamps the tool-computed version; editing the body and rewriting yields a different one.
-  // `version` is re-read from the persisted artifact so the caller sees the stamp that landed.
-  artifact(run, kind, body) {
-    this.store.writeArtifact(run, kind, body);
-    return { path: `${kind}.md`, version: this.artifactVersion(kind, body) };
-  }
-  // Write a task through the store (which stamps the version), then re-read the persisted record so the
-  // returned `version` is the one on disk — never a value this layer or the caller invented. Any
-  // caller-supplied `version` in the frontmatter is dropped before the write (defense in depth; the
-  // store also strips it).
-  writeTask(run, task) {
-    const { version: _dropped, ...frontmatter } = task.frontmatter;
-    this.store.writeTask(run, { ...task, frontmatter });
-    const persisted = this.store.readTask(run, task.taskNo);
-    const version2 = typeof persisted?.frontmatter.version === "string" ? persisted.frontmatter.version : "";
-    return { taskNo: task.taskNo, version: version2 };
-  }
-  // The version the store stamped for an artifact body: the store hashes over (body, {kind}), so we
-  // compute the same fingerprint to report it back (the store stamps `{kind}` as the only frontmatter).
-  artifactVersion(kind, body) {
-    return computeVersion(body, { kind });
-  }
-  // Next free task number: one past the highest existing NNN (pure-file scan, ADR-001). 001 for an
-  // empty run. Non-numeric prefixes are ignored so a stray file can't break numbering.
-  nextTaskNo(run) {
-    let max = 0;
-    for (const task of this.store.listTasks(run)) {
-      const n = Number.parseInt(task.taskNo, 10);
-      if (Number.isFinite(n) && n > max) max = n;
-    }
-    return formatTaskNo(max + 1);
-  }
-  // The on-disk path the create result reports — `tasks/NNN-<slug>.md`. The slug mirrors the store's
-  // own `slugOf` (title → hyphenated ascii-word), so the reported path matches the file the store wrote.
-  taskPath(taskNo, title) {
-    const slug3 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "") || "task";
-    return `tasks/${taskNo}-${slug3}.md`;
-  }
-};
-
-// src/tools/errors.ts
-var FlowErrorCode = external_exports.enum([
-  "bad-input",
-  // passes shape validation but is semantically invalid (blank run, out-of-range)
-  "not-found",
-  // a referenced run/task/artifact does not exist
-  "invalid-state",
-  // the target exists but the op does not apply (illegal status transition)
-  "internal"
-  // an unexpected exception inside a handler
-]);
-var FlowError = external_exports.object({
-  code: FlowErrorCode,
-  // stable machine category (closed set above)
-  what: external_exports.string().min(1),
-  // what went wrong, human-readable
-  why: external_exports.string().min(1),
-  // the cause, including the offending value where relevant
-  fix: external_exports.string().min(1)
-  // a concrete instruction for the next call (names field + valid form)
-});
-var badInput = (field, rule) => FlowError.parse({
-  code: "bad-input",
-  what: "An input value is semantically invalid.",
-  why: `The "${field}" value does not satisfy its constraint: ${rule}.`,
-  fix: `Set "${field}" to a value that satisfies: ${rule}, then retry.`
-});
-var notFound = (what, id) => FlowError.parse({
-  code: "not-found",
-  what: `The requested ${what} does not exist.`,
-  why: `No ${what} was found for "${id}".`,
-  fix: `Pass an existing ${what} \u2014 call run_start to mint a run, or list/get first to obtain a valid id, then retry.`
-});
-var invalidState = (what, why, fix) => FlowError.parse({ code: "invalid-state", what, why, fix });
-var internal = () => FlowError.parse({
-  code: "internal",
-  what: "An unexpected internal error occurred.",
-  why: "The handler failed for an internal reason, not because of the caller's input.",
-  fix: "Retry the request; if it persists, the issue is server-side and not fixable by changing the call."
-});
-
-// src/tools/result.ts
-var ok = (data) => ({
-  content: [{ type: "text", text: JSON.stringify(data) }]
-});
-var err = (envelope) => ({
-  content: [{ type: "text", text: JSON.stringify({ error: envelope }) }],
-  isError: true
-});
-
-// src/tools/adapter.ts
-var guard = (handler) => async (args) => {
-  try {
-    return await handler(args);
-  } catch {
-    return err(internal());
-  }
-};
-
-// src/tools/task-tools.ts
-function registerTaskTools(server, ctx) {
-  const service = new TaskService(ctx.tasks);
-  server.registerTool(
-    "task_create",
-    {
-      description: "Create the next task file (tasks/NNN-*.md) in a run. The tool numbers it and stamps a content-hash version (AC5). Requires `run` (call run_start first to mint one \u2014 ADR-005, no ambient run).",
-      inputSchema: {
-        run: external_exports.string(),
-        title: external_exports.string(),
-        body: external_exports.string().optional()
-      }
-    },
-    guard(async (args) => ok(service.create(args.run, args.title, args.body ?? "")))
-  );
-  server.registerTool(
-    "task_assign",
-    {
-      description: "Assign an agent to a task \u2014 sets `lockedBy` on the task frontmatter (never empty for an assigned task, AC3) and re-stamps the version. Requires `run`.",
-      inputSchema: {
-        run: external_exports.string(),
-        taskNo: external_exports.string(),
-        agent: external_exports.string()
-      }
-    },
-    guard(async (args) => {
-      const outcome = service.assign(args.run, args.taskNo, args.agent);
-      if (outcome.ok) return ok(outcome.value);
-      return err(notFound("task", outcome.id));
-    })
-  );
-  server.registerTool(
-    "task_status",
-    {
-      description: "Move a task to a new lifecycle status. `status` is the CLOSED enum {todo,in-progress,in-review,done} \u2014 any other value is rejected at the schema and no file is written (AC2). Re-stamps the version (AC5). Requires `run`.",
-      inputSchema: {
-        run: external_exports.string(),
-        taskNo: external_exports.string(),
-        // The closed FlowTaskStatus enum IS the validation boundary (AC2): an out-of-enum value fails
-        // here, before the handler — so an invalid status can never reach a file.
-        status: FlowTaskStatus
-      }
-    },
-    guard(async (args) => {
-      const outcome = service.status(args.run, args.taskNo, args.status);
-      if (outcome.ok) return ok(outcome.value);
-      return err(notFound("task", outcome.id));
-    })
-  );
-  server.registerTool(
-    "task_get",
-    {
-      description: "Read one task (frontmatter + body) by its number. Requires `run`.",
-      inputSchema: {
-        run: external_exports.string(),
-        taskNo: external_exports.string()
-      }
-    },
-    guard(async (args) => {
-      const outcome = service.get(args.run, args.taskNo);
-      if (outcome.ok) return ok(outcome.value);
-      return err(notFound("task", outcome.id));
-    })
-  );
-  server.registerTool(
-    "task_list",
-    {
-      description: "List all tasks in a run (a fresh directory scan over tasks/*.md \u2014 ADR-001 pure-file). Requires `run`.",
-      inputSchema: {
-        run: external_exports.string()
-      }
-    },
-    guard(async (args) => ok(service.list(args.run)))
-  );
-  server.registerTool(
-    "artifact_write",
-    {
-      description: "Write a run-root artifact (spec.md or plan.md) and stamp a tool-computed content-hash version (AC4). Editing the body and rewriting yields a different version. Requires `run`.",
-      inputSchema: {
-        run: external_exports.string(),
-        kind: external_exports.enum(["spec", "plan"]),
-        body: external_exports.string()
-      }
-    },
-    guard(async (args) => ok(service.artifact(args.run, args.kind, args.body)))
-  );
-}
-
-// src/application/run-service.ts
-var SPEC_SCAFFOLD = [
-  "# Spec",
-  "",
-  "_Scaffolded by run_start. Replace with the real spec via artifact_write(spec)._",
-  "",
-  "## Job to be done",
-  "",
-  "## Acceptance criteria",
-  ""
-].join("\n");
-var RunService = class {
-  constructor(services) {
-    this.services = services;
-  }
-  // The run front door (ADR-005). Mints <run> when absent, creates the run dir + spec scaffold, and
-  // seeds the session pointer ONLY when session_id is passed. Returns the explicit run handle.
-  start(input) {
-    const run = input.run && input.run.length > 0 ? input.run : mintRun(input.goal ?? "run");
-    this.services.runs.ensureRun(run);
-    this.services.tasks.writeArtifact(run, "spec", SPEC_SCAFFOLD);
-    if (input.session_id && input.session_id.length > 0) {
-      writeSessionPointer(this.services.cwd, input.session_id, run);
-    }
-    return { run };
-  }
-  // Read the run's live state json (the agent roster + states; T05 owns its field contract). Plain
-  // record or `{}` when the run has no state yet — never throws on a missing/corrupt file.
-  get(run) {
-    return { run, state: this.services.runs.readRunState(run) ?? {} };
-  }
-  // Validate `type` against the closed FlowEvent union (AC8) and append via the EventLog port. Returns
-  // `{ ok: false }` with the offending field when the event is out-of-union, so the adapter maps it to a
-  // bad-input envelope rather than letting the closed union throw.
-  emit(run, event) {
-    const parsed = FlowEvent.safeParse(event);
-    if (!parsed.success) {
-      const issue2 = parsed.error.issues[0];
-      const field = issue2 && issue2.path.length > 0 ? String(issue2.path[0]) : "type";
-      const rule = field === "type" ? "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)" : issue2?.message ?? "the value required by the FlowEvent schema for this type";
-      return { ok: false, field, rule };
-    }
-    this.services.events.append(run, parsed.data);
-    return { ok: true };
-  }
-  // Read the stream and return ONLY the typed FLOW events (the signature promises `FlowEvent[]`).
-  // `parseLogLine` transparently handles both line shapes and drops empty-`agent` main-session lines;
-  // hook backstop lines are not FLOW events, so they don't appear in this typed view (they surface via
-  // `status`'s reconciliation instead).
-  tail(run, since) {
-    const events = [];
-    for (const raw of this.services.events.tail(run, since)) {
-      const parsed = parseLogLine(raw);
-      if (parsed.kind === "flow") events.push(parsed.event);
-    }
-    return { events };
-  }
-  // Read-time backstop reconciliation (ADR-003 — flag, never block). Cross-check the hook's subagent
-  // boundaries (real `agent` lines) against FLOW's node lines: a hook `agent-started`/`agent-done` for
-  // an agent FLOW emitted no matching `node-enter`/`node-done` for is a disagreement (the skipped-call
-  // signal, AC9). Pure read-time computation; nothing is written and nothing blocks.
-  status(run) {
-    const lines = this.services.events.tail(run);
-    const flowEnteredAgents = /* @__PURE__ */ new Set();
-    const flowDoneNodes = /* @__PURE__ */ new Set();
-    const flowEnterNodeByAgent = /* @__PURE__ */ new Map();
-    const hookStarted = [];
-    const hookDone = [];
-    for (const raw of lines) {
-      const parsed = parseLogLine(raw);
-      if (parsed.kind === "flow") {
-        const ev = parsed.event;
-        if (ev.type === "node-enter" && ev.agent) {
-          flowEnteredAgents.add(ev.agent);
-          flowEnterNodeByAgent.set(ev.agent, ev.node);
-        } else if (ev.type === "node-done") {
-          flowDoneNodes.add(ev.node);
-        }
-      } else if (parsed.kind === "hook") {
-        const agent = parsed.line.agent;
-        if (agent === void 0) continue;
-        if (parsed.line.kind === "agent-started") hookStarted.push({ agent, ts: parsed.line.ts });
-        else if (parsed.line.kind === "agent-done") hookDone.push({ agent, ts: parsed.line.ts });
-      }
-    }
-    const disagreements = [];
-    for (const { agent, ts } of hookStarted) {
-      if (!flowEnteredAgents.has(agent)) {
-        disagreements.push({
-          agent,
-          kind: "started",
-          ts,
-          reason: `hook recorded agent-started for "${agent}" but FLOW emitted no node-enter for it (a skipped FLOW call)`
-        });
-      }
-    }
-    for (const { agent, ts } of hookDone) {
-      const node = flowEnterNodeByAgent.get(agent);
-      if (node === void 0 || !flowDoneNodes.has(node)) {
-        disagreements.push({
-          agent,
-          kind: "done",
-          ts,
-          reason: `hook recorded agent-done for "${agent}" but FLOW emitted no matching node-done (a skipped FLOW call)`
-        });
-      }
-    }
-    return { run, tasks: this.summarizeTasks(run), backstopDisagreements: disagreements };
-  }
-  // Per-status tally of the run's tasks (the "tasks summary"). A loose `status` string is counted
-  // under its own key; a task with no/non-string status falls under "unknown".
-  summarizeTasks(run) {
-    const summary = {};
-    for (const task of this.services.tasks.listTasks(run)) {
-      const status = typeof task.frontmatter.status === "string" ? task.frontmatter.status : "unknown";
-      summary[status] = (summary[status] ?? 0) + 1;
-    }
-    return summary;
-  }
-};
-
-// src/tools/monitor-tools.ts
-function registerMonitorTools(server, ctx) {
-  const service = new RunService(ctx);
-  server.registerTool(
-    "run_start",
-    {
-      description: "The run front door: mint <run> (when absent) and return the explicit run handle the conductor threads into every later FLOW call. Creates .agentry/work/<run>/ + an initial spec.md scaffold; writes the session pointer only when session_id is passed.",
-      inputSchema: {
-        run: external_exports.string().optional(),
-        session_id: external_exports.string().optional(),
-        goal: external_exports.string().optional()
-      }
-    },
-    guard(async (args) => ok(service.start(args)))
-  );
-  server.registerTool(
-    "run_get",
-    {
-      description: "Read a run's live state (the agent roster + states). Returns { run, state }.",
-      inputSchema: { run: external_exports.string() }
-    },
-    guard(async (args) => ok(service.get(args.run)))
-  );
-  server.registerTool(
-    "run_status",
-    {
-      description: "Read-time run health: a per-status task summary + backstopDisagreements \u2014 the hook subagent boundaries with no matching FLOW node line (a skipped FLOW call, AC9). Flags, never blocks (ADR-003).",
-      inputSchema: { run: external_exports.string() }
-    },
-    guard(async (args) => ok(service.status(args.run)))
-  );
-  server.registerTool(
-    "event_emit",
-    {
-      description: "Append one conductor lifecycle line to events.jsonl (AC8). `type` must be a closed FlowEvent (routing-decision | gate | node-enter | node-done); `data` carries the type-specific fields. An out-of-union type is rejected.",
-      inputSchema: {
-        run: external_exports.string(),
-        type: external_exports.string(),
-        data: external_exports.record(external_exports.unknown()).optional()
-      }
-    },
-    guard(async (args) => {
-      const event = { ts: (/* @__PURE__ */ new Date()).toISOString(), type: args.type, ...args.data ?? {} };
-      const outcome = service.emit(args.run, event);
-      if (outcome.ok) return ok({ ok: true });
-      return err(badInput(outcome.field, outcome.rule));
-    })
-  );
-  server.registerTool(
-    "event_tail",
-    {
-      description: "Read the typed FLOW events from events.jsonl (optionally only those at/after `since`, an ISO timestamp). Parses both line shapes and filters empty-agent main-session lines; returns { events: FlowEvent[] }.",
-      inputSchema: { run: external_exports.string(), since: external_exports.string().optional() }
-    },
-    guard(async (args) => ok(service.tail(args.run, args.since)))
-  );
-}
-
-// src/application/agent-service.ts
-var AgentService = class {
-  constructor(runs) {
-    this.runs = runs;
-  }
-  // Read the current roster from run-state, tolerating a fresh/absent/foreign-shaped file as empty.
-  roster(run) {
-    const raw = this.runs.readRunState(run);
-    const agents = raw?.agents;
-    if (typeof agents !== "object" || agents === null) return { agents: {} };
-    return { agents };
-  }
-  /**
-   * Record an agent's live state against the run-state json. Validates `state` against T01's
-   * `AgentState` enum (`working | blocked | done`) — an out-of-enum value is REJECTED and NOTHING is
-   * written (the rejection precedes any store touch). Per ADR-004, `blocked` is a valid AGENT state
-   * here (it is not a task status). Preserves an existing `assignedTask` (T02 owns that write).
-   */
-  setState(run, agent, state, now = () => (/* @__PURE__ */ new Date()).toISOString()) {
-    if (agent.trim().length === 0) {
-      return { ok: false, reason: "bad-input", field: "agent", rule: "a non-empty agent id" };
-    }
-    const parsed = AgentState.safeParse(state);
-    if (!parsed.success) {
-      return {
-        ok: false,
-        reason: "bad-input",
-        field: "state",
-        rule: `one of ${AgentState.options.join(", ")}`
-      };
-    }
-    const roster = this.roster(run);
-    const existing = roster.agents[agent];
-    const changed = existing?.state !== parsed.data;
-    const since = changed || existing?.since === void 0 ? now() : existing.since;
-    roster.agents[agent] = { ...existing, state: parsed.data, since };
-    this.runs.writeRunState(run, roster);
-    return { ok: true, agent, state: parsed.data };
-  }
-  /**
-   * The current roster: every recorded agent with its live `state` and optional `assignedTask`. An
-   * empty/absent run-state reads as an empty roster (a run with no agents yet is valid, not an error).
-   */
-  listRoster(run) {
-    const { agents } = this.roster(run);
-    return Object.entries(agents).map(([agent, entry]) => ({
-      agent,
-      state: entry.state,
-      ...entry.assignedTask !== void 0 ? { assignedTask: entry.assignedTask } : {},
-      ...entry.since !== void 0 ? { since: entry.since } : {}
-    }));
-  }
-};
-
-// src/tools/agent-tools.ts
-function registerAgentTools(server, ctx) {
-  const service = new AgentService(ctx.runs);
-  server.registerTool(
-    "agent_state",
-    {
-      description: "Record an agent's live state against the run (working|blocked|done). FLOW records state; it does NOT dispatch (the native Agent tool dispatches). 'blocked' is an AGENT state, not a task status (ADR-004).",
-      inputSchema: {
-        run: external_exports.string(),
-        agent: external_exports.string(),
-        state: AgentState
-      }
-    },
-    guard(async (args) => {
-      const outcome = service.setState(args.run, args.agent, args.state);
-      if (outcome.ok) return ok({ agent: outcome.agent, state: outcome.state });
-      return err(badInput(outcome.field, outcome.rule));
-    })
-  );
-  server.registerTool(
-    "agent_roster",
-    {
-      description: "The current agent roster for the run: each agent with its live state and assigned task (if any).",
-      inputSchema: {
-        run: external_exports.string()
-      }
-    },
-    guard(async (args) => ok({ agents: service.listRoster(args.run) }))
-  );
-}
-
-// src/application/review-service.ts
-function mintCommentId() {
-  return `c-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
-}
-var ReviewService = class {
-  constructor(reviews) {
-    this.reviews = reviews;
-  }
-  // Append a comment with the 3-way anchor to the gate's sidecar. A fresh comment is always open
-  // (`resolved:false`); the id is minted here so the caller gets back a handle to resolve it later.
-  comment(input) {
-    const id = mintCommentId();
-    const comment = {
-      id,
-      anchor: input.anchor,
-      decision: input.decision,
-      body: input.body,
-      resolved: false
-    };
-    const existing = this.reviews.read(input.run, input.gate);
-    this.reviews.write(input.run, input.gate, [...existing, comment]);
-    return { id };
-  }
-  // Append an agent reply (ADR-002 `channel_reply`) to the gate's sidecar — the agent→human ack/status
-  // lane that rides the SAME `.review/` bus as human comments. It is marked `origin:"agent"` so (1) the
-  // channel bridge skips it (no echo loop) and (2) open-gate read-models keep "waiting on you" human-only;
-  // `resolved:true` so the existing `!resolved` open-filter also drops it without a schema change. A reply
-  // has no review anchor/decision (ADR-002), so neutral placeholders satisfy the closed schema — the rail
-  // (Phase 2b) renders by `origin`, not by these fields. Returns the new reply's id.
-  reply(input) {
-    const id = mintCommentId();
-    const reply = {
-      id,
-      anchor: { originalText: "", headingAnchor: "", startLine: 0 },
-      // a reply has no span (ADR-002)
-      decision: "question",
-      // schema-required; not a verdict — a reply carries no review decision
-      body: input.body,
-      resolved: true,
-      // not an open human gate item — keeps it out of the "waiting on you" list
-      origin: "agent",
-      ...input.replyTo !== void 0 ? { replyTo: input.replyTo } : {}
-    };
-    const existing = this.reviews.read(input.run, input.gate);
-    this.reviews.write(input.run, input.gate, [...existing, reply]);
-    return { id };
-  }
-  // Mark one comment resolved so it is distinguishable from open ones (AC10). Idempotent: resolving an
-  // already-resolved comment succeeds (the post-state is the same). An unknown id is `not-found`.
-  resolve(run, gate, id) {
-    const comments = this.reviews.read(run, gate);
-    const target = comments.find((c) => c.id === id);
-    if (target === void 0) return { ok: false, reason: "not-found", id };
-    const next = comments.map((c) => c.id === id ? { ...c, resolved: true } : c);
-    this.reviews.write(run, gate, next);
-    return { ok: true, id };
-  }
-  // The gate's review comments — what the conductor reads AT the gate to see open vs. resolved
-  // annotations. Agent replies (ADR-002 `channel_reply`) ride the same `.review/` bus but are NOT review
-  // annotations and must not pollute this read: they are filtered out by `origin:"agent"` so `review_list`
-  // (and "open items waiting on you" derived from it) stays human-only. The rail (Phase 2b) reads the raw
-  // sidecar to render replies; this application read is review-only.
-  list(run, gate) {
-    return { comments: this.reviews.read(run, gate).filter(isHumanComment) };
-  }
-};
-
-// src/tools/review-tools.ts
-function registerReviewTools(server, ctx) {
-  const service = new ReviewService(ctx.reviews);
-  server.registerTool(
-    "review_comment",
-    {
-      description: "Append a review comment with the 3-way anchor (originalText + headingAnchor + startLine) to a gate's annotation sidecar (.review/<gate>.annotations.json). The anchor re-locates the comment after the reviewed document changes. Returns the new comment's id.",
-      inputSchema: {
-        run: external_exports.string(),
-        gate: external_exports.string(),
-        anchor: ReviewAnchor,
-        decision: ReviewDecision,
-        body: external_exports.string()
-      }
-    },
-    guard(
-      async (args) => ok(service.comment({ run: args.run, gate: args.gate, anchor: args.anchor, decision: args.decision, body: args.body }))
-    )
-  );
-  server.registerTool(
-    "review_resolve",
-    {
-      description: "Mark one review comment resolved (by id) so resolved comments are distinguishable from open ones. Idempotent; an unknown id is not-found.",
-      inputSchema: { run: external_exports.string(), gate: external_exports.string(), id: external_exports.string() }
-    },
-    guard(async (args) => {
-      const outcome = service.resolve(args.run, args.gate, args.id);
-      if (outcome.ok) return ok({ id: outcome.id, resolved: true });
-      return err(notFound("comment", outcome.id));
-    })
-  );
-  server.registerTool(
-    "review_list",
-    {
-      description: "List a gate's review comments \u2014 what the conductor reads AT the gate to see open vs. resolved annotations.",
-      inputSchema: { run: external_exports.string(), gate: external_exports.string() }
-    },
-    guard(async (args) => ok(service.list(args.run, args.gate)))
-  );
-}
-
-// src/tools/channel-reply-tools.ts
-function registerChannelReplyTools(server, ctx) {
-  const service = new ReviewService(ctx.reviews);
-  server.registerTool(
-    "channel_reply",
-    {
-      description: "Send a short reply/status back to the human in the Agentry Workbench conversation rail, in answer to a review comment. Use after addressing or acknowledging a <channel> review comment.",
-      inputSchema: {
-        run: external_exports.string(),
-        doc: external_exports.string(),
-        // the gate key (== docId) — the artifact the human commented on
-        body: external_exports.string(),
-        replyTo: external_exports.string().optional()
-        // the human comment id this answers (threading)
-      }
-    },
-    guard(
-      async (args) => ok(service.reply({ run: args.run, gate: args.doc, body: args.body, replyTo: args.replyTo }))
-    )
-  );
-}
-
-// src/application/backlog-service.ts
-var BacklogService = class {
-  constructor(store, runs, now) {
-    this.store = store;
-    this.runs = runs;
-    this.now = now;
-  }
-  add(input) {
-    const ts = this.now();
-    const item = BacklogItem.parse({
-      id: mintBacklogId(input.title),
-      title: input.title,
-      kind: input.kind ?? "feature",
-      status: input.ready === true ? "ready" : "backlog",
-      createdAt: ts,
-      updatedAt: ts,
-      runs: [],
-      body: input.body ?? ""
-    });
-    this.store.write(item);
-    return item;
-  }
-  list(status) {
-    const all = this.store.list();
-    return status === void 0 ? all : all.filter((i) => i.status === status);
-  }
-  /** Patch an item. Absent fields are left alone — this is a patch, not a replace, so a caller that
-   *  knows only the new status cannot accidentally blank the body. */
-  update(input) {
-    const current = this.store.read(input.id);
-    if (!current) return void 0;
-    const next = BacklogItem.parse({
-      ...current,
-      ...input.title !== void 0 ? { title: input.title } : {},
-      ...input.body !== void 0 ? { body: input.body } : {},
-      ...input.kind !== void 0 ? { kind: input.kind } : {},
-      ...input.status !== void 0 ? { status: input.status } : {},
-      updatedAt: this.now()
-    });
-    this.store.write(next);
-    return next;
-  }
-  /**
-   * Take an item and mint its run — the intent→work transition, and the ONLY one.
-   *
-   * With no id, claims the oldest READY item (the queue is FIFO: the thing that has waited longest goes
-   * first, which is what a queue means and what `/agentry:go` with no argument expects). The run is
-   * minted through the existing `RunService.start`, so a claimed run is indistinguishable from one a
-   * session started directly — same id shape, same scaffold, same layout.
-   */
-  claim(id, sessionId2) {
-    let item;
-    if (id !== void 0 && id.length > 0) {
-      item = this.store.read(id);
-      if (!item) return { ok: false, reason: "not_found" };
-      if (!isReady(item)) return { ok: false, reason: "not_ready" };
-    } else {
-      const queue = this.list("ready").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      item = queue[0];
-      if (!item) return { ok: false, reason: "empty_queue" };
-    }
-    const { run } = this.runs.start({
-      goal: item.title,
-      ...sessionId2 !== void 0 && sessionId2.length > 0 ? { session_id: sessionId2 } : {}
-    });
-    const claimed = BacklogItem.parse({
-      ...item,
-      status: "claimed",
-      runs: [...item.runs, run],
-      updatedAt: this.now()
-    });
-    this.store.write(claimed);
-    return { ok: true, item: claimed, run };
-  }
-};
-
-// src/tools/backlog-tools.ts
-function registerBacklogTools(server, ctx) {
-  const runService = new RunService(ctx);
-  const service = new BacklogService(ctx.backlog, runService, () => (/* @__PURE__ */ new Date()).toISOString());
-  server.registerTool(
-    "backlog_add",
-    {
-      description: "Add an item to this project's backlog \u2014 durable intent that has not become a run yet. Use to capture work to do later. Set ready:true to queue it for the conductor instead of parking it.",
-      inputSchema: {
-        title: external_exports.string(),
-        body: external_exports.string().optional(),
-        kind: external_exports.string().optional(),
-        ready: external_exports.boolean().optional()
-      }
-    },
-    guard(async (args) => ok(service.add(args)))
-  );
-  server.registerTool(
-    "backlog_list",
-    {
-      description: "List this project's backlog items, newest first. Filter by status to read the queue (status:'ready') or what is parked (status:'backlog').",
-      inputSchema: { status: BacklogStatus.optional() }
-    },
-    guard(async (args) => ok({ items: service.list(args.status) }))
-  );
-  server.registerTool(
-    "backlog_update",
-    {
-      description: "Patch a backlog item \u2014 retitle it, rewrite its context, or move it between backlog/ready/claimed/done. Absent fields are left alone.",
-      inputSchema: {
-        id: external_exports.string(),
-        title: external_exports.string().optional(),
-        body: external_exports.string().optional(),
-        kind: external_exports.string().optional(),
-        status: BacklogStatus.optional()
-      }
-    },
-    guard(async (args) => {
-      const item = service.update(args);
-      return item ? ok(item) : err(notFound("backlog item", args.id));
-    })
-  );
-  server.registerTool(
-    "backlog_claim",
-    {
-      description: "Take a backlog item and mint its run \u2014 the intent\u2192work transition. With no id, claims the item that has waited longest in the ready queue. This is how a conducting session picks up queued work.",
-      inputSchema: { id: external_exports.string().optional(), session_id: external_exports.string().optional() }
-    },
-    guard(async (args) => {
-      const outcome = service.claim(args.id, args.session_id);
-      if (outcome.ok) return ok({ item: outcome.item, run: outcome.run });
-      if (outcome.reason === "not_found") return err(notFound("backlog item", args.id ?? ""));
-      return err(
-        outcome.reason === "empty_queue" ? invalidState(
-          "the ready queue",
-          "nothing is queued",
-          "Move an item to ready first \u2014 backlog_update with status:'ready'."
-        ) : invalidState(
-          "this backlog item",
-          "only a ready item can be claimed",
-          "Set it ready first \u2014 backlog_update with status:'ready'."
-        )
-      );
-    })
-  );
-}
+// src/channel/channel-bridge.ts
+import { mkdirSync as mkdirSync2 } from "node:fs";
+import { basename as basename3, dirname as dirname3, relative as relative3, sep } from "node:path";
 
 // ../../node_modules/.pnpm/chokidar@4.0.3/node_modules/chokidar/esm/index.js
 import { stat as statcb } from "fs";
@@ -31410,9 +30125,129 @@ function watch(paths, options = {}) {
   return watcher;
 }
 
-// src/channel/channel-bridge.ts
-import { mkdirSync as mkdirSync7 } from "node:fs";
-import { basename as basename3, dirname as dirname3, relative as relative3, sep } from "node:path";
+// src/resolution/run-pointer.ts
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { join as join3 } from "node:path";
+
+// src/domain/ids.ts
+function assertSafeSegment(s) {
+  if (s.length === 0 || s.trim().length === 0) {
+    throw new Error("unsafe path segment: empty");
+  }
+  if (s.includes("..") || s.includes("/") || s.includes("\\")) {
+    throw new Error(`unsafe path segment: "${s}" contains a traversal sequence (.. / \\)`);
+  }
+}
+var STEM_WORDS = 3;
+var STEM_MAX = 20;
+function slug(text) {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS);
+  while (words.length > 1 && words.join("-").length > STEM_MAX) {
+    words.pop();
+  }
+  return words.join("-").slice(0, STEM_MAX).replace(/-+$/g, "");
+}
+function shortId() {
+  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+}
+function mintRun(goal) {
+  const stem = slug(goal) || "run";
+  const run = `${stem}-${shortId()}`;
+  assertSafeSegment(run);
+  return run;
+}
+function formatTaskNo(n) {
+  return String(n).padStart(3, "0");
+}
+
+// src/resolution/run-pointer.ts
+function workRoot(cwd) {
+  return join3(cwd, ".agentry", "work");
+}
+function runDir(cwd, run) {
+  assertSafeSegment(run);
+  return join3(workRoot(cwd), run);
+}
+function pointerPath(cwd, session_id) {
+  assertSafeSegment(session_id);
+  return join3(cwd, ".agentry", "run", "sessions", `${session_id}.json`);
+}
+function resolveRunFromSession(cwd, session_id) {
+  let ptr;
+  try {
+    ptr = JSON.parse(readFileSync(pointerPath(cwd, session_id), "utf8"));
+  } catch {
+    return void 0;
+  }
+  if (typeof ptr !== "object" || ptr === null) return void 0;
+  const workId = ptr.workId;
+  if (typeof workId !== "string" || workId.length === 0) return void 0;
+  try {
+    assertSafeSegment(workId);
+  } catch {
+    return void 0;
+  }
+  return workId;
+}
+function sessionsBoundTo(cwd, run) {
+  const dir = join3(cwd, ".agentry", "run", "sessions");
+  let files;
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const owners = [];
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+    const session_id = file.slice(0, -".json".length);
+    try {
+      assertSafeSegment(session_id);
+    } catch {
+      continue;
+    }
+    if (resolveRunFromSession(cwd, session_id) === run) owners.push(session_id);
+  }
+  return owners;
+}
+function writeSessionPointer(cwd, session_id, run) {
+  assertSafeSegment(run);
+  const target = pointerPath(cwd, session_id);
+  const dir = join3(cwd, ".agentry", "run", "sessions");
+  mkdirSync(dir, { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
+  const body = JSON.stringify({ workId: run, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  writeFileSync(tmp, body);
+  renameSync(tmp, target);
+}
+
+// src/domain/review.ts
+var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
+var ReviewAnchor = external_exports.object({
+  originalText: external_exports.string(),
+  // the exact snippet the comment was made against
+  headingAnchor: external_exports.string(),
+  // the nearest section heading
+  startLine: external_exports.number()
+  // the line the comment was made at
+});
+var ReviewOrigin = external_exports.enum(["human", "agent"]);
+var ReviewComment = external_exports.object({
+  id: external_exports.string(),
+  anchor: ReviewAnchor,
+  decision: ReviewDecision,
+  body: external_exports.string(),
+  resolved: external_exports.boolean(),
+  // distinguishes open from resolved comments (AC10: review_resolve marks one)
+  // ── Phase 2 reply lane (ADR-002) — both optional + additive so old sidecars still parse ──────────
+  origin: ReviewOrigin.optional(),
+  // absent ⇒ human; "agent" marks a channel_reply (Phase 2b's rail)
+  replyTo: external_exports.string().optional()
+  // the human comment id this reply answers (threading; agent only)
+});
+function isHumanComment(comment) {
+  return comment.origin !== "agent";
+}
 
 // src/channel/channel-event.ts
 var QUOTE_MAX = 120;
@@ -31485,7 +30320,7 @@ var ChannelBridge = class {
   start() {
     if (this.watcher !== void 0) return;
     const root = workRoot(this.cwd);
-    mkdirSync7(root, { recursive: true });
+    mkdirSync2(root, { recursive: true });
     this.watcher = watch(root, {
       ignoreInitial: false,
       // we WANT the initial scan — it drives the seed via `add` before `ready`
@@ -31522,7 +30357,12 @@ var ChannelBridge = class {
   // Re-read a changed sidecar and emit one channel per new, unresolved comment. The seen-set is
   // updated only for the comments actually pushed, so a future change re-evaluates the rest.
   async handleChange(run, gate) {
-    const { notifications, newlySeen } = diffNewComments(run, gate, this.readComments(run, gate), this.seen);
+    const { notifications, newlySeen } = diffNewComments(
+      run,
+      gate,
+      this.readComments(run, gate),
+      this.seen
+    );
     for (const id of newlySeen) this.seen.add(id);
     if (!this.shouldEmit(run)) return;
     for (const notification of notifications) await this.emit(notification);
@@ -31534,69 +30374,9 @@ var ChannelBridge = class {
   }
 };
 
-// src/channel/status-bridge.ts
-import { mkdirSync as mkdirSync8, readFileSync as readFileSync7, rmSync } from "node:fs";
-import { join as join9 } from "node:path";
-
-// src/channel/status-event.ts
-var StatusSignal = external_exports.object({
-  run: external_exports.string(),
-  task: external_exports.string(),
-  // the task node id, e.g. "task-003"
-  status: external_exports.string(),
-  // the new FLOW status (todo | in-progress | in-review | done)
-  at: external_exports.string().optional()
-  // ISO stamp the Workbench wrote it (display only)
-});
-function statusNotification(sig) {
-  return {
-    content: `Human set ${sig.task} status \u2192 ${sig.status} (run ${sig.run}).`,
-    meta: { run_id: sig.run, task: sig.task, status: sig.status, kind: "status" }
-  };
-}
-
-// src/channel/status-bridge.ts
-var StatusBridge = class {
-  constructor(cwd, emit, shouldEmit = () => true) {
-    this.cwd = cwd;
-    this.emit = emit;
-    this.shouldEmit = shouldEmit;
-  }
-  watcher;
-  // Start watching the status-signal dir. ignoreInitial is FALSE so a signal written while flow was down
-  // (between turns) still fires on startup — and is deleted after, so it never re-fires. The dir is created
-  // up front (chokidar on a missing dir reports ready but never watches — the macOS gotcha).
-  start() {
-    if (this.watcher !== void 0) return;
-    const dir = join9(this.cwd, ".agentry", "run", "status-signals");
-    mkdirSync8(dir, { recursive: true });
-    this.watcher = watch(dir, { ignoreInitial: false, persistent: true, depth: 0 });
-    this.watcher.on("add", (file) => void this.handle(file));
-  }
-  async stop() {
-    if (this.watcher === void 0) return;
-    await this.watcher.close();
-    this.watcher = void 0;
-  }
-  // Read + parse one signal file, emit the channel note, delete the file. A malformed file is dropped
-  // (no throw) so a stray/partial write never wedges the watcher.
-  async handle(file) {
-    if (!file.endsWith(".json")) return;
-    let signal;
-    try {
-      signal = StatusSignal.parse(JSON.parse(readFileSync7(file, "utf8")));
-    } catch {
-      rmSync(file, { force: true });
-      return;
-    }
-    if (this.shouldEmit(signal.run)) await this.emit(statusNotification(signal));
-    rmSync(file, { force: true });
-  }
-};
-
 // src/channel/permission-relay.ts
-import { mkdirSync as mkdirSync9, readFileSync as readFileSync8, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join10 } from "node:path";
+import { mkdirSync as mkdirSync3, readFileSync as readFileSync2, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join4 } from "node:path";
 
 // src/channel/permission-event.ts
 var PermissionRequestSchema = external_exports.object({
@@ -31640,7 +30420,7 @@ function parseVerdictFile(raw) {
 // src/channel/permission-relay.ts
 var VERDICT_SUFFIX = ".verdict.json";
 function permissionsDir(cwd) {
-  return join10(cwd, ".agentry", "run", "permissions");
+  return join4(cwd, ".agentry", "run", "permissions");
 }
 var PermissionRelay = class {
   constructor(cwd, emit) {
@@ -31666,7 +30446,7 @@ var PermissionRelay = class {
   start() {
     if (this.watcher !== void 0) return;
     const dir = permissionsDir(this.cwd);
-    mkdirSync9(dir, { recursive: true });
+    mkdirSync3(dir, { recursive: true });
     this.watcher = watch(dir, {
       ignoreInitial: false,
       persistent: true,
@@ -31696,9 +30476,9 @@ var PermissionRelay = class {
   onRequest(params) {
     this.pending.add(params.request_id);
     const dir = permissionsDir(this.cwd);
-    mkdirSync9(dir, { recursive: true });
+    mkdirSync3(dir, { recursive: true });
     const record2 = buildRequestFile(params, (/* @__PURE__ */ new Date()).toISOString());
-    writeFileSync6(join10(dir, `${params.request_id}.json`), JSON.stringify(record2, null, 2));
+    writeFileSync2(join4(dir, `${params.request_id}.json`), JSON.stringify(record2, null, 2));
   }
   // A verdict file appeared. Read + validate it; if its `request_id` is pending, emit the verdict,
   // drop the id, and delete both files. A malformed file or an unknown/stale id is ignored — we still
@@ -31706,17 +30486,17 @@ var PermissionRelay = class {
   async handleVerdict(filePath) {
     let raw;
     try {
-      raw = readFileSync8(filePath, "utf8");
+      raw = readFileSync2(filePath, "utf8");
     } catch {
       return;
     }
     const verdict = parseVerdictFile(raw);
     if (verdict === void 0) {
-      rmSync2(filePath, { force: true });
+      rmSync(filePath, { force: true });
       return;
     }
     if (!this.pending.has(verdict.request_id)) {
-      rmSync2(filePath, { force: true });
+      rmSync(filePath, { force: true });
       return;
     }
     this.pending.delete(verdict.request_id);
@@ -31725,10 +30505,1261 @@ var PermissionRelay = class {
       params: { request_id: verdict.request_id, behavior: verdict.behavior }
     });
     const dir = permissionsDir(this.cwd);
-    rmSync2(join10(dir, `${verdict.request_id}.json`), { force: true });
-    rmSync2(filePath, { force: true });
+    rmSync(join4(dir, `${verdict.request_id}.json`), { force: true });
+    rmSync(filePath, { force: true });
   }
 };
+
+// src/channel/status-bridge.ts
+import { mkdirSync as mkdirSync4, readFileSync as readFileSync3, rmSync as rmSync2 } from "node:fs";
+import { join as join5 } from "node:path";
+
+// src/channel/status-event.ts
+var StatusSignal = external_exports.object({
+  run: external_exports.string(),
+  task: external_exports.string(),
+  // the task node id, e.g. "task-003"
+  status: external_exports.string(),
+  // the new FLOW status (todo | in-progress | in-review | done)
+  at: external_exports.string().optional()
+  // ISO stamp the Workbench wrote it (display only)
+});
+function statusNotification(sig) {
+  return {
+    content: `Human set ${sig.task} status \u2192 ${sig.status} (run ${sig.run}).`,
+    meta: { run_id: sig.run, task: sig.task, status: sig.status, kind: "status" }
+  };
+}
+
+// src/channel/status-bridge.ts
+var StatusBridge = class {
+  constructor(cwd, emit, shouldEmit = () => true) {
+    this.cwd = cwd;
+    this.emit = emit;
+    this.shouldEmit = shouldEmit;
+  }
+  watcher;
+  // Start watching the status-signal dir. ignoreInitial is FALSE so a signal written while flow was down
+  // (between turns) still fires on startup — and is deleted after, so it never re-fires. The dir is created
+  // up front (chokidar on a missing dir reports ready but never watches — the macOS gotcha).
+  start() {
+    if (this.watcher !== void 0) return;
+    const dir = join5(this.cwd, ".agentry", "run", "status-signals");
+    mkdirSync4(dir, { recursive: true });
+    this.watcher = watch(dir, { ignoreInitial: false, persistent: true, depth: 0 });
+    this.watcher.on("add", (file) => void this.handle(file));
+  }
+  async stop() {
+    if (this.watcher === void 0) return;
+    await this.watcher.close();
+    this.watcher = void 0;
+  }
+  // Read + parse one signal file, emit the channel note, delete the file. A malformed file is dropped
+  // (no throw) so a stray/partial write never wedges the watcher.
+  async handle(file) {
+    if (!file.endsWith(".json")) return;
+    let signal;
+    try {
+      signal = StatusSignal.parse(JSON.parse(readFileSync3(file, "utf8")));
+    } catch {
+      rmSync2(file, { force: true });
+      return;
+    }
+    if (this.shouldEmit(signal.run)) await this.emit(statusNotification(signal));
+    rmSync2(file, { force: true });
+  }
+};
+
+// src/persistence/backlog-store.ts
+var import_yaml = __toESM(require_dist2(), 1);
+import {
+  existsSync,
+  mkdirSync as mkdirSync5,
+  readFileSync as readFileSync4,
+  readdirSync as readdirSync2,
+  unlinkSync,
+  writeFileSync as writeFileSync3
+} from "node:fs";
+import { join as join6 } from "node:path";
+
+// src/domain/backlog.ts
+var BacklogStatus = external_exports.enum(["backlog", "ready", "claimed", "done"]);
+var BacklogItem = external_exports.object({
+  id: external_exports.string(),
+  title: external_exports.string(),
+  /** Permissive on purpose, mirroring `Kind` in @agentry/core: accept an unknown kind rather than
+   *  reject it, so adding one later cannot throw on an old record. */
+  kind: external_exports.string().default("feature"),
+  status: BacklogStatus.default("backlog"),
+  createdAt: external_exports.string(),
+  updatedAt: external_exports.string(),
+  /** Runs spawned from this item — usually 0 or 1, but a re-run appends rather than replaces. */
+  runs: external_exports.array(external_exports.string()).default([]),
+  /** The context an agent starts from: markdown, `@task-…` / `@memory:…` references. */
+  body: external_exports.string().default("")
+});
+var STEM_WORDS2 = 3;
+var STEM_MAX2 = 20;
+function slug2(text) {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS2);
+  while (words.length > 1 && words.join("-").length > STEM_MAX2) words.pop();
+  return words.join("-").slice(0, STEM_MAX2).replace(/-+$/g, "");
+}
+function shortId2() {
+  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+}
+function mintBacklogId(title) {
+  const id = `b-${slug2(title) || "item"}-${shortId2()}`;
+  assertSafeSegment(id);
+  return id;
+}
+function isReady(item) {
+  return item.status === "ready";
+}
+
+// src/persistence/backlog-store.ts
+var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var LEADING_FRONTMATTER = /^---\n[\s\S]*?\n---\n?/;
+var FsBacklogStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  dir() {
+    return join6(this.cwd, ".agentry", "backlog");
+  }
+  file(id) {
+    assertSafeSegment(id);
+    return join6(this.dir(), `${id}.md`);
+  }
+  read(id) {
+    const file = this.file(id);
+    if (!existsSync(file)) return void 0;
+    try {
+      return this.parse(readFileSync4(file, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+  /** Every item, newest first. A file that fails to parse is SKIPPED, never fatal: one bad item must
+   *  not take the whole board down. */
+  list() {
+    const dir = this.dir();
+    if (!existsSync(dir)) return [];
+    const items = [];
+    for (const name of readdirSync2(dir)) {
+      if (!name.endsWith(".md")) continue;
+      try {
+        items.push(this.parse(readFileSync4(join6(dir, name), "utf8")));
+      } catch {
+      }
+    }
+    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  write(item) {
+    const validated = BacklogItem.parse(item);
+    mkdirSync5(this.dir(), { recursive: true });
+    writeFileSync3(this.file(validated.id), this.render(validated));
+  }
+  remove(id) {
+    const file = this.file(id);
+    if (existsSync(file)) unlinkSync(file);
+  }
+  // ── shape ────────────────────────────────────────────────────────────────────────────────────────
+  // The body lives BELOW the frontmatter (not as a `body:` yaml field) so an item reads as a document:
+  // `cat` it, edit it in any editor, diff it in a PR.
+  render(item) {
+    const { body, ...frontmatter } = item;
+    const yaml = (0, import_yaml.stringify)(frontmatter);
+    return `---
+${yaml}---
+
+${body.replace(LEADING_FRONTMATTER, "").trim()}
+`;
+  }
+  parse(text) {
+    const m = FRONTMATTER.exec(text);
+    if (!m || m[1] === void 0) throw new Error("backlog item has no frontmatter");
+    const frontmatter = (0, import_yaml.parse)(m[1]);
+    return BacklogItem.parse({ ...frontmatter, body: (m[2] ?? "").trim() });
+  }
+};
+
+// src/persistence/event-log.ts
+import { appendFileSync, existsSync as existsSync2, mkdirSync as mkdirSync6, readFileSync as readFileSync5 } from "node:fs";
+import { join as join7 } from "node:path";
+
+// src/domain/events.ts
+var RoutingDecisionEvent = external_exports.object({
+  ts: external_exports.string(),
+  type: external_exports.literal("routing-decision"),
+  shape: external_exports.enum(["one-shot", "spec-first", "decompose+verify"]),
+  kind: external_exports.enum(["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"])
+});
+var GateEvent = external_exports.object({
+  ts: external_exports.string(),
+  type: external_exports.literal("gate"),
+  gate: external_exports.enum(["spec", "plan", "ship"]),
+  outcome: external_exports.enum(["reached", "approved", "changes"])
+});
+var NodeEnterEvent = external_exports.object({
+  ts: external_exports.string(),
+  type: external_exports.literal("node-enter"),
+  node: external_exports.string(),
+  agent: external_exports.string().optional()
+});
+var NodeDoneEvent = external_exports.object({
+  ts: external_exports.string(),
+  type: external_exports.literal("node-done"),
+  node: external_exports.string(),
+  durationMs: external_exports.number()
+});
+var FlowEvent = external_exports.discriminatedUnion("type", [
+  RoutingDecisionEvent,
+  GateEvent,
+  NodeEnterEvent,
+  NodeDoneEvent
+]);
+var HookBackstopLine = external_exports.object({
+  ts: external_exports.string(),
+  kind: external_exports.string(),
+  agent: external_exports.string().optional(),
+  agentId: external_exports.string().optional(),
+  session: external_exports.string().optional()
+});
+function parseLogLine(line) {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) return { kind: "skip" };
+  let raw;
+  try {
+    raw = JSON.parse(trimmed);
+  } catch {
+    return { kind: "skip" };
+  }
+  if (typeof raw !== "object" || raw === null) return { kind: "skip" };
+  const obj = raw;
+  if ("type" in obj) {
+    const parsed = FlowEvent.safeParse(obj);
+    return parsed.success ? { kind: "flow", event: parsed.data } : { kind: "skip" };
+  }
+  if ("kind" in obj) {
+    const agent = obj.agent;
+    if (typeof agent !== "string" || agent.length === 0) return { kind: "skip" };
+    const parsed = HookBackstopLine.safeParse(obj);
+    return parsed.success ? { kind: "hook", line: parsed.data } : { kind: "skip" };
+  }
+  return { kind: "skip" };
+}
+
+// src/persistence/event-log.ts
+var JsonlEventLog = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  logPath(run) {
+    return join7(runDir(this.cwd, run), "events.jsonl");
+  }
+  // Validate through the closed FLOW union (a malformed event can never reach the stream — the
+  // schema enforcement of AC8's typed vocabulary), then append exactly one line.
+  append(run, event) {
+    const validated = FlowEvent.parse(event);
+    const dir = runDir(this.cwd, run);
+    mkdirSync6(dir, { recursive: true });
+    appendFileSync(this.logPath(run), `${JSON.stringify(validated)}
+`);
+  }
+  // Return the raw lines (newest-relevant left to the reader). `since` filters by the `ts` field
+  // lexicographically — ISO-8601 timestamps sort chronologically, so a string compare is correct.
+  tail(run, since) {
+    const path = this.logPath(run);
+    if (!existsSync2(path)) return [];
+    const lines = readFileSync5(path, "utf8").split("\n").filter((l) => l.trim().length > 0);
+    if (since === void 0) return lines;
+    return lines.filter((line) => {
+      try {
+        const ts = JSON.parse(line).ts;
+        return typeof ts === "string" && ts >= since;
+      } catch {
+        return false;
+      }
+    });
+  }
+};
+
+// src/persistence/review-store.ts
+import { existsSync as existsSync3, mkdirSync as mkdirSync7, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join8 } from "node:path";
+var JsonReviewStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  gateFile(run, gate) {
+    assertSafeSegment(gate);
+    return join8(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+  }
+  read(run, gate) {
+    const file = this.gateFile(run, gate);
+    if (!existsSync3(file)) return [];
+    try {
+      const raw = JSON.parse(readFileSync6(file, "utf8"));
+      if (!Array.isArray(raw)) return [];
+      return raw.map((c) => ReviewComment.parse(c));
+    } catch {
+      return [];
+    }
+  }
+  write(run, gate, comments) {
+    const validated = comments.map((c) => ReviewComment.parse(c));
+    const file = this.gateFile(run, gate);
+    mkdirSync7(join8(runDir(this.cwd, run), ".review"), { recursive: true });
+    writeFileSync4(file, `${JSON.stringify(validated, null, 2)}
+`);
+  }
+};
+
+// src/persistence/run-state-store.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync8, readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join9 } from "node:path";
+var JsonRunStateStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  statePath(run) {
+    return join9(runDir(this.cwd, run), "run-state.json");
+  }
+  // Create `.agentry/work/<run>/` (asserts the run segment via runDir). Idempotent.
+  ensureRun(run) {
+    mkdirSync8(runDir(this.cwd, run), { recursive: true });
+  }
+  readRunState(run) {
+    const path = this.statePath(run);
+    if (!existsSync4(path)) return void 0;
+    try {
+      const raw = JSON.parse(readFileSync7(path, "utf8"));
+      return typeof raw === "object" && raw !== null ? raw : void 0;
+    } catch {
+      return void 0;
+    }
+  }
+  writeRunState(run, state) {
+    this.ensureRun(run);
+    writeFileSync5(this.statePath(run), `${JSON.stringify(state, null, 2)}
+`);
+  }
+};
+
+// src/persistence/task-file-store.ts
+var import_yaml2 = __toESM(require_dist2(), 1);
+import {
+  existsSync as existsSync5,
+  mkdirSync as mkdirSync9,
+  readFileSync as readFileSync8,
+  readdirSync as readdirSync3,
+  unlinkSync as unlinkSync2,
+  writeFileSync as writeFileSync6
+} from "node:fs";
+import { join as join10 } from "node:path";
+
+// src/domain/version.ts
+import { createHash } from "node:crypto";
+function computeVersion(body, frontmatterSansVersion) {
+  const sortedKeys = Object.keys(frontmatterSansVersion).sort();
+  const canonicalFront = JSON.stringify(frontmatterSansVersion, sortedKeys);
+  const hash = createHash("sha256");
+  hash.update(canonicalFront, "utf8");
+  hash.update("\n", "utf8");
+  hash.update(body, "utf8");
+  return hash.digest("hex").slice(0, 16);
+}
+
+// src/persistence/task-file-store.ts
+var FRONTMATTER2 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var LEADING_FRONTMATTER2 = /^---\n[\s\S]*?\n---\n?/;
+function stripLeadingFrontmatter(body) {
+  return body.replace(LEADING_FRONTMATTER2, "");
+}
+var TaskFileStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  tasksDir(run) {
+    return join10(runDir(this.cwd, run), "tasks");
+  }
+  readTask(run, taskNo) {
+    const dir = this.tasksDir(run);
+    if (!existsSync5(dir)) return void 0;
+    const prefix = `${taskNo}-`;
+    const file = readdirSync3(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
+    if (!file) return void 0;
+    return this.parseTaskFile(join10(dir, file), taskNo);
+  }
+  listTasks(run) {
+    const dir = this.tasksDir(run);
+    if (!existsSync5(dir)) return [];
+    const tasks = [];
+    for (const file of readdirSync3(dir).sort()) {
+      if (!file.endsWith(".md")) continue;
+      const taskNo = file.slice(0, file.indexOf("-"));
+      const task = this.parseTaskFile(join10(dir, file), taskNo);
+      if (task) tasks.push(task);
+    }
+    return tasks;
+  }
+  writeTask(run, task) {
+    const dir = this.tasksDir(run);
+    mkdirSync9(dir, { recursive: true });
+    const prefix = `${task.taskNo}-`;
+    for (const f of readdirSync3(dir)) {
+      if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync2(join10(dir, f));
+    }
+    const file = `${task.taskNo}-${this.slugOf(task)}.md`;
+    writeFileSync6(
+      join10(dir, file),
+      this.render(task.frontmatter, stripLeadingFrontmatter(task.body))
+    );
+  }
+  readArtifact(run, kind) {
+    const file = join10(runDir(this.cwd, run), `${kind}.md`);
+    if (!existsSync5(file)) return void 0;
+    const m = FRONTMATTER2.exec(readFileSync8(file, "utf8"));
+    return m ? (m[2] ?? "").trim() : readFileSync8(file, "utf8");
+  }
+  writeArtifact(run, kind, body) {
+    const dir = runDir(this.cwd, run);
+    mkdirSync9(dir, { recursive: true });
+    writeFileSync6(join10(dir, `${kind}.md`), this.render({ kind }, body));
+  }
+  // Render frontmatter + body, stamping a tool-computed `version` (AC4/AC5). Any caller-supplied
+  // `version` is dropped first, then recomputed over (body, frontmatter-sans-version) — so the
+  // caller can never set the version and a body edit always yields a different one.
+  render(frontmatter, body) {
+    const { version: _dropped, ...front } = frontmatter;
+    const version2 = computeVersion(body, front);
+    const stamped = { ...front, version: version2 };
+    return `---
+${(0, import_yaml2.stringify)(stamped)}---
+
+${body}
+`;
+  }
+  slugOf(task) {
+    const title = typeof task.frontmatter.title === "string" ? task.frontmatter.title : "";
+    const slug3 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
+    return slug3 || "task";
+  }
+  parseTaskFile(path, taskNo) {
+    const m = FRONTMATTER2.exec(readFileSync8(path, "utf8"));
+    if (!m) return void 0;
+    const frontmatter = (0, import_yaml2.parse)(m[1] ?? "") ?? {};
+    return { taskNo, frontmatter, body: (m[2] ?? "").trim() };
+  }
+};
+
+// src/resolution/comment-routing.ts
+function shouldRouteToThisSession(run, deps) {
+  if (deps.myRuns.has(run)) return true;
+  const owners = deps.sessionsBoundTo(run);
+  if (deps.mySessionId !== void 0 && owners.includes(deps.mySessionId)) return true;
+  if (owners.length > 0) return false;
+  return true;
+}
+
+// src/resolution/process-identity.ts
+var operatedRuns = /* @__PURE__ */ new Set();
+var sessionId;
+function noteRunArg(run) {
+  if (run !== void 0 && run.length > 0) operatedRuns.add(run);
+}
+function noteSessionArg(session_id) {
+  if (sessionId === void 0 && session_id !== void 0 && session_id.length > 0) {
+    sessionId = session_id;
+  }
+}
+function knownRuns() {
+  return operatedRuns;
+}
+function knownSessionId() {
+  return sessionId;
+}
+
+// src/domain/status.ts
+var FlowTaskStatus = external_exports.enum(["todo", "in-progress", "in-review", "done"]);
+var AgentState = external_exports.enum(["working", "blocked", "done"]);
+
+// src/application/agent-service.ts
+var AgentService = class {
+  constructor(runs) {
+    this.runs = runs;
+  }
+  // Read the current roster from run-state, tolerating a fresh/absent/foreign-shaped file as empty.
+  roster(run) {
+    const raw = this.runs.readRunState(run);
+    const agents = raw?.agents;
+    if (typeof agents !== "object" || agents === null) return { agents: {} };
+    return { agents };
+  }
+  /**
+   * Record an agent's live state against the run-state json. Validates `state` against T01's
+   * `AgentState` enum (`working | blocked | done`) — an out-of-enum value is REJECTED and NOTHING is
+   * written (the rejection precedes any store touch). Per ADR-004, `blocked` is a valid AGENT state
+   * here (it is not a task status). Preserves an existing `assignedTask` (T02 owns that write).
+   */
+  setState(run, agent, state, now = () => (/* @__PURE__ */ new Date()).toISOString()) {
+    if (agent.trim().length === 0) {
+      return { ok: false, reason: "bad-input", field: "agent", rule: "a non-empty agent id" };
+    }
+    const parsed = AgentState.safeParse(state);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        reason: "bad-input",
+        field: "state",
+        rule: `one of ${AgentState.options.join(", ")}`
+      };
+    }
+    const roster = this.roster(run);
+    const existing = roster.agents[agent];
+    const changed = existing?.state !== parsed.data;
+    const since = changed || existing?.since === void 0 ? now() : existing.since;
+    roster.agents[agent] = { ...existing, state: parsed.data, since };
+    this.runs.writeRunState(run, roster);
+    return { ok: true, agent, state: parsed.data };
+  }
+  /**
+   * The current roster: every recorded agent with its live `state` and optional `assignedTask`. An
+   * empty/absent run-state reads as an empty roster (a run with no agents yet is valid, not an error).
+   */
+  listRoster(run) {
+    const { agents } = this.roster(run);
+    return Object.entries(agents).map(([agent, entry]) => ({
+      agent,
+      state: entry.state,
+      ...entry.assignedTask !== void 0 ? { assignedTask: entry.assignedTask } : {},
+      ...entry.since !== void 0 ? { since: entry.since } : {}
+    }));
+  }
+};
+
+// src/tools/errors.ts
+var FlowErrorCode = external_exports.enum([
+  "bad-input",
+  // passes shape validation but is semantically invalid (blank run, out-of-range)
+  "not-found",
+  // a referenced run/task/artifact does not exist
+  "invalid-state",
+  // the target exists but the op does not apply (illegal status transition)
+  "internal"
+  // an unexpected exception inside a handler
+]);
+var FlowError = external_exports.object({
+  code: FlowErrorCode,
+  // stable machine category (closed set above)
+  what: external_exports.string().min(1),
+  // what went wrong, human-readable
+  why: external_exports.string().min(1),
+  // the cause, including the offending value where relevant
+  fix: external_exports.string().min(1)
+  // a concrete instruction for the next call (names field + valid form)
+});
+var badInput = (field, rule) => FlowError.parse({
+  code: "bad-input",
+  what: "An input value is semantically invalid.",
+  why: `The "${field}" value does not satisfy its constraint: ${rule}.`,
+  fix: `Set "${field}" to a value that satisfies: ${rule}, then retry.`
+});
+var notFound = (what, id) => FlowError.parse({
+  code: "not-found",
+  what: `The requested ${what} does not exist.`,
+  why: `No ${what} was found for "${id}".`,
+  fix: `Pass an existing ${what} \u2014 call run_start to mint a run, or list/get first to obtain a valid id, then retry.`
+});
+var invalidState = (what, why, fix) => FlowError.parse({ code: "invalid-state", what, why, fix });
+var internal = () => FlowError.parse({
+  code: "internal",
+  what: "An unexpected internal error occurred.",
+  why: "The handler failed for an internal reason, not because of the caller's input.",
+  fix: "Retry the request; if it persists, the issue is server-side and not fixable by changing the call."
+});
+
+// src/tools/result.ts
+var ok = (data) => ({
+  content: [{ type: "text", text: JSON.stringify(data) }]
+});
+var err = (envelope) => ({
+  content: [{ type: "text", text: JSON.stringify({ error: envelope }) }],
+  isError: true
+});
+
+// src/tools/adapter.ts
+var guard = (handler) => async (args) => {
+  try {
+    return await handler(args);
+  } catch {
+    return err(internal());
+  }
+};
+
+// src/tools/agent-tools.ts
+function registerAgentTools(server, ctx) {
+  const service = new AgentService(ctx.runs);
+  server.registerTool(
+    "agent_state",
+    {
+      description: "Record an agent's live state against the run (working|blocked|done). FLOW records state; it does NOT dispatch (the native Agent tool dispatches). 'blocked' is an AGENT state, not a task status (ADR-004).",
+      inputSchema: {
+        run: external_exports.string(),
+        agent: external_exports.string(),
+        state: AgentState
+      }
+    },
+    guard(async (args) => {
+      const outcome = service.setState(args.run, args.agent, args.state);
+      if (outcome.ok) return ok({ agent: outcome.agent, state: outcome.state });
+      return err(badInput(outcome.field, outcome.rule));
+    })
+  );
+  server.registerTool(
+    "agent_roster",
+    {
+      description: "The current agent roster for the run: each agent with its live state and assigned task (if any).",
+      inputSchema: {
+        run: external_exports.string()
+      }
+    },
+    guard(async (args) => ok({ agents: service.listRoster(args.run) }))
+  );
+}
+
+// src/application/backlog-service.ts
+var BacklogService = class {
+  constructor(store, runs, now) {
+    this.store = store;
+    this.runs = runs;
+    this.now = now;
+  }
+  add(input) {
+    const ts = this.now();
+    const item = BacklogItem.parse({
+      id: mintBacklogId(input.title),
+      title: input.title,
+      kind: input.kind ?? "feature",
+      status: input.ready === true ? "ready" : "backlog",
+      createdAt: ts,
+      updatedAt: ts,
+      runs: [],
+      body: input.body ?? ""
+    });
+    this.store.write(item);
+    return item;
+  }
+  list(status) {
+    const all = this.store.list();
+    return status === void 0 ? all : all.filter((i) => i.status === status);
+  }
+  /** Patch an item. Absent fields are left alone — this is a patch, not a replace, so a caller that
+   *  knows only the new status cannot accidentally blank the body. */
+  update(input) {
+    const current = this.store.read(input.id);
+    if (!current) return void 0;
+    const next = BacklogItem.parse({
+      ...current,
+      ...input.title !== void 0 ? { title: input.title } : {},
+      ...input.body !== void 0 ? { body: input.body } : {},
+      ...input.kind !== void 0 ? { kind: input.kind } : {},
+      ...input.status !== void 0 ? { status: input.status } : {},
+      updatedAt: this.now()
+    });
+    this.store.write(next);
+    return next;
+  }
+  /**
+   * Take an item and mint its run — the intent→work transition, and the ONLY one.
+   *
+   * With no id, claims the oldest READY item (the queue is FIFO: the thing that has waited longest goes
+   * first, which is what a queue means and what `/agentry:go` with no argument expects). The run is
+   * minted through the existing `RunService.start`, so a claimed run is indistinguishable from one a
+   * session started directly — same id shape, same scaffold, same layout.
+   */
+  claim(id, sessionId2) {
+    let item;
+    if (id !== void 0 && id.length > 0) {
+      item = this.store.read(id);
+      if (!item) return { ok: false, reason: "not_found" };
+      if (!isReady(item)) return { ok: false, reason: "not_ready" };
+    } else {
+      const queue = this.list("ready").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      item = queue[0];
+      if (!item) return { ok: false, reason: "empty_queue" };
+    }
+    const { run } = this.runs.start({
+      goal: item.title,
+      ...sessionId2 !== void 0 && sessionId2.length > 0 ? { session_id: sessionId2 } : {}
+    });
+    const claimed = BacklogItem.parse({
+      ...item,
+      status: "claimed",
+      runs: [...item.runs, run],
+      updatedAt: this.now()
+    });
+    this.store.write(claimed);
+    return { ok: true, item: claimed, run };
+  }
+};
+
+// src/application/run-service.ts
+var SPEC_SCAFFOLD = [
+  "# Spec",
+  "",
+  "_Scaffolded by run_start. Replace with the real spec via artifact_write(spec)._",
+  "",
+  "## Job to be done",
+  "",
+  "## Acceptance criteria",
+  ""
+].join("\n");
+var RunService = class {
+  constructor(services) {
+    this.services = services;
+  }
+  // The run front door (ADR-005). Mints <run> when absent, creates the run dir + spec scaffold, and
+  // seeds the session pointer ONLY when session_id is passed. Returns the explicit run handle.
+  start(input) {
+    const run = input.run && input.run.length > 0 ? input.run : mintRun(input.goal ?? "run");
+    this.services.runs.ensureRun(run);
+    this.services.tasks.writeArtifact(run, "spec", SPEC_SCAFFOLD);
+    if (input.session_id && input.session_id.length > 0) {
+      writeSessionPointer(this.services.cwd, input.session_id, run);
+    }
+    return { run };
+  }
+  // Read the run's live state json (the agent roster + states; T05 owns its field contract). Plain
+  // record or `{}` when the run has no state yet — never throws on a missing/corrupt file.
+  get(run) {
+    return { run, state: this.services.runs.readRunState(run) ?? {} };
+  }
+  // Validate `type` against the closed FlowEvent union (AC8) and append via the EventLog port. Returns
+  // `{ ok: false }` with the offending field when the event is out-of-union, so the adapter maps it to a
+  // bad-input envelope rather than letting the closed union throw.
+  emit(run, event) {
+    const parsed = FlowEvent.safeParse(event);
+    if (!parsed.success) {
+      const issue2 = parsed.error.issues[0];
+      const field = issue2 && issue2.path.length > 0 ? String(issue2.path[0]) : "type";
+      const rule = field === "type" ? "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)" : issue2?.message ?? "the value required by the FlowEvent schema for this type";
+      return { ok: false, field, rule };
+    }
+    this.services.events.append(run, parsed.data);
+    return { ok: true };
+  }
+  // Read the stream and return ONLY the typed FLOW events (the signature promises `FlowEvent[]`).
+  // `parseLogLine` transparently handles both line shapes and drops empty-`agent` main-session lines;
+  // hook backstop lines are not FLOW events, so they don't appear in this typed view (they surface via
+  // `status`'s reconciliation instead).
+  tail(run, since) {
+    const events = [];
+    for (const raw of this.services.events.tail(run, since)) {
+      const parsed = parseLogLine(raw);
+      if (parsed.kind === "flow") events.push(parsed.event);
+    }
+    return { events };
+  }
+  // Read-time backstop reconciliation (ADR-003 — flag, never block). Cross-check the hook's subagent
+  // boundaries (real `agent` lines) against FLOW's node lines: a hook `agent-started`/`agent-done` for
+  // an agent FLOW emitted no matching `node-enter`/`node-done` for is a disagreement (the skipped-call
+  // signal, AC9). Pure read-time computation; nothing is written and nothing blocks.
+  status(run) {
+    const lines = this.services.events.tail(run);
+    const flowEnteredAgents = /* @__PURE__ */ new Set();
+    const flowDoneNodes = /* @__PURE__ */ new Set();
+    const flowEnterNodeByAgent = /* @__PURE__ */ new Map();
+    const hookStarted = [];
+    const hookDone = [];
+    for (const raw of lines) {
+      const parsed = parseLogLine(raw);
+      if (parsed.kind === "flow") {
+        const ev = parsed.event;
+        if (ev.type === "node-enter" && ev.agent) {
+          flowEnteredAgents.add(ev.agent);
+          flowEnterNodeByAgent.set(ev.agent, ev.node);
+        } else if (ev.type === "node-done") {
+          flowDoneNodes.add(ev.node);
+        }
+      } else if (parsed.kind === "hook") {
+        const agent = parsed.line.agent;
+        if (agent === void 0) continue;
+        if (parsed.line.kind === "agent-started") hookStarted.push({ agent, ts: parsed.line.ts });
+        else if (parsed.line.kind === "agent-done") hookDone.push({ agent, ts: parsed.line.ts });
+      }
+    }
+    const disagreements = [];
+    for (const { agent, ts } of hookStarted) {
+      if (!flowEnteredAgents.has(agent)) {
+        disagreements.push({
+          agent,
+          kind: "started",
+          ts,
+          reason: `hook recorded agent-started for "${agent}" but FLOW emitted no node-enter for it (a skipped FLOW call)`
+        });
+      }
+    }
+    for (const { agent, ts } of hookDone) {
+      const node = flowEnterNodeByAgent.get(agent);
+      if (node === void 0 || !flowDoneNodes.has(node)) {
+        disagreements.push({
+          agent,
+          kind: "done",
+          ts,
+          reason: `hook recorded agent-done for "${agent}" but FLOW emitted no matching node-done (a skipped FLOW call)`
+        });
+      }
+    }
+    return { run, tasks: this.summarizeTasks(run), backstopDisagreements: disagreements };
+  }
+  // Per-status tally of the run's tasks (the "tasks summary"). A loose `status` string is counted
+  // under its own key; a task with no/non-string status falls under "unknown".
+  summarizeTasks(run) {
+    const summary = {};
+    for (const task of this.services.tasks.listTasks(run)) {
+      const status = typeof task.frontmatter.status === "string" ? task.frontmatter.status : "unknown";
+      summary[status] = (summary[status] ?? 0) + 1;
+    }
+    return summary;
+  }
+};
+
+// src/tools/backlog-tools.ts
+function registerBacklogTools(server, ctx) {
+  const runService = new RunService(ctx);
+  const service = new BacklogService(ctx.backlog, runService, () => (/* @__PURE__ */ new Date()).toISOString());
+  server.registerTool(
+    "backlog_add",
+    {
+      description: "Add an item to this project's backlog \u2014 durable intent that has not become a run yet. Use to capture work to do later. Set ready:true to queue it for the conductor instead of parking it.",
+      inputSchema: {
+        title: external_exports.string(),
+        body: external_exports.string().optional(),
+        kind: external_exports.string().optional(),
+        ready: external_exports.boolean().optional()
+      }
+    },
+    guard(async (args) => ok(service.add(args)))
+  );
+  server.registerTool(
+    "backlog_list",
+    {
+      description: "List this project's backlog items, newest first. Filter by status to read the queue (status:'ready') or what is parked (status:'backlog').",
+      inputSchema: { status: BacklogStatus.optional() }
+    },
+    guard(async (args) => ok({ items: service.list(args.status) }))
+  );
+  server.registerTool(
+    "backlog_update",
+    {
+      description: "Patch a backlog item \u2014 retitle it, rewrite its context, or move it between backlog/ready/claimed/done. Absent fields are left alone.",
+      inputSchema: {
+        id: external_exports.string(),
+        title: external_exports.string().optional(),
+        body: external_exports.string().optional(),
+        kind: external_exports.string().optional(),
+        status: BacklogStatus.optional()
+      }
+    },
+    guard(async (args) => {
+      const item = service.update(args);
+      return item ? ok(item) : err(notFound("backlog item", args.id));
+    })
+  );
+  server.registerTool(
+    "backlog_claim",
+    {
+      description: "Take a backlog item and mint its run \u2014 the intent\u2192work transition. With no id, claims the item that has waited longest in the ready queue. This is how a conducting session picks up queued work.",
+      inputSchema: { id: external_exports.string().optional(), session_id: external_exports.string().optional() }
+    },
+    guard(async (args) => {
+      const outcome = service.claim(args.id, args.session_id);
+      if (outcome.ok) return ok({ item: outcome.item, run: outcome.run });
+      if (outcome.reason === "not_found") return err(notFound("backlog item", args.id ?? ""));
+      return err(
+        outcome.reason === "empty_queue" ? invalidState(
+          "the ready queue",
+          "nothing is queued",
+          "Move an item to ready first \u2014 backlog_update with status:'ready'."
+        ) : invalidState(
+          "this backlog item",
+          "only a ready item can be claimed",
+          "Set it ready first \u2014 backlog_update with status:'ready'."
+        )
+      );
+    })
+  );
+}
+
+// src/application/review-service.ts
+function mintCommentId() {
+  return `c-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
+}
+var ReviewService = class {
+  constructor(reviews) {
+    this.reviews = reviews;
+  }
+  // Append a comment with the 3-way anchor to the gate's sidecar. A fresh comment is always open
+  // (`resolved:false`); the id is minted here so the caller gets back a handle to resolve it later.
+  comment(input) {
+    const id = mintCommentId();
+    const comment = {
+      id,
+      anchor: input.anchor,
+      decision: input.decision,
+      body: input.body,
+      resolved: false
+    };
+    const existing = this.reviews.read(input.run, input.gate);
+    this.reviews.write(input.run, input.gate, [...existing, comment]);
+    return { id };
+  }
+  // Append an agent reply (ADR-002 `channel_reply`) to the gate's sidecar — the agent→human ack/status
+  // lane that rides the SAME `.review/` bus as human comments. It is marked `origin:"agent"` so (1) the
+  // channel bridge skips it (no echo loop) and (2) open-gate read-models keep "waiting on you" human-only;
+  // `resolved:true` so the existing `!resolved` open-filter also drops it without a schema change. A reply
+  // has no review anchor/decision (ADR-002), so neutral placeholders satisfy the closed schema — the rail
+  // (Phase 2b) renders by `origin`, not by these fields. Returns the new reply's id.
+  reply(input) {
+    const id = mintCommentId();
+    const reply = {
+      id,
+      anchor: { originalText: "", headingAnchor: "", startLine: 0 },
+      // a reply has no span (ADR-002)
+      decision: "question",
+      // schema-required; not a verdict — a reply carries no review decision
+      body: input.body,
+      resolved: true,
+      // not an open human gate item — keeps it out of the "waiting on you" list
+      origin: "agent",
+      ...input.replyTo !== void 0 ? { replyTo: input.replyTo } : {}
+    };
+    const existing = this.reviews.read(input.run, input.gate);
+    this.reviews.write(input.run, input.gate, [...existing, reply]);
+    return { id };
+  }
+  // Mark one comment resolved so it is distinguishable from open ones (AC10). Idempotent: resolving an
+  // already-resolved comment succeeds (the post-state is the same). An unknown id is `not-found`.
+  resolve(run, gate, id) {
+    const comments = this.reviews.read(run, gate);
+    const target = comments.find((c) => c.id === id);
+    if (target === void 0) return { ok: false, reason: "not-found", id };
+    const next = comments.map((c) => c.id === id ? { ...c, resolved: true } : c);
+    this.reviews.write(run, gate, next);
+    return { ok: true, id };
+  }
+  // The gate's review comments — what the conductor reads AT the gate to see open vs. resolved
+  // annotations. Agent replies (ADR-002 `channel_reply`) ride the same `.review/` bus but are NOT review
+  // annotations and must not pollute this read: they are filtered out by `origin:"agent"` so `review_list`
+  // (and "open items waiting on you" derived from it) stays human-only. The rail (Phase 2b) reads the raw
+  // sidecar to render replies; this application read is review-only.
+  list(run, gate) {
+    return { comments: this.reviews.read(run, gate).filter(isHumanComment) };
+  }
+};
+
+// src/tools/channel-reply-tools.ts
+function registerChannelReplyTools(server, ctx) {
+  const service = new ReviewService(ctx.reviews);
+  server.registerTool(
+    "channel_reply",
+    {
+      description: "Send a short reply/status back to the human in the Agentry Workbench conversation rail, in answer to a review comment. Use after addressing or acknowledging a <channel> review comment.",
+      inputSchema: {
+        run: external_exports.string(),
+        doc: external_exports.string(),
+        // the gate key (== docId) — the artifact the human commented on
+        body: external_exports.string(),
+        replyTo: external_exports.string().optional()
+        // the human comment id this answers (threading)
+      }
+    },
+    guard(
+      async (args) => ok(service.reply({ run: args.run, gate: args.doc, body: args.body, replyTo: args.replyTo }))
+    )
+  );
+}
+
+// src/tools/monitor-tools.ts
+function registerMonitorTools(server, ctx) {
+  const service = new RunService(ctx);
+  server.registerTool(
+    "run_start",
+    {
+      description: "The run front door: mint <run> (when absent) and return the explicit run handle the conductor threads into every later FLOW call. Creates .agentry/work/<run>/ + an initial spec.md scaffold; writes the session pointer only when session_id is passed.",
+      inputSchema: {
+        run: external_exports.string().optional(),
+        session_id: external_exports.string().optional(),
+        goal: external_exports.string().optional()
+      }
+    },
+    guard(async (args) => ok(service.start(args)))
+  );
+  server.registerTool(
+    "run_get",
+    {
+      description: "Read a run's live state (the agent roster + states). Returns { run, state }.",
+      inputSchema: { run: external_exports.string() }
+    },
+    guard(async (args) => ok(service.get(args.run)))
+  );
+  server.registerTool(
+    "run_status",
+    {
+      description: "Read-time run health: a per-status task summary + backstopDisagreements \u2014 the hook subagent boundaries with no matching FLOW node line (a skipped FLOW call, AC9). Flags, never blocks (ADR-003).",
+      inputSchema: { run: external_exports.string() }
+    },
+    guard(async (args) => ok(service.status(args.run)))
+  );
+  server.registerTool(
+    "event_emit",
+    {
+      description: "Append one conductor lifecycle line to events.jsonl (AC8). `type` must be a closed FlowEvent (routing-decision | gate | node-enter | node-done); `data` carries the type-specific fields. An out-of-union type is rejected.",
+      inputSchema: {
+        run: external_exports.string(),
+        type: external_exports.string(),
+        data: external_exports.record(external_exports.unknown()).optional()
+      }
+    },
+    guard(async (args) => {
+      const event = { ts: (/* @__PURE__ */ new Date()).toISOString(), type: args.type, ...args.data ?? {} };
+      const outcome = service.emit(args.run, event);
+      if (outcome.ok) return ok({ ok: true });
+      return err(badInput(outcome.field, outcome.rule));
+    })
+  );
+  server.registerTool(
+    "event_tail",
+    {
+      description: "Read the typed FLOW events from events.jsonl (optionally only those at/after `since`, an ISO timestamp). Parses both line shapes and filters empty-agent main-session lines; returns { events: FlowEvent[] }.",
+      inputSchema: { run: external_exports.string(), since: external_exports.string().optional() }
+    },
+    guard(async (args) => ok(service.tail(args.run, args.since)))
+  );
+}
+
+// src/tools/review-tools.ts
+function registerReviewTools(server, ctx) {
+  const service = new ReviewService(ctx.reviews);
+  server.registerTool(
+    "review_comment",
+    {
+      description: "Append a review comment with the 3-way anchor (originalText + headingAnchor + startLine) to a gate's annotation sidecar (.review/<gate>.annotations.json). The anchor re-locates the comment after the reviewed document changes. Returns the new comment's id.",
+      inputSchema: {
+        run: external_exports.string(),
+        gate: external_exports.string(),
+        anchor: ReviewAnchor,
+        decision: ReviewDecision,
+        body: external_exports.string()
+      }
+    },
+    guard(
+      async (args) => ok(
+        service.comment({
+          run: args.run,
+          gate: args.gate,
+          anchor: args.anchor,
+          decision: args.decision,
+          body: args.body
+        })
+      )
+    )
+  );
+  server.registerTool(
+    "review_resolve",
+    {
+      description: "Mark one review comment resolved (by id) so resolved comments are distinguishable from open ones. Idempotent; an unknown id is not-found.",
+      inputSchema: { run: external_exports.string(), gate: external_exports.string(), id: external_exports.string() }
+    },
+    guard(async (args) => {
+      const outcome = service.resolve(args.run, args.gate, args.id);
+      if (outcome.ok) return ok({ id: outcome.id, resolved: true });
+      return err(notFound("comment", outcome.id));
+    })
+  );
+  server.registerTool(
+    "review_list",
+    {
+      description: "List a gate's review comments \u2014 what the conductor reads AT the gate to see open vs. resolved annotations.",
+      inputSchema: { run: external_exports.string(), gate: external_exports.string() }
+    },
+    guard(async (args) => ok(service.list(args.run, args.gate)))
+  );
+}
+
+// src/application/task-service.ts
+var TaskService = class {
+  constructor(store) {
+    this.store = store;
+  }
+  // Create the next task file. The number is derived from the existing files (pure-file scan, ADR-001):
+  // max existing NNN + 1, zero-padded. `status` seeds to "todo" (the enum's entry state, ADR-004).
+  create(run, title, body) {
+    const taskNo = this.nextTaskNo(run);
+    const frontmatter = { title, status: "todo" };
+    return {
+      ...this.writeTask(run, { taskNo, frontmatter, body }),
+      path: this.taskPath(taskNo, title)
+    };
+  }
+  // Assign an agent: set `lockedBy` (+ `assignee`, the human-readable alias) on the task frontmatter.
+  // lockedBy is ALWAYS populated here (AC3) — there is no path that assigns without setting it. The
+  // existing frontmatter/body are preserved; only the assignment fields change, then the store re-stamps.
+  assign(run, taskNo, agent) {
+    const task = this.store.readTask(run, taskNo);
+    if (!task) return { ok: false, reason: "not-found", id: taskNo };
+    const frontmatter = { ...task.frontmatter, lockedBy: agent, assignee: agent };
+    const written = this.writeTask(run, { taskNo, frontmatter, body: task.body });
+    return { ok: true, value: { ...written, lockedBy: agent } };
+  }
+  // Move a task to a new lifecycle status. `status` is already validated against the closed enum at
+  // the zod boundary (AC2), so it is always one of {todo,in-progress,in-review,done} here. Preserves
+  // the rest of the frontmatter/body; the store re-stamps the version (AC5).
+  status(run, taskNo, status) {
+    const task = this.store.readTask(run, taskNo);
+    if (!task) return { ok: false, reason: "not-found", id: taskNo };
+    const frontmatter = { ...task.frontmatter, status };
+    const written = this.writeTask(run, { taskNo, frontmatter, body: task.body });
+    return { ok: true, value: { ...written, status } };
+  }
+  get(run, taskNo) {
+    const task = this.store.readTask(run, taskNo);
+    if (!task) return { ok: false, reason: "not-found", id: taskNo };
+    return { ok: true, value: { task } };
+  }
+  list(run) {
+    return { tasks: this.store.listTasks(run) };
+  }
+  // Write a run-root artifact (spec.md|plan.md). Same version-stamping write path as a task (AC4) —
+  // the store stamps the tool-computed version; editing the body and rewriting yields a different one.
+  // `version` is re-read from the persisted artifact so the caller sees the stamp that landed.
+  artifact(run, kind, body) {
+    this.store.writeArtifact(run, kind, body);
+    return { path: `${kind}.md`, version: this.artifactVersion(kind, body) };
+  }
+  // Write a task through the store (which stamps the version), then re-read the persisted record so the
+  // returned `version` is the one on disk — never a value this layer or the caller invented. Any
+  // caller-supplied `version` in the frontmatter is dropped before the write (defense in depth; the
+  // store also strips it).
+  writeTask(run, task) {
+    const { version: _dropped, ...frontmatter } = task.frontmatter;
+    this.store.writeTask(run, { ...task, frontmatter });
+    const persisted = this.store.readTask(run, task.taskNo);
+    const version2 = typeof persisted?.frontmatter.version === "string" ? persisted.frontmatter.version : "";
+    return { taskNo: task.taskNo, version: version2 };
+  }
+  // The version the store stamped for an artifact body: the store hashes over (body, {kind}), so we
+  // compute the same fingerprint to report it back (the store stamps `{kind}` as the only frontmatter).
+  artifactVersion(kind, body) {
+    return computeVersion(body, { kind });
+  }
+  // Next free task number: one past the highest existing NNN (pure-file scan, ADR-001). 001 for an
+  // empty run. Non-numeric prefixes are ignored so a stray file can't break numbering.
+  nextTaskNo(run) {
+    let max = 0;
+    for (const task of this.store.listTasks(run)) {
+      const n = Number.parseInt(task.taskNo, 10);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    return formatTaskNo(max + 1);
+  }
+  // The on-disk path the create result reports — `tasks/NNN-<slug>.md`. The slug mirrors the store's
+  // own `slugOf` (title → hyphenated ascii-word), so the reported path matches the file the store wrote.
+  taskPath(taskNo, title) {
+    const slug3 = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "") || "task";
+    return `tasks/${taskNo}-${slug3}.md`;
+  }
+};
+
+// src/tools/task-tools.ts
+function registerTaskTools(server, ctx) {
+  const service = new TaskService(ctx.tasks);
+  server.registerTool(
+    "task_create",
+    {
+      description: "Create the next task file (tasks/NNN-*.md) in a run. The tool numbers it and stamps a content-hash version (AC5). Requires `run` (call run_start first to mint one \u2014 ADR-005, no ambient run).",
+      inputSchema: {
+        run: external_exports.string(),
+        title: external_exports.string(),
+        body: external_exports.string().optional()
+      }
+    },
+    guard(async (args) => ok(service.create(args.run, args.title, args.body ?? "")))
+  );
+  server.registerTool(
+    "task_assign",
+    {
+      description: "Assign an agent to a task \u2014 sets `lockedBy` on the task frontmatter (never empty for an assigned task, AC3) and re-stamps the version. Requires `run`.",
+      inputSchema: {
+        run: external_exports.string(),
+        taskNo: external_exports.string(),
+        agent: external_exports.string()
+      }
+    },
+    guard(async (args) => {
+      const outcome = service.assign(args.run, args.taskNo, args.agent);
+      if (outcome.ok) return ok(outcome.value);
+      return err(notFound("task", outcome.id));
+    })
+  );
+  server.registerTool(
+    "task_status",
+    {
+      description: "Move a task to a new lifecycle status. `status` is the CLOSED enum {todo,in-progress,in-review,done} \u2014 any other value is rejected at the schema and no file is written (AC2). Re-stamps the version (AC5). Requires `run`.",
+      inputSchema: {
+        run: external_exports.string(),
+        taskNo: external_exports.string(),
+        // The closed FlowTaskStatus enum IS the validation boundary (AC2): an out-of-enum value fails
+        // here, before the handler — so an invalid status can never reach a file.
+        status: FlowTaskStatus
+      }
+    },
+    guard(async (args) => {
+      const outcome = service.status(args.run, args.taskNo, args.status);
+      if (outcome.ok) return ok(outcome.value);
+      return err(notFound("task", outcome.id));
+    })
+  );
+  server.registerTool(
+    "task_get",
+    {
+      description: "Read one task (frontmatter + body) by its number. Requires `run`.",
+      inputSchema: {
+        run: external_exports.string(),
+        taskNo: external_exports.string()
+      }
+    },
+    guard(async (args) => {
+      const outcome = service.get(args.run, args.taskNo);
+      if (outcome.ok) return ok(outcome.value);
+      return err(notFound("task", outcome.id));
+    })
+  );
+  server.registerTool(
+    "task_list",
+    {
+      description: "List all tasks in a run (a fresh directory scan over tasks/*.md \u2014 ADR-001 pure-file). Requires `run`.",
+      inputSchema: {
+        run: external_exports.string()
+      }
+    },
+    guard(async (args) => ok(service.list(args.run)))
+  );
+  server.registerTool(
+    "artifact_write",
+    {
+      description: "Write a run-root artifact (spec.md or plan.md) and stamp a tool-computed content-hash version (AC4). Editing the body and rewriting yields a different version. Requires `run`.",
+      inputSchema: {
+        run: external_exports.string(),
+        kind: external_exports.enum(["spec", "plan"]),
+        body: external_exports.string()
+      }
+    },
+    guard(async (args) => ok(service.artifact(args.run, args.kind, args.body)))
+  );
+}
 
 // src/index.ts
 var CHANNEL_CAPABILITY = "claude/channel";
@@ -31819,8 +31850,10 @@ async function main() {
 var invokedDirectly = process.argv[1] !== void 0 && import.meta.url === `file://${process.argv[1]}`;
 if (invokedDirectly) {
   main().catch((error2) => {
-    process.stderr.write(`[flow] fatal: ${error2 instanceof Error ? error2.message : String(error2)}
-`);
+    process.stderr.write(
+      `[flow] fatal: ${error2 instanceof Error ? error2.message : String(error2)}
+`
+    );
     process.exit(1);
   });
 }

@@ -1,3 +1,4 @@
+import MarkdownIt from "markdown-it";
 // memory-view — the Memory page's PURE view-model (the moat browser, design/memory.html). Sits beside
 // Memory.tsx the way works-kpis.ts sits beside Works.tsx: the route owns the CSS import + the JSX, this
 // module owns the deriveable shape so it is unit-testable without a DOM or a stylesheet. Maps a record's
@@ -7,7 +8,6 @@
 // read-only markdown render (markdown-it, the renderer the doc layer already bundles). No I/O, no React
 // components/hooks (the CSSProperties return is a type only).
 import type { CSSProperties } from "react";
-import MarkdownIt from "markdown-it";
 import type { MemReadRecord } from "../../api/index.js";
 
 // The body field name per record kind (the reader re-attaches the prose here: a fact's `text`, an
@@ -26,7 +26,8 @@ function strList(value: unknown): string[] {
 }
 function num(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)))
+    return Number(value);
   return undefined;
 }
 
@@ -51,7 +52,11 @@ export interface MemRow {
 
 /** The first sentence / line of the body, clamped — the human-scannable headline for a record. */
 function titleOf(body: string): string {
-  const firstLine = body.split("\n").find((l) => l.trim().length > 0)?.trim() ?? "";
+  const firstLine =
+    body
+      .split("\n")
+      .find((l) => l.trim().length > 0)
+      ?.trim() ?? "";
   const sentence = firstLine.split(/(?<=[.!?])\s/)[0] ?? firstLine;
   const head = sentence.length > 0 ? sentence : firstLine;
   return head.length > 140 ? `${head.slice(0, 139).trimEnd()}…` : head;
@@ -120,7 +125,11 @@ export function metricsFor(records: MemReadRecord[]): Metric[] {
   return [
     { k: "Total", v: rows.length, color: "var(--ink)" },
     { k: "Facts", v: rows.filter((r) => r.kind === "facts").length, color: typeColor("fact") },
-    { k: "Episodes", v: rows.filter((r) => r.kind === "episodes").length, color: typeColor("episode") },
+    {
+      k: "Episodes",
+      v: rows.filter((r) => r.kind === "episodes").length,
+      color: typeColor("episode"),
+    },
     { k: "Gotchas", v: byType("gotcha"), color: typeColor("gotcha") },
     { k: "Repo-facts", v: byType("repo-fact"), color: typeColor("repo-fact") },
     { k: "Decisions", v: byType("decision"), color: typeColor("decision") },

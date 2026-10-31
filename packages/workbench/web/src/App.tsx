@@ -1,3 +1,4 @@
+import type { BoardCard } from "@agentry/workbench-shared";
 // The Workbench app shell — the UI-v2 "Agent Center" language (design/ui-v2.html): a 248px sidebar
 // (text-only "Agentry Center" wordmark · Works/Memory/Gates nav with counts · live-server project card)
 // + a main column the routes fill over the fixed mesh-gradient background.
@@ -11,24 +12,31 @@
 // singleton while the project root is per-process, so the sidebar must name the project the server is
 // actually serving instead of a hardcoded string.
 import { useEffect, useState } from "react";
-import { BrowserRouter, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
-import type { BoardCard } from "@agentry/workbench-shared";
+import {
+  BrowserRouter,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { fetchBoard, fetchContext } from "./api/index.js";
 import { getWsClient } from "./api/ws.js";
 import { ApprovalsBanner } from "./routes/approvals/ApprovalsBanner.js";
-import { ConductorRail } from "./routes/rail/ConductorRail.js";
-import { OnShift } from "./routes/shell/OnShift.js";
-import { ProjectSwitcher } from "./routes/shell/ProjectSwitcher.js";
-import { useWorkspaceCounts, type WorkspaceCounts } from "./routes/shell/workspace-counts.js";
-import { Gates } from "./routes/gates/Gates.js";
-import { Memory } from "./routes/memory/Memory.js";
 import { Board } from "./routes/board/Board.js";
 import { RunView } from "./routes/board/RunView.js";
 import { runHref } from "./routes/board/board-view.js";
+import { Gates } from "./routes/gates/Gates.js";
+import { Memory } from "./routes/memory/Memory.js";
+import { ConductorRail } from "./routes/rail/ConductorRail.js";
 import { focusRun } from "./routes/rail/rail-state.js";
 import { Backlog } from "./routes/shell/Backlog.js";
+import { OnShift } from "./routes/shell/OnShift.js";
+import { ProjectSwitcher } from "./routes/shell/ProjectSwitcher.js";
 import { Projects } from "./routes/shell/Projects.js";
 import { Settings } from "./routes/shell/Settings.js";
+import { type WorkspaceCounts, useWorkspaceCounts } from "./routes/shell/workspace-counts.js";
 
 import "./ui/tokens.css";
 import "./App.css";
@@ -64,7 +72,8 @@ export function App() {
       .then((ctx) => setBoot({ kind: "ready", project: ctx.project, aliasRun: ctx.run }))
       // No server yet: fall back to the Works home rather than blocking the UI.
       .catch(() => {
-        if (!ctrl.signal.aborted) setBoot({ kind: "ready", project: undefined, aliasRun: undefined });
+        if (!ctrl.signal.aborted)
+          setBoot({ kind: "ready", project: undefined, aliasRun: undefined });
       });
     return () => ctrl.abort();
   }, []);
@@ -91,7 +100,10 @@ export function App() {
 }
 
 // The routed shell — split out of `App` only so it can use the router's hooks.
-function Shell({ project, aliasTarget }: { project: string | undefined; aliasTarget: string | undefined }) {
+function Shell({
+  project,
+  aliasTarget,
+}: { project: string | undefined; aliasTarget: string | undefined }) {
   // One shell, one column. The run VIEW is gone: `/work/<slug>` is the board with that run's pane open,
   // so a link into a run no longer takes you away from the board or from the conversation about it.
   return (
@@ -100,12 +112,18 @@ function Shell({ project, aliasTarget }: { project: string | undefined; aliasTar
       <main className="main">
         <div className="body">
           <Routes>
-            <Route path="/" element={aliasTarget ? <Navigate to={aliasTarget} replace /> : <Board />} />
+            <Route
+              path="/"
+              element={aliasTarget ? <Navigate to={aliasTarget} replace /> : <Board />}
+            />
             <Route path="/work/:slug/*" element={<RunRoute />} />
             <Route
               path="/backlog"
               element={
-                <PageHero title="Backlog" sub="Captured, not started — read it, then queue what is next.">
+                <PageHero
+                  title="Backlog"
+                  sub="Captured, not started — read it, then queue what is next."
+                >
                   <Backlog />
                 </PageHero>
               }
@@ -175,9 +193,27 @@ function RunRoute() {
         const match = Object.values(board.columns)
           .flat()
           .find((c) => c.run !== undefined && runHref(c.run).endsWith(`/${slug}`));
-        setCard(match ?? { id: slug, column: "running", title: slug, origin: "run", run: slug, updatedAt: "" });
+        setCard(
+          match ?? {
+            id: slug,
+            column: "running",
+            title: slug,
+            origin: "run",
+            run: slug,
+            updatedAt: "",
+          },
+        );
       })
-      .catch(() => setCard({ id: slug, column: "running", title: slug, origin: "run", run: slug, updatedAt: "" }));
+      .catch(() =>
+        setCard({
+          id: slug,
+          column: "running",
+          title: slug,
+          origin: "run",
+          run: slug,
+          updatedAt: "",
+        }),
+      );
     return () => ctrl.abort();
   }, [slug]);
 
@@ -220,12 +256,19 @@ function Nav({ items, counts }: { items: NavItem[]; counts: WorkspaceCounts }) {
   return (
     <nav aria-label="Primary">
       {items.map((n) => (
-        <NavLink key={n.to} to={n.to} end={n.to === "/"} className={({ isActive }) => `nav${isActive ? " on" : ""}`}>
+        <NavLink
+          key={n.to}
+          to={n.to}
+          end={n.to === "/"}
+          className={({ isActive }) => `nav${isActive ? " on" : ""}`}
+        >
           <span className="ic" aria-hidden="true">
             {n.ic}
           </span>
           {n.label}
-          {n.count !== undefined && counts[n.count] > 0 ? <span className="ct">{counts[n.count]}</span> : null}
+          {n.count !== undefined && counts[n.count] > 0 ? (
+            <span className="ct">{counts[n.count]}</span>
+          ) : null}
         </NavLink>
       ))}
     </nav>

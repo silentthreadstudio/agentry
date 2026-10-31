@@ -117,5 +117,8 @@ test("no artifacts + settled success but EMPTY produced tree => DegenerateRunErr
 test("a working dir with no .agentry/ at all falls to the settle-signal path, never throws on the scan", () => {
   const wd = freshWorkingDir();
   // success + produced tree => one-shot (proves the scan tolerated the absent .agentry/ rather than crashing).
-  assert.equal(extractShape(wd, { resultSubtype: "success", producedTreeNonEmpty: true }), "one-shot");
+  assert.equal(
+    extractShape(wd, { resultSubtype: "success", producedTreeNonEmpty: true }),
+    "one-shot",
+  );
 });

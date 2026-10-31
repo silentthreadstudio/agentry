@@ -7,15 +7,17 @@
 // endpoint that minted a run from the dashboard would be a second way to start work carrying none of
 // the claim path's meaning. `POST /api/runs` existed briefly in slice 2 and was removed with it.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Transport } from "../domain/ports.js";
 import { resolveSlug } from "@agentry/workbench-shared";
+import type { Transport } from "../domain/ports.js";
 import { sendJson } from "./http-kit.js";
 
 /** What a reset needs: the run's tasks (to know what to put back), the write boundary, and the backlog
  *  (to hand the intent back). Typed structurally so a test needs three small fakes, not the world. */
 export interface ResetDeps {
   reader: { read(run: string): { docs: { id: string }[] } | undefined; listRuns(): string[] };
-  writeService: { setStatus(req: { run: string; taskNo: string; status: "todo" }): { ok: boolean } };
+  writeService: {
+    setStatus(req: { run: string; taskNo: string; status: "todo" }): { ok: boolean };
+  };
   backlog: {
     list(): { id: string; runs: string[]; status: string }[];
     update(input: { id: string; status: "ready" }): unknown;
@@ -62,7 +64,9 @@ export async function handleRunResetRequest(
     return true;
   }
 
-  const taskNos = read.docs.filter((d) => d.id.startsWith("task-")).map((d) => d.id.slice("task-".length));
+  const taskNos = read.docs
+    .filter((d) => d.id.startsWith("task-"))
+    .map((d) => d.id.slice("task-".length));
   let reset = 0;
   for (const taskNo of taskNos) {
     if (deps.writeService.setStatus({ run, taskNo, status: "todo" }).ok) reset += 1;
@@ -74,6 +78,11 @@ export async function handleRunResetRequest(
   if (item !== undefined) deps.backlog.update({ id: item.id, status: "ready" });
 
   deps.transport.pushAll({ type: "works-changed" });
-  sendJson(res, 200, { ok: true, run, tasks: reset, ...(item !== undefined ? { item: item.id } : {}) });
+  sendJson(res, 200, {
+    ok: true,
+    run,
+    tasks: reset,
+    ...(item !== undefined ? { item: item.id } : {}),
+  });
   return true;
 }

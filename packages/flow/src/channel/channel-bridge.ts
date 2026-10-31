@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { basename, dirname, relative, sep } from "node:path";
 // Channel bridge — the INFRA half of the comment→push path (ADR-001: file-watch signaling, no HTTP).
 // chokidar-watches the review sidecars under `<cwd>/.agentry/work/*/.review/*.annotations.json`; on
 // every change it re-reads the changed sidecar, diffs it against the ids already pushed (the pure
@@ -13,9 +15,7 @@
 // passes a closure over `server.server.notification({ method:'notifications/claude/channel', … })`;
 // a session that didn't load flow as a channel silently drops the notification (the spike proved
 // emitting unconditionally is safe), so the bridge never branches on enablement.
-import { FSWatcher, watch } from "chokidar";
-import { mkdirSync } from "node:fs";
-import { basename, dirname, relative, sep } from "node:path";
+import { type FSWatcher, watch } from "chokidar";
 import type { ReviewStore } from "../domain/ports.js";
 import { workRoot } from "../resolution/run-pointer.js";
 import { type ChannelNotification, commentIds, diffNewComments } from "./channel-event.js";
@@ -29,7 +29,10 @@ const ANNOTATIONS_SUFFIX = ".annotations.json";
 // Parse `<workRoot>/<run>/.review/<gate>.annotations.json` → { run, gate }. Returns undefined for any
 // path that isn't a review sidecar at that exact depth (chokidar can surface unrelated paths). The
 // layout is fixed by run-pointer's `runDir(...)/.review/<gate>.annotations.json`.
-export function parseSidecarPath(cwd: string, filePath: string): { run: string; gate: string } | undefined {
+export function parseSidecarPath(
+  cwd: string,
+  filePath: string,
+): { run: string; gate: string } | undefined {
   const file = basename(filePath);
   if (!file.endsWith(ANNOTATIONS_SUFFIX)) return undefined;
   const reviewDir = dirname(filePath);
@@ -110,7 +113,12 @@ export class ChannelBridge {
   // Re-read a changed sidecar and emit one channel per new, unresolved comment. The seen-set is
   // updated only for the comments actually pushed, so a future change re-evaluates the rest.
   private async handleChange(run: string, gate: string): Promise<void> {
-    const { notifications, newlySeen } = diffNewComments(run, gate, this.readComments(run, gate), this.seen);
+    const { notifications, newlySeen } = diffNewComments(
+      run,
+      gate,
+      this.readComments(run, gate),
+      this.seen,
+    );
     // Mark seen FIRST (even for a run we won't emit) so a not-ours comment is consumed once and never
     // re-evaluated — only the OWNING session emits it; this process must not keep reconsidering it.
     for (const id of newlySeen) this.seen.add(id);

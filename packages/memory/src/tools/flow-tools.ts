@@ -4,8 +4,8 @@
 // outcome → ok(applied+skipped) / err(not-found) on all-invalid (AC5/Q2), via the shared mapper.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { MemoryService } from "../application/memory-service.js";
 import { consolidate, distill } from "../application/flows.js";
+import type { MemoryService } from "../application/memory-service.js";
 import { guard, partial } from "./adapter.js";
 import { ok } from "./result.js";
 

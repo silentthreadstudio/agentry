@@ -14,10 +14,10 @@ import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { loadBenchFixtures, type BenchFixture } from "../src/bench/fixture.ts";
+import { type BenchFixture, loadBenchFixtures } from "../src/bench/fixture.ts";
 import { injectOracle, runOracle } from "../src/conduct/oracle.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -96,7 +96,11 @@ test("corpus: spans the spread — ≥1 bugProne, ≥1 hidden-decision fork, ≥
 test("control invariant: every broken tree carries a `BUG:` marker and no golden tree does", () => {
   for (const fx of fixtures) {
     assert.match(treeText(fx.brokenDir), /BUG:/, `${fx.id}: broken/ must carry a BUG: marker`);
-    assert.doesNotMatch(treeText(fx.goldenDir), /BUG:/, `${fx.id}: golden/ must NOT carry a BUG: marker`);
+    assert.doesNotMatch(
+      treeText(fx.goldenDir),
+      /BUG:/,
+      `${fx.id}: golden/ must NOT carry a BUG: marker`,
+    );
   }
 });
 
@@ -127,7 +131,11 @@ test("bugProne fixtures: the broken (obvious) build fails its oracle (the escape
   assert.ok(bugProne.length >= 1, "expected at least one bugProne fixture");
   for (const fx of bugProne) {
     const r = runOracleOver(fx, fx.brokenDir);
-    assert.equal(r.pass, false, `${fx.id}: the subtle-bug probe must FAIL the obvious build\n${r.output}`);
+    assert.equal(
+      r.pass,
+      false,
+      `${fx.id}: the subtle-bug probe must FAIL the obvious build\n${r.output}`,
+    );
     assert.ok(r.total > 0, `${fx.id}: the oracle must actually run tests`);
   }
 });

@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
+import { permissionsDir } from "@agentry/flow/channel/permission-relay";
+import type { PermissionRequest } from "@agentry/workbench-shared";
 // PermissionWatcher — the read + live-loop half of the permission-approval relay (Phase 3b; channels.md
 // §"Relay permission prompts"). It watches the project-global permissions dir FLOW writes to (Phase 3a's
 // pinned file contract) and maintains the set of PENDING approval requests:
@@ -17,10 +21,6 @@
 // session/project-level, so this is a SEPARATE watcher rooted at `.agentry/run/permissions/`.
 import { watch } from "chokidar";
 import type { FSWatcher } from "chokidar";
-import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
-import { permissionsDir } from "@agentry/flow/channel/permission-relay";
-import type { PermissionRequest } from "@agentry/workbench-shared";
 import { readRequestFile } from "./permission-reader.js";
 
 const VERDICT_SUFFIX = ".verdict.json";

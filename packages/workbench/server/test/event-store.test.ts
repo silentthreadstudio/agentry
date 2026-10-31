@@ -3,15 +3,15 @@
 // roster + sidecar scan are deterministic; (2) against the REAL FsWorkRepository on the repo's runs, so the
 // readers are proven on genuine `events.jsonl` + `run-state.json` + `.review/` data (the acceptance).
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { RunFiles, WorkRepository } from "../src/domain/ports.js";
-import { FsWorkRepository } from "../src/persistence/fs-work-repository.js";
 import { EventStore } from "../src/application/event-store.js";
 import { GateInbox } from "../src/application/gate-inbox.js";
+import type { RunFiles, WorkRepository } from "../src/domain/ports.js";
 import { FsEventSource } from "../src/persistence/event-source.js";
+import { FsWorkRepository } from "../src/persistence/fs-work-repository.js";
 import { FsReviewSidecarSource } from "../src/persistence/review-sidecar-source.js";
 import { FIXTURE_RUN, loadFixtureRun } from "./fixtures/load-fixture-run.js";
 
@@ -70,8 +70,12 @@ test("timeline folds FLOW events and drops empty-agent main-session lines (parse
 
 test("timeline(runId) filters to one run; cross-run folds every run", () => {
   const cwd = seedProject({
-    "run-a": { events: '{"ts":"2026-06-19T20:00:00.000Z","type":"node-done","node":"a","durationMs":1}' },
-    "run-b": { events: '{"ts":"2026-06-19T21:00:00.000Z","type":"node-done","node":"b","durationMs":1}' },
+    "run-a": {
+      events: '{"ts":"2026-06-19T20:00:00.000Z","type":"node-done","node":"a","durationMs":1}',
+    },
+    "run-b": {
+      events: '{"ts":"2026-06-19T21:00:00.000Z","type":"node-done","node":"b","durationMs":1}',
+    },
   });
   try {
     const store = new EventStore(fakeRepo(["run-a", "run-b"]), new FsEventSource(cwd));
@@ -84,8 +88,16 @@ test("timeline(runId) filters to one run; cross-run folds every run", () => {
 
 test("roster reads run-state.json across runs, validating AgentState, namespacing by run", () => {
   const cwd = seedProject({
-    "run-a": { runState: JSON.stringify({ agents: { implementer: { state: "working", assignedTask: "001" } } }) },
-    "run-b": { runState: JSON.stringify({ agents: { verifier: { state: "done" }, bogus: { state: "nonsense" } } }) },
+    "run-a": {
+      runState: JSON.stringify({
+        agents: { implementer: { state: "working", assignedTask: "001" } },
+      }),
+    },
+    "run-b": {
+      runState: JSON.stringify({
+        agents: { verifier: { state: "done" }, bogus: { state: "nonsense" } },
+      }),
+    },
   });
   try {
     const store = new EventStore(fakeRepo(["run-a", "run-b"]), new FsEventSource(cwd));
@@ -114,10 +126,22 @@ test("roster reads an empty roster for an absent/corrupt run-state", () => {
 
 test("GateInbox.open returns gates with unresolved comments, dropping resolved ones", () => {
   const open = JSON.stringify([
-    { id: "c1", anchor: { originalText: "x", headingAnchor: "h", startLine: 1 }, decision: "changes", body: "fix", resolved: false },
+    {
+      id: "c1",
+      anchor: { originalText: "x", headingAnchor: "h", startLine: 1 },
+      decision: "changes",
+      body: "fix",
+      resolved: false,
+    },
   ]);
   const resolved = JSON.stringify([
-    { id: "c2", anchor: { originalText: "y", headingAnchor: "h", startLine: 2 }, decision: "approve", body: "ok", resolved: true },
+    {
+      id: "c2",
+      anchor: { originalText: "y", headingAnchor: "h", startLine: 2 },
+      decision: "approve",
+      body: "ok",
+      resolved: true,
+    },
   ]);
   const cwd = seedProject({ "run-a": { reviews: { spec: open, plan: resolved } } });
   try {
@@ -139,7 +163,15 @@ test("GateInbox.open(runId) filters to one run; a corrupt sidecar reads empty", 
   const cwd = seedProject({
     "run-a": {
       reviews: {
-        spec: JSON.stringify([{ id: "c1", anchor: { originalText: "x", headingAnchor: "h", startLine: 1 }, decision: "changes", body: "b", resolved: false }]),
+        spec: JSON.stringify([
+          {
+            id: "c1",
+            anchor: { originalText: "x", headingAnchor: "h", startLine: 1 },
+            decision: "changes",
+            body: "b",
+            resolved: false,
+          },
+        ]),
         plan: "{ corrupt",
       },
     },
@@ -189,14 +221,20 @@ test("EventStore + GateInbox on a REAL run (acceptance)", () => {
   // Deterministic roster proof: a temp fixture run that records one agent surfaces it (no real-tree dep).
   const cwd = seedProject({
     "run-fixture": {
-      runState: JSON.stringify({ agents: { implementer: { state: "working", assignedTask: "001" } } }),
+      runState: JSON.stringify({
+        agents: { implementer: { state: "working", assignedTask: "001" } },
+      }),
     },
   });
   try {
     const fixtureStore = new EventStore(fakeRepo(["run-fixture"]), new FsEventSource(cwd));
     const fixtureRoster = fixtureStore.roster();
     assert.equal(fixtureRoster.length, 1, "the fixture run records exactly one agent");
-    assert.equal(fixtureRoster[0]?.role, "implementer", "the recorded agent surfaces from run-state");
+    assert.equal(
+      fixtureRoster[0]?.role,
+      "implementer",
+      "the recorded agent surfaces from run-state",
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -12,21 +12,21 @@
 // SRP: the rail RENDERS from the shared comment-store; RailComposer + the reply boxes WRITE to it; the node
 // badge READS the count. No comment state lives here — it subscribes to the store.
 import { useEffect, useMemo, useState } from "react";
-import type { ReviewDecision } from "./review-types.js";
 import { fetchReview } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 import { RailComposer } from "./RailComposer.js";
 import {
+  type CommentThread,
+  type UiComment,
   addComment,
   hydrate,
   resolveComment,
   threadsOf,
   useComments,
   useOpenCommentCount,
-  type CommentThread,
-  type UiComment,
 } from "./comment-store.js";
 import { useCommentRailStyles } from "./comment-styles.js";
+import type { ReviewDecision } from "./review-types.js";
 
 const DECISION_LABEL: Record<ReviewDecision, string> = {
   changes: "changes",
@@ -100,7 +100,11 @@ export function CommentRail({
               className={filter === f ? "on" : ""}
               onClick={() => setFilter(f)}
             >
-              {f === "open" ? `Open${openCount ? ` ${openCount}` : ""}` : f === "all" ? "All" : "Resolved"}
+              {f === "open"
+                ? `Open${openCount ? ` ${openCount}` : ""}`
+                : f === "all"
+                  ? "All"
+                  : "Resolved"}
             </button>
           ))}
         </div>
@@ -121,7 +125,9 @@ export function CommentRail({
             Select any text in the document — a <b>Comment</b> button appears in the margin.
           </div>
         ) : (
-          ordered.map((t) => <ThreadCard key={t.comment.id} runId={runId} docId={docId} thread={t} />)
+          ordered.map((t) => (
+            <ThreadCard key={t.comment.id} runId={runId} docId={docId} thread={t} />
+          ))
         )}
 
         {filter !== "resolved" && orphanReplies.length > 0 ? (
@@ -177,7 +183,11 @@ function ThreadCard({
         {resolved ? (
           <span className="dd-th-resolved">resolved ✓</span>
         ) : (
-          <button type="button" className="dd-th-resolve" onClick={() => void resolveComment(runId, docId, id)}>
+          <button
+            type="button"
+            className="dd-th-resolve"
+            onClick={() => void resolveComment(runId, docId, id)}
+          >
             Resolve
           </button>
         )}
@@ -263,8 +273,22 @@ function ReplyBox({
           }
         }}
       />
-      <button type="button" className="dd-send" aria-label="Send reply" disabled={busy || !text.trim()} onClick={() => void send()}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <button
+        type="button"
+        className="dd-send"
+        aria-label="Send reply"
+        disabled={busy || !text.trim()}
+        onClick={() => void send()}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />
         </svg>
       </button>
@@ -274,7 +298,18 @@ function ReplyBox({
 
 function Chevron() {
   return (
-    <svg className="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className="chev"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M9 6l6 6-6 6" />
     </svg>
   );

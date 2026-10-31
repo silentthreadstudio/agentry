@@ -10,7 +10,8 @@ export function registerEpisodeTools(server: McpServer, service: MemoryService):
   server.registerTool(
     "episode_write",
     {
-      description: "Record a structured episode (task · shape · outcome · retries · lesson · used_memories) — the episodic layer / continue-context fuel.",
+      description:
+        "Record a structured episode (task · shape · outcome · retries · lesson · used_memories) — the episodic layer / continue-context fuel.",
       inputSchema: {
         task: z.string(),
         shape: z.string(),
@@ -28,7 +29,8 @@ export function registerEpisodeTools(server: McpServer, service: MemoryService):
   server.registerTool(
     "memory_stats",
     {
-      description: "Aggregate counts across layers — facts/episodes, active/superseded, undistilled-episode debt, by type. Surfaces read-errors for any corrupt/unreadable store record.",
+      description:
+        "Aggregate counts across layers — facts/episodes, active/superseded, undistilled-episode debt, by type. Surfaces read-errors for any corrupt/unreadable store record.",
       inputSchema: {},
     },
     // stats() already carries readErrors as an additive field (Q1) — surface it on the payload.

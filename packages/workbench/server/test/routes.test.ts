@@ -5,11 +5,11 @@
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { test } from "node:test";
-import type { Clock, RunFiles, WorkRepository } from "../src/domain/ports.js";
-import { WorkReader } from "../src/application/work-reader.js";
 import { workSlug } from "@agentry/workbench-shared";
-import { handleApiRequest } from "../src/transport/routes.js";
+import { WorkReader } from "../src/application/work-reader.js";
+import type { Clock, RunFiles, WorkRepository } from "../src/domain/ports.js";
 import type { RunContext } from "../src/transport/host-router.js";
+import { handleApiRequest } from "../src/transport/routes.js";
 
 const fixedClock: Clock = { now: () => "2026-06-19T00:00:00.000Z" };
 
@@ -84,7 +84,10 @@ test("GET /api/work/:id/docs returns the run's documents in reading order", () =
   const docs = captured.body as { id: string; label: string; status: string }[];
   assert.ok(Array.isArray(docs) && docs.length > 0, "has documents");
   assert.ok(
-    docs.every((d) => typeof d.id === "string" && typeof d.label === "string" && typeof d.status === "string"),
+    docs.every(
+      (d) =>
+        typeof d.id === "string" && typeof d.label === "string" && typeof d.status === "string",
+    ),
     "every entry is a complete { id, label, status }",
   );
 });
@@ -213,6 +216,11 @@ test("a case-folded label resolves through a workSlug too", () => {
   const long = { ...sampleFiles(), run: "Build-Agentry-Workbench-The-Agentry-Agent-Center" };
   const longReader = new WorkReader(fakeRepo(long), fixedClock);
   const { res, captured } = fakeRes();
-  handleApiRequest(fakeReq(`/api/context?run=${workSlug(long.run).toLowerCase()}`), res, longReader, home);
+  handleApiRequest(
+    fakeReq(`/api/context?run=${workSlug(long.run).toLowerCase()}`),
+    res,
+    longReader,
+    home,
+  );
   assert.deepEqual(captured.body, { run: long.run });
 });

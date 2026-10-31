@@ -14,8 +14,8 @@
 //  - AC4/AC5 (version): every write routes through the store, which stamps a tool-computed `version`.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { FlowTaskStatus } from "../domain/status.js";
 import { TaskService } from "../application/task-service.js";
+import { FlowTaskStatus } from "../domain/status.js";
 import type { FlowServices } from "../index.js";
 import { guard } from "./adapter.js";
 import { notFound } from "./errors.js";
@@ -95,7 +95,8 @@ export function registerTaskTools(server: McpServer, ctx: FlowServices): void {
   server.registerTool(
     "task_list",
     {
-      description: "List all tasks in a run (a fresh directory scan over tasks/*.md — ADR-001 pure-file). Requires `run`.",
+      description:
+        "List all tasks in a run (a fresh directory scan over tasks/*.md — ADR-001 pure-file). Requires `run`.",
       inputSchema: {
         run: z.string(),
       },

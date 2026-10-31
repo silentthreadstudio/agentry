@@ -1,3 +1,6 @@
+import { formatTaskNo } from "../domain/ids.js";
+import type { ArtifactKind, FlowTask, TaskStore } from "../domain/ports.js";
+import type { FlowTaskStatus } from "../domain/status.js";
 // TaskService — the application layer for the Task family (the highest-leverage FLOW family). It owns
 // *what each task tool does*, orchestrating the domain (version, ids) over the `TaskStore` port from
 // T01. Pure of MCP/zod: the tool adapter (task-tools.ts) validates input and renders envelopes; this
@@ -13,9 +16,6 @@
 //  - (the status-enum failure is closed at the zod boundary in task-tools.ts — out-of-enum is rejected
 //    before the handler runs, so no invalid status reaches this layer or a file; AC2.)
 import { computeVersion } from "../domain/version.js";
-import { formatTaskNo } from "../domain/ids.js";
-import type { FlowTaskStatus } from "../domain/status.js";
-import type { ArtifactKind, FlowTask, TaskStore } from "../domain/ports.js";
 
 // A task's lifecycle status is the closed `FlowTaskStatus` enum (todo|in-progress|in-review|done) —
 // the zod boundary rejects anything else (AC2), so this layer only ever sees a valid value.
@@ -31,7 +31,9 @@ export interface TaskWriteResult {
 // `not-found` is the one expected failure these ops can hit (assign/status/get a task that was never
 // created). Returned as a typed outcome, switched to a `notFound` envelope by the adapter — never an
 // envelope built here (mirrors MemoryService).
-export type TaskOutcome<T> = { ok: true; value: T } | { ok: false; reason: "not-found"; id: string };
+export type TaskOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: "not-found"; id: string };
 
 export class TaskService {
   constructor(private readonly store: TaskStore) {}
@@ -41,13 +43,20 @@ export class TaskService {
   create(run: string, title: string, body: string): TaskWriteResult & { path: string } {
     const taskNo = this.nextTaskNo(run);
     const frontmatter: Record<string, unknown> = { title, status: "todo" };
-    return { ...this.writeTask(run, { taskNo, frontmatter, body }), path: this.taskPath(taskNo, title) };
+    return {
+      ...this.writeTask(run, { taskNo, frontmatter, body }),
+      path: this.taskPath(taskNo, title),
+    };
   }
 
   // Assign an agent: set `lockedBy` (+ `assignee`, the human-readable alias) on the task frontmatter.
   // lockedBy is ALWAYS populated here (AC3) — there is no path that assigns without setting it. The
   // existing frontmatter/body are preserved; only the assignment fields change, then the store re-stamps.
-  assign(run: string, taskNo: string, agent: string): TaskOutcome<TaskWriteResult & { lockedBy: string }> {
+  assign(
+    run: string,
+    taskNo: string,
+    agent: string,
+  ): TaskOutcome<TaskWriteResult & { lockedBy: string }> {
     const task = this.store.readTask(run, taskNo);
     if (!task) return { ok: false, reason: "not-found", id: taskNo };
     const frontmatter = { ...task.frontmatter, lockedBy: agent, assignee: agent };
@@ -58,7 +67,11 @@ export class TaskService {
   // Move a task to a new lifecycle status. `status` is already validated against the closed enum at
   // the zod boundary (AC2), so it is always one of {todo,in-progress,in-review,done} here. Preserves
   // the rest of the frontmatter/body; the store re-stamps the version (AC5).
-  status(run: string, taskNo: string, status: TaskStatus): TaskOutcome<TaskWriteResult & { status: TaskStatus }> {
+  status(
+    run: string,
+    taskNo: string,
+    status: TaskStatus,
+  ): TaskOutcome<TaskWriteResult & { status: TaskStatus }> {
     const task = this.store.readTask(run, taskNo);
     if (!task) return { ok: false, reason: "not-found", id: taskNo };
     const frontmatter = { ...task.frontmatter, status };
@@ -92,7 +105,8 @@ export class TaskService {
     const { version: _dropped, ...frontmatter } = task.frontmatter;
     this.store.writeTask(run, { ...task, frontmatter });
     const persisted = this.store.readTask(run, task.taskNo);
-    const version = typeof persisted?.frontmatter.version === "string" ? persisted.frontmatter.version : "";
+    const version =
+      typeof persisted?.frontmatter.version === "string" ? persisted.frontmatter.version : "";
     return { taskNo: task.taskNo, version };
   }
 

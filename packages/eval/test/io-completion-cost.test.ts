@@ -41,7 +41,9 @@ class FakeChild extends EventEmitter implements StreamChild {
 const AGENT_DISPATCH_LINE =
   JSON.stringify({
     type: "assistant",
-    message: { content: [{ type: "tool_use", id: "toolu_1", name: "Agent", input: { subagent_type: "x" } }] },
+    message: {
+      content: [{ type: "tool_use", id: "toolu_1", name: "Agent", input: { subagent_type: "x" } }],
+    },
   }) + "\n";
 
 /**
@@ -86,15 +88,28 @@ test("runToCompletion lets a dispatch run on to settle, never killing on the fir
   const child = new FakeChild();
   const spawnFn: SpawnFn = () => child;
 
-  const inv: Invocation = { prompt: "noop", model: "test-model", streamPath, runToCompletion: true };
+  const inv: Invocation = {
+    prompt: "noop",
+    model: "test-model",
+    streamPath,
+    runToCompletion: true,
+  };
 
   const runPromise = runCaptured(inv, sandbox, spawnFn);
   // A dispatch (would kill in default mode) is followed by a settle — run-to-completion must NOT kill.
   child.feed([AGENT_DISPATCH_LINE, RESULT_WITH_COST_LINE]);
   const record = await runPromise;
 
-  assert.equal(child.killCount, 0, "run-to-completion must NOT kill on dispatch — the build runs to settle");
-  assert.equal(record.resultSubtype, "success", "a settled run-to-completion run surfaces result.subtype");
+  assert.equal(
+    child.killCount,
+    0,
+    "run-to-completion must NOT kill on dispatch — the build runs to settle",
+  );
+  assert.equal(
+    record.resultSubtype,
+    "success",
+    "a settled run-to-completion run surfaces result.subtype",
+  );
 });
 
 // --- cost parse: a settled result envelope's usage/cost populate RunResult.cost ------------------------
@@ -105,7 +120,12 @@ test("a settled result envelope populates RunResult.cost from usage/total_cost_u
   const child = new FakeChild();
   const spawnFn: SpawnFn = () => child;
 
-  const inv: Invocation = { prompt: "noop", model: "test-model", streamPath, runToCompletion: true };
+  const inv: Invocation = {
+    prompt: "noop",
+    model: "test-model",
+    streamPath,
+    runToCompletion: true,
+  };
 
   const runPromise = runCaptured(inv, sandbox, spawnFn);
   child.feed([RESULT_WITH_COST_LINE]);
@@ -129,7 +149,12 @@ test("a settled result envelope with no usage/cost fields yields an empty cost o
   const child = new FakeChild();
   const spawnFn: SpawnFn = () => child;
 
-  const inv: Invocation = { prompt: "noop", model: "test-model", streamPath, runToCompletion: true };
+  const inv: Invocation = {
+    prompt: "noop",
+    model: "test-model",
+    streamPath,
+    runToCompletion: true,
+  };
 
   const runPromise = runCaptured(inv, sandbox, spawnFn);
   child.feed([RESULT_NO_COST_LINE]);
@@ -154,7 +179,15 @@ test("a killed run (no settled result envelope) leaves RunResult.cost undefined"
   child.feed([AGENT_DISPATCH_LINE]);
   const record = await runPromise;
 
-  assert.equal(child.killCount, 1, "default mode still kills on dispatch — run-to-completion is opt-in only");
+  assert.equal(
+    child.killCount,
+    1,
+    "default mode still kills on dispatch — run-to-completion is opt-in only",
+  );
   assert.equal(record.cost, undefined, "a killed run carries no cost");
-  assert.equal(record.resultSubtype, undefined, "a killed run forfeits the trailing result envelope");
+  assert.equal(
+    record.resultSubtype,
+    undefined,
+    "a killed run forfeits the trailing result envelope",
+  );
 });

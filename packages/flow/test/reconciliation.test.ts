@@ -8,8 +8,8 @@ import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { createServices } from "../src/index.js";
 import { RunService } from "../src/application/run-service.js";
+import { createServices } from "../src/index.js";
 
 let cwd: string;
 let service: RunService;
@@ -30,8 +30,18 @@ function appendRaw(line: object): void {
 
 test("AC9: a hook start/stop with NO matching FLOW node surfaces as a disagreement", () => {
   // The hook recorded a subagent boundary the conductor SKIPPED the FLOW node calls for.
-  appendRaw({ ts: "2026-01-01T00:00:00.000Z", kind: "agent-started", agent: "agentry:verifier", agentId: "v1" });
-  appendRaw({ ts: "2026-01-01T00:01:00.000Z", kind: "agent-done", agent: "agentry:verifier", agentId: "v1" });
+  appendRaw({
+    ts: "2026-01-01T00:00:00.000Z",
+    kind: "agent-started",
+    agent: "agentry:verifier",
+    agentId: "v1",
+  });
+  appendRaw({
+    ts: "2026-01-01T00:01:00.000Z",
+    kind: "agent-done",
+    agent: "agentry:verifier",
+    agentId: "v1",
+  });
 
   const { backstopDisagreements } = service.status(run);
   assert.ok(backstopDisagreements.length > 0, "the skipped FLOW call is flagged");
@@ -41,10 +51,30 @@ test("AC9: a hook start/stop with NO matching FLOW node surfaces as a disagreeme
 
 test("AC9: a consistent stream (FLOW node lines matching the hook boundary) → no disagreement", () => {
   // FLOW emitted the node lines the hook boundary corresponds to (matched on `agent`).
-  service.emit(run, { ts: "2026-01-01T00:00:01.000Z", type: "node-enter", node: "N1", agent: "agentry:implementer" });
-  service.emit(run, { ts: "2026-01-01T00:01:01.000Z", type: "node-done", node: "N1", durationMs: 1000 });
-  appendRaw({ ts: "2026-01-01T00:00:00.000Z", kind: "agent-started", agent: "agentry:implementer", agentId: "i1" });
-  appendRaw({ ts: "2026-01-01T00:01:00.000Z", kind: "agent-done", agent: "agentry:implementer", agentId: "i1" });
+  service.emit(run, {
+    ts: "2026-01-01T00:00:01.000Z",
+    type: "node-enter",
+    node: "N1",
+    agent: "agentry:implementer",
+  });
+  service.emit(run, {
+    ts: "2026-01-01T00:01:01.000Z",
+    type: "node-done",
+    node: "N1",
+    durationMs: 1000,
+  });
+  appendRaw({
+    ts: "2026-01-01T00:00:00.000Z",
+    kind: "agent-started",
+    agent: "agentry:implementer",
+    agentId: "i1",
+  });
+  appendRaw({
+    ts: "2026-01-01T00:01:00.000Z",
+    kind: "agent-done",
+    agent: "agentry:implementer",
+    agentId: "i1",
+  });
 
   const { backstopDisagreements } = service.status(run);
   assert.deepEqual(backstopDisagreements, [], "agreeing records produce no disagreement");
@@ -61,9 +91,24 @@ test("the empty-agent main-session hook line is NOT a disagreement (filtered, AD
 
 test("a node-enter with no node-done but a hook agent-done flags the done side", () => {
   // FLOW entered the node but never emitted node-done; the hook saw the subagent finish → done-side gap.
-  service.emit(run, { ts: "2026-01-01T00:00:01.000Z", type: "node-enter", node: "N2", agent: "agentry:designer" });
-  appendRaw({ ts: "2026-01-01T00:00:00.000Z", kind: "agent-started", agent: "agentry:designer", agentId: "d1" });
-  appendRaw({ ts: "2026-01-01T00:01:00.000Z", kind: "agent-done", agent: "agentry:designer", agentId: "d1" });
+  service.emit(run, {
+    ts: "2026-01-01T00:00:01.000Z",
+    type: "node-enter",
+    node: "N2",
+    agent: "agentry:designer",
+  });
+  appendRaw({
+    ts: "2026-01-01T00:00:00.000Z",
+    kind: "agent-started",
+    agent: "agentry:designer",
+    agentId: "d1",
+  });
+  appendRaw({
+    ts: "2026-01-01T00:01:00.000Z",
+    kind: "agent-done",
+    agent: "agentry:designer",
+    agentId: "d1",
+  });
 
   const { backstopDisagreements } = service.status(run);
   assert.equal(backstopDisagreements.length, 1, "only the done side disagrees (the start matched)");

@@ -9,20 +9,20 @@
 
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
   symlinkSync,
-  mkdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, sep } from "node:path";
 
-import type { RunConfig } from "./schema.ts";
 import { extractShape } from "../conduct/extract.ts";
 import type { Shape } from "../conduct/shape.ts";
+import type { RunConfig } from "./schema.ts";
 
 /**
  * Confine a USER-SUPPLIED run-id to a single child of `runsRoot` before it is joined into a path. The id reaches

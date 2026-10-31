@@ -9,9 +9,15 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MemoryService } from "../src/application/memory-service.js";
-import type { FileStore, ReadResult, StoreSignature, StoredEpisode, StoredFact } from "../src/domain/ports.js";
+import type {
+  FileStore,
+  ReadResult,
+  StoreSignature,
+  StoredEpisode,
+  StoredFact,
+} from "../src/domain/ports.js";
 import { SqliteTextIndex } from "../src/persistence/db-index.js";
 import { MarkdownFileStore } from "../src/persistence/file-store.js";
 import type { Roots } from "../src/resolution/roots.js";
@@ -21,7 +27,11 @@ const fresh = (): string => mkdtempSync(join(tmpdir(), "agentry-fresh-"));
 
 function newService(global: string, store?: FileStore): MemoryService {
   const roots: Roots = { global, project: null };
-  const service = new MemoryService(store ?? new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
+  const service = new MemoryService(
+    store ?? new MarkdownFileStore(roots),
+    new SqliteTextIndex(),
+    roots,
+  );
   service.load();
   return service;
 }
@@ -35,7 +45,11 @@ test("out-of-band write is reflected by search without a restart (ensureFresh re
   // A SECOND service over the same root simulates another process: its write() lands a schema-valid
   // fact file on disk and into ITS OWN maps — serviceA's maps/index are untouched.
   const writer = newService(dir);
-  const { id } = writer.write({ type: "gotcha", scope: "global", text: "the peridot index must be rebuilt" });
+  const { id } = writer.write({
+    type: "gotcha",
+    scope: "global",
+    text: "the peridot index must be rebuilt",
+  });
 
   // serviceA never called load() again — the ensureFresh guard at the top of search() must rebuild,
   // because the file count moved.
@@ -100,7 +114,11 @@ test("stable store does NOT rebuild on a second read (signature short-circuits)"
   const readsAfterLoad = spy.reads;
   service.search("amber"); // first read — signature matches captured, no rebuild
   service.stats(); // second read — still no disk change
-  assert.equal(spy.reads, readsAfterLoad, "no rebuild → readFacts/readEpisodes must not be re-invoked");
+  assert.equal(
+    spy.reads,
+    readsAfterLoad,
+    "no rebuild → readFacts/readEpisodes must not be re-invoked",
+  );
 });
 
 test("resync() force-rebuilds and reports before/after counts reflecting out-of-band facts", () => {
@@ -108,7 +126,11 @@ test("resync() force-rebuilds and reports before/after counts reflecting out-of-
   const serviceA = newService(dir); // empty store → before.facts === 0
 
   // A second service over the same root lands a schema-valid fact on disk, bypassing serviceA's maps.
-  newService(dir).write({ type: "repo-fact", scope: "global", text: "ruby lives under the persistence layer" });
+  newService(dir).write({
+    type: "repo-fact",
+    scope: "global",
+    text: "ruby lives under the persistence layer",
+  });
 
   const result = serviceA.resync();
   assert.equal(result.rebuilt, true);
@@ -120,7 +142,11 @@ test("resync() force-rebuilds and reports before/after counts reflecting out-of-
 test("resync twice with no disk change → search returns exactly one hit (no double-index)", () => {
   const dir = fresh();
   const service = newService(dir);
-  const { id } = service.write({ type: "gotcha", scope: "global", text: "onyx must index exactly once" });
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "onyx must index exactly once",
+  });
 
   // Force two rebuilds back-to-back with nothing changing on disk between them. add() is
   // delete-then-insert (db-index.ts:43) and load() resets first (memory-service.ts:118), so the term
@@ -140,7 +166,9 @@ test("memory_resync tool registers and its handler returns an ok envelope with r
   newService(dir).write({ type: "gotcha", scope: "global", text: "opal was added out of band" });
 
   // Capture the registered handler off a stub server, then invoke it directly.
-  let handler: ((args: unknown) => Promise<{ content: { text: string }[]; isError?: boolean }>) | undefined;
+  let handler:
+    | ((args: unknown) => Promise<{ content: { text: string }[]; isError?: boolean }>)
+    | undefined;
   const stub = {
     registerTool: (_name: string, _def: unknown, h: typeof handler) => {
       handler = h;

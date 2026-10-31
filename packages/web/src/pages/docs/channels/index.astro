@@ -1,11 +1,11 @@
 ---
+import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
 // /docs/channels — Channels, live human↔agent comms (an additive layer). Composed through
 // DocsLayout: header from props, body = DocDiagram(channels.png) + prose. The channel_reply
 // name and the launch flag are EXACT (copy, do not paraphrase).
 //
 // Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
-import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
 import { withBase } from "../../../lib/base.ts";
 ---
 

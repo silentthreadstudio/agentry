@@ -1,10 +1,10 @@
+import { computeVersion } from "@agentry/flow/domain/version";
 // doc-model — the DocModel projection/serialization helpers shared by the read + write handlers. Pure
 // shaping over an already-parsed reader doc (frontmatter + body) and the `ArtifactTarget` ⟷ docId mapping;
 // no HTTP, no fs. The reader/WriteService own the bytes and the invariants — these functions only project
 // the on-disk shape into the transport `DocModel` the editor consumes, and translate between the docId
 // string the web sends and FLOW's `ArtifactTarget`.
-import { type DocModel } from "@agentry/workbench-shared";
-import { computeVersion } from "@agentry/flow/domain/version";
+import type { DocModel } from "@agentry/workbench-shared";
 import type { WorkReader } from "../application/work-reader.js";
 import type { ArtifactTarget } from "../persistence/flow-writer.js";
 

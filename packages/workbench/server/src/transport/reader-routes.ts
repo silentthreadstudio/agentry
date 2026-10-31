@@ -67,7 +67,11 @@ export function handleReaderRequest(
     // Tokens is per-run: `?run=<id>` selects the run; absent it, there is no series (an empty one). The
     // source may be absent — `TokenReader` degrades to a clean empty `TokenSeries` (plan §7.3).
     return guardGet(method, res, () =>
-      sendJson(res, 200, run !== undefined ? deps.tokens.series(run) : { timestamps: [], tokens: [] }),
+      sendJson(
+        res,
+        200,
+        run !== undefined ? deps.tokens.series(run) : { timestamps: [], tokens: [] },
+      ),
     );
   }
   if (path === "/api/memory") {

@@ -10,29 +10,34 @@
 //     (`.agentry/work/build-agentry-workbench-…/`) — a genuine `/agentry:go` trace, not a canned fixture.
 
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, utimesSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { runFlowComplianceProbe } from "../src/honesty/flow-compliance/probe.ts";
 import {
-  checkRunStartBeforeDispatch,
-  checkSpecBeforeTasks,
-  checkSingleFrontmatter,
   checkNoSkipFlag,
+  checkRunStartBeforeDispatch,
+  checkSingleFrontmatter,
+  checkSpecBeforeTasks,
   countFrontmatterBlocks,
-  runExists,
   runAllChecks,
+  runExists,
 } from "../src/honesty/flow-compliance/assertions.ts";
+import { runFlowComplianceProbe } from "../src/honesty/flow-compliance/probe.ts";
 import type { RunTrace, TraceEvent } from "../src/honesty/flow-compliance/trace.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "..", "fixtures", "flow-compliance");
 // The repo's real `.agentry/work/` (four dirs up: test/ → eval/ → packages/ → repo-root). The AC7 real-trace.
 const REPO_ROOT = join(HERE, "..", "..", "..");
-const REAL_RUN_DIR = join(REPO_ROOT, ".agentry", "work", "build-agentry-workbench-the-agentry-agent-center-5s9v6deiit");
+const REAL_RUN_DIR = join(
+  REPO_ROOT,
+  ".agentry",
+  "work",
+  "build-agentry-workbench-the-agentry-agent-center-5s9v6deiit",
+);
 
 /** A minimal synthetic trace; override fields per assertion test. */
 function trace(over: Partial<RunTrace> = {}): RunTrace {
@@ -54,13 +59,17 @@ const skipLine = (ts: string): TraceEvent => ({ ts, kind: "flow-skipped", artifa
 // --- pure assertions: check 1 — run_start-before-dispatch --------------------------------------------------------
 
 test("check1: FLOW run_start strictly before first dispatch ⇒ pass", () => {
-  const c = checkRunStartBeforeDispatch(trace({ events: [flowLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")] }));
+  const c = checkRunStartBeforeDispatch(
+    trace({ events: [flowLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")] }),
+  );
   assert.equal(c.pass, true);
 });
 
 test("check1: dispatch with no preceding FLOW line ⇒ fail (the proven bypass)", () => {
   // dispatch first, FLOW line later ⇒ run_start does not precede dispatch.
-  const c = checkRunStartBeforeDispatch(trace({ events: [dispatchLine("2026-01-01T00:00:00Z"), flowLine("2026-01-01T00:01:00Z")] }));
+  const c = checkRunStartBeforeDispatch(
+    trace({ events: [dispatchLine("2026-01-01T00:00:00Z"), flowLine("2026-01-01T00:01:00Z")] }),
+  );
   assert.equal(c.pass, false);
 });
 
@@ -76,32 +85,44 @@ test("check1: no dispatch at all ⇒ vacuously pass", () => {
 
 test("check1: a backstop-only line (kind, no type) is NOT a run_start signal", () => {
   // Only a flow-skipped backstop + a dispatch ⇒ no FLOW line precedes the dispatch ⇒ fail.
-  const c = checkRunStartBeforeDispatch(trace({ events: [skipLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")] }));
+  const c = checkRunStartBeforeDispatch(
+    trace({ events: [skipLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")] }),
+  );
   assert.equal(c.pass, false);
 });
 
 // --- pure assertions: check 2 — spec-before-tasks ----------------------------------------------------------------
 
 test("check2: spec mtime older than first task ⇒ pass", () => {
-  const c = checkSpecBeforeTasks(trace({
-    hasSpec: true,
-    specMtimeMs: 1000,
-    taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }],
-  }));
+  const c = checkSpecBeforeTasks(
+    trace({
+      hasSpec: true,
+      specMtimeMs: 1000,
+      taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }],
+    }),
+  );
   assert.equal(c.pass, true);
 });
 
 test("check2: a task file present but spec.md absent ⇒ fail", () => {
-  const c = checkSpecBeforeTasks(trace({ hasSpec: false, specMtimeMs: null, taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }] }));
+  const c = checkSpecBeforeTasks(
+    trace({
+      hasSpec: false,
+      specMtimeMs: null,
+      taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }],
+    }),
+  );
   assert.equal(c.pass, false);
 });
 
 test("check2: spec NEWER than the first task ⇒ fail", () => {
-  const c = checkSpecBeforeTasks(trace({
-    hasSpec: true,
-    specMtimeMs: 5000,
-    taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }],
-  }));
+  const c = checkSpecBeforeTasks(
+    trace({
+      hasSpec: true,
+      specMtimeMs: 5000,
+      taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }],
+    }),
+  );
   assert.equal(c.pass, false);
 });
 
@@ -125,16 +146,27 @@ test("countFrontmatterBlocks: no leading frontmatter ⇒ 0", () => {
 
 test("countFrontmatterBlocks: em-dashes / horizontal rules in body do NOT count as a fence", () => {
   // A `---` only counts as a fence when it opens at the very start (or immediately after a closed block).
-  assert.equal(countFrontmatterBlocks("---\ntitle: x\n---\n\nbody — with an em-dash and a thematic break below\n\nsome text\n"), 1);
+  assert.equal(
+    countFrontmatterBlocks(
+      "---\ntitle: x\n---\n\nbody — with an em-dash and a thematic break below\n\nsome text\n",
+    ),
+    1,
+  );
 });
 
 test("check3: every task has exactly one frontmatter block ⇒ pass", () => {
-  const c = checkSingleFrontmatter(trace({ taskFiles: [{ name: "001.md", text: "---\nt: 1\n---\nbody\n", mtimeMs: 1 }] }));
+  const c = checkSingleFrontmatter(
+    trace({ taskFiles: [{ name: "001.md", text: "---\nt: 1\n---\nbody\n", mtimeMs: 1 }] }),
+  );
   assert.equal(c.pass, true);
 });
 
 test("check3: a stacked-frontmatter task ⇒ fail, naming the file", () => {
-  const c = checkSingleFrontmatter(trace({ taskFiles: [{ name: "001-bad.md", text: "---\nt: 1\n---\n\n---\nt: 2\n---\n", mtimeMs: 1 }] }));
+  const c = checkSingleFrontmatter(
+    trace({
+      taskFiles: [{ name: "001-bad.md", text: "---\nt: 1\n---\n\n---\nt: 2\n---\n", mtimeMs: 1 }],
+    }),
+  );
   assert.equal(c.pass, false);
   assert.match(c.detail, /001-bad\.md/);
 });
@@ -150,7 +182,12 @@ test("runExists: a FLOW (type) line ⇒ a run exists", () => {
 });
 
 test("runExists: a backstop-only events.jsonl (only kind lines) does NOT count as a run", () => {
-  assert.equal(runExists(trace({ events: [skipLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")] })), false);
+  assert.equal(
+    runExists(
+      trace({ events: [skipLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")] }),
+    ),
+    false,
+  );
 });
 
 test("check4: above-floor run with no flow-skipped ⇒ pass", () => {
@@ -159,7 +196,9 @@ test("check4: above-floor run with no flow-skipped ⇒ pass", () => {
 });
 
 test("check4: above-floor run WITH a flow-skipped marker ⇒ fail", () => {
-  const c = checkNoSkipFlag(trace({ events: [flowLine("2026-01-01T00:00:00Z"), skipLine("2026-01-01T00:05:00Z")] }));
+  const c = checkNoSkipFlag(
+    trace({ events: [flowLine("2026-01-01T00:00:00Z"), skipLine("2026-01-01T00:05:00Z")] }),
+  );
   assert.equal(c.pass, false);
 });
 
@@ -185,7 +224,8 @@ function stagedFixture(name: string): string {
     const old = new Date("2026-01-01T00:00:00Z");
     const newer = new Date("2026-01-02T00:00:00Z");
     utimesSync(specPath, old, old);
-    for (const f of readdirSync(join(dir, "tasks"))) utimesSync(join(dir, "tasks", f), newer, newer);
+    for (const f of readdirSync(join(dir, "tasks")))
+      utimesSync(join(dir, "tasks", f), newer, newer);
   }
   return dir;
 }
@@ -256,13 +296,15 @@ test("AC7 real-trace: the probe runs over a real captured /agentry:go run dir", 
 // --- the aggregate verdict is the conjunction of all four checks --------------------------------------------------
 
 test("runAllChecks: pass iff every check passes", () => {
-  const allGreen = runAllChecks(trace({
-    hasRunState: true,
-    events: [flowLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")],
-    hasSpec: true,
-    specMtimeMs: 1,
-    taskFiles: [{ name: "001.md", text: "---\nt: 1\n---\n", mtimeMs: 2 }],
-  }));
+  const allGreen = runAllChecks(
+    trace({
+      hasRunState: true,
+      events: [flowLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")],
+      hasSpec: true,
+      specMtimeMs: 1,
+      taskFiles: [{ name: "001.md", text: "---\nt: 1\n---\n", mtimeMs: 2 }],
+    }),
+  );
   assert.equal(allGreen.pass, true);
   assert.equal(allGreen.checks.length, 4);
 });

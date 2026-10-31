@@ -4,22 +4,34 @@
 
 import { rmSync } from "node:fs";
 
-import { CODE_RUBRIC } from "../src/bench/rubric.ts";
 import { loadBenchFixtures } from "../src/bench/fixture.ts";
+import { CODE_RUBRIC } from "../src/bench/rubric.ts";
 import { summarizeProducedResult } from "../src/conduct/result.ts";
-import { judgeWithRubric, realJudgeFn, DEFAULT_JUDGE_MODEL } from "../src/judge/engine.ts";
 import { prepareSandbox, seedSandbox } from "../src/io/sandbox.ts";
+import { DEFAULT_JUDGE_MODEL, judgeWithRubric, realJudgeFn } from "../src/judge/engine.ts";
 
 const K = 2;
-const GOLD_MIN = 0.7, BROKEN_MAX = 0.4, MIN_GAP = 0.3;
+const GOLD_MIN = 0.7,
+  BROKEN_MAX = 0.4,
+  MIN_GAP = 0.3;
 const FIXTURES_DIR = "fixtures/bench";
 
 const judgeOpts = { judge: realJudgeFn, model: DEFAULT_JUDGE_MODEL };
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 function viewOf(f: any) {
-  return { id: f.id, prompt: f.prompt, shape: "one-shot", kind: "feature", oracleCmd: "",
-    oracleTimeoutMs: 1000, seedDir: f.seedDir, oracleDir: f.oracleDir, goldenDir: f.goldenDir, brokenDir: f.brokenDir };
+  return {
+    id: f.id,
+    prompt: f.prompt,
+    shape: "one-shot",
+    kind: "feature",
+    oracleCmd: "",
+    oracleTimeoutMs: 1000,
+    seedDir: f.seedDir,
+    oracleDir: f.oracleDir,
+    goldenDir: f.goldenDir,
+    brokenDir: f.brokenDir,
+  };
 }
 
 async function judgeOnce(f: any, withGolden: boolean): Promise<number> {
@@ -54,13 +66,22 @@ console.log(`fixture                gold   seed    gap   verdict`);
 console.log(`---------------------- ----- ------ ------ -------`);
 for (const f of fixtures) {
   try {
-    const golds: number[] = [], seeds: number[] = [];
+    const golds: number[] = [],
+      seeds: number[] = [];
     for (let i = 0; i < K; i++) golds.push(await judgeTree(f, true));
     for (let i = 0; i < K; i++) seeds.push(await judgeTree(f, false));
-    const g = mean(golds), s = mean(seeds), gap = g - s;
+    const g = mean(golds),
+      s = mean(seeds),
+      gap = g - s;
     const ok = g >= GOLD_MIN && s <= BROKEN_MAX && gap >= MIN_GAP;
-    const why = !ok ? [g < GOLD_MIN && "gold<0.7", s > BROKEN_MAX && "seed>0.4", gap < MIN_GAP && "gap<0.3"].filter(Boolean).join(",") : "";
-    console.log(`${f.id.padEnd(22)} ${g.toFixed(2)}  ${s.toFixed(2)}  ${gap.toFixed(2).padStart(5)}  ${ok ? "PASS" : "FAIL " + why}`);
+    const why = !ok
+      ? [g < GOLD_MIN && "gold<0.7", s > BROKEN_MAX && "seed>0.4", gap < MIN_GAP && "gap<0.3"]
+          .filter(Boolean)
+          .join(",")
+      : "";
+    console.log(
+      `${f.id.padEnd(22)} ${g.toFixed(2)}  ${s.toFixed(2)}  ${gap.toFixed(2).padStart(5)}  ${ok ? "PASS" : "FAIL " + why}`,
+    );
   } catch (err) {
     console.log(`${f.id.padEnd(22)} ERR    ${(err as Error).message}`);
   }

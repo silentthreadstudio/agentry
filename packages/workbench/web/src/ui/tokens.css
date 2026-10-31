@@ -48,8 +48,7 @@
   --grad-hero: linear-gradient(96deg, #ffffff, #d6c8fb 55%, #f0b9e4);
   --grad-bar: linear-gradient(90deg, var(--done), #86e6b9);
   /* the fixed three-radial mesh that sits behind the whole app */
-  --mesh:
-    radial-gradient(1100px 620px at 82% -12%, #a463f022, transparent 62%),
+  --mesh: radial-gradient(1100px 620px at 82% -12%, #a463f022, transparent 62%),
     radial-gradient(820px 520px at -8% 8%, #7c7ff21f, transparent 60%),
     radial-gradient(680px 520px at 60% 116%, #e472c916, transparent 58%);
 

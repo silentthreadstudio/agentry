@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { z } from "zod";
-import { createServices, type FlowServices } from "../src/index.js";
+import { type FlowServices, createServices } from "../src/index.js";
 import { registerTaskTools } from "../src/tools/task-tools.js";
 
 const RUN = "demo-run-001";
@@ -80,18 +80,30 @@ afterEach(() => {
 // ── AC1 / AC3 / AC5 — create + assign leaves a file with an in-enum status AND a populated lockedBy ──
 test("AC1/AC3/AC5: create then assign → file exists with enum status, populated lockedBy, stamped version", async () => {
   const { call } = wired();
-  const created = payloadOf(await call("task_create", { run: RUN, title: "Foundation", body: "the brief" }));
+  const created = payloadOf(
+    await call("task_create", { run: RUN, title: "Foundation", body: "the brief" }),
+  );
   assert.equal(created.taskNo, "001");
-  assert.ok(typeof created.version === "string" && created.version.length > 0, "create stamps a version (AC5)");
+  assert.ok(
+    typeof created.version === "string" && created.version.length > 0,
+    "create stamps a version (AC5)",
+  );
 
-  const assigned = payloadOf(await call("task_assign", { run: RUN, taskNo: "001", agent: "agentry:implementer" }));
+  const assigned = payloadOf(
+    await call("task_assign", { run: RUN, taskNo: "001", agent: "agentry:implementer" }),
+  );
   assert.equal(assigned.lockedBy, "agentry:implementer", "assign sets lockedBy (AC3)");
-  assert.ok(typeof assigned.version === "string" && assigned.version.length > 0, "assign re-stamps a version (AC5)");
+  assert.ok(
+    typeof assigned.version === "string" && assigned.version.length > 0,
+    "assign re-stamps a version (AC5)",
+  );
 
   const got = payloadOf(await call("task_get", { run: RUN, taskNo: "001" }));
   assert.equal(got.task.frontmatter.status, "todo"); // a live status in the enum (AC1)
   assert.equal(got.task.frontmatter.lockedBy, "agentry:implementer"); // never empty for an assigned task (AC1/AC3)
-  assert.ok(typeof got.task.frontmatter.version === "string" && got.task.frontmatter.version.length > 0);
+  assert.ok(
+    typeof got.task.frontmatter.version === "string" && got.task.frontmatter.version.length > 0,
+  );
 });
 
 // ── AC2 — an out-of-enum status is rejected at the zod boundary; NO file is written with it ──────────
@@ -125,15 +137,21 @@ test("AC2: each valid lifecycle status is accepted and lands on the file", async
 // ── AC4 — artifact_write stamps a tool-computed version; a body edit yields a DIFFERENT version ──────
 test("AC4: artifact_write stamps a version the tool computed; editing the body changes it", async () => {
   const { call } = wired();
-  const first = payloadOf(await call("artifact_write", { run: RUN, kind: "spec", body: "first body" }));
+  const first = payloadOf(
+    await call("artifact_write", { run: RUN, kind: "spec", body: "first body" }),
+  );
   assert.equal(first.path, "spec.md");
   assert.ok(typeof first.version === "string" && first.version.length > 0);
 
-  const edited = payloadOf(await call("artifact_write", { run: RUN, kind: "spec", body: "second — edited body" }));
+  const edited = payloadOf(
+    await call("artifact_write", { run: RUN, kind: "spec", body: "second — edited body" }),
+  );
   assert.notEqual(first.version, edited.version, "a body edit yields a different version (AC4)");
 
   // idempotent: rewriting the SAME body keeps the version (derived, deterministic)
-  const same = payloadOf(await call("artifact_write", { run: RUN, kind: "spec", body: "second — edited body" }));
+  const same = payloadOf(
+    await call("artifact_write", { run: RUN, kind: "spec", body: "second — edited body" }),
+  );
   assert.equal(edited.version, same.version);
 });
 
@@ -142,16 +160,27 @@ test("AC4: artifact_write has no caller `version` input — the tool is the only
   const { validate } = wired();
   // a `version` key is not part of the schema; the tool computes it. Extra keys are stripped by zod's
   // object parse, so the caller's value never reaches the write path.
-  const parsed = validate("artifact_write", { run: RUN, kind: "spec", body: "b", version: "CALLER-FAKE" });
+  const parsed = validate("artifact_write", {
+    run: RUN,
+    kind: "spec",
+    body: "b",
+    version: "CALLER-FAKE",
+  });
   assert.equal(parsed.success, true);
-  assert.equal((parsed as any).data.version, undefined, "caller-supplied version is stripped at the boundary");
+  assert.equal(
+    (parsed as any).data.version,
+    undefined,
+    "caller-supplied version is stripped at the boundary",
+  );
 });
 
 // ── AC5 — task_status re-stamps; task_list reads created tasks from a fresh directory scan ───────────
 test("AC5: task_status re-stamps the version; task_list returns created tasks (fresh scan)", async () => {
   const { call } = wired();
   const created = payloadOf(await call("task_create", { run: RUN, title: "One", body: "a" }));
-  const moved = payloadOf(await call("task_status", { run: RUN, taskNo: "001", status: "in-progress" }));
+  const moved = payloadOf(
+    await call("task_status", { run: RUN, taskNo: "001", status: "in-progress" }),
+  );
   assert.ok(typeof moved.version === "string" && moved.version.length > 0);
   assert.notEqual(created.version, moved.version, "moving status re-stamps a new version (AC5)");
 

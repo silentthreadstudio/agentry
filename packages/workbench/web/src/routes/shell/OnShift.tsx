@@ -1,3 +1,4 @@
+import type { AgentView } from "@agentry/workbench-shared";
 // OnShift — who is working, right now, across the whole project.
 //
 // Presence also appears on the run cards, and that is not a duplicate: the card answers "who is on THIS
@@ -5,7 +6,6 @@
 // any particular run. It lives in the sidebar because it belongs to the workspace, not to the board:
 // switch to Memory or Gates and you still want to know four agents are mid-flight.
 import { useEffect, useState } from "react";
-import type { AgentView } from "@agentry/workbench-shared";
 import { fetchAgents } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 
@@ -38,7 +38,11 @@ export function OnShift() {
         <div className="idle">nobody working</div>
       ) : (
         agents.map((a) => (
-          <div className="who" key={a.id} title={`${a.role} · ${a.state}${a.task ? ` · task ${a.task}` : ""}`}>
+          <div
+            className="who"
+            key={a.id}
+            title={`${a.role} · ${a.state}${a.task ? ` · task ${a.task}` : ""}`}
+          >
             <span className={`av ${a.state}`}>{a.role.slice(0, 2).toUpperCase()}</span>
             <span className="nm">{a.role}</span>
             {a.state === "working" ? <span className="pulse" /> : null}

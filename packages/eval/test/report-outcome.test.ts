@@ -15,16 +15,16 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
-  buildBenchArtifact,
-  buildAbortedBenchArtifact,
   type BenchArtifact,
   type BenchRecord,
+  buildAbortedBenchArtifact,
+  buildBenchArtifact,
 } from "../src/bench/score.ts";
 import type { Score } from "../src/judge/engine.ts";
-import type { RunSummary } from "../src/store/schema.ts";
 import { loadBench } from "../src/report/load-bench.ts";
-import { renderPage } from "../src/report/render.ts";
 import type { BenchData, PageData } from "../src/report/model.ts";
+import { renderPage } from "../src/report/render.ts";
+import type { RunSummary } from "../src/store/schema.ts";
 
 // --- fixtures ----------------------------------------------------------------------------------------------------
 
@@ -42,12 +42,58 @@ function score(overall: number): Score {
  */
 function benchRecords(): BenchRecord[] {
   return [
-    { fixtureId: "rs-dedupe", repeat: 0, bugProne: false, selfReportedDone: true, decisionScore: score(0.92), codeScore: score(0.88), oraclePass: true },
-    { fixtureId: "rs-dedupe", repeat: 1, bugProne: false, selfReportedDone: true, decisionScore: score(0.88), codeScore: score(0.84), oraclePass: true },
-    { fixtureId: "rs-format", repeat: 0, bugProne: false, selfReportedDone: true, codeScore: score(0.79), oraclePass: true }, // one-shot: no decisionScore
-    { fixtureId: "rs-format", repeat: 1, bugProne: false, selfReportedDone: true, codeScore: score(0.81), oraclePass: true },
-    { fixtureId: "rs-webhooks", repeat: 0, bugProne: true, selfReportedDone: true, decisionScore: score(0.90), codeScore: score(0.86), oraclePass: true },
-    { fixtureId: "rs-jobq", repeat: 0, bugProne: true, selfReportedDone: true, decisionScore: score(0.81), codeScore: score(0.72), oraclePass: false }, // escaped defect + overclaim
+    {
+      fixtureId: "rs-dedupe",
+      repeat: 0,
+      bugProne: false,
+      selfReportedDone: true,
+      decisionScore: score(0.92),
+      codeScore: score(0.88),
+      oraclePass: true,
+    },
+    {
+      fixtureId: "rs-dedupe",
+      repeat: 1,
+      bugProne: false,
+      selfReportedDone: true,
+      decisionScore: score(0.88),
+      codeScore: score(0.84),
+      oraclePass: true,
+    },
+    {
+      fixtureId: "rs-format",
+      repeat: 0,
+      bugProne: false,
+      selfReportedDone: true,
+      codeScore: score(0.79),
+      oraclePass: true,
+    }, // one-shot: no decisionScore
+    {
+      fixtureId: "rs-format",
+      repeat: 1,
+      bugProne: false,
+      selfReportedDone: true,
+      codeScore: score(0.81),
+      oraclePass: true,
+    },
+    {
+      fixtureId: "rs-webhooks",
+      repeat: 0,
+      bugProne: true,
+      selfReportedDone: true,
+      decisionScore: score(0.9),
+      codeScore: score(0.86),
+      oraclePass: true,
+    },
+    {
+      fixtureId: "rs-jobq",
+      repeat: 0,
+      bugProne: true,
+      selfReportedDone: true,
+      decisionScore: score(0.81),
+      codeScore: score(0.72),
+      oraclePass: false,
+    }, // escaped defect + overclaim
   ];
 }
 
@@ -95,7 +141,13 @@ function makeRun(
  */
 function pageWith(bench?: BenchData): PageData {
   return {
-    meta: { runId: "r", fixture: "f", repeats: 2, model: "claude-opus-4-8[1m]", generatedAt: "2026-06-22T00:00:00.000Z" },
+    meta: {
+      runId: "r",
+      fixture: "f",
+      repeats: 2,
+      model: "claude-opus-4-8[1m]",
+      generatedAt: "2026-06-22T00:00:00.000Z",
+    },
     ...(bench ? { bench } : {}),
     tasks: [],
     corrections: [],
@@ -136,10 +188,12 @@ test("loadBench: narrows a scored run into the four axes + per-task census + con
   assert.equal(data!.repeats, 2);
   // the showcase strip is ALWAYS present (the value story ships with every run)
   assert.equal(data!.showcase.length, 4);
-  assert.deepEqual(
-    data!.showcase.map((s) => s.kind).sort(),
-    ["memory", "specialists", "structure", "workbench"],
-  );
+  assert.deepEqual(data!.showcase.map((s) => s.kind).sort(), [
+    "memory",
+    "specialists",
+    "structure",
+    "workbench",
+  ]);
 });
 
 test("loadBench: no bench run in the store ⇒ undefined (page renders without the section)", () => {
@@ -154,12 +208,23 @@ test("loadBench: picks the LATEST bench run by startedAt", () => {
   const newerDir = join(runsRoot, "new-run");
   mkdirSync(newerDir, { recursive: true });
   const newerSummary: RunSummary = {
-    runId: "new-run", kind: "bench" as RunSummary["kind"], schemaVersion: "1",
-    config: { runId: "new-run", kind: "bench" as RunSummary["kind"], startedAt: "2026-06-23T00:00:00.000Z" },
-    taskCount: 0, finishedAt: "2026-06-23T00:00:00.000Z",
+    runId: "new-run",
+    kind: "bench" as RunSummary["kind"],
+    schemaVersion: "1",
+    config: {
+      runId: "new-run",
+      kind: "bench" as RunSummary["kind"],
+      startedAt: "2026-06-23T00:00:00.000Z",
+    },
+    taskCount: 0,
+    finishedAt: "2026-06-23T00:00:00.000Z",
     artifact: buildAbortedBenchArtifact("bench-code-judge-discrimination: gap too small"),
   };
-  writeFileSync(join(newerDir, "summary.json"), `${JSON.stringify(newerSummary, null, 2)}\n`, "utf8");
+  writeFileSync(
+    join(newerDir, "summary.json"),
+    `${JSON.stringify(newerSummary, null, 2)}\n`,
+    "utf8",
+  );
 
   const data = loadBench(runsRoot);
   assert.equal(data!.runId, "new-run");
@@ -242,9 +307,18 @@ test("renderPage: a page with no bench data still renders (sections degrade to e
 });
 
 test("renderPage: the corrections log is a first-class trust section in the bench IA", () => {
-  const page = pageWith(loadBench(makeRun(buildBenchArtifact(benchRecords()), "2026-06-22T00:00:00.000Z"))!);
+  const page = pageWith(
+    loadBench(makeRun(buildBenchArtifact(benchRecords()), "2026-06-22T00:00:00.000Z"))!,
+  );
   page.corrections = [
-    { date: "2026-06-16", high: true, h: "Dispatch-pattern proxy was invalid", meter: "scored one-shot", truth: "the conductor escalated", fix: "read the artifacts, not the tool pattern" },
+    {
+      date: "2026-06-16",
+      high: true,
+      h: "Dispatch-pattern proxy was invalid",
+      meter: "scored one-shot",
+      truth: "the conductor escalated",
+      fix: "read the artifacts, not the tool pattern",
+    },
   ];
   const html = renderPage(page);
 

@@ -46,12 +46,19 @@ class FakeChild extends EventEmitter implements StreamChild {
 const AGENT_DISPATCH_LINE =
   JSON.stringify({
     type: "assistant",
-    message: { content: [{ type: "tool_use", id: "toolu_1", name: "Agent", input: { subagent_type: "echoer" } }] },
+    message: {
+      content: [
+        { type: "tool_use", id: "toolu_1", name: "Agent", input: { subagent_type: "echoer" } },
+      ],
+    },
   }) + "\n";
 
 /** A benign `assistant` event with no tool_use — must NOT trigger a kill. */
 const THINKING_LINE =
-  JSON.stringify({ type: "assistant", message: { content: [{ type: "thinking", thinking: "" }] } }) + "\n";
+  JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "thinking", thinking: "" }] },
+  }) + "\n";
 
 /** A system line that appears after dispatch — should never be reached once we kill on the Agent block. */
 const SYSTEM_LINE =
@@ -89,12 +96,19 @@ test("captured run tees every emitted line to streamPath, kills on first Agent d
   const written = readFileSync(streamPath, "utf8");
   // (a) lines are written to streamPath — the tee captured what the child emitted.
   assert.ok(written.includes('"thinking"'), "benign line should be teed to the stream file");
-  assert.ok(written.includes('"name":"Agent"'), "the Agent dispatch line should be teed to the stream file");
+  assert.ok(
+    written.includes('"name":"Agent"'),
+    "the Agent dispatch line should be teed to the stream file",
+  );
   // (b) proc.kill() invoked exactly once, on the first Agent tool_use.
   assert.equal(child.killCount, 1, "kill() must fire exactly once, on the first Agent dispatch");
   // (c) the RunResult carries streamPath = the captured stream; a killed run has no settled result subtype.
   assert.equal(record.streamPath, streamPath);
-  assert.equal(record.resultSubtype, undefined, "a killed run forfeits the trailing result envelope");
+  assert.equal(
+    record.resultSubtype,
+    undefined,
+    "a killed run forfeits the trailing result envelope",
+  );
 });
 
 // --- CAPPED / no-kill mode: a dispatch does NOT kill; the run settles on its result envelope ----------
@@ -106,17 +120,29 @@ test("noKillOnDispatch lets a dispatch run on, settles on the result envelope, n
   const spawnFn: SpawnFn = () => child;
 
   // Capped mode: the conductor dispatches a subagent, then runs on to settle — the kill must NOT fire.
-  const inv: Invocation = { prompt: "noop", model: "test-model", streamPath, noKillOnDispatch: true };
+  const inv: Invocation = {
+    prompt: "noop",
+    model: "test-model",
+    streamPath,
+    noKillOnDispatch: true,
+  };
 
   const runPromise = runCaptured(inv, sandbox, spawnFn);
   // A dispatch appears (would kill in default mode) but the run continues to its settled result envelope.
   child.feed([THINKING_LINE, AGENT_DISPATCH_LINE, RESULT_SUCCESS_LINE]);
   const record = await runPromise;
 
-  assert.equal(child.killCount, 0, "capped mode must NOT kill on dispatch — the conductor runs on to settle");
+  assert.equal(
+    child.killCount,
+    0,
+    "capped mode must NOT kill on dispatch — the conductor runs on to settle",
+  );
   assert.equal(record.streamPath, streamPath);
   assert.equal(record.resultSubtype, "success", "a settled capped run surfaces result.subtype");
-  assert.ok(readFileSync(streamPath, "utf8").includes('"name":"Agent"'), "the dispatch line is still teed");
+  assert.ok(
+    readFileSync(streamPath, "utf8").includes('"name":"Agent"'),
+    "the dispatch line is still teed",
+  );
 });
 
 // --- no-dispatch run lets the process close normally (no kill) and observes its result subtype --------
@@ -156,7 +182,11 @@ test("an Agent dispatch split across two stdout chunks is detected once the line
   child.feed([AGENT_DISPATCH_LINE.slice(0, half), AGENT_DISPATCH_LINE.slice(half)]);
   const record = await runPromise;
 
-  assert.equal(child.killCount, 1, "the dispatch must be detected once the buffered line is complete");
+  assert.equal(
+    child.killCount,
+    1,
+    "the dispatch must be detected once the buffered line is complete",
+  );
   assert.equal(record.streamPath, streamPath);
 });
 

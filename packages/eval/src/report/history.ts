@@ -35,7 +35,8 @@ export function loadHistory(runsRoot: string, currentId: string): HistoryRow[] {
       continue;
     }
     const cfg = s.config;
-    const routing = (s.artifact as { accuracyDistribution?: { accuracyMean?: number }; accuracy?: number }) ?? {};
+    const routing =
+      (s.artifact as { accuracyDistribution?: { accuracyMean?: number }; accuracy?: number }) ?? {};
     const rt = routing.accuracyDistribution?.accuracyMean ?? routing.accuracy ?? 0;
 
     rows.push({

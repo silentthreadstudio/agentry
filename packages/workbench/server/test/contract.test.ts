@@ -46,7 +46,7 @@ test("an empty inline list parses as empty, not as one blank entry", () => {
 });
 
 test("an inline list is read too — planners write both forms", () => {
-  const c = parseContract("## Contract\nowns: [a/b.ts, \"c/d.ts\"]\ndeps: [1, 3]\n");
+  const c = parseContract('## Contract\nowns: [a/b.ts, "c/d.ts"]\ndeps: [1, 3]\n');
   assert.deepEqual(c.owns, ["a/b.ts", "c/d.ts"]);
   assert.deepEqual(c.deps, ["1", "3"]);
 });
@@ -56,7 +56,9 @@ test("a task with no Contract section yields empty lists rather than throwing", 
 });
 
 test("the Contract section ends at the next ## heading", () => {
-  const c = parseContract("## Contract\nowns:\n  - a.ts\n\n## Acceptance\nowns:\n  - NOT-a-contract.ts\n");
+  const c = parseContract(
+    "## Contract\nowns:\n  - a.ts\n\n## Acceptance\nowns:\n  - NOT-a-contract.ts\n",
+  );
   assert.deepEqual(c.owns, ["a.ts"]);
 });
 

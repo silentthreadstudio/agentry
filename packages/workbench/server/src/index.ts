@@ -1,3 +1,8 @@
+import { resolve } from "node:path";
+import { resolveSlug } from "@agentry/workbench-shared";
+import { type Project, createProject, slugsFor } from "./application/project.js";
+import type { Clock, RunChange } from "./domain/ports.js";
+import { removePidfile, writePidfile } from "./instance/pidfile.js";
 // Composition root for the Agentry Workbench local service — ADR-001's `index.ts` wiring.
 //
 // The lifecycle: acquire the singleton port-lock (ADR-002); if another instance already holds it, print
@@ -14,20 +19,17 @@
 // request names its project with `?project=<slug>`. A new repo JOINS the running server by POSTing
 // `/api/projects` instead of losing the race.
 import { bindPortLock } from "./instance/port-lock.js";
-import { removePidfile, writePidfile } from "./instance/pidfile.js";
 import { readRegistry, registerRoot } from "./instance/registry.js";
-import { createProject, slugsFor, type Project } from "./application/project.js";
-import type { Clock, RunChange } from "./domain/ports.js";
 import { createHttpHandler } from "./transport/http.js";
-import { runKey, type ProjectSource } from "./transport/projects.js";
+import { type ProjectSource, runKey } from "./transport/projects.js";
 import { WsTransport } from "./transport/ws.js";
-import { resolveSlug } from "@agentry/workbench-shared";
-import { resolve } from "node:path";
 
 // The root this server was STARTED from — the default project when a request names none. Resolved
 // exactly as FLOW resolves its root (packages/flow/src/index.ts) so both layers see the same `.agentry/`.
 function resolveStartupRoot(): string {
-  return resolve(process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd());
+  return resolve(
+    process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd(),
+  );
 }
 
 // The single source of "now" injected into the application layer (the read-models' `updatedAt`).
@@ -40,7 +42,9 @@ async function main(): Promise<void> {
   if (lock.status === "already-up") {
     // Another instance holds the port-lock — focus it, don't spawn a second (ADR-002, AC1). It serves
     // this root too as soon as the command registers it (POST /api/projects).
-    console.log("workbench already running on http://127.0.0.1:4317 — focusing the existing instance");
+    console.log(
+      "workbench already running on http://127.0.0.1:4317 — focusing the existing instance",
+    );
     process.exit(0);
   }
 
@@ -83,7 +87,8 @@ async function main(): Promise<void> {
   // The ws transport must exist before a project's watchers can push, but the resolver it needs closes
   // over the project map — so it is constructed first and the map is captured by reference.
   const transport = new WsTransport(server, (label, projectSlug) => {
-    const project = projectSlug !== null ? bySlug.get(projectSlug) : bySlug.get(orderedSlugs()[0] ?? "");
+    const project =
+      projectSlug !== null ? bySlug.get(projectSlug) : bySlug.get(orderedSlugs()[0] ?? "");
     if (!project) return null;
     const run = resolveSlug(label, project.reader.listRuns());
     return run !== undefined ? runKey(project.slug, run) : null;
@@ -114,7 +119,8 @@ async function main(): Promise<void> {
 
   const projects: ProjectSource = {
     list: () => [...bySlug.values()],
-    resolve: (slug) => (slug === null || slug.length === 0 ? byRoot.get(startupRoot) : bySlug.get(slug)),
+    resolve: (slug) =>
+      slug === null || slug.length === 0 ? byRoot.get(startupRoot) : bySlug.get(slug),
     register: (root) => {
       const abs = resolve(root);
       const existing = byRoot.get(abs);
@@ -142,7 +148,10 @@ async function main(): Promise<void> {
     console.log(`workbench server shutting down (${signal})`);
     removePidfile(startupRoot);
     transport.close();
-    const closing = [...byRoot.values()].flatMap((p) => [p.watcher.close(), p.permissionWatcher.close()]);
+    const closing = [...byRoot.values()].flatMap((p) => [
+      p.watcher.close(),
+      p.permissionWatcher.close(),
+    ]);
     void Promise.allSettled(closing).finally(() => server.close(() => process.exit(0)));
   };
   process.on("SIGINT", () => shutdown("SIGINT"));

@@ -26,7 +26,10 @@ import { runFlowComplianceProbe } from "../honesty/flow-compliance/probe.ts";
  * {@link locateAgentWorkDir} and only calls this when that returned a path (a null work dir ⇒ no compliance run).
  */
 export function runComplianceFor(capturedWorkDir: string): { pass: boolean } {
-  const outPath = join(mkdtempSync(join(tmpdir(), "rightsizing-compliance-")), "flow-compliance.json");
+  const outPath = join(
+    mkdtempSync(join(tmpdir(), "rightsizing-compliance-")),
+    "flow-compliance.json",
+  );
   const { artifact } = runFlowComplianceProbe({ runDir: capturedWorkDir, outPath });
   return { pass: artifact.pass };
 }
@@ -50,11 +53,19 @@ export function shapeAwareCompliance(
   const escalatedExpected = expectedShape !== "one-shot";
   if (workDir === null) {
     return escalatedExpected
-      ? { pass: false, routed: "one-shot", detail: `expected ${expectedShape} but no Flow run opened (under-routed)` }
+      ? {
+          pass: false,
+          routed: "one-shot",
+          detail: `expected ${expectedShape} but no Flow run opened (under-routed)`,
+        }
       : { pass: true, routed: "one-shot", detail: "one-shot: no Flow run (correct floor)" };
   }
   if (!escalatedExpected) {
-    return { pass: false, routed: "escalated", detail: "expected one-shot but opened a Flow run (over-routed)" };
+    return {
+      pass: false,
+      routed: "escalated",
+      detail: "expected one-shot but opened a Flow run (over-routed)",
+    };
   }
   const probe = runComplianceFor(workDir);
   return {

@@ -13,4 +13,3 @@ export function kindGlyphOf(id: string): string {
   if (id.startsWith("adr-")) return "◇";
   return "▤";
 }
-

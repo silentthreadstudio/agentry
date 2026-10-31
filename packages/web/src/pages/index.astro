@@ -1,4 +1,11 @@
 ---
+import Hero from "../components/Hero.astro";
+import Install from "../components/Install.astro";
+import Moat from "../components/Moat.astro";
+import Pillars from "../components/Pillars.astro";
+import Proof from "../components/Proof.astro";
+import RoutingDemo from "../components/RoutingDemo.astro";
+import Why from "../components/Why.astro";
 // The one landing page (T8 — composition root). Pure composition: imports Base + the seven
 // section components and renders them in IA order (VISION §4: claim → why → how → proof → install).
 // No section logic, no styles of its own — every section owns its own markup, styles, and ids.
@@ -6,14 +13,7 @@
 // Anchor integrity: Nav links to #proof, #how, #pillars, #install. Each component owns its own
 // section id — Proof (#proof), Pillars (#pillars), Install (#install), and RoutingDemo (#how, with
 // its own "How it works" section chrome). index.astro stays pure composition.
-import Base from '../layouts/Base.astro';
-import Hero from '../components/Hero.astro';
-import Why from '../components/Why.astro';
-import Pillars from '../components/Pillars.astro';
-import RoutingDemo from '../components/RoutingDemo.astro';
-import Moat from '../components/Moat.astro';
-import Proof from '../components/Proof.astro';
-import Install from '../components/Install.astro';
+import Base from "../layouts/Base.astro";
 ---
 
 <Base

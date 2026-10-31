@@ -1,3 +1,4 @@
+import type { BacklogItem } from "@agentry/workbench-shared";
 // Backlog — everything captured but not started, as a list.
 //
 // The board already shows the backlog as a column, so why a page: a column is a glance, and a list is
@@ -5,7 +6,6 @@
 // kind in one scannable place, not four cards and a scrollbar. Queueing from here is the same patch the
 // board's drag performs — one write path, two surfaces.
 import { useCallback, useEffect, useState } from "react";
-import type { BacklogItem } from "@agentry/workbench-shared";
 import { fetchBacklog, patchBacklogItem } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 import { EmptyState } from "../../ui/index.js";
@@ -31,7 +31,11 @@ export function Backlog() {
 
   const open = items.filter((i) => i.status === "backlog" || i.status === "ready");
   if (open.length === 0) {
-    return <EmptyState title="Nothing captured">Anything you add from the board lands here until it is claimed.</EmptyState>;
+    return (
+      <EmptyState title="Nothing captured">
+        Anything you add from the board lands here until it is claimed.
+      </EmptyState>
+    );
   }
 
   const move = async (item: BacklogItem, status: "backlog" | "ready") => {
@@ -48,7 +52,9 @@ export function Backlog() {
             {item.body.trim().length > 0 ? <div className="ctx">{item.body.trim()}</div> : null}
             <div className="meta">
               <span className="chip kind">{item.kind}</span>
-              <span className={`chip ${item.status === "ready" ? "queued" : ""}`}>{item.status}</span>
+              <span className={`chip ${item.status === "ready" ? "queued" : ""}`}>
+                {item.status}
+              </span>
               <span className="ago">added {relativeTime(item.createdAt)}</span>
             </div>
           </div>

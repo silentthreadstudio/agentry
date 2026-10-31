@@ -2,7 +2,7 @@
 // real adapters via a fake McpServer that captures each registered handler, so the assertions run the
 // genuine err()/ok() wire shape. Covers AC2–AC9 + Q1.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,10 +12,10 @@ import type { FileStore, ReadResult, StoredEpisode, StoredFact } from "../src/do
 import type { TextIndex } from "../src/domain/ports.js";
 import { SqliteTextIndex } from "../src/persistence/db-index.js";
 import { MarkdownFileStore } from "../src/persistence/file-store.js";
+import type { Roots } from "../src/resolution/roots.js";
 import { registerEpisodeTools } from "../src/tools/episode-tools.js";
 import { registerFactTools } from "../src/tools/fact-tools.js";
 import { registerFlowTools } from "../src/tools/flow-tools.js";
-import type { Roots } from "../src/resolution/roots.js";
 
 // ── harness ────────────────────────────────────────────────────────────────
 type Handler = (args: unknown) => Promise<{ content: { text: string }[]; isError?: boolean }>;
@@ -28,7 +28,13 @@ class CapturingServer {
   }
 }
 
-function wired(global: string): { service: MemoryService; call: (tool: string, args?: unknown) => Promise<{ content: { text: string }[]; isError?: boolean }> } {
+function wired(global: string): {
+  service: MemoryService;
+  call: (
+    tool: string,
+    args?: unknown,
+  ) => Promise<{ content: { text: string }[]; isError?: boolean }>;
+} {
   const roots: Roots = { global, project: null };
   const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
   service.load();
@@ -62,7 +68,11 @@ const ARCHIVE_THRESHOLD = 4;
 
 /** Archive a fresh fact and return its id (drives the real decay path). */
 function archivedFact(service: MemoryService, tick: () => number): string {
-  const { id } = service.write({ type: "gotcha", scope: "global", text: `archive target ${Math.random()}` });
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: `archive target ${Math.random()}`,
+  });
   for (let s = 1; s <= ARCHIVE_THRESHOLD; s++) {
     tick();
     service.feedback({ recalled: [id], used: [], outcome: "pass" });
@@ -89,12 +99,21 @@ test("AC2/AC4: update/forget/recover on a missing id → isError, code:not-found
 
 // ── AC2 — recover on an existing-but-not-archived id → invalid-state, why mentions the status ───────
 test("AC2: recover on an existing non-archived fact → invalid-state, why names the status", async () => {
-  let clock = 1000;
+  const clock = 1000;
   const dir = fresh();
   const roots: Roots = { global: dir, project: null };
-  const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots, () => clock);
+  const service = new MemoryService(
+    new MarkdownFileStore(roots),
+    new SqliteTextIndex(),
+    roots,
+    () => clock,
+  );
   service.load();
-  const { id } = service.write({ type: "decision", scope: "global", text: "an active fact, not archived" });
+  const { id } = service.write({
+    type: "decision",
+    scope: "global",
+    text: "an active fact, not archived",
+  });
 
   // service-level outcome carries the actual status
   const outcome = service.recover(id);
@@ -110,7 +129,9 @@ test("AC2: recover on an existing non-archived fact → invalid-state, why names
   const env = envelopeOf(res);
   assert.equal(env.code, "invalid-state");
   assert.ok(env.why.includes("active"), "why distinguishes the actual status");
-  assert.ok(env.why.toLowerCase().includes("archived") || env.fix.toLowerCase().includes("archived"));
+  assert.ok(
+    env.why.toLowerCase().includes("archived") || env.fix.toLowerCase().includes("archived"),
+  );
 });
 
 // ── AC3 — semantic bad-input: blank id → code:bad-input, fix names the field ────────────────────────
@@ -126,8 +147,16 @@ test("AC3: a blank/whitespace id → isError, code:bad-input, fix names the fiel
 // ── AC5 / Q2 — feedback partial reporting + all-invalid → error ─────────────────────────────────────
 test("AC5: feedback with one good + one bogus id → success listing applied + skipped(reason)", async () => {
   const { service, call } = wired(fresh());
-  const { id: good } = service.write({ type: "gotcha", scope: "global", text: "a real recalled fact" });
-  const res = await call("memory_feedback", { recalled: [good, "g:BOGUS"], used: [good], outcome: "pass" });
+  const { id: good } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "a real recalled fact",
+  });
+  const res = await call("memory_feedback", {
+    recalled: [good, "g:BOGUS"],
+    used: [good],
+    outcome: "pass",
+  });
   const data = payloadOf(res);
   assert.deepEqual(data.applied, [good]);
   assert.equal(data.skipped.length, 1);
@@ -137,7 +166,11 @@ test("AC5: feedback with one good + one bogus id → success listing applied + s
 
 test("AC5/Q2: feedback with all-invalid ids → isError, code:not-found naming the ids", async () => {
   const { call } = wired(fresh());
-  const res = await call("memory_feedback", { recalled: ["g:NOPE1", "g:NOPE2"], used: [], outcome: "pass" });
+  const res = await call("memory_feedback", {
+    recalled: ["g:NOPE1", "g:NOPE2"],
+    used: [],
+    outcome: "pass",
+  });
   const env = envelopeOf(res);
   assert.equal(env.code, "not-found");
   assert.ok(
@@ -165,7 +198,12 @@ test("AC5/Q2: distill stamp with all-invalid episode ids → isError, code:not-f
 // ── AC6 / Q3 — write with bogus supersedes → success, supersededMissing flagged ─────────────────────
 test("AC6: write with a bogus supersedes → success with supersededMissing === the bogus id", async () => {
   const { call } = wired(fresh());
-  const res = await call("memory_write", { type: "repo-fact", scope: "global", text: "new fact", supersedes: "g:GHOST" });
+  const res = await call("memory_write", {
+    type: "repo-fact",
+    scope: "global",
+    text: "new fact",
+    supersedes: "g:GHOST",
+  });
   const data = payloadOf(res);
   assert.equal(data.action, "created");
   assert.equal(data.supersededMissing, "g:GHOST");
@@ -173,7 +211,9 @@ test("AC6: write with a bogus supersedes → success with supersededMissing === 
 
 test("AC9: write with NO supersedes → success, supersededMissing absent (additive-only)", async () => {
   const { call } = wired(fresh());
-  const data = payloadOf(await call("memory_write", { type: "repo-fact", scope: "global", text: "plain fact" }));
+  const data = payloadOf(
+    await call("memory_write", { type: "repo-fact", scope: "global", text: "plain fact" }),
+  );
   assert.equal(data.action, "created");
   assert.equal("supersededMissing" in data, false);
 });
@@ -213,7 +253,10 @@ test("Q1: a corrupt fact file surfaces as stats().readErrors and on the memory_s
   service.write({ type: "gotcha", scope: "global", text: "a healthy fact" });
   const factsDir = join(dir, "facts");
   mkdirSync(factsDir, { recursive: true });
-  writeFileSync(join(factsDir, "corrupt-record.md"), "---\nthis: is: not: valid: yaml: frontmatter\n---\nbody\n");
+  writeFileSync(
+    join(factsDir, "corrupt-record.md"),
+    "---\nthis: is: not: valid: yaml: frontmatter\n---\nbody\n",
+  );
 
   // reload picks up the corrupt file as a read-error (not swallowed)
   service.load();
@@ -221,7 +264,9 @@ test("Q1: a corrupt fact file surfaces as stats().readErrors and on the memory_s
   assert.ok(stats.readErrors.length >= 1, "a read-error is collected");
   assert.equal(stats.readErrors[0]!.kind, "facts");
   assert.equal(stats.readErrors[0]!.file, "corrupt-record.md");
-  assert.ok(typeof stats.readErrors[0]!.reason === "string" && stats.readErrors[0]!.reason.length > 0);
+  assert.ok(
+    typeof stats.readErrors[0]!.reason === "string" && stats.readErrors[0]!.reason.length > 0,
+  );
 
   // and memory_stats surfaces it on its payload (Q1)
   const data = payloadOf(await call("memory_stats"));
@@ -244,37 +289,74 @@ test("AC9: every registered tool's happy path stays isError:false with expected 
   const { service, call } = wired(fresh());
 
   // seed records the happy paths can act on
-  const { id: factId } = service.write({ type: "gotcha", scope: "global", text: "seed fact for happy paths" });
-  const { id: epId } = service.episodeWrite({ task: "t", shape: "decompose", outcome: "pass", lesson: "lesson text" });
+  const { id: factId } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "seed fact for happy paths",
+  });
+  const { id: epId } = service.episodeWrite({
+    task: "t",
+    shape: "decompose",
+    outcome: "pass",
+    lesson: "lesson text",
+  });
 
   // 1 memory_write
-  assert.equal((await call("memory_write", { type: "decision", scope: "global", text: "another fact" })).isError ?? false, false);
+  assert.equal(
+    (await call("memory_write", { type: "decision", scope: "global", text: "another fact" }))
+      .isError ?? false,
+    false,
+  );
   // 2 memory_recall
-  assert.equal(payloadOf(await call("memory_recall", { query: "seed fact happy paths" })) && true, true);
+  assert.equal(
+    payloadOf(await call("memory_recall", { query: "seed fact happy paths" })) && true,
+    true,
+  );
   // 3 memory_search
   assert.ok(Array.isArray(payloadOf(await call("memory_search", { query: "seed fact" })).results));
   // 4 memory_update (valid id)
-  assert.deepEqual(payloadOf(await call("memory_update", { id: factId, confidence: 0.9 })), { id: factId, updated: true });
+  assert.deepEqual(payloadOf(await call("memory_update", { id: factId, confidence: 0.9 })), {
+    id: factId,
+    updated: true,
+  });
   // 5 memory_feedback (valid recalled/used)
-  assert.ok(payloadOf(await call("memory_feedback", { recalled: [factId], used: [factId], outcome: "pass" })).applied.includes(factId));
+  assert.ok(
+    payloadOf(
+      await call("memory_feedback", { recalled: [factId], used: [factId], outcome: "pass" }),
+    ).applied.includes(factId),
+  );
   // 6 memory_forget (valid id) — forget the *other* fact, keep factId for later
   const { id: throwaway } = service.write({ type: "gotcha", scope: "global", text: "forget me" });
-  assert.deepEqual(payloadOf(await call("memory_forget", { id: throwaway })), { forgotten: true, kind: "fact" });
+  assert.deepEqual(payloadOf(await call("memory_forget", { id: throwaway })), {
+    forgotten: true,
+    kind: "fact",
+  });
   // 7 episode_write
-  assert.ok(payloadOf(await call("episode_write", { task: "t2", shape: "s2", outcome: "pass" })).id);
+  assert.ok(
+    payloadOf(await call("episode_write", { task: "t2", shape: "s2", outcome: "pass" })).id,
+  );
   // 8 memory_stats
   assert.ok(typeof payloadOf(await call("memory_stats")).facts === "number");
   // 9 memory_distill (list mode)
   assert.ok(Array.isArray(payloadOf(await call("memory_distill", { mode: "list" })).clusters));
   // 9b memory_distill (stamp valid)
-  assert.ok(payloadOf(await call("memory_distill", { mode: "stamp", episodeIds: [epId] })).applied.includes(epId));
+  assert.ok(
+    payloadOf(await call("memory_distill", { mode: "stamp", episodeIds: [epId] })).applied.includes(
+      epId,
+    ),
+  );
   // 10 memory_consolidate
   assert.ok(Array.isArray(payloadOf(await call("memory_consolidate", {})).proposals));
   // 11 memory_recover (valid: archive a fact, then recover it)
   let clock = 5000;
   const dir2 = fresh();
   const roots2: Roots = { global: dir2, project: null };
-  const svc2 = new MemoryService(new MarkdownFileStore(roots2), new SqliteTextIndex(), roots2, () => (clock += 1000));
+  const svc2 = new MemoryService(
+    new MarkdownFileStore(roots2),
+    new SqliteTextIndex(),
+    roots2,
+    () => (clock += 1000),
+  );
   svc2.load();
   const archivedId = archivedFact(svc2, () => (clock += 1000));
   const server2 = new CapturingServer();

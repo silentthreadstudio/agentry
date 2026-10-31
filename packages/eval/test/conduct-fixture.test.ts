@@ -11,8 +11,8 @@ import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { loadOutcomeFixture } from "../src/conduct/fixture.ts";
 import type { OutcomeFixture } from "../src/conduct/fixture.ts";
@@ -29,7 +29,10 @@ function fixtureIds(): string[] {
 }
 
 /** Materialize seed (+ an optional golden/broken overlay) into a fresh sandbox, inject the oracle, run it. */
-function runOracleOver(fx: OutcomeFixture, overlayDir: string | null): ReturnType<typeof runOracle> {
+function runOracleOver(
+  fx: OutcomeFixture,
+  overlayDir: string | null,
+): ReturnType<typeof runOracle> {
   const sandbox = mkdtempSync(join(tmpdir(), "outcome-fx-"));
   try {
     cpSync(fx.seedDir, sandbox, { recursive: true });
@@ -77,18 +80,27 @@ for (const id of ids) {
 // --- corpus-level coverage (AC3): ≥8 fixtures spanning all three shapes and ≥2 kinds ---------------------------
 
 test("corpus: at least 8 fixtures are present", () => {
-  assert.ok(ids.length >= 8, `expected ≥8 outcome fixtures, found ${ids.length}: ${ids.join(", ")}`);
+  assert.ok(
+    ids.length >= 8,
+    `expected ≥8 outcome fixtures, found ${ids.length}: ${ids.join(", ")}`,
+  );
 });
 
 test("corpus: the labeled shapes cover one-shot, spec-first, AND decompose", () => {
   const shapes = new Set(ids.map((id) => loadOutcomeFixture(join(OUTCOME_DIR, id)).shape));
   for (const required of ["one-shot", "spec-first", "decompose"] as const) {
-    assert.ok(shapes.has(required), `no fixture labeled shape="${required}" — have ${[...shapes].join(", ")}`);
+    assert.ok(
+      shapes.has(required),
+      `no fixture labeled shape="${required}" — have ${[...shapes].join(", ")}`,
+    );
   }
 });
 
 test("corpus: the labeled kinds cover at least feature + bug", () => {
   const kinds = new Set(ids.map((id) => loadOutcomeFixture(join(OUTCOME_DIR, id)).kind));
-  assert.ok(kinds.has("feature"), `no fixture labeled kind="feature" — have ${[...kinds].join(", ")}`);
+  assert.ok(
+    kinds.has("feature"),
+    `no fixture labeled kind="feature" — have ${[...kinds].join(", ")}`,
+  );
   assert.ok(kinds.has("bug"), `no fixture labeled kind="bug" — have ${[...kinds].join(", ")}`);
 });

@@ -1,3 +1,4 @@
+import { createReadStream, existsSync, statSync } from "node:fs";
 // http — the Node `http` request edge (ADR-001's `transport`). For every request it: (1) resolves the
 // run context off the `Host` header (host-router, ADR-002); (2) delegates `/healthz` + `/api/*` to
 // `routes`; (3) otherwise serves the built SPA static from `plugin/workbench/web/`, with an `index.html`
@@ -11,23 +12,22 @@
 // This module owns request shaping only; it holds no run state. The application state (the reader) and
 // the run context per request are passed in by the composition root.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveSlug } from "@agentry/workbench-shared";
 import type { Transport } from "../domain/ports.js";
-import { handleProjectsRequest, runKey, type ProjectSource } from "./projects.js";
-import { parseHostLabel, type RunContext } from "./host-router.js";
+import { type RunContext, parseHostLabel } from "./host-router.js";
+import { type ProjectSource, handleProjectsRequest, runKey } from "./projects.js";
 import {
+  type PermissionDeps,
+  type ReaderDeps,
+  type WriteDeps,
   handleApiRequest,
+  handleBacklogRequest,
   handlePermissionRequest,
   handlePostRequest,
   handleReaderRequest,
   handleRunResetRequest,
-  handleBacklogRequest,
-  type PermissionDeps,
-  type ReaderDeps,
-  type WriteDeps,
 } from "./routes.js";
 
 // Resolve the built SPA's static root. `CLAUDE_PLUGIN_ROOT` (set by the plugin host) wins; otherwise the
@@ -149,7 +149,9 @@ export function createHttpHandler(projects: ProjectSource, transport: Transport)
     // the run-scoped write surface (the paths don't overlap; order is just a stable ladder). A non-write,
     // non-GET request lands at the 405 after both dispatchers resolve false.
     void handlePostRequest(req, res, write)
-      .then((handled) => (handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })))
+      .then((handled) =>
+        handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport }),
+      )
       .then((handled) =>
         handled
           ? true

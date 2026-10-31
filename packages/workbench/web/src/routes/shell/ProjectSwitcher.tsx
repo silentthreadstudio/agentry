@@ -9,7 +9,7 @@
 // at the top of the sidebar because "which workspace am I in" is the first question you ask, and an
 // answer buried at the bottom reads as a status readout rather than a control.
 import { useEffect, useRef, useState } from "react";
-import { fetchProjects, selectProject, type ProjectEntry } from "../../api/index.js";
+import { type ProjectEntry, fetchProjects, selectProject } from "../../api/index.js";
 
 /** Keep the END of a path — the part that distinguishes two same-named projects — and elide the front.
  *  Done here rather than with CSS `direction: rtl`, which reorders the punctuation and leaves a stray
@@ -39,7 +39,12 @@ export function ProjectSwitcher({ current }: { current: string | undefined }) {
   // from the top of a list you did not choose.
   useEffect(() => {
     if (!open) return;
-    setCursor(Math.max(0, projects.findIndex((p) => p.slug === current)));
+    setCursor(
+      Math.max(
+        0,
+        projects.findIndex((p) => p.slug === current),
+      ),
+    );
   }, [open, projects, current]);
 
   useEffect(() => {

@@ -12,8 +12,8 @@
 // adapter trusts the typed `behavior` it's handed.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertSafeSegment } from "@agentry/flow/domain/ids";
 import { permissionsDir } from "@agentry/flow/channel/permission-relay";
+import { assertSafeSegment } from "@agentry/flow/domain/ids";
 
 export type PermissionBehavior = "allow" | "deny";
 

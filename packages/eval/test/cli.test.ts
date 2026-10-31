@@ -12,8 +12,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { main, resolveRunsRoot } from "../src/cli.ts";
 import type { RunConfig } from "../src/store/schema.ts";
@@ -33,7 +33,10 @@ test("the default runs-root resolves to <eval>/runs (package-anchored), independ
   const resolved = resolveRunsRoot({});
 
   assert.equal(resolved, join(expected));
-  assert.ok(resolved.endsWith(`eval${sep}runs`), `expected a path ending in eval/runs, got ${resolved}`);
+  assert.ok(
+    resolved.endsWith(`eval${sep}runs`),
+    `expected a path ending in eval/runs, got ${resolved}`,
+  );
   assert.ok(!resolved.endsWith(`eval${sep}eval${sep}runs`), "must NOT nest to eval/eval/runs");
 });
 
@@ -69,7 +72,12 @@ test("an explicit --runs-root overrides the default (resolved relative to CWD)",
 function seedStoredRun(runsRoot: string, runId: string, specs: Record<string, string>): void {
   const runDir = join(runsRoot, runId);
   mkdirSync(runDir, { recursive: true });
-  const config: RunConfig = { runId, kind: "bench", fixtureDir: BENCH_MINI_DIR, startedAt: "2026-06-17T00:00:00.000Z" };
+  const config: RunConfig = {
+    runId,
+    kind: "bench",
+    fixtureDir: BENCH_MINI_DIR,
+    startedAt: "2026-06-17T00:00:00.000Z",
+  };
   writeFileSync(join(runDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
   for (const [taskId, spec] of Object.entries(specs)) {
     const slugDir = join(runDir, "tasks", taskId, "work", taskId);

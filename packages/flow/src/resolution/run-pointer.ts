@@ -12,7 +12,7 @@
 // Pointer seam (pinned — identical to the binder/emitter hooks):
 //   path:  <cwd>/.agentry/run/sessions/<session_id>.json   (one file per session)
 //   shape: { "workId": "<run>", "updatedAt": "<iso8601>" }  (atomic tmp-then-rename, last-write-wins)
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertSafeSegment } from "../domain/ids.js";
 

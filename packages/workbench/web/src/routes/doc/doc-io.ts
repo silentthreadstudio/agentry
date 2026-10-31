@@ -7,8 +7,13 @@ import type { DocModel } from "@agentry/workbench-shared";
 import { apiPath } from "../../api/http.js";
 
 // GET /api/work/:id/doc/:docId → DocModel.
-export async function fetchDoc(runId: string, docId: string, signal: AbortSignal): Promise<DocModel> {
-  const res = await fetch(apiPath(`/api/work/${encodeURIComponent(runId)}/doc/${encodeURIComponent(docId)}`),
+export async function fetchDoc(
+  runId: string,
+  docId: string,
+  signal: AbortSignal,
+): Promise<DocModel> {
+  const res = await fetch(
+    apiPath(`/api/work/${encodeURIComponent(runId)}/doc/${encodeURIComponent(docId)}`),
     { headers: { accept: "application/json" }, signal },
   );
   if (!res.ok) {

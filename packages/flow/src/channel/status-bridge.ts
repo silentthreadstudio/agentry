@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 // StatusBridge — the INFRA half of the human→agent status channel (mirrors ChannelBridge / PermissionRelay:
 // file-watch signaling, no HTTP). chokidar-watches `<cwd>/.agentry/run/status-signals/*.json`; on each new
 // signal file it parses the StatusSignal, emits one `notifications/claude/channel`, and DELETES the file
@@ -7,9 +9,7 @@
 // Emitting is decoupled behind the same `EmitFn` ChannelBridge uses: a session that didn't load flow as a
 // channel silently drops the notification (spike-proven), so the bridge needs no enablement branch — and it
 // still deletes the file, so signals never accumulate when channels are off.
-import { FSWatcher, watch } from "chokidar";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { type FSWatcher, watch } from "chokidar";
 import type { EmitFn } from "./channel-bridge.js";
 import { StatusSignal, statusNotification } from "./status-event.js";
 

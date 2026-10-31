@@ -1,7 +1,7 @@
 // run-pointer + resolveRunContext — the ADR-005 NO-branch identity contract: a pointer round-trips,
 // resolveRunContext requires an explicit run, and it ERRORS (never scans a folder) when unresolved.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -81,10 +81,7 @@ test("resolveRunContext ERRORS when no run and no resolvable pointer — never s
   // ignore it entirely and throw.
   mkdirSync(runDir(cwd, "a-tempting-newest-folder"), { recursive: true });
   assert.ok(workRoot(cwd).endsWith(join(".agentry", "work")));
-  assert.throws(
-    () => resolveRunContext({}, { CLAUDE_PROJECT_DIR: cwd }),
-    /no run resolved/,
-  );
+  assert.throws(() => resolveRunContext({}, { CLAUDE_PROJECT_DIR: cwd }), /no run resolved/);
   // even with an unbound session_id, no folder scan — still errors.
   assert.throws(
     () => resolveRunContext({ session_id: "unbound" }, { CLAUDE_PROJECT_DIR: cwd }),

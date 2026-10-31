@@ -17,17 +17,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import { safeRunDir, readRunConfig } from "../store/read.ts";
+import { readRunConfig, safeRunDir } from "../store/read.ts";
 import type { RunSummary } from "../store/schema.ts";
-import type {
-  Correction,
-  HistoryRow,
-  PageData,
-  TaskData,
-} from "./model.ts";
 import { loadCorrections } from "./corrections.ts";
 import { loadHistory } from "./history.ts";
 import { loadBench } from "./load-bench.ts";
+import type { Correction, HistoryRow, PageData, TaskData } from "./model.ts";
 
 /** Options for {@link buildPageData}: where the curated corrections file lives, and a stamped generation time. */
 export interface BuildOptions {
@@ -84,13 +79,21 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
 // labeled floor + the noisy set). The routing label-match VIEW (confusion/accuracy) is retired off the public
 // path (ADR-002/ADR-003), so this raw shape narrows just the two fields `buildTasks` consumes — nothing more.
 
-interface RawStabilityRow { taskId: string; labeledFloor: string; modalShape: string; stability: number }
+interface RawStabilityRow {
+  taskId: string;
+  labeledFloor: string;
+  modalShape: string;
+  stability: number;
+}
 interface RawRoutingArtifact {
   stabilityTable?: RawStabilityRow[];
   noisyTasks?: string[];
 }
 
-interface TaskRun { shape: string; ms: number }
+interface TaskRun {
+  shape: string;
+  ms: number;
+}
 
 /** Parse `events.jsonl` task-done lines into `taskId → ordered {shape, ms}[]` (the per-repeat dispatch record). */
 function parseEvents(eventsPath: string): Map<string, TaskRun[]> {
@@ -101,7 +104,11 @@ function parseEvents(eventsPath: string): Map<string, TaskRun[]> {
   for (const line of readFileSync(eventsPath, "utf8").split("\n")) {
     if (!line.trim()) continue;
     let ev: { kind?: string; detail?: string };
-    try { ev = JSON.parse(line); } catch { continue; }
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
     if (ev.kind !== "task-done" || !ev.detail) continue;
     const m = re.exec(ev.detail);
     if (!m) continue;

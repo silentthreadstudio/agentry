@@ -13,7 +13,7 @@
 
 import { spawnSync } from "node:child_process";
 
-import { overallFromDimensions, type Rubric, type RubricDimensions } from "./rubric.ts";
+import { type Rubric, type RubricDimensions, overallFromDimensions } from "./rubric.ts";
 
 /** The model the judge pins for every call. A generic default; the caller may override it (ADR-002). */
 export const DEFAULT_JUDGE_MODEL = "claude-opus-4-8[1m]";
@@ -105,7 +105,9 @@ ${dimensionKeys}
  */
 function validatedDimension(name: string, raw: unknown): number {
   if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0 || raw > 2) {
-    throw new Error(`judge: dimension "${name}" must be an integer 0..2, got ${JSON.stringify(raw)}`);
+    throw new Error(
+      `judge: dimension "${name}" must be an integer 0..2, got ${JSON.stringify(raw)}`,
+    );
   }
   return raw;
 }

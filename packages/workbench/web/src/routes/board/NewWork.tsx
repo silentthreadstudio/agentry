@@ -96,7 +96,12 @@ export function NewWork({ onCreated }: { onCreated: () => void }) {
           <div className="frow">
             <span className="flbl">Kind</span>
             {KINDS.map((k) => (
-              <button key={k} type="button" className={`kchip${k === kind ? " on" : ""}`} onClick={() => setKind(k)}>
+              <button
+                key={k}
+                type="button"
+                className={`kchip${k === kind ? " on" : ""}`}
+                onClick={() => setKind(k)}
+              >
                 {k}
               </button>
             ))}
@@ -105,21 +110,29 @@ export function NewWork({ onCreated }: { onCreated: () => void }) {
           <div>
             <span className="flbl block">Where does it go</span>
             <div className="dest">
-              <button type="button" className={`dopt${ready ? "" : " on"}`} onClick={() => setReady(false)}>
+              <button
+                type="button"
+                className={`dopt${ready ? "" : " on"}`}
+                onClick={() => setReady(false)}
+              >
                 <span className="dt">
                   <span className="dot2" style={{ background: "var(--todo)" }} />
                   Backlog
                 </span>
                 <span className="dd">Captured, not started. Sits until you decide it's next.</span>
               </button>
-              <button type="button" className={`dopt${ready ? " on" : ""}`} onClick={() => setReady(true)}>
+              <button
+                type="button"
+                className={`dopt${ready ? " on" : ""}`}
+                onClick={() => setReady(true)}
+              >
                 <span className="dt">
                   <span className="dot2" style={{ background: "var(--v1)" }} />
                   Ready
                 </span>
                 <span className="dd">
-                  Queued for the conductor. The next session claims it, right-sizes the work, and gates you at each
-                  decision.
+                  Queued for the conductor. The next session claims it, right-sizes the work, and
+                  gates you at each decision.
                 </span>
               </button>
             </div>
@@ -137,7 +150,12 @@ export function NewWork({ onCreated }: { onCreated: () => void }) {
           <button type="button" className="ghost" onClick={close}>
             Cancel
           </button>
-          <button type="button" className="newwork-open" onClick={() => void submit()} disabled={busy || title.trim().length === 0}>
+          <button
+            type="button"
+            className="newwork-open"
+            onClick={() => void submit()}
+            disabled={busy || title.trim().length === 0}
+          >
             {busy ? "Creating…" : ready ? "Queue for the conductor" : "Add to backlog"}
           </button>
         </div>

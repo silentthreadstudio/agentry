@@ -84,7 +84,9 @@ export function aaStability(
   subject = "outcome",
 ): AaResult {
   const sd = stdev(scores);
-  return sd <= tol ? { ok: true, stdev: sd } : { ok: false, verdict: aaVerdict(subject), stdev: sd };
+  return sd <= tol
+    ? { ok: true, stdev: sd }
+    : { ok: false, verdict: aaVerdict(subject), stdev: sd };
 }
 
 /**

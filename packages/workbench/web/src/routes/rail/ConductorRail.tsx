@@ -52,7 +52,12 @@ export function ConductorRail() {
   if (mode === "collapsed") {
     return (
       <aside className="rail collapsed">
-        <button type="button" className="spine" onClick={() => setMode("rail")} aria-label="Open the conversation">
+        <button
+          type="button"
+          className="spine"
+          onClick={() => setMode("rail")}
+          aria-label="Open the conversation"
+        >
           {unread > 0 ? <span className="badge">{unread}</span> : null}
           <span className="vt">Conductor</span>
         </button>

@@ -10,8 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { summarizeProducedResult } from "../src/conduct/result.ts";
 import type { OutcomeFixture } from "../src/conduct/fixture.ts";
+import { summarizeProducedResult } from "../src/conduct/result.ts";
 
 /** A minimal fixture stub — the reader consumes only `fixture.id`; the rest is unused by this slice. */
 function fixtureStub(id: string): OutcomeFixture {
@@ -130,7 +130,10 @@ test("summarizeProducedResult: caps a single oversized file's contents", () => {
     assert.equal(result.truncated, true);
     assert.match(result.text, /\[truncated: file exceeds 1000 bytes\]/);
     // The full 50k content must NOT be present — the cap actually bounds the rendering.
-    assert.ok(result.text.length < huge.length, "rendered text must be smaller than the raw oversized file");
+    assert.ok(
+      result.text.length < huge.length,
+      "rendered text must be smaller than the raw oversized file",
+    );
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }
@@ -154,7 +157,10 @@ test("summarizeProducedResult: caps total size across many files (judge-cost bou
     // All files are still LISTED (the judge knows they exist) ...
     assert.equal(result.files.length, 20);
     // ... but the rendered text is bounded near the total cap, not the full ~40k.
-    assert.ok(result.text.length < 20_000, `text length ${result.text.length} should be bounded near the cap`);
+    assert.ok(
+      result.text.length < 20_000,
+      `text length ${result.text.length} should be bounded near the cap`,
+    );
     assert.match(result.text, /\[omitted: total size cap reached\]/);
   } finally {
     rmSync(sandbox, { recursive: true, force: true });

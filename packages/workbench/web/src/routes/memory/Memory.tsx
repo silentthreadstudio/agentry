@@ -10,7 +10,14 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError, fetchMemory } from "../../api/index.js";
 import type { MemReadRecord } from "../../api/index.js";
 import { EmptyState, SearchInput } from "../../ui/index.js";
-import { applyFilters, metricsFor, renderMemoryMarkdown, toMemRow, typeBadge, typeColor } from "./memory-view.js";
+import {
+  applyFilters,
+  metricsFor,
+  renderMemoryMarkdown,
+  toMemRow,
+  typeBadge,
+  typeColor,
+} from "./memory-view.js";
 import type { KindFilter, MemRow, OriginFilter } from "./memory-view.js";
 import "./memory.css";
 
@@ -31,16 +38,21 @@ export function Memory() {
   // store is small and local, so a short debounce keeps keystrokes from stampeding the reader.
   useEffect(() => {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => {
-      fetchMemory(query, ctrl.signal)
-        .then((records) => setState({ kind: "ready", records }))
-        .catch((err: unknown) => {
-          if (ctrl.signal.aborted) return;
-          const message =
-            err instanceof ApiError ? `Couldn’t load memory (${err.status}).` : "Couldn’t load memory.";
-          setState({ kind: "error", message });
-        });
-    }, query ? 180 : 0);
+    const timer = setTimeout(
+      () => {
+        fetchMemory(query, ctrl.signal)
+          .then((records) => setState({ kind: "ready", records }))
+          .catch((err: unknown) => {
+            if (ctrl.signal.aborted) return;
+            const message =
+              err instanceof ApiError
+                ? `Couldn’t load memory (${err.status}).`
+                : "Couldn’t load memory.";
+            setState({ kind: "error", message });
+          });
+      },
+      query ? 180 : 0,
+    );
     return () => {
       clearTimeout(timer);
       ctrl.abort();
@@ -66,8 +78,7 @@ export function Memory() {
 
   // The selected row, defaulting to the first in the filtered view (so the panel is never blank when the
   // list has content). A selection that filters out falls back to the first visible row.
-  const selectedRow =
-    rows.find((r) => r.id === selected) ?? rows[0];
+  const selectedRow = rows.find((r) => r.id === selected) ?? rows[0];
 
   if (state.kind === "loading") {
     return (
@@ -100,7 +111,12 @@ export function Memory() {
 
       <div className="mem-filters">
         <div className="mem-search">
-          <SearchInput value={query} onChange={setQuery} placeholder="Search memory…" label="Search memory" />
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Search memory…"
+            label="Search memory"
+          />
         </div>
 
         <div className="mem-seg" role="group" aria-label="Filter by kind">
@@ -178,7 +194,13 @@ export function Memory() {
                     {r.type}
                   </span>
                   <span className="mem-org">
-                    <span className="mem-sw" style={{ background: r.origin === "global" ? typeColor("episode") : typeColor("repo-fact") }} />
+                    <span
+                      className="mem-sw"
+                      style={{
+                        background:
+                          r.origin === "global" ? typeColor("episode") : typeColor("repo-fact"),
+                      }}
+                    />
                     {r.origin}
                   </span>
                 </div>
@@ -196,7 +218,11 @@ export function Memory() {
             ))}
           </div>
 
-          {selectedRow ? <MemDetail row={selectedRow} /> : <div className="mem-detail mem-detail-empty">Select a record</div>}
+          {selectedRow ? (
+            <MemDetail row={selectedRow} />
+          ) : (
+            <div className="mem-detail mem-detail-empty">Select a record</div>
+          )}
         </div>
       )}
     </div>
@@ -212,7 +238,12 @@ function MemDetail({ row }: { row: MemRow }) {
           {row.type}
         </span>
         <span className="mem-org" style={{ marginLeft: 0 }}>
-          <span className="mem-sw" style={{ background: row.origin === "global" ? typeColor("episode") : typeColor("repo-fact") }} />
+          <span
+            className="mem-sw"
+            style={{
+              background: row.origin === "global" ? typeColor("episode") : typeColor("repo-fact"),
+            }}
+          />
           {row.origin} · {row.kind === "episodes" ? "episode" : "fact"}
         </span>
       </div>
@@ -223,7 +254,9 @@ function MemDetail({ row }: { row: MemRow }) {
           <span className="mem-mpill">
             confidence
             <span className="mem-bar">
-              <i style={{ width: `${Math.round(Math.max(0, Math.min(1, row.confidence)) * 100)}%` }} />
+              <i
+                style={{ width: `${Math.round(Math.max(0, Math.min(1, row.confidence)) * 100)}%` }}
+              />
             </span>
           </span>
         ) : null}

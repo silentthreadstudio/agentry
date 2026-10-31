@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 // Deterministic content hash of a source tree — the dist-lockstep signal.
 //
 // mtimes are not preserved by git (a clone / checkout / squash-merge rewrites them), so comparing
@@ -12,8 +13,7 @@
 // the source, so nothing read the artifact being certified. Observed live on plugin/mem/index.js (2026-08-24):
 // 26 lines behind its source, gate green.
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, lstatSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 
 // SHA-256 over every file's POSIX-normalized relative path + its bytes, in sorted path order.
@@ -99,7 +99,8 @@ export function bundleSrcHash(pkgDir, opts = {}) {
   const inputs = [["self", join(pkgDir, srcSubdir)]];
   if (!skipWorkspaceDeps) {
     for (const [name, ver] of Object.entries(pkg.dependencies ?? {})) {
-      if (typeof ver !== "string" || !ver.startsWith("workspace:") || !name.startsWith("@agentry/")) continue;
+      if (typeof ver !== "string" || !ver.startsWith("workspace:") || !name.startsWith("@agentry/"))
+        continue;
       const depSrc = join(packagesDir, name.slice("@agentry/".length), "src");
       if (existsSync(depSrc)) inputs.push([name, depSrc]);
     }
@@ -146,7 +147,9 @@ const STAMP_VERSION = 2;
 // ship" has no answer and the files present are the best available truth.
 export function distHash(distDir) {
   const tracked = shippedFiles(distDir);
-  return tracked === null ? srcHash(distDir, { exclude: [STAMP_FILE] }) : hashFiles(distDir, tracked);
+  return tracked === null
+    ? srcHash(distDir, { exclude: [STAMP_FILE] })
+    : hashFiles(distDir, tracked);
 }
 
 // The dist-relative paths git would include, sorted, minus the stamp itself. `null` when git cannot answer

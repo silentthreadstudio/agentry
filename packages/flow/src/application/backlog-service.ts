@@ -8,7 +8,7 @@
 // an item as available and stops. A conducting session claims it — that is the only path from intent to
 // running work, and it exists so that nothing starts work the user did not start. The Workbench has no
 // model and cannot dispatch; a "Start now" that silently spawned something would be a lie in the UI.
-import { BacklogItem, BacklogStatus, isReady, mintBacklogId } from "../domain/backlog.js";
+import { BacklogItem, type BacklogStatus, isReady, mintBacklogId } from "../domain/backlog.js";
 import type { BacklogStore } from "../domain/ports.js";
 import type { RunService } from "./run-service.js";
 

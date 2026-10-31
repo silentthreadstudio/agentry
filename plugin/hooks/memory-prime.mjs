@@ -21,7 +21,7 @@
 // Dependency-free (node builtins only) and ALWAYS non-blocking: every path exits 0. Priming is a nudge;
 // it must never be able to break a prompt or a subagent launch.
 import { readFileSync } from "node:fs";
-import { readFacts, rankFacts, readMemoryConfig, renderFacts } from "./lib/memory-recall.mjs";
+import { rankFacts, readFacts, readMemoryConfig, renderFacts } from "./lib/memory-recall.mjs";
 
 let input = {};
 try {

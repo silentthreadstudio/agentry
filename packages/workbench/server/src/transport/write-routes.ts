@@ -14,17 +14,17 @@
 // the client is never trusted here; the route only maps the outcome to an HTTP envelope. The run for a
 // write is the path `:id` segment (the SAME resolution the GET routes use — task 9's `matchWorkDocIndex`).
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { type DocModel, type WsMessage } from "@agentry/workbench-shared";
 import { ReviewAnchor, ReviewDecision } from "@agentry/flow/domain/review";
 import { FlowTaskStatus } from "@agentry/flow/domain/status";
+import type { DocModel, WsMessage } from "@agentry/workbench-shared";
 import type { WorkReader } from "../application/work-reader.js";
 import type { WriteService } from "../application/write-service.js";
-import type { ArtifactTarget } from "../persistence/flow-writer.js";
 import type { Transport } from "../domain/ports.js";
+import type { ArtifactTarget } from "../persistence/flow-writer.js";
+import { writeStatusSignal } from "../persistence/status-signal-writer.js";
+import { docIdOf, reloadDoc, targetFromDocId, taskNoFromTarget } from "./doc-model.js";
 import { isRecord, readJsonBody, reject, sendJson } from "./http-kit.js";
 import { matchWritePath, resolveRun } from "./route-match.js";
-import { docIdOf, reloadDoc, targetFromDocId, taskNoFromTarget } from "./doc-model.js";
-import { writeStatusSignal } from "../persistence/status-signal-writer.js";
 
 // The write-side dependencies the POST handlers need, threaded by the composition root alongside the
 // `WorkReader` task 9 already injects. `WriteService` enforces the invariants; `Transport` fans the
@@ -91,7 +91,12 @@ export async function handlePostRequest(
 // (always allowed, lock or not — VISION §5), push a ws notification, return the minted `{ id }`. The
 // anchor/decision are PARSED through FLOW's zod schemas (the client is never trusted — ADR-006); a
 // malformed body is a 400, never a partial write.
-function handleComment(res: ServerResponse, deps: WriteDeps, runId: string, body: unknown): boolean {
+function handleComment(
+  res: ServerResponse,
+  deps: WriteDeps,
+  runId: string,
+  body: unknown,
+): boolean {
   if (!isRecord(body)) return reject(res, 400, "invalid_body");
   const gate = body.gate;
   const bodyText = body.body;
@@ -106,7 +111,8 @@ function handleComment(res: ServerResponse, deps: WriteDeps, runId: string, body
 
   // Optional reply lane: a human follow-up nests under `replyTo` with `origin:"human"`. Both are validated
   // loosely (a non-string replyTo / an out-of-vocab origin is ignored, never a write of a bad shape).
-  const replyTo = typeof body.replyTo === "string" && body.replyTo.length > 0 ? body.replyTo : undefined;
+  const replyTo =
+    typeof body.replyTo === "string" && body.replyTo.length > 0 ? body.replyTo : undefined;
   const origin = body.origin === "human" || body.origin === "agent" ? body.origin : undefined;
 
   const result = deps.writeService.addComment({
@@ -128,7 +134,12 @@ function handleComment(res: ServerResponse, deps: WriteDeps, runId: string, body
 // POST /api/work/:id/resolve → mark a comment resolved on disk by id (the rail's Resolve action,
 // persisted so it survives reload — VISION §6). Body { gate, commentId }. A missing id is 404
 // (unknown_comment); a successful flip pushes the same file-changed nudge the comment POST does.
-function handleResolve(res: ServerResponse, deps: WriteDeps, runId: string, body: unknown): boolean {
+function handleResolve(
+  res: ServerResponse,
+  deps: WriteDeps,
+  runId: string,
+  body: unknown,
+): boolean {
   if (!isRecord(body)) return reject(res, 400, "invalid_body");
   const gate = body.gate;
   const commentId = body.commentId;
@@ -161,7 +172,11 @@ function handleStatus(res: ServerResponse, deps: WriteDeps, runId: string, body:
   // is the human→agent status channel; it's the Workbench (human) writing it, so it's never the agent's own
   // task_status. Best-effort — a signal-write failure must not fail the status change (the file is truth).
   try {
-    writeStatusSignal(deps.projectRoot, { run: runId, task: `task-${taskNo}`, status: status.data });
+    writeStatusSignal(deps.projectRoot, {
+      run: runId,
+      task: `task-${taskNo}`,
+      status: status.data,
+    });
   } catch {
     /* the status change already landed; the live channel note is the only thing missed */
   }
@@ -173,7 +188,12 @@ function handleStatus(res: ServerResponse, deps: WriteDeps, runId: string, body:
 // body, call WriteService, map the typed outcome. On success it re-reads the fresh DocModel, pushes a
 // `doc-updated` WsMessage carrying it (AC7), and returns it. Rejections map: locked→409 (+lockedBy),
 // stale→409 (+currentVersion, the optimistic-concurrency reject AC6), not-found→404.
-function handleArtifact(res: ServerResponse, deps: WriteDeps, runId: string, body: unknown): boolean {
+function handleArtifact(
+  res: ServerResponse,
+  deps: WriteDeps,
+  runId: string,
+  body: unknown,
+): boolean {
   if (!isRecord(body)) return reject(res, 400, "invalid_body");
   // The web client sends `target` as the `docId` STRING (the SAME id GET /doc/:docId returns):
   // "spec"/"plan"/"task-<NNN>" are editable; "adr-*" is read-only in V1 (a decision record) and is
@@ -201,10 +221,10 @@ function handleArtifact(res: ServerResponse, deps: WriteDeps, runId: string, bod
     }
     return true;
   }
-  if (outcome.reason === "locked") return reject(res, 409, "locked", { lockedBy: outcome.lockedBy });
+  if (outcome.reason === "locked")
+    return reject(res, 409, "locked", { lockedBy: outcome.lockedBy });
   if (outcome.reason === "stale") {
     return reject(res, 409, "stale", { currentVersion: outcome.currentVersion });
   }
   return reject(res, 404, "not_found"); // not-found
 }
-

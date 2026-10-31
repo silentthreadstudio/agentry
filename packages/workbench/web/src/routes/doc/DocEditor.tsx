@@ -1,3 +1,8 @@
+import type { DocModel } from "@agentry/workbench-shared";
+import Link from "@tiptap/extension-link";
+import { EditorContent, useEditor } from "@tiptap/react";
+import type { Editor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
 // DocEditor — the reusable document editor body (task 008, extracted from the retired DocDrawer's
 // `DocBody`). It fetches the DocModel for one doc id, splits the frontmatter into a READ-ONLY typed header
 // (status / version / lockedBy are FLOW-owned — ADR-004), and round-trips only the `body` through the
@@ -17,22 +22,12 @@
 // preserved via the module-level `liveEditor` ref, so the workspace's CommentRail paints without lifting
 // the editor out of this component.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { EditorContent, useEditor } from "@tiptap/react";
-import type { Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import type { DocModel } from "@agentry/workbench-shared";
-import {
-  mdToTiptap,
-  normalize,
-  tiptapToMd,
-  type ProseMirrorDoc,
-} from "./markdown-serializer.js";
 import { CommentMark } from "./CommentMark.js";
 import { SourceMode } from "./SourceMode.js";
-import { kindGlyphOf } from "./doc-kind.js";
-import { fetchDoc, fmString, postArtifact, postStatus } from "./doc-io.js";
 import { useDocEditorStyles } from "./doc-editor-styles.js";
+import { fetchDoc, fmString, postArtifact, postStatus } from "./doc-io.js";
+import { kindGlyphOf } from "./doc-kind.js";
+import { type ProseMirrorDoc, mdToTiptap, normalize, tiptapToMd } from "./markdown-serializer.js";
 
 /**
  * Paint the `comment` mark over a DOM `Range` in the open editor (the in-editor highlight). The rail's
@@ -106,7 +101,10 @@ export function DocEditor({ runId, docId, applyCommentMark, onLoaded }: DocEdito
         .then((doc) => setLoad({ kind: "ready", doc }))
         .catch((err: unknown) => {
           if (signal.aborted) return;
-          setLoad({ kind: "error", message: err instanceof Error ? err.message : "failed to load doc" });
+          setLoad({
+            kind: "error",
+            message: err instanceof Error ? err.message : "failed to load doc",
+          });
         });
     },
     [runId, docId],
@@ -241,9 +239,13 @@ function DocBody({
   return (
     <div className="de-root">
       <div className="de-hd">
-        <span className="de-glyph" aria-hidden="true">{glyph}</span>
+        <span className="de-glyph" aria-hidden="true">
+          {glyph}
+        </span>
         <span className="de-titlecol">
-          <span className="de-kind">{kindLabel} · {docId}</span>
+          <span className="de-kind">
+            {kindLabel} · {docId}
+          </span>
           <h2 className="de-ttl">{title}</h2>
         </span>
         <span className="de-grow" />
@@ -277,10 +279,18 @@ function DocBody({
           </select>
         ) : null}
         <div className="de-seg" role="group" aria-label="View mode">
-          <button type="button" className={`de-seg-b${mode === "read" ? " on" : ""}`} onClick={toRead}>
+          <button
+            type="button"
+            className={`de-seg-b${mode === "read" ? " on" : ""}`}
+            onClick={toRead}
+          >
             Read
           </button>
-          <button type="button" className={`de-seg-b${mode === "source" ? " on" : ""}`} onClick={toSource}>
+          <button
+            type="button"
+            className={`de-seg-b${mode === "source" ? " on" : ""}`}
+            onClick={toSource}
+          >
             Source
           </button>
         </div>

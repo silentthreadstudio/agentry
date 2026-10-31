@@ -14,8 +14,8 @@
 //    `backstopDisagreements` (ADR-003: flag, never block). The hook is unchanged and always exits 0.
 import { FlowEvent, parseLogLine } from "../domain/events.js";
 import { mintRun } from "../domain/ids.js";
-import { writeSessionPointer } from "../resolution/run-pointer.js";
 import type { FlowServices } from "../index.js";
+import { writeSessionPointer } from "../resolution/run-pointer.js";
 
 // The initial `spec.md` body the front door scaffolds. T02's `artifact_write(spec)` overwrites this
 // with the real spec; both stamp `version` the same way (the TaskStore renders the frontmatter), so a
@@ -91,7 +91,7 @@ export class RunService {
       const rule =
         field === "type"
           ? "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)"
-          : issue?.message ?? "the value required by the FlowEvent schema for this type";
+          : (issue?.message ?? "the value required by the FlowEvent schema for this type");
       return { ok: false, field, rule };
     }
     this.services.events.append(run, parsed.data);
@@ -115,7 +115,11 @@ export class RunService {
   // boundaries (real `agent` lines) against FLOW's node lines: a hook `agent-started`/`agent-done` for
   // an agent FLOW emitted no matching `node-enter`/`node-done` for is a disagreement (the skipped-call
   // signal, AC9). Pure read-time computation; nothing is written and nothing blocks.
-  status(run: string): { run: string; tasks: TaskSummary; backstopDisagreements: BackstopDisagreement[] } {
+  status(run: string): {
+    run: string;
+    tasks: TaskSummary;
+    backstopDisagreements: BackstopDisagreement[];
+  } {
     const lines = this.services.events.tail(run);
 
     // The set of agents FLOW *did* register a node-enter for (the node's `agent` field, when known).
@@ -185,7 +189,8 @@ export class RunService {
   private summarizeTasks(run: string): TaskSummary {
     const summary: TaskSummary = {};
     for (const task of this.services.tasks.listTasks(run)) {
-      const status = typeof task.frontmatter.status === "string" ? task.frontmatter.status : "unknown";
+      const status =
+        typeof task.frontmatter.status === "string" ? task.frontmatter.status : "unknown";
       summary[status] = (summary[status] ?? 0) + 1;
     }
     return summary;

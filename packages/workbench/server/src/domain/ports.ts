@@ -1,3 +1,5 @@
+import type { FlowTask } from "@agentry/flow/domain/ports";
+import type { ReviewComment } from "@agentry/flow/domain/review";
 // Ports — the seams the server's application layer depends on (ADR-001). PURE: interfaces only, no
 // I/O. Concrete adapters live in `persistence/` and `transport/`; the application is unit-testable
 // against fakes of these ports without a real fs or websocket. The dependency arrow points inward —
@@ -10,8 +12,6 @@
 // w.r.t. the session (ADR-001), so the caller threads `run` on every call. Plain values cross every
 // port — no `node:fs`/`ws` types leak through, keeping the domain pure.
 import type { WsMessage } from "@agentry/workbench-shared";
-import type { FlowTask } from "@agentry/flow/domain/ports";
-import type { ReviewComment } from "@agentry/flow/domain/review";
 
 // The parsed contents of one `.agentry/work/<run>/` directory — the read side of `WorkRepository`,
 // and the sole input to `buildGraph` (see graph.ts). Already-parsed plain data (frontmatter +

@@ -1,11 +1,11 @@
 ---
+import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
+import DocShot from "../../../components/doc-shot/DocShot.astro";
 // /docs/memory — Memory, the moat. Composed through DocsLayout: header from props, body =
 // DocDiagram(memory.png) + prose. Facts verbatim from the content map.
 //
 // Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
-import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
-import DocShot from "../../../components/doc-shot/DocShot.astro";
 ---
 
 <DocsLayout

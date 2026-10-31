@@ -8,8 +8,8 @@ import { writeFileSync } from "node:fs";
 
 import type { EvalObserver } from "../../store/schema.ts";
 
+import { type Check, runAllChecks } from "./assertions.ts";
 import { readRunTrace } from "./trace.ts";
-import { runAllChecks, type Check } from "./assertions.ts";
 
 /** The caveat pinned onto every verdict — what this probe does and does not claim. */
 export const FLOW_COMPLIANCE_CAVEAT =

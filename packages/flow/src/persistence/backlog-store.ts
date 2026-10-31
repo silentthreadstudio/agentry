@@ -6,7 +6,14 @@
 //
 // It sits at the PROJECT root, not under `.agentry/work/<run>/`, because an item exists before any run
 // does. That is the whole point of it.
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { BacklogItem } from "../domain/backlog.js";

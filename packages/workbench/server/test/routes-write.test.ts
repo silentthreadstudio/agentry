@@ -10,9 +10,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { WsMessage } from "@agentry/workbench-shared";
+import type { FlowTaskStatus } from "@agentry/flow/domain/status";
 import { computeVersion } from "@agentry/flow/domain/version";
-import type { Clock, RunFiles, Transport, WorkRepository } from "../src/domain/ports.js";
+import type { WsMessage } from "@agentry/workbench-shared";
 import { WorkReader } from "../src/application/work-reader.js";
 import type {
   AddCommentRequest,
@@ -20,8 +20,8 @@ import type {
   WriteArtifactOutcome,
   WriteArtifactRequest,
 } from "../src/application/write-service.js";
-import type { FlowTaskStatus } from "@agentry/flow/domain/status";
-import { handleApiRequest, handlePostRequest, type WriteDeps } from "../src/transport/routes.js";
+import type { Clock, RunFiles, Transport, WorkRepository } from "../src/domain/ports.js";
+import { type WriteDeps, handleApiRequest, handlePostRequest } from "../src/transport/routes.js";
 
 const fixedClock: Clock = { now: () => "2026-06-19T00:00:00.000Z" };
 
@@ -61,7 +61,10 @@ interface StubWrite {
   setStatus: (req: { run: string; taskNo: string; status: FlowTaskStatus }) => StatusOutcome;
 }
 
-function deps(write: Partial<StubWrite>, transport = recordingTransport()): WriteDeps & {
+function deps(
+  write: Partial<StubWrite>,
+  transport = recordingTransport(),
+): WriteDeps & {
   transport: ReturnType<typeof recordingTransport>;
 } {
   const reader = new WorkReader(fakeRepo(sampleFiles()), fixedClock);
@@ -154,7 +157,12 @@ test("POST /comment with a malformed anchor is 400, no write", async () => {
   let called = false;
   const d = deps({ addComment: () => ((called = true), { id: "x" }) });
   await handlePostRequest(
-    fakePost("/api/work/sample/comment", { gate: "spec", anchor: { nope: 1 }, decision: "changes", body: "b" }),
+    fakePost("/api/work/sample/comment", {
+      gate: "spec",
+      anchor: { nope: 1 },
+      decision: "changes",
+      body: "b",
+    }),
     res,
     d,
   );
@@ -201,7 +209,9 @@ test("POST /artifact with a fresh baseVersion writes, returns the DocModel and p
 
 test("POST /artifact with a stale baseVersion is 409 stale + currentVersion (AC6 optimistic-concurrency reject)", async () => {
   const { res, captured } = fakeRes();
-  const d = deps({ writeArtifact: () => ({ ok: false, reason: "stale", currentVersion: "v-disk" }) });
+  const d = deps({
+    writeArtifact: () => ({ ok: false, reason: "stale", currentVersion: "v-disk" }),
+  });
   await handlePostRequest(
     fakePost("/api/work/sample/artifact", { target: "spec", baseVersion: "v-old", newBody: "x" }),
     res,
@@ -280,23 +290,35 @@ test("POST /status with a task-<NNN> target sets the status and returns { ok:tru
       return { ok: true };
     },
   });
-  await handlePostRequest(fakePost("/api/work/sample/status", { target: "task-001", status: "done" }), res, d);
+  await handlePostRequest(
+    fakePost("/api/work/sample/status", { target: "task-001", status: "done" }),
+    res,
+    d,
+  );
   assert.equal(captured.status, 200);
   assert.deepEqual(captured.body, { ok: true });
   assert.equal(seen?.run, "sample");
   assert.equal(seen?.taskNo, "001", "the task number is derived from the task-<NNN> target");
   assert.equal(seen?.status, "done");
   // The status write nudges watchers so the graph/navigator re-tint.
-  assert.ok(d.transport.pushes.some((p) => p.message.type === "file-changed"), "pushes a file-changed");
+  assert.ok(
+    d.transport.pushes.some((p) => p.message.type === "file-changed"),
+    "pushes a file-changed",
+  );
   // …and drops a human-origin status signal for FLOW's StatusBridge (the human→agent status channel).
   const signals = readdirSync(join(d.projectRoot, ".agentry", "run", "status-signals"));
   assert.equal(signals.length, 1, "one status signal written");
-  const sig = JSON.parse(readFileSync(join(d.projectRoot, ".agentry", "run", "status-signals", signals[0]!), "utf8"));
-  assert.deepEqual({ run: sig.run, task: sig.task, status: sig.status }, {
-    run: "sample",
-    task: "task-001",
-    status: "done",
-  });
+  const sig = JSON.parse(
+    readFileSync(join(d.projectRoot, ".agentry", "run", "status-signals", signals[0]!), "utf8"),
+  );
+  assert.deepEqual(
+    { run: sig.run, task: sig.task, status: sig.status },
+    {
+      run: "sample",
+      task: "task-001",
+      status: "done",
+    },
+  );
 });
 
 test("POST /status with an out-of-vocab status is 400, no write", async () => {
@@ -340,7 +362,11 @@ test("POST /status on an absent task is 404", async () => {
 
 test("a GET to a write path is 405", async () => {
   const { res, captured } = fakeRes();
-  const handled = await handlePostRequest(fakePost("/api/work/sample/comment", undefined, "GET"), res, deps({}));
+  const handled = await handlePostRequest(
+    fakePost("/api/work/sample/comment", undefined, "GET"),
+    res,
+    deps({}),
+  );
   assert.equal(handled, true);
   assert.equal(captured.status, 405);
 });
@@ -372,10 +398,17 @@ test("a non-write path falls through (not handled by the POST dispatcher)", asyn
 test("GET /doc/:docId returns the DocModel for a known doc (unblocks task 16)", () => {
   const { res, captured } = fakeRes();
   const reader = new WorkReader(fakeRepo(sampleFiles()), fixedClock);
-  const handled = handleApiRequest(fakeGet("/api/work/sample/doc/spec"), res, reader, { run: "sample" });
+  const handled = handleApiRequest(fakeGet("/api/work/sample/doc/spec"), res, reader, {
+    run: "sample",
+  });
   assert.equal(handled, true);
   assert.equal(captured.status, 200);
-  const doc = captured.body as { body: string; version: string; lock: unknown; frontmatter: object };
+  const doc = captured.body as {
+    body: string;
+    version: string;
+    lock: unknown;
+    frontmatter: object;
+  };
   assert.equal(doc.body, "# Spec");
   // The optimistic-concurrency token MUST equal computeVersion(body, frontmatter-sans-version) — the
   // exact value the write boundary checks `baseVersion` against (ADR-006), NOT the stamped frontmatter

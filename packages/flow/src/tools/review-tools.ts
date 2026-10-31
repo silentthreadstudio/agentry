@@ -41,7 +41,15 @@ export function registerReviewTools(server: McpServer, ctx: ReviewCtx): void {
       },
     },
     guard(async (args) =>
-      ok(service.comment({ run: args.run, gate: args.gate, anchor: args.anchor, decision: args.decision, body: args.body })),
+      ok(
+        service.comment({
+          run: args.run,
+          gate: args.gate,
+          anchor: args.anchor,
+          decision: args.decision,
+          body: args.body,
+        }),
+      ),
     ),
   );
 

@@ -14,10 +14,10 @@
 // be gamed by padding. `makeRubric` derives each `max` from the fixed 0/1/2 vocabulary (5×2=10, 4×2=8), so the
 // engine normalizes `overall = sum / max` identically for both.
 
-import { makeRubric, type Rubric } from "../judge/index.ts";
+import { type Rubric, makeRubric } from "../judge/index.ts";
 
-import { OUTCOME_DIMENSIONS, RUBRIC_TEXT as CODE_RUBRIC_TEXT } from "../conduct/outcome-rubric.ts";
-import { QUALITY_DIMENSIONS, RUBRIC_TEXT as DECISION_RUBRIC_TEXT } from "../quality/rubric.ts";
+import { RUBRIC_TEXT as CODE_RUBRIC_TEXT, OUTCOME_DIMENSIONS } from "../conduct/outcome-rubric.ts";
+import { RUBRIC_TEXT as DECISION_RUBRIC_TEXT, QUALITY_DIMENSIONS } from "../quality/rubric.ts";
 
 /**
  * Axis A — DECISION QUALITY. The 5-dim decision rubric (`forkSurfacing · decisionSoundness · accountability ·

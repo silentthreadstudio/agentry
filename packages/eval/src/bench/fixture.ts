@@ -83,7 +83,9 @@ export function loadBenchFixtures(dir: string): BenchFixture[] {
     .sort();
 
   if (ids.length === 0) {
-    throw new BenchFixtureError(`${dir}: no bench fixtures found (expected ≥1 \`<id>/\` subdirectory)`);
+    throw new BenchFixtureError(
+      `${dir}: no bench fixtures found (expected ≥1 \`<id>/\` subdirectory)`,
+    );
   }
 
   const fixtures = ids.map((id) => loadBenchFixture(join(dir, id)));
@@ -124,7 +126,9 @@ export function loadBenchFixture(fixtureDir: string): BenchFixture {
 
   const raw = parseYaml(readFileSync(yamlPath, "utf8")) as unknown;
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new BenchFixtureError(`${yamlPath}: fixture.yaml must be a YAML mapping, got ${describe(raw)}`);
+    throw new BenchFixtureError(
+      `${yamlPath}: fixture.yaml must be a YAML mapping, got ${describe(raw)}`,
+    );
   }
   const root = raw as Record<string, unknown>;
   const where = `fixture "${dirId}"`;
@@ -132,7 +136,9 @@ export function loadBenchFixture(fixtureDir: string): BenchFixture {
   if (root.id !== undefined) {
     const declaredId = requireString(root.id, `${where}.id`, yamlPath);
     if (declaredId !== dirId) {
-      throw new BenchFixtureError(`${yamlPath}: \`id\` "${declaredId}" must match the directory name "${dirId}"`);
+      throw new BenchFixtureError(
+        `${yamlPath}: \`id\` "${declaredId}" must match the directory name "${dirId}"`,
+      );
     }
   }
 
@@ -169,22 +175,34 @@ function parseFork(value: unknown, where: string, path: string): string | undefi
 function parseBugProne(value: unknown, where: string, path: string): boolean {
   if (value === undefined) return false;
   if (typeof value !== "boolean") {
-    throw new BenchFixtureError(`${path}: ${where}.bugProne must be a boolean when present, got ${describe(value)}`);
+    throw new BenchFixtureError(
+      `${path}: ${where}.bugProne must be a boolean when present, got ${describe(value)}`,
+    );
   }
   return value;
 }
 
 /** Parse the `oracle` mapping: a required non-empty `cmd` and an optional positive-integer `timeoutMs`. */
-function parseOracle(value: unknown, where: string, path: string): { oracleCmd: string; oracleTimeoutMs: number } {
+function parseOracle(
+  value: unknown,
+  where: string,
+  path: string,
+): { oracleCmd: string; oracleTimeoutMs: number } {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new BenchFixtureError(`${path}: ${where}.oracle must be a mapping, got ${describe(value)}`);
+    throw new BenchFixtureError(
+      `${path}: ${where}.oracle must be a mapping, got ${describe(value)}`,
+    );
   }
   const obj = value as Record<string, unknown>;
   const oracleCmd = requireString(obj.cmd, `${where}.oracle.cmd`, path);
 
   let oracleTimeoutMs = DEFAULT_ORACLE_TIMEOUT_MS;
   if (obj.timeoutMs !== undefined) {
-    if (typeof obj.timeoutMs !== "number" || !Number.isInteger(obj.timeoutMs) || obj.timeoutMs <= 0) {
+    if (
+      typeof obj.timeoutMs !== "number" ||
+      !Number.isInteger(obj.timeoutMs) ||
+      obj.timeoutMs <= 0
+    ) {
       throw new BenchFixtureError(
         `${path}: ${where}.oracle.timeoutMs must be a positive integer when present, got ${describe(obj.timeoutMs)}`,
       );
@@ -229,7 +247,9 @@ function relativeFiles(dir: string): string[] {
 
 function requireString(value: unknown, field: string, path: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new BenchFixtureError(`${path}: \`${field}\` must be a non-empty string, got ${describe(value)}`);
+    throw new BenchFixtureError(
+      `${path}: \`${field}\` must be a non-empty string, got ${describe(value)}`,
+    );
   }
   return value;
 }

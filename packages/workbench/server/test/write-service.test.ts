@@ -7,8 +7,8 @@
 //   AC5 — `addComment` appends a valid `ReviewComment` (3-way anchor) even when the doc is locked.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { computeVersion } from "@agentry/flow/domain/version";
 import { ReviewComment } from "@agentry/flow/domain/review";
+import { computeVersion } from "@agentry/flow/domain/version";
 import { WriteService } from "../src/application/write-service.js";
 import type {
   ArtifactTarget,
@@ -95,7 +95,11 @@ test("setStatus writes the new status and drops the lock when leaving in-progres
   assert.equal(svc.setStatus({ run: "r", taskNo: "003", status: "done" }).ok, true);
   const stored = fake.store.get("task:003");
   assert.equal(stored?.frontmatter.status, "done", "status is updated on disk");
-  assert.equal(stored?.frontmatter.lockedBy, undefined, "the agent lock is dropped when no longer in-progress");
+  assert.equal(
+    stored?.frontmatter.lockedBy,
+    undefined,
+    "the agent lock is dropped when no longer in-progress",
+  );
 });
 
 test("setStatus returns not-found for an absent task", () => {
@@ -174,7 +178,10 @@ test("writeArtifact against status===in-progress is rejected with lockedBy (AC4)
 
   assert.equal(outcome.ok, false);
   assert.equal(outcome.ok === false && outcome.reason, "locked");
-  assert.equal(outcome.ok === false && outcome.reason === "locked" && outcome.lockedBy, "implementer");
+  assert.equal(
+    outcome.ok === false && outcome.reason === "locked" && outcome.lockedBy,
+    "implementer",
+  );
   assert.equal(fake.store.get("task:015")?.body, body, "a locked doc is not written");
 });
 

@@ -52,7 +52,9 @@ test("toMemRow falls back to 'episode' type when the record is an episode with n
 });
 
 test("toMemRow tolerates a missing body and non-array fields", () => {
-  const row = toMemRow(rec({ kind: "facts", fields: { type: "decision", tags: "single-tag", why: { x: 1 } } }));
+  const row = toMemRow(
+    rec({ kind: "facts", fields: { type: "decision", tags: "single-tag", why: { x: 1 } } }),
+  );
   assert.equal(row.title, "(no title)");
   assert.deepEqual(row.tags, ["single-tag"]); // a lone string coerces to a one-tag list
   assert.equal(row.why, ""); // a non-scalar why (object) is dropped

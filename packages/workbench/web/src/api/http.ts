@@ -27,7 +27,8 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
 }
 
 // The optional run-scoping query: `?run=<id>` when a runId is given, else "" (the cross-run read).
-export const runQuery = (runId?: string): string => (runId ? `?run=${encodeURIComponent(runId)}` : "");
+export const runQuery = (runId?: string): string =>
+  runId ? `?run=${encodeURIComponent(runId)}` : "";
 
 const PROJECT_KEY = "agentry.workbench.project";
 

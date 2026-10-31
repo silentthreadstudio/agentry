@@ -7,10 +7,10 @@
 // Autofocusing the textarea is SAFE here (unlike the old floating bubble) — the composer is in the rail, far
 // from the prose, so taking focus never disturbs the selection or the reader's place in the document.
 import { useState } from "react";
-import type { ReviewDecision } from "./review-types.js";
-import { addComment } from "./comment-store.js";
-import { closeComposer, usePendingComment } from "./selection-store.js";
 import type { ApplyCommentMark } from "./DocEditor.js";
+import { addComment } from "./comment-store.js";
+import type { ReviewDecision } from "./review-types.js";
+import { closeComposer, usePendingComment } from "./selection-store.js";
 
 const DECISIONS: ReadonlyArray<{ decision: ReviewDecision; label: string; cls: string }> = [
   { decision: "changes", label: "✎ Request changes", cls: "chg" },
@@ -38,7 +38,13 @@ export function RailComposer({
   async function post(decision: ReviewDecision) {
     if (!pending || busy) return;
     setBusy(true);
-    const result = await addComment({ runId, docId, anchor: pending.anchor, decision, body: body.trim() });
+    const result = await addComment({
+      runId,
+      docId,
+      anchor: pending.anchor,
+      decision,
+      body: body.trim(),
+    });
     setBusy(false);
     if (result.ok && result.id) applyCommentMark?.(pending.range, result.id);
     onPosted?.(result.message);

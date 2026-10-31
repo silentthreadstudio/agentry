@@ -11,7 +11,7 @@
 // "A run exists" (the above-floor floor for checks 1 and 4) = `run-state.json` present OR ≥1 FLOW (`type`) line.
 // A backstop-only `events.jsonl` (only `kind` lines, e.g. `flow-skipped`) does NOT count as a run.
 
-import type { RunTrace, TraceEvent, TaskFile } from "./trace.ts";
+import type { RunTrace, TaskFile, TraceEvent } from "./trace.ts";
 
 /** The four ordered checks, in assertion order. PINNED — the artifact/verdict consume these ids verbatim. */
 export const CHECK_IDS = [
@@ -85,7 +85,11 @@ export function checkRunStartBeforeDispatch(trace: RunTrace): Check {
   }
   const flow = firstFlowEvent(trace.events);
   if (flow === undefined) {
-    return { id, pass: false, detail: `agent dispatched at ${dispatch.ts} with no preceding run_start/FLOW line` };
+    return {
+      id,
+      pass: false,
+      detail: `agent dispatched at ${dispatch.ts} with no preceding run_start/FLOW line`,
+    };
   }
   const pass = flow.ts < dispatch.ts;
   return {
@@ -161,10 +165,18 @@ export function checkSingleFrontmatter(trace: RunTrace): Check {
     .map((t: TaskFile) => ({ name: t.name, blocks: countFrontmatterBlocks(t.text) }))
     .filter((r) => r.blocks !== 1);
   if (offenders.length === 0) {
-    return { id, pass: true, detail: `all ${trace.taskFiles.length} task file(s) have exactly one frontmatter block` };
+    return {
+      id,
+      pass: true,
+      detail: `all ${trace.taskFiles.length} task file(s) have exactly one frontmatter block`,
+    };
   }
   const named = offenders.map((o) => `${o.name} (${o.blocks} blocks)`).join(", ");
-  return { id, pass: false, detail: `task file(s) without exactly one frontmatter block: ${named}` };
+  return {
+    id,
+    pass: false,
+    detail: `task file(s) without exactly one frontmatter block: ${named}`,
+  };
 }
 
 /**
@@ -175,14 +187,22 @@ export function checkSingleFrontmatter(trace: RunTrace): Check {
 export function checkNoSkipFlag(trace: RunTrace): Check {
   const id: CheckId = "no-skip-flag";
   if (!isAboveFloor(trace)) {
-    return { id, pass: true, detail: "sub-floor run (no orchestration artifacts) — skip-flag check N/A" };
+    return {
+      id,
+      pass: true,
+      detail: "sub-floor run (no orchestration artifacts) — skip-flag check N/A",
+    };
   }
   const skips = trace.events.filter((e) => e.kind === "flow-skipped");
   if (skips.length === 0) {
     return { id, pass: true, detail: "no flow-skipped marker for an above-floor run" };
   }
   const named = skips.map((s) => s.artifact ?? "?").join(", ");
-  return { id, pass: false, detail: `${skips.length} flow-skipped marker(s) for an above-floor run: ${named}` };
+  return {
+    id,
+    pass: false,
+    detail: `${skips.length} flow-skipped marker(s) for an above-floor run: ${named}`,
+  };
 }
 
 /** Run all four checks in order and aggregate — PASS iff every check passed. */

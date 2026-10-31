@@ -50,7 +50,12 @@ function listOf(text: string, key: string): string[] {
   for (const line of lines.slice(start + 1)) {
     const item = /^\s+-\s+(.*)$/.exec(line);
     if (item) {
-      items.push(item[1]!.trim().replace(/^["']|["']$/g, "").replace(/^`|`$/g, ""));
+      items.push(
+        item[1]!
+          .trim()
+          .replace(/^["']|["']$/g, "")
+          .replace(/^`|`$/g, ""),
+      );
       continue;
     }
     if (line.trim().length === 0) continue; // a blank line inside a list is not the end of it

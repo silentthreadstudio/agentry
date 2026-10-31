@@ -36,12 +36,17 @@ const seedWorkDir = (cwd, id) => mkdirSync(join(cwd, ".agentry", "work", id), { 
 const primePointer = (cwd, sid, workId) => {
   const dir = join(cwd, ".agentry", "run", "sessions");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${sid}.json`), JSON.stringify({ workId, updatedAt: new Date().toISOString() }));
+  writeFileSync(
+    join(dir, `${sid}.json`),
+    JSON.stringify({ workId, updatedAt: new Date().toISOString() }),
+  );
 };
 
 // Read all JSONL lines (non-empty) of a work folder's events.jsonl.
 const readLines = (cwd, id) =>
-  readFileSync(eventsPath(cwd, id), "utf8").split("\n").filter((l) => l.length > 0);
+  readFileSync(eventsPath(cwd, id), "utf8")
+    .split("\n")
+    .filter((l) => l.length > 0);
 
 // The WorkEvent shape T-001 pins (keys + types). Asserts the line IS a valid WorkEvent
 // without importing zod into this dep-free suite (AC3 "at minimum assert the keys").
@@ -52,7 +57,8 @@ function assertIsWorkEvent(obj) {
   assert.match(obj.ts, /^\d{4}-\d{2}-\d{2}T.*Z$/); // ISO-8601
   assert.equal(typeof obj.kind, "string");
   for (const k of ["agent", "agentId", "session", "detail"]) {
-    if (obj[k] !== undefined) assert.equal(typeof obj[k], "string", `${k} must be string when present`);
+    if (obj[k] !== undefined)
+      assert.equal(typeof obj[k], "string", `${k} must be string when present`);
   }
 }
 
@@ -135,7 +141,13 @@ test("undefined fields are omitted cleanly — no agent/agentId/session keys whe
 });
 
 test("AC5: no .agentry/ in cwd — writes nothing, silent, exit 0", () => {
-  const r = run({ hook_event_name: "SubagentStart", agent_type: "x", agent_id: "A1", session_id: "S1", cwd: work });
+  const r = run({
+    hook_event_name: "SubagentStart",
+    agent_type: "x",
+    agent_id: "A1",
+    session_id: "S1",
+    cwd: work,
+  });
   assert.equal(r.status, 0);
   assert.equal(r.stdout, "");
   assert.equal(r.stderr, "");
@@ -144,7 +156,13 @@ test("AC5: no .agentry/ in cwd — writes nothing, silent, exit 0", () => {
 
 test("AC6: missing pointer (no sessions/S1.json) — exit 0, no events file written", () => {
   seedWorkDir(work, "feat-x"); // .agentry exists, but no pointer was primed
-  const r = run({ hook_event_name: "SubagentStart", agent_type: "x", agent_id: "A1", session_id: "S1", cwd: work });
+  const r = run({
+    hook_event_name: "SubagentStart",
+    agent_type: "x",
+    agent_id: "A1",
+    session_id: "S1",
+    cwd: work,
+  });
   assert.equal(r.status, 0);
   assert.equal(existsSync(eventsPath(work, "feat-x")), false);
 });
@@ -154,7 +172,13 @@ test("AC6: pointer present but unparseable — exit 0, no events file written", 
   const dir = join(work, ".agentry", "run", "sessions");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "S1.json"), "}{ not json");
-  const r = run({ hook_event_name: "SubagentStart", agent_type: "x", agent_id: "A1", session_id: "S1", cwd: work });
+  const r = run({
+    hook_event_name: "SubagentStart",
+    agent_type: "x",
+    agent_id: "A1",
+    session_id: "S1",
+    cwd: work,
+  });
   assert.equal(r.status, 0);
   assert.equal(existsSync(eventsPath(work, "feat-x")), false);
 });

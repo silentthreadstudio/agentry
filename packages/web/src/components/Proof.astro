@@ -9,8 +9,8 @@
 //
 // Static by design: no client JS. Scroll-reveal comes from the global reveal.ts via
 // `class="reveal"`; per-row stagger uses `data-reveal-delay` (reveal.ts supports it).
-import { corrections } from '../data/corrections.ts';
-import { withBase } from '../lib/base.ts';
+import { corrections } from "../data/corrections.ts";
+import { withBase } from "../lib/base.ts";
 
 // Counts are derived from the real data — never invented (VISION §8).
 const total = corrections.length;
@@ -18,10 +18,20 @@ const highCount = corrections.filter((c) => c.high).length;
 
 // Format the ISO date for display without inventing a locale-specific surprise.
 function fmtDate(iso: string): string {
-  const [y, m, d] = iso.split('-');
+  const [y, m, d] = iso.split("-");
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
   ];
   return `${months[Number(m) - 1]} ${Number(d)}, ${y}`;
 }

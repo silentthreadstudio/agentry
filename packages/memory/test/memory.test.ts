@@ -11,7 +11,12 @@ import type { Roots } from "../src/resolution/roots.js";
 
 function newService(global: string, now?: () => number): MemoryService {
   const roots: Roots = { global, project: null };
-  const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots, now);
+  const service = new MemoryService(
+    new MarkdownFileStore(roots),
+    new SqliteTextIndex(),
+    roots,
+    now,
+  );
   service.load();
   return service;
 }
@@ -40,7 +45,11 @@ test("write → recall round-trips", () => {
 
 test("dedup-reinforce: a near-duplicate reinforces, not duplicates", () => {
   const service = newService(fresh());
-  service.write({ type: "preference", scope: "global", text: "always use pnpm for installs in this repo" });
+  service.write({
+    type: "preference",
+    scope: "global",
+    text: "always use pnpm for installs in this repo",
+  });
   const second = service.write({
     type: "preference",
     scope: "global",
@@ -229,7 +238,10 @@ test("recover: a tombstoned fact returns to active and is recallable again witho
 
   // recall (task mode) finds it again — recover re-added it to the text index in-process
   const { memories } = service.recall({ query: "recover me back into the search index" });
-  assert.equal(memories.some((m) => m.fact.id === id), true);
+  assert.equal(
+    memories.some((m) => m.fact.id === id),
+    true,
+  );
 
   // recover on an already-active id → invalid-state (it exists but isn't archived); unknown id → not-found
   const reRecover = service.recover(id);

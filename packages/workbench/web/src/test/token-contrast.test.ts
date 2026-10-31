@@ -6,12 +6,15 @@
 // `--raise`, where `--faint` fell to 2.68:1. The floor that matters is the LIGHTEST surface an ink ever
 // sits on, so that is what this checks — one measurement, taken at the worst case, on every ink.
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const TOKENS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "ui", "tokens.css"), "utf8");
+const TOKENS = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "..", "ui", "tokens.css"),
+  "utf8",
+);
 
 function token(name: string): string {
   const m = new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`).exec(TOKENS);
@@ -20,20 +23,37 @@ function token(name: string): string {
 }
 
 function relativeLuminance(hex: string): number {
-  const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const channels = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
   const linear = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * (linear[0] as number) + 0.7152 * (linear[1] as number) + 0.0722 * (linear[2] as number);
+  return (
+    0.2126 * (linear[0] as number) + 0.7152 * (linear[1] as number) + 0.0722 * (linear[2] as number)
+  );
 }
 
 function contrast(a: string, b: string): number {
-  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x) as [number, number];
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x) as [
+    number,
+    number,
+  ];
   return (hi + 0.05) / (lo + 0.05);
 }
 
 // Every surface an ink can land on. `--raise` is the lightest and therefore the binding constraint.
 const SURFACES = ["bg", "bg2", "side-bg", "panel", "panel2", "raise"];
 
-const TEXT = ["ink", "ink2", "muted", "faint", "accent-ink", "done", "prog", "rev", "block", "v1", "accent"];
+const TEXT = [
+  "ink",
+  "ink2",
+  "muted",
+  "faint",
+  "accent-ink",
+  "done",
+  "prog",
+  "rev",
+  "block",
+  "v1",
+  "accent",
+];
 
 test("every text ink clears WCAG AA (4.5:1) on every surface it can sit on", () => {
   const failures: string[] = [];
@@ -51,7 +71,10 @@ test("every text ink clears WCAG AA (4.5:1) on every surface it can sit on", () 
 test("the status-dot hue clears the 3:1 non-text floor", () => {
   for (const surface of SURFACES) {
     const ratio = contrast(token("todo"), token(surface));
-    assert.ok(ratio >= 3, `--todo on --${surface} = ${ratio.toFixed(2)}:1, below the 3:1 non-text floor`);
+    assert.ok(
+      ratio >= 3,
+      `--todo on --${surface} = ${ratio.toFixed(2)}:1, below the 3:1 non-text floor`,
+    );
   }
 });
 

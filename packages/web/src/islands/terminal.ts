@@ -15,7 +15,7 @@
 // The blinking cursor is CSS-driven (a `.cursor` element); CSS pauses it under
 // reduced-motion via the global off-switch.
 
-const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Per-character typing interval (ms). */
 const TYPE_MS = 42;
@@ -32,27 +32,27 @@ interface TerminalParts {
 
 function resolveParts(root: HTMLElement): TerminalParts {
   // Use an explicit command slot if present, else create one as the first child.
-  let cmdEl = root.querySelector<HTMLElement>('[data-term-cmd]');
+  let cmdEl = root.querySelector<HTMLElement>("[data-term-cmd]");
   if (!cmdEl) {
-    cmdEl = document.createElement('span');
-    cmdEl.dataset.termCmd = '';
+    cmdEl = document.createElement("span");
+    cmdEl.dataset.termCmd = "";
     root.prepend(cmdEl);
   }
   return {
     cmdEl,
-    cursor: root.querySelector<HTMLElement>('[data-term-cursor]'),
-    lines: Array.from(root.querySelectorAll<HTMLElement>('[data-term-line]')),
+    cursor: root.querySelector<HTMLElement>("[data-term-cursor]"),
+    lines: Array.from(root.querySelectorAll<HTMLElement>("[data-term-line]")),
   };
 }
 
 function showAll(cmd: string, parts: TerminalParts): void {
   parts.cmdEl.textContent = cmd;
-  for (const line of parts.lines) line.classList.add('in');
+  for (const line of parts.lines) line.classList.add("in");
 }
 
 function revealLines(lines: HTMLElement[], i = 0): void {
   if (i >= lines.length) return;
-  lines[i].classList.add('in');
+  lines[i].classList.add("in");
   window.setTimeout(() => revealLines(lines, i + 1), LINE_MS);
 }
 
@@ -71,7 +71,7 @@ function typeCommand(cmd: string, parts: TerminalParts): void {
 }
 
 function runTerminal(root: HTMLElement): void {
-  const cmd = root.dataset.cmd ?? '';
+  const cmd = root.dataset.cmd ?? "";
   const parts = resolveParts(root);
 
   if (REDUCED) {
@@ -81,7 +81,7 @@ function runTerminal(root: HTMLElement): void {
 
   // Defer the typing until the terminal is on screen, so it doesn't run
   // (and finish) above the fold before the user ever sees it.
-  if (typeof IntersectionObserver === 'undefined') {
+  if (typeof IntersectionObserver === "undefined") {
     typeCommand(cmd, parts);
     return;
   }
@@ -99,7 +99,7 @@ function runTerminal(root: HTMLElement): void {
 }
 
 export function initTerminal(root: ParentNode = document): void {
-  const terminals = Array.from(root.querySelectorAll<HTMLElement>('[data-terminal]'));
+  const terminals = Array.from(root.querySelectorAll<HTMLElement>("[data-terminal]"));
   if (terminals.length === 0) return;
   for (const t of terminals) runTerminal(t);
 }

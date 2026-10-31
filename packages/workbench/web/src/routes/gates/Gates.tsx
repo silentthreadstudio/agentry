@@ -10,14 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError, fetchGates } from "../../api/index.js";
 import type { OpenGateItem } from "../../api/index.js";
 import { Button, EmptyState } from "../../ui/index.js";
-import {
-  GATE,
-  GATE_DETAIL,
-  GATE_ICON,
-  GATE_TITLE,
-  toGateRow,
-  type GateRow,
-} from "./gates-view.js";
+import { GATE, GATE_DETAIL, GATE_ICON, GATE_TITLE, type GateRow, toGateRow } from "./gates-view.js";
 
 type LoadState =
   | { kind: "loading" }
@@ -34,7 +27,9 @@ export function Gates() {
       .catch((err: unknown) => {
         if (ctrl.signal.aborted) return;
         const message =
-          err instanceof ApiError ? `Couldn’t load the gate inbox (${err.status}).` : "Couldn’t load the gate inbox.";
+          err instanceof ApiError
+            ? `Couldn’t load the gate inbox (${err.status}).`
+            : "Couldn’t load the gate inbox.";
         setState({ kind: "error", message });
       });
     return () => ctrl.abort();
@@ -49,7 +44,9 @@ export function Gates() {
       ) : state.gates.length === 0 ? (
         <EmptyState title="All clear">Nothing waiting on you.</EmptyState>
       ) : (
-        state.gates.map((item) => <GateInboxRow key={`${item.run}/${item.gate}`} row={toGateRow(item)} />)
+        state.gates.map((item) => (
+          <GateInboxRow key={`${item.run}/${item.gate}`} row={toGateRow(item)} />
+        ))
       )}
     </div>
   );
@@ -70,7 +67,11 @@ function GateInboxRow({ row }: { row: GateRow }) {
         <div style={GATE_DETAIL}>{row.detail}</div>
       </div>
       <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-        <Button variant="secondary" onClick={open} aria-label={`Open the ${row.gate} gate in ${row.run}`}>
+        <Button
+          variant="secondary"
+          onClick={open}
+          aria-label={`Open the ${row.gate} gate in ${row.run}`}
+        >
           Open
         </Button>
       </div>

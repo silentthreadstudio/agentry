@@ -4,13 +4,13 @@
 // through emit → tail as typed FlowEvent lines. Also pins the front-door scaffold, emit rejection,
 // and the empty-agent / both-shapes tail filtering.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { RunService } from "../src/application/run-service.js";
 import { FlowEvent } from "../src/domain/events.js";
 import { createServices } from "../src/index.js";
-import { RunService } from "../src/application/run-service.js";
 
 let cwd: string;
 let service: RunService;
@@ -44,13 +44,18 @@ test("run_start honors an explicit run handle instead of minting", () => {
 test("run_start writes the session pointer ONLY when session_id is passed", () => {
   const sid = "sess-abc";
   const { run } = service.start({ goal: "g", session_id: sid });
-  const ptr = JSON.parse(readFileSync(join(cwd, ".agentry", "run", "sessions", `${sid}.json`), "utf8"));
+  const ptr = JSON.parse(
+    readFileSync(join(cwd, ".agentry", "run", "sessions", `${sid}.json`), "utf8"),
+  );
   assert.equal(ptr.workId, run, "pointer binds the session to the minted run");
 });
 
 test("run_start does NOT write a session pointer when session_id is absent (binder seeds it reactively)", () => {
   service.start({ goal: "g" });
-  assert.ok(!existsSync(join(cwd, ".agentry", "run", "sessions")), "no pointer dir without session_id");
+  assert.ok(
+    !existsSync(join(cwd, ".agentry", "run", "sessions")),
+    "no pointer dir without session_id",
+  );
 });
 
 // ── AC8 — the conductor is the primary emitter ──────────────────────────────────────────────────
@@ -59,12 +64,32 @@ test("AC8: routing-decision / gate / node-enter / node-done(durationMs) round-tr
   const { run } = service.start({ goal: "escalated run" });
 
   assert.deepEqual(
-    service.emit(run, { ts: "2026-01-01T00:00:00.000Z", type: "routing-decision", shape: "decompose+verify", kind: "feature" }),
+    service.emit(run, {
+      ts: "2026-01-01T00:00:00.000Z",
+      type: "routing-decision",
+      shape: "decompose+verify",
+      kind: "feature",
+    }),
     { ok: true },
   );
-  service.emit(run, { ts: "2026-01-01T00:00:01.000Z", type: "gate", gate: "plan", outcome: "approved" });
-  service.emit(run, { ts: "2026-01-01T00:00:02.000Z", type: "node-enter", node: "T03", agent: "agentry:implementer" });
-  service.emit(run, { ts: "2026-01-01T00:00:03.000Z", type: "node-done", node: "T03", durationMs: 4200 });
+  service.emit(run, {
+    ts: "2026-01-01T00:00:01.000Z",
+    type: "gate",
+    gate: "plan",
+    outcome: "approved",
+  });
+  service.emit(run, {
+    ts: "2026-01-01T00:00:02.000Z",
+    type: "node-enter",
+    node: "T03",
+    agent: "agentry:implementer",
+  });
+  service.emit(run, {
+    ts: "2026-01-01T00:00:03.000Z",
+    type: "node-done",
+    node: "T03",
+    durationMs: 4200,
+  });
 
   const { events } = service.tail(run);
   assert.equal(events.length, 4, "all four conductor lifecycle lines round-trip");
@@ -95,7 +120,12 @@ test("event_emit rejects an out-of-union type (closed vocabulary, AC8)", () => {
 // real service boundary, not just validate in isolation. The bare "decompose" used to be rejected here.
 test("event_emit accepts the canonical decompose+verify routing-decision and tails it back", () => {
   const { run } = service.start({ goal: "g" });
-  const outcome = service.emit(run, { ts: "2026-01-01T00:00:00.000Z", type: "routing-decision", shape: "decompose+verify", kind: "feature" });
+  const outcome = service.emit(run, {
+    ts: "2026-01-01T00:00:00.000Z",
+    type: "routing-decision",
+    shape: "decompose+verify",
+    kind: "feature",
+  });
   assert.deepEqual(outcome, { ok: true });
 
   const { events } = service.tail(run);
@@ -109,7 +139,12 @@ test("event_emit accepts the canonical decompose+verify routing-decision and tai
 // discriminator. The live T08 rejection mislabeled this as the "type" field failing.
 test("event_emit attributes a bad member field to that field, not the type discriminator", () => {
   const { run } = service.start({ goal: "g" });
-  const outcome = service.emit(run, { ts: "2026-01-01T00:00:00.000Z", type: "routing-decision", shape: "nonsense", kind: "feature" });
+  const outcome = service.emit(run, {
+    ts: "2026-01-01T00:00:00.000Z",
+    type: "routing-decision",
+    shape: "nonsense",
+    kind: "feature",
+  });
   assert.equal(outcome.ok, false);
   if (!outcome.ok) assert.equal(outcome.field, "shape");
 });
@@ -118,13 +153,24 @@ test("event_emit attributes a bad member field to that field, not the type discr
 
 test("event_tail returns only typed FLOW events — hook lines and empty-agent lines are filtered", () => {
   const { run } = service.start({ goal: "g" });
-  service.emit(run, { ts: "2026-01-01T00:00:02.000Z", type: "node-enter", node: "T01", agent: "agentry:explorer" });
+  service.emit(run, {
+    ts: "2026-01-01T00:00:02.000Z",
+    type: "node-enter",
+    node: "T01",
+    agent: "agentry:explorer",
+  });
 
   // Append raw lines straight to the file: a real hook backstop line (kept parseable, but not a FLOW
   // event so it won't appear in the typed tail) and an empty-agent main-session line (filtered).
   const log = join(cwd, ".agentry", "work", run, "events.jsonl");
-  appendFileSync(log, `${JSON.stringify({ ts: "2026-01-01T00:00:03.000Z", kind: "agent-started", agent: "agentry:explorer" })}\n`);
-  appendFileSync(log, `${JSON.stringify({ ts: "2026-01-01T00:00:04.000Z", kind: "agent-started", agent: "" })}\n`);
+  appendFileSync(
+    log,
+    `${JSON.stringify({ ts: "2026-01-01T00:00:03.000Z", kind: "agent-started", agent: "agentry:explorer" })}\n`,
+  );
+  appendFileSync(
+    log,
+    `${JSON.stringify({ ts: "2026-01-01T00:00:04.000Z", kind: "agent-started", agent: "" })}\n`,
+  );
 
   const { events } = service.tail(run);
   assert.equal(events.length, 1, "only the one FLOW node-enter is a typed event");
@@ -133,8 +179,18 @@ test("event_tail returns only typed FLOW events — hook lines and empty-agent l
 
 test("event_tail honors the `since` filter", () => {
   const { run } = service.start({ goal: "g" });
-  service.emit(run, { ts: "2026-01-01T00:00:00.000Z", type: "gate", gate: "spec", outcome: "reached" });
-  service.emit(run, { ts: "2026-06-01T00:00:00.000Z", type: "gate", gate: "ship", outcome: "approved" });
+  service.emit(run, {
+    ts: "2026-01-01T00:00:00.000Z",
+    type: "gate",
+    gate: "spec",
+    outcome: "reached",
+  });
+  service.emit(run, {
+    ts: "2026-06-01T00:00:00.000Z",
+    type: "gate",
+    gate: "ship",
+    outcome: "approved",
+  });
 
   const { events } = service.tail(run, "2026-03-01T00:00:00.000Z");
   assert.equal(events.length, 1, "only the line at/after `since` is returned");
@@ -153,9 +209,21 @@ test("run_status summarizes tasks by status", () => {
   const { run } = new RunService(cwdServices).start({ goal: "g" });
   const tasksDir = join(cwd, ".agentry", "work", run, "tasks");
   mkdirSync(tasksDir, { recursive: true });
-  cwdServices.tasks.writeTask(run, { taskNo: "001", frontmatter: { title: "a", status: "done" }, body: "x" });
-  cwdServices.tasks.writeTask(run, { taskNo: "002", frontmatter: { title: "b", status: "todo" }, body: "y" });
-  cwdServices.tasks.writeTask(run, { taskNo: "003", frontmatter: { title: "c", status: "todo" }, body: "z" });
+  cwdServices.tasks.writeTask(run, {
+    taskNo: "001",
+    frontmatter: { title: "a", status: "done" },
+    body: "x",
+  });
+  cwdServices.tasks.writeTask(run, {
+    taskNo: "002",
+    frontmatter: { title: "b", status: "todo" },
+    body: "y",
+  });
+  cwdServices.tasks.writeTask(run, {
+    taskNo: "003",
+    frontmatter: { title: "c", status: "todo" },
+    body: "z",
+  });
 
   const status = new RunService(cwdServices).status(run);
   assert.deepEqual(status.tasks, { done: 1, todo: 2 });

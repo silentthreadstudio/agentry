@@ -33,7 +33,9 @@ test("emit appends exactly one parseable JSON line equal to the event AND emits 
   createEmitter(eventsPath, (line) => out.push(line)).emit(SAMPLE);
 
   // (a) events.jsonl gained exactly one line, parseable and deep-equal to the event.
-  const lines = readFileSync(eventsPath, "utf8").split("\n").filter((l) => l.length > 0);
+  const lines = readFileSync(eventsPath, "utf8")
+    .split("\n")
+    .filter((l) => l.length > 0);
   assert.equal(lines.length, 1);
   assert.deepEqual(JSON.parse(lines[0]!), SAMPLE);
 
@@ -47,9 +49,24 @@ test("multiple emits append to events.jsonl (do not overwrite) — one JSON line
   const out: string[] = [];
   const emitter = createEmitter(eventsPath, (line) => out.push(line));
 
-  const a: EvalEvent = { kind: "run-started", runId: "r", detail: "first", ts: "2026-06-17T00:00:00.000Z" };
-  const b: EvalEvent = { kind: "task-started", runId: "r", detail: "second", ts: "2026-06-17T00:00:01.000Z" };
-  const c: EvalEvent = { kind: "run-done", runId: "r", detail: "third", ts: "2026-06-17T00:00:02.000Z" };
+  const a: EvalEvent = {
+    kind: "run-started",
+    runId: "r",
+    detail: "first",
+    ts: "2026-06-17T00:00:00.000Z",
+  };
+  const b: EvalEvent = {
+    kind: "task-started",
+    runId: "r",
+    detail: "second",
+    ts: "2026-06-17T00:00:01.000Z",
+  };
+  const c: EvalEvent = {
+    kind: "run-done",
+    runId: "r",
+    detail: "third",
+    ts: "2026-06-17T00:00:02.000Z",
+  };
   emitter.emit(a);
   emitter.emit(b);
   emitter.emit(c);
@@ -73,8 +90,16 @@ test("formatProgressLine marks task-done with a check and the detail, ending in 
 });
 
 test("formatProgressLine gives every event kind a distinct, detail-bearing prefix", () => {
-  const kinds: EvalEvent["kind"][] = ["run-started", "task-started", "task-done", "gate-fired", "run-done"];
-  const lines = kinds.map((kind) => formatProgressLine({ kind, runId: "r", detail: `d-${kind}`, ts: "t" }));
+  const kinds: EvalEvent["kind"][] = [
+    "run-started",
+    "task-started",
+    "task-done",
+    "gate-fired",
+    "run-done",
+  ];
+  const lines = kinds.map((kind) =>
+    formatProgressLine({ kind, runId: "r", detail: `d-${kind}`, ts: "t" }),
+  );
 
   // Each line carries its own detail and ends in a newline.
   for (let i = 0; i < kinds.length; i++) {

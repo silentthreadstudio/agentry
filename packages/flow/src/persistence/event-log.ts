@@ -29,7 +29,9 @@ export class JsonlEventLog implements EventLogPort {
   tail(run: string, since?: string): string[] {
     const path = this.logPath(run);
     if (!existsSync(path)) return [];
-    const lines = readFileSync(path, "utf8").split("\n").filter((l) => l.trim().length > 0);
+    const lines = readFileSync(path, "utf8")
+      .split("\n")
+      .filter((l) => l.trim().length > 0);
     if (since === undefined) return lines;
     return lines.filter((line) => {
       try {

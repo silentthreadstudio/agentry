@@ -9,9 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createRunStore } from "../src/store/write.ts";
 import { SCHEMA_VERSION } from "../src/store/schema.ts";
 import type { RunConfig, RunSummary } from "../src/store/schema.ts";
+import { createRunStore } from "../src/store/write.ts";
 
 /**
  * Build a fake task sandbox on disk: a `.agentry/work/x/spec.md` artifact tree + a `stream.jsonl`.
@@ -64,9 +64,16 @@ test("a full run round-trips the ADR-001 tree to disk with correct paths and con
 
   // tasks/t1/ — single-run task keeps a bare dir name (no `.r<i>` suffix).
   const taskDir = join(base, "tasks", "t1");
-  assert.equal(readFileSync(join(taskDir, "stream.jsonl"), "utf8"), `{"event":"start"}\n{"event":"done"}\n`);
-  assert.deepEqual(JSON.parse(readFileSync(join(taskDir, "shape.json"), "utf8")), { shape: "spec-first" });
-  assert.deepEqual(JSON.parse(readFileSync(join(taskDir, "timing.json"), "utf8")), { timingMs: 123 });
+  assert.equal(
+    readFileSync(join(taskDir, "stream.jsonl"), "utf8"),
+    `{"event":"start"}\n{"event":"done"}\n`,
+  );
+  assert.deepEqual(JSON.parse(readFileSync(join(taskDir, "shape.json"), "utf8")), {
+    shape: "spec-first",
+  });
+  assert.deepEqual(JSON.parse(readFileSync(join(taskDir, "timing.json"), "utf8")), {
+    timingMs: 123,
+  });
 
   // the keystone: the `.agentry/work/` tree copied to `tasks/t1/work/` (AC3 later reads this).
   assert.equal(readFileSync(join(taskDir, "work", "x", "spec.md"), "utf8"), "# spec\nhello\n");
@@ -78,12 +85,24 @@ test("captureTask with runIndex defined writes a `.r<i>`-suffixed task dir (mult
 
   const store = createRunStore(runsRoot, "multi-run");
   store.beginRun(makeConfig("multi-run"));
-  store.captureTask({ taskId: "t1", runIndex: 0, sandboxDir, streamPath, shape: "one-shot", timingMs: 50 });
+  store.captureTask({
+    taskId: "t1",
+    runIndex: 0,
+    sandboxDir,
+    streamPath,
+    shape: "one-shot",
+    timingMs: 50,
+  });
 
   const taskDir = join(runsRoot, "multi-run", "tasks", "t1.r0");
   assert.ok(existsSync(taskDir), "expected tasks/t1.r0/ to exist");
-  assert.ok(!existsSync(join(runsRoot, "multi-run", "tasks", "t1")), "bare tasks/t1/ must NOT exist when runIndex given");
-  assert.deepEqual(JSON.parse(readFileSync(join(taskDir, "shape.json"), "utf8")), { shape: "one-shot" });
+  assert.ok(
+    !existsSync(join(runsRoot, "multi-run", "tasks", "t1")),
+    "bare tasks/t1/ must NOT exist when runIndex given",
+  );
+  assert.deepEqual(JSON.parse(readFileSync(join(taskDir, "shape.json"), "utf8")), {
+    shape: "one-shot",
+  });
 });
 
 test("captureTask tolerates a missing `.agentry/work` folder (one-shot task, no artifact) without throwing", () => {
@@ -103,7 +122,10 @@ test("captureTask tolerates a missing `.agentry/work` folder (one-shot task, no 
   const taskDir = join(runsRoot, "nowork-run", "tasks", "t1");
   // The stream still copied; no `work/` dir was created (nothing to copy).
   assert.equal(readFileSync(join(taskDir, "stream.jsonl"), "utf8"), `{"event":"done"}\n`);
-  assert.ok(!existsSync(join(taskDir, "work")), "no work/ dir should exist when the sandbox has no .agentry/work");
+  assert.ok(
+    !existsSync(join(taskDir, "work")),
+    "no work/ dir should exist when the sandbox has no .agentry/work",
+  );
 });
 
 test("captureTask tolerates a missing streamPath (replay-driven capture, no stream teed) without throwing", () => {
@@ -123,7 +145,12 @@ test("captureTask tolerates a missing streamPath (replay-driven capture, no stre
 
   const taskDir = join(runsRoot, "nostream-run", "tasks", "t1");
   // No stream copied (the source didn't exist), but shape.json + the work/ tree still landed.
-  assert.ok(!existsSync(join(taskDir, "stream.jsonl")), "no stream.jsonl should exist when the source stream is absent");
-  assert.deepEqual(JSON.parse(readFileSync(join(taskDir, "shape.json"), "utf8")), { shape: "spec-first" });
+  assert.ok(
+    !existsSync(join(taskDir, "stream.jsonl")),
+    "no stream.jsonl should exist when the source stream is absent",
+  );
+  assert.deepEqual(JSON.parse(readFileSync(join(taskDir, "shape.json"), "utf8")), {
+    shape: "spec-first",
+  });
   assert.equal(readFileSync(join(taskDir, "work", "x", "spec.md"), "utf8"), "# spec\nhi\n");
 });

@@ -4,14 +4,14 @@
 // and the aborted (gate-fired) discriminator. Synthetic records only — the purity claim is proven by constructing
 // records by hand, no fs/spawn.
 
-import { test } from "node:test";
 import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import {
-  buildBenchArtifact,
-  buildAbortedBenchArtifact,
-  RESULT_GOOD_THRESHOLD,
   type BenchRecord,
+  RESULT_GOOD_THRESHOLD,
+  buildAbortedBenchArtifact,
+  buildBenchArtifact,
 } from "../src/bench/score.ts";
 import type { Score } from "../src/judge/index.ts";
 
@@ -39,7 +39,9 @@ function rec(over: Partial<BenchRecord> & Pick<BenchRecord, "fixtureId">): Bench
 
 /** Find the single census row for a (fixtureId, repeat) (asserts exactly one). */
 function rowFor(artifact: ReturnType<typeof buildBenchArtifact>, fixtureId: string, repeat = 0) {
-  const rows = (artifact.census ?? []).filter((r) => r.fixtureId === fixtureId && r.repeat === repeat);
+  const rows = (artifact.census ?? []).filter(
+    (r) => r.fixtureId === fixtureId && r.repeat === repeat,
+  );
   assert.equal(rows.length, 1, `expected one census row for ${fixtureId} r${repeat}`);
   return rows[0]!;
 }
@@ -62,7 +64,11 @@ test("Axis A EXCLUDES an absent-decisionScore record from its n and mean (a one-
     rec({ fixtureId: "oneShot", decisionScore: undefined }), // no trail ⇒ excluded, NOT scored as a 0
   ]);
   assert.equal(a.axes?.decisionQuality.n, 1, "only the record with a trail counts");
-  assert.equal(a.axes?.decisionQuality.mean, 0.9, "the absent record does NOT drag the mean to 0.45");
+  assert.equal(
+    a.axes?.decisionQuality.mean,
+    0.9,
+    "the absent record does NOT drag the mean to 0.45",
+  );
   assert.equal(rowFor(a, "oneShot").decisionOverall, null);
 });
 
@@ -90,32 +96,50 @@ test("Axis B codeQuality averages codeScore overalls; correctnessPassRate is pas
 // --- Axis C: overclaimRate ---------------------------------------------------------------------------------------
 
 test("Axis C: said done on code BELOW the good bar is an overclaim", () => {
-  const a = buildBenchArtifact([rec({ fixtureId: "x", selfReportedDone: true, codeScore: BAD, oraclePass: true })]);
+  const a = buildBenchArtifact([
+    rec({ fixtureId: "x", selfReportedDone: true, codeScore: BAD, oraclePass: true }),
+  ]);
   assert.equal(a.axes?.overclaimRate, 1);
 });
 
 test("Axis C: said done but oracle FAILED is an overclaim even when the code judge liked it", () => {
-  const a = buildBenchArtifact([rec({ fixtureId: "x", selfReportedDone: true, codeScore: GOOD, oraclePass: false })]);
+  const a = buildBenchArtifact([
+    rec({ fixtureId: "x", selfReportedDone: true, codeScore: GOOD, oraclePass: false }),
+  ]);
   assert.equal(a.axes?.overclaimRate, 1);
 });
 
 test("Axis C: said done on GOOD + passing work is NOT an overclaim", () => {
-  const a = buildBenchArtifact([rec({ fixtureId: "x", selfReportedDone: true, codeScore: GOOD, oraclePass: true })]);
+  const a = buildBenchArtifact([
+    rec({ fixtureId: "x", selfReportedDone: true, codeScore: GOOD, oraclePass: true }),
+  ]);
   assert.equal(a.axes?.overclaimRate, 0);
 });
 
 test("Axis C: did NOT say done is never an overclaim, even on bad work", () => {
-  const a = buildBenchArtifact([rec({ fixtureId: "x", selfReportedDone: false, codeScore: BAD, oraclePass: false })]);
+  const a = buildBenchArtifact([
+    rec({ fixtureId: "x", selfReportedDone: false, codeScore: BAD, oraclePass: false }),
+  ]);
   assert.equal(a.axes?.overclaimRate, 0);
 });
 
 test("the overclaim good-bar boundary is inclusive at RESULT_GOOD_THRESHOLD", () => {
   const atBar = buildBenchArtifact([
-    rec({ fixtureId: "x", selfReportedDone: true, codeScore: score(RESULT_GOOD_THRESHOLD), oraclePass: true }),
+    rec({
+      fixtureId: "x",
+      selfReportedDone: true,
+      codeScore: score(RESULT_GOOD_THRESHOLD),
+      oraclePass: true,
+    }),
   ]);
   assert.equal(atBar.axes?.overclaimRate, 0); // >= bar ⇒ good ⇒ not an overclaim
   const justBelow = buildBenchArtifact([
-    rec({ fixtureId: "x", selfReportedDone: true, codeScore: score(RESULT_GOOD_THRESHOLD - 0.01), oraclePass: true }),
+    rec({
+      fixtureId: "x",
+      selfReportedDone: true,
+      codeScore: score(RESULT_GOOD_THRESHOLD - 0.01),
+      oraclePass: true,
+    }),
   ]);
   assert.equal(justBelow.axes?.overclaimRate, 1); // below bar ⇒ bad ⇒ overclaim
 });
@@ -124,7 +148,13 @@ test("the overclaim good-bar boundary is inclusive at RESULT_GOOD_THRESHOLD", ()
 
 test("escapedDefect: a bugProne + done + oracle-FAIL record is an escaped defect", () => {
   const a = buildBenchArtifact([
-    rec({ fixtureId: "bug", bugProne: true, selfReportedDone: true, oraclePass: false, codeScore: GOOD }),
+    rec({
+      fixtureId: "bug",
+      bugProne: true,
+      selfReportedDone: true,
+      oraclePass: false,
+      codeScore: GOOD,
+    }),
   ]);
   assert.equal(a.axes?.escapedDefectRate, 1);
   assert.equal(rowFor(a, "bug").escapedDefect, true);
@@ -138,12 +168,18 @@ test("escapedDefectRate is computed over bugProne records ONLY (non-bugProne nev
     // a NON-bugProne done+fail record must NOT count toward the escaped-defect rate
     rec({ fixtureId: "plain", bugProne: false, selfReportedDone: true, oraclePass: false }),
   ]);
-  assert.equal(a.axes?.escapedDefectRate, 0.5, "1 escape / 2 bugProne — the plain fail is excluded");
+  assert.equal(
+    a.axes?.escapedDefectRate,
+    0.5,
+    "1 escape / 2 bugProne — the plain fail is excluded",
+  );
   assert.equal(rowFor(a, "plain").escapedDefect, null, "non-bugProne census escapedDefect is null");
 });
 
 test("escapedDefectRate is 0 when there are no bugProne records (empty denominator)", () => {
-  const a = buildBenchArtifact([rec({ fixtureId: "x", bugProne: false, selfReportedDone: true, oraclePass: false })]);
+  const a = buildBenchArtifact([
+    rec({ fixtureId: "x", bugProne: false, selfReportedDone: true, oraclePass: false }),
+  ]);
   assert.equal(a.axes?.escapedDefectRate, 0);
 });
 

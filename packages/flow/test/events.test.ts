@@ -59,12 +59,22 @@ test("FlowEvent rejects a type outside the closed union", () => {
 // decompose run (found by live T08 validation, not the unit suite, because the units used FLOW's
 // OWN value). This guards the conductor↔FLOW vocabulary seam.
 test("RoutingDecisionEvent accepts the canonical decompose+verify shape", () => {
-  const event = { ts: "2026-06-19T10:00:00.000Z", type: "routing-decision", shape: "decompose+verify", kind: "feature" };
+  const event = {
+    ts: "2026-06-19T10:00:00.000Z",
+    type: "routing-decision",
+    shape: "decompose+verify",
+    kind: "feature",
+  };
   assert.equal(RoutingDecisionEvent.safeParse(event).success, true);
 });
 
 test("FlowEvent classifies a routing-decision with decompose+verify as flow", () => {
-  const line = JSON.stringify({ ts: "2026-06-19T10:00:00.000Z", type: "routing-decision", shape: "decompose+verify", kind: "feature" });
+  const line = JSON.stringify({
+    ts: "2026-06-19T10:00:00.000Z",
+    type: "routing-decision",
+    shape: "decompose+verify",
+    kind: "feature",
+  });
   const parsed = parseLogLine(line);
   assert.equal(parsed.kind, "flow");
   if (parsed.kind === "flow") assert.equal(parsed.event.type, "routing-decision");

@@ -28,11 +28,11 @@
 // body and re-stamps the version — keeping files-are-truth without a second markdown serializer.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { computeVersion } from "@agentry/flow/domain/version";
-import { ReviewComment } from "@agentry/flow/domain/review";
-import { runDir } from "@agentry/flow/resolution/run-pointer";
 import { assertSafeSegment } from "@agentry/flow/domain/ids";
+import { ReviewComment } from "@agentry/flow/domain/review";
+import { computeVersion } from "@agentry/flow/domain/version";
+import { runDir } from "@agentry/flow/resolution/run-pointer";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { readSidecar } from "./review-sidecar-source.js";
 
 // FLOW's frontmatter splitter (task-file-store.ts) — the SAME pattern, reused not forked. Group 1 =
@@ -43,9 +43,7 @@ const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 // An artifact addressed for read/write: a run-root artifact by `kind`, or a task file by `taskNo`.
 // Exactly one is set (the application validates the request shape; this adapter trusts the resolved
 // target). Mirrors FLOW's split between `readArtifact(kind)` and `readTask(taskNo)`.
-export type ArtifactTarget =
-  | { kind: "spec" | "plan" }
-  | { taskNo: string };
+export type ArtifactTarget = { kind: "spec" | "plan" } | { taskNo: string };
 
 // The current on-disk state of an artifact — frontmatter (with `version` stripped, the way the hash
 // sees it), the body, and the recomputed current `version`. `undefined` when the file is absent.

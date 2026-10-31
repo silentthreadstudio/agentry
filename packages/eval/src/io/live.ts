@@ -203,7 +203,8 @@ function scanWorkArtifacts(workingDir: string): WorkArtifacts {
     const slugDir = join(workRoot, slug);
     if (!statSync(slugDir).isDirectory()) continue;
     // events.jsonl is the primer hook's log, not a routing artifact — never counted (only plan/tasks/spec are).
-    if (existsSync(join(slugDir, "plan.md")) || dirNonEmpty(join(slugDir, "tasks"))) hasDecompose = true;
+    if (existsSync(join(slugDir, "plan.md")) || dirNonEmpty(join(slugDir, "tasks")))
+      hasDecompose = true;
     if (existsSync(join(slugDir, "spec.md"))) hasSpec = true;
   }
   return { hasDecompose, hasSpec };
@@ -383,9 +384,15 @@ export async function runCaptured(
   }
   const args = buildArgs(invocation);
   const captureOptions: CaptureOptions = {
-    ...(invocation.noKillOnDispatch !== undefined ? { noKillOnDispatch: invocation.noKillOnDispatch } : {}),
-    ...(invocation.terminateOnArtifact !== undefined ? { terminateOnArtifact: invocation.terminateOnArtifact } : {}),
-    ...(invocation.runToCompletion !== undefined ? { runToCompletion: invocation.runToCompletion } : {}),
+    ...(invocation.noKillOnDispatch !== undefined
+      ? { noKillOnDispatch: invocation.noKillOnDispatch }
+      : {}),
+    ...(invocation.terminateOnArtifact !== undefined
+      ? { terminateOnArtifact: invocation.terminateOnArtifact }
+      : {}),
+    ...(invocation.runToCompletion !== undefined
+      ? { runToCompletion: invocation.runToCompletion }
+      : {}),
     ...(invocation.timeoutMs !== undefined ? { timeoutMs: invocation.timeoutMs } : {}),
   };
   // Cost (ADR-002) is captured via the side channel: `spawnClaudeStreaming` resolves the subtype only (so its

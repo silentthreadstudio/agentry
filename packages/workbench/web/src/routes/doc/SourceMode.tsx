@@ -1,3 +1,4 @@
+import { markdown } from "@codemirror/lang-markdown";
 // SourceMode — the CodeMirror raw-markdown escape hatch (ADR-004, the safety valve). It edits the
 // artifact `body` as PLAIN TEXT, bypassing the Tiptap serializer entirely: the power-edit path and the
 // fallback for any construct the rich schema doesn't model. The byte-stability guarantee lives at the
@@ -5,7 +6,6 @@
 // no-op edit re-serializes to the same bytes → same version → no false optimistic-concurrency rejection
 // (ADR-006). This component is a thin controlled wrapper; it owns no save/lock logic.
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
-import { markdown } from "@codemirror/lang-markdown";
 
 // The dark theme matching the prototype's editor surface (tokens.css palette). Defined once so the raw
 // view reads as the same calm dark canvas as the rich editor, not a default light CodeMirror.

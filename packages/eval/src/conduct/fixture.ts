@@ -99,7 +99,9 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
 
   const raw = parseYaml(readFileSync(yamlPath, "utf8")) as unknown;
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new OutcomeFixtureError(`${yamlPath}: fixture.yaml must be a YAML mapping, got ${describe(raw)}`);
+    throw new OutcomeFixtureError(
+      `${yamlPath}: fixture.yaml must be a YAML mapping, got ${describe(raw)}`,
+    );
   }
   const root = raw as Record<string, unknown>;
 
@@ -108,13 +110,17 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
 
   const shapeRaw = requireString(root.shape, "shape", yamlPath);
   if (!SHAPES.has(shapeRaw)) {
-    throw new OutcomeFixtureError(`${yamlPath}: \`shape\` "${shapeRaw}" is not one of ${[...SHAPES].join("|")}`);
+    throw new OutcomeFixtureError(
+      `${yamlPath}: \`shape\` "${shapeRaw}" is not one of ${[...SHAPES].join("|")}`,
+    );
   }
   const shape = shapeRaw as FixtureShape;
 
   const kind = requireString(root.kind, "kind", yamlPath);
   if (!KNOWN_KINDS_SET.has(kind)) {
-    throw new OutcomeFixtureError(`${yamlPath}: \`kind\` "${kind}" is not one of ${KNOWN_KINDS.join("|")}`);
+    throw new OutcomeFixtureError(
+      `${yamlPath}: \`kind\` "${kind}" is not one of ${KNOWN_KINDS.join("|")}`,
+    );
   }
 
   const { oracleCmd, oracleTimeoutMs } = parseOracle(root.oracle, yamlPath);
@@ -139,16 +145,25 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
 }
 
 /** Parse the `oracle` mapping: a required non-empty `cmd` and an optional positive-integer `timeoutMs`. */
-function parseOracle(value: unknown, yamlPath: string): { oracleCmd: string; oracleTimeoutMs: number } {
+function parseOracle(
+  value: unknown,
+  yamlPath: string,
+): { oracleCmd: string; oracleTimeoutMs: number } {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new OutcomeFixtureError(`${yamlPath}: \`oracle\` must be a mapping, got ${describe(value)}`);
+    throw new OutcomeFixtureError(
+      `${yamlPath}: \`oracle\` must be a mapping, got ${describe(value)}`,
+    );
   }
   const obj = value as Record<string, unknown>;
   const oracleCmd = requireString(obj.cmd, "oracle.cmd", yamlPath);
 
   let oracleTimeoutMs = DEFAULT_ORACLE_TIMEOUT_MS;
   if (obj.timeoutMs !== undefined) {
-    if (typeof obj.timeoutMs !== "number" || !Number.isInteger(obj.timeoutMs) || obj.timeoutMs <= 0) {
+    if (
+      typeof obj.timeoutMs !== "number" ||
+      !Number.isInteger(obj.timeoutMs) ||
+      obj.timeoutMs <= 0
+    ) {
       throw new OutcomeFixtureError(
         `${yamlPath}: \`oracle.timeoutMs\` must be a positive integer when present, got ${describe(obj.timeoutMs)}`,
       );
@@ -193,7 +208,9 @@ function relativeFiles(dir: string): string[] {
 
 function requireString(value: unknown, field: string, path: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new OutcomeFixtureError(`${path}: \`${field}\` must be a non-empty string, got ${describe(value)}`);
+    throw new OutcomeFixtureError(
+      `${path}: \`${field}\` must be a non-empty string, got ${describe(value)}`,
+    );
   }
   return value;
 }

@@ -7,8 +7,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { TaskFileStore } from "../src/persistence/task-file-store.js";
 import { TaskService } from "../src/application/task-service.js";
+import { TaskFileStore } from "../src/persistence/task-file-store.js";
 
 const RUN = "demo-run-001";
 let cwd: string;
@@ -52,7 +52,11 @@ test("assign: always populates lockedBy (and assignee), preserves status + body,
     assert.equal(got.value.task.frontmatter.assignee, "agentry:implementer");
     assert.equal(got.value.task.frontmatter.status, "todo", "status preserved through assign");
     assert.equal(got.value.task.body, "the brief", "body preserved through assign");
-    assert.notEqual(got.value.task.frontmatter.version, created.version, "version changed on the assign write");
+    assert.notEqual(
+      got.value.task.frontmatter.version,
+      created.version,
+      "version changed on the assign write",
+    );
   }
 });
 
@@ -67,7 +71,10 @@ test("status: sets the new status, preserves lockedBy, re-stamps a different ver
   assert.notEqual(moved.ok && moved.value.version, v1, "status re-stamps a new version (AC5)");
 
   const got = service.get(RUN, "001");
-  assert.ok(got.ok && got.value.task.frontmatter.lockedBy === "agent-a", "lockedBy preserved through a status move");
+  assert.ok(
+    got.ok && got.value.task.frontmatter.lockedBy === "agent-a",
+    "lockedBy preserved through a status move",
+  );
 });
 
 test("artifact: stamps a tool-computed version; a body edit yields a different version (AC4)", () => {

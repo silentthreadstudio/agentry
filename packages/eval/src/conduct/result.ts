@@ -121,5 +121,8 @@ function producedFiles(sandboxDir: string): string[] {
 /** Cap a file's content to `maxBytes`, appending a truncation marker when clipped. Returns the clip flag too. */
 function capFile(content: string, maxBytes: number): { content: string; clipped: boolean } {
   if (content.length <= maxBytes) return { content, clipped: false };
-  return { content: `${content.slice(0, maxBytes)}\n[truncated: file exceeds ${maxBytes} bytes]`, clipped: true };
+  return {
+    content: `${content.slice(0, maxBytes)}\n[truncated: file exceeds ${maxBytes} bytes]`,
+    clipped: true,
+  };
 }

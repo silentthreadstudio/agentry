@@ -7,11 +7,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  OUTCOME_DIMENSIONS,
   MAX_DIMENSION_SUM,
+  OUTCOME_DIMENSIONS,
+  type OutcomeDimensions,
   RUBRIC_TEXT,
   overallFromDimensions,
-  type OutcomeDimensions,
 } from "../src/conduct/outcome-rubric.ts";
 
 // --- the canonical dimension set ------------------------------------------------------------------------------

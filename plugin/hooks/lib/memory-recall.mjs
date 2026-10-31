@@ -11,7 +11,7 @@
 // must be fast, synchronous, and dependency-free, and the files are the same source the MCP indexes.
 // Ranking mirrors `packages/memory/src/domain/ranking.ts` — `relevance × confidence × (1 + usefulness)`
 // — so a hook-primed fact and an MCP-recalled one agree about what matters.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -27,7 +27,10 @@ export function memoryRoots(projectDir) {
  *  or malformed config is the shipped default, not an error that breaks a subagent launch. */
 export function readMemoryConfig(projectDir) {
   const defaults = { prime: "conductor", primeLimit: 5, captureCorrections: false };
-  for (const path of [join(projectDir, ".agentry", "config.json"), join(homedir(), ".agentry", "config.json")]) {
+  for (const path of [
+    join(projectDir, ".agentry", "config.json"),
+    join(homedir(), ".agentry", "config.json"),
+  ]) {
     try {
       if (!existsSync(path)) continue;
       const parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -49,7 +52,15 @@ function parseFact(text, source) {
   const head = text.slice(4, end).split("\n");
   const body = text.slice(end + 4).trim();
 
-  const fact = { confidence: 0.5, usefulness: 0, status: "active", tags: [], provenance: [], body, source };
+  const fact = {
+    confidence: 0.5,
+    usefulness: 0,
+    status: "active",
+    tags: [],
+    provenance: [],
+    body,
+    source,
+  };
   let list = null;
   for (const line of head) {
     const item = /^\s+-\s+(.*)$/.exec(line);
@@ -67,7 +78,8 @@ function parseFact(text, source) {
     list = null;
     const value = raw.trim().replace(/^["']|["']$/g, "");
     if (key === "confidence" || key === "usefulness") fact[key] = Number(value) || 0;
-    else if (key === "id" || key === "type" || key === "scope" || key === "status") fact[key] = value;
+    else if (key === "id" || key === "type" || key === "scope" || key === "status")
+      fact[key] = value;
   }
   return fact;
 }
@@ -103,7 +115,10 @@ export function readFacts(projectDir) {
 // naming a subsystem or a file clears it comfortably; an unrelated prompt clears nothing.
 const MIN_RELEVANCE = 0.18;
 
-const tokenize = (text) => (String(text).toLowerCase().match(/[a-z0-9]+/g) ?? []);
+const tokenize = (text) =>
+  String(text)
+    .toLowerCase()
+    .match(/[a-z0-9]+/g) ?? [];
 
 // Tokens that carry no signal — they match nearly every fact and would swamp the real terms. Two
 // families: ordinary English glue, and STRUCTURAL PATH SEGMENTS. The second matters more than it looks:
@@ -111,10 +126,12 @@ const tokenize = (text) => (String(text).toLowerCase().match(/[a-z0-9]+/g) ?? []
 // provenance contains `packages` and `src` — which is most of them — and the identifying words
 // (`workbench`, `transport`) get outvoted by the scaffolding around them.
 const STOP = new Set(
-  ("the a an and or of to in for on with is are be this that it its as at by from you your we our " +
+  (
+    "the a an and or of to in for on with is are be this that it its as at by from you your we our " +
     "task run use using make made do does done into then than when what which who how why not no " +
     "add adds added new file files code work works " +
-    "packages package src lib dist test tests index main app source ts tsx js jsx mjs cjs json md").split(" "),
+    "packages package src lib dist test tests index main app source ts tsx js jsx mjs cjs json md"
+  ).split(" "),
 );
 
 /**
@@ -139,14 +156,20 @@ export function rankFacts(facts, task, limit) {
   const indexed = facts.map((fact) => {
     const body = tokenize(fact.body);
     const bodyTokens = new Set([...body, ...tokenize(fact.tags.join(" "))]);
-    return { fact, bodyTokens, pathTokens: new Set(tokenize(fact.provenance.join(" "))), length: body.length };
+    return {
+      fact,
+      bodyTokens,
+      pathTokens: new Set(tokenize(fact.provenance.join(" "))),
+      length: body.length,
+    };
   });
 
   // Document frequency over the corpus we actually have — small enough to count directly.
   const df = new Map();
   for (const entry of indexed) {
     for (const token of queryTokens) {
-      if (entry.bodyTokens.has(token) || entry.pathTokens.has(token)) df.set(token, (df.get(token) ?? 0) + 1);
+      if (entry.bodyTokens.has(token) || entry.pathTokens.has(token))
+        df.set(token, (df.get(token) ?? 0) + 1);
     }
   }
   const idf = (token) => Math.log(indexed.length / (1 + (df.get(token) ?? 0))) + 1;
@@ -167,7 +190,10 @@ export function rankFacts(facts, task, limit) {
     // honest answer is silence.
     if (relevance < MIN_RELEVANCE) continue;
     const { confidence, usefulness } = entry.fact;
-    scored.push({ fact: entry.fact, score: relevance * (confidence || 0.5) * (1 + (usefulness || 0)) });
+    scored.push({
+      fact: entry.fact,
+      score: relevance * (confidence || 0.5) * (1 + (usefulness || 0)),
+    });
   }
 
   scored.sort((a, b) => b.score - a.score);

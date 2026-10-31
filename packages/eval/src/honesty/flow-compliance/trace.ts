@@ -10,7 +10,7 @@
 //   - The B1 `flow-skipped` marker is a backstop line: `{ ts, kind:"flow-skipped", artifact, path }` — `kind`,
 //     never `type`. So a `flow-skipped` line is NEVER a FLOW event and never counts as "a run exists".
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /** The closed FLOW event vocabulary — a `type`-bearing line. A line with only `kind` is a backstop, not FLOW. */

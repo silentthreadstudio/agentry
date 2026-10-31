@@ -22,7 +22,15 @@
 // Fail-loud contract: this script must NEVER write an empty / 0-byte page. If it cannot source EITHER a generated
 // dashboard or the tracked template, it exits non-zero and says why — a broken deploy beats a silently empty one.
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,7 +41,15 @@ const WEB_ROOT = join(SCRIPT_DIR, ".."); // packages/web
 const REPO_ROOT = join(WEB_ROOT, "..", ".."); // repo root
 
 const RESULTS_ROOT = join(REPO_ROOT, "packages", "eval", "results");
-const TEMPLATE_PATH = join(REPO_ROOT, "packages", "eval", "src", "report", "assets", "template.html");
+const TEMPLATE_PATH = join(
+  REPO_ROOT,
+  "packages",
+  "eval",
+  "src",
+  "report",
+  "assets",
+  "template.html",
+);
 const OUT_DIR = join(WEB_ROOT, "public", "dashboard");
 const OUT_PATH = join(OUT_DIR, "index.html");
 
@@ -76,11 +92,15 @@ function listDirs(root) {
  *  is missing or lacks its marker (a loud failure beats shipping a page that can't render). */
 function renderTemplateFloor() {
   if (!existsSync(TEMPLATE_PATH)) {
-    throw new Error(`dashboard template not found at ${TEMPLATE_PATH} — no source for the embedded dashboard`);
+    throw new Error(
+      `dashboard template not found at ${TEMPLATE_PATH} — no source for the embedded dashboard`,
+    );
   }
   const template = readFileSync(TEMPLATE_PATH, "utf8");
   if (!template.includes(DATA_MARKER)) {
-    throw new Error(`template ${TEMPLATE_PATH} is missing the ${DATA_MARKER} marker — refusing to emit a page that may not render`);
+    throw new Error(
+      `template ${TEMPLATE_PATH} is missing the ${DATA_MARKER} marker — refusing to emit a page that may not render`,
+    );
   }
   // No injection: drop the marker; the SAMPLE fallback fills the page.
   return template.replace(DATA_MARKER, "");
@@ -105,7 +125,9 @@ function main() {
   // Fail loud if, despite the above, the output is empty — never publish a 0-byte dashboard.
   const size = existsSync(OUT_PATH) ? statSync(OUT_PATH).size : 0;
   if (size === 0) {
-    throw new Error(`embed-dashboard produced an empty ${OUT_PATH} — refusing to publish an empty dashboard`);
+    throw new Error(
+      `embed-dashboard produced an empty ${OUT_PATH} — refusing to publish an empty dashboard`,
+    );
   }
 
   console.log(`[embed] wrote ${OUT_PATH} (${size} bytes) from ${source}.`);

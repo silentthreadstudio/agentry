@@ -1,9 +1,9 @@
+import type { RunSummary } from "@agentry/workbench-shared";
 // StatusDot — the prototype's signature status affordance: a small colored dot + a muted text
 // label (status is NEVER conveyed by color alone — a11y, VISION's near-monochrome language).
 // Maps FLOW's closed FlowTaskStatus union (todo · in-progress · in-review · done) plus the derived
 // "blocked" state the graph surfaces. A closed map → a new status is a compile error, not a grey dot.
 import type { CSSProperties } from "react";
-import type { RunSummary } from "@agentry/workbench-shared";
 
 // FLOW's closed task-status union. Derived from the read-model's taskCounts keys rather than imported
 // from @agentry/flow directly, so the web layer depends only on the read-model contract (and a FLOW

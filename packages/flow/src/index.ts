@@ -9,26 +9,31 @@
 // its own `tools/<family>-tools.ts` and switching the import here), never the signature.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { JsonlEventLog } from "./persistence/event-log.js";
+import { ChannelBridge } from "./channel/channel-bridge.js";
+import type { ChannelNotification } from "./channel/channel-event.js";
+import type { PermissionVerdictNotification } from "./channel/permission-event.js";
+import { PermissionRelay } from "./channel/permission-relay.js";
+import { StatusBridge } from "./channel/status-bridge.js";
+import type { BacklogStore, EventLog, ReviewStore, RunStore, TaskStore } from "./domain/ports.js";
 import { FsBacklogStore } from "./persistence/backlog-store.js";
+import { JsonlEventLog } from "./persistence/event-log.js";
 import { JsonReviewStore } from "./persistence/review-store.js";
 import { JsonRunStateStore } from "./persistence/run-state-store.js";
 import { TaskFileStore } from "./persistence/task-file-store.js";
-import type { BacklogStore, EventLog, ReviewStore, RunStore, TaskStore } from "./domain/ports.js";
-import { resolveRunFromSession, sessionsBoundTo, workRoot } from "./resolution/run-pointer.js";
-import { knownRuns, knownSessionId, noteRunArg, noteSessionArg } from "./resolution/process-identity.js";
 import { shouldRouteToThisSession } from "./resolution/comment-routing.js";
-import { registerTaskTools } from "./tools/task-tools.js";
-import { registerMonitorTools } from "./tools/monitor-tools.js";
+import {
+  knownRuns,
+  knownSessionId,
+  noteRunArg,
+  noteSessionArg,
+} from "./resolution/process-identity.js";
+import { resolveRunFromSession, sessionsBoundTo, workRoot } from "./resolution/run-pointer.js";
 import { registerAgentTools } from "./tools/agent-tools.js";
-import { registerReviewTools } from "./tools/review-tools.js";
-import { registerChannelReplyTools } from "./tools/channel-reply-tools.js";
 import { registerBacklogTools } from "./tools/backlog-tools.js";
-import { ChannelBridge } from "./channel/channel-bridge.js";
-import { StatusBridge } from "./channel/status-bridge.js";
-import type { ChannelNotification } from "./channel/channel-event.js";
-import { PermissionRelay } from "./channel/permission-relay.js";
-import type { PermissionVerdictNotification } from "./channel/permission-event.js";
+import { registerChannelReplyTools } from "./tools/channel-reply-tools.js";
+import { registerMonitorTools } from "./tools/monitor-tools.js";
+import { registerReviewTools } from "./tools/review-tools.js";
+import { registerTaskTools } from "./tools/task-tools.js";
 
 // The experimental capability key for the live human↔agent channel. Declaring it is load-safe and
 // additive (the spike proved: ignored without the `--dangerously-load-development-channels` dev
@@ -221,10 +226,13 @@ export async function main(): Promise<void> {
 // Entry point: connect the stdio transport ONLY when invoked directly (`node dist/index.js`), never
 // on import — so test/tooling that imports `resolveRunContext`/`createServices` doesn't block on the
 // transport (mirrors packages/eval/src/cli.ts's `invokedDirectly` guard).
-const invokedDirectly = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
 if (invokedDirectly) {
   main().catch((error: unknown) => {
-    process.stderr.write(`[flow] fatal: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `[flow] fatal: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     process.exit(1);
   });
 }

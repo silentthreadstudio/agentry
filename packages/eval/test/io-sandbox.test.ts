@@ -8,7 +8,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { AUTOPILOT_ENV, prepareSandbox, producedTreeNonEmpty, seedSandbox } from "../src/io/sandbox.ts";
+import {
+  AUTOPILOT_ENV,
+  prepareSandbox,
+  producedTreeNonEmpty,
+  seedSandbox,
+} from "../src/io/sandbox.ts";
 
 /** Build a small nested seed tree on disk and return its root. */
 function makeSeedTree(): string {
@@ -28,7 +33,10 @@ test("seedSandbox copies a nested fixture tree into the working dir with content
 
   assert.equal(readFileSync(join(workingDir, "package.json"), "utf8"), `{"name":"seed"}`);
   assert.equal(readFileSync(join(workingDir, "src", "index.js"), "utf8"), "export const x = 1;\n");
-  assert.equal(readFileSync(join(workingDir, "src", "nested", "deep.js"), "utf8"), "export const y = 2;\n");
+  assert.equal(
+    readFileSync(join(workingDir, "src", "nested", "deep.js"), "utf8"),
+    "export const y = 2;\n",
+  );
 });
 
 test("prepareSandbox sets AGENTRY_AUTOPILOT=1 in the child env (decide-record-proceed)", () => {

@@ -1,3 +1,4 @@
+import { FsBacklogStore } from "@agentry/flow/persistence/backlog-store";
 // flow-services — FLOW's file-store tree, built for one project root.
 //
 // FLOW exports `createServices(cwd)` from its barrel, but importing that barrel drags the MCP SDK into
@@ -9,7 +10,6 @@ import { JsonlEventLog } from "@agentry/flow/persistence/event-log";
 import { JsonReviewStore } from "@agentry/flow/persistence/review-store";
 import { JsonRunStateStore } from "@agentry/flow/persistence/run-state-store";
 import { TaskFileStore } from "@agentry/flow/persistence/task-file-store";
-import { FsBacklogStore } from "@agentry/flow/persistence/backlog-store";
 
 /** Structurally FLOW's `FlowServices`, assembled without importing its barrel. */
 export function createFlowServices(root: string) {

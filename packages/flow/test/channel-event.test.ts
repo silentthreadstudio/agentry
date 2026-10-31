@@ -3,8 +3,13 @@
 // already-seen comments yield nothing; ordering is preserved; the anchor quote is included.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  commentIds,
+  diffNewComments,
+  isPushable,
+  renderChannelContent,
+} from "../src/channel/channel-event.js";
 import type { ReviewComment } from "../src/domain/review.js";
-import { commentIds, diffNewComments, isPushable, renderChannelContent } from "../src/channel/channel-event.js";
 
 function comment(over: Partial<ReviewComment> = {}): ReviewComment {
   return {
@@ -29,7 +34,12 @@ test("notification content quotes the anchor and carries the body", () => {
 });
 
 test("meta carries run/doc/comment_id/decision with snake_case keys only", () => {
-  const { notifications } = diffNewComments("run-x", "spec", [comment({ id: "abc", decision: "question" })], new Set());
+  const { notifications } = diffNewComments(
+    "run-x",
+    "spec",
+    [comment({ id: "abc", decision: "question" })],
+    new Set(),
+  );
   const meta = notifications[0].meta;
   // exact key set — no hyphenated keys (the host drops them)
   assert.deepEqual(Object.keys(meta).sort(), ["comment_id", "decision", "doc", "run_id"]);
@@ -37,7 +47,12 @@ test("meta carries run/doc/comment_id/decision with snake_case keys only", () =>
 });
 
 test("a resolved comment yields no notification", () => {
-  const { notifications, newlySeen } = diffNewComments("run-x", "spec", [comment({ resolved: true })], new Set());
+  const { notifications, newlySeen } = diffNewComments(
+    "run-x",
+    "spec",
+    [comment({ resolved: true })],
+    new Set(),
+  );
   assert.equal(notifications.length, 0);
   assert.deepEqual(newlySeen, []);
 });
@@ -103,14 +118,21 @@ test("isPushable: a comment with no origin (old sidecar) is treated as human and
   assert.equal(isPushable(legacy, new Set()), true);
 });
 
-test("an explicit origin:\"human\" comment pushes the same as an absent origin", () => {
-  const { notifications } = diffNewComments("run-x", "spec", [comment({ origin: "human" })], new Set());
+test('an explicit origin:"human" comment pushes the same as an absent origin', () => {
+  const { notifications } = diffNewComments(
+    "run-x",
+    "spec",
+    [comment({ origin: "human" })],
+    new Set(),
+  );
   assert.equal(notifications.length, 1);
 });
 
 test("renderChannelContent truncates a long anchor quote", () => {
   const long = "x".repeat(500);
-  const out = renderChannelContent(comment({ anchor: { originalText: long, headingAnchor: "h", startLine: 1 } }));
+  const out = renderChannelContent(
+    comment({ anchor: { originalText: long, headingAnchor: "h", startLine: 1 } }),
+  );
   assert.ok(out.length < 200, "content should be capped, not carry the full 500-char anchor");
   assert.ok(out.endsWith("tighten this"));
 });
@@ -127,7 +149,10 @@ test("commentIds collects every id (the seed records history without pushing)", 
 
 test("an anchorless comment renders as a message to the conductor, not a review of nothing", () => {
   const content = renderChannelContent(
-    comment({ anchor: { originalText: "", headingAnchor: "", startLine: 0 }, body: "run migrations first" }),
+    comment({
+      anchor: { originalText: "", headingAnchor: "", startLine: 0 },
+      body: "run migrations first",
+    }),
   );
   assert.equal(content, "Message to the conductor: run migrations first");
   assert.doesNotMatch(content, /Review on ""/, 'an empty span must never render as Review on ""');
@@ -135,7 +160,10 @@ test("an anchorless comment renders as a message to the conductor, not a review 
 
 test("a whitespace-only anchor is still treated as anchorless", () => {
   const content = renderChannelContent(
-    comment({ anchor: { originalText: "   \n ", headingAnchor: "", startLine: 0 }, body: "hold task 4" }),
+    comment({
+      anchor: { originalText: "   \n ", headingAnchor: "", startLine: 0 },
+      body: "hold task 4",
+    }),
   );
   assert.equal(content, "Message to the conductor: hold task 4");
 });
@@ -145,11 +173,18 @@ test("a comment WITH a span still renders as a span review (the existing path is
 });
 
 test("a run-level message is pushable like any human comment (it must reach the session)", () => {
-  const msg = comment({ anchor: { originalText: "", headingAnchor: "", startLine: 0 }, origin: "human" });
+  const msg = comment({
+    anchor: { originalText: "", headingAnchor: "", startLine: 0 },
+    origin: "human",
+  });
   assert.equal(isPushable(msg, new Set()), true);
 });
 
 test("the agent's reply on the conductor thread is NOT pushed back (no echo loop)", () => {
-  const reply = comment({ id: "r1", anchor: { originalText: "", headingAnchor: "", startLine: 0 }, origin: "agent" });
+  const reply = comment({
+    id: "r1",
+    anchor: { originalText: "", headingAnchor: "", startLine: 0 },
+    origin: "agent",
+  });
   assert.equal(isPushable(reply, new Set()), false);
 });

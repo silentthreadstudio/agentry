@@ -7,20 +7,20 @@
 // The island (islands/routing-demo.ts) defers its first render to when the root is
 // visible, then replaces this fallback's children with the interactive UI. The
 // fallback is built from the SAME typed TASKS data, so JS-off and hydrated agree.
-import { TASKS, type Shape } from '../islands/tasks';
+import { type Shape, TASKS } from "../islands/tasks";
 
-const DEFAULT_ID = 'fix';
+const DEFAULT_ID = "fix";
 const fallback = TASKS.find((t) => t.id === DEFAULT_ID) ?? TASKS[0];
 
 const SHAPE_LABEL: Record<Shape, string> = {
-  'one-shot': 'one-shot',
-  'spec-first': 'spec-first',
-  decompose: 'decompose + verify',
+  "one-shot": "one-shot",
+  "spec-first": "spec-first",
+  decompose: "decompose + verify",
 };
 const SHAPE_TONE: Record<Shape, string> = {
-  'one-shot': 'is-one-shot',
-  'spec-first': 'is-spec-first',
-  decompose: 'is-decompose',
+  "one-shot": "is-one-shot",
+  "spec-first": "is-spec-first",
+  decompose: "is-decompose",
 };
 ---
 

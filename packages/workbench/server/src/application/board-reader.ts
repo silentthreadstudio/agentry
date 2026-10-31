@@ -1,3 +1,4 @@
+import type { BacklogItem } from "@agentry/flow/domain/backlog";
 // BoardReader — every piece of work in a project, folded into exactly one column (doc 18 §3).
 //
 // The column is derived HERE, not in the browser. A client that inferred it from a task tally could
@@ -9,8 +10,13 @@
 // `backlog` and `ready` are states of a backlog ITEM. `running` / `in-review` / `done` are derived from
 // a RUN's task tally. A card is an item until a session claims it; from then on the card IS the run and
 // carries the item id as provenance. There is no ticket→run mapping table, and no card appears twice.
-import type { AgentView, BoardCard, BoardColumn, BoardConflict, BoardModel } from "@agentry/workbench-shared";
-import type { BacklogItem } from "@agentry/flow/domain/backlog";
+import type {
+  AgentView,
+  BoardCard,
+  BoardColumn,
+  BoardConflict,
+  BoardModel,
+} from "@agentry/workbench-shared";
 import { parseContract, sharedFiles } from "../domain/contract.js";
 import type { ReaderDoc, WorkReader } from "./work-reader.js";
 
@@ -164,7 +170,8 @@ function taskFactsOf(run: string, docs: readonly ReaderDoc[]): TaskFacts[] {
     const frontDeps = Array.isArray(doc.frontmatter.deps)
       ? doc.frontmatter.deps.map((d) => String(d))
       : [];
-    const lockedBy = typeof doc.frontmatter.lockedBy === "string" ? doc.frontmatter.lockedBy : undefined;
+    const lockedBy =
+      typeof doc.frontmatter.lockedBy === "string" ? doc.frontmatter.lockedBy : undefined;
     facts.push({
       run,
       taskNo: doc.id.slice("task-".length),

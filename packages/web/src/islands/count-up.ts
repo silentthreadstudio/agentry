@@ -9,7 +9,7 @@
 // Self-initializes over every `[data-countup]`; no-ops if none present.
 // Reduced-motion: writes the final formatted value immediately, no animation.
 
-const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Total animation duration (ms). */
 const DURATION_MS = 1400;
@@ -19,9 +19,9 @@ function easeOutCubic(t: number): number {
 }
 
 function format(el: HTMLElement, value: number): string {
-  const decimals = Number(el.dataset.decimals ?? '0');
-  const prefix = el.dataset.prefix ?? '';
-  const suffix = el.dataset.suffix ?? '';
+  const decimals = Number(el.dataset.decimals ?? "0");
+  const prefix = el.dataset.prefix ?? "";
+  const suffix = el.dataset.suffix ?? "";
   const fixed = Number.isFinite(decimals) ? Math.max(0, decimals) : 0;
   return `${prefix}${value.toFixed(fixed)}${suffix}`;
 }
@@ -38,7 +38,7 @@ function animate(el: HTMLElement, to: number): void {
 }
 
 export function initCountUp(root: ParentNode = document): void {
-  const targets = Array.from(root.querySelectorAll<HTMLElement>('[data-countup]'));
+  const targets = Array.from(root.querySelectorAll<HTMLElement>("[data-countup]"));
   if (targets.length === 0) return;
 
   const to = (el: HTMLElement): number => {
@@ -46,7 +46,7 @@ export function initCountUp(root: ParentNode = document): void {
     return Number.isFinite(n) ? n : 0;
   };
 
-  if (REDUCED || typeof IntersectionObserver === 'undefined') {
+  if (REDUCED || typeof IntersectionObserver === "undefined") {
     for (const el of targets) el.textContent = format(el, to(el));
     return;
   }

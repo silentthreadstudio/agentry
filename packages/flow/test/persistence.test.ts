@@ -35,12 +35,20 @@ test("TaskFileStore: a task written by one adapter is read identically by a fres
 
 test("TaskFileStore stamps a version the caller never supplied, and it changes on a body edit (AC4/AC5)", () => {
   const store = new TaskFileStore(cwd);
-  store.writeTask(RUN, { taskNo: "002", frontmatter: { title: "v", version: "CALLER-FAKE" }, body: "first" });
+  store.writeTask(RUN, {
+    taskNo: "002",
+    frontmatter: { title: "v", version: "CALLER-FAKE" },
+    body: "first",
+  });
   const v1 = new TaskFileStore(cwd).readTask(RUN, "002")?.frontmatter.version;
   assert.ok(typeof v1 === "string" && v1.length > 0);
   assert.notEqual(v1, "CALLER-FAKE"); // caller-supplied version is dropped and recomputed
 
-  store.writeTask(RUN, { taskNo: "002", frontmatter: { title: "v" }, body: "second — edited body" });
+  store.writeTask(RUN, {
+    taskNo: "002",
+    frontmatter: { title: "v" },
+    body: "second — edited body",
+  });
   const v2 = new TaskFileStore(cwd).readTask(RUN, "002")?.frontmatter.version;
   assert.notEqual(v1, v2);
 });
@@ -53,7 +61,14 @@ test("TaskFileStore: a task body that BEGINS with a ---…--- block has that lea
     body: "---\nstatus: SMUGGLED\nlockedBy: attacker\n---\nthe real brief",
   });
   const raw = readFileSync(
-    join(cwd, ".agentry", "work", RUN, "tasks", readdirSync(join(cwd, ".agentry", "work", RUN, "tasks")).find((f) => f.startsWith("010-"))!),
+    join(
+      cwd,
+      ".agentry",
+      "work",
+      RUN,
+      "tasks",
+      readdirSync(join(cwd, ".agentry", "work", RUN, "tasks")).find((f) => f.startsWith("010-"))!,
+    ),
     "utf8",
   );
   // exactly one frontmatter block (Flow's own) — count the `---` fence pairs
@@ -105,7 +120,9 @@ test("TaskFileStore: one file per task number (a renamed task leaves no stale si
   const store = new TaskFileStore(cwd);
   store.writeTask(RUN, { taskNo: "003", frontmatter: { title: "Old Title" }, body: "x" });
   store.writeTask(RUN, { taskNo: "003", frontmatter: { title: "New Title" }, body: "x" });
-  const files = readdirSync(join(cwd, ".agentry", "work", RUN, "tasks")).filter((f) => f.startsWith("003-"));
+  const files = readdirSync(join(cwd, ".agentry", "work", RUN, "tasks")).filter((f) =>
+    f.startsWith("003-"),
+  );
   assert.equal(files.length, 1);
 });
 
@@ -118,7 +135,12 @@ test("TaskFileStore: artifact (spec/plan) round-trips body and carries a version
 
 test("JsonlEventLog: appended FLOW events survive a fresh adapter and tail filters by since", () => {
   const log = new JsonlEventLog(cwd);
-  log.append(RUN, { ts: "2026-06-19T10:00:00.000Z", type: "gate", gate: "spec", outcome: "reached" });
+  log.append(RUN, {
+    ts: "2026-06-19T10:00:00.000Z",
+    type: "gate",
+    gate: "spec",
+    outcome: "reached",
+  });
   log.append(RUN, { ts: "2026-06-19T11:00:00.000Z", type: "node-done", node: "n", durationMs: 5 });
 
   const all = new JsonlEventLog(cwd).tail(RUN); // fresh adapter

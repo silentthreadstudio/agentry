@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { test } from "node:test";
 import { slugsFor } from "../src/application/project.js";
-import { handleProjectsRequest, runKey, type ProjectSource } from "../src/transport/projects.js";
 import type { Project } from "../src/application/project.js";
+import { type ProjectSource, handleProjectsRequest, runKey } from "../src/transport/projects.js";
 
 function fakeProject(slug: string, root: string): Project {
   return { slug, root } as unknown as Project;
@@ -78,7 +78,12 @@ test("runKey scopes a run to its project (two projects may hold the same run id)
 test("GET /api/projects lists what the server serves, default first", () => {
   const { res, captured } = fakeRes();
   const projects = [fakeProject("agentry", "/a/agentry"), fakeProject("lifeos", "/b/lifeos")];
-  const handled = handleProjectsRequest(fakeReq("/api/projects"), res, new URL("http://x/api/projects"), source(projects));
+  const handled = handleProjectsRequest(
+    fakeReq("/api/projects"),
+    res,
+    new URL("http://x/api/projects"),
+    source(projects),
+  );
   assert.equal(handled, true);
   assert.deepEqual(captured.body, {
     projects: [

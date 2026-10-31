@@ -5,7 +5,7 @@
 // every open view holds per-project state (the board, a graph, an open doc, the socket) and reloading
 // drops all of it at once rather than teaching each view to re-key itself.
 import { useEffect, useState } from "react";
-import { fetchProjects, selectProject, type ProjectEntry } from "../../api/index.js";
+import { type ProjectEntry, fetchProjects, selectProject } from "../../api/index.js";
 import { EmptyState } from "../../ui/index.js";
 
 export function Projects({ current }: { current: string | undefined }) {
@@ -21,7 +21,11 @@ export function Projects({ current }: { current: string | undefined }) {
 
   if (projects === null) return <div aria-busy="true" />;
   if (projects.length === 0) {
-    return <EmptyState title="No projects registered">Run /agentry:workbench in a repo to add it here.</EmptyState>;
+    return (
+      <EmptyState title="No projects registered">
+        Run /agentry:workbench in a repo to add it here.
+      </EmptyState>
+    );
   }
 
   return (

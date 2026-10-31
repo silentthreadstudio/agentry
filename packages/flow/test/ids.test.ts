@@ -36,7 +36,10 @@ test("mintRun keeps the stem terse for a long goal", () => {
 test("mintRun stays safe even when the goal is hostile/punctuation-only", () => {
   for (const goal of ["../../etc/passwd", "////", "...", "a/b\\c"]) {
     const run = mintRun(goal);
-    assert.doesNotThrow(() => assertSafeSegment(run), `run "${run}" from goal "${goal}" must be safe`);
+    assert.doesNotThrow(
+      () => assertSafeSegment(run),
+      `run "${run}" from goal "${goal}" must be safe`,
+    );
   }
 });
 

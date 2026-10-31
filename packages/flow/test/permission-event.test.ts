@@ -5,16 +5,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  type PermissionVerdictFile,
   buildRequestFile,
   parseVerdictFile,
   resolveVerdict,
-  type PermissionVerdictFile,
 } from "../src/channel/permission-event.js";
 
 // ── buildRequestFile ──────────────────────────────────────────────────────────
 test("buildRequestFile carries the four params + the injected created_at", () => {
   const file = buildRequestFile(
-    { request_id: "abcde", tool_name: "Bash", description: "list files", input_preview: '{"cmd":"ls"}' },
+    {
+      request_id: "abcde",
+      tool_name: "Bash",
+      description: "list files",
+      input_preview: '{"cmd":"ls"}',
+    },
     "2026-06-19T00:00:00.000Z",
   );
   assert.deepEqual(file, {

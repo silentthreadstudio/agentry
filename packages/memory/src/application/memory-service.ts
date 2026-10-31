@@ -3,10 +3,10 @@
 // fact/episode operations + recall ranking. Graduation analyses (distill/consolidate) live in flows.ts.
 import type { Episode, Fact, MemoryType, Scope } from "@agentry/core";
 import { DEDUP_THRESHOLD, similarity } from "../domain/dedup.js";
-import { newId, originOf, type Origin } from "../domain/id.js";
+import { type Origin, newId, originOf } from "../domain/id.js";
 import type { FileStore, ReadError, StoreSignature, TextIndex } from "../domain/ports.js";
 import { recallScore } from "../domain/ranking.js";
-import { originForScope, type Roots } from "../resolution/roots.js";
+import { type Roots, originForScope } from "../resolution/roots.js";
 
 const NEW_FACT_CONFIDENCE = 0.7;
 const ARCHIVE_THRESHOLD = 4; // recalled-but-unused strikes before self-archive (benchmark knob, doc 02 §7)
@@ -139,20 +139,20 @@ export class MemoryService {
     // applied) — leaving the to-be-retired fact active forever and silently misleading the caller.
     if (!input.supersedes)
       for (const fact of this.facts.values()) {
-      if (
-        fact.status === "active" &&
-        fact.type === input.type &&
-        similarity(fact.text, input.text) >= DEDUP_THRESHOLD
-      ) {
-        this.save({
-          ...fact,
-          usefulness: fact.usefulness + 1,
-          confidence: Math.min(1, fact.confidence + 0.05),
-          updatedAt: this.iso(),
-        });
-        return { id: fact.id, action: "reinforced" };
+        if (
+          fact.status === "active" &&
+          fact.type === input.type &&
+          similarity(fact.text, input.text) >= DEDUP_THRESHOLD
+        ) {
+          this.save({
+            ...fact,
+            usefulness: fact.usefulness + 1,
+            confidence: Math.min(1, fact.confidence + 0.05),
+            updatedAt: this.iso(),
+          });
+          return { id: fact.id, action: "reinforced" };
+        }
       }
-    }
 
     const ts = this.iso();
     const origin = originForScope(input.scope, this.roots);
@@ -206,13 +206,17 @@ export class MemoryService {
     const scored: ScoredFact[] = [];
     for (const hit of this.index.search(input.query, limit * 4)) {
       const fact = this.facts.get(hit.id);
-      if (fact && fact.status === "active") scored.push({ fact, score: recallScore(fact, hit.relevance) });
+      if (fact && fact.status === "active")
+        scored.push({ fact, score: recallScore(fact, hit.relevance) });
     }
     scored.sort((a, b) => b.score - a.score);
     return { memories: scored.slice(0, limit) };
   }
 
-  search(query: string, limit = 10): { id: string; snippet: string; type: MemoryType; scope: Scope }[] {
+  search(
+    query: string,
+    limit = 10,
+  ): { id: string; snippet: string; type: MemoryType; scope: Scope }[] {
     this.ensureFresh();
     return this.index.search(query, limit).flatMap((hit) => {
       const f = this.facts.get(hit.id);
@@ -223,7 +227,8 @@ export class MemoryService {
   }
 
   update(id: string, patch: UpdatePatch): UpdateOutcome {
-    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
+    if (id.trim() === "")
+      return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
     if (!fact) return { ok: false, reason: "not-found", id };
     this.save({ ...fact, ...this.clean(patch), updatedAt: this.iso() });
@@ -252,7 +257,13 @@ export class MemoryService {
         this.save(
           input.outcome === "pass"
             ? // cited + helped: boost and clear strikes — a used fact is alive
-              { ...fact, usefulness: fact.usefulness + 1, confidence: Math.min(1, fact.confidence + 0.05), decay: 0, updatedAt: ts }
+              {
+                ...fact,
+                usefulness: fact.usefulness + 1,
+                confidence: Math.min(1, fact.confidence + 0.05),
+                decay: 0,
+                updatedAt: ts,
+              }
             : // suspect: lower confidence, but it was relevant/used — don't strike toward archive
               { ...fact, confidence: Math.max(0, fact.confidence - 0.1), decay: 0, updatedAt: ts },
         );
@@ -282,7 +293,8 @@ export class MemoryService {
         skipped.push({ id, reason: "no such fact exists" });
       }
     }
-    const requested = recalledUsed.size + (input.recallMisses ?? []).filter((id) => !recalledUsed.has(id)).length;
+    const requested =
+      recalledUsed.size + (input.recallMisses ?? []).filter((id) => !recalledUsed.has(id)).length;
     return { applied, skipped, requested };
   }
 
@@ -378,10 +390,12 @@ export class MemoryService {
    * (carrying the actual status so the adapter can distinguish the two for the caller).
    */
   recover(id: string): RecoverOutcome {
-    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
+    if (id.trim() === "")
+      return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
     if (!fact) return { ok: false, reason: "not-found", id };
-    if (fact.status !== "archived") return { ok: false, reason: "invalid-state", id, status: fact.status };
+    if (fact.status !== "archived")
+      return { ok: false, reason: "invalid-state", id, status: fact.status };
     const restored: Fact = { ...fact, status: "active", decay: 0, updatedAt: this.iso() };
     delete restored.archivedAt;
     this.save(restored);
@@ -391,7 +405,8 @@ export class MemoryService {
 
   /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */
   forget(id: string): ForgetOutcome {
-    if (id.trim() === "") return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
+    if (id.trim() === "")
+      return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     if (this.facts.delete(id)) {
       this.store.deleteFact(originOf(id), id);
       return { ok: true, id, kind: "fact" };
@@ -464,7 +479,8 @@ export class MemoryService {
 
   private clean(patch: UpdatePatch): UpdatePatch {
     const out: UpdatePatch = {};
-    for (const [k, v] of Object.entries(patch)) if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+    for (const [k, v] of Object.entries(patch))
+      if (v !== undefined) (out as Record<string, unknown>)[k] = v;
     return out;
   }
 }

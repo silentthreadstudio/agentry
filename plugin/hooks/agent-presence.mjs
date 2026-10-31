@@ -47,7 +47,8 @@ try {
 } catch {
   process.exit(0);
 }
-if (!workId || workId.includes("..") || workId.includes("/") || workId.includes("\\")) process.exit(0);
+if (!workId || workId.includes("..") || workId.includes("/") || workId.includes("\\"))
+  process.exit(0);
 
 // The roster keys by agent name — the dispatched agent type, which is what the UI shows as the role.
 const agent = input.agent_type;
@@ -66,7 +67,12 @@ try {
   let roster = {};
   try {
     const parsed = JSON.parse(readFileSync(file, "utf8"));
-    if (parsed && typeof parsed === "object" && typeof parsed.agents === "object" && parsed.agents !== null) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.agents === "object" &&
+      parsed.agents !== null
+    ) {
       roster = parsed;
     }
   } catch {

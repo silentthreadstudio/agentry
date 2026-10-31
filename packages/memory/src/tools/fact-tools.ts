@@ -54,7 +54,8 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
   server.registerTool(
     "memory_search",
     {
-      description: "Broader full-text search with snippets — for exploration when recall's few aren't enough.",
+      description:
+        "Broader full-text search with snippets — for exploration when recall's few aren't enough.",
       inputSchema: { query: z.string(), limit: z.number().int().positive().optional() },
     },
     guard(async (args) => ok({ results: service.search(args.query, args.limit) })),
@@ -63,7 +64,8 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
   server.registerTool(
     "memory_update",
     {
-      description: "Patch a fact in place (text/tags/type/scope/confidence/status/supersedes) — for reflect/curation.",
+      description:
+        "Patch a fact in place (text/tags/type/scope/confidence/status/supersedes) — for reflect/curation.",
       inputSchema: {
         id: z.string(),
         text: z.string().optional(),

@@ -3,15 +3,15 @@
 //      + MemReader's parsing + graceful degrade), so behavior is deterministic with no real home dir;
 //  (2) against the REAL mem store under this repo (MemReader acceptance) — the project + global roots.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import type { TokenSample, TranscriptSource } from "../src/domain/ports.js";
+import { fileURLToPath } from "node:url";
 import { TokenReader } from "../src/application/token-reader.js";
-import { TranscriptReader } from "../src/persistence/transcript-reader.js";
+import type { TokenSample, TranscriptSource } from "../src/domain/ports.js";
 import { MemReader } from "../src/persistence/mem-reader.js";
+import { TranscriptReader } from "../src/persistence/transcript-reader.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 
@@ -66,8 +66,23 @@ test("TranscriptReader resolves a run's sessions and sums message.usage per line
     run: "run-a",
     session: "sess-1",
     lines: [
-      JSON.stringify({ type: "assistant", timestamp: "2026-06-18T10:00:00.000Z", message: { usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 2, cache_read_input_tokens: 3 } } }),
-      JSON.stringify({ type: "user", timestamp: "2026-06-18T10:01:00.000Z", message: { role: "user" } }), // no usage → skip
+      JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-06-18T10:00:00.000Z",
+        message: {
+          usage: {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_creation_input_tokens: 2,
+            cache_read_input_tokens: 3,
+          },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        timestamp: "2026-06-18T10:01:00.000Z",
+        message: { role: "user" },
+      }), // no usage → skip
       "not json", // malformed → skip
     ],
   });
@@ -104,11 +119,17 @@ function seedMem(): { cwd: string; home: string } {
   // global fact
   const gFacts = join(home, ".agentry", "memory", "facts");
   mkdirSync(gFacts, { recursive: true });
-  writeFileSync(join(gFacts, "use-vitest-01h.md"), "---\nid: 01h\nscope: global\n---\n\nThe repo uses Vitest, not Jest.\n");
+  writeFileSync(
+    join(gFacts, "use-vitest-01h.md"),
+    "---\nid: 01h\nscope: global\n---\n\nThe repo uses Vitest, not Jest.\n",
+  );
   // project episode
   const pEps = join(cwd, ".agentry", "memory", "episodes");
   mkdirSync(pEps, { recursive: true });
-  writeFileSync(join(pEps, "ran-migrations-02k.md"), "---\nid: 02k\n---\n\nMigrations must run before the seed script.\n");
+  writeFileSync(
+    join(pEps, "ran-migrations-02k.md"),
+    "---\nid: 02k\n---\n\nMigrations must run before the seed script.\n",
+  );
   // a corrupt file (no frontmatter fence) → skipped
   const gEps = join(home, ".agentry", "memory", "episodes");
   mkdirSync(gEps, { recursive: true });
@@ -130,7 +151,11 @@ test("MemReader browses facts + episodes across both roots, tagging kind + origi
     const episode = all.find((r) => r.id === "02k");
     assert.equal(episode?.kind, "episodes");
     assert.equal(episode?.origin, "project");
-    assert.match(String(episode?.fields.task), /Migrations/, "the episode body attached under 'task'");
+    assert.match(
+      String(episode?.fields.task),
+      /Migrations/,
+      "the episode body attached under 'task'",
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

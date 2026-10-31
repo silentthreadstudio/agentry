@@ -1,4 +1,5 @@
 ---
+import DocShot from "../../../components/doc-shot/DocShot.astro";
 // /docs/evals — Self-Eval, the centerpiece Reference page. Explains what the embedded eval
 // dashboard measures, HONESTLY: the four ABSOLUTE value axes (decision quality, code quality +
 // correctness, honesty/overclaim, verification/escaped-defect), the showcase strip, the planted
@@ -11,7 +12,6 @@
 //
 // Base-path rule (#1 404 trap): every internal href + the dashboard link goes through withBase().
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
-import DocShot from "../../../components/doc-shot/DocShot.astro";
 import { withBase } from "../../../lib/base.ts";
 ---
 

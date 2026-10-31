@@ -10,10 +10,10 @@
 // anything (doc 19 D1), and a button implying otherwise would be the same lie as the old "Start now".
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchGates, type OpenGateItem } from "../../api/index.js";
+import { type OpenGateItem, fetchGates } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
-import { resolveComment } from "../doc/comment-store.js";
 import { runHref } from "../board/board-view.js";
+import { resolveComment } from "../doc/comment-store.js";
 
 export function RailGates({ run }: { run: string }) {
   const [gates, setGates] = useState<OpenGateItem[]>([]);
@@ -56,7 +56,10 @@ export function RailGates({ run }: { run: string }) {
             <button type="button" className="pri" onClick={() => void clear(gate)}>
               Resolve
             </button>
-            <button type="button" onClick={() => navigate(`${runHref(run)}?doc=${encodeURIComponent(gate.docId)}`)}>
+            <button
+              type="button"
+              onClick={() => navigate(`${runHref(run)}?doc=${encodeURIComponent(gate.docId)}`)}
+            >
               Open {gate.docId}
             </button>
           </div>

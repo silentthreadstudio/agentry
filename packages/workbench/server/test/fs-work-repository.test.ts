@@ -75,7 +75,11 @@ test("readRun merges the task-meta block so buildDocIndex's fields (deps/status)
     const t9 = files.tasks.find((t) => t.taskNo === "009");
     assert.ok(t9, "task 009 present");
     assert.equal(typeof t9.frontmatter.status, "string", "status from the lifecycle block");
-    assert.deepEqual(t9.frontmatter.deps, [6, 7, 8], "deps from the lifted meta block, as bare integers");
+    assert.deepEqual(
+      t9.frontmatter.deps,
+      [6, 7, 8],
+      "deps from the lifted meta block, as bare integers",
+    );
 
     // Lifecycle wins a key clash: `status` is authored in both blocks — FLOW's lifecycle value is truth.
     const t1 = files.tasks.find((t) => t.taskNo === "001");

@@ -25,17 +25,12 @@
 // `buildGraph` re-pads via FLOW's `formatTaskNo`).
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
-import type {
-  ArtifactFile,
-  RoutingInfo,
-  RunFiles,
-  WorkRepository,
-} from "../domain/ports.js";
-import type { FlowTask } from "@agentry/flow/domain/ports";
 import { parseLogLine } from "@agentry/flow/domain/events";
+import type { FlowTask } from "@agentry/flow/domain/ports";
 import { TaskFileStore } from "@agentry/flow/persistence/task-file-store";
 import { runDir, workRoot } from "@agentry/flow/resolution/run-pointer";
+import { parse as parseYaml } from "yaml";
+import type { ArtifactFile, RoutingInfo, RunFiles, WorkRepository } from "../domain/ports.js";
 
 // FLOW's frontmatter splitter (task-file-store.ts) — the SAME pattern, reused not forked (ADR-005).
 // Group 1 = the YAML between the first `---` fence; group 2 = the remaining body.

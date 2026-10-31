@@ -7,11 +7,18 @@
 // Every write stamps a tool-computed `version` content-hash (AC4/AC5) — the caller never supplies it
 // (it is stripped before hashing and recomputed). Reads are a pure-file `readdir` over the tasks
 // directory (ADR-001 — no derived index).
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { computeVersion } from "../domain/version.js";
 import type { ArtifactKind, FlowTask, TaskStore } from "../domain/ports.js";
+import { computeVersion } from "../domain/version.js";
 import { runDir } from "../resolution/run-pointer.js";
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
@@ -67,7 +74,10 @@ export class TaskFileStore implements TaskStore {
       if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync(join(dir, f));
     }
     const file = `${task.taskNo}-${this.slugOf(task)}.md`;
-    writeFileSync(join(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
+    writeFileSync(
+      join(dir, file),
+      this.render(task.frontmatter, stripLeadingFrontmatter(task.body)),
+    );
   }
 
   readArtifact(run: string, kind: ArtifactKind): string | undefined {

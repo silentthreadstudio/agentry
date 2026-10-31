@@ -1,3 +1,4 @@
+import { type ReviewComment, isConductorThread, isHumanComment } from "@agentry/flow/domain/review";
 // GateInbox — the waiting-on-you list (plan §6). Scans every run's `.review/<gate>.annotations.json`
 // sidecars and returns the OPEN gate items: a gate with at least one UNRESOLVED review comment is waiting
 // on a human. Each `GateItem` carries the jump-to-doc-at-gate pointer (run + doc + gate) so the Gates page
@@ -11,7 +12,6 @@
 // SAME tolerance FLOW's `JsonReviewStore.read` gives, now consolidated in `FsReviewSidecarSource`). A
 // comment is OPEN when `resolved === false`; a gate with no open comments is not in the inbox.
 import type { GateItem } from "@agentry/workbench-shared";
-import { ReviewComment, isConductorThread, isHumanComment } from "@agentry/flow/domain/review";
 import type { ReviewSidecarSource, WorkRepository } from "../domain/ports.js";
 
 // The inbox carries the run alongside each gate item so the Gates page can deep-link into the right run.

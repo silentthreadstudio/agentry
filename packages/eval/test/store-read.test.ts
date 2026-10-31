@@ -7,8 +7,8 @@ import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { readRunConfig, rescoreRun } from "../src/store/read.ts";
 import type { RunConfig } from "../src/store/schema.ts";
@@ -57,7 +57,9 @@ function makeStoredRun(specs: Record<string, { spec: string; plan?: string }>): 
 }
 
 test("readRunConfig parses the stored reproducibility header back from config.json", () => {
-  const { runsRoot, runId, fixtureDir } = makeStoredRun({ "mini-search-tuning": { spec: "# spec\n" } });
+  const { runsRoot, runId, fixtureDir } = makeStoredRun({
+    "mini-search-tuning": { spec: "# spec\n" },
+  });
 
   const config = readRunConfig(runsRoot, runId);
 
@@ -104,13 +106,29 @@ test("a normal `YYYYMMDD-HHMMSS-<rand4>` run-id is accepted (the guard rejects o
   const root = mkdtempSync(join(tmpdir(), "selfeval-read-ok-"));
   const runsRoot = join(root, "runs");
   const runId = "20260617-000000-ab12";
-  const slugDir = join(runsRoot, runId, "tasks", "mini-search-tuning", "work", "mini-search-tuning");
+  const slugDir = join(
+    runsRoot,
+    runId,
+    "tasks",
+    "mini-search-tuning",
+    "work",
+    "mini-search-tuning",
+  );
   mkdirSync(slugDir, { recursive: true });
   const fixtureDir = join(root, "fixture");
   cpSync(MINI_FIXTURE, fixtureDir, { recursive: true });
   writeFileSync(join(slugDir, "spec.md"), "# spec\nok\n", "utf8");
-  const config: RunConfig = { runId, kind: "routing", fixtureDir, startedAt: "2026-06-17T00:00:00.000Z" };
-  writeFileSync(join(runsRoot, runId, "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const config: RunConfig = {
+    runId,
+    kind: "routing",
+    fixtureDir,
+    startedAt: "2026-06-17T00:00:00.000Z",
+  };
+  writeFileSync(
+    join(runsRoot, runId, "config.json"),
+    `${JSON.stringify(config, null, 2)}\n`,
+    "utf8",
+  );
 
   assert.doesNotThrow(() => readRunConfig(runsRoot, runId));
   assert.equal(readRunConfig(runsRoot, runId).runId, runId);

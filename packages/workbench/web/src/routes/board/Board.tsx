@@ -1,3 +1,4 @@
+import type { BoardCard, BoardColumn, BoardModel } from "@agentry/workbench-shared";
 // Board — the workspace home: every piece of work in this project, from intent to shipped.
 //
 // It replaces the Works list. Works answered "which runs exist"; the board answers the question you
@@ -8,32 +9,31 @@
 // that inferred a column from a task tally could disagree with disk the moment either side moved. This
 // component renders what it is given and owns only interaction: drag, open, and the refusal message.
 import { useCallback, useEffect, useState } from "react";
-import type { BoardCard, BoardColumn, BoardModel } from "@agentry/workbench-shared";
-import { ApiError, fetchBoard, patchBacklogItem, resetRun } from "../../api/index.js";
 import { useNavigate } from "react-router-dom";
+import { ApiError, fetchBoard, patchBacklogItem, resetRun } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 import { EmptyState } from "../../ui/index.js";
+import { NewWork } from "./NewWork.js";
+import { RunView } from "./RunView.js";
 import {
   COLUMNS,
+  assignedByAgent,
   blockedLabel,
   canDrop,
-  conflictText,
-  assignedByAgent,
   cardNote,
+  conflictText,
   countChips,
   currentTask,
-  isReset,
-  keyboardTarget,
   elapsedOf,
   initialsOf,
+  isReset,
+  keyboardTarget,
   progressOf,
   refusalReason,
   resetPrompt,
   runHref,
   totalCards,
 } from "./board-view.js";
-import { NewWork } from "./NewWork.js";
-import { RunView } from "./RunView.js";
 
 import "./board.css";
 
@@ -54,7 +54,10 @@ export function Board() {
       .then((board) => setState({ kind: "ready", board }))
       .catch((e: unknown) => {
         if (signal?.aborted) return;
-        setState({ kind: "error", message: e instanceof ApiError ? e.message : "Couldn't reach the server." });
+        setState({
+          kind: "error",
+          message: e instanceof ApiError ? e.message : "Couldn't reach the server.",
+        });
       });
   }, []);
 
@@ -221,7 +224,6 @@ export function Board() {
           </section>
         ))}
       </div>
-
     </div>
   );
 }
@@ -330,7 +332,11 @@ function Card({
           })}
           {/* Staffed but not started — dimmed, because it is a commitment rather than motion. */}
           {assigned.map((a) => (
-            <span className="who waiting" key={a.to} title={`${a.to} assigned to ${a.tasks.length} task(s)`}>
+            <span
+              className="who waiting"
+              key={a.to}
+              title={`${a.to} assigned to ${a.tasks.length} task(s)`}
+            >
               <span className="av">{a.to.slice(0, 2).toUpperCase()}</span>
               <span className="act">
                 {a.to} · assigned <code>{a.tasks.map((t) => `T-${t}`).join(", ")}</code>

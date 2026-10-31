@@ -57,7 +57,12 @@ export class AgentService {
    * written (the rejection precedes any store touch). Per ADR-004, `blocked` is a valid AGENT state
    * here (it is not a task status). Preserves an existing `assignedTask` (T02 owns that write).
    */
-  setState(run: string, agent: string, state: string, now: () => string = () => new Date().toISOString()): AgentStateOutcome {
+  setState(
+    run: string,
+    agent: string,
+    state: string,
+    now: () => string = () => new Date().toISOString(),
+  ): AgentStateOutcome {
     if (agent.trim().length === 0) {
       return { ok: false, reason: "bad-input", field: "agent", rule: "a non-empty agent id" };
     }
@@ -86,7 +91,9 @@ export class AgentService {
    * The current roster: every recorded agent with its live `state` and optional `assignedTask`. An
    * empty/absent run-state reads as an empty roster (a run with no agents yet is valid, not an error).
    */
-  listRoster(run: string): Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> {
+  listRoster(
+    run: string,
+  ): Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> {
     const { agents } = this.roster(run);
     return Object.entries(agents).map(([agent, entry]) => ({
       agent,

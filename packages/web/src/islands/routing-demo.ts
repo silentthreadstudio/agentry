@@ -20,16 +20,16 @@
 // Auto-advance updates aria-selected + roving tabindex + active styling, but does
 // NOT move keyboard focus — only user-initiated selection moves focus.
 
-import { TASKS, type Shape, type Task } from './tasks';
+import { type Shape, TASKS, type Task } from "./tasks";
 
 /** Auto-rotation cadence: long enough to read a task's route + trace before the next. */
 const ROTATE_MS = 3800;
 
 /** Human-facing labels + the design intent for each shape badge. */
 const SHAPE_META: Record<Shape, { label: string; tone: string }> = {
-  'one-shot': { label: 'one-shot', tone: 'is-one-shot' },
-  'spec-first': { label: 'spec-first', tone: 'is-spec-first' },
-  decompose: { label: 'decompose + verify', tone: 'is-decompose' },
+  "one-shot": { label: "one-shot", tone: "is-one-shot" },
+  "spec-first": { label: "spec-first", tone: "is-spec-first" },
+  decompose: { label: "decompose + verify", tone: "is-decompose" },
 };
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -63,19 +63,19 @@ class RoutingDemo {
     this.root = root;
     this.selectedId = findTask(root.dataset.default).id;
     this.reducedMotion =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     // Replace the server-rendered fallback with the interactive scaffold.
     root.replaceChildren();
-    root.classList.add('routing-demo--ready');
+    root.classList.add("routing-demo--ready");
 
-    this.tabsEl = el('div', 'routing-demo__tabs');
-    this.tabsEl.setAttribute('role', 'tablist');
-    this.tabsEl.setAttribute('aria-label', 'Example tasks');
+    this.tabsEl = el("div", "routing-demo__tabs");
+    this.tabsEl.setAttribute("role", "tablist");
+    this.tabsEl.setAttribute("aria-label", "Example tasks");
 
-    this.panelEl = el('div', 'routing-demo__panel');
-    this.panelEl.setAttribute('role', 'tabpanel');
+    this.panelEl = el("div", "routing-demo__panel");
+    this.panelEl.setAttribute("role", "tabpanel");
 
     root.append(this.tabsEl, this.panelEl);
 
@@ -90,10 +90,10 @@ class RoutingDemo {
 
     // Pause while the pointer or keyboard focus is inside the demo; resume on leave/blur.
     // (A *selection* — click/key on a tab — stops permanently; handled in select().)
-    this.root.addEventListener('pointerenter', () => this.pause());
-    this.root.addEventListener('pointerleave', () => this.resume());
-    this.root.addEventListener('focusin', () => this.pause());
-    this.root.addEventListener('focusout', (ev) => {
+    this.root.addEventListener("pointerenter", () => this.pause());
+    this.root.addEventListener("pointerleave", () => this.resume());
+    this.root.addEventListener("focusin", () => this.pause());
+    this.root.addEventListener("focusout", (ev) => {
       // resume only when focus actually left the demo, not on tab-to-tab moves
       if (!this.root.contains(ev.relatedTarget as Node | null)) this.resume();
     });
@@ -104,7 +104,7 @@ class RoutingDemo {
   private start(): void {
     if (this.stopped || this.paused || this.rotateTimer !== null) return;
     this.rotateTimer = window.setInterval(() => this.advance(), ROTATE_MS);
-    this.root.classList.add('is-rotating');
+    this.root.classList.add("is-rotating");
   }
 
   private clearTimer(): void {
@@ -112,7 +112,7 @@ class RoutingDemo {
       window.clearInterval(this.rotateTimer);
       this.rotateTimer = null;
     }
-    this.root.classList.remove('is-rotating');
+    this.root.classList.remove("is-rotating");
   }
 
   private pause(): void {
@@ -144,15 +144,15 @@ class RoutingDemo {
     this.tabsEl.replaceChildren();
     for (const task of TASKS) {
       const active = task.id === this.selectedId;
-      const tab = el('button', 'routing-demo__tab', task.label);
-      tab.type = 'button';
-      tab.setAttribute('role', 'tab');
+      const tab = el("button", "routing-demo__tab", task.label);
+      tab.type = "button";
+      tab.setAttribute("role", "tab");
       tab.id = `rd-tab-${task.id}`;
-      tab.setAttribute('aria-selected', String(active));
+      tab.setAttribute("aria-selected", String(active));
       tab.tabIndex = active ? 0 : -1;
-      tab.classList.toggle('is-active', active);
-      tab.addEventListener('click', () => this.select(task.id));
-      tab.addEventListener('keydown', (ev) => this.onTabKeydown(ev, task.id));
+      tab.classList.toggle("is-active", active);
+      tab.addEventListener("click", () => this.select(task.id));
+      tab.addEventListener("keydown", (ev) => this.onTabKeydown(ev, task.id));
       this.tabsEl.append(tab);
     }
   }
@@ -160,10 +160,10 @@ class RoutingDemo {
   private onTabKeydown(ev: KeyboardEvent, id: string): void {
     const idx = TASKS.findIndex((t) => t.id === id);
     let next = -1;
-    if (ev.key === 'ArrowRight') next = (idx + 1) % TASKS.length;
-    else if (ev.key === 'ArrowLeft') next = (idx - 1 + TASKS.length) % TASKS.length;
-    else if (ev.key === 'Home') next = 0;
-    else if (ev.key === 'End') next = TASKS.length - 1;
+    if (ev.key === "ArrowRight") next = (idx + 1) % TASKS.length;
+    else if (ev.key === "ArrowLeft") next = (idx - 1 + TASKS.length) % TASKS.length;
+    else if (ev.key === "Home") next = 0;
+    else if (ev.key === "End") next = TASKS.length - 1;
     if (next < 0) return;
     ev.preventDefault();
     const nextId = TASKS[next].id;
@@ -188,22 +188,22 @@ class RoutingDemo {
   private renderPanel(): void {
     const task = findTask(this.selectedId);
     const meta = SHAPE_META[task.shape];
-    this.panelEl.setAttribute('aria-labelledby', `rd-tab-${task.id}`);
+    this.panelEl.setAttribute("aria-labelledby", `rd-tab-${task.id}`);
     this.panelEl.replaceChildren();
 
-    const prompt = el('p', 'routing-demo__prompt');
-    prompt.append(el('span', 'routing-demo__prompt-mark', '/agentry:go'), ` "${task.prompt}"`);
+    const prompt = el("p", "routing-demo__prompt");
+    prompt.append(el("span", "routing-demo__prompt-mark", "/agentry:go"), ` "${task.prompt}"`);
 
-    const route = el('div', 'routing-demo__route');
-    route.append(el('span', 'label', 'routes to'));
-    route.append(el('span', `routing-demo__badge ${meta.tone}`, meta.label));
+    const route = el("div", "routing-demo__route");
+    route.append(el("span", "label", "routes to"));
+    route.append(el("span", `routing-demo__badge ${meta.tone}`, meta.label));
 
-    const reason = el('p', 'routing-demo__reason muted', task.reason);
+    const reason = el("p", "routing-demo__reason muted", task.reason);
 
-    const traceWrap = el('div', 'routing-demo__trace');
-    traceWrap.append(el('span', 'label', 'trace'));
-    const ol = el('ol', 'routing-demo__trace-list');
-    task.trace.forEach((step) => ol.append(el('li', undefined, step)));
+    const traceWrap = el("div", "routing-demo__trace");
+    traceWrap.append(el("span", "label", "trace"));
+    const ol = el("ol", "routing-demo__trace-list");
+    task.trace.forEach((step) => ol.append(el("li", undefined, step)));
     traceWrap.append(ol);
 
     this.panelEl.append(prompt, route, reason, traceWrap);
@@ -211,11 +211,11 @@ class RoutingDemo {
 }
 
 export function initRoutingDemo(root: ParentNode = document): void {
-  const demos = Array.from(root.querySelectorAll<HTMLElement>('[data-routing-demo]'));
+  const demos = Array.from(root.querySelectorAll<HTMLElement>("[data-routing-demo]"));
   if (demos.length === 0) return;
 
   for (const demo of demos) {
-    if (typeof IntersectionObserver === 'undefined') {
+    if (typeof IntersectionObserver === "undefined") {
       new RoutingDemo(demo); // no IO support → upgrade immediately
       continue;
     }
@@ -227,7 +227,7 @@ export function initRoutingDemo(root: ParentNode = document): void {
           new RoutingDemo(entry.target as HTMLElement);
         }
       },
-      { rootMargin: '0px 0px -10% 0px', threshold: 0.1 },
+      { rootMargin: "0px 0px -10% 0px", threshold: 0.1 },
     );
     observer.observe(demo);
   }

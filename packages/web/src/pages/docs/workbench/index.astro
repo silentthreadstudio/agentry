@@ -1,12 +1,12 @@
 ---
+import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
+import DocShot from "../../../components/doc-shot/DocShot.astro";
 // /docs/workbench — the Workbench / Agent Center (an additive layer). Composed through
 // DocsLayout: header from props, body = DocDiagram(workbench.png) + prose. The :4317 /
 // *.localhost strings are exact. (Real screenshots are wired in by T5.)
 //
 // Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
-import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
-import DocShot from "../../../components/doc-shot/DocShot.astro";
 ---
 
 <DocsLayout

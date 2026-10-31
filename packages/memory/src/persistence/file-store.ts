@@ -3,12 +3,20 @@
 // YAML frontmatter holds the fields; the body holds the prose (a fact's text / an episode's task) —
 // human-readable and git-diffable. Origin is derived from which root a file lives in. Corrupt/
 // conflict-marked files are skipped (logged), never fatal — a bad merge can't break the rebuild.
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { Episode, Fact } from "@agentry/core";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { z } from "zod";
-import { bareId, slug, type Origin } from "../domain/id.js";
+import { type Origin, bareId, slug } from "../domain/id.js";
 import type {
   FileStore,
   ReadError,
@@ -17,7 +25,7 @@ import type {
   StoredEpisode,
   StoredFact,
 } from "../domain/ports.js";
-import { dirFor, type Roots } from "../resolution/roots.js";
+import { type Roots, dirFor } from "../resolution/roots.js";
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 

@@ -13,6 +13,8 @@ export class BacklogAdapter {
 
   constructor(root: string, clock: Clock) {
     const services = createFlowServices(root);
-    this.service = new BacklogService(services.backlog, new RunService(services), () => clock.now());
+    this.service = new BacklogService(services.backlog, new RunService(services), () =>
+      clock.now(),
+    );
   }
 }

@@ -1,3 +1,4 @@
+import type { BacklogItem } from "@agentry/flow/domain/backlog";
 // The Agentry Workbench read-model contract (ADR-005 tier 2) — the transport types the server's
 // aggregator (`application/`, `transport/`) produces and the web client's `api/` consumes. Owned by
 // exactly ONE task so both halves import one non-drifting definition (plan §6). These are LOCAL
@@ -15,7 +16,6 @@
 import type { FlowEvent } from "@agentry/flow/domain/events";
 import type { ReviewComment, ReviewDecision } from "@agentry/flow/domain/review";
 import type { AgentState, FlowTaskStatus } from "@agentry/flow/domain/status";
-import type { BacklogItem } from "@agentry/flow/domain/backlog";
 
 // The backlog item, straight from FLOW — re-exported, never re-declared (ADR-005 tier 1): a schema
 // change there must ripple here as a compile error, not a silent desync.

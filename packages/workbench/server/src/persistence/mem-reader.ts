@@ -93,7 +93,11 @@ export class MemReader implements MemSource {
   // frontmatter fields are kept loose (the store owns the field contract); the body prose is re-attached
   // under the kind's body key. The `id` is the record's own frontmatter `id` (the store always writes it);
   // a record with no `id` falls back to the file stem so it still has a stable key.
-  private parseRecord(origin: "global" | "project", kind: MemKind, file: string): MemReadRecord | null {
+  private parseRecord(
+    origin: "global" | "project",
+    kind: MemKind,
+    file: string,
+  ): MemReadRecord | null {
     let text: string;
     try {
       text = readFileSync(file, "utf8");

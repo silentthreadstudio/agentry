@@ -8,22 +8,22 @@
 // FlowWriter → WriteService, and the Phase-4 aggregation readers. Only its lifetime changed — one per
 // project instead of one per process.
 import { basename } from "node:path";
-import { FsWorkRepository } from "../persistence/fs-work-repository.js";
+import type { Clock } from "../domain/ports.js";
+import { BacklogAdapter } from "../persistence/backlog-adapter.js";
 import { ChokidarWatcher } from "../persistence/chokidar-watcher.js";
-import { PermissionWatcher } from "../persistence/permission-watcher.js";
-import { FlowWriter } from "../persistence/flow-writer.js";
 import { FsEventSource } from "../persistence/event-source.js";
+import { FlowWriter } from "../persistence/flow-writer.js";
+import { FsWorkRepository } from "../persistence/fs-work-repository.js";
+import { MemReader } from "../persistence/mem-reader.js";
+import { PermissionWatcher } from "../persistence/permission-watcher.js";
 import { FsReviewSidecarSource } from "../persistence/review-sidecar-source.js";
 import { TranscriptReader } from "../persistence/transcript-reader.js";
-import { MemReader } from "../persistence/mem-reader.js";
-import { BacklogAdapter } from "../persistence/backlog-adapter.js";
-import { WorkReader } from "./work-reader.js";
-import { WriteService } from "./write-service.js";
+import { BoardReader } from "./board-reader.js";
 import { EventStore } from "./event-store.js";
 import { GateInbox } from "./gate-inbox.js";
 import { TokenReader } from "./token-reader.js";
-import { BoardReader } from "./board-reader.js";
-import type { Clock } from "../domain/ports.js";
+import { WorkReader } from "./work-reader.js";
+import { WriteService } from "./write-service.js";
 
 export interface Project {
   /** The URL-facing name (`?project=<slug>`): the root's basename, suffixed on collision. */

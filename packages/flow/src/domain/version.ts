@@ -9,7 +9,10 @@ import { createHash } from "node:crypto";
 // Deterministic over (body, frontmatter): same input → same hash (idempotent re-write keeps version);
 // any change to body OR a frontmatter field → different hash. Frontmatter keys are sorted so key
 // ordering in the record can't perturb the hash (two records with the same fields hash identically).
-export function computeVersion(body: string, frontmatterSansVersion: Record<string, unknown>): string {
+export function computeVersion(
+  body: string,
+  frontmatterSansVersion: Record<string, unknown>,
+): string {
   const sortedKeys = Object.keys(frontmatterSansVersion).sort();
   const canonicalFront = JSON.stringify(frontmatterSansVersion, sortedKeys);
   const hash = createHash("sha256");

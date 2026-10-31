@@ -5,7 +5,10 @@
 import type { BacklogItem } from "@agentry/workbench-shared";
 import { ApiError, apiPath, getJson } from "./http.js";
 
-export function fetchBacklog(status?: string, signal?: AbortSignal): Promise<{ items: BacklogItem[] }> {
+export function fetchBacklog(
+  status?: string,
+  signal?: AbortSignal,
+): Promise<{ items: BacklogItem[] }> {
   const q = status !== undefined ? `?status=${encodeURIComponent(status)}` : "";
   return getJson<{ items: BacklogItem[] }>(`/api/backlog${q}`, signal);
 }
@@ -19,7 +22,10 @@ export async function createBacklogItem(input: {
   return post("/api/backlog", input);
 }
 
-export async function patchBacklogItem(id: string, patch: Record<string, unknown>): Promise<BacklogItem> {
+export async function patchBacklogItem(
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<BacklogItem> {
   return post(`/api/backlog/${encodeURIComponent(id)}`, patch);
 }
 

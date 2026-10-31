@@ -8,9 +8,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { BacklogService } from "../application/backlog-service.js";
+import { RunService } from "../application/run-service.js";
 import { BacklogStatus } from "../domain/backlog.js";
 import type { BacklogStore, RunStore, TaskStore } from "../domain/ports.js";
-import { RunService } from "../application/run-service.js";
 import { guard } from "./adapter.js";
 import { invalidState, notFound } from "./errors.js";
 import { err, ok } from "./result.js";

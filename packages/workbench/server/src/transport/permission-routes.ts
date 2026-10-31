@@ -8,10 +8,10 @@
 // POST consumes the body, so the dispatcher is async (mirrors handlePostRequest). Returns `true` when a
 // permission route answered, `false` to fall through to the next dispatcher / static serving.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { writeVerdict, type PermissionBehavior } from "../persistence/permission-writer.js";
 import type { PermissionWatcher } from "../persistence/permission-watcher.js";
-import { matchPermissionVerdict } from "./route-match.js";
+import { type PermissionBehavior, writeVerdict } from "../persistence/permission-writer.js";
 import { guardGet, isRecord, readJsonBody, reject, sendJson } from "./http-kit.js";
+import { matchPermissionVerdict } from "./route-match.js";
 
 // `watcher.current()` seeds the GET snapshot; `projectRoot` is where the verdict file is written (the SAME
 // dir FLOW's relay watches). NOT run-scoped — session/project-level (served on the base host too).

@@ -8,9 +8,9 @@
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { test } from "node:test";
+import { WorkReader } from "../src/application/work-reader.js";
 import type { Clock, RunFiles, WorkRepository } from "../src/domain/ports.js";
 import { FsWorkRepository } from "../src/persistence/fs-work-repository.js";
-import { WorkReader } from "../src/application/work-reader.js";
 import { FIXTURE_RUN, loadFixtureRun } from "./fixtures/load-fixture-run.js";
 
 // A frozen clock so `updatedAt` is deterministic under test.
@@ -33,7 +33,11 @@ function sampleFiles(): RunFiles {
     adrs: [{ frontmatter: { id: "ADR-001", title: "stateless" }, body: "# ADR-001" }],
     tasks: [
       { taskNo: "001", frontmatter: { title: "a", status: "done", deps: [] }, body: "" },
-      { taskNo: "002", frontmatter: { title: "b", status: "in-progress", lockedBy: "implementer", deps: [1] }, body: "task 2 body" },
+      {
+        taskNo: "002",
+        frontmatter: { title: "b", status: "in-progress", lockedBy: "implementer", deps: [1] },
+        body: "task 2 body",
+      },
       { taskNo: "003", frontmatter: { title: "c", deps: [1] }, body: "" }, // no status → todo bucket
     ],
   };
@@ -46,9 +50,18 @@ test("read returns a RunSummary with task tally by FLOW's closed status", () => 
 
   assert.equal(result.summary.run, "sample");
   assert.equal(result.summary.title, "The Plan", "title from the plan frontmatter");
-  assert.equal(result.summary.updatedAt, "2026-06-19T00:00:00.000Z", "updatedAt from the injected clock");
+  assert.equal(
+    result.summary.updatedAt,
+    "2026-06-19T00:00:00.000Z",
+    "updatedAt from the injected clock",
+  );
   // 001 done, 002 in-progress, 003 status-less → todo; every bucket present even at 0.
-  assert.deepEqual(result.summary.taskCounts, { todo: 1, "in-progress": 1, "in-review": 0, done: 1 });
+  assert.deepEqual(result.summary.taskCounts, {
+    todo: 1,
+    "in-progress": 1,
+    "in-review": 0,
+    done: 1,
+  });
 });
 
 test("read returns a doc index derived from the same files (buildDocIndex delegation)", () => {
@@ -56,8 +69,14 @@ test("read returns a doc index derived from the same files (buildDocIndex delega
   const result = reader.read("sample");
   assert.ok(result, "the run reads");
   // The index carries an entry per artifact — proof buildDocIndex ran on these files.
-  assert.ok(result.docIndex.some((d) => d.id === "spec"), "the spec");
-  assert.ok(result.docIndex.some((d) => d.id === "task-002"), "a task");
+  assert.ok(
+    result.docIndex.some((d) => d.id === "spec"),
+    "the spec",
+  );
+  assert.ok(
+    result.docIndex.some((d) => d.id === "task-002"),
+    "a task",
+  );
 });
 
 test("read ferries docs keyed with buildDocIndex's ids (spec/plan/adr/task)", () => {
@@ -121,8 +140,14 @@ test("read on the REAL fixture run returns a populated summary + doc index (acce
     assert.ok(result.summary.title.length > 0, "a non-empty title");
 
     // Doc index: an entry per real artifact on disk, with FLOW's status carried through.
-    assert.ok(result.docIndex.some((d) => d.id === "spec"), "the spec from disk");
-    assert.ok(result.docIndex.some((d) => d.id.startsWith("task-")), "a task from disk");
+    assert.ok(
+      result.docIndex.some((d) => d.id === "spec"),
+      "the spec from disk",
+    );
+    assert.ok(
+      result.docIndex.some((d) => d.id.startsWith("task-")),
+      "a task from disk",
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

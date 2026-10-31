@@ -5,7 +5,7 @@
 // can read. A settings screen that quietly wrote config from a checkbox would put a second, competing
 // authority on the same keys. So this shows the truth and names where to change it.
 import { useEffect, useState } from "react";
-import { fetchContext, type AppContext } from "../../api/index.js";
+import { type AppContext, fetchContext } from "../../api/index.js";
 
 export function Settings() {
   const [ctx, setCtx] = useState<AppContext | null>(null);
@@ -30,8 +30,9 @@ export function Settings() {
         <div className="main">
           <div className="ttl">Configuration</div>
           <div className="ctx">
-            Every Agentry toggle lives in <code>.agentry/config.json</code> and defaults to stock behavior.
-            Run <code>/agentry:config</code> in a session to see what is on, what each key does, and to change one.
+            Every Agentry toggle lives in <code>.agentry/config.json</code> and defaults to stock
+            behavior. Run <code>/agentry:config</code> in a session to see what is on, what each key
+            does, and to change one.
           </div>
         </div>
       </article>

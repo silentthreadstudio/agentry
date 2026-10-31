@@ -6,15 +6,15 @@
 // an explicit claim mints a run, and only a session can claim. If that ever inverts, the UI's promise
 // ("nothing starts work you didn't start") becomes a lie, so it is pinned here.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { BacklogItem, isReady, mintBacklogId } from "../src/domain/backlog.js";
-import { FsBacklogStore } from "../src/persistence/backlog-store.js";
 import { BacklogService } from "../src/application/backlog-service.js";
 import { RunService } from "../src/application/run-service.js";
+import { BacklogItem, isReady, mintBacklogId } from "../src/domain/backlog.js";
 import { createServices } from "../src/index.js";
+import { FsBacklogStore } from "../src/persistence/backlog-store.js";
 
 let cwd: string;
 const clock = (() => {
@@ -99,7 +99,9 @@ test("a body carrying its own leading frontmatter cannot produce a double block"
 
 test("a corrupt item is skipped, not fatal — one bad file cannot take the board down", () => {
   const store = new FsBacklogStore(cwd);
-  store.write(BacklogItem.parse({ id: "b-good-1", title: "Good", createdAt: clock(), updatedAt: clock() }));
+  store.write(
+    BacklogItem.parse({ id: "b-good-1", title: "Good", createdAt: clock(), updatedAt: clock() }),
+  );
   mkdirSync(join(cwd, ".agentry", "backlog"), { recursive: true });
   writeFileSync(join(cwd, ".agentry", "backlog", "b-broken.md"), "not frontmatter at all");
 

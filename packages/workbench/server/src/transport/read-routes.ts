@@ -14,10 +14,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename } from "node:path";
 import type { WorkReader } from "../application/work-reader.js";
+import { toDocModel } from "./doc-model.js";
 import type { RunContext } from "./host-router.js";
 import { guardGet, sendJson } from "./http-kit.js";
 import { matchWorkDoc, matchWorkDocIndex, resolveRun, runParam } from "./route-match.js";
-import { toDocModel } from "./doc-model.js";
 
 // `true` when this request was answered by a route, `false` when no API/healthz route matched (so the
 // http layer falls through to static-serving the SPA). Keeps the dispatch a single, ordered decision.
@@ -53,7 +53,8 @@ export function handleApiRequest(
     //    else's runs under the wrong label. The client (and the command) compare this.
     return guardGet(method, res, () => {
       const requested = runParam(url);
-      const run = requested !== undefined ? resolveRun(reader, requested) : (context.run ?? undefined);
+      const run =
+        requested !== undefined ? resolveRun(reader, requested) : (context.run ?? undefined);
       sendJson(res, 200, {
         ...(projectRoot !== undefined
           ? { project: projectSlug ?? basename(projectRoot), root: projectRoot }

@@ -22,7 +22,10 @@ class CapturingServer {
 }
 
 let cwd: string;
-let call: (tool: string, args?: unknown) => Promise<{ content: { text: string }[]; isError?: boolean }>;
+let call: (
+  tool: string,
+  args?: unknown,
+) => Promise<{ content: { text: string }[]; isError?: boolean }>;
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "flow-review-"));
@@ -46,13 +49,33 @@ function payloadOf(res: { content: { text: string }[]; isError?: boolean }) {
 
 const RUN = "review-run-001";
 const GATE = "spec";
-const ANCHOR_A = { originalText: "the quoted snippet", headingAnchor: "## Section A", startLine: 12 };
+const ANCHOR_A = {
+  originalText: "the quoted snippet",
+  headingAnchor: "## Section A",
+  startLine: 12,
+};
 const ANCHOR_B = { originalText: "another snippet", headingAnchor: "## Section B", startLine: 40 };
 
 // ── AC10 — the family proof: write two, resolve one, list → one resolved + one open ────────────────
 test("AC10: write two comments, resolve one, list → one resolved + one open (resolved distinguishable)", async () => {
-  const { id: idA } = payloadOf(await call("review_comment", { run: RUN, gate: GATE, anchor: ANCHOR_A, decision: "changes", body: "fix this" }));
-  const { id: idB } = payloadOf(await call("review_comment", { run: RUN, gate: GATE, anchor: ANCHOR_B, decision: "question", body: "why this?" }));
+  const { id: idA } = payloadOf(
+    await call("review_comment", {
+      run: RUN,
+      gate: GATE,
+      anchor: ANCHOR_A,
+      decision: "changes",
+      body: "fix this",
+    }),
+  );
+  const { id: idB } = payloadOf(
+    await call("review_comment", {
+      run: RUN,
+      gate: GATE,
+      anchor: ANCHOR_B,
+      decision: "question",
+      body: "why this?",
+    }),
+  );
   assert.ok(idA && idB && idA !== idB, "each comment gets a distinct id");
 
   const resolveRes = payloadOf(await call("review_resolve", { run: RUN, gate: GATE, id: idA }));
@@ -70,7 +93,15 @@ test("AC10: write two comments, resolve one, list → one resolved + one open (r
 
 // ── AC10 — the resolved flag round-trips through the on-disk JSON sidecar (not just in-memory) ──────
 test("AC10: the resolved flag round-trips through .review/<gate>.annotations.json on disk", async () => {
-  const { id } = payloadOf(await call("review_comment", { run: RUN, gate: GATE, anchor: ANCHOR_A, decision: "changes", body: "fix this" }));
+  const { id } = payloadOf(
+    await call("review_comment", {
+      run: RUN,
+      gate: GATE,
+      anchor: ANCHOR_A,
+      decision: "changes",
+      body: "fix this",
+    }),
+  );
   await call("review_resolve", { run: RUN, gate: GATE, id });
 
   const file = join(cwd, ".agentry", "work", RUN, ".review", `${GATE}.annotations.json`);
@@ -83,18 +114,34 @@ test("AC10: the resolved flag round-trips through .review/<gate>.annotations.jso
 
 // ── AC10 — the 3-way anchor (originalText/headingAnchor/startLine) survives write → read ───────────
 test("AC10: the 3-way anchor round-trips through write → list (all three fields preserved)", async () => {
-  await call("review_comment", { run: RUN, gate: GATE, anchor: ANCHOR_A, decision: "approve", body: "looks good here" });
+  await call("review_comment", {
+    run: RUN,
+    gate: GATE,
+    anchor: ANCHOR_A,
+    decision: "approve",
+    body: "looks good here",
+  });
 
   const { comments } = payloadOf(await call("review_list", { run: RUN, gate: GATE }));
   assert.equal(comments.length, 1);
-  assert.deepEqual(comments[0].anchor, ANCHOR_A, "originalText + headingAnchor + startLine preserved");
+  assert.deepEqual(
+    comments[0].anchor,
+    ANCHOR_A,
+    "originalText + headingAnchor + startLine preserved",
+  );
   assert.equal(comments[0].decision, "approve");
   assert.equal(comments[0].body, "looks good here");
 });
 
 // ── per-gate isolation: a comment on one gate never bleeds into another gate's sidecar ─────────────
 test("comments are scoped per gate — review_list(other gate) does not see them", async () => {
-  await call("review_comment", { run: RUN, gate: "spec", anchor: ANCHOR_A, decision: "changes", body: "spec note" });
+  await call("review_comment", {
+    run: RUN,
+    gate: "spec",
+    anchor: ANCHOR_A,
+    decision: "changes",
+    body: "spec note",
+  });
   const { comments } = payloadOf(await call("review_list", { run: RUN, gate: "plan" }));
   assert.equal(comments.length, 0, "a different gate's sidecar is empty");
 });
@@ -116,7 +163,15 @@ test("review_resolve on an unknown id → isError, code:not-found naming the id"
 
 // ── resolve is idempotent: resolving an already-resolved comment succeeds, stays resolved ──────────
 test("review_resolve is idempotent — resolving twice keeps it resolved", async () => {
-  const { id } = payloadOf(await call("review_comment", { run: RUN, gate: GATE, anchor: ANCHOR_A, decision: "changes", body: "x" }));
+  const { id } = payloadOf(
+    await call("review_comment", {
+      run: RUN,
+      gate: GATE,
+      anchor: ANCHOR_A,
+      decision: "changes",
+      body: "x",
+    }),
+  );
   payloadOf(await call("review_resolve", { run: RUN, gate: GATE, id }));
   const second = payloadOf(await call("review_resolve", { run: RUN, gate: GATE, id }));
   assert.deepEqual(second, { id, resolved: true });

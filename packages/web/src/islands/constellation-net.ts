@@ -14,7 +14,7 @@
 //   - Reduced-motion: render a single calm static frame, no rAF loop.
 //   - Self-initializes over every [data-constellation]; no-ops if none present.
 
-const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Deterministic PRNG (mulberry32) — same layout every load. */
 function mulberry32(seed: number): () => number {
@@ -73,18 +73,18 @@ class Constellation {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('2D canvas context unavailable');
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("2D canvas context unavailable");
     this.ctx = ctx;
 
     this.resize();
     this.seedNodes();
 
     const parent = canvas.parentElement ?? canvas;
-    parent.addEventListener('pointermove', this.onPointerMove);
-    parent.addEventListener('pointerleave', this.onPointerLeave);
+    parent.addEventListener("pointermove", this.onPointerMove);
+    parent.addEventListener("pointerleave", this.onPointerLeave);
 
-    if (typeof ResizeObserver !== 'undefined') {
+    if (typeof ResizeObserver !== "undefined") {
       new ResizeObserver(() => {
         this.resize();
         this.seedNodes(); // re-seed (deterministically) for the new box
@@ -98,15 +98,13 @@ class Constellation {
     }
 
     this.observeVisibility(parent);
-    document.addEventListener('visibilitychange', this.onVisibility);
+    document.addEventListener("visibilitychange", this.onVisibility);
     this.start();
   }
 
   private parentBox(): { w: number; h: number } {
     const parent = this.canvas.parentElement;
-    const rect = parent
-      ? parent.getBoundingClientRect()
-      : this.canvas.getBoundingClientRect();
+    const rect = parent ? parent.getBoundingClientRect() : this.canvas.getBoundingClientRect();
     return { w: Math.max(1, rect.width), h: Math.max(1, rect.height) };
   }
 
@@ -138,7 +136,7 @@ class Constellation {
   }
 
   private observeVisibility(parent: Element): void {
-    if (typeof IntersectionObserver === 'undefined') return;
+    if (typeof IntersectionObserver === "undefined") return;
     new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
@@ -292,7 +290,7 @@ class Constellation {
 
 export function initConstellation(root: ParentNode = document): void {
   const canvases = Array.from(
-    root.querySelectorAll<HTMLCanvasElement>('canvas[data-constellation]'),
+    root.querySelectorAll<HTMLCanvasElement>("canvas[data-constellation]"),
   );
   if (canvases.length === 0) return;
   for (const canvas of canvases) {

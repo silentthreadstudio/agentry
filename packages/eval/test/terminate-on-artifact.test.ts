@@ -47,13 +47,17 @@ class RunningChild extends EventEmitter implements StreamChild {
 }
 
 const THINKING_LINE =
-  JSON.stringify({ type: "assistant", message: { content: [{ type: "thinking", thinking: "" }] } }) + "\n";
+  JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "thinking", thinking: "" }] },
+  }) + "\n";
 const AGENT_DISPATCH_LINE =
   JSON.stringify({
     type: "assistant",
     message: { content: [{ type: "tool_use", id: "t1", name: "Agent", input: {} }] },
   }) + "\n";
-const RESULT_SUCCESS_LINE = JSON.stringify({ type: "result", subtype: "success", is_error: false }) + "\n";
+const RESULT_SUCCESS_LINE =
+  JSON.stringify({ type: "result", subtype: "success", is_error: false }) + "\n";
 
 function freshSandbox(): Sandbox {
   const dir = mkdtempSync(join(tmpdir(), "selfeval-artifact-"));
@@ -80,7 +84,12 @@ function writeTasksEntry(sandbox: Sandbox, slug = "case"): void {
 }
 
 // Fast timing so the suite runs in milliseconds: poll every 5ms, grace 40ms, ceiling 5s (far above both).
-const FAST: CaptureOptions = { terminateOnArtifact: true, pollMs: 5, graceMs: 40, timeoutMs: 5_000 };
+const FAST: CaptureOptions = {
+  terminateOnArtifact: true,
+  pollMs: 5,
+  graceMs: 40,
+  timeoutMs: 5_000,
+};
 const streamFile = (sandbox: Sandbox): string => join(sandbox.workingDir, "stream.jsonl");
 
 // --- decompose: plan.md present → killed promptly --------------------------------------------------------
@@ -128,7 +137,10 @@ test("artifact mode waits out the grace on spec.md-only, then kills (spec-first 
 
   assert.equal(child.killCount, 1, "spec-only past the grace → killed once");
   // ~5ms tolerance for setTimeout/Date.now granularity on CI runners (same as the hard-ceiling test below).
-  assert.ok(elapsed >= 35, `kill must wait out the ~grace window, not fire immediately (elapsed=${elapsed}ms)`);
+  assert.ok(
+    elapsed >= 35,
+    `kill must wait out the ~grace window, not fire immediately (elapsed=${elapsed}ms)`,
+  );
 });
 
 // --- decompose-within-grace: spec.md, then plan.md before the grace expires → killed on decompose --------
@@ -147,7 +159,10 @@ test("a plan.md arriving within the spec grace upgrades to decompose and kills a
 
   assert.equal(child.killCount, 1, "decompose within the grace → killed");
   // It killed on the decompose poll (~15-20ms), NOT by waiting the full grace (~45ms from the spec sighting).
-  assert.ok(elapsed < 45, `decompose-within-grace kills on plan.md, not on grace expiry (elapsed=${elapsed}ms)`);
+  assert.ok(
+    elapsed < 45,
+    `decompose-within-grace kills on plan.md, not on grace expiry (elapsed=${elapsed}ms)`,
+  );
 });
 
 // --- no artifact + child settles on its own → NOT force-killed (one-shot / degenerate natural close) -----
@@ -184,8 +199,16 @@ test("an events.jsonl in the work folder is ignored (not a routing artifact) →
   }, 40);
   const subtype = await run;
 
-  assert.equal(child.killCount, 0, "events.jsonl is the hook's log, not a routing artifact → no force-kill");
-  assert.equal(subtype, "success", "the run settled on its own (no artifact ever determined a shape)");
+  assert.equal(
+    child.killCount,
+    0,
+    "events.jsonl is the hook's log, not a routing artifact → no force-kill",
+  );
+  assert.equal(
+    subtype,
+    "success",
+    "the run settled on its own (no artifact ever determined a shape)",
+  );
 });
 
 // --- hard-ceiling fallback: nothing ever determines a shape → killed at timeoutMs -----------------------
@@ -196,15 +219,27 @@ test("the hard ceiling fires when no artifact ever determines a shape and the ch
   const spawnFn: SpawnFn = () => child;
 
   // A tiny ceiling, no artifact ever written, child never settles → only the ceiling can end the run.
-  const opts: CaptureOptions = { terminateOnArtifact: true, pollMs: 5, graceMs: 1_000, timeoutMs: 30 };
+  const opts: CaptureOptions = {
+    terminateOnArtifact: true,
+    pollMs: 5,
+    graceMs: 1_000,
+    timeoutMs: 30,
+  };
   const before = Date.now();
   const run = spawnClaudeStreaming([], sandbox, streamFile(sandbox), opts, spawnFn);
   child.emitLines([THINKING_LINE]); // it runs, but never writes an artifact and never closes
   await run;
   const elapsed = Date.now() - before;
 
-  assert.equal(child.killCount, 1, "the hard ceiling is the fallback kill when nothing else terminates the run");
+  assert.equal(
+    child.killCount,
+    1,
+    "the hard ceiling is the fallback kill when nothing else terminates the run",
+  );
   // ~5ms tolerance below timeoutMs: setTimeout + Date.now() granularity can report a hair under the delay on
   // some runners (observed 29ms for a 30ms ceiling in CI). The intent is "it waited ~timeoutMs, not fired at 0".
-  assert.ok(elapsed >= 25, `ceiling must wait out ~timeoutMs, not fire immediately (elapsed=${elapsed}ms)`);
+  assert.ok(
+    elapsed >= 25,
+    `ceiling must wait out ~timeoutMs, not fire immediately (elapsed=${elapsed}ms)`,
+  );
 });

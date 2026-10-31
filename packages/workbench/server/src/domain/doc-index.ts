@@ -1,3 +1,4 @@
+import { FlowTaskStatus } from "@agentry/flow/domain/status";
 // buildDocIndex — the ONLY place a run's parsed files become the ORDERED LIST OF DOCUMENTS the run view
 // opens. PURE (ADR-001): plain `RunFiles` in, a plain array out — no fs, no ws, fully unit-testable on
 // fixture data.
@@ -12,7 +13,6 @@
 // (The dependency relationships themselves are NOT lost — they are read from FLOW's own task
 // frontmatter where the board needs them, e.g. the blocked-by chips.)
 import type { RunDoc } from "@agentry/workbench-shared";
-import { FlowTaskStatus } from "@agentry/flow/domain/status";
 import type { RunFiles } from "./ports.js";
 
 // Stable doc ids — one namespace per kind so a task "1" and an adr "1" never collide. These are the same

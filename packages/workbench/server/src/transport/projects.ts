@@ -42,7 +42,8 @@ export function handleProjectsRequest(
 
   if (method === "POST") {
     void readJsonBody(req).then((body) => {
-      const root = typeof body === "object" && body !== null ? (body as { root?: unknown }).root : undefined;
+      const root =
+        typeof body === "object" && body !== null ? (body as { root?: unknown }).root : undefined;
       if (typeof root !== "string" || root.length === 0) {
         return sendJson(res, 400, { error: "root_required" });
       }

@@ -8,11 +8,11 @@ import { test } from "node:test";
 
 import { newRunId } from "../src/store/runId.ts";
 import type {
+  EvalObserver,
   RunConfig,
-  TaskRecord,
   RunSummary,
   TaskCaptureSrc,
-  EvalObserver,
+  TaskRecord,
 } from "../src/store/schema.ts";
 import { SCHEMA_VERSION } from "../src/store/schema.ts";
 
@@ -82,7 +82,12 @@ test("the exported schema types compile and carry their pinned fields", () => {
     emit: (event) => emitted.push(event.kind),
     onTaskComplete: (src) => captured.push(src),
   };
-  observer.emit?.({ kind: "task-done", runId: "fixed-id", detail: "task complete", ts: "2026-06-17T00:00:00.000Z" });
+  observer.emit?.({
+    kind: "task-done",
+    runId: "fixed-id",
+    detail: "task complete",
+    ts: "2026-06-17T00:00:00.000Z",
+  });
   observer.onTaskComplete?.(captureSrc);
 
   // SCHEMA_VERSION is a string const (so a future "2.1" scheme stays representable).

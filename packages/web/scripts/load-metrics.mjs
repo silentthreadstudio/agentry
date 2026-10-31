@@ -27,14 +27,31 @@ const WEB_ROOT = join(SCRIPT_DIR, ".."); // packages/web
 const REPO_ROOT = join(WEB_ROOT, "..", ".."); // repo root
 
 const CORRECTIONS_SRC = join(REPO_ROOT, "packages", "eval", "corrections.json");
-const TEMPLATE_PATH = join(REPO_ROOT, "packages", "eval", "src", "report", "assets", "template.html");
+const TEMPLATE_PATH = join(
+  REPO_ROOT,
+  "packages",
+  "eval",
+  "src",
+  "report",
+  "assets",
+  "template.html",
+);
 const TOKENS_PATH = join(WEB_ROOT, "src", "styles", "tokens.css");
 const OUT_PATH = join(WEB_ROOT, "src", "data", "corrections.ts");
 
 /** Brand-critical tokens that MUST match between tokens.css and the dashboard template (ADR 003). Pure-canvas
  *  neutrals (`--bg`, `--panel`, …) legitimately differ — VISION §5 owns the site's neutrals — so they're excluded.
  *  Note: the site calls the brand-mark gradient `--brand`; the dashboard template calls it `--grad`. */
-const BRAND_TOKENS = ["--amber", "--violet", "--violet-2", "--good", "--coral", "--cyan", "--bad", "--action"];
+const BRAND_TOKENS = [
+  "--amber",
+  "--violet",
+  "--violet-2",
+  "--good",
+  "--coral",
+  "--cyan",
+  "--bad",
+  "--action",
+];
 const SITE_GRADIENT_TOKEN = "--brand";
 const TEMPLATE_GRADIENT_TOKEN = "--grad";
 
@@ -57,7 +74,9 @@ function isCorrection(x) {
  *  malformed-row input — a build step must not silently ship an empty or partial centerpiece. */
 function loadCorrections() {
   if (!existsSync(CORRECTIONS_SRC)) {
-    throw new Error(`corrections.json not found at ${CORRECTIONS_SRC} — cannot build the corrections log`);
+    throw new Error(
+      `corrections.json not found at ${CORRECTIONS_SRC} — cannot build the corrections log`,
+    );
   }
   let parsed;
   try {
@@ -69,7 +88,9 @@ function loadCorrections() {
     throw new Error(`corrections.json must be a JSON array (${CORRECTIONS_SRC})`);
   }
   if (parsed.length === 0) {
-    throw new Error(`corrections.json is empty (${CORRECTIONS_SRC}) — the corrections log is the centerpiece`);
+    throw new Error(
+      `corrections.json is empty (${CORRECTIONS_SRC}) — the corrections log is the centerpiece`,
+    );
   }
   const bad = parsed.filter((x) => !isCorrection(x));
   if (bad.length > 0) {
@@ -134,7 +155,9 @@ export const corrections = ${body} as const satisfies readonly Correction[];
 function colorsOf(value) {
   // Length-ordered alternation (8 → 6 → 4 → 3) so a trailing stop-offset digit (e.g. "#ef8a5c 42%" normalized to
   // "#ef8a5c42%") can't be swallowed into the hex — #rrggbb matches at 6, leaving the offset behind.
-  return (value.match(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})/gi) ?? []).map((h) => h.toLowerCase());
+  return (value.match(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})/gi) ?? []).map((h) =>
+    h.toLowerCase(),
+  );
 }
 
 /** Pull `--name: value;` declarations out of the first `:root { ... }` block of a CSS/HTML source. Tolerant of
@@ -165,33 +188,53 @@ function parseRootTokens(text, label) {
  *  Skips with a clear log (not a crash) if either file is absent — tokens.css is produced by T2 in parallel. */
 function checkTokenDrift() {
   if (!existsSync(TOKENS_PATH)) {
-    console.log(`[drift] skip: ${TOKENS_PATH} not present yet (T2 produces it) — token drift not checked.`);
+    console.log(
+      `[drift] skip: ${TOKENS_PATH} not present yet (T2 produces it) — token drift not checked.`,
+    );
     return;
   }
   if (!existsSync(TEMPLATE_PATH)) {
-    console.log(`[drift] skip: dashboard template not found at ${TEMPLATE_PATH} — token drift not checked.`);
+    console.log(
+      `[drift] skip: dashboard template not found at ${TEMPLATE_PATH} — token drift not checked.`,
+    );
     return;
   }
-  const { tokens: site, raw: siteRaw } = parseRootTokens(readFileSync(TOKENS_PATH, "utf8"), "tokens.css");
-  const { tokens: tpl, raw: tplRaw } = parseRootTokens(readFileSync(TEMPLATE_PATH, "utf8"), "template.html");
+  const { tokens: site, raw: siteRaw } = parseRootTokens(
+    readFileSync(TOKENS_PATH, "utf8"),
+    "tokens.css",
+  );
+  const { tokens: tpl, raw: tplRaw } = parseRootTokens(
+    readFileSync(TEMPLATE_PATH, "utf8"),
+    "template.html",
+  );
 
   const mismatches = [];
   for (const name of BRAND_TOKENS) {
-    if (site[name] === undefined) { mismatches.push(`${name}: missing from tokens.css`); continue; }
-    if (tpl[name] === undefined) { mismatches.push(`${name}: missing from template :root`); continue; }
-    if (site[name] !== tpl[name]) mismatches.push(`${name}: site "${site[name]}" vs template "${tpl[name]}"`);
+    if (site[name] === undefined) {
+      mismatches.push(`${name}: missing from tokens.css`);
+      continue;
+    }
+    if (tpl[name] === undefined) {
+      mismatches.push(`${name}: missing from template :root`);
+      continue;
+    }
+    if (site[name] !== tpl[name])
+      mismatches.push(`${name}: site "${site[name]}" vs template "${tpl[name]}"`);
   }
   // The brand gradient: --brand (site) and --grad (template) must share the same color sequence (see colorsOf).
   // Use the whitespace-PRESERVED raw values so a stop offset (`#hex 42%`) stays separate from its color.
   const siteGrad = siteRaw[SITE_GRADIENT_TOKEN];
   const tplGrad = tplRaw[TEMPLATE_GRADIENT_TOKEN];
   if (siteGrad === undefined) mismatches.push(`${SITE_GRADIENT_TOKEN}: missing from tokens.css`);
-  else if (tplGrad === undefined) mismatches.push(`${TEMPLATE_GRADIENT_TOKEN}: missing from template :root`);
+  else if (tplGrad === undefined)
+    mismatches.push(`${TEMPLATE_GRADIENT_TOKEN}: missing from template :root`);
   else {
     const siteColors = colorsOf(siteGrad).join(",");
     const tplColors = colorsOf(tplGrad).join(",");
     if (siteColors !== tplColors) {
-      mismatches.push(`brand gradient colors: site ${SITE_GRADIENT_TOKEN} [${siteColors}] vs template ${TEMPLATE_GRADIENT_TOKEN} [${tplColors}]`);
+      mismatches.push(
+        `brand gradient colors: site ${SITE_GRADIENT_TOKEN} [${siteColors}] vs template ${TEMPLATE_GRADIENT_TOKEN} [${tplColors}]`,
+      );
     }
   }
 
@@ -202,7 +245,9 @@ function checkTokenDrift() {
         `\nThe site and the receipts must feel like one product — align both, or update the brand decision.`,
     );
   }
-  console.log(`[drift] OK: ${BRAND_TOKENS.length + 1} brand-critical tokens match the dashboard template.`);
+  console.log(
+    `[drift] OK: ${BRAND_TOKENS.length + 1} brand-critical tokens match the dashboard template.`,
+  );
 }
 
 // --- main ----------------------------------------------------------------------------------------------------

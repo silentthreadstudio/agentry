@@ -10,8 +10,8 @@
 // test went with it: a proof of a model nobody reads only makes the model harder to remove.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { RunFiles } from "../src/domain/ports.js";
 import { buildDocIndex } from "../src/domain/doc-index.js";
+import type { RunFiles } from "../src/domain/ports.js";
 
 function fixture(over: Partial<RunFiles> = {}): RunFiles {
   return {
@@ -50,7 +50,12 @@ test("a task carries its FLOW status; a task with none reads as todo, not as mis
 
 test("a malformed status falls back to todo rather than throwing", () => {
   const docs = buildDocIndex(
-    fixture({ spec: null, plan: null, adrs: [], tasks: [{ taskNo: "001", frontmatter: { title: "t", status: "banana" }, body: "" }] }),
+    fixture({
+      spec: null,
+      plan: null,
+      adrs: [],
+      tasks: [{ taskNo: "001", frontmatter: { title: "t", status: "banana" }, body: "" }],
+    }),
   );
   assert.equal(docs[0]?.status, "todo");
 });
@@ -69,7 +74,12 @@ test("labels are what the tab strip shows: the adr key + title, the task number 
 
 test("an adr with no frontmatter id falls back to its index, so two adrs never collide", () => {
   const docs = buildDocIndex(
-    fixture({ adrs: [{ frontmatter: {}, body: "" }, { frontmatter: {}, body: "" }] }),
+    fixture({
+      adrs: [
+        { frontmatter: {}, body: "" },
+        { frontmatter: {}, body: "" },
+      ],
+    }),
   );
   const ids = docs.filter((d) => d.id.startsWith("adr-")).map((d) => d.id);
   assert.deepEqual(ids, ["adr-0", "adr-1"]);

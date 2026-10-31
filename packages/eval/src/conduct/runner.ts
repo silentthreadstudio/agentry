@@ -67,7 +67,9 @@ export async function runCell(
   opts: RunCellOptions = {},
 ): Promise<RunCellResult> {
   if (cell.loadsPlugin && opts.pluginDir === undefined) {
-    throw new Error(`runCell: cell "${cell.id}" loads the Agentry plugin but no pluginDir was provided`);
+    throw new Error(
+      `runCell: cell "${cell.id}" loads the Agentry plugin but no pluginDir was provided`,
+    );
   }
 
   const model = opts.model ?? DEFAULT_MODEL;

@@ -15,7 +15,12 @@ test("statusNotification renders content + snake_case meta", () => {
 });
 
 test("StatusSignal parses the pinned shape; rejects a non-object", () => {
-  const ok = StatusSignal.safeParse({ run: "r", task: "task-1", status: "todo", at: "2026-06-20T00:00:00Z" });
+  const ok = StatusSignal.safeParse({
+    run: "r",
+    task: "task-1",
+    status: "todo",
+    at: "2026-06-20T00:00:00Z",
+  });
   assert.equal(ok.success, true);
   assert.equal(StatusSignal.safeParse({ run: "r" }).success, false); // missing task/status
 });

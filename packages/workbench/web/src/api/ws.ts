@@ -6,8 +6,8 @@
 // This module owns transport (connect, reconnect-with-backoff, parse, dispatch) only — it holds no
 // view state. Pages call `subscribe()` to receive typed messages and wire them into their own store.
 import type { WsMessage } from "@agentry/workbench-shared";
-import { currentProject } from "./http.js";
 import { FOCUS_EVENT, focusedRun } from "../routes/rail/rail-state.js";
+import { currentProject } from "./http.js";
 
 export type WsListener = (msg: WsMessage) => void;
 export type WsStatusListener = (status: WsStatus) => void;

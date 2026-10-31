@@ -27,7 +27,11 @@ test("hydrate seeds an empty store with on-disk comments (mine = false)", () => 
   hydrate(runId, docId, [disk("c1"), disk("c2")]);
   const list = snapshotForTest(runId, docId);
   assert.equal(list.length, 2, "both disk comments seeded");
-  assert.equal(list.every((c) => c.mine === false), true, "seeded comments are not 'mine'");
+  assert.equal(
+    list.every((c) => c.mine === false),
+    true,
+    "seeded comments are not 'mine'",
+  );
 });
 
 test("hydrate counts an open disk comment in the badge signal", () => {

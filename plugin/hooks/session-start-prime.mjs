@@ -7,9 +7,9 @@
 // Iteration 1: emits counts + the front-door note + cold/warm state. Full recency×relevance
 // ranking of the warm set lands with the @agentry/memory implementation.
 
-import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 let input = {};
 try {

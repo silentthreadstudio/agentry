@@ -10,8 +10,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { ChannelBridge, parseSidecarPath } from "../src/channel/channel-bridge.js";
 import type { ChannelNotification } from "../src/channel/channel-event.js";
-import { JsonReviewStore } from "../src/persistence/review-store.js";
 import type { ReviewComment } from "../src/domain/review.js";
+import { JsonReviewStore } from "../src/persistence/review-store.js";
 
 // ── parseSidecarPath (pure) ───────────────────────────────────────────────────
 test("parseSidecarPath resolves a real sidecar path to {run, gate}", () => {
@@ -112,7 +112,12 @@ test("a new unresolved comment added after start pushes exactly one channel", as
 
 // ── session-targeting gate (shouldEmit) ───────────────────────────────────────
 test("a comment on a NON-owned run is not emitted (shouldEmit=false)", async () => {
-  bridge = new ChannelBridge(cwd, store, (n) => void emitted.push(n), (run) => run === "mine");
+  bridge = new ChannelBridge(
+    cwd,
+    store,
+    (n) => void emitted.push(n),
+    (run) => run === "mine",
+  );
   bridge.start();
   await settle();
 
@@ -123,7 +128,12 @@ test("a comment on a NON-owned run is not emitted (shouldEmit=false)", async () 
 });
 
 test("a comment on an OWNED run IS emitted (shouldEmit=true)", async () => {
-  bridge = new ChannelBridge(cwd, store, (n) => void emitted.push(n), (run) => run === "mine");
+  bridge = new ChannelBridge(
+    cwd,
+    store,
+    (n) => void emitted.push(n),
+    (run) => run === "mine",
+  );
   bridge.start();
   await settle();
 
@@ -137,7 +147,12 @@ test("a dropped (non-owned) comment is marked seen — it never re-emits even if
   // First pass: the run is not ours, so the comment is dropped but recorded as seen. Then flip the
   // gate to claim the run and rewrite the sidecar: the already-seen comment must NOT fire late.
   let owned = false;
-  bridge = new ChannelBridge(cwd, store, (n) => void emitted.push(n), () => owned);
+  bridge = new ChannelBridge(
+    cwd,
+    store,
+    (n) => void emitted.push(n),
+    () => owned,
+  );
   bridge.start();
   await settle();
 
@@ -166,5 +181,9 @@ test("resolving a pushed comment (a sidecar rewrite) does not re-fire (AC3)", as
   // resolve it — same id, rewritten sidecar; the seen-set must suppress a second push
   store.write("run-1", "spec", [comment({ id: "x", resolved: true })]);
   await settle(600);
-  assert.equal(emitted.length, 1, "a resolve-rewrite of an already-pushed comment must not re-fire");
+  assert.equal(
+    emitted.length,
+    1,
+    "a resolve-rewrite of an already-pushed comment must not re-fire",
+  );
 });

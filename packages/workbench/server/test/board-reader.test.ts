@@ -5,10 +5,10 @@
 // wrong — a run with no tasks yet, and an item whose run has vanished.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BoardReader, runColumn, type BacklogSource } from "../src/application/board-reader.js";
+import type { BacklogItem } from "@agentry/flow/domain/backlog";
+import { type BacklogSource, BoardReader, runColumn } from "../src/application/board-reader.js";
 import { WorkReader } from "../src/application/work-reader.js";
 import type { Clock, RunFiles, WorkRepository } from "../src/domain/ports.js";
-import type { BacklogItem } from "@agentry/flow/domain/backlog";
 
 const clock: Clock = { now: () => "2026-08-22T00:00:00.000Z" };
 
@@ -71,13 +71,28 @@ test("a run with work left is running", () => {
 test("items and runs land in their columns, and nothing appears twice", () => {
   const board = new BoardReader(
     reader([runFiles("r-live", ["in-progress"]), runFiles("r-done", ["done"])]),
-    items([{ id: "b-parked", status: "backlog" }, { id: "b-queued", status: "ready" }]),
+    items([
+      { id: "b-parked", status: "backlog" },
+      { id: "b-queued", status: "ready" },
+    ]),
   ).read();
 
-  assert.deepEqual(board.columns.backlog.map((c) => c.id), ["b-parked"]);
-  assert.deepEqual(board.columns.ready.map((c) => c.id), ["b-queued"]);
-  assert.deepEqual(board.columns.running.map((c) => c.id), ["r-live"]);
-  assert.deepEqual(board.columns.done.map((c) => c.id), ["r-done"]);
+  assert.deepEqual(
+    board.columns.backlog.map((c) => c.id),
+    ["b-parked"],
+  );
+  assert.deepEqual(
+    board.columns.ready.map((c) => c.id),
+    ["b-queued"],
+  );
+  assert.deepEqual(
+    board.columns.running.map((c) => c.id),
+    ["r-live"],
+  );
+  assert.deepEqual(
+    board.columns.done.map((c) => c.id),
+    ["r-done"],
+  );
 
   const all = Object.values(board.columns).flat();
   assert.equal(new Set(all.map((c) => c.id)).size, all.length, "no card appears in two columns");
@@ -102,17 +117,26 @@ test("a claimed item whose run VANISHED falls back to ready — intent outlives 
     items([{ id: "b-orphan", status: "claimed", runs: ["r-deleted"] }]),
   ).read();
 
-  assert.deepEqual(board.columns.ready.map((c) => c.id), ["b-orphan"]);
+  assert.deepEqual(
+    board.columns.ready.map((c) => c.id),
+    ["b-orphan"],
+  );
   assert.equal(board.columns.ready[0]?.origin, "item");
 });
 
 test("a done item stays in done rather than falling back to ready", () => {
   const board = new BoardReader(reader([]), items([{ id: "b-shipped", status: "done" }])).read();
-  assert.deepEqual(board.columns.done.map((c) => c.id), ["b-shipped"]);
+  assert.deepEqual(
+    board.columns.done.map((c) => c.id),
+    ["b-shipped"],
+  );
 });
 
 test("a run card carries the tally and roster the Works list showed — one read-model, no disagreement", () => {
-  const board = new BoardReader(reader([runFiles("r-1", ["done", "in-progress"])]), items([])).read();
+  const board = new BoardReader(
+    reader([runFiles("r-1", ["done", "in-progress"])]),
+    items([]),
+  ).read();
   const card = board.columns.running[0];
   assert.equal(card?.taskCounts?.done, 1);
   assert.equal(card?.taskCounts?.["in-progress"], 1);
@@ -128,19 +152,34 @@ test("cards are newest-first within a column", () => {
       { id: "b-new", status: "backlog", updatedAt: "2026-08-22T00:00:00.000Z" },
     ]),
   ).read();
-  assert.deepEqual(board.columns.backlog.map((c) => c.id), ["b-new", "b-old"]);
+  assert.deepEqual(
+    board.columns.backlog.map((c) => c.id),
+    ["b-new", "b-old"],
+  );
 });
 
 test("an empty project yields five empty columns, not a missing key", () => {
   const board = new BoardReader(reader([]), items([])).read();
-  assert.deepEqual(Object.keys(board.columns).sort(), ["backlog", "done", "in-review", "ready", "running"]);
+  assert.deepEqual(Object.keys(board.columns).sort(), [
+    "backlog",
+    "done",
+    "in-review",
+    "ready",
+    "running",
+  ]);
   assert.equal(Object.values(board.columns).flat().length, 0);
 });
 
-
 // ── presence, blocking, and the overlap warning (slice 3) ──────────────────────────────────────────
 
-const roster = (agents: { id: string; role: string; state: "working" | "blocked" | "done"; task: string | null }[]) => ({
+const roster = (
+  agents: {
+    id: string;
+    role: string;
+    state: "working" | "blocked" | "done";
+    task: string | null;
+  }[],
+) => ({
   roster: () => agents,
 });
 
@@ -217,7 +256,10 @@ test("the same file owned at DIFFERENT times is a sequence, not a clobber — no
 
 test("disjoint contracts raise nothing — the parallel-safe case stays quiet", () => {
   const board = new BoardReader(
-    reader([runFiles("r-a", ["in-progress"], [["a.ts"]]), runFiles("r-b", ["in-progress"], [["b.ts"]])]),
+    reader([
+      runFiles("r-a", ["in-progress"], [["a.ts"]]),
+      runFiles("r-b", ["in-progress"], [["b.ts"]]),
+    ]),
     items([]),
   ).read();
   assert.deepEqual(board.conflicts, []);
@@ -236,7 +278,9 @@ test("a task with lockedBy shows an assignee even with an empty roster", () => {
   const files = runFiles("r-1", ["todo"]);
   files.tasks[0]!.frontmatter.lockedBy = "agentry:implementer";
   const board = new BoardReader(reader([files]), items([])).read();
-  assert.deepEqual(board.columns.running[0]?.assigned, [{ task: "001", to: "agentry:implementer" }]);
+  assert.deepEqual(board.columns.running[0]?.assigned, [
+    { task: "001", to: "agentry:implementer" },
+  ]);
 });
 
 test("once the agent is actually PRESENT the assignment row gives way — never both at once", () => {
@@ -245,11 +289,17 @@ test("once the agent is actually PRESENT the assignment row gives way — never 
   const board = new BoardReader(
     reader([files]),
     items([]),
-    roster([{ id: "r-1/agentry:implementer", role: "agentry:implementer", state: "working", task: "001" }]),
+    roster([
+      { id: "r-1/agentry:implementer", role: "agentry:implementer", state: "working", task: "001" },
+    ]),
   ).read();
   const card = board.columns.running[0];
   assert.equal(card?.agents?.length, 1);
-  assert.equal(card?.assigned, undefined, "a working agent must not also appear as merely assigned");
+  assert.equal(
+    card?.assigned,
+    undefined,
+    "a working agent must not also appear as merely assigned",
+  );
 });
 
 test("a DONE task's assignment is not surfaced — the commitment is discharged", () => {

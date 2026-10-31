@@ -1,6 +1,12 @@
 // board-view — the board's column vocabulary and card view-logic. Pure; no React, no fetch (the same
 // view-model split Works/Gates/Activity use), so the ordering and drop rules are unit-testable.
-import type { AgentView, BoardCard, BoardColumn, BoardConflict, RunDoc } from "@agentry/workbench-shared";
+import type {
+  AgentView,
+  BoardCard,
+  BoardColumn,
+  BoardConflict,
+  RunDoc,
+} from "@agentry/workbench-shared";
 import { workSlug } from "@agentry/workbench-shared";
 
 /** The columns, in lifecycle order. This array IS the board's left-to-right reading order. */
@@ -86,14 +92,15 @@ const COUNT_ORDER: { key: "in-progress" | "in-review" | "todo" | "done"; label: 
 
 export function countChips(card: BoardCard): { label: string; n: number }[] {
   if (!card.taskCounts) return [];
-  return COUNT_ORDER.map((c) => ({ label: c.label, n: card.taskCounts?.[c.key] ?? 0 })).filter((c) => c.n > 0);
+  return COUNT_ORDER.map((c) => ({ label: c.label, n: card.taskCounts?.[c.key] ?? 0 })).filter(
+    (c) => c.n > 0,
+  );
 }
 
 /** Total cards on the board — the header's "N pieces of work". */
 export function totalCards(columns: Record<BoardColumn, BoardCard[]>): number {
   return Object.values(columns).reduce((sum, list) => sum + list.length, 0);
 }
-
 
 /** Initials for an agent avatar — two letters of the role, which is what makes the roster scannable
  *  without a legend (IM implementer, VE verifier, AR architect). */
@@ -131,7 +138,6 @@ export function blockedLabel(card: BoardCard): string | null {
   return `blocked by ${first.by.join(", ")}${more > 0 ? ` (+${more} more)` : ""}`;
 }
 
-
 /** A compact relative age ("just now", "4m ago", "2d ago"). The mock's cards carry one on every column
  *  and it is not decoration: a backlog item added six weeks ago and one added this morning are different
  *  things, and a board that shows neither makes you open both to find out. */
@@ -166,7 +172,6 @@ export function cardNote(card: BoardCard, now?: number): string {
   }
 }
 
-
 /** The in-app PATH a run opens at: `/work/<workSlug>`. The slug is the short, stable label both halves
  *  compute; the server resolves it back to the full run id.
  *
@@ -177,7 +182,6 @@ export function runHref(runId: string): string {
   return `/work/${encodeURIComponent(workSlug(runId))}`;
 }
 
-
 /** The task a run is currently on — the one an agent holds, else the lowest-numbered unfinished one.
  *  The mock shows it because "which task is this run actually on" is the question a running card raises
  *  and a progress bar alone cannot answer. */
@@ -187,7 +191,6 @@ export function currentTask(card: BoardCard): string | null {
   const blocked = card.blocked?.[0]?.task;
   return blocked ? `T-${blocked}` : null;
 }
-
 
 /** Assignments folded by agent: one row per person, listing their tasks. Three identical
  *  "implementer · assigned T-00x" lines say the same thing three times and push the rest of the card

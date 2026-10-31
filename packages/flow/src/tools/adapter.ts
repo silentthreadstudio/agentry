@@ -2,7 +2,7 @@
 // wraps a handler so any unexpected throw becomes the `internal` envelope, mirroring
 // @agentry/memory's tools/adapter.ts (do not invent a new shape — Notes).
 import { internal } from "./errors.js";
-import { err, ok } from "./result.js";
+import { err, type ok } from "./result.js";
 
 /**
  * Outermost catch: any unexpected throw inside a handler becomes the `internal` envelope, so a raw

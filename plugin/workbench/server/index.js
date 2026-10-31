@@ -11041,89 +11041,31 @@ var require_websocket_server = __commonJS({
   }
 });
 
-// src/instance/port-lock.ts
-import { createServer } from "node:http";
-var WORKBENCH_PORT = 4317;
-var LOOPBACK_HOST = "127.0.0.1";
-function bindPortLock(port = WORKBENCH_PORT) {
-  return new Promise((resolve6, reject2) => {
-    const server = createServer();
-    const onError = (err) => {
-      server.removeListener("listening", onListening);
-      if (err.code === "EADDRINUSE") {
-        resolve6({ status: "already-up" });
-        return;
-      }
-      reject2(err);
-    };
-    const onListening = () => {
-      server.removeListener("error", onError);
-      resolve6({ status: "bound", server });
-    };
-    server.once("error", onError);
-    server.once("listening", onListening);
-    server.listen(port, LOOPBACK_HOST);
-  });
-}
+// src/index.ts
+import { resolve as resolve5 } from "node:path";
 
-// src/instance/pidfile.ts
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-function pidfilePath(projectRoot) {
-  return join(projectRoot, ".agentry", "run", "workbench.json");
-}
-function writePidfile(projectRoot, data) {
-  const target = pidfilePath(projectRoot);
-  const dir = join(projectRoot, ".agentry", "run");
-  mkdirSync(dir, { recursive: true });
-  const tmp = `${target}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data));
-  renameSync(tmp, target);
-}
-function removePidfile(projectRoot) {
-  rmSync(pidfilePath(projectRoot), { force: true });
-}
-
-// src/instance/registry.ts
-import { mkdirSync as mkdirSync2, readFileSync as readFileSync2, renameSync as renameSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join as join2, resolve } from "node:path";
-function registryPath() {
-  return join2(homedir(), ".agentry", "workbench", "projects.json");
-}
-function readRegistry() {
-  try {
-    const parsed = JSON.parse(readFileSync2(registryPath(), "utf8"));
-    if (typeof parsed !== "object" || parsed === null) return [];
-    const list = parsed.projects;
-    if (!Array.isArray(list)) return [];
-    return list.filter(
-      (p) => typeof p === "object" && p !== null && typeof p.root === "string"
-    );
-  } catch {
-    return [];
+// ../shared/src/slug.ts
+var MAX = 28;
+function hash(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
+  return (h >>> 0).toString(36).padStart(6, "0").slice(-6);
 }
-function registerRoot(root, now) {
-  const abs = resolve(root);
-  const current = readRegistry();
-  if (current.some((p) => p.root === abs)) return current;
-  const next = [...current, { root: abs, addedAt: now }];
-  const target = registryPath();
-  mkdirSync2(dirname(target), { recursive: true });
-  const tmp = `${target}.${process.pid}.tmp`;
-  writeFileSync2(tmp, JSON.stringify({ projects: next }, null, 2));
-  renameSync2(tmp, target);
-  return next;
+function workSlug(runId) {
+  if (runId.length <= MAX) return runId;
+  const words = runId.split("-").filter(Boolean).slice(0, 2).join("-");
+  return `${words}-${hash(runId)}`;
 }
-
-// src/application/project.ts
-import { basename as basename4 } from "node:path";
-
-// src/persistence/fs-work-repository.ts
-var import_yaml2 = __toESM(require_dist(), 1);
-import { existsSync as existsSync2, readFileSync as readFileSync5, readdirSync as readdirSync3, statSync } from "node:fs";
-import { join as join5 } from "node:path";
+function resolveSlug(label, runIds) {
+  if (runIds.includes(label)) return label;
+  const exactSlug = runIds.find((id) => workSlug(id) === label);
+  if (exactSlug !== void 0) return exactSlug;
+  const lower = label.toLowerCase();
+  return runIds.find((id) => id.toLowerCase() === lower || workSlug(id).toLowerCase() === lower);
+}
 
 // ../../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
 var external_exports = {};
@@ -15166,6 +15108,180 @@ var coerce = {
 };
 var NEVER = INVALID;
 
+// ../../flow/src/domain/review.ts
+var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
+var ReviewAnchor = external_exports.object({
+  originalText: external_exports.string(),
+  // the exact snippet the comment was made against
+  headingAnchor: external_exports.string(),
+  // the nearest section heading
+  startLine: external_exports.number()
+  // the line the comment was made at
+});
+var ReviewOrigin = external_exports.enum(["human", "agent"]);
+var ReviewComment = external_exports.object({
+  id: external_exports.string(),
+  anchor: ReviewAnchor,
+  decision: ReviewDecision,
+  body: external_exports.string(),
+  resolved: external_exports.boolean(),
+  // distinguishes open from resolved comments (AC10: review_resolve marks one)
+  // ── Phase 2 reply lane (ADR-002) — both optional + additive so old sidecars still parse ──────────
+  origin: ReviewOrigin.optional(),
+  // absent ⇒ human; "agent" marks a channel_reply (Phase 2b's rail)
+  replyTo: external_exports.string().optional()
+  // the human comment id this reply answers (threading; agent only)
+});
+function isHumanComment(comment) {
+  return comment.origin !== "agent";
+}
+var CONDUCTOR_GATE = "_conductor";
+function isConductorThread(gate) {
+  return gate === CONDUCTOR_GATE;
+}
+
+// src/application/project.ts
+import { basename as basename4 } from "node:path";
+
+// ../../flow/src/domain/ids.ts
+function assertSafeSegment(s) {
+  if (s.length === 0 || s.trim().length === 0) {
+    throw new Error("unsafe path segment: empty");
+  }
+  if (s.includes("..") || s.includes("/") || s.includes("\\")) {
+    throw new Error(`unsafe path segment: "${s}" contains a traversal sequence (.. / \\)`);
+  }
+}
+var STEM_WORDS = 3;
+var STEM_MAX = 20;
+function slug(text) {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS);
+  while (words.length > 1 && words.join("-").length > STEM_MAX) {
+    words.pop();
+  }
+  return words.join("-").slice(0, STEM_MAX).replace(/-+$/g, "");
+}
+function shortId() {
+  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+}
+function mintRun(goal) {
+  const stem = slug(goal) || "run";
+  const run = `${stem}-${shortId()}`;
+  assertSafeSegment(run);
+  return run;
+}
+
+// ../../flow/src/domain/backlog.ts
+var BacklogStatus = external_exports.enum(["backlog", "ready", "claimed", "done"]);
+var BacklogItem = external_exports.object({
+  id: external_exports.string(),
+  title: external_exports.string(),
+  /** Permissive on purpose, mirroring `Kind` in @agentry/core: accept an unknown kind rather than
+   *  reject it, so adding one later cannot throw on an old record. */
+  kind: external_exports.string().default("feature"),
+  status: BacklogStatus.default("backlog"),
+  createdAt: external_exports.string(),
+  updatedAt: external_exports.string(),
+  /** Runs spawned from this item — usually 0 or 1, but a re-run appends rather than replaces. */
+  runs: external_exports.array(external_exports.string()).default([]),
+  /** The context an agent starts from: markdown, `@task-…` / `@memory:…` references. */
+  body: external_exports.string().default("")
+});
+var STEM_WORDS2 = 3;
+var STEM_MAX2 = 20;
+function slug2(text) {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS2);
+  while (words.length > 1 && words.join("-").length > STEM_MAX2) words.pop();
+  return words.join("-").slice(0, STEM_MAX2).replace(/-+$/g, "");
+}
+function shortId2() {
+  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+}
+function mintBacklogId(title) {
+  const id = `b-${slug2(title) || "item"}-${shortId2()}`;
+  assertSafeSegment(id);
+  return id;
+}
+function isReady(item) {
+  return item.status === "ready";
+}
+
+// ../../flow/src/application/backlog-service.ts
+var BacklogService = class {
+  constructor(store, runs, now) {
+    this.store = store;
+    this.runs = runs;
+    this.now = now;
+  }
+  add(input) {
+    const ts = this.now();
+    const item = BacklogItem.parse({
+      id: mintBacklogId(input.title),
+      title: input.title,
+      kind: input.kind ?? "feature",
+      status: input.ready === true ? "ready" : "backlog",
+      createdAt: ts,
+      updatedAt: ts,
+      runs: [],
+      body: input.body ?? ""
+    });
+    this.store.write(item);
+    return item;
+  }
+  list(status) {
+    const all = this.store.list();
+    return status === void 0 ? all : all.filter((i) => i.status === status);
+  }
+  /** Patch an item. Absent fields are left alone — this is a patch, not a replace, so a caller that
+   *  knows only the new status cannot accidentally blank the body. */
+  update(input) {
+    const current = this.store.read(input.id);
+    if (!current) return void 0;
+    const next = BacklogItem.parse({
+      ...current,
+      ...input.title !== void 0 ? { title: input.title } : {},
+      ...input.body !== void 0 ? { body: input.body } : {},
+      ...input.kind !== void 0 ? { kind: input.kind } : {},
+      ...input.status !== void 0 ? { status: input.status } : {},
+      updatedAt: this.now()
+    });
+    this.store.write(next);
+    return next;
+  }
+  /**
+   * Take an item and mint its run — the intent→work transition, and the ONLY one.
+   *
+   * With no id, claims the oldest READY item (the queue is FIFO: the thing that has waited longest goes
+   * first, which is what a queue means and what `/agentry:go` with no argument expects). The run is
+   * minted through the existing `RunService.start`, so a claimed run is indistinguishable from one a
+   * session started directly — same id shape, same scaffold, same layout.
+   */
+  claim(id, sessionId) {
+    let item;
+    if (id !== void 0 && id.length > 0) {
+      item = this.store.read(id);
+      if (!item) return { ok: false, reason: "not_found" };
+      if (!isReady(item)) return { ok: false, reason: "not_ready" };
+    } else {
+      const queue = this.list("ready").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      item = queue[0];
+      if (!item) return { ok: false, reason: "empty_queue" };
+    }
+    const { run } = this.runs.start({
+      goal: item.title,
+      ...sessionId !== void 0 && sessionId.length > 0 ? { session_id: sessionId } : {}
+    });
+    const claimed = BacklogItem.parse({
+      ...item,
+      status: "claimed",
+      runs: [...item.runs, run],
+      updatedAt: this.now()
+    });
+    this.store.write(claimed);
+    return { ok: true, item: claimed, run };
+  }
+};
+
 // ../../flow/src/domain/events.ts
 var RoutingDecisionEvent = external_exports.object({
   ts: external_exports.string(),
@@ -15228,10 +15344,339 @@ function parseLogLine(line) {
   return { kind: "skip" };
 }
 
-// ../../flow/src/persistence/task-file-store.ts
+// ../../flow/src/resolution/run-pointer.ts
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+function workRoot(cwd) {
+  return join(cwd, ".agentry", "work");
+}
+function runDir(cwd, run) {
+  assertSafeSegment(run);
+  return join(workRoot(cwd), run);
+}
+function pointerPath(cwd, session_id) {
+  assertSafeSegment(session_id);
+  return join(cwd, ".agentry", "run", "sessions", `${session_id}.json`);
+}
+function writeSessionPointer(cwd, session_id, run) {
+  assertSafeSegment(run);
+  const target = pointerPath(cwd, session_id);
+  const dir = join(cwd, ".agentry", "run", "sessions");
+  mkdirSync(dir, { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
+  const body = JSON.stringify({ workId: run, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  writeFileSync(tmp, body);
+  renameSync(tmp, target);
+}
+
+// ../../flow/src/application/run-service.ts
+var SPEC_SCAFFOLD = [
+  "# Spec",
+  "",
+  "_Scaffolded by run_start. Replace with the real spec via artifact_write(spec)._",
+  "",
+  "## Job to be done",
+  "",
+  "## Acceptance criteria",
+  ""
+].join("\n");
+var RunService = class {
+  constructor(services) {
+    this.services = services;
+  }
+  // The run front door (ADR-005). Mints <run> when absent, creates the run dir + spec scaffold, and
+  // seeds the session pointer ONLY when session_id is passed. Returns the explicit run handle.
+  start(input) {
+    const run = input.run && input.run.length > 0 ? input.run : mintRun(input.goal ?? "run");
+    this.services.runs.ensureRun(run);
+    this.services.tasks.writeArtifact(run, "spec", SPEC_SCAFFOLD);
+    if (input.session_id && input.session_id.length > 0) {
+      writeSessionPointer(this.services.cwd, input.session_id, run);
+    }
+    return { run };
+  }
+  // Read the run's live state json (the agent roster + states; T05 owns its field contract). Plain
+  // record or `{}` when the run has no state yet — never throws on a missing/corrupt file.
+  get(run) {
+    return { run, state: this.services.runs.readRunState(run) ?? {} };
+  }
+  // Validate `type` against the closed FlowEvent union (AC8) and append via the EventLog port. Returns
+  // `{ ok: false }` with the offending field when the event is out-of-union, so the adapter maps it to a
+  // bad-input envelope rather than letting the closed union throw.
+  emit(run, event) {
+    const parsed = FlowEvent.safeParse(event);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const field = issue && issue.path.length > 0 ? String(issue.path[0]) : "type";
+      const rule = field === "type" ? "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)" : issue?.message ?? "the value required by the FlowEvent schema for this type";
+      return { ok: false, field, rule };
+    }
+    this.services.events.append(run, parsed.data);
+    return { ok: true };
+  }
+  // Read the stream and return ONLY the typed FLOW events (the signature promises `FlowEvent[]`).
+  // `parseLogLine` transparently handles both line shapes and drops empty-`agent` main-session lines;
+  // hook backstop lines are not FLOW events, so they don't appear in this typed view (they surface via
+  // `status`'s reconciliation instead).
+  tail(run, since) {
+    const events = [];
+    for (const raw of this.services.events.tail(run, since)) {
+      const parsed = parseLogLine(raw);
+      if (parsed.kind === "flow") events.push(parsed.event);
+    }
+    return { events };
+  }
+  // Read-time backstop reconciliation (ADR-003 — flag, never block). Cross-check the hook's subagent
+  // boundaries (real `agent` lines) against FLOW's node lines: a hook `agent-started`/`agent-done` for
+  // an agent FLOW emitted no matching `node-enter`/`node-done` for is a disagreement (the skipped-call
+  // signal, AC9). Pure read-time computation; nothing is written and nothing blocks.
+  status(run) {
+    const lines = this.services.events.tail(run);
+    const flowEnteredAgents = /* @__PURE__ */ new Set();
+    const flowDoneNodes = /* @__PURE__ */ new Set();
+    const flowEnterNodeByAgent = /* @__PURE__ */ new Map();
+    const hookStarted = [];
+    const hookDone = [];
+    for (const raw of lines) {
+      const parsed = parseLogLine(raw);
+      if (parsed.kind === "flow") {
+        const ev = parsed.event;
+        if (ev.type === "node-enter" && ev.agent) {
+          flowEnteredAgents.add(ev.agent);
+          flowEnterNodeByAgent.set(ev.agent, ev.node);
+        } else if (ev.type === "node-done") {
+          flowDoneNodes.add(ev.node);
+        }
+      } else if (parsed.kind === "hook") {
+        const agent = parsed.line.agent;
+        if (agent === void 0) continue;
+        if (parsed.line.kind === "agent-started") hookStarted.push({ agent, ts: parsed.line.ts });
+        else if (parsed.line.kind === "agent-done") hookDone.push({ agent, ts: parsed.line.ts });
+      }
+    }
+    const disagreements = [];
+    for (const { agent, ts } of hookStarted) {
+      if (!flowEnteredAgents.has(agent)) {
+        disagreements.push({
+          agent,
+          kind: "started",
+          ts,
+          reason: `hook recorded agent-started for "${agent}" but FLOW emitted no node-enter for it (a skipped FLOW call)`
+        });
+      }
+    }
+    for (const { agent, ts } of hookDone) {
+      const node = flowEnterNodeByAgent.get(agent);
+      if (node === void 0 || !flowDoneNodes.has(node)) {
+        disagreements.push({
+          agent,
+          kind: "done",
+          ts,
+          reason: `hook recorded agent-done for "${agent}" but FLOW emitted no matching node-done (a skipped FLOW call)`
+        });
+      }
+    }
+    return { run, tasks: this.summarizeTasks(run), backstopDisagreements: disagreements };
+  }
+  // Per-status tally of the run's tasks (the "tasks summary"). A loose `status` string is counted
+  // under its own key; a task with no/non-string status falls under "unknown".
+  summarizeTasks(run) {
+    const summary = {};
+    for (const task of this.services.tasks.listTasks(run)) {
+      const status = typeof task.frontmatter.status === "string" ? task.frontmatter.status : "unknown";
+      summary[status] = (summary[status] ?? 0) + 1;
+    }
+    return summary;
+  }
+};
+
+// ../../flow/src/persistence/backlog-store.ts
 var import_yaml = __toESM(require_dist(), 1);
-import { existsSync, mkdirSync as mkdirSync4, readFileSync as readFileSync4, readdirSync as readdirSync2, unlinkSync, writeFileSync as writeFileSync4 } from "node:fs";
+import {
+  existsSync,
+  mkdirSync as mkdirSync2,
+  readFileSync as readFileSync2,
+  readdirSync as readdirSync2,
+  unlinkSync,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { join as join2 } from "node:path";
+var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var LEADING_FRONTMATTER = /^---\n[\s\S]*?\n---\n?/;
+var FsBacklogStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  dir() {
+    return join2(this.cwd, ".agentry", "backlog");
+  }
+  file(id) {
+    assertSafeSegment(id);
+    return join2(this.dir(), `${id}.md`);
+  }
+  read(id) {
+    const file = this.file(id);
+    if (!existsSync(file)) return void 0;
+    try {
+      return this.parse(readFileSync2(file, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+  /** Every item, newest first. A file that fails to parse is SKIPPED, never fatal: one bad item must
+   *  not take the whole board down. */
+  list() {
+    const dir = this.dir();
+    if (!existsSync(dir)) return [];
+    const items = [];
+    for (const name of readdirSync2(dir)) {
+      if (!name.endsWith(".md")) continue;
+      try {
+        items.push(this.parse(readFileSync2(join2(dir, name), "utf8")));
+      } catch {
+      }
+    }
+    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  write(item) {
+    const validated = BacklogItem.parse(item);
+    mkdirSync2(this.dir(), { recursive: true });
+    writeFileSync2(this.file(validated.id), this.render(validated));
+  }
+  remove(id) {
+    const file = this.file(id);
+    if (existsSync(file)) unlinkSync(file);
+  }
+  // ── shape ────────────────────────────────────────────────────────────────────────────────────────
+  // The body lives BELOW the frontmatter (not as a `body:` yaml field) so an item reads as a document:
+  // `cat` it, edit it in any editor, diff it in a PR.
+  render(item) {
+    const { body, ...frontmatter } = item;
+    const yaml = (0, import_yaml.stringify)(frontmatter);
+    return `---
+${yaml}---
+
+${body.replace(LEADING_FRONTMATTER, "").trim()}
+`;
+  }
+  parse(text) {
+    const m = FRONTMATTER.exec(text);
+    if (!m || m[1] === void 0) throw new Error("backlog item has no frontmatter");
+    const frontmatter = (0, import_yaml.parse)(m[1]);
+    return BacklogItem.parse({ ...frontmatter, body: (m[2] ?? "").trim() });
+  }
+};
+
+// ../../flow/src/persistence/event-log.ts
+import { appendFileSync, existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3 } from "node:fs";
+import { join as join3 } from "node:path";
+var JsonlEventLog = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  logPath(run) {
+    return join3(runDir(this.cwd, run), "events.jsonl");
+  }
+  // Validate through the closed FLOW union (a malformed event can never reach the stream — the
+  // schema enforcement of AC8's typed vocabulary), then append exactly one line.
+  append(run, event) {
+    const validated = FlowEvent.parse(event);
+    const dir = runDir(this.cwd, run);
+    mkdirSync3(dir, { recursive: true });
+    appendFileSync(this.logPath(run), `${JSON.stringify(validated)}
+`);
+  }
+  // Return the raw lines (newest-relevant left to the reader). `since` filters by the `ts` field
+  // lexicographically — ISO-8601 timestamps sort chronologically, so a string compare is correct.
+  tail(run, since) {
+    const path = this.logPath(run);
+    if (!existsSync2(path)) return [];
+    const lines = readFileSync3(path, "utf8").split("\n").filter((l) => l.trim().length > 0);
+    if (since === void 0) return lines;
+    return lines.filter((line) => {
+      try {
+        const ts = JSON.parse(line).ts;
+        return typeof ts === "string" && ts >= since;
+      } catch {
+        return false;
+      }
+    });
+  }
+};
+
+// ../../flow/src/persistence/review-store.ts
+import { existsSync as existsSync3, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
 import { join as join4 } from "node:path";
+var JsonReviewStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  gateFile(run, gate) {
+    assertSafeSegment(gate);
+    return join4(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+  }
+  read(run, gate) {
+    const file = this.gateFile(run, gate);
+    if (!existsSync3(file)) return [];
+    try {
+      const raw = JSON.parse(readFileSync4(file, "utf8"));
+      if (!Array.isArray(raw)) return [];
+      return raw.map((c) => ReviewComment.parse(c));
+    } catch {
+      return [];
+    }
+  }
+  write(run, gate, comments) {
+    const validated = comments.map((c) => ReviewComment.parse(c));
+    const file = this.gateFile(run, gate);
+    mkdirSync4(join4(runDir(this.cwd, run), ".review"), { recursive: true });
+    writeFileSync3(file, `${JSON.stringify(validated, null, 2)}
+`);
+  }
+};
+
+// ../../flow/src/persistence/run-state-store.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join5 } from "node:path";
+var JsonRunStateStore = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  statePath(run) {
+    return join5(runDir(this.cwd, run), "run-state.json");
+  }
+  // Create `.agentry/work/<run>/` (asserts the run segment via runDir). Idempotent.
+  ensureRun(run) {
+    mkdirSync5(runDir(this.cwd, run), { recursive: true });
+  }
+  readRunState(run) {
+    const path = this.statePath(run);
+    if (!existsSync4(path)) return void 0;
+    try {
+      const raw = JSON.parse(readFileSync5(path, "utf8"));
+      return typeof raw === "object" && raw !== null ? raw : void 0;
+    } catch {
+      return void 0;
+    }
+  }
+  writeRunState(run, state) {
+    this.ensureRun(run);
+    writeFileSync4(this.statePath(run), `${JSON.stringify(state, null, 2)}
+`);
+  }
+};
+
+// ../../flow/src/persistence/task-file-store.ts
+var import_yaml2 = __toESM(require_dist(), 1);
+import {
+  existsSync as existsSync5,
+  mkdirSync as mkdirSync6,
+  readFileSync as readFileSync6,
+  readdirSync as readdirSync3,
+  unlinkSync as unlinkSync2,
+  writeFileSync as writeFileSync5
+} from "node:fs";
+import { join as join6 } from "node:path";
 
 // ../../flow/src/domain/version.ts
 import { createHash } from "node:crypto";
@@ -15245,114 +15690,62 @@ function computeVersion(body, frontmatterSansVersion) {
   return hash2.digest("hex").slice(0, 16);
 }
 
-// ../../flow/src/resolution/run-pointer.ts
-import { mkdirSync as mkdirSync3, readdirSync, readFileSync as readFileSync3, renameSync as renameSync3, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join3 } from "node:path";
-
-// ../../flow/src/domain/ids.ts
-function assertSafeSegment(s) {
-  if (s.length === 0 || s.trim().length === 0) {
-    throw new Error("unsafe path segment: empty");
-  }
-  if (s.includes("..") || s.includes("/") || s.includes("\\")) {
-    throw new Error(`unsafe path segment: "${s}" contains a traversal sequence (.. / \\)`);
-  }
-}
-var STEM_WORDS = 3;
-var STEM_MAX = 20;
-function slug(text) {
-  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS);
-  while (words.length > 1 && words.join("-").length > STEM_MAX) {
-    words.pop();
-  }
-  return words.join("-").slice(0, STEM_MAX).replace(/-+$/g, "");
-}
-function shortId() {
-  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-}
-function mintRun(goal) {
-  const stem = slug(goal) || "run";
-  const run = `${stem}-${shortId()}`;
-  assertSafeSegment(run);
-  return run;
-}
-
-// ../../flow/src/resolution/run-pointer.ts
-function workRoot(cwd) {
-  return join3(cwd, ".agentry", "work");
-}
-function runDir(cwd, run) {
-  assertSafeSegment(run);
-  return join3(workRoot(cwd), run);
-}
-function pointerPath(cwd, session_id) {
-  assertSafeSegment(session_id);
-  return join3(cwd, ".agentry", "run", "sessions", `${session_id}.json`);
-}
-function writeSessionPointer(cwd, session_id, run) {
-  assertSafeSegment(run);
-  const target = pointerPath(cwd, session_id);
-  const dir = join3(cwd, ".agentry", "run", "sessions");
-  mkdirSync3(dir, { recursive: true });
-  const tmp = `${target}.${process.pid}.tmp`;
-  const body = JSON.stringify({ workId: run, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-  writeFileSync3(tmp, body);
-  renameSync3(tmp, target);
-}
-
 // ../../flow/src/persistence/task-file-store.ts
-var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var LEADING_FRONTMATTER = /^---\n[\s\S]*?\n---\n?/;
+var FRONTMATTER2 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var LEADING_FRONTMATTER2 = /^---\n[\s\S]*?\n---\n?/;
 function stripLeadingFrontmatter(body) {
-  return body.replace(LEADING_FRONTMATTER, "");
+  return body.replace(LEADING_FRONTMATTER2, "");
 }
 var TaskFileStore = class {
   constructor(cwd) {
     this.cwd = cwd;
   }
   tasksDir(run) {
-    return join4(runDir(this.cwd, run), "tasks");
+    return join6(runDir(this.cwd, run), "tasks");
   }
   readTask(run, taskNo) {
     const dir = this.tasksDir(run);
-    if (!existsSync(dir)) return void 0;
+    if (!existsSync5(dir)) return void 0;
     const prefix = `${taskNo}-`;
-    const file = readdirSync2(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
+    const file = readdirSync3(dir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
     if (!file) return void 0;
-    return this.parseTaskFile(join4(dir, file), taskNo);
+    return this.parseTaskFile(join6(dir, file), taskNo);
   }
   listTasks(run) {
     const dir = this.tasksDir(run);
-    if (!existsSync(dir)) return [];
+    if (!existsSync5(dir)) return [];
     const tasks = [];
-    for (const file of readdirSync2(dir).sort()) {
+    for (const file of readdirSync3(dir).sort()) {
       if (!file.endsWith(".md")) continue;
       const taskNo = file.slice(0, file.indexOf("-"));
-      const task = this.parseTaskFile(join4(dir, file), taskNo);
+      const task = this.parseTaskFile(join6(dir, file), taskNo);
       if (task) tasks.push(task);
     }
     return tasks;
   }
   writeTask(run, task) {
     const dir = this.tasksDir(run);
-    mkdirSync4(dir, { recursive: true });
+    mkdirSync6(dir, { recursive: true });
     const prefix = `${task.taskNo}-`;
-    for (const f of readdirSync2(dir)) {
-      if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync(join4(dir, f));
+    for (const f of readdirSync3(dir)) {
+      if (f.startsWith(prefix) && f.endsWith(".md")) unlinkSync2(join6(dir, f));
     }
     const file = `${task.taskNo}-${this.slugOf(task)}.md`;
-    writeFileSync4(join4(dir, file), this.render(task.frontmatter, stripLeadingFrontmatter(task.body)));
+    writeFileSync5(
+      join6(dir, file),
+      this.render(task.frontmatter, stripLeadingFrontmatter(task.body))
+    );
   }
   readArtifact(run, kind) {
-    const file = join4(runDir(this.cwd, run), `${kind}.md`);
-    if (!existsSync(file)) return void 0;
-    const m = FRONTMATTER.exec(readFileSync4(file, "utf8"));
-    return m ? (m[2] ?? "").trim() : readFileSync4(file, "utf8");
+    const file = join6(runDir(this.cwd, run), `${kind}.md`);
+    if (!existsSync5(file)) return void 0;
+    const m = FRONTMATTER2.exec(readFileSync6(file, "utf8"));
+    return m ? (m[2] ?? "").trim() : readFileSync6(file, "utf8");
   }
   writeArtifact(run, kind, body) {
     const dir = runDir(this.cwd, run);
-    mkdirSync4(dir, { recursive: true });
-    writeFileSync4(join4(dir, `${kind}.md`), this.render({ kind }, body));
+    mkdirSync6(dir, { recursive: true });
+    writeFileSync5(join6(dir, `${kind}.md`), this.render({ kind }, body));
   }
   // Render frontmatter + body, stamping a tool-computed `version` (AC4/AC5). Any caller-supplied
   // `version` is dropped first, then recomputed over (body, frontmatter-sans-version) — so the
@@ -15362,7 +15755,7 @@ var TaskFileStore = class {
     const version = computeVersion(body, front);
     const stamped = { ...front, version };
     return `---
-${(0, import_yaml.stringify)(stamped)}---
+${(0, import_yaml2.stringify)(stamped)}---
 
 ${body}
 `;
@@ -15373,139 +15766,40 @@ ${body}
     return slug3 || "task";
   }
   parseTaskFile(path, taskNo) {
-    const m = FRONTMATTER.exec(readFileSync4(path, "utf8"));
+    const m = FRONTMATTER2.exec(readFileSync6(path, "utf8"));
     if (!m) return void 0;
-    const frontmatter = (0, import_yaml.parse)(m[1] ?? "") ?? {};
+    const frontmatter = (0, import_yaml2.parse)(m[1] ?? "") ?? {};
     return { taskNo, frontmatter, body: (m[2] ?? "").trim() };
   }
 };
 
-// src/persistence/fs-work-repository.ts
-var FRONTMATTER2 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var FsWorkRepository = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-    this.tasks = new TaskFileStore(cwd);
-  }
-  // Reuse FLOW's task store for tasks/ — its `listTasks` is the canonical parser for that directory.
-  tasks;
-  // The run ids present under `.agentry/work/` — every immediate subdirectory. Absent root ⇒ no runs
-  // (a fresh project that has never run); a non-directory entry (a stray file) is skipped.
-  listRuns() {
-    const root = workRoot(this.cwd);
-    if (!existsSync2(root)) return [];
-    return readdirSync3(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
-  }
-  // Parse one run dir into `RunFiles`, or undefined when the run folder is absent. `runDir` asserts
-  // `run` is a safe single segment (FLOW's traversal guard) before any fs touch.
-  readRun(run) {
-    const dir = runDir(this.cwd, run);
-    if (!existsSync2(dir)) return void 0;
-    return {
-      run,
-      routing: this.readRouting(dir),
-      spec: this.readArtifactFile(join5(dir, "spec.md")),
-      plan: this.readArtifactFile(join5(dir, "plan.md")),
-      adrs: this.readAdrs(join5(dir, "adr")),
-      tasks: this.readTasks(run)
-    };
-  }
-  // The routing decision that opened the run — the FIRST `routing-decision` line in `events.jsonl`
-  // (the graph root, VISION §4). Read via FLOW's `parseLogLine` (the closed vocabulary), so a malformed
-  // or absent line yields null rather than throwing.
-  readRouting(dir) {
-    const log = join5(dir, "events.jsonl");
-    if (!existsSync2(log)) return null;
-    for (const line of readFileSync5(log, "utf8").split("\n")) {
-      const parsed = parseLogLine(line);
-      if (parsed.kind === "flow" && parsed.event.type === "routing-decision") {
-        return { shape: parsed.event.shape, kind: parsed.event.kind };
-      }
-    }
-    return null;
-  }
-  // A run-root artifact (spec.md / plan.md) as frontmatter+body, or null when absent. Reuses FLOW's
-  // `FRONTMATTER` regex: a file with no frontmatter fence is all body (empty frontmatter), never a throw.
-  readArtifactFile(path) {
-    if (!existsSync2(path)) return null;
-    return this.parseArtifact(readFileSync5(path, "utf8"));
-  }
-  // The adr/*.md records, id-keyed via their own frontmatter `id` downstream (buildGraph). Sorted by
-  // filename (the `NNN-*.md` prefix) so adr order is stable. Absent dir ⇒ no adrs.
-  readAdrs(adrDir) {
-    if (!existsSync2(adrDir)) return [];
-    const out = [];
-    for (const file of readdirSync3(adrDir).sort()) {
-      if (!file.endsWith(".md")) continue;
-      out.push(this.parseArtifact(readFileSync5(join5(adrDir, file), "utf8")));
-    }
-    return out;
-  }
-  // The tasks/ records via FLOW's `listTasks` (its parser, its `FlowTask` shape), then the leading
-  // task-meta block lifted out of each body and merged under the lifecycle frontmatter so `buildGraph`
-  // sees `deps`/`satisfies` where it reads them (see the file header for why).
-  readTasks(run) {
-    return this.tasks.listTasks(run).map((task) => this.mergeTaskMeta(task));
-  }
-  // Lift the planner's leading `---…---` meta-block off the task body and merge its keys UNDER the
-  // FLOW lifecycle frontmatter (lifecycle wins a clash — `status` is authored in both and FLOW's is
-  // truth). No leading block ⇒ the task is returned unchanged.
-  mergeTaskMeta(task) {
-    const meta = this.leadingFrontmatter(task.body);
-    if (meta === null) return task;
-    return {
-      taskNo: task.taskNo,
-      frontmatter: { ...meta.frontmatter, ...task.frontmatter },
-      body: meta.body
-    };
-  }
-  // Split `text` into the first frontmatter block (parsed YAML) + the remaining body, via FLOW's
-  // regex. No fence ⇒ frontmatter is `{}` and the whole text is the body.
-  parseArtifact(text) {
-    const parsed = this.leadingFrontmatter(text);
-    if (parsed === null) return { frontmatter: {}, body: text.trim() };
-    return parsed;
-  }
-  // The shared split: apply FLOW's `FRONTMATTER` regex once and parse the YAML half. Returns null when
-  // the text does not open with a `---` fence (so callers can distinguish "no block" from "empty block").
-  leadingFrontmatter(text) {
-    const m = FRONTMATTER2.exec(text);
-    if (!m) return null;
-    const frontmatter = (0, import_yaml2.parse)(m[1] ?? "") ?? {};
-    return { frontmatter, body: (m[2] ?? "").trim() };
-  }
-  /**
-   * The newest mtime in the run's tree — spec/plan, every task and ADR, the event log and the review
-   * sidecars. Walked rather than cached: a board read is a handful of `stat` calls over files the OS has
-   * in cache anyway, and a cache here would be one more thing that can disagree with disk.
-   */
-  lastModified(run) {
-    const dir = runDir(this.cwd, run);
-    if (!existsSync2(dir)) return void 0;
-    let newest = 0;
-    const walk = (path, depth) => {
-      let entries;
-      try {
-        entries = readdirSync3(path, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        const child = join5(path, entry.name);
-        if (entry.isDirectory()) {
-          if (depth > 0) walk(child, depth - 1);
-          continue;
-        }
-        try {
-          newest = Math.max(newest, statSync(child).mtimeMs);
-        } catch {
-        }
-      }
-    };
-    walk(dir, 1);
-    return newest === 0 ? void 0 : new Date(newest).toISOString();
+// src/persistence/flow-services.ts
+function createFlowServices(root) {
+  return {
+    cwd: root,
+    tasks: new TaskFileStore(root),
+    events: new JsonlEventLog(root),
+    reviews: new JsonReviewStore(root),
+    runs: new JsonRunStateStore(root),
+    backlog: new FsBacklogStore(root)
+  };
+}
+
+// src/persistence/backlog-adapter.ts
+var BacklogAdapter = class {
+  service;
+  constructor(root, clock) {
+    const services = createFlowServices(root);
+    this.service = new BacklogService(
+      services.backlog,
+      new RunService(services),
+      () => clock.now()
+    );
   }
 };
+
+// src/persistence/chokidar-watcher.ts
+import { sep } from "node:path";
 
 // ../../../node_modules/.pnpm/chokidar@5.0.0/node_modules/chokidar/index.js
 import { EventEmitter } from "node:events";
@@ -17239,7 +17533,6 @@ function watch(paths, options = {}) {
 }
 
 // src/persistence/chokidar-watcher.ts
-import { sep } from "node:path";
 var DEFAULT_DEBOUNCE_MS = 100;
 var ChokidarWatcher = class {
   fsWatcher;
@@ -17296,12 +17589,403 @@ var ChokidarWatcher = class {
   }
 };
 
+// src/persistence/event-source.ts
+import { existsSync as existsSync6, readFileSync as readFileSync7 } from "node:fs";
+import { join as join9 } from "node:path";
+var FsEventSource = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  // `events.jsonl` split into lines, or `[]` when absent. The application indexes the lines (the feed key)
+  // and runs FLOW's `parseLogLine` over each — this adapter does no line interpretation.
+  eventLines(run) {
+    const log = join9(runDir(this.cwd, run), "events.jsonl");
+    if (!existsSync6(log)) return [];
+    return readFileSync7(log, "utf8").split("\n");
+  }
+  // `run-state.json` parsed to loose data, or `undefined` when absent/unparseable. A corrupt file reads as
+  // `undefined` (the application surfaces it as an empty roster) rather than throwing.
+  runState(run) {
+    const path = join9(runDir(this.cwd, run), "run-state.json");
+    if (!existsSync6(path)) return void 0;
+    try {
+      return JSON.parse(readFileSync7(path, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+};
+
+// src/persistence/flow-writer.ts
+import { existsSync as existsSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync9, readdirSync as readdirSync5, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join11 } from "node:path";
+var import_yaml3 = __toESM(require_dist(), 1);
+
+// src/persistence/review-sidecar-source.ts
+import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync as readdirSync4 } from "node:fs";
+import { join as join10 } from "node:path";
+var SIDECAR_SUFFIX = ".annotations.json";
+var FsReviewSidecarSource = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  // The gate stems present under one run's `.review/` (sorted, stable), or `[]` when the dir is absent.
+  // The stem is the filename minus the `.annotations.json` suffix — the gate key the inbox folds over.
+  listGates(run) {
+    const dir = join10(runDir(this.cwd, run), ".review");
+    if (!existsSync7(dir)) return [];
+    return readdirSync4(dir).filter((file) => file.endsWith(SIDECAR_SUFFIX)).map((file) => file.slice(0, -SIDECAR_SUFFIX.length)).sort();
+  }
+  // One gate's validated `ReviewComment[]`, or `[]` when the sidecar is absent/corrupt. The single
+  // parse-tolerant reader (see header) — every sidecar read in the package routes through here.
+  commentsFor(run, gate) {
+    const file = join10(runDir(this.cwd, run), ".review", `${gate}${SIDECAR_SUFFIX}`);
+    return readSidecar(file);
+  }
+};
+function readSidecar(file) {
+  if (!existsSync7(file)) return [];
+  try {
+    const raw = JSON.parse(readFileSync8(file, "utf8"));
+    if (!Array.isArray(raw)) return [];
+    return raw.map((c) => ReviewComment.parse(c));
+  } catch {
+    return [];
+  }
+}
+
+// src/persistence/flow-writer.ts
+var FRONTMATTER3 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var FlowWriter = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+  }
+  readArtifact(run, target) {
+    const path = this.artifactPath(run, target);
+    if (path === void 0 || !existsSync8(path)) return void 0;
+    return this.parse(readFileSync9(path, "utf8"));
+  }
+  writeArtifact(run, target, frontmatter, body) {
+    const path = this.resolveWritePath(run, target);
+    mkdirSync7(join11(path, ".."), { recursive: true });
+    const { rendered, version } = this.render(frontmatter, body);
+    writeFileSync6(path, rendered);
+    return version;
+  }
+  appendComment(run, gate, comment) {
+    assertSafeSegment(gate);
+    const validated = ReviewComment.parse(comment);
+    const dir = join11(runDir(this.cwd, run), ".review");
+    const file = join11(dir, `${gate}.annotations.json`);
+    const existing = readSidecar(file);
+    mkdirSync7(dir, { recursive: true });
+    writeFileSync6(file, `${JSON.stringify([...existing, validated], null, 2)}
+`);
+  }
+  // Flip `resolved:true` on the comment with `commentId` in the gate sidecar, rewriting the file in the
+  // SAME JsonReviewStore layout. Read-modify-write by id: absent id ⇒ false (no write), found ⇒ true.
+  resolveComment(run, gate, commentId) {
+    assertSafeSegment(gate);
+    const file = join11(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
+    const existing = readSidecar(file);
+    let found = false;
+    const next = existing.map((c) => {
+      if (c.id !== commentId) return c;
+      found = true;
+      return { ...c, resolved: true };
+    });
+    if (!found) return false;
+    writeFileSync6(file, `${JSON.stringify(next, null, 2)}
+`);
+    return true;
+  }
+  // ── internals ──────────────────────────────────────────────────────────────────────────────────
+  // Split the file FLOW's way and recompute the version over (body, frontmatter-sans-version) — so
+  // the version returned here is the one FLOW stamped on disk. The body is `.trim()`ed exactly as
+  // FLOW's `readArtifact`/`parseTaskFile` trim it: FLOW's `render` writes `\n\n${body}\n` but stamps
+  // the version over the TRIMMED body, so reading back the raw inter-fence text and hashing it
+  // un-trimmed would not match the stamped version (the `\n\n…\n` padding would perturb the hash).
+  // A file with no fence is all body (empty frontmatter), never a throw (mirrors FsWorkRepository).
+  parse(text) {
+    const m = FRONTMATTER3.exec(text);
+    const front = m ? (0, import_yaml3.parse)(m[1] ?? "") ?? {} : {};
+    const body = (m ? m[2] ?? "" : text).trim();
+    const { version: _dropped, ...sansVersion } = front;
+    return {
+      frontmatter: sansVersion,
+      body,
+      version: computeVersion(body, sansVersion)
+    };
+  }
+  // FLOW's exact render (task-file-store.ts:77): drop any caller `version`, re-stamp over (body,
+  // frontmatter-sans-version), emit `---\n${yaml}---\n\n${body}\n`. Returns the rendered bytes and
+  // the stamped version so the caller (and the WriteService) can echo the new version to the client.
+  render(frontmatter, body) {
+    const { version: _dropped, ...front } = frontmatter;
+    const version = computeVersion(body, front);
+    const stamped = { ...front, version };
+    return { rendered: `---
+${(0, import_yaml3.stringify)(stamped)}---
+
+${body}
+`, version };
+  }
+  // The on-disk path of an artifact target for READ — a run-root `<kind>.md`, or the existing
+  // `tasks/NNN-*.md` file (found by its number prefix, the way FLOW's `readTask` finds it). Returns
+  // undefined for a task whose file does not yet exist (an absent artifact reads as undefined).
+  artifactPath(run, target) {
+    const dir = runDir(this.cwd, run);
+    if ("kind" in target) return join11(dir, `${target.kind}.md`);
+    assertSafeSegment(target.taskNo);
+    const tasksDir = join11(dir, "tasks");
+    if (!existsSync8(tasksDir)) return void 0;
+    const prefix = `${target.taskNo}-`;
+    const file = readdirSync5(tasksDir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
+    return file ? join11(tasksDir, file) : void 0;
+  }
+  // The path to WRITE a target. For a task we never write to a fresh name (the WriteService only
+  // writes after a successful read at the same target, so the file exists) — but if FLOW renamed the
+  // slug we still target the existing file by its number prefix; absent ⇒ a hard error (writing a
+  // task that was never read is a misuse the application gates against).
+  resolveWritePath(run, target) {
+    const path = this.artifactPath(run, target);
+    if (path !== void 0) return path;
+    if ("taskNo" in target) {
+      throw new Error(`flow-writer: no task file for ${target.taskNo} in run ${run} to write`);
+    }
+    return join11(runDir(this.cwd, run), `${target.kind}.md`);
+  }
+};
+
+// src/persistence/fs-work-repository.ts
+import { existsSync as existsSync9, readFileSync as readFileSync10, readdirSync as readdirSync6, statSync } from "node:fs";
+import { join as join12 } from "node:path";
+var import_yaml4 = __toESM(require_dist(), 1);
+var FRONTMATTER4 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var FsWorkRepository = class {
+  constructor(cwd) {
+    this.cwd = cwd;
+    this.tasks = new TaskFileStore(cwd);
+  }
+  // Reuse FLOW's task store for tasks/ — its `listTasks` is the canonical parser for that directory.
+  tasks;
+  // The run ids present under `.agentry/work/` — every immediate subdirectory. Absent root ⇒ no runs
+  // (a fresh project that has never run); a non-directory entry (a stray file) is skipped.
+  listRuns() {
+    const root = workRoot(this.cwd);
+    if (!existsSync9(root)) return [];
+    return readdirSync6(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  }
+  // Parse one run dir into `RunFiles`, or undefined when the run folder is absent. `runDir` asserts
+  // `run` is a safe single segment (FLOW's traversal guard) before any fs touch.
+  readRun(run) {
+    const dir = runDir(this.cwd, run);
+    if (!existsSync9(dir)) return void 0;
+    return {
+      run,
+      routing: this.readRouting(dir),
+      spec: this.readArtifactFile(join12(dir, "spec.md")),
+      plan: this.readArtifactFile(join12(dir, "plan.md")),
+      adrs: this.readAdrs(join12(dir, "adr")),
+      tasks: this.readTasks(run)
+    };
+  }
+  // The routing decision that opened the run — the FIRST `routing-decision` line in `events.jsonl`
+  // (the graph root, VISION §4). Read via FLOW's `parseLogLine` (the closed vocabulary), so a malformed
+  // or absent line yields null rather than throwing.
+  readRouting(dir) {
+    const log = join12(dir, "events.jsonl");
+    if (!existsSync9(log)) return null;
+    for (const line of readFileSync10(log, "utf8").split("\n")) {
+      const parsed = parseLogLine(line);
+      if (parsed.kind === "flow" && parsed.event.type === "routing-decision") {
+        return { shape: parsed.event.shape, kind: parsed.event.kind };
+      }
+    }
+    return null;
+  }
+  // A run-root artifact (spec.md / plan.md) as frontmatter+body, or null when absent. Reuses FLOW's
+  // `FRONTMATTER` regex: a file with no frontmatter fence is all body (empty frontmatter), never a throw.
+  readArtifactFile(path) {
+    if (!existsSync9(path)) return null;
+    return this.parseArtifact(readFileSync10(path, "utf8"));
+  }
+  // The adr/*.md records, id-keyed via their own frontmatter `id` downstream (buildGraph). Sorted by
+  // filename (the `NNN-*.md` prefix) so adr order is stable. Absent dir ⇒ no adrs.
+  readAdrs(adrDir) {
+    if (!existsSync9(adrDir)) return [];
+    const out = [];
+    for (const file of readdirSync6(adrDir).sort()) {
+      if (!file.endsWith(".md")) continue;
+      out.push(this.parseArtifact(readFileSync10(join12(adrDir, file), "utf8")));
+    }
+    return out;
+  }
+  // The tasks/ records via FLOW's `listTasks` (its parser, its `FlowTask` shape), then the leading
+  // task-meta block lifted out of each body and merged under the lifecycle frontmatter so `buildGraph`
+  // sees `deps`/`satisfies` where it reads them (see the file header for why).
+  readTasks(run) {
+    return this.tasks.listTasks(run).map((task) => this.mergeTaskMeta(task));
+  }
+  // Lift the planner's leading `---…---` meta-block off the task body and merge its keys UNDER the
+  // FLOW lifecycle frontmatter (lifecycle wins a clash — `status` is authored in both and FLOW's is
+  // truth). No leading block ⇒ the task is returned unchanged.
+  mergeTaskMeta(task) {
+    const meta = this.leadingFrontmatter(task.body);
+    if (meta === null) return task;
+    return {
+      taskNo: task.taskNo,
+      frontmatter: { ...meta.frontmatter, ...task.frontmatter },
+      body: meta.body
+    };
+  }
+  // Split `text` into the first frontmatter block (parsed YAML) + the remaining body, via FLOW's
+  // regex. No fence ⇒ frontmatter is `{}` and the whole text is the body.
+  parseArtifact(text) {
+    const parsed = this.leadingFrontmatter(text);
+    if (parsed === null) return { frontmatter: {}, body: text.trim() };
+    return parsed;
+  }
+  // The shared split: apply FLOW's `FRONTMATTER` regex once and parse the YAML half. Returns null when
+  // the text does not open with a `---` fence (so callers can distinguish "no block" from "empty block").
+  leadingFrontmatter(text) {
+    const m = FRONTMATTER4.exec(text);
+    if (!m) return null;
+    const frontmatter = (0, import_yaml4.parse)(m[1] ?? "") ?? {};
+    return { frontmatter, body: (m[2] ?? "").trim() };
+  }
+  /**
+   * The newest mtime in the run's tree — spec/plan, every task and ADR, the event log and the review
+   * sidecars. Walked rather than cached: a board read is a handful of `stat` calls over files the OS has
+   * in cache anyway, and a cache here would be one more thing that can disagree with disk.
+   */
+  lastModified(run) {
+    const dir = runDir(this.cwd, run);
+    if (!existsSync9(dir)) return void 0;
+    let newest = 0;
+    const walk = (path, depth) => {
+      let entries;
+      try {
+        entries = readdirSync6(path, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const child = join12(path, entry.name);
+        if (entry.isDirectory()) {
+          if (depth > 0) walk(child, depth - 1);
+          continue;
+        }
+        try {
+          newest = Math.max(newest, statSync(child).mtimeMs);
+        } catch {
+        }
+      }
+    };
+    walk(dir, 1);
+    return newest === 0 ? void 0 : new Date(newest).toISOString();
+  }
+};
+
+// src/persistence/mem-reader.ts
+var import_yaml5 = __toESM(require_dist(), 1);
+import { existsSync as existsSync10, readFileSync as readFileSync11, readdirSync as readdirSync7 } from "node:fs";
+import { homedir } from "node:os";
+import { join as join13 } from "node:path";
+var FRONTMATTER5 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+var BODY_KEY = { facts: "text", episodes: "task" };
+var MemReader = class {
+  roots;
+  // `cwd` (the project root) + `home` (the global root base, injectable for testing) resolve the two mem
+  // roots. The project root is included only when the project mem dir exists — a project that has never
+  // written memory contributes nothing rather than erroring.
+  constructor(cwd, home = homedir()) {
+    this.roots = [
+      { origin: "global", dir: join13(home, ".agentry", "memory") },
+      { origin: "project", dir: join13(cwd, ".agentry", "memory") }
+    ];
+  }
+  // Every memory record across both roots (facts then episodes), each tagged with its kind + origin. A
+  // corrupt/unreadable file is skipped (never fatal). The READ-ONLY browse the panel lists from.
+  list() {
+    const records = [];
+    for (const { origin, dir } of this.roots) {
+      for (const kind of ["facts", "episodes"]) {
+        records.push(...this.readDir(origin, kind, join13(dir, kind)));
+      }
+    }
+    return records;
+  }
+  // One record by id, or undefined when absent. The id is the store's bare ulid (the `<slug>-<ulid>` file
+  // stem's ulid half); we match on the parsed record's own `id` field, so a renamed file still resolves.
+  read(id) {
+    return this.list().find((r) => r.id === id);
+  }
+  // A simple read-only search over both roots: a case-insensitive substring match against the record's
+  // body prose and its frontmatter values (the fields a human scans for). An empty query returns all
+  // records (the browse default). Search NEVER writes — it filters the in-memory `list()`.
+  search(query) {
+    const needle = query.trim().toLowerCase();
+    if (needle.length === 0) return this.list();
+    return this.list().filter((r) => recordText(r).toLowerCase().includes(needle));
+  }
+  // Read one kind dir under one root into records. Absent dir ⇒ no records. Each `.md` file is split with
+  // the store's frontmatter regex; a file with no fence, or one whose YAML fails to parse, is skipped (the
+  // store's "corrupt files are skipped, never fatal" tolerance).
+  readDir(origin, kind, dir) {
+    if (!existsSync10(dir)) return [];
+    const records = [];
+    for (const file of readdirSync7(dir).sort()) {
+      if (!file.endsWith(".md")) continue;
+      const record = this.parseRecord(origin, kind, join13(dir, file));
+      if (record !== null) records.push(record);
+    }
+    return records;
+  }
+  // Parse one record file into a `MemReadRecord`, or null when it can't be read as a fenced record. The
+  // frontmatter fields are kept loose (the store owns the field contract); the body prose is re-attached
+  // under the kind's body key. The `id` is the record's own frontmatter `id` (the store always writes it);
+  // a record with no `id` falls back to the file stem so it still has a stable key.
+  parseRecord(origin, kind, file) {
+    let text;
+    try {
+      text = readFileSync11(file, "utf8");
+    } catch {
+      return null;
+    }
+    const m = FRONTMATTER5.exec(text);
+    if (!m) return null;
+    let front;
+    try {
+      front = (0, import_yaml5.parse)(m[1] ?? "") ?? {};
+    } catch {
+      return null;
+    }
+    const body = (m[2] ?? "").trim();
+    const fields = { ...front, [BODY_KEY[kind]]: body };
+    const id = typeof front.id === "string" && front.id.length > 0 ? front.id : stemOf(file);
+    return { id, fields, kind, origin };
+  }
+};
+function recordText(record) {
+  const parts = [];
+  for (const value of Object.values(record.fields)) {
+    if (typeof value === "string") parts.push(value);
+    else if (typeof value === "number") parts.push(String(value));
+  }
+  return parts.join("\n");
+}
+function stemOf(file) {
+  const name = file.slice(file.lastIndexOf("/") + 1);
+  return name.endsWith(".md") ? name.slice(0, -".md".length) : name;
+}
+
 // src/persistence/permission-watcher.ts
-import { existsSync as existsSync3 } from "node:fs";
-import { basename as basename3, join as join9 } from "node:path";
+import { existsSync as existsSync11 } from "node:fs";
+import { basename as basename3, join as join15 } from "node:path";
 
 // ../../flow/src/channel/permission-relay.ts
-import { join as join8 } from "node:path";
+import { join as join14 } from "node:path";
 
 // ../../flow/src/channel/permission-event.ts
 var PermissionRequestSchema = external_exports.object({
@@ -17325,15 +18009,15 @@ var PermissionVerdictFileSchema = external_exports.object({
 
 // ../../flow/src/channel/permission-relay.ts
 function permissionsDir(cwd) {
-  return join8(cwd, ".agentry", "run", "permissions");
+  return join14(cwd, ".agentry", "run", "permissions");
 }
 
 // src/persistence/permission-reader.ts
-import { readFileSync as readFileSync6 } from "node:fs";
+import { readFileSync as readFileSync12 } from "node:fs";
 function readRequestFile(path) {
   let raw;
   try {
-    raw = readFileSync6(path, "utf8");
+    raw = readFileSync12(path, "utf8");
   } catch {
     return void 0;
   }
@@ -17405,7 +18089,7 @@ var PermissionWatcher = class {
   // is gone — and emit `removed` for it, so a stuck banner card (one whose own unlink was also missed)
   // clears too. Guarantees the snapshot reflects disk truth, never a phantom.
   current() {
-    const gone = prunePhantoms(this.pending, (id) => existsSync3(join9(this.dir, `${id}.json`)));
+    const gone = prunePhantoms(this.pending, (id) => existsSync11(join15(this.dir, `${id}.json`)));
     for (const id of gone) this.emit({ kind: "removed", requestId: id });
     return [...this.pending.values()];
   }
@@ -17438,210 +18122,10 @@ var PermissionWatcher = class {
   }
 };
 
-// src/persistence/flow-writer.ts
-var import_yaml3 = __toESM(require_dist(), 1);
-import { existsSync as existsSync5, mkdirSync as mkdirSync5, readFileSync as readFileSync8, readdirSync as readdirSync5, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join11 } from "node:path";
-
-// ../../flow/src/domain/review.ts
-var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
-var ReviewAnchor = external_exports.object({
-  originalText: external_exports.string(),
-  // the exact snippet the comment was made against
-  headingAnchor: external_exports.string(),
-  // the nearest section heading
-  startLine: external_exports.number()
-  // the line the comment was made at
-});
-var ReviewOrigin = external_exports.enum(["human", "agent"]);
-var ReviewComment = external_exports.object({
-  id: external_exports.string(),
-  anchor: ReviewAnchor,
-  decision: ReviewDecision,
-  body: external_exports.string(),
-  resolved: external_exports.boolean(),
-  // distinguishes open from resolved comments (AC10: review_resolve marks one)
-  // ── Phase 2 reply lane (ADR-002) — both optional + additive so old sidecars still parse ──────────
-  origin: ReviewOrigin.optional(),
-  // absent ⇒ human; "agent" marks a channel_reply (Phase 2b's rail)
-  replyTo: external_exports.string().optional()
-  // the human comment id this reply answers (threading; agent only)
-});
-function isHumanComment(comment) {
-  return comment.origin !== "agent";
-}
-var CONDUCTOR_GATE = "_conductor";
-function isConductorThread(gate) {
-  return gate === CONDUCTOR_GATE;
-}
-
-// src/persistence/review-sidecar-source.ts
-import { existsSync as existsSync4, readFileSync as readFileSync7, readdirSync as readdirSync4 } from "node:fs";
-import { join as join10 } from "node:path";
-var SIDECAR_SUFFIX = ".annotations.json";
-var FsReviewSidecarSource = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  // The gate stems present under one run's `.review/` (sorted, stable), or `[]` when the dir is absent.
-  // The stem is the filename minus the `.annotations.json` suffix — the gate key the inbox folds over.
-  listGates(run) {
-    const dir = join10(runDir(this.cwd, run), ".review");
-    if (!existsSync4(dir)) return [];
-    return readdirSync4(dir).filter((file) => file.endsWith(SIDECAR_SUFFIX)).map((file) => file.slice(0, -SIDECAR_SUFFIX.length)).sort();
-  }
-  // One gate's validated `ReviewComment[]`, or `[]` when the sidecar is absent/corrupt. The single
-  // parse-tolerant reader (see header) — every sidecar read in the package routes through here.
-  commentsFor(run, gate) {
-    const file = join10(runDir(this.cwd, run), ".review", `${gate}${SIDECAR_SUFFIX}`);
-    return readSidecar(file);
-  }
-};
-function readSidecar(file) {
-  if (!existsSync4(file)) return [];
-  try {
-    const raw = JSON.parse(readFileSync7(file, "utf8"));
-    if (!Array.isArray(raw)) return [];
-    return raw.map((c) => ReviewComment.parse(c));
-  } catch {
-    return [];
-  }
-}
-
-// src/persistence/flow-writer.ts
-var FRONTMATTER3 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var FlowWriter = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  readArtifact(run, target) {
-    const path = this.artifactPath(run, target);
-    if (path === void 0 || !existsSync5(path)) return void 0;
-    return this.parse(readFileSync8(path, "utf8"));
-  }
-  writeArtifact(run, target, frontmatter, body) {
-    const path = this.resolveWritePath(run, target);
-    mkdirSync5(join11(path, ".."), { recursive: true });
-    const { rendered, version } = this.render(frontmatter, body);
-    writeFileSync5(path, rendered);
-    return version;
-  }
-  appendComment(run, gate, comment) {
-    assertSafeSegment(gate);
-    const validated = ReviewComment.parse(comment);
-    const dir = join11(runDir(this.cwd, run), ".review");
-    const file = join11(dir, `${gate}.annotations.json`);
-    const existing = readSidecar(file);
-    mkdirSync5(dir, { recursive: true });
-    writeFileSync5(file, `${JSON.stringify([...existing, validated], null, 2)}
-`);
-  }
-  // Flip `resolved:true` on the comment with `commentId` in the gate sidecar, rewriting the file in the
-  // SAME JsonReviewStore layout. Read-modify-write by id: absent id ⇒ false (no write), found ⇒ true.
-  resolveComment(run, gate, commentId) {
-    assertSafeSegment(gate);
-    const file = join11(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
-    const existing = readSidecar(file);
-    let found = false;
-    const next = existing.map((c) => {
-      if (c.id !== commentId) return c;
-      found = true;
-      return { ...c, resolved: true };
-    });
-    if (!found) return false;
-    writeFileSync5(file, `${JSON.stringify(next, null, 2)}
-`);
-    return true;
-  }
-  // ── internals ──────────────────────────────────────────────────────────────────────────────────
-  // Split the file FLOW's way and recompute the version over (body, frontmatter-sans-version) — so
-  // the version returned here is the one FLOW stamped on disk. The body is `.trim()`ed exactly as
-  // FLOW's `readArtifact`/`parseTaskFile` trim it: FLOW's `render` writes `\n\n${body}\n` but stamps
-  // the version over the TRIMMED body, so reading back the raw inter-fence text and hashing it
-  // un-trimmed would not match the stamped version (the `\n\n…\n` padding would perturb the hash).
-  // A file with no fence is all body (empty frontmatter), never a throw (mirrors FsWorkRepository).
-  parse(text) {
-    const m = FRONTMATTER3.exec(text);
-    const front = m ? (0, import_yaml3.parse)(m[1] ?? "") ?? {} : {};
-    const body = (m ? m[2] ?? "" : text).trim();
-    const { version: _dropped, ...sansVersion } = front;
-    return {
-      frontmatter: sansVersion,
-      body,
-      version: computeVersion(body, sansVersion)
-    };
-  }
-  // FLOW's exact render (task-file-store.ts:77): drop any caller `version`, re-stamp over (body,
-  // frontmatter-sans-version), emit `---\n${yaml}---\n\n${body}\n`. Returns the rendered bytes and
-  // the stamped version so the caller (and the WriteService) can echo the new version to the client.
-  render(frontmatter, body) {
-    const { version: _dropped, ...front } = frontmatter;
-    const version = computeVersion(body, front);
-    const stamped = { ...front, version };
-    return { rendered: `---
-${(0, import_yaml3.stringify)(stamped)}---
-
-${body}
-`, version };
-  }
-  // The on-disk path of an artifact target for READ — a run-root `<kind>.md`, or the existing
-  // `tasks/NNN-*.md` file (found by its number prefix, the way FLOW's `readTask` finds it). Returns
-  // undefined for a task whose file does not yet exist (an absent artifact reads as undefined).
-  artifactPath(run, target) {
-    const dir = runDir(this.cwd, run);
-    if ("kind" in target) return join11(dir, `${target.kind}.md`);
-    assertSafeSegment(target.taskNo);
-    const tasksDir = join11(dir, "tasks");
-    if (!existsSync5(tasksDir)) return void 0;
-    const prefix = `${target.taskNo}-`;
-    const file = readdirSync5(tasksDir).find((f) => f.startsWith(prefix) && f.endsWith(".md"));
-    return file ? join11(tasksDir, file) : void 0;
-  }
-  // The path to WRITE a target. For a task we never write to a fresh name (the WriteService only
-  // writes after a successful read at the same target, so the file exists) — but if FLOW renamed the
-  // slug we still target the existing file by its number prefix; absent ⇒ a hard error (writing a
-  // task that was never read is a misuse the application gates against).
-  resolveWritePath(run, target) {
-    const path = this.artifactPath(run, target);
-    if (path !== void 0) return path;
-    if ("taskNo" in target) {
-      throw new Error(`flow-writer: no task file for ${target.taskNo} in run ${run} to write`);
-    }
-    return join11(runDir(this.cwd, run), `${target.kind}.md`);
-  }
-};
-
-// src/persistence/event-source.ts
-import { existsSync as existsSync6, readFileSync as readFileSync9 } from "node:fs";
-import { join as join12 } from "node:path";
-var FsEventSource = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  // `events.jsonl` split into lines, or `[]` when absent. The application indexes the lines (the feed key)
-  // and runs FLOW's `parseLogLine` over each — this adapter does no line interpretation.
-  eventLines(run) {
-    const log = join12(runDir(this.cwd, run), "events.jsonl");
-    if (!existsSync6(log)) return [];
-    return readFileSync9(log, "utf8").split("\n");
-  }
-  // `run-state.json` parsed to loose data, or `undefined` when absent/unparseable. A corrupt file reads as
-  // `undefined` (the application surfaces it as an empty roster) rather than throwing.
-  runState(run) {
-    const path = join12(runDir(this.cwd, run), "run-state.json");
-    if (!existsSync6(path)) return void 0;
-    try {
-      return JSON.parse(readFileSync9(path, "utf8"));
-    } catch {
-      return void 0;
-    }
-  }
-};
-
 // src/persistence/transcript-reader.ts
-import { existsSync as existsSync7, readFileSync as readFileSync10, readdirSync as readdirSync6 } from "node:fs";
+import { existsSync as existsSync12, readFileSync as readFileSync13, readdirSync as readdirSync8 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join13 } from "node:path";
+import { join as join16 } from "node:path";
 var TranscriptReader = class {
   // `cwd` (the project root) locates the FLOW session pointers; `home` is the transcript root base
   // (injectable so the reader is testable against a fixture tree without touching the real home dir).
@@ -17657,11 +18141,11 @@ var TranscriptReader = class {
     const sessions = this.sessionsForRun(run);
     if (sessions.length === 0) return [];
     const dir = this.transcriptDir();
-    if (dir === null || !existsSync7(dir)) return [];
+    if (dir === null || !existsSync12(dir)) return [];
     const samples = [];
     for (const session of sessions) {
-      const file = join13(dir, `${session}.jsonl`);
-      if (!existsSync7(file)) continue;
+      const file = join16(dir, `${session}.jsonl`);
+      if (!existsSync12(file)) continue;
       samples.push(...this.readTranscript(file));
     }
     return samples.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -17670,13 +18154,13 @@ var TranscriptReader = class {
   // `workId` is this run names a session whose transcript belongs to the run. A missing pointer dir, an
   // unreadable pointer, or one with no matching `workId` simply contributes no session.
   sessionsForRun(run) {
-    const dir = join13(this.cwd, ".agentry", "run", "sessions");
-    if (!existsSync7(dir)) return [];
+    const dir = join16(this.cwd, ".agentry", "run", "sessions");
+    if (!existsSync12(dir)) return [];
     const sessions = [];
-    for (const file of readdirSync6(dir)) {
+    for (const file of readdirSync8(dir)) {
       if (!file.endsWith(".json")) continue;
       try {
-        const ptr = JSON.parse(readFileSync10(join13(dir, file), "utf8"));
+        const ptr = JSON.parse(readFileSync13(join16(dir, file), "utf8"));
         if (ptr && typeof ptr === "object" && ptr.workId === run) {
           sessions.push(file.slice(0, -".json".length));
         }
@@ -17691,7 +18175,7 @@ var TranscriptReader = class {
   readTranscript(file) {
     let text;
     try {
-      text = readFileSync10(file, "utf8");
+      text = readFileSync13(file, "utf8");
     } catch {
       return [];
     }
@@ -17706,9 +18190,9 @@ var TranscriptReader = class {
   // absolute cwd with every non-alphanumeric char replaced by `-` (Claude Code's layout). Returns null
   // only if the base projects dir is itself absent (Claude Code never ran) — a degrade signal.
   transcriptDir() {
-    const base = join13(this.home, ".claude", "projects");
-    if (!existsSync7(base)) return null;
-    return join13(base, projectSlug(this.cwd));
+    const base = join16(this.home, ".claude", "projects");
+    if (!existsSync12(base)) return null;
+    return join16(base, projectSlug(this.cwd));
   }
 };
 function parseUsageLine(line) {
@@ -17740,524 +18224,371 @@ function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// src/persistence/mem-reader.ts
-var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync8, readFileSync as readFileSync11, readdirSync as readdirSync7 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { join as join14 } from "node:path";
-var FRONTMATTER4 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var BODY_KEY = { facts: "text", episodes: "task" };
-var MemReader = class {
-  roots;
-  // `cwd` (the project root) + `home` (the global root base, injectable for testing) resolve the two mem
-  // roots. The project root is included only when the project mem dir exists — a project that has never
-  // written memory contributes nothing rather than erroring.
-  constructor(cwd, home = homedir3()) {
-    this.roots = [
-      { origin: "global", dir: join14(home, ".agentry", "memory") },
-      { origin: "project", dir: join14(cwd, ".agentry", "memory") }
-    ];
-  }
-  // Every memory record across both roots (facts then episodes), each tagged with its kind + origin. A
-  // corrupt/unreadable file is skipped (never fatal). The READ-ONLY browse the panel lists from.
-  list() {
-    const records = [];
-    for (const { origin, dir } of this.roots) {
-      for (const kind of ["facts", "episodes"]) {
-        records.push(...this.readDir(origin, kind, join14(dir, kind)));
-      }
-    }
-    return records;
-  }
-  // One record by id, or undefined when absent. The id is the store's bare ulid (the `<slug>-<ulid>` file
-  // stem's ulid half); we match on the parsed record's own `id` field, so a renamed file still resolves.
-  read(id) {
-    return this.list().find((r) => r.id === id);
-  }
-  // A simple read-only search over both roots: a case-insensitive substring match against the record's
-  // body prose and its frontmatter values (the fields a human scans for). An empty query returns all
-  // records (the browse default). Search NEVER writes — it filters the in-memory `list()`.
-  search(query) {
-    const needle = query.trim().toLowerCase();
-    if (needle.length === 0) return this.list();
-    return this.list().filter((r) => recordText(r).toLowerCase().includes(needle));
-  }
-  // Read one kind dir under one root into records. Absent dir ⇒ no records. Each `.md` file is split with
-  // the store's frontmatter regex; a file with no fence, or one whose YAML fails to parse, is skipped (the
-  // store's "corrupt files are skipped, never fatal" tolerance).
-  readDir(origin, kind, dir) {
-    if (!existsSync8(dir)) return [];
-    const records = [];
-    for (const file of readdirSync7(dir).sort()) {
-      if (!file.endsWith(".md")) continue;
-      const record = this.parseRecord(origin, kind, join14(dir, file));
-      if (record !== null) records.push(record);
-    }
-    return records;
-  }
-  // Parse one record file into a `MemReadRecord`, or null when it can't be read as a fenced record. The
-  // frontmatter fields are kept loose (the store owns the field contract); the body prose is re-attached
-  // under the kind's body key. The `id` is the record's own frontmatter `id` (the store always writes it);
-  // a record with no `id` falls back to the file stem so it still has a stable key.
-  parseRecord(origin, kind, file) {
-    let text;
-    try {
-      text = readFileSync11(file, "utf8");
-    } catch {
-      return null;
-    }
-    const m = FRONTMATTER4.exec(text);
-    if (!m) return null;
-    let front;
-    try {
-      front = (0, import_yaml4.parse)(m[1] ?? "") ?? {};
-    } catch {
-      return null;
-    }
-    const body = (m[2] ?? "").trim();
-    const fields = { ...front, [BODY_KEY[kind]]: body };
-    const id = typeof front.id === "string" && front.id.length > 0 ? front.id : stemOf(file);
-    return { id, fields, kind, origin };
-  }
-};
-function recordText(record) {
-  const parts = [];
-  for (const value of Object.values(record.fields)) {
-    if (typeof value === "string") parts.push(value);
-    else if (typeof value === "number") parts.push(String(value));
-  }
-  return parts.join("\n");
+// src/domain/contract.ts
+var SECTION = /^##\s+Contract\s*$/im;
+var NEXT_SECTION = /^##\s+/m;
+function section(body) {
+  const start = SECTION.exec(body);
+  if (!start) return "";
+  const rest = body.slice(start.index + start[0].length);
+  const end = NEXT_SECTION.exec(rest);
+  return end ? rest.slice(0, end.index) : rest;
 }
-function stemOf(file) {
-  const name = file.slice(file.lastIndexOf("/") + 1);
-  return name.endsWith(".md") ? name.slice(0, -".md".length) : name;
+function listOf(text, key) {
+  const inline = new RegExp(`^${key}:\\s*\\[(.*?)\\]\\s*$`, "im").exec(text);
+  if (inline) {
+    return inline[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  }
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => new RegExp(`^${key}:\\s*$`, "i").test(l.trim()));
+  if (start === -1) return [];
+  const items = [];
+  for (const line of lines.slice(start + 1)) {
+    const item = /^\s+-\s+(.*)$/.exec(line);
+    if (item) {
+      items.push(
+        item[1].trim().replace(/^["']|["']$/g, "").replace(/^`|`$/g, "")
+      );
+      continue;
+    }
+    if (line.trim().length === 0) continue;
+    break;
+  }
+  return items;
+}
+function parseContract(body) {
+  const text = section(body);
+  if (text.length === 0) return { owns: [], deps: [] };
+  return { owns: listOf(text, "owns"), deps: listOf(text, "deps") };
+}
+function sharedFiles(a, b) {
+  const set = new Set(a.map((p) => p.trim()).filter(Boolean));
+  return [...new Set(b.map((p) => p.trim()).filter((p) => p.length > 0 && set.has(p)))];
 }
 
-// ../../flow/src/domain/backlog.ts
-var BacklogStatus = external_exports.enum(["backlog", "ready", "claimed", "done"]);
-var BacklogItem = external_exports.object({
-  id: external_exports.string(),
-  title: external_exports.string(),
-  /** Permissive on purpose, mirroring `Kind` in @agentry/core: accept an unknown kind rather than
-   *  reject it, so adding one later cannot throw on an old record. */
-  kind: external_exports.string().default("feature"),
-  status: BacklogStatus.default("backlog"),
-  createdAt: external_exports.string(),
-  updatedAt: external_exports.string(),
-  /** Runs spawned from this item — usually 0 or 1, but a re-run appends rather than replaces. */
-  runs: external_exports.array(external_exports.string()).default([]),
-  /** The context an agent starts from: markdown, `@task-…` / `@memory:…` references. */
-  body: external_exports.string().default("")
+// src/application/board-reader.ts
+var EMPTY_COLUMNS = () => ({
+  backlog: [],
+  ready: [],
+  running: [],
+  "in-review": [],
+  done: []
 });
-var STEM_WORDS2 = 3;
-var STEM_MAX2 = 20;
-function slug2(text) {
-  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, STEM_WORDS2);
-  while (words.length > 1 && words.join("-").length > STEM_MAX2) words.pop();
-  return words.join("-").slice(0, STEM_MAX2).replace(/-+$/g, "");
-}
-function shortId2() {
-  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-}
-function mintBacklogId(title) {
-  const id = `b-${slug2(title) || "item"}-${shortId2()}`;
-  assertSafeSegment(id);
-  return id;
-}
-function isReady(item) {
-  return item.status === "ready";
-}
-
-// ../../flow/src/application/backlog-service.ts
-var BacklogService = class {
-  constructor(store, runs, now) {
-    this.store = store;
-    this.runs = runs;
-    this.now = now;
+var BoardReader = class {
+  constructor(reader, backlog, roster) {
+    this.reader = reader;
+    this.backlog = backlog;
+    this.roster = roster;
   }
-  add(input) {
-    const ts = this.now();
-    const item = BacklogItem.parse({
-      id: mintBacklogId(input.title),
-      title: input.title,
-      kind: input.kind ?? "feature",
-      status: input.ready === true ? "ready" : "backlog",
-      createdAt: ts,
-      updatedAt: ts,
-      runs: [],
-      body: input.body ?? ""
-    });
-    this.store.write(item);
-    return item;
-  }
-  list(status) {
-    const all = this.store.list();
-    return status === void 0 ? all : all.filter((i) => i.status === status);
-  }
-  /** Patch an item. Absent fields are left alone — this is a patch, not a replace, so a caller that
-   *  knows only the new status cannot accidentally blank the body. */
-  update(input) {
-    const current = this.store.read(input.id);
-    if (!current) return void 0;
-    const next = BacklogItem.parse({
-      ...current,
-      ...input.title !== void 0 ? { title: input.title } : {},
-      ...input.body !== void 0 ? { body: input.body } : {},
-      ...input.kind !== void 0 ? { kind: input.kind } : {},
-      ...input.status !== void 0 ? { status: input.status } : {},
-      updatedAt: this.now()
-    });
-    this.store.write(next);
-    return next;
-  }
-  /**
-   * Take an item and mint its run — the intent→work transition, and the ONLY one.
-   *
-   * With no id, claims the oldest READY item (the queue is FIFO: the thing that has waited longest goes
-   * first, which is what a queue means and what `/agentry:go` with no argument expects). The run is
-   * minted through the existing `RunService.start`, so a claimed run is indistinguishable from one a
-   * session started directly — same id shape, same scaffold, same layout.
-   */
-  claim(id, sessionId) {
-    let item;
-    if (id !== void 0 && id.length > 0) {
-      item = this.store.read(id);
-      if (!item) return { ok: false, reason: "not_found" };
-      if (!isReady(item)) return { ok: false, reason: "not_ready" };
-    } else {
-      const queue = this.list("ready").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      item = queue[0];
-      if (!item) return { ok: false, reason: "empty_queue" };
+  read() {
+    const columns = EMPTY_COLUMNS();
+    const allTasks = [];
+    const runCards = /* @__PURE__ */ new Map();
+    for (const runId of this.reader.listRuns()) {
+      const read = this.reader.read(runId);
+      if (!read) continue;
+      const summary = read.summary;
+      const tasks = taskFactsOf(runId, read.docs);
+      allTasks.push(...tasks);
+      const blocked = blockedIn(tasks);
+      const assigned = assignedIn(tasks);
+      runCards.set(runId, {
+        id: runId,
+        column: runColumn(summary.taskCounts),
+        title: summary.title,
+        origin: "run",
+        run: runId,
+        ...summary.kind !== void 0 ? { kind: summary.kind } : {},
+        ...summary.shape !== void 0 ? { shape: summary.shape } : {},
+        ...summary.summary !== void 0 ? { summary: summary.summary } : {},
+        taskCounts: summary.taskCounts,
+        agentCount: summary.agentCount,
+        ...blocked.length > 0 ? { blocked } : {},
+        ...assigned.length > 0 ? { assigned } : {},
+        updatedAt: summary.updatedAt
+      });
     }
-    const { run } = this.runs.start({
-      goal: item.title,
-      ...sessionId !== void 0 && sessionId.length > 0 ? { session_id: sessionId } : {}
-    });
-    const claimed = BacklogItem.parse({
-      ...item,
-      status: "claimed",
-      runs: [...item.runs, run],
-      updatedAt: this.now()
-    });
-    this.store.write(claimed);
-    return { ok: true, item: claimed, run };
-  }
-};
-
-// ../../flow/src/application/run-service.ts
-var SPEC_SCAFFOLD = [
-  "# Spec",
-  "",
-  "_Scaffolded by run_start. Replace with the real spec via artifact_write(spec)._",
-  "",
-  "## Job to be done",
-  "",
-  "## Acceptance criteria",
-  ""
-].join("\n");
-var RunService = class {
-  constructor(services) {
-    this.services = services;
-  }
-  // The run front door (ADR-005). Mints <run> when absent, creates the run dir + spec scaffold, and
-  // seeds the session pointer ONLY when session_id is passed. Returns the explicit run handle.
-  start(input) {
-    const run = input.run && input.run.length > 0 ? input.run : mintRun(input.goal ?? "run");
-    this.services.runs.ensureRun(run);
-    this.services.tasks.writeArtifact(run, "spec", SPEC_SCAFFOLD);
-    if (input.session_id && input.session_id.length > 0) {
-      writeSessionPointer(this.services.cwd, input.session_id, run);
-    }
-    return { run };
-  }
-  // Read the run's live state json (the agent roster + states; T05 owns its field contract). Plain
-  // record or `{}` when the run has no state yet — never throws on a missing/corrupt file.
-  get(run) {
-    return { run, state: this.services.runs.readRunState(run) ?? {} };
-  }
-  // Validate `type` against the closed FlowEvent union (AC8) and append via the EventLog port. Returns
-  // `{ ok: false }` with the offending field when the event is out-of-union, so the adapter maps it to a
-  // bad-input envelope rather than letting the closed union throw.
-  emit(run, event) {
-    const parsed = FlowEvent.safeParse(event);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      const field = issue && issue.path.length > 0 ? String(issue.path[0]) : "type";
-      const rule = field === "type" ? "one of the closed FlowEvent set (routing-decision | gate | node-enter | node-done)" : issue?.message ?? "the value required by the FlowEvent schema for this type";
-      return { ok: false, field, rule };
-    }
-    this.services.events.append(run, parsed.data);
-    return { ok: true };
-  }
-  // Read the stream and return ONLY the typed FLOW events (the signature promises `FlowEvent[]`).
-  // `parseLogLine` transparently handles both line shapes and drops empty-`agent` main-session lines;
-  // hook backstop lines are not FLOW events, so they don't appear in this typed view (they surface via
-  // `status`'s reconciliation instead).
-  tail(run, since) {
-    const events = [];
-    for (const raw of this.services.events.tail(run, since)) {
-      const parsed = parseLogLine(raw);
-      if (parsed.kind === "flow") events.push(parsed.event);
-    }
-    return { events };
-  }
-  // Read-time backstop reconciliation (ADR-003 — flag, never block). Cross-check the hook's subagent
-  // boundaries (real `agent` lines) against FLOW's node lines: a hook `agent-started`/`agent-done` for
-  // an agent FLOW emitted no matching `node-enter`/`node-done` for is a disagreement (the skipped-call
-  // signal, AC9). Pure read-time computation; nothing is written and nothing blocks.
-  status(run) {
-    const lines = this.services.events.tail(run);
-    const flowEnteredAgents = /* @__PURE__ */ new Set();
-    const flowDoneNodes = /* @__PURE__ */ new Set();
-    const flowEnterNodeByAgent = /* @__PURE__ */ new Map();
-    const hookStarted = [];
-    const hookDone = [];
-    for (const raw of lines) {
-      const parsed = parseLogLine(raw);
-      if (parsed.kind === "flow") {
-        const ev = parsed.event;
-        if (ev.type === "node-enter" && ev.agent) {
-          flowEnteredAgents.add(ev.agent);
-          flowEnterNodeByAgent.set(ev.agent, ev.node);
-        } else if (ev.type === "node-done") {
-          flowDoneNodes.add(ev.node);
-        }
-      } else if (parsed.kind === "hook") {
-        const agent = parsed.line.agent;
-        if (agent === void 0) continue;
-        if (parsed.line.kind === "agent-started") hookStarted.push({ agent, ts: parsed.line.ts });
-        else if (parsed.line.kind === "agent-done") hookDone.push({ agent, ts: parsed.line.ts });
+    if (this.roster !== void 0) {
+      const byRun = /* @__PURE__ */ new Map();
+      for (const agent of this.roster.roster()) {
+        const run = agent.id.split("/")[0] ?? "";
+        const file = agent.task === null ? void 0 : ownsOf(allTasks, run, agent.task)[0];
+        const view = { ...agent, ...file !== void 0 ? { file } : {} };
+        byRun.set(run, [...byRun.get(run) ?? [], view]);
+      }
+      for (const [run, agents] of byRun) {
+        const card = runCards.get(run);
+        if (!card) continue;
+        card.agents = agents;
+        const present = new Set(agents.map((a) => a.role));
+        const stillWaiting = (card.assigned ?? []).filter((a) => !present.has(a.to));
+        if (stillWaiting.length > 0) card.assigned = stillWaiting;
+        else delete card.assigned;
       }
     }
-    const disagreements = [];
-    for (const { agent, ts } of hookStarted) {
-      if (!flowEnteredAgents.has(agent)) {
-        disagreements.push({
-          agent,
-          kind: "started",
-          ts,
-          reason: `hook recorded agent-started for "${agent}" but FLOW emitted no node-enter for it (a skipped FLOW call)`
-        });
+    for (const item of this.backlog.list()) {
+      const spawned = item.runs.map((r) => runCards.get(r)).find((c) => c !== void 0);
+      if (spawned !== void 0) {
+        spawned.item = item.id;
+        if (spawned.kind === void 0) spawned.kind = item.kind;
+        continue;
+      }
+      const column = item.status === "done" ? "done" : item.status === "backlog" ? "backlog" : "ready";
+      columns[column].push({
+        id: item.id,
+        column,
+        title: item.title,
+        kind: item.kind,
+        origin: "item",
+        item: item.id,
+        updatedAt: item.updatedAt
+      });
+    }
+    const conflicts = overlapsAmong(allTasks);
+    for (const conflict of conflicts) {
+      for (const id of conflict.cards) {
+        const card = runCards.get(id);
+        if (card) card.conflict = true;
       }
     }
-    for (const { agent, ts } of hookDone) {
-      const node = flowEnterNodeByAgent.get(agent);
-      if (node === void 0 || !flowDoneNodes.has(node)) {
-        disagreements.push({
-          agent,
-          kind: "done",
-          ts,
-          reason: `hook recorded agent-done for "${agent}" but FLOW emitted no matching node-done (a skipped FLOW call)`
-        });
-      }
+    for (const card of runCards.values()) columns[card.column].push(card);
+    for (const column of Object.values(columns)) {
+      column.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     }
-    return { run, tasks: this.summarizeTasks(run), backstopDisagreements: disagreements };
-  }
-  // Per-status tally of the run's tasks (the "tasks summary"). A loose `status` string is counted
-  // under its own key; a task with no/non-string status falls under "unknown".
-  summarizeTasks(run) {
-    const summary = {};
-    for (const task of this.services.tasks.listTasks(run)) {
-      const status = typeof task.frontmatter.status === "string" ? task.frontmatter.status : "unknown";
-      summary[status] = (summary[status] ?? 0) + 1;
-    }
-    return summary;
+    return { columns, conflicts };
   }
 };
-
-// ../../flow/src/persistence/event-log.ts
-import { appendFileSync, existsSync as existsSync9, mkdirSync as mkdirSync6, readFileSync as readFileSync12 } from "node:fs";
-import { join as join15 } from "node:path";
-var JsonlEventLog = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  logPath(run) {
-    return join15(runDir(this.cwd, run), "events.jsonl");
-  }
-  // Validate through the closed FLOW union (a malformed event can never reach the stream — the
-  // schema enforcement of AC8's typed vocabulary), then append exactly one line.
-  append(run, event) {
-    const validated = FlowEvent.parse(event);
-    const dir = runDir(this.cwd, run);
-    mkdirSync6(dir, { recursive: true });
-    appendFileSync(this.logPath(run), `${JSON.stringify(validated)}
-`);
-  }
-  // Return the raw lines (newest-relevant left to the reader). `since` filters by the `ts` field
-  // lexicographically — ISO-8601 timestamps sort chronologically, so a string compare is correct.
-  tail(run, since) {
-    const path = this.logPath(run);
-    if (!existsSync9(path)) return [];
-    const lines = readFileSync12(path, "utf8").split("\n").filter((l) => l.trim().length > 0);
-    if (since === void 0) return lines;
-    return lines.filter((line) => {
-      try {
-        const ts = JSON.parse(line).ts;
-        return typeof ts === "string" && ts >= since;
-      } catch {
-        return false;
-      }
+function taskFactsOf(run, docs) {
+  const facts = [];
+  for (const doc of docs) {
+    if (!doc.id.startsWith("task-")) continue;
+    const contract = parseContract(doc.body);
+    const frontDeps = Array.isArray(doc.frontmatter.deps) ? doc.frontmatter.deps.map((d) => String(d)) : [];
+    const lockedBy = typeof doc.frontmatter.lockedBy === "string" ? doc.frontmatter.lockedBy : void 0;
+    facts.push({
+      run,
+      taskNo: doc.id.slice("task-".length),
+      status: typeof doc.frontmatter.status === "string" ? doc.frontmatter.status : "todo",
+      owns: contract.owns,
+      ...lockedBy !== void 0 ? { lockedBy } : {},
+      deps: [.../* @__PURE__ */ new Set([...frontDeps, ...contract.deps])].map(normalizeTaskNo).filter(Boolean)
     });
   }
-};
-
-// ../../flow/src/persistence/review-store.ts
-import { existsSync as existsSync10, mkdirSync as mkdirSync7, readFileSync as readFileSync13, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join16 } from "node:path";
-var JsonReviewStore = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  gateFile(run, gate) {
-    assertSafeSegment(gate);
-    return join16(runDir(this.cwd, run), ".review", `${gate}.annotations.json`);
-  }
-  read(run, gate) {
-    const file = this.gateFile(run, gate);
-    if (!existsSync10(file)) return [];
-    try {
-      const raw = JSON.parse(readFileSync13(file, "utf8"));
-      if (!Array.isArray(raw)) return [];
-      return raw.map((c) => ReviewComment.parse(c));
-    } catch {
-      return [];
-    }
-  }
-  write(run, gate, comments) {
-    const validated = comments.map((c) => ReviewComment.parse(c));
-    const file = this.gateFile(run, gate);
-    mkdirSync7(join16(runDir(this.cwd, run), ".review"), { recursive: true });
-    writeFileSync6(file, `${JSON.stringify(validated, null, 2)}
-`);
-  }
-};
-
-// ../../flow/src/persistence/run-state-store.ts
-import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync14, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join17 } from "node:path";
-var JsonRunStateStore = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  statePath(run) {
-    return join17(runDir(this.cwd, run), "run-state.json");
-  }
-  // Create `.agentry/work/<run>/` (asserts the run segment via runDir). Idempotent.
-  ensureRun(run) {
-    mkdirSync8(runDir(this.cwd, run), { recursive: true });
-  }
-  readRunState(run) {
-    const path = this.statePath(run);
-    if (!existsSync11(path)) return void 0;
-    try {
-      const raw = JSON.parse(readFileSync14(path, "utf8"));
-      return typeof raw === "object" && raw !== null ? raw : void 0;
-    } catch {
-      return void 0;
-    }
-  }
-  writeRunState(run, state) {
-    this.ensureRun(run);
-    writeFileSync7(this.statePath(run), `${JSON.stringify(state, null, 2)}
-`);
-  }
-};
-
-// ../../flow/src/persistence/backlog-store.ts
-var import_yaml5 = __toESM(require_dist(), 1);
-import { existsSync as existsSync12, mkdirSync as mkdirSync9, readFileSync as readFileSync15, readdirSync as readdirSync8, unlinkSync as unlinkSync2, writeFileSync as writeFileSync8 } from "node:fs";
-import { join as join18 } from "node:path";
-var FRONTMATTER5 = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-var LEADING_FRONTMATTER2 = /^---\n[\s\S]*?\n---\n?/;
-var FsBacklogStore = class {
-  constructor(cwd) {
-    this.cwd = cwd;
-  }
-  dir() {
-    return join18(this.cwd, ".agentry", "backlog");
-  }
-  file(id) {
-    assertSafeSegment(id);
-    return join18(this.dir(), `${id}.md`);
-  }
-  read(id) {
-    const file = this.file(id);
-    if (!existsSync12(file)) return void 0;
-    try {
-      return this.parse(readFileSync15(file, "utf8"));
-    } catch {
-      return void 0;
-    }
-  }
-  /** Every item, newest first. A file that fails to parse is SKIPPED, never fatal: one bad item must
-   *  not take the whole board down. */
-  list() {
-    const dir = this.dir();
-    if (!existsSync12(dir)) return [];
-    const items = [];
-    for (const name of readdirSync8(dir)) {
-      if (!name.endsWith(".md")) continue;
-      try {
-        items.push(this.parse(readFileSync15(join18(dir, name), "utf8")));
-      } catch {
-      }
-    }
-    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-  write(item) {
-    const validated = BacklogItem.parse(item);
-    mkdirSync9(this.dir(), { recursive: true });
-    writeFileSync8(this.file(validated.id), this.render(validated));
-  }
-  remove(id) {
-    const file = this.file(id);
-    if (existsSync12(file)) unlinkSync2(file);
-  }
-  // ── shape ────────────────────────────────────────────────────────────────────────────────────────
-  // The body lives BELOW the frontmatter (not as a `body:` yaml field) so an item reads as a document:
-  // `cat` it, edit it in any editor, diff it in a PR.
-  render(item) {
-    const { body, ...frontmatter } = item;
-    const yaml = (0, import_yaml5.stringify)(frontmatter);
-    return `---
-${yaml}---
-
-${body.replace(LEADING_FRONTMATTER2, "").trim()}
-`;
-  }
-  parse(text) {
-    const m = FRONTMATTER5.exec(text);
-    if (!m || m[1] === void 0) throw new Error("backlog item has no frontmatter");
-    const frontmatter = (0, import_yaml5.parse)(m[1]);
-    return BacklogItem.parse({ ...frontmatter, body: (m[2] ?? "").trim() });
-  }
-};
-
-// src/persistence/flow-services.ts
-function createFlowServices(root) {
-  return {
-    cwd: root,
-    tasks: new TaskFileStore(root),
-    events: new JsonlEventLog(root),
-    reviews: new JsonReviewStore(root),
-    runs: new JsonRunStateStore(root),
-    backlog: new FsBacklogStore(root)
-  };
+  return facts;
 }
-
-// src/persistence/backlog-adapter.ts
-var BacklogAdapter = class {
-  service;
-  constructor(root, clock) {
-    const services = createFlowServices(root);
-    this.service = new BacklogService(services.backlog, new RunService(services), () => clock.now());
+function normalizeTaskNo(raw) {
+  const trimmed = raw.trim().replace(/^["']|["']$/g, "");
+  return /^\d+$/.test(trimmed) ? trimmed.padStart(3, "0") : trimmed;
+}
+function blockedIn(tasks) {
+  const byNo = new Map(tasks.map((t) => [t.taskNo, t]));
+  const blocked = [];
+  for (const task of tasks) {
+    if (task.status === "done") continue;
+    const by = task.deps.filter((d) => {
+      const dep = byNo.get(d);
+      return dep !== void 0 && dep.status !== "done";
+    });
+    if (by.length > 0) blocked.push({ task: task.taskNo, by });
   }
-};
+  return blocked;
+}
+function assignedIn(tasks) {
+  return tasks.filter((t) => t.lockedBy !== void 0 && t.status !== "done").map((t) => ({ task: t.taskNo, to: t.lockedBy }));
+}
+function overlapsAmong(tasks) {
+  const live = tasks.filter((t) => t.status === "in-progress" && t.owns.length > 0);
+  const conflicts = [];
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length; j++) {
+      const a = live[i];
+      const b = live[j];
+      const files = sharedFiles(a.owns, b.owns);
+      if (files.length === 0) continue;
+      conflicts.push({
+        files,
+        cards: [.../* @__PURE__ */ new Set([a.run, b.run])],
+        tasks: [`${a.run}/${a.taskNo}`, `${b.run}/${b.taskNo}`]
+      });
+    }
+  }
+  return conflicts;
+}
+function ownsOf(tasks, run, taskRef) {
+  const no = normalizeTaskNo(taskRef.replace(/^task-/, ""));
+  return tasks.find((t) => t.run === run && t.taskNo === no)?.owns ?? [];
+}
+function runColumn(counts) {
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  if ((counts["in-review"] ?? 0) > 0) return "in-review";
+  if (total > 0 && (counts.done ?? 0) === total) return "done";
+  return "running";
+}
 
 // ../../flow/src/domain/status.ts
 var FlowTaskStatus = external_exports.enum(["todo", "in-progress", "in-review", "done"]);
 var AgentState = external_exports.enum(["working", "blocked", "done"]);
+
+// src/application/event-store.ts
+var EventStore = class {
+  // The run list comes from the repository (the SAME `.agentry/work/` listing the Works home uses, so the
+  // fold and the Works list never disagree about which runs exist); the two run-level files come from the
+  // injected `EventSource` port — no fs here, the adapter owns the bytes (ADR-001).
+  constructor(repository, source) {
+    this.repository = repository;
+    this.source = source;
+  }
+  // The one fold. With no `runId`, fold EVERY run's events into a single cross-run timeline (the Agents
+  // projection); with a `runId`, fold ONLY that run (the per-work Activity feed). Both come from the SAME
+  // projection — the only difference is the set of runs scanned. Events arrive in file order per run; the
+  // cross-run timeline concatenates runs in `listRuns` order (sorted, stable).
+  timeline(runId) {
+    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
+    const views = [];
+    for (const run of runs) {
+      this.foldRun(run, views);
+    }
+    return views;
+  }
+  // The agent roster across runs (or one run): every recorded agent with its FLOW live state and the task
+  // it is on. Read from each run's `run-state.json`; a fresh/absent/foreign-shaped file contributes no
+  // agents (a run with no roster yet is valid, not an error). The view `id` is namespaced by run so the
+  // same agent role in two runs stays distinct in the cross-run view.
+  roster(runId) {
+    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
+    const views = [];
+    for (const run of runs) {
+      for (const entry of this.rosterOf(run)) {
+        views.push({
+          id: `${run}/${entry.agent}`,
+          role: entry.agent,
+          state: entry.state,
+          task: entry.assignedTask ?? null,
+          ...entry.since !== void 0 ? { since: entry.since } : {}
+        });
+      }
+    }
+    return views;
+  }
+  // Fold one run's `events.jsonl` lines into the accumulator. Each kept line becomes one `EventView` with a
+  // stable feed key (run + line index — unique within the fold, stable across reads of an unchanged file).
+  // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session hook line) is dropped.
+  // A hook backstop line is projected into the closed `node-enter` shape so the feed renders one event
+  // vocabulary — its `kind` becomes the node label, its `agent` the actor (the hook's only structured fields).
+  foldRun(run, into) {
+    this.source.eventLines(run).forEach((line, index) => {
+      const parsed = parseLogLine(line);
+      if (parsed.kind === "skip") return;
+      const event = parsed.kind === "flow" ? parsed.event : hookToEvent(parsed.line);
+      into.push({ id: `${run}#${index}`, event });
+    });
+  }
+  // Derive one run's roster from the source's parsed `run-state.json`. A corrupt/absent file (the source
+  // returns `undefined`), or one whose `agents` isn't an object, yields no entries. Each agent's `state` is
+  // validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent rather than
+  // surfacing an ill-typed state.
+  rosterOf(run) {
+    const raw = this.source.runState(run);
+    const agents = isRecord2(raw) ? raw.agents : void 0;
+    if (!isRecord2(agents)) return [];
+    const out = [];
+    for (const [agent, value] of Object.entries(agents)) {
+      if (!isRecord2(value)) continue;
+      const state = AgentState.safeParse(value.state);
+      if (!state.success) continue;
+      const assignedTask = typeof value.assignedTask === "string" ? value.assignedTask : void 0;
+      const since = typeof value.since === "string" ? value.since : void 0;
+      out.push({
+        agent,
+        state: state.data,
+        ...assignedTask !== void 0 ? { assignedTask } : {},
+        ...since !== void 0 ? { since } : {}
+      });
+    }
+    return out;
+  }
+};
+function hookToEvent(line) {
+  return { ts: line.ts, type: "node-enter", node: line.kind, agent: line.agent };
+}
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/application/gate-inbox.ts
+var GateInbox = class {
+  // The run list comes from the repository (mirrors the Works home listing); the sidecar reads come from
+  // the injected `ReviewSidecarSource` port — no fs here, the adapter owns the bytes + the parser (ADR-001).
+  constructor(repository, sidecars) {
+    this.repository = repository;
+    this.sidecars = sidecars;
+  }
+  // The open waiting-on-you list across every run (or one run when `runId` is given). A gate is OPEN when
+  // its sidecar holds at least one unresolved comment. Runs are scanned in `listRuns` order (stable); a run
+  // with no `.review/` dir contributes nothing. `decision` is null while the gate is open — the read-model
+  // surfaces the comments, not a verdict (a verdict is reached at the FLOW gate, not derived here).
+  open(runId) {
+    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
+    const items = [];
+    for (const run of runs) {
+      for (const gate of this.sidecars.listGates(run)) {
+        if (isConductorThread(gate)) continue;
+        const comments = this.sidecars.commentsFor(run, gate);
+        const openComments = comments.filter((c) => isHumanComment(c) && !c.resolved);
+        if (openComments.length === 0) continue;
+        items.push({ run, gate, docId: gate, comments: openComments, decision: null });
+      }
+    }
+    return items;
+  }
+  // ALL comments (open + resolved) for one run+gate — the doc-level read the comment rail hydrates from on
+  // load (the bidirectional AI↔Dashboard loop, VISION §6). The gate key IS the docId (the SAME key the
+  // `/comment` POST writes under). Delegates to the source's single parser; an absent sidecar ⇒ `[]` (clean
+  // empty), distinct from `open()` which filters to unresolved and drops resolved-empty gates.
+  commentsFor(run, gate) {
+    return this.sidecars.commentsFor(run, gate);
+  }
+};
+
+// src/application/token-reader.ts
+var TokenReader = class {
+  constructor(transcripts) {
+    this.transcripts = transcripts;
+  }
+  // The token series for one run: token usage bucketed by calendar day (UTC), accumulated so each point is
+  // the running total through that day — the shape the usage chart plots. Days are sorted ascending; a run
+  // with no samples returns a clean empty series (the graceful-degrade empty state).
+  series(run) {
+    const perDay = this.bucketByDay(this.transcripts.read(run));
+    const days = [...perDay.keys()].sort();
+    const timestamps = [];
+    const tokens = [];
+    let cumulative = 0;
+    for (const day of days) {
+      cumulative += perDay.get(day) ?? 0;
+      timestamps.push(day);
+      tokens.push(cumulative);
+    }
+    return { timestamps, tokens };
+  }
+  // Sum the samples into per-day totals keyed by the sample's UTC calendar day (the `YYYY-MM-DD` prefix of
+  // its ISO timestamp). A sample whose timestamp has no parseable day prefix is dropped (it can't be placed
+  // on the day axis) rather than corrupting a bucket.
+  bucketByDay(samples) {
+    const perDay = /* @__PURE__ */ new Map();
+    for (const { timestamp, tokens } of samples) {
+      const day = dayOf(timestamp);
+      if (day === null) continue;
+      perDay.set(day, (perDay.get(day) ?? 0) + tokens);
+    }
+    return perDay;
+  }
+};
+function dayOf(timestamp) {
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
 
 // src/domain/doc-index.ts
 var SPEC_ID = "spec";
@@ -18491,366 +18822,6 @@ function mintCommentId() {
   return `c-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
 }
 
-// src/application/event-store.ts
-var EventStore = class {
-  // The run list comes from the repository (the SAME `.agentry/work/` listing the Works home uses, so the
-  // fold and the Works list never disagree about which runs exist); the two run-level files come from the
-  // injected `EventSource` port — no fs here, the adapter owns the bytes (ADR-001).
-  constructor(repository, source) {
-    this.repository = repository;
-    this.source = source;
-  }
-  // The one fold. With no `runId`, fold EVERY run's events into a single cross-run timeline (the Agents
-  // projection); with a `runId`, fold ONLY that run (the per-work Activity feed). Both come from the SAME
-  // projection — the only difference is the set of runs scanned. Events arrive in file order per run; the
-  // cross-run timeline concatenates runs in `listRuns` order (sorted, stable).
-  timeline(runId) {
-    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
-    const views = [];
-    for (const run of runs) {
-      this.foldRun(run, views);
-    }
-    return views;
-  }
-  // The agent roster across runs (or one run): every recorded agent with its FLOW live state and the task
-  // it is on. Read from each run's `run-state.json`; a fresh/absent/foreign-shaped file contributes no
-  // agents (a run with no roster yet is valid, not an error). The view `id` is namespaced by run so the
-  // same agent role in two runs stays distinct in the cross-run view.
-  roster(runId) {
-    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
-    const views = [];
-    for (const run of runs) {
-      for (const entry of this.rosterOf(run)) {
-        views.push({
-          id: `${run}/${entry.agent}`,
-          role: entry.agent,
-          state: entry.state,
-          task: entry.assignedTask ?? null,
-          ...entry.since !== void 0 ? { since: entry.since } : {}
-        });
-      }
-    }
-    return views;
-  }
-  // Fold one run's `events.jsonl` lines into the accumulator. Each kept line becomes one `EventView` with a
-  // stable feed key (run + line index — unique within the fold, stable across reads of an unchanged file).
-  // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session hook line) is dropped.
-  // A hook backstop line is projected into the closed `node-enter` shape so the feed renders one event
-  // vocabulary — its `kind` becomes the node label, its `agent` the actor (the hook's only structured fields).
-  foldRun(run, into) {
-    this.source.eventLines(run).forEach((line, index) => {
-      const parsed = parseLogLine(line);
-      if (parsed.kind === "skip") return;
-      const event = parsed.kind === "flow" ? parsed.event : hookToEvent(parsed.line);
-      into.push({ id: `${run}#${index}`, event });
-    });
-  }
-  // Derive one run's roster from the source's parsed `run-state.json`. A corrupt/absent file (the source
-  // returns `undefined`), or one whose `agents` isn't an object, yields no entries. Each agent's `state` is
-  // validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent rather than
-  // surfacing an ill-typed state.
-  rosterOf(run) {
-    const raw = this.source.runState(run);
-    const agents = isRecord2(raw) ? raw.agents : void 0;
-    if (!isRecord2(agents)) return [];
-    const out = [];
-    for (const [agent, value] of Object.entries(agents)) {
-      if (!isRecord2(value)) continue;
-      const state = AgentState.safeParse(value.state);
-      if (!state.success) continue;
-      const assignedTask = typeof value.assignedTask === "string" ? value.assignedTask : void 0;
-      const since = typeof value.since === "string" ? value.since : void 0;
-      out.push({
-        agent,
-        state: state.data,
-        ...assignedTask !== void 0 ? { assignedTask } : {},
-        ...since !== void 0 ? { since } : {}
-      });
-    }
-    return out;
-  }
-};
-function hookToEvent(line) {
-  return { ts: line.ts, type: "node-enter", node: line.kind, agent: line.agent };
-}
-function isRecord2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-// src/application/gate-inbox.ts
-var GateInbox = class {
-  // The run list comes from the repository (mirrors the Works home listing); the sidecar reads come from
-  // the injected `ReviewSidecarSource` port — no fs here, the adapter owns the bytes + the parser (ADR-001).
-  constructor(repository, sidecars) {
-    this.repository = repository;
-    this.sidecars = sidecars;
-  }
-  // The open waiting-on-you list across every run (or one run when `runId` is given). A gate is OPEN when
-  // its sidecar holds at least one unresolved comment. Runs are scanned in `listRuns` order (stable); a run
-  // with no `.review/` dir contributes nothing. `decision` is null while the gate is open — the read-model
-  // surfaces the comments, not a verdict (a verdict is reached at the FLOW gate, not derived here).
-  open(runId) {
-    const runs = runId !== void 0 ? [runId] : this.repository.listRuns();
-    const items = [];
-    for (const run of runs) {
-      for (const gate of this.sidecars.listGates(run)) {
-        if (isConductorThread(gate)) continue;
-        const comments = this.sidecars.commentsFor(run, gate);
-        const openComments = comments.filter((c) => isHumanComment(c) && !c.resolved);
-        if (openComments.length === 0) continue;
-        items.push({ run, gate, docId: gate, comments: openComments, decision: null });
-      }
-    }
-    return items;
-  }
-  // ALL comments (open + resolved) for one run+gate — the doc-level read the comment rail hydrates from on
-  // load (the bidirectional AI↔Dashboard loop, VISION §6). The gate key IS the docId (the SAME key the
-  // `/comment` POST writes under). Delegates to the source's single parser; an absent sidecar ⇒ `[]` (clean
-  // empty), distinct from `open()` which filters to unresolved and drops resolved-empty gates.
-  commentsFor(run, gate) {
-    return this.sidecars.commentsFor(run, gate);
-  }
-};
-
-// src/application/token-reader.ts
-var TokenReader = class {
-  constructor(transcripts) {
-    this.transcripts = transcripts;
-  }
-  // The token series for one run: token usage bucketed by calendar day (UTC), accumulated so each point is
-  // the running total through that day — the shape the usage chart plots. Days are sorted ascending; a run
-  // with no samples returns a clean empty series (the graceful-degrade empty state).
-  series(run) {
-    const perDay = this.bucketByDay(this.transcripts.read(run));
-    const days = [...perDay.keys()].sort();
-    const timestamps = [];
-    const tokens = [];
-    let cumulative = 0;
-    for (const day of days) {
-      cumulative += perDay.get(day) ?? 0;
-      timestamps.push(day);
-      tokens.push(cumulative);
-    }
-    return { timestamps, tokens };
-  }
-  // Sum the samples into per-day totals keyed by the sample's UTC calendar day (the `YYYY-MM-DD` prefix of
-  // its ISO timestamp). A sample whose timestamp has no parseable day prefix is dropped (it can't be placed
-  // on the day axis) rather than corrupting a bucket.
-  bucketByDay(samples) {
-    const perDay = /* @__PURE__ */ new Map();
-    for (const { timestamp, tokens } of samples) {
-      const day = dayOf(timestamp);
-      if (day === null) continue;
-      perDay.set(day, (perDay.get(day) ?? 0) + tokens);
-    }
-    return perDay;
-  }
-};
-function dayOf(timestamp) {
-  const parsed = new Date(timestamp);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
-}
-
-// src/domain/contract.ts
-var SECTION = /^##\s+Contract\s*$/im;
-var NEXT_SECTION = /^##\s+/m;
-function section(body) {
-  const start = SECTION.exec(body);
-  if (!start) return "";
-  const rest = body.slice(start.index + start[0].length);
-  const end = NEXT_SECTION.exec(rest);
-  return end ? rest.slice(0, end.index) : rest;
-}
-function listOf(text, key) {
-  const inline = new RegExp(`^${key}:\\s*\\[(.*?)\\]\\s*$`, "im").exec(text);
-  if (inline) {
-    return inline[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-  }
-  const lines = text.split("\n");
-  const start = lines.findIndex((l) => new RegExp(`^${key}:\\s*$`, "i").test(l.trim()));
-  if (start === -1) return [];
-  const items = [];
-  for (const line of lines.slice(start + 1)) {
-    const item = /^\s+-\s+(.*)$/.exec(line);
-    if (item) {
-      items.push(item[1].trim().replace(/^["']|["']$/g, "").replace(/^`|`$/g, ""));
-      continue;
-    }
-    if (line.trim().length === 0) continue;
-    break;
-  }
-  return items;
-}
-function parseContract(body) {
-  const text = section(body);
-  if (text.length === 0) return { owns: [], deps: [] };
-  return { owns: listOf(text, "owns"), deps: listOf(text, "deps") };
-}
-function sharedFiles(a, b) {
-  const set = new Set(a.map((p) => p.trim()).filter(Boolean));
-  return [...new Set(b.map((p) => p.trim()).filter((p) => p.length > 0 && set.has(p)))];
-}
-
-// src/application/board-reader.ts
-var EMPTY_COLUMNS = () => ({
-  backlog: [],
-  ready: [],
-  running: [],
-  "in-review": [],
-  done: []
-});
-var BoardReader = class {
-  constructor(reader, backlog, roster) {
-    this.reader = reader;
-    this.backlog = backlog;
-    this.roster = roster;
-  }
-  read() {
-    const columns = EMPTY_COLUMNS();
-    const allTasks = [];
-    const runCards = /* @__PURE__ */ new Map();
-    for (const runId of this.reader.listRuns()) {
-      const read = this.reader.read(runId);
-      if (!read) continue;
-      const summary = read.summary;
-      const tasks = taskFactsOf(runId, read.docs);
-      allTasks.push(...tasks);
-      const blocked = blockedIn(tasks);
-      const assigned = assignedIn(tasks);
-      runCards.set(runId, {
-        id: runId,
-        column: runColumn(summary.taskCounts),
-        title: summary.title,
-        origin: "run",
-        run: runId,
-        ...summary.kind !== void 0 ? { kind: summary.kind } : {},
-        ...summary.shape !== void 0 ? { shape: summary.shape } : {},
-        ...summary.summary !== void 0 ? { summary: summary.summary } : {},
-        taskCounts: summary.taskCounts,
-        agentCount: summary.agentCount,
-        ...blocked.length > 0 ? { blocked } : {},
-        ...assigned.length > 0 ? { assigned } : {},
-        updatedAt: summary.updatedAt
-      });
-    }
-    if (this.roster !== void 0) {
-      const byRun = /* @__PURE__ */ new Map();
-      for (const agent of this.roster.roster()) {
-        const run = agent.id.split("/")[0] ?? "";
-        const file = agent.task === null ? void 0 : ownsOf(allTasks, run, agent.task)[0];
-        const view = { ...agent, ...file !== void 0 ? { file } : {} };
-        byRun.set(run, [...byRun.get(run) ?? [], view]);
-      }
-      for (const [run, agents] of byRun) {
-        const card = runCards.get(run);
-        if (!card) continue;
-        card.agents = agents;
-        const present = new Set(agents.map((a) => a.role));
-        const stillWaiting = (card.assigned ?? []).filter((a) => !present.has(a.to));
-        if (stillWaiting.length > 0) card.assigned = stillWaiting;
-        else delete card.assigned;
-      }
-    }
-    for (const item of this.backlog.list()) {
-      const spawned = item.runs.map((r) => runCards.get(r)).find((c) => c !== void 0);
-      if (spawned !== void 0) {
-        spawned.item = item.id;
-        if (spawned.kind === void 0) spawned.kind = item.kind;
-        continue;
-      }
-      const column = item.status === "done" ? "done" : item.status === "backlog" ? "backlog" : "ready";
-      columns[column].push({
-        id: item.id,
-        column,
-        title: item.title,
-        kind: item.kind,
-        origin: "item",
-        item: item.id,
-        updatedAt: item.updatedAt
-      });
-    }
-    const conflicts = overlapsAmong(allTasks);
-    for (const conflict of conflicts) {
-      for (const id of conflict.cards) {
-        const card = runCards.get(id);
-        if (card) card.conflict = true;
-      }
-    }
-    for (const card of runCards.values()) columns[card.column].push(card);
-    for (const column of Object.values(columns)) {
-      column.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    }
-    return { columns, conflicts };
-  }
-};
-function taskFactsOf(run, docs) {
-  const facts = [];
-  for (const doc of docs) {
-    if (!doc.id.startsWith("task-")) continue;
-    const contract = parseContract(doc.body);
-    const frontDeps = Array.isArray(doc.frontmatter.deps) ? doc.frontmatter.deps.map((d) => String(d)) : [];
-    const lockedBy = typeof doc.frontmatter.lockedBy === "string" ? doc.frontmatter.lockedBy : void 0;
-    facts.push({
-      run,
-      taskNo: doc.id.slice("task-".length),
-      status: typeof doc.frontmatter.status === "string" ? doc.frontmatter.status : "todo",
-      owns: contract.owns,
-      ...lockedBy !== void 0 ? { lockedBy } : {},
-      deps: [.../* @__PURE__ */ new Set([...frontDeps, ...contract.deps])].map(normalizeTaskNo).filter(Boolean)
-    });
-  }
-  return facts;
-}
-function normalizeTaskNo(raw) {
-  const trimmed = raw.trim().replace(/^["']|["']$/g, "");
-  return /^\d+$/.test(trimmed) ? trimmed.padStart(3, "0") : trimmed;
-}
-function blockedIn(tasks) {
-  const byNo = new Map(tasks.map((t) => [t.taskNo, t]));
-  const blocked = [];
-  for (const task of tasks) {
-    if (task.status === "done") continue;
-    const by = task.deps.filter((d) => {
-      const dep = byNo.get(d);
-      return dep !== void 0 && dep.status !== "done";
-    });
-    if (by.length > 0) blocked.push({ task: task.taskNo, by });
-  }
-  return blocked;
-}
-function assignedIn(tasks) {
-  return tasks.filter((t) => t.lockedBy !== void 0 && t.status !== "done").map((t) => ({ task: t.taskNo, to: t.lockedBy }));
-}
-function overlapsAmong(tasks) {
-  const live = tasks.filter((t) => t.status === "in-progress" && t.owns.length > 0);
-  const conflicts = [];
-  for (let i = 0; i < live.length; i++) {
-    for (let j = i + 1; j < live.length; j++) {
-      const a = live[i];
-      const b = live[j];
-      const files = sharedFiles(a.owns, b.owns);
-      if (files.length === 0) continue;
-      conflicts.push({
-        files,
-        cards: [.../* @__PURE__ */ new Set([a.run, b.run])],
-        tasks: [`${a.run}/${a.taskNo}`, `${b.run}/${b.taskNo}`]
-      });
-    }
-  }
-  return conflicts;
-}
-function ownsOf(tasks, run, taskRef) {
-  const no = normalizeTaskNo(taskRef.replace(/^task-/, ""));
-  return tasks.find((t) => t.run === run && t.taskNo === no)?.owns ?? [];
-}
-function runColumn(counts) {
-  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
-  if ((counts["in-review"] ?? 0) > 0) return "in-review";
-  if (total > 0 && (counts.done ?? 0) === total) return "done";
-  return "running";
-}
-
 // src/application/project.ts
 function createProject(root, slug3, clock) {
   const repository = new FsWorkRepository(root);
@@ -18894,32 +18865,102 @@ function shortHash(s) {
   return (h >>> 0).toString(36).padStart(6, "0").slice(-6);
 }
 
+// src/instance/pidfile.ts
+import { mkdirSync as mkdirSync8, readFileSync as readFileSync14, renameSync as renameSync2, rmSync, writeFileSync as writeFileSync7 } from "node:fs";
+import { join as join17 } from "node:path";
+function pidfilePath(projectRoot) {
+  return join17(projectRoot, ".agentry", "run", "workbench.json");
+}
+function writePidfile(projectRoot, data) {
+  const target = pidfilePath(projectRoot);
+  const dir = join17(projectRoot, ".agentry", "run");
+  mkdirSync8(dir, { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
+  writeFileSync7(tmp, JSON.stringify(data));
+  renameSync2(tmp, target);
+}
+function removePidfile(projectRoot) {
+  rmSync(pidfilePath(projectRoot), { force: true });
+}
+
+// src/instance/port-lock.ts
+import { createServer } from "node:http";
+var WORKBENCH_PORT = 4317;
+var LOOPBACK_HOST = "127.0.0.1";
+function bindPortLock(port = WORKBENCH_PORT) {
+  return new Promise((resolve6, reject2) => {
+    const server = createServer();
+    const onError = (err) => {
+      server.removeListener("listening", onListening);
+      if (err.code === "EADDRINUSE") {
+        resolve6({ status: "already-up" });
+        return;
+      }
+      reject2(err);
+    };
+    const onListening = () => {
+      server.removeListener("error", onError);
+      resolve6({ status: "bound", server });
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, LOOPBACK_HOST);
+  });
+}
+
+// src/instance/registry.ts
+import { mkdirSync as mkdirSync9, readFileSync as readFileSync15, renameSync as renameSync3, writeFileSync as writeFileSync8 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { dirname as dirname3, join as join18, resolve as resolve3 } from "node:path";
+function registryPath() {
+  return join18(homedir3(), ".agentry", "workbench", "projects.json");
+}
+function readRegistry() {
+  try {
+    const parsed = JSON.parse(readFileSync15(registryPath(), "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return [];
+    const list = parsed.projects;
+    if (!Array.isArray(list)) return [];
+    return list.filter(
+      (p) => typeof p === "object" && p !== null && typeof p.root === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+function registerRoot(root, now) {
+  const abs = resolve3(root);
+  const current = readRegistry();
+  if (current.some((p) => p.root === abs)) return current;
+  const next = [...current, { root: abs, addedAt: now }];
+  const target = registryPath();
+  mkdirSync9(dirname3(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
+  writeFileSync8(tmp, JSON.stringify({ projects: next }, null, 2));
+  renameSync3(tmp, target);
+  return next;
+}
+
 // src/transport/http.ts
 import { createReadStream, existsSync as existsSync13, statSync as statSync2 } from "node:fs";
 import { extname as extname2, join as join21, normalize as normalize2, resolve as resolve4, sep as sep2 } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// ../shared/src/slug.ts
-var MAX = 28;
-function hash(s) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
+// src/transport/host-router.ts
+var HOME_LABELS = /* @__PURE__ */ new Set(["localhost", "workbench"]);
+function parseHostLabel(hostHeader) {
+  if (hostHeader === void 0 || hostHeader.length === 0) return null;
+  const host = hostHeader.split(":")[0] ?? "";
+  const labels = host.split(".");
+  if (labels[labels.length - 1] !== "localhost") return null;
+  const leading = labels[0] ?? "";
+  if (HOME_LABELS.has(leading) || labels.length < 2) return null;
+  try {
+    assertSafeSegment(leading);
+  } catch {
+    return null;
   }
-  return (h >>> 0).toString(36).padStart(6, "0").slice(-6);
-}
-function workSlug(runId) {
-  if (runId.length <= MAX) return runId;
-  const words = runId.split("-").filter(Boolean).slice(0, 2).join("-");
-  return `${words}-${hash(runId)}`;
-}
-function resolveSlug(label, runIds) {
-  if (runIds.includes(label)) return label;
-  const exactSlug = runIds.find((id) => workSlug(id) === label);
-  if (exactSlug !== void 0) return exactSlug;
-  const lower = label.toLowerCase();
-  return runIds.find((id) => id.toLowerCase() === lower || workSlug(id).toLowerCase() === lower);
+  return leading;
 }
 
 // src/transport/http-kit.ts
@@ -18996,25 +19037,55 @@ function handleProjectsRequest(req, res, url, projects) {
   });
 }
 
-// src/transport/host-router.ts
-var HOME_LABELS = /* @__PURE__ */ new Set(["localhost", "workbench"]);
-function parseHostLabel(hostHeader) {
-  if (hostHeader === void 0 || hostHeader.length === 0) return null;
-  const host = hostHeader.split(":")[0] ?? "";
-  const labels = host.split(".");
-  if (labels[labels.length - 1] !== "localhost") return null;
-  const leading = labels[0] ?? "";
-  if (HOME_LABELS.has(leading) || labels.length < 2) return null;
-  try {
-    assertSafeSegment(leading);
-  } catch {
-    return null;
-  }
-  return leading;
-}
-
 // src/transport/read-routes.ts
 import { basename as basename5 } from "node:path";
+
+// src/transport/doc-model.ts
+function reloadDoc(reader, runId, target) {
+  const read = reader.read(runId);
+  if (!read) return void 0;
+  const found = read.docs.find((d) => d.id === docIdOf(target));
+  return found ? toDocModel(found) : void 0;
+}
+function docIdOf(target) {
+  return "kind" in target ? target.kind : `task-${target.taskNo}`;
+}
+function toDocModel(doc) {
+  const { version: _stamped, ...sansVersion } = doc.frontmatter;
+  return {
+    frontmatter: doc.frontmatter,
+    body: doc.body,
+    version: computeVersion(doc.body, sansVersion),
+    lock: lockOf(doc.frontmatter)
+  };
+}
+function lockOf(frontmatter) {
+  if (frontmatter.status !== "in-progress") return null;
+  const by = frontmatter.lockedBy;
+  const assignee = frontmatter.assignee;
+  const holder = typeof by === "string" && by.length > 0 ? by : typeof assignee === "string" && assignee.length > 0 ? assignee : "an agent";
+  const acquiredAt = typeof frontmatter.updatedAt === "string" ? frontmatter.updatedAt : "";
+  return { by: holder, acquiredAt };
+}
+function targetFromDocId(raw) {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  if (raw === "spec" || raw === "plan") return { kind: raw };
+  if (raw.startsWith("adr-")) return "read_only";
+  if (raw.startsWith("task-")) {
+    const taskNo = raw.slice("task-".length);
+    return taskNo.length > 0 ? { taskNo } : null;
+  }
+  return null;
+}
+function taskNoFromTarget(body) {
+  const target = body.target;
+  if (typeof target === "string" && target.startsWith("task-")) {
+    const taskNo2 = target.slice("task-".length);
+    return taskNo2.length > 0 ? taskNo2 : null;
+  }
+  const taskNo = body.taskNo;
+  return typeof taskNo === "string" && taskNo.length > 0 ? taskNo : null;
+}
 
 // src/transport/route-match.ts
 function runParam(url) {
@@ -19068,53 +19139,6 @@ function matchPermissionVerdict(path) {
   } catch {
     return null;
   }
-}
-
-// src/transport/doc-model.ts
-function reloadDoc(reader, runId, target) {
-  const read = reader.read(runId);
-  if (!read) return void 0;
-  const found = read.docs.find((d) => d.id === docIdOf(target));
-  return found ? toDocModel(found) : void 0;
-}
-function docIdOf(target) {
-  return "kind" in target ? target.kind : `task-${target.taskNo}`;
-}
-function toDocModel(doc) {
-  const { version: _stamped, ...sansVersion } = doc.frontmatter;
-  return {
-    frontmatter: doc.frontmatter,
-    body: doc.body,
-    version: computeVersion(doc.body, sansVersion),
-    lock: lockOf(doc.frontmatter)
-  };
-}
-function lockOf(frontmatter) {
-  if (frontmatter.status !== "in-progress") return null;
-  const by = frontmatter.lockedBy;
-  const assignee = frontmatter.assignee;
-  const holder = typeof by === "string" && by.length > 0 ? by : typeof assignee === "string" && assignee.length > 0 ? assignee : "an agent";
-  const acquiredAt = typeof frontmatter.updatedAt === "string" ? frontmatter.updatedAt : "";
-  return { by: holder, acquiredAt };
-}
-function targetFromDocId(raw) {
-  if (typeof raw !== "string" || raw.length === 0) return null;
-  if (raw === "spec" || raw === "plan") return { kind: raw };
-  if (raw.startsWith("adr-")) return "read_only";
-  if (raw.startsWith("task-")) {
-    const taskNo = raw.slice("task-".length);
-    return taskNo.length > 0 ? { taskNo } : null;
-  }
-  return null;
-}
-function taskNoFromTarget(body) {
-  const target = body.target;
-  if (typeof target === "string" && target.startsWith("task-")) {
-    const taskNo2 = target.slice("task-".length);
-    return taskNo2.length > 0 ? taskNo2 : null;
-  }
-  const taskNo = body.taskNo;
-  return typeof taskNo === "string" && taskNo.length > 0 ? taskNo : null;
 }
 
 // src/transport/read-routes.ts
@@ -19189,7 +19213,11 @@ function handleReaderRequest(req, res, deps) {
     return guardGet(
       method,
       res,
-      () => sendJson(res, 200, run !== void 0 ? deps.tokens.series(run) : { timestamps: [], tokens: [] })
+      () => sendJson(
+        res,
+        200,
+        run !== void 0 ? deps.tokens.series(run) : { timestamps: [], tokens: [] }
+      )
     );
   }
   if (path === "/api/memory") {
@@ -19319,7 +19347,11 @@ function handleStatus(res, deps, runId, body) {
   if (!outcome.ok) return reject(res, 404, "not_found");
   deps.transport.push(runId, { type: "file-changed", path: `tasks/${taskNo}` });
   try {
-    writeStatusSignal(deps.projectRoot, { run: runId, task: `task-${taskNo}`, status: status.data });
+    writeStatusSignal(deps.projectRoot, {
+      run: runId,
+      task: `task-${taskNo}`,
+      status: status.data
+    });
   } catch {
   }
   sendJson(res, 200, { ok: true });
@@ -19347,7 +19379,8 @@ function handleArtifact(res, deps, runId, body) {
     }
     return true;
   }
-  if (outcome.reason === "locked") return reject(res, 409, "locked", { lockedBy: outcome.lockedBy });
+  if (outcome.reason === "locked")
+    return reject(res, 409, "locked", { lockedBy: outcome.lockedBy });
   if (outcome.reason === "stale") {
     return reject(res, 409, "stale", { currentVersion: outcome.currentVersion });
   }
@@ -19385,7 +19418,12 @@ async function handleRunResetRequest(req, res, deps) {
   const item = deps.backlog.list().find((i) => i.runs.includes(run));
   if (item !== void 0) deps.backlog.update({ id: item.id, status: "ready" });
   deps.transport.pushAll({ type: "works-changed" });
-  sendJson(res, 200, { ok: true, run, tasks: reset, ...item !== void 0 ? { item: item.id } : {} });
+  sendJson(res, 200, {
+    ok: true,
+    run,
+    tasks: reset,
+    ...item !== void 0 ? { item: item.id } : {}
+  });
   return true;
 }
 
@@ -19573,7 +19611,9 @@ function createHttpHandler(projects, transport) {
     }
     if (handleApiRequest(req, res, reader, context, project.root, project.slug)) return;
     if (handleReaderRequest(req, res, readers)) return;
-    void handlePostRequest(req, res, write).then((handled) => handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })).then(
+    void handlePostRequest(req, res, write).then(
+      (handled) => handled ? true : handleBacklogRequest(req, res, { backlog: project.backlog, transport })
+    ).then(
       (handled) => handled ? true : handleRunResetRequest(req, res, {
         reader,
         writeService: project.writeService,
@@ -19727,16 +19767,19 @@ var WsTransport = class {
 };
 
 // src/index.ts
-import { resolve as resolve5 } from "node:path";
 function resolveStartupRoot() {
-  return resolve5(process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd());
+  return resolve5(
+    process.env.CLAUDE_PROJECT_DIR ?? process.env.AGENTRY_PROJECT_DIR ?? process.cwd()
+  );
 }
 var systemClock = { now: () => (/* @__PURE__ */ new Date()).toISOString() };
 async function main() {
   const startupRoot = resolveStartupRoot();
   const lock = await bindPortLock();
   if (lock.status === "already-up") {
-    console.log("workbench already running on http://127.0.0.1:4317 \u2014 focusing the existing instance");
+    console.log(
+      "workbench already running on http://127.0.0.1:4317 \u2014 focusing the existing instance"
+    );
     process.exit(0);
   }
   const server = lock.server;
@@ -19814,7 +19857,10 @@ async function main() {
     console.log(`workbench server shutting down (${signal})`);
     removePidfile(startupRoot);
     transport.close();
-    const closing = [...byRoot.values()].flatMap((p) => [p.watcher.close(), p.permissionWatcher.close()]);
+    const closing = [...byRoot.values()].flatMap((p) => [
+      p.watcher.close(),
+      p.permissionWatcher.close()
+    ]);
     void Promise.allSettled(closing).finally(() => server.close(() => process.exit(0)));
   };
   process.on("SIGINT", () => shutdown("SIGINT"));

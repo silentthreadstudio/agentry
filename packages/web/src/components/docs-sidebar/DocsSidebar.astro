@@ -7,7 +7,7 @@
 // co-located <script> below — reduced-motion-safe, no framework). Base-path rule: every
 // href goes through withBase() or it 404s under /agentry.
 import { withBase } from "../../lib/base.ts";
-import { docsGroups, DOCS_OVERVIEW, type DocsKey } from "../../lib/docs-nav.ts";
+import { DOCS_OVERVIEW, type DocsKey, docsGroups } from "../../lib/docs-nav.ts";
 
 interface Props {
   /** Active route key — omit on the overview index. */

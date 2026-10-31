@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 // Permission relay — the INFRA half of the permission relay (channels.md "Relay permission prompts",
 // Phase 3a). Two pieces of I/O, mirroring the Phase-1 ChannelBridge:
 //   1. A notification handler for `notifications/claude/channel/permission_request` (registered on the
@@ -15,14 +17,12 @@
 //   dir:     <cwd>/.agentry/run/permissions/
 //   request: <request_id>.json          (flow writes; PermissionRequestFile)
 //   verdict: <request_id>.verdict.json  (Workbench writes; { request_id, behavior })
-import { FSWatcher, watch } from "chokidar";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { type FSWatcher, watch } from "chokidar";
 import {
-  buildRequestFile,
-  parseVerdictFile,
   PermissionRequestSchema,
   type PermissionVerdictNotification,
+  buildRequestFile,
+  parseVerdictFile,
 } from "./permission-event.js";
 
 // What the relay needs to emit a verdict back — a single async fn so the SDK (and its custom-method
@@ -100,7 +100,12 @@ export class PermissionRelay {
   // A permission_request arrived: track the id pending + write the request file the Workbench reads.
   // Public so a test can drive the request path without a live SDK transport (the registrar handler
   // delegates straight here).
-  onRequest(params: { request_id: string; tool_name: string; description: string; input_preview: string }): void {
+  onRequest(params: {
+    request_id: string;
+    tool_name: string;
+    description: string;
+    input_preview: string;
+  }): void {
     this.pending.add(params.request_id);
     const dir = permissionsDir(this.cwd);
     mkdirSync(dir, { recursive: true });

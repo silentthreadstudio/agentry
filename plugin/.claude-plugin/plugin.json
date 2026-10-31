@@ -9,26 +9,15 @@
   "license": "MIT",
   "homepage": "https://github.com/Codestz/agentry",
   "repository": "https://github.com/Codestz/agentry",
-  "keywords": [
-    "orchestration",
-    "memory",
-    "agents",
-    "skills",
-    "sdlc",
-    "claude-code"
-  ],
+  "keywords": ["orchestration", "memory", "agents", "skills", "sdlc", "claude-code"],
   "mcpServers": {
     "mem": {
       "command": "node",
-      "args": [
-        "${CLAUDE_PLUGIN_ROOT}/mem/index.js"
-      ]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mem/index.js"]
     },
     "flow": {
       "command": "node",
-      "args": [
-        "${CLAUDE_PLUGIN_ROOT}/flow/index.js"
-      ]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/flow/index.js"]
     }
   }
 }

@@ -16,6 +16,9 @@ export async function postVerdict(requestId: string, behavior: "allow" | "deny")
     body: JSON.stringify({ behavior }),
   });
   if (!res.ok) {
-    throw new ApiError(`POST /api/permissions/${requestId} → ${res.status} ${res.statusText}`, res.status);
+    throw new ApiError(
+      `POST /api/permissions/${requestId} → ${res.status} ${res.statusText}`,
+      res.status,
+    );
   }
 }

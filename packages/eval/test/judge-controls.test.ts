@@ -8,13 +8,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  DEFAULT_AA_TOLERANCE,
+  DEFAULT_BROKEN_MAX,
+  DEFAULT_CONTROL_REPEATS,
+  DEFAULT_GOLD_MIN,
+  DEFAULT_MIN_GAP,
   aaStability,
   discrimination,
-  DEFAULT_AA_TOLERANCE,
-  DEFAULT_GOLD_MIN,
-  DEFAULT_BROKEN_MAX,
-  DEFAULT_MIN_GAP,
-  DEFAULT_CONTROL_REPEATS,
 } from "../src/judge/index.ts";
 
 // --- the pinned default thresholds (ADR-003) -----------------------------------------------------------

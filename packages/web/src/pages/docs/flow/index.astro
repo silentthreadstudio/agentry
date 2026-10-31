@@ -1,11 +1,11 @@
 ---
+import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
+import DocShot from "../../../components/doc-shot/DocShot.astro";
 // /docs/flow — Flow, the run-state engine. Composed through DocsLayout: header from props,
 // body = DocDiagram(flow.png) + prose. Facts verbatim from the content map.
 //
 // Base-path rule (#1 404 trap): DocDiagram takes a BARE path and prefixes it via withBase().
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
-import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
-import DocShot from "../../../components/doc-shot/DocShot.astro";
 ---
 
 <DocsLayout

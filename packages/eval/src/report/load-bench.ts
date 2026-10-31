@@ -18,7 +18,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import type { RunSummary } from "../store/schema.ts";
-import type { BenchData, BenchAxesView, BenchCensusView, ShowcaseItem } from "./model.ts";
+import type { BenchAxesView, BenchCensusView, BenchData, ShowcaseItem } from "./model.ts";
 
 /** The run kind a bench run is persisted under (the store's `RunKind` enum carries `"bench"`). */
 const BENCH_KIND = "bench";
@@ -55,22 +55,26 @@ interface RawBenchArtifact {
 const SHOWCASE: readonly ShowcaseItem[] = [
   {
     title: "Auditable structure",
-    blurb: "Every escalated run leaves a spec, a plan, and ADRs you can read — the decision trail Axis A judges is the same one you audit.",
+    blurb:
+      "Every escalated run leaves a spec, a plan, and ADRs you can read — the decision trail Axis A judges is the same one you audit.",
     kind: "structure",
   },
   {
     title: "Durable memory",
-    blurb: "Decisions, gotchas, and repo-facts persist across runs with provenance, so run two is warmer than run one — recall is shown, never scored.",
+    blurb:
+      "Decisions, gotchas, and repo-facts persist across runs with provenance, so run two is warmer than run one — recall is shown, never scored.",
     kind: "memory",
   },
   {
     title: "Real specialists",
-    blurb: "Architect, implementer, verifier, librarian — bounded experts the conductor dispatches, so the work is built and checked by different agents.",
+    blurb:
+      "Architect, implementer, verifier, librarian — bounded experts the conductor dispatches, so the work is built and checked by different agents.",
     kind: "specialists",
   },
   {
     title: "You stay in control",
-    blurb: "The Workbench surfaces every run live with review gates and steerable tasks — the value bench measures the work you can already watch happen.",
+    blurb:
+      "The Workbench surfaces every run live with review gates and steerable tasks — the value bench measures the work you can already watch happen.",
     kind: "workbench",
   },
 ];
@@ -165,7 +169,11 @@ function narrowAxes(raw: RawBenchArtifact["axes"]): BenchAxesView {
 }
 
 /** Narrow one axis stat, defaulting a missing mean/std/n to 0. */
-function stat(s: { mean?: number; std?: number; n?: number } | undefined): { mean: number; std: number; n: number } {
+function stat(s: { mean?: number; std?: number; n?: number } | undefined): {
+  mean: number;
+  std: number;
+  n: number;
+} {
   return { mean: s?.mean ?? 0, std: s?.std ?? 0, n: s?.n ?? 0 };
 }
 

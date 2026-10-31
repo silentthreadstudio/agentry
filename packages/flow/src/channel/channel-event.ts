@@ -6,7 +6,7 @@
 //
 // `meta` keys MUST be snake_case (`run_id`, `comment_id`) — the host drops hyphenated keys, so a
 // kebab key would silently strip the context the conductor needs to act on the comment.
-import { isHumanComment, type ReviewComment } from "../domain/review.js";
+import { type ReviewComment, isHumanComment } from "../domain/review.js";
 
 // The payload of one `notifications/claude/channel` notification — `content` is what Claude reads,
 // `meta` is the structured context the host surfaces in the `<channel …>` tag (snake_case only).

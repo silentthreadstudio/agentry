@@ -1,3 +1,4 @@
+import type { BoardCard, RunDoc } from "@agentry/workbench-shared";
 // RunView — one run's documents, filling the work column.
 //
 // This started as a PANE over the board and that was wrong. Reviewing a ticket means reading a document
@@ -14,7 +15,6 @@
 // navigator inside a column that already sits beside the conversation — three levels of chrome for one
 // document. The navigator's job is done here by the tab strip.
 import { useCallback, useEffect, useState } from "react";
-import type { BoardCard, RunDoc } from "@agentry/workbench-shared";
 import { fetchDocIndex } from "../../api/index.js";
 import { getWsClient } from "../../api/ws.js";
 import { CommentRail } from "../doc/CommentRail.js";

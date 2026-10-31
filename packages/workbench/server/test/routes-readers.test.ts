@@ -2,20 +2,20 @@
 // over EventStore / GateInbox / TokenReader / MemReader. Asserts the PINNED paths + verbs + `?run=`/`?q=`
 // filtering against a temp `.agentry/work/` + mem fixture tree. Evidence is the captured status + body.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { RunFiles, WorkRepository } from "../src/domain/ports.js";
 import { EventStore } from "../src/application/event-store.js";
 import { GateInbox } from "../src/application/gate-inbox.js";
-import { FsEventSource } from "../src/persistence/event-source.js";
-import { FsReviewSidecarSource } from "../src/persistence/review-sidecar-source.js";
 import { TokenReader } from "../src/application/token-reader.js";
-import { TranscriptReader } from "../src/persistence/transcript-reader.js";
+import type { RunFiles, WorkRepository } from "../src/domain/ports.js";
+import { FsEventSource } from "../src/persistence/event-source.js";
 import { MemReader } from "../src/persistence/mem-reader.js";
-import { handleReaderRequest, type ReaderDeps } from "../src/transport/routes.js";
+import { FsReviewSidecarSource } from "../src/persistence/review-sidecar-source.js";
+import { TranscriptReader } from "../src/persistence/transcript-reader.js";
+import { type ReaderDeps, handleReaderRequest } from "../src/transport/routes.js";
 
 function fakeRepo(runs: string[]): WorkRepository {
   return { listRuns: () => runs, readRun: () => undefined as RunFiles | undefined };
@@ -54,11 +54,22 @@ function seed(): { cwd: string; home: string; deps: ReaderDeps } {
     join(dir, "events.jsonl"),
     '{"ts":"2026-06-19T20:14:37.157Z","type":"node-done","node":"spec","durationMs":4200}\n',
   );
-  writeFileSync(join(dir, "run-state.json"), JSON.stringify({ agents: { implementer: { state: "working" } } }));
+  writeFileSync(
+    join(dir, "run-state.json"),
+    JSON.stringify({ agents: { implementer: { state: "working" } } }),
+  );
   mkdirSync(join(dir, ".review"), { recursive: true });
   writeFileSync(
     join(dir, ".review", "spec.annotations.json"),
-    JSON.stringify([{ id: "c1", anchor: { originalText: "x", headingAnchor: "h", startLine: 1 }, decision: "changes", body: "fix", resolved: false }]),
+    JSON.stringify([
+      {
+        id: "c1",
+        anchor: { originalText: "x", headingAnchor: "h", startLine: 1 },
+        decision: "changes",
+        body: "fix",
+        resolved: false,
+      },
+    ]),
   );
   const pFacts = join(cwd, ".agentry", "memory", "facts");
   mkdirSync(pFacts, { recursive: true });
@@ -162,10 +173,7 @@ test("GET /api/memory browses; ?q filters (read-only)", () => {
 test("GET /api/work/:id/review/:docId returns the doc's on-disk comments (open + resolved)", () => {
   withSeed((deps) => {
     const { res, captured } = fakeRes();
-    assert.equal(
-      handleReaderRequest(fakeReq("/api/work/run-a/review/spec"), res, deps),
-      true,
-    );
+    assert.equal(handleReaderRequest(fakeReq("/api/work/run-a/review/spec"), res, deps), true);
     assert.equal(captured.status, 200);
     const comments = captured.body as Array<{ id: string; resolved: boolean }>;
     assert.equal(comments.length, 1, "the seeded spec comment");
@@ -220,7 +228,11 @@ test("GateInbox skips the reserved conductor thread", () => {
     commentsFor: (_run: string, gate: string) => [
       {
         id: `${gate}-1`,
-        anchor: { originalText: gate === "_conductor" ? "" : "a span", headingAnchor: "", startLine: 0 },
+        anchor: {
+          originalText: gate === "_conductor" ? "" : "a span",
+          headingAnchor: "",
+          startLine: 0,
+        },
         decision: "question" as const,
         body: "text",
         resolved: false,
@@ -229,5 +241,9 @@ test("GateInbox skips the reserved conductor thread", () => {
   };
 
   const gates = new GateInbox(repository, sidecars).open().map((g) => g.gate);
-  assert.deepEqual(gates, ["spec"], "the conductor thread is a conversation, not a decision waiting on you");
+  assert.deepEqual(
+    gates,
+    ["spec"],
+    "the conductor thread is a conversation, not a decision waiting on you",
+  );
 });

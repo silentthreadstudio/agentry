@@ -53,7 +53,10 @@ test("a saved mode survives (AC12: it outlives a reload)", () => {
 });
 
 test("a junk stored mode falls back to the default rather than breaking the layout", () => {
-  (g.window as { localStorage: Storage }).localStorage.setItem("agentry.workbench.rail", "enormous");
+  (g.window as { localStorage: Storage }).localStorage.setItem(
+    "agentry.workbench.rail",
+    "enormous",
+  );
   assert.equal(loadMode(), "rail");
 });
 

@@ -11,8 +11,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { PermissionRelay, permissionsDir } from "../src/channel/permission-relay.js";
 import type { PermissionVerdictNotification } from "../src/channel/permission-event.js";
+import { PermissionRelay, permissionsDir } from "../src/channel/permission-relay.js";
 
 // Poll until `predicate` holds or the deadline passes — chokidar's fs events are async.
 async function waitFor(predicate: () => boolean, ms = 3000): Promise<void> {
@@ -48,7 +48,12 @@ afterEach(async () => {
 
 test("a permission_request writes the request file and tracks the id pending", () => {
   relay = new PermissionRelay(cwd, (n) => void emitted.push(n));
-  relay.onRequest({ request_id: "abcde", tool_name: "Bash", description: "run ls", input_preview: '{"cmd":"ls"}' });
+  relay.onRequest({
+    request_id: "abcde",
+    tool_name: "Bash",
+    description: "run ls",
+    input_preview: '{"cmd":"ls"}',
+  });
 
   assert.deepEqual(relay.pendingIds(), ["abcde"]);
   const file = JSON.parse(readFileSync(join(permissionsDir(cwd), "abcde.json"), "utf8"));
@@ -64,7 +69,12 @@ test("a verdict for a pending id emits the verdict and deletes both files", asyn
   relay.start();
   await settle();
 
-  relay.onRequest({ request_id: "abcde", tool_name: "Write", description: "write a file", input_preview: "{}" });
+  relay.onRequest({
+    request_id: "abcde",
+    tool_name: "Write",
+    description: "write a file",
+    input_preview: "{}",
+  });
   writeVerdict(cwd, "abcde", '{"request_id":"abcde","behavior":"allow"}');
 
   await waitFor(() => emitted.length >= 1);
@@ -85,7 +95,12 @@ test("a deny verdict emits behavior:deny", async () => {
   relay.start();
   await settle();
 
-  relay.onRequest({ request_id: "bcdef", tool_name: "Bash", description: "rm -rf", input_preview: "{}" });
+  relay.onRequest({
+    request_id: "bcdef",
+    tool_name: "Bash",
+    description: "rm -rf",
+    input_preview: "{}",
+  });
   writeVerdict(cwd, "bcdef", '{"request_id":"bcdef","behavior":"deny"}');
 
   await waitFor(() => emitted.length >= 1);
@@ -108,12 +123,20 @@ test("a malformed verdict json is ignored — no emit, no throw", async () => {
   relay.start();
   await settle();
 
-  relay.onRequest({ request_id: "cdefg", tool_name: "Bash", description: "x", input_preview: "{}" });
+  relay.onRequest({
+    request_id: "cdefg",
+    tool_name: "Bash",
+    description: "x",
+    input_preview: "{}",
+  });
   writeVerdict(cwd, "cdefg", "not valid json {");
   await settle(600);
 
   assert.equal(emitted.length, 0, "a malformed verdict must not emit");
   // the id stays pending (the malformed file didn't resolve it), and the request file remains
   assert.deepEqual(relay.pendingIds(), ["cdefg"]);
-  assert.ok(existsSync(join(permissionsDir(cwd), "cdefg.json")), "request file untouched by a bad verdict");
+  assert.ok(
+    existsSync(join(permissionsDir(cwd), "cdefg.json")),
+    "request file untouched by a bad verdict",
+  );
 });

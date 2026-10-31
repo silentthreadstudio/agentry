@@ -5,10 +5,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  type UiComment,
   hydrate,
   openCommentCount,
   threadsOf,
-  type UiComment,
 } from "../routes/doc/comment-store.js";
 import type { DiskComment } from "../routes/doc/comment-store.js";
 
@@ -60,7 +60,11 @@ test("threadsOf treats a comment with no replyTo as a thread root (threading key
   // origin. So a stray no-replyTo entry becomes its own top-level thread, never an orphan.
   const { threads, orphanReplies } = threadsOf([human("c1"), reply("r1")]);
   assert.equal(threads.length, 2, "both no-replyTo comments are roots");
-  assert.equal(orphanReplies.length, 0, "nothing is orphaned — orphans come from an unknown replyTo");
+  assert.equal(
+    orphanReplies.length,
+    0,
+    "nothing is orphaned — orphans come from an unknown replyTo",
+  );
 });
 
 test("threadsOf routes a reply pointing at an unknown id to orphanReplies", () => {
@@ -84,7 +88,15 @@ test("openCommentCount counts unresolved HUMAN comments only (agent replies excl
   // regardless): the badge must read 1, not 2.
   const disk: DiskComment[] = [
     { id: "c1", anchor, decision: "changes", body: "open", resolved: false },
-    { id: "r1", anchor, decision: "changes", body: "reply", resolved: false, origin: "agent", replyTo: "c1" },
+    {
+      id: "r1",
+      anchor,
+      decision: "changes",
+      body: "reply",
+      resolved: false,
+      origin: "agent",
+      replyTo: "c1",
+    },
   ];
   hydrate(runId, docId, disk);
   assert.equal(openCommentCount(runId, docId), 1, "only the human comment counts toward the badge");
@@ -94,7 +106,15 @@ test("openCommentCount ignores a resolved human comment and any agent reply", ()
   const [runId, docId] = ["run-thread-count-2", "spec"];
   const disk: DiskComment[] = [
     { id: "c1", anchor, decision: "approve", body: "done", resolved: true },
-    { id: "r1", anchor, decision: "changes", body: "reply", resolved: true, origin: "agent", replyTo: "c1" },
+    {
+      id: "r1",
+      anchor,
+      decision: "changes",
+      body: "reply",
+      resolved: true,
+      origin: "agent",
+      replyTo: "c1",
+    },
   ];
   hydrate(runId, docId, disk);
   assert.equal(openCommentCount(runId, docId), 0, "resolved human + agent reply → badge 0");

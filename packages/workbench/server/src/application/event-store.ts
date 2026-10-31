@@ -1,3 +1,6 @@
+import type { FlowEvent, HookBackstopLine } from "@agentry/flow/domain/events";
+import { parseLogLine } from "@agentry/flow/domain/events";
+import { AgentState } from "@agentry/flow/domain/status";
 // EventStore — the ONE timeline fold (plan §2.2). Folds every run's `events.jsonl` (+ the hook backstop
 // lines) into a single `EventView[]` projection that powers BOTH the per-work Activity feed (filtered to
 // one run) and the cross-run Agents view — a projection, NOT five ad-hoc scanners. Also derives the agent
@@ -13,9 +16,6 @@
 // The roster is read off `run-state.json`'s `{ agents: { "<id>": { state, assignedTask? } } }` shape (the
 // same shape FLOW's `AgentService` owns), validated through FLOW's closed `AgentState` enum.
 import type { AgentView, EventView } from "@agentry/workbench-shared";
-import type { FlowEvent, HookBackstopLine } from "@agentry/flow/domain/events";
-import { parseLogLine } from "@agentry/flow/domain/events";
-import { AgentState } from "@agentry/flow/domain/status";
 import type { EventSource, WorkRepository } from "../domain/ports.js";
 
 export class EventStore {
@@ -79,12 +79,15 @@ export class EventStore {
   // returns `undefined`), or one whose `agents` isn't an object, yields no entries. Each agent's `state` is
   // validated through FLOW's closed `AgentState` — an out-of-enum value drops that agent rather than
   // surfacing an ill-typed state.
-  private rosterOf(run: string): Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> {
+  private rosterOf(
+    run: string,
+  ): Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> {
     const raw = this.source.runState(run);
     const agents = isRecord(raw) ? raw.agents : undefined;
     if (!isRecord(agents)) return [];
 
-    const out: Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> = [];
+    const out: Array<{ agent: string; state: AgentState; assignedTask?: string; since?: string }> =
+      [];
     for (const [agent, value] of Object.entries(agents)) {
       if (!isRecord(value)) continue;
       const state = AgentState.safeParse(value.state);

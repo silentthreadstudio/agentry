@@ -8,9 +8,9 @@
 // tools/errors.ts, never built here. `guard()` maps an unexpected throw to the `internal` envelope.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { FlowServices } from "../index.js";
 import { AgentService } from "../application/agent-service.js";
 import { AgentState } from "../domain/status.js";
+import type { FlowServices } from "../index.js";
 import { guard } from "./adapter.js";
 import { badInput } from "./errors.js";
 import { err, ok } from "./result.js";

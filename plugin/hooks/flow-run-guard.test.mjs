@@ -3,7 +3,7 @@
 // work-id-binder.test.mjs (there is no hook-test harness in-repo). Run: node --test hooks/flow-run-guard.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
@@ -65,7 +65,10 @@ test("gate write (plan) + no run ⇒ marker with artifact=plan", () => {
 
 test("gate write (tasks/NNN-*.md) + no run ⇒ marker with artifact=task", () => {
   seedWorkDir(work, "feat-x");
-  const r = run({ cwd: work, tool_input: { file_path: gatePath(work, "feat-x", "tasks", "006-b1.md") } });
+  const r = run({
+    cwd: work,
+    tool_input: { file_path: gatePath(work, "feat-x", "tasks", "006-b1.md") },
+  });
   assert.equal(r.status, 0);
   const m = markers(work, "feat-x");
   assert.equal(m.length, 1);
@@ -109,7 +112,11 @@ test("non-gate write under work/ ⇒ no-op (no marker, no events.jsonl created)"
   seedWorkDir(work, "feat-x");
   const r = run({ cwd: work, tool_input: { file_path: gatePath(work, "feat-x", "notes.md") } });
   assert.equal(r.status, 0);
-  assert.equal(existsSync(eventsPath(work, "feat-x")), false, "no events.jsonl for a non-gate write");
+  assert.equal(
+    existsSync(eventsPath(work, "feat-x")),
+    false,
+    "no events.jsonl for a non-gate write",
+  );
 });
 
 test("a file at the work-id root that isn't spec/plan ⇒ no-op", () => {
@@ -121,7 +128,10 @@ test("a file at the work-id root that isn't spec/plan ⇒ no-op", () => {
 
 test("a non-digit-prefixed file under tasks/ ⇒ no-op (not a task gate artifact)", () => {
   seedWorkDir(work, "feat-x");
-  const r = run({ cwd: work, tool_input: { file_path: gatePath(work, "feat-x", "tasks", "index.md") } });
+  const r = run({
+    cwd: work,
+    tool_input: { file_path: gatePath(work, "feat-x", "tasks", "index.md") },
+  });
   assert.equal(r.status, 0);
   assert.equal(existsSync(eventsPath(work, "feat-x")), false);
 });
@@ -135,7 +145,10 @@ test("a write OUTSIDE .agentry/work/ (a src file) ⇒ no-op", () => {
 
 test("non-Agentry repo (no .agentry/) ⇒ silent, exit 0, nothing written", () => {
   // No seedWorkDir — there is no .agentry tree at all.
-  const r = run({ cwd: work, tool_input: { file_path: join(work, ".agentry", "work", "feat-x", "spec.md") } });
+  const r = run({
+    cwd: work,
+    tool_input: { file_path: join(work, ".agentry", "work", "feat-x", "spec.md") },
+  });
   assert.equal(r.status, 0);
   assert.equal(r.stdout, "");
   assert.equal(r.stderr, "");

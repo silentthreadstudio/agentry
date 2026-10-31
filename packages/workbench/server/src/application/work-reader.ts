@@ -1,3 +1,4 @@
+import { FlowTaskStatus } from "@agentry/flow/domain/status";
 // WorkReader — the application service that folds ONE run's parsed files into the read-models the
 // transport serves (task 9's `routes`/`ws` call these). PURE of HTTP/ws (ADR-001): it depends only on
 // the `WorkRepository` port (the parsed files), the pure `buildDocIndex` (the doc list), and the `Clock`
@@ -11,9 +12,8 @@
 //   - docs:    the run's parsed artifacts (spec/plan/adrs/tasks) keyed for the editor; Phase 1 ferries
 //     the parsed records so task 9 can serve them without re-reading the disk.
 import type { RunDoc, RunSummary } from "@agentry/workbench-shared";
-import { FlowTaskStatus } from "@agentry/flow/domain/status";
-import type { Clock, RunFiles, WorkRepository } from "../domain/ports.js";
 import { buildDocIndex } from "../domain/doc-index.js";
+import type { Clock, RunFiles, WorkRepository } from "../domain/ports.js";
 
 // A frontmatter value coerced to a non-empty string, else undefined (so omitted-vs-empty stays clean).
 function asString(v: unknown): string | undefined {
