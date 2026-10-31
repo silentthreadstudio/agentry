@@ -2,6 +2,8 @@
 // reached only through ctx.hasCommit.
 import {
   CLOSED,
+  EXCEPT,
+  KIND,
   finding,
   kindSpec,
   leadTokens,
@@ -36,6 +38,12 @@ const doneItems = (model, params) => scope(model, params).filter((item) => item.
 
 const doneHasEvidence = {
   id: "done-has-evidence",
+  params: {
+    kind: KIND,
+    field: { type: "field", required: true },
+    evidence: { type: "enum", values: ["commit", "commit-or-note"], required: true },
+    except: EXCEPT,
+  },
   check(model, params, ctx) {
     const field = param(params, "field");
     const mode = param(params, "evidence");
@@ -64,9 +72,16 @@ function names(line, shas, mode) {
 
 const doneHasHandoff = {
   id: "done-has-handoff",
+  params: {
+    kind: KIND,
+    section: { type: "section", of: "parent", required: true },
+    commit: { type: "enum", values: ["first", "any", "none"], default: "none" },
+    field: { type: "field" },
+    except: EXCEPT,
+  },
   check(model, params) {
     const section = param(params, "section");
-    const mode = params.commit ?? "none";
+    const mode = params.commit;
     const field = mode === "none" ? undefined : evidenceField(model, params);
     const out = [];
     for (const item of doneItems(model, params)) {
@@ -99,6 +114,13 @@ const doneHasHandoff = {
 
 const flaggedNeedsVerdict = {
   id: "flagged-needs-verdict",
+  params: {
+    kind: KIND,
+    flag: { type: "field", required: true },
+    verdict: { type: "field", required: true },
+    pass: { type: "strings", required: true },
+    except: EXCEPT,
+  },
   check(model, params) {
     const flag = param(params, "flag");
     const verdict = param(params, "verdict");
@@ -121,6 +143,7 @@ const flaggedNeedsVerdict = {
 
 const closedChildren = {
   id: "closed-children",
+  params: { kind: KIND, except: EXCEPT },
   check(model, params) {
     const out = [];
     for (const item of doneItems(model, params)) {
@@ -142,6 +165,7 @@ const closedChildren = {
 
 const doneSignoff = {
   id: "done-signoff",
+  params: { kind: KIND, field: { type: "field", required: true }, except: EXCEPT },
   check(model, params) {
     const field = param(params, "field");
     return doneItems(model, params)

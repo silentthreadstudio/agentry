@@ -1,5 +1,7 @@
 // Flow rules: what may start, in which order, and what waits on parked work. Pure.
 import {
+  EXCEPT,
+  KIND,
   STARTED,
   depField,
   finding,
@@ -24,6 +26,7 @@ const depsOf = (model, item, { field, kinds }) =>
 
 const depsDone = {
   id: "deps-done",
+  params: { kind: KIND, field: { type: "field" }, except: EXCEPT },
   check(model, params) {
     const setup = depSetup(model, params);
     const out = [];
@@ -41,6 +44,7 @@ const depsDone = {
 
 const parentActive = {
   id: "parent-active",
+  params: { kind: KIND, except: EXCEPT },
   check(model, params) {
     const out = [];
     for (const item of scope(model, params)) {
@@ -61,8 +65,9 @@ const parentActive = {
 
 const sequential = {
   id: "sequential",
+  params: { kind: KIND, skip: { type: "strings", default: [] }, except: EXCEPT },
   check(model, params) {
-    const skip = params.skip ?? [];
+    const skip = params.skip;
     const out = [];
     let previous;
     for (const item of scope(model, params)) {
@@ -80,8 +85,9 @@ const sequential = {
 
 const questionBlocks = {
   id: "question-blocks",
+  params: { kind: KIND, field: { type: "field", default: "blocks" }, except: EXCEPT },
   check(model, params) {
-    const field = params.field ?? "blocks";
+    const field = params.field;
     const kinds = refKinds(kindSpec(model, param(params, "kind")).fields[field]);
     const blockedBy = new Map();
     for (const question of scope(model, params)) {
@@ -106,6 +112,12 @@ const questionBlocks = {
 
 const parked = {
   id: "parked",
+  params: {
+    kind: KIND,
+    parking: { type: "string", required: true },
+    field: { type: "field" },
+    except: EXCEPT,
+  },
   check(model, params) {
     const parking = param(params, "parking");
     const setup = depSetup(model, params);
@@ -128,9 +140,15 @@ const parked = {
 
 const depsNotForward = {
   id: "deps-not-forward",
+  params: {
+    kind: KIND,
+    field: { type: "field" },
+    skip: { type: "strings", default: [] },
+    except: EXCEPT,
+  },
   check(model, params) {
     const setup = depSetup(model, params);
-    const skip = params.skip ?? [];
+    const skip = params.skip;
     const ordered = (item) =>
       item.rank !== undefined && !skip.includes(item.id) && !skip.includes(item.parent);
     const out = [];

@@ -1,9 +1,10 @@
 // spec — parse and validate the process file (`.agentry/process.json`, plan F13 §3.1) by hand: it
 // mirrors core's zod schema (`packages/core/src/process.ts`; the plugin ships no dependency) and adds
-// what only a reader can check (refs between kinds, paths, regexes). Every name the file supplies is
-// looked up as an own property, never reaching a built-in such as `constructor`. PURE: never reads,
-// never throws.
+// what only a reader can check (refs between kinds, paths, regexes, each rule's declared params).
+// Every name the file supplies is looked up as an own property, never reaching a built-in such as
+// `constructor`. PURE: never reads, never throws.
 import { posix } from "node:path";
+import { CATALOG, ruleOf } from "./rules/index.mjs";
 
 const PHASES = ["planned", "active", "done", "dropped", "parked"];
 const TYPES = ["text", "list", "ref", "flag", "date", "commits", "evidence", "link"];
@@ -101,10 +102,9 @@ const kind = shape({
   contract: shape({ "blocks!": list(str), lead: list(oneOf("heading", "bold")) }),
   create: shape({ ask: list(str), "id!": str, rows: list(row), blocks: list(block) }),
 });
-const rule = shape(
-  { "rule!": like(/\S/, "a rule id"), label: str, kind: str, except: record(list(str)) },
-  true,
-);
+// The keys every rule entry may carry; the rest are its rule's params, checked by `checkRule`.
+const rule = shape({ "rule!": like(/\S/, "a rule id"), label: str, note: str }, true);
+const ENTRY = ["rule", "label", "note"];
 const lifecycle = shape({
   "kind!": str,
   "on!": shape({ dispatched: str, built: str, failed: str, merged: str }),
@@ -130,6 +130,72 @@ export function escapesRoot(root, path) {
 }
 
 const entries = (v) => (isObject(v) ? Object.entries(v) : []);
+
+// One param value against its declared type (`rules/index.mjs`). `ctx` is { kinds, kind, name, given }:
+// `kind` is the entry's kind spec when it names a declared kind, `name` that kind's name.
+const fieldsOf = (kind) => (isObject(kind?.fields) ? kind.fields : {});
+const sectionsOf = (kind) => (isObject(kind?.file?.sections) ? kind.file.sections : {});
+const named = (test) => (v, at, bad, ctx, p) => {
+  if (typeof v !== "string") return bad(at, "should be a string");
+  const problem = test(v, ctx, p);
+  if (problem) bad(at, ctx.given ? problem : `defaults to "${v}", which ${problem}`);
+};
+const PARAM = {
+  string: str,
+  strings: list(str),
+  enum: (v, at, bad, _ctx, p) => oneOf(...p.values)(v, at, bad),
+  kind: named((v, { kinds }) => !has(kinds, v) && `names an unknown kind "${v}"`),
+  field: named(
+    (v, { kind, name }) => kind && !has(fieldsOf(kind), v) && `names no ${name} field "${v}"`,
+  ),
+  section: named((v, { kinds, kind, name }, p) => {
+    if (!kind) return false;
+    if (p.of === "kind")
+      return !has(sectionsOf(kind), v) && `names no section "${v}" of the ${name} file`;
+    const parent = Object.values(fieldsOf(kind)).find((f) => f?.role === "parent");
+    if (!parent) return `needs a parent, and ${name} has no field with role "parent"`;
+    const refs = [parent.ref ?? []].flat().filter((k) => typeof k === "string");
+    return (
+      !refs.some((k) => has(sectionsOf(own(kinds, k)), v)) &&
+      `names no section "${v}" of the ${refs.join(" or ")} file`
+    );
+  }),
+  except: (v, at, bad, { kind, name }) => {
+    if (!isObject(v)) return bad(at, "should be an object");
+    for (const [k, x] of Object.entries(v)) {
+      list(str)(x, join(at, k), bad);
+      if (kind && k !== "id" && !has(fieldsOf(kind), k))
+        bad(join(at, k), `names no ${name} field (or "id")`);
+    }
+  },
+};
+
+// A rules[] entry against the params its catalog rule declares: an unknown rule or param, a missing
+// one, a wrong type, or a kind, field or section the process file does not declare. The defaults are
+// checked too, so a rule never runs on a field its kind lacks.
+function checkRule(entry, at, kinds, bad) {
+  if (!isObject(entry) || typeof entry.rule !== "string") return; // the shape check reports it
+  const rule = ruleOf(entry.rule);
+  if (!rule)
+    return bad(
+      `${at}.rule`,
+      `names an unknown rule "${entry.rule}" (${quote(Object.keys(CATALOG))})`,
+    );
+  const declared = Object.keys(rule.params);
+  const takes = declared.length ? `its params: ${quote(declared)}` : "it takes none";
+  for (const k of Object.keys(entry))
+    if (!ENTRY.includes(k) && !has(rule.params, k))
+      bad(join(at, k), `is not a param of ${entry.rule} (${takes})`);
+  const name = typeof entry.kind === "string" && has(kinds, entry.kind) ? entry.kind : null;
+  const kind = name && isObject(kinds[name]) ? kinds[name] : null;
+  for (const [p, def] of Object.entries(rule.params)) {
+    const given = has(entry, p);
+    if (!given && def.required) bad(at, `is missing "${p}" (${entry.rule} needs it)`);
+    const value = given ? entry[p] : def.default;
+    if (value !== undefined)
+      PARAM[def.type](value, join(at, p), bad, { kinds, kind, name, given }, def);
+  }
+}
 
 // What only a reader can check: the kinds refs name, the fields status names, the paths.
 function crossCheck(spec, bad) {
@@ -163,7 +229,8 @@ function crossCheck(spec, bad) {
     [k.contract?.blocks ?? []].flat().forEach((p, i) => inside(p, `${at}.contract.blocks[${i}]`));
     [k.create?.blocks ?? []].flat().forEach((b, i) => inside(b?.file, `${at}.create.blocks[${i}]`));
   }
-  [spec.rules ?? []].flat().forEach((r, i) => known(r?.kind, `rules[${i}].kind`));
+  if (Array.isArray(spec.rules))
+    spec.rules.forEach((r, i) => checkRule(r, `rules[${i}]`, kinds, bad));
   known(spec.lifecycle?.kind, "lifecycle.kind");
   known(spec.status?.now, "status.now");
   for (const [d, def] of entries(spec.drafts)) known(def?.kind, `drafts.${d}.kind`);

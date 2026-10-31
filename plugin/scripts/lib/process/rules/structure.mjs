@@ -1,8 +1,13 @@
 // Structure rules (ids, statuses, references, sprint files) plus the helpers every rule file shares.
 // Pure: reads the Model only. See the pinned Rule/Finding/Model seams in the process-kit design.
+// Each rule declares its `params` (see `index.mjs`); the process file is checked against them.
 
 export const STARTED = new Set(["active", "done"]);
 export const CLOSED = new Set(["done", "dropped", "parked"]);
+
+// The params most rules share: the kind they check (required) and the items they skip.
+export const KIND = { type: "kind", required: true };
+export const EXCEPT = { type: "except" };
 
 export function param(params, name) {
   if (params[name] === undefined) throw new Error(`missing param '${name}'`);
@@ -81,6 +86,7 @@ export const leadTokens = (lead) =>
 
 const idsUnique = {
   id: "ids-unique",
+  params: {},
   check(model) {
     const out = [];
     for (const [kind, { items }] of Object.entries(model.kinds)) {
@@ -96,6 +102,7 @@ const idsUnique = {
 
 const statusKnown = {
   id: "status-known",
+  params: {},
   check(model) {
     const out = [];
     for (const [kind, { items }] of Object.entries(model.kinds)) {
@@ -112,6 +119,7 @@ const statusKnown = {
 
 const refsResolve = {
   id: "refs-resolve",
+  params: {},
   check(model) {
     const out = [];
     for (const [kind, { items }] of Object.entries(model.kinds)) {
@@ -137,6 +145,7 @@ const refsResolve = {
 
 const fileRequired = {
   id: "file-required",
+  params: { kind: { type: "kind" }, except: EXCEPT },
   check(model, params) {
     const required = (k) => model.spec.kinds[k].file?.required;
     const kinds = params.kind ? [params.kind] : Object.keys(model.kinds).filter(required);
@@ -170,6 +179,12 @@ function listedIds(section, column) {
 
 const membersListed = {
   id: "members-listed",
+  params: {
+    kind: KIND,
+    section: { type: "section", of: "kind", required: true },
+    member: { type: "kind", required: true },
+    except: EXCEPT,
+  },
   check(model, params) {
     const section = param(params, "section");
     const members = itemsOf(model, param(params, "member"));

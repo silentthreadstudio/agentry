@@ -1,4 +1,5 @@
 // Test support (not a test): hand-built Models for the rule tests. Invented ids and words only.
+import { withDefaults } from "../lib/process/rules/index.mjs";
 
 const PHASES = {
   todo: "planned",
@@ -116,5 +117,6 @@ export const file = (path, { rows = [], leads = [] } = {}) => ({
 
 export const hasAll = { hasCommit: () => true };
 export const hasOnly = (...shas) => ({ hasCommit: (sha) => shas.includes(sha) });
+// As `check.mjs` runs a rule: the entry with the rule's declared defaults filled in.
 export const run = (rule, model, params, ctx = hasAll) =>
-  rule.check(model, { rule: rule.id, ...params }, ctx);
+  rule.check(model, withDefaults(rule, { rule: rule.id, ...params }), ctx);

@@ -74,7 +74,10 @@ test("each problem names its path in the file", () => {
     [spec("kinds.task.status.values.todo", "open"), /^kinds\.task\.status\.values\.todo should/],
     [spec("kinds.task.id.match", "("), /^kinds\.task\.id\.match should be a valid regular/],
     [spec("rules.1", { label: "R2" }), /^rules\[1\] is missing "rule"/],
-    [spec("rules.0.kind", "epic"), /^rules\[0\]\.kind names an unknown kind "epic"/],
+    [
+      spec("rules.1", { rule: "parent-active", kind: "epic" }),
+      /^rules\[1\]\.kind names an unknown kind "epic"/,
+    ],
     [spec("kinds.task.status.field", "state"), /^kinds\.task\.status\.field names no field/],
     [spec("kinds.task.file", { glob: "sprints/*.md" }), /^kinds\.task\.file\.glob should be a/],
     [
@@ -91,13 +94,104 @@ test("each problem names its path in the file", () => {
   }
 });
 
-test("rules keep their own params (open shape)", () => {
-  assert.deepEqual(messages(spec("rules.1", { rule: "deps-done", field: "deps" })), []);
+test("a rule entry takes the params its rule declares, and a note", () => {
+  const entry = { rule: "deps-done", kind: "task", field: "status", note: "why it is on" };
+  assert.deepEqual(messages(spec("rules.1", entry)), []);
+});
+
+// MINI plus what the rule params can name: a sprint with an own file, a task with a parent.
+function withTree(rule) {
+  const copy = spec("rules.1", rule);
+  copy.kinds.sprint = {
+    label: "Sprint",
+    at: { table: "BOARD.md", heading: "Sprints" },
+    id: { column: "Sprint" },
+    file: { glob: "s/{id}.md", sections: { handoff: { heading: "Handoff", as: "bold-lead" } } },
+  };
+  copy.kinds.task.fields.sprint = { column: "Sprint", ref: "sprint", role: "parent" };
+  return copy;
+}
+
+test("a rule entry with a param its rule does not declare, or lacks, or mistypes, is a problem", () => {
+  const cases = [
+    [{ rule: "nope" }, /^rules\[1\]\.rule names an unknown rule "nope" \("ids-unique"/],
+    [{ rule: "toString" }, /^rules\[1\]\.rule names an unknown rule "toString"/],
+    [{ rule: "ids-unique", kind: "task" }, /^rules\[1\]\.kind is not a param of ids-unique/],
+    [
+      { rule: "deps-done", kind: "task", feild: "status" },
+      /^rules\[1\]\.feild is not a param of deps-done \(its params: "kind", "field", "except"\)/,
+    ],
+    [{ rule: "deps-done", field: "status" }, /^rules\[1\] is missing "kind"/],
+    [{ rule: "deps-done", kind: "task", field: 7 }, /^rules\[1\]\.field should be a string/],
+    [
+      { rule: "deps-done", kind: "task", field: "depz" },
+      /^rules\[1\]\.field names no task field "depz"/,
+    ],
+    [
+      { rule: "deps-done", kind: "task", field: "constructor" },
+      /^rules\[1\]\.field names no task field "constructor"/,
+    ],
+    [{ rule: "sequential", kind: "task", skip: "PRE" }, /^rules\[1\]\.skip should be a list/],
+    [
+      {
+        rule: "flagged-needs-verdict",
+        kind: "task",
+        flag: "status",
+        verdict: "status",
+        pass: "OK",
+      },
+      /^rules\[1\]\.pass should be a list/,
+    ],
+    [
+      { rule: "done-has-evidence", kind: "task", field: "status", evidence: "sha" },
+      /^rules\[1\]\.evidence should be one of "commit", "commit-or-note"/,
+    ],
+    [
+      { rule: "question-blocks", kind: "task" },
+      /^rules\[1\]\.field defaults to "blocks", which names no task field "blocks"/,
+    ],
+    [
+      { rule: "parked", kind: "task", parking: "LATER", except: { sprnt: ["X"] } },
+      /^rules\[1\]\.except\.sprnt names no task field \(or "id"\)/,
+    ],
+    [
+      { rule: "parked", kind: "task", parking: "LATER", except: { id: "X" } },
+      /^rules\[1\]\.except\.id should be a list/,
+    ],
+    [
+      { rule: "members-listed", kind: "task", section: "tasks", member: "task" },
+      /^rules\[1\]\.section names no section "tasks" of the task file/,
+    ],
+    [
+      { rule: "done-has-handoff", kind: "task", section: "handof" },
+      /^rules\[1\]\.section names no section "handof" of the sprint file/,
+    ],
+    [
+      { rule: "done-has-handoff", kind: "sprint", section: "handoff" },
+      /^rules\[1\]\.section needs a parent, and sprint has no field with role "parent"/,
+    ],
+    [
+      { rule: "done-has-handoff", kind: "task", section: "handoff", commit: "all" },
+      /^rules\[1\]\.commit should be one of "first", "any", "none"/,
+    ],
+  ];
+  for (const [rule, expected] of cases) {
+    const found = messages(withTree(rule));
+    assert.ok(
+      found.some((m) => expected.test(m)),
+      `${expected} not in ${JSON.stringify(found)}`,
+    );
+  }
+  const fine = { rule: "done-has-handoff", kind: "task", section: "handoff", commit: "any" };
+  assert.deepEqual(messages(withTree(fine)), []);
 });
 
 test("a name from the file never reads a built-in: kinds, fields, rules, lifecycle", () => {
   const cases = [
-    [spec("rules.0.kind", "toString"), /^rules\[0\]\.kind names an unknown kind "toString"/],
+    [
+      spec("rules.1", { rule: "parent-active", kind: "toString" }),
+      /^rules\[1\]\.kind names an unknown kind "toString"/,
+    ],
     [spec("lifecycle", { kind: "hasOwnProperty", on: {} }), /^lifecycle\.kind names an unknown/],
     [spec("status", { now: "constructor" }), /^status\.now names an unknown kind "constructor"/],
     [spec("kinds.task.status.field", "toString"), /^kinds\.task\.status\.field names no field/],
@@ -114,7 +208,7 @@ test("a name from the file never reads a built-in: kinds, fields, rules, lifecyc
 test("a kind may be named like a built-in when the file declares it", () => {
   const copy = spec();
   copy.kinds.constructor = structuredClone(MINI.kinds.task);
-  copy.rules.push({ rule: "ids-unique", kind: "constructor" });
+  copy.rules.push({ rule: "parent-active", kind: "constructor" });
   assert.deepEqual(messages(copy), []);
 });
 

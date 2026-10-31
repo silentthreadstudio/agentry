@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { CATALOG } from "../lib/process/rules/index.mjs";
 import { validateSpec } from "../lib/process/spec.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -108,3 +109,96 @@ for (const patch of DEGENERATE) {
     }
   });
 }
+
+// One entry per catalog rule that is valid on table-board, so a typo is the only thing wrong.
+const ENTRIES = {
+  "ids-unique": {},
+  "status-known": {},
+  "refs-resolve": {},
+  "file-required": { kind: "sprint" },
+  "members-listed": { kind: "sprint", section: "members", member: "task" },
+  "deps-done": { kind: "task", field: "deps" },
+  "parent-active": { kind: "task" },
+  sequential: { kind: "sprint", skip: ["PRE", "TRK", "LATER"] },
+  "question-blocks": { kind: "question", field: "blocks" },
+  parked: { kind: "task", parking: "LATER" },
+  "deps-not-forward": { kind: "task", field: "deps", skip: ["LATER"] },
+  "done-has-evidence": { kind: "task", field: "commit", evidence: "commit" },
+  "done-has-handoff": { kind: "task", section: "handoff", commit: "first" },
+  "flagged-needs-verdict": { kind: "task", flag: "risky", verdict: "verdict", pass: ["PASS"] },
+  "closed-children": { kind: "sprint" },
+  "done-signoff": { kind: "sprint", field: "ok" },
+};
+// A misspelling of a param name: its last letter turned into a "z" (`field` → `fielz`).
+const typo = (name) => `${name.slice(0, -1)}${name.endsWith("z") ? "y" : "z"}`;
+
+function checkWith(fixture, rules) {
+  const root = mkdtempSync(join(tmpdir(), "spec-fuzz-"));
+  cpSync(join(HERE, "fixtures", fixture), root, { recursive: true });
+  const spec = JSON.parse(readFileSync(join(root, "process.json"), "utf8"));
+  writeFileSync(join(root, "process.json"), JSON.stringify({ ...spec, rules }));
+  try {
+    return spawn("board.mjs", ["check", "--root", root, "--process", join(root, "process.json")]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("every catalog rule has a valid entry here", () => {
+  assert.deepEqual(Object.keys(ENTRIES).sort(), Object.keys(CATALOG).sort());
+});
+
+for (const [id, entry] of Object.entries(ENTRIES)) {
+  test(`${id}: a misspelled param is a process-file error naming it, not a run without it`, () => {
+    const valid = checkWith("table-board", [{ rule: id, ...entry }]);
+    assert.ok(valid.status === 0 || valid.status === 1, `${id} as written: ${valid.stderr}`);
+    const names = Object.keys(CATALOG[id].params);
+    const typos = Object.fromEntries(
+      (names.length ? names : ["kind"]).map((p) => [typo(p), entry[p] ?? "task"]),
+    );
+    const out = checkWith("table-board", [{ rule: id, ...entry, ...typos }]);
+    assert.equal(out.status, 2, `${id}: ${out.stdout}`);
+    for (const key of Object.keys(typos))
+      assert.match(out.stderr, new RegExp(`rules\\[0\\]\\.${key} is not a param of ${id}`), key);
+  });
+}
+
+test("a broken board with a wrong-typed or unknown rule param is exit 2, never OK", () => {
+  const cases = [
+    [{ rule: "deps-done", kind: "task", field: 7 }, /rules\[0\]\.field should be a string/],
+    [{ rule: "deps-done", kind: "task", field: "depz" }, /rules\[0\]\.field names no task field/],
+    [{ rule: "deps-done", kind: "task", feild: "deps" }, /rules\[0\]\.feild is not a param/],
+    [{ rule: "parked", kind: "task", parking: "LATER", skip: "PRE" }, /rules\[0\]\.skip is not/],
+  ];
+  for (const [rule, expected] of cases) {
+    const out = checkWith("evidence-board", [rule]);
+    assert.equal(out.status, 2, JSON.stringify(rule));
+    assert.match(out.stderr, expected);
+    assert.doesNotMatch(out.stderr + out.stdout, /OK|\n\s+at /);
+  }
+  const fine = checkWith("evidence-board", [{ rule: "deps-done", kind: "task", field: "deps" }]);
+  assert.equal(fine.status, 1, "the board is broken under the rule as written");
+});
+
+test("a list or enum param given the wrong type is exit 2 on the board that uses it", () => {
+  const verdict = {
+    rule: "flagged-needs-verdict",
+    kind: "task",
+    flag: "risky",
+    verdict: "verdict",
+  };
+  const cases = [
+    [{ ...verdict, pass: "PASS" }, /rules\[0\]\.pass should be a list/],
+    [{ rule: "sequential", kind: "sprint", skip: "PRE" }, /rules\[0\]\.skip should be a list/],
+    [
+      { rule: "done-has-handoff", kind: "task", section: "handoff", commit: "all" },
+      /rules\[0\]\.commit should be one of/,
+    ],
+  ];
+  for (const [rule, expected] of cases) {
+    const out = checkWith("table-board", [rule]);
+    assert.equal(out.status, 2, JSON.stringify(rule));
+    assert.match(out.stderr, expected);
+    assert.doesNotMatch(out.stderr, /\n\s+at /);
+  }
+});
