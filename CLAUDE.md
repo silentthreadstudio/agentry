@@ -38,7 +38,7 @@ copies only that dir — not the dev tree); TypeScript dev packages live under `
 
 ## Commits
 
-End commit messages with:
-`Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+Conventional Commits: `type(scope): summary`, imperative, lowercase, no trailing period, ≤ 72 chars.
+No AI attribution anywhere: commits, PRs, tags and release notes carry the author only.
 
 When in doubt about structure, the `architecting`/`planning` skills and doc 11 govern.
