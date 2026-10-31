@@ -2,12 +2,12 @@
 // where `kinds(specKinds, params) -> names` gives the kinds it checks when that is not `params.kind`.
 //
 // `params` is the single list of what a process-file entry may set besides `rule`, `label` and `note`:
-// name -> { type, required?, default?, values?, of?, is?, pick?, only?, needs?, names? }. Types:
+// name -> { type, required?, default?, values?, of?, as?, is?, pick?, only?, needs?, names? }. Types:
 // "string", "strings" (a list of strings; `names`: its values are ids of the kind's items, "id", or
 // of their parents, "parent"), "enum" (one of `values`), "kind" (a kind the file declares), "field"
 // (a field of the entry's kind, of the type `is` names in `FIELD`: a value never reads a field the
 // rule cannot use), "section" (a section of the entry's kind's own file, or `of: "parent"` of its
-// parent kind's), "parent" (a value the kind's parent field can hold: an item of the kind it refs,
+// parent kind's; with `as`, one read that way), "parent" (a value the kind's parent field can hold: an item of the kind it refs,
 // or an `also` value; the board decides, `checkOnBoard`) and "except" ({ <field or "id">: [values] }).
 // `needs` (capabilities in `CAN`): what a "kind" param's kind must have for the rule to check it at
 // all, or on a "field" param what one kind the field refs must have. `pick`: left out, a field param
@@ -18,12 +18,12 @@
 // and reports a `names` or `except` value that matches nothing on the board. The process skill's
 // `references/format.md` lists the same params and capabilities; `test/format-doc.test.mjs` fails
 // when the two differ.
-import { CAN, lacks } from "./capabilities.mjs";
+import { CAN, LINK, lacks, phasesOf } from "./capabilities.mjs";
 import { rules as evidence } from "./evidence.mjs";
 import { rules as flow } from "./flow.mjs";
 import { FIELD, rules as structure } from "./structure.mjs";
 
-export { CAN, FIELD, lacks };
+export { CAN, FIELD, LINK, lacks, phasesOf };
 
 export const CATALOG = Object.fromEntries(
   [...structure, ...flow, ...evidence].map((r) => [r.id, r]),

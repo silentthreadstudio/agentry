@@ -3,8 +3,33 @@
 // what only a reader can check (refs between kinds, paths, regexes, each rule's declared params).
 // Every name the file supplies is looked up as an own property, never reaching a built-in such as
 // `constructor`. PURE: never reads, never throws.
+//
+// The reader's invariants: what `read.mjs`, the rules and `rules/capabilities.mjs` take for granted
+// of a kind, each refused here (exit 2 naming the key), so an option never silently changes what a
+// rule checks. `format.md` ("What the reader assumes") words the same list.
+// - ids: a table kind names its id `column`; a files kind takes its id from frontmatter or a filename
+//   pattern with `{id}`; `match` is a valid regex.
+// - types: a cell reads as its `type` (markdown.mjs `cellValue`); `ref` is read only from a `ref` or
+//   `list` field, and names at least one declared kind; `case` is read only on a text field.
+// - roles: a kind has at most one `parent` field, of type `ref` (the reader links a parent by one
+//   id); a `children` field is of type `list`; a role field refs at least one kind.
+// - status: phases are the five fixed words; `status.field` names a text field of the kind, and with
+//   `case: "upper"` every status word is upper case (else none could match); `derived: "children"`
+//   needs a child kind with a status (else every item is "planned").
+// - sections: `as: "table"` names its id `column`; a section a rule reads leads by bold
+//   (`done-has-handoff`) is a `bold-lead` one.
+// - rule params: each against its declared type and the capabilities its kind `needs` (`checkRule`).
 import { posix } from "node:path";
-import { CATALOG, FIELD, applies, lacks, pickField, ruleOf } from "./rules/index.mjs";
+import {
+  CATALOG,
+  FIELD,
+  LINK,
+  applies,
+  lacks,
+  phasesOf,
+  pickField,
+  ruleOf,
+} from "./rules/index.mjs";
 
 const PHASES = ["planned", "active", "done", "dropped", "parked"];
 const TYPES = ["text", "list", "ref", "flag", "date", "commits", "evidence", "link"];
@@ -180,15 +205,17 @@ const PARAM = {
     return `names ${describe(field, v)}, and no kind it refs has ${missing}; ${rule} needs one`;
   }),
   // A section of the parent's file is judged once the kind has a parent (its `needs` says so).
+  // With `as`, a section read that way (`bold-lead`).
   section: named((v, { kinds, kind, name }, p) => {
     if (!kind) return false;
-    if (p.of === "kind")
-      return !has(sectionsOf(kind), v) && `names no section "${v}" of the ${name} file`;
+    const fits = (k) => has(sectionsOf(k), v) && (!p.as || sectionsOf(k)[v]?.as === p.as);
+    const what = `${p.as ? `${p.as} ` : ""}section "${v}"`;
+    if (p.of === "kind") return !fits(kind) && `names no ${what} of the ${name} file`;
     const refs = refsOf(parentOf(kind)?.[1]);
     return (
       refs.length > 0 &&
-      !refs.some((k) => has(sectionsOf(own(kinds, k)), v)) &&
-      `names no section "${v}" of the ${refs.join(" or ")} file`
+      !refs.some((k) => fits(own(kinds, k))) &&
+      `names no ${what} of the ${refs.join(" or ")} file`
     );
   }),
   // That the kind has a parent is its `needs`; which parent values exist, the board's to say:
@@ -259,6 +286,56 @@ function checkRule(entry, at, kinds, bad) {
   }
 }
 
+// The reader's invariants on kind `name`'s fields and status (the header): what a ref is read
+// from, how a role links, which field a status is read from and whether a derived one can move.
+function checkTree(kinds, name, at, bad) {
+  const k = kinds[name];
+  const fields = fieldsOf(k);
+  let parent;
+  for (const [f, def] of Object.entries(fields)) {
+    if (!isObject(def)) continue;
+    const here = `${at}.fields.${f}`;
+    const type = def.type ?? "text";
+    const typed = TYPES.includes(type); // a wrong type is the shape check's to report
+    if (Array.isArray(def.ref) && def.ref.length === 0)
+      bad(`${here}.ref`, "should name at least one kind");
+    if (has(def, "ref") && typed && !["ref", "list"].includes(type))
+      bad(`${here}.ref`, `is read only from a "ref" or "list" field, and "${f}" is ${type}`);
+    // On a ref it would upper-case the id before the tree links it, so a mixed-case id never links.
+    if (has(def, "case") && typed && type !== "text")
+      bad(`${here}.case`, `is read only on a text field, and "${f}" is ${type}`);
+    if (!has(LINK, def.role)) continue;
+    if (!def.ref) bad(here, `has role "${def.role}" but no "ref"`);
+    else if (typed && type !== LINK[def.role])
+      bad(here, `has role "${def.role}", which needs type "${LINK[def.role]}", not "${type}"`);
+    if (def.role !== "parent") continue;
+    if (parent) bad(`${here}.role`, `is "parent" as "${parent}" is; a kind has one parent field`);
+    parent ??= f;
+  }
+  const status = isObject(k.status) ? k.status : {};
+  const field = typeof status.field === "string" ? own(fields, status.field) : undefined;
+  if (isObject(field)) {
+    const type = field.type ?? "text";
+    if (type !== "text")
+      bad(
+        `${at}.status.field`,
+        `names the ${type} field "${status.field}"; a status is one word, read from a text field`,
+      );
+    if (field.case === "upper")
+      for (const word of Object.keys(isObject(status.values) ? status.values : {}))
+        if (word !== word.toUpperCase())
+          bad(
+            `${at}.status.values.${word}`,
+            `can never match: "${status.field}" reads upper case ("case": "upper")`,
+          );
+  }
+  if (status.derived === "children" && phasesOf(kinds, name).length === 0)
+    bad(
+      `${at}.status.derived`,
+      `needs children with a status (a kind whose parent field refs ${name}, or a children list of ${name}, to a kind with a status); without, every ${name} is "planned"`,
+    );
+}
+
 // What only a reader can check: the kinds refs name, the fields status names, the paths.
 function crossCheck(spec, bad) {
   const kinds = isObject(spec.kinds) ? spec.kinds : {};
@@ -276,10 +353,9 @@ function crossCheck(spec, bad) {
     if (!isObject(k)) continue; // reported by the shape check
     const at = `kinds.${name}`;
     const fields = isObject(k.fields) ? k.fields : {};
-    for (const [f, def] of Object.entries(fields)) {
+    for (const [f, def] of Object.entries(fields))
       for (const ref of [def?.ref ?? []].flat()) known(ref, `${at}.fields.${f}.ref`);
-      if (def?.role && !def.ref) bad(`${at}.fields.${f}`, `has role "${def.role}" but no "ref"`);
-    }
+    checkTree(kinds, name, at, bad);
     if (has(k.at, "table") && !k.id?.column) bad(`${at}.id`, 'needs a "column"');
     if (typeof k.status?.field === "string" && !has(fields, k.status.field))
       bad(`${at}.status.field`, `names no field "${k.status.field}"`);

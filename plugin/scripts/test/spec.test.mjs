@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { CAN, lacks } from "../lib/process/rules/index.mjs";
 import { checkOnBoard, escapesRoot, parseSpec, validateSpec } from "../lib/process/spec.mjs";
 import { SPEC, makeModel, sprint, task } from "./rules-model.mjs";
 
@@ -112,7 +113,7 @@ function withTree(rule) {
     id: { column: "Sprint" },
     file: { glob: "s/{id}.md", sections: { handoff: { heading: "Handoff", as: "bold-lead" } } },
   };
-  copy.kinds.task.fields.sprint = { column: "Sprint", ref: "sprint", role: "parent" };
+  copy.kinds.task.fields.sprint = { column: "Sprint", type: "ref", ref: "sprint", role: "parent" };
   return copy;
 }
 
@@ -168,7 +169,7 @@ test("a rule entry with a param its rule does not declare, or lacks, or mistypes
     ],
     [
       { rule: "done-has-handoff", kind: "task", section: "handof" },
-      /^rules\[1\]\.section names no section "handof" of the sprint file/,
+      /^rules\[1\]\.section names no bold-lead section "handof" of the sprint file/,
     ],
     [
       { rule: "done-has-handoff", kind: "sprint", section: "handoff" },
@@ -271,7 +272,7 @@ test("a field param naming a field of the wrong type is a problem naming the par
     ],
     [
       { rule: "deps-done", kind: "task", field: "sprint" },
-      /field names the text field "sprint" of sprint;/,
+      /field names the ref field "sprint" of sprint;/,
     ],
     [{ rule: "deps-not-forward", kind: "task", field: "note" }, deps("deps-not-forward")],
     [{ rule: "parked", kind: "task", parking: "LATER", field: "commit" }, deps("parked")],
@@ -396,5 +397,169 @@ test("parked's parking value is a parent the kind can hold: an item on the board
     orphan.includes(
       'rules[1].kind names "sprint", which lacks a status that can be "parked" and a field with role "parent"; parked needs it',
     ),
+  );
+});
+
+// The reader's invariants (spec.mjs header): each edit of withTree breaks one, refused naming its key.
+const tree = (edit, rule = { rule: "ids-unique" }) => {
+  const copy = withTree(rule);
+  edit(copy);
+  return messages(copy);
+};
+const DERIVED_ALONE =
+  'kinds.sprint.status.derived needs children with a status (a kind whose parent field refs sprint, or a children list of sprint, to a kind with a status); without, every sprint is "planned"';
+const READER = [
+  [
+    "a parent field read as a list links no parent",
+    (s) => {
+      s.kinds.task.fields.sprint.type = "list";
+    },
+    ['kinds.task.fields.sprint has role "parent", which needs type "ref", not "list"'],
+  ],
+  [
+    "a parent field read as text links by a ref it does not read",
+    (s) => {
+      Reflect.deleteProperty(s.kinds.task.fields.sprint, "type");
+    },
+    [
+      'kinds.task.fields.sprint.ref is read only from a "ref" or "list" field, and "sprint" is text',
+      'kinds.task.fields.sprint has role "parent", which needs type "ref", not "text"',
+    ],
+  ],
+  [
+    "a children field read as one id links no children",
+    (s) => {
+      Reflect.deleteProperty(s.kinds.task.fields.sprint, "role");
+      s.kinds.sprint.fields = {
+        tasks: { column: "Tasks", type: "ref", ref: "task", role: "children" },
+      };
+    },
+    ['kinds.sprint.fields.tasks has role "children", which needs type "list", not "ref"'],
+  ],
+  [
+    "a second parent field (the reader keeps the last, the rules the first)",
+    (s) => {
+      s.kinds.task.fields.epic = { column: "Epic", type: "ref", ref: "sprint", role: "parent" };
+    },
+    ['kinds.task.fields.epic.role is "parent" as "sprint" is; a kind has one parent field'],
+  ],
+  [
+    "a ref list naming no kind",
+    (s) => {
+      s.kinds.task.fields.sprint.ref = [];
+    },
+    ["kinds.task.fields.sprint.ref should name at least one kind"],
+  ],
+  [
+    "a ref on a field whose value is no id",
+    (s) => {
+      s.kinds.task.fields.risky = { column: "Risk", type: "flag", ref: "task" };
+    },
+    ['kinds.task.fields.risky.ref is read only from a "ref" or "list" field, and "risky" is flag'],
+  ],
+  [
+    "an upper-cased ref, which would no longer name a mixed-case id",
+    (s) => {
+      s.kinds.task.fields.sprint.case = "upper";
+    },
+    ['kinds.task.fields.sprint.case is read only on a text field, and "sprint" is ref'],
+  ],
+  [
+    "a status read from a list field",
+    (s) => {
+      s.kinds.task.fields.status.type = "list";
+    },
+    [
+      'kinds.task.status.field names the list field "status"; a status is one word, read from a text field',
+    ],
+  ],
+  [
+    "a status read upper case against a lower-case word",
+    (s) => {
+      s.kinds.task.fields.status.case = "upper";
+      s.kinds.task.status.values = { TODO: "planned", doing: "active" };
+    },
+    ['kinds.task.status.values.doing can never match: "status" reads upper case ("case": "upper")'],
+  ],
+  [
+    "a derived status with no child kind",
+    (s) => {
+      s.kinds.sprint.status = { derived: "children" };
+      Reflect.deleteProperty(s.kinds.task.fields.sprint, "role");
+    },
+    [DERIVED_ALONE],
+  ],
+  [
+    "a derived status whose child kind has none",
+    (s) => {
+      s.kinds.sprint.status = { derived: "children" };
+      Reflect.deleteProperty(s.kinds.task, "status");
+    },
+    [DERIVED_ALONE],
+  ],
+];
+
+for (const [name, edit, expected] of READER)
+  test(`the reader's invariants: ${name} is refused naming the key`, () => {
+    assert.deepEqual(tree(edit), expected);
+  });
+
+test("the reader's invariants hold on what the reader can use", () => {
+  const fine = [
+    (s) => {
+      s.kinds.sprint.status = { derived: "children" };
+    },
+    (s) => {
+      s.kinds.task.fields.status.case = "upper";
+      s.kinds.task.status.values = { TODO: "planned", DOING: "active" };
+    },
+    (s) => {
+      s.kinds.sprint.fields = {
+        tasks: { column: "Tasks", type: "list", ref: "task", role: "children" },
+      };
+    },
+  ];
+  for (const edit of fine) assert.deepEqual(tree(edit), []);
+});
+
+test("a section a rule reads by its bold leads must be a bold-lead section", () => {
+  const handoff = { rule: "done-has-handoff", kind: "task", section: "tasks" };
+  const found = tree((s) => {
+    s.kinds.sprint.file.sections.tasks = { heading: "Tasks", as: "table", column: "Task" };
+  }, handoff);
+  assert.deepEqual(found, [
+    'rules[1].section names no bold-lead section "tasks" of the sprint file',
+  ]);
+});
+
+test("a capability counts a role field only of the type the reader links it by", () => {
+  const { kinds } = withTree({ rule: "ids-unique" });
+  assert.deepEqual(lacks(kinds, "task", ["parent", "order"]), []);
+  kinds.task.fields.sprint.type = "list";
+  const lacking = ["parent", "order"].map((c) => CAN[c].says());
+  assert.deepEqual(lacks(kinds, "task", ["parent", "order"]), lacking);
+  assert.deepEqual(lacks(kinds, "sprint", ["children"]), [CAN.children.says()]);
+  assert.deepEqual(lacks(kinds, "task", ["child"], "sprint"), [CAN.child.says("sprint")]);
+  Reflect.deleteProperty(kinds.task.fields.sprint, "role");
+  kinds.sprint.fields = { tasks: { column: "Tasks", type: "ref", ref: "task", role: "children" } };
+  assert.deepEqual(lacks(kinds, "sprint", ["children"]), [CAN.children.says()]);
+  kinds.sprint.fields.tasks.type = "list";
+  assert.deepEqual(lacks(kinds, "sprint", ["children"]), []);
+});
+
+test("a derived status can be done or started only with children that have a status", () => {
+  const { kinds } = withTree({ rule: "ids-unique" });
+  kinds.sprint.status = { derived: "children" };
+  const both = ["done", "started"];
+  assert.deepEqual(lacks(kinds, "sprint", both), []);
+  kinds.task.status.values = { todo: "planned" };
+  assert.deepEqual(
+    lacks(kinds, "sprint", both),
+    both.map((c) => CAN[c].says()),
+  );
+  Reflect.deleteProperty(kinds.task, "status");
+  assert.deepEqual(
+    lacks(kinds, "sprint", both),
+    both.map((c) => CAN[c].says()),
   );
 });

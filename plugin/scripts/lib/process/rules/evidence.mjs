@@ -65,7 +65,7 @@ const doneHasHandoff = {
   id: "done-has-handoff",
   params: {
     kind: kindParam("done", "parent"),
-    section: { type: "section", of: "parent", required: true },
+    section: { type: "section", of: "parent", as: "bold-lead", required: true },
     commit: { type: "enum", values: ["first", "any", "none"], default: "none" },
     field: { type: "field", is: "commits", pick: true, only: { commit: ["first", "any"] } },
     except: EXCEPT,

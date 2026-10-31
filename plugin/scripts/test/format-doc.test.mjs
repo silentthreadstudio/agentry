@@ -32,7 +32,8 @@ const NAMES = { id: "the kind's items", parent: "their parents" };
 const TYPE = {
   kind: (d) => `a kind${needs(d)}`,
   field: (d) => FIELD[d.is].says("the rule's kind") + (d.needs ? `, to a kind${needs(d)}` : ""),
-  section: (d) => `a section of the ${d.of === "parent" ? "parent's" : "kind's"} file`,
+  section: (d) =>
+    `a ${d.as ? `${d.as} ` : ""}section of the ${d.of === "parent" ? "parent's" : "kind's"} file`,
   parent: () => "an item of the parent's kind, or an also value of the parent field",
   string: () => "a string",
   strings: (d) =>

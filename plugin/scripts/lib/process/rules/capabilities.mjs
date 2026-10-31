@@ -5,29 +5,48 @@
 // CAN: name -> { says(of), has(kinds, name, of) }. `kinds` is the process file's (unchecked: any
 // value may be garbage), `name` the kind tested, `of` the rule's own kind (for a kind named beside it,
 // such as members-listed's `member`). Each mirrors what `read.mjs` derives: phases from `status`, the
-// tree from `role` fields, ranks from the kinds a parent field refs. PURE.
+// tree from `role` fields of the type it links by, ranks from the kinds a parent field refs. PURE.
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const kindOf = (kinds, name) => (Object.hasOwn(kinds, name) ? kinds[name] : undefined);
 const fieldsOf = (kind) => (isObject(kind?.fields) ? Object.values(kind.fields) : []);
 const refsOf = (field) => [field?.ref ?? []].flat().filter((k) => typeof k === "string");
-const withRole = (kind, role) => fieldsOf(kind).filter((f) => isObject(f) && f.role === role);
+const STARTED = ["active", "done"];
+const CLOSED = ["done", "dropped", "parked"];
 
-/** The phases a kind's items can be in: its status values, or what a derived status yields. */
-function phasesOf(kind) {
-  if (kind?.status?.derived === "children") return ["planned", "active", "done"];
-  return isObject(kind?.status?.values) ? Object.values(kind.status.values) : [];
-}
-const canBe =
-  (...phases) =>
-  (kinds, name) =>
-    phasesOf(kindOf(kinds, name)).some((p) => phases.includes(p));
+/** The type `read.mjs` links each role by: a parent is one id (a string), children a list. A role
+ *  field of another type, or one that refs no kind, links nothing. */
+export const LINK = { parent: "ref", children: "list" };
+const withRole = (kind, role) =>
+  fieldsOf(kind).filter(
+    (f) => isObject(f) && f.role === role && f.type === LINK[role] && refsOf(f).length > 0,
+  );
 
 /** True when items of `child` hang under items of `parent`: the child's parent field refs it, or
  *  the parent's children list does (`read.mjs` builds the tree from both). */
 const under = (kinds, parent, child) =>
   withRole(kindOf(kinds, child), "parent").some((f) => refsOf(f).includes(parent)) ||
   withRole(kindOf(kinds, parent), "children").some((f) => refsOf(f).includes(child));
+const childKinds = (kinds, name) =>
+  Object.keys(kinds).filter((k) => k !== name && under(kinds, name, k));
+
+/** The phases a kind's items can be in: its status values, or what a derived status yields from its
+ *  children's phases (none when no child kind has a status: its items are then always "planned"). */
+export function phasesOf(kinds, name, seen = new Set()) {
+  const kind = kindOf(kinds, name);
+  if (kind?.status?.derived !== "children")
+    return isObject(kind?.status?.values) ? Object.values(kind.status.values) : [];
+  if (seen.has(name)) return [];
+  seen.add(name);
+  const child = childKinds(kinds, name).flatMap((k) => phasesOf(kinds, k, seen));
+  if (child.length === 0) return [];
+  const can = (phases) => child.some((p) => phases.includes(p));
+  return ["planned", ...(can(STARTED) ? ["active"] : []), ...(can(CLOSED) ? ["done"] : [])];
+}
+const canBe =
+  (...phases) =>
+  (kinds, name) =>
+    phasesOf(kinds, name).some((p) => phases.includes(p));
 
 // The kinds a parent field refs rank by row order; a kind linked to one takes its rank.
 const ordered = (kinds) =>
@@ -56,12 +75,12 @@ export const CAN = {
     says: () => "a parent kind with a status",
     has: (kinds, name) => {
       const parents = withRole(kindOf(kinds, name), "parent").flatMap(refsOf);
-      return parents.length === 0 || parents.some((k) => phasesOf(kindOf(kinds, k)).length > 0);
+      return parents.length === 0 || parents.some((k) => phasesOf(kinds, k).length > 0);
     },
   },
   children: {
     says: () => "children (another kind whose parent field refs it, or a children list)",
-    has: (kinds, name) => Object.keys(kinds).some((k) => k !== name && under(kinds, name, k)),
+    has: (kinds, name) => childKinds(kinds, name).length > 0,
   },
   child: {
     says: (of) => `a parent field that refs ${of}, or a place in a children list of ${of}`,

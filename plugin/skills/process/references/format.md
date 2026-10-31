@@ -36,7 +36,7 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
   | `column` | The header text, exactly. Column order never matters. |
   | `type` | `text` (default) · `list` (comma-separated) · `ref` (one id) · `flag` (cell contains `mark`) · `date` (leading `YYYY-MM-DD`) · `commits` (every 7–40 hex token) · `evidence` (commits plus the remaining text as a note) · `link` (the first markdown link's text, not its target; a cell without a link reads whole) |
   | `ref` | The kind (or list of kinds) a `ref`/`list` value names. A hit in two kinds is a finding. |
-  | `role` | `parent` on the child's ref (a task's sprint), `children` on the parent's list (a milestone's sprints). Together they make the tree. |
+  | `role` | `parent` on the child's `ref` field (a task's sprint), `children` on the parent's `list` field (a milestone's sprints). Together they make the tree. |
   | `also` | Literal values allowed besides ids (a parking word such as `LATER`). |
   | `mark`, `match`, `case` | The flag glyph; a regex applied before the type; `upper` to compare case-blind. |
 
@@ -62,6 +62,24 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
 Kind order matters once: when two links claim the same child (a task's `sprint` ref and an epic's `tasks`
 list), the link in the kind listed first decides the child's order. List a grouping kind such as `epic`
 after `task`, so tasks keep their sprint's order.
+
+### What the reader assumes
+
+The reader and the rules take these for granted; a file that breaks one is refused when it is loaded (exit 2,
+naming the key), because the rules would otherwise run on links or phases that are never there and print OK.
+
+- **Ids** — a table kind names its `id.column`; a files kind takes its id from `frontmatter:<key>` or
+  `filename:<pattern with {id}>`; every `match` is a valid regex.
+- **Refs** — `ref` is read only from a `ref` or `list` field, and names at least one declared kind. `case` is
+  read only on a text field (on a ref it would change the id before it is looked up).
+- **The tree** — a kind has at most one field with role `parent`, of type `ref` (a parent is one id); a field
+  with role `children` is a `list`. A role field of another type would link nothing.
+- **Status** — the phases are the five words above; `status.field` names a text field of the kind, and when
+  that field reads `case: "upper"` every status word is upper case. `derived: "children"` needs a child kind
+  with a status (a kind whose parent field refs it, or its children list); without one every item stays
+  planned.
+- **Sections** — an `as: "table"` section names its id `column`; `done-has-handoff` reads a `bold-lead`
+  section.
 
 ## Rule catalog
 
@@ -136,7 +154,7 @@ refuses a file where no kind's is.
 | `done-has-evidence` | `evidence` | yes | — | `"commit"` or `"commit-or-note"` |
 | `done-has-evidence` | `except` | no | — | `{ field or "id": [values] }` |
 | `done-has-handoff` | `kind` | yes | — | a kind with `done`, `parent` |
-| `done-has-handoff` | `section` | yes | — | a section of the parent's file |
+| `done-has-handoff` | `section` | yes | — | a bold-lead section of the parent's file |
 | `done-has-handoff` | `commit` | no | `"none"` | `"first"` or `"any"` or `"none"` |
 | `done-has-handoff` | `field` | no | the first field that fits | a commits or evidence field, used only when commit is `"first"` or `"any"` |
 | `done-has-handoff` | `except` | no | — | `{ field or "id": [values] }` |
