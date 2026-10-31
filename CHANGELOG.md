@@ -6,6 +6,14 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+### Added
+- **`/agentry:exec <task-id>`** — builds a task whose contract is already written. It finds the
+  contract in the repo's task files, briefs the implementer (or the designer for UI work) in a
+  worktree, has an independent verifier check the acceptance, allows one fix round, and hands off
+  the worktree, commits and verdict. No spec, plan or split, no Flow run, no merge or push.
+- **`/agentry:ask <question>`** — answers with one read-only specialist (explorer, researcher or
+  architect) and cited sources. No worktree, no run state, no edits.
+
 ## [0.2.0] — 2026-06-21
 
 The orchestration-substrate release: a durable run-state engine (Flow), a local

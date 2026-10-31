@@ -13,6 +13,10 @@ Run a task as Agentry's conductor: choose the **least process that wins**, dispa
 1. **Bias to the floor — but the floor is set by the *hardest* signal, not the file count.** Over-routing is sunk, visible waste — *but under-routing a task that hides a decision is worse and invisible:* you silently **guess** the fork and ship a fragile default no one notices until it breaks (e.g. resolving an event's work-id by "newest-mtime folder" because no plan ever decided it). Don't be lulled by "under-routing is cheap to fix mid-flight" — the measured failure is that it *isn't* caught mid-flight; it ships. So: default to the floor for **genuinely** simple work, but **you may one-shot only after actively clearing the escalation check (§Right-size) — "I saw no reason to escalate" counts only if you actually ran the check.** The blunt rule: *if you can finish it in one edit / one agent without learning anything new AND it hides no decision, do it.* A **real unknown or an undecided design fork vetoes the floor** → **≥ spec-first regardless of how few files it touches.** Small footprint ≠ small decision.
 2. **Guide, don't cage.** Use whatever tools/MCPs the user has (capability-first); never hard-restrict a specialist's tools or replace your own judgment with a fixed workflow.
 
+## Lanes — outside the pipeline
+
+Work with a written contract → `/agentry:exec <task-id>`; a question → `/agentry:ask <question>`. Lanes skip routing, the gates, Flow and `.agentry/work/`, and `/agentry:go` never routes to them. Their rules live in `references/lanes.md`.
+
 ## Interaction mode — interactive (default) vs auto-pilot
 
 The conductor runs in one of two modes. **Mode changes *gating*, not *thinking*** — the routing, right-sizing, escalation check, spec/plan/split work, and the shapes you choose are **identical** in both. What differs is only what happens *at* a gate.

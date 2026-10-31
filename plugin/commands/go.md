@@ -25,4 +25,6 @@ Load and follow the `conducting` skill. The essentials:
 
 **First action when you escalate — open a Flow run.** The moment you route *above* the one-shot floor (spec-first or decompose+verify), your **first action is `run_start(goal)`** through the Flow MCP, **immediately followed by `event_emit` of the routing decision** (the shape you chose + why) — *before* you write a spec, dispatch a specialist, or create a task. That routing event is what makes the decision observable and gradeable; a run with artifacts but **no routing-decision event reads as a skipped process** (the self-eval flags it). Thread the returned `run` handle into every later Flow call: `artifact_write` (spec/plan), `task_create` / `task_assign` / `task_status`, and an `event_emit` at **each gate reached**. Track escalated work in Flow, never an ad-hoc todo list — the run is what makes the work resumable, gradeable, and visible in the Workbench. A genuine **one-shot is exempt**: no run, no ceremony — just make the edit.
 
+**Other lanes** (explicit commands, never routed from here): work with a written contract → `/agentry:exec <task-id>`; a question → `/agentry:ask <question>`.
+
 Right-size first, then act.
