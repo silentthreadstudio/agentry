@@ -5,7 +5,7 @@
 import { globSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import * as md from "./markdown.mjs";
-import { escapesRoot, parseSpec } from "./spec.mjs";
+import { escapesRoot, own, parseSpec } from "./spec.mjs";
 
 const STARTED = new Set(["active", "done"]);
 const CLOSED = new Set(["done", "dropped", "parked"]);
@@ -38,7 +38,7 @@ function makeItem(ctx, rawId, get, where) {
   const item = { kind: name, id, fields, children: [], ...where };
   if (kind.status?.field) {
     item.status = String(fields[kind.status.field] ?? "");
-    const phase = kind.status.values?.[item.status];
+    const phase = own(kind.status.values, item.status);
     if (phase) item.phase = phase;
   }
   return item;
@@ -81,9 +81,9 @@ function readFiles(ctx) {
     const text = ctx.io.read(file);
     if (text === null) continue;
     const fm = md.frontmatter(text);
-    const rawId = key ? fm?.data[key] : byName.exec(basename(file))?.[1];
-    const where = { file, line: (key && fm?.lines[key]) || 1 };
-    const item = makeItem(ctx, rawId, (column) => fm?.data[column], where);
+    const rawId = key ? own(fm?.data, key) : byName.exec(basename(file))?.[1];
+    const where = { file, line: (key && own(fm?.lines, key)) || 1 };
+    const item = makeItem(ctx, rawId, (column) => own(fm?.data, column), where);
     if (item) items.push(item);
   }
   if (paths.length === 0) ctx.problem({ kind: ctx.name, message: `no files match "${glob}"` });
@@ -211,10 +211,9 @@ export function readProcess({ root, spec }) {
     }
   }
   linkTree(spec ?? {}, kinds);
-  const index = {};
-  for (const item of Object.values(kinds).flatMap((k) => k.items)) {
-    if (!Object.hasOwn(index, item.id)) index[item.id] = [];
-    index[item.id].push(item);
-  }
-  return { spec, root, kinds, index, problems };
+  // Built from entries, so an id such as `__proto__` is held as a plain key like any other.
+  const byItemId = new Map();
+  for (const item of Object.values(kinds).flatMap((k) => k.items))
+    byItemId.set(item.id, [...(byItemId.get(item.id) ?? []), item]);
+  return { spec, root, kinds, index: Object.fromEntries(byItemId), problems };
 }

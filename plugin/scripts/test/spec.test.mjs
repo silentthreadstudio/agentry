@@ -95,6 +95,29 @@ test("rules keep their own params (open shape)", () => {
   assert.deepEqual(messages(spec("rules.1", { rule: "deps-done", field: "deps" })), []);
 });
 
+test("a name from the file never reads a built-in: kinds, fields, rules, lifecycle", () => {
+  const cases = [
+    [spec("rules.0.kind", "toString"), /^rules\[0\]\.kind names an unknown kind "toString"/],
+    [spec("lifecycle", { kind: "hasOwnProperty", on: {} }), /^lifecycle\.kind names an unknown/],
+    [spec("status", { now: "constructor" }), /^status\.now names an unknown kind "constructor"/],
+    [spec("kinds.task.status.field", "toString"), /^kinds\.task\.status\.field names no field/],
+    [spec("kinds.task.toString", "x"), /^kinds\.task\.toString is not a known key/],
+    [spec("kinds.task.fields.status.ref", "constructor"), /\.ref names an unknown kind/],
+    [JSON.parse('{"version":1,"__proto__":{}}'), /^__proto__ is not a known key/],
+    [spec("kinds", JSON.parse('{"__proto__":{}}')), /^kinds\.__proto__ is a reserved name/],
+  ];
+  for (const [value, expected] of cases) {
+    assert.ok(flags(value, expected), `${expected} not in ${JSON.stringify(messages(value))}`);
+  }
+});
+
+test("a kind may be named like a built-in when the file declares it", () => {
+  const copy = spec();
+  copy.kinds.constructor = structuredClone(MINI.kinds.task);
+  copy.rules.push({ rule: "ids-unique", kind: "constructor" });
+  assert.deepEqual(messages(copy), []);
+});
+
 test("a path that leaves the repository is a spec problem; ../ inside it is fine", () => {
   assert.deepEqual(messages(spec("kinds.task.at.table", "../DECISIONS.md")), []);
   const outside = /kinds\.task\.at\.table "\.\.\/\.\.\/outside\.md" leaves the repository/;

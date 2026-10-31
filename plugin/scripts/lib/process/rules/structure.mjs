@@ -10,15 +10,13 @@ export function param(params, name) {
 }
 
 export function kindSpec(model, kind) {
-  const spec = model.spec.kinds[kind];
-  if (!spec) throw new Error(`unknown kind '${kind}'`);
-  return spec;
+  if (!Object.hasOwn(model.spec.kinds, kind)) throw new Error(`unknown kind '${kind}'`);
+  return model.spec.kinds[kind];
 }
 
 export function itemsOf(model, kind) {
-  const entry = model.kinds[kind];
-  if (!entry) throw new Error(`unknown kind '${kind}'`);
-  return entry.items;
+  if (!Object.hasOwn(model.kinds, kind)) throw new Error(`unknown kind '${kind}'`);
+  return model.kinds[kind].items;
 }
 
 // `except` is { field: [values] }; the field name "id" means the item's own id.
@@ -37,12 +35,15 @@ export function finding(rule, item, message) {
   return { rule, kind: item.kind, id: item.id, message, file: item.file, line: item.line };
 }
 
+/** The items with this id, any kind (the board's own words never reach a built-in such as `constructor`). */
+export const withId = (model, id) => (Object.hasOwn(model.index, id) ? model.index[id] : []);
+
 export const refKinds = (field) => [field?.ref].flat().filter(Boolean);
 
 // The items an id names, in the first of `kinds` (the field's `ref` order) that has it: an id shared by
 // two kinds (a milestone and a sprint both called "M1") reads as the kind the field lists first.
 export function resolve(model, id, kinds) {
-  const hits = model.index[id] ?? [];
+  const hits = withId(model, id);
   for (const kind of kinds) {
     const found = hits.filter((item) => item.kind === kind);
     if (found.length) return found;
@@ -101,7 +102,7 @@ const statusKnown = {
       const values = model.spec.kinds[kind].status?.values;
       if (!values) continue;
       for (const item of items) {
-        if (item.status in values) continue;
+        if (Object.hasOwn(values, item.status ?? "")) continue;
         out.push(finding("status-known", item, `unknown status '${item.status ?? ""}'`));
       }
     }
@@ -160,7 +161,9 @@ const fileRequired = {
 
 // Ids a file section lists: the `column` cell of each table row, plus every token of each bold lead.
 function listedIds(section, column) {
-  const rows = (section.rows ?? []).map((row) => plain(row[column]));
+  const rows = (section.rows ?? []).map((row) =>
+    plain(Object.hasOwn(row, column) ? row[column] : ""),
+  );
   const leads = (section.leads ?? []).flatMap((l) => leadTokens(l.lead));
   return new Set([...rows, ...leads].filter(Boolean));
 }

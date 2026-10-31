@@ -6,7 +6,7 @@
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written, 2 = usage or refusal
 import { join } from "node:path";
-import { escapesRoot } from "../spec.mjs";
+import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, appendBlock, applyAll, insertRow } from "../write.mjs";
 
 const fail = (out) => ({ exit: 2, out });
@@ -24,7 +24,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   const json = argv[argv.indexOf("--json") + 1];
   if (!kindName || argv.indexOf("--json") < 0 || json === undefined)
     return fail('usage: add <kind> --json \'{"id": "…", …}\'');
-  const kind = spec.kinds[kindName];
+  const kind = own(spec.kinds, kindName);
   if (!kind)
     return fail(`unknown kind "${kindName}" (kinds: ${Object.keys(spec.kinds).join(", ")})`);
   const create = kind.create;
@@ -39,7 +39,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
     return fail("--json must be an object");
   const id = typeof given.id === "string" ? given.id.trim() : "";
   if (!id) return fail('--json needs an "id" (see next-id)');
-  if (model.kinds[kindName]?.items.some((i) => i.id === id))
+  if (model.kinds[kindName].items.some((i) => i.id === id))
     return fail(`${kindName} "${id}" is already on the board`);
 
   // The parent item: the id held by the field with `role: parent`, looked up in the kinds it refs. A
@@ -52,7 +52,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
     if (def.also?.includes(wanted)) return { also: wanted };
     const found = [def.ref]
       .flat()
-      .flatMap((k) => model.kinds[k]?.items ?? [])
+      .flatMap((k) => own(model.kinds, k)?.items ?? [])
       .find((i) => i.id === wanted);
     if (!found) throw new WriteError(`${name} "${wanted}" is not on the board`);
     return found;
@@ -74,13 +74,13 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
         if (p.also) throw new NoParent(`${p.also} is not an item on the board`);
         const key = name.slice("parent.".length);
         return show(
-          p.fields[key] ?? (key === "id" ? p.id : undefined),
-          spec.kinds[p.kind].fields?.[key],
+          own(p.fields, key) ?? (key === "id" ? p.id : undefined),
+          own(spec.kinds[p.kind].fields, key),
         );
       }
-      if (!known.has(name) && !(name in values))
+      if (!known.has(name) && !Object.hasOwn(values, name))
         throw new WriteError(`unknown placeholder {${name}}`);
-      return show(values[name], kind.fields?.[name]);
+      return show(own(values, name), own(kind.fields, name));
     });
 
   const edits = [];
@@ -94,7 +94,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
     for (const row of create.rows ?? []) {
       const cells = Object.fromEntries(Object.entries(row.cells).map(([h, t]) => [h, render(t)]));
       const field = row.at.startsWith("after-last:") ? row.at.slice("after-last:".length) : null;
-      const column = field === null ? null : kind.fields?.[field]?.column;
+      const column = field === null ? null : own(kind.fields, field)?.column;
       if (field !== null && !column)
         throw new WriteError(`after-last:${field} names no ${kindName} field`);
       const at = field === null ? row.at : `after-last:${column}`;
@@ -111,7 +111,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
           notes.push(`skipped the row in ${p.also}'s file: ${p.also} is not an item on the board`);
           continue;
         }
-        const def = spec.kinds[p.kind].file?.sections?.[section];
+        const def = own(spec.kinds[p.kind].file?.sections, section);
         if (def?.as !== "table")
           throw new WriteError(`${p.kind} section "${section}" is not a table`);
         if (!p.own) {

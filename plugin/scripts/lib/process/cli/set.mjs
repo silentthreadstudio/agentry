@@ -3,7 +3,7 @@
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written, 2 = usage or refusal (nothing written)
 import { join } from "node:path";
-import { escapesRoot } from "../spec.mjs";
+import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, apply, setCell, setKey } from "../write.mjs";
 
 const fail = (out) => ({ exit: 2, out });
@@ -14,18 +14,18 @@ export function run(argv, { root, spec, model }) {
   if (!kindName || !id || at < 1) return fail("usage: set <kind> <id> <field>=<value>");
   const fieldName = assignment.slice(0, at);
   const value = assignment.slice(at + 1);
-  const kind = spec.kinds[kindName];
+  const kind = own(spec.kinds, kindName);
   if (!kind)
     return fail(`unknown kind "${kindName}" (kinds: ${Object.keys(spec.kinds).join(", ")})`);
-  const field = kind.fields?.[fieldName];
+  const field = own(kind.fields, fieldName);
   if (!field) return fail(`${kindName} has no field "${fieldName}"`);
   const idKey = kind.id?.column ?? kind.at.id?.replace(/^frontmatter:/, "");
   if (field.column === idKey)
     return fail(`"${fieldName}" shares the id column; not rewriting an id`);
   const known = kind.status?.values;
-  if (kind.status?.field === fieldName && known && !(value in known))
+  if (kind.status?.field === fieldName && known && !Object.hasOwn(known, value))
     return fail(`"${value}" is not a ${kindName} status (${Object.keys(known).join(", ")})`);
-  const items = model.kinds[kindName]?.items.filter((i) => i.id === id) ?? [];
+  const items = model.kinds[kindName].items.filter((i) => i.id === id);
   if (items.length !== 1)
     return fail(`${items.length ? "several" : "no"} ${kindName} "${id}" on the board`);
 

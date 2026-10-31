@@ -72,7 +72,7 @@ export function setCell(text, { heading, idColumn, id, column, value, idMatch })
 /** Set an existing frontmatter key's value (flat `key: value`), keeping the rest of the line. */
 export function setKey(text, { key, value }) {
   const fm = md.frontmatter(text);
-  if (!fm || !(key in fm.lines)) return refuse(`no frontmatter key "${key}"`);
+  if (!fm || !Object.hasOwn(fm.lines, key)) return refuse(`no frontmatter key "${key}"`);
   if (/[\r\n]/.test(value)) refuse("a frontmatter value cannot hold a line break");
   const out = rawLines(text);
   const at = fm.lines[key] - 1;
@@ -93,7 +93,7 @@ export function insertRow(text, { heading, cells, at = "end" }) {
   let after = table.rows.at(-1)?.line ?? table.line + 1; // the separator when the table is empty
   const column = at.startsWith("after-last:") ? at.slice("after-last:".length) : null;
   if (column !== null) {
-    if (!table.header.includes(column) || !(column in cells))
+    if (!table.header.includes(column) || !Object.hasOwn(cells, column))
       refuse(`after-last:${column} needs the column in the table and in the new row`);
     const same = table.rows.filter((r) => md.plain(r.cells[column]) === md.plain(cells[column]));
     if (same.length) after = same.at(-1).line;

@@ -151,18 +151,20 @@ export function frontmatter(text) {
   if (all[0]?.trim() !== "---") return null;
   const close = all.findIndex((l, i) => i > 0 && l.trim() === "---");
   if (close === -1) return null;
-  const data = {};
-  const at = {};
+  // Built from entries, so a key such as `__proto__` is held as a plain key like any other.
+  const data = [];
+  const at = [];
   for (let i = 1; i < close; i++) {
     const kv = /^([\w.-]+):\s*(.*)$/.exec(all[i]);
     if (!kv) continue;
     const value = kv[2].trim();
-    data[kv[1]] = /^\[.*\]$/.test(value)
+    const parsed = /^\[.*\]$/.test(value)
       ? value.slice(1, -1).split(",").map(unquote).filter(Boolean)
       : unquote(value);
-    at[kv[1]] = i + 1;
+    data.push([kv[1], parsed]);
+    at.push([kv[1], i + 1]);
   }
-  return { data, lines: at };
+  return { data: Object.fromEntries(data), lines: Object.fromEntries(at) };
 }
 
 /** `filename:<pattern with {id}>` → a regex over a file's basename, group 1 = the id. */

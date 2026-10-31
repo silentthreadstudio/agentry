@@ -7,7 +7,7 @@ export function check(model, entries, ctx) {
   return entries.flatMap((entry) => {
     let found;
     try {
-      const rule = CATALOG[entry.rule];
+      const rule = Object.hasOwn(CATALOG, entry.rule) ? CATALOG[entry.rule] : undefined;
       if (!rule) throw new Error("unknown rule");
       found = rule.check(model, entry, ctx);
     } catch (error) {

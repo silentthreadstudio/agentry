@@ -3,11 +3,13 @@
 // asks for its ids (`"ask"`) or the pattern needs more than a number. Writes nothing.
 //
 // run(argv, { spec, model }) -> { exit, out }
+import { own } from "../spec.mjs";
+
 const NUMBER = /\{n(?::0(\d+))?\}/;
 
 export function run(argv, { spec, model }) {
   const name = argv.find((a) => !a.startsWith("--"));
-  const kind = spec.kinds[name];
+  const kind = own(spec.kinds, name);
   if (!kind)
     return { exit: 2, out: `usage: next-id <kind> (kinds: ${Object.keys(spec.kinds).join(", ")})` };
   const pattern = kind.create?.id;
@@ -21,9 +23,9 @@ export function run(argv, { spec, model }) {
   if (!token || /[{}]/.test(before + after))
     return { exit: 2, out: `${name}: create.id "${pattern}" needs more than a number` };
   const literal = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const own = new RegExp(`^${literal(before)}(\\d+)${literal(after)}$`);
+  const ours = new RegExp(`^${literal(before)}(\\d+)${literal(after)}$`);
   const used = model.kinds[name].items
-    .map((i) => own.exec(i.id)?.[1])
+    .map((i) => ours.exec(i.id)?.[1])
     .filter(Boolean)
     .map(Number);
   const next = String(Math.max(0, ...used) + 1).padStart(Number(width ?? 0), "0");

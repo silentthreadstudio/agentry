@@ -2,6 +2,7 @@
 // with the exit code, because Claude Code folds long tool output and shows the top. One line per
 // thing, ≤ WIDTH columns, no emoji. Color only on a TTY and only on glyphs; words keep the default
 // color (bold and dim mark structure). PURE: data in, text out.
+import { withId } from "./rules/structure.mjs";
 import { titleOf } from "./status.mjs";
 
 export const WIDTH = 80;
@@ -210,7 +211,7 @@ export function renderStatus({ spec, report, view, work, subtitle, tty = false }
 
 /** `--why <id>` as a CLI result: exit 2 when no item has that id, else 1 when it has findings. */
 export function why({ spec, model, report, id, tty }) {
-  if (!model.index[id]) return { exit: 2, out: `no item "${id}" on the board` };
+  if (!Object.hasOwn(model.index, id)) return { exit: 2, out: `no item "${id}" on the board` };
   const exit = report.findings.some((f) => f.id === id) ? 1 : 0;
   return { exit, out: renderWhy({ spec, model, report, id, tty }) };
 }
@@ -218,11 +219,11 @@ export function why({ spec, model, report, id, tty }) {
 /** `--why <id>`: one item, where it sits, and each rule that applies to its kind, failing or holding. */
 export function renderWhy({ spec, model, report, id, tty = false }) {
   const s = style(tty);
-  return (model.index[id] ?? [])
+  return withId(model, id)
     .map((item) => {
       const mine = report.findings.filter((f) => f.id === id && f.kind === item.kind);
       const parent = item.parent
-        ? model.index[item.parent]?.find((p) => p.kind !== item.kind)
+        ? withId(model, item.parent).find((p) => p.kind !== item.kind)
         : undefined;
       const where = [
         `${item.file}:${item.line}`,

@@ -13,6 +13,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { trackedFiles } from "./git.mjs";
 import * as md from "./markdown.mjs";
+import { own } from "./spec.mjs";
 
 /** A token that reads as an item id: a capital, letters, an optional dash, then a digit (`F1`, `R0-6`,
  *  `T29a`, `AB-01`). Used to tell block starts from emphasis (`**Owns:**`, `**the seam**`). */
@@ -148,7 +149,7 @@ const isTasks = (file) => file === "TASKS.md" || file.endsWith("/TASKS.md");
  *  `{ status: "found", id, file, line, source: "process"|"agentry"|"discovered", block, related? }` or
  *  `{ status: "not-found"|"ambiguous", id, candidates: [{ file, line }] }`. `file` is relative to `root`. */
 export function findContract({ root, spec, id, kind = "task" }) {
-  const contract = spec?.kinds?.[kind]?.contract;
+  const contract = own(spec?.kinds, kind)?.contract;
   if (contract) {
     const base = posix(relative(root, join(root, spec.root ?? ".")));
     const files = contract.blocks.map((f) => posix(join(base, f)));

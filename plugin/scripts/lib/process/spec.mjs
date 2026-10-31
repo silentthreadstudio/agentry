@@ -1,12 +1,18 @@
 // spec — parse and validate the process file (`.agentry/process.json`, plan F13 §3.1) by hand: it
 // mirrors core's zod schema (`packages/core/src/process.ts`; the plugin ships no dependency) and adds
-// what only a reader can check (refs between kinds, paths, regexes). PURE: never reads, never throws.
+// what only a reader can check (refs between kinds, paths, regexes). Every name the file supplies is
+// looked up as an own property, never reaching a built-in such as `constructor`. PURE: never reads,
+// never throws.
 import { posix } from "node:path";
 
 const PHASES = ["planned", "active", "done", "dropped", "parked"];
 const TYPES = ["text", "list", "ref", "flag", "date", "commits", "evidence", "link"];
 const quote = (xs) => xs.map((x) => `"${x}"`).join(", ");
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const has = (obj, key) => isObject(obj) && Object.hasOwn(obj, key);
+/** `obj[key]` when `obj` holds `key` itself: a name from the process file or the board (`toString`,
+ *  `constructor`) never reads a built-in. */
+export const own = (obj, key) => (has(obj, key) ? obj[key] : undefined);
 const join = (at, key) => (at ? `${at}.${key}` : key);
 const validRegex = (v) => {
   try {
@@ -26,9 +32,13 @@ const oneOf = (...xs) => is((v) => xs.includes(v), `should be one of ${quote(xs)
 const like = (re, hint) => is((v) => typeof v === "string" && re.test(v), `should be ${hint}`);
 const list = (item) => (v, at, bad) =>
   Array.isArray(v) ? v.forEach((x, i) => item(x, `${at}[${i}]`, bad)) : bad(at, "should be a list");
+// A map of names; `__proto__` is refused, as no reader could hold it as a plain name.
 const record = (item) => (v, at, bad) => {
   if (!isObject(v)) return bad(at, "should be an object");
-  for (const [k, x] of Object.entries(v)) item(x, join(at, k), bad);
+  for (const [k, x] of Object.entries(v)) {
+    if (k === "__proto__") bad(join(at, k), "is a reserved name");
+    else item(x, join(at, k), bad);
+  }
 };
 const strOrList = (v, at, bad) => (Array.isArray(v) ? list(str) : str)(v, at, bad);
 // An object with known keys; a key written `name!` is required. `open` lets unknown keys through.
@@ -37,16 +47,16 @@ const shape =
   (v, at, bad) => {
     if (!isObject(v)) return bad(at, "should be an object");
     const names = Object.keys(keys).map((k) => k.replace(/!$/, ""));
-    for (const k of names) if (`${k}!` in keys && !(k in v)) bad(at, `is missing "${k}"`);
+    for (const k of names) if (has(keys, `${k}!`) && !has(v, k)) bad(at, `is missing "${k}"`);
     for (const [k, x] of Object.entries(v)) {
-      const check = keys[k] ?? keys[`${k}!`];
+      const check = own(keys, k) ?? own(keys, `${k}!`);
       if (check) check(x, join(at, k), bad);
       else if (!open) bad(join(at, k), `is not a known key (expected ${quote(names)})`);
     }
   };
 // One of several shapes, picked by the key that tells them apart (`table` vs `files`).
 const variant = (shapes, hint) => (v, at, bad) => {
-  const key = isObject(v) && Object.keys(shapes).find((k) => k in v);
+  const key = isObject(v) && Object.keys(shapes).find((k) => has(v, k));
   return key ? shapes[key](v, at, bad) : bad(at, `should be ${hint}`);
 };
 
@@ -127,7 +137,7 @@ function crossCheck(spec, bad) {
   if (isObject(spec.kinds) && Object.keys(kinds).length === 0)
     bad("kinds", "should name at least one kind");
   const known = (name, at) =>
-    typeof name !== "string" || name in kinds || bad(at, `names an unknown kind "${name}"`);
+    typeof name !== "string" || has(kinds, name) || bad(at, `names an unknown kind "${name}"`);
   const root = typeof spec.root === "string" ? spec.root : ".";
   if (escapesRoot(".", root)) bad("root", `"${root}" leaves the repository`);
   const inside = (path, at) =>
@@ -142,8 +152,8 @@ function crossCheck(spec, bad) {
       for (const ref of [def?.ref ?? []].flat()) known(ref, `${at}.fields.${f}.ref`);
       if (def?.role && !def.ref) bad(`${at}.fields.${f}`, `has role "${def.role}" but no "ref"`);
     }
-    if (isObject(k.at) && "table" in k.at && !k.id?.column) bad(`${at}.id`, 'needs a "column"');
-    if (typeof k.status?.field === "string" && !(k.status.field in fields))
+    if (has(k.at, "table") && !k.id?.column) bad(`${at}.id`, 'needs a "column"');
+    if (typeof k.status?.field === "string" && !has(fields, k.status.field))
       bad(`${at}.status.field`, `names no field "${k.status.field}"`);
     for (const [s, def] of entries(k.file?.sections))
       if (def?.as === "table" && !def.column) bad(`${at}.file.sections.${s}`, 'needs a "column"');
@@ -155,6 +165,7 @@ function crossCheck(spec, bad) {
   }
   [spec.rules ?? []].flat().forEach((r, i) => known(r?.kind, `rules[${i}].kind`));
   known(spec.lifecycle?.kind, "lifecycle.kind");
+  known(spec.status?.now, "status.now");
   for (const [d, def] of entries(spec.drafts)) known(def?.kind, `drafts.${d}.kind`);
 }
 

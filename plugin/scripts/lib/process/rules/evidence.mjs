@@ -9,6 +9,7 @@ import {
   parentOf,
   scope,
   show,
+  withId,
 } from "./structure.mjs";
 
 const SHA = /^[0-9a-f]{7,40}$/i;
@@ -124,7 +125,11 @@ const closedChildren = {
     const out = [];
     for (const item of doneItems(model, params)) {
       const open = item.children
-        .flatMap((id) => (model.index[id] ?? []).filter((c) => c.kind !== item.kind).slice(0, 1))
+        .flatMap((id) =>
+          withId(model, id)
+            .filter((c) => c.kind !== item.kind)
+            .slice(0, 1),
+        )
         .filter((child) => !CLOSED.has(child.phase));
       if (open.length === 0) continue;
       out.push(

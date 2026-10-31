@@ -58,6 +58,43 @@ test("--why <id> works on check and on status; an unknown id is exit 2", () => {
   assert.equal(run("evidence-board", "--why", "NOPE").status, 2);
 });
 
+test("a built-in name (constructor, toString) is no kind, field or item to the subcommands", () => {
+  const cases = [
+    [["check", "--why", "constructor"], /^no item "constructor" on the board/],
+    [["next-id", "constructor"], /^usage: next-id <kind>/],
+    [["set", "toString", "W1", "status=done"], /^unknown kind "toString"/],
+    [["set", "task", "W1", "constructor=x"], /^task has no field "constructor"/],
+    [["set", "task", "W1", "status=hasOwnProperty"], /^"hasOwnProperty" is not a task status/],
+    [["add", "toString", "--json", '{"id": "Z1"}'], /^unknown kind "toString"/],
+  ];
+  for (const [args, expected] of cases) {
+    const out = run("table-board", ...args);
+    assert.equal(out.status, 2, args.join(" "));
+    assert.match(out.stderr, expected, args.join(" "));
+  }
+});
+
+test("a board cell holding a built-in name reads as that word, not as a built-in", () => {
+  const root = mkdtempSync(join(tmpdir(), "agentry-board-"));
+  try {
+    cpSync(join(FIXTURES, "table-board"), root, { recursive: true });
+    const board = join(root, "docs", "board", "BOARD.md");
+    const text = readFileSync(board, "utf8");
+    writeFileSync(board, text.replace("| W4 | A2 | todo | W3 |", "| W4 | A2 | toString | W3 |"));
+    const spec = loadSpec(join(root, "process.json")).spec;
+    const model = readProcess({ root, spec });
+    const w4 = model.kinds.task.items.find((i) => i.id === "W4");
+    assert.equal(w4.phase, undefined);
+    const found = check(model, [{ rule: "status-known" }], {});
+    assert.deepEqual(
+      found.map((f) => [f.id, f.message]),
+      [["W4", "unknown status 'toString'"]],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("usage and process-file errors are exit 2, on stderr", () => {
   const unknown = run("table-board", "frobnicate");
   assert.equal(unknown.status, 2);
