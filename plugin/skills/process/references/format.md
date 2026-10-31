@@ -66,29 +66,84 @@ after `task`, so tasks keep their sprint's order.
 ## Rule catalog
 
 Every rule is a fixed function with parameters; there is no rule language. `kind` names the kind it checks;
-`except: { "<field>": [values] }` skips matching items (`"id"` means the item's own id); `label` prints the
-repo's own name for the rule on each finding.
+`except: { "<field>": [values] }` skips matching items (`"id"` means the item's own id, any other key must be
+a field of every kind the rule checks); `label` prints the repo's own name for the rule on each finding.
 
-| Rule | Checks | Params |
-| :--- | :--- | :--- |
-| `ids-unique` | no id twice in a kind | — |
-| `status-known` | every status word is in `values` | — |
-| `refs-resolve` | every `ref`/`list` value names an item (or an `also` literal) | — |
-| `file-required` | an item with `file.required` has exactly one file | `kind` |
-| `members-listed` | the parent's own-file section lists exactly its children | `kind`, `section`, `member` |
-| `deps-done` | a started item's dependencies are all done (a sprint or milestone dep by its phase) | `kind`, `field` |
-| `parent-active` | a started item's parent is active or done | `kind` |
-| `done-has-evidence` | a done item names its commit, and every commit named exists in git | `kind`, `field`, `evidence`: `commit` or `commit-or-note` |
-| `done-has-handoff` | a done item has a line in its parent's handoff section | `kind`, `section`, `commit`: `first`, `any` or `none` (where the SHA must appear) |
-| `flagged-needs-verdict` | a flagged done item has a passing verdict | `kind`, `flag`, `verdict`, `pass` |
-| `closed-children` | a done parent's children are all closed | `kind` |
-| `done-signoff` | a done item carries a sign-off date | `kind`, `field` |
-| `sequential` | an item starts only after the one above it (row order) is done | `kind`, `skip` |
-| `question-blocks` | nothing starts while an open question blocks it | `kind`, `field` |
-| `parked` | the parking parent's children are parked; nothing live depends on a parked item | `kind`, `parking` |
-| `deps-not-forward` | no dependency on an item later in the order | `kind`, `field`, `skip` |
+| Rule | Checks |
+| :--- | :--- |
+| `ids-unique` | no id twice in a kind |
+| `status-known` | every status word is in `values` |
+| `refs-resolve` | every `ref`/`list` value names an item (or an `also` literal) |
+| `file-required` | an item with `file.required` has exactly one file (no `kind`: every kind whose file is required) |
+| `members-listed` | the parent's own-file section lists exactly its children |
+| `deps-done` | a started item's dependencies are all done (a sprint or milestone dep by its phase) |
+| `parent-active` | a started item's parent is active or done |
+| `sequential` | an item starts only after the one above it (row order) is done |
+| `question-blocks` | nothing starts while an open question blocks it |
+| `parked` | the parking parent's children are parked; nothing live depends on a parked item |
+| `deps-not-forward` | no dependency on an item later in the order |
+| `done-has-evidence` | a done item names its commit (`commit-or-note`: or a note), and every commit named exists in git |
+| `done-has-handoff` | a done item has a line in its parent's handoff section (`commit`: the SHA that line must name) |
+| `flagged-needs-verdict` | a flagged done item has a passing verdict |
+| `closed-children` | a done parent's children are all closed |
+| `done-signoff` | a done item carries a sign-off date |
 
 Order is the row order of the parent kind's table: a task ranks with its sprint.
+
+### Rule params
+
+Every param each rule takes; any other key in a rule entry is an error. A param that names a field must name
+one of the type shown, so an option never changes what a rule reads: a commits column is not a dependency
+list. "The first field that fits" is the kind's first field of that type, and a kind with none is an error.
+`parking` must be an item on the board of the kind the parent field refs, or one of that field's `also`
+values.
+
+| Rule | Param | Required | Default | Type |
+| :--- | :--- | :--- | :--- | :--- |
+| `file-required` | `kind` | no | — | a kind |
+| `file-required` | `except` | no | — | `{ field or "id": [values] }` |
+| `members-listed` | `kind` | yes | — | a kind |
+| `members-listed` | `section` | yes | — | a section of the kind's file |
+| `members-listed` | `member` | yes | — | a kind |
+| `members-listed` | `except` | no | — | `{ field or "id": [values] }` |
+| `deps-done` | `kind` | yes | — | a kind |
+| `deps-done` | `field` | no | the first field that fits | a list field whose ref includes the rule's kind |
+| `deps-done` | `except` | no | — | `{ field or "id": [values] }` |
+| `parent-active` | `kind` | yes | — | a kind |
+| `parent-active` | `except` | no | — | `{ field or "id": [values] }` |
+| `sequential` | `kind` | yes | — | a kind |
+| `sequential` | `skip` | no | `[]` | a list of strings |
+| `sequential` | `except` | no | — | `{ field or "id": [values] }` |
+| `question-blocks` | `kind` | yes | — | a kind |
+| `question-blocks` | `field` | no | `"blocks"` | a list field with a ref |
+| `question-blocks` | `except` | no | — | `{ field or "id": [values] }` |
+| `parked` | `kind` | yes | — | a kind |
+| `parked` | `parking` | yes | — | an item of the parent's kind, or an `also` value of the parent field |
+| `parked` | `field` | no | the first field that fits | a list field whose ref includes the rule's kind |
+| `parked` | `except` | no | — | `{ field or "id": [values] }` |
+| `deps-not-forward` | `kind` | yes | — | a kind |
+| `deps-not-forward` | `field` | no | the first field that fits | a list field whose ref includes the rule's kind |
+| `deps-not-forward` | `skip` | no | `[]` | a list of strings |
+| `deps-not-forward` | `except` | no | — | `{ field or "id": [values] }` |
+| `done-has-evidence` | `kind` | yes | — | a kind |
+| `done-has-evidence` | `field` | yes | — | a commits or evidence field |
+| `done-has-evidence` | `evidence` | yes | — | `"commit"` or `"commit-or-note"` |
+| `done-has-evidence` | `except` | no | — | `{ field or "id": [values] }` |
+| `done-has-handoff` | `kind` | yes | — | a kind |
+| `done-has-handoff` | `section` | yes | — | a section of the parent's file |
+| `done-has-handoff` | `commit` | no | `"none"` | `"first"` or `"any"` or `"none"` |
+| `done-has-handoff` | `field` | no | the first field that fits | a commits or evidence field, used only when commit is `"first"` or `"any"` |
+| `done-has-handoff` | `except` | no | — | `{ field or "id": [values] }` |
+| `flagged-needs-verdict` | `kind` | yes | — | a kind |
+| `flagged-needs-verdict` | `flag` | yes | — | a flag field |
+| `flagged-needs-verdict` | `verdict` | yes | — | a text field |
+| `flagged-needs-verdict` | `pass` | yes | — | a list of strings |
+| `flagged-needs-verdict` | `except` | no | — | `{ field or "id": [values] }` |
+| `closed-children` | `kind` | yes | — | a kind |
+| `closed-children` | `except` | no | — | `{ field or "id": [values] }` |
+| `done-signoff` | `kind` | yes | — | a kind |
+| `done-signoff` | `field` | yes | — | a date field |
+| `done-signoff` | `except` | no | — | `{ field or "id": [values] }` |
 
 ## lifecycle and drafts
 

@@ -10,7 +10,8 @@
 // value; the board decides, `checkOnBoard`) and "except" ({ <field or "id">: [values] }). `pick`: left out, a field param takes the first field
 // of the kind that fits. `only`: { <param>: [values] }, the param is used only while that one holds
 // one of them. `spec.mjs` checks every entry against it; `check.mjs` fills the defaults, so a rule
-// never runs with a param it did not declare.
+// never runs with a param it did not declare. The process skill's `references/format.md` lists the
+// same params; `test/format-doc.test.mjs` fails when the two differ.
 import { rules as evidence } from "./evidence.mjs";
 import { rules as flow } from "./flow.mjs";
 import { FIELD, rules as structure } from "./structure.mjs";
