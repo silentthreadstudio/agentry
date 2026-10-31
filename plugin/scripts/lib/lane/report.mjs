@@ -63,15 +63,17 @@ export function verdictOf(text) {
 }
 
 const NO_MEMORY = new Set(["", "none", "n/a", "na", "null", "-", "no"]);
-const ID = /^[A-Za-z0-9][A-Za-z0-9:._…-]*$/;
+// A memory id is `<kind>:<id>` (`p:01ABC`, `g:xyz`); anything else on the line is prose.
+const ID = /^[A-Za-z]:[A-Za-z0-9][A-Za-z0-9._…-]*$/;
 
-/** The memory ids cited under `used_memories` — inline (`used_memories: [a, b]`) or as a bullet list under
- *  it — de-duplicated, in order. */
+/** The memory ids cited under an explicit `used_memories:` line — inline (`used_memories: [p:a, g:b]`) or
+ *  as a bullet list under it — de-duplicated, in order. Only tokens shaped like an id count, so words of
+ *  prose after the colon never do; `none` is `[]`. */
 export function usedMemories(text) {
   const lines = nonEmpty(text);
   const found = [];
   for (let i = 0; i < lines.length; i++) {
-    const m = /used_memories\W*:?(.*)$/i.exec(lines[i]);
+    const m = /^[>#*`_\s-]*used_memories[*`_\s]*:(.*)$/i.exec(lines[i]);
     if (!m) continue;
     let rest = m[1];
     if (!rest.trim())

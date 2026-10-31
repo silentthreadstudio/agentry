@@ -91,13 +91,26 @@ test("verdictOf sees through a wrapper closer that follows the verdict", () => {
   assert.equal(verdictOf("<task_result>\nVerdict: FAIL\n</task_result>\n</task>"), "FAIL");
 });
 
+test("usedMemories: reads only an explicit used_memories line, never words from prose", () => {
+  assert.deepEqual(usedMemories("I used_memories: p:01X while building"), []); // mid-sentence
+  assert.deepEqual(usedMemories("used_memories: none needed, I used the wiki"), []);
+  assert.deepEqual(usedMemories("used_memories: p:01X (the retry gotcha), g:9Z because of it"), [
+    "p:01X",
+    "g:9Z",
+  ]);
+  assert.deepEqual(usedMemories("used_memories:\n- g:01A why it helped\n- none\nnext: p:02B"), [
+    "g:01A",
+  ]);
+  assert.deepEqual(usedMemories("used_memories: a1, b2"), []); // not memory ids
+});
+
 test("usedMemories: inline list, bullets, dedupe, and the none forms", () => {
-  assert.deepEqual(usedMemories("used_memories: a1, b2, a1"), ["a1", "b2"]);
+  assert.deepEqual(usedMemories("used_memories: p:a1, g:b2, p:a1"), ["p:a1", "g:b2"]);
   assert.deepEqual(usedMemories("used_memories:\n- p:01X\n- p:02Y\nnext: thing"), [
     "p:01X",
     "p:02Y",
   ]);
-  assert.deepEqual(usedMemories('**used_memories**: ["m1", "m2"]'), ["m1", "m2"]);
+  assert.deepEqual(usedMemories('**used_memories**: ["p:m1", "g:m2"]'), ["p:m1", "g:m2"]);
   for (const none of [
     "used_memories: []",
     "used_memories: none",
