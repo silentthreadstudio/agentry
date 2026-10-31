@@ -563,3 +563,30 @@ test("a derived status can be done or started only with children that have a sta
     both.map((c) => CAN[c].says()),
   );
 });
+
+// Cells are read trimmed, without `**` or backticks (markdown.mjs `plain`): a status word written
+// otherwise is one no cell can ever hold.
+for (const word of ["done ", " done", "**done**", "`done`", "do`ne"])
+  test(`a status word the reader can never produce is refused: ${JSON.stringify(word)}`, () => {
+    const s = spec("kinds.task.status.values", { todo: "planned", [word]: "done" });
+    const found = messages(s);
+    assert.equal(found.length, 1, found.join(" | "));
+    assert.ok(
+      found[0].startsWith(`kinds.task.status.values.${word} can never match: the reader trims`),
+      found[0],
+    );
+    assert.match(found[0], /strips "\*\*" and backticks/);
+  });
+
+test("param-less rules with nothing to check are refused, like file-required", () => {
+  const noStatus = spec("rules.1", { rule: "status-known" });
+  Reflect.deleteProperty(noStatus.kinds.task, "status");
+  assert.deepEqual(messages(noStatus), [
+    "rules[1] no kind has status values: status-known would check nothing",
+  ]);
+  assert.deepEqual(messages(spec("rules.1", { rule: "status-known" })), []);
+  assert.deepEqual(messages(spec("rules.1", { rule: "refs-resolve" })), [
+    "rules[1] no field has a ref: refs-resolve would check nothing",
+  ]);
+  assert.deepEqual(messages(withTree({ rule: "refs-resolve" })), [], "task.sprint refs sprint");
+});

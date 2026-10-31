@@ -75,7 +75,9 @@ naming the key), because the rules would otherwise run on links or phases that a
 - **The tree** — a kind has at most one field with role `parent`, of type `ref` (a parent is one id); a field
   with role `children` is a `list`. A role field of another type would link nothing.
 - **Status** — the phases are the five words above; `status.field` names a text field of the kind, and when
-  that field reads `case: "upper"` every status word is upper case. `derived: "children"` needs a child kind
+  that field reads `case: "upper"` every status word is upper case. A status word is looked up as the reader
+  makes it of a cell, which trims it and strips `**` and backticks, so a word with spaces, `**` or backticks
+  can never match and is refused. `derived: "children"` needs a child kind
   with a status (a kind whose parent field refs it, or its children list); without one every item stays
   planned.
 - **Sections** — an `as: "table"` section names its id `column`; `done-has-handoff` reads a `bold-lead`
@@ -120,7 +122,8 @@ list. "The first field that fits" is the kind's first field of that type, and a 
 values. A kind must have what the rule needs of it (a kind "with" the capabilities below, or a field that
 refs a kind with them), or the file is refused naming the param: a rule given a kind it cannot check would
 check nothing and print OK. `file-required` without `kind` checks every kind whose file is required, and
-refuses a file where no kind's is.
+refuses a file where no kind's is. Likewise `status-known` refuses a file where no kind has status
+`values`, and `refs-resolve` one where no field has a `ref`.
 
 | Rule | Param | Required | Default | Type |
 | :--- | :--- | :--- | :--- | :--- |

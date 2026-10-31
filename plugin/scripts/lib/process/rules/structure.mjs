@@ -121,6 +121,8 @@ const idsUnique = {
 const statusKnown = {
   id: "status-known",
   params: {},
+  kinds: (kinds) => Object.keys(kinds).filter((k) => isObject(kinds[k]?.status?.values)),
+  none: "no kind has status values",
   check(model) {
     const out = [];
     for (const [kind, { items }] of Object.entries(model.kinds)) {
@@ -138,6 +140,9 @@ const statusKnown = {
 const refsResolve = {
   id: "refs-resolve",
   params: {},
+  kinds: (kinds) =>
+    Object.keys(kinds).filter((k) => Object.values(kinds[k]?.fields ?? {}).some((f) => f?.ref)),
+  none: "no field has a ref",
   check(model) {
     const out = [];
     for (const [kind, { items }] of Object.entries(model.kinds)) {

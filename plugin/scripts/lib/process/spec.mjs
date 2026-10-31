@@ -14,12 +14,14 @@
 // - roles: a kind has at most one `parent` field, of type `ref` (the reader links a parent by one
 //   id); a `children` field is of type `list`; a role field refs at least one kind.
 // - status: phases are the five fixed words; `status.field` names a text field of the kind, and with
-//   `case: "upper"` every status word is upper case (else none could match); `derived: "children"`
+//   `case: "upper"` every status word is upper case, and every word equals what the reader makes of
+//   a cell (`plain`: trimmed, `**` and backticks stripped), else none could match; `derived: "children"`
 //   needs a child kind with a status (else every item is "planned").
 // - sections: `as: "table"` names its id `column`; a section a rule reads leads by bold
 //   (`done-has-handoff`) is a `bold-lead` one.
 // - rule params: each against its declared type and the capabilities its kind `needs` (`checkRule`).
 import { posix } from "node:path";
+import { plain } from "./markdown.mjs";
 import {
   CATALOG,
   FIELD,
@@ -259,7 +261,12 @@ function checkRule(entry, at, kinds, bad) {
     (k) => typeof k === "string" && has(kinds, k),
   );
   if (rule.kinds && !has(entry, "kind") && targets.length === 0)
-    bad(at, `is missing "kind", and ${rule.none}: ${entry.rule} would check nothing`);
+    bad(
+      at,
+      has(rule.params, "kind")
+        ? `is missing "kind", and ${rule.none}: ${entry.rule} would check nothing`
+        : `${rule.none}: ${entry.rule} would check nothing`,
+    );
   for (const [p, def] of Object.entries(rule.params)) {
     const given = has(entry, p);
     if (!applies(rule, def, entry)) {
@@ -329,6 +336,13 @@ function checkTree(kinds, name, at, bad) {
             `can never match: "${status.field}" reads upper case ("case": "upper")`,
           );
   }
+  // A status is looked up as the reader makes it of a cell; a word that differs from that is never found.
+  for (const word of Object.keys(isObject(status.values) ? status.values : {}))
+    if (word !== plain(word))
+      bad(
+        `${at}.status.values.${word}`,
+        `can never match: the reader trims every cell and strips "**" and backticks, so it never reads ${JSON.stringify(word)}`,
+      );
   if (status.derived === "children" && phasesOf(kinds, name).length === 0)
     bad(
       `${at}.status.derived`,
