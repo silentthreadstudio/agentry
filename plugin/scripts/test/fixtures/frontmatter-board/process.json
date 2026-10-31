@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "name": "Roadmap",
+  "root": "plan",
+  "kinds": {
+    "epic": {
+      "label": "Epic",
+      "note": "One file per epic; the id is a frontmatter key.",
+      "at": { "files": "epics/*.md", "id": "frontmatter:id" },
+      "fields": {
+        "title": { "column": "title" },
+        "status": { "column": "status" },
+        "stories": { "column": "stories", "type": "list", "ref": "story", "role": "children" }
+      },
+      "status": {
+        "field": "status",
+        "values": { "idea": "planned", "open": "active", "closed": "done" }
+      }
+    },
+    "story": {
+      "label": "Story",
+      "note": "One file per story; the id is the file name.",
+      "at": { "files": "stories/*.md", "id": "filename:{id}.md" },
+      "fields": {
+        "epic": { "column": "epic", "type": "ref", "ref": "epic", "role": "parent" },
+        "status": { "column": "status" },
+        "deps": { "column": "deps", "type": "list", "ref": "story" },
+        "shipped": { "column": "shipped", "type": "date" },
+        "commits": { "column": "commits", "type": "commits" }
+      },
+      "status": {
+        "field": "status",
+        "values": { "todo": "planned", "doing": "active", "done": "done" }
+      }
+    }
+  },
+  "rules": [{ "rule": "ids-unique" }, { "rule": "refs-resolve" }]
+}

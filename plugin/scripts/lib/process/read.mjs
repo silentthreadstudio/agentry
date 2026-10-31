@@ -1,0 +1,220 @@
+// read — process file + board files → the Model (plan F13 §6): items per kind with header-named
+// fields, the tree, phases (own or derived from children), ranks, each item's own file and sections.
+// The kit's only file reads (git is `git.mjs`). A missing file, heading or column is a `problems`
+// entry (rule "read"), never a throw. Item `file` and `own.path` are relative to the spec's `root`.
+import { globSync, readFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import * as md from "./markdown.mjs";
+import { escapesRoot, parseSpec } from "./spec.mjs";
+
+const STARTED = new Set(["active", "done"]);
+const CLOSED = new Set(["done", "dropped", "parked"]);
+const noColumn = (file, head, col) => `${file}: the "${head}" table has no column "${col}"`;
+
+/** Read and validate a process file. A missing or unreadable file is a problem, not a throw. */
+export function loadSpec(path) {
+  let text;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (e) {
+    const message = `cannot read the process file (${e.code ?? e.message})`;
+    return { spec: null, problems: [{ rule: "spec", message, file: path }] };
+  }
+  return parseSpec(text, { file: path });
+}
+
+/** An item from one row or file; `get(column)` is the raw value, undefined when there is none. */
+function makeItem(ctx, rawId, get, where) {
+  const { name, kind } = ctx;
+  let id = md.plain(rawId ?? "");
+  if (id && kind.id?.match) id = md.applyMatch(id, kind.id.match) ?? "";
+  if (!id)
+    return ctx.problem({ kind: name, message: `${where.file}: a ${name} without an id`, ...where });
+  const fields = {};
+  for (const [f, def] of Object.entries(kind.fields ?? {})) {
+    const raw = get(def.column);
+    fields[f] = raw === undefined ? null : md.cellValue(raw, def);
+  }
+  const item = { kind: name, id, fields, children: [], ...where };
+  if (kind.status?.field) {
+    item.status = String(fields[kind.status.field] ?? "");
+    const phase = kind.status.values?.[item.status];
+    if (phase) item.phase = phase;
+  }
+  return item;
+}
+
+function readTable(ctx) {
+  const { name, kind, io, problem } = ctx;
+  const { table: file, heading } = kind.at;
+  const miss = (message, line) => {
+    problem({ kind: name, message: `${file}: ${message}`, file, ...(line ? { line } : {}) });
+    return { items: [], located: false };
+  };
+  if (!io.inside(file)) return miss("outside the repository; not read");
+  const text = io.read(file);
+  if (text === null) return miss("file not found");
+  const sec = md.section(text, heading);
+  if (!sec) return miss(`no heading "${heading}"`);
+  const table = md.tableIn(text, sec);
+  if (!table) return miss(`no table under "${heading}"`, sec.line);
+  const has = (column) => table.header.includes(column);
+  const columns = [kind.id.column, ...Object.values(kind.fields ?? {}).map((f) => f.column)];
+  for (const column of new Set(columns))
+    if (!has(column))
+      problem({ kind: name, message: noColumn(file, heading, column), file, line: table.line });
+  if (!has(kind.id.column)) return { items: [], located: true };
+  const items = table.rows.map((row) => {
+    const get = (column) => (has(column) ? row.cells[column] : undefined);
+    return makeItem(ctx, row.cells[kind.id.column], get, { file, line: row.line });
+  });
+  return { items: items.filter(Boolean), located: true };
+}
+
+function readFiles(ctx) {
+  const { files: glob, id: idFrom } = ctx.kind.at;
+  const paths = ctx.io.glob(glob);
+  const key = idFrom.startsWith("frontmatter:") ? idFrom.slice("frontmatter:".length) : null;
+  const byName = key ? null : md.filenameId(idFrom.slice("filename:".length));
+  const items = [];
+  for (const file of paths) {
+    const text = ctx.io.read(file);
+    if (text === null) continue;
+    const fm = md.frontmatter(text);
+    const rawId = key ? fm?.data[key] : byName.exec(basename(file))?.[1];
+    const where = { file, line: (key && fm?.lines[key]) || 1 };
+    const item = makeItem(ctx, rawId, (column) => fm?.data[column], where);
+    if (item) items.push(item);
+  }
+  if (paths.length === 0) ctx.problem({ kind: ctx.name, message: `no files match "${glob}"` });
+  return { items, located: paths.length > 0 };
+}
+
+const escapeGlob = (s) => s.replace(/[*?[\]{}()!\\]/g, "\\$&");
+const plainRow = (row) =>
+  Object.fromEntries(Object.entries(row.cells).map(([k, v]) => [k, md.plain(v)]));
+
+/** Each item's own file (`file.glob` with its id; `except` ids skipped) and its named sections. */
+function readOwn(ctx, items) {
+  const { name, kind, io, problem } = ctx;
+  const except = new Set(kind.file.except ?? []);
+  for (const item of items.filter((i) => !except.has(i.id))) {
+    const matches = io.glob(kind.file.glob.replaceAll("{id}", escapeGlob(item.id)));
+    if (matches.length === 0) continue;
+    const path = matches[0];
+    const text = io.read(path) ?? "";
+    const sections = {};
+    for (const [s, def] of Object.entries(kind.file.sections ?? {})) {
+      const at = { kind: name, id: item.id, file: path };
+      const sec = md.section(text, def.heading);
+      if (!sec) {
+        problem({ ...at, message: `${path}: no heading "${def.heading}"` });
+      } else if (def.as === "bold-lead") {
+        sections[s] = { leads: md.boldLeads(text, sec) };
+      } else {
+        const table = md.tableIn(text, sec);
+        if (table && !table.header.includes(def.column))
+          problem({ ...at, message: noColumn(path, def.heading, def.column), line: table.line });
+        sections[s] = { rows: (table?.rows ?? []).map(plainRow) };
+      }
+    }
+    item.own = { path, matches, sections };
+  }
+}
+
+/** Parents, children, derived phases and ranks, across kinds. */
+function linkTree(spec, kinds) {
+  const byId = {};
+  for (const [name, { items }] of Object.entries(kinds))
+    byId[name] = new Map(items.toReversed().map((item) => [item.id, item])); // first row wins
+  const find = (id, refs) => byId[[refs ?? []].flat().find((k) => byId[k]?.has(id))]?.get(id);
+  const childrenOf = new Map();
+  const parentOf = new Map();
+  const adopt = (parent, child) => {
+    if (!parent.children.includes(child.id)) parent.children.push(child.id);
+    child.parent ??= parent.id;
+    childrenOf.set(parent, (childrenOf.get(parent) ?? new Set()).add(child));
+    if (!parentOf.has(child)) parentOf.set(child, parent);
+  };
+  const orderKinds = new Set();
+  for (const [name, kind] of Object.entries(spec.kinds ?? {})) {
+    for (const [f, def] of Object.entries(kind?.fields ?? {})) {
+      if (def?.role === "parent") for (const k of [def.ref].flat()) orderKinds.add(k);
+      for (const item of kinds[name]?.items ?? []) {
+        const value = item.fields[f];
+        if (def?.role === "parent" && typeof value === "string" && value) {
+          item.parent = value;
+          const parent = find(value, def.ref);
+          if (parent) adopt(parent, item);
+        } else if (def?.role === "children" && Array.isArray(value)) {
+          for (const id of value) {
+            if (!item.children.includes(id)) item.children.push(id);
+            const child = find(id, def.ref);
+            if (child) adopt(item, child);
+          }
+        }
+      }
+    }
+  }
+  // `derived: children`: all children closed → done; any started → active; else (or none) planned.
+  const derive = (item, seen) => {
+    const derived = spec.kinds?.[item.kind]?.status?.derived === "children";
+    if (!derived || item.phase || seen.has(item)) return item.phase;
+    seen.add(item);
+    const phases = [...(childrenOf.get(item) ?? [])].map((c) => derive(c, seen));
+    if (phases.length && phases.every((p) => CLOSED.has(p))) item.phase = "done";
+    else item.phase = phases.some((p) => STARTED.has(p)) ? "active" : "planned";
+    return item.phase;
+  };
+  const all = Object.values(kinds).flatMap((k) => k.items);
+  for (const item of all) derive(item, new Set());
+  // Rank = row order of a parent kind (sprint); its children take its rank, its parents their last.
+  for (const k of orderKinds)
+    for (const [i, item] of (kinds[k]?.items ?? []).entries()) item.rank = i;
+  for (const item of all.filter((i) => !orderKinds.has(i.kind))) {
+    const ranks = [...(childrenOf.get(item) ?? [])].map((c) => c.rank).filter(Number.isInteger);
+    const rank = parentOf.get(item)?.rank ?? (ranks.length ? Math.max(...ranks) : undefined);
+    if (rank !== undefined) item.rank = rank;
+  }
+}
+
+/** The pinned seam: `readProcess({ root, spec }) -> Model`, where `root` is the git root. */
+export function readProcess({ root, spec }) {
+  const problems = [];
+  const problem = (p) => {
+    problems.push({ rule: "read", ...p });
+  };
+  const specRoot = typeof spec?.root === "string" ? spec.root : ".";
+  const base = join(root, specRoot);
+  // A path that leaves the repository is never opened, whatever the spec says.
+  const inside = (rel) => !escapesRoot(specRoot, rel);
+  const cache = new Map();
+  const load = (rel) => {
+    try {
+      return inside(rel) ? readFileSync(join(base, rel), "utf8") : null;
+    } catch {
+      return null; // missing, or a directory: the caller reports it in its own words
+    }
+  };
+  const read = (rel) => (cache.has(rel) ? cache.get(rel) : cache.set(rel, load(rel)).get(rel));
+  const glob = (p) => (inside(p) ? globSync(p, { cwd: base }).filter(inside).sort() : []);
+  const kinds = {};
+  for (const [name, kind] of Object.entries(spec?.kinds ?? {})) {
+    const ctx = { name, kind, problem, io: { inside, read, glob } };
+    kinds[name] = { items: [], located: false };
+    try {
+      if (typeof kind.at?.files === "string") kinds[name] = readFiles(ctx);
+      else if (typeof kind.at?.table === "string") kinds[name] = readTable(ctx);
+      if (typeof kind.file?.glob === "string") readOwn(ctx, kinds[name].items);
+    } catch (e) {
+      problem({ kind: name, message: `could not read the ${name} kind: ${e.message}` });
+    }
+  }
+  linkTree(spec ?? {}, kinds);
+  const index = {};
+  for (const item of Object.values(kinds).flatMap((k) => k.items)) {
+    if (!Object.hasOwn(index, item.id)) index[item.id] = [];
+    index[item.id].push(item);
+  }
+  return { spec, root, kinds, index, problems };
+}

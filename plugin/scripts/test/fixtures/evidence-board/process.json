@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "name": "Release",
+  "root": "notes/release",
+  "kinds": {
+    "milestone": {
+      "label": "Milestone",
+      "at": { "table": "BOARD.md", "heading": "Milestones" },
+      "id": { "column": "Milestone", "match": "^(\\S+)" },
+      "fields": {
+        "name": { "column": "Milestone", "match": "·\\s*(.+)$" },
+        "sprints": { "column": "Sprints", "type": "list", "ref": "sprint", "role": "children" }
+      },
+      "status": { "derived": "children" }
+    },
+    "sprint": {
+      "label": "Sprint",
+      "at": { "table": "BOARD.md", "heading": "Sprints" },
+      "id": { "column": "Sprint" },
+      "fields": {
+        "name": { "column": "Name", "type": "link" },
+        "status": { "column": "Status" },
+        "ok": { "column": "Owner OK", "type": "date" }
+      },
+      "status": {
+        "field": "status",
+        "values": { "todo": "planned", "doing": "active", "done": "done" }
+      },
+      "file": {
+        "glob": "sprints/{id}_*.md",
+        "required": false,
+        "sections": {
+          "members": { "heading": "Tasks", "as": "bold-lead" },
+          "handoff": { "heading": "Handoff", "as": "bold-lead" }
+        }
+      }
+    },
+    "task": {
+      "label": "Task",
+      "at": { "table": "BOARD.md", "heading": "Tasks" },
+      "id": { "column": "Task" },
+      "fields": {
+        "sprint": {
+          "column": "Sprint",
+          "type": "ref",
+          "ref": "sprint",
+          "role": "parent",
+          "also": ["LATER"]
+        },
+        "what": { "column": "What" },
+        "status": { "column": "Status" },
+        "deps": { "column": "Depends on", "type": "list", "ref": ["task", "sprint", "milestone"] },
+        "evidence": { "column": "Commit / verdict", "type": "evidence" }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "ready": "active",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped",
+          "later": "parked"
+        }
+      },
+      "contract": { "blocks": ["TASKS.md"], "lead": ["heading", "bold"] }
+    },
+    "question": {
+      "label": "Owner question",
+      "at": { "table": "BOARD.md", "heading": "Owner questions" },
+      "id": { "column": "#" },
+      "fields": {
+        "question": { "column": "Question" },
+        "status": { "column": "Status" },
+        "answer": { "column": "Answer" }
+      },
+      "status": { "field": "status", "values": { "open": "active", "answered": "done" } }
+    },
+    "decision": {
+      "label": "Decision",
+      "at": { "table": "../DECISIONS.md", "heading": "Decisions log" },
+      "id": { "column": "#", "prefix": "P" },
+      "fields": {
+        "decision": { "column": "Decision" },
+        "why": { "column": "Why" },
+        "rejected": { "column": "Rejected alternatives" }
+      }
+    }
+  },
+  "rules": [
+    { "rule": "ids-unique" },
+    { "rule": "refs-resolve" },
+    { "rule": "deps-done", "kind": "task", "field": "deps" },
+    {
+      "rule": "done-has-evidence",
+      "kind": "task",
+      "field": "evidence",
+      "evidence": "commit-or-note"
+    },
+    { "rule": "done-has-handoff", "kind": "task", "section": "handoff", "commit": "none" },
+    { "rule": "parked", "kind": "task", "parking": "LATER" }
+  ]
+}

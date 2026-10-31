@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "name": "Broken",
+  "root": "board",
+  "kinds": {
+    "sprint": {
+      "label": "Sprint",
+      "at": { "table": "BOARD.md", "heading": "Sprints" },
+      "id": { "column": "Sprint" },
+      "fields": { "status": { "column": "Status" } }
+    },
+    "task": {
+      "label": "Task",
+      "at": { "table": "BOARD.md", "heading": "Tasks" },
+      "id": { "column": "Task" },
+      "fields": {
+        "status": { "column": "Status" },
+        "owner": { "column": "Owner" },
+        "deps": { "column": "Status", "type": "lst", "ref": "epic" }
+      }
+    },
+    "note": {
+      "label": "Note",
+      "at": { "table": "NOTES.md", "heading": "Notes" },
+      "id": { "column": "#" }
+    },
+    "decision": {
+      "label": "Decision",
+      "at": { "table": "../../outside/DECISIONS.md", "heading": "Decisions log" },
+      "id": { "column": "#" }
+    }
+  },
+  "rules": [{ "rule": "ids-unique" }, { "label": "a rule without its id" }]
+}

@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "name": "Sample",
+  "root": "docs/board",
+  "kinds": {
+    "milestone": {
+      "label": "Milestone",
+      "at": { "table": "BOARD.md", "heading": "Milestones" },
+      "id": { "column": "Milestone", "match": "^(\\S+)" },
+      "fields": {
+        "name": { "column": "Milestone", "match": "·\\s*(.+)$" },
+        "answers": { "column": "Review question" },
+        "sprints": { "column": "Sprints", "type": "list", "ref": "sprint", "role": "children" }
+      },
+      "status": { "derived": "children" }
+    },
+    "sprint": {
+      "label": "Sprint",
+      "at": { "table": "BOARD.md", "heading": "Sprints" },
+      "id": { "column": "Sprint" },
+      "fields": {
+        "name": { "column": "Name", "type": "link" },
+        "status": { "column": "Status" },
+        "ok": { "column": "Owner OK", "type": "date" }
+      },
+      "status": {
+        "field": "status",
+        "values": { "todo": "planned", "doing": "active", "done": "done" }
+      },
+      "file": {
+        "glob": "sprints/{id}_*.md",
+        "required": true,
+        "except": ["PRE", "TRK", "LATER"],
+        "sections": {
+          "members": { "heading": "Tasks", "as": "table", "column": "Task" },
+          "handoff": { "heading": "Handoff", "as": "bold-lead" }
+        }
+      },
+      "create": {
+        "ask": ["name"],
+        "id": "ask",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": { "Sprint": "{id}", "Name": "{name}", "Status": "todo", "Owner OK": "" }
+          }
+        ]
+      }
+    },
+    "task": {
+      "label": "Task",
+      "at": { "table": "BOARD.md", "heading": "Tasks" },
+      "id": { "column": "Task" },
+      "fields": {
+        "sprint": { "column": "Sprint", "type": "ref", "ref": "sprint", "role": "parent" },
+        "status": { "column": "Status" },
+        "deps": { "column": "Deps", "type": "list", "ref": "task" },
+        "risky": { "column": "⚑", "type": "flag", "mark": "⚑" },
+        "verdict": { "column": "Verdict", "case": "upper" },
+        "commit": { "column": "Commit", "type": "commits" },
+        "note": { "column": "Note" }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "ready": "active",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped",
+          "later": "parked"
+        }
+      },
+      "contract": { "blocks": ["TASKS.md"], "lead": ["bold", "heading"] },
+      "create": {
+        "ask": ["sprint", "what", "deps", "risky"],
+        "id": "ask",
+        "rows": [
+          {
+            "in": "self",
+            "at": "after-last:sprint",
+            "cells": {
+              "Task": "{id}",
+              "Sprint": "{sprint}",
+              "Status": "todo",
+              "Deps": "{deps}",
+              "⚑": "{risky}",
+              "Verdict": "",
+              "Commit": "",
+              "Note": "{what}"
+            }
+          },
+          {
+            "in": "parent.file:members",
+            "at": "end",
+            "cells": { "Task": "{id}", "What": "{what}", "Deps": "{deps}", "⚑": "{risky}" }
+          }
+        ],
+        "blocks": [{ "file": "TASKS.md", "under": "ask", "text": "- **{id}** ({sprint}): owns …" }]
+      }
+    },
+    "question": {
+      "label": "Owner question",
+      "at": { "table": "BOARD.md", "heading": "Owner questions" },
+      "id": { "column": "Id" },
+      "fields": {
+        "question": { "column": "Question (recommendation)" },
+        "status": { "column": "Status" },
+        "blocks": { "column": "Blocks", "type": "list", "ref": "task" },
+        "answer": { "column": "Answer" }
+      },
+      "status": { "field": "status", "values": { "open": "active", "answered": "done" } },
+      "create": {
+        "ask": ["question", "blocks"],
+        "id": "Q-{n:02}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": {
+              "Id": "{id}",
+              "Question (recommendation)": "{question}",
+              "Status": "open",
+              "Blocks": "{blocks}",
+              "Answer": ""
+            }
+          }
+        ]
+      }
+    },
+    "decision": {
+      "label": "Decision",
+      "at": { "table": "../DECISIONS.md", "heading": "Decisions log" },
+      "id": { "column": "#", "prefix": "N" },
+      "fields": {
+        "decision": { "column": "Decision" },
+        "why": { "column": "Why" },
+        "rejected": { "column": "Rejected alternatives" }
+      }
+    }
+  },
+  "rules": [
+    { "rule": "ids-unique", "label": "C1" },
+    { "rule": "status-known", "label": "C1" },
+    { "rule": "refs-resolve", "label": "C1" },
+    { "rule": "file-required", "label": "C2", "kind": "sprint" },
+    {
+      "rule": "members-listed",
+      "label": "C2",
+      "kind": "sprint",
+      "section": "members",
+      "member": "task"
+    },
+    { "rule": "deps-done", "label": "C3", "kind": "task", "field": "deps" },
+    {
+      "rule": "done-has-handoff",
+      "label": "C4",
+      "kind": "task",
+      "section": "handoff",
+      "commit": "first",
+      "except": { "sprint": ["PRE", "TRK"] }
+    },
+    { "rule": "sequential", "label": "C5", "kind": "sprint", "skip": ["PRE", "TRK", "LATER"] }
+  ],
+  "lifecycle": {
+    "kind": "task",
+    "on": { "dispatched": "doing", "built": "verify", "failed": "doing", "merged": "done" },
+    "write": { "status": "status", "verdict": "verdict", "commit": "commit" },
+    "handoff": "- **{id}** ({sha}): {summary}"
+  },
+  "drafts": {
+    "decision": {
+      "kind": "decision",
+      "map": { "decision": "{answer}", "why": "{question}", "rejected": "{unpicked}" }
+    }
+  },
+  "status": { "now": "sprint", "note": ".agentry/NOTE.md", "prime": true, "lines": 12 }
+}
