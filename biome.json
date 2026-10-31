@@ -14,7 +14,8 @@
       "plugin/mem/**",
       "plugin/flow/**",
       "plugin/workbench/**",
-      "packages/eval/fixtures/**"
+      "packages/eval/fixtures/**",
+      ".claude/**"
     ]
   },
   "formatter": {
