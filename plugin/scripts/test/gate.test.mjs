@@ -132,7 +132,7 @@ test("pickTier: every full result carries a reason", () => {
   assert.match(pickTier(gate, ["a.md"]).reason, /match/);
 });
 
-const record = { exit: 0, cleanBefore: true, cleanAfter: true };
+const record = { exit: 0, tier: "full", cleanBefore: true, cleanAfter: true };
 const ok = {
   record,
   mainTree: "t1",
@@ -150,6 +150,8 @@ test("canSkip: each failed condition refuses with its own reason", () => {
   const cases = [
     [{ ...ok, record: null }, /no gate record/],
     [{ ...ok, record: { ...record, exit: 1 } }, /exited 1/],
+    [{ ...ok, record: { ...record, tier: "quick" } }, /quick tier, not full/],
+    [{ ...ok, record: { ...record, tier: undefined } }, /unknown tier, not full/],
     [{ ...ok, record: { ...record, cleanBefore: false } }, /clean tree/],
     [{ ...ok, record: { ...record, cleanAfter: false } }, /clean tree/],
     [{ ...ok, branchTipTree: "t2" }, /tree differs/],

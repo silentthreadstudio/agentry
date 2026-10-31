@@ -103,6 +103,12 @@ export function pickTier(gate, changedFiles) {
 export function canSkip({ record, mainTree, branchTipTree, changedSinceGate, after }) {
   if (!record) return { skip: false, reason: "no gate record" };
   if (record.exit !== 0) return { skip: false, reason: `the recorded gate exited ${record.exit}` };
+  // A quick-tier gate only proved the files it was allowed to cover; it never stands in for the full gate on main.
+  if (record.tier !== "full")
+    return {
+      skip: false,
+      reason: `the recorded gate ran the ${record.tier ?? "unknown"} tier, not full`,
+    };
   if (!record.cleanBefore || !record.cleanAfter)
     return {
       skip: false,
