@@ -203,7 +203,7 @@ class RoutingDemo {
     const traceWrap = el("div", "routing-demo__trace");
     traceWrap.append(el("span", "label", "trace"));
     const ol = el("ol", "routing-demo__trace-list");
-    task.trace.forEach((step) => ol.append(el("li", undefined, step)));
+    for (const step of task.trace) ol.append(el("li", undefined, step));
     traceWrap.append(ol);
 
     this.panelEl.append(prompt, route, reason, traceWrap);

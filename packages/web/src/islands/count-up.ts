@@ -15,7 +15,7 @@ const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const DURATION_MS = 1400;
 
 function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3);
+  return 1 - (1 - t) ** 3;
 }
 
 function format(el: HTMLElement, value: number): string {

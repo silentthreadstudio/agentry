@@ -272,8 +272,7 @@ for (const { pkg } of manifests) {
       if (scriptOwners.get(name)?.has(target) !== true) continue;
       doubleRun += 1;
       err(
-        `${pkg.name}'s "${name}" re-invokes ${target}'s "${name}" — pnpm -r ${name} then runs it twice, ` +
-          `concurrently, with no ordering edge; drop the wrapper and let -r reach the package directly`,
+        `${pkg.name}'s "${name}" re-invokes ${target}'s "${name}" — pnpm -r ${name} then runs it twice, concurrently, with no ordering edge; drop the wrapper and let -r reach the package directly`,
       );
     }
   }

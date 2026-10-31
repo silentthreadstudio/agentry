@@ -95,8 +95,7 @@ function loadCorrections() {
   const bad = parsed.filter((x) => !isCorrection(x));
   if (bad.length > 0) {
     throw new Error(
-      `corrections.json has ${bad.length} malformed row(s) (need string date/h/meter/truth/fix): ` +
-        JSON.stringify(bad, null, 2),
+      `corrections.json has ${bad.length} malformed row(s) (need string date/h/meter/truth/fix): ${JSON.stringify(bad, null, 2)}`,
     );
   }
   // Normalize to exactly the fields Proof.astro consumes; coerce `high` to a boolean (defaults false).
@@ -173,8 +172,7 @@ function parseRootTokens(text, label) {
   const raw = {}; // whitespace-preserved (so gradient color extraction sees the `#hex 42%` delimiter)
   // Match `--name: value` up to the next `;` (handles values with commas/parens like gradients).
   const re = /(--[a-z0-9-]+)\s*:\s*([^;]+);/gi;
-  let m;
-  while ((m = re.exec(block)) !== null) {
+  for (let m = re.exec(block); m !== null; m = re.exec(block)) {
     const value = m[2].trim().toLowerCase();
     raw[m[1]] = value;
     // Normalize whitespace so `135deg, #8b5cf6` and `135deg,#8b5cf6` compare equal.
@@ -240,9 +238,7 @@ function checkTokenDrift() {
 
   if (mismatches.length > 0) {
     throw new Error(
-      `[drift] brand-critical token drift between tokens.css and the dashboard template (ADR 003):\n  - ` +
-        mismatches.join("\n  - ") +
-        `\nThe site and the receipts must feel like one product — align both, or update the brand decision.`,
+      `[drift] brand-critical token drift between tokens.css and the dashboard template (ADR 003):\n  - ${mismatches.join("\n  - ")}\nThe site and the receipts must feel like one product — align both, or update the brand decision.`,
     );
   }
   console.log(
