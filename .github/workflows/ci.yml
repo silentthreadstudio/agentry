@@ -36,5 +36,8 @@ jobs:
       - name: Typecheck (all packages)
         run: pnpm -r typecheck
 
-      - name: Test (all packages — core · memory · eval)
-        run: pnpm -r test
+      - name: Lint (biome — lint, format, import order)
+        run: pnpm lint
+
+      - name: Test (every package + the plugin's hook tests)
+        run: pnpm test
