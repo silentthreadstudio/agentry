@@ -190,6 +190,11 @@ test("an except or skip value that names nothing on the board is a finding namin
       { ...evidence, except: { status: ["doing", "doin"] } },
       ['except.status names no item "doin"'],
     ],
+    // Declared status words no item holds yet are known values, not strays.
+    [
+      { ...evidence, except: { status: ["verify", "cut", "Verify"] } },
+      ['except.status names no item "Verify"'],
+    ],
     [{ rule: "sequential", kind: "sprint", skip: ["TRK", "TRKK"] }, ['skip names no item "TRKK"']],
     [
       {

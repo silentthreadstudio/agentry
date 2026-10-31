@@ -16,19 +16,25 @@ function fieldOf(spec, kind, key) {
   return key !== "id" && Object.hasOwn(fields, key) ? fields[key] : undefined;
 }
 
-// A value names something when an item of the kinds holds it, or its field could: an `also` literal,
-// or an item of a kind the field refs. Undefined (not judged) when one of those kinds was not read.
+// The values the process file declares for `key` in `kind`: its status words when `key` is the
+// kind's status field, and the field's `also` literals.
+function declared(spec, kind, key) {
+  const { status } = spec.kinds[kind];
+  const words = status?.field === key && status.values ? Object.keys(status.values) : [];
+  return [...words, ...(fieldOf(spec, kind, key)?.also ?? [])];
+}
+
+// A value names something when the process file declares it for the field (`declared`), an item of
+// the kinds holds it, or an item of a kind the field refs is it. Undefined (not judged) when one of
+// those kinds was not read.
 function named(model, kinds, key, value) {
+  if (kinds.some((k) => declared(model.spec, k, key).includes(value))) return true;
   const defs = kinds.map((k) => fieldOf(model.spec, k, key));
   const read = [...kinds, ...defs.flatMap(refKinds)].every((k) => model.kinds[k]?.located);
   if (!read) return undefined;
   const items = kinds.flatMap((k) => model.kinds[k].items);
   if (items.some((item) => holds(item, key).includes(value))) return true;
-  return defs.some(
-    (def) =>
-      def?.also?.includes(value) ||
-      withId(model, value).some((item) => refKinds(def).includes(item.kind)),
-  );
+  return defs.some((def) => withId(model, value).some((item) => refKinds(def).includes(item.kind)));
 }
 
 // The `except` and `names` values of entry `i` that name nothing on the board: a typo there would

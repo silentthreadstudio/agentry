@@ -68,9 +68,9 @@ after `task`, so tasks keep their sprint's order.
 Every rule is a fixed function with parameters; there is no rule language. `kind` names the kind it checks;
 `except: { "<field>": [values] }` skips matching items (`"id"` means the item's own id, any other key must be
 a field of every kind the rule checks); `label` prints the repo's own name for the rule on each finding.
-An `except` or `skip` value that no item on the board holds (and that is no `also` value or item of the kind
-the field refs) is a finding of its own, `rules[3].except.sprint names no item "PREE"`, so a typo shows
-instead of quietly changing what the rule skips.
+An `except` or `skip` value that no item on the board holds (and that is no status word or `also` value the
+file declares for that field, nor an item of the kind the field refs) is a finding of its own,
+`rules[3].except.sprint names no item "PREE"`, so a typo shows instead of quietly changing what the rule skips.
 
 | Rule | Checks |
 | :--- | :--- |
