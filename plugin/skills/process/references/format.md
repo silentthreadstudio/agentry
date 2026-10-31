@@ -34,7 +34,7 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
   | Field key | Meaning |
   | :--- | :--- |
   | `column` | The header text, exactly. Column order never matters. |
-  | `type` | `text` (default) · `list` (comma-separated) · `ref` (one id) · `flag` (cell contains `mark`) · `date` (leading `YYYY-MM-DD`) · `commits` (every 7–40 hex token) · `evidence` (commits plus the remaining text as a note) · `link` (the first markdown link's target, not its text) |
+  | `type` | `text` (default) · `list` (comma-separated) · `ref` (one id) · `flag` (cell contains `mark`) · `date` (leading `YYYY-MM-DD`) · `commits` (every 7–40 hex token) · `evidence` (commits plus the remaining text as a note) · `link` (the first markdown link's text, not its target; a cell without a link reads whole) |
   | `ref` | The kind (or list of kinds) a `ref`/`list` value names. A hit in two kinds is a finding. |
   | `role` | `parent` on the child's ref (a task's sprint), `children` on the parent's list (a milestone's sprints). Together they make the tree. |
   | `also` | Literal values allowed besides ids (a parking word such as `LATER`). |

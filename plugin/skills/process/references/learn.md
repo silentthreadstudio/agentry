@@ -39,7 +39,7 @@ Work on a draft, never on the real file: `.agentry/run/process/draft.json`, read
 2. **Fields.** Map every column. Infer the type from the cells: comma-separated ids → `list` with `ref`;
    one id of another kind → `ref`; 7–40 hex tokens → `commits`; hex tokens mixed with words → `evidence`;
    `YYYY-MM-DD` → `date`; a glyph in some rows and blank in others → `flag` with `mark`; markdown links →
-   `link` (it yields the target, not the text). A cell holding two things (`M1 · Name`) gets one field per
+   `link` (it yields the link text, not the target). A cell holding two things (`M1 · Name`) gets one field per
    part, each with `match`.
 3. **Tree.** A ref naming the kind whose table groups this one (a task's sprint) gets `role: parent`; a list
    on the grouping kind naming its members gets `role: children`. A kind with no status column but children
