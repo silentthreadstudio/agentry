@@ -135,17 +135,26 @@ export function appendLine(text, { heading, line }) {
   return insertInSection(text, heading, [line], true);
 }
 
+// A file to edit: missing, a dangling symlink or a directory is a refusal that names it.
+function readOrRefuse(file) {
+  try {
+    return readFileSync(file, "utf8");
+  } catch (error) {
+    return refuse(`cannot read ${file} (${error.code ?? error.message}); nothing written`);
+  }
+}
+
 /** Apply edits `[{ file, edit }]` (`edit`: text → text, may throw `WriteError`) as one step: read
  *  every file and compute every edit first, re-read to check nothing changed meanwhile, then write.
  *  Any refusal or changed file → nothing is written. Several edits on one file compose in order. */
 export function applyAll(edits) {
   const seen = new Map(); // file → { before, after }
   for (const { file, edit } of edits) {
-    const state = seen.get(file) ?? { before: readFileSync(file, "utf8") };
+    const state = seen.get(file) ?? { before: readOrRefuse(file) };
     seen.set(file, { before: state.before, after: edit(state.after ?? state.before) });
   }
   for (const [file, { before }] of seen)
-    if (readFileSync(file, "utf8") !== before)
+    if (readOrRefuse(file) !== before)
       refuse(`${file} changed while it was being edited; nothing written`);
   for (const [file, { after }] of seen) writeFileSync(file, after);
   return [...seen.keys()];

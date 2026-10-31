@@ -3,7 +3,7 @@
 // table-board and frontmatter-board (copied to a scratch dir, never edited in place).
 // Run: node --test plugin/scripts/test/write-cli.test.mjs
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -135,6 +135,27 @@ test("add refuses bad input: no id, bad JSON, unknown kind or parent, unknown pl
     add(["task", "--json", '{"id":"W4","sprint":"A1"}'], { root, spec, model }).out,
     /unknown placeholder \{whatever\}/,
   );
+});
+
+test("add refuses a create target that is missing or a dangling symlink, naming it, and writes nothing", () => {
+  for (const make of [
+    (file) => rmSync(file),
+    (file) => {
+      rmSync(file);
+      symlinkSync("gone.md", file);
+    },
+  ]) {
+    const root = copy("write");
+    const before = text(root, "board/BOARD.md");
+    make(join(root, "board/TASKS.md"));
+    let result;
+    assert.doesNotThrow(() => {
+      result = addTask(root, { id: "W4", sprint: "A1", note: "Fourth" });
+    });
+    assert.equal(result.exit, 2);
+    assert.match(result.out, /^cannot read .*board\/TASKS\.md \(ENOENT\); nothing written$/);
+    assert.equal(text(root, "board/BOARD.md"), before);
+  }
 });
 
 test("add reads a field named like a built-in from the given JSON only", () => {
