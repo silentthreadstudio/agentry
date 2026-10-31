@@ -106,6 +106,15 @@ test("scan needs no process file and lists every table with its row count", () =
   assert.ok(cols(out.stdout) <= 100);
 });
 
+test("--why with no id is a usage error, not a plain run", () => {
+  for (const sub of ["check", "status"])
+    for (const args of [["--why"], ["--why", "--json"]]) {
+      const out = run("evidence-board", sub, ...args);
+      assert.equal(out.status, 2, `${sub} ${args}`);
+      assert.match(out.stderr, /^usage: (check|status) .*--why <id>/, sub);
+    }
+});
+
 test("scan refuses a directory outside the repository root", () => {
   const root = join(FIXTURES, "table-board");
   for (const dir of ["..", "../evidence-board", "docs/../../evidence-board", "/tmp"]) {

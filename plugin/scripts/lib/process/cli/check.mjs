@@ -10,8 +10,11 @@ const tty = () => Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
 export function run(argv, { root, spec, model }) {
   const report = boardReport({ root, spec, model });
   const exit = report.ok ? 0 : 1;
-  const id = argv.includes("--why") ? argv[argv.indexOf("--why") + 1] : undefined;
-  if (id) return why({ spec, model, report, id, tty: tty() });
+  const at = argv.indexOf("--why");
+  const id = argv[at + 1];
+  if (at >= 0 && (!id || id.startsWith("--")))
+    return { exit: 2, out: "usage: check [--json] [--why <id>]" };
+  if (at >= 0) return why({ spec, model, report, id, tty: tty() });
   if (argv.includes("--json")) return { exit, out: JSON.stringify(report) };
   return { exit, out: renderCheck({ spec, report, work: workKind(spec), tty: tty() }) };
 }

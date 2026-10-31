@@ -13,8 +13,11 @@ const clock = () => new Date().toTimeString().slice(0, 5);
 export function run(argv, { root, processPath, spec, model }) {
   const report = boardReport({ root, spec, model });
   const exit = report.ok ? 0 : 1;
-  const id = argv.includes("--why") ? argv[argv.indexOf("--why") + 1] : undefined;
-  if (id) return why({ spec, model, report, id, tty: tty() });
+  const at = argv.indexOf("--why");
+  const id = argv[at + 1];
+  if (at >= 0 && (!id || id.startsWith("--")))
+    return { exit: 2, out: "usage: status [--json] [--why <id>]" };
+  if (at >= 0) return why({ spec, model, report, id, tty: tty() });
   const view = statusView({ root, spec, model });
   if (argv.includes("--json")) return { exit, out: JSON.stringify({ ...report, status: view }) };
   const file = processPath ? relative(root, processPath) : "";
