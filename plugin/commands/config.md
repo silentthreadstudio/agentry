@@ -39,3 +39,5 @@ Current keys:
 
 - If the user asks "why did Agentry do X?", checking this config first is usually the fastest answer — a non-default value is the likeliest cause.
 - Removing a key from the file restores its default; there is no "unset" ceremony.
+
+See also `/agentry:init`: the setup front door, which shows this config as part of a repo's setup.

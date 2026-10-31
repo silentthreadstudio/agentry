@@ -13,6 +13,16 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   the worktree, commits and verdict. No spec, plan or split, no Flow run state, no merge or push.
 - **`/agentry:ask <question>`** — answers with one read-only specialist (explorer, researcher or
   architect) and cited sources. No worktree, no Flow run state, no edits.
+- **`/agentry:init`** — the setup front door for a repo's own process. In a new repo it scaffolds
+  a board from templates; in a repo with a board it learns how that board is written into
+  `.agentry/process.json`, checked against the files at every step; in a repo already set up it
+  shows the setup and offers repairs for drift. Asks only what it can't infer, never commits.
+- **`/agentry:new <kind>`** — adds one item of any kind the process file knows (task, sprint,
+  question, decision…) to every place that kind lives, asking only that kind's fields, then
+  reports what changed in the board check.
+- **`/agentry:board`** — the board's derived status, then every rule finding, from the repo's own
+  files. `--fix` fills mechanical drift once the harness writers ship.
+- **`process` skill** — the process file format, the learn procedure and fresh-repo templates.
 
 ## [0.2.0] — 2026-06-21
 

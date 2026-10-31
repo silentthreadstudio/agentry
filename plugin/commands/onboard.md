@@ -11,3 +11,5 @@ Brief for the explorer:
 - Detect the available tools/MCPs in this environment and record them.
 
 Output: a **Context map** (doc-01 format) at `.agentry/context.md`, plus seeded `repo-fact` memories (including the available-capabilities profile). Change nothing — this node is read-only.
+
+See also `/agentry:init`: the setup front door, which offers this map when `.agentry/context.md` is missing.
