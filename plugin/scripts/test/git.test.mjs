@@ -6,7 +6,14 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { defaultBranch, hasCommit, log, patchIds, worktrees } from "../lib/process/git.mjs";
+import {
+  defaultBranch,
+  hasCommit,
+  knownCommits,
+  log,
+  patchIds,
+  worktrees,
+} from "../lib/process/git.mjs";
 
 let repo;
 let outside;
@@ -58,6 +65,20 @@ test("hasCommit: a real commit, short or full; not a missing one or an option", 
   assert.equal(hasCommit(repo, "0000000"), false);
   assert.equal(hasCommit(repo, "--all"), false);
   assert.equal(hasCommit(outside, sha.first), false);
+});
+
+test("knownCommits: one call answers many SHAs, short or full, and hasCommit agrees", () => {
+  const tree = run("rev-parse", "HEAD^{tree}");
+  const asked = [sha.first, sha.second.slice(0, 8), "0000000", tree, "--all", sha.picked];
+  const found = knownCommits(repo, asked);
+  assert.deepEqual([...found].sort(), [sha.first, sha.second.slice(0, 8), sha.picked].sort());
+  assert.deepEqual(
+    asked.map((s) => hasCommit(repo, s)),
+    [true, true, false, false, false, true],
+    "a tree is not a commit; an option never reaches git",
+  );
+  assert.deepEqual([...knownCommits(outside, [sha.first])], []);
+  assert.deepEqual([...knownCommits(repo, [])], []);
 });
 
 test("log: newest first, with subjects, limited to n", () => {

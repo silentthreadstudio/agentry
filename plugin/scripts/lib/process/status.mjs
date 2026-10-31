@@ -31,8 +31,23 @@ export function titleOf(spec, item) {
   return found ?? undefined;
 }
 
+const SHA = /^[0-9a-f]{7,40}$/i;
+
+// Every SHA-looking token in a commits or evidence field: what the evidence rules may ask git about.
+function shasOf(spec, model) {
+  return Object.entries(model.kinds).flatMap(([name, { items }]) => {
+    const fields = Object.entries(spec.kinds[name]?.fields ?? {})
+      .filter(([, f]) => f.type === "commits" || f.type === "evidence")
+      .map(([f]) => f);
+    return items.flatMap((item) =>
+      fields.flatMap((f) => [item.fields[f] ?? []].flat()).filter((t) => SHA.test(t)),
+    );
+  });
+}
+
 /** Load-time problems plus every enabled rule's findings, and the counts the header shows. */
 export function boardReport({ root, spec, model }) {
+  git.knownCommits(root, shasOf(spec, model)); // one git process for the whole board
   const ctx = { hasCommit: (sha) => git.hasCommit(root, sha) };
   const findings = [...model.problems, ...check(model, spec.rules, ctx)];
   const items = Object.fromEntries(

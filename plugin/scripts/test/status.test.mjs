@@ -27,6 +27,37 @@ test("the report counts items per kind and carries load problems and rule findin
   assert.ok(report.findings.some((f) => f.rule === "deps-done" && f.id === "H2"));
 });
 
+test("the report checks 2,000 done rows' commits in well under a second", () => {
+  const root = mkdtempSync(join(tmpdir(), "agentry-status-"));
+  try {
+    const rows = Array.from({ length: 2000 }, (_, i) => {
+      const sha = (0xabc0000 + i).toString(16);
+      return `| T${i} | done | ${sha} |`;
+    });
+    const md = ["## Tasks", "", "| Task | Status | Commit |", "| --- | --- | --- |", ...rows];
+    writeFileSync(join(root, "BOARD.md"), `${md.join("\n")}\n`);
+    const task = {
+      label: "Task",
+      at: { table: "BOARD.md", heading: "Tasks" },
+      id: { column: "Task" },
+      fields: { status: { column: "Status" }, commit: { column: "Commit", type: "commits" } },
+      status: { field: "status", values: { done: "done" } },
+    };
+    const rules = [
+      { rule: "done-has-evidence", kind: "task", field: "commit", evidence: "commit" },
+    ];
+    const spec = { version: 1, name: "Big", root: ".", kinds: { task }, rules };
+    const model = readProcess({ root, spec });
+    const start = performance.now();
+    const report = boardReport({ root, spec, model });
+    const ms = performance.now() - start;
+    assert.equal(report.findings.length, 2000, "outside a repository no commit is found");
+    assert.ok(ms < 1000, `boardReport took ${Math.round(ms)} ms`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("the view: now with progress, in flight, on you, blocked, ahead and parked", () => {
   const { root, spec, model } = board("evidence-board");
   const view = statusView({ root, spec, model });

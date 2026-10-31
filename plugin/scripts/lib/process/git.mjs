@@ -22,15 +22,23 @@ function git(root, args, input) {
   }
 }
 
-const known = new Map();
+const known = new Map(); // `${root}\0${sha}` → boolean
 
-/** True when `sha` names a commit in the repo at `root`. Cached per root and SHA. */
-export function hasCommit(root, sha) {
-  if (!SHA.test(sha ?? "")) return false;
-  const key = `${root}\0${sha}`;
-  if (!known.has(key)) known.set(key, git(root, ["cat-file", "-e", `${sha}^{commit}`]) !== null);
-  return known.get(key);
+/** The `shas` that name a commit in the repo at `root`, as a Set. The ones not yet cached are asked in
+ *  one `git cat-file --batch-check` (one line out per line in), so a board's every SHA costs one process. */
+export function knownCommits(root, shas) {
+  const key = (sha) => `${root}\0${sha}`;
+  const asked = [...new Set(shas)].filter((sha) => SHA.test(sha ?? "") && !known.has(key(sha)));
+  if (asked.length) {
+    const input = asked.map((sha) => `${sha}^{commit}\n`).join("");
+    const out = git(root, ["cat-file", "--batch-check=%(objecttype)"], input)?.split("\n") ?? [];
+    asked.forEach((sha, i) => known.set(key(sha), out[i] === "commit"));
+  }
+  return new Set(shas.filter((sha) => known.get(key(sha)) === true));
 }
+
+/** True when `sha` names a commit in the repo at `root`. Cached per root and SHA (see `knownCommits`). */
+export const hasCommit = (root, sha) => knownCommits(root, [sha]).has(sha);
 
 /** The last `n` commits on `ref` (newest first): `{ sha, subject }`. */
 export function log(root, { ref = "HEAD", n = 10, firstParent = false } = {}) {
