@@ -8,6 +8,9 @@ const FENCE = /^\s*(```|~~~)/;
 const HEADING = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const SEPARATOR_CELL = /^:?-+:?$/;
 const LEAD = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?\*\*(.+?)\*\*(.*)$/;
+// A run of 7+ decimal digits (`20261031`) is also valid hex, so it reads as a commit: in a `commits`
+// or `evidence` cell it is checked against git and reported when missing. Known and kept: an
+// abbreviated SHA can be all digits, and telling the two apart would need git, which this file lacks.
 const SHA = /(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])/g;
 const LINK = /\[([^\]]*)\]\(\s*<?[^)\s>]+>?(?:\s+"[^"]*")?\s*\)/;
 const DATE = /^(\d{4}-\d{2}-\d{2})/;
