@@ -1,5 +1,7 @@
-// Fuzz tests for the process file: a wrong-typed value at any key is a spec problem (exit 2 from
-// the board, a note and fallback from find-contract), never a stack trace.
+// Fuzz tests for the process file: a wrong-typed value at any key or list item, and a wrong, unknown
+// or misspelled rule param, is a spec problem (exit 2 from the board, a note and fallback from
+// find-contract), never a stack trace. The board exits 2 exactly when `loadSpec` reports a problem,
+// so most cases are checked in process through `validateSpec`; a sample is run through the board.
 // Run: node --test plugin/scripts/test/spec-fuzz.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -8,6 +10,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { check } from "../lib/process/check.mjs";
+import { readProcess } from "../lib/process/read.mjs";
 import { CATALOG } from "../lib/process/rules/index.mjs";
 import { validateSpec } from "../lib/process/spec.mjs";
 
@@ -16,11 +20,11 @@ const SCRIPTS = join(HERE, "..");
 const BASE = join(HERE, "fixtures", "table-board");
 const VALID = JSON.parse(readFileSync(join(BASE, "process.json"), "utf8"));
 const BAD_VALUES = [null, "x", 7, [], true];
+const BUILTINS = ["toString", "constructor", "__proto__", "hasOwnProperty"];
 
-/** Every (path, bad value) up to `depth` keys down the object, as a mutated copy of the spec. */
-function* mutations(node = VALID, path = [], depth = 4) {
-  if (path.length === depth || node === null || typeof node !== "object" || Array.isArray(node))
-    return;
+/** Every (path, bad value) up to `depth` keys or list items down the spec, as a mutated copy. */
+function* mutations(node = VALID, path = [], depth = 6) {
+  if (path.length === depth || node === null || typeof node !== "object") return;
   for (const key of Object.keys(node)) {
     const at = [...path, key];
     for (const bad of BAD_VALUES) {
@@ -33,7 +37,17 @@ function* mutations(node = VALID, path = [], depth = 4) {
   }
 }
 
-test("a wrong-typed value at any key is a spec problem, never a throw", () => {
+// A file the check accepts must read and run every rule without a throw and without a rule that
+// cannot run: that would be a param that slipped past the check.
+function runsClean(spec, name) {
+  const model = readProcess({ root: BASE, spec });
+  const stuck = check(model, spec.rules, { hasCommit: () => true }).filter((f) =>
+    f.message.startsWith("rule cannot run"),
+  );
+  assert.deepEqual(stuck, [], name);
+}
+
+test("a wrong-typed value at any key or list item is a spec problem, never a throw", () => {
   let n = 0;
   for (const { name, spec } of mutations()) {
     n++;
@@ -43,8 +57,9 @@ test("a wrong-typed value at any key is a spec problem, never a throw", () => {
     }, name);
     // other values are legitimate for some keys (a string, a flag, a list); null never is
     if (name.endsWith("= null")) assert.ok(problems.length > 0, `${name} should be reported`);
+    if (problems.length === 0) assert.doesNotThrow(() => runsClean(spec, name), name);
   }
-  assert.ok(n > 100);
+  assert.ok(n > 1000, `${n} mutations`);
 });
 
 const DEGENERATE = [
@@ -132,10 +147,11 @@ const ENTRIES = {
 // A misspelling of a param name: its last letter turned into a "z" (`field` → `fielz`).
 const typo = (name) => `${name.slice(0, -1)}${name.endsWith("z") ? "y" : "z"}`;
 
-function checkWith(fixture, rules) {
+// `board check` on a copy of a fixture with these rules (and, given, this whole spec).
+function checkWith(fixture, rules, whole) {
   const root = mkdtempSync(join(tmpdir(), "spec-fuzz-"));
   cpSync(join(HERE, "fixtures", fixture), root, { recursive: true });
-  const spec = JSON.parse(readFileSync(join(root, "process.json"), "utf8"));
+  const spec = whole ?? JSON.parse(readFileSync(join(root, "process.json"), "utf8"));
   writeFileSync(join(root, "process.json"), JSON.stringify({ ...spec, rules }));
   try {
     return spawn("board.mjs", ["check", "--root", root, "--process", join(root, "process.json")]);
@@ -202,3 +218,84 @@ test("a list or enum param given the wrong type is exit 2 on the board that uses
     assert.doesNotMatch(out.stderr, /\n\s+at /);
   }
 });
+
+// Values of the wrong type, or naming nothing the file declares, for each declared param type.
+const WRONG = {
+  string: [7, [], true, null, {}],
+  strings: ["x", 7, [7], null, {}],
+  enum: ["nope", 7, null, []],
+  kind: [7, "nope", null, ...BUILTINS],
+  field: [7, "nope", null, ...BUILTINS],
+  section: [7, "nope", null, ...BUILTINS],
+  except: ["x", [], { nope: ["a"] }, { id: "x" }, ...BUILTINS.map((b) => ({ [b]: ["a"] }))],
+};
+
+/** Every wrong entry for one rule, from its declared params: each param mistyped or naming nothing,
+ *  each param name misspelled, an unknown key, and the built-in names as rule id, kind and key. */
+function* ruleMutations(id) {
+  const entry = { rule: id, ...ENTRIES[id] };
+  const params = CATALOG[id].params;
+  for (const [p, def] of Object.entries(params))
+    for (const bad of WRONG[def.type])
+      yield { name: `${p} = ${JSON.stringify(bad)}`, entry: { ...entry, [p]: bad } };
+  for (const p of Object.keys(params)) {
+    const { [p]: value, ...rest } = entry;
+    const typoed = { ...entry, [typo(p)]: value ?? "x" };
+    yield { name: `${typo(p)} beside ${p}`, entry: typoed };
+    if (value !== undefined)
+      yield { name: `${typo(p)} for ${p}`, entry: { ...rest, [typo(p)]: value } };
+  }
+  yield { name: "bogus key", entry: { ...entry, bogus: 1 } };
+  for (const b of BUILTINS) {
+    yield { name: `rule ${b}`, entry: { ...entry, rule: b } };
+    yield { name: `key ${b}`, entry: { ...entry, [b]: 1 } };
+    if (Object.hasOwn(params, "kind")) yield { name: `kind ${b}`, entry: { ...entry, kind: b } };
+  }
+}
+
+for (const id of Object.keys(ENTRIES)) {
+  test(`${id}: every wrong, unknown or misspelled param is a spec problem naming the entry`, () => {
+    let n = 0;
+    for (const { name, entry } of ruleMutations(id)) {
+      n++;
+      const spec = { ...structuredClone(VALID), rules: [entry] };
+      let problems;
+      assert.doesNotThrow(() => {
+        problems = validateSpec(spec).problems;
+      }, name);
+      const named = problems.filter((p) => p.message.startsWith("rules[0]"));
+      assert.ok(named.length > 0, `${id} ${name}: ${JSON.stringify(problems)}`);
+    }
+    assert.ok(n >= 9, `${id}: ${n} mutations`);
+  });
+}
+
+// Built-in names where the file names a kind, a field or a rule, run through the board.
+const at = (path) => (s, b) => {
+  const keys = path.split(".");
+  const last = keys.pop();
+  keys.reduce((o, k) => o[k], s)[last] = b;
+};
+const NAMED = [
+  ["rules[].rule", (s, b) => s.rules.push({ rule: b })],
+  ["rules[].kind", (s, b) => s.rules.push({ rule: "parent-active", kind: b })],
+  ["rules[].field", (s, b) => s.rules.push({ rule: "deps-done", kind: "task", field: b })],
+  ["rules[].<param>", (s, b) => s.rules.push(JSON.parse(`{"rule":"ids-unique","${b}":1}`))],
+  ["fields.ref", at("kinds.task.fields.deps.ref")],
+  ["status.field", at("kinds.task.status.field")],
+  ["lifecycle.kind", at("lifecycle.kind")],
+  ["status.now", at("status.now")],
+];
+
+for (const [where, set] of NAMED) {
+  test(`a built-in name as ${where} is exit 2 naming it, never a stack trace`, () => {
+    for (const b of BUILTINS) {
+      const spec = structuredClone(VALID);
+      set(spec, b);
+      const out = checkWith("table-board", spec.rules, spec);
+      assert.equal(out.status, 2, `${where} = ${b}: ${out.stdout}${out.stderr}`);
+      assert.match(out.stderr, /cannot use the process file\n {2}\S/, `${where} = ${b}`);
+      assert.doesNotMatch(out.stdout + out.stderr, /\n\s+at |TypeError|\[Function/, b);
+    }
+  });
+}
