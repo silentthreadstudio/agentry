@@ -43,30 +43,26 @@ class FakeChild extends EventEmitter implements StreamChild {
 }
 
 /** An `assistant` event carrying a `tool_use name:"Agent"` block — the dispatch trigger (stream-json shape). */
-const AGENT_DISPATCH_LINE =
-  JSON.stringify({
-    type: "assistant",
-    message: {
-      content: [
-        { type: "tool_use", id: "toolu_1", name: "Agent", input: { subagent_type: "echoer" } },
-      ],
-    },
-  }) + "\n";
+const AGENT_DISPATCH_LINE = `${JSON.stringify({
+  type: "assistant",
+  message: {
+    content: [
+      { type: "tool_use", id: "toolu_1", name: "Agent", input: { subagent_type: "echoer" } },
+    ],
+  },
+})}\n`;
 
 /** A benign `assistant` event with no tool_use — must NOT trigger a kill. */
-const THINKING_LINE =
-  JSON.stringify({
-    type: "assistant",
-    message: { content: [{ type: "thinking", thinking: "" }] },
-  }) + "\n";
+const THINKING_LINE = `${JSON.stringify({
+  type: "assistant",
+  message: { content: [{ type: "thinking", thinking: "" }] },
+})}\n`;
 
 /** A system line that appears after dispatch — should never be reached once we kill on the Agent block. */
-const SYSTEM_LINE =
-  JSON.stringify({ type: "system", subtype: "task_started", task_id: "x" }) + "\n";
+const SYSTEM_LINE = `${JSON.stringify({ type: "system", subtype: "task_started", task_id: "x" })}\n`;
 
 /** The settled-run `result` envelope — present on a no-dispatch run; its subtype surfaces on RunResult. */
-const RESULT_SUCCESS_LINE =
-  JSON.stringify({ type: "result", subtype: "success", is_error: false }) + "\n";
+const RESULT_SUCCESS_LINE = `${JSON.stringify({ type: "result", subtype: "success", is_error: false })}\n`;
 
 function freshSandbox(): Sandbox {
   const dir = mkdtempSync(join(tmpdir(), "selfeval-capture-"));

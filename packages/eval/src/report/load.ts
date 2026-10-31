@@ -113,8 +113,10 @@ function parseEvents(eventsPath: string): Map<string, TaskRun[]> {
     const m = re.exec(ev.detail);
     if (!m) continue;
     const [, taskId, shape, ms] = m;
-    if (!out.has(taskId!)) out.set(taskId!, []);
-    out.get(taskId!)!.push({ shape: shape!, ms: Number(ms) });
+    if (taskId === undefined || shape === undefined) continue;
+    const dispatches = out.get(taskId) ?? [];
+    dispatches.push({ shape, ms: Number(ms) });
+    out.set(taskId, dispatches);
   }
   return out;
 }
@@ -166,8 +168,9 @@ function readPerTaskQuality(qualityPath: string): Map<string, number[]> {
 
   const raw = JSON.parse(readFileSync(qualityPath, "utf8")) as RawQualityFile;
   for (const s of raw.scores ?? []) {
-    if (!perTask.has(s.taskId)) perTask.set(s.taskId, []);
-    perTask.get(s.taskId)!.push(s.score.overall);
+    const scores = perTask.get(s.taskId) ?? [];
+    scores.push(s.score.overall);
+    perTask.set(s.taskId, scores);
   }
   return perTask;
 }

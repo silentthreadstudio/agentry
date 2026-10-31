@@ -46,18 +46,15 @@ class RunningChild extends EventEmitter implements StreamChild {
   }
 }
 
-const THINKING_LINE =
-  JSON.stringify({
-    type: "assistant",
-    message: { content: [{ type: "thinking", thinking: "" }] },
-  }) + "\n";
-const AGENT_DISPATCH_LINE =
-  JSON.stringify({
-    type: "assistant",
-    message: { content: [{ type: "tool_use", id: "t1", name: "Agent", input: {} }] },
-  }) + "\n";
-const RESULT_SUCCESS_LINE =
-  JSON.stringify({ type: "result", subtype: "success", is_error: false }) + "\n";
+const THINKING_LINE = `${JSON.stringify({
+  type: "assistant",
+  message: { content: [{ type: "thinking", thinking: "" }] },
+})}\n`;
+const AGENT_DISPATCH_LINE = `${JSON.stringify({
+  type: "assistant",
+  message: { content: [{ type: "tool_use", id: "t1", name: "Agent", input: {} }] },
+})}\n`;
+const RESULT_SUCCESS_LINE = `${JSON.stringify({ type: "result", subtype: "success", is_error: false })}\n`;
 
 function freshSandbox(): Sandbox {
   const dir = mkdtempSync(join(tmpdir(), "selfeval-artifact-"));

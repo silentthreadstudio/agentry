@@ -41,7 +41,7 @@ export function loadHistory(runsRoot: string, currentId: string): HistoryRow[] {
 
     rows.push({
       id: s.runId,
-      fixture: cfg.fixtureDir ? cfg.fixtureDir.split("/").pop()! : "—",
+      fixture: cfg.fixtureDir ? (cfg.fixtureDir.split("/").pop() ?? "—") : "—",
       n: s.taskCount,
       k: cfg.runs ?? 1,
       when: fmtWhen(cfg.startedAt),

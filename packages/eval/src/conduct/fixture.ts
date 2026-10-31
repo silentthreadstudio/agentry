@@ -96,6 +96,12 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
     }
     subtrees[name] = dir;
   }
+  const requireSubtree = (name: string): string => {
+    const dir = subtrees[name];
+    if (dir === undefined)
+      throw new OutcomeFixtureError(`${fixtureDir}: missing \`${name}/\` subtree`);
+    return dir;
+  };
 
   const raw = parseYaml(readFileSync(yamlPath, "utf8")) as unknown;
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
@@ -128,7 +134,9 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
   // THE SAFETY RULE (AC5): the agent-visible seed must not contain ANY oracle file. Enforced structurally by
   // asserting the two subtrees share no relative path — obscurity (rename / gitignore) is rejected by ADR-001,
   // only disjointness counts.
-  assertSeedOracleDisjoint(subtrees.seed!, subtrees.oracle!, fixtureDir);
+  const seedDir = requireSubtree("seed");
+  const oracleDir = requireSubtree("oracle");
+  assertSeedOracleDisjoint(seedDir, oracleDir, fixtureDir);
 
   return {
     id,
@@ -137,10 +145,10 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
     kind,
     oracleCmd,
     oracleTimeoutMs,
-    seedDir: subtrees.seed!,
-    oracleDir: subtrees.oracle!,
-    goldenDir: subtrees.golden!,
-    brokenDir: subtrees.broken!,
+    seedDir,
+    oracleDir,
+    goldenDir: requireSubtree("golden"),
+    brokenDir: requireSubtree("broken"),
   };
 }
 

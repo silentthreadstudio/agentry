@@ -123,6 +123,12 @@ export function loadBenchFixture(fixtureDir: string): BenchFixture {
     }
     subtrees[name] = sub;
   }
+  const requireSubtree = (name: string): string => {
+    const sub = subtrees[name];
+    if (sub === undefined)
+      throw new BenchFixtureError(`${fixtureDir}: missing \`${name}/\` subtree`);
+    return sub;
+  };
 
   const raw = parseYaml(readFileSync(yamlPath, "utf8")) as unknown;
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
@@ -148,7 +154,9 @@ export function loadBenchFixture(fixtureDir: string): BenchFixture {
   const { oracleCmd, oracleTimeoutMs } = parseOracle(root.oracle, where, yamlPath);
 
   // THE SAFETY RULE: the agent-visible seed must not contain ANY oracle file (reused from conduct/fixture.ts).
-  assertSeedOracleDisjoint(subtrees.seed!, subtrees.oracle!, fixtureDir);
+  const seedDir = requireSubtree("seed");
+  const oracleDir = requireSubtree("oracle");
+  assertSeedOracleDisjoint(seedDir, oracleDir, fixtureDir);
 
   const fixture: BenchFixture = {
     id: dirId,
@@ -156,10 +164,10 @@ export function loadBenchFixture(fixtureDir: string): BenchFixture {
     bugProne,
     oracleCmd,
     oracleTimeoutMs,
-    seedDir: subtrees.seed!,
-    oracleDir: subtrees.oracle!,
-    goldenDir: subtrees.golden!,
-    brokenDir: subtrees.broken!,
+    seedDir,
+    oracleDir,
+    goldenDir: requireSubtree("golden"),
+    brokenDir: requireSubtree("broken"),
   };
   if (fork !== undefined) fixture.fork = fork;
   return fixture;

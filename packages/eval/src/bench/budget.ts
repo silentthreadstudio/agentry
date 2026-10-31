@@ -174,9 +174,6 @@ export function formatBudgetNotice(budget: BenchBudget): string {
       ? ` (${budget.tasksEstimated} task(s) settled UNMEASURABLE and were charged the ${usd(budget.projectionUsd)} projection, not $0)`
       : ""
   }.`;
-  const bound =
-    `   the cap is an ADMISSION threshold, NOT a spend guarantee: it refuses to START a task and cannot abort one\n` +
-    `   already running, so spend can exceed it by up to one in-flight task per concurrency slot —\n` +
-    `   ${budget.concurrency} slot(s) x ${usd(budget.projectionUsd)} projection = ${usd(overshootBoundUsd(budget))}, plus whatever any single task costs above that projection.`;
+  const bound = `   the cap is an ADMISSION threshold, NOT a spend guarantee: it refuses to START a task and cannot abort one\n   already running, so spend can exceed it by up to one in-flight task per concurrency slot —\n   ${budget.concurrency} slot(s) x ${usd(budget.projectionUsd)} projection = ${usd(overshootBoundUsd(budget))}, plus whatever any single task costs above that projection.`;
   return `${head}\n${spend}\n${bound}`;
 }

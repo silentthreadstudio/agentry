@@ -32,7 +32,7 @@ export async function mapPool<T, R>(
     for (;;) {
       const index = cursor++;
       if (index >= items.length) return;
-      results[index] = await fn(items[index]!, index);
+      results[index] = await fn(items[index] as T, index); // index < items.length, so the slot exists
     }
   }
 

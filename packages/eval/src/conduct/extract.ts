@@ -133,7 +133,7 @@ export function extractShape(workingDir: string, ctx: ExtractContext): Shape {
 function frontmatterBlock(content: string): string | null {
   // Tolerate a leading BOM / blank lines, then require the opening fence on its own line.
   const match = /^\uFEFF?\s*---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/.exec(content);
-  return match === null ? null : match[1]!;
+  return match?.[1] ?? null;
 }
 
 /**

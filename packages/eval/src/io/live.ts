@@ -339,8 +339,7 @@ export function spawnClaudeStreaming(
       const chunk = d.toString();
       file.write(chunk);
       buffer += chunk;
-      let nl: number;
-      while ((nl = buffer.indexOf("\n")) !== -1) {
+      for (let nl = buffer.indexOf("\n"); nl !== -1; nl = buffer.indexOf("\n")) {
         const line = buffer.slice(0, nl);
         buffer = buffer.slice(nl + 1);
         handleLine(line);

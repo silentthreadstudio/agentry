@@ -38,38 +38,35 @@ class FakeChild extends EventEmitter implements StreamChild {
 }
 
 /** An `assistant` event carrying a `tool_use name:"Agent"` block — the dispatch that kills in the default mode. */
-const AGENT_DISPATCH_LINE =
-  JSON.stringify({
-    type: "assistant",
-    message: {
-      content: [{ type: "tool_use", id: "toolu_1", name: "Agent", input: { subagent_type: "x" } }],
-    },
-  }) + "\n";
+const AGENT_DISPATCH_LINE = `${JSON.stringify({
+  type: "assistant",
+  message: {
+    content: [{ type: "tool_use", id: "toolu_1", name: "Agent", input: { subagent_type: "x" } }],
+  },
+})}\n`;
 
 /**
  * A settled `result` envelope with the EXACT field shape a real `claude -p --output-format stream-json` run
  * emits (snake_case `usage.*` + `total_cost_usd`/`duration_ms`/`num_turns`). Extra fields the parser ignores
  * (`modelUsage`, `usage.cache_creation_input_tokens`, …) are included to model the real envelope faithfully.
  */
-const RESULT_WITH_COST_LINE =
-  JSON.stringify({
-    type: "result",
-    subtype: "success",
-    is_error: false,
-    duration_ms: 38059,
-    num_turns: 6,
-    total_cost_usd: 0.485633,
-    usage: {
-      input_tokens: 18382,
-      cache_creation_input_tokens: 27106,
-      cache_read_input_tokens: 146626,
-      output_tokens: 1974,
-    },
-  }) + "\n";
+const RESULT_WITH_COST_LINE = `${JSON.stringify({
+  type: "result",
+  subtype: "success",
+  is_error: false,
+  duration_ms: 38059,
+  num_turns: 6,
+  total_cost_usd: 0.485633,
+  usage: {
+    input_tokens: 18382,
+    cache_creation_input_tokens: 27106,
+    cache_read_input_tokens: 146626,
+    output_tokens: 1974,
+  },
+})}\n`;
 
 /** A settled `result` envelope with NO usage/cost fields — a present-but-empty cost record (e.g. an old CLI). */
-const RESULT_NO_COST_LINE =
-  JSON.stringify({ type: "result", subtype: "success", is_error: false }) + "\n";
+const RESULT_NO_COST_LINE = `${JSON.stringify({ type: "result", subtype: "success", is_error: false })}\n`;
 
 function freshSandbox(): Sandbox {
   const dir = mkdtempSync(join(tmpdir(), "selfeval-completion-"));

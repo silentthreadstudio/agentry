@@ -125,12 +125,13 @@ function parseFlags(argv: readonly string[]): { positionals: string[]; flags: Cl
   const positionals: string[] = [];
   const flags: CliFlags = {};
   let i = 0;
-  while (i < argv.length && !argv[i]!.startsWith("--")) {
-    positionals.push(argv[i]!);
+  for (let arg = argv[i]; arg !== undefined && !arg.startsWith("--"); arg = argv[i]) {
+    positionals.push(arg);
     i++;
   }
   for (; i < argv.length; i++) {
-    const flag = argv[i]!;
+    const flag = argv[i];
+    if (flag === undefined) break;
     const key = FLAGS[flag];
     if (key === undefined) throw new UsageError(`selfeval: unknown flag "${flag}"`);
     const value = argv[i + 1];

@@ -63,9 +63,7 @@ export function injectOracle(sandboxDir: string, oracleDir: string): void {
  * the counts. The returned `pass` is a LOOSE FLOOR signal ("did it run / not crash"), not a score (ADR-001).
  */
 export function runOracle(sandboxDir: string, cmd: string, timeoutMs: number): OracleResult {
-  const parts = cmd.trim().split(/\s+/);
-  const bin = parts[0]!;
-  const args = parts.slice(1);
+  const [bin = "", ...args] = cmd.trim().split(/\s+/);
 
   const proc = spawnSync(bin, args, {
     cwd: sandboxDir,
@@ -93,8 +91,7 @@ export function runOracle(sandboxDir: string, cmd: string, timeoutMs: number): O
  * it lets the oracle's held-out suite run as an independent process, exactly as it does in a real (non-test) run.
  */
 function oracleEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env.NODE_TEST_CONTEXT;
+  const { NODE_TEST_CONTEXT: _inherited, ...env } = process.env;
   return env;
 }
 
@@ -120,7 +117,8 @@ function parseTapCounts(output: string): { passed: number; total: number } | nul
 /** Extract the first integer captured by `re` from `output`, or `null` when it does not match. */
 function matchCount(output: string, re: RegExp): number | null {
   const m = output.match(re);
-  return m ? Number.parseInt(m[1]!, 10) : null;
+  const captured = m?.[1];
+  return captured === undefined ? null : Number.parseInt(captured, 10);
 }
 
 /**

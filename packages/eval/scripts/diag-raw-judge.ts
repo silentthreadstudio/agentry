@@ -10,7 +10,8 @@ import { summarizeProducedResult } from "../src/conduct/result.ts";
 import { prepareSandbox, seedSandbox } from "../src/io/sandbox.ts";
 import { DEFAULT_JUDGE_MODEL, buildJudgePrompt } from "../src/judge/engine.ts";
 
-const f = loadBenchFixtures("fixtures/bench").find((x) => x.id === "bn-csv-parse")!;
+const f = loadBenchFixtures("fixtures/bench").find((x) => x.id === "bn-csv-parse");
+if (f === undefined) throw new Error("fixture bn-csv-parse not found");
 const sandbox = prepareSandbox();
 seedSandbox(sandbox.workingDir, f.seedDir);
 seedSandbox(sandbox.workingDir, f.goldenDir);
@@ -25,7 +26,7 @@ const produced = summarizeProducedResult(sandbox.workingDir, {
   oracleDir: f.oracleDir,
   goldenDir: f.goldenDir,
   brokenDir: f.brokenDir,
-} as any);
+});
 rmSync(sandbox.workingDir, { recursive: true, force: true });
 
 const prompt = buildJudgePrompt(CODE_RUBRIC, f.prompt, produced.text);
@@ -44,7 +45,7 @@ for (let i = 0; i < 4; i++) {
   if (proc.stderr) console.log(`stderr: ${proc.stderr.slice(0, 400)}`);
   let result: unknown;
   try {
-    result = (JSON.parse(proc.stdout) as any).result;
+    result = (JSON.parse(proc.stdout) as { result?: unknown }).result;
   } catch {
     result = `<<envelope not JSON>> ${proc.stdout.slice(0, 400)}`;
   }

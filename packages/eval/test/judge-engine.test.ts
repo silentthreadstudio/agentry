@@ -95,7 +95,7 @@ test("parseScore: a non-integer dimension is rejected", () => {
 // --- robustness: a real `claude -p` answer routinely fences or prose-wraps the JSON; extract it ----------
 
 test("parseScore: tolerates a ```json fenced answer (real-judge decoration)", () => {
-  const fenced = "```json\n" + cannedDims({ a: 2, b: 1, c: 2, d: 1 }) + "\n```";
+  const fenced = `\`\`\`json\n${cannedDims({ a: 2, b: 1, c: 2, d: 1 })}\n\`\`\``;
   assert.equal(parseScore(FOUR_DIM, fenced).overall, 0.75); // 6/8
 });
 

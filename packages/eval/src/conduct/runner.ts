@@ -86,9 +86,11 @@ export async function runCell(
   const streamPath = join(sandbox.workingDir, "stream.jsonl");
   // The Agentry cell delivers the EXPANDED go.md conductor prompt (NOT the 0-turn `/agentry:go` slash form);
   // the bare cell hands the raw task through its identity promptWrap.
-  const prompt = cell.loadsPlugin
-    ? buildConductorPrompt(opts.pluginDir!, fixture.prompt)
-    : cell.promptWrap(fixture.prompt);
+  const pluginDir = cell.loadsPlugin ? opts.pluginDir : undefined; // defined whenever the cell loads it (guarded above)
+  const prompt =
+    pluginDir !== undefined
+      ? buildConductorPrompt(pluginDir, fixture.prompt)
+      : cell.promptWrap(fixture.prompt);
 
   // Build the per-cell Invocation. RUN-TO-COMPLETION (ADR-002): `runToCompletion: true` makes the live runner
   // let the build finish — it takes NEITHER early-kill path (not kill-on-first-dispatch, not terminate-on-artifact),
@@ -105,7 +107,7 @@ export async function runCell(
     timeoutMs,
     runToCompletion: true,
     permissionMode: "bypassPermissions",
-    ...(cell.loadsPlugin ? { pluginDir: opts.pluginDir! } : {}),
+    ...(pluginDir !== undefined ? { pluginDir } : {}),
   };
 
   const result = await runner.run(invocation, sandbox);

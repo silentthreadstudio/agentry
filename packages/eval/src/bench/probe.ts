@@ -34,7 +34,9 @@ import {
   type JudgeFn,
   type Score,
   aaStability,
+  aaVerdict,
   discrimination,
+  discriminationVerdict,
   judgeWithRubric,
 } from "../judge/index.ts";
 import { mapPool } from "../pool.ts";
@@ -292,7 +294,7 @@ async function runControls(
       goldScores.push((await judgeCodeOverlay(fixture, fixture.goldenDir, opts)).overall);
     }
     const aa = aaStability(goldScores, tol, CODE_JUDGE_SUBJECT);
-    if (!aa.ok) return aa.verdict!;
+    if (!aa.ok) return aa.verdict ?? aaVerdict(CODE_JUDGE_SUBJECT);
 
     const poorScores: number[] = [];
     for (let i = 0; i < controlK; i++) {
@@ -306,7 +308,7 @@ async function runControls(
       minGap,
       CODE_JUDGE_SUBJECT,
     );
-    if (!disc.ok) return disc.verdict!;
+    if (!disc.ok) return disc.verdict ?? discriminationVerdict(CODE_JUDGE_SUBJECT);
   }
 
   // 2. DECISION judge (Axis A) — planted gold/poor decision artifacts. SKIP when the controls dir is absent.
@@ -317,7 +319,7 @@ async function runControls(
       goldScores.push((await judgeDecision(decisionControls.gold, opts)).overall);
     }
     const aa = aaStability(goldScores, tol, DECISION_JUDGE_SUBJECT);
-    if (!aa.ok) return aa.verdict!;
+    if (!aa.ok) return aa.verdict ?? aaVerdict(DECISION_JUDGE_SUBJECT);
 
     const poorScores: number[] = [];
     for (let i = 0; i < controlK; i++) {
@@ -331,7 +333,7 @@ async function runControls(
       minGap,
       DECISION_JUDGE_SUBJECT,
     );
-    if (!disc.ok) return disc.verdict!;
+    if (!disc.ok) return disc.verdict ?? discriminationVerdict(DECISION_JUDGE_SUBJECT);
   }
 
   return null;
