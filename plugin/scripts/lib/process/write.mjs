@@ -89,7 +89,8 @@ export function insertRow(text, { heading, cells, at = "end" }) {
   const table = tableUnder(text, heading);
   const unknown = Object.keys(cells).filter((name) => !table.header.includes(name));
   if (unknown.length) refuse(`the "${heading}" table has no column "${unknown.join('", "')}"`);
-  const row = `| ${table.header.map((name) => escapeCell(cells[name])).join(" | ")} |`;
+  const cell = (name) => (Object.hasOwn(cells, name) ? cells[name] : "");
+  const row = `| ${table.header.map((name) => escapeCell(cell(name))).join(" | ")} |`;
   let after = table.rows.at(-1)?.line ?? table.line + 1; // the separator when the table is empty
   const column = at.startsWith("after-last:") ? at.slice("after-last:".length) : null;
   if (column !== null) {

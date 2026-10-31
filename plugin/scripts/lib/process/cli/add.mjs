@@ -49,7 +49,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   const parentOf = () => {
     if (!parentField) throw new WriteError(`${kindName} has no parent field`);
     const [name, def] = parentField;
-    const wanted = show(given[name]);
+    const wanted = show(own(given, name));
     if (def.also?.includes(wanted)) return { also: wanted };
     const found = [def.ref]
       .flat()
@@ -132,7 +132,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
       let under;
       let lines;
       try {
-        under = block.under === "ask" ? given.under : render(block.under);
+        under = block.under === "ask" ? own(given, "under") : render(block.under);
         lines = render(block.text);
       } catch (error) {
         if (!(error instanceof NoParent)) throw error;

@@ -121,6 +121,13 @@ test("insertRow end appends after the last row, before the next section", () => 
   assert.equal(out, board.replace("| A2     | todo   |\n", "| A2     | todo   |\n| A3 | todo |\n"));
 });
 
+test("insertRow leaves a header named like a built-in empty when the new row has no cell for it", () => {
+  const table =
+    "## Log\n\n| Id | valueOf | constructor | toString | __proto__ |\n| --- | --- | --- | --- | --- |\n";
+  const out = insertRow(table, { heading: "Log", cells: { Id: "L1" }, at: "end" });
+  assert.equal(out, `${table}| L1 |  |  |  |  |\n`);
+});
+
 test("insertRow refuses a column the table lacks, an unknown position and a missing table", () => {
   refused(
     () => insertRow(board, { heading: "Sprints", cells: { Owner: "x" }, at: "end" }),

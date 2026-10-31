@@ -137,6 +137,21 @@ test("add refuses bad input: no id, bad JSON, unknown kind or parent, unknown pl
   );
 });
 
+test("add reads a field named like a built-in from the given JSON only", () => {
+  const root = copy("write");
+  const { spec: loaded } = loadSpec(join(root, "process.json"));
+  // The task's parent field renamed `toString`, and left out of the JSON.
+  const renamed = JSON.stringify(loaded)
+    .replaceAll('"sprint":{"column"', '"toString":{"column"')
+    .replaceAll("{sprint}", "{toString}")
+    .replaceAll("after-last:sprint", "after-last:toString");
+  const spec = JSON.parse(renamed);
+  const model = readProcess({ root, spec });
+  const result = add(["task", "--json", '{"id":"W4","note":"x"}'], { root, spec, model });
+  assert.equal(result.exit, 2);
+  assert.match(result.out, /^toString "" is not on the board$/);
+});
+
 test("add on table-board, then check: findings are unchanged", () => {
   const root = copy("table-board");
   const baseline = findings(root);
