@@ -165,6 +165,9 @@ function shippedFiles(distDir) {
       .toString("utf8")
       .split("\0")
       .filter((rel) => rel.length > 0 && rel !== STAMP_FILE)
+      // Still in the index but gone from disk = removed by this build (e.g. a rotated hashed asset). It won't
+      // ship, so it must not be stamped; counting it made the stamp stale the moment the removal was committed.
+      .filter((rel) => existsSync(join(distDir, rel)))
       .sort();
   } catch {
     return null;
