@@ -4,7 +4,7 @@
 // frontmatter docs. The whole repository means its git-tracked `*.md` (every one on disk, outside
 // dot-directories, when git cannot answer). `<dir>` (relative to the root) narrows it to that directory
 // as it is on disk, so it reaches an untracked board or one under a dot-directory. Needs no process
-// file. Writes nothing; exit 0.
+// file. Writes nothing; exit 0, or 2 for a `<dir>` outside the repository.
 //
 // run(argv, { root }) -> { exit, out }
 import { readFileSync } from "node:fs";
@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { ID_TOKEN, blockStarts, markdownFiles, repoMarkdown } from "../contract.mjs";
 import * as md from "../markdown.mjs";
 import { fit } from "../render.mjs";
+import { escapesRoot } from "../spec.mjs";
 
 export const noSpec = true;
 const WIDTH = 100;
@@ -73,6 +74,7 @@ function render(found, dir) {
 
 export function run(argv, { root }) {
   const dir = argv.find((a) => !a.startsWith("--")) ?? "";
+  if (escapesRoot(".", dir)) return { exit: 2, out: `"${dir}" leaves the repository` };
   const found = scan(root, dir);
   return { exit: 0, out: argv.includes("--json") ? JSON.stringify(found) : render(found, dir) };
 }

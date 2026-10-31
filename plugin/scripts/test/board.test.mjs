@@ -106,6 +106,15 @@ test("scan needs no process file and lists every table with its row count", () =
   assert.ok(cols(out.stdout) <= 100);
 });
 
+test("scan refuses a directory outside the repository root", () => {
+  const root = join(FIXTURES, "table-board");
+  for (const dir of ["..", "../evidence-board", "docs/../../evidence-board", "/tmp"]) {
+    const out = spawnSync("node", [BOARD, "scan", dir, "--root", root], { encoding: "utf8" });
+    assert.equal(out.status, 2, dir);
+    assert.match(out.stderr, /leaves the repository/, dir);
+  }
+});
+
 test("explain lists every kind with its count and every catalog rule on or off", () => {
   const out = run("table-board", "explain");
   assert.equal(out.status, 0);
