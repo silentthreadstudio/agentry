@@ -5,6 +5,7 @@ import {
   STARTED,
   depField,
   finding,
+  idsIn,
   kindSpec,
   param,
   parentOf,
@@ -22,7 +23,7 @@ function depSetup(model, params) {
 
 // Dependencies of `item` that resolve on the board (unresolved ones are refs-resolve's business).
 const depsOf = (model, item, { field, kinds }) =>
-  (item.fields[field] ?? []).flatMap((id) => resolve(model, id, kinds).slice(0, 1));
+  idsIn(item.fields[field]).flatMap((id) => resolve(model, id, kinds).slice(0, 1));
 
 const depsDone = {
   id: "deps-done",
@@ -96,7 +97,7 @@ const questionBlocks = {
     const blockedBy = new Map();
     for (const question of scope(model, params)) {
       if (question.phase !== "active") continue;
-      for (const id of question.fields[field] ?? []) {
+      for (const id of idsIn(question.fields[field])) {
         for (const blocked of resolve(model, id, kinds)) {
           blockedBy.set(blocked, [...(blockedBy.get(blocked) ?? []), question.id]);
         }

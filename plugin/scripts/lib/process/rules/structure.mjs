@@ -45,6 +45,10 @@ export const withId = (model, id) => (Object.hasOwn(model.index, id) ? model.ind
 
 export const refKinds = (field) => [field?.ref].flat().filter(Boolean);
 
+/** The ids a field value holds, whatever its shape: a list's strings, one id as a list of one, else
+ *  none. The process file check types every field a rule reads; this is the second line. */
+export const idsIn = (value) => [value ?? []].flat().filter((v) => typeof v === "string" && v);
+
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
 // What a field-typed param needs of the field it names (`is` in its declaration): `fits(field, kind)`
@@ -148,8 +152,8 @@ const refsResolve = {
       const refs = Object.entries(model.spec.kinds[kind].fields ?? {}).filter(([, f]) => f.ref);
       for (const item of items) {
         for (const [name, field] of refs) {
-          for (const value of [item.fields[name]].flat()) {
-            if (!value || field.also?.includes(value)) continue;
+          for (const value of idsIn(item.fields[name])) {
+            if (field.also?.includes(value)) continue;
             const hits = resolve(model, value, refKinds(field));
             if (hits.length === 0) {
               out.push(finding("refs-resolve", item, `${name} '${value}' is not on the board`));

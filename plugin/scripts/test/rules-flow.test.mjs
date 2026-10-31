@@ -216,3 +216,29 @@ test("deps-not-forward leaves skipped sprints outside the order, on either side"
   );
   assert.equal(run(rule("deps-not-forward"), model, { kind: "task", field: "deps" }).length, 1);
 });
+
+test("the rules that read ids take a value of any shape: one id as a list of one, never a throw", () => {
+  // As a frontmatter value or a hand-built model may hold it, whatever the field's type says.
+  const shapes = (id) => [id, [id, 7, null], 7, null, true, { [id]: 1 }];
+  const cases = [
+    ["deps-done", { kind: "task", field: "deps" }],
+    ["parked", { kind: "task", parking: "LATER", field: "deps" }],
+    ["deps-not-forward", { kind: "task", field: "deps" }],
+    ["question-blocks", { kind: "question", field: "blocks" }],
+  ];
+  for (const [n, [deps, blocks]] of shapes("T1")
+    .map((d, i) => [d, shapes("T2")[i]])
+    .entries()) {
+    const model = makeModel([
+      sprint("S1", "doing"),
+      sprint("LATER", "todo"),
+      task("T1", "LATER", "later"),
+      task("T2", "S1", "doing", { deps }),
+      question("Q1", "open", blocks),
+    ]);
+    for (const [id, params] of cases) {
+      const what = `${id} on ${JSON.stringify(id === "question-blocks" ? blocks : deps)}`;
+      assert.equal(run(rule(id), model, params).length, n < 2 ? 1 : 0, what);
+    }
+  }
+});
