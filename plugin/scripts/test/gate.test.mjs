@@ -105,6 +105,42 @@ test("the command runs at the git root even when started from a subdirectory", (
   assert.equal(res.exit, 0);
 });
 
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+test("a gate that outlives timeoutSec is killed, with its children, and is red", async () => {
+  const pidFile = join(logs, "child.pid");
+  const code = `
+    const { spawn } = require('child_process');
+    const kid = spawn('sleep', ['60'], { stdio: 'ignore' });
+    require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(kid.pid));
+    setTimeout(() => {}, 60000);`;
+  const started = Date.now();
+  const res = runGate(repo.dir, node(code), { tier: "full", logFile: log, timeoutSec: 1 });
+  assert.ok(Date.now() - started < 20000);
+  assert.notEqual(res.exit, 0);
+  assert.match(readFileSync(log, "utf8"), /timed out after 1 s/);
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  for (let i = 0; i < 40 && alive(pid); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.equal(alive(pid), false);
+});
+
+test("a gate within timeoutSec is unaffected, and a bad timeoutSec is refused", () => {
+  const res = runGate(repo.dir, node("0"), { tier: "full", logFile: log, timeoutSec: 30 });
+  assert.equal(res.exit, 0);
+  for (const timeoutSec of [0, -1, "5", Number.NaN])
+    assert.throws(
+      () => runGate(repo.dir, node("0"), { tier: "full", logFile: log, timeoutSec }),
+      TypeError,
+    );
+});
+
 test("runGate rejects an empty or non-array command", () => {
   assert.throws(() => runGate(repo.dir, [], { tier: "full", logFile: log }), TypeError);
   assert.throws(() => runGate(repo.dir, "npm test", { tier: "full", logFile: log }), TypeError);

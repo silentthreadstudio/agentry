@@ -10,13 +10,19 @@ import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import { git, porcelain } from "./worktree.mjs";
 
+const DEFAULT_TIMEOUT_SEC = 3600;
+
 /** Run `cmd` (argv) at the git root of `dir`. `logFile` should sit outside the tree under test, or the log
- *  itself would dirty it. Returns `{ refused: "dirty", files }` without running when the tree is not clean;
- *  otherwise `{ exit, tier, commit, tree, cleanBefore, cleanAfter, log, seconds }`. When the command exits 0
- *  but leaves files behind, `exit` is 1 (`commandExit` keeps the command's own code). */
-export function runGate(dir, cmd, { tier, logFile }) {
+ *  itself would dirty it. `timeoutSec` (callers pass the gate config's, default 3600) bounds the run: past
+ *  it the command's whole process group is killed and the gate is red. Returns `{ refused: "dirty", files }`
+ *  without running when the tree is not clean; otherwise `{ exit, tier, commit, tree, cleanBefore,
+ *  cleanAfter, log, seconds }`. When the command exits 0 but leaves files behind, `exit` is 1 (`commandExit`
+ *  keeps the command's own code). */
+export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_SEC }) {
   if (!Array.isArray(cmd) || cmd.length === 0 || cmd.some((a) => typeof a !== "string"))
     throw new TypeError("runGate: cmd must be a non-empty argv array");
+  if (typeof timeoutSec !== "number" || !(timeoutSec > 0))
+    throw new TypeError("runGate: timeoutSec must be a positive number");
   const before = porcelain(dir);
   if (before.length > 0) return { refused: "dirty", files: before };
 
@@ -28,9 +34,26 @@ export function runGate(dir, cmd, { tier, logFile }) {
   const fd = openSync(logFile, "w");
   const started = Date.now();
   let res;
+  let timedOut = false;
   try {
-    res = spawnSync(cmd[0], cmd.slice(1), { cwd: top, stdio: ["ignore", fd, fd] });
-    if (res.error) writeSync(fd, `\n[agentry] could not run ${cmd[0]}: ${res.error.message}\n`);
+    // detached: the command leads its own process group, so a timeout can take its children down too.
+    res = spawnSync(cmd[0], cmd.slice(1), {
+      cwd: top,
+      stdio: ["ignore", fd, fd],
+      detached: true,
+      timeout: timeoutSec * 1000,
+      killSignal: "SIGKILL",
+    });
+    timedOut = res.error?.code === "ETIMEDOUT";
+    if (timedOut) {
+      try {
+        process.kill(-res.pid, "SIGKILL");
+      } catch {
+        /* the group is already gone */
+      }
+      writeSync(fd, `\n[agentry] ${cmd[0]} timed out after ${timeoutSec} s and was killed\n`);
+    } else if (res.error)
+      writeSync(fd, `\n[agentry] could not run ${cmd[0]}: ${res.error.message}\n`);
     else if (res.signal) writeSync(fd, `\n[agentry] ${cmd[0]} was killed by ${res.signal}\n`);
   } finally {
     closeSync(fd);
