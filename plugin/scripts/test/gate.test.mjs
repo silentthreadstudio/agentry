@@ -141,6 +141,18 @@ test("a gate within timeoutSec is unaffected, and a bad timeoutSec is refused", 
     );
 });
 
+test("a gate that commits moves HEAD and is red", () => {
+  const before = git(repo.dir, "rev-parse", "HEAD");
+  const commit =
+    "echo c > c.txt && git add c.txt && git -c user.name=t -c user.email=t@t commit -qm c";
+  const res = runGate(repo.dir, ["sh", "-c", commit], { tier: "full", logFile: log });
+  assert.notEqual(git(repo.dir, "rev-parse", "HEAD"), before);
+  assert.equal(res.exit, 1);
+  assert.equal(res.commandExit, 0);
+  assert.equal(res.commit, before);
+  assert.match(readFileSync(log, "utf8"), /the gate changed HEAD/);
+});
+
 test("runGate rejects an empty or non-array command", () => {
   assert.throws(() => runGate(repo.dir, [], { tier: "full", logFile: log }), TypeError);
   assert.throws(() => runGate(repo.dir, "npm test", { tier: "full", logFile: log }), TypeError);

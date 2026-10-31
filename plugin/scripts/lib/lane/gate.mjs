@@ -63,11 +63,16 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
   const commandExit = res.status ?? 1;
   const left = porcelain(dir);
   const cleanAfter = left.length === 0;
-  const exit = commandExit === 0 && !cleanAfter ? 1 : commandExit;
-  if (!cleanAfter) {
-    const note = `\n[agentry] the gate left ${left.length} file(s) behind: ${left.slice(0, 10).join(", ")}\n`;
+  // A gate that commits leaves a clean tree behind, but not the commit it was asked to prove.
+  const headMoved = git(dir, ["rev-parse", "HEAD"]).stdout.trim() !== commit;
+  const exit = commandExit === 0 && (!cleanAfter || headMoved) ? 1 : commandExit;
+  const notes = [
+    !cleanAfter && `the gate left ${left.length} file(s) behind: ${left.slice(0, 10).join(", ")}`,
+    headMoved && "the gate changed HEAD",
+  ].filter(Boolean);
+  if (notes.length > 0) {
     const out = openSync(logFile, "a");
-    writeSync(out, note);
+    writeSync(out, notes.map((note) => `\n[agentry] ${note}\n`).join(""));
     closeSync(out);
   }
   return {
