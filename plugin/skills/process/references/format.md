@@ -74,10 +74,16 @@ naming the key), because the rules would otherwise run on links or phases that a
   read only on a text field (on a ref it would change the id before it is looked up).
 - **The tree** — a kind has at most one field with role `parent`, of type `ref` (a parent is one id); a field
   with role `children` is a `list`. A role field of another type would link nothing.
+- **Rank** — the one number the order rules (`deps-not-forward`) compare, defined without regard to the
+  order the kinds are declared in. A kind that a `parent` field refs (the sprint) ranks by row order, from 0.
+  Any other item takes the lowest rank among its parents (a task in a sprint and in an epic is as early as
+  the earlier); one that no parent ranks takes the highest among its children (a milestone is as late as its
+  last sprint); one neither reaches has no rank and is never ordered. Both are fixed points, so a cycle of
+  parents or children ends, its members sharing the rank that reaches them.
 - **Status** — the phases are the five words above; `status.field` names a text field of the kind, and when
   that field reads `case: "upper"` every status word is upper case. A status word is looked up as the reader
-  makes it of a cell, which trims it and strips `**` and backticks, so a word with spaces, `**` or backticks
-  can never match and is refused. `derived: "children"` needs a child kind
+  makes it of a cell, which trims it and strips `**` and backticks, so a word with spaces, a line
+  break, `**` or backticks can never match and is refused. `derived: "children"` needs a child kind
   with a status (a kind whose parent field refs it, or its children list); without one every item stays
   planned.
 - **Sections** — an `as: "table"` section names its id `column`; `done-has-handoff` reads a `bold-lead`
@@ -111,7 +117,7 @@ file declares for that field, nor an item of the kind the field refs) is a findi
 | `closed-children` | a done parent's children are all closed |
 | `done-signoff` | a done item carries a sign-off date |
 
-Order is the row order of the parent kind's table: a task ranks with its sprint.
+Order is the row order of the parent kind's table: a task ranks with its sprint (see "Rank" above).
 
 ### Rule params
 

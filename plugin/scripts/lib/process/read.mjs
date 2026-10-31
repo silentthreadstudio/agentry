@@ -188,9 +188,13 @@ function linkTree(spec, kinds) {
     childrenOf.set(parent, (childrenOf.get(parent) ?? new Set()).add(child));
     parentsOf.set(child, (parentsOf.get(child) ?? new Set()).add(parent));
   };
+  // Every walk below goes by kind name, field name and row, never by the order `process.json` declares
+  // the kinds in, so nothing the reader derives depends on it.
+  const byName = ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0);
+  const kindDefs = Object.entries(spec.kinds ?? {}).sort(byName);
   const orderKinds = new Set();
-  for (const [name, kind] of Object.entries(spec.kinds ?? {})) {
-    for (const [f, def] of Object.entries(kind?.fields ?? {})) {
+  for (const [name, kind] of kindDefs) {
+    for (const [f, def] of Object.entries(kind?.fields ?? {}).sort(byName)) {
       if (def?.role === "parent") for (const k of [def.ref].flat()) orderKinds.add(k);
       for (const item of kinds[name]?.items ?? []) {
         const value = item.fields[f];
@@ -218,25 +222,44 @@ function linkTree(spec, kinds) {
     else item.phase = phases.some((p) => STARTED.has(p)) ? "active" : "planned";
     return item.phase;
   };
-  const all = Object.values(kinds).flatMap((k) => k.items);
+  const all = Object.entries(kinds)
+    .sort(byName)
+    .flatMap(([, k]) => k.items);
   for (const item of all) derive(item, new Set());
-  // Rank = row order of a parent kind (sprint); its children take its rank, its parents their last.
-  // Settled to a fixed point, children before parents, so the order the kinds are declared in never
-  // changes a rank.
+  rank(all, orderKinds, kinds, parentsOf, childrenOf);
+}
+
+/**
+ * Rank, the one number the order rules compare. The kinds a parent field refs (sprint) rank by row
+ * order. Any other item takes the LOWEST rank among its parents (a task with a sprint and an epic is
+ * as early as the earliest); one no parent ranks takes the HIGHEST among its children (a milestone is
+ * as late as its last sprint); one neither reaches has none. Each step runs in rounds where every item
+ * reads the previous round, until nothing moves: the result is the same whatever order the items and
+ * kinds are walked in, and a cycle ends once its ranks stop moving.
+ */
+function rank(all, orderKinds, kinds, parentsOf, childrenOf) {
   for (const k of orderKinds)
     for (const [i, item] of (kinds[k]?.items ?? []).entries()) item.rank = i;
-  const unranked = all.filter((i) => !orderKinds.has(i.kind));
-  const settle = (related, pick) => {
+  const settle = (items, related, pick) => {
     for (let moved = true; moved; ) {
-      moved = false;
-      for (const item of unranked.filter((i) => i.rank === undefined)) {
+      const next = items.flatMap((item) => {
         const ranks = [...(related.get(item) ?? [])].map((x) => x.rank).filter(Number.isInteger);
-        if (ranks.length) [item.rank, moved] = [pick(...ranks), true];
-      }
+        return ranks.length && pick(...ranks) !== item.rank ? [[item, pick(...ranks)]] : [];
+      });
+      for (const [item, r] of next) item.rank = r;
+      moved = next.length > 0;
     }
   };
-  settle(parentsOf, Math.min);
-  settle(childrenOf, Math.max);
+  settle(
+    all.filter((i) => !orderKinds.has(i.kind)),
+    parentsOf,
+    Math.min,
+  );
+  settle(
+    all.filter((i) => i.rank === undefined),
+    childrenOf,
+    Math.max,
+  );
 }
 
 /** The pinned seam: `readProcess({ root, spec }) -> Model`, where `root` is the git root. */
