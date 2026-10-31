@@ -163,11 +163,12 @@ function shippedFiles(distDir) {
     );
     // A path still in the index but gone from disk was removed by this build (e.g. a rotated hashed asset). It
     // won't ship, so it must not be stamped; counting it made the stamp stale the moment the removal was committed.
+    // `lstat`, not `existsSync`: a broken symlink still ships, so it must stay in the list and change the digest.
     return out
       .toString("utf8")
       .split("\0")
       .filter((rel) => rel.length > 0 && rel !== STAMP_FILE)
-      .filter((rel) => existsSync(join(distDir, rel)))
+      .filter((rel) => lstatSync(join(distDir, rel), { throwIfNoEntry: false }) !== undefined)
       .sort();
   } catch {
     return null;
