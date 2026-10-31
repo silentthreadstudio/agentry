@@ -21,7 +21,7 @@ body:
       label: Steps to reproduce
       description: The smallest sequence that triggers it.
       placeholder: |
-        1. Install via `/plugin marketplace add Codestz/agentry`
+        1. Install via `/plugin marketplace add silentthreadstudio/agentry`
         2. /reload-plugins
         3. Run `/agentry:go "…"`
         4. …
@@ -61,7 +61,7 @@ body:
     attributes:
       label: How did you install Agentry?
       options:
-        - "Marketplace from the repo (/plugin marketplace add Codestz/agentry)"
+        - "Marketplace from the repo (/plugin marketplace add silentthreadstudio/agentry)"
         - "Release zip (--plugin-url)"
         - "Local dev (cloned + marketplace add .)"
     validations:

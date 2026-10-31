@@ -29,7 +29,7 @@ memory are the product.
 compile). From a Claude Code session:
 
 ```
-/plugin marketplace add Codestz/agentry
+/plugin marketplace add silentthreadstudio/agentry
 /plugin install agentry@agentry-dev
 ```
 

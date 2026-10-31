@@ -119,8 +119,8 @@ without the fix.
   - **Self-eval harness** — measures the system's own routing and decision
     quality instead of asserting it works.
 
-[Unreleased]: https://github.com/Codestz/agentry/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/Codestz/agentry/compare/v0.1.2...v0.2.0
-[0.1.2]: https://github.com/Codestz/agentry/compare/v0.1.1...v0.1.2
-[0.1.1]: https://github.com/Codestz/agentry/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/Codestz/agentry/releases/tag/v0.1.0
+[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/silentthreadstudio/agentry/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/silentthreadstudio/agentry/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/silentthreadstudio/agentry/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/silentthreadstudio/agentry/releases/tag/v0.1.0

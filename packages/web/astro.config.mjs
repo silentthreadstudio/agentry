@@ -5,6 +5,6 @@ import { defineConfig } from "astro/config";
 // `site`/`base` are env-overridable (ADR 004) so a custom domain is a one-line change at deploy time.
 export default defineConfig({
   output: "static",
-  site: process.env.SITE_URL ?? "https://codestz.github.io",
+  site: process.env.SITE_URL ?? "https://silentthreadstudio.github.io",
   base: process.env.BASE_PATH ?? "/agentry",
 });

@@ -13,7 +13,7 @@ Agentry is pre-1.0 and ships as a Claude Code plugin. Security fixes target the 
 
 **Please do not open a public issue for security problems.**
 
-Report privately via GitHub's **[Security Advisories](https://github.com/Codestz/agentry/security/advisories/new)**
+Report privately via GitHub's **[Security Advisories](https://github.com/silentthreadstudio/agentry/security/advisories/new)**
 (Security → Report a vulnerability). Include:
 
 - a description and impact,

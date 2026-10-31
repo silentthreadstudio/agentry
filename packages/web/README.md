@@ -22,7 +22,7 @@ pnpm --filter @agentry/web typecheck  # astro check
 
 Static output (`dist/`) ships to **GitHub Pages** via a dedicated `deploy.yml` workflow (push to `main`
 touching `packages/web/**`). `site`/`base` are env-overridable (`SITE_URL` / `BASE_PATH`) — defaults target
-`https://codestz.github.io/agentry`, so moving to a custom domain is a one-line change.
+`https://silentthreadstudio.github.io/agentry`, so moving to a custom domain is a one-line change.
 
 ## Provenance
 
