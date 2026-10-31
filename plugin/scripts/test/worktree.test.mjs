@@ -117,6 +117,31 @@ test("remove copes with a worktree directory that is already gone", () => {
   assert.equal(findByBranch(repo.dir, "agentry/T-1"), null);
 });
 
+test("remove refuses a worktree with uncommitted changes unless forced", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  writeFileSync(join(made.path, "wip.txt"), "uncommitted");
+  const res = remove(repo.dir, made);
+  assert.equal(res.removed, false);
+  assert.match(res.reason, /uncommitted changes.*wip\.txt/);
+  assert.equal(existsSync(join(made.path, "wip.txt")), true);
+  const forced = remove(repo.dir, { ...made, force: true });
+  assert.equal(forced.removed, true);
+  assert.equal(existsSync(made.path), false);
+});
+
+test("remove prunes a locked worktree whose directory is gone, and still decides the branch", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  commitFile(made.path, "f.txt", "f");
+  git(repo.dir, "worktree", "lock", "--reason", "agent running", made.path);
+  rmSync(made.path, { recursive: true });
+  const res = remove(repo.dir, made);
+  assert.equal(res.removed, true);
+  assert.equal(findByBranch(repo.dir, "agentry/T-1"), null);
+  assert.equal(git(repo.dir, "worktree", "list").includes("T-1"), false);
+  assert.equal(res.branchDeleted, false);
+  assert.match(res.reason, /not on main/);
+});
+
 // A merge commit carries content `git cherry` cannot see (it skips merges), so a branch holding one is
 // deleted only when everything it changed since the merge-base is already on main.
 function sideBranch(name, { land }) {

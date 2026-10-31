@@ -113,18 +113,36 @@ function onMain(root, onto, branch) {
   );
 }
 
-/** Remove the worktree at `path` (force twice, which also takes down a locked one) and, when every commit
- *  on `branch` is on `onto` (default: the repo's default branch), delete the branch. A branch with
- *  unlanded commits is kept and `reason` says so. Never throws on a git failure: `removed` says it. */
-export function remove(root, { path, branch, onto = defaultBranch(root) }) {
+function uncommitted(dir) {
+  try {
+    return porcelain(dir);
+  } catch {
+    return []; // not a work tree git can read: let `worktree remove` decide
+  }
+}
+
+/** Remove the worktree at `path` and, when all the work on `branch` is on `onto` (default: the repo's
+ *  default branch), delete the branch. A worktree with uncommitted changes is kept unless `force`; a locked
+ *  one is taken down, and a locked one whose directory is gone is unlocked and pruned. A branch with
+ *  unlanded work is kept. `reason` says why anything was kept. Never throws on a git failure: `removed`
+ *  says it. */
+export function remove(root, { path, branch, onto = defaultBranch(root), force = false }) {
   const out = { removed: false, branchDeleted: false };
   if (existsSync(path)) {
+    const dirty = force ? [] : uncommitted(path);
+    if (dirty.length > 0)
+      return {
+        ...out,
+        reason: `${path} has uncommitted changes (${dirty.slice(0, 5).join(", ")}); commit them or pass force`,
+      };
     const res = git(root, ["worktree", "remove", "-f", "-f", path]);
     if (res.status !== 0) return { ...out, reason: res.stderr.trim() };
   } else {
+    git(root, ["worktree", "unlock", path]); // a locked entry is never pruned; failing here is fine
     git(root, ["worktree", "prune"]);
   }
-  out.removed = !existsSync(path);
+  out.removed = !existsSync(path) && !worktrees(root).some((tree) => tree.path === path);
+  if (!out.removed) return { ...out, reason: `${path} is still a registered worktree` };
   if (
     !branch ||
     git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status !== 0
