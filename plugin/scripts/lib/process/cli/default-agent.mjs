@@ -9,7 +9,14 @@
 // overwritten).
 //
 // run(argv, { root }) -> { exit, out }
-import { AGENT, readSettings, verifyLive, verifyStatic, writeAgent } from "../default-agent.mjs";
+import {
+  AGENT,
+  localAgent,
+  readSettings,
+  verifyLive,
+  verifyStatic,
+  writeAgent,
+} from "../default-agent.mjs";
 
 export const noSpec = true;
 export const usage = "default-agent [--write] [--verify [static|live]]";
@@ -40,12 +47,24 @@ export function run(argv, { root, pluginRoot, claude }) {
     wrote = written.wrote;
   }
   const now = wrote ? AGENT : read.data.agent;
+  const local = localAgent(root);
+  const pre = verify.mode ? verifyStatic(now, { pluginRoot }) : null;
   const check =
-    verify.mode === "live"
-      ? verifyLive(root, now, { claude })
-      : verify.mode === "static"
-        ? verifyStatic(now, { pluginRoot })
-        : { resolved: "unchecked", how: "not verified: pass --verify (static) or --verify live" };
+    verify.mode && local !== undefined && local !== AGENT
+      ? {
+          resolved: "no",
+          how: `.claude/settings.local.json sets agent ${JSON.stringify(local)}, which overrides settings.json`,
+        }
+      : verify.mode === "live" && pre.resolved !== "yes"
+        ? pre // the static check already says no: don't spend a request
+        : verify.mode === "live"
+          ? verifyLive(root, now, { claude })
+          : verify.mode === "static"
+            ? pre
+            : {
+                resolved: "unchecked",
+                how: "not verified: pass --verify (static) or --verify live",
+              };
   const out = { settings: read.file, current, wrote, ...check };
   return { exit: verify.mode && check.resolved !== "yes" ? 1 : 0, out: JSON.stringify(out) };
 }

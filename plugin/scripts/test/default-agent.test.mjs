@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -160,6 +161,37 @@ test("a broken settings symlink is refused, so the write never lands where it po
   assert.equal(res.exit, 2);
   assert.match(res.out, /broken symlink/);
   assert.equal(existsSync(own), false);
+});
+
+test("a settings file hard-linked to the plugin's own settings.json is never written", () => {
+  const ctx = project();
+  const own = join(ctx.pluginRoot, "settings.json");
+  writeFileSync(own, "{}\n");
+  mkdirSync(join(ctx.root, ".claude"));
+  linkSync(own, join(ctx.root, ".claude", "settings.json"));
+  const res = run(["--write"], ctx);
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /plugin's own settings\.json/);
+  assert.equal(readFileSync(own, "utf8"), "{}\n");
+});
+
+test("--verify answers no when settings.local.json sets another agent, which wins", () => {
+  const ctx = project(`{"agent":"${AGENT}"}`);
+  writeFileSync(join(ctx.root, ".claude", "settings.local.json"), '{"agent":"other"}');
+  for (const argv of [["--verify"], ["--verify", "live"]]) {
+    const { exit, json } = call(argv, { ...ctx, claude: "/nonexistent/claude" });
+    assert.equal(exit, 1);
+    assert.equal(json.resolved, "no");
+    assert.match(json.how, /settings\.local\.json sets agent "other"/);
+  }
+});
+
+test("--verify live spends no request when the static check already says no", () => {
+  const ctx = project('{"agent":"agentry:conductr"}');
+  const { exit, json } = call(["--verify", "live"], { ...ctx, claude: "/nonexistent/claude" });
+  assert.equal(exit, 1);
+  assert.equal(json.resolved, "no");
+  assert.match(json.how, /^static: the name is wrong/);
 });
 
 test("--verify (static) answers yes for the exact name and an existing agent file", () => {

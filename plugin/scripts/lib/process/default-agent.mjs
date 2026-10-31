@@ -15,6 +15,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -58,6 +59,26 @@ export function readSettings(root) {
   return { file, data };
 }
 
+/** The `agent` in `.claude/settings.local.json`, which Claude Code applies over the project's settings.json;
+ *  `undefined` when that file or key is absent or unreadable. */
+export function localAgent(root) {
+  const file = join(root, ".claude", "settings.local.json");
+  if (!existsSync(file)) return undefined;
+  try {
+    const data = JSON.parse(readFileSync(file, "utf8"));
+    return isObject(data) ? data.agent : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Same file on disk (covers hard links, which a real-path comparison misses).
+function sameFile(a, b) {
+  const sa = statSync(a, { throwIfNoEntry: false });
+  const sb = statSync(b, { throwIfNoEntry: false });
+  return Boolean(sa && sb && sa.dev === sb.dev && sa.ino === sb.ino);
+}
+
 // The real path a write to `file` would land on (its parent's real path when it does not exist yet).
 function landsOn(file) {
   if (existsSync(file)) return realpathSync(file);
@@ -77,7 +98,8 @@ export function writeAgent(root, { pluginRoot = PLUGIN_ROOT } = {}) {
   const read = readSettings(root);
   if (read.error) return read;
   const { file, data } = read;
-  if (landsOn(file) === landsOn(join(pluginRoot, "settings.json")))
+  const own = join(pluginRoot, "settings.json");
+  if (landsOn(file) === landsOn(own) || sameFile(file, own))
     return { file, error: "is the plugin's own settings.json; the agent is set per project" };
   if (data.agent === AGENT) return { file, wrote: false };
   try {
