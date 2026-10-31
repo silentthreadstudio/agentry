@@ -155,7 +155,12 @@ test("POST /comment returns the minted id and pushes a file-changed for the side
 test("POST /comment with a malformed anchor is 400, no write", async () => {
   const { res, captured } = fakeRes();
   let called = false;
-  const d = deps({ addComment: () => ((called = true), { id: "x" }) });
+  const d = deps({
+    addComment: () => {
+      called = true;
+      return { id: "x" };
+    },
+  });
   await handlePostRequest(
     fakePost("/api/work/sample/comment", {
       gate: "spec",
@@ -247,7 +252,12 @@ test("POST /artifact against an adr-* doc is rejected read_only (V1 decision rec
   await handlePostRequest(
     fakePost("/api/work/sample/artifact", { target: "adr-001", baseVersion: "v", newBody: "x" }),
     res,
-    deps({ writeArtifact: () => ((called = true), { ok: true, version: "v" }) }),
+    deps({
+      writeArtifact: () => {
+        called = true;
+        return { ok: true, version: "v" };
+      },
+    }),
   );
   assert.equal(captured.status, 409);
   assert.equal((captured.body as { error: string }).error, "read_only");
@@ -272,7 +282,12 @@ test("POST /artifact with an unknown/non-string target is 400, no write", async 
     // Not one of spec/plan/task-<NNN>/adr-* — an unknown docId is rejected before any write.
     fakePost("/api/work/sample/artifact", { target: "mystery", baseVersion: "v", newBody: "x" }),
     res,
-    deps({ writeArtifact: () => ((called = true), { ok: true, version: "v" }) }),
+    deps({
+      writeArtifact: () => {
+        called = true;
+        return { ok: true, version: "v" };
+      },
+    }),
   );
   assert.equal(captured.status, 400);
   assert.equal((captured.body as { error: string }).error, "invalid_target");
@@ -327,7 +342,12 @@ test("POST /status with an out-of-vocab status is 400, no write", async () => {
   await handlePostRequest(
     fakePost("/api/work/sample/status", { target: "task-001", status: "bogus" }),
     res,
-    deps({ setStatus: () => ((called = true), { ok: true }) }),
+    deps({
+      setStatus: () => {
+        called = true;
+        return { ok: true };
+      },
+    }),
   );
   assert.equal(captured.status, 400);
   assert.equal((captured.body as { error: string }).error, "invalid_status");
@@ -340,7 +360,12 @@ test("POST /status on a non-task target (spec/plan/adr-*) is 400", async () => {
   await handlePostRequest(
     fakePost("/api/work/sample/status", { target: "spec", status: "done" }),
     res,
-    deps({ setStatus: () => ((called = true), { ok: true }) }),
+    deps({
+      setStatus: () => {
+        called = true;
+        return { ok: true };
+      },
+    }),
   );
   assert.equal(captured.status, 400);
   assert.equal((captured.body as { error: string }).error, "not_a_task");

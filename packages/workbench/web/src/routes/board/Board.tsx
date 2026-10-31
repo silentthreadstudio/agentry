@@ -136,6 +136,7 @@ export function Board() {
       </div>
 
       {refusal !== null ? (
+        // biome-ignore lint/a11y/useSemanticElements: <output> is inline; the div keeps the block layout
         <div className="board-refusal" role="status">
           {refusal}
           <button type="button" onClick={() => setRefusal(null)} aria-label="Dismiss">

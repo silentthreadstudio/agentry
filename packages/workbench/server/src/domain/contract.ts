@@ -36,7 +36,7 @@ function section(body: string): string {
 function listOf(text: string, key: string): string[] {
   const inline = new RegExp(`^${key}:\\s*\\[(.*?)\\]\\s*$`, "im").exec(text);
   if (inline) {
-    return inline[1]!
+    return (inline[1] ?? "")
       .split(",")
       .map((s) => s.trim().replace(/^["']|["']$/g, ""))
       .filter(Boolean);
@@ -51,7 +51,7 @@ function listOf(text: string, key: string): string[] {
     const item = /^\s+-\s+(.*)$/.exec(line);
     if (item) {
       items.push(
-        item[1]!
+        (item[1] ?? "")
           .trim()
           .replace(/^["']|["']$/g, "")
           .replace(/^`|`$/g, ""),

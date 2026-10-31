@@ -40,7 +40,7 @@ beforeEach(() => {
   ).CustomEvent;
 });
 afterEach(() => {
-  delete (globalThis as Partial<typeof globalThis> & { window?: unknown }).window;
+  Reflect.deleteProperty(globalThis, "window");
 });
 
 test("the default mode is rail — the board leads until told otherwise", () => {

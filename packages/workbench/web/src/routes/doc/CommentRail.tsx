@@ -92,6 +92,7 @@ export function CommentRail({
         <span className="dd-rail-t">Conversation</span>
         <span className="dd-gatepill">{docId}</span>
         <span className="dd-rail-grow" />
+        {/* biome-ignore lint/a11y/useSemanticElements: role=group on a div: <fieldset> brings a border, padding and min-width the design does not have */}
         <div className="dd-filter" role="group" aria-label="Filter comments">
           {(["open", "all", "resolved"] as Filter[]).map((f) => (
             <button

@@ -73,6 +73,7 @@ export function ConductorRail() {
           <div className="s">{focused ?? "no run in focus"}</div>
         </div>
         <div className="grow" />
+        {/* biome-ignore lint/a11y/useSemanticElements: role=group on a div: <fieldset> brings a border, padding and min-width the design does not have */}
         <div className="modes" role="group" aria-label="Conversation size">
           {MODES.map((m) => (
             <button

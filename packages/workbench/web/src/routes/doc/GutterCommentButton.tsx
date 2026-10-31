@@ -65,6 +65,7 @@ export function GutterCommentButton({ runId, docId }: { runId: string; docId: st
     document.addEventListener("selectionchange", onSelChange);
     return () => document.removeEventListener("selectionchange", onSelChange);
   }, [hide]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: docId is the trigger — a doc switch dismisses the button
   useEffect(() => hide(), [docId, hide]);
 
   if (!pos) return null;

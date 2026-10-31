@@ -59,9 +59,11 @@ export function NewWork({ onCreated }: { onCreated: () => void }) {
 
   return (
     <>
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: backdrop click-to-dismiss; the keyboard path is Escape on the dialog below */}
       <div className="mscrim" onClick={close} />
       <section
         className="modal"
+        // biome-ignore lint/a11y/useSemanticElements: <dialog> is closed until showModal() runs; this modal is mounted conditionally
         role="dialog"
         aria-modal="true"
         aria-label="New work"

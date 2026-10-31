@@ -107,6 +107,7 @@ export class BoardReader {
         const present = new Set(agents.map((a) => a.role));
         const stillWaiting = (card.assigned ?? []).filter((a) => !present.has(a.to));
         if (stillWaiting.length > 0) card.assigned = stillWaiting;
+        // biome-ignore lint/performance/noDelete: the key must be absent, not undefined — board JSON and deepEqual consumers distinguish them
         else delete card.assigned;
       }
     }
@@ -222,8 +223,9 @@ function overlapsAmong(tasks: readonly TaskFacts[]): BoardConflict[] {
   const conflicts: BoardConflict[] = [];
   for (let i = 0; i < live.length; i++) {
     for (let j = i + 1; j < live.length; j++) {
-      const a = live[i]!;
-      const b = live[j]!;
+      const a = live[i];
+      const b = live[j];
+      if (a === undefined || b === undefined) continue;
       const files = sharedFiles(a.owns, b.owns);
       if (files.length === 0) continue;
       conflicts.push({

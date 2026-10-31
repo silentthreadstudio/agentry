@@ -42,7 +42,8 @@ export function computeAnchor(
 function nearestHeading(blocks: readonly BlockView[], blockIndex: number): string {
   if (blockIndex >= 0) {
     for (let i = blockIndex; i >= 0; i--) {
-      if (blocks[i]?.tag === "H2") return blocks[i]!.text;
+      const block = blocks[i];
+      if (block?.tag === "H2") return block.text;
     }
   }
   const h2 = blocks.find((b) => b.tag === "H2");

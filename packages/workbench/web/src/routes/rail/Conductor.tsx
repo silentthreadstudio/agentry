@@ -66,6 +66,7 @@ export function Conductor({ runId, onIncoming }: { runId: string; onIncoming?: (
   }, [seed, onIncoming]);
 
   // Keep the newest message in view as the conversation grows.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: messages.length is the trigger — re-scroll when a message arrives, not on unrelated renders
   useEffect(() => {
     const el = streamRef.current;
     if (el) el.scrollTop = el.scrollHeight;

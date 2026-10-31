@@ -18237,7 +18237,7 @@ function section(body) {
 function listOf(text, key) {
   const inline = new RegExp(`^${key}:\\s*\\[(.*?)\\]\\s*$`, "im").exec(text);
   if (inline) {
-    return inline[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    return (inline[1] ?? "").split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
   }
   const lines = text.split("\n");
   const start = lines.findIndex((l) => new RegExp(`^${key}:\\s*$`, "i").test(l.trim()));
@@ -18247,7 +18247,7 @@ function listOf(text, key) {
     const item = /^\s+-\s+(.*)$/.exec(line);
     if (item) {
       items.push(
-        item[1].trim().replace(/^["']|["']$/g, "").replace(/^`|`$/g, "")
+        (item[1] ?? "").trim().replace(/^["']|["']$/g, "").replace(/^`|`$/g, "")
       );
       continue;
     }
@@ -18403,6 +18403,7 @@ function overlapsAmong(tasks) {
     for (let j = i + 1; j < live.length; j++) {
       const a = live[i];
       const b = live[j];
+      if (a === void 0 || b === void 0) continue;
       const files = sharedFiles(a.owns, b.owns);
       if (files.length === 0) continue;
       conflicts.push({
@@ -18799,8 +18800,11 @@ var WriteService = class {
     const target = { taskNo: req.taskNo };
     const current = this.writer.readArtifact(req.run, target);
     if (current === void 0) return { ok: false, reason: "not-found" };
-    const frontmatter = { ...current.frontmatter, status: req.status };
-    if (req.status !== "in-progress") delete frontmatter.lockedBy;
+    const frontmatter = Object.fromEntries(
+      Object.entries({ ...current.frontmatter, status: req.status }).filter(
+        ([key]) => key !== "lockedBy" || req.status === "in-progress"
+      )
+    );
     this.writer.writeArtifact(req.run, target, frontmatter, current.body);
     return { ok: true };
   }

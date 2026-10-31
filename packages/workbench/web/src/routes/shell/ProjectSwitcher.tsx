@@ -117,11 +117,14 @@ export function ProjectSwitcher({ current }: { current: string | undefined }) {
       </button>
 
       {open ? (
+        // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the trigger button; options are driven by onKeyDown cursor movement
+        // biome-ignore lint/a11y/useSemanticElements: custom popover listbox with a bespoke row layout; a native <select> cannot render it
         <div className="projpop" role="listbox" aria-label="Projects" onKeyDown={onKeyDown}>
           {projects.map((p, i) => (
             <button
               type="button"
               key={p.slug}
+              // biome-ignore lint/a11y/useSemanticElements: custom listbox option (see the listbox above); <option> cannot hold this layout
               role="option"
               aria-selected={p.slug === current}
               className={`projopt${i === cursor ? " cursor" : ""}${p.slug === current ? " on" : ""}`}

@@ -119,6 +119,7 @@ export function Memory() {
           />
         </div>
 
+        {/* biome-ignore lint/a11y/useSemanticElements: role=group on a div: <fieldset> brings a border, padding and min-width the design does not have */}
         <div className="mem-seg" role="group" aria-label="Filter by kind">
           {(["all", "facts", "episodes"] as const).map((k) => (
             <button
@@ -133,6 +134,7 @@ export function Memory() {
           ))}
         </div>
 
+        {/* biome-ignore lint/a11y/useSemanticElements: role=group on a div: <fieldset> brings a border, padding and min-width the design does not have */}
         <div className="mem-chips" role="group" aria-label="Filter by type">
           <button
             type="button"
@@ -156,6 +158,7 @@ export function Memory() {
           ))}
         </div>
 
+        {/* biome-ignore lint/a11y/useSemanticElements: role=group on a div: <fieldset> brings a border, padding and min-width the design does not have */}
         <div className="mem-seg" role="group" aria-label="Filter by store">
           {(["project", "global"] as const).map((o) => (
             <button
@@ -179,12 +182,11 @@ export function Memory() {
         </EmptyState>
       ) : (
         <div className="mem-split">
-          <div className="mem-list" role="list">
+          <div className="mem-list">
             {rows.map((r) => (
               <button
                 key={`${r.origin}/${r.kind}/${r.id}`}
                 type="button"
-                role="listitem"
                 className={`mem-card${selectedRow?.id === r.id ? " on" : ""}`}
                 aria-pressed={selectedRow?.id === r.id}
                 onClick={() => setSelected(r.id)}
@@ -276,7 +278,7 @@ function MemDetail({ row }: { row: MemRow }) {
       </div>
 
       <div className="mem-body">
-        {/* eslint-disable-next-line react/no-danger -- local, read-only mem file content; markdown-it html:false */}
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: html comes from renderMemoryMarkdown (memory-view.ts), a markdown-it instance with html:false, over local read-only memory files */}
         <div className="mem-md" dangerouslySetInnerHTML={{ __html: html }} />
 
         {row.why ? (

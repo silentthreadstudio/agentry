@@ -89,7 +89,7 @@ export function ApprovalsBanner() {
   if (pending.length === 0) return null;
 
   return (
-    <div className="apv-wrap" role="region" aria-label="Permission approvals">
+    <section className="apv-wrap" aria-label="Permission approvals">
       {pending.map((req) => (
         <ApprovalCard
           key={req.request_id}
@@ -98,7 +98,7 @@ export function ApprovalsBanner() {
           onAnswer={answer}
         />
       ))}
-    </div>
+    </section>
   );
 }
 

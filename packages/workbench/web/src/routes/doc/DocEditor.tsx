@@ -278,6 +278,7 @@ function DocBody({
             <option value="done">Done</option>
           </select>
         ) : null}
+        {/* biome-ignore lint/a11y/useSemanticElements: role=group on a div: <fieldset> brings a border, padding and min-width the design does not have */}
         <div className="de-seg" role="group" aria-label="View mode">
           <button
             type="button"
@@ -307,6 +308,7 @@ function DocBody({
       ) : null}
 
       {feedback ? (
+        // biome-ignore lint/a11y/useSemanticElements: <output> is inline; the div keeps the block layout
         <div className="de-feedback" role="status">
           {feedback}
         </div>

@@ -255,13 +255,13 @@ export function tiptapToMd(doc: ProseMirrorDoc): string {
 function block(node: TiptapNode, indent: string): string {
   switch (node.type) {
     case "heading": {
-      const level = Number(node.attrs?.["level"]) || 1;
+      const level = Number(node.attrs?.level) || 1;
       return `${"#".repeat(level)} ${inline(node.content)}`;
     }
     case "paragraph":
       return inline(node.content);
     case "codeBlock": {
-      const lang = typeof node.attrs?.["language"] === "string" ? node.attrs["language"] : "";
+      const lang = typeof node.attrs?.language === "string" ? node.attrs.language : "";
       const code = (node.content ?? []).map((n) => n.text ?? "").join("");
       return `\`\`\`${lang}\n${code}\n\`\`\``;
     }
@@ -279,7 +279,7 @@ function block(node: TiptapNode, indent: string): string {
     case "bulletList":
       return list(node, indent, () => "- ");
     case "orderedList": {
-      const start = Number(node.attrs?.["start"]) || 1;
+      const start = Number(node.attrs?.start) || 1;
       return list(node, indent, (i) => `${start + i}. `);
     }
     case "horizontalRule":
@@ -371,7 +371,7 @@ function literal(node: TiptapNode): string {
 function emphasisKey(node: TiptapNode): string {
   const marks = activeMarks(node).filter((m) => m.type !== "code");
   const parts = marks.map((m) =>
-    m.type === "link" ? `link:${String(m.attrs?.["href"] ?? "")}` : m.type,
+    m.type === "link" ? `link:${String(m.attrs?.href ?? "")}` : m.type,
   );
   return parts.sort().join("|");
 }
@@ -402,7 +402,7 @@ function hasMark(node: TiptapNode, type: string): boolean {
 
 function linkHref(node: TiptapNode): string {
   const mark = activeMarks(node).find((m) => m.type === "link");
-  return typeof mark?.attrs?.["href"] === "string" ? mark.attrs["href"] : "";
+  return typeof mark?.attrs?.href === "string" ? mark.attrs.href : "";
 }
 
 // ──────────────────────────────────────────────────────────────────────────────────────────────────────

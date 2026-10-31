@@ -67,6 +67,7 @@ export function RailComposer({
         className="dd-composer-ta"
         placeholder="Add a note… (optional), then pick a decision below"
         value={body}
+        // biome-ignore lint/a11y/noAutofocus: the composer mounts only after an explicit selection; focus moves into the field the user just asked for
         autoFocus
         disabled={busy}
         onChange={(e) => setBody(e.target.value)}

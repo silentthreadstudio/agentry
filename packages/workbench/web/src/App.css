@@ -80,7 +80,6 @@ body[data-chat="focus"] .bcol[data-digest] .bcolhd {
   color: transparent;
 }
 .brand .wm i {
-  font-style: normal;
   font: 600 9.5px var(--sans);
   letter-spacing: 1.4px;
   text-transform: uppercase;

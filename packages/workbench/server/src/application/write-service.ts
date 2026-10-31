@@ -132,8 +132,12 @@ export class WriteService {
     const current = this.writer.readArtifact(req.run, target);
     if (current === undefined) return { ok: false, reason: "not-found" };
 
-    const frontmatter: Record<string, unknown> = { ...current.frontmatter, status: req.status };
-    if (req.status !== "in-progress") delete frontmatter.lockedBy;
+    // Leaving in-progress releases the lock: drop the key (in place, so key order is kept).
+    const frontmatter: Record<string, unknown> = Object.fromEntries(
+      Object.entries({ ...current.frontmatter, status: req.status }).filter(
+        ([key]) => key !== "lockedBy" || req.status === "in-progress",
+      ),
+    );
     this.writer.writeArtifact(req.run, target, frontmatter, current.body);
     return { ok: true };
   }
