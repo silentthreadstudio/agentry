@@ -11,7 +11,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CATALOG, FIELD } from "../lib/process/rules/index.mjs";
+import { CAN, CATALOG, FIELD } from "../lib/process/rules/index.mjs";
 import { BREAK, BUILTINS, ENTRIES, VALID, brokenBoard, outcome } from "./broken-boards.mjs";
 
 const BOARD = join(dirname(fileURLToPath(import.meta.url)), "..", "board.mjs");
@@ -215,6 +215,76 @@ test("a kind that lacks what the rule needs is refused naming the capability", (
     r.messages[0],
     /^rules\[0\]\.field names the list field "blocks" of decision, and no kind it refs has a status that can be started/,
   );
+});
+
+// For each capability, an edit of the process file after which kind `name` lacks it and keeps every
+// other one a rule needs of it (`of`: the rule's own kind, for `child`).
+const refsOf = (f) => [f.ref].flat();
+const unlink = (spec, test) => {
+  for (const [k, kind] of Object.entries(spec.kinds))
+    for (const f of Object.values(kind.fields ?? {}))
+      if (f.role && test(k, f)) Reflect.deleteProperty(f, "role");
+};
+const rephase = (spec, name, from, to) => {
+  const { values } = spec.kinds[name].status;
+  for (const word of Object.keys(values)) if (from.includes(values[word])) values[word] = to;
+};
+const parentField = (spec, name) =>
+  Object.values(spec.kinds[name].fields).find((f) => f.role === "parent");
+const LACK = {
+  done: (s, name) => rephase(s, name, ["done"], "active"),
+  started: (s, name) => rephase(s, name, ["active", "done"], "planned"),
+  active: (s, name) => rephase(s, name, ["active"], "planned"),
+  parked: (s, name) => rephase(s, name, ["parked"], "dropped"),
+  "status-field": (s, name) => {
+    s.kinds[name].status = { derived: "children" };
+  },
+  parent: (s, name) => Reflect.deleteProperty(parentField(s, name), "role"),
+  "parent-status": (s, name) => {
+    parentField(s, name).ref = KINDS.find((k) => !s.kinds[k].status);
+  },
+  children: (s, name) =>
+    unlink(s, (k, f) =>
+      f.role === "parent" ? k !== name && refsOf(f).includes(name) : k === name,
+    ),
+  child: (s, name, of) =>
+    unlink(s, (k, f) =>
+      f.role === "parent"
+        ? k === name && refsOf(f).includes(of)
+        : k === of && refsOf(f).includes(name),
+    ),
+  file: (s, name) => Reflect.deleteProperty(s.kinds[name], "file"),
+  order: (s) => unlink(s, (_, f) => f.role === "parent"),
+};
+
+test("every need of every rule is what refuses a kind without it, and nothing else is", () => {
+  let n = 0;
+  for (const [id, rule] of Object.entries(CATALOG)) {
+    const entry = { rule: id, ...ENTRIES[id] };
+    for (const [p, def] of Object.entries(rule.params)) {
+      for (const need of def.needs ?? []) {
+        n++;
+        // The kind lacking it: the one a kind param names, or the first a field param's field refs.
+        const value = entry[p] ?? def.default;
+        const name = def.type === "kind" ? value : refsOf(VALID.kinds[entry.kind].fields[value])[0];
+        const spec = structuredClone(VALID);
+        assert.ok(LACK[need], `a way to make a kind lack "${need}"`);
+        LACK[need](spec, name, entry.kind);
+        const r = judge(id, entry, spec);
+        const says = CAN[need].says(entry.kind);
+        const expected =
+          def.type === "kind"
+            ? [`rules[0].${p} names "${name}", which lacks ${says}; ${id} needs it`]
+            : r.messages.filter(
+                (m) => m.startsWith(`rules[0].${p} `) && m.includes(`has ${says};`),
+              );
+        assert.equal(r.exit, 2, `${id}.${p} without ${need}: ${show(r)}`);
+        assert.deepEqual(r.messages, expected, `${id}.${p} without ${need}`);
+        assert.equal(r.messages.length, 1, `${id}.${p} without ${need}: ${show(r)}`);
+      }
+    }
+  }
+  assert.equal(n, 20, "needs entries in the catalog");
 });
 
 test("file-required without a kind is refused where no kind's file is required", () => {
