@@ -3,7 +3,7 @@
 // report, `--why`, argv passed to a subcommand untouched, and widths.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -66,6 +66,26 @@ test("usage and process-file errors are exit 2, on stderr", () => {
   assert.equal(broken.status, 2);
   assert.match(broken.stderr, /cannot use the process file\n {2}kinds\.task\.fields\.deps\.type/);
   const root = join(FIXTURES, "table-board");
+  const empty = mkdtempSync(join(tmpdir(), "agentry-board-"));
+  try {
+    const kindless = { version: 1, name: "E", root: ".", kinds: {}, rules: [] };
+    writeFileSync(join(empty, "process.json"), JSON.stringify(kindless));
+    for (const sub of ["check", "status"]) {
+      const argv = [BOARD, sub, "--root", empty, "--process", join(empty, "process.json")];
+      const res = spawnSync("node", argv, {
+        encoding: "utf8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      assert.equal(res.status, 2, sub);
+      assert.match(
+        res.stderr,
+        /cannot use the process file\n {2}kinds should name at least one kind/,
+      );
+      assert.doesNotMatch(res.stderr, /TypeError|\.mjs:\d+/, "a problem, not a stack");
+    }
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
   const missing = spawnSync("node", [BOARD, "check", "--root", root], { encoding: "utf8" });
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /run \/agentry:init/);

@@ -124,6 +124,8 @@ const entries = (v) => (isObject(v) ? Object.entries(v) : []);
 // What only a reader can check: the kinds refs name, the fields status names, the paths.
 function crossCheck(spec, bad) {
   const kinds = isObject(spec.kinds) ? spec.kinds : {};
+  if (isObject(spec.kinds) && Object.keys(kinds).length === 0)
+    bad("kinds", "should name at least one kind");
   const known = (name, at) =>
     typeof name !== "string" || name in kinds || bad(at, `names an unknown kind "${name}"`);
   const root = typeof spec.root === "string" ? spec.root : ".";

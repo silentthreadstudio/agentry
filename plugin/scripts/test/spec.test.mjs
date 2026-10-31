@@ -65,6 +65,7 @@ test("each problem names its path in the file", () => {
   const cases = [
     [spec("version", 2), /^version should be one of "1"/],
     [spec("kinds"), /^the process file is missing "kinds"/],
+    [spec("kinds", {}), /^kinds should name at least one kind/],
     [spec("extra", true), /^extra is not a known key/],
     [spec("kinds.task.fields.status.type", "lst"), /^kinds\.task\.fields\.status\.type should/],
     [spec("kinds.task.fields.status.column"), /^kinds\.task\.fields\.status is missing "column"/],
