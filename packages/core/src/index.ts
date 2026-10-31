@@ -10,3 +10,4 @@ export * from "./memory.js";
 export * from "./artifacts.js";
 export * from "./events.js";
 export * from "./config.js";
+export * from "./process.js";
