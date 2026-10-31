@@ -218,7 +218,7 @@ leaves the status where it is; a `FAIL` verdict also applies `failed`; only the 
 first landed commit, or `<first>…<last>`, as short SHAs) and `handoff` (`parent.file:<section>`, a bold-lead
 section of the parent's file, where the `handoff` line is appended). A step with no `on` word or no `write`
 key is skipped and reported, and without `lifecycle` nothing is ever written. Writes are mechanical only
-and land in the user's files, visible in their diff.
+and land in the user's files, visible in their diff; `board lifecycle <event> <id>` applies one event.
 
 The `handoff` template is one line and fills `{id}`, `{sha}` (the first commit) and `{summary}`. When a
 `done-has-handoff` rule checks the lifecycle's kind, the template is tried at load: filled with a fake SHA,
