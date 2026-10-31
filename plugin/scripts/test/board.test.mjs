@@ -3,7 +3,16 @@
 // report, `--why`, argv passed to a subcommand untouched, and widths.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -92,6 +101,88 @@ test("a board cell holding a built-in name reads as that word, not as a built-in
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// table-board copied into `<tmp>/repo`, beside `<tmp>/outside`, which holds a board-like secret.
+function besideOutside() {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-board-")));
+  const root = join(tmp, "repo");
+  const outside = join(tmp, "outside");
+  cpSync(join(FIXTURES, "table-board"), root, { recursive: true });
+  mkdirSync(outside);
+  writeFileSync(join(outside, "secret.md"), "## Secret\n\n| Code |\n| --- |\n| SECRET-1 |\n");
+  const sprint = join(root, "docs", "board", "sprints", "B1_the_door.md");
+  cpSync(sprint, join(outside, "B1_the_door.md"));
+  cpSync(join(root, "docs", "DECISIONS.md"), join(outside, "DECISIONS.md"));
+  const cli = (...args) =>
+    spawnSync("node", [BOARD, ...args, "--root", root], {
+      encoding: "utf8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+  return { tmp, root, outside, sprint, cli };
+}
+
+test("scan never reads through a symlink out of the repository", () => {
+  const { tmp, root, outside, cli } = besideOutside();
+  try {
+    symlinkSync(outside, join(root, "lnk"));
+    const dir = cli("scan", "lnk");
+    assert.equal(dir.status, 2);
+    assert.match(dir.stderr, /^"lnk" leaves the repository/);
+    assert.doesNotMatch(dir.stdout + dir.stderr, /SECRET|Secret/);
+    // git lists a tracked symlink like a file: it is listed as skipped, never read.
+    symlinkSync(join(outside, "secret.md"), join(root, "docs", "leak.md"));
+    const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+    for (const args of [
+      ["init", "-q"],
+      ["add", "-A"],
+    ])
+      assert.equal(spawnSync("git", ["-C", root, ...args], { env }).status, 0, args.join(" "));
+    const all = cli("scan");
+    assert.equal(all.status, 0);
+    assert.match(all.stdout, /^scan · \. · \d+ files · .* · 1 skipped\n/);
+    assert.match(all.stdout, /\ndocs\/leak\.md\n {2}skipped a symlink out of the repository/);
+    assert.doesNotMatch(all.stdout, /SECRET|Secret/);
+    const json = JSON.parse(cli("scan", "--json").stdout);
+    assert.deepEqual(
+      json.filter((f) => f.skipped).map((f) => f.file),
+      ["docs/leak.md"],
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("a process-file path a symlink takes out is exit 2; a glob match out is a finding", () => {
+  const { tmp, root, outside, sprint, cli } = besideOutside();
+  const spec = ["--process", join(root, "process.json")];
+  try {
+    const decisions = join(root, "docs", "DECISIONS.md");
+    rmSync(decisions);
+    symlinkSync(join(outside, "DECISIONS.md"), decisions);
+    const table = cli("check", ...spec);
+    assert.equal(table.status, 2);
+    assert.match(
+      table.stderr,
+      /\n {2}kinds\.decision\.at\.table "\.\.\/DECISIONS\.md" leaves the repository through a symlink/,
+    );
+    rmSync(decisions);
+    cpSync(join(outside, "DECISIONS.md"), decisions);
+    rmSync(sprint);
+    symlinkSync(join(outside, "B1_the_door.md"), sprint);
+    const glob = cli("check", "--json", ...spec);
+    assert.equal(glob.status, 1);
+    const messages = JSON.parse(glob.stdout).findings.map((f) => f.message);
+    assert.ok(
+      messages.includes("sprints/B1_the_door.md: a symlink out of the repository; not read"),
+    );
+    assert.ok(
+      messages.some((m) => /^no file/.test(m)),
+      "B1 reads as having no file",
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
   }
 });
 

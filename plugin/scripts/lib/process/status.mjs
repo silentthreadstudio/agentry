@@ -5,10 +5,10 @@
 //   statusView({ root, spec, model })           -> StatusView
 // The "work" kind is the lifecycle's (else the first kind with a parent); "now" is `status.now` (else
 // that parent's kind). Worktrees and decision drafts join when the ledger and drafts land (T8a/T9).
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { check } from "./check.mjs";
 import * as git from "./git.mjs";
+import { readInside } from "./read.mjs";
 import { refKinds, resolve } from "./rules/structure.mjs";
 
 const parentField = (kind) =>
@@ -89,12 +89,8 @@ function depsOf(spec, model, work) {
 }
 
 function readNote(root, path) {
-  try {
-    const lines = readFileSync(join(root, path), "utf8").trimEnd().split("\n");
-    return { path, lines };
-  } catch {
-    return undefined;
-  }
+  const text = readInside(root, join(root, path));
+  return text === null ? undefined : { path, lines: text.trimEnd().split("\n") };
 }
 
 export function statusView({ root, spec, model }) {

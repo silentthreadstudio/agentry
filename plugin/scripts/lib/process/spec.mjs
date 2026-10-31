@@ -233,6 +233,9 @@ function crossCheck(spec, bad) {
     spec.rules.forEach((r, i) => checkRule(r, `rules[${i}]`, kinds, bad));
   known(spec.lifecycle?.kind, "lifecycle.kind");
   known(spec.status?.now, "status.now");
+  const note = spec.status?.note;
+  if (typeof note === "string" && escapesRoot(".", note))
+    bad("status.note", `"${note}" leaves the repository`);
   for (const [d, def] of entries(spec.drafts)) known(def?.kind, `drafts.${d}.kind`);
 }
 

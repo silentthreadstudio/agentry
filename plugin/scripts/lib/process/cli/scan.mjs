@@ -4,25 +4,29 @@
 // frontmatter docs. The whole repository means its git-tracked `*.md` (every one on disk, outside
 // dot-directories, when git cannot answer). `<dir>` (relative to the root) narrows it to that directory
 // as it is on disk, so it reaches an untracked board or one under a dot-directory. Needs no process
-// file. Writes nothing; exit 0, or 2 for a `<dir>` outside the repository.
+// file. A file a symlink takes out of the repository is listed as skipped, never read. Writes
+// nothing; exit 0, or 2 for a `<dir>` outside the repository (as written or through a symlink).
 //
 // run(argv, { root }) -> { exit, out }
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ID_TOKEN, blockStarts, markdownFiles, repoMarkdown } from "../contract.mjs";
 import * as md from "../markdown.mjs";
+import { staysInside } from "../read.mjs";
 import { fit } from "../render.mjs";
 import { escapesRoot } from "../spec.mjs";
 
 export const noSpec = true;
 const WIDTH = 100;
 const SAMPLE = 4;
+const OUTSIDE = "a symlink out of the repository; not read";
 
 export function scan(root, dir = "") {
   const base = join(root, dir);
   const files = dir ? markdownFiles(base) : repoMarkdown(root, "**/*.md");
   return files.flatMap((rel) => {
     const file = dir ? `${dir.replace(/\/$/, "")}/${rel}` : rel;
+    if (!staysInside(root, join(base, rel))) return [{ file, skipped: OUTSIDE }];
     let text;
     try {
       text = readFileSync(join(base, rel), "utf8");
@@ -49,7 +53,9 @@ export function scan(root, dir = "") {
 const ids = (xs) =>
   `${xs.length} (${xs.slice(0, SAMPLE).join(", ")}${xs.length > SAMPLE ? ", …" : ""})`;
 
-function render(found, dir) {
+function render(all, dir) {
+  const found = all.filter((x) => !x.skipped);
+  const skipped = all.filter((x) => x.skipped);
   const count = (f) => found.reduce((n, x) => n + f(x), 0);
   const head = [
     `scan · ${dir || "."} · ${found.length} files`,
@@ -57,6 +63,7 @@ function render(found, dir) {
     `${count((x) => x.leads.length)} id leads`,
     `${count((x) => x.headings.length)} id headings`,
     `${count((x) => (x.frontmatter ? 1 : 0))} frontmatter docs`,
+    ...(skipped.length ? [`${skipped.length} skipped`] : []),
   ].join(" · ");
   const lines = found.flatMap((x) => [
     "",
@@ -69,12 +76,14 @@ function render(found, dir) {
     ...(x.headings.length ? [`  heads   ${ids(x.headings)}`] : []),
     ...(x.frontmatter ? [`  front   ${x.frontmatter.join(", ") || "(empty)"}`] : []),
   ]);
-  return [head, ...lines].map((l) => fit(l, WIDTH)).join("\n");
+  const notes = skipped.flatMap((x) => ["", x.file, `  skipped ${x.skipped}`]);
+  return [head, ...lines, ...notes].map((l) => fit(l, WIDTH)).join("\n");
 }
 
 export function run(argv, { root }) {
   const dir = argv.find((a) => !a.startsWith("--")) ?? "";
-  if (escapesRoot(".", dir)) return { exit: 2, out: `"${dir}" leaves the repository` };
+  if (escapesRoot(".", dir) || !staysInside(root, join(root, dir)))
+    return { exit: 2, out: `"${dir}" leaves the repository` };
   const found = scan(root, dir);
   return { exit: 0, out: argv.includes("--json") ? JSON.stringify(found) : render(found, dir) };
 }

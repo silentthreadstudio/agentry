@@ -40,7 +40,7 @@ async function main(argv) {
     return { exit: 2, out: `unknown subcommand "${sub}" (subcommands: ${subs().join(", ")})` };
   const mod = await import(pathToFileURL(file).href);
   if (mod.noSpec) return mod.run(argv, { root, processPath });
-  const { spec, problems } = loadSpec(processPath);
+  const { spec, problems } = loadSpec(processPath, { root });
   if (!spec || problems.length) {
     const shown = relative(root, processPath).startsWith("..")
       ? processPath

@@ -219,6 +219,7 @@ test("a path that leaves the repository is a spec problem; ../ inside it is fine
   assert.ok(flags(spec("root", "../elsewhere"), /^root .* leaves/));
   assert.ok(flags(spec("root", "/abs"), /^root .* leaves/));
   assert.ok(flags(spec("kinds.task.file", { glob: "../../{id}.md" }), /file\.glob .* leaves/));
+  assert.ok(flags(spec("status", { note: "../NOTE.md" }), /^status\.note .* leaves/));
 });
 
 test("escapesRoot normalises the path against the spec root", () => {

@@ -4,10 +4,10 @@
 // finding count. Writes nothing; exit 0.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { check } from "../check.mjs";
 import * as md from "../markdown.mjs";
+import { readInside } from "../read.mjs";
 import { columns } from "../render.mjs";
 import { CATALOG } from "../rules/index.mjs";
 import { boardReport } from "../status.mjs";
@@ -17,12 +17,8 @@ const WIDTH = 100;
 // A table kind's header names that neither the id nor any field reads.
 function unmapped(root, spec, kind) {
   if (!kind.at.table) return [];
-  let text;
-  try {
-    text = readFileSync(join(root, spec.root, kind.at.table), "utf8");
-  } catch {
-    return [];
-  }
+  const text = readInside(root, join(root, spec.root, kind.at.table));
+  if (text === null) return [];
   const sec = md.section(text, kind.at.heading);
   const table = sec && md.tableIn(text, sec);
   const used = new Set([kind.id?.column, ...Object.values(kind.fields ?? {}).map((f) => f.column)]);

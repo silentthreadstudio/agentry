@@ -2,8 +2,9 @@
 // fields, the tree, phases (own or derived from children), ranks, each item's own file and sections.
 // The kit's only file reads (git is `git.mjs`). A missing file, heading or column is a `problems`
 // entry (rule "read"), never a throw. Item `file` and `own.path` are relative to the spec's `root`.
-import { globSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+// Every read stays inside the repository once symlinks are resolved (`staysInside`).
+import { globSync, readFileSync, realpathSync } from "node:fs";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 import * as md from "./markdown.mjs";
 import { escapesRoot, own, parseSpec } from "./spec.mjs";
 
@@ -11,8 +12,57 @@ const STARTED = new Set(["active", "done"]);
 const CLOSED = new Set(["done", "dropped", "parked"]);
 const noColumn = (file, head, col) => `${file}: the "${head}" table has no column "${col}"`;
 
-/** Read and validate a process file. A missing or unreadable file is a problem, not a throw. */
-export function loadSpec(path) {
+/** True when `path` (absolute) stays inside the repository at `root` once every symlink is
+ *  resolved. A path that does not exist is judged as written: reading it fails on its own. */
+export function staysInside(root, path) {
+  let rel;
+  try {
+    rel = relative(realpathSync(root), realpathSync(path));
+  } catch {
+    return true;
+  }
+  return !isAbsolute(rel) && !escapesRoot(".", rel.split(sep).join("/") || ".");
+}
+
+/** A file's text, or null when it cannot be read or a symlink takes it out of the repository. */
+export function readInside(root, path) {
+  try {
+    return staysInside(root, path) ? readFileSync(path, "utf8") : null;
+  } catch {
+    return null;
+  }
+}
+
+// The process file's own paths that a symlink takes out of the repository: problems, as a path
+// written with `../` out is. Globs are checked file by file as they are read.
+function linkedOut(root, spec, file) {
+  const base = join(root, spec.root);
+  const paths = [
+    ["root", root, spec.root],
+    ["status.note", root, spec.status?.note],
+  ];
+  for (const [name, k] of Object.entries(spec.kinds)) {
+    const at = `kinds.${name}`;
+    paths.push([`${at}.at.table`, base, k.at.table]);
+    (k.contract?.blocks ?? []).forEach((p, i) =>
+      paths.push([`${at}.contract.blocks[${i}]`, base, p]),
+    );
+    (k.create?.blocks ?? []).forEach((b, i) =>
+      paths.push([`${at}.create.blocks[${i}]`, base, b.file]),
+    );
+  }
+  return paths
+    .filter(([, from, path]) => typeof path === "string" && !staysInside(root, join(from, path)))
+    .map(([at, , path]) => ({
+      rule: "spec",
+      message: `${at} "${path}" leaves the repository through a symlink`,
+      file,
+    }));
+}
+
+/** Read and validate a process file. A missing or unreadable file is a problem, not a throw. Given
+ *  the repository `root`, a path of the file that a symlink takes out of it is a problem too. */
+export function loadSpec(path, { root } = {}) {
   let text;
   try {
     text = readFileSync(path, "utf8");
@@ -20,7 +70,9 @@ export function loadSpec(path) {
     const message = `cannot read the process file (${e.code ?? e.message})`;
     return { spec: null, problems: [{ rule: "spec", message, file: path }] };
   }
-  return parseSpec(text, { file: path });
+  const loaded = parseSpec(text, { file: path });
+  if (root === undefined || !loaded.spec || loaded.problems.length) return loaded;
+  return { spec: loaded.spec, problems: linkedOut(root, loaded.spec, path) };
 }
 
 /** An item from one row or file; `get(column)` is the raw value, undefined when there is none. */
@@ -186,18 +238,19 @@ export function readProcess({ root, spec }) {
   };
   const specRoot = typeof spec?.root === "string" ? spec.root : ".";
   const base = join(root, specRoot);
-  // A path that leaves the repository is never opened, whatever the spec says.
-  const inside = (rel) => !escapesRoot(specRoot, rel);
+  // A path that leaves the repository, as written or through a symlink, is never opened.
+  const inside = (rel) => !escapesRoot(specRoot, rel) && staysInside(root, join(base, rel));
   const cache = new Map();
-  const load = (rel) => {
-    try {
-      return inside(rel) ? readFileSync(join(base, rel), "utf8") : null;
-    } catch {
-      return null; // missing, or a directory: the caller reports it in its own words
-    }
-  };
+  // Missing, a directory or outside: null, and the caller reports it in its own words.
+  const load = (rel) => (inside(rel) ? readInside(root, join(base, rel)) : null);
   const read = (rel) => (cache.has(rel) ? cache.get(rel) : cache.set(rel, load(rel)).get(rel));
-  const glob = (p) => (inside(p) ? globSync(p, { cwd: base }).filter(inside).sort() : []);
+  const glob = (p) => {
+    if (!inside(p)) return [];
+    const matches = globSync(p, { cwd: base }).sort();
+    for (const file of matches.filter((m) => !inside(m)))
+      problem({ message: `${file}: a symlink out of the repository; not read`, file });
+    return matches.filter(inside);
+  };
   const kinds = {};
   for (const [name, kind] of Object.entries(spec?.kinds ?? {})) {
     const ctx = { name, kind, problem, io: { inside, read, glob } };

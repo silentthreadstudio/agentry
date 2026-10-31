@@ -9,10 +9,11 @@
 // before the next line that starts a block of any id, or a heading of the same or a higher level (any
 // heading, for a bold start). Ids match exactly: `DS-1` never matches `DS-1a`. Reads files; asks git
 // only which files are tracked.
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { trackedFiles } from "./git.mjs";
 import * as md from "./markdown.mjs";
+import { readInside } from "./read.mjs";
 import { own } from "./spec.mjs";
 
 /** A token that reads as an item id: a capital, letters, an optional dash, then a digit (`F1`, `R0-6`,
@@ -23,13 +24,6 @@ const LINE_START = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?$/;
 const SKIP = new Set(["node_modules", "dist"]);
 
 const posix = (path) => path.split(sep).join("/");
-const read = (path) => {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return null;
-  }
-};
 
 /** The git root at or above `dir` (the nearest directory holding `.git`), or null. */
 export function gitRootOf(dir) {
@@ -113,7 +107,7 @@ export function blocksIn(text, id, lead = ["heading", "bold"]) {
 
 const hitsIn = (root, files, id, lead) =>
   files.flatMap((file) => {
-    const text = read(join(root, file));
+    const text = readInside(root, join(root, file));
     return text === null ? [] : blocksIn(text, id, lead).map((b) => ({ file, ...b }));
   });
 
@@ -135,7 +129,7 @@ function agentryHits(root, id) {
     }
   });
   return files.flatMap((file) => {
-    const text = read(join(root, file));
+    const text = readInside(root, join(root, file));
     return text !== null && md.frontmatter(text)?.data.id === id
       ? [{ file, line: 1, block: text.trimEnd() }]
       : [];
