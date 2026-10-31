@@ -338,10 +338,10 @@ function checkTree(kinds, name, at, bad) {
   }
   // A status is looked up as the reader makes it of a cell; a word that differs from that is never found.
   for (const word of Object.keys(isObject(status.values) ? status.values : {}))
-    if (word !== plain(word))
+    if (word !== plain(word) || /[\r\n]/.test(word))
       bad(
         `${at}.status.values.${word}`,
-        `can never match: the reader trims every cell and strips "**" and backticks, so it never reads ${JSON.stringify(word)}`,
+        `can never match: the reader trims every cell and strips "**" and backticks (a cell is one line), so it never reads ${JSON.stringify(word)}`,
       );
   if (status.derived === "children" && phasesOf(kinds, name).length === 0)
     bad(

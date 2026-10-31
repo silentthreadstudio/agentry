@@ -566,7 +566,7 @@ test("a derived status can be done or started only with children that have a sta
 
 // Cells are read trimmed, without `**` or backticks (markdown.mjs `plain`): a status word written
 // otherwise is one no cell can ever hold.
-for (const word of ["done ", " done", "**done**", "`done`", "do`ne"])
+for (const word of ["done ", " done", "**done**", "`done`", "do`ne", "do\nne"])
   test(`a status word the reader can never produce is refused: ${JSON.stringify(word)}`, () => {
     const s = spec("kinds.task.status.values", { todo: "planned", [word]: "done" });
     const found = messages(s);
