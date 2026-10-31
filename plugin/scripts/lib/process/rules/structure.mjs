@@ -160,12 +160,16 @@ const refsResolve = {
   },
 };
 
+// The kinds file-required checks: the one named, else every kind whose own file is required.
+const requiredKinds = (kinds, params) =>
+  params.kind ? [params.kind] : Object.keys(kinds).filter((k) => kinds[k]?.file?.required === true);
+
 const fileRequired = {
   id: "file-required",
   params: { kind: { type: "kind" }, except: EXCEPT },
+  kinds: requiredKinds,
   check(model, params) {
-    const required = (k) => model.spec.kinds[k].file?.required;
-    const kinds = params.kind ? [params.kind] : Object.keys(model.kinds).filter(required);
+    const kinds = requiredKinds(model.spec.kinds, params);
     const out = [];
     for (const kind of kinds) {
       const file = model.spec.kinds[kind].file;

@@ -144,7 +144,8 @@ function describe(field, name) {
 }
 
 // One param value against its declared type (`rules/index.mjs`). `ctx` is { kinds, kind, name, given,
-// rule }: `kind` is the entry's kind spec when it names a declared kind, `name` that kind's name.
+// rule, targets }: `kind` is the entry's kind spec when it names a declared kind, `name` that kind's
+// name, `targets` the names of the kinds the rule checks.
 const fieldsOf = (kind) => (isObject(kind?.fields) ? kind.fields : {});
 const sectionsOf = (kind) => (isObject(kind?.file?.sections) ? kind.file.sections : {});
 const named = (test) => (v, at, bad, ctx, p) => {
@@ -178,12 +179,12 @@ const PARAM = {
       `names no section "${v}" of the ${refs.join(" or ")} file`
     );
   }),
-  except: (v, at, bad, { kind, name }) => {
+  except: (v, at, bad, { kinds, targets }) => {
     if (!isObject(v)) return bad(at, "should be an object");
     for (const [k, x] of Object.entries(v)) {
       list(str)(x, join(at, k), bad);
-      if (kind && k !== "id" && !has(fieldsOf(kind), k))
-        bad(join(at, k), `names no ${name} field (or "id")`);
+      for (const t of k === "id" ? [] : targets)
+        if (!has(fieldsOf(kinds[t]), k)) bad(join(at, k), `names no ${t} field (or "id")`);
     }
   },
 };
@@ -211,6 +212,10 @@ function checkRule(entry, at, kinds, bad) {
       bad(join(at, k), `is not a param of ${entry.rule} (${takes})`);
   const name = typeof entry.kind === "string" && has(kinds, entry.kind) ? entry.kind : null;
   const kind = name && isObject(kinds[name]) ? kinds[name] : null;
+  // The kinds the rule checks (its `kinds`, else the entry's own): what `except` keys name.
+  const targets = (rule.kinds ? rule.kinds(kinds, entry) : [name]).filter(
+    (k) => typeof k === "string" && has(kinds, k),
+  );
   for (const [p, def] of Object.entries(rule.params)) {
     const given = has(entry, p);
     if (!applies(rule, def, entry)) {
@@ -227,7 +232,13 @@ function checkRule(entry, at, kinds, bad) {
     }
     const value = given ? entry[p] : def.default;
     if (value !== undefined)
-      PARAM[def.type](value, join(at, p), bad, { kinds, kind, name, given, rule: entry.rule }, def);
+      PARAM[def.type](
+        value,
+        join(at, p),
+        bad,
+        { kinds, kind, name, given, rule: entry.rule, targets },
+        def,
+      );
   }
 }
 

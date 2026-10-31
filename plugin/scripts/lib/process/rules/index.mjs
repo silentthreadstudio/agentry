@@ -1,4 +1,5 @@
-// The rule catalog: id -> Rule. A Rule is { id, params, check(model, params, ctx) -> Finding[] }.
+// The rule catalog: id -> Rule. A Rule is { id, params, kinds?, check(model, params, ctx) -> Finding[] },
+// where `kinds(specKinds, params) -> names` gives the kinds it checks when that is not `params.kind`.
 //
 // `params` is the single list of what a process-file entry may set besides `rule`, `label` and `note`:
 // name -> { type, required?, default?, values?, of?, is?, pick?, only? }. Types: "string", "strings"

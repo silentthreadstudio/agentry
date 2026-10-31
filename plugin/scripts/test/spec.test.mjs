@@ -209,6 +209,27 @@ test("a field param left out defaults to the first field of its type, and none t
   for (const rule of cases.map(([r]) => r)) assert.deepEqual(messages(typed(rule)), [], rule.rule);
 });
 
+test("except keys are checked against the kinds the rule checks, also when kind is left out", () => {
+  const required = (rule) => {
+    const copy = withTree(rule);
+    copy.kinds.sprint.file.required = true;
+    copy.kinds.sprint.fields = { status: { column: "Status" } };
+    return copy;
+  };
+  const cases = [
+    [{ except: { sprnt: ["X"] } }, 'rules[1].except.sprnt names no sprint field (or "id")'],
+    [{ except: { toString: ["X"] } }, 'rules[1].except.toString names no sprint field (or "id")'],
+    [{ kind: "task", except: { status: ["X"] } }, null],
+    [{ kind: "task", except: { sprint: ["X"] } }, null],
+    [{ except: { sprint: ["X"] } }, 'rules[1].except.sprint names no sprint field (or "id")'],
+    [{ except: { id: ["X"], status: ["X"] } }, null],
+  ];
+  for (const [params, expected] of cases) {
+    const found = messages(required({ rule: "file-required", ...params }));
+    assert.deepEqual(found, expected ? [expected] : [], JSON.stringify(params));
+  }
+});
+
 test("a param used only with another's value is a problem given without it", () => {
   const entry = { rule: "done-has-handoff", kind: "task", section: "handoff", field: "commit" };
   assert.deepEqual(messages(typed(entry)), [
