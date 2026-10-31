@@ -1,0 +1,96 @@
+// Tests for lib/process/ledger.mjs: per-task state under the main root, atomic writes, run dirs.
+import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, test } from "node:test";
+import { create, mainRoot } from "../lib/lane/worktree.mjs";
+import { list, read, runDir, write } from "../lib/process/ledger.mjs";
+import { tempRepo } from "./git-repo.mjs";
+
+let root;
+beforeEach(() => {
+  root = realpathSync(mkdtempSync(join(tmpdir(), "ledger-")));
+});
+afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+const ledger = (id, extra = {}) => ({
+  v: 1,
+  id,
+  kind: "task",
+  state: "building",
+  rounds: [],
+  ...extra,
+});
+const dirOf = (r) => join(r, ".agentry", "run", "process", "ledger");
+
+test("write then read round-trips, stamps updatedAt, and leaves no temp file", () => {
+  const written = write(root, ledger("T-1"));
+  assert.match(written.updatedAt, /^\d{4}-\d\d-\d\dT/);
+  assert.deepEqual(read(root, "T-1"), written);
+  assert.deepEqual(readdirSync(dirOf(root)), ["T-1.json"]);
+});
+
+test("write replaces the previous ledger in place", () => {
+  write(root, ledger("T-1"));
+  write(root, ledger("T-1", { state: "verified" }));
+  assert.equal(read(root, "T-1").state, "verified");
+});
+
+test("read is null for an unknown id, a bad id, or a missing ledger directory", () => {
+  assert.equal(read(root, "T-9"), null);
+  assert.equal(read(root, "../escape"), null);
+  assert.equal(read(root, undefined), null);
+});
+
+test("read names the file when it is corrupt or not a v1 ledger for that id", () => {
+  write(root, ledger("T-1"));
+  writeFileSync(join(dirOf(root), "T-1.json"), "{ nope");
+  assert.throws(() => read(root, "T-1"), /T-1\.json is not valid JSON/);
+  writeFileSync(join(dirOf(root), "T-1.json"), JSON.stringify({ v: 2, id: "T-1" }));
+  assert.throws(() => read(root, "T-1"), /not a v1 ledger/);
+  writeFileSync(join(dirOf(root), "T-1.json"), JSON.stringify({ v: 1, id: "T-2" }));
+  assert.throws(() => read(root, "T-1"), /not a v1 ledger/);
+});
+
+test("write refuses a bad id or version without touching disk", () => {
+  assert.throws(() => write(root, ledger("../x")), /plain id/);
+  assert.throws(() => write(root, ledger("a..b")), /plain id/);
+  assert.throws(() => write(root, { ...ledger("T-1"), v: 2 }), /v: 1/);
+  assert.equal(existsSync(dirOf(root)), false);
+});
+
+test("list returns ledgers sorted by id and skips an unreadable one", () => {
+  assert.deepEqual(list(root), []);
+  write(root, ledger("B-2"));
+  write(root, ledger("A-1"));
+  writeFileSync(join(dirOf(root), "C-3.json"), "garbage");
+  assert.deepEqual(
+    list(root).map((l) => l.id),
+    ["A-1", "B-2"],
+  );
+});
+
+test("runDir creates the task's directory under process/runs", () => {
+  const dir = runDir(root, "T-1");
+  assert.equal(dir, join(root, ".agentry", "run", "process", "runs", "T-1"));
+  assert.equal(existsSync(dir), true);
+  assert.equal(runDir(root, "T-1"), dir);
+  assert.throws(() => runDir(root, "../x"), /plain id/);
+});
+
+test("a ledger written from inside a worktree lands under the main checkout", () => {
+  const repo = tempRepo();
+  try {
+    const made = create(repo.dir, { id: "T-1", base: "main" });
+    const main = mainRoot(made.path);
+    write(main, ledger("T-1"));
+    assert.equal(
+      existsSync(join(repo.dir, ".agentry", "run", "process", "ledger", "T-1.json")),
+      true,
+    );
+    assert.equal(existsSync(join(made.path, ".agentry")), false);
+  } finally {
+    repo.cleanup();
+  }
+});
