@@ -95,7 +95,7 @@ test("each problem names its path in the file", () => {
 });
 
 test("a rule entry takes the params its rule declares, and a note", () => {
-  const entry = { rule: "deps-done", kind: "task", field: "status", note: "why it is on" };
+  const entry = { rule: "sequential", kind: "task", skip: ["X"], note: "why it is on" };
   assert.deepEqual(messages(spec("rules.1", entry)), []);
 });
 
@@ -184,6 +184,93 @@ test("a rule entry with a param its rule does not declare, or lacks, or mistypes
   }
   const fine = { rule: "done-has-handoff", kind: "task", section: "handoff", commit: "any" };
   assert.deepEqual(messages(withTree(fine)), []);
+});
+
+// withTree plus one field of every type the field params ask for, and a few they do not.
+function typed(rule) {
+  const copy = withTree(rule);
+  Object.assign(copy.kinds.task.fields, {
+    deps: { column: "Deps", type: "list", ref: "task" },
+    blocks: { column: "Blocks", type: "list" },
+    commit: { column: "Commit", type: "commits" },
+    risky: { column: "Risky", type: "flag", mark: "!" },
+    shipped: { column: "Shipped", type: "date" },
+    note: { column: "Note" },
+  });
+  return copy;
+}
+
+test("a field param naming a field of the wrong type is a problem naming the param and the type", () => {
+  const needs = (rule, want) => new RegExp(`; ${rule} needs ${want}$`);
+  const deps = (rule) => needs(rule, 'a list field whose ref includes "task"');
+  const cases = [
+    [
+      { rule: "deps-done", kind: "task", field: "commit" },
+      /^rules\[1\]\.field names the commits field "commit"; deps-done needs a list field whose ref includes "task"$/,
+    ],
+    [
+      { rule: "deps-done", kind: "task", field: "blocks" },
+      /field names the list field "blocks" with no ref;/,
+    ],
+    [
+      { rule: "deps-done", kind: "task", field: "sprint" },
+      /field names the text field "sprint" of sprint;/,
+    ],
+    [{ rule: "deps-not-forward", kind: "task", field: "note" }, deps("deps-not-forward")],
+    [{ rule: "parked", kind: "task", parking: "LATER", field: "commit" }, deps("parked")],
+    [
+      { rule: "question-blocks", kind: "task", field: "note" },
+      needs("question-blocks", "a list field with a ref"),
+    ],
+    [
+      { rule: "question-blocks", kind: "task" },
+      /^rules\[1\]\.field defaults to "blocks", which names the list field "blocks" with no ref; question-blocks needs a list field with a ref$/,
+    ],
+    [
+      { rule: "done-has-evidence", kind: "task", field: "note", evidence: "commit-or-note" },
+      needs("done-has-evidence", "a commits or evidence field"),
+    ],
+    [
+      {
+        rule: "done-has-handoff",
+        kind: "task",
+        section: "handoff",
+        commit: "first",
+        field: "note",
+      },
+      needs("done-has-handoff", "a commits or evidence field"),
+    ],
+    [
+      { rule: "flagged-needs-verdict", kind: "task", flag: "note", verdict: "note", pass: ["OK"] },
+      /^rules\[1\]\.flag names the text field "note"; flagged-needs-verdict needs a flag field$/,
+    ],
+    [
+      {
+        rule: "flagged-needs-verdict",
+        kind: "task",
+        flag: "risky",
+        verdict: "risky",
+        pass: ["OK"],
+      },
+      /^rules\[1\]\.verdict names the flag field "risky"; flagged-needs-verdict needs a text field$/,
+    ],
+    [{ rule: "done-signoff", kind: "task", field: "note" }, needs("done-signoff", "a date field")],
+  ];
+  for (const [rule, expected] of cases) {
+    const found = messages(typed(rule));
+    assert.ok(
+      found.some((m) => expected.test(m)),
+      `${expected} not in ${JSON.stringify(found)}`,
+    );
+  }
+  const fine = [
+    { rule: "deps-done", kind: "task", field: "deps" },
+    { rule: "question-blocks", kind: "task", field: "deps" },
+    { rule: "done-has-evidence", kind: "task", field: "commit", evidence: "commit" },
+    { rule: "flagged-needs-verdict", kind: "task", flag: "risky", verdict: "note", pass: ["OK"] },
+    { rule: "done-signoff", kind: "task", field: "shipped" },
+  ];
+  for (const rule of fine) assert.deepEqual(messages(typed(rule)), [], rule.rule);
 });
 
 test("a name from the file never reads a built-in: kinds, fields, rules, lifecycle", () => {

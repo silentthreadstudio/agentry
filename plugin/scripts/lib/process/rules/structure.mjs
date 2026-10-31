@@ -45,6 +45,28 @@ export const withId = (model, id) => (Object.hasOwn(model.index, id) ? model.ind
 
 export const refKinds = (field) => [field?.ref].flat().filter(Boolean);
 
+const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+// What a field-typed param needs of the field it names (`is` in its declaration): `fits(field, kind)`
+// tests a field's declaration, `kind` being the kind the rule checks; `says(kind)` words it.
+export const FIELD = {
+  deps: {
+    says: (kind) => `a list field whose ref includes ${kind}`,
+    fits: (f, kind) => isObject(f) && f.type === "list" && refKinds(f).includes(kind),
+  },
+  refs: {
+    says: () => "a list field with a ref",
+    fits: (f) => isObject(f) && f.type === "list" && refKinds(f).length > 0,
+  },
+  commits: {
+    says: () => "a commits or evidence field",
+    fits: (f) => isObject(f) && (f.type === "commits" || f.type === "evidence"),
+  },
+  flag: { says: () => "a flag field", fits: (f) => isObject(f) && f.type === "flag" },
+  text: { says: () => "a text field", fits: (f) => isObject(f) && (f.type ?? "text") === "text" },
+  date: { says: () => "a date field", fits: (f) => isObject(f) && f.type === "date" },
+};
+
 // The items an id names, in the first of `kinds` (the field's `ref` order) that has it: an id shared by
 // two kinds (a milestone and a sprint both called "M1") reads as the kind the field lists first.
 export function resolve(model, id, kinds) {
@@ -66,7 +88,7 @@ export function parentOf(model, item) {
 export function depField(model, params) {
   if (params.field) return params.field;
   const fields = Object.entries(kindSpec(model, param(params, "kind")).fields ?? {});
-  const found = fields.find(([, f]) => f.type === "list" && refKinds(f).includes(params.kind));
+  const found = fields.find(([, f]) => FIELD.deps.fits(f, params.kind));
   if (!found) throw new Error("no dependency field (set 'field')");
   return found[0];
 }

@@ -3,6 +3,7 @@
 import {
   CLOSED,
   EXCEPT,
+  FIELD,
   KIND,
   finding,
   kindSpec,
@@ -29,7 +30,7 @@ function evidenceOf(value) {
 function evidenceField(model, params) {
   if (params.field) return params.field;
   const fields = Object.entries(kindSpec(model, param(params, "kind")).fields ?? {});
-  const found = fields.find(([, f]) => f.type === "commits" || f.type === "evidence");
+  const found = fields.find(([, f]) => FIELD.commits.fits(f));
   if (!found) throw new Error("no commits or evidence field (set 'field')");
   return found[0];
 }
@@ -40,7 +41,7 @@ const doneHasEvidence = {
   id: "done-has-evidence",
   params: {
     kind: KIND,
-    field: { type: "field", required: true },
+    field: { type: "field", is: "commits", required: true },
     evidence: { type: "enum", values: ["commit", "commit-or-note"], required: true },
     except: EXCEPT,
   },
@@ -76,7 +77,7 @@ const doneHasHandoff = {
     kind: KIND,
     section: { type: "section", of: "parent", required: true },
     commit: { type: "enum", values: ["first", "any", "none"], default: "none" },
-    field: { type: "field" },
+    field: { type: "field", is: "commits" },
     except: EXCEPT,
   },
   check(model, params) {
@@ -116,8 +117,8 @@ const flaggedNeedsVerdict = {
   id: "flagged-needs-verdict",
   params: {
     kind: KIND,
-    flag: { type: "field", required: true },
-    verdict: { type: "field", required: true },
+    flag: { type: "field", is: "flag", required: true },
+    verdict: { type: "field", is: "text", required: true },
     pass: { type: "strings", required: true },
     except: EXCEPT,
   },
@@ -165,7 +166,7 @@ const closedChildren = {
 
 const doneSignoff = {
   id: "done-signoff",
-  params: { kind: KIND, field: { type: "field", required: true }, except: EXCEPT },
+  params: { kind: KIND, field: { type: "field", is: "date", required: true }, except: EXCEPT },
   check(model, params) {
     const field = param(params, "field");
     return doneItems(model, params)

@@ -4,7 +4,7 @@
 // Every name the file supplies is looked up as an own property, never reaching a built-in such as
 // `constructor`. PURE: never reads, never throws.
 import { posix } from "node:path";
-import { CATALOG, ruleOf } from "./rules/index.mjs";
+import { CATALOG, FIELD, ruleOf } from "./rules/index.mjs";
 
 const PHASES = ["planned", "active", "done", "dropped", "parked"];
 const TYPES = ["text", "list", "ref", "flag", "date", "commits", "evidence", "link"];
@@ -131,8 +131,20 @@ export function escapesRoot(root, path) {
 
 const entries = (v) => (isObject(v) ? Object.entries(v) : []);
 
-// One param value against its declared type (`rules/index.mjs`). `ctx` is { kinds, kind, name, given }:
-// `kind` is the entry's kind spec when it names a declared kind, `name` that kind's name.
+// A field as a problem names it: `the list field "blocks" with no ref`, `the commits field "commit"`.
+function describe(field, name) {
+  const type = typeof field?.type === "string" ? field.type : "text";
+  const refs = [field?.ref ?? []].flat().filter((k) => typeof k === "string");
+  const to = refs.length
+    ? ` of ${refs.join(" or ")}`
+    : ["list", "ref"].includes(type)
+      ? " with no ref"
+      : "";
+  return `the ${type} field "${name}"${to}`;
+}
+
+// One param value against its declared type (`rules/index.mjs`). `ctx` is { kinds, kind, name, given,
+// rule }: `kind` is the entry's kind spec when it names a declared kind, `name` that kind's name.
 const fieldsOf = (kind) => (isObject(kind?.fields) ? kind.fields : {});
 const sectionsOf = (kind) => (isObject(kind?.file?.sections) ? kind.file.sections : {});
 const named = (test) => (v, at, bad, ctx, p) => {
@@ -145,9 +157,15 @@ const PARAM = {
   strings: list(str),
   enum: (v, at, bad, _ctx, p) => oneOf(...p.values)(v, at, bad),
   kind: named((v, { kinds }) => !has(kinds, v) && `names an unknown kind "${v}"`),
-  field: named(
-    (v, { kind, name }) => kind && !has(fieldsOf(kind), v) && `names no ${name} field "${v}"`,
-  ),
+  field: named((v, { kind, name, rule }, p) => {
+    if (!kind) return false;
+    if (!has(fieldsOf(kind), v)) return `names no ${name} field "${v}"`;
+    const field = fieldsOf(kind)[v];
+    return (
+      !FIELD[p.is].fits(field, name) &&
+      `names ${describe(field, v)}; ${rule} needs ${FIELD[p.is].says(`"${name}"`)}`
+    );
+  }),
   section: named((v, { kinds, kind, name }, p) => {
     if (!kind) return false;
     if (p.of === "kind")
@@ -193,7 +211,7 @@ function checkRule(entry, at, kinds, bad) {
     if (!given && def.required) bad(at, `is missing "${p}" (${entry.rule} needs it)`);
     const value = given ? entry[p] : def.default;
     if (value !== undefined)
-      PARAM[def.type](value, join(at, p), bad, { kinds, kind, name, given }, def);
+      PARAM[def.type](value, join(at, p), bad, { kinds, kind, name, given, rule: entry.rule }, def);
   }
 }
 

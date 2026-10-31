@@ -26,7 +26,7 @@ const depsOf = (model, item, { field, kinds }) =>
 
 const depsDone = {
   id: "deps-done",
-  params: { kind: KIND, field: { type: "field" }, except: EXCEPT },
+  params: { kind: KIND, field: { type: "field", is: "deps" }, except: EXCEPT },
   check(model, params) {
     const setup = depSetup(model, params);
     const out = [];
@@ -85,7 +85,11 @@ const sequential = {
 
 const questionBlocks = {
   id: "question-blocks",
-  params: { kind: KIND, field: { type: "field", default: "blocks" }, except: EXCEPT },
+  params: {
+    kind: KIND,
+    field: { type: "field", is: "refs", default: "blocks" },
+    except: EXCEPT,
+  },
   check(model, params) {
     const field = params.field;
     const kinds = refKinds(kindSpec(model, param(params, "kind")).fields[field]);
@@ -115,7 +119,7 @@ const parked = {
   params: {
     kind: KIND,
     parking: { type: "string", required: true },
-    field: { type: "field" },
+    field: { type: "field", is: "deps" },
     except: EXCEPT,
   },
   check(model, params) {
@@ -142,7 +146,7 @@ const depsNotForward = {
   id: "deps-not-forward",
   params: {
     kind: KIND,
-    field: { type: "field" },
+    field: { type: "field", is: "deps" },
     skip: { type: "strings", default: [] },
     except: EXCEPT,
   },
