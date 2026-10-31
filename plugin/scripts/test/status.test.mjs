@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
-import { WIDTH, renderCheck, renderStatus, renderWhy } from "../lib/process/render.mjs";
+import { WIDTH, renderCheck, renderStatus, renderWhy, wrapText } from "../lib/process/render.mjs";
 import { boardReport, statusView, workKind } from "../lib/process/status.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -138,6 +138,66 @@ test("status: the blocks in order, findings, the legend; no line wider than the 
   assert.match(text, /^■ done {2}◆ verify/m);
   assert.ok(cols(text) <= WIDTH);
   assert.ok(!text.includes(ESC), "no color off a TTY");
+});
+
+test("a long finding wraps onto indented lines at word breaks, never cut", () => {
+  const long =
+    "verify, but depends on F13-T2 (task, verify) and on a second item that is also waiting";
+  const findings = [
+    { rule: "deps-done", kind: "task", id: "F13-T4", message: long, file: "BOARD.md", line: 49 },
+    { rule: "read", kind: "task", message: 'BOARD.md: the "Tasks" table has no column "Status"' },
+  ];
+  const report = { ok: false, name: "Long", rules: 1, items: { task: 1 }, findings };
+  const spec = { rules: [{ rule: "deps-done" }] };
+  const lines = renderCheck({ spec, report, work: "task" }).split("\n");
+  assert.match(lines[0], /^✗ Long {2}2 problems · .* · exit 1$/);
+  assert.ok(
+    lines.every((l) => [...l].length <= WIDTH),
+    lines.join("\n"),
+  );
+  assert.ok(!lines.some((l) => l.includes("…")), "nothing is cut");
+  const first = lines.findIndex((l) => l.includes("F13-T4"));
+  assert.match(lines[first], /BOARD\.md:49$/, "the location stays on the first line");
+  const indent = lines[first].indexOf("verify");
+  const next = lines.findIndex((l, n) => n > first && !/^ +\S/.test(l));
+  const rest = lines.slice(first + 1, next);
+  assert.ok(rest.length > 0 && rest.every((l) => l.search(/\S/) === indent), "continuations align");
+  const text = [
+    lines[first].slice(indent).replace(/\s+BOARD\.md:49$/, ""),
+    ...rest.map((l) => l.trim()),
+  ];
+  assert.equal(text.join(" "), long);
+  assert.ok(
+    lines.some((l) => /(^| )"Status"$/.test(l)),
+    "the read problem ends whole",
+  );
+});
+
+test("--why wraps a long finding the same way", () => {
+  const long =
+    "verify, but depends on F13-T2 (task, verify) and on a second item that is also waiting";
+  const item = { kind: "task", id: "X1", file: "B.md", line: 3, fields: {} };
+  const spec = { kinds: { task: { fields: {} } }, rules: [{ rule: "deps-done" }] };
+  const report = { findings: [{ rule: "deps-done", kind: "task", id: "X1", message: long }] };
+  const lines = renderWhy({ spec, model: { index: { X1: [item] } }, report, id: "X1" }).split("\n");
+  const at = lines.findIndex((l) => l.startsWith("✗ deps-done  verify,"));
+  assert.ok(
+    lines.every((l) => [...l].length <= WIDTH && !l.includes("…")),
+    lines.join("\n"),
+  );
+  assert.equal(
+    lines
+      .slice(at)
+      .map((l) => l.replace(/^✗ deps-done/, "").trim())
+      .join(" "),
+    long,
+  );
+});
+
+test("wrapText breaks between words and splits only a word wider than the column", () => {
+  assert.deepEqual(wrapText("one two three", 7), ["one two", "three"]);
+  assert.deepEqual(wrapText("abcdefghij", 4), ["abcd", "efgh", "ij"]);
+  assert.deepEqual(wrapText("", 4), [""]);
 });
 
 test("color sits on glyphs only, on a TTY", () => {

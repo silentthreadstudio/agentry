@@ -23,6 +23,22 @@ export const fit = (text, n) => {
 const pad = (text, n) => fit(text, n).padEnd(n);
 const widest = (xs) => Math.max(0, ...xs.map((x) => [...x].length));
 
+/** `text` as lines of at most `n` columns, broken between words; only a word wider than `n` is split. */
+export function wrapText(text, n) {
+  const out = [];
+  for (const word of String(text).split(/\s+/).filter(Boolean)) {
+    let rest = [...word];
+    const last = out.at(-1);
+    if (last !== undefined && [...last].length + 1 + rest.length <= n) {
+      out[out.length - 1] = `${last} ${word}`;
+      continue;
+    }
+    for (; rest.length > n; rest = rest.slice(n)) out.push(rest.slice(0, n).join(""));
+    out.push(rest.join(""));
+  }
+  return out.length ? out : [""];
+}
+
 /** Rows of cells as aligned columns (two spaces apart), each line cut to `width`. */
 export function columns(rows, width = WIDTH) {
   const w = rows[0]?.map((_, i) => widest(rows.map((r) => String(r[i] ?? "")))) ?? [];
@@ -48,7 +64,8 @@ export function verdict(report, { work, s }) {
   return `${glyph} ${s.bold(report.name)}  ${head} · ${report.rules} rules · ${tasks} · ${s.bold(`exit ${exitOf(report)}`)}`;
 }
 
-/** One line per finding: `✗ <rule> <id> <message> <file:line>`, the location in its own column. */
+/** One finding per entry: `✗ <rule> <id> <message> <file:line>`, the location in its own column on
+ *  the first line; a message too long for its column goes on, whole words, on indented lines below. */
 export function findingLines(findings, s) {
   const rows = findings.map((f) => ({
     rule: f.label ? `${f.label} ${f.rule}` : f.rule,
@@ -61,9 +78,12 @@ export function findingLines(findings, s) {
   const at = widest(rows.map((x) => x.at));
   const room = Math.max(20, WIDTH - (2 + r + 2 + i + 2) - (at ? at + 2 : 0));
   const m = Math.min(room, widest(rows.map((x) => x.message)));
-  return rows.map((x) => {
+  const indent = " ".repeat(2 + r + 2 + i + 2);
+  return rows.flatMap((x) => {
+    const [first, ...rest] = wrapText(x.message, m);
     const tail = x.at ? `  ${s.dim(x.at)}` : "";
-    return `${s.red("✗")} ${pad(x.rule, r)}  ${s.bold(pad(x.id, i))}  ${pad(x.message, m)}${tail}`.trimEnd();
+    const head = `${s.red("✗")} ${pad(x.rule, r)}  ${s.bold(pad(x.id, i))}  ${pad(first, m)}${tail}`;
+    return [head.trimEnd(), ...rest.map((l) => indent + l)];
   });
 }
 
@@ -208,14 +228,17 @@ export function renderWhy({ spec, model, report, id, tty = false }) {
       const applies = spec.rules.filter((e) => !e.kind || e.kind === item.kind);
       const failing = applies.filter((e) => mine.some((f) => f.rule === e.rule));
       const holds = [...new Set(applies.filter((e) => !failing.includes(e)).map((e) => e.rule))];
-      const fail = mine.map(
-        (f) => `${s.red("✗")} ${f.rule.padEnd(widest(mine.map((x) => x.rule)))}  ${f.message}`,
-      );
+      const r = widest(mine.map((x) => x.rule));
+      const fail = mine.flatMap((f) => {
+        const [first, ...rest] = wrapText(f.message, Math.max(20, WIDTH - r - 4));
+        const more = rest.map((l) => `${" ".repeat(r + 4)}${l}`);
+        return [`${s.red("✗")} ${f.rule.padEnd(r)}  ${first}`, ...more];
+      });
       return [
         `${s.bold(item.id)}  ${fit(titleOf(spec, item) ?? "", WIDTH - item.id.length - 2)}`,
         s.dim(fit(`     ${where}`, WIDTH)),
         "",
-        ...fail.map((l) => fit(l, WIDTH)),
+        ...fail,
         ...(holds.length
           ? wrap(holds, WIDTH - 2).map((l, n) => `${n ? " " : s.green("✓")} ${l}`)
           : []),
