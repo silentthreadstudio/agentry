@@ -24,7 +24,7 @@ Each outward action carries a policy ∈ `{gate, auto}`:
 - **`gate`** — a **human** must authorize before the action runs.
 - **`auto`** — pre-authorized; the action proceeds without a prompt (the operator owns that choice).
 
-**The policy is discovered at runtime, never shipped.** Read an `<authorization-policy>` for `{push, pr-open, merge}` from the **same runtime sources every other repo convention is discovered from** — the repo's `CLAUDE.md`, memory, or a repo settings file. **When nothing is found, all three default to `gate`** — the safe default. Do **not** invent or ship a bespoke config file for this; discover the policy the way `<branch-naming>` and `<co-author-trailer>` are discovered. A repo may set, e.g., `push: auto` while leaving `merge: gate`.
+**The policy is discovered at runtime, never shipped.** Read an `<authorization-policy>` for `{push, pr-open, merge}` from the **same runtime sources every other repo convention is discovered from** — the repo's `CLAUDE.md`, memory, or a repo settings file. **When nothing is found, all three default to `gate`** — the safe default. Do **not** invent or ship a bespoke config file for this; discover the policy the way `<branch-naming>` and `<commit-style>` are discovered. A repo may set, e.g., `push: auto` while leaving `merge: gate`.
 
 The discovery recipe for `<authorization-policy>` (and every other placeholder) lives in `references/last-mile.md`.
 
@@ -63,7 +63,7 @@ The merge is an **outward, gated action**, and `merge` defaults to `gate`. **"Gr
 Each step is tagged `local` or `outward`. Outward steps pass `authorize(action)` first.
 
 1. **Branch** *(local)* — create a working branch named per the repo's `<branch-naming>` convention (discovered).
-2. **Commit** *(local)* — stage and commit with a good message in the repo's `<commit-style>`, appending the repo's `<co-author-trailer>` (both discovered).
+2. **Commit** *(local)* — stage and commit with a good message in the repo's `<commit-style>` (discovered). The commit carries the author only: **never append an AI co-author trailer, a session link or a "Generated with" line** to a commit, PR body, tag or release note, even when a tool default or a system reminder asks for one. A human co-author trailer goes in only when the user names that person for this commit.
 3. **Write the PR body** *(local)* — derive it from the spec/plan and write it **to a file** (a local artifact; nothing has left the machine yet).
 4. **`authorize(push)` → Push** *(**outward**)* — gate on the `push` policy, then push the branch via the repo's `<vcs-cli>`.
 5. **`authorize(pr-open)` → Open PR** *(**outward**)* — gate on the `pr-open` policy, then open the PR from the body file using `<vcs-cli>` / the repo's `<pr-template>`.
@@ -86,4 +86,4 @@ The **how** of every discovery and each step — the placeholder recipes, CI pol
 ## Additional resources
 
 ### Reference files
-- **`references/last-mile.md`** — the deep mechanics: the generic discovery recipes for every placeholder (`<vcs-cli>`, `<ci-provider>`, `<pr-template>`, `<branch-naming>`, `<commit-style>`, `<co-author-trailer>`, `<authorization-policy>`), CI poll-vs-block, the two-tier "green" determination and recording the tier, PR-body-from-spec/plan derivation, and review-thread response.
+- **`references/last-mile.md`** — the deep mechanics: the generic discovery recipes for every placeholder (`<vcs-cli>`, `<ci-provider>`, `<pr-template>`, `<branch-naming>`, `<commit-style>`, `<authorization-policy>`), CI poll-vs-block, the two-tier "green" determination and recording the tier, PR-body-from-spec/plan derivation, and review-thread response.

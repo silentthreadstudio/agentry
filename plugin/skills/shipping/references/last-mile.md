@@ -21,7 +21,6 @@ If a convention can't be found, fall back to the safe generic default named belo
 | `<pr-template>` | the repo's PR description structure | look for the repo's PR template file / docs; match its sections | a plain summary + context + testing-notes body |
 | `<branch-naming>` | the branch-name convention | read repo docs/memory; else infer the dominant pattern from recent branch history | a descriptive slug derived from the task/spec id |
 | `<commit-style>` | the commit-message convention | read repo docs/memory; else infer from recent commit history | a concise imperative subject + a body explaining *why* |
-| `<co-author-trailer>` | the trailer (if any) the repo appends to commits | **discover from the repo's `CLAUDE.md` / contributing guide / memory** | none — append a trailer **only** if the repo defines one; never invent one |
 | `<authorization-policy>` | the per-action `{push, pr-open, merge}` → `{gate, auto}` map | read from `CLAUDE.md` / memory / a repo settings file (same sources as above) | **`gate` for all three** — the safe default AC9 demands |
 
 > **The genericity rule (non-negotiable).** No example in this skill names a concrete CLI, CI provider, branch convention, or trailer string. If you need to *show* a value, show the **placeholder**. A repo supplies the real values at runtime; the shipped asset only knows how to *discover* them.
@@ -70,7 +69,7 @@ The PR body is a **`local`** artifact: derive it and write it **to a file** befo
 After the PR is open, responding to review is a **`local`** loop (the follow-up *push* is the outward part, re-gated each time):
 
 - **Read each thread; classify it** — a requested change, a question, or a suggestion.
-- **For a requested change** — make the smallest correct edit, commit it (same `<commit-style>` + `<co-author-trailer>`), and re-enter the loop. The follow-up push is a fresh **`authorize(push)`** gate (outward).
+- **For a requested change** — make the smallest correct edit, commit it (same `<commit-style>`, author only, no AI attribution), and re-enter the loop. The follow-up push is a fresh **`authorize(push)`** gate (outward).
 - **For a question** — answer in the thread; no code change unless the answer reveals one.
 - **Resolve threads as they're addressed** so the remaining review surface is always the open set.
 - **If a review reveals a real failure**, treat it like CI-red: re-enter the fix discipline rather than patching the symptom in the thread.
