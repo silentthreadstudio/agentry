@@ -107,9 +107,10 @@ test("headings in the process file may carry their # marks", () => {
   const root = join(FIXTURES, "table-board");
   const { spec } = loadSpec(join(root, "process.json"));
   for (const kind of Object.values(spec.kinds))
-    if (kind.at.heading) kind.at.heading = `## ${kind.at.heading}`;
+    if (kind.at.heading)
+      kind.at.heading = `${kind.at.heading === "Decisions log" ? "#" : "##"} ${kind.at.heading}`;
   for (const def of Object.values(spec.kinds.sprint.file.sections))
-    def.heading = `#  ${def.heading}`;
+    def.heading = `##  ${def.heading}`;
   const marked = readProcess({ root, spec });
   assert.deepEqual(marked.problems, []);
   assert.deepEqual(marked.kinds, model("table-board").kinds);

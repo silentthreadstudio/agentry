@@ -58,11 +58,23 @@ test("a section runs to the next heading of the same or a higher level", () => {
   assert.equal(section(doc, "Missing"), null);
 });
 
+test("a heading given with # marks matches its level, and a text of # is not a mark", () => {
+  const text = ["## 5", "a", "### #5", "b", "### 5", "c"].join("\n");
+  assert.equal(section(text, "## 5")?.line, 1);
+  assert.equal(section(text, "### #5")?.line, 3);
+  assert.equal(section(text, "### 5")?.line, 5);
+  assert.equal(section(text, "#### 5"), null);
+  assert.equal(section("### #5\n", "## 5"), null, "## 5 is not ### #5");
+  assert.equal(section("### 5\n", "## 5"), null, "## 5 is not ### 5");
+  assert.equal(section("### 5\n", "5")?.line, 1, "no marks: text only");
+});
+
 test("a heading may be given with its # marks and loose spaces", () => {
   assert.equal(section(doc, "## Handoff")?.line, 16);
-  assert.equal(section(doc, "#Tasks")?.line, 3);
+  assert.equal(section(doc, "##Tasks")?.line, 3);
   assert.equal(section("#  Task   contracts  #\n", "# Task contracts")?.line, 1);
-  assert.equal(section(doc, "### Handoff")?.line, 16, "the level given is not checked");
+  assert.equal(section(doc, "Handoff")?.line, 16, "without marks, any level matches");
+  assert.equal(section(doc, "### Handoff"), null, "with marks, the level must match");
 });
 
 test("tables map header names to raw cells, with escaped pipes and short rows", () => {

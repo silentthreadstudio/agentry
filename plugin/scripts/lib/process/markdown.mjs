@@ -32,20 +32,23 @@ export function headings(text) {
   return out;
 }
 
-/** How two headings compare: leading `#` marks dropped, trimmed, spaces collapsed. */
-export const headingKey = (heading) =>
-  String(heading ?? "")
-    .replace(/^\s*#+/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+/** How a heading compares: its text with spaces collapsed, and its level when `#` marks lead it
+ *  (`"## Tasks"` is level 2, `"Tasks"` has none and matches any level). */
+const collapse = (text) => text.replace(/\s+/g, " ").trim();
+export const headingKey = (heading) => {
+  const [, marks, rest] = /^\s*(#*)(.*)$/s.exec(String(heading ?? ""));
+  return { level: marks.length || null, text: collapse(rest) };
+};
 
-/** The first heading whose text is `heading` (any level), and where its section ends: the line before
- *  the next heading of the same or a higher level. Body = lines `line + 1 … end`. Null if absent.
- *  `heading` may be given with or without its `#` marks (`"## Tasks"` = `"Tasks"`): compared by `headingKey`. */
+/** The first heading matching `heading` (its level too when given with `#` marks), and where its
+ *  section ends: the line before the next heading of the same or a higher level. Body = lines
+ *  `line + 1 … end`. Null if absent. Compared by `headingKey`. */
 export function section(text, heading) {
   const all = headings(text);
   const key = headingKey(heading);
-  const at = all.findIndex((h) => headingKey(h.text) === key);
+  const at = all.findIndex(
+    (h) => collapse(h.text) === key.text && (key.level === null || key.level === h.level),
+  );
   if (at === -1) return null;
   const own = all[at];
   const next = all.slice(at + 1).find((h) => h.level <= own.level);
