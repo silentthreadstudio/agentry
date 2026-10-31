@@ -100,7 +100,7 @@ test("AC8: routing-decision / gate / node-enter / node-done(durationMs) round-tr
   const byType = Object.fromEntries(events.map((e) => [e.type, e]));
   assert.equal(byType["routing-decision"].shape, "decompose+verify");
   assert.equal(byType["routing-decision"].kind, "feature");
-  assert.equal(byType["gate"].gate, "plan");
+  assert.equal(byType.gate.gate, "plan");
   assert.equal(byType["node-enter"].agent, "agentry:implementer");
   assert.equal(byType["node-done"].durationMs, 4200, "node-done carries durationMs (AC8)");
 });

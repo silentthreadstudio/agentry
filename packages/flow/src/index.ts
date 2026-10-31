@@ -124,8 +124,7 @@ export function resolveRunContext(
   // 3) Unresolved → hard error. NEVER a folder scan (the named anti-pattern). `workRoot` is named in
   //    the message only to point the caller at where runs live, not to scan it.
   throw new Error(
-    `FLOW: no run resolved — pass an explicit "run" (call run_start first to mint one). FLOW does not ` +
-      `scan ${workRoot(cwd)} for a current run and holds no ambient run (ADR-005).`,
+    `FLOW: no run resolved — pass an explicit "run" (call run_start first to mint one). FLOW does not scan ${workRoot(cwd)} for a current run and holds no ambient run (ADR-005).`,
   );
 }
 

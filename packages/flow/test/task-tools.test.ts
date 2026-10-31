@@ -8,6 +8,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { type FlowServices, createServices } from "../src/index.js";
 import { registerTaskTools } from "../src/tools/task-tools.js";
@@ -37,8 +38,7 @@ function wired(): {
   validate: (tool: string, args: unknown) => z.SafeParseReturnType<unknown, unknown>;
 } {
   const server = new CapturingServer();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerTaskTools(server as any, services);
+  registerTaskTools(server as unknown as McpServer, services);
   // Like the SDK: validate against the tool's inputSchema, and ONLY dispatch the handler when it passes.
   const call = async (tool: string, args: unknown = {}): Promise<Res> => {
     const t = server.tools.get(tool);
@@ -54,10 +54,12 @@ function wired(): {
   return { call, validate };
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: test helper parses arbitrary tool JSON; each case asserts the fields it reads
 function payloadOf(res: Res): any {
   assert.notEqual(res.isError, true, "expected a success response (isError falsy)");
   return JSON.parse(res.content[0]!.text);
 }
+// biome-ignore lint/suspicious/noExplicitAny: test helper parses arbitrary tool JSON; each case asserts the fields it reads
 function envelopeOf(res: Res): any {
   assert.equal(res.isError, true, "expected isError:true");
   return JSON.parse(res.content[0]!.text).error;
@@ -168,7 +170,7 @@ test("AC4: artifact_write has no caller `version` input — the tool is the only
   });
   assert.equal(parsed.success, true);
   assert.equal(
-    (parsed as any).data.version,
+    (parsed as { data: { version?: string } }).data.version,
     undefined,
     "caller-supplied version is stripped at the boundary",
   );
@@ -188,7 +190,7 @@ test("AC5: task_status re-stamps the version; task_list returns created tasks (f
   const list = payloadOf(await call("task_list", { run: RUN }));
   assert.equal(list.tasks.length, 2, "task_list returns both created tasks from a fresh read");
   assert.deepEqual(
-    list.tasks.map((t: any) => t.taskNo),
+    list.tasks.map((t: { taskNo: string }) => t.taskNo),
     ["001", "002"],
   );
 });

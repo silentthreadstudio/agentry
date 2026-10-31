@@ -7,6 +7,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { JsonReviewStore } from "../src/persistence/review-store.js";
 import { registerReviewTools } from "../src/tools/review-tools.js";
 
@@ -30,8 +31,7 @@ let call: (
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "flow-review-"));
   const server = new CapturingServer();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerReviewTools(server as any, { reviews: new JsonReviewStore(cwd) });
+  registerReviewTools(server as unknown as McpServer, { reviews: new JsonReviewStore(cwd) });
   call = (tool, args = {}) => {
     const h = server.handlers.get(tool);
     if (!h) throw new Error(`tool ${tool} not registered`);

@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { JsonReviewStore } from "../src/persistence/review-store.js";
 import { registerChannelReplyTools } from "../src/tools/channel-reply-tools.js";
 import { registerReviewTools } from "../src/tools/review-tools.js";
@@ -29,10 +30,8 @@ beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "flow-channel-reply-"));
   const server = new CapturingServer();
   const store = new JsonReviewStore(cwd);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerChannelReplyTools(server as any, { reviews: store });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerReviewTools(server as any, { reviews: store });
+  registerChannelReplyTools(server as unknown as McpServer, { reviews: store });
+  registerReviewTools(server as unknown as McpServer, { reviews: store });
   call = (tool, args = {}) => {
     const h = server.handlers.get(tool);
     if (!h) throw new Error(`tool ${tool} not registered`);
