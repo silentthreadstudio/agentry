@@ -1,5 +1,6 @@
 // Tests for lib/process/contract.mjs and find-contract.mjs: an item's contract block by id, through the
-// process file's blocks, Agentry task files and discovered TASKS.md. Invented ids and words only.
+// process file's blocks, Agentry task files and discovered TASKS.md; and the tracked-file discovery
+// `scan` shares with it. Invented ids and words only.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -7,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { scan } from "../lib/process/cli/scan.mjs";
 import { blocksIn, findContract } from "../lib/process/contract.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "find-contract.mjs");
@@ -22,6 +24,23 @@ function repo(files) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
   }
+  return root;
+}
+// A real git repository: `tracked` files are committed, `loose` ones only written.
+function gitRepo(tracked, loose) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentry-contract-")));
+  dirs.push(root);
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (...args) => {
+    const res = spawnSync("git", ["-C", root, ...args], { encoding: "utf8", env });
+    assert.equal(res.status, 0, res.stderr);
+  };
+  git("init", "-q");
+  for (const [path, text] of Object.entries({ ...tracked, ...loose })) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  git("add", "--", ...Object.keys(tracked));
   return root;
 }
 
@@ -122,6 +141,28 @@ test("two hits in the discovered tier are ambiguous; no hit is not-found", () =>
     id: "KX-99",
     candidates: [],
   });
+});
+
+test("in a git repository only tracked TASKS.md are discovered", () => {
+  const root = gitRepo(
+    { "docs/TASKS.md": "- **KX-05** tracked\n" },
+    { "scratch/TASKS.md": "- **KX-05** a loose copy\n" },
+  );
+  const found = findContract({ root, id: "KX-05" });
+  assert.deepEqual([found.status, found.file], ["found", "docs/TASKS.md"]);
+});
+
+test("scan lists the tracked markdown of a git repository; a named directory is read from disk", () => {
+  const table = "## Tasks\n\n| Task |\n| --- |\n| KX-1 |\n";
+  const root = gitRepo({ "docs/BOARD.md": table }, { "notes/BOARD.md": table });
+  assert.deepEqual(
+    scan(root).map((f) => f.file),
+    ["docs/BOARD.md"],
+  );
+  assert.deepEqual(
+    scan(root, "notes").map((f) => f.file),
+    ["notes/BOARD.md"],
+  );
 });
 
 test("find-contract.mjs prints one JSON line; exit 0 found, 1 not found, 2 usage", () => {

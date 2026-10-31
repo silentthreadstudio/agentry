@@ -1,14 +1,17 @@
 // contract — an item's contract block, found by id (plan F13 §8, the old F2 lookup). Tiers, first hit
 // wins: (1) the kind's `contract.blocks` files from the process file, in order (the first hit is the
 // block, every later hit is `related`); (2) Agentry task files `.agentry/work/*/tasks/*.md` by
-// frontmatter `id`; (3) every `TASKS.md` in the repository. Two hits in tier 2 or 3 are `ambiguous`.
+// frontmatter `id`; (3) every git-tracked `TASKS.md` in the repository (every one on disk when git
+// cannot answer). Two hits in tier 2 or 3 are `ambiguous`.
 //
 // A block starts where its id is the first token of a heading (`### F1 · …`) or of a bold run at the
 // start of a line or right after a sentence (`- **T-03** (…)`, `**A1 splits.** **A1a** …`). It ends
 // before the next line that starts a block of any id, or a heading of the same or a higher level (any
-// heading, for a bold start). Ids match exactly: `DS-1` never matches `DS-1a`. Reads files only.
+// heading, for a bold start). Ids match exactly: `DS-1` never matches `DS-1a`. Reads files; asks git
+// only which files are tracked.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { trackedFiles } from "./git.mjs";
 import * as md from "./markdown.mjs";
 
 /** A token that reads as an item id: a capital, letters, an optional dash, then a digit (`F1`, `R0-6`,
@@ -35,8 +38,8 @@ export function gitRootOf(dir) {
   }
 }
 
-/** Every `*.md` under `dir` (relative paths, sorted), skipping dot-directories, `node_modules` and
- *  `dist`: the repository's own documents, not tool state or vendored copies. */
+/** Every `*.md` under `dir` on disk (relative paths, sorted), skipping dot-directories, `node_modules`
+ *  and `dist`: the stand-in for the repository's own documents when git cannot list them. */
 export function markdownFiles(dir) {
   const out = [];
   const walk = (rel) => {
@@ -54,6 +57,12 @@ export function markdownFiles(dir) {
   };
   walk("");
   return out.sort();
+}
+
+/** The repository's markdown matching a glob pathspec: the git-tracked files, or, only when git
+ *  cannot answer, the disk walk (`markdownFiles`) filtered by `keep`. */
+export function repoMarkdown(root, pattern, keep = () => true) {
+  return trackedFiles(root, pattern) ?? markdownFiles(root).filter(keep);
 }
 
 /** Every block start in a text: `{ line, id, type: "heading" | "bold", level? }` (line 1-based). */
@@ -151,7 +160,7 @@ export function findContract({ root, spec, id, kind = "task" }) {
   }
   const tiers = [
     ["agentry", () => agentryHits(root, id)],
-    ["discovered", () => hitsIn(root, markdownFiles(root).filter(isTasks), id)],
+    ["discovered", () => hitsIn(root, repoMarkdown(root, "**/TASKS.md", isTasks), id)],
   ];
   for (const [source, hits] of tiers) {
     const found = hits();

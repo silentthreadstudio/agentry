@@ -12,6 +12,7 @@ import {
   knownCommits,
   log,
   patchIds,
+  trackedFiles,
   worktrees,
 } from "../lib/process/git.mjs";
 
@@ -79,6 +80,17 @@ test("knownCommits: one call answers many SHAs, short or full, and hasCommit agr
   );
   assert.deepEqual([...knownCommits(outside, [sha.first])], []);
   assert.deepEqual([...knownCommits(repo, [])], []);
+});
+
+test("trackedFiles: the tracked files a glob matches, untracked ones left out; null outside a repo", () => {
+  writeFileSync(join(repo, "untracked.txt"), "loose\n");
+  try {
+    assert.deepEqual(trackedFiles(repo, "**/*.txt"), ["a.txt", "b.txt", "c.txt"]);
+    assert.deepEqual(trackedFiles(repo, "**/*.md"), []);
+    assert.equal(trackedFiles(outside, "**/*.txt"), null);
+  } finally {
+    rmSync(join(repo, "untracked.txt"));
+  }
 });
 
 test("log: newest first, with subjects, limited to n", () => {

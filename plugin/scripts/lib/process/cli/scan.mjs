@@ -1,13 +1,15 @@
 // board scan [<dir>] [--json] — every board-like thing in the repository's markdown (plan F13 §2.4),
 // the grounding `/agentry:init` learns a process from: each table (file, line, heading, header, row
 // count, a first-column sample), the id-led bold leads and headings (contract blocks) and the
-// frontmatter docs. `<dir>` (relative to the root) narrows it, and reaches a board under a
-// dot-directory, which the whole-repo walk skips. Needs no process file. Writes nothing; exit 0.
+// frontmatter docs. The whole repository means its git-tracked `*.md` (every one on disk, outside
+// dot-directories, when git cannot answer). `<dir>` (relative to the root) narrows it to that directory
+// as it is on disk, so it reaches an untracked board or one under a dot-directory. Needs no process
+// file. Writes nothing; exit 0.
 //
 // run(argv, { root }) -> { exit, out }
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ID_TOKEN, blockStarts, markdownFiles } from "../contract.mjs";
+import { ID_TOKEN, blockStarts, markdownFiles, repoMarkdown } from "../contract.mjs";
 import * as md from "../markdown.mjs";
 import { fit } from "../render.mjs";
 
@@ -17,7 +19,8 @@ const SAMPLE = 4;
 
 export function scan(root, dir = "") {
   const base = join(root, dir);
-  return markdownFiles(base).flatMap((rel) => {
+  const files = dir ? markdownFiles(base) : repoMarkdown(root, "**/*.md");
+  return files.flatMap((rel) => {
     const file = dir ? `${dir.replace(/\/$/, "")}/${rel}` : rel;
     let text;
     try {

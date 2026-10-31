@@ -1,5 +1,5 @@
 // git — the process kit's only git I/O: does a commit exist, recent history, worktrees, patch ids (to
-// match a cherry-picked commit to its branch original) and the default branch.
+// match a cherry-picked commit to its branch original), the default branch and the tracked files.
 //
 // Every function takes the git root first and never throws: outside a repo, or on any git error, it
 // answers false / [] / null. Refs and SHAs are checked before they reach argv, so a board cell can never
@@ -39,6 +39,13 @@ export function knownCommits(root, shas) {
 
 /** True when `sha` names a commit in the repo at `root`. Cached per root and SHA (see `knownCommits`). */
 export const hasCommit = (root, sha) => knownCommits(root, [sha]).has(sha);
+
+// The tracked files under `root` matching `pattern`, a glob pathspec in which `**` crosses directories
+// (`**/TASKS.md`), relative to `root` and sorted; null when git cannot answer (not a repository).
+export function trackedFiles(root, pattern) {
+  const out = git(root, ["ls-files", "-z", "--", `:(glob)${pattern}`]);
+  return out === null ? null : out.split("\0").filter(Boolean).sort();
+}
 
 /** The last `n` commits on `ref` (newest first): `{ sha, subject }`. */
 export function log(root, { ref = "HEAD", n = 10, firstParent = false } = {}) {
