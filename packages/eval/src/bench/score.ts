@@ -97,6 +97,31 @@ export interface BenchAxes {
   escapedDefectRate: number;
 }
 
+/**
+ * The BUDGET stamp of one bench run — present ONLY when the run was given a `--budget-usd` cap. Its presence is
+ * the discriminator "this run was admission-gated"; its `stopReason` is the discriminator "this is a PARTIAL
+ * bench, not a full one". Persisted inside the artifact (⇒ inside `summary.json`), so a stored partial can never
+ * be mistaken for a full matrix by anything that reads the run back.
+ */
+export interface BenchBudget {
+  /** The `--budget-usd` cap every admission was tested against. */
+  capUsd: number;
+  /** Charged spend: the measured task costs, plus the projection charged for each unmeasurable task. */
+  spentUsd: number;
+  /** How many (fixture × repeat) tasks the matrix PLANNED to run. */
+  tasksPlanned: number;
+  /** How many were actually admitted and run — `< tasksPlanned` exactly when the budget stopped the run. */
+  tasksRun: number;
+  /** How many ran but settled with NO measurable cost, and so were charged the projection rather than $0. */
+  tasksEstimated: number;
+  /** The projection in force at the stop — the per-slot reservation, and the unit of the overshoot bound. */
+  projectionUsd: number;
+  /** The matrix concurrency — the number of in-flight slots the worst-case overshoot bound multiplies. */
+  concurrency: number;
+  /** Why the matrix ended: the whole plan ran, or admission was refused because the cap would be crossed. */
+  stopReason: "completed" | "budget-exhausted";
+}
+
 /** One per-task census row — the readable trace of every record's four signals (null where a signal was absent). */
 export interface BenchCensusRow {
   fixtureId: string;
@@ -113,6 +138,13 @@ export interface BenchCensusRow {
   bugProne: boolean;
   /** Whether a defect escaped (bugProne && done && oracle failed), or null on a non-bugProne record. */
   escapedDefect: boolean | null;
+  /**
+   * What this task's settled run actually cost, in USD — read from `total_cost_usd` in its trailing `result`
+   * envelope. `null` when the run settled with no measurable cost (a killed/partial run forfeits that envelope):
+   * an UNMEASURABLE task, never a free one. The budget ledger charges such a task the projection; here it stays
+   * null so the census tells the truth about what was measured versus what was estimated.
+   */
+  costUsd: number | null;
 }
 
 /**
@@ -130,6 +162,8 @@ export interface BenchArtifact {
   axes?: BenchAxes;
   /** The per-task census (the readable trace); ABSENT on an aborted run. */
   census?: readonly BenchCensusRow[];
+  /** The budget stamp; ABSENT unless the run was given a `--budget-usd` cap (and on any aborted run). */
+  budget?: BenchBudget;
 }
 
 /** A judged code result is GOOD iff its overall clears {@link RESULT_GOOD_THRESHOLD} (>=, not strictly above). */
@@ -156,8 +190,14 @@ function isEscapedDefect(record: BenchRecord): boolean {
 }
 
 /** Aggregate the overalls of every record that carried `pick(record)` into an {@link AxisStats} (mean±std±n). */
-function axisStats(records: readonly BenchRecord[], pick: (r: BenchRecord) => Score | undefined): AxisStats {
-  const overalls = records.map(pick).filter((s): s is Score => s !== undefined).map((s) => s.overall);
+function axisStats(
+  records: readonly BenchRecord[],
+  pick: (r: BenchRecord) => Score | undefined,
+): AxisStats {
+  const overalls = records
+    .map(pick)
+    .filter((s): s is Score => s !== undefined)
+    .map((s) => s.overall);
   const m = meanOf(overalls);
   return { mean: m, std: stdev(overalls, m), n: overalls.length };
 }
@@ -173,6 +213,7 @@ function censusRow(record: BenchRecord): BenchCensusRow {
     selfReportedDone: record.selfReportedDone,
     bugProne: record.bugProne,
     escapedDefect: record.bugProne ? isEscapedDefect(record) : null,
+    costUsd: record.cost?.totalCostUsd ?? null,
   };
 }
 
@@ -214,12 +255,20 @@ function aggregate(records: readonly BenchRecord[]): BenchAxes {
  * Build the SCORED artifact from the flat per-run records (the probe calls this only AFTER every control gate has
  * passed). The four axes are aggregated, each over its own denominator, and the per-task census is the readable
  * trace. Pure: reads its argument, allocates, returns — no I/O, no spawn, never throws on an absent optional field.
+ *
+ * A PARTIAL run scores exactly like a full one — the records it did produce are real data, and the axes are
+ * already per-denominator, so nothing here needs to know the run was cut short. `budget` is the ONLY thing that
+ * distinguishes them, and it is stamped, not inferred: pass it whenever the run was given a cap.
  */
-export function buildBenchArtifact(records: readonly BenchRecord[]): BenchArtifact {
+export function buildBenchArtifact(
+  records: readonly BenchRecord[],
+  budget?: BenchBudget,
+): BenchArtifact {
   return {
     condition: "scored",
     axes: aggregate(records),
     census: records.map(censusRow),
+    ...(budget !== undefined ? { budget } : {}),
   };
 }
 

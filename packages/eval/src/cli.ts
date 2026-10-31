@@ -9,19 +9,30 @@
 //
 // stdout carries ONLY the run dir / artifact path (script-friendly); progress goes to stderr + the per-run
 // `events.jsonl` via the emitter. Argument errors exit non-zero loudly (exit 2 for parse/usage, 1 for runtime).
+//
+// A `--budget-usd` STOP is NOT an error: the tool did exactly what it was asked and left a scored, reportable
+// partial run, so it exits 0. What keeps a partial from being mistaken for a full bench is the stamped run (stop
+// reason + tasks planned/run, inside `summary.json`) and the unmissable PARTIAL BENCH line on stderr — a signal
+// that survives being read back later, which an exit code does not.
 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { newRunId } from "./store/runId.ts";
-import { createRunStore, type RunStore } from "./store/write.ts";
 import { createEmitter } from "./store/events.ts";
 import { readRunConfig, rescoreRun } from "./store/read.ts";
-import { SCHEMA_VERSION, type EvalObserver, type RunConfig, type RunSummary } from "./store/schema.ts";
+import { newRunId } from "./store/runId.ts";
+import {
+  type EvalObserver,
+  type RunConfig,
+  type RunSummary,
+  SCHEMA_VERSION,
+} from "./store/schema.ts";
+import { type RunStore, createRunStore } from "./store/write.ts";
 
 import { liveRunner } from "./io/live.ts";
-import { realJudgeFn, DEFAULT_JUDGE_MODEL, type JudgeFn } from "./judge/index.ts";
+import { DEFAULT_JUDGE_MODEL, type JudgeFn, realJudgeFn } from "./judge/index.ts";
 
+import { formatBudgetNotice } from "./bench/budget.ts";
 import { runBenchProbe } from "./bench/probe.ts";
 
 import { emitReport } from "./report/emit.ts";
@@ -63,6 +74,8 @@ export interface CliFlags {
   concurrency?: string;
   /** bench only — model id pinned for every JUDGE call (defaults to {@link DEFAULT_JUDGE_MODEL}). */
   judgeModel?: string;
+  /** bench only — the admission cap ($): refuse to START a task whose projected cost would cross it. */
+  budgetUsd?: string;
 }
 
 /** Map of `--flag` → CliFlags key. A flag absent here is an unknown flag → loud UsageError. */
@@ -81,7 +94,27 @@ const FLAGS: Record<string, keyof CliFlags> = {
   "--timeout": "timeout",
   "--concurrency": "concurrency",
   "--judge-model": "judgeModel",
+  "--budget-usd": "budgetUsd",
 };
+
+/**
+ * The usage text — printed alongside every {@link UsageError}, and by the `help` command. It carries the
+ * `--budget-usd` semantics in full because the bound is part of the contract: a cap that LOOKED like a hard spend
+ * guarantee would be worse than no cap at all, so the tool states what it actually does everywhere it is described.
+ */
+const USAGE = `usage:
+  selfeval run bench --fixtures-dir <dir> [--fixture <id>] [--k <n>] [--concurrency <n>] [--model <id>]
+                     [--judge-model <id>] [--timeout <ms>] [--plugin-dir <dir>] [--runs-root <dir>]
+                     [--run-id <id>] [--budget-usd <n>]
+  selfeval replay <id> [--runs-root <dir>]
+  selfeval report <id> [--runs-root <dir>] [--results-root <dir>] [--corrections <file>]
+
+  --budget-usd <n>   ADMISSION cap in USD (must be a positive number). A task's cost is only knowable from its
+                     SETTLED result message, so there is no mid-task abort: the cap refuses to START a task whose
+                     projected cost would cross it. It is a stop-starting threshold, NOT a spend guarantee —
+                     spend can exceed it by up to one in-flight task per concurrency slot. A run stopped this way
+                     is stamped PARTIAL (stop reason + tasks planned/run) and its completed tasks are scored and
+                     persisted exactly as in a full run.`;
 
 /**
  * Split a subcommand's argv into its leading POSITIONAL tokens (e.g. an `<id>`) and its `--flag value` pairs.
@@ -109,6 +142,20 @@ function parseFlags(argv: readonly string[]): { positionals: string[]; flags: Cl
 }
 
 /**
+ * Parse a flag that must be a POSITIVE number, mirroring the parser's flag discipline: a typo is a setup bug
+ * surfaced loudly, never a silently-coerced `NaN` that would disable the guard it configures. `undefined` in ⇒
+ * `undefined` out (the flag was simply not given).
+ */
+function positiveNumberFlag(raw: string | undefined, flag: string): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new UsageError(`selfeval: flag "${flag}" expects a positive number (got "${raw}")`);
+  }
+  return value;
+}
+
+/**
  * Resolve the runs-root to an absolute path. Default = the package-root `<selfeval>/runs` (already absolute, so
  * `resolve` is a no-op and it's CWD-independent). An explicit `--runs-root` resolves relative to CWD as before.
  */
@@ -120,7 +167,11 @@ export function resolveRunsRoot(flags: CliFlags): string {
  * Construct the persistence layer for one run and bundle it into the injected {@link EvalObserver}. The store dir
  * is created (`beginRun` mkdirs it) so the emitter's `events.jsonl` has a parent to append to.
  */
-function openRun(runsRoot: string, runId: string, config: RunConfig): { store: RunStore; runDir: string; observer: EvalObserver } {
+function openRun(
+  runsRoot: string,
+  runId: string,
+  config: RunConfig,
+): { store: RunStore; runDir: string; observer: EvalObserver } {
   const runDir = join(runsRoot, runId);
   const store = createRunStore(runsRoot, runId);
   store.beginRun(config); // mkdirs runs/<id>/ + writes config.json — must precede the emitter's first append.
@@ -150,16 +201,26 @@ function summaryFor(config: RunConfig, taskCount: number, artifact: unknown): Ru
  * The JUDGE is injectable (a canned content-keyed fn in tests = zero API; the real `claude -p` judge in production),
  * pinned to one judge model (`--judge-model`, default {@link DEFAULT_JUDGE_MODEL}). `--fixture` restricts the matrix
  * to one fixture; `--runs`/`--k` set the repeat count k (default 1); `--concurrency` bounds matrix parallelism
- * (default 1 = serial). The Axis-A decision controls default to `<fixturesDir>/_controls/` (the probe SKIPS that gate
+ * (default 1 = serial). `--budget-usd <n>` puts an ADMISSION cap on the matrix: the probe refuses to START a task
+ * whose projected cost would cross `<n>`, stamping the resulting PARTIAL run with its stop reason + planned/run
+ * counts. Omitting it leaves the matrix ungated — today's behavior exactly. The Axis-A decision controls default to `<fixturesDir>/_controls/` (the probe SKIPS that gate
  * when the dir is absent, so the bench runs before those controls are authored).
  */
-async function runBench(flags: CliFlags, runner = liveRunner, judge: JudgeFn = realJudgeFn): Promise<number> {
+async function runBench(
+  flags: CliFlags,
+  runner = liveRunner,
+  judge: JudgeFn = realJudgeFn,
+): Promise<number> {
   const fixturesDirRaw = flags.fixturesDir ?? flags.fixtures;
-  if (fixturesDirRaw === undefined) throw new UsageError("run bench: --fixtures-dir <dir> is required");
+  if (fixturesDirRaw === undefined)
+    throw new UsageError("run bench: --fixtures-dir <dir> is required");
   const fixturesDir = resolve(fixturesDirRaw);
+  // Validated BEFORE the run dir is opened: a bad cap must fail as a usage error, not leave a half-open run behind.
+  const budgetUsd = positiveNumberFlag(flags.budgetUsd, "--budget-usd");
   const runsRoot = resolveRunsRoot(flags);
   const runId = newRunId(flags.runId);
-  const k = flags.k !== undefined ? Number(flags.k) : flags.runs !== undefined ? Number(flags.runs) : 1;
+  const k =
+    flags.k !== undefined ? Number(flags.k) : flags.runs !== undefined ? Number(flags.runs) : 1;
   const judgeModel = flags.judgeModel ?? DEFAULT_JUDGE_MODEL;
 
   const config: RunConfig = {
@@ -188,9 +249,16 @@ async function runBench(flags: CliFlags, runner = liveRunner, judge: JudgeFn = r
     ...(flags.model !== undefined ? { model: flags.model } : {}),
     ...(flags.timeout !== undefined ? { timeoutMs: Number(flags.timeout) } : {}),
     ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
+    ...(budgetUsd !== undefined ? { budgetUsd } : {}),
   });
 
   store.finishRun(summaryFor(config, result.records.length, result.artifact));
+
+  // The unmissable line (AC4/AC5): a budget-stopped run announces itself as PARTIAL with its planned/run counts,
+  // and either way the overshoot bound is stated. stderr, so stdout stays exactly the run dir (script-friendly).
+  if (result.artifact.budget !== undefined) {
+    process.stderr.write(`${formatBudgetNotice(result.artifact.budget)}\n`);
+  }
 
   process.stdout.write(`${runDir}\n`);
   return 0;
@@ -209,7 +277,9 @@ function replay(positionals: string[], flags: CliFlags): number {
   const config = readRunConfig(runsRoot, runId); // throws loudly if the run dir / config.json is absent.
   const rescored = rescoreRun(runsRoot, runId);
 
-  process.stderr.write(`replay ${config.runId} (kind=${config.kind}, ${rescored.length} task(s) re-derived offline)\n`);
+  process.stderr.write(
+    `replay ${config.runId} (kind=${config.kind}, ${rescored.length} task(s) re-derived offline)\n`,
+  );
   for (const { taskId, shape } of rescored) {
     process.stdout.write(`${taskId} → ${shape}\n`);
   }
@@ -225,8 +295,10 @@ function report(positionals: string[], flags: CliFlags): number {
   const runId = positionals[0];
   if (runId === undefined) throw new UsageError("report: a <id> positional argument is required");
   const runsRoot = resolveRunsRoot(flags);
-  const resultsRoot = flags.resultsRoot !== undefined ? resolve(flags.resultsRoot) : DEFAULT_RESULTS_ROOT;
-  const correctionsPath = flags.correctionsPath !== undefined ? resolve(flags.correctionsPath) : DEFAULT_CORRECTIONS;
+  const resultsRoot =
+    flags.resultsRoot !== undefined ? resolve(flags.resultsRoot) : DEFAULT_RESULTS_ROOT;
+  const correctionsPath =
+    flags.correctionsPath !== undefined ? resolve(flags.correctionsPath) : DEFAULT_CORRECTIONS;
 
   const { outPath } = emitReport(runsRoot, runId, { resultsRoot, correctionsPath });
   process.stdout.write(`${outPath}\n`);
@@ -240,7 +312,10 @@ function report(positionals: string[], flags: CliFlags): number {
  * The injectable `runner`/`judge` are the zero-API test seams (a replay runner / a canned judge); production
  * leaves them defaulted to the live runner / real judge.
  */
-export async function main(argv: readonly string[], deps: { runner?: typeof liveRunner; judge?: JudgeFn } = {}): Promise<number> {
+export async function main(
+  argv: readonly string[],
+  deps: { runner?: typeof liveRunner; judge?: JudgeFn } = {},
+): Promise<number> {
   try {
     const [command, sub, ...rest] = argv;
 
@@ -252,26 +327,39 @@ export async function main(argv: readonly string[], deps: { runner?: typeof live
     }
 
     if (command === "replay") {
-      const { positionals, flags } = parseFlags([sub, ...rest].filter((t): t is string => t !== undefined));
+      const { positionals, flags } = parseFlags(
+        [sub, ...rest].filter((t): t is string => t !== undefined),
+      );
       return replay(positionals, flags);
     }
 
+    if (command === "help" || command === "--help" || command === "-h") {
+      process.stdout.write(`${USAGE}\n`);
+      return 0;
+    }
+
     if (command === "report") {
-      const { positionals, flags } = parseFlags([sub, ...rest].filter((t): t is string => t !== undefined));
+      const { positionals, flags } = parseFlags(
+        [sub, ...rest].filter((t): t is string => t !== undefined),
+      );
       return report(positionals, flags);
     }
 
     throw new UsageError(
-      `selfeval: unknown command "${command ?? ""}" (expected "run bench" | "replay <id>" | "report <id>")`,
+      `selfeval: unknown command "${command ?? ""}" (expected "run bench" | "replay <id>" | "report <id>" | "help")`,
     );
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n`);
+    // A usage error is a setup bug: reprint the usage (which is where `--budget-usd`'s semantics are stated) so the
+    // caller sees what the flags actually mean, not just which one was wrong.
+    if (err instanceof UsageError) process.stderr.write(`${USAGE}\n`);
     return err instanceof UsageError ? 2 : 1;
   }
 }
 
 // Entry point: run when invoked directly (`node --import tsx src/cli.ts ...`). No TTY prompt.
-const invokedDirectly = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
 if (invokedDirectly) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),

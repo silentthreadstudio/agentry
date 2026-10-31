@@ -26,35 +26,37 @@ import { join } from "node:path";
 import type { Runner } from "../io/port.ts";
 import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
 import {
-  judgeWithRubric,
-  aaStability,
-  discrimination,
   DEFAULT_AA_TOLERANCE,
-  DEFAULT_GOLD_MIN,
   DEFAULT_BROKEN_MAX,
-  DEFAULT_MIN_GAP,
   DEFAULT_CONTROL_REPEATS,
+  DEFAULT_GOLD_MIN,
+  DEFAULT_MIN_GAP,
   type JudgeFn,
   type Score,
+  aaStability,
+  discrimination,
+  judgeWithRubric,
 } from "../judge/index.ts";
 import { mapPool } from "../pool.ts";
 import { mean } from "../stats.ts";
 import type { EvalObserver } from "../store/schema.ts";
 
-import { summarizeProducedResult } from "../conduct/result.ts";
-import type { OutcomeFixture } from "../conduct/fixture.ts";
-import { runCell, type RunCellOptions } from "../conduct/runner.ts";
 import { AGENTRY_CELL, type Cell } from "../conduct/cell.ts";
-import { injectOracle, runOracle, relativeFilesUnder } from "../conduct/oracle.ts";
 import { extractSelfReportedDone } from "../conduct/compliance.ts";
+import type { OutcomeFixture } from "../conduct/fixture.ts";
+import { injectOracle, relativeFilesUnder, runOracle } from "../conduct/oracle.ts";
+import { summarizeProducedResult } from "../conduct/result.ts";
+import { type RunCellOptions, runCell } from "../conduct/runner.ts";
 
+import { type BudgetLedger, createBudgetLedger } from "./budget.ts";
+import { type BenchFixture, CONTROLS_DIR, loadBenchFixtures } from "./fixture.ts";
 import { CODE_RUBRIC, DECISION_RUBRIC } from "./rubric.ts";
-import { CONTROLS_DIR, loadBenchFixtures, type BenchFixture } from "./fixture.ts";
 import {
+  type BenchArtifact,
+  type BenchBudget,
+  type BenchRecord,
   buildAbortedBenchArtifact,
   buildBenchArtifact,
-  type BenchArtifact,
-  type BenchRecord,
 } from "./score.ts";
 
 /** The verdict label for the CODE judge's controls (Axis B) — stamps `bench-code-judge-…` verdict strings. */
@@ -69,7 +71,9 @@ const DECISION_POOR_FILE = "decision-poor.md";
 /** Thrown when the captured agent-visible tree contains an oracle file — the oracle-hiding invariant breached. */
 export class OracleLeakError extends Error {
   constructor(fixtureId: string, leaked: readonly string[]) {
-    super(`oracle-hiding breached: ${fixtureId} leaked ${leaked.join(", ")} into the agent-visible tree`);
+    super(
+      `oracle-hiding breached: ${fixtureId} leaked ${leaked.join(", ")} into the agent-visible tree`,
+    );
     this.name = "OracleLeakError";
   }
 }
@@ -92,6 +96,12 @@ export interface BenchProbeOptions {
   k?: number;
   /** Bounded concurrency for the matrix (default 1 = serial). The controls gate stays SERIAL and FIRST. */
   concurrency?: number;
+  /**
+   * ADMISSION cap ($) for the matrix: a task is refused a START once its projected cost would cross this. ABSENT
+   * ⇒ no gate at all (today's behavior, byte for byte). NOT a spend guarantee — see `budget.ts` for why a
+   * mid-task abort is impossible, and {@link BenchBudget} for the bound the run stamps.
+   */
+  budgetUsd?: number;
   /** A/A stability tolerance — max population stdev of the gold-judged overalls (default {@link DEFAULT_AA_TOLERANCE}). */
   tol?: number;
   /** The floor the gold judged overall must clear (default {@link DEFAULT_GOLD_MIN}). */
@@ -162,22 +172,90 @@ export async function runBenchProbe(opts: BenchProbeOptions): Promise<BenchProbe
     ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
   };
 
+  // ADMISSION CONTROL: cost is only knowable from a task's SETTLED result envelope, so the ledger cannot abort a
+  // running task — it refuses to START one whose projected cost would cross the cap. No `--budget-usd` ⇒ an
+  // Infinity cap, which admits everything: one code path, and the ungated behavior is preserved exactly.
+  const ledger = createBudgetLedger(opts.budgetUsd ?? Number.POSITIVE_INFINITY);
+
   const total = fixtures.length * k;
   const work = fixtures.flatMap((fixture) =>
     Array.from({ length: k }, (_, repeat) => ({ fixture, repeat })),
   );
-  const records = await mapPool(work, concurrency, async ({ fixture, repeat }, index) => {
+  let stopAnnounced = false; // the budget stop is ONE event, at the task it refused — not one per drained item.
+  const admitted = await mapPool(work, concurrency, async ({ fixture, repeat }, index) => {
     const i = index + 1;
+    if (!ledger.admit()) {
+      // Refused, not failed: the budget stopped the run. The ledger LATCHES, so every remaining item drains
+      // instantly at zero spend and the partial stays a contiguous PREFIX of the plan rather than a scattered
+      // subset with holes (`mapPool` never retries a skipped index — see budget.ts's LATCHED STOP contract).
+      if (!stopAnnounced) {
+        stopAnnounced = true;
+        emit(
+          "gate-fired",
+          `budget stop before ${i}/${total} ${fixture.id} r${repeat}: ${budgetLine(ledger)}`,
+        );
+      }
+      return null;
+    }
     emit("task-started", `${i}/${total} ${fixture.id} r${repeat}`);
-    const record = await runMatrixCell(fixture, repeat, cell, opts, runOpts);
+    let record: BenchRecord;
+    try {
+      record = await runMatrixCell(fixture, repeat, cell, opts, runOpts);
+    } catch (err) {
+      // A task that threw still SPENT — release its reservation and charge it before the failure propagates,
+      // or a crashing matrix would look free to the ledger.
+      ledger.settle(undefined);
+      throw err;
+    }
+    ledger.settle(record.cost?.totalCostUsd);
     const codeLabel = record.codeScore ? record.codeScore.overall.toFixed(2) : "—";
     const decisionLabel = record.decisionScore ? record.decisionScore.overall.toFixed(2) : "—";
-    emit("task-done", `${i}/${total} ${fixture.id} r${repeat} → decision ${decisionLabel} code ${codeLabel}`);
+    const costLabel =
+      record.cost?.totalCostUsd !== undefined ? `$${record.cost.totalCostUsd.toFixed(3)}` : "$?";
+    emit(
+      "task-done",
+      `${i}/${total} ${fixture.id} r${repeat} → decision ${decisionLabel} code ${codeLabel} ${costLabel}`,
+    );
     return record;
   });
 
-  const artifact = buildBenchArtifact(records);
+  // A refused task contributes NO record — a partial run holds exactly the tasks that actually ran, and those are
+  // scored and persisted like any other (they are real data, not a degraded sample).
+  const records = admitted.filter((r): r is BenchRecord => r !== null);
+
+  const artifact = buildBenchArtifact(records, budgetStamp(opts, ledger, total, concurrency));
   return { artifact, outPath: writeArtifact(opts.outPath, artifact), records };
+}
+
+/**
+ * Stamp the run's {@link BenchBudget} — ABSENT unless a `--budget-usd` cap was given, so an ungated run's artifact
+ * is byte-for-byte what it is today. `tasksPlanned` is the FULL matrix (fixtures × k), `tasksRun` is what the
+ * ledger admitted; `stopReason` is the discriminator that stops a partial being read as a full bench.
+ */
+function budgetStamp(
+  opts: BenchProbeOptions,
+  ledger: BudgetLedger,
+  tasksPlanned: number,
+  concurrency: number,
+): BenchBudget | undefined {
+  if (opts.budgetUsd === undefined) return undefined;
+  const s = ledger.state();
+  return {
+    capUsd: s.capUsd,
+    spentUsd: s.spentUsd,
+    tasksPlanned,
+    tasksRun: s.tasksRun,
+    tasksEstimated: s.tasksEstimated,
+    projectionUsd: s.projectionUsd,
+    concurrency,
+    stopReason: s.stopped ? "budget-exhausted" : "completed",
+  };
+}
+
+/** The one-line ledger state stamped onto the budget-stop event (the `events.jsonl` trace of where it stopped). */
+function budgetLine(ledger: BudgetLedger): string {
+  const s = ledger.state();
+  return `spent $${s.spentUsd.toFixed(2)} of $${s.capUsd.toFixed(2)} cap, projection $${s.projectionUsd.toFixed(2)}`;
 }
 
 /**
@@ -320,7 +398,12 @@ async function runMatrixCell(
   opts: BenchProbeOptions,
   runOpts: RunCellOptions,
 ): Promise<BenchRecord> {
-  const { result, sandboxDir } = await runCell(asOutcomeFixtureView(fixture), cell, opts.runner, runOpts);
+  const { result, sandboxDir } = await runCell(
+    asOutcomeFixtureView(fixture),
+    cell,
+    opts.runner,
+    runOpts,
+  );
   try {
     // CAPTURE (capture-before-inject): everything that reads the agent-visible tree happens BEFORE the oracle inject.
     // (a) oracle-hiding: prove the captured tree holds no oracle file. A leak is an invariant breach, not a score.
@@ -341,7 +424,12 @@ async function runMatrixCell(
         : undefined;
 
     // JUDGE B — the produced code tree (the result-quality signal).
-    const codeScore = await judgeWithRubric(CODE_RUBRIC, fixture.prompt, produced.text, judgeOpts(opts));
+    const codeScore = await judgeWithRubric(
+      CODE_RUBRIC,
+      fixture.prompt,
+      produced.text,
+      judgeOpts(opts),
+    );
 
     // OPTIONAL CORRECTNESS, POST-CAPTURE/POST-JUDGE: inject the held-out oracle and run it as the correctness floor.
     injectOracle(sandboxDir, fixture.oracleDir);
@@ -407,7 +495,10 @@ function readDecisionTrail(sandboxDir: string): string {
 
 /** The judge options threaded to every {@link judgeWithRubric} call — the injected seam + the pinned judge model. */
 function judgeOpts(opts: BenchProbeOptions): { judge: JudgeFn; model?: string } {
-  return { judge: opts.judge, ...(opts.judgeModel !== undefined ? { model: opts.judgeModel } : {}) };
+  return {
+    judge: opts.judge,
+    ...(opts.judgeModel !== undefined ? { model: opts.judgeModel } : {}),
+  };
 }
 
 /**
@@ -417,7 +508,9 @@ function judgeOpts(opts: BenchProbeOptions): { judge: JudgeFn; model?: string } 
  */
 function assertNoOracleLeak(fixture: BenchFixture, sandboxDir: string): void {
   const captured = new Set(relativeFilesUnder(sandboxDir));
-  const leaked = relativeFilesUnder(fixture.oracleDir).filter((f) => captured.has(f) || captured.has(`oracle/${f}`));
+  const leaked = relativeFilesUnder(fixture.oracleDir).filter(
+    (f) => captured.has(f) || captured.has(`oracle/${f}`),
+  );
   if (leaked.length > 0) throw new OracleLeakError(fixture.id, leaked);
 }
 
@@ -451,7 +544,9 @@ function loadFixtures(fixturesDir: string, fixtureFilter: string | undefined): B
   if (fixtureFilter === undefined) return all;
   const selected = all.filter((fx) => fx.id === fixtureFilter);
   if (selected.length === 0) {
-    throw new RangeError(`runBenchProbe: fixture "${fixtureFilter}" not found under ${fixturesDir}`);
+    throw new RangeError(
+      `runBenchProbe: fixture "${fixtureFilter}" not found under ${fixturesDir}`,
+    );
   }
   return selected;
 }
