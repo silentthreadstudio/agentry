@@ -116,3 +116,62 @@ test("remove copes with a worktree directory that is already gone", () => {
   assert.equal(res.removed, true);
   assert.equal(findByBranch(repo.dir, "agentry/T-1"), null);
 });
+
+// A merge commit carries content `git cherry` cannot see (it skips merges), so a branch holding one is
+// deleted only when everything it changed since the merge-base is already on main.
+function sideBranch(name, { land }) {
+  git(repo.dir, "branch", name, "main");
+  const side = join(repo.dir, "..", `${name}-${process.pid}`);
+  git(repo.dir, "worktree", "add", "-q", side, name);
+  const sha = commitFile(side, `${name}.txt`, "side\n");
+  if (land) git(repo.dir, "cherry-pick", sha);
+  return () => git(repo.dir, "worktree", "remove", "-f", side);
+}
+
+test("remove keeps a branch whose merge commit brings in a file that is not on main", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  const done = sideBranch("side", { land: false });
+  git(made.path, "merge", "-q", "--no-ff", "-m", "merge side", "side");
+  done();
+  const res = remove(repo.dir, made);
+  assert.equal(res.branchDeleted, false);
+  assert.match(res.reason, /not on main/);
+  assert.notEqual(git(repo.dir, "branch", "--list", "agentry/T-1"), "");
+});
+
+test("remove keeps a branch whose merge commit adds content that is in no parent", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  const done = sideBranch("side", { land: true });
+  git(made.path, "merge", "-q", "--no-ff", "--no-commit", "side");
+  writeFileSync(join(made.path, "evil.txt"), "only in the merge\n");
+  git(made.path, "add", "evil.txt");
+  git(made.path, "commit", "-q", "-m", "merge side");
+  done();
+  const res = remove(repo.dir, made);
+  assert.equal(res.branchDeleted, false);
+  assert.notEqual(git(repo.dir, "branch", "--list", "agentry/T-1"), "");
+});
+
+test("remove deletes a branch with a merge commit when all its content is already on main", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  const done = sideBranch("side", { land: true });
+  git(made.path, "merge", "-q", "--no-ff", "-m", "merge side", "side");
+  done();
+  assert.equal(remove(repo.dir, made).branchDeleted, true);
+});
+
+test("remove keeps a squash-merged branch (patch ids differ: the safe direction)", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  commitFile(made.path, "a.txt", "1\n");
+  commitFile(made.path, "b.txt", "2\n");
+  git(repo.dir, "merge", "-q", "--squash", "agentry/T-1");
+  git(repo.dir, "commit", "-q", "-m", "squash");
+  assert.equal(remove(repo.dir, made).branchDeleted, false);
+});
+
+test("remove deletes a fast-forwarded branch", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  commitFile(made.path, "a.txt", "1\n");
+  git(repo.dir, "merge", "-q", "--ff-only", "agentry/T-1");
+  assert.equal(remove(repo.dir, made).branchDeleted, true);
+});

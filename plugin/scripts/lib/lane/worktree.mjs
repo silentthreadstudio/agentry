@@ -92,11 +92,33 @@ export function ignoredFiles(dir) {
   return out.split("\0").filter(Boolean);
 }
 
-// True when every commit on `branch` is already on `onto`, by ancestry or by patch id (`git cherry`
-// marks a commit "-" when an equivalent one is upstream, "+" when it is not).
+// True when all of `branch`'s work is on `onto`. Every commit outside `onto` must be patch-equivalent to one
+// on it (`git cherry` marks that "-"). `git cherry` skips merge commits, so when the branch holds one the
+// check is by content instead: every file the branch changed since the merge-base must be identical on
+// `onto`. Anything unclear answers false, which keeps the branch.
 function onMain(root, onto, branch) {
-  const res = git(root, ["cherry", onto, branch]);
-  return res.status === 0 && !res.stdout.split("\n").some((line) => line.startsWith("+"));
+  const cherry = git(root, ["cherry", onto, branch]);
+  if (cherry.status !== 0 || cherry.stdout.split("\n").some((line) => line.startsWith("+")))
+    return false;
+  const merges = git(root, ["rev-list", "--merges", `${onto}..${branch}`]);
+  if (merges.status !== 0) return false;
+  if (!merges.stdout.trim()) return true;
+  const base = git(root, ["merge-base", onto, branch]);
+  if (base.status !== 0) return false;
+  const touched = git(root, [
+    "diff",
+    "--no-renames",
+    "--name-only",
+    "-z",
+    base.stdout.trim(),
+    branch,
+  ]);
+  if (touched.status !== 0) return false;
+  const files = touched.stdout.split("\0").filter(Boolean);
+  if (files.length === 0) return true;
+  return (
+    git(root, ["--literal-pathspecs", "diff", "--quiet", onto, branch, "--", ...files]).status === 0
+  );
 }
 
 /** Remove the worktree at `path` (force twice, which also takes down a locked one) and, when every commit
