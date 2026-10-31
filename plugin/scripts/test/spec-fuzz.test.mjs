@@ -14,13 +14,11 @@ import { check } from "../lib/process/check.mjs";
 import { readProcess } from "../lib/process/read.mjs";
 import { CATALOG, FIELD } from "../lib/process/rules/index.mjs";
 import { validateSpec } from "../lib/process/spec.mjs";
+import { BASE, BUILTINS, ENTRIES, VALID, brokenBoard } from "./broken-boards.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = join(HERE, "..");
-const BASE = join(HERE, "fixtures", "table-board");
-const VALID = JSON.parse(readFileSync(join(BASE, "process.json"), "utf8"));
 const BAD_VALUES = [null, "x", 7, [], true];
-const BUILTINS = ["toString", "constructor", "__proto__", "hasOwnProperty"];
 
 /** Every (path, bad value) up to `depth` keys or list items down the spec, as a mutated copy. */
 function* mutations(node = VALID, path = [], depth = 6) {
@@ -125,25 +123,6 @@ for (const patch of DEGENERATE) {
   });
 }
 
-// One entry per catalog rule that is valid on table-board, so a typo is the only thing wrong.
-const ENTRIES = {
-  "ids-unique": {},
-  "status-known": {},
-  "refs-resolve": {},
-  "file-required": { kind: "sprint" },
-  "members-listed": { kind: "sprint", section: "members", member: "task" },
-  "deps-done": { kind: "task", field: "deps" },
-  "parent-active": { kind: "task" },
-  sequential: { kind: "sprint", skip: ["PRE", "TRK", "LATER"] },
-  "question-blocks": { kind: "question", field: "blocks" },
-  parked: { kind: "task", parking: "LATER" },
-  "deps-not-forward": { kind: "task", field: "deps", skip: ["LATER"] },
-  "done-has-evidence": { kind: "task", field: "commit", evidence: "commit" },
-  "done-has-handoff": { kind: "task", section: "handoff", commit: "first" },
-  "flagged-needs-verdict": { kind: "task", flag: "risky", verdict: "verdict", pass: ["PASS"] },
-  "closed-children": { kind: "sprint" },
-  "done-signoff": { kind: "sprint", field: "ok" },
-};
 // A misspelling of a param name: its last letter turned into a "z" (`field` → `fielz`).
 const typo = (name) => `${name.slice(0, -1)}${name.endsWith("z") ? "y" : "z"}`;
 
@@ -303,30 +282,10 @@ for (const [where, set] of NAMED) {
   });
 }
 
-// table-board edited so each rule with a field param fires as ENTRIES writes it.
-const BREAK = {
-  "deps-done": [["| W4 | A2 | todo | W3 |", "| W4 | A2 | doing | W3 |"]],
-  "question-blocks": [["| W5 | B1 | todo |", "| W5 | B1 | doing |"]],
-  parked: [["| W5 | B1 | todo | W4 |", "| W5 | LATER | todo | W4 |"]],
-  "deps-not-forward": [["| W2 | A1 | done | W1 |", "| W2 | A1 | done | W1, W5 |"]],
-  "done-has-evidence": [], // W0 is done without a commit
-  "done-has-handoff": [], // W0's sprint PRE has no file
-  "flagged-needs-verdict": [["| ⚑ | PASS | a1b2c3d |", "| ⚑ | FAIL | a1b2c3d |"]],
-  "done-signoff": [["| done | 2026-01-12 |", "| done |  |"]],
-};
-
 // `board check` on a table-board copy broken for rule `id`, with these rules and kinds.
 function checkBroken(id, rules, kinds = VALID.kinds) {
-  const root = mkdtempSync(join(tmpdir(), "spec-fuzz-"));
+  const root = brokenBoard(id);
   try {
-    cpSync(BASE, root, { recursive: true });
-    const board = join(root, "docs", "board", "BOARD.md");
-    let text = readFileSync(board, "utf8");
-    for (const [from, to] of BREAK[id]) {
-      assert.ok(text.includes(from), `${id}: the board has "${from}"`);
-      text = text.replace(from, to);
-    }
-    writeFileSync(board, text);
     writeFileSync(join(root, "process.json"), JSON.stringify({ ...VALID, kinds, rules }));
     return spawn("board.mjs", ["check", "--root", root, "--process", join(root, "process.json")]);
   } finally {
@@ -339,10 +298,6 @@ const fieldParams = Object.entries(CATALOG).flatMap(([id, rule]) =>
     .filter(([, def]) => def.type === "field")
     .map(([p, def]) => [id, p, def]),
 );
-
-test("every rule with a field param has a broken board here", () => {
-  assert.deepEqual(Object.keys(BREAK).sort(), [...new Set(fieldParams.map(([id]) => id))].sort());
-});
 
 for (const [id, p, def] of fieldParams) {
   test(`${id}.${p}: every field of the wrong type is exit 2 on a board where the rule fires`, () => {
