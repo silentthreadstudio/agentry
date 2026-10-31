@@ -142,10 +142,84 @@ const Lifecycle = z
         merged: z.string().optional(),
       })
       .strict(),
-    write: z.record(z.string()).optional(),
+    write: z
+      .object({
+        status: z.string().optional(),
+        verdict: z.string().optional(),
+        commit: z.string().optional(),
+        handoff: z
+          .string()
+          .regex(/^parent\.file:.+$/, { message: 'expected "parent.file:<section>"' })
+          .optional(),
+      })
+      .strict()
+      .optional(),
     handoff: z.string().optional(),
   })
   .strict();
+
+// The harness keys never take an empty string or list, and their paths stay inside the repository
+// (relative to its git root): a typo refuses instead of quietly checking less. Mirrors the plugin's
+// `spec.mjs`; the shared table (`plugin/scripts/test/key-cases.mjs`) holds both to one verdict.
+const Text = z.string().min(1);
+/** True when a repo-relative path is absolute or climbs out with `..` (posix `normalize` semantics). */
+const leavesRepo = (path: string): boolean => {
+  if (path.startsWith("/")) return true;
+  let depth = 0;
+  for (const part of path.split("/")) {
+    if (part === "..") depth--;
+    else if (part !== "" && part !== ".") depth++;
+    if (depth < 0) return true;
+  }
+  return false;
+};
+const RepoPath = Text.refine((p) => !leavesRepo(p), { message: "leaves the repository" });
+const Argv = z.array(Text).min(1);
+const Globs = z.array(RepoPath).min(1);
+
+/** The repo's gate: argv run with no shell in the git root of the tree under test. `quick` applies
+ *  only when every changed file matches `only`; `after` lists the files it may leave changed. */
+export const Gate = z
+  .object({
+    command: Argv,
+    quick: z.object({ command: Argv, only: Globs }).strict().optional(),
+    after: Globs.optional(),
+    note: Text.optional(),
+  })
+  .strict();
+export type Gate = z.infer<typeof Gate>;
+
+const SkillName = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]*$/, { message: "expected a skill name (lower-case, digits, -)" });
+
+/** The repo skills `/agentry:merge` runs as checks (native names). */
+export const Extensions = z
+  .object({
+    merge: z
+      .object({
+        checks: z
+          .array(SkillName)
+          .min(1)
+          .superRefine((names, ctx) =>
+            names.forEach((name, i) => {
+              if (names.indexOf(name) < i)
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: [i],
+                  message: `repeats "${name}"`,
+                });
+            }),
+          ),
+      })
+      .strict(),
+  })
+  .strict();
+export type Extensions = z.infer<typeof Extensions>;
+
+/** The repo's conductor prompt, and the heading standing-rule appends go under. */
+export const Conductor = z.object({ prompt: RepoPath, rules: Text.optional() }).strict();
+export type Conductor = z.infer<typeof Conductor>;
 
 const Drafts = z.record(z.object({ kind: z.string(), map: z.record(z.string()) }).strict());
 
@@ -172,6 +246,9 @@ export const ProcessSpec = z
     lifecycle: Lifecycle.optional(),
     drafts: Drafts.optional(),
     status: StatusConfig.optional(),
+    gate: Gate.optional(),
+    extensions: Extensions.optional(),
+    conductor: Conductor.optional(),
   })
   .strict();
 export type ProcessSpec = z.infer<typeof ProcessSpec>;

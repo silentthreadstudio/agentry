@@ -20,8 +20,13 @@
 // - sections: `as: "table"` names its id `column`; a section a rule reads leads by bold
 //   (`done-has-handoff`) is a `bold-lead` one.
 // - rule params: each against its declared type and the capabilities its kind `needs` (`checkRule`).
+// - lifecycle: what the writer (`lifecycle.mjs`) puts where a rule reads it (`checkLifecycle`), and a
+//   handoff template the enabled `done-has-handoff` rule accepts (`checkHandoff`).
+// - harness keys (`gate`, `extensions`, `conductor`): no empty string or list, no unknown key, paths
+//   inside the repository, skill names unique. Core's zod gives the same verdict on each (the shared
+//   table, `test/key-cases.mjs`).
 import { posix } from "node:path";
-import { plain } from "./markdown.mjs";
+import { boldLeads, plain } from "./markdown.mjs";
 import {
   CATALOG,
   FIELD,
@@ -31,6 +36,7 @@ import {
   phasesOf,
   pickField,
   ruleOf,
+  withDefaults,
 } from "./rules/index.mjs";
 
 const PHASES = ["planned", "active", "done", "dropped", "parked"];
@@ -69,19 +75,40 @@ const record = (item) => (v, at, bad) => {
   }
 };
 const strOrList = (v, at, bad) => (Array.isArray(v) ? list(str) : str)(v, at, bad);
-// An object with known keys; a key written `name!` is required. `open` lets unknown keys through.
-const shape =
-  (keys, open = false) =>
-  (v, at, bad) => {
-    if (!isObject(v)) return bad(at, "should be an object");
-    const names = Object.keys(keys).map((k) => k.replace(/!$/, ""));
-    for (const k of names) if (has(keys, `${k}!`) && !has(v, k)) bad(at, `is missing "${k}"`);
-    for (const [k, x] of Object.entries(v)) {
-      const check = own(keys, k) ?? own(keys, `${k}!`);
-      if (check) check(x, join(at, k), bad);
-      else if (!open) bad(join(at, k), `is not a known key (expected ${quote(names)})`);
-    }
-  };
+// An object with known keys; a key written `name!` is required. `open` lets unknown keys through;
+// `full` names a missing key by its own path (`gate.quick.only is required`), as the harness keys do.
+// The checker carries its `keys`, so the format reference can be bound to them (format-doc test).
+const shape = (keys, { open = false, full = false } = {}) =>
+  Object.assign(
+    (v, at, bad) => {
+      if (!isObject(v)) return bad(at, "should be an object");
+      const names = Object.keys(keys).map((k) => k.replace(/!$/, ""));
+      for (const k of names)
+        if (has(keys, `${k}!`) && !has(v, k))
+          full ? bad(join(at, k), "is required") : bad(at, `is missing "${k}"`);
+      for (const [k, x] of Object.entries(v)) {
+        const check = own(keys, k) ?? own(keys, `${k}!`);
+        if (check) check(x, join(at, k), bad);
+        else if (!open) bad(join(at, k), `is not a known key (expected ${quote(names)})`);
+      }
+    },
+    { keys },
+  );
+const FULL = { full: true };
+// The harness keys' values: a string is never empty, a list never empty, a path stays inside the
+// repository (relative to its git root), so a typo refuses instead of quietly checking less.
+const text = is((v) => typeof v === "string" && v.length > 0, "should be a non-empty string");
+const repoPath = (v, at, bad) =>
+  typeof v === "string" && v.length > 0
+    ? escapesRoot(".", v) && bad(at, `"${v}" leaves the repository`)
+    : text(v, at, bad);
+const filled = (item) => (v, at, bad) =>
+  Array.isArray(v) && v.length === 0 ? bad(at, "should not be empty") : list(item)(v, at, bad);
+const distinct = (item) => (v, at, bad) => {
+  filled(item)(v, at, bad);
+  if (Array.isArray(v))
+    v.forEach((x, i) => v.indexOf(x) < i && bad(`${at}[${i}]`, `repeats ${JSON.stringify(x)}`));
+};
 // One of several shapes, picked by the key that tells them apart (`table` vs `files`).
 const variant = (shapes, hint) => (v, at, bad) => {
   const key = isObject(v) && Object.keys(shapes).find((k) => has(v, k));
@@ -130,14 +157,35 @@ const kind = shape({
   create: shape({ ask: list(str), "id!": str, rows: list(row), blocks: list(block) }),
 });
 // The keys every rule entry may carry; the rest are its rule's params, checked by `checkRule`.
-const rule = shape({ "rule!": like(/\S/, "a rule id"), label: str, note: str }, true);
+const rule = shape({ "rule!": like(/\S/, "a rule id"), label: str, note: str }, { open: true });
 const ENTRY = ["rule", "label", "note"];
 const lifecycle = shape({
   "kind!": str,
   "on!": shape({ dispatched: str, built: str, failed: str, merged: str }),
-  write: record(str),
+  write: shape({
+    status: str,
+    verdict: str,
+    commit: str,
+    handoff: like(/^parent\.file:.+$/, '"parent.file:<section>"'),
+  }),
   handoff: str,
 });
+// The repo's gate (argv, no shell), its quick tier and the files it may leave changed; the repo
+// skills merge runs as checks; the repo's conductor prompt (plan R1b §2, §3.1).
+const argv = filled(text);
+const globs = filled(repoPath);
+const gate = shape(
+  {
+    "command!": argv,
+    quick: shape({ "command!": argv, "only!": globs }, FULL),
+    after: globs,
+    note: text,
+  },
+  FULL,
+);
+const skill = like(/^[a-z0-9][a-z0-9-]*$/, "a skill name (lower-case letters, digits and -)");
+const extensions = shape({ "merge!": shape({ "checks!": distinct(skill) }, FULL) }, FULL);
+const conductor = shape({ "prompt!": repoPath, rules: text }, FULL);
 const processFile = shape({
   "version!": oneOf(1),
   "name!": str,
@@ -147,7 +195,41 @@ const processFile = shape({
   lifecycle,
   drafts: record(shape({ "kind!": str, "map!": record(str) })),
   status: shape({ now: str, note: str, prime: bool, lines: posInt }),
+  gate,
+  extensions,
+  conductor,
 });
+/** The process file's checker; `schema.keys` (and each nested shape's `keys`) lists its keys, a
+ *  trailing `!` marking a required one. The format reference is bound to it. */
+export const schema = processFile;
+
+/** The repo's gate with its defaults filled (`after: []`, no quick tier), or null when the process
+ *  file has none. A copy: changing it never changes the spec. */
+export function gateOf(spec) {
+  const g = own(spec, "gate");
+  if (!isObject(g)) return null;
+  return structuredClone({
+    command: g.command,
+    quick: g.quick ?? null,
+    after: g.after ?? [],
+    note: g.note ?? null,
+  });
+}
+
+// The values a handoff template fills: `{id}`, `{sha}` (the first commit) and `{summary}`.
+const SLOTS = ["id", "sha", "summary"];
+const SLOT = /\{(\w+)\}/g;
+/** A handoff template filled: each value on one line (runs of white space become one space); any
+ *  other `{name}` is left as written (the process file check refuses it). `lifecycle.mjs`'s
+ *  `renderHandoff` is this on the spec's template. */
+export const fillHandoff = (template, values) =>
+  template.replace(SLOT, (all, name) =>
+    SLOTS.includes(name)
+      ? String(own(values, name) ?? "")
+          .replace(/\s+/g, " ")
+          .trim()
+      : all,
+  );
 
 /** True when `path` (relative to `root`, itself relative to the repository) leaves the repository. */
 export function escapesRoot(root, path) {
@@ -389,6 +471,141 @@ function crossCheck(spec, bad) {
   if (typeof note === "string" && escapesRoot(".", note))
     bad("status.note", `"${note}" leaves the repository`);
   for (const [d, def] of entries(spec.drafts)) known(def?.kind, `drafts.${d}.kind`);
+  checkLifecycle(spec, bad);
+}
+
+// What the lifecycle writer (`lifecycle.mjs`) takes for granted: each `on` word is a status of the
+// kind, the status goes to its status field, the verdict to a text field, the commits to a commits
+// field, the handoff line to a bold-lead section of the parent's file, from a one-line template that
+// fills only {id}, {sha} and {summary}. Otherwise a write would land where no rule reads it.
+function checkLifecycle(spec, bad) {
+  const life = spec.lifecycle;
+  if (!isObject(life) || typeof life.kind !== "string" || !has(spec.kinds, life.kind)) return;
+  const name = life.kind;
+  const kind = isObject(spec.kinds[name]) ? spec.kinds[name] : {};
+  const fields = fieldsOf(kind);
+  const status = isObject(kind.status) ? kind.status : {};
+  const words = isObject(status.values) ? status.values : null;
+  for (const [event, word] of entries(life.on))
+    if (typeof word === "string" && !has(words, word))
+      bad(
+        `lifecycle.on.${event}`,
+        words
+          ? `"${word}" is not a ${name} status (${quote(Object.keys(words))})`
+          : `names a status, but ${name} has no status field`,
+      );
+  const write = isObject(life.write) ? life.write : {};
+  if (typeof write.status === "string" && write.status !== status.field)
+    bad(
+      "lifecycle.write.status",
+      `is "${write.status}", but ${name}'s status is read from ${typeof status.field === "string" ? `"${status.field}"` : "its children"}`,
+    );
+  for (const [key, is] of [
+    ["verdict", "text"],
+    ["commit", "commits"],
+  ]) {
+    const f = write[key];
+    if (typeof f !== "string") continue;
+    if (!has(fields, f)) bad(`lifecycle.write.${key}`, `names no ${name} field "${f}"`);
+    else if (!FIELD[is].fits(fields[f], name))
+      bad(
+        `lifecycle.write.${key}`,
+        `names ${describe(fields[f], f)}; it needs ${FIELD[is].says()}`,
+      );
+  }
+  const target = typeof write.handoff === "string" && /^parent\.file:.+$/.test(write.handoff);
+  if (target) {
+    const section = write.handoff.slice("parent.file:".length);
+    const refs = refsOf(parentOf(kind)?.[1]);
+    const fits = (k) => own(sectionsOf(own(spec.kinds, k)), section)?.as === "bold-lead";
+    if (refs.length === 0) bad("lifecycle.write.handoff", `needs a parent field on ${name}`);
+    else if (!refs.some(fits))
+      bad(
+        "lifecycle.write.handoff",
+        `names no bold-lead section "${section}" of the ${refs.join(" or ")} file`,
+      );
+    if (!has(life, "handoff"))
+      bad("lifecycle.write.handoff", 'needs the line it writes: a "handoff" template');
+  }
+  if (typeof life.handoff !== "string") return;
+  if (/[\r\n]/.test(life.handoff)) bad("lifecycle.handoff", "should be one line");
+  for (const [, slot] of life.handoff.matchAll(SLOT))
+    if (!SLOTS.includes(slot))
+      bad(
+        "lifecycle.handoff",
+        `fills no {${slot}} (it fills ${SLOTS.map((s) => `{${s}}`).join(", ")})`,
+      );
+}
+
+// The ids and values a handoff template is tried with (`checkHandoff`).
+const PROBE = { id: "X1", parent: "P1", sha: "0a1b2c3", summary: "a summary" };
+
+// Load-time self-consistency (plan R1b §2.6): with a `done-has-handoff` rule on the lifecycle's kind,
+// the line the writer would append, filled with a fake SHA, goes through that rule's own check on a
+// one-item board. A template the rule rejects (no bold lead, the SHA not right after `(` with
+// `commit: "first"`), or a handoff written to another section than the rule reads, is a spec error:
+// the writer can never produce a line the checker rejects. Run on an otherwise valid file only.
+function checkHandoff(spec, bad) {
+  const life = spec.lifecycle;
+  if (!isObject(life) || typeof life.handoff !== "string") return;
+  const rule = ruleOf("done-has-handoff");
+  const line = fillHandoff(life.handoff, PROBE);
+  const section = /^parent\.file:(.+)$/.exec(life.write?.handoff ?? "")?.[1];
+  spec.rules.forEach((entry, i) => {
+    if (entry.rule !== rule.id || entry.kind !== life.kind) return;
+    if (section !== undefined && section !== entry.section)
+      return bad(
+        "lifecycle.write.handoff",
+        `writes to section "${section}", but rules[${i}] (done-has-handoff) reads "${entry.section}"`,
+      );
+    const params = withDefaults(rule, entry, spec.kinds);
+    const model = probeBoard(spec, params, line);
+    let found;
+    try {
+      found = model ? rule.check(model, params, { hasCommit: () => true }) : [];
+    } catch (error) {
+      found = [{ message: error.message }];
+    }
+    if (found.length)
+      bad(
+        "lifecycle.handoff",
+        `renders ${JSON.stringify(line)}, which rules[${i}] (done-has-handoff) rejects: ${found[0].message}`,
+      );
+  });
+}
+
+// A board of one done item (PROBE.id, its commits field holding PROBE.sha) and its parent, whose
+// handoff section holds `line` alone. Null when no kind the parent field refs has that section.
+function probeBoard(spec, params, line) {
+  const name = spec.lifecycle.kind;
+  const refs = refsOf(parentOf(spec.kinds[name])?.[1]);
+  const parentKind = refs.find((k) => has(sectionsOf(own(spec.kinds, k)), params.section));
+  if (!parentKind) return null;
+  const item = {
+    kind: name,
+    id: PROBE.id,
+    fields: params.field ? { [params.field]: [PROBE.sha] } : {},
+    phase: "done",
+    parent: PROBE.parent,
+    children: [],
+    file: "probe",
+    line: 1,
+  };
+  const leads = boldLeads(line);
+  const parent = {
+    kind: parentKind,
+    id: PROBE.parent,
+    fields: {},
+    children: [PROBE.id],
+    file: "probe",
+    line: 1,
+    own: { path: `its ${params.section} section`, sections: { [params.section]: { leads } } },
+  };
+  const kinds = Object.fromEntries(Object.keys(spec.kinds).map((k) => [k, { items: [] }]));
+  kinds[parentKind].items.push(parent);
+  kinds[name].items.push(item);
+  const index = { [PROBE.id]: [item], [PROBE.parent]: [parent] };
+  return { spec, kinds, index, problems: [] };
 }
 
 /** Validate a parsed process file: `{ spec, problems }`, each problem a Finding with rule "spec".
@@ -401,6 +618,7 @@ export function validateSpec(value, { file } = {}) {
   processFile(value, "", (at, message) => bad(at || "the process file", message));
   if (!isObject(value)) return { spec: null, problems };
   crossCheck(value, bad);
+  if (problems.length === 0) checkHandoff(value, bad);
   return { spec: value, problems };
 }
 

@@ -2,7 +2,9 @@
 // params table lists every param each rule declares, with what is required, the default and the type
 // (the capabilities a kind needs among it), as `rules/*.mjs` declare them, and its capability table
 // words each capability as `rules/capabilities.mjs` does. A param added, dropped, retyped or given
-// another need in code fails here until the page says so too.
+// another need in code fails here until the page says so too. The same holds for the process file's
+// keys: the top-level table and the harness-key table list exactly the keys `spec.mjs` checks, with
+// which of them are required, and the lifecycle section names every `write` key.
 // Run: node --test plugin/scripts/test/format-doc.test.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -11,6 +13,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import * as md from "../lib/process/markdown.mjs";
 import { CAN, CATALOG, FIELD } from "../lib/process/rules/index.mjs";
+import { schema } from "../lib/process/spec.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORMAT = join(HERE, "..", "..", "skills", "process", "references", "format.md");
@@ -77,4 +80,34 @@ test("the capability table words every capability a rule can need, once", () => 
     rows("Kind capabilities"),
     Object.entries(CAN).map(([name, c]) => [name, c.says("the rule's kind")]),
   );
+});
+
+// A shape's keys as [path, "yes" | "no"] (required or not), each followed by its nested shape's keys.
+const keyRows = (keys, at = "") =>
+  Object.entries(keys).flatMap(([key, check]) => {
+    const path = `${at}${key.replace(/!$/, "")}`;
+    const row = [path, key.endsWith("!") ? "yes" : "no"];
+    return [row, ...(check.keys ? keyRows(check.keys, `${path}.`) : [])];
+  });
+const HARNESS = ["gate", "extensions", "conductor"];
+
+test("the top-level table lists every key of the process file, with what is required", () => {
+  assert.deepEqual(
+    rows("Top level").map(([key, required]) => [key, required]),
+    Object.keys(schema.keys).map((k) => [k.replace(/!$/, ""), k.endsWith("!") ? "yes" : "no"]),
+  );
+});
+
+test("the harness-key table lists every gate, extensions and conductor key, with what is required", () => {
+  assert.deepEqual(
+    rows("gate, extensions and conductor").map(([key, required]) => [key, required]),
+    HARNESS.flatMap((top) => keyRows(schema.keys[top].keys, `${top}.`)),
+  );
+});
+
+test("the lifecycle section names every write key", () => {
+  const sec = md.section(text, "lifecycle and drafts");
+  const body = text.split("\n").slice(sec.line, sec.end).join("\n");
+  for (const key of Object.keys(schema.keys.lifecycle.keys.write.keys))
+    assert.ok(body.includes(`\`${key}\` (`), `the lifecycle section words write.${key}`);
 });

@@ -20,6 +20,9 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
 | `lifecycle` | no | What the harness writes as work moves. Absent: the checker never writes on its own. |
 | `drafts` | no | How an answered question becomes a decision draft. |
 | `status` | no | The derived view: `now` (the kind that is "current", e.g. `sprint`), `note` (the hand-written note, default `.agentry/NOTE.md`), `prime` (inject it at session start), `lines` (how many). |
+| `gate` | no | The repo's gate: the command `exec` and `merge` run, its quick tier, the files it may leave changed. |
+| `extensions` | no | Repo skills Agentry's commands run as extra checks (`merge.checks`). |
+| `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
 
 ## Kind
 
@@ -209,10 +212,51 @@ What a rule needs of a kind before it can check it, as the params table names th
 
 `on` maps the harness events to the kind's own status words: a builder dispatched, a builder reporting done,
 a verifier failing it, its commits landing on the default branch. A verifier pass writes the verdict and
-leaves the status where it is; only the merge makes a task done. `write` names the field each value goes to
-(several may share one evidence field). Writes are mechanical only (status, commit, verdict, handoff stub)
+leaves the status where it is; a `FAIL` verdict also applies `failed`; only the merge makes a task done.
+`write` names where each value goes, and takes exactly these keys: `status` (the kind's status field),
+`verdict` (a text field: `PASS`, `PASS WITH NOTES` or `FAIL`), `commit` (a commits or evidence field: the
+first landed commit, or `<first>…<last>`, as short SHAs) and `handoff` (`parent.file:<section>`, a bold-lead
+section of the parent's file, where the `handoff` line is appended). A step with no `on` word or no `write`
+key is skipped and reported, and without `lifecycle` nothing is ever written. Writes are mechanical only
 and land in the user's files, visible in their diff.
+
+The `handoff` template is one line and fills `{id}`, `{sha}` (the first commit) and `{summary}`. When a
+`done-has-handoff` rule checks the lifecycle's kind, the template is tried at load: filled with a fake SHA,
+the line must pass that rule (a bold lead naming the id; with `commit: "first"` the SHA right after `(`),
+and `write.handoff` must name the section the rule reads. Otherwise the file is refused, so the writer can
+never append a line the checker rejects. Each `on` word must be one of the kind's status words.
 
 `drafts.decision.map` fills a decision draft from an answered question: `{answer}` (the picked option),
 `{question}`, `{unpicked}` (the options not picked). A draft is never written to the decisions file without
 the owner's approval.
+
+## gate, extensions and conductor
+
+```json
+"gate": {
+  "command": ["scripts/gate.sh"],
+  "quick": { "command": ["scripts/gate.sh", "--quick"], "only": ["docs/**", "*.md"] },
+  "after": ["CHANGELOG.md"],
+  "note": "the full gate takes about ten minutes"
+},
+"extensions": { "merge": { "checks": ["repo-merge-checks"] } },
+"conductor": { "prompt": "docs/CONDUCTOR.md", "rules": "Standing rules" }
+```
+
+| Key | Required | What |
+| :--- | :--- | :--- |
+| `gate.command` | yes | The gate, as argv: run with no shell, in the git root of the tree under test; its exit code is the verdict. |
+| `gate.quick` | no | A cheaper tier: `command` and `only`, both required. |
+| `gate.quick.command` | yes | The quick tier's argv. |
+| `gate.quick.only` | yes | Globs (from the git root). The quick tier applies only when every changed file matches one of them. |
+| `gate.after` | no | Globs of the files allowed to change after the gate ran green. Default `[]`: none. |
+| `gate.note` | no | Free text. |
+| `extensions.merge` | yes | What `/agentry:merge` adds. |
+| `extensions.merge.checks` | yes | Repo skills by their own names (lower-case letters, digits, `-`; each once). Merge refuses to land until each has a recorded outcome. |
+| `conductor.prompt` | yes | The repo's conductor prompt, from the git root. |
+| `conductor.rules` | no | The heading in that prompt where a standing rule the owner states is appended. |
+
+These keys fail strict: a typo makes a check stricter or is refused, never laxer. An unknown key, a wrong
+type, an empty string or list, a repeated check, or a path that is absolute or climbs out with `..` is refused
+at load (exit 2, naming the path: `gate.command[1]`, `gate.quick.only`). A misspelled `after` glob allows
+less; a misspelled `only` glob makes the quick tier apply less often.
