@@ -96,54 +96,75 @@ Every param each rule takes; any other key in a rule entry is an error. A param 
 one of the type shown, so an option never changes what a rule reads: a commits column is not a dependency
 list. "The first field that fits" is the kind's first field of that type, and a kind with none is an error.
 `parking` must be an item on the board of the kind the parent field refs, or one of that field's `also`
-values.
+values. A kind must have what the rule needs of it (a kind "with" the capabilities below, or a field that
+refs a kind with them), or the file is refused naming the param: a rule given a kind it cannot check would
+check nothing and print OK. `file-required` without `kind` checks every kind whose file is required, and
+refuses a file where no kind's is.
 
 | Rule | Param | Required | Default | Type |
 | :--- | :--- | :--- | :--- | :--- |
-| `file-required` | `kind` | no | — | a kind |
+| `file-required` | `kind` | no | — | a kind with `file` |
 | `file-required` | `except` | no | — | `{ field or "id": [values] }` |
 | `members-listed` | `kind` | yes | — | a kind |
 | `members-listed` | `section` | yes | — | a section of the kind's file |
-| `members-listed` | `member` | yes | — | a kind |
+| `members-listed` | `member` | yes | — | a kind with `child` |
 | `members-listed` | `except` | no | — | `{ field or "id": [values] }` |
-| `deps-done` | `kind` | yes | — | a kind |
+| `deps-done` | `kind` | yes | — | a kind with `started` |
 | `deps-done` | `field` | no | the first field that fits | a list field whose ref includes the rule's kind |
 | `deps-done` | `except` | no | — | `{ field or "id": [values] }` |
-| `parent-active` | `kind` | yes | — | a kind |
+| `parent-active` | `kind` | yes | — | a kind with `started`, `parent`, `parent-status` |
 | `parent-active` | `except` | no | — | `{ field or "id": [values] }` |
-| `sequential` | `kind` | yes | — | a kind |
+| `sequential` | `kind` | yes | — | a kind with `started` |
 | `sequential` | `skip` | no | `[]` | a list of strings |
 | `sequential` | `except` | no | — | `{ field or "id": [values] }` |
-| `question-blocks` | `kind` | yes | — | a kind |
-| `question-blocks` | `field` | no | `"blocks"` | a list field with a ref |
+| `question-blocks` | `kind` | yes | — | a kind with `active` |
+| `question-blocks` | `field` | no | `"blocks"` | a list field with a ref, to a kind with `started` |
 | `question-blocks` | `except` | no | — | `{ field or "id": [values] }` |
-| `parked` | `kind` | yes | — | a kind |
+| `parked` | `kind` | yes | — | a kind with `parked`, `parent` |
 | `parked` | `parking` | yes | — | an item of the parent's kind, or an `also` value of the parent field |
 | `parked` | `field` | no | the first field that fits | a list field whose ref includes the rule's kind |
 | `parked` | `except` | no | — | `{ field or "id": [values] }` |
-| `deps-not-forward` | `kind` | yes | — | a kind |
+| `deps-not-forward` | `kind` | yes | — | a kind with `order` |
 | `deps-not-forward` | `field` | no | the first field that fits | a list field whose ref includes the rule's kind |
 | `deps-not-forward` | `skip` | no | `[]` | a list of strings |
 | `deps-not-forward` | `except` | no | — | `{ field or "id": [values] }` |
-| `done-has-evidence` | `kind` | yes | — | a kind |
+| `done-has-evidence` | `kind` | yes | — | a kind with `done` |
 | `done-has-evidence` | `field` | yes | — | a commits or evidence field |
 | `done-has-evidence` | `evidence` | yes | — | `"commit"` or `"commit-or-note"` |
 | `done-has-evidence` | `except` | no | — | `{ field or "id": [values] }` |
-| `done-has-handoff` | `kind` | yes | — | a kind |
+| `done-has-handoff` | `kind` | yes | — | a kind with `done`, `parent` |
 | `done-has-handoff` | `section` | yes | — | a section of the parent's file |
 | `done-has-handoff` | `commit` | no | `"none"` | `"first"` or `"any"` or `"none"` |
 | `done-has-handoff` | `field` | no | the first field that fits | a commits or evidence field, used only when commit is `"first"` or `"any"` |
 | `done-has-handoff` | `except` | no | — | `{ field or "id": [values] }` |
-| `flagged-needs-verdict` | `kind` | yes | — | a kind |
+| `flagged-needs-verdict` | `kind` | yes | — | a kind with `done` |
 | `flagged-needs-verdict` | `flag` | yes | — | a flag field |
 | `flagged-needs-verdict` | `verdict` | yes | — | a text field |
 | `flagged-needs-verdict` | `pass` | yes | — | a list of strings |
 | `flagged-needs-verdict` | `except` | no | — | `{ field or "id": [values] }` |
-| `closed-children` | `kind` | yes | — | a kind |
+| `closed-children` | `kind` | yes | — | a kind with `done`, `status-field`, `children` |
 | `closed-children` | `except` | no | — | `{ field or "id": [values] }` |
-| `done-signoff` | `kind` | yes | — | a kind |
+| `done-signoff` | `kind` | yes | — | a kind with `done` |
 | `done-signoff` | `field` | yes | — | a date field |
 | `done-signoff` | `except` | no | — | `{ field or "id": [values] }` |
+
+### Kind capabilities
+
+What a rule needs of a kind before it can check it, as the params table names them.
+
+| Capability | A kind has it when it has |
+| :--- | :--- |
+| `done` | a status that can be "done" |
+| `started` | a status that can be started ("active" or "done") |
+| `active` | a status that can be "active" |
+| `parked` | a status that can be "parked" |
+| `status-field` | a status field of its own (a derived status is done only once its children are) |
+| `parent` | a field with role "parent" |
+| `parent-status` | a parent kind with a status |
+| `children` | children (another kind whose parent field refs it, or a children list) |
+| `child` | a parent field that refs the rule's kind, or a place in a children list of the rule's kind |
+| `file` | its own file ("file") |
+| `order` | an order (it, its parent or its children sit in a kind a parent field refs) |
 
 ## lifecycle and drafts
 

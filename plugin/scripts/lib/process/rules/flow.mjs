@@ -1,10 +1,10 @@
 // Flow rules: what may start, in which order, and what waits on parked work. Pure.
 import {
   EXCEPT,
-  KIND,
   STARTED,
   finding,
   idsIn,
+  kindParam,
   kindSpec,
   param,
   parentOf,
@@ -27,7 +27,11 @@ const depsOf = (model, item, { field, kinds }) =>
 
 const depsDone = {
   id: "deps-done",
-  params: { kind: KIND, field: { type: "field", is: "deps", pick: true }, except: EXCEPT },
+  params: {
+    kind: kindParam("started"),
+    field: { type: "field", is: "deps", pick: true },
+    except: EXCEPT,
+  },
   check(model, params) {
     const setup = depSetup(model, params);
     const out = [];
@@ -45,7 +49,7 @@ const depsDone = {
 
 const parentActive = {
   id: "parent-active",
-  params: { kind: KIND, except: EXCEPT },
+  params: { kind: kindParam("started", "parent", "parent-status"), except: EXCEPT },
   check(model, params) {
     const out = [];
     for (const item of scope(model, params)) {
@@ -66,7 +70,11 @@ const parentActive = {
 
 const sequential = {
   id: "sequential",
-  params: { kind: KIND, skip: { type: "strings", default: [] }, except: EXCEPT },
+  params: {
+    kind: kindParam("started"),
+    skip: { type: "strings", default: [] },
+    except: EXCEPT,
+  },
   check(model, params) {
     const skip = params.skip;
     const out = [];
@@ -87,8 +95,8 @@ const sequential = {
 const questionBlocks = {
   id: "question-blocks",
   params: {
-    kind: KIND,
-    field: { type: "field", is: "refs", default: "blocks" },
+    kind: kindParam("active"),
+    field: { type: "field", is: "refs", default: "blocks", needs: ["started"] },
     except: EXCEPT,
   },
   check(model, params) {
@@ -118,7 +126,7 @@ const questionBlocks = {
 const parked = {
   id: "parked",
   params: {
-    kind: KIND,
+    kind: kindParam("parked", "parent"),
     parking: { type: "parent", required: true },
     field: { type: "field", is: "deps", pick: true },
     except: EXCEPT,
@@ -146,7 +154,7 @@ const parked = {
 const depsNotForward = {
   id: "deps-not-forward",
   params: {
-    kind: KIND,
+    kind: kindParam("order"),
     field: { type: "field", is: "deps", pick: true },
     skip: { type: "strings", default: [] },
     except: EXCEPT,

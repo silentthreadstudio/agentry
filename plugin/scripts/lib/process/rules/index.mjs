@@ -2,21 +2,26 @@
 // where `kinds(specKinds, params) -> names` gives the kinds it checks when that is not `params.kind`.
 //
 // `params` is the single list of what a process-file entry may set besides `rule`, `label` and `note`:
-// name -> { type, required?, default?, values?, of?, is?, pick?, only? }. Types: "string", "strings"
-// (a list of strings), "enum" (one of `values`), "kind" (a kind the file declares), "field" (a field
-// of the entry's kind, of the type `is` names in `FIELD`: a value never reads a field the rule cannot
-// use), "section" (a section of the entry's kind's own file, or `of: "parent"` of its parent kind's),
-// "parent" (a value the kind's parent field can hold: an item of the kind it refs, or an `also`
-// value; the board decides, `checkOnBoard`) and "except" ({ <field or "id">: [values] }). `pick`: left out, a field param takes the first field
-// of the kind that fits. `only`: { <param>: [values] }, the param is used only while that one holds
-// one of them. `spec.mjs` checks every entry against it; `check.mjs` fills the defaults, so a rule
-// never runs with a param it did not declare. The process skill's `references/format.md` lists the
-// same params; `test/format-doc.test.mjs` fails when the two differ.
+// name -> { type, required?, default?, values?, of?, is?, pick?, only?, needs? }. Types: "string",
+// "strings" (a list of strings), "enum" (one of `values`), "kind" (a kind the file declares), "field"
+// (a field of the entry's kind, of the type `is` names in `FIELD`: a value never reads a field the
+// rule cannot use), "section" (a section of the entry's kind's own file, or `of: "parent"` of its
+// parent kind's), "parent" (a value the kind's parent field can hold: an item of the kind it refs,
+// or an `also` value; the board decides, `checkOnBoard`) and "except" ({ <field or "id">: [values] }).
+// `needs` (capabilities in `CAN`): what a "kind" param's kind must have for the rule to check it at
+// all, or on a "field" param what one kind the field refs must have. `pick`: left out, a field param
+// takes the first field of the kind that fits. `only`: { <param>: [values] }, the param is used only
+// while that one holds one of them. A rule with `kinds` (the kinds it checks when `kind` is left
+// out) words in `none` what it would check when they come to none. `spec.mjs` checks every entry
+// against it; `check.mjs` fills the defaults, so a rule never runs with a param it did not declare.
+// The process skill's `references/format.md` lists the same params and capabilities;
+// `test/format-doc.test.mjs` fails when the two differ.
+import { CAN, lacks } from "./capabilities.mjs";
 import { rules as evidence } from "./evidence.mjs";
 import { rules as flow } from "./flow.mjs";
 import { FIELD, rules as structure } from "./structure.mjs";
 
-export { FIELD };
+export { CAN, FIELD, lacks };
 
 export const CATALOG = Object.fromEntries(
   [...structure, ...flow, ...evidence].map((r) => [r.id, r]),

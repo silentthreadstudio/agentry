@@ -5,8 +5,9 @@
 export const STARTED = new Set(["active", "done"]);
 export const CLOSED = new Set(["done", "dropped", "parked"]);
 
-// The params most rules share: the kind they check (required) and the items they skip.
-export const KIND = { type: "kind", required: true };
+// The params most rules share: the kind they check (required, with what the rule `needs` of it:
+// `capabilities.mjs`) and the items they skip.
+export const kindParam = (...needs) => ({ type: "kind", required: true, needs });
 export const EXCEPT = { type: "except" };
 
 export function param(params, name) {
@@ -166,8 +167,9 @@ const requiredKinds = (kinds, params) =>
 
 const fileRequired = {
   id: "file-required",
-  params: { kind: { type: "kind" }, except: EXCEPT },
+  params: { kind: { type: "kind", needs: ["file"] }, except: EXCEPT },
   kinds: requiredKinds,
+  none: 'no kind has a required file ("file.required": true)',
   check(model, params) {
     const kinds = requiredKinds(model.spec.kinds, params);
     const out = [];
@@ -201,9 +203,9 @@ function listedIds(section, column) {
 const membersListed = {
   id: "members-listed",
   params: {
-    kind: KIND,
+    kind: kindParam(),
     section: { type: "section", of: "kind", required: true },
-    member: { type: "kind", required: true },
+    member: { type: "kind", required: true, needs: ["child"] },
     except: EXCEPT,
   },
   check(model, params) {

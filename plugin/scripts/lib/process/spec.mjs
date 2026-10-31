@@ -4,7 +4,7 @@
 // Every name the file supplies is looked up as an own property, never reaching a built-in such as
 // `constructor`. PURE: never reads, never throws.
 import { posix } from "node:path";
-import { CATALOG, FIELD, applies, pickField, ruleOf } from "./rules/index.mjs";
+import { CATALOG, FIELD, applies, lacks, pickField, ruleOf } from "./rules/index.mjs";
 
 const PHASES = ["planned", "active", "done", "dropped", "parked"];
 const TYPES = ["text", "list", "ref", "flag", "date", "commits", "evidence", "link"];
@@ -151,7 +151,7 @@ const sectionsOf = (kind) => (isObject(kind?.file?.sections) ? kind.file.section
 // A kind's field with role "parent", as [name, field], and the kinds it refs.
 const parentOf = (kind) => Object.entries(fieldsOf(kind)).find(([, f]) => f?.role === "parent");
 const refsOf = (field) => [field?.ref ?? []].flat().filter((k) => typeof k === "string");
-const noParent = (name) => `needs a parent, and ${name} has no field with role "parent"`;
+const both = (xs) => xs.join(" and ");
 const named = (test) => (v, at, bad, ctx, p) => {
   if (typeof v !== "string") return bad(at, "should be a string");
   const problem = test(v, ctx, p);
@@ -161,30 +161,39 @@ const PARAM = {
   string: str,
   strings: list(str),
   enum: (v, at, bad, _ctx, p) => oneOf(...p.values)(v, at, bad),
-  kind: named((v, { kinds }) => !has(kinds, v) && `names an unknown kind "${v}"`),
-  field: named((v, { kind, name, rule }, p) => {
+  // A declared kind that lacks what the rule `needs` of it, judged once the entry's own kind is known.
+  kind: named((v, { kinds, name, rule }, p) => {
+    if (!has(kinds, v)) return `names an unknown kind "${v}"`;
+    const missing = name ? lacks(kinds, v, p.needs, name) : [];
+    return missing.length > 0 && `names "${v}", which lacks ${both(missing)}; ${rule} needs it`;
+  }),
+  // A field of the type `is` names, and with `needs`, one that refs a kind that has them.
+  field: named((v, { kinds, kind, name, rule }, p) => {
     if (!kind) return false;
     if (!has(fieldsOf(kind), v)) return `names no ${name} field "${v}"`;
     const field = fieldsOf(kind)[v];
-    return (
-      !FIELD[p.is].fits(field, name) &&
-      `names ${describe(field, v)}; ${rule} needs ${FIELD[p.is].says(`"${name}"`)}`
-    );
+    if (!FIELD[p.is].fits(field, name))
+      return `names ${describe(field, v)}; ${rule} needs ${FIELD[p.is].says(`"${name}"`)}`;
+    const refs = refsOf(field);
+    if (!p.needs || refs.some((k) => lacks(kinds, k, p.needs).length === 0)) return false;
+    const missing = both(lacks(kinds, refs[0], p.needs));
+    return `names ${describe(field, v)}, and no kind it refs has ${missing}; ${rule} needs one`;
   }),
+  // A section of the parent's file is judged once the kind has a parent (its `needs` says so).
   section: named((v, { kinds, kind, name }, p) => {
     if (!kind) return false;
     if (p.of === "kind")
       return !has(sectionsOf(kind), v) && `names no section "${v}" of the ${name} file`;
-    const parent = parentOf(kind);
-    if (!parent) return noParent(name);
-    const refs = refsOf(parent[1]);
+    const refs = refsOf(parentOf(kind)?.[1]);
     return (
+      refs.length > 0 &&
       !refs.some((k) => has(sectionsOf(own(kinds, k)), v)) &&
       `names no section "${v}" of the ${refs.join(" or ")} file`
     );
   }),
-  // Which parent values exist is the board's to say: `checkOnBoard`.
-  parent: named((v, { kind, name }) => kind && !parentOf(kind) && noParent(name)),
+  // That the kind has a parent is its `needs`; which parent values exist, the board's to say:
+  // `checkOnBoard`.
+  parent: named(() => false),
   except: (v, at, bad, { kinds, targets }) => {
     if (!isObject(v)) return bad(at, "should be an object");
     for (const [k, x] of Object.entries(v)) {
@@ -222,6 +231,8 @@ function checkRule(entry, at, kinds, bad) {
   const targets = (rule.kinds ? rule.kinds(kinds, entry) : [name]).filter(
     (k) => typeof k === "string" && has(kinds, k),
   );
+  if (rule.kinds && !has(entry, "kind") && targets.length === 0)
+    bad(at, `is missing "kind", and ${rule.none}: ${entry.rule} would check nothing`);
   for (const [p, def] of Object.entries(rule.params)) {
     const given = has(entry, p);
     if (!applies(rule, def, entry)) {

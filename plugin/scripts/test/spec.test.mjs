@@ -21,7 +21,10 @@ const MINI = {
       at: { table: "BOARD.md", heading: "Tasks" },
       id: { column: "Task" },
       fields: { status: { column: "Status" } },
-      status: { field: "status", values: { todo: "planned", done: "done" } },
+      status: {
+        field: "status",
+        values: { todo: "planned", doing: "active", done: "done", later: "parked" },
+      },
     },
   },
   rules: [{ rule: "ids-unique" }],
@@ -169,7 +172,7 @@ test("a rule entry with a param its rule does not declare, or lacks, or mistypes
     ],
     [
       { rule: "done-has-handoff", kind: "sprint", section: "handoff" },
-      /^rules\[1\]\.section needs a parent, and sprint has no field with role "parent"/,
+      /^rules\[1\]\.kind names "sprint", which lacks .* and a field with role "parent"; done-has-handoff needs it$/,
     ],
     [
       { rule: "done-has-handoff", kind: "task", section: "handoff", commit: "all" },
@@ -215,6 +218,7 @@ test("except keys are checked against the kinds the rule checks, also when kind 
     const copy = withTree(rule);
     copy.kinds.sprint.file.required = true;
     copy.kinds.sprint.fields = { status: { column: "Status" } };
+    copy.kinds.task.file = { glob: "t/{id}.md" };
     return copy;
   };
   const cases = [
@@ -348,7 +352,7 @@ test("a name from the file never reads a built-in: kinds, fields, rules, lifecyc
 test("a kind may be named like a built-in when the file declares it", () => {
   const copy = spec();
   copy.kinds.constructor = structuredClone(MINI.kinds.task);
-  copy.rules.push({ rule: "parent-active", kind: "constructor" });
+  copy.rules.push({ rule: "sequential", kind: "constructor" });
   assert.deepEqual(messages(copy), []);
 });
 
@@ -389,6 +393,8 @@ test("parked's parking value is a parent the kind can hold: an item on the board
   assert.deepEqual(checkOnBoard(lost, model), [], "a parent kind not found is not judged");
   const orphan = messages(withTree({ rule: "parked", kind: "sprint", parking: "LATER" }));
   assert.ok(
-    orphan.includes('rules[1].parking needs a parent, and sprint has no field with role "parent"'),
+    orphan.includes(
+      'rules[1].kind names "sprint", which lacks a status that can be "parked" and a field with role "parent"; parked needs it',
+    ),
   );
 });

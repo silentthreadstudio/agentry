@@ -3,8 +3,8 @@
 import {
   CLOSED,
   EXCEPT,
-  KIND,
   finding,
+  kindParam,
   kindSpec,
   leadTokens,
   param,
@@ -30,7 +30,7 @@ const doneItems = (model, params) => scope(model, params).filter((item) => item.
 const doneHasEvidence = {
   id: "done-has-evidence",
   params: {
-    kind: KIND,
+    kind: kindParam("done"),
     field: { type: "field", is: "commits", required: true },
     evidence: { type: "enum", values: ["commit", "commit-or-note"], required: true },
     except: EXCEPT,
@@ -64,7 +64,7 @@ function names(line, shas, mode) {
 const doneHasHandoff = {
   id: "done-has-handoff",
   params: {
-    kind: KIND,
+    kind: kindParam("done", "parent"),
     section: { type: "section", of: "parent", required: true },
     commit: { type: "enum", values: ["first", "any", "none"], default: "none" },
     field: { type: "field", is: "commits", pick: true, only: { commit: ["first", "any"] } },
@@ -106,7 +106,7 @@ const doneHasHandoff = {
 const flaggedNeedsVerdict = {
   id: "flagged-needs-verdict",
   params: {
-    kind: KIND,
+    kind: kindParam("done"),
     flag: { type: "field", is: "flag", required: true },
     verdict: { type: "field", is: "text", required: true },
     pass: { type: "strings", required: true },
@@ -134,7 +134,7 @@ const flaggedNeedsVerdict = {
 
 const closedChildren = {
   id: "closed-children",
-  params: { kind: KIND, except: EXCEPT },
+  params: { kind: kindParam("done", "status-field", "children"), except: EXCEPT },
   check(model, params) {
     const out = [];
     for (const item of doneItems(model, params)) {
@@ -156,7 +156,11 @@ const closedChildren = {
 
 const doneSignoff = {
   id: "done-signoff",
-  params: { kind: KIND, field: { type: "field", is: "date", required: true }, except: EXCEPT },
+  params: {
+    kind: kindParam("done"),
+    field: { type: "field", is: "date", required: true },
+    except: EXCEPT,
+  },
   check(model, params) {
     const field = param(params, "field");
     return doneItems(model, params)
