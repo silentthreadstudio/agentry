@@ -10,7 +10,7 @@ export function check(model, entries, ctx) {
     try {
       const rule = ruleOf(entry.rule);
       if (!rule) throw new Error("unknown rule");
-      found = rule.check(model, withDefaults(rule, entry), ctx);
+      found = rule.check(model, withDefaults(rule, entry, model.spec.kinds), ctx);
     } catch (error) {
       found = [
         { rule: entry.rule, kind: entry.kind, message: `rule cannot run: ${error.message}` },

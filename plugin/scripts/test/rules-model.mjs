@@ -119,4 +119,4 @@ export const hasAll = { hasCommit: () => true };
 export const hasOnly = (...shas) => ({ hasCommit: (sha) => shas.includes(sha) });
 // As `check.mjs` runs a rule: the entry with the rule's declared defaults filled in.
 export const run = (rule, model, params, ctx = hasAll) =>
-  rule.check(model, withDefaults(rule, { rule: rule.id, ...params }), ctx);
+  rule.check(model, withDefaults(rule, { rule: rule.id, ...params }, model.spec.kinds), ctx);

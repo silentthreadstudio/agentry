@@ -88,15 +88,6 @@ export function parentOf(model, item) {
   return item.parent && field ? resolve(model, item.parent, refKinds(field))[0] : undefined;
 }
 
-// The field listing dependencies: params.field, else the first list that points back at the kind.
-export function depField(model, params) {
-  if (params.field) return params.field;
-  const fields = Object.entries(kindSpec(model, param(params, "kind")).fields ?? {});
-  const found = fields.find(([, f]) => FIELD.deps.fits(f, params.kind));
-  if (!found) throw new Error("no dependency field (set 'field')");
-  return found[0];
-}
-
 export const show = (item) => item.status ?? item.phase;
 
 const plain = (text) =>

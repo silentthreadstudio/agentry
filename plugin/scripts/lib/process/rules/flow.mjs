@@ -3,7 +3,6 @@ import {
   EXCEPT,
   KIND,
   STARTED,
-  depField,
   finding,
   idsIn,
   kindSpec,
@@ -15,10 +14,11 @@ import {
   show,
 } from "./structure.mjs";
 
-// The dependency field and the kinds it may point at.
+// The dependency field (given, or the first that fits: `withDefaults`) and the kinds it may point at.
 function depSetup(model, params) {
-  const field = depField(model, params);
-  return { field, kinds: refKinds(kindSpec(model, params.kind).fields[field]) };
+  const { fields } = kindSpec(model, param(params, "kind"));
+  const field = param(params, "field");
+  return { field, kinds: refKinds(fields[field]) };
 }
 
 // Dependencies of `item` that resolve on the board (unresolved ones are refs-resolve's business).
@@ -27,7 +27,7 @@ const depsOf = (model, item, { field, kinds }) =>
 
 const depsDone = {
   id: "deps-done",
-  params: { kind: KIND, field: { type: "field", is: "deps" }, except: EXCEPT },
+  params: { kind: KIND, field: { type: "field", is: "deps", pick: true }, except: EXCEPT },
   check(model, params) {
     const setup = depSetup(model, params);
     const out = [];
@@ -120,7 +120,7 @@ const parked = {
   params: {
     kind: KIND,
     parking: { type: "string", required: true },
-    field: { type: "field", is: "deps" },
+    field: { type: "field", is: "deps", pick: true },
     except: EXCEPT,
   },
   check(model, params) {
@@ -147,7 +147,7 @@ const depsNotForward = {
   id: "deps-not-forward",
   params: {
     kind: KIND,
-    field: { type: "field", is: "deps" },
+    field: { type: "field", is: "deps", pick: true },
     skip: { type: "strings", default: [] },
     except: EXCEPT,
   },

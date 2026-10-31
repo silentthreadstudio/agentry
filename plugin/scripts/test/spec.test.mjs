@@ -182,8 +182,39 @@ test("a rule entry with a param its rule does not declare, or lacks, or mistypes
       `${expected} not in ${JSON.stringify(found)}`,
     );
   }
-  const fine = { rule: "done-has-handoff", kind: "task", section: "handoff", commit: "any" };
+  const fine = { rule: "done-has-handoff", kind: "task", section: "handoff", commit: "none" };
   assert.deepEqual(messages(withTree(fine)), []);
+});
+
+test("a field param left out defaults to the first field of its type, and none to pick is a problem", () => {
+  const cases = [
+    [
+      { rule: "deps-done", kind: "task" },
+      /^rules\[1\] is missing "field", and no task field fits \(deps-done needs a list field whose ref includes "task"\)$/,
+    ],
+    [{ rule: "parked", kind: "task", parking: "LATER" }, /^rules\[1\] is missing "field", and no/],
+    [{ rule: "deps-not-forward", kind: "task" }, /^rules\[1\] is missing "field", and no/],
+    [
+      { rule: "done-has-handoff", kind: "task", section: "handoff", commit: "first" },
+      /^rules\[1\] is missing "field", and no task field fits \(done-has-handoff needs a commits or evidence field\)$/,
+    ],
+  ];
+  for (const [rule, expected] of cases) {
+    const found = messages(withTree(rule));
+    assert.ok(
+      found.some((m) => expected.test(m)),
+      `${expected} not in ${JSON.stringify(found)}`,
+    );
+  }
+  for (const rule of cases.map(([r]) => r)) assert.deepEqual(messages(typed(rule)), [], rule.rule);
+});
+
+test("a param used only with another's value is a problem given without it", () => {
+  const entry = { rule: "done-has-handoff", kind: "task", section: "handoff", field: "commit" };
+  assert.deepEqual(messages(typed(entry)), [
+    'rules[1].field is used only when commit is "first" or "any"',
+  ]);
+  assert.deepEqual(messages(typed({ ...entry, commit: "any" })), []);
 });
 
 // withTree plus one field of every type the field params ask for, and a few they do not.

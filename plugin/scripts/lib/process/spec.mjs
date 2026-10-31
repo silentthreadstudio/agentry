@@ -4,7 +4,7 @@
 // Every name the file supplies is looked up as an own property, never reaching a built-in such as
 // `constructor`. PURE: never reads, never throws.
 import { posix } from "node:path";
-import { CATALOG, FIELD, ruleOf } from "./rules/index.mjs";
+import { CATALOG, FIELD, applies, pickField, ruleOf } from "./rules/index.mjs";
 
 const PHASES = ["planned", "active", "done", "dropped", "parked"];
 const TYPES = ["text", "list", "ref", "flag", "date", "commits", "evidence", "link"];
@@ -188,6 +188,11 @@ const PARAM = {
   },
 };
 
+const onlyWhen = (only) =>
+  Object.entries(only)
+    .map(([p, values]) => `${p} is ${values.map((v) => `"${v}"`).join(" or ")}`)
+    .join(" and ");
+
 // A rules[] entry against the params its catalog rule declares: an unknown rule or param, a missing
 // one, a wrong type, or a kind, field or section the process file does not declare. The defaults are
 // checked too, so a rule never runs on a field its kind lacks.
@@ -208,7 +213,18 @@ function checkRule(entry, at, kinds, bad) {
   const kind = name && isObject(kinds[name]) ? kinds[name] : null;
   for (const [p, def] of Object.entries(rule.params)) {
     const given = has(entry, p);
+    if (!applies(rule, def, entry)) {
+      if (given) bad(join(at, p), `is used only when ${onlyWhen(def.only)}`);
+      continue;
+    }
     if (!given && def.required) bad(at, `is missing "${p}" (${entry.rule} needs it)`);
+    if (!given && def.pick) {
+      if (kind && !pickField(fieldsOf(kind), def, name)) {
+        const needs = `${entry.rule} needs ${FIELD[def.is].says(`"${name}"`)}`;
+        bad(at, `is missing "${p}", and no ${name} field fits (${needs})`);
+      }
+      continue;
+    }
     const value = given ? entry[p] : def.default;
     if (value !== undefined)
       PARAM[def.type](value, join(at, p), bad, { kinds, kind, name, given, rule: entry.rule }, def);

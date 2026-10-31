@@ -3,7 +3,6 @@
 import {
   CLOSED,
   EXCEPT,
-  FIELD,
   KIND,
   finding,
   kindSpec,
@@ -24,15 +23,6 @@ function evidenceOf(value) {
     shas: tokens.filter((t) => SHA.test(t)),
     note: tokens.filter((t) => !SHA.test(t)).join(" "),
   };
-}
-
-// params.field, else the first commits/evidence field of the kind.
-function evidenceField(model, params) {
-  if (params.field) return params.field;
-  const fields = Object.entries(kindSpec(model, param(params, "kind")).fields ?? {});
-  const found = fields.find(([, f]) => FIELD.commits.fits(f));
-  if (!found) throw new Error("no commits or evidence field (set 'field')");
-  return found[0];
 }
 
 const doneItems = (model, params) => scope(model, params).filter((item) => item.phase === "done");
@@ -77,13 +67,13 @@ const doneHasHandoff = {
     kind: KIND,
     section: { type: "section", of: "parent", required: true },
     commit: { type: "enum", values: ["first", "any", "none"], default: "none" },
-    field: { type: "field", is: "commits" },
+    field: { type: "field", is: "commits", pick: true, only: { commit: ["first", "any"] } },
     except: EXCEPT,
   },
   check(model, params) {
     const section = param(params, "section");
     const mode = params.commit;
-    const field = mode === "none" ? undefined : evidenceField(model, params);
+    const field = mode === "none" ? undefined : param(params, "field");
     const out = [];
     for (const item of doneItems(model, params)) {
       const parent = parentOf(model, item);

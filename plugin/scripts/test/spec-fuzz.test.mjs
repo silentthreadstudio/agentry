@@ -185,6 +185,7 @@ test("a broken board with a wrong-typed or unknown rule param is exit 2, never O
     [{ rule: "deps-done", kind: "task", field: "depz" }, /rules\[0\]\.field names no task field/],
     [{ rule: "deps-done", kind: "task", feild: "deps" }, /rules\[0\]\.feild is not a param/],
     [{ rule: "parked", kind: "task", parking: "LATER", skip: "PRE" }, /rules\[0\]\.skip is not/],
+    [{ rule: "deps-done", kind: "question" }, /rules\[0\] is missing "field", and no question/],
   ];
   for (const [rule, expected] of cases) {
     const out = checkWith("evidence-board", [rule]);
