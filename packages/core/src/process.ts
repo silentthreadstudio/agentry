@@ -201,32 +201,41 @@ export const Item = z.object({
 });
 export type Item = z.infer<typeof Item>;
 
-/** The derived view `board status` builds each time from items, git, worktrees, drafts and the note. */
+const count = z.number().int().nonnegative();
+
+/** A "now" or "ahead" item (a sprint) and how its work items (tasks) stand. `total` leaves parked out;
+ *  `tally` splits active into `verify` (the lifecycle's built status) and the rest. */
+const Progress = z.object({
+  kind: z.string(),
+  id: z.string(),
+  name: z.string().optional(),
+  status: z.string().optional(),
+  done: count,
+  total: count,
+  tally: z.object({
+    done: count,
+    verify: count,
+    active: count,
+    planned: count,
+    dropped: count,
+    parked: count,
+  }),
+});
+
+/** The derived view `board status` builds each time from the items, git and the note. */
 export const StatusView = z.object({
-  now: z
-    .array(
-      z.object({
-        kind: z.string(),
-        id: z.string(),
-        name: z.string().optional(),
-        status: z.string().optional(),
-        done: z.number().int().optional(),
-        total: z.number().int().optional(),
-        waiting: z.array(z.string()).optional(),
-      }),
-    )
+  now: z.array(Progress).default([]),
+  inFlight: z.array(z.object({ id: z.string(), status: z.string().optional() })).default([]),
+  /** Work waiting on a look (verify) and open items of standalone kinds (owner questions). */
+  onYou: z
+    .array(z.object({ kind: z.string(), id: z.string(), status: z.string().optional() }))
     .default([]),
-  inFlight: z
-    .array(
-      z.object({ id: z.string(), status: z.string().optional(), worktree: z.string().optional() }),
-    )
-    .default([]),
-  verify: z.array(z.string()).default([]),
-  next: z.array(z.string()).default([]),
+  /** Planned work items with a dependency that is not done. */
   blocked: z.array(z.object({ id: z.string(), by: z.array(z.string()) })).default([]),
-  drafts: z.number().int().default(0),
+  ahead: z.array(Progress).default([]),
+  parked: count.default(0),
   recent: z.array(z.object({ sha: z.string(), subject: z.string() })).default([]),
-  note: z.object({ path: z.string(), lines: z.number().int() }).optional(),
+  note: z.object({ path: z.string(), lines: z.array(z.string()) }).optional(),
 });
 export type StatusView = z.infer<typeof StatusView>;
 

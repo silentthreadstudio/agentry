@@ -131,5 +131,5 @@ test("Finding needs a message; BoardReport carries findings and a default-filled
     status: {},
   });
   assert.equal(report.findings[0]?.line, 9);
-  assert.deepEqual(report.status?.next, []);
+  assert.deepEqual(report.status?.blocked, []);
 });
