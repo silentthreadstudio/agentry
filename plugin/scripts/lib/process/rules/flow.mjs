@@ -72,7 +72,7 @@ const sequential = {
   id: "sequential",
   params: {
     kind: kindParam("started"),
-    skip: { type: "strings", default: [] },
+    skip: { type: "strings", default: [], names: ["id"] },
     except: EXCEPT,
   },
   check(model, params) {
@@ -156,7 +156,7 @@ const depsNotForward = {
   params: {
     kind: kindParam("order"),
     field: { type: "field", is: "deps", pick: true },
-    skip: { type: "strings", default: [] },
+    skip: { type: "strings", default: [], names: ["id", "parent"] },
     except: EXCEPT,
   },
   check(model, params) {

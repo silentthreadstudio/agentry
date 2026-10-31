@@ -27,6 +27,7 @@ function rows(heading) {
 
 const quoted = (values) => values.map((v) => `"${v}"`).join(" or ");
 const needs = (d) => (d.needs?.length ? ` with ${d.needs.join(", ")}` : "");
+const NAMES = { id: "the kind's items", parent: "their parents" };
 // How the page words each declared param type.
 const TYPE = {
   kind: (d) => `a kind${needs(d)}`,
@@ -34,7 +35,8 @@ const TYPE = {
   section: (d) => `a section of the ${d.of === "parent" ? "parent's" : "kind's"} file`,
   parent: () => "an item of the parent's kind, or an also value of the parent field",
   string: () => "a string",
-  strings: () => "a list of strings",
+  strings: (d) =>
+    d.names ? `a list of ids of ${d.names.map((n) => NAMES[n]).join(" or ")}` : "a list of strings",
   enum: (d) => quoted(d.values),
   except: () => '{ field or "id": [values] }',
 };

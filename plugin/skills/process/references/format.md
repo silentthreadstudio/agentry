@@ -68,6 +68,9 @@ after `task`, so tasks keep their sprint's order.
 Every rule is a fixed function with parameters; there is no rule language. `kind` names the kind it checks;
 `except: { "<field>": [values] }` skips matching items (`"id"` means the item's own id, any other key must be
 a field of every kind the rule checks); `label` prints the repo's own name for the rule on each finding.
+An `except` or `skip` value that no item on the board holds (and that is no `also` value or item of the kind
+the field refs) is a finding of its own, `rules[3].except.sprint names no item "PREE"`, so a typo shows
+instead of quietly changing what the rule skips.
 
 | Rule | Checks |
 | :--- | :--- |
@@ -115,7 +118,7 @@ refuses a file where no kind's is.
 | `parent-active` | `kind` | yes | — | a kind with `started`, `parent`, `parent-status` |
 | `parent-active` | `except` | no | — | `{ field or "id": [values] }` |
 | `sequential` | `kind` | yes | — | a kind with `started` |
-| `sequential` | `skip` | no | `[]` | a list of strings |
+| `sequential` | `skip` | no | `[]` | a list of ids of the kind's items |
 | `sequential` | `except` | no | — | `{ field or "id": [values] }` |
 | `question-blocks` | `kind` | yes | — | a kind with `active` |
 | `question-blocks` | `field` | no | `"blocks"` | a list field with a ref, to a kind with `started` |
@@ -126,7 +129,7 @@ refuses a file where no kind's is.
 | `parked` | `except` | no | — | `{ field or "id": [values] }` |
 | `deps-not-forward` | `kind` | yes | — | a kind with `order` |
 | `deps-not-forward` | `field` | no | the first field that fits | a list field whose ref includes the rule's kind |
-| `deps-not-forward` | `skip` | no | `[]` | a list of strings |
+| `deps-not-forward` | `skip` | no | `[]` | a list of ids of the kind's items or their parents |
 | `deps-not-forward` | `except` | no | — | `{ field or "id": [values] }` |
 | `done-has-evidence` | `kind` | yes | — | a kind with `done` |
 | `done-has-evidence` | `field` | yes | — | a commits or evidence field |

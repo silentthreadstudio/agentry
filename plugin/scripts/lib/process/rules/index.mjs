@@ -2,8 +2,9 @@
 // where `kinds(specKinds, params) -> names` gives the kinds it checks when that is not `params.kind`.
 //
 // `params` is the single list of what a process-file entry may set besides `rule`, `label` and `note`:
-// name -> { type, required?, default?, values?, of?, is?, pick?, only?, needs? }. Types: "string",
-// "strings" (a list of strings), "enum" (one of `values`), "kind" (a kind the file declares), "field"
+// name -> { type, required?, default?, values?, of?, is?, pick?, only?, needs?, names? }. Types:
+// "string", "strings" (a list of strings; `names`: its values are ids of the kind's items, "id", or
+// of their parents, "parent"), "enum" (one of `values`), "kind" (a kind the file declares), "field"
 // (a field of the entry's kind, of the type `is` names in `FIELD`: a value never reads a field the
 // rule cannot use), "section" (a section of the entry's kind's own file, or `of: "parent"` of its
 // parent kind's), "parent" (a value the kind's parent field can hold: an item of the kind it refs,
@@ -13,9 +14,10 @@
 // takes the first field of the kind that fits. `only`: { <param>: [values] }, the param is used only
 // while that one holds one of them. A rule with `kinds` (the kinds it checks when `kind` is left
 // out) words in `none` what it would check when they come to none. `spec.mjs` checks every entry
-// against it; `check.mjs` fills the defaults, so a rule never runs with a param it did not declare.
-// The process skill's `references/format.md` lists the same params and capabilities;
-// `test/format-doc.test.mjs` fails when the two differ.
+// against it; `check.mjs` fills the defaults, so a rule never runs with a param it did not declare,
+// and reports a `names` or `except` value that matches nothing on the board. The process skill's
+// `references/format.md` lists the same params and capabilities; `test/format-doc.test.mjs` fails
+// when the two differ.
 import { CAN, lacks } from "./capabilities.mjs";
 import { rules as evidence } from "./evidence.mjs";
 import { rules as flow } from "./flow.mjs";

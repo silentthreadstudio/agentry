@@ -81,6 +81,7 @@ const clean = () => [
     }),
   }),
   sprint("S2", "doing", { ok: "", own: file("sprints/S2_b.md", { rows: ["T2", "T3"] }) }),
+  sprint("TRK", "doing", { ok: "" }),
   sprint("LATER", "todo", { ok: "" }),
   task("P1", "PRE", "done", { commit: [SHA] }),
   task("T1", "S1", "done", { commit: [SHA], risky: true, verdict: "PASS" }),
@@ -173,6 +174,42 @@ test("a rule that cannot run becomes a finding instead of a throw", () => {
       "rule cannot run: missing param 'field'",
     ],
   );
+});
+
+test("an except or skip value that names nothing on the board is a finding naming it", () => {
+  const evidence = { rule: "done-has-evidence", kind: "task", field: "commit", evidence: "commit" };
+  const strays = (entry, model = makeModel(clean())) =>
+    check(model, [entry], hasAll)
+      .filter((f) => f.message.startsWith("rules[0]."))
+      .map((f) => f.message);
+  const cases = [
+    [{ ...evidence, except: { sprint: ["PREE", "PRE"] } }, ['except.sprint names no item "PREE"']],
+    [{ ...evidence, except: { sprint: ["S9", "EXTRA"] } }, ['except.sprint names no item "S9"']],
+    [{ ...evidence, except: { id: ["T1", "S1"] } }, ['except.id names no item "S1"']],
+    [
+      { ...evidence, except: { status: ["doing", "doin"] } },
+      ['except.status names no item "doin"'],
+    ],
+    [{ rule: "sequential", kind: "sprint", skip: ["TRK", "TRKK"] }, ['skip names no item "TRKK"']],
+    [
+      {
+        rule: "deps-not-forward",
+        kind: "task",
+        field: "deps",
+        skip: ["T1", "S1", "LATER", "LATR"],
+      },
+      ['skip names no item "LATR"'],
+    ],
+  ];
+  for (const [entry, expected] of cases)
+    assert.deepEqual(
+      strays(entry),
+      expected.map((m) => `rules[0].${m}`),
+      JSON.stringify(entry),
+    );
+  const unread = makeModel(clean());
+  unread.kinds.sprint.located = false;
+  assert.deepEqual(strays(cases[0][0], unread), [], "a kind the reader did not find is not judged");
 });
 
 test("only the enabled rules run, in the order given", () => {
