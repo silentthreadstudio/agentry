@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { idProblem } from "../lib/lane/id.mjs";
 import { create, mainRoot } from "../lib/lane/worktree.mjs";
 import { list, read, runDir, write } from "../lib/process/ledger.mjs";
 import { tempRepo } from "./git-repo.mjs";
@@ -58,6 +59,26 @@ test("write refuses a bad id or version without touching disk", () => {
   assert.throws(() => write(root, ledger("a..b")), /plain id/);
   assert.throws(() => write(root, { ...ledger("T-1"), v: 2 }), /v: 1/);
   assert.equal(existsSync(dirOf(root)), false);
+});
+
+test("the ledger takes exactly the ids the worktree takes", () => {
+  const ids = [
+    "x.lock",
+    "x.lock.y",
+    "a.",
+    "-x",
+    "a b",
+    "café",
+    "a/b",
+    "a".repeat(300),
+    "T-1",
+    "DS.1_a",
+  ];
+  for (const id of ids) {
+    assert.equal(read(root, id), null, id); // an unusable id never reads a file
+    if (idProblem(id)) assert.throws(() => write(root, ledger(id)), /plain id/, id);
+    else assert.doesNotThrow(() => write(root, ledger(id)), id);
+  }
 });
 
 test("list returns ledgers sorted by id and skips an unreadable one", () => {

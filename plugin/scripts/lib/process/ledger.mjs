@@ -6,10 +6,10 @@
 // the only `.agentry/run` I/O of the process kit. Node built-ins only.
 import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { idProblem } from "../lane/id.mjs";
 
 const VERSION = 1;
-const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const validId = (id) => typeof id === "string" && ID.test(id) && !id.includes("..");
+const validId = (id) => idProblem(id) === null;
 
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const ledgerDir = (root) => join(processDir(root), "ledger");

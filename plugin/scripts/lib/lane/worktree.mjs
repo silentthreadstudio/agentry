@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { defaultBranch, worktrees } from "../process/git.mjs";
+import { idProblem } from "./id.mjs";
 
 /** Where the lane's worktrees live, under the main checkout. */
 export const worktreesDir = (root) => join(root, ".agentry", "run", "worktrees");
@@ -38,16 +39,7 @@ export function mainRoot(dir) {
   return res.status === 0 ? dirname(res.stdout.trim()) : null;
 }
 
-// An id becomes a directory name and a branch name: plain characters only, and none of the sequences git
-// refuses in a ref (`..`, `.lock`) or that could climb out of the worktrees directory.
-const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-export function idProblem(id) {
-  if (typeof id !== "string" || !ID.test(id)) return `id "${id}" must match ${ID}`;
-  if (id.includes("..")) return `id "${id}" must not contain ".."`;
-  if (id.includes(".lock")) return `id "${id}" must not contain ".lock"`;
-  if (id.endsWith(".")) return `id "${id}" must not end with "."`;
-  return null;
-}
+export { idProblem };
 
 /** Add worktree `<root>/.agentry/run/worktrees/<id>` on a new branch `agentry/<id>` cut from `base`.
  *  `root` is the main checkout. Throws on a bad id or any git failure (branch or path already exists). */
