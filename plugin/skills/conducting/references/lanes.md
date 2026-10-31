@@ -17,12 +17,8 @@ a question. `/agentry:go` stays the full pipeline and never routes to a lane on 
 
 ### 1. Find the contract
 
-Pass the id as one single-quoted argument. If it contains anything other than letters, digits, `-`, `_`, `.`
-or `/`, ask the user before running it.
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/find-contract.mjs" '<id>'
-```
+Run the `find-contract.mjs` command `exec.md` gives, with the id as one single-quoted argument (`exec.md`
+states when it may run).
 
 It prints one JSON line:
 
@@ -42,13 +38,13 @@ and id. Don't search by hand and pick a block: a guessed contract builds the wro
   acceptance is judged on rendered output.
 - **implementer** otherwise.
 
-Dispatch it with `isolation: "worktree"`. Before dispatching, count builders already running in this session:
-respect the cap on concurrent builders the repo's instructions state, or three if they state none. At the cap,
-wait for one to finish.
+Dispatch it with `isolation: "worktree"`.
 
 ### 3. The build brief
 
-The first line is exact; the marker is how hooks tie the dispatch to the task.
+The first line is exact; the marker is how hooks tie the dispatch to the task. Every dispatch starts with it,
+including each re-dispatch (a fix round, a `NEEDS_CONTEXT` round, a verifier sent back for a missing
+`Verdict:` line): it is a new dispatch whose first line is the marker.
 
 ```text
 agentry-task: <id> role=build
@@ -76,8 +72,10 @@ isn't available.
 | Status | Do |
 | :--- | :--- |
 | `DONE`, `DONE_WITH_CONCERNS` | Verify. Pass the concerns to the verifier and into the handoff. |
-| `NEEDS_CONTEXT` | If the missing piece is a fact you can supply without changing the contract, supply it and re-dispatch once. If it needs a file outside the contract or a decision the contract never made, stop and report it to the owner. |
+| `NEEDS_CONTEXT` | If the missing fact is already in the contract block, the repo or recalled memory, supply it and re-dispatch once: a new dispatch, marker line first, then the build brief, then the fact appended at the end. Otherwise stop and ask the owner. |
 | `BLOCKED` | Stop and report what blocks it and the smallest unblock. |
+
+Never widen the contract: a file outside it or a decision it never made goes to the owner.
 
 ### 5. The verify brief
 
@@ -94,17 +92,21 @@ Read and run there; edit nothing, commit nothing.
 Builder's report: <status and concerns>
 For each acceptance item: PASS, FAIL or UNVERIFIED, with the evidence (the command and its output, file:line,
 a screenshot path). Check that the branch changes only the owned files.
-End with one line `Verdict: PASS | PASS WITH NOTES | FAIL`.
+Your last instruction: the final line of your report is exactly `Verdict: PASS | PASS WITH NOTES | FAIL`,
+after `used_memories` and anything else.
 ```
 
-A report without that last line is not a verdict: send it back once for the line.
+A report without that last line is not a verdict: send it back once for the line, as a new dispatch whose
+first line is the marker.
 
 ### 6. One fix round
 
-On `FAIL`, dispatch a fresh builder (same role, `isolation: "worktree"`) with the build brief plus:
+On `FAIL`, dispatch a fresh builder (same role, `isolation: "worktree"`). The fix-round brief is, in order: the
+marker line `agentry-task: <id> role=build`, then the build brief, then this text appended at the end:
 
 ```text
-Attempt 2. Start from branch <branch>: `git merge --ff-only <branch>`.
+Attempt 2. Your worktree is new. First run `git reset --hard <first builder's branch>` so you continue exactly
+from the first attempt, whatever main has moved on to.
 Fix list, from the verifier's FAIL: <the failing items and their evidence>
 ```
 
