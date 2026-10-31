@@ -132,6 +132,23 @@ test("pickTier: every full result carries a reason", () => {
   assert.match(pickTier(gate, ["a.md"]).reason, /match/);
 });
 
+test("globs: ** never crosses a .. segment or a partial segment, and odd paths never match", () => {
+  const only = (glob, file) =>
+    pickTier({ command: ["t"], quick: { command: ["q"], only: [glob] } }, [file]).tier === "quick";
+  assert.equal(only("docs/**", "docs/a/b.md"), true);
+  assert.equal(only("**/*.md", "a/b/c.md"), true);
+  assert.equal(only("docs/**/x.md", "docs/x.md"), true);
+  assert.equal(only("docs/**", "./docs/a.md"), true); // a leading ./ is normalised
+  assert.equal(only("docs/**", "docs/../src/x"), false);
+  assert.equal(only("**", "../outside"), false);
+  assert.equal(only("**/x", "docs/../x"), false);
+  assert.equal(only("docs/**", "docs-evil/x"), false);
+  assert.equal(only("docs/**", "/docs/x"), false);
+  assert.equal(only("docs/a**b", "docs/a/zzz/b"), false); // ** inside a segment is just *
+  assert.equal(only("docs/a**b", "docs/axyzb"), true);
+  assert.equal(only("docs/../src/**", "docs/../src/x"), false);
+});
+
 const record = { exit: 0, tier: "full", cleanBefore: true, cleanAfter: true, tree: "t1" };
 const ok = {
   record,
