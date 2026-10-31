@@ -101,6 +101,14 @@ test("file-required flags a sprint with no file and names the glob", () => {
   ]);
 });
 
+test("file-required flags a sprint whose glob matches more than one file, naming them", () => {
+  const two = ["sprints/S1_a.md", "sprints/S1_b.md"];
+  const model = makeModel([sprint("S1", "todo", { own: { ...file(two[0]), matches: two } })]);
+  assert.deepEqual(messages(run(rule("file-required"), model, { kind: "sprint" })), [
+    "S1: more than one file matches sprints/S1_*.md: sprints/S1_a.md, sprints/S1_b.md",
+  ]);
+});
+
 test("file-required honours the rule's own except", () => {
   const model = makeModel([sprint("S1", "todo")]);
   assert.deepEqual(

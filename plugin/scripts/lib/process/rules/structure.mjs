@@ -143,8 +143,15 @@ const fileRequired = {
     for (const kind of kinds) {
       const file = model.spec.kinds[kind].file;
       for (const item of itemsOf(model, kind)) {
-        if (item.own || excepted(item, params.except) || file?.except?.includes(item.id)) continue;
-        out.push(finding("file-required", item, `no file (${file?.glob ?? "none declared"})`));
+        if (excepted(item, params.except) || file?.except?.includes(item.id)) continue;
+        const matches = item.own?.matches ?? [];
+        if (matches.length > 1) {
+          const glob = file.glob.replaceAll("{id}", item.id);
+          const what = `more than one file matches ${glob}: ${matches.join(", ")}`;
+          out.push(finding("file-required", item, what));
+        } else if (!item.own) {
+          out.push(finding("file-required", item, `no file (${file?.glob ?? "none declared"})`));
+        }
       }
     }
     return out;

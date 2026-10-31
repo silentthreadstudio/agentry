@@ -73,7 +73,7 @@ repo's own name for the rule on each finding.
 | `ids-unique` | no id twice in a kind | — |
 | `status-known` | every status word is in `values` | — |
 | `refs-resolve` | every `ref`/`list` value names an item (or an `also` literal) | — |
-| `file-required` | an item with `file.required` has its file | `kind` |
+| `file-required` | an item with `file.required` has exactly one file | `kind` |
 | `members-listed` | the parent's own-file section lists exactly its children | `kind`, `section`, `member` |
 | `deps-done` | a started item's dependencies are all done (a sprint or milestone dep by its phase) | `kind`, `field` |
 | `parent-active` | a started item's parent is active or done | `kind` |
