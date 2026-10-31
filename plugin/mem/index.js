@@ -28748,8 +28748,8 @@ var MemoryService = class {
     if (!fact) return { ok: false, reason: "not-found", id };
     if (fact.status !== "archived")
       return { ok: false, reason: "invalid-state", id, status: fact.status };
-    const restored = { ...fact, status: "active", decay: 0, updatedAt: this.iso() };
-    delete restored.archivedAt;
+    const { archivedAt: _tombstone, ...live } = fact;
+    const restored = { ...live, status: "active", decay: 0, updatedAt: this.iso() };
     this.save(restored);
     this.index.add(id, this.body(restored));
     return { ok: true, id };

@@ -10,6 +10,7 @@ import { err, ok } from "./result.js";
  * raw stack/path never reaches the caller and the failure conforms to the AC1 shape — the SDK's own
  * try/catch produces a non-envelope message, so we map the thrown case ourselves.
  */
+// biome-ignore lint/suspicious/noExplicitAny: args are validated by each tool's zod inputSchema at registerTool; typing them here would make every handler re-declare the schema shape
 export type Handler = (args: any) => Promise<ReturnType<typeof ok> | ReturnType<typeof err>>;
 export const guard =
   (handler: Handler): Handler =>

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { MemoryError } from "@agentry/core";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MemoryService } from "../src/application/memory-service.js";
 import type { FileStore, ReadResult, StoredEpisode, StoredFact } from "../src/domain/ports.js";
 import type { TextIndex } from "../src/domain/ports.js";
@@ -39,10 +40,9 @@ function wired(global: string): {
   const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
   service.load();
   const server = new CapturingServer();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerFactTools(server as any, service);
-  registerEpisodeTools(server as any, service);
-  registerFlowTools(server as any, service);
+  registerFactTools(server as unknown as McpServer, service);
+  registerEpisodeTools(server as unknown as McpServer, service);
+  registerFlowTools(server as unknown as McpServer, service);
   const call = (tool: string, args: unknown = {}) => {
     const h = server.handlers.get(tool);
     if (!h) throw new Error(`tool ${tool} not registered`);
@@ -123,8 +123,7 @@ test("AC2: recover on an existing non-archived fact → invalid-state, why names
 
   // adapter-level envelope distinguishes invalid-state from not-found
   const server = new CapturingServer();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerFactTools(server as any, service);
+  registerFactTools(server as unknown as McpServer, service);
   const res = await server.handlers.get("memory_recover")!({ id });
   const env = envelopeOf(res);
   assert.equal(env.code, "invalid-state");
@@ -233,8 +232,7 @@ test("AC7: a throwing handler path → isError, code:internal, no path or stack 
   const service = new MemoryService(new MarkdownFileStore(roots), throwingIndex, roots);
   service.load();
   const server = new CapturingServer();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerFactTools(server as any, service);
+  registerFactTools(server as unknown as McpServer, service);
   const res = await server.handlers.get("memory_search")!({ query: "anything" });
   const env = envelopeOf(res);
   assert.equal(env.code, "internal");
@@ -349,19 +347,22 @@ test("AC9: every registered tool's happy path stays isError:false with expected 
   assert.ok(Array.isArray(payloadOf(await call("memory_consolidate", {})).proposals));
   // 11 memory_recover (valid: archive a fact, then recover it)
   let clock = 5000;
+  const tick = (): number => {
+    clock += 1000;
+    return clock;
+  };
   const dir2 = fresh();
   const roots2: Roots = { global: dir2, project: null };
   const svc2 = new MemoryService(
     new MarkdownFileStore(roots2),
     new SqliteTextIndex(),
     roots2,
-    () => (clock += 1000),
+    tick,
   );
   svc2.load();
-  const archivedId = archivedFact(svc2, () => (clock += 1000));
+  const archivedId = archivedFact(svc2, tick);
   const server2 = new CapturingServer();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  registerFactTools(server2 as any, svc2);
+  registerFactTools(server2 as unknown as McpServer, svc2);
   const recoverRes = await server2.handlers.get("memory_recover")!({ id: archivedId });
   assert.deepEqual(payloadOf(recoverRes), { recovered: true });
 });
