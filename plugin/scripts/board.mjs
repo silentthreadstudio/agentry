@@ -13,15 +13,27 @@ import { loadSpec, readProcess } from "./lib/process/read.mjs";
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "lib", "process", "cli");
 const subs = () => readdirSync(CLI).map((f) => f.replace(/\.mjs$/, ""));
 
+// A router option's value: undefined when absent, null when given without one (last, or followed by
+// another option).
 function take(argv, name) {
   const at = argv.indexOf(name);
-  return at < 0 ? undefined : argv.splice(at, 2)[1];
+  if (at < 0) return undefined;
+  const value = argv[at + 1];
+  const given = value !== undefined && !value.startsWith("--");
+  argv.splice(at, given ? 2 : 1);
+  return given ? value : null;
 }
 
 async function main(argv) {
   const rootArg = take(argv, "--root");
+  const processArg = take(argv, "--process");
+  for (const [name, value] of [
+    ["--root", rootArg],
+    ["--process", processArg],
+  ])
+    if (value === null) return { exit: 2, out: `${name} needs a value` };
   const root = resolve(rootArg ?? gitRootOf(process.cwd()) ?? process.cwd());
-  const processPath = resolve(take(argv, "--process") ?? join(root, ".agentry", "process.json"));
+  const processPath = resolve(processArg ?? join(root, ".agentry", "process.json"));
   const sub = argv[0] && !argv[0].startsWith("--") ? argv.shift() : "status";
   const file = join(CLI, `${sub}.mjs`);
   if (!/^[a-z][a-z-]*$/.test(sub) || !existsSync(file))

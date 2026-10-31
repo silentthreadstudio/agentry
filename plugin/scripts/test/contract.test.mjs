@@ -191,3 +191,17 @@ test("find-contract.mjs prints one JSON line; exit 0 found, 1 not found, 2 usage
   assert.equal(run("KX-60", "--root", root).status, 1);
   assert.equal(run("--root", root).status, 2);
 });
+
+test("find-contract.mjs: an option without its value is a usage error", () => {
+  const root = repo({ "TASKS.md": "- **KX-06** owns the gate.\n" });
+  const run = (...args) => spawnSync("node", [CLI, ...args], { encoding: "utf8", cwd: root });
+  for (const args of [
+    ["KX-06", "--root"],
+    ["KX-06", "--root", "--kind", "task"],
+    ["KX-06", "--kind"],
+  ]) {
+    const res = run(...args);
+    assert.equal(res.status, 2, args.join(" "));
+    assert.match(res.stderr, /^usage: find-contract\.mjs/);
+  }
+});

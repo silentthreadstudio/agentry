@@ -9,21 +9,26 @@ import { join, resolve } from "node:path";
 import { findContract, gitRootOf } from "./lib/process/contract.mjs";
 import { loadSpec } from "./lib/process/read.mjs";
 
+const USAGE = "usage: find-contract.mjs <id> [--root <dir>] [--process <file>] [--kind <kind>]\n";
+const usage = () => {
+  process.stderr.write(USAGE);
+  process.exit(2);
+};
 const argv = process.argv.slice(2);
+// An option's value; an option given without one (last, or followed by another option) is a usage error.
 const option = (name) => {
   const at = argv.indexOf(name);
-  return at < 0 ? undefined : argv.splice(at, 2)[1];
+  if (at < 0) return undefined;
+  const value = argv[at + 1];
+  if (value === undefined || value.startsWith("--")) usage();
+  argv.splice(at, 2);
+  return value;
 };
 const rootArg = option("--root");
 const processArg = option("--process");
 const kind = option("--kind") ?? "task";
 const [id, extra] = argv;
-if (!id || id.startsWith("-") || extra !== undefined) {
-  process.stderr.write(
-    "usage: find-contract.mjs <id> [--root <dir>] [--process <file>] [--kind <kind>]\n",
-  );
-  process.exit(2);
-}
+if (!id || id.startsWith("-") || extra !== undefined) usage();
 const root = resolve(rootArg ?? gitRootOf(process.cwd()) ?? process.cwd());
 const specPath = resolve(processArg ?? join(root, ".agentry", "process.json"));
 const loaded = existsSync(specPath) ? loadSpec(specPath) : { spec: null, problems: [] };

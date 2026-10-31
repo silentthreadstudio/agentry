@@ -86,6 +86,11 @@ test("usage and process-file errors are exit 2, on stderr", () => {
   } finally {
     rmSync(empty, { recursive: true, force: true });
   }
+  for (const args of [["--root"], ["--process"], ["--root", "--process", "x.json"]]) {
+    const bare = spawnSync("node", [BOARD, "check", ...args], { encoding: "utf8", cwd: root });
+    assert.equal(bare.status, 2, args.join(" "));
+    assert.match(bare.stderr, /needs a value/);
+  }
   const missing = spawnSync("node", [BOARD, "check", "--root", root], { encoding: "utf8" });
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /run \/agentry:init/);
