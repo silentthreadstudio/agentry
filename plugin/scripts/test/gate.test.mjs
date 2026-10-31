@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { canSkip, pickTier, runGate } from "../lib/lane/gate.mjs";
+import { canSkip, changedSince, pickTier, runGate } from "../lib/lane/gate.mjs";
 import { commitFile, git, tempRepo } from "./git-repo.mjs";
 
 let repo;
@@ -132,7 +132,7 @@ test("pickTier: every full result carries a reason", () => {
   assert.match(pickTier(gate, ["a.md"]).reason, /match/);
 });
 
-const record = { exit: 0, tier: "full", cleanBefore: true, cleanAfter: true };
+const record = { exit: 0, tier: "full", cleanBefore: true, cleanAfter: true, tree: "t1" };
 const ok = {
   record,
   mainTree: "t1",
@@ -144,6 +144,21 @@ const ok = {
 test("canSkip: skips under all four conditions, including post-gate docs", () => {
   assert.equal(canSkip(ok).skip, true);
   assert.equal(canSkip({ ...ok, changedSinceGate: ["docs/x.md"] }).skip, true);
+});
+
+test("canSkip: a moved tree skips only when the listed docs files explain it", () => {
+  const moved = { ...ok, record: { ...record, tree: "t0" } };
+  assert.equal(canSkip({ ...moved, changedSinceGate: ["docs/x.md"] }).skip, true);
+});
+
+test("changedSince lists a rename out of src/ into docs/ as both paths", () => {
+  commitFile(repo.dir, "src/a.txt", "a\n".repeat(20));
+  const gated = git(repo.dir, "rev-parse", "HEAD");
+  assert.deepEqual(changedSince(repo.dir, gated), []);
+  git(repo.dir, "mv", "src/a.txt", "docs-a.txt");
+  git(repo.dir, "commit", "-q", "-m", "move");
+  assert.deepEqual(changedSince(repo.dir, gated).sort(), ["docs-a.txt", "src/a.txt"]);
+  assert.equal(changedSince(repo.dir, "no-such-commit"), null);
 });
 
 test("canSkip: each failed condition refuses with its own reason", () => {
@@ -158,6 +173,11 @@ test("canSkip: each failed condition refuses with its own reason", () => {
     [{ ...ok, mainTree: undefined, branchTipTree: undefined }, /tree differs/],
     [{ ...ok, changedSinceGate: ["src/x.mjs"] }, /src\/x\.mjs changed since the gate/],
     [{ ...ok, after: undefined, changedSinceGate: ["docs/x.md"] }, /not in "after"/],
+    [{ ...ok, changedSinceGate: undefined }, /unknown changes since the gate/],
+    [{ ...ok, changedSinceGate: "docs/x.md" }, /unknown changes since the gate/],
+    [{ ...ok, record: { ...record, tree: undefined } }, /no tree/],
+    // the tree moved since the gate, but nothing is listed to explain it
+    [{ ...ok, record: { ...record, tree: "t0" }, changedSinceGate: [] }, /no changed files/],
   ];
   for (const [input, why] of cases) {
     const res = canSkip(input);

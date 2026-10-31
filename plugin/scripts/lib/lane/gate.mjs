@@ -97,9 +97,18 @@ export function pickTier(gate, changedFiles) {
   };
 }
 
+/** The files that differ between `commit` (the gated commit) and `tip` (default HEAD): the input `canSkip`
+ *  wants as `changedSinceGate`. A rename lists both its paths, so moving a file out of `src/` into `docs/`
+ *  is never read as a docs-only change. Null when git cannot say. */
+export function changedSince(dir, commit, tip = "HEAD") {
+  const res = git(dir, ["diff", "--no-renames", "--name-only", "-z", commit, tip, "--"]);
+  return res.status === 0 ? res.stdout.split("\0").filter(Boolean) : null;
+}
+
 /** May a merge skip re-running the gate on main? Only when the recorded worktree gate was green and clean
  *  both sides, main's tree equals the branch tip's tree, and everything changed since that gate matches
- *  `after` (docs and the like). Each refusal names its reason. */
+ *  `after` (docs and the like). `changedSinceGate` must be known (see `changedSince`): missing, or empty
+ *  while the tree moved since the gate, is "unknown" and never skips. Each refusal names its reason. */
 export function canSkip({ record, mainTree, branchTipTree, changedSinceGate, after }) {
   if (!record) return { skip: false, reason: "no gate record" };
   if (record.exit !== 0) return { skip: false, reason: `the recorded gate exited ${record.exit}` };
@@ -116,8 +125,17 @@ export function canSkip({ record, mainTree, branchTipTree, changedSinceGate, aft
     };
   if (!mainTree || mainTree !== branchTipTree)
     return { skip: false, reason: "main's tree differs from the branch tip's tree" };
+  if (!record.tree)
+    return { skip: false, reason: "the recorded gate has no tree to compare against" };
+  if (!Array.isArray(changedSinceGate))
+    return { skip: false, reason: "unknown changes since the gate" };
+  if (record.tree !== branchTipTree && changedSinceGate.length === 0)
+    return {
+      skip: false,
+      reason: "the tree moved since the gate but no changed files explain it",
+    };
   const inAfter = matcher(after);
-  const stray = (changedSinceGate ?? []).find((file) => !inAfter(file));
+  const stray = changedSinceGate.find((file) => !inAfter(file));
   if (stray !== undefined)
     return { skip: false, reason: `${stray} changed since the gate and is not in "after"` };
   return { skip: true, reason: "green clean gate on this tree; only post-gate files changed" };
