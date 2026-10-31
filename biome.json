@@ -15,7 +15,10 @@
       "plugin/flow/**",
       "plugin/workbench/**",
       "packages/eval/fixtures/**",
-      ".claude/**"
+      ".claude/**",
+      "**/.astro/**",
+      "packages/web/src/data/corrections.ts",
+      "packages/web/public/dashboard/**"
     ]
   },
   "formatter": {
