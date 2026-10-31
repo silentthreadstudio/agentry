@@ -60,8 +60,8 @@ test("table board: cells are read by header name, stripped and typed", () => {
   assert.deepEqual(item(m, "task", "W2").fields.commit, ["b2c3d4e", "0f9e8d7"]);
   assert.equal(item(m, "task", "W2").fields.note, "loop.mjs split in two", "backticks stripped");
   assert.equal(item(m, "task", "W5").fields.note, "The door | the hinge");
-  assert.equal(item(m, "sprint", "A1").fields.name, "sprints/A1_the_loop.md", "link target");
-  assert.equal(item(m, "sprint", "PRE").fields.name, null, "no link → null");
+  assert.equal(item(m, "sprint", "A1").fields.name, "The loop", "link text");
+  assert.equal(item(m, "sprint", "PRE").fields.name, "Work merged before this board", "no link");
   assert.equal(item(m, "sprint", "A1").fields.ok, "2026-01-12");
   assert.equal(item(m, "sprint", "A2").fields.ok, null);
   const m1 = item(m, "milestone", "M1");

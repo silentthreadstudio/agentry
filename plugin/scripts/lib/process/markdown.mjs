@@ -9,7 +9,7 @@ const HEADING = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const SEPARATOR_CELL = /^:?-+:?$/;
 const LEAD = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?\*\*(.+?)\*\*(.*)$/;
 const SHA = /(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])/g;
-const LINK = /\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/;
+const LINK = /\[([^\]]*)\]\(\s*<?[^)\s>]+>?(?:\s+"[^"]*")?\s*\)/;
 const DATE = /^(\d{4}-\d{2}-\d{2})/;
 
 export function lines(text) {
@@ -172,7 +172,8 @@ const PARSE = {
     return trimmed ? [...PARSE.commits(v), trimmed] : PARSE.commits(v);
   },
   flag: (v, field) => (field.mark ? v.includes(field.mark) : v !== ""),
-  link: (v) => LINK.exec(v)?.[1] ?? null,
+  // The link text (the target is the kind's own file, found by its glob); a cell without a link reads whole.
+  link: (v) => (LINK.exec(v)?.[1] ?? v).trim() || null,
   date: (v) => DATE.exec(v)?.[1] ?? null,
 };
 
@@ -181,7 +182,8 @@ export const parseCommits = (cell) => PARSE.commits(plain(cell));
 
 /** One cell (or frontmatter value) as its field reads it: plain, then `match`, then the `type`:
  *  `list`/`commits` → string[], `evidence` → the SHAs + one note token, `flag` → boolean, `link` →
- *  the first link's target, `date` → a leading YYYY-MM-DD; null when match/link/date find nothing. */
+ *  the first link's text (or the cell), `date` → a leading YYYY-MM-DD; null when match/date find
+ *  nothing or the cell is empty. */
 export function cellValue(raw, field) {
   const type = field.type ?? "text";
   if (Array.isArray(raw) && type === "list") return raw.map(plain).filter(Boolean);

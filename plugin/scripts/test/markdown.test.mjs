@@ -108,8 +108,9 @@ test("cellValue reads each field type", () => {
   assert.equal(cellValue("⚑", { type: "flag", mark: "⚑" }), true);
   assert.equal(cellValue("", { type: "flag", mark: "⚑" }), false);
   assert.equal(cellValue("x", { type: "flag" }), true);
-  assert.equal(cellValue("[The loop](sprints/A1.md)", { type: "link" }), "sprints/A1.md");
-  assert.equal(cellValue("No link", { type: "link" }), null);
+  assert.equal(cellValue("[The loop](sprints/A1.md)", { type: "link" }), "The loop");
+  assert.equal(cellValue("No link", { type: "link" }), "No link");
+  assert.equal(cellValue("", { type: "link" }), null);
   assert.equal(cellValue("2026-01-12 (late)", { type: "date" }), "2026-01-12");
   assert.equal(cellValue("soon", { type: "date" }), null);
   assert.equal(cellValue("pass with notes", { case: "upper" }), "PASS WITH NOTES");
