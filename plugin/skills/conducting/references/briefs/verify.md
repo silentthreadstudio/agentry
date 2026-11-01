@@ -47,7 +47,8 @@ The builder's report: {{builderReport}}
 - Each probe you write to test a claim (a script, a test) goes under {{logDir}} and is named in your
   report with its path and what it showed, so a fix round can commit it as a test.
 - Run checks in the foreground; never pipe one into `grep`, `tail` or `head` to decide; start no
-  background waits.
+  background waits. Only a check longer than your host's foreground limit runs in the host's background
+  mode: wait for its one exit notice and read the same exit code.
 
 ## Report
 

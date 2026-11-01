@@ -79,8 +79,9 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
 - `needs-context`: if the fact is in the contract block, the repo or memory, append it at the end of the brief
   under `## The fact` (the `todo` line says where), then send the prompt. Otherwise ask the owner first. The lane
   allows one such round.
-- A gate can outrun a host's foreground timeout: run `gate` in the host's background mode and wait for its one
-  exit notice. The record is written at exit either way.
+- `gate` and `close` run in the foreground; read the exit code. Only a gate longer than the host's foreground
+  limit runs in the host's background mode: wait for its one exit notice and read the same exit code (no
+  polling, no piping). The record is written at exit either way.
 
 ### Guards
 
@@ -119,7 +120,8 @@ templates, once:
 
 - `cd "<worktree>" &&` on every shell command (quoted); absolute paths under the worktree.
 - Checks in the foreground, exit codes read, never piped into `grep` / `tail` to decide; no self-started
-  background waits.
+  background waits. The one exception is the gate rule above: a check longer than the host's foreground limit
+  runs in the host's background mode, read by the same exit code.
 - Logs and scratch files only under the round's log dir.
 - Commits on `agentry/<id>` with no AI attribution; no merge, push or rebase.
 - The verifier changes and commits nothing, runs the printed gate line, states the bar for any input or

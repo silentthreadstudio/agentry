@@ -9,7 +9,7 @@ Run the **exec lane** for task `$ARGUMENTS`. The script carries the sequence: ru
 2. Read the printed JSON and act on `next`:
    - `build`, `verify`, `final`: dispatch a fresh agent with `prompt`, verbatim, as the whole prompt. `dispatch.agent` names the type (for a build it is a suggestion: you decide designer or implementer). No worktree isolation option: the worktree exists.
    - `fix`, `recheck`, `needs-context`, `resend`: when `mode` is `resume`, send `prompt` to the agent `agent` (resume it); otherwise dispatch fresh as above. For `needs-context`, do `todo` first.
-   - `gate`, `close`: run `run` in the foreground and read its exit code.
+   - `gate`, `close`: run `run` and read its exit code (a gate past the host's foreground limit: `lanes.md`, Dispatching).
    - `stop`: tell the owner `reason`, with every verdict (`lane exec show <id>`). Don't retry by hand.
    - `merge`: the lane is done; hand off (step 4).
 3. When an agent returns, save its full reply to `reportPath` if that file is missing or empty, then run `after` with the agent's id. Back to step 2.

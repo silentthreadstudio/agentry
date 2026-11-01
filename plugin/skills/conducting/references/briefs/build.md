@@ -35,7 +35,8 @@ Recalled for these files (cite each one that changed what you did in `used_memor
 
 - Run the repo's checks in the foreground and read each exit code. Never pipe a check into `grep`, `tail`
   or `head` to decide whether it passed. Don't start background jobs or watchers to wait on: wait for the
-  command itself.
+  command itself. Only a check longer than your host's foreground limit runs in the host's background
+  mode: wait for its one exit notice and read the same exit code.
 - The repo's gate, as the lane records it (it refuses a dirty tree): `{{gateLine}}`
 - Commit on `{{branch}}` following the repo's commit conventions, with no AI attribution. Leave no
   uncommitted or untracked files behind. Do not merge, push or rebase, and once you have reported, don't
