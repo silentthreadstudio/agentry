@@ -1,25 +1,36 @@
-// board fix [--dry-run] [--json] — write what is mechanical, report the rest (A31; plan R1b-6). A task whose
-// ledger's work is on main now (`drift.mechanical`) and whose board row lacks the done status, the commit
-// cell or the handoff line gets the lifecycle's `merged` event narrowed to those missing steps, through
-// `applyEvent`, in one write: a step the board already has (a hand-written cell, any handoff line for the
-// task) is never written again. Every other drift is listed with the command that deals with it. The output
-// lists exactly the writes made; running it again finds nothing to do; `--dry-run` writes nothing.
+// board fix [--dry-run] [--accept <id>] [--json] — write what is provable, report the rest (A23, A31; plan
+// R1b-6). A task whose `lane merge` record still holds on main (`drift.mechanical`: its landed commits are
+// main's first-parent history and their change still reverse-applies on main's tip) and whose board row
+// lacks the done status, the commit cell or the handoff line gets the lifecycle's `merged` event narrowed
+// to those missing steps, through `applyEvent`, in one write: a step the board already has (a hand-written
+// cell, any handoff line naming the task) is never written again. A merge with no record is never written
+// on its own: it stays a `merged-by-hand` nudge until the owner confirms it with `--accept <id>`, which
+// writes it only while the branch's change still reverse-applies on main (`drift.accepted`). Anything
+// unsure writes nothing and is listed, as is every other drift, with the command that deals with it. The
+// output lists exactly the writes made; running it again finds nothing to do; `--dry-run` writes nothing.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = nothing left for the owner, 1 = items left
 // to report, 2 = usage
 import { basename } from "node:path";
 import { mainRoot } from "../../lane/worktree.mjs";
-import { mechanical, nudges } from "../drift.mjs";
+import { accepted, mechanical, nudges } from "../drift.mjs";
 import { applyEvent } from "../lifecycle.mjs";
 import { readProcess } from "../read.mjs";
 import { fit } from "../render.mjs";
 import { titleOf } from "../status.mjs";
 import { WriteError } from "../write.mjs";
 
-export const usage = "fix [--dry-run] [--json]";
-export const flags = { "--dry-run": false, "--json": false };
+export const usage = "fix [--dry-run] [--accept <id>] [--json]";
+export const flags = { "--dry-run": false, "--accept": true, "--json": false };
 const WIDTH = 80;
-const FIX = "/agentry:board --fix";
+
+// The id `--accept` names: undefined when it is not given, null when it is given without one.
+function acceptOf(argv) {
+  const at = argv.indexOf("--accept");
+  if (at < 0) return undefined;
+  const id = argv[at + 1];
+  return id && !id.startsWith("-") ? id : null;
+}
 
 // The process file with the lifecycle writing only `need`: the steps it drops are skipped by `applyEvent`.
 const narrowed = (spec, need) => ({
@@ -32,8 +43,15 @@ const narrowed = (spec, need) => ({
 
 export function run(argv, { root, spec, model }) {
   const dryRun = argv.includes("--dry-run");
+  const id = acceptOf(argv);
+  if (id === null) return { exit: 2, out: `--accept needs a task id\nusage: ${usage}` };
   const runRoot = mainRoot(root) ?? root;
   const plan = mechanical({ root, runRoot, spec, model });
+  if (id !== undefined && !plan.fixes.some((f) => f.id === id)) {
+    const own = accepted({ root, runRoot, spec, model, id });
+    plan.fixes.push(...own.fixes);
+    plan.left.push(...own.left);
+  }
   const fixed = [];
   const left = [...plan.left];
   let board = model;
@@ -64,8 +82,8 @@ export function run(argv, { root, spec, model }) {
     }
   }
   const after = dryRun ? model : board;
-  // A nudge to run fix is this run's own business: its task is fixed (or would be) or in `left`.
-  const rest = nudges({ root, runRoot, spec, model: after }).filter((n) => n.command !== FIX);
+  // The task `--accept` names is this run's own business: fixed (or would be) or in `left`.
+  const rest = nudges({ root, runRoot, spec, model: after }).filter((n) => !id || n.id !== id);
   const exit = left.length || rest.length ? 1 : 0;
   if (argv.includes("--json"))
     return { exit, out: JSON.stringify({ dryRun, fixed, left, nudges: rest }) };

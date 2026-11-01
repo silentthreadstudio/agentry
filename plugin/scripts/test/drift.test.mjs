@@ -94,14 +94,16 @@ test("commits cherry-picked onto main by hand: merged-by-hand, naming merge", ()
   assert.ok(!nudgesOf(root).some((x) => x.kind === "unlisted-worktree"));
 });
 
-test("a ledgered branch on main with no merge record nudges fix until the board catches up", () => {
+test("a ledgered branch on main with no merge record nudges fix --accept, and fix alone writes nothing", () => {
   const { root } = fresh();
   const { sha } = builtBranch(root, "T1");
   ledger(root, "T1");
   assert.ok(!nudgesOf(root).some((x) => x.kind === "merged-by-hand"), "not on main yet");
   pickOntoMain(root, sha);
   const [n] = nudgesOf(root).filter((x) => x.kind === "merged-by-hand");
-  assert.deepEqual([n.id, n.command], ["T1", "/agentry:board --fix"]);
+  assert.deepEqual([n.id, n.command], ["T1", "/agentry:board --fix --accept T1"]);
+  const spec = loadSpec(join(root, ".agentry", "process.json"), { root }).spec;
+  assert.deepEqual(mechanical({ root, spec, model: readProcess({ root, spec }) }).fixes, []);
 });
 
 test("a verified ledger with no merge is verified-not-merged, naming merge", () => {

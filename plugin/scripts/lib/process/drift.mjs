@@ -12,11 +12,12 @@
 // wrote). A task gets one nudge at most, in that order of precedence: merged-by-hand, verified-not-merged,
 // episode-pending. Without a `lifecycle` the board has no started words, so `started-by-hand` stays quiet.
 //
-// Work counts as landed only while it is on main now (A23): its commits there (cherry-picked, merged or
-// fast-forwarded) and no later commit undoing one of them. Read-only.
+// Done is written only when provable (A23): a `lane merge` record whose landed commits are still main's
+// first-parent history and whose net change still reverse-applies on main's tip. Anything else is "unsure"
+// and nothing is written. A hand merge (no record) is a nudge to `board fix --accept <id>`: the owner says it
+// landed, and the branch's net change must still reverse-apply on main. Read-only; git goes through git.mjs.
 import { realpathSync } from "node:fs";
 import { basename, join, sep } from "node:path";
-import { git as runGit } from "../lane/worktree.mjs";
 import * as git from "./git.mjs";
 import * as ledgers from "./ledger.mjs";
 import * as md from "./markdown.mjs";
@@ -33,39 +34,7 @@ const workItems = (spec, model) => {
   return name ? (own(model.kinds, name)?.items ?? []) : [];
 };
 
-// ---- git, read-only: every helper answers null / false / [] on any failure ----
-
-const safeRef = (ref) => typeof ref === "string" && ref.length > 0 && !ref.startsWith("-");
-const out = (root, args, input) => {
-  const res = runGit(root, args, input);
-  return res.status === 0 ? res.stdout : null;
-};
-const commitOf = (root, ref) =>
-  (safeRef(ref) && out(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])?.trim()) ||
-  null;
-const isAncestor = (root, a, b) => runGit(root, ["merge-base", "--is-ancestor", a, b]).status === 0;
-const words = (text) => (text ?? "").split(/\s+/).filter(Boolean);
-
-// Stable patch ids of the non-merge commits `git log` lists for `args`, in its order: `{ pid, sha }`.
-function pids(root, args) {
-  const patches = out(root, [
-    "log",
-    "-p",
-    "--no-color",
-    "--no-ext-diff",
-    "--no-merges",
-    ...args,
-    "--",
-  ]);
-  const ids = patches ? out(root, ["patch-id", "--stable"], patches) : null;
-  return (ids ?? "")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [pid, sha] = line.split(" ");
-      return { pid, sha };
-    });
-}
+// ---- where a task's work stands on main ----
 
 // A reflog entry that made the commit on the branch itself (not a reset, a fast-forward or a merge).
 const MADE = /^(commit( \((amend|initial)\))?|cherry-pick|revert): /;
@@ -76,113 +45,72 @@ const MADE = /^(commit( \((amend|initial)\))?|cherry-pick|revert): /;
 // fast-forwarded to main, or never committed to), it has no work of its own: null. undefined when nothing
 // tells.
 function ownCommits(root, { tip, branch, bases }) {
-  const log = safeRef(branch)
-    ? out(root, ["log", "-g", "--format=%H %gs", `refs/heads/${branch}`, "--"])
-    : null;
-  const entries = (log ?? "")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const at = line.indexOf(" ");
-      return { sha: line.slice(0, at), made: MADE.test(line.slice(at + 1)) };
-    });
+  const entries = git.reflog(root, branch).map((e) => ({ sha: e.sha, made: MADE.test(e.says) }));
   if (entries.length && !(entries[0].sha === tip && entries[0].made)) return null;
   const base = bases
-    .map((ref) => commitOf(root, ref))
-    .find((c) => c && c !== tip && isAncestor(root, c, tip));
-  if (base)
-    return words(
-      out(root, ["rev-list", "--first-parent", "--no-merges", "--reverse", `${base}..${tip}`]),
-    );
+    .map((ref) => git.commitOf(root, ref))
+    .find((c) => c && c !== tip && git.isAncestor(root, c, tip));
+  if (base) return git.commits(root, `${base}..${tip}`, { firstParent: true, noMerges: true });
   if (!entries.length) return undefined;
   const made = [...new Set(entries.filter((e) => e.made).map((e) => e.sha))].reverse();
-  return made.filter((sha) => isAncestor(root, sha, tip));
+  return made.filter((sha) => git.isAncestor(root, sha, tip));
 }
 
-/** True when each of `shas` is on `main` and still in effect: the newest commit after it that carries its
- *  patch or the inverse patch is not the inverse (a revert; a revert of that revert counts as the patch). */
-export function inEffect(root, shas, main) {
-  const full = shas.map((s) => commitOf(root, s));
-  if (!full.length || !full.every((s) => s && isAncestor(root, s, main))) return false;
-  const walk = ["--no-walk=unsorted", ...full];
-  const patch = new Map(pids(root, walk).map((p) => [p.sha, p.pid]));
-  const undo = new Map(
-    pids(root, ["-R", "--src-prefix=b/", "--dst-prefix=a/", ...walk]).map((p) => [p.sha, p.pid]),
-  );
-  return full.every((sha) => {
-    if (!undo.has(sha)) return true; // an empty commit: nothing to undo
-    const last = pids(root, ["--topo-order", `${sha}..${main}`]).find(
-      (p) => p.pid === undo.get(sha) || p.pid === patch.get(sha),
-    );
-    return last?.pid !== undo.get(sha);
-  });
-}
-
-// Every file the branch changed since `fork` is the same on main as on the branch.
-function sameContent(root, { fork, tip, main }) {
-  const files = (out(root, ["diff", "--no-renames", "--name-only", "-z", fork, tip]) ?? "")
-    .split("\0")
-    .filter(Boolean);
-  if (!files.length) return false;
-  // The names are from the top of the repository, wherever `root` sits in it.
-  const paths = files.map((f) => `:(top,literal)${f}`);
-  return runGit(root, ["diff", "--quiet", main, tip, "--", ...paths]).status === 0;
-}
-
-/** Where `branch`'s work stands on `onto` now: `{ shas }`, the commits on main that carry it (oldest first),
- *  `{ unsure }` when its changes are on main but no commits can be named for them (a squash; a tip on main
- *  with no reflog or base to tell its own commits), or null when it is not on main (never landed, partly
- *  landed, or undone). `bases` are refs the branch may have been cut from (the ledger's `base`). */
+/** Where `branch`'s work stands on `onto` now, from git alone (no merge record): `{ shas }`, the commits on
+ *  main that carry it (oldest first); `{ unsure }` when its change is on main but no commits there can be
+ *  named for it (a squash; a tip on main with no reflog or base to tell its own commits); null when it is
+ *  not on main. On main means the branch's net change reverse-applies on main's tip, so a revert, a reset
+ *  or a hand edit that took any of its lines out leaves it off. `bases` are refs the branch may have been
+ *  cut from (the ledger's `base`). */
 export function landing(root, { branch, onto, bases = [] }) {
-  const tip = commitOf(root, branch);
-  const main = commitOf(root, onto);
+  const tip = git.commitOf(root, branch);
+  const main = git.commitOf(root, onto);
   if (!tip || !main || branch === onto) return null;
   let fork;
   let shas = null;
-  if (isAncestor(root, tip, main)) {
+  if (git.isAncestor(root, tip, main)) {
     // Merged (--no-ff) or fast-forwarded: the branch's own commits are main's.
     shas = ownCommits(root, { tip, branch, bases });
     if (shas === undefined)
       return { unsure: "its tip is on main, but not which commits are its own" };
     if (!shas?.length) return null;
-    fork = commitOf(root, `${shas[0]}^`);
+    fork = git.commitOf(root, `${shas[0]}^`);
   } else {
     // Cherry-picked: every commit of the branch has a commit on main with its patch id.
-    fork = out(root, ["merge-base", main, tip])?.trim();
-    if (!fork) return null;
-    const mine = pids(root, [`${main}..${tip}`]);
+    fork = git.mergeBase(root, main, tip);
+    const mine = fork ? git.patchIds(root, `${main}..${tip}`) : [];
     if (!mine.length) return null;
     const theirs = new Map();
-    for (const p of pids(root, [`${tip}..${main}`]))
-      if (!theirs.has(p.pid)) theirs.set(p.pid, p.sha);
-    const found = mine.map((p) => theirs.get(p.pid)).reverse();
+    for (const p of git.patchIds(root, `${tip}..${main}`))
+      if (!theirs.has(p.patchId)) theirs.set(p.patchId, p.sha);
+    const found = mine.map((p) => theirs.get(p.patchId)).reverse();
     shas = found.every(Boolean) ? found : null;
   }
-  if (shas && inEffect(root, shas, main)) return { shas };
-  return fork && sameContent(root, { fork, tip, main })
-    ? { unsure: "on main, but no commit there matches its own (squashed?)" }
-    : null;
+  if (!fork || !git.reverseApplies(root, { from: fork, to: tip, onto: main })) return null;
+  return shas ? { shas } : { unsure: "on main, but no commit there matches its own (squashed?)" };
 }
 
-// The ledger's work on main: its merge record's commits while still in effect, else its branch's landing.
-// null while a merge is under way or nothing landed.
-function landedWork(root, ledger, onto) {
-  const rec = ledger.merge;
-  if (!rec)
-    return ledger.branch
-      ? landing(root, {
-          branch: ledger.branch,
-          onto,
-          bases: [ledger.base, ledger.mainAtStart?.head],
-        })
-      : null;
-  if (!MERGED_STATES.includes(ledger.state) || !Array.isArray(rec.landed) || !rec.landed.length)
+// A merged ledger's `lane merge` record, proven against main now: `{ shas }` while the landed commits are
+// main's first-parent commits right after the first one's parent, in order, and their net change (the
+// branch's, picked) still reverse-applies on main's tip; else `{ unsure }`. null while no merge has finished.
+function recorded(root, ledger, onto) {
+  const landed = ledger.merge?.landed;
+  if (!MERGED_STATES.includes(ledger.state) || !Array.isArray(landed) || !landed.length)
     return null;
-  const main = commitOf(root, onto);
-  if (main && inEffect(root, rec.landed, main))
-    return { shas: rec.landed.map((s) => commitOf(root, s)) };
-  return { unsure: "merged, but those commits are undone on main (reverted?)" };
+  const main = git.commitOf(root, onto);
+  const shas = landed.map((s) => (typeof s === "string" ? git.commitOf(root, s) : null));
+  const from = shas[0] && git.commitOf(root, `${shas[0]}^`);
+  const chain = main && from ? git.commits(root, `${from}..${main}`, { firstParent: true }) : [];
+  const onMain = shas.every((sha, i) => sha && chain[i] === sha);
+  if (onMain && git.reverseApplies(root, { from, to: shas.at(-1), onto: main })) return { shas };
+  return { unsure: "merged, but those commits are undone on main (reverted or reset?)" };
 }
+
+// A ledger's hand merge, by its branch alone.
+const byHand = (root, ledger, onto) =>
+  ledger.branch
+    ? landing(root, { branch: ledger.branch, onto, bases: [ledger.base, ledger.mainAtStart?.head] })
+    : null;
 
 // ---- the board, as written ----
 
@@ -198,8 +126,13 @@ function written(root, spec, item, name) {
   return row ? md.plain(row.cells[column] ?? "") : null;
 }
 
-// Does the parent's handoff section hold any line naming `item` (bold lead or not)? null when there is no
-// such section to write to (the lifecycle refuses then).
+// Does `line` name `id` as a whole token? A sentence's closing `.` (or a trailing `-`, `_`) is not part of it.
+const namesId = (line, id) =>
+  line.split(/[^A-Za-z0-9._-]+/).some((t) => t === id || t.replace(/[._-]+$/, "") === id);
+
+// Does the parent's handoff section hold any line naming `item` (bold lead or not, written by hand or by
+// the lifecycle)? Any such line is the handoff. null when there is no such section to write to (the
+// lifecycle refuses then).
 function hasHandoff(root, spec, model, item, target) {
   const section = target.slice("parent.file:".length);
   const parent = parentOf(model, item);
@@ -210,7 +143,7 @@ function hasHandoff(root, spec, model, item, target) {
   return text
     .split("\n")
     .slice(sec.line, sec.end)
-    .some((line) => line.split(/[^A-Za-z0-9._-]+/).includes(item.id));
+    .some((line) => namesId(line, item.id));
 }
 
 // What the board lacks of the lifecycle's merged event for `item`: `need` (steps) and the hand-written state
@@ -240,13 +173,11 @@ function gaps({ root, spec, model, item }) {
   return { need, field, ...found };
 }
 
-// One ledgered task: the merged event `board fix` would apply (only the missing steps), or why it is only
-// reported. `work` is the task's landing when the caller has it.
-function plan({ root, spec, model, ledger, item, onto, work }) {
+// One task whose work stands as `landed` on main (`{ shas }` or `{ unsure }`): the merged event `board fix`
+// would apply (only the missing steps), or why it is only reported. Nothing when the board has it all.
+function plan({ root, spec, model, item, landed }) {
   const { need, field, status, cell } = gaps({ root, spec, model, item });
   if (!need.length && status === undefined) return {};
-  const landed = work !== undefined ? work : landedWork(root, ledger, onto);
-  if (!landed) return {};
   if (landed.unsure) return { left: `${item.id}: ${landed.unsure}` };
   const short = landed.shas[0].slice(0, 7);
   if (status !== undefined)
@@ -295,7 +226,7 @@ function taskIdOf(tree, items) {
 
 const exec = (id) => `/agentry:exec ${id ?? "<id>"}`;
 const merge = (id) => `/agentry:merge ${id ?? "<id>"}`;
-const FIX = "/agentry:board --fix";
+const accept = (id) => `/agentry:board --fix --accept ${id}`;
 
 export function nudges({ root, runRoot = root, spec, model }) {
   const life = spec.lifecycle;
@@ -304,7 +235,7 @@ export function nudges({ root, runRoot = root, spec, model }) {
   const byId = new Map(all.map((l) => [l.id, l]));
   const onto = git.defaultBranch(root);
   // The checkout the board is in, from its git root: a board kept in a subfolder sees the worktrees too.
-  const top = out(root, ["rev-parse", "--show-toplevel"])?.trim() || root;
+  const top = git.topLevel(root) || root;
   const found = [];
 
   for (const tree of git.worktrees(root).filter((t) => isAgentTree(t, { top, runRoot }))) {
@@ -321,14 +252,15 @@ export function nudges({ root, runRoot = root, spec, model }) {
 
   for (const l of all) {
     const row = { id: l.id, ...(l.branch ? { branch: l.branch } : {}) };
-    const work = l.merge ? null : landedWork(root, l, onto);
+    const work = l.merge ? null : byHand(root, l, onto);
     if (work) {
-      // On main with no merge record: a nudge only while the board has not caught up.
+      // On main with no merge record: a nudge only while the board has not caught up. Only the owner can
+      // say it landed (`--accept`); fix never writes it on its own.
       const item = items.find((i) => i.id === l.id);
       const { fixes, left } = item
-        ? plan({ root, spec, model, ledger: l, item, onto, work })
+        ? plan({ root, spec, model, item, landed: work })
         : { left: true };
-      if (fixes || left) found.push({ kind: "merged-by-hand", ...row, command: FIX });
+      if (fixes || left) found.push({ kind: "merged-by-hand", ...row, command: accept(l.id) });
     } else if (l.state === "verified" && !l.merge)
       found.push({ kind: "verified-not-merged", ...row, command: merge(l.id) });
     if (l.episode && !l.episode.writtenId)
@@ -345,29 +277,55 @@ export function nudges({ root, runRoot = root, spec, model }) {
   return found.filter((n) => !n.id || (!seen.has(n.id) && seen.add(n.id)));
 }
 
+// The one board item for `id`, or why there is not one.
+function itemFor(spec, model, id) {
+  const here = workItems(spec, model).filter((i) => i.id === id);
+  return here.length === 1
+    ? { item: here[0] }
+    : { left: `${id}: on main, but ${here.length ? "several" : "no"} board items by that id` };
+}
+
 /** What `board fix` may write (`fixes`: `{ id, shas, need }`, each the merged event's missing steps) and
- *  what it only reports (`left`: lines). A task is fixed only when a ledger's work is on main now (its merge
- *  record's commits, or its branch's commits picked, merged or fast-forwarded there) and the board lacks the
- *  status, commit cell or handoff line. Hand-written state is never overwritten: a status the lifecycle does
- *  not set before a merge, or a commit cell that does not name the landed commits, is reported instead. */
+ *  what it only reports (`left`: lines). A task is fixed only when it is provably on main: its ledger's
+ *  `lane merge` record still holds there (`recorded`), and the board lacks the status, commit cell or
+ *  handoff line. A merge with no record is never written here (see `accepted`). Hand-written state is never
+ *  overwritten: a status the lifecycle does not set before a merge, or a commit cell that does not name the
+ *  landed commits, is reported instead. */
 export function mechanical({ root, runRoot = root, spec, model }) {
   const fixes = [];
   const left = [];
   if (!spec.lifecycle) return { fixes, left };
-  const items = workItems(spec, model);
   const onto = git.defaultBranch(root);
   for (const ledger of ledgers.list(runRoot)) {
-    const here = items.filter((i) => i.id === ledger.id);
-    if (here.length !== 1) {
-      if (landedWork(root, ledger, onto))
-        left.push(
-          `${ledger.id}: on main, but ${here.length ? "several" : "no"} board items by that id`,
-        );
-      continue;
-    }
-    const found = plan({ root, spec, model, ledger, item: here[0], onto });
+    const landed = recorded(root, ledger, onto);
+    if (!landed) continue;
+    const { item, left: none } = itemFor(spec, model, ledger.id);
+    const found = item ? plan({ root, spec, model, item, landed }) : { left: none };
     if (found.fixes) fixes.push(found.fixes);
     if (found.left) left.push(found.left);
   }
   return { fixes, left };
+}
+
+/** What `board fix --accept <id>` may write once the owner says task `id` was merged by hand: the same
+ *  `{ fixes, left }` as `mechanical`, for that task alone. Its ledger's branch must be on main by git
+ *  (`landing`: commits on main to name, and its net change still reverse-applies on main's tip); otherwise
+ *  nothing is written and the reason is in `left`. */
+export function accepted({ root, runRoot = root, spec, model, id }) {
+  if (!spec.lifecycle) return { fixes: [], left: [`${id}: the process file has no lifecycle`] };
+  const ledger = ledgers.list(runRoot).find((l) => l.id === id);
+  const work = ledger && byHand(root, ledger, git.defaultBranch(root));
+  const { item, left: none } = itemFor(spec, model, id);
+  let found;
+  if (!ledger?.branch) found = { left: `${id}: no ledger names its branch; nothing to accept` };
+  else if (!item) found = { left: none };
+  else
+    found = plan({
+      root,
+      spec,
+      model,
+      item,
+      landed: work ?? { unsure: "its branch's change is not all on main; not accepted" },
+    });
+  return { fixes: found.fixes ? [found.fixes] : [], left: found.left ? [found.left] : [] };
 }
