@@ -11,7 +11,7 @@ asks. Change nothing else.
 ## Where you work
 
 - Worktree: {{worktree}}, on branch `{{branch}}`, cut from {{base}}. Work only there.
-- Prefix every shell command with `cd "{{worktree}}" &&`, and give every file you read or edit as an absolute
+- Prefix every shell command with `{{cd}} &&`, and give every file you read or edit as an absolute
   path under the worktree. Never change the main checkout at {{mainRoot}}: the lane stops when its HEAD or
   its files change.
 - Logs and scratch files go only under {{logDir}}.

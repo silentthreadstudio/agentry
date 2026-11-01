@@ -199,3 +199,6 @@ export function renderBrief(step, values) {
 
 /** A list as brief lines (`- item`), or `none`. */
 export const bullets = (items) => (items.length ? items.map((i) => `- ${i}`).join("\n") : "none");
+
+/** `text` as one POSIX shell word: single-quoted, each `'` written `'\''`. */
+export const shellQuote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;
