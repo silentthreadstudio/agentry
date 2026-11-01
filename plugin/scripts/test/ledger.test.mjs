@@ -61,6 +61,18 @@ test("write refuses a bad id or version without touching disk", () => {
   assert.equal(existsSync(dirOf(root)), false);
 });
 
+test("write refuses an id that differs from an existing one only by case; read of it is null", () => {
+  write(root, ledger("T-1", { state: "verified" }));
+  assert.throws(() => write(root, ledger("t-1")), /differs only by case from "T-1"/);
+  assert.equal(read(root, "t-1"), null); // never throws on, or returns, the other spelling's file
+  assert.equal(read(root, "T-1").state, "verified");
+  assert.deepEqual(
+    list(root).map((l) => l.id),
+    ["T-1"],
+  );
+  assert.doesNotThrow(() => write(root, ledger("T-1")));
+});
+
 test("the ledger takes exactly the ids the worktree takes", () => {
   const ids = [
     "x.lock",

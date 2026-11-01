@@ -11,6 +11,8 @@ import { idProblem } from "../lane/id.mjs";
 const VERSION = 1;
 const validId = (id) => idProblem(id) === null;
 
+const sameWord = (a, b) => a.toLowerCase() === b.toLowerCase();
+
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const ledgerDir = (root) => join(processDir(root), "ledger");
 const fileOf = (root, id) => join(ledgerDir(root), `${id}.json`);
@@ -31,6 +33,8 @@ export function read(root, id) {
   } catch (err) {
     throw new Error(`ledger ${fileOf(root, id)} is not valid JSON: ${err.message}`);
   }
+  // On a case-insensitive filesystem `t-1` opens `T-1.json`: that is another task's ledger, not ours.
+  if (typeof ledger?.id === "string" && ledger.id !== id && sameWord(ledger.id, id)) return null;
   if (ledger?.v !== VERSION || ledger.id !== id)
     throw new Error(`ledger ${fileOf(root, id)} is not a v${VERSION} ledger for "${id}"`);
   return ledger;
@@ -43,6 +47,12 @@ export function write(root, ledger) {
   const out = { ...ledger, updatedAt: new Date().toISOString() };
   const file = fileOf(root, ledger.id);
   mkdirSync(ledgerDir(root), { recursive: true });
+  // Two ids that differ only by case would share one file on a case-insensitive filesystem.
+  const twin = readdirSync(ledgerDir(root))
+    .filter((n) => n.endsWith(".json"))
+    .map((n) => n.slice(0, -".json".length))
+    .find((n) => n !== ledger.id && sameWord(n, ledger.id));
+  if (twin) throw new Error(`ledger id "${ledger.id}" differs only by case from "${twin}"`);
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`);
   renameSync(tmp, file);
