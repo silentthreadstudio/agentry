@@ -17,7 +17,7 @@ Then wire the lanes, in order, following `learn.md` § Wiring the lanes. A step 
 
 1. **Gate.** Learn it from the repo's workflow doc, gate scripts, CI config and `package.json` scripts; show where each part came from; confirm `gate.command`, `gate.quick` (only with a stated scope) and `gate.after`.
 2. **Conductor prompt.** Offer the repo's own or the template `templates/CONDUCTOR.md` → `conductor.prompt` and `conductor.rules`.
-3. **Trigger block.** Show `board instructions` (the block for `AGENTS.md` and the `@AGENTS.md` import for an existing `CLAUDE.md`); on OK, `board instructions --write`. Propose replacements for competing lines in the repo's instruction files; edit them only on OK.
+3. **Trigger block.** Show `board instructions` (the block for `AGENTS.md` and the `@AGENTS.md` import for an existing `CLAUDE.md`, or `@../AGENTS.md` for `.claude/CLAUDE.md` when that is where the instructions live); on OK, `board instructions --write`. Propose replacements for competing lines in the repo's instruction files; edit them only on OK.
 4. **Default agent.** `board default-agent`; on OK `--write`, then `--verify`; `--verify live` only with the owner's OK (one small request). Say that teammates without Agentry fall back to plain Claude Code.
 5. **Push policy.** Ask `merge.push` once (`ask` default, `auto`, `never`) unless it is set; write it to `.agentry/config.json`.
 6. **Merge skill.** If the repo has its own merge skill, offer to name it in `extensions.merge.checks` and show its shrunk text (only the repo's own checks); edit the skill only on the owner's OK.

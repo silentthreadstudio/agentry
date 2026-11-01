@@ -107,8 +107,9 @@ conductor.
    target such as `check` or `ci`); the CI config (`.github/workflows/*.yml`, `.gitlab-ci.yml`); the
    `package.json` scripts. Prefer the one command the repo itself calls its gate.
    - `gate.command` is argv, run with no shell in the git root: `["tools/ci/gate.sh"]`,
-     `["pnpm", "run", "check"]`. With no single command, propose the CI's steps joined by `&&` under
-     `["sh", "-c", "…"]` and say so. Never a pipe (`|`): it hides the exit code.
+     `["pnpm", "run", "check"]`. Propose it as argv, never through a shell. With no single command, or
+     steps that genuinely need a shell (`&&`, a pipe), point to the repo's own script that runs them
+     (`scripts/gate.sh`) and offer to write one with the owner's OK.
    - `gate.quick` only when the repo has a cheaper tier with a stated scope (a `--quick` flag "for docs-only
      changes"): its `command`, and `only` globs for exactly that scope (`["docs/**", "**/*.md"]`).
    - `gate.after`: files the repo's workflow changes after the gate is green (a changelog written at merge).
@@ -124,7 +125,11 @@ conductor.
 3. **The trigger block.** Run `board instructions` and show its output: the block it would write between
    `<!-- agentry:begin v1 -->` and `<!-- agentry:end -->` in `AGENTS.md` (created if absent) and the
    `@AGENTS.md` line it would add to an existing `CLAUDE.md` (never created). Every host reads `AGENTS.md`;
-   Claude Code reads it beside a `CLAUDE.md` only through that import. On OK, `board instructions --write`.
+   Claude Code reads it beside a `CLAUDE.md` only through that import. Project instructions can also live in
+   `.claude/CLAUDE.md`: with no root `CLAUDE.md` the import goes there as `@../AGENTS.md` (relative to that
+   file); with both, in the root one only. An import inside a code fence, an HTML comment or a code span
+   doesn't count. On OK, `board instructions --write`; it writes both files or neither (exit 2 with the
+   reason when one can't be written).
    Text outside the markers is never touched, and a re-run changes nothing. If the repo's instruction files
    carry a competing line (every task through `/agentry:go`, a hand checker to keep green), list it and
    propose its replacement; edit it only on the owner's OK.

@@ -8,8 +8,8 @@ Show this repo's board. Load the `process` skill; `board` means `node "${CLAUDE_
 Pick the calls from `$ARGUMENTS`:
 - nothing → `board status`, then `board check`;
 - `status` or `check` → that one only;
-- `--fix` → `board fix` (add `--dry-run` to see it first): show what it wrote and what it left for the owner. It writes only the mechanical items (a task whose ledger says its commits landed, written as done with its SHA and handoff line); everything else is listed with the command that deals with it. If this plugin's `board.mjs` has no `fix` (exit 2, unknown subcommand), say fix isn't available in this version and run `check` instead;
-- `draft …` → `board draft <list|add|drop|apply>` as given. `apply` writes a decision or a standing rule, so run it only after the owner says OK to that draft (`references/drafts.md`).
+- `--fix` → `board fix` (add `--dry-run` to see it first): show what it wrote and what it left for the owner. It writes only the mechanical pieces a board lacks (a status, a commit, a handoff line), never rewrites a cell someone wrote, and marks a task done only when its work is in effect on main. It exits 1 while something is left for the owner; each of those is listed with the command that deals with it. If this plugin's `board.mjs` has no `fix` (exit 2, unknown subcommand), say fix isn't available in this version and run `check` instead;
+- `draft …` → `board draft <list|add|drop|apply>` as given. `add` needs its draft as `--json '{"kind":"decision"|"rule","answer":"…"}'` (optional `question`, `unpicked`, `source`; `references/drafts.md`); without it, it stops at the usage line. `apply` writes a decision or a standing rule, so run it only after the owner says OK to that draft (`references/drafts.md`).
 
 `--json` and `--why <id>` pass through unchanged to every call.
 
