@@ -18,7 +18,7 @@ const read = (...parts) => readFileSync(join(PLUGIN, ...parts), "utf8");
 
 // Pinned in conductor.md (plan R1b-3) and built in parallel: a name here may have no file yet. Once
 // its file exists the entry is harmless; drop it then.
-const PINNED = ["start", "close", "merge"];
+const PINNED = ["start", "close"];
 // The lane triggers: each session's start and end, a board id, a landing, a question.
 const TRIGGERS = ["start", "close", "exec", "merge", "ask"];
 
