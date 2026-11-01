@@ -1,13 +1,15 @@
-import { join } from "node:path";
 // board draft add --json '{…}' | list | drop <n> | apply <n> — the owner's calls the conductor caught in
 // conversation, held until the owner says OK (plan R1b §5). `add` keeps a draft in `.agentry/run`, `list` shows
 // the pending ones, `drop` forgets one, and `apply` writes it: a decision through `next-id` and `add` with the
 // process file's `drafts.decision.map` (`{answer}`, `{question}`, `{unpicked}`), a rule as a line under
 // `conductor.rules` in the conductor prompt. Only `apply` writes to the repo, and the conductor runs it only
-// after the owner's OK.
+// after the owner's OK. The drafts live in the main checkout, so `apply` edits the main checkout's board: from
+// inside a linked worktree it refuses rather than write the edit in one checkout and the state in another.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = done, 2 = usage or refusal (nothing written)
-import { mainRoot } from "../../lane/worktree.mjs";
+import { realpathSync } from "node:fs";
+import { join } from "node:path";
+import { git, mainRoot } from "../../lane/worktree.mjs";
 import * as drafts from "../drafts.mjs";
 import { fit } from "../render.mjs";
 import { own } from "../spec.mjs";
@@ -70,6 +72,20 @@ function applyRule(draft, { root, spec }) {
   return { exit: 0, out: `rule added under "${heading}" (${prompt})` };
 }
 
+// The checkout `root` is in, when it is not the main one `runRoot` (a linked worktree); else null.
+function linkedTree(root, runRoot) {
+  const res = git(root, ["rev-parse", "--show-toplevel"]);
+  const top = res.status === 0 ? res.stdout.trim() : null;
+  const real = (p) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
+  };
+  return top && real(top) !== real(runRoot) ? top : null;
+}
+
 function number(word) {
   return /^[1-9]\d*$/.test(word ?? "") ? Number(word) : null;
 }
@@ -113,6 +129,11 @@ export function run(argv, ctx) {
     drafts.mark(runRoot, n, "dropped");
     return { exit: 0, out: `dropped draft ${n}` };
   }
+  const tree = linkedTree(ctx.root, runRoot);
+  if (tree)
+    return fail(
+      `draft apply edits the main checkout's board, and ${tree} is a worktree: run it from ${runRoot}`,
+    );
   const done = draft.kind === "decision" ? applyDecision(draft, ctx) : applyRule(draft, ctx);
   if (done.exit !== 0) return done;
   drafts.mark(runRoot, n, "applied");

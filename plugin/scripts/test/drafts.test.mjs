@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import * as drafts from "../lib/process/drafts.mjs";
-import { SPEC, board, boardRepo, read } from "./drift-repo.mjs";
+import { SPEC, board, boardRepo, builtBranch, read } from "./drift-repo.mjs";
 
 const cleanups = [];
 after(() => {
@@ -158,4 +158,18 @@ test("apply and drop name a pending draft by a plain number", () => {
   assert.equal(board(root, "draft", "drop", "7").status, 2);
   assert.equal(board(root, "draft", "drop").status, 2);
   assert.equal(board(root, "draft").status, 2);
+});
+
+test("apply from inside a worktree refuses: the edit and the run state stay in one checkout", () => {
+  const { root } = fresh();
+  const { path } = builtBranch(root, "T1");
+  add(path, { kind: "rule", answer: "From a worktree." });
+  const before = [read(root, "CONDUCTOR.md"), read(path, "CONDUCTOR.md")];
+  const out = board(path, "draft", "apply", "1");
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /is a worktree: run it from /);
+  assert.deepEqual([read(root, "CONDUCTOR.md"), read(path, "CONDUCTOR.md")], before);
+  assert.equal(drafts.pending(root).length, 1, "still pending in the main checkout");
+  assert.equal(board(root, "draft", "apply", "1").status, 0, "and applies from there");
+  assert.match(read(root, "CONDUCTOR.md"), /- From a worktree\./);
 });
