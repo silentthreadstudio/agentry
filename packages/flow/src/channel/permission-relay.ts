@@ -42,6 +42,7 @@ export class PermissionRelay {
   // (the file contract: ignore stray verdict files for ids flow never issued).
   private readonly pending = new Set<string>();
   private watcher: FSWatcher | undefined;
+  private readyP: Promise<void> | undefined;
 
   constructor(
     private readonly cwd: string,
@@ -76,6 +77,8 @@ export class PermissionRelay {
       persistent: true,
       depth: 0, // verdict files are direct children of the permissions dir
     });
+    const w = this.watcher;
+    this.readyP = new Promise((resolve) => w.once("ready", () => resolve()));
 
     const onPath = (filePath: string): void => {
       if (!filePath.endsWith(VERDICT_SUFFIX)) return; // ignore `<id>.json` and anything else
@@ -85,11 +88,18 @@ export class PermissionRelay {
     this.watcher.on("change", onPath);
   }
 
+  // Resolves once the watcher finished its initial scan, so a verdict written after this is seen as
+  // a live event. Resolves at once when never started.
+  ready(): Promise<void> {
+    return this.readyP ?? Promise.resolve();
+  }
+
   // Tear down the watcher (shutdown path). Safe to call when never started.
   async stop(): Promise<void> {
     if (this.watcher === undefined) return;
     await this.watcher.close();
     this.watcher = undefined;
+    this.readyP = undefined;
   }
 
   // Test/inspection seam: a snapshot of the ids flow is currently awaiting a verdict on.

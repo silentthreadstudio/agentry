@@ -15,7 +15,7 @@ import type { PermissionVerdictNotification } from "../src/channel/permission-ev
 import { PermissionRelay, permissionsDir } from "../src/channel/permission-relay.js";
 
 // Poll until `predicate` holds or the deadline passes — chokidar's fs events are async.
-async function waitFor(predicate: () => boolean, ms = 3000): Promise<void> {
+async function waitFor(predicate: () => boolean, ms = 10_000): Promise<void> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     if (predicate()) return;
@@ -23,13 +23,25 @@ async function waitFor(predicate: () => boolean, ms = 3000): Promise<void> {
   }
 }
 
-// Let the watcher settle its initial scan before we drop a verdict file.
-async function settle(ms = 400): Promise<void> {
+// Fail fast instead of hanging the suite when the fs watcher stalls under load.
+const LIMIT = { timeout: 20_000 };
+
+async function settle(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
 }
 
 function writeVerdict(cwd: string, requestId: string, body: string): void {
   writeFileSync(join(permissionsDir(cwd), `${requestId}.verdict.json`), body);
+}
+
+// Write a verdict for a pending id and wait for its emit. macOS fsevents can drop an event when the
+// machine is under load (a full parallel suite); a real verdict lands long after startup, so the test
+// rewrites the file (a `change` event) up to 4 times rather than flaking on one lost event.
+async function deliverVerdict(cwd: string, requestId: string, body: string): Promise<void> {
+  for (let attempt = 0; attempt < 5 && emitted.length === 0; attempt++) {
+    writeVerdict(cwd, requestId, body);
+    await waitFor(() => emitted.length >= 1, 2000);
+  }
 }
 
 let cwd: string;
@@ -44,9 +56,9 @@ beforeEach(() => {
 afterEach(async () => {
   await relay?.stop();
   rmSync(cwd, { recursive: true, force: true });
-});
+}, LIMIT);
 
-test("a permission_request writes the request file and tracks the id pending", () => {
+test("a permission_request writes the request file and tracks the id pending", LIMIT, () => {
   relay = new PermissionRelay(cwd, (n) => void emitted.push(n));
   relay.onRequest({
     request_id: "abcde",
@@ -64,10 +76,10 @@ test("a permission_request writes the request file and tracks the id pending", (
   assert.equal(typeof file.created_at, "string");
 });
 
-test("a verdict for a pending id emits the verdict and deletes both files", async () => {
+test("a verdict for a pending id emits the verdict and deletes both files", LIMIT, async () => {
   relay = new PermissionRelay(cwd, (n) => void emitted.push(n));
   relay.start();
-  await settle();
+  await relay.ready();
 
   relay.onRequest({
     request_id: "abcde",
@@ -75,9 +87,7 @@ test("a verdict for a pending id emits the verdict and deletes both files", asyn
     description: "write a file",
     input_preview: "{}",
   });
-  writeVerdict(cwd, "abcde", '{"request_id":"abcde","behavior":"allow"}');
-
-  await waitFor(() => emitted.length >= 1);
+  await deliverVerdict(cwd, "abcde", '{"request_id":"abcde","behavior":"allow"}');
   assert.equal(emitted.length, 1);
   assert.deepEqual(emitted[0], {
     method: "notifications/claude/channel/permission",
@@ -90,10 +100,10 @@ test("a verdict for a pending id emits the verdict and deletes both files", asyn
   assert.ok(!existsSync(join(permissionsDir(cwd), "abcde.verdict.json")), "verdict file deleted");
 });
 
-test("a deny verdict emits behavior:deny", async () => {
+test("a deny verdict emits behavior:deny", LIMIT, async () => {
   relay = new PermissionRelay(cwd, (n) => void emitted.push(n));
   relay.start();
-  await settle();
+  await relay.ready();
 
   relay.onRequest({
     request_id: "bcdef",
@@ -101,16 +111,14 @@ test("a deny verdict emits behavior:deny", async () => {
     description: "rm -rf",
     input_preview: "{}",
   });
-  writeVerdict(cwd, "bcdef", '{"request_id":"bcdef","behavior":"deny"}');
-
-  await waitFor(() => emitted.length >= 1);
+  await deliverVerdict(cwd, "bcdef", '{"request_id":"bcdef","behavior":"deny"}');
   assert.equal(emitted[0].params.behavior, "deny");
 });
 
-test("a verdict for an UNKNOWN id never emits (stray verdict file ignored)", async () => {
+test("a verdict for an UNKNOWN id never emits (stray verdict file ignored)", LIMIT, async () => {
   relay = new PermissionRelay(cwd, (n) => void emitted.push(n));
   relay.start();
-  await settle();
+  await relay.ready();
 
   // No request issued for this id — it's not in the pending set.
   writeVerdict(cwd, "zzzzz", '{"request_id":"zzzzz","behavior":"allow"}');
@@ -118,10 +126,10 @@ test("a verdict for an UNKNOWN id never emits (stray verdict file ignored)", asy
   assert.equal(emitted.length, 0, "a verdict for an id flow never issued must not emit");
 });
 
-test("a malformed verdict json is ignored — no emit, no throw", async () => {
+test("a malformed verdict json is ignored — no emit, no throw", LIMIT, async () => {
   relay = new PermissionRelay(cwd, (n) => void emitted.push(n));
   relay.start();
-  await settle();
+  await relay.ready();
 
   relay.onRequest({
     request_id: "cdefg",

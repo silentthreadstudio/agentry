@@ -30431,6 +30431,7 @@ var PermissionRelay = class {
   // (the file contract: ignore stray verdict files for ids flow never issued).
   pending = /* @__PURE__ */ new Set();
   watcher;
+  readyP;
   // The zod schema Claude Code's `permission_request` notification validates against — also the
   // dispatch key `setNotificationHandler` routes by. Re-exported so index.ts registers it on the
   // low-level Server (the SDK stays at that single seam, mirroring the bridge's `emit` cast).
@@ -30453,6 +30454,8 @@ var PermissionRelay = class {
       depth: 0
       // verdict files are direct children of the permissions dir
     });
+    const w = this.watcher;
+    this.readyP = new Promise((resolve3) => w.once("ready", () => resolve3()));
     const onPath = (filePath) => {
       if (!filePath.endsWith(VERDICT_SUFFIX)) return;
       void this.handleVerdict(filePath);
@@ -30460,11 +30463,17 @@ var PermissionRelay = class {
     this.watcher.on("add", onPath);
     this.watcher.on("change", onPath);
   }
+  // Resolves once the watcher finished its initial scan, so a verdict written after this is seen as
+  // a live event. Resolves at once when never started.
+  ready() {
+    return this.readyP ?? Promise.resolve();
+  }
   // Tear down the watcher (shutdown path). Safe to call when never started.
   async stop() {
     if (this.watcher === void 0) return;
     await this.watcher.close();
     this.watcher = void 0;
+    this.readyP = void 0;
   }
   // Test/inspection seam: a snapshot of the ids flow is currently awaiting a verdict on.
   pendingIds() {
