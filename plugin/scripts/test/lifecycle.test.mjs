@@ -186,13 +186,87 @@ test("a single landed commit writes one SHA, shortened to 7", () => {
   assert.deepEqual(result.skipped, []);
 });
 
-test("merging twice does not add the handoff line twice", () => {
+test("merging twice writes nothing the second time: every step is skipped as already done", () => {
   const { root, shas } = repo({ commits: 1 });
   event(root, "merged", "T1", { shas, summary: "done" });
-  const once = read(root, "plan/sprints/S1.md");
+  const once = files(root);
   const again = event(root, "merged", "T1", { shas, summary: "done" });
-  assert.deepEqual(again.skipped, [{ what: "handoff", why: "already there" }]);
-  assert.equal(read(root, "plan/sprints/S1.md"), once);
+  assert.deepEqual(again.writes, []);
+  assert.deepEqual(again.skipped, [
+    { what: "status", why: "already set" },
+    { what: "commit", why: "already set" },
+    { what: "handoff", why: "already there" },
+  ]);
+  assert.deepEqual(files(root), once);
+  const out = board(root, "lifecycle", "merged", "T1", "--sha", shas[0], "--summary", "done");
+  assert.match(out.stdout, /0 written, 3 skipped/);
+});
+
+test("a handoff line put there since the board was read is not added again", () => {
+  const { root, shas } = repo({ commits: 1 });
+  const { spec } = loadSpec(join(root, ".agentry", "process.json"));
+  const model = readProcess({ root, spec }); // read before the line exists
+  const line = `- **T1** (${shas[0].slice(0, 7)}): done`;
+  const path = join(root, "plan", "sprints", "S1.md");
+  writeFileSync(
+    path,
+    read(root, "plan/sprints/S1.md").replace("## Handoff\n", `## Handoff\n\n${line}\n`),
+  );
+  const result = applyEvent({
+    root,
+    spec,
+    model,
+    event: "merged",
+    id: "T1",
+    data: { shas, summary: "done" },
+  });
+  assert.deepEqual(result.skipped, [{ what: "handoff", why: "already there" }]);
+  assert.equal(read(root, "plan/sprints/S1.md").split(line).length - 1, 1);
+});
+
+test("a handoff line the done-has-handoff rule would reject for this id is refused, nothing written", () => {
+  const { root, shas } = repo();
+  // An id the rule reads as two tokens: `leadTokens` splits "**A/B**" at the slash.
+  writeFileSync(
+    join(root, "plan", "BOARD.md"),
+    read(root, "plan/BOARD.md").replace("| T2 ", "| A/B"),
+  );
+  const before = files(root);
+  assert.throws(
+    () => event(root, "merged", "A/B", { shas, summary: "x" }),
+    (e) => e instanceof WriteError && /would fail rules\[3\] \(done-has-handoff\)/.test(e.message),
+  );
+  assert.deepEqual(files(root), before);
+});
+
+test("a tag object is not a commit SHA", () => {
+  const { root, shas } = repo({ commits: 1 });
+  git(root, "tag", "-a", "v1", "-m", "v1");
+  const tag = git(root, "rev-parse", "v1");
+  const before = files(root);
+  assert.throws(
+    () => event(root, "merged", "T1", { shas: [tag], summary: "x" }),
+    (e) => e instanceof WriteError && /is not a commit in git/.test(e.message),
+  );
+  assert.deepEqual(files(root), before);
+  assert.ok(event(root, "merged", "T1", { shas, summary: "x" }).writes.length);
+});
+
+test("a written prefix is unique across every object type: it grows past a shared one", () => {
+  const { root, shas } = repo({ commits: 1 });
+  const sha = shas[0];
+  // A loose object that is not the commit but shares its first 7 characters.
+  const dir = join(root, ".git", "objects", sha.slice(0, 2));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${sha.slice(2, 7)}${"f".repeat(33)}`), "");
+  event(root, "merged", "T1", { shas: [sha], summary: "x" });
+  const cell = cells(
+    read(root, "plan/BOARD.md")
+      .split("\n")
+      .find((l) => l.startsWith("| T1")),
+  )[5];
+  assert.equal(cell, sha.slice(0, 8));
+  assert.match(read(root, "plan/sprints/S1.md"), new RegExp(`\\(${sha.slice(0, 8)}\\)`));
 });
 
 test("dispatched, built and failed write the status `on` maps them to", () => {

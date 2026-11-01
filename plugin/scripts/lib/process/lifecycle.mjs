@@ -8,10 +8,12 @@
 // verdict field; FAIL also applies "failed"; a pass leaves the status (only the merge makes a task
 // done, A23). merged (data.shas, first landed first; data.summary) → `on.merged`, the commit cell
 // `<first>` or `<first>…<last>` (short SHAs) and the handoff line in the parent's file, naming the
-// first. A `writes` file is relative to the git root.
+// first. A `writes` file is relative to the git root. A step whose edit changes nothing (already set,
+// the handoff line already there) is in `skipped`, not `writes`.
+import { execFileSync } from "node:child_process";
 import { join, posix } from "node:path";
-import { hasCommit } from "./git.mjs";
-import { escapesRoot, fillHandoff, own } from "./spec.mjs";
+import * as md from "./markdown.mjs";
+import { escapesRoot, fillHandoff, handoffRejection, own } from "./spec.mjs";
 import { WriteError, appendLine, applyAll, setCell, setKey } from "./write.mjs";
 
 export const EVENTS = ["dispatched", "built", "failed", "verdict", "merged"];
@@ -60,11 +62,31 @@ function checkData(event, data) {
     refuse("summary should be text");
 }
 
-// The shortest prefix of `sha`, from 7 characters, that names one commit in the repo.
+// git's answer to `args` in `root`, trimmed; null when it fails.
+function ask(root, args) {
+  try {
+    return execFileSync("git", ["-C", root, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+// The shortest prefix of `sha`, from 7 characters, that names that commit and no other object of any
+// type (a tag or a blob sharing the prefix would make the board's checker fail on it). `sha` itself
+// must be a commit: `cat-file -t` does not peel a tag to the commit it points at.
 function shortOf(root, sha) {
-  for (let n = 7; n <= sha.length; n++)
-    if (hasCommit(root, sha.slice(0, n))) return sha.slice(0, n);
-  return refuse(`${sha} is not a commit in git`);
+  if (ask(root, ["cat-file", "-t", sha]) !== "commit")
+    return refuse(
+      `${sha} is not a commit in git (a tag or another object, or a prefix not unique)`,
+    );
+  const full = ask(root, ["rev-parse", "--verify", sha]);
+  for (let n = 7; n < full.length; n++)
+    if (ask(root, ["rev-parse", `--disambiguate=${full.slice(0, n)}`]) === full)
+      return full.slice(0, n);
+  return full;
 }
 
 /**
@@ -90,15 +112,23 @@ export function applyEvent({ root, spec, model, event, id, data = {} }) {
   const shas = event === "merged" ? data.shas.map((sha) => shortOf(root, sha)) : [];
 
   const edits = [];
-  const writes = [];
+  const planned = []; // { step, file, what, changed } per edit, `changed` set when the edit runs
   const skipped = [];
-  const place = (file, edit, what) => {
+  const place = (step, file, edit, what) => {
     if (escapesRoot(spec.root, file)) refuse(`${file} leaves the repository`);
-    edits.push({ file: join(root, spec.root, file), edit });
-    writes.push({ file: posix.join(spec.root, file), what });
+    const entry = { step, file: posix.join(spec.root, file), what, changed: false };
+    planned.push(entry);
+    edits.push({
+      file: join(root, spec.root, file),
+      edit: (text) => {
+        const out = edit(text);
+        entry.changed = out !== text;
+        return out;
+      },
+    });
   };
   // One field of the item: its table cell, or its frontmatter key for a one-file-per-item kind.
-  const setField = (fieldName, value) => {
+  const setField = (step, fieldName, value) => {
     const { column } = kind.fields[fieldName];
     const table = kind.at.table !== undefined;
     const edit = table
@@ -112,7 +142,7 @@ export function applyEvent({ root, spec, model, event, id, data = {} }) {
             value,
           })
       : (text) => setKey(text, { key: column, value });
-    place(table ? kind.at.table : item.file, edit, `${fieldName} → ${value}`);
+    place(step, table ? kind.at.table : item.file, edit, `${fieldName} → ${value}`);
   };
   const values = {
     status: () => own(life.on, event === "verdict" ? "failed" : event),
@@ -131,10 +161,10 @@ export function applyEvent({ root, spec, model, event, id, data = {} }) {
         spec,
         model,
         item,
+        sha: shas[0],
         line: renderLine(spec, item, shas, data),
         target,
         place,
-        skipped,
       });
       continue;
     }
@@ -144,9 +174,13 @@ export function applyEvent({ root, spec, model, event, id, data = {} }) {
       skipped.push({ what: step, why: `no lifecycle.on.${on}` });
       continue;
     }
-    setField(target, value);
+    setField(step, target, value);
   }
   if (edits.length) applyAll(edits);
+  const writes = [];
+  for (const { step, file, what, changed } of planned)
+    if (changed) writes.push({ file, what });
+    else skipped.push({ what: step, why: step === "handoff" ? "already there" : "already set" });
   return { writes, skipped };
 }
 
@@ -156,9 +190,17 @@ function renderLine(spec, item, shas, data) {
   return renderHandoff(spec, { id: item.id, sha: shas[0], summary: data.summary });
 }
 
+// Is `line` (as written) already a bold-lead line of the section under `heading` in `text`?
+function hasLine(text, heading, line) {
+  const sec = md.section(text, heading);
+  return !!sec && md.boldLeads(text, sec).some((l) => l.text.trim() === line.trim());
+}
+
 // The handoff line, appended to the section `target` (`parent.file:<section>`) of the item's parent's
-// own file. A line already there as written is not added twice.
-function handoff({ spec, model, item, line, target, place, skipped }) {
+// own file, after the checker's own rule has accepted that very line for this id and commit. A line
+// already there as written is not added twice: that is asked of the file as re-read inside the edit,
+// so a line put there since the board was read counts too.
+function handoff({ spec, model, item, sha, line, target, place }) {
   const section = target.slice("parent.file:".length);
   const fields = Object.values(spec.kinds[item.kind].fields ?? {});
   const refs = [fields.find((f) => f.role === "parent")?.ref ?? []].flat();
@@ -168,9 +210,10 @@ function handoff({ spec, model, item, line, target, place, skipped }) {
   if (def?.as !== "bold-lead") refuse(`${parent.kind} has no bold-lead section "${section}"`);
   if (!parent.own)
     refuse(`${parent.kind} ${parent.id} has no file (${spec.kinds[parent.kind].file?.glob})`);
-  const leads = own(parent.own.sections, section)?.leads ?? [];
-  if (leads.some((l) => l.text.trim() === line.trim()))
-    return skipped.push({ what: "handoff", why: "already there" });
-  const edit = (text) => appendLine(text, { heading: def.heading, line });
-  place(parent.own.path, edit, `handoff line under "${def.heading}"`);
+  const found = handoffRejection(spec, line, { id: item.id, sha, parent: parent.id });
+  if (found)
+    refuse(`the handoff line ${JSON.stringify(line)} would fail ${found}; nothing written`);
+  const edit = (text) =>
+    hasLine(text, def.heading, line) ? text : appendLine(text, { heading: def.heading, line });
+  place("handoff", parent.own.path, edit, `handoff line under "${def.heading}"`);
 }
