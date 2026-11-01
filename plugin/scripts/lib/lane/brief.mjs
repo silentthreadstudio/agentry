@@ -5,7 +5,8 @@
 //   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
 //   citedDecisions  every decision of the board's decision kind the block cites by id, its row quoted
 //   recalledFacts   the memory facts ranked for the owned files, only when `memory.prime` is "all": this
-//                   repo's store and the user's own (`scope: user`) facts, never another project's
+//                   repo's store, the user's own and cross-project (`scope: user|global`) facts,
+//                   never another project's
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
 //
 // Reads the board's files and the memory store; writes nothing. Node built-ins only.
@@ -123,10 +124,12 @@ function quoteOf(root, spec, kind, item) {
     .join(" · ");
 }
 
-// A brief may carry what this repo's store holds and the user's own facts from the home store. The
-// home store also keeps facts written for other projects (a `repo` fact with no project store goes
-// there), and general ones: none of those belong in this repo's brief.
-const forThisRepo = (fact) => fact.source === "project" || fact.scope === "user";
+// A brief may carry what this repo's store holds, plus the user's own (`scope: user`) and the
+// cross-project (`scope: global`) facts from the home store. The home store also keeps facts written
+// for other projects (a `repo` fact with no project store goes there) and unscoped ones: those never
+// belong in this repo's brief.
+const forThisRepo = (fact) =>
+  fact.source === "project" || fact.scope === "user" || fact.scope === "global";
 
 /** The facts recalled for this contract: `{ prime, facts }`. Facts only when the repo's
  *  `memory.prime` is "all" (briefs are primed); otherwise none. */

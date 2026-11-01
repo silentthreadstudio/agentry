@@ -222,7 +222,7 @@ test("the brief carries recalled facts when memory.prime is all, none at off", (
   }
 });
 
-test("a brief recalls from this repo's store and the user's own facts, never another project's", () => {
+test("a brief recalls this repo's store, user and global facts, never another project's", () => {
   const r = repo({ config: { memory: { prime: "all" } } });
   const home = join(r.home, ".agentry", "memory", "facts");
   mkdirSync(home, { recursive: true });
@@ -240,8 +240,8 @@ test("a brief recalls from this repo's store and the user's own facts, never ano
   writeFileSync(join(home, "x.md"), fact("g:04NONE", null, "An unscoped panel.css note."));
   const brief = readFileSync(lane(r, "start", "T1").json.brief, "utf8");
   assert.match(brief, /g:01USER/);
-  for (const id of ["g:02OTHER", "g:03GLOBAL", "g:04NONE"])
-    assert.doesNotMatch(brief, new RegExp(id));
+  assert.match(brief, /g:03GLOBAL/);
+  for (const id of ["g:02OTHER", "g:04NONE"]) assert.doesNotMatch(brief, new RegExp(id));
 });
 
 test("start refuses at lanes.maxWriters and names the open ledgers and unowned worktrees", () => {
