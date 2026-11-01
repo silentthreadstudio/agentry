@@ -8,16 +8,22 @@
 //   build / fix: uncommitted files or no commits past base → fix (resume) with the reason; twice → stop
 //   build / fix: NEEDS_CONTEXT              → needs-context (resume) once, then stop
 //   build / fix: BLOCKED                    → stop; no status line → resend once, then stop
-//   verify / recheck / final: tip moved     → recheck: the verdict is void (no rebase while one reads)
+//   verify / recheck / final: tip moved     → recheck: the verdict is void (no rebase while one reads);
+//                                             the 3rd void verdict → stop
 //   verify: PASS*                           → gate (no green worktree gate on this tip), then close
 //   recheck: PASS*                          → final (fresh, against the full bar)
 //   final: PASS* / FAIL                     → gate → close / stop
 //   verify / recheck: FAIL                  → fix (resume the builder); at the 3rd verdict → stop
 //   no `Verdict:` last line                 → resend once, then stop
 //
+// Every budget is the lane's, so no mix of outcomes resets one: one resend per role, one needs-context
+// round, three counted verdicts (a final after a recheck PASS is the one more), three void ones, and a
+// guard fix (resent or not) that trips a guard again stops. So every lane ends.
+//
 // A round in the ledger: { n, step, role, mode, final?, resend?, guard?, agent?, from?, reason?, brief,
 // reportPath, tip, at } plus, once reported, { report, status | verdict, void?, summary?, guards? }.
 export const MAX_VERDICTS = 3;
+export const MAX_VOIDS = 3;
 export const PASSES = ["PASS", "PASS WITH NOTES"];
 
 // What each dispatch step sends: the agent's role and whether it resumes the agent of an earlier round.
@@ -103,14 +109,21 @@ const send = (ledger, step, extra, reason) => ({
   reason,
   dispatch: { step, ...STEPS[step], ...extra, ...(reason && { reason }) },
 });
-// The same round's step sent back to the same agent, once.
+// The same round's step sent back to the same agent, once per role in the lane. A guard fix stays one
+// when resent, so the guard tripping again still stops.
 const resend = (ledger, round, reason) =>
-  round.resend
-    ? stop(ledger, `${reason}, after it was sent back once`)
+  ledger.rounds.some((r) => r.resend && r.role === round.role)
+    ? stop(ledger, `${reason}, after a ${round.role} report was sent back once`)
     : send(
         ledger,
         round.step,
-        { mode: "resume", resend: true, from: round.reportPath, agent: round.agent },
+        {
+          mode: "resume",
+          resend: true,
+          from: round.reportPath,
+          agent: round.agent,
+          ...(round.guard && { guard: true }),
+        },
         reason,
       );
 
@@ -178,6 +191,11 @@ function onReport(ledger, round, { status, guards = {} }) {
 function onVerdict(ledger, round, { verdict, tip, gate = true }) {
   if (tip !== round.tip) {
     round.void = true;
+    if (ledger.rounds.filter((r) => r.void).length >= MAX_VOIDS)
+      return stop(
+        ledger,
+        `${MAX_VOIDS} void verdicts: the branch tip kept moving while its verifiers read`,
+      );
     return send(
       ledger,
       "recheck",

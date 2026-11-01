@@ -306,3 +306,110 @@ test("an out-of-order event throws and names what the lane expects", () => {
   assert.equal(expects(stopped), null);
   assert.throws(() => step(stopped, report("DONE")), /expects nothing/);
 });
+
+test("the 3rd void verdict → stop: a branch that keeps moving under its verifiers ends the lane", () => {
+  let ledger = go(lane(), report("DONE")).ledger;
+  let res;
+  for (const tip of ["c", "d", "e"].map((c) => c.repeat(40))) {
+    res = go(ledger, judge("PASS", tip), tip);
+    ledger = res.ledger;
+  }
+  assert.equal(res.next, "stop");
+  assert.match(res.reason, /3 void verdicts/);
+  assert.equal(ledger.rounds.filter((r) => r.void).length, 3);
+});
+
+test("the resend budget is the lane's: alternating causes can't reset it", () => {
+  // verifier: no Verdict line → resend; a void recheck; no Verdict line again → stop
+  let ledger = go(lane(), report("DONE")).ledger;
+  ledger = go(ledger, judge(null)).ledger;
+  assert.equal(ledger.next, "resend");
+  ledger = go(ledger, judge("PASS", MOVED), MOVED).ledger;
+  assert.equal(ledger.next, "recheck");
+  const res = go(ledger, judge(null, MOVED));
+  assert.equal(res.next, "stop");
+  assert.match(res.reason, /sent back once/);
+
+  // builder: no status → resend; NEEDS_CONTEXT; no status again → stop
+  let built = go(lane(), report(null)).ledger;
+  built = go(built, report("NEEDS_CONTEXT")).ledger;
+  assert.equal(built.next, "needs-context");
+  assert.equal(go(built, report(null)).next, "stop");
+});
+
+test("a guard fix that is sent back, then trips the guard again → stop", () => {
+  const dirty = { dirty: [" M a"], commits: 1 };
+  let ledger = go(lane(), report("DONE", dirty)).ledger;
+  assert.equal(ledger.next, "fix");
+  ledger = go(ledger, report(null)).ledger;
+  assert.equal(ledger.next, "resend");
+  const res = go(ledger, report("DONE", dirty));
+  assert.equal(res.next, "stop");
+  assert.match(res.reason, /again after a fix for it/);
+});
+
+// A seeded generator (mulberry32), so a failing walk can be replayed from its seed.
+function random(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Every event the lane could get next, at branch tip `tip` (a verdict may come with the tip moved).
+function eventsFor(want, tip, n) {
+  const moved = String(n).padEnd(40, "f");
+  if (want === "report") {
+    const guards = [ok, { dirty: [" M x"], commits: 1 }, { dirty: [], commits: 0 }];
+    const statuses = ["DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", null];
+    return [
+      ...statuses.flatMap((s) => guards.map((g) => ({ tip, event: report(s, g, { agent: "b" }) }))),
+      { tip, event: report("DONE", { ...ok, mainTouched: "HEAD moved" }) },
+    ];
+  }
+  if (want === "verdict")
+    return ["PASS", "PASS WITH NOTES", "FAIL", null].flatMap((v) =>
+      [tip, moved].flatMap((t) =>
+        [true, false].map((gate) => ({ tip: t, event: judge(v, t, { agent: "v", gate }) })),
+      ),
+    );
+  return [green(tip), { ...green(tip), exit: 1 }, green(MOVED)].map((record) => ({
+    tip,
+    event: { type: "gate", record },
+  }));
+}
+
+test("no state loops: 300 adversarial walks of up to 200 events all stop or close", () => {
+  // Each walk picks, at random, among the events that keep the lane open: if even that ends every
+  // walk, no sequence of reports, verdicts and gates keeps a lane going forever.
+  let longest = 0;
+  for (let seed = 1; seed <= 300; seed++) {
+    const pick = random(seed);
+    let tip = TIP;
+    let ledger = lane();
+    let events = 0;
+    for (; events < 200; events++) {
+      const want = expects(ledger);
+      if (want === null || want === "close") break;
+      const outcomes = eventsFor(want, tip, events).map((c) => ({
+        ...c,
+        ledger: go(ledger, c.event, c.tip).ledger,
+      }));
+      const open = outcomes.filter((o) => !["stop", "close"].includes(o.ledger.next));
+      const pool = open.length ? open : outcomes;
+      const chosen = pool[Math.floor(pick() * pool.length)];
+      tip = chosen.tip;
+      ledger = chosen.ledger;
+    }
+    assert.ok(
+      ["stop", "close"].includes(ledger.next),
+      `seed ${seed}: still at ${ledger.next} after ${events} events`,
+    );
+    longest = Math.max(longest, events);
+  }
+  assert.ok(longest <= 30, `the longest walk took ${longest} events`);
+});

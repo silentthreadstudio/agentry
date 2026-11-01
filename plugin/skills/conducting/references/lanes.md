@@ -48,8 +48,8 @@ a suggestion for builders), `after` (the step to run when the agent returns); `r
 | build, fix | `DONE` / `DONE_WITH_CONCERNS`, guards hold | `verify` (fresh) when there is no verdict yet; `recheck` (resume the last verifier) after a fix |
 | build, fix | `NEEDS_CONTEXT` | `needs-context` once (resume, with the fact), then `stop` |
 | build, fix | `BLOCKED` | `stop` |
-| any | no status line / no `Verdict:` last line | `resend` once (resume), then `stop` |
-| verify, recheck, final | the branch tip moved since the dispatch | `recheck`: the verdict is void, nothing written |
+| any | no status line / no `Verdict:` last line | `resend` (resume) once per role in the lane, then `stop` |
+| verify, recheck, final | the branch tip moved since the dispatch | `recheck`: the verdict is void, nothing written; the 3rd void → `stop` |
 | verify | `PASS` / `PASS WITH NOTES` | `gate` when no green worktree gate is on this tip, then `close` |
 | recheck | `PASS` / `PASS WITH NOTES` | `final`: a fresh verifier against the full acceptance |
 | final | `PASS` / `PASS WITH NOTES` | `gate`, then `close` |
@@ -58,8 +58,11 @@ a suggestion for builders), `after` (the step to run when the agent returns); `r
 | verify, recheck | `FAIL` at the 3rd verdict | `stop`: report every verdict to the owner |
 | gate | red, or the branch moved since the verdict | `stop` |
 
-A void verdict doesn't count toward the three. With no `gate` in the process file, a `PASS` closes on the
-verdict and the output says so.
+A void verdict doesn't count toward the three verdicts; voids have their own cap of three. A recheck `PASS`
+at the third verdict still goes to `final`, so a lane can hold four verdicts: the cap of three stops FAILs,
+not the fresh final pass. Every budget is the lane's, so no mix of outcomes resets one: one resend per role,
+one `needs-context` round, and a guard fix (resent or not) that trips a guard again stops. Every lane ends in
+`close` or `stop`. With no `gate` in the process file, a `PASS` closes on the verdict and the output says so.
 
 ### Dispatching
 
