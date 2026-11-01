@@ -429,15 +429,24 @@ test("a branch with a merge commit is refused before any pick", () => {
 });
 
 test("a board write that adds a finding is restored and stops; a rerun after main moved won't guess", () => {
-  // Without the handoff write, the done task has no handoff line: a new done-has-handoff finding.
-  const { handoff: _, ...write } = SPEC.lifecycle.write;
-  commitSpec({ ...SPEC, lifecycle: { ...SPEC.lifecycle, write } });
+  // A flagged task must land with a verdict the rule accepts; the fixture's T1 has "PASS" and this rule
+  // asks for "SIGNED", so the done task gets a new flagged-needs-verdict finding no load check foresees.
+  const flagged = structuredClone(SPEC);
+  flagged.kinds.task.fields.flagged = { column: "Sprint", type: "flag" };
+  flagged.rules.push({
+    rule: "flagged-needs-verdict",
+    kind: "task",
+    flag: "flagged",
+    verdict: "verdict",
+    pass: ["SIGNED"],
+  });
+  commitSpec(flagged);
   build({ "src/a.txt": "a\n" });
   const before = { board: board(), sprint: sprint() };
   const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
   assert.equal(res.status, 1, out(res));
   assert.match(res.stdout, /✗ record +board check: 1 new finding\(s\).*restored/);
-  assert.match(res.stdout, /done-has-handoff T1/);
+  assert.match(res.stdout, /flagged-needs-verdict T1/);
   assert.deepEqual({ board: board(), sprint: sprint() }, before);
   assert.equal(status(), "");
   assert.equal(readLedger(root, ID).merge.step, "gated");
