@@ -20,6 +20,7 @@ Current keys:
 | Key | Default | What it does |
 |---|---|---|
 | `workDir` | `.agentry` | Where run artifacts and memory live. |
+| `mode` | — (none) | A non-empty string naming the working mode (e.g. `night`). `/agentry:start` prints it and the conductor follows the repo's `mode-<name>` skill if there is one; the scripts never interpret it. An empty or non-string value is refused like any bad key, and `/agentry:start` says the config is unreadable rather than "none set". |
 | `evolution.enabled` | `false` | Records Evolution entries (harness self-improvement notes). |
 | `evolution.path` | — | Optional override for where those are written. |
 | `memory.prime` | `conductor` | Whether the commands carry ranked durable facts: `off` (none) · `conductor` (`/agentry:start` prints them for the session; builder and verifier briefs carry none) · `all` (`/agentry:exec` also puts them in each brief, ~200–400 tokens each). |

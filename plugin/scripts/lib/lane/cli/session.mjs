@@ -29,8 +29,12 @@ const WIDTH = 80;
 const MAX_LINES = 40;
 const MAX_LIST = 4; // lines one list may take
 
-// The mode in `.agentry/config.json`, or null: none set, or a config file the reader refuses.
-const modeOf = (root) => readConfig(root).mode ?? null;
+// The mode in `.agentry/config.json` (null: none set) and, when the reader refuses a config file, its error:
+// `lane exec` refuses the same file, so start says so rather than reading it as no mode.
+function modeOf(root) {
+  const config = readConfig(root);
+  return { mode: config.mode ?? null, ...(config.error && { configError: config.error }) };
+}
 
 // A repo's own and the user's facts (what a brief may carry), ranked against `task`; none when memory.prime is off.
 function recallFor(root, task) {
@@ -61,7 +65,7 @@ function start({ root, spec, model }) {
   const all = ledgers.list(runRoot);
   return {
     prompt: spec.conductor?.prompt ? join(root, spec.conductor.prompt) : null,
-    mode: modeOf(root),
+    ...modeOf(root),
     status,
     recall: recallFor(root, task),
     questions: status.onYou.filter((i) => i.kind !== work),
@@ -88,16 +92,19 @@ function closing({ root, spec, model }) {
 }
 
 function renderStart(s, { name, root }) {
-  const lines = [fit(`${name} · session start · mode ${s.mode ?? "none set"}`, WIDTH)];
+  const mode = s.configError ? "unreadable" : (s.mode ?? "none set");
+  const lines = [fit(`${name} · session start · mode ${mode}`, WIDTH)];
   const add = (text) => lines.push(fit(text, WIDTH));
+  if (s.configError) add(`config: ${s.configError.replace(`${root}/`, "")}`);
   // A list wraps onto up to MAX_LIST lines; what does not fit is counted, never silently cut.
   const addList = (label, items) => {
     let line = label;
     let sep = "";
     let used = 1;
     for (const [i, item] of items.entries()) {
-      // On the last line, keep room for the ", +N more" tail unless this is the final item.
-      const room = WIDTH - (used === MAX_LIST && i < items.length - 1 ? 12 : 0);
+      // Keep room for what follows the item unless it is the final one: the ", +N more" tail on the last
+      // line, else the comma a wrapped line ends with.
+      const room = WIDTH - (i === items.length - 1 ? 0 : used === MAX_LIST ? 12 : 1);
       if ([...(line + sep + item)].length > room && line.trim() !== label.trim() && line.trim()) {
         if (used === MAX_LIST) return add(`${line}, +${items.length - i} more`);
         add(`${line},`);

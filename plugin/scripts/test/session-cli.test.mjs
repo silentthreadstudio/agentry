@@ -140,3 +140,27 @@ test("a primeLimit of 0 falls back to the default instead of recalling nothing",
   assert.equal(data.recall[0]?.id, "f1");
   assert.equal(data.mode, "night");
 });
+
+test("a wrapped list line that ends exactly at the width keeps its comma and hides no item", () => {
+  const root = fresh();
+  // "lanes: " + 26 + " building" + ", " + 27 + " building" is exactly 80 columns before the comma.
+  const ids = ["A".repeat(26), "B".repeat(27), "C".repeat(5)];
+  for (const id of ids) ledger(root, id);
+  const lines = session(root, "start").stdout.trimEnd().split("\n");
+  assert.ok(lines.every((l) => [...l].length <= 80));
+  const text = lines.join("\n");
+  for (const id of ids) assert.ok(text.includes(`${id} building`), `${id[0]} is listed`);
+  assert.ok(!text.includes("…"), "no line was cut");
+});
+
+test("a config the reader refuses is said at start, not shown as no mode", () => {
+  const root = fresh();
+  mkdirSync(join(root, ".agentry"), { recursive: true });
+  writeFileSync(join(root, ".agentry", "config.json"), JSON.stringify({ mode: "" }));
+  const res = session(root, "start");
+  assert.match(res.stdout, /mode unreadable/);
+  assert.doesNotMatch(res.stdout, /none set/);
+  assert.match(res.stdout, /config: .*mode should be a non-empty string/);
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  assert.match(data.configError, /mode should be a non-empty string/);
+});
