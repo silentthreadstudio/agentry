@@ -4,9 +4,10 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { mechanical, nudges } from "../lib/process/drift.mjs";
+import { landing, mechanical, nudges } from "../lib/process/drift.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 import { SPEC, boardRepo, builtBranch, handBranch, ledger, pickOntoMain } from "./drift-repo.mjs";
+import { commitFile, git } from "./git-repo.mjs";
 
 const cleanups = [];
 after(() => {
@@ -123,6 +124,92 @@ test("a board kept in a subfolder of a repo still sees the repo's worktrees", ()
     found.filter((n) => n.path).map((n) => [n.kind, n.branch]),
     [["unlisted-worktree", "worktree-agent-c3"]],
   );
+});
+
+// ---- landing: work counts as on main only while it is there now (A23) ----
+
+const at = (root, branch) => landing(root, { branch, onto: "main" });
+
+test("landing: a cherry-pick later reverted on main is not landed", () => {
+  const { root } = fresh();
+  const { branch, sha } = builtBranch(root, "T1");
+  const picked = pickOntoMain(root, sha);
+  assert.deepEqual(at(root, branch), { shas: [picked] });
+  git(root, "revert", "--no-edit", picked);
+  assert.equal(at(root, branch), null);
+  git(root, "revert", "--no-edit", "HEAD"); // a revert of the revert puts it back
+  assert.ok(at(root, branch)?.shas);
+});
+
+test("landing: a branch only partly picked onto main is not landed", () => {
+  const { root } = fresh();
+  const { path, branch, sha } = builtBranch(root, "T1");
+  commitFile(path, "T1b.txt", "second\n", "feat: T1 second");
+  pickOntoMain(root, sha);
+  assert.equal(at(root, branch), null);
+});
+
+test("landing: a --no-ff merge and a fast-forward by hand land the branch's own commits", () => {
+  const merged = fresh().root;
+  const one = builtBranch(merged, "T1");
+  commitFile(merged, "m.txt", "main moved\n", "chore: move");
+  git(merged, "merge", "--no-ff", "--no-edit", one.branch);
+  assert.deepEqual(at(merged, one.branch), { shas: [one.sha] });
+  const forwarded = fresh().root;
+  const two = builtBranch(forwarded, "T1");
+  const second = commitFile(two.path, "T1b.txt", "second\n", "feat: T1 second");
+  git(forwarded, "merge", "--ff-only", two.branch);
+  assert.deepEqual(at(forwarded, two.branch), { shas: [two.sha, second] });
+});
+
+test("landing: a squash is on main with no commits to name, so it is unsure", () => {
+  const { root } = fresh();
+  const { path, branch } = builtBranch(root, "T1");
+  commitFile(path, "T1b.txt", "second\n", "feat: T1 second");
+  git(root, "merge", "--squash", branch);
+  git(root, "commit", "-q", "-m", "squash T1");
+  assert.match(at(root, branch)?.unsure ?? "", /squashed/);
+});
+
+test("landing: a branch with no commits of its own, or reset to main, has not landed anything", () => {
+  const { root } = fresh();
+  const fresh1 = handBranch(root, ".claude/worktrees/agent-n1", "worktree-agent-n1");
+  git(fresh1.path, "reset", "-q", "--hard", "main");
+  commitFile(root, "m.txt", "main moved\n", "chore: move");
+  git(fresh1.path, "reset", "-q", "--hard", "main");
+  assert.equal(at(root, fresh1.branch), null, "reset onto main");
+  git(root, "branch", "never-used");
+  assert.equal(at(root, "never-used"), null, "created at main, never committed to");
+});
+
+test("a hand worktree merged --no-ff or fast-forwarded is merged-by-hand, not unlisted", () => {
+  const { root } = fresh();
+  const a = handBranch(root, ".claude/worktrees/agent-T2", "worktree-agent-T2", "a.txt");
+  commitFile(root, "m.txt", "main moved\n", "chore: move");
+  git(root, "merge", "--no-ff", "--no-edit", a.branch);
+  const b = handBranch(root, ".claude/worktrees/agent-x7", "worktree-agent-x7", "b.txt");
+  git(root, "merge", "--ff-only", b.branch);
+  assert.deepEqual(
+    nudgesOf(root)
+      .filter((n) => n.path)
+      .map((n) => [n.kind, n.branch, n.command]),
+    [
+      ["merged-by-hand", "worktree-agent-T2", "/agentry:merge <id>"],
+      ["merged-by-hand", "worktree-agent-x7", "/agentry:merge <id>"],
+    ],
+  );
+});
+
+test("mechanical: a merge record whose commits were reverted on main is reported, not fixed", () => {
+  const { root } = fresh();
+  const { sha } = builtBranch(root, "T1");
+  const main = pickOntoMain(root, sha);
+  git(root, "revert", "--no-edit", main);
+  ledger(root, "T1", { state: "merged", merge: { preHead: "x", landed: [main], step: "done" } });
+  const spec = loadSpec(join(root, ".agentry", "process.json"), { root }).spec;
+  const plan = mechanical({ root, spec, model: readProcess({ root, spec }) });
+  assert.deepEqual(plan.fixes, []);
+  assert.match(plan.left.join("\n"), /T1: merged, but those commits are undone on main/);
 });
 
 test("mechanical: a ledger with a merge record gives one fix naming what the board lacks", () => {

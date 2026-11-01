@@ -15,6 +15,7 @@ import {
   pickOntoMain,
   read,
 } from "./drift-repo.mjs";
+import { git } from "./git-repo.mjs";
 
 const cleanups = [];
 after(() => {
@@ -125,6 +126,22 @@ test("a commit cell that names other commits is reported and left alone", () => 
   assert.equal(out.status, 1);
   assert.match(out.stdout, /T1: .*cell names other commits.*left alone/);
   assert.deepEqual(files(root), before);
+});
+
+test("work picked onto main and then reverted is never written as done", () => {
+  for (const record of [false, true]) {
+    const { root } = fresh();
+    const { sha } = builtBranch(root, "T1");
+    const main = pickOntoMain(root, sha);
+    git(root, "revert", "--no-edit", main);
+    const merge = { preHead: "x", landed: [main], step: "done" };
+    ledger(root, "T1", record ? { state: "merged", merge } : { state: "verified" });
+    const before = files(root);
+    const out = board(root, "fix");
+    assert.deepEqual(files(root), before, record ? "with a merge record" : "picked by hand");
+    assert.match(out.stdout, /^fixed 0/);
+    assert.equal(out.status, 1);
+  }
 });
 
 test("what is not mechanical is listed with its command, and the exit is 1", () => {
