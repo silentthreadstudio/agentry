@@ -124,6 +124,6 @@ test("memoryRoots reads the global store under AGENTRY_GLOBAL_DIR, as the memory
   try {
     assert.equal(memoryRoots(project)[1].dir, join(base, ".agentry", "memory"));
   } finally {
-    delete process.env.AGENTRY_GLOBAL_DIR;
+    Reflect.deleteProperty(process.env, "AGENTRY_GLOBAL_DIR");
   }
 });
