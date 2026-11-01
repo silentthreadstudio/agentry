@@ -19,7 +19,9 @@ import { basename, join, sep } from "node:path";
 import { git as runGit } from "../lane/worktree.mjs";
 import * as git from "./git.mjs";
 import * as ledgers from "./ledger.mjs";
-import { leadTokens, parentOf } from "./rules/structure.mjs";
+import * as md from "./markdown.mjs";
+import { readInside } from "./read.mjs";
+import { parentOf } from "./rules/structure.mjs";
 import { own } from "./spec.mjs";
 
 const MERGED_STATES = ["merged", "closed"];
@@ -182,6 +184,92 @@ function landedWork(root, ledger, onto) {
   return { unsure: "merged, but those commits are undone on main (reverted?)" };
 }
 
+// ---- the board, as written ----
+
+// A field's text as written in the item's row (or frontmatter), or null when it cannot be read.
+function written(root, spec, item, name) {
+  const kind = spec.kinds[item.kind];
+  const column = kind.fields[name]?.column;
+  const text = readInside(root, join(root, spec.root, item.file));
+  if (text === null || !column) return null;
+  if (kind.at.table === undefined) return String(own(md.frontmatter(text)?.data, column) ?? "");
+  const sec = md.section(text, kind.at.heading);
+  const row = sec && md.tableIn(text, sec)?.rows.find((r) => r.line === item.line);
+  return row ? md.plain(row.cells[column] ?? "") : null;
+}
+
+// Does the parent's handoff section hold any line naming `item` (bold lead or not)? null when there is no
+// such section to write to (the lifecycle refuses then).
+function hasHandoff(root, spec, model, item, target) {
+  const section = target.slice("parent.file:".length);
+  const parent = parentOf(model, item);
+  const heading = parent?.own && own(spec.kinds[parent.kind].file?.sections, section)?.heading;
+  const text = heading ? readInside(root, join(root, spec.root, parent.own.path)) : null;
+  const sec = text === null ? null : md.section(text, heading);
+  if (!sec) return null;
+  return text
+    .split("\n")
+    .slice(sec.line, sec.end)
+    .some((line) => line.split(/[^A-Za-z0-9._-]+/).includes(item.id));
+}
+
+// What the board lacks of the lifecycle's merged event for `item`: `need` (steps) and the hand-written state
+// that stops a write: `status` (a status the lifecycle never sets before a merge) and `cell` (a commit cell
+// that already holds text).
+function gaps({ root, spec, model, item }) {
+  const life = spec.lifecycle;
+  const write = life.write ?? {};
+  const need = [];
+  const found = {};
+  const merged = own(life.on, "merged");
+  if (typeof own(write, "status") === "string" && typeof merged === "string") {
+    const before = ["dispatched", "built", "failed"].map((e) => own(life.on, e));
+    if (before.includes(item.status)) need.push("status");
+    else if (item.status !== merged) found.status = item.status;
+  }
+  const field = own(write, "commit");
+  if (typeof field === "string") {
+    const cell = written(root, spec, item, field);
+    if (cell === null) found.cell = "";
+    else if (!cell.trim()) need.push("commit");
+    else found.cell = cell.trim();
+  }
+  const target = own(write, "handoff");
+  if (typeof target === "string" && hasHandoff(root, spec, model, item, target) === false)
+    need.push("handoff");
+  return { need, field, ...found };
+}
+
+// One ledgered task: the merged event `board fix` would apply (only the missing steps), or why it is only
+// reported. `work` is the task's landing when the caller has it.
+function plan({ root, spec, model, ledger, item, onto, work }) {
+  const { need, field, status, cell } = gaps({ root, spec, model, item });
+  if (!need.length && status === undefined) return {};
+  const landed = work !== undefined ? work : landedWork(root, ledger, onto);
+  if (!landed) return {};
+  if (landed.unsure) return { left: `${item.id}: ${landed.unsure}` };
+  const short = landed.shas[0].slice(0, 7);
+  if (status !== undefined)
+    return {
+      left: `${item.id}: on main (${short}), but status "${status}" is set by hand; left alone`,
+    };
+  let shas = landed.shas;
+  if (cell !== undefined) {
+    // A hand-written cell is never rewritten; the handoff then names the cell's first commit.
+    const named = (cell.match(SHA_TOKEN) ?? []).map((t) =>
+      landed.shas.find((s) => s.startsWith(t.toLowerCase())),
+    );
+    if (!named.length || !named.every(Boolean))
+      return {
+        left: `${item.id}: ${field} cell "${cell}" is not the landed ${short}; left alone`,
+      };
+    shas = named;
+  }
+  return need.length ? { fixes: { id: item.id, shas, need } } : {};
+}
+
+// ---- the two answers ----
+
 function samePath(a, b) {
   try {
     return realpathSync(a) === realpathSync(b);
@@ -201,8 +289,8 @@ function isAgentTree(tree, { top, runRoot }) {
 
 // The board task a worktree belongs to: an id that is a whole token of its branch or directory name.
 function taskIdOf(tree, items) {
-  const words = `${tree.branch ?? ""} ${basename(tree.path)}`.split(/[^A-Za-z0-9._-]+|\//);
-  return items.map((i) => i.id).find((id) => words.includes(id));
+  const names = `${tree.branch ?? ""} ${basename(tree.path)}`.split(/[^A-Za-z0-9._-]+|\//);
+  return items.map((i) => i.id).find((id) => names.includes(id));
 }
 
 const exec = (id) => `/agentry:exec ${id ?? "<id>"}`;
@@ -215,10 +303,10 @@ export function nudges({ root, runRoot = root, spec, model }) {
   const all = ledgers.list(runRoot);
   const byId = new Map(all.map((l) => [l.id, l]));
   const onto = git.defaultBranch(root);
-  const found = [];
-
   // The checkout the board is in, from its git root: a board kept in a subfolder sees the worktrees too.
   const top = out(root, ["rev-parse", "--show-toplevel"])?.trim() || root;
+  const found = [];
+
   for (const tree of git.worktrees(root).filter((t) => isAgentTree(t, { top, runRoot }))) {
     const known = all.find(
       (l) => l.worktree === tree.path || (tree.branch && l.branch === tree.branch),
@@ -257,49 +345,11 @@ export function nudges({ root, runRoot = root, spec, model }) {
   return found.filter((n) => !n.id || (!seen.has(n.id) && seen.add(n.id)));
 }
 
-// What the lifecycle's merged event would still write for `item`, given the commits `shas` that landed:
-// the status, the commit cell, the handoff line. `conflict` when the commit cell holds other commits.
-function missing({ spec, model, item, shas }) {
-  const life = spec.lifecycle;
-  const need = [];
-  if (typeof life.on?.merged === "string" && item.status !== life.on.merged) need.push("status");
-  const field = own(life.write, "commit");
-  let conflict = null;
-  if (typeof field === "string") {
-    const cell = [item.fields[field] ?? []].flat().join(" ");
-    const named = cell.match(SHA_TOKEN) ?? [];
-    if (!named.length) need.push("commit");
-    else if (!named.every((t) => shas.some((s) => s.startsWith(t.toLowerCase()))))
-      conflict = `${item.id}: its ${field} cell names other commits than the ledger's; left alone`;
-  }
-  const target = own(life.write, "handoff");
-  if (typeof target === "string") {
-    const section = target.slice("parent.file:".length);
-    const parent = parentOf(model, item);
-    const leads = parent?.own ? (own(parent.own.sections, section)?.leads ?? []) : null;
-    if (leads && !leads.some((l) => leadTokens(l.lead).includes(item.id))) need.push("handoff");
-  }
-  return { need, conflict };
-}
-
-// One ledgered task: the merged event `board fix` would apply, or why it is only reported. `work` is the
-// task's landing when the caller has it.
-function plan({ root, spec, model, ledger, item, onto, work }) {
-  const landed = work !== undefined ? work : landedWork(root, ledger, onto);
-  if (!landed) return {};
-  const shas = landed.shas ?? [];
-  const { need, conflict } = missing({ spec, model, item, shas });
-  if (!need.length && !conflict) return {};
-  if (landed.unsure) return { left: `${item.id}: ${landed.unsure}` };
-  if (conflict) return { left: conflict };
-  if (!need.length) return {};
-  return { fixes: { id: item.id, shas, need } };
-}
-
-/** What `board fix` may write (`fixes`: `{ id, shas, need }`, each one merged event) and what it
- *  only reports (`left`: lines). A task is fixed only when a ledger's work is on main now (its merge
- *  record's commits, or its branch's commits picked, merged or fast-forwarded there) and the board lacks
- *  the status, commit or handoff line. */
+/** What `board fix` may write (`fixes`: `{ id, shas, need }`, each the merged event's missing steps) and
+ *  what it only reports (`left`: lines). A task is fixed only when a ledger's work is on main now (its merge
+ *  record's commits, or its branch's commits picked, merged or fast-forwarded there) and the board lacks the
+ *  status, commit cell or handoff line. Hand-written state is never overwritten: a status the lifecycle does
+ *  not set before a merge, or a commit cell that does not name the landed commits, is reported instead. */
 export function mechanical({ root, runRoot = root, spec, model }) {
   const fixes = [];
   const left = [];

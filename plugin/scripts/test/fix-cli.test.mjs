@@ -124,9 +124,22 @@ test("a commit cell that names other commits is reported and left alone", () => 
   const before = files(root);
   const out = board(root, "fix");
   assert.equal(out.status, 1);
-  assert.match(out.stdout, /T1: .*cell names other commits.*left alone/);
+  assert.match(out.stdout, /T1: commit cell "abc1234" is not the landed \w+; left alone/);
   assert.deepEqual(files(root), before);
 });
+
+// The board as a hand left it: `cells` replaces T1's row from its Status column on.
+function handRow(root, cells) {
+  const text = read(root, "plan/BOARD.md").replace(/^\| T1 .*$/m, `| T1   | S1     | ${cells}`);
+  writeFileSync(join(root, "plan", "BOARD.md"), text);
+}
+// T1 built and cherry-picked by hand, its ledger left at verified (no merge record).
+function pickedByHand(root) {
+  const { sha } = builtBranch(root, "T1");
+  const main = pickOntoMain(root, sha);
+  ledger(root, "T1", { state: "verified" });
+  return main;
+}
 
 test("work picked onto main and then reverted is never written as done", () => {
   for (const record of [false, true]) {
@@ -142,6 +155,71 @@ test("work picked onto main and then reverted is never written as done", () => {
     assert.match(out.stdout, /^fixed 0/);
     assert.equal(out.status, 1);
   }
+});
+
+test("a hand-written commit cell is never rewritten: reported, and nothing else written", () => {
+  const { root } = fresh();
+  pickedByHand(root);
+  handRow(root, "doing  |         | see PR 12 | The first  |");
+  const before = files(root);
+  const out = board(root, "fix");
+  assert.deepEqual(files(root), before);
+  assert.match(out.stdout, /T1: commit cell "see PR 12" is not the landed \w{7}; left alone/);
+  assert.equal(out.status, 1);
+});
+
+test("a cell naming the first of two landed commits is not extended", () => {
+  const { root } = fresh();
+  const { path, sha } = builtBranch(root, "T1");
+  const second = commitFile(path, "T1b.txt", "second\n", "feat: T1 second");
+  const first = pickOntoMain(root, sha);
+  git(root, "cherry-pick", second);
+  ledger(root, "T1", { state: "verified" });
+  handRow(root, `doing  |         | ${first.slice(0, 7)} | The first  |`);
+  const out = board(root, "fix");
+  assert.equal(out.status, 0, out.stdout);
+  assert.match(
+    row(read(root, "plan/BOARD.md"), "T1"),
+    new RegExp(`done +\\| +\\| ${first.slice(0, 7)} \\|`),
+  );
+  assert.match(
+    read(root, "plan/sprints/S1.md"),
+    new RegExp(`\\*\\*T1\\*\\* \\(${first.slice(0, 7)}\\)`),
+  );
+});
+
+test("a handoff line already there for the task (any form) is not added again", () => {
+  const { root } = fresh();
+  const main = pickedByHand(root);
+  const sprint = `# S1\n\n## Handoff\n\n- T1 landed by hand in ${main.slice(0, 7)}, notes here\n\n## Notes\n\nNothing yet.\n`;
+  writeFileSync(join(root, "plan", "sprints", "S1.md"), sprint);
+  const out = board(root, "fix", "--json");
+  assert.equal(read(root, "plan/sprints/S1.md"), sprint);
+  const [fixed] = JSON.parse(out.stdout).fixed;
+  assert.deepEqual(fixed.writes, ["status → done", `commit → ${main.slice(0, 7)}`]);
+});
+
+test("a status the lifecycle never sets before a merge is left alone and reported", () => {
+  const { root } = fresh();
+  pickedByHand(root);
+  handRow(root, "todo   |         |        | The first  |");
+  const before = files(root);
+  const out = board(root, "fix");
+  assert.deepEqual(files(root), before);
+  assert.match(out.stdout, /T1: on main \(\w{7}\), but status "todo" is set by hand; left alone/);
+});
+
+test("the output lists exactly the writes made, and the run after a fix exits 0", () => {
+  const { root } = fresh();
+  const main = pickedByHand(root);
+  const out = board(root, "fix");
+  const short = main.slice(0, 7);
+  assert.equal(
+    out.stdout,
+    `fixed 1, 0 left for you\n  T1  status → done, commit → ${short}, handoff line under "Handoff"\n`,
+  );
+  assert.equal(out.status, 0, "the verified ledger's work is on main: no stale nudge is left");
+  assert.equal(git(root, "diff", "--numstat"), "1\t1\tplan/BOARD.md\n2\t0\tplan/sprints/S1.md");
 });
 
 test("a ledgered branch merged by hand with --no-ff or fast-forwarded is fixed with its commit", () => {
