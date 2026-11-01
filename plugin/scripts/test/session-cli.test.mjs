@@ -83,7 +83,9 @@ test("close gathers drafts, the fix plan, ledgers and sweep findings, and writes
   drafts.add(root, { kind: "rule", answer: "Always X" });
   const built = builtBranch(root, "T1");
   git(root, "cherry-pick", built.sha);
-  ledger(root, "T1", { state: "merged", worktree: built.path });
+  // board fix writes done only from a `lane merge` record (A23), so the fixture carries one.
+  const landed = git(root, "rev-parse", "HEAD");
+  ledger(root, "T1", { state: "merged", worktree: built.path, merge: { landed: [landed] } });
   ledger(root, "T3", { episode: { payload: {} } });
   const before = read(root, "plan/BOARD.md");
   const res = session(root, "close");
