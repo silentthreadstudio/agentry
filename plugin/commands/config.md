@@ -28,7 +28,7 @@ Current keys:
 | `merge.push` | `ask` | What `/agentry:merge` does once a task lands: `ask` (ask each time) · `auto` (push) · `never` (keep it local). Any other value is refused, never read as `auto`. |
 | `lanes.maxWriters` | `3` | How many builder lanes may write at once; `/agentry:exec` refuses a new one at the limit and names the open ones. A whole number above 0. |
 
-`merge` and `lanes` are read strictly by the lane scripts (`scripts/lib/config.mjs`): an unknown key, a wrong type or an out-of-range value in either block stops the step with an error naming it, in whichever file it sits.
+The lane scripts (`scripts/lib/config.mjs`) read the file strictly: an unknown top-level key (a misspelled block such as `marge`), or an unknown key, wrong type or out-of-range value inside `merge` or `lanes`, stops the step with an error naming it, in whichever file it sits.
 
 ## 2. Set a key (only when `$ARGUMENTS` is given)
 
