@@ -20,7 +20,7 @@ export const FLOW_COMPLIANCE_CAVEAT =
 export interface FlowComplianceArtifact {
   /** The run dir the verdict is over (provenance). */
   runDir: string;
-  /** PASS iff every check passed. */
+  /** PASS iff no check failed (N/A checks do not fail). */
   pass: boolean;
   /** The four ordered checks with their pass/fail + evidence. */
   checks: readonly Check[];
@@ -57,10 +57,12 @@ export function runFlowComplianceProbe(opts: FlowComplianceProbeOptions): FlowCo
   const verdict = runAllChecks(trace);
 
   for (const check of verdict.checks) {
+    // N/A is neither task-done nor a fired gate; the artifact still records it.
+    if (check.status === "na") continue;
     opts.observer?.emit?.({
-      kind: check.pass ? "task-done" : "gate-fired",
+      kind: check.status === "pass" ? "task-done" : "gate-fired",
       runId,
-      detail: `${check.id}: ${check.na ? "N/A" : check.pass ? "PASS" : "FAIL"} — ${check.detail}`,
+      detail: `${check.id}: ${check.status === "pass" ? "PASS" : "FAIL"} — ${check.detail}`,
       ts: new Date().toISOString(),
     });
   }

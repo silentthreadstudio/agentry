@@ -1,12 +1,15 @@
 // The flow-compliance assertion layer — PURE predicates over a {@link RunTrace}, mirroring the routing/moat
 // control gates. Zero I/O, no API: forced-testable with synthetic traces. Each of the four ordered checks
-// returns a {@link Check} (pass + a human verdict); `runAllChecks` aggregates them into a {@link FlowVerdict}.
+// returns a {@link Check} (status + a human verdict); `runAllChecks` aggregates them into a {@link FlowVerdict}.
 //
 // The contract asserted (ADR-004, AS-BUILT shapes decided by ADR-001/B1 + the A3/C1 single-frontmatter rule):
 //   1. run_start-before-dispatch — the first `type`-bearing FLOW line precedes the first `agent-started` line.
 //   2. spec-before-tasks — `spec.md` exists and predates the first `tasks/NNN-*.md`.
 //   3. single-frontmatter — every task file parses to exactly ONE leading `---…---` block.
-//   4. no-skip-flag — N/A: the hook that wrote the `flow-skipped` marker is retired (A32), so it never passes.
+//   4. no-skip-flag — N/A: the hook that wrote the `flow-skipped` marker is retired, so it can never be observed.
+//
+// A check is `pass`, `fail`, or `na` (its source is gone). N/A is neither a pass nor a fail: it never fails the
+// verdict and is never counted as evidence of compliance.
 //
 // "A run exists" (the above-floor floor for checks 1 and 4) = `run-state.json` present OR ≥1 FLOW (`type`) line.
 // A backstop-only `events.jsonl` (only `kind` lines, e.g. `flow-skipped`) does NOT count as a run.
@@ -22,17 +25,18 @@ export const CHECK_IDS = [
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
-/** One check's result: which check, whether it passed, and a human-readable verdict (the evidence on FAIL). */
+/** A check's outcome. `na` = it cannot be evaluated (its source is gone): not a pass, not a fail. */
+export type CheckStatus = "pass" | "fail" | "na";
+
+/** One check's result: which check, its status, and a human-readable verdict (the evidence on FAIL). */
 export interface Check {
   id: CheckId;
-  pass: boolean;
-  /** True when the check cannot be evaluated (its source is gone). It does not fail the verdict and is never a PASS. */
-  na?: true;
+  status: CheckStatus;
   /** A short, evidence-bearing line — what made it pass or fail (the readable trace). */
   detail: string;
 }
 
-/** The aggregate verdict over a run: PASS iff every check passed, plus the per-check breakdown. */
+/** The aggregate verdict over a run: PASS iff no check failed (N/A checks do not fail), plus the breakdown. */
 export interface FlowVerdict {
   pass: boolean;
   checks: readonly Check[];
@@ -43,7 +47,7 @@ function firstFlowEvent(events: readonly TraceEvent[]): TraceEvent | undefined {
   return events.find((e) => e.type !== undefined);
 }
 
-/** The first dispatch signal — the first `agent-started` backstop line (the implementer/subagent dispatch). */
+/** The first dispatch signal — the first `agent-started` line. Only the retired subagent hook wrote these. */
 function firstDispatchEvent(events: readonly TraceEvent[]): TraceEvent | undefined {
   return events.find((e) => e.kind === "agent-started");
 }
@@ -62,8 +66,8 @@ export function runExists(trace: RunTrace): boolean {
  * Is this an ESCALATED (above-floor) run? Detected by the **artifact surface** the run left on disk — a `spec.md`
  * plus a `plan.md` or task files — OR an explicit run signal (`run-state.json` / a FLOW event). This is the honest
  * classifier: a genuine one-shot writes NOTHING to `.agentry/work/`, so it has none of these; an escalated run that
- * skipped `event_emit` still has its artifacts, so it is correctly judged above-floor (and then FAILs check 1, the
- * missing routing event — rather than escaping as "sub-floor N/A").
+ * skipped `event_emit` still has its artifacts, so it is correctly judged above-floor rather than escaping as
+ * "sub-floor N/A". Dispatch order (check 1) is a separate question: it is N/A when no dispatch line exists.
  */
 export function isAboveFloor(trace: RunTrace): boolean {
   return (
@@ -77,26 +81,27 @@ export function isAboveFloor(trace: RunTrace): boolean {
 /**
  * CHECK 1 — run_start-before-dispatch. The first FLOW (`type`) line's ts must be STRICTLY before the first
  * `agent-started` line's ts. A dispatch with no preceding FLOW line = FAIL (the proven bypass made observable).
- * With no dispatch line at all, there is nothing to order against ⇒ vacuously satisfied.
+ * Only the retired subagent hook wrote `agent-started` lines, so with none in the trace dispatch cannot be
+ * observed at all: the check is N/A, never a pass (a run that dispatched agents without run_start looks the same).
  */
 export function checkRunStartBeforeDispatch(trace: RunTrace): Check {
   const id: CheckId = "run-start-before-dispatch";
   const dispatch = firstDispatchEvent(trace.events);
   if (dispatch === undefined) {
-    return { id, pass: true, detail: "no agent dispatch in the trace — nothing to order" };
+    return { id, status: "na", detail: "N/A (hook retired)" };
   }
   const flow = firstFlowEvent(trace.events);
   if (flow === undefined) {
     return {
       id,
-      pass: false,
+      status: "fail",
       detail: `agent dispatched at ${dispatch.ts} with no preceding run_start/FLOW line`,
     };
   }
   const pass = flow.ts < dispatch.ts;
   return {
     id,
-    pass,
+    status: pass ? "pass" : "fail",
     detail: pass
       ? `run_start (${flow.type} @ ${flow.ts}) precedes first dispatch @ ${dispatch.ts}`
       : `run_start (${flow.type} @ ${flow.ts}) does NOT precede first dispatch @ ${dispatch.ts}`,
@@ -112,16 +117,20 @@ export function checkSpecBeforeTasks(trace: RunTrace): Check {
   const id: CheckId = "spec-before-tasks";
   const firstTask = trace.taskFiles[0];
   if (firstTask === undefined) {
-    return { id, pass: true, detail: "no task files — spec ordering not exercised" };
+    return { id, status: "pass", detail: "no task files — spec ordering not exercised" };
   }
   if (!trace.hasSpec || trace.specMtimeMs === null) {
-    return { id, pass: false, detail: `task file ${firstTask.name} present but spec.md is absent` };
+    return {
+      id,
+      status: "fail",
+      detail: `task file ${firstTask.name} present but spec.md is absent`,
+    };
   }
   const earliestTaskMtime = Math.min(...trace.taskFiles.map((t) => t.mtimeMs));
   const pass = trace.specMtimeMs <= earliestTaskMtime;
   return {
     id,
-    pass,
+    status: pass ? "pass" : "fail",
     detail: pass
       ? `spec.md (mtime ${trace.specMtimeMs}) predates first task (mtime ${earliestTaskMtime})`
       : `spec.md (mtime ${trace.specMtimeMs}) is NEWER than first task (mtime ${earliestTaskMtime})`,
@@ -161,7 +170,7 @@ export function countFrontmatterBlocks(text: string): number {
 export function checkSingleFrontmatter(trace: RunTrace): Check {
   const id: CheckId = "single-frontmatter";
   if (trace.taskFiles.length === 0) {
-    return { id, pass: true, detail: "no task files to check" };
+    return { id, status: "pass", detail: "no task files to check" };
   }
   const offenders = trace.taskFiles
     .map((t: TaskFile) => ({ name: t.name, blocks: countFrontmatterBlocks(t.text) }))
@@ -169,27 +178,27 @@ export function checkSingleFrontmatter(trace: RunTrace): Check {
   if (offenders.length === 0) {
     return {
       id,
-      pass: true,
+      status: "pass",
       detail: `all ${trace.taskFiles.length} task file(s) have exactly one frontmatter block`,
     };
   }
   const named = offenders.map((o) => `${o.name} (${o.blocks} blocks)`).join(", ");
   return {
     id,
-    pass: false,
+    status: "fail",
     detail: `task file(s) without exactly one frontmatter block: ${named}`,
   };
 }
 
 /**
  * CHECK 4 — no-skip-flag. Reported N/A: the `flow-skipped` marker was written only by the `flow-run-guard` hook,
- * which is retired (A32), so a clean trace proves nothing. It does not fail the verdict and is never a pass.
+ * which is retired, so a clean trace proves nothing. It does not fail the verdict and is never a pass.
  */
 export function checkNoSkipFlag(_trace: RunTrace): Check {
-  return { id: "no-skip-flag", pass: true, na: true, detail: "N/A (hook retired)" };
+  return { id: "no-skip-flag", status: "na", detail: "N/A (hook retired)" };
 }
 
-/** Run all four checks in order and aggregate — PASS iff every check passed. */
+/** Run all four checks in order and aggregate — PASS iff no check failed (N/A does not fail). */
 export function runAllChecks(trace: RunTrace): FlowVerdict {
   const checks: Check[] = [
     checkRunStartBeforeDispatch(trace),
@@ -197,5 +206,5 @@ export function runAllChecks(trace: RunTrace): FlowVerdict {
     checkSingleFrontmatter(trace),
     checkNoSkipFlag(trace),
   ];
-  return { pass: checks.every((c) => c.pass), checks };
+  return { pass: checks.every((c) => c.status !== "fail"), checks };
 }

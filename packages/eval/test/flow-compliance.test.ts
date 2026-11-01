@@ -10,7 +10,7 @@
 //     (`.agentry/work/build-agentry-workbench-…/`) — a genuine `/agentry:go` trace, not a canned fixture.
 
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, utimesSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -62,7 +62,7 @@ test("check1: FLOW run_start strictly before first dispatch ⇒ pass", () => {
   const c = checkRunStartBeforeDispatch(
     trace({ events: [flowLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")] }),
   );
-  assert.equal(c.pass, true);
+  assert.equal(c.status, "pass");
 });
 
 test("check1: dispatch with no preceding FLOW line ⇒ fail (the proven bypass)", () => {
@@ -70,17 +70,18 @@ test("check1: dispatch with no preceding FLOW line ⇒ fail (the proven bypass)"
   const c = checkRunStartBeforeDispatch(
     trace({ events: [dispatchLine("2026-01-01T00:00:00Z"), flowLine("2026-01-01T00:01:00Z")] }),
   );
-  assert.equal(c.pass, false);
+  assert.equal(c.status, "fail");
 });
 
 test("check1: dispatch with NO FLOW line anywhere ⇒ fail", () => {
   const c = checkRunStartBeforeDispatch(trace({ events: [dispatchLine("2026-01-01T00:00:00Z")] }));
-  assert.equal(c.pass, false);
+  assert.equal(c.status, "fail");
 });
 
-test("check1: no dispatch at all ⇒ vacuously pass", () => {
+test("check1: no dispatch line at all ⇒ N/A (hook retired), never a pass", () => {
   const c = checkRunStartBeforeDispatch(trace({ events: [flowLine("2026-01-01T00:00:00Z")] }));
-  assert.equal(c.pass, true);
+  assert.equal(c.status, "na");
+  assert.equal(c.detail, "N/A (hook retired)");
 });
 
 test("check1: a backstop-only line (kind, no type) is NOT a run_start signal", () => {
@@ -88,7 +89,7 @@ test("check1: a backstop-only line (kind, no type) is NOT a run_start signal", (
   const c = checkRunStartBeforeDispatch(
     trace({ events: [skipLine("2026-01-01T00:00:00Z"), dispatchLine("2026-01-01T00:01:00Z")] }),
   );
-  assert.equal(c.pass, false);
+  assert.equal(c.status, "fail");
 });
 
 // --- pure assertions: check 2 — spec-before-tasks ----------------------------------------------------------------
@@ -101,7 +102,7 @@ test("check2: spec mtime older than first task ⇒ pass", () => {
       taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }],
     }),
   );
-  assert.equal(c.pass, true);
+  assert.equal(c.status, "pass");
 });
 
 test("check2: a task file present but spec.md absent ⇒ fail", () => {
@@ -112,7 +113,7 @@ test("check2: a task file present but spec.md absent ⇒ fail", () => {
       taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }],
     }),
   );
-  assert.equal(c.pass, false);
+  assert.equal(c.status, "fail");
 });
 
 test("check2: spec NEWER than the first task ⇒ fail", () => {
@@ -123,11 +124,11 @@ test("check2: spec NEWER than the first task ⇒ fail", () => {
       taskFiles: [{ name: "001.md", text: "", mtimeMs: 2000 }],
     }),
   );
-  assert.equal(c.pass, false);
+  assert.equal(c.status, "fail");
 });
 
 test("check2: no task files ⇒ vacuously pass", () => {
-  assert.equal(checkSpecBeforeTasks(trace({ hasSpec: true, specMtimeMs: 1 })).pass, true);
+  assert.equal(checkSpecBeforeTasks(trace({ hasSpec: true, specMtimeMs: 1 })).status, "pass");
 });
 
 // --- pure assertions: check 3 — single-frontmatter (the frontmatter counter) -------------------------------------
@@ -158,7 +159,7 @@ test("check3: every task has exactly one frontmatter block ⇒ pass", () => {
   const c = checkSingleFrontmatter(
     trace({ taskFiles: [{ name: "001.md", text: "---\nt: 1\n---\nbody\n", mtimeMs: 1 }] }),
   );
-  assert.equal(c.pass, true);
+  assert.equal(c.status, "pass");
 });
 
 test("check3: a stacked-frontmatter task ⇒ fail, naming the file", () => {
@@ -167,7 +168,7 @@ test("check3: a stacked-frontmatter task ⇒ fail, naming the file", () => {
       taskFiles: [{ name: "001-bad.md", text: "---\nt: 1\n---\n\n---\nt: 2\n---\n", mtimeMs: 1 }],
     }),
   );
-  assert.equal(c.pass, false);
+  assert.equal(c.status, "fail");
   assert.match(c.detail, /001-bad\.md/);
 });
 
@@ -196,8 +197,7 @@ test("check4: no-skip-flag is N/A (hook retired), with or without a flow-skipped
     trace({ events: [flowLine("2026-01-01T00:00:00Z"), skipLine("2026-01-01T00:05:00Z")] }),
   );
   for (const c of [clean, marked]) {
-    assert.equal(c.na, true);
-    assert.equal(c.pass, true);
+    assert.equal(c.status, "na");
     assert.equal(c.detail, "N/A (hook retired)");
   }
 });
@@ -233,27 +233,49 @@ function probeOver(runDir: string): ReturnType<typeof runFlowComplianceProbe>["a
 test("probe: the compliant fixture ⇒ PASS (all four checks green)", () => {
   const a = probeOver(stagedFixture("compliant"));
   assert.equal(a.pass, true, JSON.stringify(a.checks, null, 2));
-  assert.ok(a.checks.every((c) => c.pass));
+  assert.ok(a.checks.every((c) => c.status !== "fail"));
 });
 
 test("probe: dispatch-before-run ⇒ FAIL on check 1 only", () => {
   const a = probeOver(stagedFixture("dispatch-before-run"));
   assert.equal(a.pass, false);
-  const failing = a.checks.filter((c) => !c.pass).map((c) => c.id);
+  const failing = a.checks.filter((c) => c.status === "fail").map((c) => c.id);
   assert.deepEqual(failing, ["run-start-before-dispatch"]);
+});
+
+test("probe: a run with no events.jsonl is not a PASS on check 1 (dispatch unobservable ⇒ N/A)", () => {
+  // Regression: dispatch evidence lived only in events.jsonl; without it the check used to pass vacuously.
+  const dir = stagedFixture("dispatch-before-run");
+  rmSync(join(dir, "events.jsonl"));
+  const a = probeOver(dir);
+  const c1 = a.checks.find((c) => c.id === "run-start-before-dispatch");
+  assert.equal(c1?.status, "na");
+  assert.equal(c1?.detail, "N/A (hook retired)");
+});
+
+test("probe: N/A checks emit no observer event (neither task-done nor gate-fired)", () => {
+  const events: string[] = [];
+  const outPath = join(mkdtempSync(join(tmpdir(), "flowcomp-out-")), "flow-compliance.json");
+  runFlowComplianceProbe({
+    runDir: stagedFixture("skip-flag"),
+    outPath,
+    observer: { emit: (e) => events.push(e.detail ?? "") },
+  });
+  assert.ok(events.length > 0);
+  assert.ok(events.every((d) => !d.includes("N/A") && !d.startsWith("no-skip-flag")));
 });
 
 test("probe: tasks-before-spec ⇒ FAIL on check 2 only", () => {
   const a = probeOver(stagedFixture("tasks-before-spec"));
   assert.equal(a.pass, false);
-  const failing = a.checks.filter((c) => !c.pass).map((c) => c.id);
+  const failing = a.checks.filter((c) => c.status === "fail").map((c) => c.id);
   assert.deepEqual(failing, ["spec-before-tasks"]);
 });
 
 test("probe: double-frontmatter ⇒ FAIL on check 3 only", () => {
   const a = probeOver(stagedFixture("double-frontmatter"));
   assert.equal(a.pass, false);
-  const failing = a.checks.filter((c) => !c.pass).map((c) => c.id);
+  const failing = a.checks.filter((c) => c.status === "fail").map((c) => c.id);
   assert.deepEqual(failing, ["single-frontmatter"]);
 });
 
@@ -261,7 +283,7 @@ test("probe: a skip-flag fixture no longer fails; no-skip-flag reports N/A", () 
   const a = probeOver(stagedFixture("skip-flag"));
   assert.equal(a.pass, true);
   const c4 = a.checks.find((c) => c.id === "no-skip-flag");
-  assert.equal(c4?.na, true);
+  assert.equal(c4?.status, "na");
 });
 
 // (The former `run flow-compliance --run <dir>` CLI subcommand was removed by T-10: flow-compliance is no longer a
@@ -281,9 +303,9 @@ test("AC7 real-trace: the probe runs over a real captured /agentry:go run dir", 
 
   // The load-bearing real-shape assertion: run_start fired before dispatch on a real trace — the AC7 signal.
   const c1 = a.checks.find((c) => c.id === "run-start-before-dispatch")!;
-  assert.equal(c1.pass, true, `real trace must show run_start before dispatch: ${c1.detail}`);
+  assert.equal(c1.status, "pass", `real trace must show run_start before dispatch: ${c1.detail}`);
   const c4 = a.checks.find((c) => c.id === "no-skip-flag")!;
-  assert.equal(c4.na, true);
+  assert.equal(c4.status, "na");
 });
 
 // --- the aggregate verdict is the conjunction of all four checks --------------------------------------------------
