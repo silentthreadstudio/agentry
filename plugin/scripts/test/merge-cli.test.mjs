@@ -414,6 +414,26 @@ test("a lifecycle cell of a task with no open lane is not carried", () => {
   assert.match(out(res), /task T2 status "todo" → "doing", but T2 has no open lane/);
 });
 
+// R1b-5 re-verify item 5: the board check's baseline was read with the carry already back on the
+// board, so a finding the carry itself brought passed and was committed.
+test("a new finding brought by exec's carried write stops the land; nothing of it is committed", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  openLane("T2");
+  writeFileSync(
+    join(root, "plan", "BOARD.md"),
+    board().replace(T2_DOING[0], "| T2   | S1     | bogus  |"),
+  );
+  const dirty = board();
+  const pre = head();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ record +board check: 1 new finding\(s\)/);
+  assert.match(res.stdout, /status-known T2/);
+  assert.doesNotMatch(git(root, "log", "-p", "--format=", `${pre}..HEAD`), /bogus/);
+  assert.equal(board(), dirty); // exec's write is back on main, uncommitted
+});
+
 test("a red gate gives main back exec's uncommitted board writes as they were", () => {
   const { path } = build({ "red.txt": "fails the gate\n" });
   execLedger({ path, gated: null });

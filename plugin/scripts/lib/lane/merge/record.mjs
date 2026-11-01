@@ -29,12 +29,17 @@ export function recordStep(lane, rows) {
     rows.push(skip("record", "lifecycle off: nothing written to the board"));
     return null;
   }
+  // The board check's baseline: main's board as committed, before exec's writes or the merged write,
+  // so a finding either one brings is new.
+  const before = new Set(
+    boardReport({ root, spec, model: readProcess({ root, spec }) }).findings.map(findingKey),
+  );
   // Written before the first board write: a rerun after a kill from here on looks for this land's
   // board commit, or takes its uncommitted board writes back (merge/recover.mjs).
   setMerge(lane, { step: "recording" });
   const carried = merge.carry?.files ?? [];
   if (merge.carry) {
-    // Exec's writes go back first, on top of the picks, so the merged write and the check see them.
+    // Exec's writes go back first, on top of the picks, so the merged write sees them.
     const back = applyPatch(root, merge.carry.patch);
     if (!back.ok) {
       rows.push(
@@ -46,7 +51,6 @@ export function recordStep(lane, rows) {
     }
   }
   const model = readProcess({ root, spec });
-  const before = new Set(boardReport({ root, spec, model }).findings.map(findingKey));
   const summary = lane.opts["--summary"] ?? subjectOf(root, merge.landed[0]);
   let result;
   try {
