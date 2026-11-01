@@ -613,6 +613,27 @@ test("a land killed right after its board commit is finished by the rerun, not r
   assert.equal(status(), "");
 });
 
+// R1b-5 re-verify item 2: a land killed after its board writes, before the commit (a slow pre-commit
+// hook), left them staged on main, and no rerun got past them.
+test("a land killed with its board writes staged takes them back on the rerun and lands", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  execWrites();
+  const pre = head();
+  landKilledAt("^-C [^ ]+ commit --quiet -m", "before");
+  assert.match(status(), /^M {2}plan\/BOARD\.md$/m); // the writes, staged
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /✓ recover +took back the board writes a killed run left uncommitted/);
+  assert.equal(chainSince(pre).length, 2); // the pick and one board commit
+  const committed = git(root, "show", "HEAD:plan/BOARD.md");
+  assert.match(committed, /\| T1 +\| S1 +\| done +\|/);
+  assert.match(committed, /\| T2 +\| S1 +\| doing +\|/); // exec's write, carried once
+  assert.equal(git(root, "show", "HEAD:plan/sprints/S1.md").match(/- \*\*T1\*\*/g).length, 1);
+  assert.equal(status(), "");
+  assert.equal(readLedger(root, ID).state, "merged");
+});
+
 // R1b-5 fix 2: a killed land set exec's writes aside in a patch file only; the rerun saw a clean main
 // and landed without them.
 test("a land killed during its gate keeps exec's writes in the ledger; the rerun commits them", async () => {

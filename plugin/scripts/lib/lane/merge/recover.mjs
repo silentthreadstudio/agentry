@@ -3,30 +3,73 @@
 // against main and either finishes what the killed run did or puts main back where the rerun can start.
 import { boardFiles } from "../../process/board-diff.mjs";
 import { endStrayGate } from "../gate-group.mjs";
-import { commitsBetween, filesOf, pickInProgress, subjectOf } from "../land.mjs";
+import {
+  commitsBetween,
+  filesOf,
+  notEdits,
+  pickInProgress,
+  restoreFiles,
+  statusEntries,
+  subjectOf,
+} from "../land.mjs";
 import { afterLand, now, ok, red, save, setMerge, short } from "./lane.mjs";
 
+// The files the record writes to: the board's, and the carry's.
+const boardSet = ({ spec, model, ledger }) =>
+  new Set([...boardFiles(spec, model), ...(ledger.merge.carry?.files ?? [])]);
+
 // The commit on main right after this land's picks, when it is this land's board commit: one commit
-// past exactly the picks, touching board files only (the ones the record writes, the carry's). Null
-// when main is anything else.
-function boardCommitOnMain(lane) {
-  const { root, spec, model } = lane;
+// past exactly the picks, touching board files only. Null when main is anything else.
+function boardCommitOnMain(lane, chain) {
   const merge = lane.ledger.merge;
-  const chain = commitsBetween(root, merge.preHead, "HEAD", { firstParent: true });
-  if (chain?.length !== merge.landed.length + 1) return null;
+  if (chain.length !== merge.landed.length + 1) return null;
   if (chain.slice(0, -1).join(" ") !== merge.landed.join(" ")) return null;
   const sha = chain.at(-1);
-  const files = filesOf(root, sha);
-  const board = new Set([...boardFiles(spec, model), ...(merge.carry?.files ?? [])]);
+  const files = filesOf(lane.root, sha);
+  const board = boardSet(lane);
   return files && files.length > 0 && files.every((file) => board.has(file)) ? sha : null;
 }
 
-// A run killed while it wrote or committed the board (`step: "recording"`). If its board commit is on
-// main, the land is done: the ledger says so now. Otherwise the land is gated again and resumes.
+// The board files main holds plain edits of (staged or not): the board writes a killed run left.
+function boardWritesLeft(lane) {
+  const entries = statusEntries(lane.root) ?? [];
+  const other = new Set(
+    notEdits(
+      entries,
+      entries.map((entry) => entry.slice(3)),
+    ),
+  );
+  const board = boardSet(lane);
+  return entries
+    .filter((entry) => !other.has(entry))
+    .map((entry) => entry.slice(3))
+    .filter((file) => board.has(file));
+}
+
+// A run killed while it wrote or committed the board (`step: "recording"`). Its board commit on main:
+// the land is done, and the ledger says so now. Main still at the picks: whatever board writes it
+// left (the carry put back, the merged write, staged or not) are taken back, and the land resumes
+// from its green gate. Main anything else: the land step says main has moved.
 function resumeRecording(lane, rows) {
+  const { root } = lane;
   const merge = lane.ledger.merge;
-  const sha = boardCommitOnMain(lane);
+  const chain = commitsBetween(root, merge.preHead, "HEAD", { firstParent: true }) ?? [];
+  const sha = boardCommitOnMain(lane, chain);
   if (!sha) {
+    if (chain.join(" ") !== merge.landed.join(" ")) return null;
+    const left = boardWritesLeft(lane);
+    if (left.length > 0) {
+      const back = restoreFiles(root, left);
+      if (!back.ok) {
+        rows.push(red("recover", `cannot take back a killed run's board writes: ${back.reason}`));
+        return { exit: 1, keepCarry: true, next: `show the owner git status in ${root}` };
+      }
+      rows.push(
+        ok("recover", "took back the board writes a killed run left uncommitted", [
+          `${left.join(", ")}: back at HEAD; the land writes them again`,
+        ]),
+      );
+    }
     setMerge(lane, { step: "gated" });
     return null;
   }
