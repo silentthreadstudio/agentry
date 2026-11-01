@@ -3,7 +3,8 @@
 // the cleanup, each read through the step table and the repo's state afterwards.
 // Run: node --test plugin/scripts/test/merge-cli.test.mjs
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -97,10 +98,13 @@ const BOARD_MD = `# Merge
 | T2   | S1     | todo   |         |         |
 `;
 const SPRINT_MD = "# S1\n\n## Handoff\n\n## Notes\n\nNothing yet.\n";
-// The fixture's gate: red when `red.txt` is in the tree, and it says which tier it ran.
+// The fixture's gate: red when `red.txt` is in the tree, and it says which tier it ran. While the file
+// $MERGE_TEST_HANG names exists, it runs until killed (a long gate the host kills the merge during).
 const GATE_JS = `import { existsSync } from "node:fs";
 console.log("gate tier", process.argv[2]);
-process.exit(existsSync("red.txt") ? 1 : 0);
+const hang = process.env.MERGE_TEST_HANG;
+if (hang && existsSync(hang)) setInterval(() => {}, 1000);
+else process.exit(existsSync("red.txt") ? 1 : 0);
 `;
 
 let root;
@@ -319,12 +323,28 @@ test("after a rollback an exec lane is back in the state it landed from, so its 
   assert.equal(readLedger(root, ID).state, "verified");
 });
 
-// Exec writes the status and verdict cells through the lifecycle and leaves them uncommitted on main.
-const execWrites = () =>
-  writeFileSync(
-    join(root, "plan", "BOARD.md"),
-    board().replace("| T2   | S1     | todo   |", "| T2   | S1     | doing  |"),
-  );
+/** Another task's lane, open (exec is building it): its lifecycle writes may wait on main. */
+const openLane = (id, state = "building") =>
+  writeLedger(root, {
+    v: 1,
+    id,
+    kind: "task",
+    origin: "exec",
+    mainBranch: "main",
+    branch: `agentry/${id}`,
+    rounds: [],
+    gates: [],
+    checks: {},
+    usedMemories: [],
+    state,
+    next: "",
+  });
+// Exec writes T2's status cell through the lifecycle (T2's lane is open) and leaves it uncommitted.
+const T2_DOING = ["| T2   | S1     | todo   |", "| T2   | S1     | doing  |"];
+const execWrites = () => {
+  openLane("T2");
+  writeFileSync(join(root, "plan", "BOARD.md"), board().replace(...T2_DOING));
+};
 
 test("exec's uncommitted board writes are carried into the board commit; main ends clean", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -332,13 +352,15 @@ test("exec's uncommitted board writes are carried into the board commit; main en
   execWrites();
   const res = merge(ID, "--message", "docs(board): land T1");
   assert.equal(res.status, 0, out(res));
-  assert.match(res.stdout, /clean but for the lifecycle's uncommitted board writes/);
-  assert.match(res.stdout, /✓ carry +1 board file\(s\) set aside/);
+  assert.match(res.stdout, /clean but for exec's uncommitted lifecycle writes/);
+  assert.match(res.stdout, /T2 status: "todo" → "doing" \(plan\/BOARD\.md\)/);
+  assert.match(res.stdout, /✓ carry +1 board file\(s\) set aside, recorded in the ledger first/);
   assert.equal(status(), "");
   const committed = git(root, "show", "HEAD:plan/BOARD.md");
   assert.match(committed, /\| T2 +\| S1 +\| doing +\|/); // exec's write
   assert.match(committed, /\| T1 +\| S1 +\| done +\|/); // the merged write
   assert.equal(boardCheck().status, 0);
+  assert.equal(readLedger(root, ID).merge.carry, undefined); // in the commit: the ledger let go
 });
 
 test("with exec's board writes on main, any other change still refuses the land", () => {
@@ -349,9 +371,47 @@ test("with exec's board writes on main, any other change still refuses the land"
   const pre = head();
   const res = merge(ID, "--message", "docs(board): land T1");
   assert.equal(res.status, 2, out(res));
-  assert.match(out(res), /M plan\/sprints\/S1\.md/);
-  assert.match(out(res), /only edits of plan\/BOARD\.md may wait for the land/);
+  assert.match(out(res), /1 uncommitted change\(s\) the land cannot carry/);
+  assert.match(out(res), /plan\/sprints\/S1\.md:\d+: lines added or removed/);
+  assert.match(
+    out(res),
+    /only lifecycle cells \(status, verdict, commit\) of tasks with an open lane/,
+  );
   assert.equal(head(), pre);
+});
+
+// R1b-5 fix 1 (and R1b-4 re-verify item 1): the carry took whole board files, so a builder's stray edit
+// in BOARD.md rode into another lane's board commit.
+test("a stray edit in the board file next to exec's write blocks the land and is never committed", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  execWrites();
+  const pre = head();
+  for (const stray of [
+    ["## Tasks\n", "## Tasks\n\nSneaked in by a builder.\n"], // free text
+    ["| S1     | doing  |", "| S1     | done   |"], // another row's cell
+  ]) {
+    writeFileSync(join(root, "plan", "BOARD.md"), BOARD_MD.replace(...T2_DOING).replace(...stray));
+    const res = merge(ID, "--message", "docs(board): land T1");
+    assert.equal(res.status, 2, out(res));
+    assert.match(out(res), /the land cannot carry/);
+    assert.equal(head(), pre);
+    assert.doesNotMatch(git(root, "log", "-p", "--format=", `${pre}..HEAD`), /Sneaked|done/);
+  }
+  assert.match(
+    out(merge(ID, "--message", "docs(board): land T1")),
+    /sprint S1 status "doing" → "done" is not a lifecycle cell/,
+  );
+});
+
+test("a lifecycle cell of a task with no open lane is not carried", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  writeFileSync(join(root, "plan", "BOARD.md"), board().replace(...T2_DOING));
+  openLane("T2", "merged");
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /task T2 status "todo" → "doing", but T2 has no open lane/);
 });
 
 test("a red gate gives main back exec's uncommitted board writes as they were", () => {
@@ -363,10 +423,240 @@ test("a red gate gives main back exec's uncommitted board writes as they were", 
   const res = merge(ID, "--message", "docs(board): land T1");
   assert.equal(res.status, 1, out(res));
   assert.match(res.stdout, /✓ rollback/);
-  assert.match(res.stdout, /✓ carry +the lifecycle's board writes are back on main, uncommitted/);
+  assert.match(res.stdout, /✓ carry +exec's board writes are on main again, uncommitted/);
   assert.equal(head(), pre);
   assert.equal(board(), dirty);
   assert.equal(status(), "M plan/BOARD.md");
+  assert.equal(readLedger(root, ID).merge.carry, undefined);
+});
+
+// R1b-4 re-verify item 5: on a one-file-per-item board, another lane's lifecycle write in its own item
+// file blocked every land ("main is not clean").
+test("on a one-file-per-item board, an open lane's write in its own file is carried", () => {
+  const stories = {
+    version: 1,
+    name: "Files",
+    root: ".",
+    kinds: {
+      story: {
+        label: "Story",
+        at: { files: "stories/*.md", id: "frontmatter:id" },
+        fields: { state: { column: "state" }, commit: { column: "commit", type: "commits" } },
+        status: { field: "state", values: { open: "planned", verify: "active", done: "done" } },
+      },
+    },
+    rules: [],
+    lifecycle: {
+      kind: "story",
+      on: { dispatched: "verify", merged: "done" },
+      write: { status: "state", commit: "commit" },
+    },
+    gate: SPEC.gate,
+  };
+  commitFile(root, "stories/s1.md", "---\nid: S-1\nstate: open\ncommit:\n---\n\n# One\n");
+  commitFile(root, "stories/s2.md", "---\nid: S-2\nstate: verify\ncommit:\n---\n\n# Two\n");
+  commitSpec(stories);
+  openLane("S-1");
+  const s1 = join(root, "stories", "s1.md");
+  writeFileSync(s1, readFileSync(s1, "utf8").replace("state: open", "state: verify"));
+  const { path } = create(root, { id: "S-2", base: "main" });
+  commitFile(path, "src/b.txt", "b\n");
+  const res = merge("S-2", "--branch", "agentry/S-2", "--message", "docs(board): land S-2");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /S-1 state: "open" → "verify" \(stories\/s1\.md\)/);
+  assert.equal(status(), "");
+  assert.match(git(root, "show", "HEAD:stories/s1.md"), /state: verify/);
+  assert.match(git(root, "show", "HEAD:stories/s2.md"), /state: done/);
+});
+
+test("--drop-carry with nothing set aside is refused", () => {
+  build({ "src/a.txt": "a\n" });
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1", "--drop-carry");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /--drop-carry: the ledger holds no set-aside board writes/);
+});
+
+// R1b-5 fix 5: a carry that no longer applies used to be dropped on the next run, silently.
+test("a carry that no longer applies blocks every rerun until --drop-carry, which keeps its patch", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  const t2 = "| T2   | S1     | todo   |         |         |";
+  commitFile(
+    path,
+    "plan/BOARD.md",
+    BOARD_MD.replace(t2, "| T2   | S1     | todo   | n/a     |         |"),
+  );
+  execLedger({ path, gated: shas[0] });
+  execWrites();
+  const first = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(first.status, 1, out(first));
+  assert.match(first.stdout, /✗ record +exec's board writes do not apply on top of the picks/);
+  assert.match(first.stdout, /they stay in the ledger \(merge\.carry/);
+  assert.ok(readLedger(root, ID).merge.carry);
+
+  const second = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(second.status, 1, out(second));
+  assert.match(second.stdout, /✗ carry +exec's board writes no longer apply to plan\/BOARD\.md/);
+  assert.match(second.stdout, /next: .*--drop-carry/);
+  assert.equal(readLedger(root, ID).state, "merging");
+
+  const dropped = merge(ID, "--message", "docs(board): land T1", "--drop-carry");
+  assert.equal(dropped.status, 0, out(dropped));
+  assert.match(dropped.stdout, /dropped exec's board writes \(the owner's --drop-carry\)/);
+  const [record] = readLedger(root, ID).merge.droppedCarries;
+  assert.match(readFileSync(record.patchFile, "utf8"), /^\+\| T2 +\| S1 +\| doing/m);
+  assert.equal(readLedger(root, ID).state, "merged");
+  assert.equal(status(), "");
+});
+
+// --- a killed land and its rerun ------------------------------------------------------------------
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const gatePidFile = () => join(root, ".agentry", "run", "process", "runs", ID, "merge-gate-1.pid");
+const gateGroup = () => {
+  try {
+    return Number(readFileSync(gatePidFile(), "utf8")) || null;
+  } catch {
+    return null;
+  }
+};
+const alive = (pgid) => {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Start the land in the background and SIGKILL it (as a host's time limit does) once its gate runs. */
+async function killDuringGate() {
+  const hang = join(home, "hang");
+  writeFileSync(hang, "");
+  const args = [LANE, "merge", ID, "--message", "docs(board): land T1", "--root", root];
+  const env = { ...gitEnv, HOME: home, NO_COLOR: "1", MERGE_TEST_HANG: hang };
+  const child = spawn("node", args, { env, stdio: "ignore" });
+  const exited = new Promise((resolve) => child.on("exit", resolve));
+  const log = join(root, ".agentry", "run", "process", "runs", ID, "merge-gate-1.log");
+  const started = () => existsSync(log) && readFileSync(log, "utf8").includes("gate tier");
+  for (let i = 0; i < 500 && !started(); i++) await sleep(20);
+  assert.ok(started(), "the gate never started");
+  child.kill("SIGKILL");
+  await exited;
+  rmSync(hang);
+  return gateGroup();
+}
+const endGroup = (pgid) => {
+  if (pgid && alive(pgid)) process.kill(-pgid, "SIGKILL");
+};
+
+// R1b-5 fix 2: a killed land set exec's writes aside in a patch file only; the rerun saw a clean main
+// and landed without them.
+test("a land killed during its gate keeps exec's writes in the ledger; the rerun commits them", async () => {
+  const { path } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: null });
+  execWrites();
+  const pgid = await killDuringGate();
+  try {
+    const { carry } = readLedger(root, ID).merge;
+    assert.deepEqual(carry.files, ["plan/BOARD.md"]);
+    assert.equal(carry.sha256, createHash("sha256").update(carry.patch).digest("hex"));
+    assert.match(carry.patch, /^\+\| T2 +\| S1 +\| doing/m);
+    assert.equal(status(), ""); // set aside: the gate ran on a clean tree
+    const res = merge(ID, "--message", "docs(board): land T1");
+    assert.equal(res.status, 0, out(res));
+    assert.match(res.stdout, /exec's board writes are on main again/);
+    assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T2 +\| S1 +\| doing +\|/);
+    assert.equal(status(), "");
+  } finally {
+    endGroup(pgid);
+  }
+});
+
+// R1b-5 fix 6: the gate of a killed land kept running, in its own process group, on main's tree.
+test("a rerun stops the gate a killed land left running, then gates again", async () => {
+  const { path } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: null });
+  const pgid = await killDuringGate();
+  try {
+    assert.ok(pgid && alive(pgid), "the killed land's gate is still running");
+    assert.equal(readLedger(root, ID).merge.step, "gating");
+    const res = merge(ID, "--message", "docs(board): land T1");
+    assert.equal(res.status, 0, out(res));
+    assert.match(
+      res.stdout,
+      new RegExp(
+        `✓ recover +stopped the gate a killed run left running \\(process group ${pgid}\\)`,
+      ),
+    );
+    assert.equal(alive(pgid), false);
+    const ledger = readLedger(root, ID);
+    assert.equal(ledger.merge.gateRun, undefined);
+    assert.equal(ledger.gates.filter((g) => g.where === "main").length, 1); // the rerun's gate
+  } finally {
+    endGroup(pgid);
+  }
+});
+
+/** The ledger as a land killed while picking leaves it: the intent written, the picks not recorded. */
+function killedWhilePicking(shas) {
+  execLedger({ path: join(root, ".agentry", "run", "worktrees", ID), gated: null });
+  const merge = { preHead: head(), planned: shas, landed: [], tip: shas.at(-1) };
+  writeLedger(root, {
+    ...readLedger(root, ID),
+    state: "merging",
+    merge: { ...merge, stateBefore: "verified", step: "picking", at: "2026-10-31T00:00:00Z" },
+  });
+}
+
+// R1b-5 fix 3: picks a killed run made were not read back from main, so the rerun found nothing to land
+// (or recorded the wrong commits).
+test("a land killed after its picks reads them back from main and does not pick twice", () => {
+  const { shas } = build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
+  killedWhilePicking(shas);
+  const pre = head();
+  git(root, "cherry-pick", ...shas); // the picks the killed run made
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /2 commit\(s\) a killed run had picked onto/);
+  const chain = git(root, "rev-list", "--first-parent", "--reverse", `${pre}..HEAD`).split("\n");
+  assert.equal(chain.length, 3); // the two picks and the board commit, nothing picked twice
+  assert.deepEqual(readLedger(root, ID).merge.landed, chain.slice(0, 2));
+});
+
+test("a land killed between its picks takes off the partial picks and picks them all again", () => {
+  const { shas } = build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
+  killedWhilePicking(shas);
+  const pre = head();
+  git(root, "cherry-pick", shas[0]);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /took off the 1 pick\(s\) a killed run made/);
+  const chain = git(root, "rev-list", "--first-parent", "--reverse", `${pre}..HEAD`).split("\n");
+  assert.equal(chain.length, 3);
+  assert.deepEqual(readLedger(root, ID).merge.landed, chain.slice(0, 2));
+});
+
+test("a rerun stops while git is mid-cherry-pick, and picks again once it is aborted", () => {
+  const { shas } = build({ "src/ok.txt": "fine\n", "src/c.txt": "branch side\n" });
+  commitFile(root, "src/c.txt", "main side\n");
+  killedWhilePicking(shas);
+  const pre = head();
+  spawnSync("git", ["-C", root, "cherry-pick", ...shas], { env: gitEnv }); // stops on the conflict
+  const stuck = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(stuck.status, 1, out(stuck));
+  assert.match(
+    stuck.stdout,
+    /✗ recover +git is in the middle of a cherry-pick in the main checkout/,
+  );
+  assert.match(stuck.stdout, /next: in .*: git cherry-pick --abort/);
+  assert.equal(readLedger(root, ID).merge.step, "picking");
+  git(root, "cherry-pick", "--abort");
+  assert.equal(head(), pre);
+  const again = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(again.status, 1, out(again));
+  assert.match(again.stdout, /✗ land +cherry-pick stopped on/); // picked again, from preHead
+  assert.equal(head(), pre);
+  assert.equal(status(), "");
 });
 
 test("a stopped exec lane lands only with its branch named, and is then adopted", () => {
@@ -455,8 +745,10 @@ test("a board write that adds a finding is restored and stops; a rerun after mai
   commitSpec(SPEC);
   const picked = readLedger(root, ID).merge.landed;
   const again = merge(ID, "--message", "docs(board): land T1");
-  assert.equal(again.status, 1, out(again)); // main moved (the spec commit): not guessing
-  assert.match(again.stdout, /main moved since 1 commit\(s\) landed/);
+  assert.equal(again.status, 1, out(again)); // main moved (the spec commit): it does not resume
+  assert.match(again.stdout, /main has moved since this land picked 1 commit\(s\) onto/);
+  assert.match(again.stdout, /: not this land's/);
+  assert.match(again.stdout, /next: show the owner git log --first-parent/);
   assert.deepEqual(readLedger(root, ID).merge.landed, picked);
 });
 

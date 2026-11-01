@@ -1,15 +1,25 @@
-// land — the git I/O that lands a task's branch on main (plan R1b-5): which commits to pick, the
-// cherry-pick (aborted on any stop), the rollback after a red gate, the board commit, the push and the
-// cleanup by branch. `cli/merge.mjs` sequences these steps against the ledger.
+// land — the git and process I/O that lands a task's branch on main (plan R1b-5): which commits to
+// pick, the cherry-pick (aborted on any stop), which picks main really holds, the rollback after a red
+// gate, the carry of exec's uncommitted board writes, the board commit, the push, the cleanup by branch,
+// and the gate's process group across a killed run. `cli/merge.mjs` sequences these steps against the
+// ledger.
 //
 // Every git call is an argv array, never a shell line (a zsh variable that did not split once turned a
 // cherry-pick into a silent no-op), and every one reads its own exit code. A git refusal is an answer
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { boardFiles } from "../process/board-diff.mjs";
+import { readProcess } from "../process/read.mjs";
 import { findByBranch, git, ignoredFiles, porcelain, remove } from "./worktree.mjs";
 
 const first = (text) => text.trim().split("\n")[0] ?? "";
 const lines = (text) => text.split("\n").filter(Boolean);
+const short = (sha) => sha.slice(0, 7);
 
 /** The commit `ref` names, as a full SHA, or null. `--end-of-options` keeps a ref from reading as an
  *  option. */
@@ -85,16 +95,13 @@ export function toLand(root, { main, branch }) {
 /**
  * Cherry-pick `shas` (oldest first) onto HEAD in one argv call. On any non-zero exit the sequence is
  * aborted (`cherry-pick --abort`, never a hand reset) and HEAD must be `preHead` again with a clean tree.
- * Returns `{ ok: true, landed }` (the new commits on main, oldest first) or `{ ok: false, stopped,
- * reason, restored }`: `stopped` is the commit it stopped on (null when git did not say), `restored`
- * whether main is back at `preHead` and clean.
+ * Returns `{ ok: true }` (which commits main then holds is `landedSince`'s answer) or `{ ok: false,
+ * stopped, reason, restored }`: `stopped` is the commit it stopped on (null when git did not say),
+ * `restored` whether main is back at `preHead` and clean.
  */
 export function cherryPick(root, { shas, preHead }) {
   const res = git(root, ["cherry-pick", ...shas]);
-  if (res.status === 0) {
-    const landed = commitsBetween(root, preHead, "HEAD") ?? [];
-    return { ok: true, landed };
-  }
+  if (res.status === 0) return { ok: true };
   const stopped = commitOf(root, "CHERRY_PICK_HEAD");
   const reason = first(res.stderr) || first(res.stdout) || `git cherry-pick exited ${res.status}`;
   git(root, ["cherry-pick", "--abort"]); // no sequence in progress (a bad SHA) fails here, harmlessly
@@ -102,10 +109,64 @@ export function cherryPick(root, { shas, preHead }) {
   return { ok: false, stopped, reason, restored };
 }
 
+// Who and what a commit is: author, author date and message, which a cherry-pick keeps (its patch id
+// can change when main's context lines differ from the branch's).
+function identities(root, shas) {
+  const res = git(root, [
+    "show",
+    "-s",
+    "--date=raw",
+    "--format=%H%x1f%an <%ae> %ad%x1f%B%x1e",
+    ...shas,
+  ]);
+  const out = new Map();
+  for (const record of res.status === 0 ? res.stdout.split("\x1e") : []) {
+    const [sha, who, body] = record.replace(/^\n/, "").split("\x1f");
+    if (sha) out.set(sha, `${who}\n${(body ?? "").trim()}`);
+  }
+  return out;
+}
+
 /**
- * Put main back at `preHead` after a red gate, with `reset --hard`, but only when HEAD's first-parent
- * chain since `preHead` is exactly `landed` and the tree is clean: anything else on main (someone
- * else's commit, files the gate left) is not ours to throw away. `{ ok }` or `{ ok: false, reason }`.
+ * Which of `planned` (branch commits, oldest first) main holds since `preHead`, read from main itself:
+ * its first-parent commits since `preHead`, each the planned commit at the same place (same author,
+ * date and message). `{ landed, rest }` (main's commits, and the planned ones not on it yet), or
+ * `{ error }` when main holds anything else or lost `preHead` from its history.
+ */
+export function landedSince(root, { preHead, planned }) {
+  if (!isAncestor(root, preHead, "HEAD"))
+    return { error: `${short(preHead)} is no longer in main's history` };
+  const chain = commitsBetween(root, preHead, "HEAD", { firstParent: true });
+  if (chain === null) return { error: `git cannot list main's commits since ${short(preHead)}` };
+  if (chain.length > planned.length)
+    return {
+      error: `main has ${chain.length} commit(s) since ${short(preHead)}, more than the ${planned.length} planned`,
+    };
+  if (chain.length === 0) return { landed: [], rest: [...planned] };
+  const ids = identities(root, [...chain, ...planned.slice(0, chain.length)]);
+  const off = chain.findIndex((sha, i) => !ids.get(sha) || ids.get(sha) !== ids.get(planned[i]));
+  if (off >= 0)
+    return {
+      error: `${short(chain[off])} on main is not the planned pick of ${short(planned[off])}`,
+    };
+  return { landed: chain, rest: planned.slice(chain.length) };
+}
+
+/** The cherry-pick git is in the middle of in `root` (a killed run leaves one): `[{ name, path }]`
+ *  for each of `.git/sequencer` and `CHERRY_PICK_HEAD` that exists; empty when none. */
+export function pickInProgress(root) {
+  return ["sequencer", "CHERRY_PICK_HEAD"].flatMap((name) => {
+    const res = git(root, ["rev-parse", "--git-path", name]);
+    const path = resolve(root, res.stdout.trim());
+    return res.status === 0 && existsSync(path) ? [{ name, path }] : [];
+  });
+}
+
+/**
+ * Put main back at `preHead` after a red gate, with `reset --keep` (git refuses rather than overwrite a
+ * local change, one `git status` cannot see included), and only when HEAD's first-parent chain since
+ * `preHead` is exactly `landed` and the tree is clean: anything else on main (someone else's commit,
+ * files the gate left) is not ours to throw away. `{ ok }` or `{ ok: false, reason }`.
  */
 export function rollback(root, { preHead, landed }) {
   const chain = commitsBetween(root, preHead, "HEAD", { firstParent: true });
@@ -121,8 +182,12 @@ export function rollback(root, { preHead, landed }) {
       ok: false,
       reason: `main is not clean (${dirty.slice(0, 5).join(", ")}); not resetting over it`,
     };
-  const res = git(root, ["reset", "--hard", "--quiet", preHead]);
-  if (res.status !== 0) return { ok: false, reason: first(res.stderr) };
+  const res = git(root, ["reset", "--keep", "--quiet", preHead]);
+  if (res.status !== 0)
+    return {
+      ok: false,
+      reason: `git reset --keep refused: ${first(res.stderr) || "no reason given"}`,
+    };
   return { ok: true };
 }
 
@@ -141,18 +206,57 @@ export function notEdits(entries, files) {
   );
 }
 
-/** Set the uncommitted edits of `files` aside as a patch in `patchFile`, leaving the files at HEAD. */
-export function setAside(root, { files, patchFile }) {
-  const diff = git(root, ["--literal-pathspecs", "diff", "--binary", "HEAD", "--", ...files]);
-  if (diff.status !== 0) return { ok: false, reason: first(diff.stderr) };
-  writeFileSync(patchFile, diff.stdout);
-  return restoreFiles(root, files);
+/** The sha256 of `text`, hex. */
+export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
+/** The uncommitted edits of `files` against HEAD as one binary patch, and its sha256: `{ patch,
+ *  sha256 }`, or `{ error }` when git cannot say. */
+export function uncommittedPatch(root, files) {
+  const res = git(root, ["--literal-pathspecs", "diff", "--binary", "HEAD", "--", ...files]);
+  if (res.status !== 0) return { error: first(res.stderr) || "git diff failed" };
+  return { patch: res.stdout, sha256: sha256(res.stdout) };
 }
 
-/** Apply a patch `setAside` wrote back onto the working tree. */
-export function putBack(root, { patchFile }) {
-  const res = git(root, ["apply", "--whitespace=nowarn", patchFile]);
-  return res.status === 0 ? { ok: true } : { ok: false, reason: first(res.stderr) };
+/** Apply `patch` to the working tree, all or nothing; `check` only asks git whether it would, and
+ *  `reverse` takes it off (a reverse check that passes: the edits are on the tree already). `{ ok }` or
+ *  `{ ok: false, reason }`. */
+export function applyPatch(root, patch, { check = false, reverse = false } = {}) {
+  const flags = [...(check ? ["--check"] : []), ...(reverse ? ["--reverse"] : [])];
+  const res = git(root, ["apply", "--whitespace=nowarn", ...flags, "-"], patch);
+  return res.status === 0
+    ? { ok: true }
+    : { ok: false, reason: first(res.stderr) || "git apply failed" };
+}
+
+/** The working tree's board in the shape `board-diff` reads: `{ model, text(file) }`. */
+export function workingBoard(root, spec) {
+  const text = (file) => {
+    try {
+      return readFileSync(join(root, file), "utf8");
+    } catch {
+      return null;
+    }
+  };
+  return { model: readProcess({ root, spec }), text };
+}
+
+/** HEAD's board in the same shape: HEAD's copy of each board file `model` (the working board's) was
+ *  read from goes to a scratch directory and is read there, by the same reader. */
+export function headBoard(root, spec, model) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentry-head-")));
+  const texts = new Map();
+  try {
+    for (const file of boardFiles(spec, model)) {
+      const res = git(root, ["--literal-pathspecs", "cat-file", "blob", `HEAD:${file}`]);
+      if (res.status !== 0) continue;
+      texts.set(file, res.stdout);
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      writeFileSync(join(dir, file), res.stdout);
+    }
+    return { model: readProcess({ root: dir, spec }), text: (file) => texts.get(file) ?? null };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /** Put `files` (repo-relative) back to HEAD's content, staged and working copy. */
@@ -256,4 +360,64 @@ export function cleanup(root, { branch, main, fallbackPath, discardIgnored = fal
   const res = remove(root, { path, branch, onto: main });
   const ok = res.removed && (res.branchDeleted || !commitOf(root, `refs/heads/${branch}`));
   return { ok, path, ...res, ...(ignored.length > 0 && { ignored }) };
+}
+
+// The gate runs under this wrapper: it writes its own pid to `pidFile`, then runs the gate as its
+// child. `runGate` starts it detached, so the wrapper leads the group the gate runs in and its pid is
+// the group's id. A merge killed mid-gate leaves that group running; the next run finds it by the file.
+const WRAP = `const [, pidFile, ...cmd] = process.argv.slice(1);
+require("node:fs").writeFileSync(pidFile, String(process.pid));
+const r = require("node:child_process").spawnSync(cmd[0], cmd.slice(1), { stdio: "inherit" });
+if (r.error) { console.error("[agentry] could not run " + cmd[0] + ": " + r.error.message); process.exit(127); }
+process.exit(r.status ?? 1);`;
+
+/** The argv that runs the gate `cmd` under the pid-writing wrapper. `nonce` sits in the wrapper's own
+ *  argv, so a later run can tell the group is this gate's and not a process that reused the pid. */
+export function gateArgv(cmd, { pidFile, nonce }) {
+  return [process.execPath, "-e", WRAP, nonce, pidFile, ...cmd];
+}
+
+const alive = (pgid) => {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM"; // there, but not ours to signal
+  }
+};
+
+/**
+ * End the gate a killed run left behind (`run` = `{ pidFile, nonce }`, as the ledger recorded it).
+ * `{ ok: true, pgid, killed }` (`killed`: a group was still running and is gone now), or `{ ok: false,
+ * pgid, reason }` when the group will not die. A live group is the gate's when its leader's argv holds
+ * the nonce, or when it has no leader left (a live group's id is never reused); one whose leader is
+ * another process is left alone.
+ */
+export function endStrayGate(run) {
+  let pgid;
+  try {
+    pgid = Number.parseInt(readFileSync(run.pidFile, "utf8").trim(), 10);
+  } catch {
+    return { ok: true, pgid: null, killed: false }; // the wrapper never started
+  }
+  if (!Number.isInteger(pgid) || pgid <= 1 || !alive(pgid))
+    return { ok: true, pgid, killed: false };
+  const ps = spawnSync("ps", ["-o", "command=", "-p", String(pgid)], { encoding: "utf8" });
+  if (ps.error)
+    return {
+      ok: false,
+      pgid,
+      reason: `ps cannot say what process ${pgid} is: ${ps.error.message}`,
+    };
+  const leader = ps.status === 0 ? ps.stdout.trim() : "";
+  if (leader && !leader.includes(run.nonce)) return { ok: true, pgid, killed: false }; // a reused pid
+  try {
+    process.kill(-pgid, "SIGKILL");
+  } catch (error) {
+    return { ok: false, pgid, reason: `cannot kill process group ${pgid}: ${error.code}` };
+  }
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  for (let waited = 0; waited < 5000 && alive(pgid); waited += 20) Atomics.wait(nap, 0, 0, 20);
+  if (alive(pgid)) return { ok: false, pgid, reason: `process group ${pgid} is still running` };
+  return { ok: true, pgid, killed: true };
 }

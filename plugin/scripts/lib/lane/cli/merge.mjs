@@ -2,7 +2,7 @@
 //
 //   merge <id> [--branch <b>] --preflight                what landing needs (adopts --branch work)
 //   merge <id> --check <skill>=pass|fail [--note <t>]    record a repo check (extensions.merge.checks)
-//   merge <id> [--branch <b>] --message <m> [--summary <t>]
+//   merge <id> [--branch <b>] --message <m> [--summary <t>] [--drop-carry]
 //                                                        land → gate or skip → record → board commit
 //   merge <id> --push [--approved]                       push per config merge.push (ask|auto|never)
 //   merge <id> --cleanup [--discard-ignored]             the worktree and branch, found by branch
@@ -12,12 +12,30 @@
 // row says why); 2 = usage or refusal. A call stops at its first red row and is idempotent from the
 // ledger: re-running the land after a stop resumes from what the ledger says already happened.
 //
+// A land can be killed (a long gate outlives the host's foreground limit), so it writes what it is
+// about to do to the ledger before it does it, and a rerun starts from there:
+//   - the carry: exec leaves its lifecycle writes uncommitted on main. The land takes main's edits only
+//     when they are exactly lifecycle cells of tasks with an open lane (`board-diff`, against HEAD),
+//     records them (`merge.carry`: the patch and its sha256) and only then sets them aside. They go into
+//     the board commit, or back onto main at a stop or on the next run; one that no longer applies
+//     blocks the land until the owner passes `--drop-carry` (its patch is kept in the run directory).
+//   - the picks: `merge.preHead` and `merge.planned` are written before the cherry-pick, and what landed
+//     is read from main's first-parent history since preHead. A rerun stops while git is mid-pick.
+//   - the gate: `merge.gateRun` names its process group (a pid file and a nonce); a rerun kills it.
+//
 // run(argv, { root, spec, model }) -> { exit, out }
-import { existsSync, realpathSync } from "node:fs";
-import { join, posix } from "node:path";
+import { randomBytes } from "node:crypto";
+import { existsSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { readConfig } from "../../config.mjs";
+import { diffBoard, strayChanges } from "../../process/board-diff.mjs";
 import { defaultBranch, worktrees } from "../../process/git.mjs";
-import { read as readLedger, runDir, write as writeLedger } from "../../process/ledger.mjs";
+import {
+  list as listLedgers,
+  read as readLedger,
+  runDir,
+  write as writeLedger,
+} from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { readProcess } from "../../process/read.mjs";
 import { gateOf, own } from "../../process/spec.mjs";
@@ -26,6 +44,7 @@ import { WriteError } from "../../process/write.mjs";
 import { canSkip, changedSince, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import {
+  applyPatch,
   attributionIn,
   boardCommit,
   cherryPick,
@@ -33,25 +52,31 @@ import {
   commitOf,
   commitsBetween,
   currentBranch,
+  endStrayGate,
+  gateArgv,
+  headBoard,
   isAncestor,
+  landedSince,
   mergeBaseOf,
   notEdits,
+  pickInProgress,
   push,
-  putBack,
   restoreFiles,
   rollback,
-  setAside,
+  sha256,
   statusEntries,
   subjectOf,
   toLand,
   treeOf,
+  uncommittedPatch,
+  workingBoard,
 } from "../land.mjs";
 import { findByBranch, mainRoot, porcelain, worktreesDir } from "../worktree.mjs";
 
 export const usage = [
   "merge <id> [--branch <b>] --preflight",
   "merge <id> --check <skill>=pass|fail [--note <t>]",
-  "merge <id> [--branch <b>] --message <board commit> [--summary <t>]",
+  "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
   "merge <id> --push [--approved]",
   "merge <id> --cleanup [--discard-ignored]",
 ].join("\n       ");
@@ -62,6 +87,7 @@ export const flags = {
   "--branch": true,
   "--message": true,
   "--summary": true,
+  "--drop-carry": false,
   "--push": false,
   "--approved": false,
   "--cleanup": false,
@@ -71,13 +97,17 @@ export const flags = {
 const MODES = {
   "--preflight": ["--branch"],
   "--check": ["--note"],
-  "--message": ["--branch", "--summary"],
+  "--message": ["--branch", "--summary", "--drop-carry"],
   "--push": ["--approved"],
   "--cleanup": ["--discard-ignored"],
 };
 // The ledger states a land may start or resume from; an exec lane still building or verifying is not
 // done, and a stopped one needs the owner.
 const LANDABLE = ["verified", "merging", "merged"];
+// A lane in any other state is open: its task is not on main, so its lifecycle writes may wait there.
+const CLOSED = ["merged", "closed"];
+// The land steps from which nothing of this land is on main: a run starts the picks over.
+const FRESH = [undefined, "conflict", "rolled-back"];
 const CHECK_RESULTS = ["pass", "fail"];
 const MARK = { ok: "✓", red: "✗", skip: "·", wait: "…" };
 const short = (sha) => (sha ? sha.slice(0, 7) : "-");
@@ -140,6 +170,9 @@ function save(lane, changes = {}) {
   lane.ledger = writeLedger(lane.root, { ...lane.ledger, ...changes });
   return lane.ledger;
 }
+// The same for the ledger's `merge` record; a key set to undefined is dropped.
+const setMerge = (lane, changes) =>
+  save(lane, { merge: { ...lane.ledger.merge, ...changes, at: now() } });
 
 // The task's ledger, or one adopted from `--branch`. Returns a row, or { exit, rows } to stop.
 function ledgerStep(lane, { adopt }) {
@@ -264,21 +297,30 @@ function boardRow({ spec, model, id }) {
   return ok("board", `${life.kind} ${id} is "${items[0].status ?? ""}"; landing makes it "${to}"`);
 }
 
-// The board files the lifecycle's own status, verdict and commit writes go to (repo-relative): the
-// lifecycle kind's table file, or the item's own file for a one-file-per-item kind. Exec leaves its
-// writes there uncommitted on main; the land carries them into its board commit.
-function lifecycleFiles({ spec, model, id }) {
-  const life = spec.lifecycle;
-  const write = life?.write ?? {};
-  if (!life || !["status", "verdict", "commit"].some((key) => Object.hasOwn(write, key))) return [];
-  const kind = spec.kinds[life.kind];
-  if (kind.at.table !== undefined) return [posix.join(spec.root, kind.at.table)];
-  const item = (own(model.kinds, life.kind)?.items ?? []).find((i) => i.id === id);
-  return item?.file ? [posix.join(spec.root, item.file)] : [];
+// Why main's uncommitted edits of `files` cannot wait for the land, one line each; [] when they are
+// exactly lifecycle cells of tasks whose lane is open (exec's writes), read at the model level against
+// HEAD. The cells found are kept in `lane.carryCells` for the table.
+function carryProblems(lane, files) {
+  const { root, spec, id } = lane;
+  if (!spec.lifecycle) return files.map((file) => `${file}: the lifecycle is off; no write waits`);
+  const after = workingBoard(root, spec);
+  const before = headBoard(root, spec, after.model);
+  const diff = diffBoard({ spec, before, after, files });
+  lane.carryCells = diff.cells;
+  const open = listLedgers(root).filter((l) => !CLOSED.includes(l.state));
+  const sameText = files
+    .filter((file) => before.text(file) !== null && before.text(file) === after.text(file))
+    .map((file) => `${file}: changed, but not in its text (its mode?)`);
+  return [...sameText, ...strayChanges(spec, diff, { ids: [id, ...open.map((l) => l.id)] })];
 }
+const cellLine = (c) =>
+  `${c.id} ${c.field}: ${JSON.stringify(c.from ?? "")} → ${JSON.stringify(c.to ?? "")} (${c.file})`;
+const CARRY_RULE =
+  "only lifecycle cells (status, verdict, commit) of tasks with an open lane may wait on main for the land";
 
-// Main's checkout: on the main branch and clean. With `carry`, plain edits of the lifecycle's board
-// files are allowed too (exec's uncommitted writes) and listed in `lane.carried`; anything else refuses.
+// Main's checkout: on the main branch and clean. With `carry`, uncommitted edits that are exactly
+// lifecycle cells of open lanes (exec's writes) are allowed too and listed in `lane.carried`; anything
+// else refuses, each change named.
 function mainRow(lane, { carry = false } = {}) {
   const { root, ledger } = lane;
   lane.carried = [];
@@ -290,49 +332,141 @@ function mainRow(lane, { carry = false } = {}) {
     );
   const entries = statusEntries(root);
   if (!entries) return red("main", "git status failed in the main checkout");
-  const board = carry ? lifecycleFiles(lane) : [];
-  const dirty = notEdits(entries, board);
+  const at = `${ledger.mainBranch} at ${short(commitOf(root, "HEAD"))}`;
+  if (entries.length === 0) return ok("main", `${at}, clean`);
+  const files = entries.map((entry) => entry.slice(3));
+  const dirty = carry ? notEdits(entries, files) : entries;
   if (dirty.length > 0) {
     const ours = dirty.some((entry) => entry.slice(3).startsWith(".agentry/run/"));
-    const allowed = board.length ? [`only edits of ${board.join(", ")} may wait for the land`] : [];
     return red("main", `${ledger.mainBranch} is not clean: ${dirty.length} change(s)`, [
       ...dirty.slice(0, 10),
-      ...allowed,
+      ...(carry ? [`${CARRY_RULE}; commit or undo the rest, then land again`] : []),
       ...(ours ? ["add .agentry/run/ to .gitignore: the lane's own files live there"] : []),
     ]);
   }
-  lane.carried = entries.map((entry) => entry.slice(3));
-  const at = `${ledger.mainBranch} at ${short(commitOf(root, "HEAD"))}`;
-  if (lane.carried.length === 0) return ok("main", `${at}, clean`);
-  return ok("main", `${at}, clean but for the lifecycle's uncommitted board writes`, [
-    `${lane.carried.join(", ")}: carried into the board commit`,
+  const problems = carryProblems(lane, files);
+  if (problems.length > 0)
+    return red(
+      "main",
+      `${ledger.mainBranch} has ${problems.length} uncommitted change(s) the land cannot carry`,
+      [...problems.slice(0, 10), `${CARRY_RULE}; commit or undo the rest, then land again`],
+    );
+  lane.carried = files;
+  return ok("main", `${at}, clean but for exec's uncommitted lifecycle writes`, [
+    ...lane.carryCells.map(cellLine),
+    `${files.join(", ")}: set aside for the land, then carried into the board commit`,
   ]);
 }
 
-// Set exec's uncommitted board writes aside so the picks, the gate and a rollback see a clean tree.
-function carryStep(lane, rows) {
-  if (lane.carried.length === 0) return null;
-  const patchFile = join(runDir(lane.root, lane.id), "merge-carry.patch");
-  const aside = setAside(lane.root, { files: lane.carried, patchFile });
-  if (!aside.ok) {
-    rows.push(red("carry", `could not set the board writes aside: ${aside.reason}`));
+const dropNext = (lane) =>
+  `look at git diff on ${lane.ledger.mainBranch} and the patch in the ledger (merge.carry); to land without exec's writes: lane merge ${lane.id} --message "<board commit message>" --drop-carry`;
+
+// Put the carry the ledger holds back onto main's tree, as exec left it, and let go of it there. A
+// carry already on the tree (a run killed before it set it aside) is only let go of. A row, or null
+// when the ledger holds none.
+function giveBack(lane) {
+  const carry = lane.ledger.merge?.carry;
+  if (!carry) return null;
+  const files = carry.files.join(", ");
+  if (sha256(carry.patch) !== carry.sha256)
+    return red("carry", `exec's board writes in the ledger (${files}) fail their sha256 check`, [
+      "the ledger was edited; nothing is put back",
+    ]);
+  const there = applyPatch(lane.root, carry.patch, { check: true, reverse: true }).ok;
+  const back = there ? { ok: true } : applyPatch(lane.root, carry.patch);
+  if (!back.ok)
+    return red("carry", `exec's board writes no longer apply to ${files} on main: ${back.reason}`, [
+      "they stay in the ledger (merge.carry): nothing is dropped without --drop-carry",
+    ]);
+  setMerge(lane, { carry: undefined });
+  return ok("carry", `exec's board writes are on main again, uncommitted, as they were (${files})`);
+}
+
+// The carry an earlier run set aside: back onto main before anything else, or dropped on the owner's
+// --drop-carry (its patch kept in the run directory). One that no longer applies blocks the land.
+function carryBackStep(lane, rows) {
+  const merge = lane.ledger.merge;
+  if (!merge?.carry) return null;
+  if (lane.opts["--drop-carry"]) {
+    const { carry, droppedCarries = [] } = merge;
+    const n = droppedCarries.length + 1;
+    const file = join(runDir(lane.root, lane.id), `merge-carry-dropped-${n}.patch`);
+    writeFileSync(file, carry.patch);
+    const dropped = { files: carry.files, sha256: carry.sha256, patchFile: file, at: now() };
+    setMerge(lane, { carry: undefined, droppedCarries: [...droppedCarries, dropped] });
+    rows.push(
+      ok("carry", "dropped exec's board writes (the owner's --drop-carry)", [
+        `${carry.files.join(", ")}: the patch is kept in ${file} (git apply it by hand if its cells matter)`,
+      ]),
+    );
+    return null;
+  }
+  const back = giveBack(lane);
+  rows.push(back);
+  return back.mark === "red" ? { exit: 1, keepCarry: true, next: dropNext(lane) } : null;
+}
+
+// Record main's carry-able edits in the ledger (the patch and its sha256), and only then set them
+// aside, so the picks, the gate and a rollback see a clean tree and a killed run cannot lose them.
+function takeCarryStep(lane, rows) {
+  const files = lane.carried;
+  if (files.length === 0) return null;
+  const made = uncommittedPatch(lane.root, files);
+  if (made.error) {
+    rows.push(red("carry", `cannot read exec's board writes: ${made.error}`));
     return { exit: 1 };
   }
-  lane.carry = { files: lane.carried, patchFile };
-  rows.push(ok("carry", `${lane.carried.length} board file(s) set aside (${patchFile})`));
+  setMerge(lane, { carry: { files, patch: made.patch, sha256: made.sha256, at: now() } });
+  const aside = restoreFiles(lane.root, files);
+  if (!aside.ok) {
+    rows.push(red("carry", `could not set exec's board writes aside: ${aside.reason}`));
+    return { exit: 1 };
+  }
+  const sum = made.sha256.slice(0, 12);
+  rows.push(
+    ok("carry", `${files.length} board file(s) set aside, recorded in the ledger first`, [
+      `merge.carry: ${files.join(", ")}, sha256 ${sum}…`,
+    ]),
+  );
   return null;
 }
 
-// After a stop, give main back the board writes it had before the land, uncommitted as they were.
-function returnCarry(lane) {
-  const { carry, root } = lane;
-  if (!carry || carry.lost) return null;
-  restoreFiles(root, carry.files);
-  const back = putBack(root, carry);
-  lane.carry = null;
-  return back.ok
-    ? ok("carry", "the lifecycle's board writes are back on main, uncommitted")
-    : red("carry", `could not put the board writes back (${back.reason}): ${carry.patchFile}`);
+// A killed land leaves two things a rerun deals with before anything else: its gate's process group,
+// maybe still running, and git, maybe in the middle of the cherry-pick.
+function recoverStep(lane, rows) {
+  const { root, ledger } = lane;
+  const merge = ledger.merge;
+  if (merge?.gateRun) {
+    const res = endStrayGate(merge.gateRun);
+    if (!res.ok) {
+      rows.push(red("recover", `the gate a killed run started is still running: ${res.reason}`));
+      return {
+        exit: 1,
+        keepCarry: true,
+        next: `stop process group ${res.pgid} (kill -KILL -- -${res.pgid}), then land again`,
+      };
+    }
+    setMerge(lane, { gateRun: undefined, ...(merge.step === "gating" && { step: "landed" }) });
+    if (res.killed)
+      rows.push(
+        ok("recover", `stopped the gate a killed run left running (process group ${res.pgid})`),
+      );
+  }
+  const busy = pickInProgress(root);
+  if (busy.length === 0) return null;
+  const where = merge?.preHead ? ` (the land started from ${short(merge.preHead)})` : "";
+  rows.push(
+    red(
+      "recover",
+      `git is in the middle of a cherry-pick in the main checkout${where}: a killed land leaves one`,
+      busy.map((b) => b.path),
+    ),
+  );
+  return {
+    exit: 1,
+    keepCarry: true,
+    next: `in ${root}: git cherry-pick --abort (it puts ${ledger.mainBranch} back where the pick started), then land again`,
+  };
 }
 
 // The commits to land, as a row: red when there is nothing to pick or a merge commit is in the way.
@@ -353,7 +487,7 @@ function commitsRow({ root, ledger }) {
       row: red(
         "commits",
         plan.onMain.length > 0
-          ? `every commit of ${branch} is already on ${mainBranch} (same patch): nothing to land; board fix records a hand merge`
+          ? `every commit of ${branch} is already on ${mainBranch} (same patch): nothing to land; if it was merged by hand, board fix records it`
           : `${branch} has no commits past ${mainBranch}: nothing to land`,
       ),
     };
@@ -420,22 +554,97 @@ function pushRow({ root }) {
 
 // --- the land: land → gate or skip → record → commit, each resumable from the ledger -------------
 
-function landStep(lane, rows) {
+// The picks main holds since preHead, read from main itself, become `merge.landed`.
+function recordLanded(lane, rows, detail) {
+  const { root } = lane;
+  const merge = lane.ledger.merge;
+  const got = landedSince(root, merge);
+  if (got.error || got.rest.length > 0) {
+    const why = got.error ?? `${got.rest.length} planned commit(s) are not on it`;
+    rows.push(red("land", `${lane.ledger.mainBranch} does not hold the planned picks: ${why}`));
+    return { exit: 1, next: `show the owner git log --first-parent ${short(merge.preHead)}..HEAD` };
+  }
+  setMerge(lane, { step: "landed", landed: got.landed, stopped: undefined });
+  const more = got.landed.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`);
+  rows.push(ok("land", `${got.landed.length} commit(s) ${detail} ${short(merge.preHead)}`, more));
+  return null;
+}
+
+function pickStep(lane, rows) {
   const { root } = lane;
   const { mainBranch, branch } = lane.ledger;
+  const { preHead, planned } = lane.ledger.merge;
+  const res = cherryPick(root, { shas: planned, preHead });
+  if (res.ok) return recordLanded(lane, rows, "picked onto");
+  setMerge(lane, { step: res.restored ? "conflict" : "picking", stopped: res.stopped });
+  const where = res.stopped ? ` on ${short(res.stopped)}` : "";
+  rows.push(
+    red("land", `cherry-pick stopped${where}: ${res.reason}`, [
+      res.restored
+        ? `aborted: ${mainBranch} is back at ${short(preHead)}, clean`
+        : `aborted, but ${mainBranch} is NOT back at ${short(preHead)} and clean`,
+    ]),
+  );
+  return res.restored
+    ? { exit: 1, next: `ask the builder to rebase ${branch} onto ${mainBranch}, then land again` }
+    : {
+        exit: 1,
+        keepCarry: true,
+        next: `look at ${mainBranch} by hand (git status; git log ${short(preHead)}..HEAD), then land again`,
+      };
+}
+
+// A run killed while picking: which planned commits main holds, read from main itself. All of them →
+// landed; some → taken off again, so the picks start over as one sequence.
+function resumePicking(lane, rows) {
+  const { root } = lane;
   const merge = lane.ledger.merge;
-  if (merge && (merge.step === "landed" || merge.step === "gated")) {
+  const got = landedSince(root, merge);
+  if (got.error) {
+    rows.push(
+      red("land", `a killed land was picking onto ${short(merge.preHead)}: ${got.error}`, [
+        "merge takes off only its own picks; it leaves anything else on main alone",
+      ]),
+    );
+    return { exit: 1, next: `show the owner git log --first-parent ${short(merge.preHead)}..HEAD` };
+  }
+  if (got.rest.length === 0) return recordLanded(lane, rows, "a killed run had picked onto");
+  if (got.landed.length > 0) {
+    const back = rollback(root, { preHead: merge.preHead, landed: got.landed });
+    if (!back.ok) {
+      rows.push(red("land", `a killed land left ${got.landed.length} pick(s): ${back.reason}`));
+      return { exit: 1, next: `show the owner git log ${short(merge.preHead)}..HEAD` };
+    }
+    rows.push(ok("land", `took off the ${got.landed.length} pick(s) a killed run made`));
+  }
+  setMerge(lane, { step: undefined });
+  return landStep(lane, rows);
+}
+
+function landStep(lane, rows) {
+  const { root } = lane;
+  const { mainBranch, state } = lane.ledger;
+  const merge = lane.ledger.merge ?? {};
+  if (merge.step === "picking") return resumePicking(lane, rows);
+  if (!FRESH.includes(merge.step)) {
     const chain = commitsBetween(root, merge.preHead, "HEAD", { firstParent: true });
     if (chain?.join(" ") !== merge.landed.join(" ")) {
+      const extra = (chain ?? []).filter((sha) => !merge.landed.includes(sha));
       rows.push(
         red(
           "land",
-          `${mainBranch} moved since ${merge.landed.length} commit(s) landed on ${short(merge.preHead)}; not guessing`,
+          `${mainBranch} has moved since this land picked ${merge.landed.length} commit(s) onto ${short(merge.preHead)}`,
+          [
+            ...extra
+              .slice(0, 5)
+              .map((sha) => `${short(sha)} ${subjectOf(root, sha)}: not this land's`),
+            "merge resumes only while main is preHead plus its own picks",
+          ],
         ),
       );
       return {
         exit: 1,
-        next: `look at ${mainBranch} by hand (its log since ${short(merge.preHead)})`,
+        next: `show the owner git log --first-parent ${short(merge.preHead)}..${mainBranch}`,
       };
     }
     rows.push(
@@ -452,38 +661,25 @@ function landStep(lane, rows) {
     rows.push({ ...row, step: "land" });
     return { exit: 1 };
   }
-  const preHead = commitOf(root, "HEAD");
-  const tip = tipOf(lane);
-  const res = cherryPick(root, { shas: plan.picks, preHead });
-  if (!res.ok) {
-    save(lane, {
-      merge: { preHead, landed: [], tip, step: "conflict", stopped: res.stopped, at: now() },
-    });
-    const where = res.stopped ? ` on ${short(res.stopped)}` : "";
-    rows.push(
-      red("land", `cherry-pick stopped${where}: ${res.reason}`, [
-        res.restored
-          ? `aborted: ${mainBranch} is back at ${short(preHead)}, clean`
-          : `aborted, but ${mainBranch} is NOT back at ${short(preHead)} and clean: check it by hand`,
-      ]),
-    );
-    return {
-      exit: 1,
-      next: res.restored
-        ? `ask the builder to rebase ${branch} onto ${mainBranch}, then land again`
-        : null,
-    };
-  }
-  // The lane's state before this land, given back if a red gate takes the picks off main again.
-  const { state } = lane.ledger;
-  const stateBefore = state === "merging" ? (lane.ledger.merge?.stateBefore ?? state) : state;
+  // The intent, written before main changes: what is picked onto what. The lane's state before this
+  // land is kept too, given back if a red gate takes the picks off main again.
+  const stateBefore = state === "merging" ? (merge.stateBefore ?? state) : state;
+  const { carry, droppedCarries } = merge;
   save(lane, {
     state: "merging",
-    merge: { preHead, landed: res.landed, tip, stateBefore, step: "landed", at: now() },
+    merge: {
+      carry,
+      droppedCarries,
+      preHead: commitOf(root, "HEAD"),
+      planned: plan.picks,
+      landed: [],
+      tip: tipOf(lane),
+      stateBefore,
+      step: "picking",
+      at: now(),
+    },
   });
-  const more = res.landed.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`);
-  rows.push(ok("land", `${res.landed.length} commit(s) picked onto ${short(preHead)}`, more));
-  return null;
+  return pickStep(lane, rows);
 }
 
 function gateStep(lane, rows) {
@@ -517,20 +713,30 @@ function gateStep(lane, rows) {
   }
   const { tier, reason } = pickTier(gate, changedSince(root, merge.preHead, "HEAD") ?? []);
   const n = gates.filter((g) => g.where === "main").length + 1;
-  const logFile = join(runDir(root, id), `merge-gate-${n}.log`);
-  const res = runGate(root, tier === "quick" ? gate.quick.command : gate.command, {
-    tier,
-    logFile,
-  });
+  const dir = runDir(root, id);
+  const logFile = join(dir, `merge-gate-${n}.log`);
+  // The gate's process group, written down before it starts, so a rerun can stop it if this run dies.
+  const gateRun = {
+    pidFile: join(dir, `merge-gate-${n}.pid`),
+    nonce: randomBytes(8).toString("hex"),
+  };
+  setMerge(lane, { step: "gating", gateRun });
+  const cmd = tier === "quick" ? gate.quick.command : gate.command;
+  const res = runGate(root, gateArgv(cmd, gateRun), { tier, logFile });
+  rmSync(gateRun.pidFile, { force: true });
   if (res.refused) {
+    setMerge(lane, { step: "landed", gateRun: undefined });
     rows.push(red("gate", `refused: ${mainBranch} is not clean`, res.files.slice(0, 10)));
-    return { exit: 1 };
+    return {
+      exit: 1,
+      next: `move what makes ${mainBranch} dirty away, then land again (it resumes)`,
+    };
   }
   save(lane, { gates: [...gates, { where: "main", ...res, at: now() }] });
   const why = [`${tier}: ${reason}`, `not skipped: ${decision.reason}`, `log ${logFile}`];
   if (res.exit === 0) {
     const detail = `${tier} ran on ${mainBranch}: exit 0 in ${res.seconds} s`;
-    save(lane, { merge: { ...merge, step: "gated", gate: { tier, detail, log: logFile } } });
+    setMerge(lane, { step: "gated", gateRun: undefined, gate: { tier, detail, log: logFile } });
     rows.push(ok("gate", detail, why));
     return null;
   }
@@ -538,14 +744,25 @@ function gateStep(lane, rows) {
   const back = rollback(root, { preHead: merge.preHead, landed: merge.landed });
   save(lane, {
     ...(back.ok && { state: merge.stateBefore }),
-    merge: { ...merge, step: back.ok ? "rolled-back" : "rollback-refused", at: now() },
+    merge: {
+      ...lane.ledger.merge,
+      gateRun: undefined,
+      step: back.ok ? "rolled-back" : "rollback-refused",
+      at: now(),
+    },
   });
   if (!back.ok) {
     rows.push(red("rollback", back.reason));
-    return { exit: 1, next: `${mainBranch} still holds the landed commits: look at it by hand` };
+    return {
+      exit: 1,
+      next: `${mainBranch} still holds the ${merge.landed.length} landed commit(s) on ${short(merge.preHead)}: clear what the rollback row names, then land again (the gate runs again; a red one retries the rollback)`,
+    };
   }
   rows.push(ok("rollback", `${mainBranch} reset to ${short(merge.preHead)}: the picks are off it`));
-  return { exit: 1, next: `read the log, fix on ${branch} (resume the builder), then land again` };
+  return {
+    exit: 1,
+    next: `read ${logFile}, fix on ${branch} (resume the builder), then land again`,
+  };
 }
 
 function recordStep(lane, rows) {
@@ -556,17 +773,17 @@ function recordStep(lane, rows) {
     rows.push(skip("record", "lifecycle off: nothing written to the board"));
     return null;
   }
-  if (lane.carry) {
+  const carried = merge.carry?.files ?? [];
+  if (merge.carry) {
     // Exec's writes go back first, on top of the picks, so the merged write and the check see them.
-    const back = putBack(root, lane.carry);
+    const back = applyPatch(root, merge.carry.patch);
     if (!back.ok) {
-      lane.carry.lost = true;
       rows.push(
-        red("record", `the set-aside board writes no longer apply: ${back.reason}`, [
-          `they are kept in ${lane.carry.patchFile}`,
+        red("record", `exec's board writes do not apply on top of the picks: ${back.reason}`, [
+          `they stay in the ledger (merge.carry: ${carried.join(", ")})`,
         ]),
       );
-      return { exit: 1, next: "re-apply that patch or redo the writes, then land again" };
+      return { exit: 1, next: dropNext(lane) };
     }
   }
   const model = readProcess({ root, spec });
@@ -584,10 +801,10 @@ function recordStep(lane, rows) {
     });
   } catch (error) {
     if (!(error instanceof WriteError)) throw error;
+    restoreFiles(root, carried); // the carry goes back as it was, at the stop
     rows.push(red("record", error.message));
     return { exit: 1, next: "fix what it names, then land again (the picks stay; it resumes)" };
   }
-  const carried = lane.carry?.files ?? [];
   lane.files = [...new Set([...result.writes.map((w) => w.file), ...carried])];
   const after = boardReport({ root, spec, model: readProcess({ root, spec }) });
   const fresh = after.findings.filter((f) => !before.has(findingKey(f)));
@@ -643,10 +860,10 @@ function commitStep(lane, rows) {
       next: "fix the message or what the hook names, then land again (it resumes)",
     };
   }
-  lane.carry = null; // the carried board writes are in this commit now
+  // The carried board writes are in this commit now: the ledger lets go of them.
   save(lane, {
     state: "merged",
-    merge: { ...merge, step: "committed", boardCommit: res.sha, at: now() },
+    merge: { ...merge, carry: undefined, step: "committed", boardCommit: res.sha, at: now() },
   });
   if (res.left.length > 0) {
     rows.push(
@@ -674,7 +891,21 @@ function preflight(lane) {
     rows.push(ok("land", `already merged (board commit ${short(lane.ledger.merge?.boardCommit)})`));
     return done(0, lane, rows, afterLand(lane));
   }
-  rows.push(boardRow(lane), mainRow(lane, { carry: true }), commitsRow(lane).row);
+  const busy = pickInProgress(lane.root);
+  if (busy.length > 0)
+    rows.push(red("recover", "git is in the middle of a cherry-pick in the main checkout"));
+  const merge = lane.ledger.merge;
+  rows.push(boardRow(lane), mainRow(lane, { carry: true }));
+  if (merge?.carry)
+    rows.push(
+      ok(
+        "carry",
+        `exec's board writes are set aside in the ledger (${merge.carry.files.join(", ")})`,
+        ["the land puts them back on main first"],
+      ),
+    );
+  if (FRESH.includes(merge?.step)) rows.push(commitsRow(lane).row);
+  else rows.push(ok("land", `a land is under way (step "${merge.step}"): the land resumes it`));
   const gate = gateOf(lane.spec);
   if (!gate) rows.push(red("gate", "the process file has no gate: merge cannot prove main"));
   else {
@@ -738,17 +969,36 @@ function land(lane) {
   if (checks.failed.length > 0)
     return done(1, lane, rows, `fix what ${checks.failed.join(", ")} found, then record it again`);
   if (checks.pending.length > 0) return done(2, lane, rows, checkNext(id, checks.pending));
-  const main = mainRow(lane, { carry: true });
-  rows.push(main);
-  if (main.mark === "red") return done(2, lane, rows);
-  for (const step of [carryStep, landStep, gateStep, recordStep, commitStep]) {
+  if (opts["--drop-carry"] && !merged?.carry)
+    return done(2, lane, [
+      ...rows,
+      red("carry", "--drop-carry: the ledger holds no set-aside board writes, so nothing to drop"),
+    ]);
+  const steps = [
+    recoverStep,
+    carryBackStep,
+    mainStep,
+    takeCarryStep,
+    landStep,
+    gateStep,
+    recordStep,
+    commitStep,
+  ];
+  for (const step of steps) {
     const stop = step(lane, rows);
     if (!stop) continue;
-    const back = returnCarry(lane);
+    // At a stop, main gets exec's writes back, unless git is mid-pick or they would not go back.
+    const back = stop.keepCarry ? null : giveBack(lane);
     if (back) rows.push(back);
     return done(stop.exit, lane, rows, stop.next);
   }
   return done(0, lane, rows, afterLand(lane));
+}
+
+function mainStep(lane, rows) {
+  const main = mainRow(lane, { carry: true });
+  rows.push(main);
+  return main.mark === "red" ? { exit: 2 } : null;
 }
 
 // The ledger for a step after the land, or the refusal when it is missing or not landed yet.
