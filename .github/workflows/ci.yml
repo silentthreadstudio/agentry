@@ -39,5 +39,5 @@ jobs:
       - name: Lint (biome — lint, format, import order)
         run: pnpm lint
 
-      - name: Test (every package + the plugin's hook tests)
+      - name: Test (every package + the plugin's script tests)
         run: pnpm test

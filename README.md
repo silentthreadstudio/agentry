@@ -91,7 +91,7 @@ zero-install bundles inside `plugin/`.
 
 | Where | What it is |
 | :--- | :--- |
-| `plugin/` | the **shipped plugin** — `agents/ commands/ skills/ hooks/` + the committed `mem`, `flow`, and `workbench` bundles |
+| `plugin/` | the **shipped plugin** — `agents/ commands/ skills/` + the committed `mem`, `flow`, and `workbench` bundles |
 | `plugin/.claude-plugin/plugin.json` | the manifest — wires the `mem` and `flow` MCP servers inline (`${CLAUDE_PLUGIN_ROOT}/…/index.js`) |
 | `.claude-plugin/marketplace.json` | the marketplace manifest (stays at the repo root; `source: "./plugin"`) |
 | `packages/core` | `@agentry/core` — the single typed contract every node shares |
@@ -144,8 +144,8 @@ can't: *what is moving, and what needs me* — across every project, every run, 
   conducting session claims it. A button that said "Start now" would promise something it cannot do.
 - **The conductor rail.** The conversation is *ambient* — a persistent column beside the work, in three widths
   (a spine with an unread count · the rail · focus). Not a tab you navigate to.
-- **Presence you can trust.** ON SHIFT shows who is working on what, with a live timer, recorded by a
-  `SubagentStart`/`SubagentStop` hook — the harness reports it, so a model cannot forget to.
+- **Presence.** ON SHIFT shows who is working on what, with a live timer, recorded by the conductor
+  through the Flow MCP (`agent_state`) as it dispatches and collects each agent.
 - **Contract-overlap warnings.** Two in-progress tasks that both `own` a file are flagged *before* one clobbers
   the other.
 - **Read, edit, comment, resolve** — select a span of a spec/plan/task, comment on it, and the agent reads it
@@ -218,7 +218,7 @@ verification — so the probes share a run instead of each paying for their own.
 ## Repo layout & dev
 
 ```
-plugin/            the shipped plugin (agents · commands · skills · hooks · mem · flow · workbench)
+plugin/            the shipped plugin (agents · commands · skills · mem · flow · workbench)
 packages/          TypeScript dev sources (core · memory · flow · workbench · web · eval)
 ```
 

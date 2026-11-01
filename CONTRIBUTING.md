@@ -6,7 +6,7 @@ it runs. This guide gets you set up and explains what a change is held to. For *
 
 ## Repository shape
 
-- **`plugin/`** — the shipped plugin (`CLAUDE_PLUGIN_ROOT`). `agents/ commands/ skills/ hooks/`, the manifest
+- **`plugin/`** — the shipped plugin (`CLAUDE_PLUGIN_ROOT`). `agents/ commands/ skills/`, the manifest
   in `.claude-plugin/plugin.json`, and the committed memory MCP bundle `mem/index.js`. A marketplace install
   copies **only this directory** (`source: "./plugin"`) — not the dev tree.
 - **`packages/`** — dev-only TypeScript, a pnpm workspace:
@@ -55,7 +55,7 @@ Work on one package with `pnpm --filter @agentry/memory <script>`.
 - **Dist-lockstep** — any change to a bundled package's sources (`memory`, `flow`, `workbench`) ⇒ `pnpm build`
   and commit the updated `plugin/` bundle (+ its `.srchash`) in the **same** change. The gate verifies it by
   content hash.
-- **Reload-gated** — agent/command/skill/hook/MCP changes register only on a Claude Code reload/restart;
+- **Reload-gated** — agent/command/skill/MCP changes register only on a Claude Code reload/restart;
   verify live after a restart.
 - All packages must `typecheck`, `test` and `lint` green; CI runs the gate and the packages on every push/PR.
 

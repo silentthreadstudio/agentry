@@ -1,7 +1,7 @@
 name: Release
 
 # Tagging `v*` publishes a GitHub Release with the plugin payload zip — the `plugin/` directory (manifest +
-# agents/commands/skills/hooks + the committed `mem/index.js` bundle), never the dev tree. The structure +
+# agents/commands/skills + the committed `mem/index.js` bundle), never the dev tree. The structure +
 # dist-lockstep gate validates the bundle ↔ src before packaging (CI separately rebuilds + tests the whole
 # workspace). Users install the zip via `--plugin-url` (Claude Code ≥ 2.1.128); a marketplace install of the
 # repo already gets only `plugin/` via `source: "./plugin"`.

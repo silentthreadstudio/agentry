@@ -279,63 +279,19 @@ for (const { pkg } of manifests) {
 }
 if (doubleRun === 0) ok("no double-run scripts", `${manifests.length} package(s) checked`);
 
-// 7. hooks.json — events MUST nest under a top-level "hooks" key. The bare form
-// (events at the root) parses as valid JSON but silently fails to load — no hook
-// ever fires, including SessionStart, with no error anywhere. Catch it here.
-const HOOK_EVENTS = new Set([
-  "SessionStart",
-  "SessionEnd",
-  "UserPromptSubmit",
-  "PreToolUse",
-  "PostToolUse",
-  "PostToolUseFailure",
-  "PostToolBatch",
-  "Stop",
-  "StopFailure",
-  "SubagentStart",
-  "SubagentStop",
-  "PreCompact",
-  "PostCompact",
-  "Notification",
-  "FileChanged",
-]);
+// 7. No hooks (A32: one mechanism). Commands, skills and the default conductor agent replace them, so a
+// hooks.json — or a "hooks" key in the manifest — fails the gate instead of silently firing from a stale cache.
 const hooksJson = join(PLUGIN, "hooks", "hooks.json");
 if (existsSync(hooksJson)) {
-  let h;
-  try {
-    h = readJson(hooksJson);
-  } catch (e) {
-    err(`hooks/hooks.json: invalid JSON — ${e.message}`);
-  }
-  if (h) {
-    const rootKeys = Object.keys(h);
-    if (!("hooks" in h)) {
-      // bare form — events at the root with no wrapper → silently never loads
-      const looksLikeEvents = rootKeys.some((k) => HOOK_EVENTS.has(k));
-      err(
-        looksLikeEvents
-          ? `hooks/hooks.json: events (${rootKeys.filter((k) => HOOK_EVENTS.has(k)).join(", ")}) at the root — must nest under a top-level "hooks" key, or NOTHING loads (silent)`
-          : `hooks/hooks.json: missing top-level "hooks" key`,
-      );
-    } else {
-      const events = h.hooks;
-      let groups = 0;
-      for (const [evt, list] of Object.entries(events)) {
-        if (!HOOK_EVENTS.has(evt)) warn(`hooks/hooks.json: unknown event "${evt}"`);
-        for (const grp of list ?? []) {
-          for (const hk of grp.hooks ?? []) {
-            groups++;
-            // verify any ${CLAUDE_PLUGIN_ROOT}-relative script the hook runs actually exists
-            const ref = (hk.command ?? "").match(/\$\{CLAUDE_PLUGIN_ROOT\}\/(\S+?)["\s]/);
-            if (ref && !existsSync(join(PLUGIN, ref[1])))
-              err(`hooks/hooks.json: ${evt} → missing script ${ref[1]}`);
-          }
-        }
-      }
-      ok("hooks.json", `${Object.keys(events).length} event(s), ${groups} handler(s)`);
-    }
-  }
+  err(
+    "hooks/hooks.json exists — Agentry ships no hooks (A32); put the behavior in a command, skill or the conductor agent",
+  );
 }
+const manifestHooks = existsSync(pluginManifest) && "hooks" in readJson(pluginManifest);
+if (manifestHooks) {
+  err('.claude-plugin/plugin.json declares "hooks" — Agentry ships no hooks (A32)');
+}
+if (!existsSync(hooksJson) && !manifestHooks) ok("no hooks", "none shipped (A32)");
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));
