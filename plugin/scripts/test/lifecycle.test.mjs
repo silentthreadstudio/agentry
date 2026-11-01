@@ -255,10 +255,12 @@ test("a tag object is not a commit SHA", () => {
 test("a written prefix is unique across every object type: it grows past a shared one", () => {
   const { root, shas } = repo({ commits: 1 });
   const sha = shas[0];
-  // A loose object that is not the commit but shares its first 7 characters.
+  // A loose object that is not the commit but shares exactly its first 7 characters: the filler
+  // differs from the commit's 8th, or the two would share 8 and the prefix would need 9.
   const dir = join(root, ".git", "objects", sha.slice(0, 2));
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${sha.slice(2, 7)}${"f".repeat(33)}`), "");
+  const filler = sha[7] === "f" ? "e" : "f";
+  writeFileSync(join(dir, `${sha.slice(2, 7)}${filler.repeat(33)}`), "");
   event(root, "merged", "T1", { shas: [sha], summary: "x" });
   const cell = cells(
     read(root, "plan/BOARD.md")
