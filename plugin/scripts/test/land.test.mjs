@@ -1,7 +1,8 @@
-// Tests for lib/lane/land.mjs on throwaway repositories: what a branch has to land, the cherry-pick that
-// aborts on any stop, which picks main holds (read from main), git mid-pick, the rollback's guards and
-// its `--keep`, the carry patch, the board commit's exactness, the attribution check, the push without
-// an upstream, the cleanup's refusals and the gate group a killed run leaves behind.
+// Tests for lib/lane/{land,carry-io,gate-group}.mjs on throwaway repositories: what a branch has to
+// land, the cherry-pick that aborts on any stop, which picks main holds (read from main), git mid-pick,
+// the rollback's guards and its `--keep`, the carry patch, the board commit's exactness, the attribution
+// check, the push without an upstream, the cleanup's refusals and the gate group a killed run leaves
+// behind.
 // (`merge-cli.test.mjs` runs them as one land.)
 // Run: node --test plugin/scripts/test/land.test.mjs
 import assert from "node:assert/strict";
@@ -9,21 +10,18 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { applyPatch, sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
+import { endStrayGate, gateArgv } from "../lib/lane/gate-group.mjs";
 import {
-  applyPatch,
   attributionIn,
   boardCommit,
   cherryPick,
   cleanup,
-  endStrayGate,
-  gateArgv,
   landedSince,
   pickInProgress,
   push,
   rollback,
-  sha256,
   toLand,
-  uncommittedPatch,
 } from "../lib/lane/land.mjs";
 import { create } from "../lib/lane/worktree.mjs";
 import { commitFile, git, gitEnv, tempRepo } from "./git-repo.mjs";

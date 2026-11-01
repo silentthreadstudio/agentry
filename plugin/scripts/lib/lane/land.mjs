@@ -1,20 +1,14 @@
-// land — the git and process I/O that lands a task's branch on main (plan R1b-5): which commits to
-// pick, the cherry-pick (aborted on any stop), which picks main really holds, the rollback after a red
-// gate, the carry of exec's uncommitted board writes, the board commit, the push, the cleanup by branch,
-// and the gate's process group across a killed run. `cli/merge.mjs` sequences these steps against the
-// ledger.
+// land — the git that lands a task's branch on main (plan R1b-5): which commits to pick, the
+// cherry-pick (aborted on any stop), which picks main really holds, the rollback after a red gate, the
+// board commit, the push and the cleanup by branch. `cli/merge.mjs` and `merge/` sequence these steps
+// against the ledger; the carry's patch and boards are `carry-io.mjs`, the gate's process group
+// `gate-group.mjs`.
 //
 // Every git call is an argv array, never a shell line (a zsh variable that did not split once turned a
 // cherry-pick into a silent no-op), and every one reads its own exit code. A git refusal is an answer
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { boardFiles } from "../process/board-diff.mjs";
-import { readProcess } from "../process/read.mjs";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { findByBranch, git, ignoredFiles, porcelain, remove } from "./worktree.mjs";
 
 const first = (text) => text.trim().split("\n")[0] ?? "";
@@ -206,59 +200,6 @@ export function notEdits(entries, files) {
   );
 }
 
-/** The sha256 of `text`, hex. */
-export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
-
-/** The uncommitted edits of `files` against HEAD as one binary patch, and its sha256: `{ patch,
- *  sha256 }`, or `{ error }` when git cannot say. */
-export function uncommittedPatch(root, files) {
-  const res = git(root, ["--literal-pathspecs", "diff", "--binary", "HEAD", "--", ...files]);
-  if (res.status !== 0) return { error: first(res.stderr) || "git diff failed" };
-  return { patch: res.stdout, sha256: sha256(res.stdout) };
-}
-
-/** Apply `patch` to the working tree, all or nothing; `check` only asks git whether it would, and
- *  `reverse` takes it off (a reverse check that passes: the edits are on the tree already). `{ ok }` or
- *  `{ ok: false, reason }`. */
-export function applyPatch(root, patch, { check = false, reverse = false } = {}) {
-  const flags = [...(check ? ["--check"] : []), ...(reverse ? ["--reverse"] : [])];
-  const res = git(root, ["apply", "--whitespace=nowarn", ...flags, "-"], patch);
-  return res.status === 0
-    ? { ok: true }
-    : { ok: false, reason: first(res.stderr) || "git apply failed" };
-}
-
-/** The working tree's board in the shape `board-diff` reads: `{ model, text(file) }`. */
-export function workingBoard(root, spec) {
-  const text = (file) => {
-    try {
-      return readFileSync(join(root, file), "utf8");
-    } catch {
-      return null;
-    }
-  };
-  return { model: readProcess({ root, spec }), text };
-}
-
-/** HEAD's board in the same shape: HEAD's copy of each board file `model` (the working board's) was
- *  read from goes to a scratch directory and is read there, by the same reader. */
-export function headBoard(root, spec, model) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentry-head-")));
-  const texts = new Map();
-  try {
-    for (const file of boardFiles(spec, model)) {
-      const res = git(root, ["--literal-pathspecs", "cat-file", "blob", `HEAD:${file}`]);
-      if (res.status !== 0) continue;
-      texts.set(file, res.stdout);
-      mkdirSync(dirname(join(dir, file)), { recursive: true });
-      writeFileSync(join(dir, file), res.stdout);
-    }
-    return { model: readProcess({ root: dir, spec }), text: (file) => texts.get(file) ?? null };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 /** Put `files` (repo-relative) back to HEAD's content, staged and working copy. */
 export function restoreFiles(root, files) {
   if (files.length === 0) return { ok: true };
@@ -360,64 +301,4 @@ export function cleanup(root, { branch, main, fallbackPath, discardIgnored = fal
   const res = remove(root, { path, branch, onto: main });
   const ok = res.removed && (res.branchDeleted || !commitOf(root, `refs/heads/${branch}`));
   return { ok, path, ...res, ...(ignored.length > 0 && { ignored }) };
-}
-
-// The gate runs under this wrapper: it writes its own pid to `pidFile`, then runs the gate as its
-// child. `runGate` starts it detached, so the wrapper leads the group the gate runs in and its pid is
-// the group's id. A merge killed mid-gate leaves that group running; the next run finds it by the file.
-const WRAP = `const [, pidFile, ...cmd] = process.argv.slice(1);
-require("node:fs").writeFileSync(pidFile, String(process.pid));
-const r = require("node:child_process").spawnSync(cmd[0], cmd.slice(1), { stdio: "inherit" });
-if (r.error) { console.error("[agentry] could not run " + cmd[0] + ": " + r.error.message); process.exit(127); }
-process.exit(r.status ?? 1);`;
-
-/** The argv that runs the gate `cmd` under the pid-writing wrapper. `nonce` sits in the wrapper's own
- *  argv, so a later run can tell the group is this gate's and not a process that reused the pid. */
-export function gateArgv(cmd, { pidFile, nonce }) {
-  return [process.execPath, "-e", WRAP, nonce, pidFile, ...cmd];
-}
-
-const alive = (pgid) => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM"; // there, but not ours to signal
-  }
-};
-
-/**
- * End the gate a killed run left behind (`run` = `{ pidFile, nonce }`, as the ledger recorded it).
- * `{ ok: true, pgid, killed }` (`killed`: a group was still running and is gone now), or `{ ok: false,
- * pgid, reason }` when the group will not die. A live group is the gate's when its leader's argv holds
- * the nonce, or when it has no leader left (a live group's id is never reused); one whose leader is
- * another process is left alone.
- */
-export function endStrayGate(run) {
-  let pgid;
-  try {
-    pgid = Number.parseInt(readFileSync(run.pidFile, "utf8").trim(), 10);
-  } catch {
-    return { ok: true, pgid: null, killed: false }; // the wrapper never started
-  }
-  if (!Number.isInteger(pgid) || pgid <= 1 || !alive(pgid))
-    return { ok: true, pgid, killed: false };
-  const ps = spawnSync("ps", ["-o", "command=", "-p", String(pgid)], { encoding: "utf8" });
-  if (ps.error)
-    return {
-      ok: false,
-      pgid,
-      reason: `ps cannot say what process ${pgid} is: ${ps.error.message}`,
-    };
-  const leader = ps.status === 0 ? ps.stdout.trim() : "";
-  if (leader && !leader.includes(run.nonce)) return { ok: true, pgid, killed: false }; // a reused pid
-  try {
-    process.kill(-pgid, "SIGKILL");
-  } catch (error) {
-    return { ok: false, pgid, reason: `cannot kill process group ${pgid}: ${error.code}` };
-  }
-  const nap = new Int32Array(new SharedArrayBuffer(4));
-  for (let waited = 0; waited < 5000 && alive(pgid); waited += 20) Atomics.wait(nap, 0, 0, 20);
-  if (alive(pgid)) return { ok: false, pgid, reason: `process group ${pgid} is still running` };
-  return { ok: true, pgid, killed: true };
 }
