@@ -42,8 +42,7 @@ export function registerMonitorTools(server: McpServer, ctx: FlowServices): void
   server.registerTool(
     "run_status",
     {
-      description:
-        "Read-time run health: a per-status task summary. Returns { run, tasks }.",
+      description: "Read-time run health: a per-status task summary. Returns { run, tasks }.",
       inputSchema: { run: z.string() },
     },
     guard(async (args) => ok(service.status(args.run))),
