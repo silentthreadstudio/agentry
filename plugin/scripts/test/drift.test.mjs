@@ -2,11 +2,20 @@
 // cases (a ledgered worktree, no lifecycle, a board in a subfolder).
 // Run: node --test plugin/scripts/test/drift.test.mjs
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { landing, mechanical, nudges } from "../lib/process/drift.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
-import { SPEC, boardRepo, builtBranch, handBranch, ledger, pickOntoMain } from "./drift-repo.mjs";
+import {
+  SPEC,
+  boardRepo,
+  builtBranch,
+  handBranch,
+  ledger,
+  pickOntoMain,
+  read,
+} from "./drift-repo.mjs";
 import { commitFile, git } from "./git-repo.mjs";
 
 const cleanups = [];
@@ -197,6 +206,45 @@ test("a hand worktree merged --no-ff or fast-forwarded is merged-by-hand, not un
       ["merged-by-hand", "worktree-agent-T2", "/agentry:merge <id>"],
       ["merged-by-hand", "worktree-agent-x7", "/agentry:merge <id>"],
     ],
+  );
+});
+
+test("verified-not-merged clears once the work is on main and the board has caught up", () => {
+  const { root } = fresh();
+  const { sha } = builtBranch(root, "T3");
+  ledger(root, "T3", { state: "verified" });
+  const picked = pickOntoMain(root, sha);
+  assert.deepEqual(
+    nudgesOf(root)
+      .filter((n) => n.id === "T3")
+      .map((n) => n.kind),
+    ["merged-by-hand"],
+    "one nudge for the task, naming fix",
+  );
+  const short = picked.slice(0, 7);
+  const text = read(root, "plan/BOARD.md").replace(
+    "| T3   | S1     | verify |         |        |",
+    `| T3   | S1     | done   |         | ${short} |`,
+  );
+  writeFileSync(join(root, "plan", "BOARD.md"), text);
+  writeFileSync(
+    join(root, "plan", "sprints", "S1.md"),
+    `# S1\n\n## Handoff\n\n- **T3** (${short}): x\n`,
+  );
+  assert.deepEqual(
+    nudgesOf(root).filter((n) => n.id === "T3"),
+    [],
+  );
+});
+
+test("a task gets one nudge at most: a worktree named for it hides its started-by-hand", () => {
+  const { root } = fresh();
+  builtBranch(root, "T1");
+  assert.deepEqual(
+    nudgesOf(root)
+      .filter((n) => n.id === "T1")
+      .map((n) => n.kind),
+    ["unlisted-worktree"],
   );
 });
 

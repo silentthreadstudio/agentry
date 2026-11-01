@@ -15,7 +15,7 @@ import {
   pickOntoMain,
   read,
 } from "./drift-repo.mjs";
-import { git } from "./git-repo.mjs";
+import { commitFile, git } from "./git-repo.mjs";
 
 const cleanups = [];
 after(() => {
@@ -141,6 +141,22 @@ test("work picked onto main and then reverted is never written as done", () => {
     assert.deepEqual(files(root), before, record ? "with a merge record" : "picked by hand");
     assert.match(out.stdout, /^fixed 0/);
     assert.equal(out.status, 1);
+  }
+});
+
+test("a ledgered branch merged by hand with --no-ff or fast-forwarded is fixed with its commit", () => {
+  for (const how of [["--no-ff", "--no-edit"], ["--ff-only"]]) {
+    const { root } = fresh();
+    const { branch, sha } = builtBranch(root, "T1");
+    if (how[0] === "--no-ff") commitFile(root, "m.txt", "main moved\n", "chore: move");
+    git(root, "merge", ...how, branch);
+    ledger(root, "T1", { state: "verified" });
+    const out = board(root, "fix");
+    assert.equal(out.status, 0, `${how[0]}: ${out.stdout}`);
+    assert.match(
+      row(read(root, "plan/BOARD.md"), "T1"),
+      new RegExp(`done +\\| +\\| ${sha.slice(0, 7)}`),
+    );
   }
 });
 

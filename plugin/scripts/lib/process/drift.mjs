@@ -8,8 +8,9 @@
 //
 // A nudge kind: `unlisted-worktree` (an agent worktree no ledger knows), `started-by-hand` (a task the board
 // has started and no ledger tracks), `merged-by-hand` (a branch whose work is on main with no merge record),
-// `verified-not-merged` (verified, waiting for merge) and `episode-pending` (an episode payload nobody wrote).
-// Without a `lifecycle` the board has no started words, so `started-by-hand` stays quiet.
+// `verified-not-merged` (verified, its work not on main yet) and `episode-pending` (an episode payload nobody
+// wrote). A task gets one nudge at most, in that order of precedence: merged-by-hand, verified-not-merged,
+// episode-pending. Without a `lifecycle` the board has no started words, so `started-by-hand` stays quiet.
 //
 // Work counts as landed only while it is on main now (A23): its commits there (cherry-picked, merged or
 // fast-forwarded) and no later commit undoing one of them. Read-only.
@@ -232,25 +233,28 @@ export function nudges({ root, runRoot = root, spec, model }) {
 
   for (const l of all) {
     const row = { id: l.id, ...(l.branch ? { branch: l.branch } : {}) };
-    if (l.state === "verified" && !l.merge)
+    const work = l.merge ? null : landedWork(root, l, onto);
+    if (work) {
+      // On main with no merge record: a nudge only while the board has not caught up.
+      const item = items.find((i) => i.id === l.id);
+      const { fixes, left } = item
+        ? plan({ root, spec, model, ledger: l, item, onto, work })
+        : { left: true };
+      if (fixes || left) found.push({ kind: "merged-by-hand", ...row, command: FIX });
+    } else if (l.state === "verified" && !l.merge)
       found.push({ kind: "verified-not-merged", ...row, command: merge(l.id) });
     if (l.episode && !l.episode.writtenId)
       found.push({ kind: "episode-pending", ...row, command: "/agentry:close" });
-    // A ledgered branch already on main: only a nudge while the board has not caught up.
-    if (!l.merge && landedWork(root, l, onto)) {
-      const item = items.find((i) => i.id === l.id);
-      const { fixes, left } = item
-        ? plan({ root, runRoot, spec, model, ledger: l, item, onto })
-        : {};
-      if (!item || fixes || left) found.push({ kind: "merged-by-hand", ...row, command: FIX });
-    }
   }
 
   const started = [life?.on?.dispatched, life?.on?.built].filter((w) => typeof w === "string");
   for (const item of items)
     if (started.includes(item.status) && !byId.has(item.id))
       found.push({ kind: "started-by-hand", id: item.id, command: exec(item.id) });
-  return found;
+
+  // One nudge per task: the first one found for its id.
+  const seen = new Set();
+  return found.filter((n) => !n.id || (!seen.has(n.id) && seen.add(n.id)));
 }
 
 // What the lifecycle's merged event would still write for `item`, given the commits `shas` that landed:
@@ -278,9 +282,10 @@ function missing({ spec, model, item, shas }) {
   return { need, conflict };
 }
 
-// One ledgered task: the merged event `board fix` would apply, or why it is only reported.
-function plan({ root, spec, model, ledger, item, onto }) {
-  const landed = landedWork(root, ledger, onto);
+// One ledgered task: the merged event `board fix` would apply, or why it is only reported. `work` is the
+// task's landing when the caller has it.
+function plan({ root, spec, model, ledger, item, onto, work }) {
+  const landed = work !== undefined ? work : landedWork(root, ledger, onto);
   if (!landed) return {};
   const shas = landed.shas ?? [];
   const { need, conflict } = missing({ spec, model, item, shas });
@@ -303,11 +308,10 @@ export function mechanical({ root, runRoot = root, spec, model }) {
   const onto = git.defaultBranch(root);
   for (const ledger of ledgers.list(runRoot)) {
     const here = items.filter((i) => i.id === ledger.id);
-    const mergedAlready = ledger.merge && MERGED_STATES.includes(ledger.state);
     if (here.length !== 1) {
-      if (mergedAlready)
+      if (landedWork(root, ledger, onto))
         left.push(
-          `${ledger.id}: merged, but ${here.length ? "several" : "no"} board items by that id`,
+          `${ledger.id}: on main, but ${here.length ? "several" : "no"} board items by that id`,
         );
       continue;
     }

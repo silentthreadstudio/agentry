@@ -18,6 +18,7 @@ import { WriteError } from "../write.mjs";
 export const usage = "fix [--dry-run] [--json]";
 export const flags = { "--dry-run": false, "--json": false };
 const WIDTH = 80;
+const FIX = "/agentry:board --fix";
 
 export function run(argv, { root, spec, model }) {
   const dryRun = argv.includes("--dry-run");
@@ -53,10 +54,8 @@ export function run(argv, { root, spec, model }) {
     }
   }
   const after = dryRun ? model : board;
-  const rest = nudges({ root, runRoot, spec, model: after }).filter(
-    // In a dry run the tasks that would be fixed still nudge; they are listed as "would fix" instead.
-    (n) => !(dryRun && n.command === "/agentry:board --fix" && fixed.some((f) => f.id === n.id)),
-  );
+  // A nudge to run fix is this run's own business: its task is fixed (or would be) or in `left`.
+  const rest = nudges({ root, runRoot, spec, model: after }).filter((n) => n.command !== FIX);
   const exit = left.length || rest.length ? 1 : 0;
   if (argv.includes("--json"))
     return { exit, out: JSON.stringify({ dryRun, fixed, left, nudges: rest }) };
