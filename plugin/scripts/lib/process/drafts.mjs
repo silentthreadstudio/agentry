@@ -71,10 +71,15 @@ export const unreadable = (root) => read(root).lines.flatMap((l, i) => (l.draft 
 /** The drafts still waiting for the owner. */
 export const pending = (root) => list(root).filter((d) => d.state === "pending");
 
-/** Append `draft` (already `problem`-free) as the next `n`; returns the stored draft. */
+// A number a line may hold, read or not: a torn line's `"n": 7` still counts. Never reused.
+const numbersIn = ({ raw, draft }) =>
+  draft ? [draft.n] : [...raw.matchAll(/"n"\s*:\s*(\d+)/g)].map((m) => Number(m[1]));
+
+/** Append `draft` (already `problem`-free) as the next `n`: past every number in the file, torn lines
+ *  included, and past the line count; returns the stored draft. */
 export function add(root, draft) {
   const { text, lines } = read(root);
-  const n = Math.max(0, ...lines.flatMap((l) => (l.draft ? [l.draft.n] : []))) + 1;
+  const n = Math.max(lines.length, ...lines.flatMap(numbersIn)) + 1;
   const stored = { n, ...draft, at: new Date().toISOString(), state: "pending" };
   mkdirSync(dirname(fileOf(root)), { recursive: true });
   // A torn last line has no newline: the new draft must not be glued onto it.

@@ -59,6 +59,17 @@ test("a torn line in the file is skipped and the rest still read", () => {
   );
 });
 
+test("a torn line's number is never given to a new draft", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-drafts-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  drafts.add(dir, DECISION);
+  const file = join(dir, ".agentry", "run", "process", "drafts.jsonl");
+  writeFileSync(file, `${readFileSync(file, "utf8")}{"n":2,"kind":"rule","ans`);
+  assert.equal(drafts.add(dir, DECISION).n, 3, "2 is the torn line's");
+  writeFileSync(file, `${readFileSync(file, "utf8")}not json at all\n`);
+  assert.equal(drafts.add(dir, DECISION).n, 5, "a line with no number still holds its place");
+});
+
 test("add, list and drop keep drafts in the run state and never write the repo", () => {
   const { root } = fresh();
   const board0 = read(root, "plan/DECISIONS.md");
