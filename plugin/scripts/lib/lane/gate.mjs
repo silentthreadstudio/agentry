@@ -11,10 +11,34 @@ import { dirname } from "node:path";
 import { git, porcelain } from "./worktree.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 3600;
+const SETTLE_MS = 2000;
+
+// Kill the command's whole process group, whatever the outcome, so a background child of a green gate cannot
+// write into the tree later; then wait (up to SETTLE_MS) for the group to be gone, so the clean-tree check
+// that follows sees every write it made.
+function endGroup(pid) {
+  if (!pid) return;
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    return; // the group is already gone
+  }
+  const gone = () => {
+    try {
+      process.kill(-pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  for (let waited = 0; waited < SETTLE_MS && !gone(); waited += 20) Atomics.wait(nap, 0, 0, 20);
+}
 
 /** Run `cmd` (argv) at the git root of `dir`. `logFile` should sit outside the tree under test, or the log
  *  itself would dirty it. `timeoutSec` (callers pass the gate config's, default 3600) bounds the run: past
- *  it the command's whole process group is killed and the gate is red. Returns `{ refused: "dirty", files }`
+ *  it the gate is red. Whatever the outcome, the command's whole process group is killed afterwards, so
+ *  nothing it left in the background can touch the tree later. Returns `{ refused: "dirty", files }`
  *  without running when the tree is not clean; otherwise `{ exit, tier, commit, tree, cleanBefore,
  *  cleanAfter, log, seconds }`. When the command exits 0 but leaves files behind, `exit` is 1 (`commandExit`
  *  keeps the command's own code). */
@@ -45,14 +69,10 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
       killSignal: "SIGKILL",
     });
     timedOut = res.error?.code === "ETIMEDOUT";
-    if (timedOut) {
-      try {
-        process.kill(-res.pid, "SIGKILL");
-      } catch {
-        /* the group is already gone */
-      }
+    endGroup(res.pid);
+    if (timedOut)
       writeSync(fd, `\n[agentry] ${cmd[0]} timed out after ${timeoutSec} s and was killed\n`);
-    } else if (res.error)
+    else if (res.error)
       writeSync(fd, `\n[agentry] could not run ${cmd[0]}: ${res.error.message}\n`);
     else if (res.signal) writeSync(fd, `\n[agentry] ${cmd[0]} was killed by ${res.signal}\n`);
   } finally {
@@ -149,8 +169,28 @@ export function pickTier(gate, changedFiles) {
  *  wants as `changedSinceGate`. A rename lists both its paths, so moving a file out of `src/` into `docs/`
  *  is never read as a docs-only change. Null when git cannot say. */
 export function changedSince(dir, commit, tip = "HEAD") {
-  const res = git(dir, ["diff", "--no-renames", "--name-only", "-z", commit, tip, "--"]);
+  // Resolve both to commit SHAs first: a rev that is not a commit (or that git could read as an option, like
+  // `--output=…`) resolves to nothing and answers null.
+  const from = commitOf(dir, commit);
+  const to = commitOf(dir, tip);
+  if (!from || !to) return null;
+  const res = git(dir, [
+    "diff",
+    "--no-renames",
+    "--name-only",
+    "-z",
+    "--end-of-options",
+    from,
+    to,
+    "--",
+  ]);
   return res.status === 0 ? res.stdout.split("\0").filter(Boolean) : null;
+}
+
+function commitOf(dir, rev) {
+  if (typeof rev !== "string" || rev === "") return null;
+  const res = git(dir, ["rev-parse", "--verify", "--quiet", "--end-of-options", `${rev}^{commit}`]);
+  return res.status === 0 ? res.stdout.trim() : null;
 }
 
 /** May a merge skip re-running the gate on main? Only when the recorded worktree gate was green and clean
@@ -166,7 +206,7 @@ export function canSkip({ record, mainTree, branchTipTree, changedSinceGate, aft
       skip: false,
       reason: `the recorded gate ran the ${record.tier ?? "unknown"} tier, not full`,
     };
-  if (!record.cleanBefore || !record.cleanAfter)
+  if (record.cleanBefore !== true || record.cleanAfter !== true)
     return {
       skip: false,
       reason: "the recorded gate did not run on a clean tree both before and after",
@@ -182,6 +222,8 @@ export function canSkip({ record, mainTree, branchTipTree, changedSinceGate, aft
       skip: false,
       reason: "the tree moved since the gate but no changed files explain it",
     };
+  if (after != null && !(Array.isArray(after) && after.every((g) => typeof g === "string")))
+    return { skip: false, reason: 'the gate\'s "after" is not a list of globs' };
   const inAfter = matcher(after);
   const stray = changedSinceGate.find((file) => !inAfter(file));
   if (stray !== undefined)

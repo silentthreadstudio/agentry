@@ -131,6 +131,18 @@ test("a gate that outlives timeoutSec is killed, with its children, and is red",
   assert.equal(alive(pid), false);
 });
 
+test("a background child of a green gate is killed with the gate and never dirties the tree", async () => {
+  const pidFile = join(logs, "bg.pid");
+  const sh = `(sleep 1; echo late > late.txt) & echo $! > ${JSON.stringify(pidFile)}; exit 0`;
+  const res = runGate(repo.dir, ["sh", "-c", sh], { tier: "full", logFile: log });
+  assert.equal(res.exit, 0);
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  assert.equal(alive(pid), false);
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal(existsSync(join(repo.dir, "late.txt")), false);
+  assert.equal(git(repo.dir, "status", "--porcelain"), "");
+});
+
 test("a gate within timeoutSec is unaffected, and a bad timeoutSec is refused", () => {
   const res = runGate(repo.dir, node("0"), { tier: "full", logFile: log, timeoutSec: 30 });
   assert.equal(res.exit, 0);
@@ -224,6 +236,36 @@ test("changedSince lists a rename out of src/ into docs/ as both paths", () => {
   git(repo.dir, "commit", "-q", "-m", "move");
   assert.deepEqual(changedSince(repo.dir, gated).sort(), ["docs-a.txt", "src/a.txt"]);
   assert.equal(changedSince(repo.dir, "no-such-commit"), null);
+});
+
+test("changedSince takes a SHA or a ref and refuses anything git could read as an option", () => {
+  const gated = commitFile(repo.dir, "a.txt", "a\n");
+  commitFile(repo.dir, "b.txt", "b\n");
+  assert.deepEqual(changedSince(repo.dir, gated), ["b.txt"]);
+  assert.deepEqual(changedSince(repo.dir, "HEAD~1", "main"), ["b.txt"]);
+  const out = join(logs, "injected.txt");
+  assert.equal(changedSince(repo.dir, `--output=${out}`), null);
+  assert.equal(changedSince(repo.dir, gated, `--output=${out}`), null);
+  assert.equal(changedSince(repo.dir, "--no-index"), null);
+  assert.equal(changedSince(repo.dir, undefined), null);
+  assert.equal(existsSync(out), false);
+});
+
+test("canSkip: cleanBefore and cleanAfter must be literally true", () => {
+  for (const flag of ["yes", 1, {}, "false"])
+    for (const key of ["cleanBefore", "cleanAfter"]) {
+      const res = canSkip({ ...ok, record: { ...record, [key]: flag } });
+      assert.equal(res.skip, false, `${key}=${JSON.stringify(flag)}`);
+      assert.match(res.reason, /clean tree/);
+    }
+});
+
+test("canSkip: an after that is not a list of globs refuses with a reason instead of throwing", () => {
+  for (const after of ["docs/**", {}, 5, [1], ["docs/**", null]]) {
+    const res = canSkip({ ...ok, after });
+    assert.equal(res.skip, false, JSON.stringify(after));
+    assert.match(res.reason, /"after"/);
+  }
 });
 
 test("canSkip: each failed condition refuses with its own reason", () => {
