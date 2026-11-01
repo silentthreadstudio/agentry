@@ -63,6 +63,11 @@ test("porcelain lists untracked files one by one, renames once, nothing when cle
   assert.ok(porcelain(repo.dir).includes("?? d/b.txt"));
 });
 
+test('porcelain keeps the status columns of the first entry (an unstaged edit is " M")', () => {
+  writeFileSync(join(repo.dir, "README.md"), "changed\n");
+  assert.deepEqual(porcelain(repo.dir), [" M README.md"]);
+});
+
 test("ignoredFiles lists ignored files and collapses ignored directories", () => {
   commitFile(repo.dir, ".gitignore", "out/\n*.log\n");
   writeFileSync(join(repo.dir, "a.log"), "x");

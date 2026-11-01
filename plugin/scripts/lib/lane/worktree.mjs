@@ -61,7 +61,10 @@ export function findByBranch(root, branch) {
 /** `git status` as `"XY path"` entries, untracked files listed one by one (never collapsed to a
  *  directory). Empty when the tree is clean. Throws when `dir` is not a work tree. */
 export function porcelain(dir) {
-  const out = must(dir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  // Not `must`: it trims, which would eat the leading space of the first entry (" M f" → "M f").
+  const res = git(dir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  if (res.status !== 0) throw new Error(`git status: ${res.stderr.trim()}`);
+  const out = res.stdout;
   const parts = out.split("\0").filter(Boolean);
   const entries = [];
   for (let i = 0; i < parts.length; i++) {
