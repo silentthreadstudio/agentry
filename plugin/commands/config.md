@@ -22,8 +22,8 @@ Current keys:
 | `workDir` | `.agentry` | Where run artifacts and memory live. |
 | `evolution.enabled` | `false` | Records Evolution entries (harness self-improvement notes). |
 | `evolution.path` | — | Optional override for where those are written. |
-| `memory.prime` | `conductor` | Who gets ranked durable facts injected before working: `off` (nobody) · `conductor` (the main session, on each prompt) · `all` (also every dispatched subagent, ~200–400 tokens each). |
-| `memory.primeLimit` | `5` | Most facts a single priming injection may carry (recall is few-and-ranked, never a dump). |
+| `memory.prime` | `conductor` | Whether the commands carry ranked durable facts: `off` (none) · `conductor` (`/agentry:start` prints them for the session; builder and verifier briefs carry none) · `all` (`/agentry:exec` also puts them in each brief, ~200–400 tokens each). |
+| `memory.primeLimit` | `5` | Most facts a single recall may carry (recall is few-and-ranked, never a dump). |
 | `memory.captureCorrections` | `false` | Distill a `preference` fact when you correct or rewrite the agent's output. Off by default: it writes durable memory as a side effect of ordinary conversation. |
 | `merge.push` | `ask` | What `/agentry:merge` does once a task lands: `ask` (ask each time) · `auto` (push) · `never` (keep it local). Any other value is refused, never read as `auto`. |
 | `lanes.maxWriters` | `3` | How many builder lanes may write at once; `/agentry:exec` refuses a new one at the limit and names the open ones. A whole number above 0. |
@@ -37,7 +37,7 @@ The lane scripts (`scripts/lib/config.mjs`) read the file strictly: an unknown t
 - **Validate first** against `AgentryConfig` — an unknown key or an out-of-range value is a refusal with the valid options, never a silently-written typo.
 - **Write project-local by default** (`<project>/.agentry/config.json`), creating the file and any missing parents, and **merging** — never clobber keys you did not set. Write the global file only if the user explicitly asks for it.
 - **Show the before → after** for that key and name the file you wrote.
-- **Say what it takes effect on.** Hook-driven settings (anything under `memory.prime`) are read per invocation, so they apply to the next prompt or the next dispatched subagent — no restart. A key that changes plugin registration (hooks, commands, agents) is reload-gated; say so.
+- **Say what it takes effect on.** Settings are read each time a command runs, so a changed key applies to the next command — no restart. A key that changes plugin registration (commands, agents, skills) is reload-gated; say so.
 
 ## Notes
 

@@ -15,7 +15,7 @@ Run a task as Agentry's conductor: choose the **least process that wins**, dispa
 
 ## Lanes — outside the pipeline
 
-Work with a written contract → `/agentry:exec <task-id>`; a question → `/agentry:ask <question>`. Lanes skip routing, the gates, Flow and `.agentry/work/`, and `/agentry:go` never routes to them. Their rules live in `references/lanes.md`.
+Work with a written contract → `/agentry:exec <task-id>`; landing a finished task → `/agentry:merge <task-id>`; a question → `/agentry:ask <question>`. A session opens with `/agentry:start` and ends with `/agentry:close`. Lanes skip routing, the gates, Flow and `.agentry/work/`, and `/agentry:go` never routes to them. Their rules live in `references/lanes.md`, `references/merge.md` and `references/session.md`.
 
 ## Interaction mode — interactive (default) vs auto-pilot
 
@@ -39,7 +39,7 @@ Recall → Right-size → [Spec gate?] → Dispatch → [Plan gate?] → Build �
 
 Most tasks touch only part of this. A one-liner is `Recall → do it → Learn`.
 
-1. **Recall.** Memory is primed at session start. Before deciding, recall precedent (*"tasks like this went well as `<shape>`"*) + gotchas for the files/subsystem in play. Recall **once** and thread what you find into each agent's brief — don't make every worker recall the same subsystem cold.
+1. **Recall.** No hook primes memory: recall is your first step. Before deciding, call `memory_recall` for precedent (*"tasks like this went well as `<shape>`"*) + gotchas for the files/subsystem in play. Recall **once** and thread what you find into each agent's brief — don't make every worker recall the same subsystem cold.
 2. **Right-size.** Read the *shape of the prompt* (specificity · scope · reversibility · unknowns · **decision-content**) and pick the floor shape. Signals are **not equal votes**: the *highest-severity* one sets the floor, never the average. Let precedent inform, not dictate.
 
    **Mandatory pre-flight escalation check — run it before you may choose one-shot.** Ask, of the *actual* task (not a glance at file count):

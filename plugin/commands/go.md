@@ -17,7 +17,7 @@ this one to pick it up.
 
 Load and follow the `conducting` skill. The essentials:
 
-- **Recall first.** Memory is primed at session start; recall precedent + gotchas for *this* task before deciding anything.
+- **Recall first.** Nothing primes memory for you: your first step is `memory_recall` for precedent + gotchas for *this* task, before deciding anything.
 - **Bias to the floor — set by the hardest signal, not the file count.** Pick the *least process that wins*: if you can finish it in one edit without learning anything new, **just do it** — a plan for a one-liner is the failure. But the opposite failure is just as real: **one-shotting a task that hides an undecided design choice means you *guess* it and ship something fragile.** A real unknown or a design fork **vetoes the floor** → at least spec-first, even if it's only one or two files. Small footprint ≠ small decision.
 - **Escalate on evidence — pre-flight, not just mid-flight.** Multi-file, under-specified, irreversible, failed twice, a real unknown, *or a specified goal whose mechanism/design is still undecided.* If you can already see the fork in the prompt, escalate **before** you touch code.
 - **You are the conductor.** Sequence the work, gate approvals with the user, and dispatch specialist subagents to do it — never re-implement what a node or agent already does.
