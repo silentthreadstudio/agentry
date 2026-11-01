@@ -222,6 +222,28 @@ test("the brief carries recalled facts when memory.prime is all, none at off", (
   }
 });
 
+test("a brief recalls from this repo's store and the user's own facts, never another project's", () => {
+  const r = repo({ config: { memory: { prime: "all" } } });
+  const home = join(r.home, ".agentry", "memory", "facts");
+  mkdirSync(home, { recursive: true });
+  const fact = (id, scope, body) =>
+    `---\nid: ${id}\ntype: gotcha\n${scope ? `scope: ${scope}\n` : ""}confidence: 0.9\nprovenance:\n  - src/ui/panel.css\n---\n${body}\n`;
+  writeFileSync(
+    join(home, "u.md"),
+    fact("g:01USER", "user", "The owner wants panel.css focus rings."),
+  );
+  writeFileSync(join(home, "o.md"), fact("g:02OTHER", "repo", "Another repo's panel.css detail."));
+  writeFileSync(
+    join(home, "n.md"),
+    fact("g:03GLOBAL", "global", "A panel.css note from elsewhere."),
+  );
+  writeFileSync(join(home, "x.md"), fact("g:04NONE", null, "An unscoped panel.css note."));
+  const brief = readFileSync(lane(r, "start", "T1").json.brief, "utf8");
+  assert.match(brief, /g:01USER/);
+  for (const id of ["g:02OTHER", "g:03GLOBAL", "g:04NONE"])
+    assert.doesNotMatch(brief, new RegExp(id));
+});
+
 test("start refuses at lanes.maxWriters and names the open ledgers and unowned worktrees", () => {
   const r = repo({ config: { lanes: { maxWriters: 2 } } });
   assert.equal(lane(r, "start", "T1").exit, 0);

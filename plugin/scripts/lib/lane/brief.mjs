@@ -4,7 +4,8 @@
 //   ownedFiles      the paths the contract's "owns" names (backticked), in order
 //   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
 //   citedDecisions  every decision of the board's decision kind the block cites by id, its row quoted
-//   recalledFacts   the memory facts ranked for the owned files, only when `memory.prime` is "all"
+//   recalledFacts   the memory facts ranked for the owned files, only when `memory.prime` is "all": this
+//                   repo's store and the user's own (`scope: user`) facts, never another project's
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
 //
 // Reads the board's files and the memory store; writes nothing. Node built-ins only.
@@ -122,6 +123,11 @@ function quoteOf(root, spec, kind, item) {
     .join(" · ");
 }
 
+// A brief may carry what this repo's store holds and the user's own facts from the home store. The
+// home store also keeps facts written for other projects (a `repo` fact with no project store goes
+// there), and general ones: none of those belong in this repo's brief.
+const forThisRepo = (fact) => fact.source === "project" || fact.scope === "user";
+
 /** The facts recalled for this contract: `{ prime, facts }`. Facts only when the repo's
  *  `memory.prime` is "all" (briefs are primed); otherwise none. */
 export function recalledFacts(root, { owned, block }) {
@@ -134,7 +140,10 @@ export function recalledFacts(root, { owned, block }) {
   const task = [...owned, head].join(" ");
   const limit =
     Number.isInteger(config.primeLimit) && config.primeLimit > 0 ? config.primeLimit : 5;
-  return { prime: config.prime, facts: rankFacts(readFacts(root), task, limit) };
+  return {
+    prime: config.prime,
+    facts: rankFacts(readFacts(root).filter(forThisRepo), task, limit),
+  };
 }
 
 /** The slots and section names a template uses, in order of first use. */

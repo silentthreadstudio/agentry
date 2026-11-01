@@ -112,8 +112,9 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
 (`.agentry/run/process/runs/<id>/`): `build.md`; `fix.md` (wraps the build brief: the verifier's fix list, a
 refused report, or the supplied fact); `verify.md` (with a recheck section when resuming); `final.md` (wraps the
 verify brief). Each brief carries the contract block verbatim, the owned files, the decisions it cites quoted
-from the board's decision kind by id, the facts recalled for the owned files when `memory.prime` is `all`, the
-worktree, the gate line, the log dir and the report path. The rules builders and verifiers follow live in those
+from the board's decision kind by id, the facts recalled for the owned files when `memory.prime` is `all` (from
+this repo's store and the user's `scope: user` facts only, never another project's), the worktree, the gate
+line, the log dir and the report path. The rules builders and verifiers follow live in those
 templates, once:
 
 - `cd <worktree> &&` on every shell command; absolute paths under the worktree.
