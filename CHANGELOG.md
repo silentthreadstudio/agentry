@@ -23,6 +23,30 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **`/agentry:board`** — the board's derived status, then every rule finding, from the repo's own
   files. `--fix` fills mechanical drift once the harness writers ship.
 - **`process` skill** — the process file format, the learn procedure and fresh-repo templates.
+- **`/agentry:merge <task-id>`** — lands one task on main: preflight, the repo's checks,
+  cherry-pick, the gate, then the board's done row, SHA and handoff line in one commit. It writes
+  its plan to the task's ledger before acting, so a killed merge can be rerun without losing the
+  board writes it carries or picking twice, and it rolls back with `reset --keep`. Pushes only
+  per the repo's push policy.
+- **`/agentry:start` and `/agentry:close`** — open and close a working session. `start` prints
+  the current sprint, work in flight, nudges, drafts and ranked memory in a few lines. `close`
+  applies drafts, runs `board fix`, offers a sweep, writes pending episodes and a short note.
+- **`lane sweep`** — reports, and with `--apply` removes, the worktrees of merged lanes and stops
+  stray processes started under `.agentry/run/`. Unknown, live or dirty worktrees, and worktrees
+  holding ignored files, are kept.
+- **`mode` config key** — read by `start`.
+
+### Changed
+- **`/agentry:exec`** now drives the build and verify rounds through `lane exec`, records the
+  gate, and stops a lane whose builder edited main outside its own board cells.
+- **`board fix`** writes `done` only from a `lane merge` record whose commits are still on main.
+  A hand merge is a nudge to `board fix --accept <id>`, which the owner confirms.
+- **`/agentry:go`, `/agentry:ask`** recall memory first; `memory.prime` now sets what `start` and
+  `exec` briefs carry.
+
+### Removed
+- **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a
+  `hooks.json` returns.
 
 ## [0.2.0] — 2026-06-21
 
