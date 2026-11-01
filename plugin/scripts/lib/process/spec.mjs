@@ -540,53 +540,73 @@ function checkLifecycle(spec, bad) {
 // The ids and values a handoff template is tried with (`checkHandoff`).
 const PROBE = { id: "X1", parent: "P1", sha: "0a1b2c3", summary: "a summary" };
 
-// Load-time self-consistency (plan R1b §2.6): with a `done-has-handoff` rule on the lifecycle's kind,
-// the line the writer would append, filled with a fake SHA, goes through that rule's own check on a
-// one-item board. A template the rule rejects (no bold lead, the SHA not right after `(` with
-// `commit: "first"`), or a handoff written to another section than the rule reads, is a spec error:
-// the writer can never produce a line the checker rejects. Run on an otherwise valid file only.
-function checkHandoff(spec, bad) {
-  const life = spec.lifecycle;
-  if (!isObject(life) || typeof life.handoff !== "string") return;
+// The `done-has-handoff` entries of the process file that judge the lifecycle's kind: [index, entry].
+const handoffRules = (spec) =>
+  spec.rules.flatMap((entry, i) =>
+    entry.rule === "done-has-handoff" && entry.kind === spec.lifecycle.kind ? [[i, entry]] : [],
+  );
+
+/** The first message of the `done-has-handoff` rules (those on the lifecycle's kind) rejecting `line`
+ *  as the handoff of item `id`, whose first commit is `sha`, written under a parent `parent`; null
+ *  when they all accept it. The same check the board runs, on a board of just that item, so the
+ *  writer can ask it of the very line it is about to write. */
+export function handoffRejection(spec, line, { id, sha, parent }) {
   const rule = ruleOf("done-has-handoff");
-  const line = fillHandoff(life.handoff, PROBE);
-  const section = /^parent\.file:(.+)$/.exec(life.write?.handoff ?? "")?.[1];
-  spec.rules.forEach((entry, i) => {
-    if (entry.rule !== rule.id || entry.kind !== life.kind) return;
-    if (section !== undefined && section !== entry.section)
-      return bad(
-        "lifecycle.write.handoff",
-        `writes to section "${section}", but rules[${i}] (done-has-handoff) reads "${entry.section}"`,
-      );
+  for (const [i, entry] of handoffRules(spec)) {
     const params = withDefaults(rule, entry, spec.kinds);
-    const model = probeBoard(spec, params, line);
+    const model = probeBoard(spec, params, line, { id, sha, parent });
     let found;
     try {
       found = model ? rule.check(model, params, { hasCommit: () => true }) : [];
     } catch (error) {
       found = [{ message: error.message }];
     }
-    if (found.length)
-      bad(
-        "lifecycle.handoff",
-        `renders ${JSON.stringify(line)}, which rules[${i}] (done-has-handoff) rejects: ${found[0].message}`,
-      );
-  });
+    if (found.length) return `rules[${i}] (done-has-handoff) rejects: ${found[0].message}`;
+  }
+  return null;
 }
 
-// A board of one done item (PROBE.id, its commits field holding PROBE.sha) and its parent, whose
+// Load-time self-consistency (plan R1b §2.6): with a `done-has-handoff` rule on the lifecycle's kind,
+// the line the writer would append, filled with a fake SHA, goes through that rule's own check on a
+// one-item board. A template the rule rejects (no bold lead, the SHA not right after `(` with
+// `commit: "first"`), a handoff written to another section than the rule reads, or no handoff
+// written at all, is a spec error: the writer can never produce a line the checker rejects. Run on an
+// otherwise valid file only. (The id and SHAs of a real event are checked again when it is applied.)
+function checkHandoff(spec, bad) {
+  const life = spec.lifecycle;
+  if (!isObject(life)) return;
+  const rules = handoffRules(spec);
+  if (rules.length && typeof life.write?.handoff !== "string")
+    return bad(
+      "lifecycle.write.handoff",
+      `is missing, but rules[${rules[0][0]}] (done-has-handoff) reads the ${life.kind} handoff line it would write`,
+    );
+  if (typeof life.handoff !== "string") return;
+  const line = fillHandoff(life.handoff, PROBE);
+  const section = /^parent\.file:(.+)$/.exec(life.write?.handoff ?? "")?.[1];
+  for (const [i, entry] of rules)
+    if (section !== undefined && section !== entry.section)
+      return bad(
+        "lifecycle.write.handoff",
+        `writes to section "${section}", but rules[${i}] (done-has-handoff) reads "${entry.section}"`,
+      );
+  const found = handoffRejection(spec, line, PROBE);
+  if (found) bad("lifecycle.handoff", `renders ${JSON.stringify(line)}, which ${found}`);
+}
+
+// A board of one done item (`id`, its commits field holding `sha`) and its parent, whose
 // handoff section holds `line` alone. Null when no kind the parent field refs has that section.
-function probeBoard(spec, params, line) {
+function probeBoard(spec, params, line, { id, sha, parent: parentId }) {
   const name = spec.lifecycle.kind;
   const refs = refsOf(parentOf(spec.kinds[name])?.[1]);
   const parentKind = refs.find((k) => has(sectionsOf(own(spec.kinds, k)), params.section));
   if (!parentKind) return null;
   const item = {
     kind: name,
-    id: PROBE.id,
-    fields: params.field ? { [params.field]: [PROBE.sha] } : {},
+    id: id,
+    fields: params.field ? { [params.field]: [sha] } : {},
     phase: "done",
-    parent: PROBE.parent,
+    parent: parentId,
     children: [],
     file: "probe",
     line: 1,
@@ -594,9 +614,9 @@ function probeBoard(spec, params, line) {
   const leads = boldLeads(line);
   const parent = {
     kind: parentKind,
-    id: PROBE.parent,
+    id: parentId,
     fields: {},
-    children: [PROBE.id],
+    children: [id],
     file: "probe",
     line: 1,
     own: { path: `its ${params.section} section`, sections: { [params.section]: { leads } } },
@@ -604,7 +624,7 @@ function probeBoard(spec, params, line) {
   const kinds = Object.fromEntries(Object.keys(spec.kinds).map((k) => [k, { items: [] }]));
   kinds[parentKind].items.push(parent);
   kinds[name].items.push(item);
-  const index = { [PROBE.id]: [item], [PROBE.parent]: [parent] };
+  const index = { [id]: [item], [parentId]: [parent] };
   return { spec, kinds, index, problems: [] };
 }
 

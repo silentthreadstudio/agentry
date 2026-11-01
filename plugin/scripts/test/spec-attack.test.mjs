@@ -56,7 +56,11 @@ before(() => {
 after(() => {
   for (const root of Object.values(roots)) rmSync(root, { recursive: true, force: true });
 });
-const judge = (id, entry, spec = DECOYED) => outcome({ ...spec, rules: [entry] }, roots[id]);
+// The lifecycle is left out: it names parents and files that a kind made to lack one would strand.
+const judge = (id, entry, spec = DECOYED) => {
+  const { lifecycle: _, ...rest } = spec;
+  return outcome({ ...rest, rules: [entry] }, roots[id]);
+};
 const show = (r) => `exit ${r.exit}: ${r.messages.slice(0, 3).join(" | ")}`;
 const typo = (name) => `${name.slice(0, -1)}${name.endsWith("z") ? "y" : "z"}`;
 // `{ key: value }` as an own property, also for `__proto__`.

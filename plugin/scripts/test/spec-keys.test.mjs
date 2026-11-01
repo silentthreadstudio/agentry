@@ -202,6 +202,24 @@ test("a handoff template the done-has-handoff rule would reject is a spec error 
   assert.deepEqual(messages(life({ handoff: "- {id}: {summary}" }, [])), []);
 });
 
+test("a done-has-handoff rule on the lifecycle's kind needs a lifecycle.write.handoff target", () => {
+  const missing = life();
+  Reflect.deleteProperty(missing.lifecycle.write, "handoff");
+  assert.ok(
+    flags(
+      missing,
+      /^lifecycle\.write\.handoff is missing, but rules\[0\] \(done-has-handoff\) reads the task handoff/,
+    ),
+  );
+  // No such rule (or none at all): the target is optional.
+  const other = [{ rule: "ids-unique" }];
+  for (const rules of [[], other]) {
+    const spec = life(undefined, rules);
+    Reflect.deleteProperty(spec.lifecycle.write, "handoff");
+    assert.deepEqual(messages(spec), []);
+  }
+});
+
 test("a handoff written to another section than the rule reads is refused", () => {
   const spec = life();
   spec.kinds.sprint.file.sections.notes = { heading: "Notes", as: "bold-lead" };

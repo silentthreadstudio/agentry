@@ -167,7 +167,12 @@
   "lifecycle": {
     "kind": "task",
     "on": { "dispatched": "doing", "built": "verify", "failed": "doing", "merged": "done" },
-    "write": { "status": "status", "verdict": "verdict", "commit": "commit" },
+    "write": {
+      "status": "status",
+      "verdict": "verdict",
+      "commit": "commit",
+      "handoff": "parent.file:handoff"
+    },
     "handoff": "- **{id}** ({sha}): {summary}"
   },
   "drafts": {
