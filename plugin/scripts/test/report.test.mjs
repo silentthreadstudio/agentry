@@ -120,6 +120,29 @@ test("usedMemories: inline list, bullets, dedupe, and the none forms", () => {
     assert.deepEqual(usedMemories(none), [], none);
 });
 
+test("usedMemories: a numbered list and a JSON array, inline or across lines", () => {
+  assert.deepEqual(usedMemories("used_memories:\n1. p:01X\n2) g:02Y why\nnext: thing"), [
+    "p:01X",
+    "g:02Y",
+  ]);
+  assert.deepEqual(usedMemories('used_memories: [\n  "p:m1",\n  "g:m2"\n]\nafter: p:no'), [
+    "p:m1",
+    "g:m2",
+  ]);
+  assert.deepEqual(usedMemories('used_memories: ["p:m1",\n"g:m2"]'), ["p:m1", "g:m2"]);
+});
+
+test("usedMemories: a truncated id (ending in an ellipsis) is not an id", () => {
+  assert.deepEqual(usedMemories("used_memories: p:01ABCD…, g:ok1"), ["g:ok1"]);
+  assert.deepEqual(usedMemories("used_memories:\n- p:01ABCD…"), []);
+});
+
+test("findMarker: an id with .. is not an id, so the line is no marker", () => {
+  assert.equal(findMarker("agentry-task: a..b role=build"), null);
+  assert.equal(findMarker("agentry-task: x.lock role=build"), null);
+  assert.deepEqual(findMarker("agentry-task: a.b role=build"), { id: "a.b", role: "build" });
+});
+
 test("summaryOf: skips the marker, headings and verdict; caps at 120 chars", () => {
   assert.equal(
     summaryOf(`${MARKER}\n# Result\nDONE\nShipped the router move.`),

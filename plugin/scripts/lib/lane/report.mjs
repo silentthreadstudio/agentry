@@ -9,6 +9,8 @@
 //   verdictOf      `Verdict: PASS | PASS WITH NOTES | FAIL`, and only as the LAST non-empty line
 //   usedMemories   the ids a builder cites in `used_memories`
 //   summaryOf      one line, ≤ 120 chars, for the ledger and the handoff
+import { idProblem } from "./id.mjs";
+
 const WRAPPER = /<\/?(?:subagent|task|task_result|text)(?:\s[^>]*)?>/g;
 
 // Decoration around a line that is not part of its meaning: markdown emphasis, code ticks, quote marks.
@@ -33,7 +35,7 @@ export function unwrap(text) {
 export function findMarker(text, { within = 5 } = {}) {
   for (const line of nonEmpty(text).slice(0, within)) {
     const m = /^agentry-task:\s*([A-Za-z0-9][A-Za-z0-9._-]*)(.*)$/.exec(strip(line));
-    if (!m) continue;
+    if (!m || idProblem(m[1])) continue;
     const role = /\brole=([a-z-]+)/.exec(m[2])?.[1] ?? null;
     const round = /\bround=(\d+)/.exec(m[2])?.[1];
     return { id: m[1], role, ...(round !== undefined && { round: Number(round) }) };
@@ -64,10 +66,12 @@ export function verdictOf(text) {
 
 const NO_MEMORY = new Set(["", "none", "n/a", "na", "null", "-", "no"]);
 // A memory id is `<kind>:<id>` (`p:01ABC`, `g:xyz`); anything else on the line is prose.
-const ID = /^[A-Za-z]:[A-Za-z0-9][A-Za-z0-9._…-]*$/;
+// A truncated id (one ending in `…`) names nothing, so `…` is not allowed in it.
+const ID = /^[A-Za-z]:[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const ITEM = /^(?:[-*]|\d+[.)])\s+/;
 
 /** The memory ids cited under an explicit `used_memories:` line — inline (`used_memories: [p:a, g:b]`) or
- *  as a bullet list under it — de-duplicated, in order. Only tokens shaped like an id count, so words of
+ *  as a bullet or numbered list, or a JSON array across lines, under it — de-duplicated, in order. Only tokens shaped like an id count, so words of
  *  prose after the colon never do; `none` is `[]`. */
 export function usedMemories(text) {
   const lines = nonEmpty(text);
@@ -77,8 +81,10 @@ export function usedMemories(text) {
     if (!m) continue;
     let rest = m[1];
     if (!rest.trim())
-      for (let j = i + 1; /^[-*]\s+/.test(lines[j] ?? ""); j++)
-        rest += `,${lines[j].replace(/^[-*]\s+/, "")}`;
+      for (let j = i + 1; ITEM.test(lines[j] ?? ""); j++)
+        rest += `,${lines[j].replace(ITEM, "")}`;
+    else if (rest.includes("[") && !rest.includes("]"))
+      for (let j = i + 1; j < lines.length && !rest.includes("]"); j++) rest += `,${lines[j]}`;
     for (const raw of rest.split(/[,\s]+/)) {
       const id = raw.replace(/^[[("'`]+|[\])"'`.;]+$/g, "");
       if (!NO_MEMORY.has(id.toLowerCase()) && ID.test(id) && !found.includes(id)) found.push(id);
