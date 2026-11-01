@@ -122,7 +122,7 @@ test("a board kept in a subfolder of a repo reads no worktrees", () => {
   assert.ok(!found.some((n) => n.kind === "unlisted-worktree"));
 });
 
-test("mechanical: a ledger with a merge record gives a fix; the same board once written gives none", () => {
+test("mechanical: a ledger with a merge record gives one fix naming what the board lacks", () => {
   const { root } = fresh();
   const { sha } = builtBranch(root, "T1");
   const main = pickOntoMain(root, sha);
