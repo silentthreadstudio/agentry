@@ -2,15 +2,13 @@
 // against a task, and render the few that earned a slot.
 //
 // WHY THIS EXISTS. Every specialist's prompt says some variant of "you are primed with recalled gotchas
-// — use them; recall further only for the specific symbol you're touching." Nothing primed them: the
-// SessionStart hook exits immediately for workers, and injected only COUNTS ("55 facts, 19 episodes")
-// even for the conductor. Agents were told recall had already happened and were explicitly discouraged
-// from recalling, so the memory MCP went unused. This module makes the sentence true.
+// — use them; recall further only for the specific symbol you're touching." This module makes the
+// sentence true: the lane scripts call it to put the few facts that earned a slot into a task brief.
 //
-// It reads the FILE STORE directly (text is truth — doc 07) rather than going through the MCP: a hook
-// must be fast, synchronous, and dependency-free, and the files are the same source the MCP indexes.
+// It reads the FILE STORE directly (text is truth — doc 07) rather than going through the MCP: the lane
+// scripts are fast, synchronous and dependency-free, and the files are the same source the MCP indexes.
 // Ranking mirrors `packages/memory/src/domain/ranking.ts` — `relevance × confidence × (1 + usefulness)`
-// — so a hook-primed fact and an MCP-recalled one agree about what matters.
+// — so a brief-primed fact and an MCP-recalled one agree about what matters.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

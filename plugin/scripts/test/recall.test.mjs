@@ -1,6 +1,5 @@
 // Tests for lib/memory/recall.mjs — reading the memory file store, ranking facts against a task, and
-// rendering the ones that earn a slot. (`hooks/memory-prime.test.mjs` drives the same module through the
-// hook; these call it directly.) HOME is pointed at an empty directory so the developer's own global store
+// rendering the ones that earn a slot. HOME is pointed at an empty directory so the developer's own global store
 // never leaks into the fixtures.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
