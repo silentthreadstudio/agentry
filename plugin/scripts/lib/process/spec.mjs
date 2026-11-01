@@ -566,6 +566,42 @@ export function handoffRejection(spec, line, { id, sha, parent }) {
   return null;
 }
 
+// Only `merged` may finish a task (A23: done = on main), and when it does it must write everything the
+// "done" rules on the lifecycle's kind read: a `done-has-evidence` field gets the commits, a
+// `done-signoff` date is never written by the lifecycle (so that rule can't sit on its kind). Otherwise
+// an event the writer applies would leave a done task the checker rejects.
+function checkDone(spec, bad) {
+  const life = spec.lifecycle;
+  if (!isObject(life) || !has(spec.kinds, life.kind)) return;
+  const values = spec.kinds[life.kind]?.status?.values;
+  const phaseOf = (word) => (isObject(values) && has(values, word) ? values[word] : undefined);
+  let finishes = false;
+  for (const [event, word] of entries(life.on)) {
+    if (phaseOf(word) !== "done") continue;
+    if (event !== "merged")
+      bad(
+        `lifecycle.on.${event}`,
+        `sets "${word}", a done status; only "merged" may finish a task`,
+      );
+    else finishes = true;
+  }
+  if (!finishes) return;
+  const write = isObject(life.write) ? life.write : {};
+  spec.rules.forEach((entry, i) => {
+    if (!isObject(entry) || entry.kind !== life.kind) return;
+    if (entry.rule === "done-has-evidence" && write.commit !== entry.field)
+      bad(
+        "lifecycle.write.commit",
+        `is ${write.commit === undefined ? "missing" : JSON.stringify(write.commit)}, but rules[${i}] (done-has-evidence) reads the commits of a done ${life.kind} from "${entry.field}"`,
+      );
+    if (entry.rule === "done-signoff")
+      bad(
+        `rules[${i}]`,
+        `(done-signoff) needs a dated sign-off on a done ${life.kind}, which "merged" never writes`,
+      );
+  });
+}
+
 // Load-time self-consistency (plan R1b §2.6): with a `done-has-handoff` rule on the lifecycle's kind,
 // the line the writer would append, filled with a fake SHA, goes through that rule's own check on a
 // one-item board. A template the rule rejects (no bold lead, the SHA not right after `(` with
@@ -638,7 +674,10 @@ export function validateSpec(value, { file } = {}) {
   processFile(value, "", (at, message) => bad(at || "the process file", message));
   if (!isObject(value)) return { spec: null, problems };
   crossCheck(value, bad);
-  if (problems.length === 0) checkHandoff(value, bad);
+  if (problems.length === 0) {
+    checkHandoff(value, bad);
+    checkDone(value, bad);
+  }
   return { spec: value, problems };
 }
 

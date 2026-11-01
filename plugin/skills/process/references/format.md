@@ -224,7 +224,10 @@ The `handoff` template is one line and fills `{id}`, `{sha}` (the first commit) 
 `done-has-handoff` rule checks the lifecycle's kind, the template is tried at load: filled with a fake SHA,
 the line must pass that rule (a bold lead naming the id; with `commit: "first"` the SHA right after `(`),
 and `write.handoff` must name the section the rule reads. Otherwise the file is refused, so the writer can
-never append a line the checker rejects. Each `on` word must be one of the kind's status words.
+never append a line the checker rejects. Each `on` word must be one of the kind's status words. Only
+`merged` may set a status whose phase is `done` (a task is done when it lands on main), and then `write`
+must give every "done" rule on that kind what it reads: a `done-has-evidence` field gets `write.commit`; a
+`done-signoff` date can't be written by the lifecycle, so that rule is refused on the lifecycle's kind.
 
 `drafts.decision.map` fills a decision draft from an answered question: `{answer}` (the picked option),
 `{question}`, `{unpicked}` (the options not picked). A draft is never written to the decisions file without

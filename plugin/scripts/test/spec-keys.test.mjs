@@ -231,3 +231,42 @@ test("a handoff written to another section than the rule reads is refused", () =
     ),
   );
 });
+
+test("only merged may finish a task, and it writes what the done rules read", () => {
+  console.log(
+    JSON.stringify(
+      messages(
+        life({ write: (({ commit, ...r }) => r)(LIFE.lifecycle.write) }, [
+          LIFE.rules[0],
+          { rule: "done-has-evidence", kind: "task", field: "commit", evidence: "commit" },
+        ]),
+      ),
+    ),
+  );
+  console.log(
+    JSON.stringify(
+      messages(
+        life(undefined, [LIFE.rules[0], { rule: "done-signoff", kind: "task", field: "verdict" }]),
+      ),
+    ),
+  );
+  const evidence = { rule: "done-has-evidence", kind: "task", field: "commit", evidence: "commit" };
+  const handoff = LIFE.rules[0];
+  assert.deepEqual(messages(life(undefined, [handoff, evidence])), []);
+  assert.ok(
+    flags(
+      life({ on: { ...LIFE.lifecycle.on, built: "done" } }),
+      /^lifecycle\.on\.built sets "done", a done status; only "merged" may finish a task/,
+    ),
+  );
+  const { commit, ...noCommit } = LIFE.lifecycle.write;
+  assert.ok(
+    flags(
+      life({ write: noCommit }, [handoff, evidence]),
+      /^lifecycle\.write\.commit is missing, but rules\[1\] \(done-has-evidence\) reads/,
+    ),
+  );
+  const dated = life(undefined, [handoff, { rule: "done-signoff", kind: "task", field: "ok" }]);
+  dated.kinds.task.fields.ok = { column: "OK", type: "date" };
+  assert.ok(flags(dated, /^rules\[1\] \(done-signoff\) needs a dated sign-off on a done task/));
+});
