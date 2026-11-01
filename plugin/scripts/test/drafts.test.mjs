@@ -2,7 +2,7 @@
 // for good, applied only on request, a decision through next-id and add, a rule under conductor.rules.
 // Run: node --test plugin/scripts/test/drafts.test.mjs
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -158,6 +158,28 @@ test("apply and drop name a pending draft by a plain number", () => {
   assert.equal(board(root, "draft", "drop", "7").status, 2);
   assert.equal(board(root, "draft", "drop").status, 2);
   assert.equal(board(root, "draft").status, 2);
+});
+
+test("a line that is not a draft is kept as written on drop and apply, and named in the output", () => {
+  const { root } = fresh();
+  add(root, { kind: "rule", answer: "A" });
+  const file = join(root, ".agentry", "run", "process", "drafts.jsonl");
+  const torn = '{"n":2,"kind":"rule","ans';
+  writeFileSync(file, `${readFileSync(file, "utf8")}${torn}`); // torn: no newline at the end
+  add(root, { kind: "rule", answer: "B" });
+  assert.deepEqual(
+    drafts.list(root).map((d) => d.answer),
+    ["A", "B"],
+    "the new draft is not glued onto the torn line",
+  );
+  const drop = board(root, "draft", "drop", "1");
+  assert.match(drop.stdout, /^dropped draft 1\nnote: drafts\.jsonl line 2 could not be read; kept/);
+  const apply = board(root, "draft", "apply", String(drafts.pending(root)[0].n));
+  assert.equal(apply.status, 0, apply.stderr);
+  assert.match(apply.stdout, /line 2 could not be read/);
+  assert.equal(readFileSync(file, "utf8").split("\n")[1], torn);
+  assert.deepEqual(drafts.unreadable(root), [2]);
+  assert.match(board(root, "draft", "list").stdout, /^no pending drafts\nnote: .*line 2/);
 });
 
 test("apply from inside a worktree refuses: the edit and the run state stay in one checkout", () => {

@@ -2,7 +2,8 @@
 // `<main root>/.agentry/run/process/drafts.jsonl`, one JSON object per line, never committed. A draft is
 // `{ n, kind: "decision" | "rule", answer, question?, unpicked?, source?, at, state }`. `n` is the line it
 // was added on and is never reused: applying or dropping a draft changes its `state`, it does not remove
-// the line. Nothing here writes a decision or a rule; `cli/draft.mjs` does that, on the owner's OK.
+// the line. A line that is not a draft is never removed either: it is kept as written and reported
+// (`unreadable`). Nothing here writes a decision or a rule; `cli/draft.mjs` does that, on the owner's OK.
 //
 // With `ledger`, this is the process kit's only `.agentry/run` I/O. Node built-ins only.
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -36,47 +37,62 @@ export function problem(draft) {
   return long ? `${long} is longer than ${MAX} characters` : null;
 }
 
-/** Every draft, oldest first. A missing file is no drafts; a line that is not a draft is left out. */
-export function list(root) {
+// The file's text ("" when there is none) and its lines, each `{ raw, draft }`: `draft` is null for a line
+// that is not a draft (torn, hand-edited), which is kept as written.
+function read(root) {
   let text;
   try {
     text = readFileSync(fileOf(root), "utf8");
   } catch (err) {
-    if (err.code === "ENOENT") return [];
+    if (err.code === "ENOENT") return { text: "", lines: [] };
     throw err;
   }
-  const out = [];
-  for (const line of text.split("\n").filter(Boolean)) {
-    try {
-      const d = JSON.parse(line);
-      if (Number.isInteger(d?.n) && KINDS.includes(d.kind) && STATES.includes(d.state)) out.push(d);
-    } catch {
-      /* a torn or hand-edited line: skipped, the rest still read */
-    }
-  }
-  return out;
+  const lines = text
+    .split("\n")
+    .filter(Boolean)
+    .map((raw) => {
+      try {
+        const d = JSON.parse(raw);
+        const ok = Number.isInteger(d?.n) && KINDS.includes(d.kind) && STATES.includes(d.state);
+        return { raw, draft: ok ? d : null };
+      } catch {
+        return { raw, draft: null };
+      }
+    });
+  return { text, lines };
 }
+
+/** Every draft, oldest first. A missing file is no drafts; a line that is not a draft is left out. */
+export const list = (root) => read(root).lines.flatMap((l) => (l.draft ? [l.draft] : []));
+
+/** The lines that are not drafts, by number (from 1, blank lines not counted). Never removed. */
+export const unreadable = (root) => read(root).lines.flatMap((l, i) => (l.draft ? [] : [i + 1]));
 
 /** The drafts still waiting for the owner. */
 export const pending = (root) => list(root).filter((d) => d.state === "pending");
 
 /** Append `draft` (already `problem`-free) as the next `n`; returns the stored draft. */
 export function add(root, draft) {
-  const n = Math.max(0, ...list(root).map((d) => d.n)) + 1;
+  const { text, lines } = read(root);
+  const n = Math.max(0, ...lines.flatMap((l) => (l.draft ? [l.draft.n] : []))) + 1;
   const stored = { n, ...draft, at: new Date().toISOString(), state: "pending" };
   mkdirSync(dirname(fileOf(root)), { recursive: true });
-  appendFileSync(fileOf(root), `${JSON.stringify(stored)}\n`);
+  // A torn last line has no newline: the new draft must not be glued onto it.
+  const gap = text && !text.endsWith("\n") ? "\n" : "";
+  appendFileSync(fileOf(root), `${gap}${JSON.stringify(stored)}\n`);
   return stored;
 }
 
-/** Move draft `n` to `state` (rewritten atomically); returns it, or null when there is no such draft. */
+/** Move draft `n` to `state` (rewritten atomically, every other line as it was); returns it, or null when
+ *  there is no such draft. */
 export function mark(root, n, state) {
-  const all = list(root);
-  const found = all.find((d) => d.n === n);
+  const { lines } = read(root);
+  const found = lines.find((l) => l.draft?.n === n);
   if (!found) return null;
-  found.state = state;
+  found.draft.state = state;
+  found.raw = JSON.stringify(found.draft);
   const tmp = `${fileOf(root)}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${all.map((d) => JSON.stringify(d)).join("\n")}\n`);
+  writeFileSync(tmp, `${lines.map((l) => l.raw).join("\n")}\n`);
   renameSync(tmp, fileOf(root));
-  return found;
+  return found.draft;
 }

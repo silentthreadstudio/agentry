@@ -4,7 +4,9 @@
 // process file's `drafts.decision.map` (`{answer}`, `{question}`, `{unpicked}`), a rule as a line under
 // `conductor.rules` in the conductor prompt. Only `apply` writes to the repo, and the conductor runs it only
 // after the owner's OK. The drafts live in the main checkout, so `apply` edits the main checkout's board: from
-// inside a linked worktree it refuses rather than write the edit in one checkout and the state in another.
+// inside a linked worktree it refuses rather than write the edit in one checkout and the state in another. A
+// line of the drafts file that is not a draft is kept as written and named in the output of list, drop and
+// apply.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = done, 2 = usage or refusal (nothing written)
 import { realpathSync } from "node:fs";
@@ -86,6 +88,14 @@ function linkedTree(root, runRoot) {
   return top && real(top) !== real(runRoot) ? top : null;
 }
 
+// A note naming the lines of the drafts file that are not drafts, after `out`.
+function withTorn(out, runRoot) {
+  const torn = drafts.unreadable(runRoot);
+  if (!torn.length) return out;
+  const which = `line${torn.length > 1 ? "s" : ""} ${torn.join(", ")}`;
+  return `${out}\nnote: drafts.jsonl ${which} could not be read; kept as written`;
+}
+
 function number(word) {
   return /^[1-9]\d*$/.test(word ?? "") ? Number(word) : null;
 }
@@ -96,15 +106,14 @@ export function run(argv, ctx) {
   if (action === "list") {
     if (rest.length) return fail(`usage: ${usage}`);
     const open = drafts.pending(runRoot);
-    if (!open.length) return { exit: 0, out: "no pending drafts" };
-    return {
-      exit: 0,
-      out: open
-        .map((d) =>
-          fit(`${String(d.n).padStart(3)}  ${d.kind.padEnd(8)}  ${oneLine(d.answer)}`, WIDTH),
-        )
-        .join("\n"),
-    };
+    const shown = open.length
+      ? open
+          .map((d) =>
+            fit(`${String(d.n).padStart(3)}  ${d.kind.padEnd(8)}  ${oneLine(d.answer)}`, WIDTH),
+          )
+          .join("\n")
+      : "no pending drafts";
+    return { exit: 0, out: withTorn(shown, runRoot) };
   }
   if (action === "add") {
     const at = rest.indexOf("--json");
@@ -127,7 +136,7 @@ export function run(argv, ctx) {
   if (!draft) return fail(`no pending draft ${n} (see: draft list)`);
   if (action === "drop") {
     drafts.mark(runRoot, n, "dropped");
-    return { exit: 0, out: `dropped draft ${n}` };
+    return { exit: 0, out: withTorn(`dropped draft ${n}`, runRoot) };
   }
   const tree = linkedTree(ctx.root, runRoot);
   if (tree)
@@ -137,5 +146,5 @@ export function run(argv, ctx) {
   const done = draft.kind === "decision" ? applyDecision(draft, ctx) : applyRule(draft, ctx);
   if (done.exit !== 0) return done;
   drafts.mark(runRoot, n, "applied");
-  return { exit: 0, out: `applied draft ${n}: ${done.out.split("\n")[0]}` };
+  return { exit: 0, out: withTorn(`applied draft ${n}: ${done.out.split("\n")[0]}`, runRoot) };
 }
