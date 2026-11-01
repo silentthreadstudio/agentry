@@ -17,7 +17,11 @@ import { join } from "node:path";
 export function memoryRoots(projectDir) {
   return [
     { label: "project", dir: join(projectDir, ".agentry", "memory") },
-    { label: "global", dir: join(homedir(), ".agentry", "memory") },
+    // AGENTRY_GLOBAL_DIR is a base dir, as the memory server reads it; absent, the home directory.
+    {
+      label: "global",
+      dir: join(process.env.AGENTRY_GLOBAL_DIR || homedir(), ".agentry", "memory"),
+    },
   ];
 }
 

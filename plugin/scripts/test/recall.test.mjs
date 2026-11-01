@@ -117,3 +117,13 @@ test("readMemoryConfig: defaults, a project override, and a malformed file", () 
   writeFileSync(join(project, ".agentry", "config.json"), "{ nope");
   assert.equal(readMemoryConfig(project).prime, "conductor");
 });
+
+test("memoryRoots reads the global store under AGENTRY_GLOBAL_DIR, as the memory server does", () => {
+  const base = join(home, "elsewhere");
+  process.env.AGENTRY_GLOBAL_DIR = base;
+  try {
+    assert.equal(memoryRoots(project)[1].dir, join(base, ".agentry", "memory"));
+  } finally {
+    delete process.env.AGENTRY_GLOBAL_DIR;
+  }
+});
