@@ -6,10 +6,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -263,4 +266,91 @@ test("`board instructions` routes through the CLI on a real process file", () =>
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /wrote AGENTS\.md/);
   assert.ok(read(root, "AGENTS.md").includes("/agentry:exec <id>"));
+});
+
+// notes round: fences, comments, BOM, replacer, read-only files, .claude/CLAUDE.md
+
+test("markers inside a code fence are not the block: the block is appended, the example untouched", () => {
+  const fenced = `# Docs\n\n\`\`\`md\n${BLOCK}\n\`\`\`\n`;
+  const { text, action } = upsertBlock(fenced, BLOCK);
+  assert.equal(action, "append");
+  assert.equal(text, `${fenced}\n${BLOCK}\n`);
+  assert.equal(upsertBlock(text, BLOCK).action, "unchanged");
+  const tilde = `~~~\n${BEGIN}\n~~~\n`;
+  assert.equal(upsertBlock(tilde, BLOCK).action, "append");
+});
+
+test("a real block beside a fenced example is the one replaced", () => {
+  const fenced = `\`\`\`\n${BEGIN}\n\`\`\`\n\n`;
+  const old = "<!-- agentry:begin v0 -->\nold\n<!-- agentry:end -->";
+  const { text, action } = upsertBlock(fenced + old, BLOCK);
+  assert.equal(action, "replace");
+  assert.equal(text, fenced + BLOCK);
+});
+
+test("a byte-order mark before the block on line 1 does not hide it", () => {
+  const old = "﻿<!-- agentry:begin v0 -->\nold\n<!-- agentry:end -->\n";
+  const { text, action } = upsertBlock(old, BLOCK);
+  assert.equal(action, "replace");
+  assert.equal(text, `﻿${BLOCK}\n`);
+  assert.equal(upsertBlock(text, BLOCK).action, "unchanged");
+});
+
+test("renderBlock keeps `$&` and `$1` in the prompt path literal", () => {
+  const block = renderBlock("- read {prompt} and {prompt}\n", { prompt: "docs/$&-$1.md" });
+  assert.match(block, /read docs\/\$&-\$1\.md and docs\/\$&-\$1\.md/);
+});
+
+test("an import in a fence, an HTML comment or a code span is not an import", () => {
+  for (const text of [
+    "# C\n```\n@AGENTS.md\n```\n",
+    "# C\n<!-- @AGENTS.md -->\n",
+    "# C\n<!--\n@AGENTS.md\n-->\n",
+    "# C\nadd `@AGENTS.md` here\n",
+  ]) {
+    const res = addImport(text);
+    assert.equal(res.action, "import", text);
+    assert.ok(res.text.startsWith("@AGENTS.md\n"));
+  }
+});
+
+test("addImport takes the `.claude/` form and recognises it", () => {
+  assert.equal(addImport("# C\n", "@../AGENTS.md").text, "@../AGENTS.md\n# C\n");
+  for (const text of ["@../AGENTS.md\n# C\n", "# C\n@./../AGENTS.md\n"])
+    assert.equal(addImport(text, "@../AGENTS.md").action, "has-import", text);
+  assert.equal(addImport("@AGENTS.md\n", "@../AGENTS.md").action, "import");
+  assert.equal(addImport("﻿# C\r\n", "@../AGENTS.md").text, "﻿@../AGENTS.md\r\n# C\r\n");
+});
+
+test("project instructions in .claude/CLAUDE.md get `@../AGENTS.md`, and a re-run changes nothing", () => {
+  const root = repo();
+  mkdirSync(join(root, ".claude"));
+  writeFileSync(join(root, ".claude", "CLAUDE.md"), "# C\n");
+  const first = run(["--write"], { root, spec: SPEC });
+  assert.match(first.out, /^\.claude\/CLAUDE\.md: add `@\.\.\/AGENTS\.md` as its first line$/m);
+  assert.equal(read(root, ".claude/CLAUDE.md"), "@../AGENTS.md\n# C\n");
+  assert.equal(existsSync(join(root, "CLAUDE.md")), false);
+  const second = run(["--write"], { root, spec: SPEC });
+  assert.match(second.out, /\.claude\/CLAUDE\.md: already imports/);
+  assert.equal(read(root, ".claude/CLAUDE.md"), "@../AGENTS.md\n# C\n");
+});
+
+test("with both CLAUDE.md files, only the root one gets the import", () => {
+  const root = repo({ "CLAUDE.md": "# R\n" });
+  mkdirSync(join(root, ".claude"));
+  writeFileSync(join(root, ".claude", "CLAUDE.md"), "# D\n");
+  run(["--write"], { root, spec: SPEC });
+  assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n# R\n");
+  assert.equal(read(root, ".claude/CLAUDE.md"), "# D\n");
+});
+
+test("a read-only CLAUDE.md is exit 2 and AGENTS.md is not written either", () => {
+  const root = repo({ "CLAUDE.md": "# C\n" });
+  chmodSync(join(root, "CLAUDE.md"), 0o444);
+  const res = run(["--write"], { root, spec: SPEC });
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /nothing written/);
+  assert.equal(existsSync(join(root, "AGENTS.md")), false);
+  assert.equal(read(root, "CLAUDE.md"), "# C\n");
+  assert.deepEqual(readdirSync(root).sort(), ["CLAUDE.md"]);
 });
