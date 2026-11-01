@@ -215,7 +215,7 @@ test("every template uses only the slots the CLI fills, and renders with none le
 
 test("the brief rules are in the templates: cd prefix, foreground checks, logs, no rebase, gate, probes", () => {
   const build = renderBrief("build", VALUES);
-  assert.match(build, /Prefix every shell command with `cd \/w &&`/);
+  assert.match(build, /Prefix every shell command with `cd "\/w" &&`/);
   assert.match(build, /foreground and read each exit code/);
   assert.match(build, /Never pipe a check into `grep`, `tail`/);
   assert.match(build, /Logs and scratch files go only under \/m\/logs/);

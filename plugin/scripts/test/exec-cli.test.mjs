@@ -177,7 +177,7 @@ test("start cuts agentry/<id> in a worktree, writes `dispatched` and prints the 
   assert.equal(marker, "agentry-task: T1 role=build round=1");
   assert.equal(
     read,
-    `Read your brief first: ${json.brief}. Work only in ${json.worktree}; prefix every shell command with \`cd ${json.worktree} &&\`.`,
+    `Read your brief first: ${json.brief}. Work only in ${json.worktree}; prefix every shell command with \`cd "${json.worktree}" &&\`.`,
   );
   assert.equal(json.mode, "fresh");
   assert.deepEqual(json.dispatch, { agent: "designer", why: "src/ui/panel.css is UI-shaped" });

@@ -19,7 +19,7 @@ nothing next to it.
 ## Where you work
 
 - Worktree: {{worktree}}, branch `{{branch}}` at {{tip}}, cut from {{base}}. Read and run there; prefix
-  every shell command with `cd {{worktree}} &&`.
+  every shell command with `cd "{{worktree}}" &&`.
 - Change nothing in the worktree and commit nothing. The lane voids a verdict when the branch tip moves
   while you read, and the gate refuses a dirty tree. Probes, scratch files and logs go only under
   {{logDir}}.
@@ -40,7 +40,7 @@ The builder's report: {{builderReport}}
 
 - Each acceptance item: PASS, FAIL or UNVERIFIED, with its evidence (the command and its exit code,
   `file:line`, a screenshot path).
-- The branch changes only the owned files: `cd {{worktree}} && git diff --stat {{base}}..HEAD`.
+- The branch changes only the owned files: `cd "{{worktree}}" && git diff --stat {{base}}..HEAD`.
 - Run the gate as the lane records it, in the foreground, and read its exit code: `{{gateLine}}`
 - For any input, setting or interaction the contract handles, write down the bar first (what must never
   happen, edge cases included), then test against it.

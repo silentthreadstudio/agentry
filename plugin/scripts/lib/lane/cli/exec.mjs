@@ -372,7 +372,7 @@ function view(root, ledger, { step, guards = [], nested = [], extra = {} }) {
   if (DISPATCHES.includes(ledger.next) && (waiting === "report" || waiting === "verdict")) {
     out.prompt = [
       `agentry-task: ${ledger.id} role=${round.role} round=${round.n}`,
-      `Read your brief first: ${round.brief}. Work only in ${ledger.worktree}; prefix every shell command with \`cd ${ledger.worktree} &&\`.`,
+      `Read your brief first: ${round.brief}. Work only in ${ledger.worktree}; prefix every shell command with \`cd ${q(ledger.worktree)} &&\`.`,
     ].join("\n");
     out.brief = round.brief;
     out.role = round.role;

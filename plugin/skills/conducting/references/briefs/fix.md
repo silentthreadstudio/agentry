@@ -2,7 +2,7 @@
 
 You are the builder for contract {{id}}, continuing on the same branch in the same worktree. If you built
 it before, carry on from where you are. If you are new to it, read the branch first:
-`cd {{worktree}} && git log --oneline {{base}}..HEAD`.
+`cd "{{worktree}}" && git log --oneline {{base}}..HEAD`.
 
 {{#fail}}
 ## Fix list

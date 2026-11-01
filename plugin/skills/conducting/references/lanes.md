@@ -117,7 +117,7 @@ this repo's store and the user's `scope: user` facts only, never another project
 line, the log dir and the report path. The rules builders and verifiers follow live in those
 templates, once:
 
-- `cd <worktree> &&` on every shell command; absolute paths under the worktree.
+- `cd "<worktree>" &&` on every shell command (quoted); absolute paths under the worktree.
 - Checks in the foreground, exit codes read, never piped into `grep` / `tail` to decide; no self-started
   background waits.
 - Logs and scratch files only under the round's log dir.
