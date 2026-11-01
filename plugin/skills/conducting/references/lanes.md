@@ -84,9 +84,21 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
 
 ### Guards
 
-- **Main touched.** At each builder report, main's HEAD and working files must match the lane's start, Agentry's
-  own run files and the board files the lifecycle writes excepted. A HEAD move made only of commits another lane's
-  merge recorded is not a breach. Don't commit on main by hand while a lane builds.
+- **Main touched.** Checked at each builder report, content-exact. `start` records main's HEAD and the content
+  (git blob id) of every file dirty there; every lifecycle write a lane makes records the file and its content
+  before and after (`boardWrites` in its ledger). A main file may differ from the lane's start only when its
+  content is reached from its start content, or from what a recorded merge committed, through recorded
+  lifecycle writes, by this lane or any other. So parallel lanes never trip each other, and anything else is a
+  breach: another row or cell of the board, free text, a file outside the board, a file dirty at start that
+  changed or was reverted since. HEAD may move only by other lanes' merges, each the run `preHead` → landed
+  commits → board commit its ledger records, matched against main's first-parent history. Agentry's own run
+  files (`.agentry/run/`) are not checked. So: no board edits (`board set`, by hand) and no commits on main
+  while a lane builds.
+- **Trust boundary.** The guard catches a builder that slips into the main checkout; it is not a sandbox. It
+  trusts `.agentry/run/` as Agentry's steps wrote it and checks each ledger's claims against git where git can
+  say, so a planted ledger naming a SHA excuses nothing. A builder that forges a whole merge record, or edits
+  ledgers on purpose, is beyond a guard on a cooperating agent: read the diff when a trip, or its absence,
+  looks wrong.
 - **The worktree.** A builder leaves no uncommitted or untracked files and at least one commit past base.
 - **The tip.** A verdict counts only for the tip it was dispatched on: nobody rebases while a verifier reads.
 - **Nested worktrees.** A worktree that appears during the lane and belongs to no ledger is listed in `nested`

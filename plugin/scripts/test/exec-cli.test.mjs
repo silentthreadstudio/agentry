@@ -377,31 +377,151 @@ test("a builder that changes the main checkout stops the lane (exit 1) and names
   assert.equal(lane(r, "show", "T1").exit, 1);
 });
 
-test("a commit on main stops the lane; one another lane's merge recorded does not", () => {
+// Lane `id` from start to a verified close, its builder adding `file`.
+function verified(r, id, file) {
+  let out = lane(r, "start", id).json;
+  build(out, file);
+  out = lane(r, "report", id).json;
+  judge(out, "PASS");
+  assert.equal(lane(r, "verdict", id).json.next, "gate");
+  assert.equal(lane(r, "gate", id).exit, 0);
+  assert.equal(lane(r, "close", id).exit, 0);
+}
+const merge = ({ root, home }, ...args) =>
+  spawnSync("node", [LANE, "merge", ...args, "--root", root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: home },
+  });
+const ledgerFile = (root, id) => join(root, ".agentry", "run", "process", "ledger", `${id}.json`);
+
+test("a commit on main stops the lane; another lane's real merge does not", () => {
   const r = repo();
   const out = lane(r, "start", "T1").json;
-  build(out);
-  const sha = commitFile(r.root, "plan/NOTES.md", "x\n", "docs: note");
-  const ledgerDir = join(r.root, ".agentry", "run", "process", "ledger");
-  writeFileSync(
-    join(ledgerDir, "T2.json"),
-    JSON.stringify({
-      v: 1,
-      id: "T2",
-      state: "merged",
-      worktree: "/gone",
-      merge: { landed: [sha] },
-    }),
-  );
-  assert.equal(lane(r, "report", "T1").json.next, "verify");
+  build(out, "t1.txt");
+  verified(r, "T2", "out.txt");
+  const landed = merge(r, "T2", "--message", "chore(board): land T2");
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  const res = lane(r, "report", "T1");
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+  assert.deepEqual(row(r.root, "T1"), ["T1", "S1", "verify", "", ""]);
 
   const r2 = repo();
-  const out2 = lane(r2, "start", "T1").json;
-  build(out2);
+  build(lane(r2, "start", "T1").json);
   commitFile(r2.root, "plan/NOTES.md", "x\n", "docs: by hand");
-  const res = lane(r2, "report", "T1");
+  const stopped = lane(r2, "report", "T1");
+  assert.equal(stopped.exit, 1);
+  assert.match(stopped.json.reason, /main touched: HEAD moved/);
+});
+
+test("a ledger planted under .agentry/run cannot excuse a commit on main", () => {
+  const forged = [
+    (sha) => ({ landed: [sha] }),
+    (sha, pre) => ({ preHead: pre, landed: [sha], step: "committed", boardCommit: "f".repeat(40) }),
+  ];
+  for (const record of forged) {
+    const r = repo();
+    build(lane(r, "start", "T1").json);
+    const pre = git(r.root, "rev-parse", "HEAD");
+    const sha = commitFile(r.root, "evil.txt", "x\n", "feat: on main");
+    writeFileSync(
+      ledgerFile(r.root, "ZZ"),
+      JSON.stringify({
+        v: 1,
+        id: "ZZ",
+        state: "merged",
+        worktree: "/gone",
+        merge: record(sha, pre),
+      }),
+    );
+    const res = lane(r, "report", "T1");
+    assert.equal(res.exit, 1);
+    assert.match(res.json.reason, /main touched: HEAD moved/);
+  }
+});
+
+test("a builder's edit of main's board outside its lifecycle cells stops the lane", () => {
+  const edits = {
+    "another row": (text) => text.replace("| T2   | S1     | todo ", "| T2   | S1     | done "),
+    "free text": (text) => `${text}\nA paragraph the builder added.\n`,
+  };
+  for (const [what, edit] of Object.entries(edits)) {
+    const r = repo();
+    build(lane(r, "start", "T1").json);
+    const file = join(r.root, "plan", "BOARD.md");
+    writeFileSync(file, edit(readFileSync(file, "utf8")));
+    const res = lane(r, "report", "T1");
+    assert.equal(res.exit, 1, what);
+    assert.match(res.json.reason, /main touched: files changed: {2}M plan\/BOARD\.md/, what);
+  }
+});
+
+test("a board edit stays caught after another lane's lifecycle write lands on top of it", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  const file = join(r.root, "plan", "BOARD.md");
+  writeFileSync(
+    file,
+    readFileSync(file, "utf8").replace("| S1     | doing  |", "| S1     | done   |"),
+  );
+  assert.equal(lane(r, "start", "T2").exit, 0);
+  const res = lane(r, "report", "T1");
   assert.equal(res.exit, 1);
-  assert.match(res.json.reason, /main touched: HEAD moved/);
+  assert.match(res.json.reason, /plan\/BOARD\.md/);
+});
+
+test("a file dirty when the lane started may stay as it was, but not change further", () => {
+  for (const further of [false, true]) {
+    const r = repo();
+    const tasks = join(r.root, "plan", "TASKS.md");
+    writeFileSync(tasks, `${TASKS_MD}\nOwner's draft.\n`);
+    build(lane(r, "start", "T1").json);
+    if (further) writeFileSync(tasks, `${TASKS_MD}\nOwner's draft.\nAnd more.\n`);
+    const res = lane(r, "report", "T1");
+    if (further) {
+      assert.equal(res.exit, 1);
+      assert.match(res.json.reason, /files changed: {2}M plan\/TASKS\.md/);
+    } else assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+  }
+});
+
+const STORIES = {
+  version: 1,
+  name: "Files",
+  root: ".",
+  kinds: {
+    story: {
+      label: "Story",
+      at: { files: "stories/*.md", id: "frontmatter:id" },
+      fields: { state: { column: "state" } },
+      status: { field: "state", values: { open: "planned", doing: "active", verify: "active" } },
+      contract: { blocks: ["TASKS.md"] },
+    },
+  },
+  rules: [],
+  lifecycle: {
+    kind: "story",
+    on: { dispatched: "doing", built: "verify" },
+    write: { status: "state" },
+  },
+};
+
+test("parallel lanes on a one-file-per-item board don't stop each other", () => {
+  const r = { root: temp("exec-files-"), home: temp("exec-home-") };
+  git(r.root, "init", "-q", "-b", "main");
+  commitFile(r.root, ".gitignore", ".agentry/run/\n");
+  commitFile(r.root, "stories/s1.md", "---\nid: S-1\nstate: open\n---\n\n# One\n");
+  commitFile(r.root, "stories/s2.md", "---\nid: S-2\nstate: open\n---\n\n# Two\n");
+  commitFile(r.root, "TASKS.md", "# Tasks\n\n- **S-1**: owns `a.txt`.\n- **S-2**: owns `b.txt`.\n");
+  commitFile(r.root, ".agentry/process.json", JSON.stringify(STORIES));
+  const one = lane(r, "start", "S-1").json;
+  const two = lane(r, "start", "S-2").json;
+  build(one, "a.txt");
+  build(two, "b.txt");
+  const first = lane(r, "report", "S-1");
+  assert.equal(first.json.next, "verify", JSON.stringify(first.json.guards));
+  const second = lane(r, "report", "S-2");
+  assert.equal(second.json.next, "verify", JSON.stringify(second.json.guards));
+  assert.match(readFileSync(join(r.root, "stories", "s1.md"), "utf8"), /state: verify/);
 });
 
 test("uncommitted files in the worktree send the builder back with the reason", () => {
