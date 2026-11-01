@@ -84,17 +84,18 @@ export function ignoredFiles(dir) {
   return out.split("\0").filter(Boolean);
 }
 
-// True when all of `branch`'s work is on `onto`. Every commit outside `onto` must be patch-equivalent to one
-// on it (`git cherry` marks that "-"). `git cherry` skips merge commits, so when the branch holds one the
-// check is by content instead: every file the branch changed since the merge-base must be identical on
-// `onto`. Anything unclear answers false, which keeps the branch.
+// True when all of `branch`'s work is on `onto`. Without merge commits, every commit outside `onto` must be
+// patch-equivalent to one on it (`git cherry` marks that "-"). A branch holding a merge commit is judged by
+// content instead: `git cherry` skips merges and, once `onto` is merged into the branch, can no longer see
+// the commits the branch's were matched against. Every file the branch changed since the merge-base must be
+// identical on `onto`. Anything unclear answers false, which keeps the branch.
 function onMain(root, onto, branch) {
-  const cherry = git(root, ["cherry", onto, branch]);
-  if (cherry.status !== 0 || cherry.stdout.split("\n").some((line) => line.startsWith("+")))
-    return false;
   const merges = git(root, ["rev-list", "--merges", `${onto}..${branch}`]);
   if (merges.status !== 0) return false;
-  if (!merges.stdout.trim()) return true;
+  if (!merges.stdout.trim()) {
+    const cherry = git(root, ["cherry", onto, branch]);
+    return cherry.status === 0 && !cherry.stdout.split("\n").some((line) => line.startsWith("+"));
+  }
   const base = git(root, ["merge-base", onto, branch]);
   if (base.status !== 0) return false;
   const touched = git(root, [

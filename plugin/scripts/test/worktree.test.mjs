@@ -185,6 +185,23 @@ test("remove deletes a branch with a merge commit when all its content is alread
   assert.equal(remove(repo.dir, made).branchDeleted, true);
 });
 
+test("remove deletes a branch whose own work landed on main and whose extra commit merges main in", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  const sha = commitFile(made.path, "a.txt", "1\n");
+  commitFile(repo.dir, "other.txt", "o\n");
+  git(repo.dir, "cherry-pick", sha);
+  git(made.path, "merge", "-q", "--no-edit", "main");
+  assert.equal(remove(repo.dir, made).branchDeleted, true);
+});
+
+test("remove keeps a branch that merged main in but holds work main does not have", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  commitFile(made.path, "a.txt", "1\n");
+  commitFile(repo.dir, "other.txt", "o\n");
+  git(made.path, "merge", "-q", "--no-edit", "main");
+  assert.equal(remove(repo.dir, made).branchDeleted, false);
+});
+
 test("remove keeps a squash-merged branch (patch ids differ: the safe direction)", () => {
   const made = create(repo.dir, { id: "T-1", base: "main" });
   commitFile(made.path, "a.txt", "1\n");
