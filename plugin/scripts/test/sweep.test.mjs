@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -212,4 +213,134 @@ test("less than 10 GB free is a warning; plenty is not", () => {
   cleanups.push(repo.cleanup);
   assert.match(plan(repo.root, { free: LOW_DISK - 1 }).warnings[0], /GB free/);
   assert.deepEqual(plan(repo.root, { free: LOW_DISK }).warnings, []);
+});
+
+// ---- fix round 2 (R1b-7 re-verify) ----
+
+/** A shell script at `file` that `sh` runs as a plain (not detached) child of the test: no group of its own. */
+function plantShell(file, body, { cwd = tmpdir() } = {}) {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, body);
+  const child = spawn("/bin/sh", [file], { stdio: "ignore", cwd });
+  children.push(child);
+  return child;
+}
+const childOf = (pid) =>
+  Number(spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf8" }).stdout.trim());
+
+test("a stray that does not lead its group is stopped with its whole descendant tree", async () => {
+  const { root } = fixture();
+  const stray = plantShell(runFile(root, "runs/T1/tree.sh"), "sleep 300\n");
+  await settle();
+  const kid = childOf(stray.pid);
+  assert.ok(kid > 0, "the shell should have a sleeping child");
+  const res = sweep(root, "--apply", "--json");
+  assert.equal(res.status, 0, res.stdout);
+  assert.deepEqual(JSON.parse(res.stdout).applied.survived, []);
+  assert.ok(await waitDead(stray.pid));
+  assert.ok(await waitDead(kid), "the child must not be orphaned and left running");
+});
+
+test("an interactive shell in a merged worktree is never signalled", async () => {
+  const { root, merged } = fixture();
+  const stdio = ["pipe", "ignore", "ignore"];
+  const login = spawn("/bin/zsh", ["-f"], { argv0: "-zsh", cwd: merged.path, stdio });
+  const inter = spawn("/bin/zsh", ["-f", "-i"], { cwd: merged.path, stdio });
+  const plain = plant(join(root, "elsewhere", "plain.js"), { cwd: merged.path });
+  children.push(login, inter);
+  await settle();
+  const dry = sweep(root);
+  assert.match(dry.stdout, new RegExp(`left alone: interactive shell.*${login.pid}`));
+  assert.match(dry.stdout, new RegExp(`left alone: interactive shell.*${inter.pid}`));
+  assert.match(dry.stdout, new RegExp(`would stop process ${plain.pid}`));
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 0, res.stdout);
+  assert.ok(await waitDead(plain.pid), "an ordinary stray is still stopped");
+  await settle();
+  assert.ok(alive(login.pid), "the login shell must survive");
+  assert.ok(alive(inter.pid), "the interactive shell must survive");
+});
+
+const python = spawnSync("python3", ["-c", "import pty"]).status === 0;
+test(
+  "a process on a terminal, cwd in a merged worktree, is never signalled",
+  { skip: !python },
+  async () => {
+    const { root, merged } = fixture();
+    const dir = mkdtempSync(join(tmpdir(), "sweep-tty-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const py = join(dir, "term.py");
+    writeFileSync(
+      py,
+      `import os, pty, sys, time
+pid, fd = pty.fork()
+if pid == 0:
+    os.chdir(sys.argv[1])
+    os.execv("/bin/sleep", ["sleep", "300"])
+print(pid, flush=True)
+time.sleep(300)
+`,
+    );
+    const term = spawn("python3", ["-I", py, merged.path], {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "ignore"],
+      detached: true,
+    });
+    children.push(term);
+    const pid = await new Promise((r) => term.stdout.once("data", (d) => r(Number(String(d)))));
+    await settle();
+    const res = sweep(root, "--apply");
+    assert.equal(res.status, 0, res.stdout);
+    assert.match(res.stdout, new RegExp(`left alone: interactive shell.*${pid}`));
+    await settle();
+    // Its parent (python) never reaps it, so a signalled one would linger as a zombie: read its state.
+    const stat = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).stdout;
+    assert.ok(
+      stat.trim() && !stat.startsWith("Z"),
+      "a process with a controlling terminal must survive",
+    );
+    process.kill(pid, "SIGKILL");
+  },
+);
+
+test("a merged ledger that claims the repo root does not claim a live lane's processes", async () => {
+  const { root, live } = fixture();
+  ledger(root, "T0", { state: "merged", worktree: root });
+  const building = plant(join(root, "elsewhere", "live9.js"), { cwd: live.path });
+  await settle();
+  assert.doesNotMatch(sweep(root).stdout, new RegExp(`process ${building.pid}`));
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 0, res.stdout);
+  await settle(); // let the event loop reap the child, so a signalled one is not a zombie that looks alive
+  assert.ok(alive(building.pid), "the building lane's process must survive");
+});
+
+test("an option's value is not taken for the script a node process runs", async () => {
+  const { root } = fixture();
+  const hook = join(root, "elsewhere", "hook.cjs");
+  mkdirSync(dirname(hook), { recursive: true });
+  writeFileSync(hook, "\n");
+  const script = runFile(root, "runs/T1/x.mjs");
+  mkdirSync(dirname(script), { recursive: true });
+  writeFileSync(script, "setTimeout(() => {}, 300000)");
+  const stray = spawn("node", ["--require", hook, script], { stdio: "ignore", cwd: tmpdir() });
+  children.push(stray);
+  await settle();
+  assert.match(sweep(root).stdout, new RegExp(`would stop process ${stray.pid}`));
+});
+
+test("a missing lsof is a warning: strays by working directory can't be seen", () => {
+  const { root } = fixture();
+  const bin = mkdtempSync(join(tmpdir(), "sweep-bin-"));
+  cleanups.push(() => rmSync(bin, { recursive: true, force: true }));
+  for (const tool of ["ps", "git"]) {
+    const found = spawnSync("which", [tool], { encoding: "utf8" }).stdout.trim();
+    symlinkSync(found, join(bin, tool));
+  }
+  const res = spawnSync(process.execPath, [LANE, "sweep", "--root", root], {
+    encoding: "utf8",
+    env: { ...gitEnv, NO_COLOR: "1", PATH: bin },
+  });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /warning: lsof not found/);
 });

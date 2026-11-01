@@ -1,8 +1,9 @@
 // lane sweep [--apply [--discard-ignored]] [--json] — clean up after a session (plan R1b-7, #8, #9). Without
 // `--apply` it only reports: the worktrees of merged or closed tasks, the worktrees no ledger knows (never
-// removed), the processes left running under `.agentry/run/` by a finished lane or by none, and a low-disk
-// warning. With `--apply` it stops those processes (their process group) and removes the worktrees, and
-// nothing else; a worktree holding ignored files (`.env`, build output) stays unless `--discard-ignored`.
+// removed), the processes left running under `.agentry/run/` by a finished lane or by none (an interactive
+// shell among them is listed as left alone, never stopped), and a low-disk or no-lsof warning. With
+// `--apply` it stops those processes (each with its descendants) and removes the worktrees, and nothing
+// else; a worktree holding ignored files (`.env`, build output) stays unless `--discard-ignored`.
 // Needs no process file.
 // Exit 0 = done or reported, 1 = `--apply` left a worktree it could not remove or a process running.
 //
@@ -46,6 +47,8 @@ function render(found, done, discardIgnored) {
           : "already gone:";
     row(`${verb} process ${p.pid}  ${p.command}`);
   }
+  for (const p of found.leftAlone) row(`left alone: ${p.reason} ${p.pid}  ${p.command}`);
+  if (done?.survivors.length) row(`still running after SIGKILL: ${done.survivors.join(", ")}`);
   for (const w of found.warnings) row(`warning: ${w}`);
   if (lines.length === 1) row("nothing to clean");
   return lines.join("\n");
