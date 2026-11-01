@@ -107,8 +107,8 @@ const DECISIONS_MD = `# Decisions
 
 /** A repo on `main` with the board committed; `home` is an empty HOME for the CLI (no global config or
  *  memory leaks in). */
-function repo({ spec = SPEC, config } = {}) {
-  const root = temp("exec-repo-");
+function repo({ spec = SPEC, config, prefix = "exec-repo-" } = {}) {
+  const root = temp(prefix);
   const home = temp("exec-home-");
   git(root, "init", "-q", "-b", "main");
   mkdirSync(join(root, ".agentry"));
@@ -177,7 +177,7 @@ test("start cuts agentry/<id> in a worktree, writes `dispatched` and prints the 
   assert.equal(marker, "agentry-task: T1 role=build round=1");
   assert.equal(
     read,
-    `Read your brief first: ${json.brief}. Work only in ${json.worktree}; prefix every shell command with \`cd "${json.worktree}" &&\`.`,
+    `Read your brief first: ${json.brief}. Work only in ${json.worktree}; prefix every shell command with \`cd '${json.worktree}' &&\`.`,
   );
   assert.equal(json.mode, "fresh");
   assert.deepEqual(json.dispatch, { agent: "designer", why: "src/ui/panel.css is UI-shaped" });
@@ -435,7 +435,7 @@ test("a commit on main stops the lane; another lane's real merge does not", () =
   assert.match(stopped.json.reason, /main touched: HEAD moved/);
 });
 
-test("a ledger planted under .agentry/run cannot excuse a commit on main", () => {
+test("a ledger without a real merge's shape cannot excuse a commit on main", () => {
   const forged = [
     (sha) => ({ landed: [sha] }),
     (sha, pre) => ({ preHead: pre, landed: [sha], step: "committed", boardCommit: "f".repeat(40) }),
@@ -631,4 +631,100 @@ test("a worktree that appears during the lane and belongs to no lane is reported
   const res = lane(r, "report", "T1");
   assert.deepEqual(res.json.nested, [nested]);
   assert.deepEqual(ledgerOf(r.root, "T1").nested, [nested]);
+});
+
+test("a ledger's boardWrites excuse only the lifecycle's own board file, not another file", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  const tasks = join(r.root, "plan", "TASKS.md");
+  const from = git(r.root, "hash-object", "plan/TASKS.md");
+  writeFileSync(tasks, `${TASKS_MD}\nA contract the builder rewrote.\n`);
+  const to = git(r.root, "hash-object", "plan/TASKS.md");
+  writeFileSync(
+    ledgerFile(r.root, "ZZ"),
+    JSON.stringify({
+      v: 1,
+      id: "ZZ",
+      state: "building",
+      worktree: "/gone",
+      boardWrites: [{ file: "plan/TASKS.md", from, to }],
+    }),
+  );
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 1, JSON.stringify(res.json));
+  assert.match(res.json.reason, /files changed: {2}M plan\/TASKS\.md/);
+});
+
+test("Agentry's own memory writes in main do not stop a building lane", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  const dir = join(r.root, ".agentry", "memory", "episodes");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "01EP.md"), "an episode another lane wrote\n");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+});
+
+test("every printed cd prefix and lane line survives a path with quotes, $, backticks and spaces", () => {
+  const r = repo({ prefix: 'ex "q" $HOME `id` it\'s ' });
+  const out = lane(r, "start", "T1").json;
+  const sh = (line) =>
+    spawnSync("sh", ["-c", line], { encoding: "utf8", env: { ...gitEnv, HOME: r.home } });
+  // the prompt's `cd '<worktree>' &&` prefix lands in the worktree
+  const cd = /`(cd .*? &&)`/.exec(out.prompt.split("\n")[1])[1];
+  assert.equal(sh(`${cd} pwd`).stdout.trim(), out.worktree);
+  // the brief's prefixes do too
+  const text = readFileSync(out.brief, "utf8");
+  assert.doesNotMatch(text, /cd "/);
+  const prefixes = text.match(/cd '.*?' &&/g) ?? [];
+  assert.ok(prefixes.length > 0);
+  for (const line of prefixes) assert.equal(sh(`${line} pwd`).stdout.trim(), out.worktree, line);
+  // the lane line the next step prints runs
+  build(out);
+  const shown = lane(r, "report", "T1").json;
+  judge(shown, "PASS");
+  const gated = lane(r, "verdict", "T1").json;
+  assert.equal(gated.next, "gate");
+  const ran = sh(gated.run);
+  assert.equal(JSON.parse(ran.stdout).step, "gate", ran.stdout + ran.stderr);
+});
+
+test("an index-only change in main (git rm --cached) stops the lane", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  git(r.root, "rm", "-q", "--cached", "plan/DECISIONS.md");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 1, JSON.stringify(res.json));
+  assert.match(res.json.reason, /files changed: .*plan\/DECISIONS\.md/);
+});
+
+test('close accepts a merged ledger (next done, or "" when adopted) and stamps its episode', () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  judge(out, "PASS");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").exit, 0);
+  const landed = merge(r, "T1", "--message", "chore(board): land T1");
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  const merged = ledgerOf(r.root, "T1");
+  assert.equal(merged.state, "merged");
+  assert.equal(merged.episode, undefined);
+  writeFileSync(ledgerFile(r.root, "T1"), JSON.stringify({ ...merged, next: "" }));
+  const closed = lane(r, "close", "T1");
+  assert.equal(closed.exit, 0, closed.stderr);
+  assert.equal(closed.json.episode.shape, "exec");
+  const stamped = lane(r, "close", "T1", "--episode", "01EP");
+  assert.equal(stamped.json.episode.writtenId, "01EP");
+});
+
+test("close accepts a stopped lane", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  commitFile(r.root, "plan/NOTES.md", "x\n", "docs: by hand");
+  assert.equal(lane(r, "report", "T1").exit, 1);
+  const closed = lane(r, "close", "T1");
+  assert.equal(closed.exit, 0, closed.stderr);
+  assert.match(closed.json.episode.outcome, /^stopped/);
 });

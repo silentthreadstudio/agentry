@@ -27,6 +27,7 @@ import {
   bullets,
   citedDecisions,
   ownedFiles,
+  shellQuote as q,
   recalledFacts,
   renderBrief,
   suggestBuilder,
@@ -50,7 +51,6 @@ const refuse = (message) => {
 };
 const now = () => new Date().toISOString();
 const short = (sha) => String(sha ?? "").slice(0, 7);
-const q = (s) => `"${s}"`;
 const laneLine = (root, sub, id, extra = "") =>
   `node ${q(LANE)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
@@ -105,8 +105,10 @@ export function run(argv, ctx) {
 // start that changed since) is the builder's. HEAD may move only by merges other ledgers record, each a
 // run preHead → landed… → board commit that git's first-parent history confirms.
 
-const RUN_DIR = ".agentry/run/";
+// Agentry's own files: the run state, and the memory a lane writes (an episode, a fact).
+const OWN_DIRS = [".agentry/run/", ".agentry/memory/"];
 const ABSENT = "-";
+const STAGED = /^[MADRC]/;
 const headOf = (dir, ref = "HEAD") =>
   git(dir, ["rev-parse", "--verify", "--quiet", ref]).stdout.trim();
 
@@ -120,7 +122,9 @@ function dirtyPaths(root) {
   for (let i = 0; i < parts.length; i++) {
     const entry = parts[i];
     const paths = [entry.slice(3), ...(/^[RC]/.test(entry) ? [parts[++i]] : [])];
-    for (const path of paths) if (!path.startsWith(RUN_DIR)) out.set(path, entry);
+    for (const path of paths)
+      if (!OWN_DIRS.some((d) => path.startsWith(d)) && !STAGED.test(out.get(path) ?? ""))
+        out.set(path, entry); // a staged entry stays when the path is also untracked (`rm --cached`)
   }
   return out;
 }
@@ -197,7 +201,7 @@ function reachable(moves, from, to) {
 }
 
 // The main files whose content no recorded lifecycle write explains, as `git status` entries.
-function strayFiles(root, ledger, head, all) {
+function strayFiles(root, ledger, head, all, boards) {
   const was = ledger.mainAtStart;
   const started = was.files ?? {};
   const dirty = dirtyPaths(root);
@@ -206,8 +210,8 @@ function strayFiles(root, ledger, head, all) {
   const now = contentOf(root, paths);
   const atStart = blobsAt(root, was.head, paths);
   const atHead = head === was.head ? atStart : blobsAt(root, head, paths);
-  const moves = all.flatMap((l) => l.boardWrites ?? []);
-  return paths
+  const moves = all.flatMap((l) => l.boardWrites ?? []).filter((m) => boards.has(m.file));
+  const changed = paths
     .filter((p) => {
       const start = Object.hasOwn(started, p) ? started[p] : atStart[p];
       if (now[p] === start) return false;
@@ -219,6 +223,12 @@ function strayFiles(root, ledger, head, all) {
       );
     })
     .map((p) => dirty.get(p) ?? `${p} (back to HEAD)`);
+  // An index-only change (`git rm --cached`) leaves the content as it was: any staged entry that was
+  // not there at start is the builder's too.
+  const staged = [...new Set(dirty.values())].filter(
+    (e) => STAGED.test(e) && !was.porcelain.includes(e),
+  );
+  return [...new Set([...changed, ...staged])];
 }
 
 // Are main's first-parent commits from `from` to `to`, end to end, merges other ledgers record? Each
@@ -247,14 +257,15 @@ function landedOnly(root, from, to, others) {
 }
 
 // Why the main checkout no longer matches the lane's start, or null.
-function mainTouched(root, ledger, all) {
+function mainTouched({ root, spec, model }, ledger, all) {
   const was = ledger.mainAtStart;
   const head = headOf(root);
   const others = all.filter((l) => l.id !== ledger.id);
   const reasons = [];
   if (head !== was.head && !landedOnly(root, was.head, head, others))
     reasons.push(`HEAD moved ${short(was.head)} → ${short(head)}`);
-  const stray = strayFiles(root, ledger, head, all);
+  const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id)));
+  const stray = strayFiles(root, ledger, head, all, boards);
   if (stray.length) reasons.push(`files changed: ${stray.slice(0, 10).join(", ")}`);
   return reasons.length ? reasons.join("; ") : null;
 }
@@ -326,6 +337,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
     ),
     facts: factsLine(root, owned, block),
     worktree: ledger.worktree,
+    cd: `cd ${q(ledger.worktree)}`,
     branch: ledger.branch,
     base: short(ledger.base),
     mainRoot: root,
@@ -532,7 +544,7 @@ function report(ctx, id, agent) {
   }
   const count = git(root, ["rev-list", "--count", `${ledger.base}..${ledger.branch}`]);
   const guards = {
-    mainTouched: mainTouched(root, ledger, all),
+    mainTouched: mainTouched(ctx, ledger, all),
     dirty,
     commits: count.status === 0 ? Number(count.stdout.trim()) : 0,
   };
@@ -681,7 +693,11 @@ function close(ctx, id, episodeId) {
       out: JSON.stringify({ id, step: "close", episode: ledger.episode }, null, 2),
     };
   }
-  const closable = ledger.next === "close" || ledger.state === "stopped" || ledger.episode;
+  const closable =
+    ledger.next === "close" ||
+    ledger.state === "stopped" ||
+    ledger.state === "merged" ||
+    ledger.episode;
   if (!closable) refuse(`the lane is not done (state ${ledger.state}, next ${ledger.next})`);
   const payload = episodeOf(ledger);
   ledger = {
