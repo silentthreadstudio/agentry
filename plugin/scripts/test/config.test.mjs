@@ -45,6 +45,21 @@ test("the shared table: every good case passes, every bad case names exactly its
   }
 });
 
+test("an unknown top-level key is named, with the nearest known one when it is close", () => {
+  assert.deepEqual(checkConfig({ marge: { push: "never" } }), [
+    'marge is not a known key (did you mean "merge"?)',
+  ]);
+  assert.deepEqual(checkConfig({ lane: {} }), ['lane is not a known key (did you mean "lanes"?)']);
+  const [far] = checkConfig({ telemetry: true });
+  assert.match(far, /^telemetry is not a known key \(expected "workDir"/);
+  assert.doesNotMatch(far, /did you mean/);
+});
+
+test("a misspelled block is an error, not the defaults", () => {
+  const { root, home } = place({ project: { marge: { push: "never" } } });
+  assert.match(readConfig(root, { home }).error, /marge is not a known key \(did you mean "merge"/);
+});
+
 test("no config file anywhere: the defaults, push ask and three writers", () => {
   const { root, home } = place();
   assert.deepEqual(readConfig(root, { home }), {
@@ -77,7 +92,7 @@ test("a bad value is an error naming the file and the key, in either file, never
   const global = place({ project: { merge: { push: "ask" } }, home: { lanes: { maxWrites: 2 } } });
   assert.match(
     readConfig(global.root, { home: global.home }).error,
-    /lanes\.maxWrites is not a known key \(expected "maxWriters"\)/,
+    /lanes\.maxWrites is not a known key \(did you mean "maxWriters"\?\)/,
   );
   assert.ok(readConfig(global.root, { home: global.home }).error.startsWith(global.home));
 });

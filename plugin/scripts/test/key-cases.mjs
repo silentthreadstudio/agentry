@@ -227,7 +227,11 @@ export const CONFIG_CASES = [
   { name: "one writer", value: { lanes: { maxWriters: 1 } } },
   { name: "many writers", value: { lanes: { maxWriters: 12 } } },
   { name: "beside other keys", value: { memory: { prime: "all" }, merge: { push: "never" } } },
+  { name: "every top-level key there is", value: { workDir: "x", evolution: {}, memory: {} } },
   // bad
+  { name: "a misspelled merge block", value: { marge: { push: "never" } }, bad: ["marge"] },
+  { name: "a misspelled lanes block", value: { lane: { maxWriters: 1 } }, bad: ["lane"] },
+  { name: "an unknown top-level key", value: { telemetry: true }, bad: ["telemetry"] },
   { name: "an unknown push", value: { merge: { push: "yes" } }, bad: ["merge.push"] },
   { name: "an empty push", value: { merge: { push: "" } }, bad: ["merge.push"] },
   { name: "an upper-case push", value: { merge: { push: "AUTO" } }, bad: ["merge.push"] },
