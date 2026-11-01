@@ -634,6 +634,33 @@ test("a land killed with its board writes staged takes them back on the rerun an
   assert.equal(readLedger(root, ID).state, "merged");
 });
 
+// R1b-5 re-verify item 3: a red gate's rollback killed after the reset, before the ledger said so: the
+// rerun read main at preHead as "main has moved", and the lane stayed `merging`.
+test("a rollback killed after its reset is finished by the rerun: lane back, exec's writes back", () => {
+  const { path } = build({ "red.txt": "fails the gate\n" });
+  execLedger({ path, gated: null });
+  execWrites();
+  const dirty = board();
+  const pre = head();
+  landKilledAt("^-C [^ ]+ reset --keep", "after");
+  assert.equal(head(), pre);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(
+    res.stdout,
+    /✓ recover +finishing the rollback a killed run started after its red gate/,
+  );
+  assert.match(res.stdout, /✓ rollback main reset to/);
+  assert.match(res.stdout, /next: read .*merge-gate-1\.log, fix on agentry\/T1/);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "verified");
+  assert.equal(ledger.merge.step, "rolled-back");
+  assert.equal(ledger.merge.carry, undefined);
+  assert.equal(head(), pre);
+  assert.equal(board(), dirty); // exec's writes, uncommitted, as they were
+  assert.equal(ledger.gates.filter((g) => g.where === "main").length, 1); // no second gate run
+});
+
 // R1b-5 fix 2: a killed land set exec's writes aside in a patch file only; the rerun saw a clean main
 // and landed without them.
 test("a land killed during its gate keeps exec's writes in the ledger; the rerun commits them", async () => {

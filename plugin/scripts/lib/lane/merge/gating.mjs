@@ -1,13 +1,13 @@
 // merge/gating — the land's `gate` step (plan R1b-5): skip on a trusted worktree gate (`canSkip`), or
 // run the tier `pickTier` picks on main, in a process group the ledger names first (`merge.gateRun`) so
-// a rerun can stop it if this run dies. A red gate takes the picks off main again (`rollback`).
+// a rerun can stop it if this run dies. A red gate takes the picks off main again (`rollBack`).
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { runDir } from "../../process/ledger.mjs";
 import { gateArgv } from "../gate-group.mjs";
 import { canSkip, changedSince, pickTier, runGate } from "../gate.mjs";
-import { rollback, treeOf } from "../land.mjs";
+import { commitOf, rollback, treeOf } from "../land.mjs";
 import { now, ok, red, save, setMerge, short } from "./lane.mjs";
 import { lastWorktreeGate } from "./rows.mjs";
 
@@ -20,7 +20,7 @@ const globOf = (file, globs) =>
 
 export function gateStep(lane, rows) {
   const { root, id, gate } = lane;
-  const { mainBranch, branch, gates = [] } = lane.ledger;
+  const { mainBranch, gates = [] } = lane.ledger;
   const merge = lane.ledger.merge;
   if (merge.step === "gated") {
     rows.push(ok("gate", `already passed: ${merge.gate.detail}`));
@@ -77,15 +77,24 @@ export function gateStep(lane, rows) {
     return null;
   }
   rows.push(red("gate", `${tier} ran on ${mainBranch}: exit ${res.exit} in ${res.seconds} s`, why));
-  const back = rollback(root, { preHead: merge.preHead, landed: merge.landed });
+  return rollBack(lane, rows);
+}
+
+/** After a red gate, take the picks off main again. The intent goes to the ledger first (`step:
+ *  "rolling-back"`), so a rerun after a kill finishes it: main already at preHead is the reset the
+ *  killed run made. Always a stop: the gate was red. */
+export function rollBack(lane, rows) {
+  const { root } = lane;
+  const { mainBranch, branch } = lane.ledger;
+  setMerge(lane, { step: "rolling-back", gateRun: undefined });
+  const merge = lane.ledger.merge;
+  const reset = commitOf(root, "HEAD") === merge.preHead;
+  const back = reset
+    ? { ok: true }
+    : rollback(root, { preHead: merge.preHead, landed: merge.landed });
   save(lane, {
     ...(back.ok && { state: merge.stateBefore }),
-    merge: {
-      ...lane.ledger.merge,
-      gateRun: undefined,
-      step: back.ok ? "rolled-back" : "rollback-refused",
-      at: now(),
-    },
+    merge: { ...merge, step: back.ok ? "rolled-back" : "rollback-refused", at: now() },
   });
   if (!back.ok) {
     rows.push(red("rollback", back.reason));
@@ -95,8 +104,9 @@ export function gateStep(lane, rows) {
     };
   }
   rows.push(ok("rollback", `${mainBranch} reset to ${short(merge.preHead)}: the picks are off it`));
+  const log = lane.ledger.gates.findLast((g) => g.where === "main")?.log;
   return {
     exit: 1,
-    next: `read ${logFile}, fix on ${branch} (resume the builder), then land again`,
+    next: `read ${log}, fix on ${branch} (resume the builder), then land again`,
   };
 }

@@ -12,6 +12,7 @@ import {
   statusEntries,
   subjectOf,
 } from "../land.mjs";
+import { rollBack } from "./gating.mjs";
 import { afterLand, now, ok, red, save, setMerge, short } from "./lane.mjs";
 
 // The files the record writes to: the board's, and the carry's.
@@ -89,8 +90,8 @@ function resumeRecording(lane, rows) {
 }
 
 /** A killed land leaves its gate's process group, maybe still running; git, maybe in the middle of the
- *  cherry-pick; and a board write or commit the ledger does not know of yet. The rerun deals with each
- *  before anything else. */
+ *  cherry-pick; a board write, a board commit or a rollback's reset the ledger does not know of yet.
+ *  The rerun deals with each before anything else. */
 export function recoverStep(lane, rows) {
   const { root, ledger } = lane;
   const merge = ledger.merge;
@@ -126,6 +127,11 @@ export function recoverStep(lane, rows) {
       next: `in ${root}: git cherry-pick --abort (it puts ${ledger.mainBranch} back where the pick started), then land again`,
     };
   }
-  if (lane.ledger.merge?.step === "recording") return resumeRecording(lane, rows);
+  const step = lane.ledger.merge?.step;
+  if (step === "recording") return resumeRecording(lane, rows);
+  if (step === "rolling-back") {
+    rows.push(ok("recover", "finishing the rollback a killed run started after its red gate"));
+    return rollBack(lane, rows);
+  }
   return null;
 }
