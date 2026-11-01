@@ -113,13 +113,16 @@ test("an episode payload with no stamp is episode-pending, naming close", () => 
   assert.ok(!nudgesOf(root).some((x) => x.kind === "episode-pending"));
 });
 
-test("a board kept in a subfolder of a repo reads no worktrees", () => {
+test("a board kept in a subfolder of a repo still sees the repo's worktrees", () => {
   const { root } = fresh();
   handBranch(root, ".claude/worktrees/agent-c3", "worktree-agent-c3");
   const sub = join(root, "plan");
   const { spec } = loadSpec(join(root, ".agentry", "process.json"), { root });
-  const found = nudges({ root: sub, runRoot: sub, spec, model: readProcess({ root, spec }) });
-  assert.ok(!found.some((n) => n.kind === "unlisted-worktree"));
+  const found = nudges({ root: sub, runRoot: root, spec, model: readProcess({ root, spec }) });
+  assert.deepEqual(
+    found.filter((n) => n.path).map((n) => [n.kind, n.branch]),
+    [["unlisted-worktree", "worktree-agent-c3"]],
+  );
 });
 
 test("mechanical: a ledger with a merge record gives one fix naming what the board lacks", () => {

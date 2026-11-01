@@ -3,8 +3,8 @@
 //
 //   nudges(args)     -> [{ kind, id?, path?, branch?, command }]   what to flag, naming the command to use
 //   mechanical(args) -> { fixes, left }                            what `board fix` may write, and what it only reports
-// with args { root, runRoot, spec, model }: `root` is the checkout the board is read from, `runRoot` the main
-// checkout, where the ledgers live.
+// with args { root, runRoot, spec, model }: `root` is the checkout the board is read from (it may sit in a
+// subfolder), `runRoot` the main checkout, where the ledgers live.
 //
 // A nudge kind: `unlisted-worktree` (an agent worktree no ledger knows), `started-by-hand` (a task the board
 // has started and no ledger tracks), `merged-by-hand` (commits on main that no merge record covers),
@@ -12,6 +12,7 @@
 // Without a `lifecycle` the board has no started words, so `started-by-hand` stays quiet. Read-only.
 import { realpathSync } from "node:fs";
 import { basename, join, sep } from "node:path";
+import { git as runGit } from "../lane/worktree.mjs";
 import * as git from "./git.mjs";
 import * as ledgers from "./ledger.mjs";
 import { leadTokens, parentOf } from "./rules/structure.mjs";
@@ -47,8 +48,8 @@ function samePath(a, b) {
 
 // An agent's worktree: Agentry's own, a Claude Code agent's, or one on an agent-named branch. Never the
 // checkout being read or the main one.
-function isAgentTree(tree, { root, runRoot }) {
-  if (samePath(tree.path, root) || samePath(tree.path, runRoot)) return false;
+function isAgentTree(tree, { top, runRoot }) {
+  if (samePath(tree.path, top) || samePath(tree.path, runRoot)) return false;
   const inRun = tree.path.startsWith(join(runRoot, ".agentry", "run", "worktrees") + sep);
   const inClaude = tree.path.includes(`${sep}.claude${sep}worktrees${sep}`);
   return inRun || inClaude || /^(agentry\/|worktree-agent-)/.test(tree.branch ?? "");
@@ -72,10 +73,9 @@ export function nudges({ root, runRoot = root, spec, model }) {
   const onto = git.defaultBranch(root);
   const out = [];
 
-  // Worktrees are only read from a checkout's top level, so a board kept in a subfolder sees none.
-  const trees = git.worktrees(root);
-  const top = trees.some((t) => samePath(t.path, root));
-  for (const tree of top ? trees.filter((t) => isAgentTree(t, { root, runRoot })) : []) {
+  // The checkout the board is in, from its git root: a board kept in a subfolder sees the worktrees too.
+  const top = runGit(root, ["rev-parse", "--show-toplevel"]).stdout.trim() || root;
+  for (const tree of git.worktrees(root).filter((t) => isAgentTree(t, { top, runRoot }))) {
     const known = all.find(
       (l) => l.worktree === tree.path || (tree.branch && l.branch === tree.branch),
     );

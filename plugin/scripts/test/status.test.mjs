@@ -13,7 +13,19 @@ import { boardReport, statusView, workKind } from "../lib/process/status.mjs";
 import { boardRepo, handBranch } from "./drift-repo.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
-function board(name, root = join(FIXTURES, name)) {
+const copies = [];
+after(() => {
+  for (const dir of copies) rmSync(dir, { recursive: true, force: true });
+});
+// A copy of the fixture outside any repository: a board in a subfolder sees its repository's worktrees, and
+// the view must not depend on the ones the checkout running the tests happens to have.
+function copyOf(name) {
+  const root = mkdtempSync(join(tmpdir(), "agentry-status-"));
+  copies.push(root);
+  cpSync(join(FIXTURES, name), root, { recursive: true });
+  return root;
+}
+function board(name, root = copyOf(name)) {
   const { spec } = loadSpec(join(FIXTURES, name, "process.json"));
   const model = readProcess({ root, spec });
   return { root, spec, model, report: boardReport({ root, spec, model }), work: workKind(spec) };
