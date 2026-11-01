@@ -118,10 +118,19 @@ export function carryBackStep(lane, rows) {
     const n = droppedCarries.length + 1;
     const file = join(runDir(lane.root, lane.id), `merge-carry-dropped-${n}.patch`);
     writeFileSync(file, carry.patch);
+    // A carry still on the tree (a run killed before it set it aside) comes off it too: dropped means
+    // the land goes on without those edits, not that it takes them again as a new carry.
+    const there = applyPatch(lane.root, carry.patch, { check: true, reverse: true }).ok;
+    const off = there ? applyPatch(lane.root, carry.patch, { reverse: true }) : { ok: true };
+    if (!off.ok) {
+      rows.push(red("carry", `cannot take exec's board writes off main: ${off.reason}`));
+      return { exit: 1, keepCarry: true, next: dropNext(lane) };
+    }
     const dropped = { files: carry.files, sha256: carry.sha256, patchFile: file, at: now() };
     setMerge(lane, { carry: undefined, droppedCarries: [...droppedCarries, dropped] });
+    const detail = `dropped exec's board writes (the owner's --drop-carry)${there ? ", off main too" : ""}`;
     rows.push(
-      ok("carry", "dropped exec's board writes (the owner's --drop-carry)", [
+      ok("carry", detail, [
         `${carry.files.join(", ")}: the patch is kept in ${file} (git apply it by hand if its cells matter)`,
       ]),
     );

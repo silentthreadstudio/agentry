@@ -681,6 +681,27 @@ test("a rollback killed after its reset is finished by the rerun: lane back, exe
   assert.equal(ledger.gates.filter((g) => g.where === "main").length, 1); // no second gate run
 });
 
+// R1b-5 re-verify item 6: with the carry recorded but still on main's tree (killed before it was set
+// aside), --drop-carry said "dropped", then took the same edits as a new carry and committed them.
+test("--drop-carry of a carry still on main's tree takes it off, so it is not committed", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  execWrites();
+  landKilledAt("^-C [^ ]+ --literal-pathspecs restore --source=HEAD", "before");
+  assert.ok(readLedger(root, ID).merge.carry);
+  assert.equal(status(), "M plan/BOARD.md"); // still on the tree
+  const res = merge(ID, "--message", "docs(board): land T1", "--drop-carry");
+  assert.equal(res.status, 0, out(res));
+  assert.match(
+    res.stdout,
+    /dropped exec's board writes \(the owner's --drop-carry\), off main too/,
+  );
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T2 +\| S1 +\| todo +\|/);
+  assert.equal(status(), "");
+  const [record] = readLedger(root, ID).merge.droppedCarries;
+  assert.match(readFileSync(record.patchFile, "utf8"), /^\+\| T2 +\| S1 +\| doing/m);
+});
+
 // R1b-5 fix 2: a killed land set exec's writes aside in a patch file only; the rerun saw a clean main
 // and landed without them.
 test("a land killed during its gate keeps exec's writes in the ledger; the rerun commits them", async () => {
