@@ -93,5 +93,57 @@ Ask each once, only when it cannot be inferred, in one `AskUserQuestion` where p
   removes it and the checker stays read-only.
 - **Map the code?** Only when `.agentry/context.md` is missing: offer `/agentry:onboard`.
 
+## Wiring the lanes (every state)
+
+Once the process file loads, set up what `/agentry:exec`, `/agentry:merge`, `/agentry:start` and
+`/agentry:close` use, in this order. A step already set up is shown, not asked again (`--relearn` aside).
+Each change to `.agentry/process.json` goes through the draft: copy it to `.agentry/run/process/draft.json`,
+edit the draft, run `board explain --process .agentry/run/process/draft.json` (exit 2 → fix the draft), then
+write the real file and delete the draft. The keys are in `references/format.md` § gate, extensions and
+conductor.
+
+1. **The gate.** Learn it from the repo, in this order: the workflow doc (`PROCESS.md`, `WORKFLOW.md`,
+   `CONTRIBUTING.md`) naming the merge gate; a gate script (`tools/ci/gate*`, `scripts/gate*`, a `Makefile`
+   target such as `check` or `ci`); the CI config (`.github/workflows/*.yml`, `.gitlab-ci.yml`); the
+   `package.json` scripts. Prefer the one command the repo itself calls its gate.
+   - `gate.command` is argv, run with no shell in the git root: `["tools/ci/gate.sh"]`,
+     `["pnpm", "run", "check"]`. With no single command, propose the CI's steps joined by `&&` under
+     `["sh", "-c", "…"]` and say so. Never a pipe (`|`): it hides the exit code.
+   - `gate.quick` only when the repo has a cheaper tier with a stated scope (a `--quick` flag "for docs-only
+     changes"): its `command`, and `only` globs for exactly that scope (`["docs/**", "**/*.md"]`).
+   - `gate.after`: files the repo's workflow changes after the gate is green (a changelog written at merge).
+     Default none.
+   - Show the proposal with where each part came from, and confirm it. Don't run the gate unasked: it may be
+     long. A gate that leaves files changed counts as red; say so when the script writes into the tree.
+2. **The conductor prompt.** Look for the repo's own (a doc its instruction files or board point agents to
+   as their operating prompt). Offer it, or the template `templates/CONDUCTOR.md` copied next to the board
+   (`CONDUCTOR.md` in the process file's `root`; never overwrite), or none. Set `conductor.prompt` (from
+   the git root) and `conductor.rules`, the heading standing rules are appended under (`Standing rules` for
+   the template; for an existing file a heading of that kind, or propose adding one with the owner's OK).
+   Without `rules`, a rule draft can't be applied.
+3. **The trigger block.** Run `board instructions` and show its output: the block it would write between
+   `<!-- agentry:begin v1 -->` and `<!-- agentry:end -->` in `AGENTS.md` (created if absent) and the
+   `@AGENTS.md` line it would add to an existing `CLAUDE.md` (never created). Every host reads `AGENTS.md`;
+   Claude Code reads it beside a `CLAUDE.md` only through that import. On OK, `board instructions --write`.
+   Text outside the markers is never touched, and a re-run changes nothing. If the repo's instruction files
+   carry a competing line (every task through `/agentry:go`, a hand checker to keep green), list it and
+   propose its replacement; edit it only on the owner's OK.
+4. **The default agent.** Run `board default-agent` and show `current`. Offer to make `agentry:conductor`
+   the project's main-session agent: `board default-agent --write`, then `--verify` (static). A different
+   `agent` already set is shown and replaced only on an explicit OK. The live check (`--verify live`) costs
+   one small request (about 15k tokens); run it only with the owner's OK. Show `resolved` and `how`; on
+   `no`, the cause. Say: it takes effect in the next session; `.claude/settings.local.json` overrides it;
+   a teammate without Agentry falls back to plain Claude Code, silently.
+5. **The push policy.** If `.agentry/config.json` has no `merge.push`, ask once: `ask` (default: ask at each
+   merge), `auto` (push once a merge is green) or `never` (keep it local). A repo doc that says to push after
+   every verified unit makes `auto` the recommendation, still asked. Write it project-local, merging, as
+   `/agentry:config` §2 does.
+6. **The merge skill.** If the repo has its own merge or landing skill (`.claude/skills/*/SKILL.md`), offer to
+   name it in `extensions.merge.checks` by its own name: `/agentry:merge` then refuses to land until it
+   has a recorded outcome. Propose its shrunk text: only the checks that are the repo's own (what a person
+   must see, rules only this repo has, extra files to update), with the steps merge now does (cherry-pick,
+   gate, board writes, push, cleanup) removed. Show the full proposed text; edit the skill only on the
+   owner's OK, never unasked.
+
 End with what was written (paths), what was left as it was, and the last `board check` result. Nothing is
 committed: the user reviews the diff.

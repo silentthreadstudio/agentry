@@ -1,5 +1,5 @@
 ---
-description: Set Agentry up for this repo's process — scaffold a board in a new repo, learn the board it already has into .agentry/process.json, or show and repair one already set up. Asks only what it can't infer; never commits.
+description: Set Agentry up for this repo — scaffold a board in a new repo, learn the board it already has into .agentry/process.json, or show and repair one already set up; then learn the gate and wire the lanes (conductor prompt, AGENTS.md trigger block, default agent, push policy). Asks only what it can't infer; never commits.
 argument-hint: "[--relearn <kind>] — re-learn one kind of an existing setup"
 ---
 
@@ -13,6 +13,15 @@ Pick the state, then follow its section of `learn.md`:
 
 Then ask, once each and only what can't be inferred: is `.agentry/` committed (infer from `.gitignore` and `git ls-files .agentry` first)? Session-start status on? Harness writes on? Map the code with `/agentry:onboard` (only if `.agentry/context.md` is missing)?
 
-Never guess a mapping `explain` hasn't confirmed. Never commit or push; the board files stay the user's. End with the paths written and the last `board check` result.
+Then wire the lanes, in order, following `learn.md` § Wiring the lanes. A step already set up is shown, not asked again; each process-file change goes through the draft and `board explain`:
+
+1. **Gate.** Learn it from the repo's workflow doc, gate scripts, CI config and `package.json` scripts; show where each part came from; confirm `gate.command`, `gate.quick` (only with a stated scope) and `gate.after`.
+2. **Conductor prompt.** Offer the repo's own or the template `templates/CONDUCTOR.md` → `conductor.prompt` and `conductor.rules`.
+3. **Trigger block.** Show `board instructions` (the block for `AGENTS.md` and the `@AGENTS.md` import for an existing `CLAUDE.md`); on OK, `board instructions --write`. Propose replacements for competing lines in the repo's instruction files; edit them only on OK.
+4. **Default agent.** `board default-agent`; on OK `--write`, then `--verify`; `--verify live` only with the owner's OK (one small request). Say that teammates without Agentry fall back to plain Claude Code.
+5. **Push policy.** Ask `merge.push` once (`ask` default, `auto`, `never`) unless it is set; write it to `.agentry/config.json`.
+6. **Merge skill.** If the repo has its own merge skill, offer to name it in `extensions.merge.checks` and show its shrunk text (only the repo's own checks); edit the skill only on the owner's OK.
+
+Never guess a mapping `explain` hasn't confirmed. Never commit or push; the board files, instruction files and repo skills stay the user's. End with the paths written and the last `board check` result.
 
 See also: `/agentry:new <kind>` adds items, `/agentry:board` shows status and findings, `/agentry:config` edits toggles.
