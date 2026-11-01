@@ -81,8 +81,7 @@ export function usedMemories(text) {
     if (!m) continue;
     let rest = m[1];
     if (!rest.trim())
-      for (let j = i + 1; ITEM.test(lines[j] ?? ""); j++)
-        rest += `,${lines[j].replace(ITEM, "")}`;
+      for (let j = i + 1; ITEM.test(lines[j] ?? ""); j++) rest += `,${lines[j].replace(ITEM, "")}`;
     else if (rest.includes("[") && !rest.includes("]"))
       for (let j = i + 1; j < lines.length && !rest.includes("]"); j++) rest += `,${lines[j]}`;
     for (const raw of rest.split(/[,\s]+/)) {
