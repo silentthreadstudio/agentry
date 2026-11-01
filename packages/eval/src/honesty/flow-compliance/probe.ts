@@ -60,7 +60,7 @@ export function runFlowComplianceProbe(opts: FlowComplianceProbeOptions): FlowCo
     opts.observer?.emit?.({
       kind: check.pass ? "task-done" : "gate-fired",
       runId,
-      detail: `${check.id}: ${check.pass ? "PASS" : "FAIL"} — ${check.detail}`,
+      detail: `${check.id}: ${check.na ? "N/A" : check.pass ? "PASS" : "FAIL"} — ${check.detail}`,
       ts: new Date().toISOString(),
     });
   }

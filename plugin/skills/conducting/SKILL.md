@@ -89,9 +89,9 @@ On **spec-first and decompose+verify these gates are mandatory stops, in order �
 
 On any run **above the one-shot floor** (spec-first / decompose+verify), record the orchestration through the **`flow` MCP** (`mcp__…_flow__*`) so the run's state is structured and correct-by-construction, not prose-narrated. The skill *mandates* these calls; they are not optional narration.
 
-- **`run_start` FIRST — hold the returned `run` handle.** Begin the run by calling `run_start(goal)` *before* any other FLOW call or any artifact write. It mints and returns a **`run` handle**; **thread that explicit `run` into every subsequent FLOW call** (`task_*`, `event_emit`, `artifact_write`, `agent_*`, `review_*`, `run_get`/`run_status`). Per **ADR-005 (NO branch)** the stdio FLOW server has **no ambient "current run"** — `run` is a **required argument** on every tool, never resolved server-side; a FLOW call before `run_start` is an error. If you know this session's `session_id`, pass it to `run_start` so it seeds the session→run pointer proactively; if not, omit it and the `work-id-binder` hook seeds the pointer reactively on the first Write.
+- **`run_start` FIRST — hold the returned `run` handle.** Begin the run by calling `run_start(goal)` *before* any other FLOW call or any artifact write. It mints and returns a **`run` handle**; **thread that explicit `run` into every subsequent FLOW call** (`task_*`, `event_emit`, `artifact_write`, `agent_*`, `review_*`, `run_get`/`run_status`). Per **ADR-005 (NO branch)** the stdio FLOW server has **no ambient "current run"** — `run` is a **required argument** on every tool, never resolved server-side; a FLOW call before `run_start` is an error. If you know this session's `session_id`, pass it to `run_start` so it seeds the session→run pointer proactively; if not, omit it.
 - **Write a spec/plan ⇒ `artifact_write`** (threading `run`) — it stamps the `version` content-hash. Do this *as* you write each gate artifact (`spec.md`, `plan.md`).
-- **Each routing decision / gate reached / node enter·done ⇒ `event_emit`** (threading `run`). The **conductor is the primary event emitter** — the `flow` stream is the rich record (shape + kind, gate, node + duration); the `subagent-emit` hook is only the backstop.
+- **Each routing decision / gate reached / node enter·done ⇒ `event_emit`** (threading `run`). The **conductor is the primary event emitter** — the `flow` stream is the rich record (shape + kind, gate, node + duration); no hook writes it for you.
 - **CHECKPOINT — proportional (AC7).** This entire FLOW mandate applies **only above the one-shot floor.** A **one-shot run calls NOTHING through FLOW** — no `run_start`, no `task_*`, no `event_emit`, no `artifact_write`. Never impose FLOW ceremony on a one-shot; right-sizing already decided it didn't need orchestration state. (This mirrors §Gating: a genuine one-shot writes nothing to `.agentry/work/`.)
 
 ## Build loop (implement ⇄ verify)
@@ -124,8 +124,8 @@ not draw it, but **what you write is what it shows**, so two habits are not opti
   reinforce an existing item rather than filing a near-duplicate; `backlog_update` moves one to `ready`
   when it is genuinely next). Filing is cheap and reversible — dropping a follow-up is neither.
 
-Presence (who is working, and for how long) is recorded by a hook, not by you — you do not need to call
-`agent_state` for an agent to appear.
+Presence (who is working, and for how long) is yours to record: call `agent_state(run, …)` when you dispatch
+an agent and again when it returns, so the Workbench shows who is on shift.
 
 ## Memory discipline
 

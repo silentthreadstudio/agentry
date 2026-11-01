@@ -6,7 +6,7 @@
 //   1. run_start-before-dispatch — the first `type`-bearing FLOW line precedes the first `agent-started` line.
 //   2. spec-before-tasks — `spec.md` exists and predates the first `tasks/NNN-*.md`.
 //   3. single-frontmatter — every task file parses to exactly ONE leading `---…---` block.
-//   4. no-skip-flag — no `flow-skipped` marker for an above-floor run.
+//   4. no-skip-flag — N/A: the hook that wrote the `flow-skipped` marker is retired (A32), so it never passes.
 //
 // "A run exists" (the above-floor floor for checks 1 and 4) = `run-state.json` present OR ≥1 FLOW (`type`) line.
 // A backstop-only `events.jsonl` (only `kind` lines, e.g. `flow-skipped`) does NOT count as a run.
@@ -26,6 +26,8 @@ export type CheckId = (typeof CHECK_IDS)[number];
 export interface Check {
   id: CheckId;
   pass: boolean;
+  /** True when the check cannot be evaluated (its source is gone). It does not fail the verdict and is never a PASS. */
+  na?: true;
   /** A short, evidence-bearing line — what made it pass or fail (the readable trace). */
   detail: string;
 }
@@ -180,29 +182,11 @@ export function checkSingleFrontmatter(trace: RunTrace): Check {
 }
 
 /**
- * CHECK 4 — no-skip-flag. An above-floor run must carry NO `flow-skipped` marker (the B1 backstop line written
- * when a gate artifact is produced with no run). If the run is sub-floor ("no run exists"), the check is N/A and
- * passes (a one-shot writes no artifact and triggers no flag). For an above-floor run, any `flow-skipped` = FAIL.
+ * CHECK 4 — no-skip-flag. Reported N/A: the `flow-skipped` marker was written only by the `flow-run-guard` hook,
+ * which is retired (A32), so a clean trace proves nothing. It does not fail the verdict and is never a pass.
  */
-export function checkNoSkipFlag(trace: RunTrace): Check {
-  const id: CheckId = "no-skip-flag";
-  if (!isAboveFloor(trace)) {
-    return {
-      id,
-      pass: true,
-      detail: "sub-floor run (no orchestration artifacts) — skip-flag check N/A",
-    };
-  }
-  const skips = trace.events.filter((e) => e.kind === "flow-skipped");
-  if (skips.length === 0) {
-    return { id, pass: true, detail: "no flow-skipped marker for an above-floor run" };
-  }
-  const named = skips.map((s) => s.artifact ?? "?").join(", ");
-  return {
-    id,
-    pass: false,
-    detail: `${skips.length} flow-skipped marker(s) for an above-floor run: ${named}`,
-  };
+export function checkNoSkipFlag(_trace: RunTrace): Check {
+  return { id: "no-skip-flag", pass: true, na: true, detail: "N/A (hook retired)" };
 }
 
 /** Run all four checks in order and aggregate — PASS iff every check passed. */

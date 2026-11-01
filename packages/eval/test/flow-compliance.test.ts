@@ -190,22 +190,16 @@ test("runExists: a backstop-only events.jsonl (only kind lines) does NOT count a
   );
 });
 
-test("check4: above-floor run with no flow-skipped ⇒ pass", () => {
-  const c = checkNoSkipFlag(trace({ events: [flowLine("2026-01-01T00:00:00Z")] }));
-  assert.equal(c.pass, true);
-});
-
-test("check4: above-floor run WITH a flow-skipped marker ⇒ fail", () => {
-  const c = checkNoSkipFlag(
+test("check4: no-skip-flag is N/A (hook retired), with or without a flow-skipped marker", () => {
+  const clean = checkNoSkipFlag(trace({ events: [flowLine("2026-01-01T00:00:00Z")] }));
+  const marked = checkNoSkipFlag(
     trace({ events: [flowLine("2026-01-01T00:00:00Z"), skipLine("2026-01-01T00:05:00Z")] }),
   );
-  assert.equal(c.pass, false);
-});
-
-test("check4: a sub-floor run (no run-state, no FLOW line) ⇒ skip-flag check is N/A ⇒ pass", () => {
-  // A skip flag with no run is below the floor — a one-shot writes no artifact; the check does not apply.
-  const c = checkNoSkipFlag(trace({ events: [skipLine("2026-01-01T00:00:00Z")] }));
-  assert.equal(c.pass, true);
+  for (const c of [clean, marked]) {
+    assert.equal(c.na, true);
+    assert.equal(c.pass, true);
+    assert.equal(c.detail, "N/A (hook retired)");
+  }
 });
 
 // --- the probe over the committed replay fixtures: PASS on compliant, FAIL on each violation ---------------------
@@ -263,11 +257,11 @@ test("probe: double-frontmatter ⇒ FAIL on check 3 only", () => {
   assert.deepEqual(failing, ["single-frontmatter"]);
 });
 
-test("probe: skip-flag ⇒ FAIL on check 4 only", () => {
+test("probe: a skip-flag fixture no longer fails; no-skip-flag reports N/A", () => {
   const a = probeOver(stagedFixture("skip-flag"));
-  assert.equal(a.pass, false);
-  const failing = a.checks.filter((c) => !c.pass).map((c) => c.id);
-  assert.deepEqual(failing, ["no-skip-flag"]);
+  assert.equal(a.pass, true);
+  const c4 = a.checks.find((c) => c.id === "no-skip-flag");
+  assert.equal(c4?.na, true);
 });
 
 // (The former `run flow-compliance --run <dir>` CLI subcommand was removed by T-10: flow-compliance is no longer a
@@ -288,9 +282,8 @@ test("AC7 real-trace: the probe runs over a real captured /agentry:go run dir", 
   // The load-bearing real-shape assertion: run_start fired before dispatch on a real trace — the AC7 signal.
   const c1 = a.checks.find((c) => c.id === "run-start-before-dispatch")!;
   assert.equal(c1.pass, true, `real trace must show run_start before dispatch: ${c1.detail}`);
-  // And the real run carries no flow-skipped marker for an above-floor run.
   const c4 = a.checks.find((c) => c.id === "no-skip-flag")!;
-  assert.equal(c4.pass, true, `real trace must carry no flow-skipped marker: ${c4.detail}`);
+  assert.equal(c4.na, true);
 });
 
 // --- the aggregate verdict is the conjunction of all four checks --------------------------------------------------
