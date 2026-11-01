@@ -1,0 +1,15 @@
+---
+description: Land one task on main — preflight, the repo's own checks, cherry-pick, the gate (or the recorded gate it may trust), the board's done row, SHA and handoff line in one commit, then push per policy and cleanup. Stops at the first red step.
+argument-hint: <task id> [--branch <branch>]
+---
+
+Land task `$ARGUMENTS` on main. `lane` means `node "${CLAUDE_PLUGIN_ROOT}/scripts/lane.mjs"`. What each row means and every edge case: the `conducting` skill's `references/merge.md`.
+
+Run each call from the main checkout, in the foreground, and read its exit code: 0 = done, `next` printed; 1 = a red step stopped it; 2 = usage or refusal. Never pipe it into `grep`/`tail` to decide. Show each step table as printed.
+
+1. `lane merge <id> --preflight`. Add `--branch <b>` only for work built outside `/agentry:exec` (it adopts that branch).
+2. For each repo check the table names (`extensions.merge.checks`): run that skill's checks, then `lane merge <id> --check <skill>=pass|fail --note "<one line>"`.
+3. `lane merge <id> --message "<board commit message>" [--summary "<handoff text>"]`: the repo's commit conventions, no AI attribution.
+4. Follow `next`. `ask` → ask the owner, and add `--approved` only on their yes. `never` → no push. Then `--cleanup`. If it refuses on ignored files, show them and ask; `--discard-ignored` only on a yes.
+
+On exit 1 or 2, stop and show why. Do what `next` says, or ask the owner. Never finish a step by hand: no hand cherry-pick, reset, board edit, commit or push.

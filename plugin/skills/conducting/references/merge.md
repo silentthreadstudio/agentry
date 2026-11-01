@@ -1,0 +1,85 @@
+# Merge — landing a task on main
+
+Reference for the `conducting` skill and `/agentry:merge`. One procedure lands a task: `lane merge` does
+every git, gate and board step and prints what it did. A repo's own merge skill keeps only what is specific
+to that repo, and merge calls it as a check (`extensions.merge.checks`). `lane` means
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/lane.mjs"`.
+
+A task is `done` when its commits are on main (A23). The merge is what makes it `done`. A verifier's PASS
+leaves the task in verify.
+
+## The calls
+
+| Call | Does |
+| :--- | :--- |
+| `lane merge <id> [--branch <b>] --preflight` | Reads what landing needs and changes nothing on main. With `--branch`, adopts work built outside exec. |
+| `lane merge <id> --check <skill>=pass\|fail [--note <t>]` | Records one repo check's outcome on the branch's current tip. |
+| `lane merge <id> [--branch <b>] --message <m> [--summary <t>]` | The land: pick → gate or skip → record → board commit. |
+| `lane merge <id> --push [--approved]` | Pushes main per `merge.push`. |
+| `lane merge <id> --cleanup [--discard-ignored]` | Removes the task's worktree and branch. |
+
+Exit 0 = the step is done and `next` names the following one. Exit 1 = a red step stopped it, and its row
+says why. Exit 2 = usage or a refusal: nothing was changed. Run every call in the foreground from the main
+checkout and read the exit code. A pipe would report the last command's exit, not merge's.
+
+Each call is idempotent from the task's ledger (`.agentry/run/process/ledger/<id>.json`). Re-run the land
+after fixing what stopped it, and it resumes. Picks already on main are not picked again, and a gate
+already green on main's HEAD does not run again. A land that already finished prints "already merged".
+
+## The land, row by row
+
+| Row | Checks | Red or refused when |
+| :--- | :--- | :--- |
+| `ledger` | The exec ledger (state `verified`), or a new one adopted from `--branch` (origin `adopted`, counted as a bypassed dispatch). A `stopped` exec lane lands only on the owner's call, with `--branch <its branch>`, and is adopted from then on. | No ledger and no `--branch`; the lane is still building, verifying or fixing; it is stopped and its branch isn't named. |
+| `board` | The id is on the board once, in the lifecycle's kind. | It isn't. With no `lifecycle` the row is skipped and nothing is written. |
+| `checks` | Each `extensions.merge.checks` skill exists in `.claude/skills/<name>/SKILL.md` and has an outcome recorded on the branch's current tip. | A skill is missing (exit 2), a check is unrecorded or was recorded on an older tip (exit 2), or a check failed (exit 1). |
+| `main` | The main checkout is on the main branch and `git status` is empty, untracked files included. One exception: plain edits of the board file the lifecycle's status and verdict writes go to (exec leaves them uncommitted). | Any other change. Commit it or move it away first. |
+| `carry` | Exec's uncommitted board writes are set aside as a patch in the task's run dir, so the picks, the gate and a rollback see a clean tree. They go back on top of the picks before `record` and land in the board commit. | The patch no longer applies after the picks: the row names the patch file. On any stop, main gets them back, uncommitted, as they were. |
+| `land` | `git cherry-pick <shas…>` of every branch commit not already on main by patch. | A merge commit on the branch (rebase first). A pick stops: the sequence is aborted (`cherry-pick --abort`) and main is asserted back at `preHead`, clean. Then the builder rebases its branch. |
+| `gate` | Skipped only when the ledger holds a green full worktree gate, clean before and after, main's tree after the picks equals the branch tip's tree, and every file changed since that gate matches `gate.after`. Otherwise it runs the tier `pickTier` picks (`quick` only when every landed file matches `gate.quick.only`). The row names the tier and why, or the gate it trusted and the `after` glob each later file matched. | The gate exits non-zero or leaves files. Main is reset to `preHead`, but only after asserting that main's first-parent chain since `preHead` is exactly the picked commits and the tree is clean. Otherwise it stops and says so. |
+| `record` | The lifecycle's `merged` event: status, the commit cell (`<first>…<last>`) and the handoff line. Then `board check` runs again. | A rule fails for an item it didn't fail for before. The written files are restored, and the picks stay on main. |
+| `commit` | One commit of exactly the files `record` wrote and the carried board file, with the repo's own hooks. | Main holds any other change; a hook refuses (the files are restored); main isn't clean after the commit. |
+
+The board commit message follows the repo's commit conventions and carries the author only. A message with
+AI attribution (a co-author trailer, a session link, a "generated with" line) is refused before anything
+runs. `--summary` is the handoff text. Without it, the first landed commit's subject is used.
+
+A long gate (more than the host's foreground limit) is the reason to run the land in the host's background
+mode. Then wait for its single exit notice. The ledger records the outcome either way.
+
+## Repo checks
+
+A repo check is judgment the repo owns, such as "the UI was seen running and the owner OK'd it", or a second
+handoff file. Run the named skill's checks yourself, then record the outcome with a one-line note. A check
+counts only for the branch tip it was recorded on: new commits on the branch mean recording it again. Scripted
+checks belong in the repo's gate command, which merge already runs.
+
+## Push
+
+`merge.push` in `.agentry/config.json` (project, then global; default `ask`):
+
+- `auto`: `lane merge <id> --push` after the land.
+- `ask`: ask the owner in the session. Only on their yes, `lane merge <id> --push --approved`.
+- `never`: merge refuses to push. The owner pushes.
+
+Push goes to main's upstream and runs the repo's pre-push hooks. With no upstream it refuses.
+
+## Cleanup
+
+The worktree is found by its branch, whatever its directory is called, and removed with `-f -f`, so a locked
+one comes down too. The branch is deleted only when every commit on it is on main. Cleanup refuses while the
+worktree holds ignored files (screenshots, build output), because removal deletes them. List them, copy what
+the owner wants to keep, and re-run with `--discard-ignored` only on their yes.
+
+## When it stops
+
+| Stop | Do |
+| :--- | :--- |
+| Cherry-pick conflict | Resume the builder (or a fresh one in the same worktree) to rebase `agentry/<id>` onto main, then re-run the gate in the worktree (`lane exec gate <id>`) and land again. |
+| Red gate, rolled back | Read the log the row names. Fix on the branch through the exec lane, then land again. |
+| Red gate, rollback refused | Main holds more than the picks, or the gate left files. Show the owner. Don't reset by hand. |
+| New board finding | Fix what the finding names, then land again. It resumes after the picks. |
+| Main moved since the land | Someone committed between two runs. Show the owner the log since `preHead`. |
+
+Never finish a stopped step by hand: no hand cherry-pick, `reset`, board edit, commit or push. A hand step
+leaves the ledger behind the repo, and the next call refuses or repeats work.
