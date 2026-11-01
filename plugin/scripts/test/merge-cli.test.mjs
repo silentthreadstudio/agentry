@@ -549,6 +549,70 @@ const endGroup = (pgid) => {
   if (pgid && alive(pgid)) process.kill(-pgid, "SIGKILL");
 };
 
+// A git on PATH in front of the real one: at the first call whose argv matches $KILL_ON it SIGKILLs its
+// parent, `lane merge`, before or after running that call (a host's time limit landing right there).
+const REAL_GIT = process.env.PATH.split(":")
+  .map((dir) => join(dir, "git"))
+  .find((file) => existsSync(file));
+function killShim() {
+  const dir = join(home, "shim");
+  mkdirSync(dir, { recursive: true });
+  const shim = `#!/bin/bash
+if [ -f "$KILL_MARK" ] && [[ "$*" =~ $KILL_ON ]]; then
+  rm -f "$KILL_MARK"
+  if [ "$KILL_WHEN" = after ]; then "${REAL_GIT}" "$@"; st=$?; kill -9 $PPID; exit $st; fi
+  kill -9 $PPID; exit 137
+fi
+exec "${REAL_GIT}" "$@"
+`;
+  writeFileSync(join(dir, "git"), shim);
+  chmodSync(join(dir, "git"), 0o755);
+  return dir;
+}
+/** The land, killed at the first git call matching `on` (a regex over its argv), `when` before|after. */
+function landKilledAt(on, when, ...args) {
+  const mark = join(home, "kill.mark");
+  writeFileSync(mark, "");
+  const env = {
+    ...gitEnv,
+    HOME: home,
+    NO_COLOR: "1",
+    PATH: `${killShim()}:${process.env.PATH}`,
+    KILL_MARK: mark,
+    KILL_ON: on,
+    KILL_WHEN: when,
+  };
+  const argv = [LANE, "merge", ID, "--message", "docs(board): land T1", ...args, "--root", root];
+  const res = spawnSync("node", argv, { encoding: "utf8", env });
+  assert.equal(res.signal, "SIGKILL", `the land was not killed at ${on}:\n${out(res)}`);
+  return res;
+}
+/** main's first-parent commits since `from`, oldest first. */
+const chainSince = (from) =>
+  git(root, "rev-list", "--first-parent", "--reverse", `${from}..HEAD`).split("\n").filter(Boolean);
+
+// R1b-5 re-verify item 1: a land killed after its board commit, before the ledger said so, stuck: every
+// rerun was red ("carry no longer applies", then "main has moved"), the ledger left at `merging`.
+test("a land killed right after its board commit is finished by the rerun, not redone", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  execWrites();
+  const pre = head();
+  landKilledAt("^-C [^ ]+ commit --quiet -m", "after");
+  const committed = head();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /✓ recover +a killed run had made the board commit/);
+  assert.equal(head(), committed); // nothing picked or committed again
+  assert.equal(chainSince(pre).length, 2);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "merged");
+  assert.equal(ledger.merge.boardCommit, committed);
+  assert.equal(ledger.merge.carry, undefined);
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T2 +\| S1 +\| doing +\|/);
+  assert.equal(status(), "");
+});
+
 // R1b-5 fix 2: a killed land set exec's writes aside in a patch file only; the rerun saw a clean main
 // and landed without them.
 test("a land killed during its gate keeps exec's writes in the ledger; the rerun commits them", async () => {

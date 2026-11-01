@@ -59,6 +59,12 @@ export function isAncestor(dir, a, b) {
   return Boolean(x && y) && git(dir, ["merge-base", "--is-ancestor", x, y]).status === 0;
 }
 
+/** The files commit `sha` changes against its first parent, or null when git cannot say. */
+export function filesOf(dir, sha) {
+  const res = git(dir, ["diff-tree", "--no-commit-id", "--name-only", "-z", "-r", sha, "--"]);
+  return res.status === 0 ? res.stdout.split("\0").filter(Boolean) : null;
+}
+
 /** A commit's subject line. */
 export const subjectOf = (dir, sha) =>
   git(dir, ["log", "-1", "--format=%s", sha, "--"]).stdout.trim();

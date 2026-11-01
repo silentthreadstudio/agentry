@@ -8,13 +8,18 @@ import { WriteError } from "../../process/write.mjs";
 import { applyPatch } from "../carry-io.mjs";
 import { boardCommit, restoreFiles, subjectOf } from "../land.mjs";
 import { dropNext } from "./carry.mjs";
-import { now, ok, red, save, short, skip } from "./lane.mjs";
+import { now, ok, red, save, setMerge, short, skip } from "./lane.mjs";
 
 // A finding is "new" when its rule fails for an item it did not fail for before the board write. The
 // message is not part of it (it often quotes the status the write just changed); a problem with no item
 // is keyed by its message.
 const findingKey = (f) =>
   JSON.stringify([f.rule ?? null, f.kind ?? null, f.id ?? null, f.id ? null : f.message]);
+// A stop that put the board back as it was: the land is gated again, and resumes from there.
+const unrecorded = (lane, stop) => {
+  setMerge(lane, { step: "gated" });
+  return stop;
+};
 
 export function recordStep(lane, rows) {
   const { root, spec, id } = lane;
@@ -24,6 +29,9 @@ export function recordStep(lane, rows) {
     rows.push(skip("record", "lifecycle off: nothing written to the board"));
     return null;
   }
+  // Written before the first board write: a rerun after a kill from here on looks for this land's
+  // board commit, or takes its uncommitted board writes back (merge/recover.mjs).
+  setMerge(lane, { step: "recording" });
   const carried = merge.carry?.files ?? [];
   if (merge.carry) {
     // Exec's writes go back first, on top of the picks, so the merged write and the check see them.
@@ -34,7 +42,7 @@ export function recordStep(lane, rows) {
           `they stay in the ledger (merge.carry: ${carried.join(", ")})`,
         ]),
       );
-      return { exit: 1, next: dropNext(lane) };
+      return unrecorded(lane, { exit: 1, next: dropNext(lane) });
     }
   }
   const model = readProcess({ root, spec });
@@ -54,7 +62,8 @@ export function recordStep(lane, rows) {
     if (!(error instanceof WriteError)) throw error;
     restoreFiles(root, carried); // the carry goes back as it was, at the stop
     rows.push(red("record", error.message));
-    return { exit: 1, next: "fix what it names, then land again (the picks stay; it resumes)" };
+    const next = "fix what it names, then land again (the picks stay; it resumes)";
+    return unrecorded(lane, { exit: 1, next });
   }
   lane.files = [...new Set([...result.writes.map((w) => w.file), ...carried])];
   const after = boardReport({ root, spec, model: readProcess({ root, spec }) });
@@ -69,10 +78,8 @@ export function recordStep(lane, rows) {
         fresh.map((f) => `${f.rule} ${f.id ?? ""} ${f.message}`),
       ),
     );
-    return {
-      exit: 1,
-      next: "fix what the finding names, then land again (the picks stay; it resumes)",
-    };
+    const next = "fix what the finding names, then land again (the picks stay; it resumes)";
+    return unrecorded(lane, { exit: 1, next });
   }
   const more = [
     ...result.writes.map((w) => `${w.file}: ${w.what}`),
@@ -106,10 +113,8 @@ export function commitStep(lane, rows) {
         back.ok ? "the board files are restored" : `restore failed: ${back.reason}`,
       ]),
     );
-    return {
-      exit: 1,
-      next: "fix the message or what the hook names, then land again (it resumes)",
-    };
+    const next = "fix the message or what the hook names, then land again (it resumes)";
+    return unrecorded(lane, { exit: 1, next });
   }
   // The carried board writes are in this commit now: the ledger lets go of them.
   save(lane, {
