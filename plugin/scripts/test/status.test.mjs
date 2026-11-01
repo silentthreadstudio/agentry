@@ -4,11 +4,13 @@ import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { add as addDraft } from "../lib/process/drafts.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 import { WIDTH, renderCheck, renderStatus, renderWhy, wrapText } from "../lib/process/render.mjs";
 import { boardReport, statusView, workKind } from "../lib/process/status.mjs";
+import { boardRepo, handBranch } from "./drift-repo.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 function board(name, root = join(FIXTURES, name)) {
@@ -115,7 +117,8 @@ test("check: line 1 is the verdict with the exit code, then one line per finding
 test("a clean board: check is the verdict alone; status adds only the Now block", () => {
   const { root, spec, model, report, work } = board("table-board");
   assert.equal(renderCheck({ spec, report, work }), "✓ Sample  OK · 8 rules · 8 tasks · exit 0");
-  const view = statusView({ root, spec, model });
+  // Without a lifecycle nothing says a task was started by hand, so no drift rows.
+  const view = statusView({ root, spec: { ...spec, lifecycle: undefined }, model });
   const lines = renderStatus({ spec, report, view, work, subtitle: "x" }).split("\n");
   assert.equal(lines[0], "✓ Sample  OK · 8 rules · 8 tasks · exit 0");
   assert.equal(lines[1], "");
@@ -238,4 +241,60 @@ test("--why traces one item: where it sits, the rule that fails, the rules that 
   assert.match(lines[1], /BOARD\.md:27 · task · sprint K1a \(todo\) · status doing/);
   assert.ok(lines.some((l) => /^✗ deps-done {2}doing, but depends on H1/.test(l)));
   assert.ok(lines.some((l) => /^✓ ids-unique · refs-resolve/.test(l)));
+});
+
+// Drift and drafts in the view: a temp repo with a hand worktree, a started task, a pending draft.
+function driftView(extra = () => {}) {
+  const repo = boardRepo();
+  after(repo.cleanup);
+  const { root } = repo;
+  const { spec } = loadSpec(join(root, ".agentry", "process.json"), { root });
+  extra(root);
+  const model = readProcess({ root, spec });
+  const report = boardReport({ root, spec, model });
+  const view = statusView({ root, spec, model });
+  return { root, spec, report, view, work: workKind(spec) };
+}
+
+test("tasks the board started with no ledger nudge; a board with no lifecycle has none", () => {
+  const { root, spec, model } = board("table-board");
+  const view = statusView({ root, spec, model });
+  assert.deepEqual(
+    view.nudges.map((n) => [n.kind, n.id, n.command]),
+    [
+      ["started-by-hand", "W3", "/agentry:exec W3"],
+      ["started-by-hand", "X-01", "/agentry:exec X-01"],
+    ],
+  );
+  assert.equal(view.drafts, 0);
+  assert.deepEqual(statusView({ root, spec: { ...spec, lifecycle: undefined }, model }).nudges, []);
+});
+
+test("the view carries nudges and the pending draft count, and status shows both", () => {
+  const { spec, report, view, work } = driftView((root) => {
+    handBranch(root, ".claude/worktrees/agent-q1", "worktree-agent-q1");
+    addDraft(root, { kind: "rule", answer: "Recall first." });
+  });
+  assert.deepEqual(
+    view.nudges.map((n) => n.kind),
+    ["unlisted-worktree", "started-by-hand", "started-by-hand"],
+  );
+  assert.equal(view.drafts, 1);
+  const text = renderStatus({ spec, report, view, work });
+  assert.match(text, /^Drift {6}! unlisted-worktree agent-q1 → \/agentry:exec <id>$/m);
+  assert.match(text, /^ {11}! started-by-hand T1 → \/agentry:exec T1$/m);
+  assert.match(text, /^Drafts {5}1 pending · \/agentry:board draft list$/m);
+});
+
+test("with more than four nudges the rest are counted, and no line passes 80 columns", () => {
+  const { spec, report, view, work } = driftView((root) => {
+    for (const n of ["a", "b", "c", "d"])
+      handBranch(root, `.claude/worktrees/agent-${n}${"x".repeat(60)}`, `worktree-agent-${n}`);
+  });
+  assert.ok(view.nudges.length > 4);
+  const text = renderStatus({ spec, report, view, work });
+  assert.match(text, new RegExp(`^ {11}\\+${view.nudges.length - 4} more: /agentry:board$`, "m"));
+  assert.ok(cols(text) <= WIDTH, text);
+  const tty = renderStatus({ spec, report, view, work, tty: true });
+  assert.ok(tty.includes(`${ESC}[36m!${ESC}[0m`), "only the glyph is colored");
 });

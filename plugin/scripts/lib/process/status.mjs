@@ -4,9 +4,13 @@
 //   boardReport({ root, spec, model })          -> BoardReport (core's `--json` shape, without status)
 //   statusView({ root, spec, model })           -> StatusView
 // The "work" kind is the lifecycle's (else the leaf of the parent tree, ties by name); "now" is
-// `status.now` (else that parent's kind). Worktrees and decision drafts join when the ledger and drafts land (T8a/T9).
+// `status.now` (else that parent's kind). `nudges` are the work done outside Agentry's commands (`drift.mjs`)
+// and `drafts` the count of the owner's calls not yet written down (`drafts.mjs`); both read `runRoot`, the
+// main checkout, and add nothing to a repo with neither.
 import { join } from "node:path";
 import { check } from "./check.mjs";
+import * as drafts from "./drafts.mjs";
+import { nudges } from "./drift.mjs";
 import * as git from "./git.mjs";
 import { readInside } from "./read.mjs";
 import { refKinds, resolve } from "./rules/structure.mjs";
@@ -112,7 +116,7 @@ function readNote(root, path) {
   return text === null ? undefined : { path, lines: text.trimEnd().split("\n") };
 }
 
-export function statusView({ root, spec, model }) {
+export function statusView({ root, spec, model, runRoot = root }) {
   const work = workKind(spec);
   const now = spec.status?.now ?? refKinds(parentField(spec.kinds[work])?.[1])[0];
   const verify = spec.lifecycle?.on?.built ?? "verify";
@@ -167,6 +171,8 @@ export function statusView({ root, spec, model }) {
     blocked,
     ahead: nowItems.filter((i) => i.phase === "planned").map(progress),
     parked: items.filter((i) => i.phase === "parked").length,
+    nudges: nudges({ root, runRoot, spec, model }),
+    drafts: drafts.pending(runRoot).length,
     recent: git.log(root, { ref: branch, n: 10, firstParent: true }),
     ...(note ? { note } : {}),
   };

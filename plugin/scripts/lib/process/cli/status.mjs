@@ -4,6 +4,7 @@
 //
 // run(argv, { root, processPath, spec, model }) -> { exit, out }
 import { relative } from "node:path";
+import { mainRoot } from "../../lane/worktree.mjs";
 import { renderStatus, why } from "../render.mjs";
 import { boardReport, statusView, workKind } from "../status.mjs";
 
@@ -19,7 +20,7 @@ export function run(argv, { root, processPath, spec, model }) {
   const id = argv[at + 1];
   if (at >= 0 && (!id || id.startsWith("--"))) return { exit: 2, out: `usage: ${usage}` };
   if (at >= 0) return why({ spec, model, report, id, tty: tty() });
-  const view = statusView({ root, spec, model });
+  const view = statusView({ root, spec, model, runRoot: mainRoot(root) ?? root });
   if (argv.includes("--json")) return { exit, out: JSON.stringify({ ...report, status: view }) };
   const file = processPath ? relative(root, processPath) : "";
   const shown = file.startsWith("..") ? processPath : file;

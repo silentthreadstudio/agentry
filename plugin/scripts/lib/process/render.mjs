@@ -2,6 +2,7 @@
 // with the exit code, because Claude Code folds long tool output and shows the top. One line per
 // thing, ≤ WIDTH columns, no emoji. Color only on a TTY and only on glyphs; words keep the default
 // color (bold and dim mark structure). PURE: data in, text out.
+import { basename } from "node:path";
 import { withId } from "./rules/structure.mjs";
 import { titleOf } from "./status.mjs";
 
@@ -189,12 +190,32 @@ function blockLines(view, s) {
   ];
 }
 
+const SHOWN = 4;
+
+/** Drift and drafts: one row per nudge (`! kind subject → command`), the first few, then "+N more"; the
+ *  pending drafts on their own row. Nothing at all when there are none. */
+function driftLines(view, s) {
+  const nudges = view.nudges ?? [];
+  const rows = nudges.slice(0, SHOWN).map((n) => {
+    const subject = n.id ?? basename(n.path ?? n.branch ?? "");
+    return `! ${n.kind} ${subject} → ${n.command}`;
+  });
+  if (nudges.length > SHOWN) rows.push(`+${nudges.length - SHOWN} more: /agentry:board`);
+  const lines = rows.map((text, n) => {
+    const shown = fit(text, WIDTH - LABEL);
+    return row(n ? "" : "Drift", shown.startsWith("!") ? s.cyan("!") + shown.slice(1) : shown, s);
+  });
+  if (view.drafts)
+    lines.push(row("Drafts", line(`${view.drafts} pending · /agentry:board draft list`), s));
+  return lines;
+}
+
 /** `status`: verdict, where it read from, Now / In flight / On you / Blocked / Ahead, the findings and
  *  the legend. A clean board is the verdict and the Now block only. */
 export function renderStatus({ spec, report, view, work, subtitle, tty = false }) {
   const s = style(tty);
   const head = verdict(report, { work, s });
-  if (report.ok) return [head, "", ...nowLines(view.now, s)].join("\n");
+  if (report.ok) return [head, "", ...nowLines(view.now, s), ...driftLines(view, s)].join("\n");
   const legend = `■ done  ◆ verify  ● doing  □ todo  × cut     ${holding(spec, report.findings)} rules hold · --why <id>`;
   return [
     head,
@@ -202,6 +223,7 @@ export function renderStatus({ spec, report, view, work, subtitle, tty = false }
     "",
     ...nowLines(view.now, s),
     ...blockLines(view, s),
+    ...driftLines(view, s),
     "",
     ...findingLines(report.findings, s),
     "",
