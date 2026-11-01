@@ -1,4 +1,4 @@
-# Lanes — `exec` and `ask`
+# Lanes: `exec` and `ask`
 
 Reference for the `conducting` skill. A lane is an explicit command for work whose shape is already known, so it
 skips routing. `/agentry:exec <task-id>` builds a contract that already exists; `/agentry:ask <question>` answers
@@ -9,119 +9,117 @@ a question. `/agentry:go` stays the full pipeline and never routes to a lane on 
 - No right-sizing, no spec, plan or split step, no spec or plan gate. The planning already happened.
 - No Flow MCP calls (`run_start`, `task_*`, `event_emit`, `artifact_write`, `review_*`, `backlog_*`).
 - No files under `.agentry/work/` (`spec.md`, `plan.md`, `tasks/*.md`).
-- No edits to the repo's board, task status or contract text. Status is derived elsewhere (hooks, the merge);
-  the lane writes none.
-- No merge, no push. The owner merges.
+- No board edits by hand and no contract edits. The exec steps write the board through the process file's
+  `lifecycle`; a repo without one gets no writes.
+- No merge, no push: `/agentry:merge` lands the work.
 
 ## exec
 
-### 1. Find the contract
+The lane's state is a ledger, `.agentry/run/process/ledger/<id>.json` in the main checkout, stepped by
+`lane exec <step> <id>` (`scripts/lane.mjs`). Each step checks that the ledger expects it, does the git and board
+work, writes the ledger and prints one JSON object. The conductor runs the step `next` names and dispatches the
+prompt the step printed. It never composes a brief, picks the next round or writes the board itself.
 
-Run the `find-contract.mjs` command `exec.md` gives, with the id as one single-quoted argument (`exec.md`
-states when it may run).
-
-It prints one JSON line:
-
-| `status` | Exit | Do |
+| Step | Does | Board (through `lifecycle`) |
 | :--- | :--- | :--- |
-| `found` | 0 | `block` is the contract (from `file`:`line`). Locations in `related`, if present, are context, not the contract. |
-| `not-found` | 1 | Show the candidates as `file:line` and ask which one is meant, or for the file that holds it. |
-| `ambiguous` | 1 | Show the candidates as `file:line` and ask which one is meant. |
+| `start <id>` | finds the contract, refuses at `lanes.maxWriters`, cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder | `dispatched` |
+| `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round | `built` when a verifier is next |
+| `verdict <id> [--agent a]` | reads the verifier's report and its tip, briefs the next round | the verdict (`FAIL` also `failed`) |
+| `gate <id>` | runs the repo's `gate` in the worktree as argv, records `{commit, tree, exit, clean before and after, log}` | none |
+| `close <id> [--episode e]` | prints the `episode_write` payload; `--episode` stamps the id it returned | none (`done` comes at merge) |
+| `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
 
-If the script is missing, prints no JSON or exits with any other code, say so and ask the user for the file
-and id. Don't search by hand and pick a block: a guessed contract builds the wrong thing. With no user to ask
-(headless), stop and report.
+Exit 0: `next` is printed. Exit 1: the lane stopped (or, for `gate`, the gate is red). Exit 2: usage or a
+refusal, nothing changed (an out-of-order step, a missing report file, a dirty worktree at the gate, a run from
+inside a worktree instead of the main checkout).
 
-### 2. Pick the builder
+The JSON: `id`, `step`, `next`, `state`, `worktree`, `branch`, `reportPath`, `guards`, `nested`; for a dispatch
+`prompt`, `brief`, `role`, `mode` (`fresh` or `resume`), `agent` (the one to resume), `dispatch` (the agent type,
+a suggestion for builders), `after` (the step to run when the agent returns); `run` for `gate` and `close`;
+`reason` on a stop; `why` for the machine's choice; `board` for what the lifecycle wrote or skipped.
 
-- **designer** when the contract is UI-shaped: its owned files are screens, components or styles, or its
-  acceptance is judged on rendered output.
-- **implementer** otherwise.
+### The rounds
 
-Dispatch it with `isolation: "worktree"`.
+| From | Report | Next |
+| :--- | :--- | :--- |
+| start | | `build`: a fresh builder |
+| build, fix | main's HEAD or files changed (any status) | `stop` |
+| build, fix | `DONE` / `DONE_WITH_CONCERNS`, uncommitted files or no commits past base | `fix` with the reason (resume); the same again → `stop` |
+| build, fix | `DONE` / `DONE_WITH_CONCERNS`, guards hold | `verify` (fresh) when there is no verdict yet; `recheck` (resume the last verifier) after a fix |
+| build, fix | `NEEDS_CONTEXT` | `needs-context` once (resume, with the fact), then `stop` |
+| build, fix | `BLOCKED` | `stop` |
+| any | no status line / no `Verdict:` last line | `resend` once (resume), then `stop` |
+| verify, recheck, final | the branch tip moved since the dispatch | `recheck`: the verdict is void, nothing written |
+| verify | `PASS` / `PASS WITH NOTES` | `gate` when no green worktree gate is on this tip, then `close` |
+| recheck | `PASS` / `PASS WITH NOTES` | `final`: a fresh verifier against the full acceptance |
+| final | `PASS` / `PASS WITH NOTES` | `gate`, then `close` |
+| final | `FAIL` | `stop` |
+| verify, recheck | `FAIL`, fewer than 3 verdicts | `fix` (resume the builder) |
+| verify, recheck | `FAIL` at the 3rd verdict | `stop`: report every verdict to the owner |
+| gate | red, or the branch moved since the verdict | `stop` |
 
-### 3. The build brief
+A void verdict doesn't count toward the three. With no `gate` in the process file, a `PASS` closes on the
+verdict and the output says so.
 
-The first line is exact; the marker is how hooks tie the dispatch to the task. Every dispatch starts with its
-role's marker (`role=build` for builders, `role=verify` for verifiers), including each re-dispatch (a fix round,
-a `NEEDS_CONTEXT` round, a verifier sent back for a missing `Verdict:` line): it is a new dispatch whose first
-line is the marker.
+### Dispatching
+
+- The prompt is the two lines the step printed, verbatim: the marker `agentry-task: <id> role=<build|verify>
+  round=<n>`, then "Read your brief first: <path>…". Everything else is in the brief.
+- `fresh`: a new agent of the type `dispatch.agent` names. For a build, `designer` is suggested when an owned
+  path is UI-shaped, `implementer` otherwise; the conductor decides. No worktree isolation option: Agentry
+  made the worktree, and the brief holds the agent to it.
+- `resume`: continue the agent `agent` with the prompt (Claude Code: SendMessage to it; opencode: the same
+  `sessionID`). Pass its id as `--agent` on `report` / `verdict` so a later round can resume it. When it can't
+  be resumed, dispatch fresh: the brief stands alone, and the worktree is the same.
+- The agent writes its full report to `reportPath` and replies with it. If the file is missing or empty, save
+  the reply there before running `after`.
+- `needs-context`: if the fact is in the contract block, the repo or memory, append it at the end of the brief
+  under `## The fact` (the `todo` line says where), then send the prompt. Otherwise ask the owner first. The lane
+  allows one such round.
+- A gate can outrun a host's foreground timeout: run `gate` in the host's background mode and wait for its one
+  exit notice. The record is written at exit either way.
+
+### Guards
+
+- **Main touched.** At each builder report, main's HEAD and working files must match the lane's start, Agentry's
+  own run files and the board files the lifecycle writes excepted. A HEAD move made only of commits another lane's
+  merge recorded is not a breach. Don't commit on main by hand while a lane builds.
+- **The worktree.** A builder leaves no uncommitted or untracked files and at least one commit past base.
+- **The tip.** A verdict counts only for the tip it was dispatched on: nobody rebases while a verifier reads.
+- **Nested worktrees.** A worktree that appears during the lane and belongs to no ledger is listed in `nested`
+  on every step. Name it to the owner.
+- **Writers.** `start` refuses when the ledgers in `building` / `fixing` plus worktrees no ledger owns reach
+  `lanes.maxWriters` (`.agentry/config.json`, default 3), and names each one.
+
+### The briefs
+
+`lane exec` renders each round's brief from `references/briefs/` into the task's run dir
+(`.agentry/run/process/runs/<id>/`): `build.md`; `fix.md` (wraps the build brief: the verifier's fix list, a
+refused report, or the supplied fact); `verify.md` (with a recheck section when resuming); `final.md` (wraps the
+verify brief). Each brief carries the contract block verbatim, the owned files, the decisions it cites quoted
+from the board's decision kind by id, the facts recalled for the owned files when `memory.prime` is `all`, the
+worktree, the gate line, the log dir and the report path. The rules builders and verifiers follow live in those
+templates, once:
+
+- `cd <worktree> &&` on every shell command; absolute paths under the worktree.
+- Checks in the foreground, exit codes read, never piped into `grep` / `tail` to decide; no self-started
+  background waits.
+- Logs and scratch files only under the round's log dir.
+- Commits on `agentry/<id>` with no AI attribution; no merge, push or rebase.
+- The verifier changes and commits nothing, runs the printed gate line, states the bar for any input or
+  interaction before testing it, and names each probe so the fix round commits it as a test.
+
+### Close and handoff
+
+After `close`, call `episode_write` with the printed `episode` (add a `lesson` when the run taught one), then
+stamp its id with `close <id> --episode <id>`. The lane stays `verified` until `/agentry:merge` lands it. Hand off:
 
 ```text
-agentry-task: <id> role=build
-Build contract <id> (<file>:<line>) in your worktree. The contract is the whole scope.
-
-<the block, verbatim>
-
-Owned files: <from the block>. Touch nothing else; a file outside this list is NEEDS_CONTEXT.
-Acceptance: <from the block, verbatim>
-Decisions it cites: <each row quoted from the repo's decisions file> | none
-Recalled gotchas: <memories recalled for the owned files> | none
-Related, not the contract: <file:line, from `related`>        (omit when absent)
-
-Run the repo's checks. Commit on your worktree branch following the repo's commit conventions, with no AI
-attribution. Do not merge or push.
-Start your report with one of DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, BLOCKED; then the branch, the commits,
-the checks you ran and their result, and any concern.
-```
-
-Quote decisions from the file, not from memory. Recall gotchas once for the owned files; write `none` if memory
-isn't available.
-
-### 4. Route the builder's report
-
-| Status | Do |
-| :--- | :--- |
-| `DONE`, `DONE_WITH_CONCERNS` | Verify. Pass the concerns to the verifier and into the handoff. |
-| `NEEDS_CONTEXT` | If the missing fact is already in the contract block, the repo or recalled memory, supply it and re-dispatch once: a new dispatch, marker line first, then the build brief, then the fact appended at the end. If the first builder committed anything, append the same `git reset --hard <first builder's branch>` line as the fix round (§6). Otherwise stop and ask the owner. |
-| `BLOCKED` | Stop and report what blocks it and the smallest unblock. |
-
-Never widen the contract: a file outside it or a decision it never made goes to the owner.
-
-### 5. The verify brief
-
-A fresh **verifier**, never the builder. It works in the builder's worktree, not a new one.
-
-```text
-agentry-task: <id> role=verify
-Verify contract <id> (<file>:<line>) against its acceptance. You did not build it; try to prove it wrong.
-Worktree: <path>  Branch: <branch>  Commits: <sha list>
-Read and run there; edit nothing, commit nothing.
-
-<the block, verbatim>
-
-Builder's report: <status and concerns>
-For each acceptance item: PASS, FAIL or UNVERIFIED, with the evidence (the command and its output, file:line,
-a screenshot path). Check that the branch changes only the owned files.
-Your last instruction: the final line of your report is exactly one of `Verdict: PASS`, `Verdict: PASS WITH
-NOTES` or `Verdict: FAIL`, after `used_memories` and anything else.
-```
-
-A report without that last line is not a verdict: send it back once as a new dispatch: the verify marker
-first, the same verify brief, then its earlier report appended with "end with the `Verdict:` line".
-
-### 6. One fix round
-
-On `FAIL`, dispatch a fresh builder (same role, `isolation: "worktree"`). The fix-round brief is, in order: the
-marker line `agentry-task: <id> role=build`, then the build brief, then this text appended at the end:
-
-```text
-Attempt 2. Your worktree is new. First run `git reset --hard <first builder's branch>` so you continue exactly
-from the first attempt, whatever main has moved on to.
-Fix list, from the verifier's FAIL: <the failing items and their evidence>
-```
-
-Then verify again with a fresh verifier. A second `FAIL` ends the lane: report both verdicts to the owner. Don't
-try a third time.
-
-### 7. Handoff
-
-```text
-<id>: <verdict line>
+<id>: <last verdict>; gate <green|red> <tier> on <sha>
 Worktree: <path>  Branch: <branch>
-Commits: <sha subject>, one per line
-Notes: <PASS WITH NOTES items, UNVERIFIED items, builder concerns>
-Left: <what the owner still has to do: review, merge, anything out of scope>
+Rounds: <steps, from show>
+Notes: <PASS WITH NOTES items, builder concerns, guards, nested worktrees>
+Left: /agentry:merge <id>, and anything out of scope
 ```
 
 ## ask
