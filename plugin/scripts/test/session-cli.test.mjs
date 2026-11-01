@@ -87,6 +87,7 @@ test("close gathers drafts, the fix plan, ledgers and sweep findings, and writes
   const landed = git(root, "rev-parse", "HEAD");
   ledger(root, "T1", { state: "merged", worktree: built.path, merge: { landed: [landed] } });
   ledger(root, "T3", { episode: { payload: {} } });
+  ledger(root, "T5", { state: "stopped" });
   const before = read(root, "plan/BOARD.md");
   const res = session(root, "close");
   assert.equal(res.status, 0, res.stderr);
@@ -98,7 +99,8 @@ test("close gathers drafts, the fix plan, ledgers and sweep findings, and writes
     data.cleanable.map((w) => w.id),
     ["T1"],
   );
-  assert.deepEqual(data.episodesPending, ["T3"]);
+  // T1 merged and T5 stopped without an episode, T3 with a payload nobody wrote.
+  assert.deepEqual(data.episodesPending.sort(), ["T1", "T3", "T5"]);
   assert.deepEqual(data.strays, []);
   assert.equal(typeof data.diskFree, "number");
   assert.equal(read(root, "plan/BOARD.md"), before);
@@ -108,4 +110,33 @@ test("a missing or unknown step is a usage error", () => {
   const root = fresh();
   assert.equal(session(root).status, 2);
   assert.equal(session(root, "later").status, 2);
+});
+
+test("a long lanes list wraps and counts what it drops instead of cutting it mid-line", () => {
+  const root = fresh();
+  for (let i = 1; i <= 30; i++) ledger(root, `LANE-${String(i).padStart(2, "0")}`);
+  const res = session(root, "start");
+  const lines = res.stdout.trimEnd().split("\n");
+  assert.ok(lines.length <= 40 && lines.every((l) => [...l].length <= 80));
+  const at = lines.findIndex((l) => l.startsWith("lanes: "));
+  assert.ok(lines[at + 1].startsWith("  LANE-"), "the list continues on the next line");
+  assert.match(res.stdout, /, \+\d+ more/);
+  assert.ok(lines.slice(at).join(" ").includes("LANE-01 building"));
+});
+
+test("a primeLimit of 0 falls back to the default instead of recalling nothing", () => {
+  const root = fresh();
+  const dir = join(root, ".agentry", "memory", "facts");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "f1.md"),
+    "---\nid: f1\ntype: gotcha\nscope: repo\nstatus: active\nconfidence: 0.9\ntags:\n  - first\n---\nThe first task needs its cache cleared.\n",
+  );
+  writeFileSync(
+    join(root, ".agentry", "config.json"),
+    JSON.stringify({ memory: { primeLimit: 0 }, mode: "night" }),
+  );
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  assert.equal(data.recall[0]?.id, "f1");
+  assert.equal(data.mode, "night");
 });

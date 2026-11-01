@@ -128,8 +128,12 @@ function quoteOf(root, spec, kind, item) {
 // cross-project (`scope: global`) facts from the home store. The home store also keeps facts written
 // for other projects (a `repo` fact with no project store goes there) and unscoped ones: those never
 // belong in this repo's brief.
-const forThisRepo = (fact) =>
+export const forThisRepo = (fact) =>
   fact.source === "project" || fact.scope === "user" || fact.scope === "global";
+
+/** How many ranked facts a prime may carry: the config's `primeLimit` when a whole number above 0, else 5. */
+export const primeLimitOf = (config) =>
+  Number.isInteger(config.primeLimit) && config.primeLimit > 0 ? config.primeLimit : 5;
 
 /** The facts recalled for this contract: `{ prime, facts }`. Facts only when the repo's
  *  `memory.prime` is "all" (briefs are primed); otherwise none. */
@@ -141,11 +145,9 @@ export function recalledFacts(root, { owned, block }) {
     .slice(0, 2)
     .join(" ");
   const task = [...owned, head].join(" ");
-  const limit =
-    Number.isInteger(config.primeLimit) && config.primeLimit > 0 ? config.primeLimit : 5;
   return {
     prime: config.prime,
-    facts: rankFacts(readFacts(root).filter(forThisRepo), task, limit),
+    facts: rankFacts(readFacts(root).filter(forThisRepo), task, primeLimitOf(config)),
   };
 }
 

@@ -7,18 +7,19 @@
 //           `lane sweep --apply` would clean, the disk, and the episodes nobody wrote. Always JSON.
 //
 // It only reads: board fix, the drafts and the sweep each do their own writing, when the command says so. The
-// mode is read from `.agentry/config.json` as written and never interpreted here (A29).
+// mode comes from the config reader (`mode` in `.agentry/config.json`) and is never interpreted here (A29).
 // Exit 0, or 2 for a usage error.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { readConfig } from "../../config.mjs";
 import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
 import { run as fix } from "../../process/cli/fix.mjs";
 import * as drafts from "../../process/drafts.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { fit } from "../../process/render.mjs";
 import { statusView, titleOf, workKind } from "../../process/status.mjs";
+import { forThisRepo, primeLimitOf } from "../brief.mjs";
 import { plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
@@ -26,26 +27,16 @@ export const usage = "session <start|close> [--json]";
 export const flags = { "--json": false };
 const WIDTH = 80;
 const MAX_LINES = 40;
+const MAX_LIST = 4; // lines one list may take
 
-// The mode in `.agentry/config.json`, or null: no file, no mode, or a file this can't read.
-function modeOf(root) {
-  try {
-    const file = join(root, ".agentry", "config.json");
-    const mode = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).mode : null;
-    return typeof mode === "string" ? mode : null;
-  } catch {
-    return null;
-  }
-}
+// The mode in `.agentry/config.json`, or null: none set, or a config file the reader refuses.
+const modeOf = (root) => readConfig(root).mode ?? null;
 
 // A repo's own and the user's facts (what a brief may carry), ranked against `task`; none when memory.prime is off.
 function recallFor(root, task) {
   const config = readMemoryConfig(root);
   if (config.prime === "off") return [];
-  const mine = readFacts(root).filter(
-    (f) => f.source === "project" || f.scope === "user" || f.scope === "global",
-  );
-  return rankFacts(mine, task, config.primeLimit).map((f) => ({
+  return rankFacts(readFacts(root).filter(forThisRepo), task, primeLimitOf(config)).map((f) => ({
     id: f.id,
     type: f.type,
     text: f.body.split("\n")[0],
@@ -53,7 +44,13 @@ function recallFor(root, task) {
 }
 
 const summary = (l) => ({ id: l.id, state: l.state, next: l.next });
-const pendingEpisodes = (all) => all.filter((l) => l.episode && !l.episode.writtenId);
+// A ledger whose episode was not written: one with a payload waiting, and any finished lane (merged, closed,
+// stopped) that never wrote one (merged without an exec close, stopped).
+const pendingEpisodes = (all) =>
+  all.filter(
+    (l) =>
+      !l.episode?.writtenId && (l.episode || ["merged", "closed", "stopped"].includes(l.state)),
+  );
 
 function start({ root, spec, model }) {
   const runRoot = mainRoot(root) ?? root;
@@ -93,6 +90,26 @@ function closing({ root, spec, model }) {
 function renderStart(s, { name, root }) {
   const lines = [fit(`${name} · session start · mode ${s.mode ?? "none set"}`, WIDTH)];
   const add = (text) => lines.push(fit(text, WIDTH));
+  // A list wraps onto up to MAX_LIST lines; what does not fit is counted, never silently cut.
+  const addList = (label, items) => {
+    let line = label;
+    let sep = "";
+    let used = 1;
+    for (const [i, item] of items.entries()) {
+      // On the last line, keep room for the ", +N more" tail unless this is the final item.
+      const room = WIDTH - (used === MAX_LIST && i < items.length - 1 ? 12 : 0);
+      if ([...(line + sep + item)].length > room && line.trim() !== label.trim() && line.trim()) {
+        if (used === MAX_LIST) return add(`${line}, +${items.length - i} more`);
+        add(`${line},`);
+        used++;
+        line = "  ";
+        sep = "";
+      }
+      line += sep + item;
+      sep = ", ";
+    }
+    add(line);
+  };
   add(
     s.prompt
       ? `conductor prompt: ${relative(root, s.prompt)} (read it once)`
@@ -102,16 +119,30 @@ function renderStart(s, { name, root }) {
     add(`now: ${[n.id, n.name].filter(Boolean).join(" ")} — ${n.done}/${n.total} done`);
   if (!s.status.now.length) add("now: no active sprint");
   if (s.status.inFlight.length)
-    add(`in flight: ${s.status.inFlight.map((i) => `${i.id} (${i.status})`).join(", ")}`);
+    addList(
+      "in flight: ",
+      s.status.inFlight.map((i) => `${i.id} (${i.status})`),
+    );
   if (s.status.onYou.length)
-    add(`on you: ${s.status.onYou.map((i) => `${i.id} (${i.status})`).join(", ")}`);
-  if (s.questions.length) add(`open questions: ${s.questions.map((q) => q.id).join(", ")}`);
+    addList(
+      "on you: ",
+      s.status.onYou.map((i) => `${i.id} (${i.status})`),
+    );
+  if (s.questions.length)
+    addList(
+      "open questions: ",
+      s.questions.map((q) => q.id),
+    );
   for (const n of s.status.nudges.slice(0, 5))
     add(`drift: ${n.kind} ${n.id ?? n.branch ?? ""} → ${n.command}`);
   if (s.status.nudges.length > 5)
     add(`drift: +${s.status.nudges.length - 5} more (/agentry:board)`);
   if (s.status.drafts) add(`drafts: ${s.status.drafts} pending → /agentry:close`);
-  if (s.ledgers.length) add(`lanes: ${s.ledgers.map((l) => `${l.id} ${l.state}`).join(", ")}`);
+  if (s.ledgers.length)
+    addList(
+      "lanes: ",
+      s.ledgers.map((l) => `${l.id} ${l.state}`),
+    );
   for (const f of s.recall.slice(0, 3)) add(`recall: ${f.text}`);
   return lines.slice(0, MAX_LINES).join("\n");
 }
