@@ -40,6 +40,7 @@ function linkedOut(root, spec, file) {
   const paths = [
     ["root", root, spec.root],
     ["status.note", root, spec.status?.note],
+    ["conductor.prompt", root, spec.conductor?.prompt],
   ];
   for (const [name, k] of Object.entries(spec.kinds)) {
     const at = `kinds.${name}`;

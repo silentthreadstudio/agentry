@@ -155,6 +155,25 @@ test("scan never reads through a symlink out of the repository", () => {
   }
 });
 
+test("a conductor prompt that a symlink takes out of the repository is exit 2", () => {
+  const { tmp, root, outside, cli } = besideOutside();
+  try {
+    const file = join(root, "process.json");
+    const spec = JSON.parse(readFileSync(file, "utf8"));
+    writeFileSync(file, JSON.stringify({ ...spec, conductor: { prompt: "CONDUCTOR.md" } }));
+    symlinkSync(join(outside, "secret.md"), join(root, "CONDUCTOR.md"));
+    const res = cli("check", "--process", file);
+    assert.equal(res.status, 2);
+    assert.match(
+      res.stderr,
+      /conductor\.prompt "CONDUCTOR\.md" leaves the repository through a symlink/,
+    );
+    assert.doesNotMatch(res.stdout + res.stderr, /SECRET/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("a process-file path a symlink takes out is exit 2; a glob match out is a finding", () => {
   const { tmp, root, outside, sprint, cli } = besideOutside();
   const spec = ["--process", join(root, "process.json")];
