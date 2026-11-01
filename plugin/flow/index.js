@@ -31261,8 +31261,7 @@ var RunService = class {
   }
   // Read the stream and return ONLY the typed FLOW events (the signature promises `FlowEvent[]`).
   // `parseLogLine` transparently handles both line shapes and drops empty-`agent` main-session lines;
-  // hook backstop lines are not FLOW events, so they don't appear in this typed view (they surface via
-  // `status`'s reconciliation instead).
+  // legacy backstop lines (an old stream may still hold them) are not FLOW events, so they don't appear.
   tail(run, since) {
     const events = [];
     for (const raw of this.services.events.tail(run, since)) {
@@ -31271,57 +31270,9 @@ var RunService = class {
     }
     return { events };
   }
-  // Read-time backstop reconciliation (ADR-003 — flag, never block). Cross-check the hook's subagent
-  // boundaries (real `agent` lines) against FLOW's node lines: a hook `agent-started`/`agent-done` for
-  // an agent FLOW emitted no matching `node-enter`/`node-done` for is a disagreement (the skipped-call
-  // signal, AC9). Pure read-time computation; nothing is written and nothing blocks.
+  // Read-time run health: the per-status task tally.
   status(run) {
-    const lines = this.services.events.tail(run);
-    const flowEnteredAgents = /* @__PURE__ */ new Set();
-    const flowDoneNodes = /* @__PURE__ */ new Set();
-    const flowEnterNodeByAgent = /* @__PURE__ */ new Map();
-    const hookStarted = [];
-    const hookDone = [];
-    for (const raw of lines) {
-      const parsed = parseLogLine(raw);
-      if (parsed.kind === "flow") {
-        const ev = parsed.event;
-        if (ev.type === "node-enter" && ev.agent) {
-          flowEnteredAgents.add(ev.agent);
-          flowEnterNodeByAgent.set(ev.agent, ev.node);
-        } else if (ev.type === "node-done") {
-          flowDoneNodes.add(ev.node);
-        }
-      } else if (parsed.kind === "hook") {
-        const agent = parsed.line.agent;
-        if (agent === void 0) continue;
-        if (parsed.line.kind === "agent-started") hookStarted.push({ agent, ts: parsed.line.ts });
-        else if (parsed.line.kind === "agent-done") hookDone.push({ agent, ts: parsed.line.ts });
-      }
-    }
-    const disagreements = [];
-    for (const { agent, ts } of hookStarted) {
-      if (!flowEnteredAgents.has(agent)) {
-        disagreements.push({
-          agent,
-          kind: "started",
-          ts,
-          reason: `hook recorded agent-started for "${agent}" but FLOW emitted no node-enter for it (a skipped FLOW call)`
-        });
-      }
-    }
-    for (const { agent, ts } of hookDone) {
-      const node = flowEnterNodeByAgent.get(agent);
-      if (node === void 0 || !flowDoneNodes.has(node)) {
-        disagreements.push({
-          agent,
-          kind: "done",
-          ts,
-          reason: `hook recorded agent-done for "${agent}" but FLOW emitted no matching node-done (a skipped FLOW call)`
-        });
-      }
-    }
-    return { run, tasks: this.summarizeTasks(run), backstopDisagreements: disagreements };
+    return { run, tasks: this.summarizeTasks(run) };
   }
   // Per-status tally of the run's tasks (the "tasks summary"). A loose `status` string is counted
   // under its own key; a task with no/non-string status falls under "unknown".
@@ -31517,7 +31468,7 @@ function registerMonitorTools(server, ctx) {
   server.registerTool(
     "run_status",
     {
-      description: "Read-time run health: a per-status task summary + backstopDisagreements \u2014 the hook subagent boundaries with no matching FLOW node line (a skipped FLOW call, AC9). Flags, never blocks (ADR-003).",
+      description: "Read-time run health: a per-status task summary. Returns { run, tasks }.",
       inputSchema: { run: external_exports.string() }
     },
     guard(async (args) => ok(service.status(args.run)))

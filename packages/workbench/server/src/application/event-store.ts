@@ -11,7 +11,7 @@ import { AgentState } from "@agentry/flow/domain/status";
 //
 // ── Reuse, not fork (ADR-005 tier 1) ─────────────────────────────────────────────────────────────────
 // Event parsing is FLOW's: `parseLogLine` discriminates the two `events.jsonl` line shapes (FLOW events
-// vs. the `subagent-emit` hook backstop) and DROPS empty-`agent` main-session lines. We never reimplement
+// vs. legacy backstop lines from the retired subagent hook) and DROPS empty-`agent` main-session lines. We never reimplement
 // that — a malformed line is already a `skip`, so the fold tolerates a corrupt stream past one bad entry.
 // The roster is read off `run-state.json`'s `{ agents: { "<id>": { state, assignedTask? } } }` shape (the
 // same shape FLOW's `AgentService` owns), validated through FLOW's closed `AgentState` enum.

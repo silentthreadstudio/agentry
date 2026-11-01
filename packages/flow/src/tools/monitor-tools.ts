@@ -43,7 +43,7 @@ export function registerMonitorTools(server: McpServer, ctx: FlowServices): void
     "run_status",
     {
       description:
-        "Read-time run health: a per-status task summary + backstopDisagreements — the hook subagent boundaries with no matching FLOW node line (a skipped FLOW call, AC9). Flags, never blocks (ADR-003).",
+        "Read-time run health: a per-status task summary. Returns { run, tasks }.",
       inputSchema: { run: z.string() },
     },
     guard(async (args) => ok(service.status(args.run))),

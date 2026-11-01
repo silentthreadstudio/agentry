@@ -1,10 +1,9 @@
 // Identity helpers — pure, no I/O. Every FLOW write targets `.agentry/work/<run>/…`, so a run id
 // (and a task number) must be a single, traversal-safe path segment. `assertSafeSegment` is the
-// shared guard mirroring the binder/emitter hooks' `..`/`/`/`\` checks (ADR-005 §4 — harden both
-// ends of the shared-file seam); `mintRun` and `runDir` both route through it.
+// shared guard against `..`/`/`/`\` in a segment (ADR-005 §4); `mintRun` and `runDir` both route
+// through it.
 
-// Reject anything that could escape a single path segment. Mirrors the guard the work-id-binder and
-// subagent-emit hooks already apply to the pointer's `workId` (ADR-005). Empty/whitespace is also a
+// Reject anything that could escape a single path segment. Empty/whitespace is also a
 // misuse — a blank segment is not a valid run/task folder.
 export function assertSafeSegment(s: string): void {
   if (s.length === 0 || s.trim().length === 0) {

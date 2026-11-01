@@ -1,10 +1,10 @@
 // FlowEvent — the closed, discriminated conductor event vocabulary (ADR-002). Pure shapes, no I/O.
 // Lives in FLOW's domain (NOT @agentry/core): core's `WorkEvent` is deliberately loose so the
-// dep-free hook can write it; FLOW needs a *closed* union the loose shape can't express. Consumed by
+// retired dep-free hook wrote it; FLOW needs a *closed* union the loose shape can't express. Consumed by
 // T03's monitoring service (`event_emit`/`event_tail`/`run_status`).
 //
 // One append-only `events.jsonl` carries TWO line shapes (ADR-002): FLOW lines (a discriminated
-// `type`) and legacy backstop lines from the `subagent-emit` hook (a loose `kind`, no `type`).
+// `type`) and legacy backstop lines from the retired subagent hook (a loose `kind`, no `type`); old streams may still hold them.
 // `parseLogLine` is the typed-vs-legacy discriminator the reader uses to tell them apart.
 import { z } from "zod";
 
@@ -54,8 +54,8 @@ export type FlowEvent = z.infer<typeof FlowEvent>;
 
 // ---- Legacy backstop lines: the loose hook shape, kept parseable in the same stream (ADR-002) ----
 
-// A `subagent-emit` hook line: `kind` (no `type`), with the optional correlation fields. Tagged
-// `source: "hook"` by the reconciler so it is distinguishable from a FLOW line in the parsed view.
+// A legacy backstop line from the retired subagent hook: `kind` (no `type`), with the optional
+// correlation fields. Kept parseable so an old stream still reads.
 export const HookBackstopLine = z.object({
   ts: z.string(),
   kind: z.string(),
