@@ -119,3 +119,10 @@ test("/agentry:config documents merge.push and lanes.maxWriters with the reader'
   assert.equal(rows["merge.push"], DEFAULTS.merge.push);
   assert.equal(rows["lanes.maxWriters"], String(DEFAULTS.lanes.maxWriters));
 });
+
+test("readConfig carries the mode a file sets, and no mode key when none does (A29)", () => {
+  const set = place({ project: { mode: "night", merge: { push: "never" } } });
+  assert.equal(readConfig(set.root, { home: set.home }).mode, "night");
+  const none = place({ project: { merge: { push: "never" } } });
+  assert.ok(!("mode" in readConfig(none.root, { home: none.home })));
+});

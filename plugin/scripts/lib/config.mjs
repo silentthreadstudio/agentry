@@ -1,5 +1,5 @@
 // config — the strict reader for the harness keys the lanes act on in `.agentry/config.json`
-// (plan R1b §2, §3.1): `merge.push` and `lanes.maxWriters`. It mirrors those two blocks of core's
+// (plan R1b §2, §3.1): `merge.push`, `lanes.maxWriters` and `mode`. It mirrors those two blocks of core's
 // `AgentryConfig` (`packages/core/src/config.ts`; the plugin ships no dependency): an unknown key,
 // a wrong type or an out-of-range value is an error naming it, never read as a default, and a
 // missing one is the default (`push: "ask"`, `maxWriters: 3`). An unknown top-level key is an error
@@ -26,7 +26,7 @@ const BLOCKS = {
 
 // Every top-level key `AgentryConfig` (packages/core/src/config.ts) has; the parity test holds the
 // two together.
-const TOP_LEVEL = ["workDir", "evolution", "memory", "merge", "lanes"];
+const TOP_LEVEL = ["workDir", "mode", "evolution", "memory", "merge", "lanes"];
 
 // Edit distance, for the "did you mean" of an unknown key.
 function distance(a, b) {
@@ -56,6 +56,8 @@ export function checkConfig(value) {
   const problems = Object.keys(value)
     .filter((key) => !TOP_LEVEL.includes(key))
     .map((key) => unknownKey(key, key, TOP_LEVEL));
+  if (Object.hasOwn(value, "mode") && (typeof value.mode !== "string" || value.mode === ""))
+    problems.push("mode should be a non-empty string");
   for (const [block, keys] of Object.entries(BLOCKS)) {
     if (!Object.hasOwn(value, block)) continue;
     const given = value[block];
@@ -87,7 +89,7 @@ function readFile(path) {
   }
 }
 
-/** The effective `{ merge: { push }, lanes: { maxWriters } }` for the repo at `root`, or `{ error }`
+/** The effective `{ merge: { push }, lanes: { maxWriters }, mode? }` (`mode` only when a file sets one) for the repo at `root`, or `{ error }`
  *  naming the file and each bad key. `home` is where the global `.agentry/` lives. */
 export function readConfig(root, { home = homedir() } = {}) {
   const found = [];
@@ -106,5 +108,6 @@ export function readConfig(root, { home = homedir() } = {}) {
     ...DEFAULTS[name],
     ...found.find((value) => Object.hasOwn(value, name))?.[name],
   });
-  return { merge: block("merge"), lanes: block("lanes") };
+  const mode = found.find((value) => Object.hasOwn(value, "mode"))?.mode;
+  return { merge: block("merge"), lanes: block("lanes"), ...(mode !== undefined && { mode }) };
 }

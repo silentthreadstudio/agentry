@@ -12,6 +12,9 @@ import { z } from "zod";
 export const AgentryConfig = z
   .object({
     workDir: z.string().default(".agentry"),
+    /** The active working mode (a name such as `night`; A29). Each mode's meaning is a skill of the repo's
+     *  own: Agentry only carries the name, so any non-empty string is accepted and none is the default. */
+    mode: z.string().min(1).optional(),
     evolution: z
       .object({
         enabled: z.boolean().default(false),
