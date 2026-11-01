@@ -1,19 +1,24 @@
-// git — the process kit's only git I/O: does a commit exist, recent history, worktrees, patch ids (to
-// match a cherry-picked commit to its branch original), the default branch and the tracked files.
+// git — the process kit's only git I/O: does a commit exist, recent history, ancestry, a branch's reflog,
+// worktrees, patch ids (to match a cherry-picked commit to its branch original), whether a change is still
+// in a tree, the default branch and the tracked files.
 //
 // Every function takes the git root first and never throws: outside a repo, or on any git error, it
 // answers false / [] / null. Refs and SHAs are checked before they reach argv, so a board cell can never
-// become a git option.
+// become a git option. Nothing here changes the repository: `reverseApplies` works on a throwaway index.
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const SHA = /^[0-9a-f]{4,40}$/i;
 const safeRef = (ref) => typeof ref === "string" && ref.length > 0 && !ref.startsWith("-");
 
-function git(root, args, input) {
+function git(root, args, input, env) {
   try {
     return execFileSync("git", ["-C", root, ...args], {
       encoding: "utf8",
       input,
+      env,
       stdio: ["pipe", "pipe", "ignore"],
       maxBuffer: 256 * 1024 * 1024,
     });
@@ -106,6 +111,67 @@ export function patchIds(root, range) {
       const [patchId, sha] = line.split(" ");
       return { patchId, sha };
     });
+}
+
+/** The full SHA of the commit `ref` names, or null. */
+export const commitOf = (root, ref) =>
+  (safeRef(ref) && git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])?.trim()) ||
+  null;
+
+/** True when commit `a` is an ancestor of (or is) commit `b`. */
+export const isAncestor = (root, a, b) =>
+  safeRef(a) && safeRef(b) && git(root, ["merge-base", "--is-ancestor", a, b]) !== null;
+
+/** The best common ancestor of `a` and `b`, or null. */
+export const mergeBase = (root, a, b) =>
+  (safeRef(a) && safeRef(b) && git(root, ["merge-base", a, b])?.trim()) || null;
+
+/** The commits `range` lists (e.g. `base..tip`), oldest first. `firstParent` follows first parents only;
+ *  `noMerges` leaves merge commits out. */
+export function commits(root, range, { firstParent = false, noMerges = false } = {}) {
+  if (!safeRef(range)) return [];
+  const flags = [firstParent && "--first-parent", noMerges && "--no-merges"].filter(Boolean);
+  const out = git(root, ["rev-list", "--reverse", ...flags, range, "--"]);
+  return (out ?? "").split(/\s+/).filter(Boolean);
+}
+
+/** The reflog of local branch `branch`, newest first: `{ sha, says }`, `says` being the entry's message
+ *  (`commit: …`, `cherry-pick: …`, `reset: …`). [] when it has none. */
+export function reflog(root, branch) {
+  if (!safeRef(branch)) return [];
+  const out = git(root, ["log", "-g", "--format=%H %gs", `refs/heads/${branch}`, "--"]);
+  return (out ?? "")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const at = line.indexOf(" ");
+      return { sha: line.slice(0, at), says: line.slice(at + 1) };
+    });
+}
+
+/** The top of the working tree `root` is in, or null. */
+export const topLevel = (root) => git(root, ["rev-parse", "--show-toplevel"])?.trim() || null;
+
+/** True when the net change `from..to` reverse-applies to commit `onto`'s tree (`git apply --check -R`):
+ *  every line it added is there, in its context, and every line it removed is still gone. False for an
+ *  empty change. Checked on a throwaway index from the top of the tree, so a board in a subfolder still
+ *  checks the whole change, and the repository's own index and files are never touched. */
+export function reverseApplies(root, { from, to, onto }) {
+  const top = topLevel(root);
+  if (!top || ![from, to, onto].every(safeRef)) return false;
+  const diff = ["diff", "--binary", "--no-renames", "--no-ext-diff", "--no-color", from, to, "--"];
+  const patch = git(top, diff);
+  if (!patch) return false;
+  const dir = mkdtempSync(join(tmpdir(), "agentry-apply-"));
+  const env = { ...process.env, GIT_INDEX_FILE: join(dir, "index") };
+  try {
+    return (
+      git(top, ["read-tree", onto], undefined, env) !== null &&
+      git(top, ["apply", "--cached", "--check", "-R"], patch, env) !== null
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /** The default branch: `origin/HEAD`'s target, else a local `main` or `master`, else null. */

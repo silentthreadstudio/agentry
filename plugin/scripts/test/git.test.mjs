@@ -12,6 +12,7 @@ import {
   knownCommits,
   log,
   patchIds,
+  reverseApplies,
   trackedFiles,
   worktrees,
 } from "../lib/process/git.mjs";
@@ -111,6 +112,23 @@ test("patchIds: a cherry-picked commit has its original's patch id", () => {
   assert.equal(onMain.sha, sha.picked);
   assert.equal(onBranch.patchId, onMain.patchId);
   assert.deepEqual(patchIds(outside, "main..feature"), []);
+});
+
+test("reverseApplies: a change is in a tree only while all its lines are; the repo is untouched", () => {
+  const change = { from: sha.first, to: sha.feature };
+  const deep = join(repo, "deep");
+  mkdirSync(deep, { recursive: true });
+  assert.equal(reverseApplies(repo, { ...change, onto: "main" }), true, "picked onto main");
+  assert.equal(reverseApplies(repo, { ...change, onto: sha.second }), false, "not there yet");
+  assert.equal(
+    reverseApplies(deep, { ...change, onto: sha.second }),
+    false,
+    "from a subfolder the whole change is still checked",
+  );
+  assert.equal(reverseApplies(repo, { from: sha.first, to: sha.first, onto: "main" }), false);
+  assert.equal(reverseApplies(repo, { ...change, onto: "--all" }), false);
+  assert.equal(reverseApplies(outside, { ...change, onto: "main" }), false);
+  assert.equal(run("status", "--porcelain"), "");
 });
 
 test("worktrees: each path with its head and branch", () => {
