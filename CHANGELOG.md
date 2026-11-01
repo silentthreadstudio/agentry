@@ -46,7 +46,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a
-  `hooks.json` returns.
+  `hooks.json` returns. Known limit: without the hooks, nothing records the session's active run,
+  so review comments on a run reach every session instead of only its own, and the Workbench
+  token chart stays empty.
 
 ## [0.2.0] — 2026-06-21
 
