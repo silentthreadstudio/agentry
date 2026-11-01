@@ -279,19 +279,19 @@ for (const { pkg } of manifests) {
 }
 if (doubleRun === 0) ok("no double-run scripts", `${manifests.length} package(s) checked`);
 
-// 7. No hooks (A32: one mechanism). Commands, skills and the default conductor agent replace them, so a
+// 7. No hooks (one mechanism). Commands, skills and the default conductor agent replace them, so a
 // hooks.json — or a "hooks" key in the manifest — fails the gate instead of silently firing from a stale cache.
 const hooksJson = join(PLUGIN, "hooks", "hooks.json");
 if (existsSync(hooksJson)) {
   err(
-    "hooks/hooks.json exists — Agentry ships no hooks (A32); put the behavior in a command, skill or the conductor agent",
+    "hooks/hooks.json exists — Agentry ships no hooks; put the behavior in a command, skill or the conductor agent",
   );
 }
 const manifestHooks = existsSync(pluginManifest) && "hooks" in readJson(pluginManifest);
 if (manifestHooks) {
-  err('.claude-plugin/plugin.json declares "hooks" — Agentry ships no hooks (A32)');
+  err('.claude-plugin/plugin.json declares "hooks" — Agentry ships no hooks');
 }
-if (!existsSync(hooksJson) && !manifestHooks) ok("no hooks", "none shipped (A32)");
+if (!existsSync(hooksJson) && !manifestHooks) ok("no hooks", "none shipped");
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));
