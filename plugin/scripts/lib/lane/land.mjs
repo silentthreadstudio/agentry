@@ -162,6 +162,24 @@ export function pickInProgress(root) {
   });
 }
 
+/** End the cherry-pick git is in the middle of, with `cherry-pick --abort` until git keeps nothing of
+ *  it: killed after a pick's commit, git does not rewind and keeps a stale CHERRY_PICK_HEAD the first
+ *  abort leaves, so it can take two. Which picks stay on main is `landedSince`'s answer. `{ ok,
+ *  aborts }`, or `{ ok: false, reason }` while one is still in progress. */
+export function abortPick(root) {
+  let aborts = 0;
+  let res = null;
+  while (pickInProgress(root).length > 0 && aborts < 3) {
+    res = git(root, ["cherry-pick", "--abort"]);
+    aborts++;
+  }
+  if (pickInProgress(root).length === 0) return { ok: true, aborts };
+  return {
+    ok: false,
+    reason: first(res?.stderr ?? "") || "git cherry-pick --abort did not end it",
+  };
+}
+
 /**
  * Put main back at `preHead` after a red gate, with `reset --keep` (git refuses rather than overwrite a
  * local change, one `git status` cannot see included), and only when HEAD's first-parent chain since

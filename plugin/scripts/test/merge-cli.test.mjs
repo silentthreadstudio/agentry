@@ -610,6 +610,9 @@ function landKilledAt(on, when, ...args) {
 /** main's first-parent commits since `from`, oldest first. */
 const chainSince = (from) =>
   git(root, "rev-list", "--first-parent", "--reverse", `${from}..HEAD`).split("\n").filter(Boolean);
+/** What git keeps while a cherry-pick is in progress, of what main's .git holds. */
+const pickInProgressFiles = () =>
+  ["sequencer", "CHERRY_PICK_HEAD"].filter((name) => existsSync(join(root, ".git", name)));
 
 // R1b-5 re-verify item 1: a land killed after its board commit, before the ledger said so, stuck: every
 // rerun was red ("carry no longer applies", then "main has moved"), the ledger left at `merging`.
@@ -789,27 +792,61 @@ test("a land killed between its picks takes off the partial picks and picks them
   assert.deepEqual(readLedger(root, ID).merge.landed, chain.slice(0, 2));
 });
 
-test("a rerun stops while git is mid-cherry-pick, and picks again once it is aborted", () => {
+test("a rerun aborts the cherry-pick its killed land left midway, and picks again from preHead", () => {
   const { shas } = build({ "src/ok.txt": "fine\n", "src/c.txt": "branch side\n" });
   commitFile(root, "src/c.txt", "main side\n");
   killedWhilePicking(shas);
   const pre = head();
   spawnSync("git", ["-C", root, "cherry-pick", ...shas], { env: gitEnv }); // stops on the conflict
-  const stuck = merge(ID, "--message", "docs(board): land T1");
-  assert.equal(stuck.status, 1, out(stuck));
-  assert.match(
-    stuck.stdout,
-    /✗ recover +git is in the middle of a cherry-pick in the main checkout/,
-  );
-  assert.match(stuck.stdout, /next: in .*: git cherry-pick --abort/);
-  assert.equal(readLedger(root, ID).merge.step, "picking");
-  git(root, "cherry-pick", "--abort");
-  assert.equal(head(), pre);
   const again = merge(ID, "--message", "docs(board): land T1");
   assert.equal(again.status, 1, out(again));
+  assert.match(again.stdout, /✓ recover +aborted the cherry-pick a killed run left/);
   assert.match(again.stdout, /✗ land +cherry-pick stopped on/); // picked again, from preHead
   assert.equal(head(), pre);
   assert.equal(status(), "");
+});
+
+// R1b-5 re-verify item 7: killed in the post-commit hook of the first pick, git keeps a stale
+// CHERRY_PICK_HEAD after one `cherry-pick --abort` and does not rewind; the printed recovery said the
+// abort puts main back, and it took two.
+test("a land killed after its first pick's commit lands on the rerun, with no abort by hand", () => {
+  const { path } = build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
+  execLedger({ path, gated: null });
+  const once = join(home, "kill-once");
+  writeFileSync(once, "");
+  const hook = join(root, ".git", "hooks", "post-commit");
+  writeFileSync(
+    hook,
+    `#!/bin/sh\n[ -f "${once}" ] || exit 0\nrm -f "${once}"\nkill -9 $PPID $(ps -o ppid= -p $PPID)\n`,
+  );
+  chmodSync(hook, 0o755);
+  const pre = head();
+  assert.equal(merge(ID, "--message", "docs(board): land T1").signal, "SIGKILL");
+  assert.equal(chainSince(pre).length, 1); // the first pick, mid-sequence
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /✓ recover +aborted the cherry-pick a killed run left/);
+  assert.match(res.stdout, /took off the 1 pick\(s\) a killed run made/);
+  assert.equal(chainSince(pre).length, 3); // two picks and the board commit, each once
+  assert.deepEqual(pickInProgressFiles(), []);
+  assert.equal(status(), "");
+});
+
+test("a cherry-pick that is not this land's stops the land, and says how to clear it", () => {
+  const { path, shas } = build({ "src/c.txt": "branch side\n" });
+  execLedger({ path, gated: null });
+  commitFile(root, "src/c.txt", "main side\n");
+  const pre = head();
+  spawnSync("git", ["-C", root, "cherry-pick", shas[0]], { env: gitEnv }); // the owner's, by hand
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(
+    res.stdout,
+    /✗ recover +git is in the middle of a cherry-pick that is not this land's/,
+  );
+  assert.match(res.stdout, /next: in .*: finish or abort it/);
+  assert.equal(head(), pre);
+  assert.ok(existsSync(join(root, ".git", "CHERRY_PICK_HEAD")), "the owner's pick is left alone");
 });
 
 test("a stopped exec lane lands only with its branch named, and is then adopted", () => {

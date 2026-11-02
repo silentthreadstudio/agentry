@@ -4,6 +4,8 @@
 import { boardFiles } from "../../process/board-diff.mjs";
 import { endStrayGate } from "../gate-group.mjs";
 import {
+  abortPick,
+  commitOf,
   commitsBetween,
   filesOf,
   notEdits,
@@ -89,6 +91,36 @@ function resumeRecording(lane, rows) {
   return { exit: 0, next: afterLand(lane) };
 }
 
+// git mid-cherry-pick in the main checkout. This land's own (the ledger says it was picking, and git
+// stopped on one of its planned commits) is aborted, as the pick step aborts any stop of its own; the
+// land step then takes off whatever picks the abort left. Any other is not merge's to end.
+function endOwnPick(lane, rows, busy) {
+  const { root } = lane;
+  const merge = lane.ledger.merge;
+  const at = commitOf(root, "CHERRY_PICK_HEAD");
+  const own = merge?.step === "picking" && (!at || merge.planned.includes(at));
+  const ended = own ? abortPick(root) : null;
+  if (ended?.ok) {
+    const times = ended.aborts > 1 ? ` (${ended.aborts} aborts)` : "";
+    rows.push(ok("recover", `aborted the cherry-pick a killed run left${times}`));
+    return null;
+  }
+  rows.push(
+    red(
+      "recover",
+      own
+        ? `git is in the middle of this land's cherry-pick, and the abort did not end it: ${ended.reason}`
+        : "git is in the middle of a cherry-pick that is not this land's, in the main checkout",
+      busy.map((b) => b.path),
+    ),
+  );
+  return {
+    exit: 1,
+    keepCarry: true,
+    next: `in ${root}: finish or abort it (git cherry-pick --abort, again while git status still names one), then land again`,
+  };
+}
+
 /** A killed land leaves its gate's process group, maybe still running; git, maybe in the middle of the
  *  cherry-pick; a board write, a board commit or a rollback's reset the ledger does not know of yet.
  *  The rerun deals with each before anything else. */
@@ -113,19 +145,8 @@ export function recoverStep(lane, rows) {
   }
   const busy = pickInProgress(root);
   if (busy.length > 0) {
-    const where = merge?.preHead ? ` (the land started from ${short(merge.preHead)})` : "";
-    rows.push(
-      red(
-        "recover",
-        `git is in the middle of a cherry-pick in the main checkout${where}: a killed land leaves one`,
-        busy.map((b) => b.path),
-      ),
-    );
-    return {
-      exit: 1,
-      keepCarry: true,
-      next: `in ${root}: git cherry-pick --abort (it puts ${ledger.mainBranch} back where the pick started), then land again`,
-    };
+    const stop = endOwnPick(lane, rows, busy);
+    if (stop) return stop;
   }
   const step = lane.ledger.merge?.step;
   if (step === "recording") return resumeRecording(lane, rows);
