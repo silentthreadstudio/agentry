@@ -53,8 +53,11 @@ Without `--apply` it only reports. With it:
   SIGTERM, then SIGKILL after two seconds, and sweep confirms they are gone. Any pid still running is listed
   and the exit is 1;
 - never signals an interactive shell: a process on a controlling terminal, a login shell (`-zsh`), or a
-  shell run with `-i`. The owner's terminal can sit in a merged worktree; it is listed as
-  `left alone: interactive shell` and the owner leaves that directory.
+  shell run with `-i` (only an option before the script or `-c` counts). A terminal above a stray never
+  spares it, and a `-i` shell with no terminal that a stray started is part of the stray. The stray's
+  process group goes too, unless it holds a terminal, a login shell or the sweep itself. The owner's
+  terminal can sit in a merged worktree; it is listed as `left alone: interactive shell`, and the worktree
+  it sits in is kept ("in use by a shell") until the owner leaves that directory.
 
 A worktree no ledger knows is listed as unknown and left alone, as is any worktree of a task still in flight.
 Working-directory strays need `lsof`; without it sweep warns and judges by executable and script only.

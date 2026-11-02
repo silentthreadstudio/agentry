@@ -254,7 +254,7 @@ test("an interactive shell in a merged worktree is never signalled", async () =>
   assert.match(dry.stdout, new RegExp(`left alone: interactive shell.*${inter.pid}`));
   assert.match(dry.stdout, new RegExp(`would stop process ${plain.pid}`));
   const res = sweep(root, "--apply");
-  assert.equal(res.status, 0, res.stdout);
+  assert.equal(res.status, 1, res.stdout); // the worktree the shells sit in is kept
   assert.ok(await waitDead(plain.pid), "an ordinary stray is still stopped");
   await settle();
   assert.ok(alive(login.pid), "the login shell must survive");
@@ -290,7 +290,7 @@ time.sleep(300)
     const pid = await new Promise((r) => term.stdout.once("data", (d) => r(Number(String(d)))));
     await settle();
     const res = sweep(root, "--apply");
-    assert.equal(res.status, 0, res.stdout);
+    assert.equal(res.status, 1, res.stdout); // the worktree the terminal sits in is kept
     assert.match(res.stdout, new RegExp(`left alone: interactive shell.*${pid}`));
     await settle();
     // Its parent (python) never reaps it, so a signalled one would linger as a zombie: read its state.
@@ -343,4 +343,112 @@ test("a missing lsof is a warning: strays by working directory can't be seen", (
   });
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /warning: lsof not found/);
+});
+
+// ---- fix round 3 (R1b-7 re-verify) ----
+
+/** `body` run by a login shell (`-sh`, so the owner's shell by name) in `cwd`, as a child of the test. */
+function plantLogin(file, body, { cwd = tmpdir(), detached = false } = {}) {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, body);
+  const child = spawn("/bin/sh", [file], { argv0: "-sh", stdio: "ignore", cwd, detached });
+  children.push(child);
+  return child;
+}
+const runStray = (root, name) => {
+  const file = runFile(root, name);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, "setTimeout(() => {}, 300000)");
+  return file;
+};
+const sleepsIn = (group) =>
+  spawnSync("pgrep", ["-g", String(group), "-f", "sleep 300"], { encoding: "utf8" })
+    .stdout.split("\n")
+    .map(Number)
+    .filter((pid) => pid > 0);
+
+test("a stray under an interactive ancestor is stopped; the ancestor is not", async () => {
+  const { root } = fixture();
+  const script = runStray(root, "runs/T1/under-login.js");
+  const login = plantLogin(join(root, "elsewhere", "login.sh"), `node ${script} &\nwait\n`);
+  await settle();
+  const stray = childOf(login.pid);
+  assert.ok(stray > 0, "the login shell should have started the stray");
+  const res = sweep(root, "--apply", "--json");
+  assert.equal(res.status, 0, res.stdout);
+  assert.ok(await waitDead(stray), "the stray must be stopped although a login shell is above it");
+  assert.ok(alive(login.pid), "the login shell itself is never signalled");
+});
+
+test("a -i that follows the script is the script's argument, not a shell option", async () => {
+  const { root } = fixture();
+  const script = runFile(root, "runs/T1/args.sh");
+  mkdirSync(dirname(script), { recursive: true });
+  writeFileSync(script, "sleep 300\n");
+  const stray = spawn("/bin/sh", [script, "-i"], { stdio: "ignore", cwd: tmpdir() });
+  children.push(stray);
+  await settle();
+  assert.match(sweep(root).stdout, new RegExp(`would stop process ${stray.pid}`));
+});
+
+test("a descendant shell run -i with no terminal is stopped with its stray", async () => {
+  const { root } = fixture();
+  const stray = plantShell(
+    runFile(root, "runs/T1/inter.sh"),
+    "/bin/bash -i -c 'sleep 300; sleep 300'\n",
+  );
+  await settle();
+  const shell = childOf(stray.pid);
+  assert.ok(shell > 0, "the stray should have started the shell");
+  const res = sweep(root, "--apply", "--json");
+  assert.equal(res.status, 0, res.stdout);
+  assert.ok(await waitDead(shell), "a no-terminal bash -i is not the owner's shell");
+  assert.ok(await waitDead(stray.pid));
+});
+
+test("a double-forked child that stayed in the stray's group is stopped too", async () => {
+  const { root } = fixture();
+  const script = runFile(root, "runs/T1/fork.sh");
+  mkdirSync(dirname(script), { recursive: true });
+  writeFileSync(script, "( sleep 300 & )\nsleep 300\n");
+  const leader = spawn("/bin/sh", [script], { stdio: "ignore", detached: true });
+  children.push(leader);
+  await settle();
+  const kid = childOf(leader.pid);
+  const orphan = sleepsIn(leader.pid).find((pid) => pid !== kid);
+  assert.ok(orphan, "the group should hold a sleep that is not the stray's child");
+  const res = sweep(root, "--apply", "--json");
+  assert.equal(res.status, 0, res.stdout);
+  assert.ok(await waitDead(orphan), "the orphan in the stray's group must go");
+});
+
+test("a group that holds an interactive shell is not taken down", async () => {
+  const { root } = fixture();
+  const script = runStray(root, "runs/T1/shared.js");
+  const login = plantLogin(
+    join(root, "elsewhere", "shared.sh"),
+    `( sleep 300 & )\nnode ${script} &\nwhile :; do sleep 1; done\n`,
+    { detached: true },
+  );
+  await settle();
+  const [orphan] = sleepsIn(login.pid);
+  assert.ok(orphan, "the group should hold an orphaned sleep");
+  const res = sweep(root, "--apply", "--json");
+  assert.equal(res.status, 0, res.stdout);
+  await settle();
+  assert.ok(alive(orphan), "a group with the owner's shell in it is left whole");
+  assert.ok(alive(login.pid));
+  process.kill(orphan, "SIGKILL");
+});
+
+test("a merged worktree a spared shell sits in is kept: in use by a shell", async () => {
+  const { root, merged } = fixture();
+  const shell = plantLogin(join(root, "elsewhere", "sit.sh"), "sleep 300\n", { cwd: merged.path });
+  await settle();
+  assert.match(sweep(root).stdout, /would keep worktree T1: in use by a shell/);
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 1, res.stdout);
+  assert.match(res.stdout, /kept worktree T1: in use by a shell/);
+  assert.ok(existsSync(merged.path));
+  assert.ok(alive(shell.pid));
 });

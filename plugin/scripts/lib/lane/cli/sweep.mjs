@@ -8,7 +8,7 @@
 // Exit 0 = done or reported, 1 = `--apply` left a worktree it could not remove or a process running.
 //
 // run(argv, { root }) -> { exit, out }
-import { apply, ignoredReason, plan } from "../sweep.mjs";
+import { apply, keepReason, plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
 export const usage = "sweep [--apply [--discard-ignored]] [--json]";
@@ -31,10 +31,9 @@ function render(found, done, discardIgnored) {
   const row = (text) => lines.push(`  ${text}`);
   for (const w of found.cleanable) {
     const kept = done?.kept.find((k) => k.id === w.id);
-    const holds = w.ignored?.length > 0 && !discardIgnored;
-    const verb = !done ? (holds ? "would keep" : "would remove") : kept ? "kept" : "removed";
-    const why = kept ? kept.reason : !done && holds ? ignoredReason(w) : "";
-    row(`${verb} worktree ${w.id}${why ? `: ${why}` : ""}`);
+    const why = kept ? kept.reason : keepReason(w, discardIgnored);
+    const verb = !done ? (why ? "would keep" : "would remove") : kept ? "kept" : "removed";
+    row(`${verb} worktree ${w.id}${why && verb !== "removed" ? `: ${why}` : ""}`);
   }
   for (const w of found.unknown) row(`unknown worktree ${w.path} (left alone)`);
   for (const p of found.strays) {

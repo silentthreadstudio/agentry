@@ -8,7 +8,8 @@
 //              its arguments (`tail -f …/gate.log`) is not one, and neither is one that belongs to a lane
 //              still building
 //   leftAlone  what would be a stray but is an interactive shell (a controlling terminal, a login shell,
-//              `-i`): the owner's own terminal can sit in a merged worktree, and it is never signalled
+//              `-i`): the owner's own terminal can sit in a merged worktree, and it is never signalled;
+//              a worktree one sits in is kept (`inUse`)
 //   warnings   disk under 10 GB free; `lsof` missing (a process is then judged by its executable and script
 //              only, so one that merely stands in the run directory is not seen)
 // `apply` then stops the strays (each with its whole descendant tree, confirming all of it is gone) and
@@ -71,28 +72,43 @@ export function freeBytes(dir) {
 // `{ pid, ppid, tty, stat, command }` for every process on the machine except this one and its parent (the
 // command that ran the sweep may itself sit under the run directory). `tty`: it has a controlling terminal.
 function processes() {
-  const res = spawnSync("ps", ["-axo", "pid=,ppid=,tty=,stat=,command="], { encoding: "utf8" });
+  const res = spawnSync("ps", ["-axo", "pid=,ppid=,pgid=,tty=,stat=,command="], {
+    encoding: "utf8",
+  });
   if (res.status !== 0) return [];
   return res.stdout
     .split("\n")
-    .map((line) => line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/))
+    .map((line) => line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/))
     .filter(Boolean)
     .map((m) => ({
       pid: Number(m[1]),
       ppid: Number(m[2]),
-      tty: !["??", "?", "-"].includes(m[3]),
-      stat: m[4],
-      command: m[5],
+      pgid: Number(m[3]),
+      tty: !["??", "?", "-"].includes(m[4]),
+      stat: m[5],
+      command: m[6],
     }))
     .filter((p) => p.pid !== process.pid && p.pid !== process.ppid);
 }
 
-// Whether `p` is the owner's terminal: on a controlling terminal, a login shell (`-zsh`) or a shell run `-i`.
-function interactive(p) {
+// Whether `p` is on a controlling terminal or is a login shell (`-zsh`): the owner's own, whatever started it.
+const onTerminal = (p) => p.tty || p.command.split(/\s+/)[0].startsWith("-");
+
+// Whether `p` is a shell run `-i`: only the options before the script or `-c` operand count (`sh run.sh -i`
+// hands `-i` to the script).
+function runsInteractive(p) {
   const [exe, ...args] = p.command.split(/\s+/);
-  if (p.tty || exe.startsWith("-")) return true;
-  return SHELLS.includes(basename(exe)) && args.some((a) => /^-[a-zA-Z]*i[a-zA-Z]*$/.test(a));
+  if (!SHELLS.includes(basename(exe))) return false;
+  for (const a of args) {
+    if (!a.startsWith("-") || a === "--") return false;
+    if (/^-[a-zA-Z]*i[a-zA-Z]*$/.test(a)) return true;
+    if (/^-[a-zA-Z]*c/.test(a)) return false;
+  }
+  return false;
 }
+
+// The owner's terminal, for a process found under the run directory: on a terminal, a login shell or run `-i`.
+const interactive = (p) => onTerminal(p) || runsInteractive(p);
 
 // The pids of `top` and everything below it, by parent pid, among `procs`.
 function treeOf(top, procs) {
@@ -174,7 +190,12 @@ function findStrays(root, all) {
     const owners = all.filter((l) => laneDirs(root, l).some((d) => feet.some((f) => within(f, d))));
     if (owners.some((l) => !FINISHED.includes(l.state))) continue;
     if (interactive(p))
-      found.leftAlone.push({ pid: p.pid, command: p.command, reason: "interactive shell" });
+      found.leftAlone.push({
+        pid: p.pid,
+        command: p.command,
+        reason: "interactive shell",
+        cwd: cwd.map.get(p.pid),
+      });
     else found.strays.push({ pid: p.pid, command: p.command });
   }
   return found;
@@ -198,10 +219,20 @@ export function plan(root, { free = freeBytes(root) } = {}) {
       } catch {
         ignored = []; // no work tree there: nothing to lose
       }
-      cleanable.push({ id: ledger.id, path: tree.path, branch: tree.branch, ignored });
+      cleanable.push({
+        id: ledger.id,
+        path: tree.path,
+        branch: tree.branch,
+        ignored,
+        inUse: false,
+      });
     }
   }
   const { strays, leftAlone, lsofMissing } = findStrays(root, all);
+  for (const w of cleanable) {
+    const dirs = [w.path, real(w.path)];
+    w.inUse = leftAlone.some((p) => p.cwd && dirs.some((d) => within(p.cwd, d)));
+  }
   const warnings = [];
   if (free !== null && free < LOW_DISK)
     warnings.push(`only ${(free / GB).toFixed(1)} GB free on the disk (below ${LOW_DISK / GB} GB)`);
@@ -216,17 +247,28 @@ const stillRunning = (pids) =>
     .filter((p) => pids.has(p.pid) && !p.stat.startsWith("Z"))
     .map((p) => p.pid);
 
-// SIGTERM, then SIGKILL after SETTLE_MS, to the stray and everything below it, never to a terminal or an
-// interactive shell among them (nor what hangs under one). The set grows with children that appear and keeps
-// the pids of ones whose parent died first (they are re-parented, so only the set still names them).
+// This sweep's own process group.
+const ownGroup = () =>
+  Number(spawnSync("ps", ["-o", "pgid=", "-p", String(process.pid)], { encoding: "utf8" }).stdout);
+
+// SIGTERM, then SIGKILL after SETTLE_MS, to the stray, everything below it and the rest of its process group
+// (a double-forked child keeps the group), never to a terminal or a login shell among them (nor what hangs
+// under one), and never to a group that holds one or this sweep. Only the stray's own subtree is judged: a
+// terminal above it (the normal case: Claude Code runs on one) does not spare it. The set grows with
+// children that appear and keeps the pids of ones whose parent died first (they are re-parented).
 // Returns the pids still running afterwards.
 function stop(stray) {
   const members = new Set([stray.pid]);
+  let group = null;
   const grow = () => {
     const procs = processes();
+    group ??= procs.find((p) => p.pid === stray.pid)?.pgid ?? null;
+    const mates = group > 1 ? procs.filter((p) => p.pgid === group) : [];
+    const shared = mates.some((p) => onTerminal(p) || runsInteractive(p)) || group === ownGroup();
+    if (!shared) for (const p of mates) members.add(p.pid);
     for (const top of [...members]) for (const pid of treeOf(top, procs)) members.add(pid);
     for (const p of procs)
-      if (interactive(p) && p.pid !== stray.pid)
+      if (members.has(p.pid) && p.pid !== stray.pid && onTerminal(p))
         for (const pid of treeOf(p.pid, procs)) members.delete(pid);
   };
   const nap = new Int32Array(new SharedArrayBuffer(4));
@@ -266,8 +308,9 @@ export function apply(root, found, { discardIgnored = false } = {}) {
     } else done.killed.push(p.pid);
   }
   for (const w of found.cleanable) {
-    if (w.ignored?.length && !discardIgnored) {
-      done.kept.push({ id: w.id, reason: ignoredReason(w) });
+    const why = keepReason(w, discardIgnored);
+    if (why) {
+      done.kept.push({ id: w.id, reason: why });
       continue;
     }
     const res = remove(root, { path: w.path, branch: w.branch });
@@ -277,6 +320,10 @@ export function apply(root, found, { discardIgnored = false } = {}) {
   return done;
 }
 
-/** Why a worktree with ignored files stays. */
-export const ignoredReason = (w) =>
-  `holds ${w.ignored.length} ignored file(s) removal would delete (${w.ignored.slice(0, 3).join(", ")}); --discard-ignored to remove it anyway`;
+/** Why a cleanable worktree stays (a shell is in it, or it holds ignored files), or null when it can go. */
+export function keepReason(w, discardIgnored) {
+  if (w.inUse) return "in use by a shell";
+  if (w.ignored?.length && !discardIgnored)
+    return `holds ${w.ignored.length} ignored file(s) removal would delete (${w.ignored.slice(0, 3).join(", ")}); --discard-ignored to remove it anyway`;
+  return null;
+}
