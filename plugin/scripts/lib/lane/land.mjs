@@ -9,7 +9,8 @@
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { findByBranch, git, ignoredFiles, porcelain, remove } from "./worktree.mjs";
+import { isMemoryWrite } from "./own-memory.mjs";
+import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
 
 const first = (text) => text.trim().split("\n")[0] ?? "";
 const lines = (text) => text.split("\n").filter(Boolean);
@@ -105,7 +106,8 @@ export function cherryPick(root, { shas, preHead }) {
   const stopped = commitOf(root, "CHERRY_PICK_HEAD");
   const reason = first(res.stderr) || first(res.stdout) || `git cherry-pick exited ${res.status}`;
   git(root, ["cherry-pick", "--abort"]); // no sequence in progress (a bad SHA) fails here, harmlessly
-  const restored = commitOf(root, "HEAD") === preHead && porcelain(root).length === 0;
+  const restored =
+    commitOf(root, "HEAD") === preHead && (statusEntries(root) ?? ["?"]).length === 0;
   return { ok: false, stopped, reason, restored };
 }
 
@@ -194,7 +196,7 @@ export function rollback(root, { preHead, landed }) {
       ok: false,
       reason: `main has ${chain.length} commit(s) since ${preHead.slice(0, 7)}, not exactly the ${landed.length} landed`,
     };
-  const dirty = porcelain(root);
+  const dirty = statusEntries(root) ?? ["git status failed"];
   if (dirty.length > 0)
     return {
       ok: false,
@@ -210,10 +212,13 @@ export function rollback(root, { preHead, landed }) {
 }
 
 /** `git status` entries as `"XY path"`, read untrimmed so the first keeps its leading " " column
- *  (`porcelain` trims it); null when git fails. */
+ *  (`porcelain` trims it); null when git fails. Agentry's own new memory records are left out
+ *  (`own-memory.mjs`): main counts as clean with them on it, and the land leaves them as they are. */
 export function statusEntries(dir) {
   const res = git(dir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  return res.status === 0 ? res.stdout.split("\0").filter(Boolean) : null;
+  return res.status === 0
+    ? res.stdout.split("\0").filter((entry) => entry && !isMemoryWrite(entry))
+    : null;
 }
 
 /** The entries that are not a plain edit of one of `files` (a rename's source field included). */
@@ -276,7 +281,11 @@ export function boardCommit(root, { files, message }) {
     const said = `${commit.stderr}\n${commit.stdout}`.trim();
     return { ok: false, reason: said || `git commit exited ${commit.status}` };
   }
-  return { ok: true, sha: commitOf(root, "HEAD"), left: porcelain(root) };
+  return {
+    ok: true,
+    sha: commitOf(root, "HEAD"),
+    left: statusEntries(root) ?? ["git status failed"],
+  };
 }
 
 /** `branch`'s upstream, from its git config: `{ remote, ref }`, or null when it has none. */

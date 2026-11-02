@@ -92,9 +92,12 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
   lifecycle writes, by this lane or any other. So parallel lanes never trip each other, and anything else is a
   breach: another row or cell of the board, free text, a file outside the board, a file dirty at start that
   changed or was reverted since. HEAD may move only by other lanes' merges, each the run `preHead` → landed
-  commits → board commit its ledger records, matched against main's first-parent history. Agentry's own run
-  files (`.agentry/run/`) are not checked. So: no board edits (`board set`, by hand) and no commits on main
-  while a lane builds.
+  commits → board commit its ledger records, matched against main's first-parent history. Agentry's own files
+  are not checked: `.agentry/run/`, and new memory records (`.agentry/memory/<facts|episodes>/<slug>-<ULID>.md`,
+  untracked, staged as new, or in a commit that only adds them), the same definition `lane merge` uses for a
+  clean main. Anything else under the store (an edit of a tracked record, another file) is a breach. A path's
+  type and mode count with its content (a symlink, a chmod). So: no board edits (`board set`, by hand) and no
+  other commits on main while a lane builds.
 - **Trust boundary.** The guard catches a builder that slips into the main checkout; it is not a sandbox. It
   trusts `.agentry/run/` as Agentry's steps wrote it and checks each ledger's claims against git where git can
   say, so a planted ledger naming a SHA excuses nothing. A builder that forges a whole merge record, or edits
@@ -118,7 +121,7 @@ this repo's store and the user's `scope: user` facts only, never another project
 line, the log dir and the report path. The rules builders and verifiers follow live in those
 templates, once:
 
-- `cd "<worktree>" &&` on every shell command (quoted); absolute paths under the worktree.
+- `cd '<worktree>' &&` on every shell command (single-quoted); absolute paths under the worktree.
 - Checks in the foreground, exit codes read, never piped into `grep` / `tail` to decide; no self-started
   background waits. The one exception is the gate rule above: a check longer than the host's foreground limit
   runs in the host's background mode, read by the same exit code.
@@ -130,7 +133,8 @@ templates, once:
 ### Close and handoff
 
 After `close`, call `episode_write` with the printed `episode` (add a `lesson` when the run taught one), then
-stamp its id with `close <id> --episode <id>`. The lane stays `verified` until `/agentry:merge` lands it. Hand off:
+stamp its id with `close <id> --episode <id>`. A second `close` on a stamped lane says the episode is already
+written: write nothing more. The lane stays `verified` until `/agentry:merge` lands it. Hand off:
 
 ```text
 <id>: <last verdict>; gate <green|red> <tier> on <sha>

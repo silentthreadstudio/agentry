@@ -5,14 +5,16 @@
 // its report file.
 // Run: node --test plugin/scripts/test/exec-cli.test.mjs
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -655,12 +657,39 @@ test("a ledger's boardWrites excuse only the lifecycle's own board file, not ano
   assert.match(res.json.reason, /files changed: {2}M plan\/TASKS\.md/);
 });
 
+const ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+test("only new memory records are Agentry's own: other files and edits of tracked ones stop the lane", () => {
+  const record = `.agentry/memory/facts/a-fact-${ULID}.md`;
+  const cases = {
+    "a script in the store": (root) => {
+      mkdirSync(join(root, ".agentry", "memory"), { recursive: true });
+      writeFileSync(join(root, ".agentry", "memory", "evil.sh"), "echo\n");
+    },
+    "a record whose name is not a ULID": (root) => {
+      mkdirSync(join(root, ".agentry", "memory", "facts"), { recursive: true });
+      writeFileSync(join(root, ".agentry", "memory", "facts", "evil.md"), "x\n");
+    },
+    "an edit of a tracked record": (root) => writeFileSync(join(root, record), "changed\n"),
+    "a tracked record deleted": (root) => rmSync(join(root, record)),
+  };
+  for (const [what, act] of Object.entries(cases)) {
+    const r = repo();
+    commitFile(r.root, record, "a fact\n");
+    build(lane(r, "start", "T1").json);
+    act(r.root);
+    const res = lane(r, "report", "T1");
+    assert.equal(res.exit, 1, what);
+    assert.match(res.json.reason, /files changed: .*\.agentry\/memory/, what);
+  }
+});
+
 test("Agentry's own memory writes in main do not stop a building lane", () => {
   const r = repo();
   build(lane(r, "start", "T1").json);
   const dir = join(r.root, ".agentry", "memory", "episodes");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "01EP.md"), "an episode another lane wrote\n");
+  writeFileSync(join(dir, `an-episode-${ULID}.md`), "an episode another lane wrote\n");
   const res = lane(r, "report", "T1");
   assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
 });
@@ -727,4 +756,154 @@ test("close accepts a stopped lane", () => {
   const closed = lane(r, "close", "T1");
   assert.equal(closed.exit, 0, closed.stderr);
   assert.match(closed.json.episode.outcome, /^stopped/);
+});
+
+// ---- Agentry's own memory writes, store NOT ignored (the normal path for a repo that commits it) ----
+
+const MEM = join(dirname(LANE), "..", "mem", "index.js");
+
+// A real `episode_write` through the shipped memory MCP, writing into the repo's `.agentry/memory`.
+// Resolves to the episode id.
+function episodeWrite({ root, home }, payload) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("node", [MEM], {
+      env: { ...gitEnv, HOME: home, CLAUDE_PROJECT_DIR: root, AGENTRY_PROJECT_DIR: root },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const send = (msg) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...msg })}\n`);
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("the memory MCP did not answer"));
+    }, 20000);
+    let buf = "";
+    child.stdout.on("data", (d) => {
+      buf += d;
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        const msg = JSON.parse(line);
+        if (msg.id === 1) {
+          send({ method: "notifications/initialized" });
+          send({
+            id: 2,
+            method: "tools/call",
+            params: { name: "episode_write", arguments: payload },
+          });
+        } else if (msg.id === 2) {
+          clearTimeout(timer);
+          child.kill();
+          resolve(JSON.parse(msg.result.content[0].text).id);
+        }
+      }
+    });
+    send({
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test", version: "0" },
+      },
+    });
+  });
+}
+
+// Close lane `id`, write its episode for real and stamp the id.
+async function closeAndRecord(r, id) {
+  const { episode } = lane(r, "close", id).json;
+  const { task, shape, outcome } = episode;
+  const written = await episodeWrite(r, { task, shape, outcome });
+  assert.equal(lane(r, "close", id, "--episode", written).exit, 0);
+  return written;
+}
+const status = (root) => git(root, "status", "--porcelain", "--untracked-files=all");
+
+test("close, a real episode_write, stamp and lane merge land with the store not ignored", async () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  await closeAndRecord(r, "T1");
+  assert.match(status(r.root), /^\?\? \.agentry\/memory\/episodes\/.+\.md$/m);
+  const landed = merge(r, "T1", "--message", "chore(board): land T1");
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  assert.match(status(r.root), /^\?\? \.agentry\/memory\/episodes\//m, "left as it was");
+});
+
+test("committing the episode between two lanes stops neither, and the land still works", async () => {
+  const r = repo();
+  const building = lane(r, "start", "T1").json;
+  build(building, "t1.txt");
+  verified(r, "T2", "out.txt");
+  await closeAndRecord(r, "T2");
+  git(r.root, "add", ".agentry/memory");
+  git(r.root, "commit", "-q", "-m", "chore(memory): record the T2 episode");
+  const landed = merge(r, "T2", "--message", "chore(board): land T2");
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  const res = lane(r, "report", "T1");
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+});
+
+test("close on a stamped lane says the episode is written and prints no payload to follow", async () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const written = await closeAndRecord(r, "T1");
+  const again = lane(r, "close", "T1");
+  assert.equal(again.exit, 0);
+  assert.match(again.json.already, /already|is written/);
+  assert.equal(again.json.afterwards, undefined);
+  assert.equal(ledgerOf(r.root, "T1").episode.writtenId, written);
+});
+
+test("close on an adopted lane says it was not verified by a lane", () => {
+  const r = repo();
+  git(r.root, "branch", "feat/t1");
+  git(r.root, "checkout", "-q", "feat/t1");
+  commitFile(r.root, "out.txt", "x\n", "feat: one");
+  git(r.root, "checkout", "-q", "main");
+  const landed = merge(r, "T1", "--branch", "feat/t1", "--message", "chore(board): land T1");
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  const { outcome } = lane(r, "close", "T1").json.episode;
+  assert.doesNotMatch(outcome, /undefined/);
+  assert.match(outcome, /^adopted: not built or verified by a lane/);
+});
+
+test("a recorded lifecycle write on a file the owner staged does not stop another lane", () => {
+  const r = { root: temp("exec-files-"), home: temp("exec-home-") };
+  git(r.root, "init", "-q", "-b", "main");
+  commitFile(r.root, ".gitignore", ".agentry/run/\n");
+  commitFile(r.root, "stories/s1.md", "---\nid: S-1\nstate: open\n---\n\n# One\n");
+  commitFile(r.root, "stories/s2.md", "---\nid: S-2\nstate: open\n---\n\n# Two\n");
+  commitFile(r.root, "TASKS.md", "# Tasks\n\n- **S-1**: owns `a.txt`.\n- **S-2**: owns `b.txt`.\n");
+  commitFile(r.root, ".agentry/process.json", JSON.stringify(STORIES));
+  writeFileSync(
+    join(r.root, "stories", "s2.md"),
+    "---\nid: S-2\nstate: open\n---\n\n# Two, mine\n",
+  );
+  git(r.root, "add", "stories/s2.md");
+  const one = lane(r, "start", "S-1").json;
+  build(one, "a.txt");
+  assert.equal(lane(r, "start", "S-2").exit, 0);
+  assert.match(status(r.root), /^MM stories\/s2\.md$/m);
+  const res = lane(r, "report", "S-1");
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+});
+
+test("a new symlink, a dangling one, a type change with the same content and a chmod stop the lane", () => {
+  const cases = {
+    "a symlink to a directory": (root) => symlinkSync("plan", join(root, "link")),
+    "a dangling symlink": (root) => symlinkSync("nowhere", join(root, "link")),
+    "a file turned into a symlink with its own text": (root) => {
+      rmSync(join(root, "plan", "NOTE.txt"));
+      symlinkSync("target", join(root, "plan", "NOTE.txt"));
+    },
+    "a chmod": (root) => chmodSync(join(root, "plan", "NOTE.txt"), 0o755),
+  };
+  for (const [what, act] of Object.entries(cases)) {
+    const r = repo();
+    commitFile(r.root, "plan/NOTE.txt", "target");
+    build(lane(r, "start", "T1").json);
+    act(r.root);
+    const res = lane(r, "report", "T1");
+    assert.equal(res.exit, 1, what);
+    assert.match(res.json.reason, /main touched: files changed/, what);
+  }
 });

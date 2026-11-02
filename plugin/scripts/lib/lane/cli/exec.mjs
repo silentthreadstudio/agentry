@@ -13,7 +13,14 @@
 // stopped (or the gate is red), 2 = usage or refusal (nothing changed).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readConfig } from "../../config.mjs";
@@ -34,6 +41,7 @@ import {
 } from "../brief.mjs";
 import { changedSince, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
+import { isMemoryCommit, isMemoryWrite } from "../own-memory.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
 import { DISPATCHES, addRound, step as advance, begin, expects, verdicts } from "../rounds.mjs";
 import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
@@ -105,14 +113,16 @@ export function run(argv, ctx) {
 // start that changed since) is the builder's. HEAD may move only by merges other ledgers record, each a
 // run preHead → landed… → board commit that git's first-parent history confirms.
 
-// Agentry's own files: the run state, and the memory a lane writes (an episode, a fact).
-const OWN_DIRS = [".agentry/run/", ".agentry/memory/"];
+// Agentry's own files: the run state. (The memory records a lane writes are `own-memory.mjs`'s.)
+const OWN_DIRS = [".agentry/run/"];
 const ABSENT = "-";
+const MODE_SUFFIX = { 100755: ":x", 120000: ":l" };
 const STAGED = /^[MADRC]/;
+const stagedKey = (entry) => `${entry[0]}${entry.slice(3)}`; // index column + path
 const headOf = (dir, ref = "HEAD") =>
   git(dir, ["rev-parse", "--verify", "--quiet", ref]).stdout.trim();
 
-// Main's changed paths (Agentry's run files left out) → their `git status` entry; a rename or copy
+// Main's changed paths (Agentry's run files and new memory records left out) → their `git status` entry; a rename or copy
 // lists its source too.
 function dirtyPaths(root) {
   const res = git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
@@ -121,6 +131,7 @@ function dirtyPaths(root) {
   const out = new Map();
   for (let i = 0; i < parts.length; i++) {
     const entry = parts[i];
+    if (isMemoryWrite(entry)) continue;
     const paths = [entry.slice(3), ...(/^[RC]/.test(entry) ? [parts[++i]] : [])];
     for (const path of paths)
       if (!OWN_DIRS.some((d) => path.startsWith(d)) && !STAGED.test(out.get(path) ?? ""))
@@ -129,37 +140,46 @@ function dirtyPaths(root) {
   return out;
 }
 
-// The blob id git would store for each path as it is in main's working tree, ABSENT when it is not
-// a file there.
+// What is stored for each path as it is in main's working tree, ABSENT when it is nothing there (or a
+// directory): the blob id, plus a suffix for what the blob id leaves out: ":x" an executable file, ":l" a
+// symlink (the blob is its target). A plain file is its bare blob id.
 function contentOf(root, paths) {
   const out = Object.fromEntries(paths.map((p) => [p, ABSENT]));
-  const files = paths.filter((p) => {
+  const files = [];
+  for (const p of paths) {
+    let st;
     try {
-      return statSync(join(root, p)).isFile();
+      st = lstatSync(join(root, p));
     } catch {
-      return false;
+      continue;
     }
-  });
+    if (st.isSymbolicLink()) {
+      const res = git(root, ["hash-object", "--stdin"], readlinkSync(join(root, p)));
+      if (res.status !== 0) refuse(`git hash-object failed in ${root}: ${res.stderr.trim()}`);
+      out[p] = `${res.stdout.trim()}:l`;
+    } else if (st.isFile()) files.push([p, st.mode & 0o111 ? ":x" : ""]);
+  }
   if (!files.length) return out;
-  const res = git(root, ["hash-object", "--", ...files]);
+  const res = git(root, ["hash-object", "--", ...files.map(([p]) => p)]);
   if (res.status !== 0) refuse(`git hash-object failed in ${root}: ${res.stderr.trim()}`);
   res.stdout
     .split("\n")
     .filter(Boolean)
     .forEach((id, i) => {
-      out[files[i]] = id;
+      out[files[i][0]] = id + files[i][1];
     });
   return out;
 }
 
-// The blob id of each path in `commit`, ABSENT when the commit has no such file.
+// The same, as `commit` holds it, ABSENT when the commit has no such file.
 function blobsAt(root, commit, paths) {
   const out = Object.fromEntries(paths.map((p) => [p, ABSENT]));
   const res = git(root, ["--literal-pathspecs", "ls-tree", "-r", "-z", commit, "--", ...paths]);
   for (const line of res.stdout.split("\0").filter(Boolean)) {
     const tab = line.indexOf("\t");
     const path = line.slice(tab + 1);
-    if (Object.hasOwn(out, path)) out[path] = line.slice(0, tab).split(" ")[2];
+    const [mode, , id] = line.slice(0, tab).split(" ");
+    if (Object.hasOwn(out, path)) out[path] = id + (MODE_SUFFIX[mode] ?? "");
   }
   return out;
 }
@@ -225,8 +245,11 @@ function strayFiles(root, ledger, head, all, boards) {
     .map((p) => dirty.get(p) ?? `${p} (back to HEAD)`);
   // An index-only change (`git rm --cached`) leaves the content as it was: any staged entry that was
   // not there at start is the builder's too.
+  // The index column is compared, not the whole entry: a recorded write on a file staged at start turns
+  // "M " into "MM" and the index is as it was.
+  const stagedAtStart = new Set(was.porcelain.map(stagedKey));
   const staged = [...new Set(dirty.values())].filter(
-    (e) => STAGED.test(e) && !was.porcelain.includes(e),
+    (e) => STAGED.test(e) && !stagedAtStart.has(stagedKey(e)),
   );
   return [...new Set([...changed, ...staged])];
 }
@@ -248,6 +271,10 @@ function landedOnly(root, from, to, others) {
     }));
   let at = from;
   for (let i = 0; i < chain.length; ) {
+    if (isMemoryCommit(root, chain[i])) {
+      at = chain[i++]; // the owner committing Agentry's own memory records
+      continue;
+    }
     const run = runs.find((r) => r.preHead === at && r.shas.every((s, k) => chain[i + k] === s));
     if (!run) return false;
     i += run.shas.length;
@@ -664,7 +691,9 @@ function episodeOf(ledger) {
   const outcome = [
     ledger.state === "stopped"
       ? `stopped: ${ledger.stopReason ?? "unknown"}`
-      : `verified (${judged.at(-1)?.verdict})`,
+      : ledger.origin === "adopted"
+        ? "adopted: not built or verified by a lane"
+        : `verified (${judged.at(-1)?.verdict})`,
     `rounds: ${ledger.rounds.map((r) => `${r.step}${r.resend ? " (resent)" : ""}`).join(", ")}`,
     `verdicts: ${judged.map((r) => r.verdict).join(", ") || "none"}`,
     `void verdicts: ${ledger.rounds.filter((r) => r.void).length}`,
@@ -693,6 +722,20 @@ function close(ctx, id, episodeId) {
       out: JSON.stringify({ id, step: "close", episode: ledger.episode }, null, 2),
     };
   }
+  if (ledger.episode?.writtenId)
+    return {
+      exit: 0,
+      out: JSON.stringify(
+        {
+          id,
+          step: "close",
+          episode: ledger.episode,
+          already: `the episode is written (${ledger.episode.writtenId}): write nothing more`,
+        },
+        null,
+        2,
+      ),
+    };
   const closable =
     ledger.next === "close" ||
     ledger.state === "stopped" ||
