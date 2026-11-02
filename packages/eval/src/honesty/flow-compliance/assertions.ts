@@ -3,8 +3,9 @@
 // returns a {@link Check} (status + a human verdict); `runAllChecks` aggregates them into a {@link FlowVerdict}.
 //
 // The contract asserted (ADR-004, AS-BUILT shapes decided by ADR-001/B1 + the A3/C1 single-frontmatter rule):
-//   1. run_start-before-dispatch — the first `type`-bearing FLOW line precedes the first dispatch signal: an
-//      `agent-started` line or, now that nothing writes those, an agent in `run-state.json`'s roster.
+//   1. run_start-before-dispatch — the first `type`-bearing FLOW line precedes the first `agent-started` line. Only
+//      those lines show order; the `run-state.json` roster cannot (see `firstDispatchStamp`), so roster-only
+//      evidence is N/A.
 //   2. spec-before-tasks — `spec.md` exists and predates the first `tasks/NNN-*.md`.
 //   3. single-frontmatter — every task file parses to exactly ONE leading `---…---` block.
 //   4. no-skip-flag — N/A: the hook that wrote the `flow-skipped` marker is retired, so it can never be observed.
@@ -58,18 +59,16 @@ function firstFlowEvent(events: readonly TraceEvent[]): TraceEvent | undefined {
 }
 
 /**
- * Dispatch evidence: the `ts` of every `agent-started` line (legacy; the retired subagent hook wrote these) and of
- * every roster agent that carries a `since`, plus how many signals there are at all (a roster agent with no
- * `since` proves a dispatch happened but not when). `since` is when the agent ENTERED ITS CURRENT state, so it can
- * only be later than the true dispatch: an ordering that passes on it is a lower bound, a FAIL is exact.
+ * The `ts` of the earliest `agent-started` line (legacy; the retired subagent hook wrote these), or undefined when
+ * there is none. This is the ONLY dispatch-order evidence: the roster is not, because `since` is restamped on every
+ * state change (a finished agent's `since` is its return time), `agent_state` needs the handle `run_start` returns
+ * (so a roster entry always postdates run_start), and `run_start` writes no event.
  */
-function dispatchEvidence(trace: RunTrace): { count: number; earliest: string | undefined } {
-  const stamps = [
-    ...trace.events.filter((e) => e.kind === "agent-started").map((e) => e.ts),
-    ...trace.roster.flatMap((a) => (a.since === undefined ? [] : [a.since])),
-  ].sort();
-  const count = stamps.length + trace.roster.filter((a) => a.since === undefined).length;
-  return { count, earliest: stamps[0] };
+function firstDispatchStamp(events: readonly TraceEvent[]): string | undefined {
+  return events
+    .filter((e) => e.kind === "agent-started")
+    .map((e) => e.ts)
+    .sort()[0];
 }
 
 /**
@@ -87,7 +86,7 @@ export function runExists(trace: RunTrace): boolean {
  * plus a `plan.md` or task files — OR an explicit run signal (`run-state.json` / a FLOW event). This is the honest
  * classifier: a genuine one-shot writes NOTHING to `.agentry/work/`, so it has none of these; an escalated run that
  * skipped `event_emit` still has its artifacts, so it is correctly judged above-floor rather than escaping as
- * "sub-floor N/A". Dispatch order (check 1) is a separate question: it is N/A when no dispatch line exists.
+ * "sub-floor N/A". Dispatch order (check 1) is a separate question: it is N/A when no `agent-started` line exists.
  */
 export function isAboveFloor(trace: RunTrace): boolean {
   return (
@@ -100,34 +99,27 @@ export function isAboveFloor(trace: RunTrace): boolean {
 
 /**
  * CHECK 1 — run_start-before-dispatch. The first FLOW (`type`) line's ts must be STRICTLY before the first
- * dispatch signal's ts (see {@link dispatchEvidence}: `agent-started` lines and the `run-state.json` roster). A
- * dispatch with no preceding FLOW line = FAIL (the proven bypass made observable). With no dispatch evidence at
- * all — or only undated roster entries beside a run_start — the order cannot be observed: the check is N/A, never
- * a pass (a run that dispatched agents without run_start would look the same).
+ * `agent-started` line's ts (see {@link firstDispatchStamp}). A dispatch line with no preceding FLOW line = FAIL
+ * (the proven bypass made observable). With no `agent-started` line the order cannot be observed: the check is N/A,
+ * never a pass or a fail — the roster alone cannot show it, and a run that dispatched before run_start looks the
+ * same. Nothing writes `agent-started` lines now, so on a current run this check is N/A and the verdict inconclusive.
  */
 export function checkRunStartBeforeDispatch(trace: RunTrace): Check {
   const id: CheckId = "run-start-before-dispatch";
-  const { count, earliest } = dispatchEvidence(trace);
-  if (count === 0) {
-    return {
-      id,
-      status: "na",
-      detail: "N/A (no dispatch evidence: no agent-started line, empty roster)",
-    };
+  const earliest = firstDispatchStamp(trace.events);
+  if (earliest === undefined) {
+    const roster =
+      trace.roster.length === 0
+        ? ""
+        : `; the roster (${trace.roster.length} agent(s)) cannot show order`;
+    return { id, status: "na", detail: `N/A (no agent-started line${roster})` };
   }
   const flow = firstFlowEvent(trace.events);
   if (flow === undefined) {
     return {
       id,
       status: "fail",
-      detail: `agent dispatched${earliest === undefined ? "" : ` at ${earliest}`} with no preceding run_start/FLOW line`,
-    };
-  }
-  if (earliest === undefined) {
-    return {
-      id,
-      status: "na",
-      detail: "N/A (roster agents carry no timestamp to order against run_start)",
+      detail: `agent dispatched at ${earliest} with no preceding run_start/FLOW line`,
     };
   }
   const pass = flow.ts < earliest;

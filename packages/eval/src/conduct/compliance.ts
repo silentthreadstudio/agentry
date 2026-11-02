@@ -79,7 +79,10 @@ export function shapeAwareCompliance(
   };
 }
 
-/** The readable verdict for an escalated run: an inconclusive one (a required check unobservable) is never "compliant". */
+/**
+ * The readable verdict for an escalated run: an inconclusive one (a required check unobservable) is never
+ * "compliant". With no `agent-started` lines (nothing writes them now) that is every current run.
+ */
 function complianceDetail(result: FlowResult, expectedShape: string): string {
   if (result === "pass") return `escalated + flow-compliant (expected ${expectedShape})`;
   if (result === "inconclusive") {

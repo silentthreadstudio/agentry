@@ -32,13 +32,15 @@ controls → report-section`, ADR-002) so adding a fourth is mechanical:
 |---|---|---|
 | `moat` | Does a recalled gotcha prevent a re-bug (memory hygiene)? | `run moat` |
 | `rightsizing` | Did the conductor route to the least process that *wins* (results-gated, not label-match)? | `run rightsizing` |
-| `honesty` | Did it ever claim "done" below the oracle bar (overclaim gap), and did escalated runs follow the process (flow-compliance)? | (rides the same conduct as `run rightsizing`) |
+| `honesty` | Did it ever claim "done" below the oracle bar (overclaim gap)? | (rides the same conduct as `run rightsizing`) |
 
 `run rightsizing` is the **unified conduct-and-judge** harness (ADR-001): it conducts each task **once**, reads the
 routed shape from the settled work-folder artifacts **and** judges the produced tree, then scores results-gated
 (`right-sizing-success` / `over-route-tax` / `under-route-failure`, with `indeterminate` as its own terminal
-category — never a bare label-match accuracy). The **honesty** probe rides that same conduct: it is two pure reads
-over the same per-run records (the overclaim gap) plus a read-only flow-compliance census, so it never re-conducts.
+category — never a bare label-match accuracy). The **honesty** probe rides that same conduct: it is a pure read
+over the same per-run records (the overclaim gap), so it never re-conducts. A read-only flow-compliance probe
+(`src/honesty/flow-compliance/`) exists for a captured run dir, but no CLI subcommand or probe runs it today; its
+verdict is `inconclusive` for any run without `agent-started` lines, which nothing writes now.
 The CLI persists the rightsizing artifact in `summary.json` and writes the honesty artifact as a sibling
 `honesty.json` in the same run dir.
 

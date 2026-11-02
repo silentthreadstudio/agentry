@@ -95,22 +95,23 @@ test("check1: no dispatch evidence at all ⇒ N/A, never a pass", () => {
   assert.equal(c.status, "na");
 });
 
-test("check1: roster agent started after run_start ⇒ pass; before it ⇒ fail; undated ⇒ N/A", () => {
+test("check1: roster-only evidence cannot show dispatch order ⇒ N/A, whatever the stamps say", () => {
+  // `since` is restamped on every state change and agent_state needs run_start's handle, so no roster stamp
+  // orders a dispatch against run_start: later, earlier or undated, the check is unobservable.
   const events = [flowLine("2026-01-01T00:01:00Z")];
-  const run = (since?: string) =>
-    checkRunStartBeforeDispatch(
+  for (const since of ["2026-01-01T00:02:00Z", "2026-01-01T00:00:00Z", undefined]) {
+    const c = checkRunStartBeforeDispatch(
       trace({ events, roster: [{ agent: "a", ...(since ? { since } : {}) }] }),
-    ).status;
-  assert.equal(run("2026-01-01T00:02:00Z"), "pass");
-  assert.equal(run("2026-01-01T00:00:00Z"), "fail");
-  assert.equal(run(), "na");
+    );
+    assert.equal(c.status, "na", `since=${since}`);
+  }
 });
 
 test("runAllChecks: a required check N/A ⇒ inconclusive (not pass); a fail still wins", () => {
   const noDispatch = runAllChecks(trace({ events: [flowLine("2026-01-01T00:00:00Z")] }));
   assert.equal(noDispatch.result, "inconclusive");
   assert.equal(noDispatch.pass, false);
-  const failed = runAllChecks(trace({ roster: [{ agent: "a", since: "2026-01-01T00:00:00Z" }] }));
+  const failed = runAllChecks(trace({ events: [dispatchLine("2026-01-01T00:00:00Z")] }));
   assert.equal(failed.result, "fail");
 });
 
@@ -307,29 +308,41 @@ test("shapeAwareCompliance: an inconclusive escalated run is not reported as flo
   assert.doesNotMatch(v.detail, /flow-compliant/);
 });
 
-test("probe: agents in the roster with no run_start (events.jsonl gone) ⇒ overall FAIL on check 1", () => {
-  const dir = stagedFixture("dispatch-before-run");
-  rmSync(join(dir, "events.jsonl"));
-  writeRoster(dir, { "agentry:implementer": { since: "2026-06-19T22:05:00.000Z" } });
-  const a = probeOver(dir);
-  assert.equal(a.result, "fail");
+/** The verdict over a staged `compliant` run whose events and roster are replaced (roster-only dispatch evidence). */
+function rosterRun(events: object[], agents: Record<string, { since?: string }>) {
+  const dir = stagedFixture("compliant");
+  writeFileSync(join(dir, "events.jsonl"), events.map((e) => `${JSON.stringify(e)}\n`).join(""));
+  writeRoster(dir, agents);
+  return probeOver(dir);
+}
+
+const routing = { ts: "2026-06-19T22:09:39.686Z", type: "routing-decision" };
+const implementer = { "agentry:implementer": { since: "2026-06-19T22:19:52.108Z" } };
+
+test("probe: dispatch before run_start, then the normal recording ⇒ inconclusive, not pass (B2)", () => {
+  // run_start writes no event and a roster entry only postdates it, so a roster stamped after the first FLOW
+  // line looks the same as a run that dispatched first. The verdict must not vouch for it.
+  const a = rosterRun([routing], implementer);
+  assert.equal(a.result, "inconclusive");
   assert.equal(a.pass, false);
-  assert.deepEqual(
-    a.checks.filter((c) => c.status === "fail").map((c) => c.id),
-    ["run-start-before-dispatch"],
-  );
+  assert.equal(a.checks.find((c) => c.id === "run-start-before-dispatch")?.status, "na");
 });
 
-test("probe: run_start precedes the roster's agents ⇒ overall PASS from roster evidence alone", () => {
-  const dir = stagedFixture("compliant");
-  writeFileSync(
-    join(dir, "events.jsonl"),
-    `${JSON.stringify({ ts: "2026-06-19T22:09:39.686Z", type: "routing-decision" })}\n`,
+test("probe: run_start then agent_state with no event ⇒ inconclusive, not fail (B6)", () => {
+  const a = rosterRun([], implementer);
+  assert.equal(a.result, "inconclusive");
+  assert.equal(a.pass, false);
+});
+
+test("probe: the verdict is stable as the run proceeds (working, event emitted, agent done)", () => {
+  const working = { "agentry:implementer": { since: "2026-06-19T22:10:00.000Z" } };
+  const done = { "agentry:implementer": { since: "2026-06-19T22:30:00.000Z" } };
+  assert.deepEqual(
+    [rosterRun([], working), rosterRun([routing], working), rosterRun([routing], done)].map(
+      (a) => a.result,
+    ),
+    ["inconclusive", "inconclusive", "inconclusive"],
   );
-  writeRoster(dir, { "agentry:implementer": { since: "2026-06-19T22:19:52.108Z" } });
-  const a = probeOver(dir);
-  assert.equal(a.result, "pass");
-  assert.equal(a.pass, true);
 });
 
 test("probe: N/A checks emit no observer event (neither task-done nor gate-fired)", () => {

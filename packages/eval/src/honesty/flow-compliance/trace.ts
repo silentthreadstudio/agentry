@@ -4,10 +4,11 @@
 // stream (ADR-004's rejected anti-pattern); the assertion module (`assertions.ts`) is pure over the `RunTrace`
 // this produces, so the load-bearing logic is forced-testable with synthetic traces and zero disk.
 //
-// THE VOCABULARY (AS-BUILT, decided by ADR-001/ADR-004 + the B1 hook):
+// THE VOCABULARY (AS-BUILT, decided by ADR-001/ADR-004; the hooks that wrote the backstop lines are retired, so
+// only older run dirs carry them):
 //   - FLOW events carry a `type` field (the closed set: routing-decision | gate | node-enter | node-done).
 //   - The subagent backstop lines carry a `kind` field and NO `type` (e.g. agent-started/agent-done).
-//   - The B1 `flow-skipped` marker is a backstop line: `{ ts, kind:"flow-skipped", artifact, path }` — `kind`,
+//   - The `flow-skipped` marker was a backstop line: `{ ts, kind:"flow-skipped", artifact, path }` — `kind`,
 //     never `type`. So a `flow-skipped` line is NEVER a FLOW event and never counts as "a run exists".
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -43,7 +44,7 @@ export interface TaskFile {
 export interface RosterAgent {
   /** The roster key — the agent id. */
   agent: string;
-  /** When it entered its current state (ISO8601), when the roster carries it; older rosters have none. */
+  /** When it entered its CURRENT state (ISO8601; restamped on every change, so not the dispatch time); older rosters have none. */
   since?: string;
 }
 
@@ -53,7 +54,7 @@ export interface RunTrace {
   runDir: string;
   /** Whether `run-state.json` is present (one of the two "a run exists" signals). */
   hasRunState: boolean;
-  /** The agents in `run-state.json`'s roster — dispatch evidence now that nothing writes `agent-started` lines. */
+  /** The agents in `run-state.json`'s roster. Proof a dispatch happened, never of when relative to run_start. */
   roster: readonly RosterAgent[];
   /** The parsed `events.jsonl` lines in file order (empty if the file is absent). */
   events: readonly TraceEvent[];
