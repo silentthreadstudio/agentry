@@ -93,7 +93,7 @@ export function seedSandbox(workingDir: string, seedDir: string): void {
  */
 const STREAM_FILE = "stream.jsonl";
 /**
- * The basename of the primer hook's own log — written under `<workingDir>/.agentry/work/<slug>/`. It shares
+ * The basename of Flow's own event log — written under `<workingDir>/.agentry/work/<slug>/`. It shares
  * the work folder with the conductor's routing artifacts (a known naming collision; see live.ts/extract.ts),
  * so it is excluded ONLY within the `.agentry/work/` subtree, never blanket-ignored elsewhere.
  */
@@ -109,7 +109,7 @@ const WORK_SUBTREE = join(".agentry", "work");
  *
  * Excludes the HARNESS's own bookkeeping, which is teed into this same `workingDir` and would otherwise make
  * the signal structurally always-true (collapsing extractShape's degenerate-vs-one-shot guard): the teed
- * `stream.jsonl` (workingDir root) and the primer hook's `events.jsonl` (under `.agentry/work/`). Everything
+ * `stream.jsonl` (workingDir root) and Flow's `events.jsonl` (under `.agentry/work/`). Everything
  * else — the conductor's `spec.md`/`plan.md`/`tasks/` artifacts AND any sandbox code edits — still counts, so
  * a workingDir with ONLY harness files reads empty while any conductor output reads non-empty.
  */

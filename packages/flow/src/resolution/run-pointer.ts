@@ -5,11 +5,11 @@
 //  - The run id is explicit and caller-threaded. There is NO ambient "current run" and NEVER a
 //    newest-mtime folder scan (the named anti-pattern). `index.ts`'s `resolveRunContext` errors when
 //    a run can't be resolved.
-//  - The session→run pointer is `session_id`-keyed and OWNED by the work-id-binder hook. FLOW writes
-//    it (`writeSessionPointer`) ONLY when a caller passes `session_id` explicitly; it never reads
-//    `session_id` from its own (absent) context. Both ends harden the seam with `assertSafeSegment`.
+//  - The session→run pointer is `session_id`-keyed. FLOW is its only writer (`writeSessionPointer`), and
+//    only when a caller passes `session_id` explicitly; it never reads `session_id` from its own (absent)
+//    context. Both ends harden the seam with `assertSafeSegment`.
 //
-// Pointer seam (pinned — identical to the binder/emitter hooks):
+// Pointer seam (pinned):
 //   path:  <cwd>/.agentry/run/sessions/<session_id>.json   (one file per session)
 //   shape: { "workId": "<run>", "updatedAt": "<iso8601>" }  (atomic tmp-then-rename, last-write-wins)
 import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
@@ -22,7 +22,7 @@ export function workRoot(cwd: string): string {
 }
 
 // `<cwd>/.agentry/work/<run>` — asserts `run` is a safe single segment before joining (containment:
-// a poisoned run id can never escape work/ — mirrors the hooks' guards, ADR-005 §4).
+// a poisoned run id can never escape work/ — ADR-005 §4).
 export function runDir(cwd: string, run: string): string {
   assertSafeSegment(run);
   return join(workRoot(cwd), run);
@@ -34,10 +34,10 @@ function pointerPath(cwd: string, session_id: string): string {
   return join(cwd, ".agentry", "run", "sessions", `${session_id}.json`);
 }
 
-// Resolve the run a session is bound to by reading the binder's pointer. Returns undefined when the
+// Resolve the run a session is bound to by reading its pointer. Returns undefined when the
 // pointer is missing/unparseable or carries no `workId` (the caller decides what "unresolved" means —
 // `resolveRunContext` turns it into a hard error). Containment: a `workId` that isn't a safe segment
-// is rejected (never trust a poisoned pointer — mirrors the emitter hook's guard).
+// is rejected (never trust a poisoned pointer).
 export function resolveRunFromSession(cwd: string, session_id: string): string | undefined {
   let ptr: unknown;
   try {
@@ -57,7 +57,7 @@ export function resolveRunFromSession(cwd: string, session_id: string): string |
 }
 
 // Which sessions claim a run — the "is this run claimed by anyone?" signal for comment routing. Scans
-// `<cwd>/.agentry/run/sessions/*.json` (pointers written by the work-id-binder hook) and returns the
+// `<cwd>/.agentry/run/sessions/*.json` (pointers written by `writeSessionPointer`) and returns the
 // session ids (filename minus `.json`) whose pointer `workId === run`. Tolerant: a missing dir / bad
 // json / poisoned pointer is treated as no claim (returns [] or skips the file — never throws). The
 // returned session segments are guarded (a traversal filename can never masquerade as a session id).

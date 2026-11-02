@@ -18424,9 +18424,10 @@ var EventStore = class {
   }
   // Fold one run's `events.jsonl` lines into the accumulator. Each kept line becomes one `EventView` with a
   // stable feed key (run + line index — unique within the fold, stable across reads of an unchanged file).
-  // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session hook line) is dropped.
-  // A hook backstop line is projected into the closed `node-enter` shape so the feed renders one event
-  // vocabulary — its `kind` becomes the node label, its `agent` the actor (the hook's only structured fields).
+  // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session legacy line) is dropped.
+  // A legacy backstop line (from the retired subagent hook) is projected into the closed `node-enter` shape
+  // so the feed renders one event vocabulary — its `kind` becomes the node label, its `agent` the actor
+  // (the line's only structured fields).
   foldRun(run, into) {
     this.source.eventLines(run).forEach((line, index) => {
       const parsed = parseLogLine(line);

@@ -53,7 +53,7 @@ export class RunService {
     this.services.tasks.writeArtifact(run, "spec", SPEC_SCAFFOLD);
 
     // ADR-005 NO branch: write the session pointer only when the caller supplies session_id. Absent it,
-    // the server has no session_id of its own and the binder hook seeds the pointer reactively.
+    // the server has no session_id of its own and no pointer is written.
     if (input.session_id && input.session_id.length > 0) {
       writeSessionPointer(this.services.cwd, input.session_id, run);
     }

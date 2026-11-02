@@ -1,7 +1,7 @@
 import type { FlowEvent, HookBackstopLine } from "@agentry/flow/domain/events";
 import { parseLogLine } from "@agentry/flow/domain/events";
 import { AgentState } from "@agentry/flow/domain/status";
-// EventStore — the ONE timeline fold (plan §2.2). Folds every run's `events.jsonl` (+ the hook backstop
+// EventStore — the ONE timeline fold (plan §2.2). Folds every run's `events.jsonl` (+ the legacy backstop
 // lines) into a single `EventView[]` projection that powers BOTH the per-work Activity feed (filtered to
 // one run) and the cross-run Agents view — a projection, NOT five ad-hoc scanners. Also derives the agent
 // roster (`AgentView[]`) from each run's `run-state.json`. PURE of HTTP/ws AND of fs (ADR-001): it depends
@@ -11,8 +11,9 @@ import { AgentState } from "@agentry/flow/domain/status";
 //
 // ── Reuse, not fork (ADR-005 tier 1) ─────────────────────────────────────────────────────────────────
 // Event parsing is FLOW's: `parseLogLine` discriminates the two `events.jsonl` line shapes (FLOW events
-// vs. legacy backstop lines from the retired subagent hook) and DROPS empty-`agent` main-session lines. We never reimplement
-// that — a malformed line is already a `skip`, so the fold tolerates a corrupt stream past one bad entry.
+// vs. legacy backstop lines from the retired subagent hook) and DROPS empty-`agent` main-session lines.
+// We never reimplement that — a malformed line is already a `skip`, so the fold tolerates a corrupt stream
+// past one bad entry.
 // The roster is read off `run-state.json`'s `{ agents: { "<id>": { state, assignedTask? } } }` shape (the
 // same shape FLOW's `AgentService` owns), validated through FLOW's closed `AgentState` enum.
 import type { AgentView, EventView } from "@agentry/workbench-shared";
@@ -63,9 +64,10 @@ export class EventStore {
 
   // Fold one run's `events.jsonl` lines into the accumulator. Each kept line becomes one `EventView` with a
   // stable feed key (run + line index — unique within the fold, stable across reads of an unchanged file).
-  // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session hook line) is dropped.
-  // A hook backstop line is projected into the closed `node-enter` shape so the feed renders one event
-  // vocabulary — its `kind` becomes the node label, its `agent` the actor (the hook's only structured fields).
+  // A line `parseLogLine` skips (blank, malformed, or an empty-`agent` main-session legacy line) is dropped.
+  // A legacy backstop line (from the retired subagent hook) is projected into the closed `node-enter` shape
+  // so the feed renders one event vocabulary — its `kind` becomes the node label, its `agent` the actor
+  // (the line's only structured fields).
   private foldRun(run: string, into: EventView[]): void {
     this.source.eventLines(run).forEach((line, index) => {
       const parsed = parseLogLine(line);
@@ -107,9 +109,9 @@ export class EventStore {
   }
 }
 
-// Project a hook backstop line into the closed FLOW event vocabulary so the feed renders ONE shape. The
-// hook carries only `kind` + `agent` (the empty-`agent` ones are already dropped upstream), so we map it
-// to a `node-enter` whose `node` is the hook `kind` and whose `agent` is the actor. `ts` carries through.
+// Project a legacy backstop line into the closed FLOW event vocabulary so the feed renders ONE shape. The
+// line carries only `kind` + `agent` (the empty-`agent` ones are already dropped upstream), so we map it
+// to a `node-enter` whose `node` is the line `kind` and whose `agent` is the actor. `ts` carries through.
 function hookToEvent(line: HookBackstopLine): FlowEvent {
   return { ts: line.ts, type: "node-enter", node: line.kind, agent: line.agent };
 }

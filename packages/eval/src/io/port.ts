@@ -71,7 +71,7 @@ export interface Invocation {
   model: string;
   /**
    * Where the captured event stream is teed, one per run. Named `stream.jsonl` (NOT `events.jsonl` — the
-   * primer hook owns that name in the work dir; ADR-002/005). Surfaces on the resulting `RunResult.streamPath`.
+   * Flow's event log owns that name in the work dir; ADR-002/005). Surfaces on `RunResult.streamPath`.
    */
   streamPath: string;
   /** Repo root to load the Agentry plugin from (`--plugin-dir`). Absent ⇒ no Agentry layer. */

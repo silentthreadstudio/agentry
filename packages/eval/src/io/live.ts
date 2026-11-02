@@ -188,7 +188,7 @@ interface WorkArtifacts {
 /**
  * Scan `<workingDir>/.agentry/work/*` for the routing artifacts the conductor writes — MIRRORS the mapping
  * `extract.ts` reads after the run, so the live kill-when-determined matches the post-run shape verdict. Only
- * `spec.md` / `plan.md` / `tasks/` count; the primer hook's own `events.jsonl` log shares the folder (a known
+ * `spec.md` / `plan.md` / `tasks/` count; Flow's own `events.jsonl` log shares the folder (a known
  * naming collision) and is IGNORED here, exactly as the extractor ignores it. Tolerates a missing work root
  * (a not-yet-written / one-shot run scans clean). Pure fs reads.
  */
@@ -202,7 +202,7 @@ function scanWorkArtifacts(workingDir: string): WorkArtifacts {
   for (const slug of readdirSync(workRoot)) {
     const slugDir = join(workRoot, slug);
     if (!statSync(slugDir).isDirectory()) continue;
-    // events.jsonl is the primer hook's log, not a routing artifact — never counted (only plan/tasks/spec are).
+    // events.jsonl is Flow's event log, not a routing artifact — never counted (only plan/tasks/spec are).
     if (existsSync(join(slugDir, "plan.md")) || dirNonEmpty(join(slugDir, "tasks")))
       hasDecompose = true;
     if (existsSync(join(slugDir, "spec.md"))) hasSpec = true;
