@@ -419,6 +419,20 @@ test("--accept takes a branch that merged main in and was then merged --no-ff", 
   );
 });
 
+test("a long id wraps the row: the command is whole and no line is wider than 80 columns", () => {
+  const { root } = fresh();
+  const long = "R1b-6-board-fix-drafts-and-nudges-round-three-really-long-id";
+  const text = read(root, "plan/BOARD.md").replace(
+    "| T2   | S1     | todo   |",
+    `| ${long} | S1 | doing |`,
+  );
+  writeFileSync(join(root, "plan", "BOARD.md"), text);
+  const out = board(root, "fix");
+  assert.ok(!out.stdout.includes("…"), out.stdout);
+  assert.ok(out.stdout.replaceAll(/\s+/g, " ").includes(`/agentry:exec ${long}`), out.stdout);
+  for (const line of out.stdout.split("\n")) assert.ok([...line].length <= 80, line);
+});
+
 const sprintWith = (root, lines) =>
   writeFileSync(
     join(root, "plan", "sprints", "S1.md"),

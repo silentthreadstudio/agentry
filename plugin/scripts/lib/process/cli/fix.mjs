@@ -8,7 +8,7 @@
 // it with `--accept <id>`, which writes it only while the commits carrying it are still in effect on main
 // (`drift.accepted`). Anything unsure writes nothing and is listed, as is every other drift, with the
 // command that deals with it. The output lists exactly the writes made; running it again finds nothing to
-// do; `--dry-run` writes nothing.
+// do; `--dry-run` writes nothing. A row wider than 80 columns wraps between words: a command is never cut.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = nothing left for the owner, 1 = items left
 // to report, 2 = usage
@@ -17,7 +17,7 @@ import { mainRoot } from "../../lane/worktree.mjs";
 import { accepted, mechanical, nudges } from "../drift.mjs";
 import { applyEvent } from "../lifecycle.mjs";
 import { readProcess } from "../read.mjs";
-import { fit } from "../render.mjs";
+import { wrapText } from "../render.mjs";
 import { titleOf } from "../status.mjs";
 import { WriteError } from "../write.mjs";
 
@@ -91,7 +91,11 @@ export function run(argv, { root, spec, model }) {
   return { exit, out: render({ dryRun, fixed, left, rest }) };
 }
 
-const rows = (text) => [fit(`  ${text}`, WIDTH)];
+// One row: as it is while it fits, else broken between words with the rest indented.
+function rows(text) {
+  if ([...text].length <= WIDTH - 2) return [`  ${text}`];
+  return wrapText(text, WIDTH - 2, WIDTH - 4).map((l, i) => `${i ? "    " : "  "}${l}`);
+}
 
 function render({ dryRun, fixed, left, rest }) {
   const verb = dryRun ? "would fix" : "fixed";
