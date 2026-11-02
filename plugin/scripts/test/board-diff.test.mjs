@@ -234,6 +234,15 @@ test("a frontmatter field is a cell; a key no field reads is other", () => {
   assert.match(body.other[0].what, /changed: "Edited\."/);
 });
 
+// R1b-5 re-verify item 10: a one-file item's cell named the item's line, not the line of its key.
+test("a frontmatter cell is located at its key's line", () => {
+  const diff = diffOf({ "plan/notes/n1.md": NOTE.replace("status: open", "status: closed") });
+  assert.equal(diff.cells[0].line, 3);
+  assert.deepEqual(strayChanges(SPEC, diff, { ids: [] }), [
+    'plan/notes/n1.md:3: note N1 status "open" → "closed" is not a lifecycle cell',
+  ]);
+});
+
 test("a changed path that is not a board file is other; so is a board file one version lacks", () => {
   assert.deepEqual(diffOf({}, ["src/app.js", "plan/BOARD.md"]).other, [
     { file: "src/app.js", what: "not a board file" },

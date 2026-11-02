@@ -156,13 +156,17 @@ export function diffBoard({ spec, before, after, files = [] }) {
       const [from, to] = [old.fields[field], item.fields[field]];
       if (show(from) === show(to)) continue;
       const file = at(spec, item.file);
+      // A table row is the item's line; in a one-file item the cell is its own key's line.
+      const keyLine = isTable(spec, item.kind)
+        ? null
+        : own(md.frontmatter(after.text(file) ?? "")?.lines, def.column);
       ctx.cells.push({
         kind: item.kind,
         id: item.id,
         field,
         column: def.column,
         file,
-        line: item.line,
+        line: keyLine ?? item.line,
         from,
         to,
       });
