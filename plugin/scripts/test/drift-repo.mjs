@@ -145,6 +145,27 @@ export function pickOntoMain(root, sha) {
   return git(root, "rev-parse", "HEAD");
 }
 
+/** The merge record `lane merge` keeps: main's head before the picks, the branch commits it planned to
+ *  pick (oldest first), the branch tip and main's `landed` commits. */
+export const mergeRecord = (preHead, planned, landed) => ({
+  preHead,
+  planned,
+  tip: planned.at(-1),
+  landed,
+  step: "done",
+});
+
+/** Land `shas` (branch commits, oldest first) on main as `lane merge` does, main moving on first (see
+ *  `pickOntoMain`), and write `id`'s merged ledger with its record. Returns main's landed commits. */
+export function mergeOntoMain(root, id, shas) {
+  commitFile(root, `moved-${shas[0].slice(0, 7)}.txt`, "main moved\n", "chore: main moves on");
+  const preHead = git(root, "rev-parse", "HEAD");
+  git(root, "cherry-pick", ...shas);
+  const landed = git(root, "rev-list", "--reverse", `${preHead}..HEAD`).split("\n");
+  ledger(root, id, { state: "merged", merge: mergeRecord(preHead, shas, landed) });
+  return landed;
+}
+
 /** Write a v1 ledger for `id` into the repo's run state. */
 export function ledger(root, id, extra = {}) {
   return writeLedger(root, {

@@ -1,13 +1,14 @@
 // board fix [--dry-run] [--accept <id>] [--json] — write what is provable, report the rest (A23, A31; plan
-// R1b-6). A task whose `lane merge` record still holds on main (`drift.mechanical`: its landed commits are
-// main's first-parent history and their change still reverse-applies on main's tip) and whose board row
-// lacks the done status, the commit cell or the handoff line gets the lifecycle's `merged` event narrowed
-// to those missing steps, through `applyEvent`, in one write: a step the board already has (a hand-written
-// cell, any handoff line naming the task) is never written again. A merge with no record is never written
-// on its own: it stays a `merged-by-hand` nudge until the owner confirms it with `--accept <id>`, which
-// writes it only while the branch's change still reverse-applies on main (`drift.accepted`). Anything
-// unsure writes nothing and is listed, as is every other drift, with the command that deals with it. The
-// output lists exactly the writes made; running it again finds nothing to do; `--dry-run` writes nothing.
+// R1b-6). A task whose `lane merge` record still holds on main (`drift.mechanical`: it matches its branch,
+// its landed commits are main's first-parent history and their change is still in effect where it landed)
+// and whose board row lacks the done status, the commit cell or the handoff line gets the lifecycle's
+// `merged` event narrowed to those missing steps, through `applyEvent`, in one write: a step the board
+// already has (a hand-written cell, a handoff line `board check` accepts) is never written again. A merge
+// with no record is never written on its own: it stays a `merged-by-hand` nudge until the owner confirms
+// it with `--accept <id>`, which writes it only while the commits carrying it are still in effect on main
+// (`drift.accepted`). Anything unsure writes nothing and is listed, as is every other drift, with the
+// command that deals with it. The output lists exactly the writes made; running it again finds nothing to
+// do; `--dry-run` writes nothing.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = nothing left for the owner, 1 = items left
 // to report, 2 = usage
@@ -90,19 +91,21 @@ export function run(argv, { root, spec, model }) {
   return { exit, out: render({ dryRun, fixed, left, rest }) };
 }
 
+const rows = (text) => [fit(`  ${text}`, WIDTH)];
+
 function render({ dryRun, fixed, left, rest }) {
   const verb = dryRun ? "would fix" : "fixed";
   const head = `${verb} ${fixed.length}, ${left.length + rest.length} left for you${dryRun ? " (dry run: nothing written)" : ""}`;
   const lines = [head];
   for (const f of fixed) {
     const what = f.writes ? f.writes.join(", ") : `${f.need.join(", ")} from commit ${f.sha}`;
-    lines.push(fit(`  ${f.id}  ${what}`, WIDTH));
+    lines.push(...rows(`${f.id}  ${what}`));
   }
   if (left.length + rest.length) lines.push("left for you:");
-  for (const text of left) lines.push(fit(`  ${text}`, WIDTH));
+  for (const text of left) lines.push(...rows(text));
   for (const n of rest) {
     const subject = n.id ?? basename(n.path ?? n.branch ?? "");
-    lines.push(fit(`  ${n.kind} ${subject} → ${n.command}`, WIDTH));
+    lines.push(...rows(`${n.kind} ${subject} → ${n.command}`));
   }
   return lines.join("\n");
 }

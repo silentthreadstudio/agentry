@@ -1,7 +1,8 @@
 // Tests for `board fix` (lib/process/cli/fix.mjs): it writes done only when provable (a merge record that
-// still holds on main, or an owner's --accept whose change still reverse-applies), `--dry-run` writes
-// nothing, a second run finds nothing, and what it cannot decide is reported. A property test walks random
-// pick / revert / reset / squash / merge sequences and checks done is written only while the lines are on main.
+// still holds on main, or an owner's --accept whose change is still in effect), `--dry-run` writes nothing,
+// a second run finds nothing, and what it cannot decide is reported. A property test walks random pick /
+// revert / reset / squash / merge sequences and checks done is written only while main's copy of the task's
+// files is the branch's, byte for byte.
 // Run: node --test plugin/scripts/test/fix-cli.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -17,6 +18,8 @@ import {
   builtBranch,
   handBranch,
   ledger,
+  mergeOntoMain,
+  mergeRecord,
   pickOntoMain,
   read,
 } from "./drift-repo.mjs";
@@ -39,12 +42,20 @@ const files = (root) => ({
 });
 const row = (text, id) => text.split("\n").find((l) => l.startsWith(`| ${id} `));
 
-// T1 built on its branch and cherry-picked to main; a ledger with the merge record. Returns main's commit.
+// A file whose 7-line block repeats: `git apply` finds a reverted hunk's lines and context in the other
+// copy, so only a position-exact check tells the revert. `add`: the task adds X to the block that lacks
+// it; `drop`: it takes X out of the block that has it. Committed on main before the branch is cut.
+const BLOCK = "p\nq\nr\nX\ns\nt\nu\n";
+const BARE = "p\nq\nr\ns\nt\nu\n";
+const REPEATED = {
+  add: { before: `${BLOCK}---\n${BARE}`, after: `${BLOCK}---\n${BLOCK}` },
+  drop: { before: `${BARE}---\n${BLOCK}`, after: `${BARE}---\n${BARE}` },
+};
+
+// T1 built on its branch and landed on main as `lane merge` does, with its record. Returns main's commit.
 function landedWithRecord(root, id = "T1") {
   const { sha } = builtBranch(root, id);
-  const main = pickOntoMain(root, sha);
-  ledger(root, id, { state: "merged", merge: { preHead: "x", landed: [main], step: "done" } });
-  return main;
+  return mergeOntoMain(root, id, [sha])[0];
 }
 
 test("a merged ledger and a board still at doing: fix writes done, the SHA and the handoff line", () => {
@@ -167,7 +178,7 @@ test("work picked onto main and then reverted is never written as done", () => {
     const { sha } = builtBranch(root, "T1");
     const main = pickOntoMain(root, sha);
     git(root, "revert", "--no-edit", main);
-    const merge = { preHead: "x", landed: [main], step: "done" };
+    const merge = mergeRecord(git(root, "rev-parse", `${main}^`), [sha], [main]);
     ledger(root, "T1", record ? { state: "merged", merge } : { state: "verified" });
     const before = files(root);
     for (const out of [board(root, "fix"), accept(root)]) {
@@ -204,13 +215,12 @@ test("a merge record reset off main is unsure, even with its commits still in th
   const { root } = fresh();
   const { sha } = builtBranch(root, "T1");
   const before = git(root, "rev-parse", "HEAD");
-  const main = pickOntoMain(root, sha);
-  ledger(root, "T1", { state: "merged", merge: { preHead: before, landed: [main], step: "done" } });
+  const [main] = mergeOntoMain(root, "T1", [sha]);
   git(root, "reset", "-q", "--hard", before);
   git(root, "merge", "-q", "--no-ff", "--no-edit", main); // the commit is back, but not first-parent
   const out = board(root, "fix");
   assert.match(out.stdout, /^fixed 0/);
-  assert.match(out.stdout, /T1: merged, but those commits are undone on main/);
+  assert.match(out.stdout, /T1: merged, but those commits are no longer main's history/);
 });
 
 test("a hand-written commit cell is never rewritten: reported, and nothing else written", () => {
@@ -244,25 +254,207 @@ test("a cell naming the first of two landed commits is not extended", () => {
   );
 });
 
-test("a handoff line already there for the task (any form) is not added again", () => {
+// T1's branch: one commit of its own file, then its change to `file` (`text`). The two commits, oldest first.
+function taskChanging(root, file, text) {
+  const { path, sha } = builtBranch(root, "T1", "unused.txt");
+  return [sha, commitFile(path, file, text, `feat: T1 changes ${file}`)];
+}
+// The same, for a change to a file whose block repeats (`REPEATED`).
+function repeatedTask(root, shape) {
+  commitFile(root, "rep.txt", REPEATED[shape].before, "chore: a repeated block");
+  return taskChanging(root, "rep.txt", REPEATED[shape].after);
+}
+
+test("a revert is seen where the task's lines were, even where the same lines repeat in the file", () => {
+  for (const shape of ["add", "drop"]) {
+    const { root } = fresh();
+    const [, two] = mergeOntoMain(root, "T1", repeatedTask(root, shape));
+    assert.equal(board(root, "fix", "--dry-run").status, 0, `${shape}: holds at first`);
+    git(root, "revert", "--no-edit", two);
+    const before = files(root);
+    const out = board(root, "fix");
+    assert.deepEqual(files(root), before, `${shape}: nothing written`);
+    assert.match(out.stdout, /^fixed 0, 1 left/, shape);
+    assert.match(out.stdout, /T1: merged, but .*rep\.txt/, shape);
+  }
+});
+
+test("--accept refuses a hand pick reverted on a file whose lines repeat", () => {
+  for (const shape of ["add", "drop"]) {
+    const { root } = fresh();
+    const [first, second] = repeatedTask(root, shape);
+    pickOntoMain(root, first);
+    git(root, "cherry-pick", second);
+    git(root, "revert", "--no-edit", "HEAD");
+    ledger(root, "T1", { state: "verified" });
+    const before = files(root);
+    const out = accept(root);
+    assert.deepEqual(files(root), before, shape);
+    assert.match(out.stdout, /T1: its branch's change is not all on main/, shape);
+  }
+});
+
+test("a re-added line is a new line: a record whose lines went and came back is unsure", () => {
+  const { root } = fresh();
+  commitFile(root, "src.txt", "a\nb\nc\n", "chore: src");
+  mergeOntoMain(root, "T1", taskChanging(root, "src.txt", "a\nb\nNEW\nc\n"));
+  commitFile(root, "src.txt", "a\nb\nc\n", "chore: drop it by hand");
+  commitFile(root, "src.txt", "top\na\nb\nNEW\nc\n", "chore: type it back, and more");
+  const out = board(root, "fix");
+  assert.match(out.stdout, /^fixed 0/);
+  assert.match(out.stdout, /T1: merged, but the line it added at src\.txt:3 is not there now/);
+});
+
+test("a revert of the revert leaves the file byte for byte as it landed: done", () => {
+  const { root } = fresh();
+  commitFile(root, "src.txt", "a\nb\nc\n", "chore: src");
+  const [, two] = mergeOntoMain(root, "T1", taskChanging(root, "src.txt", "a\nb\nNEW\nc\n"));
+  git(root, "revert", "--no-edit", two);
+  assert.match(board(root, "fix", "--dry-run").stdout, /^would fix 0/);
+  git(root, "revert", "--no-edit", "HEAD");
+  assert.match(board(root, "fix").stdout, /^fixed 1, 0 left/);
+});
+
+test("a later commit next to a line the task added leaves it done, and rewriting the line does not", () => {
+  const setup = () => {
+    const { root } = fresh();
+    commitFile(root, "ctx.txt", "a\nb\nc\nd\ne\nf\n", "chore: ctx");
+    mergeOntoMain(root, "T1", taskChanging(root, "ctx.txt", "a\nb\nc\nNEW\nd\ne\nf\n"));
+    return root;
+  };
+  const near = setup();
+  commitFile(near, "ctx.txt", "a\nb\nC2\nNEW\nd\ne\nf\n", "feat: T2 edits its neighbour");
+  assert.match(board(near, "fix").stdout, /^fixed 1, 0 left/);
+  const over = setup();
+  commitFile(over, "ctx.txt", "a\nb\nc\nNEWER\nd\ne\nf\n", "feat: T2 rewrites the line");
+  assert.match(board(over, "fix").stdout, /line it added at ctx\.txt:4 is not there now/);
+});
+
+test("a later edit around a line the task removed is unsure and says so, not that it was reverted", () => {
+  const { root } = fresh();
+  commitFile(root, "ctx.txt", "a\nb\nOLD\nc\nd\n", "chore: ctx");
+  mergeOntoMain(root, "T1", taskChanging(root, "ctx.txt", "a\nb\nc\nd\n"));
+  commitFile(root, "ctx.txt", "a\nB2\nc\nd\n", "feat: T2 edits its neighbour");
+  const out = board(root, "fix");
+  assert.match(out.stdout, /^fixed 0/);
+  assert.match(out.stdout, /lines around its change at ctx\.txt:2 were edited since/);
+  assert.doesNotMatch(out.stdout, /reverted/);
+});
+
+test("a line the task added beside its twin: a revert that removes either copy is caught", () => {
+  const { root } = fresh();
+  commitFile(root, "twin.txt", "a\nX\nb\n", "chore: twin");
+  const [, two] = mergeOntoMain(root, "T1", taskChanging(root, "twin.txt", "a\nX\nX\nb\n"));
+  git(root, "revert", "--no-edit", two);
+  const out = board(root, "fix");
+  assert.match(out.stdout, /^fixed 0/);
+  assert.match(out.stdout, /twin\.txt/);
+});
+
+test("a binary or empty file the task added is checked by its content", () => {
+  const { root } = fresh();
+  const { path, sha } = builtBranch(root, "T1");
+  writeFileSync(join(path, "b.bin"), Buffer.from([0, 1, 2, 0, 3]));
+  writeFileSync(join(path, "empty.txt"), "");
+  git(path, "add", "-A");
+  git(path, "commit", "-q", "-m", "feat: T1 binary and empty");
+  mergeOntoMain(root, "T1", [sha, git(path, "rev-parse", "HEAD")]);
+  git(root, "rm", "-q", "empty.txt");
+  git(root, "commit", "-q", "-m", "chore: drop the empty file");
+  const out = board(root, "fix");
+  assert.match(out.stdout, /^fixed 0/);
+  assert.match(out.stdout, /T1: merged, but empty\.txt is not as it landed/);
+});
+
+test("a record not about the ledger's branch is unsure: an unrelated commit, or only part of the branch", () => {
+  const unrelated = fresh().root;
+  const other = commitFile(unrelated, "other.txt", "o\n", "feat: someone else");
+  const one = builtBranch(unrelated, "T1");
+  ledger(unrelated, "T1", {
+    state: "merged",
+    merge: mergeRecord(git(unrelated, "rev-parse", `${other}^`), [one.sha], [other]),
+  });
+  assert.match(board(unrelated, "fix").stdout, /T1: merged, but its merge record does not match/);
+
+  const part = fresh().root;
+  const two = builtBranch(part, "T1");
+  commitFile(two.path, "T1b.txt", "b\n", "feat: T1 second");
+  const [landed] = mergeOntoMain(part, "T1", [two.sha]);
+  assert.ok(landed);
+  assert.match(board(part, "fix").stdout, /T1: merged, but its merge record does not match/);
+});
+
+test("a record with no plan of what it picked is unsure", () => {
+  const { root } = fresh();
+  const { sha } = builtBranch(root, "T1");
+  const [main] = mergeOntoMain(root, "T1", [sha]);
+  const preHead = git(root, "rev-parse", `${main}^`);
+  ledger(root, "T1", { state: "merged", merge: { preHead, landed: [main], step: "done" } });
+  assert.match(board(root, "fix").stdout, /its merge record does not match/);
+});
+
+test("a record whose branch was cleaned up still holds, by the tip it wrote at the land", () => {
+  const { root } = fresh();
+  const { path, branch, sha } = builtBranch(root, "T1");
+  const [main] = mergeOntoMain(root, "T1", [sha]);
+  git(root, "worktree", "remove", "-f", path);
+  git(root, "branch", "-D", branch);
+  const out = board(root, "fix");
+  assert.match(out.stdout, /^fixed 1, 0 left/, out.stdout);
+  assert.ok(read(root, "plan/BOARD.md").includes(main.slice(0, 7)));
+});
+
+test("--accept takes a branch that merged main in and was then merged --no-ff", () => {
+  const { root } = fresh();
+  const { path, branch, sha } = builtBranch(root, "T1");
+  commitFile(root, "mv.txt", "x\n", "chore: main moves on");
+  git(path, "merge", "--no-edit", "main");
+  git(root, "merge", "--no-ff", "--no-edit", branch);
+  ledger(root, "T1", { state: "verified" });
+  const out = accept(root);
+  assert.equal(out.status, 0, out.stdout);
+  assert.match(
+    row(read(root, "plan/BOARD.md"), "T1"),
+    new RegExp(`done +\\| +\\| ${sha.slice(0, 7)}`),
+  );
+});
+
+const sprintWith = (root, lines) =>
+  writeFileSync(
+    join(root, "plan", "sprints", "S1.md"),
+    `# S1\n\n## Handoff\n\n${lines}\n## Notes\n\nNothing yet.\n`,
+  );
+
+test("a hand handoff line board check accepts is not added again", () => {
   const { root } = fresh();
   const main = pickedByHand(root);
-  const sprint = `# S1\n\n## Handoff\n\n- Landed by hand in ${main.slice(0, 7)}: T1.\n\n## Notes\n\nNothing yet.\n`;
-  writeFileSync(join(root, "plan", "sprints", "S1.md"), sprint);
+  sprintWith(root, `- **T1** (${main.slice(0, 7)}): landed by hand\n`);
+  const sprint = read(root, "plan/sprints/S1.md");
   const out = accept(root, "--json");
   assert.equal(read(root, "plan/sprints/S1.md"), sprint);
   const [fixed] = JSON.parse(out.stdout).fixed;
   assert.deepEqual(fixed.writes, ["status → done", `commit → ${main.slice(0, 7)}`]);
+  assert.equal(board(root, "check").status, 0);
 });
 
-test("a merge record's task with a hand handoff line naming it gets no second line", () => {
-  const { root } = fresh();
-  const main = landedWithRecord(root);
-  const sprint = `# S1\n\n## Handoff\n\n- shipped T1 (see ${main.slice(0, 7)})\n`;
-  writeFileSync(join(root, "plan", "sprints", "S1.md"), sprint);
-  const [fixed] = JSON.parse(board(root, "fix", "--json").stdout).fixed;
-  assert.deepEqual(fixed.need, ["status", "commit"]);
-  assert.equal(read(root, "plan/sprints/S1.md"), sprint);
+test("a line board check does not count as T1's handoff gets T1 its own line, and check is green", () => {
+  const shapes = [
+    (sha) => `- shipped T1 (see ${sha})\n`, // plain, no bold lead
+    () => "- **T2** (abcdef1): builds on T1 once it lands\n", // another task's line
+    () => "- **T10** (abcdef1): ten\n- see T1-b\n", // ids that only start like it
+    () => "- **T1**: landed, no commit named\n", // the rule asks for the first commit
+  ];
+  for (const shape of shapes) {
+    const { root } = fresh();
+    const main = landedWithRecord(root);
+    sprintWith(root, shape(main.slice(0, 7)));
+    git(root, "commit", "-qam", "a hand line");
+    const [fixed] = JSON.parse(board(root, "fix", "--json").stdout).fixed;
+    assert.deepEqual(fixed.need, ["status", "commit", "handoff"], shape("<sha>"));
+    const check = board(root, "check");
+    assert.equal(check.status, 0, `${shape("<sha>")}${check.stdout}`);
+    assert.match(board(root, "fix").stdout, /^fixed 0, 0 left for you/);
+  }
 });
 
 test("a status the lifecycle never sets before a merge is left alone and reported", () => {
@@ -371,10 +563,12 @@ const firstParents = (root) => git(root, "rev-list", "--first-parent", "main").s
 const isMerge = (root, sha) => git(root, "rev-list", "--parents", "-n1", sha).split(" ").length > 2;
 
 // One step on main: pick / land (a pick with a `lane merge` record) / revert / revert -m 1 / reset /
-// squash / no-ff, or a hand edit that takes the task's file out. Main moves on first half the time.
+// squash / no-ff, or a hand edit that takes the task's file out. Main moves on first half the time. Lands
+// and reverts come up most, so a walk often ends on the revert of a landed commit.
 function step(root, { pick, branch, fork, step: n }) {
   if (pick() < 0.5) commitFile(root, `m${n}.txt`, `main ${n}\n`, `chore: main ${n}`);
-  const ops = ["land", "pick", "revert", "revert-m", "reset", "squash", "no-ff", "hand"];
+  const ops = ["land", "land", "land", "pick", "revert", "revert", "revert", "revert"];
+  ops.push("revert-m", "reset", "squash", "no-ff", "hand");
   const op = ops[Math.floor(pick() * ops.length)];
   const history = firstParents(root).slice(0, -1); // never the root commit
   const choose = (list) => list[Math.floor(pick() * list.length)];
@@ -382,9 +576,23 @@ function step(root, { pick, branch, fork, step: n }) {
     const preHead = git(root, "rev-parse", "HEAD");
     if (!attempt(root, "cherry-pick", `${fork}..${branch}`) || op === "pick") return op;
     const landed = git(root, "rev-list", "--reverse", `${preHead}..HEAD`).split("\n");
-    ledger(root, "T1", { state: "merged", merge: { preHead, landed, step: "done" } });
+    const planned = git(root, "rev-list", "--reverse", `${fork}..${branch}`).split("\n");
+    ledger(root, "T1", { state: "merged", merge: mergeRecord(preHead, planned, landed) });
   } else if (op === "revert") {
-    const sha = choose(history.filter((s) => !isMerge(root, s)));
+    // Most reverts hit a commit that touched the task's files: the one shape a text match can miss.
+    const changed = git(root, "diff", "--name-only", fork, branch).split("\n");
+    const touching = git(
+      root,
+      "rev-list",
+      "--first-parent",
+      "--no-merges",
+      "main",
+      "--",
+      ...changed,
+    );
+    const task = touching.split("\n").filter((s) => s && history.includes(s));
+    const plain = history.filter((s) => !isMerge(root, s));
+    const sha = choose(task.length && pick() < 0.8 ? task : plain);
     if (sha) attempt(root, "revert", "--no-edit", sha);
   } else if (op === "revert-m") {
     const sha = choose(history.filter((s) => isMerge(root, s)));
@@ -401,18 +609,16 @@ function step(root, { pick, branch, fork, step: n }) {
   return op;
 }
 
-// Every line of every file the branch changed is in main's copy of that file.
-function linesOnMain(root, { fork, branch }) {
+// The oracle, position-exact: nothing on main but the task's own commits (picked, merged, squashed,
+// reverted, reset) and the hand removal touches the files the branch changed, so its change is on main
+// exactly when main's copy of each such file is the branch's, byte for byte (absent on both counts).
+function onMain(root, { fork, branch }) {
   const changed = git(root, "diff", "--name-only", fork, branch).split("\n").filter(Boolean);
+  const show = (ref, file) =>
+    spawnSync("git", ["-C", root, "show", `${ref}:${file}`], { encoding: "utf8", env: gitEnv });
   return changed.every((file) => {
-    const theirs = spawnSync("git", ["-C", root, "show", `main:${file}`], { encoding: "utf8" });
-    const lines = theirs.stdout.split("\n");
-    return (
-      theirs.status === 0 &&
-      git(root, "show", `${branch}:${file}`)
-        .split("\n")
-        .every((l) => lines.includes(l))
-    );
+    const [theirs, mine] = [show("main", file), show(branch, file)];
+    return theirs.status === mine.status && theirs.stdout === mine.stdout;
   });
 }
 
@@ -424,20 +630,23 @@ const isDone = (root) => /^\| T1 +\| S1 +\| done /.test(row(read(root, "plan/BOA
 
 test("property: random pick/revert/reset/squash/no-ff/revert -m 1 walks write done only when on main", () => {
   const done = { record: 0, accept: 0, refused: 0 };
-  for (let seed = 1; seed <= 30; seed++) {
+  for (let seed = 1; seed <= 25; seed++) {
     const pick = random(seed);
     const { root } = fresh();
+    const shape = [null, "add", "drop"][Math.floor(pick() * 3)];
+    if (shape) commitFile(root, "rep.txt", REPEATED[shape].before, "chore: a repeated block");
     const fork = git(root, "rev-parse", "HEAD");
     const { path, branch } = builtBranch(root, "T1");
     if (pick() < 0.5) commitFile(path, "T1.txt", "work of T1\nmore of T1\n", "feat: T1 more");
     if (pick() < 0.5) commitFile(path, "T1b.txt", "second\n", "feat: T1 second");
+    if (shape) commitFile(path, "rep.txt", REPEATED[shape].after, `feat: T1 ${shape}s X`);
     ledger(root, "T1", { state: "verified" });
     const ops = [];
     const walk = { pick, branch, fork };
     for (let n = 0, steps = 1 + Math.floor(pick() * 5); n < steps; n++)
       ops.push(step(root, { ...walk, step: n }));
-    const on = linesOnMain(root, walk);
-    const why = `seed ${seed}: ${ops.join(" → ")}`;
+    const on = onMain(root, walk);
+    const why = `seed ${seed} (${shape ?? "plain"}): ${ops.join(" → ")}`;
     fixIn(root, []);
     if (isDone(root)) {
       assert.ok(on, `fix wrote done with the lines off main (${why})`);

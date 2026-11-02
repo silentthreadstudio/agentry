@@ -13,6 +13,7 @@ import {
   builtBranch,
   handBranch,
   ledger,
+  mergeOntoMain,
   pickOntoMain,
   read,
 } from "./drift-repo.mjs";
@@ -90,7 +91,10 @@ test("commits cherry-picked onto main by hand: merged-by-hand, naming merge", ()
   pickOntoMain(root, sha);
   const [n] = nudgesOf(root).filter((x) => x.kind === "merged-by-hand");
   assert.equal(n.id, "T2");
-  assert.equal(n.command, "/agentry:merge T2");
+  assert.equal(
+    n.command,
+    "/agentry:merge T2 --branch agentry/T2, then /agentry:board --fix --accept T2",
+  );
   assert.ok(!nudgesOf(root).some((x) => x.kind === "unlisted-worktree"));
 });
 
@@ -204,10 +208,11 @@ test("a hand worktree merged --no-ff or fast-forwarded is merged-by-hand, not un
     nudgesOf(root)
       .filter((n) => n.path)
       .map((n) => [n.kind, n.branch, n.command]),
-    [
-      ["merged-by-hand", "worktree-agent-T2", "/agentry:merge <id>"],
-      ["merged-by-hand", "worktree-agent-x7", "/agentry:merge <id>"],
-    ],
+    ["worktree-agent-T2", "worktree-agent-x7"].map((branch) => [
+      "merged-by-hand",
+      branch,
+      `/agentry:merge <id> --branch ${branch}, then /agentry:board --fix --accept <id>`,
+    ]),
   );
 });
 
@@ -253,20 +258,18 @@ test("a task gets one nudge at most: a worktree named for it hides its started-b
 test("mechanical: a merge record whose commits were reverted on main is reported, not fixed", () => {
   const { root } = fresh();
   const { sha } = builtBranch(root, "T1");
-  const main = pickOntoMain(root, sha);
+  const [main] = mergeOntoMain(root, "T1", [sha]);
   git(root, "revert", "--no-edit", main);
-  ledger(root, "T1", { state: "merged", merge: { preHead: "x", landed: [main], step: "done" } });
   const spec = loadSpec(join(root, ".agentry", "process.json"), { root }).spec;
   const plan = mechanical({ root, spec, model: readProcess({ root, spec }) });
   assert.deepEqual(plan.fixes, []);
-  assert.match(plan.left.join("\n"), /T1: merged, but those commits are undone on main/);
+  assert.match(plan.left.join("\n"), /T1: merged, but the line it added at T1\.txt:1 is not there/);
 });
 
 test("mechanical: a ledger with a merge record gives one fix naming what the board lacks", () => {
   const { root } = fresh();
   const { sha } = builtBranch(root, "T1");
-  const main = pickOntoMain(root, sha);
-  ledger(root, "T1", { state: "merged", merge: { preHead: "x", landed: [main], step: "done" } });
+  const [main] = mergeOntoMain(root, "T1", [sha]);
   const spec = loadSpec(join(root, ".agentry", "process.json"), { root }).spec;
   const plan = mechanical({ root, spec, model: readProcess({ root, spec }) });
   assert.deepEqual(

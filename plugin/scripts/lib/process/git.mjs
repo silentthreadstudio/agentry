@@ -1,6 +1,7 @@
-// git — the process kit's only git I/O: does a commit exist, recent history, ancestry, a branch's reflog,
-// worktrees, patch ids (to match a cherry-picked commit to its branch original), whether a change is still
-// in a tree, the default branch and the tracked files.
+// git — the process kit's only git I/O: does a commit exist, recent history, ancestry, parents and
+// identities, a branch's reflog, worktrees, patch ids (to match a cherry-picked commit to its branch
+// original), whether a change is still in effect where it landed (`inEffect`), the default branch and the
+// tracked files.
 //
 // Every function takes the git root first and never throws: outside a repo, or on any git error, it
 // answers false / [] / null. Refs and SHAs are checked before they reach argv, so a board cell can never
@@ -11,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const SHA = /^[0-9a-f]{4,40}$/i;
+const FULL_SHA = /^[0-9a-f]{40,64}$/;
 const safeRef = (ref) => typeof ref === "string" && ref.length > 0 && !ref.startsWith("-");
 
 function git(root, args, input, env) {
@@ -152,8 +154,217 @@ export function reflog(root, branch) {
 /** The top of the working tree `root` is in, or null. */
 export const topLevel = (root) => git(root, ["rev-parse", "--show-toplevel"])?.trim() || null;
 
-/** True when the net change `from..to` reverse-applies to commit `onto`'s tree (`git apply --check -R`):
- *  every line it added is there, in its context, and every line it removed is still gone. False for an
+/** The parents of each of `shas` (full SHAs), as a Map sha → [parent…]: a merge has two or more, a root
+ *  commit none. A SHA git does not know is left out. */
+export function parents(root, shas) {
+  const asked = shas.filter((s) => SHA.test(s ?? ""));
+  const out = asked.length
+    ? git(root, ["log", "--no-walk=unsorted", "--format=%H %P", ...asked])
+    : "";
+  return new Map(
+    (out ?? "")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [sha, ...up] = line.split(" ").filter(Boolean);
+        return [sha, up];
+      }),
+  );
+}
+
+/** Who and what each of `shas` (full SHAs) is: author, author date and message, which a cherry-pick
+ *  keeps. A Map sha → text; a SHA git does not know is left out. */
+export function identities(root, shas) {
+  const asked = shas.filter((s) => SHA.test(s ?? ""));
+  const format = "--format=%H%x1f%an <%ae> %ad%x1f%B%x1e";
+  const out = asked.length ? git(root, ["show", "-s", "--date=raw", format, ...asked]) : "";
+  const found = new Map();
+  for (const record of (out ?? "").split("\x1e")) {
+    const [sha, who, body] = record.replace(/^\n/, "").split("\x1f");
+    if (sha && who !== undefined) found.set(sha, `${who}\n${(body ?? "").trim()}`);
+  }
+  return found;
+}
+
+// ---- is a change still in effect on a later commit (A23: done = on main now) ----
+//
+// The question `board fix` asks before it writes done: is the net change `from..to` (commits on `onto`'s
+// history) still in `onto`'s tree, AT THE PLACE IT LANDED? `git apply --check -R` cannot answer it: a
+// patch matches at any offset, so a reverted hunk "applies" wherever the same lines and context repeat.
+//
+// What answers it is `git blame --reverse to..onto`: for each line of `to`'s copy of a file it names the
+// last commit that still holds that very line, followed through every diff in between (by position, not by
+// content). A line still in `onto` is reported at `onto`, with its line number there; a line a revert, a
+// reset-and-redo or a hand edit took out is reported at the commit before that, and a line put back later
+// (a re-add, a revert of the revert) is a new line, not this one. So, per hunk of the change:
+//   - every line it added must still be in `onto` (the survivor test);
+//   - where it removed lines, the lines just around the cut must still be in `onto`, and between them none
+//     of the removed lines may be back (no more copies of a removed line there than `to` had).
+// Diffs match equal lines arbitrarily (in `x X b` → `x X X b` either X is the new one), so when a hunk's
+// own lines repeat right next to it the window grows to the nearest line not among them, and a line the
+// hunk added may not have fewer copies in that window than `to` had either. A file whose blob is the same
+// in `to` and `onto` holds outright, however it got back (a revert of the revert): byte for byte, every
+// line is where it landed. A binary, empty or non-file entry that differs is not provable, and neither is
+// anything git cannot answer. The answer is conservative by design: a line next to a removal edited since,
+// or a line re-added in a file that also differs otherwise, is reported, never written as done.
+
+// Each object `rev:path` names: Map key → { sha, type } (absent keys left out), in one cat-file call;
+// null when git cannot answer, or answers anything but an object or "missing" for a key.
+function objectsAt(top, keys) {
+  const input = `${keys.join("\n")}\n`;
+  const out = git(top, ["cat-file", "--batch-check=%(objectname) %(objecttype)"], input);
+  const lines = out?.split("\n") ?? [];
+  const found = new Map();
+  for (const [i, key] of keys.entries()) {
+    const m = /^([0-9a-f]{40,64}) (\w+)$/.exec(lines[i] ?? "");
+    if (m) found.set(key, { sha: m[1], type: m[2] });
+    else if (!lines[i]?.endsWith(" missing")) return null;
+  }
+  return found;
+}
+
+// The files `from..to` changes: { path, text } (text false for a binary or an entry with no lines changed).
+function changedFiles(top, from, to) {
+  const out = git(top, [
+    "diff",
+    "--numstat",
+    "-z",
+    "--no-renames",
+    "--no-ext-diff",
+    from,
+    to,
+    "--",
+  ]);
+  if (out === null) return null;
+  return out
+    .split("\0")
+    .filter(Boolean)
+    .map((entry) => {
+      const [added, removed, ...path] = entry.split("\t");
+      return { path: path.join("\t"), text: added !== "-" && `${added}${removed}` !== "00" };
+    });
+}
+
+// The -U0 hunks of `from..to` in `path`: { start, count, removed: [line…] } with `start`/`count` the
+// added lines' place in `to` (count 0: the removal sits after line `start`). Parsed by the counts in each
+// header, so a removed line that itself starts with `--` is read as a line.
+function hunksOf(top, from, to, path) {
+  const args = ["diff", "-U0", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-color"];
+  const out = git(top, [...args, from, to, "--", path]);
+  if (out === null) return null;
+  const lines = out.split("\n");
+  const hunks = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(lines[i]);
+    if (!m) continue;
+    const hunk = { start: Number(m[2]), count: Number(m[3] ?? 1), removed: [] };
+    for (let left = Number(m[1] ?? 1); left > 0 && i + 1 < lines.length; ) {
+      const line = lines[++i];
+      if (line.startsWith("-")) {
+        hunk.removed.push(line.slice(1));
+        left--;
+      } else if (!line.startsWith("\\")) break;
+    }
+    hunks.push(hunk);
+  }
+  return hunks;
+}
+
+// The lines of blob `rev:path` ([] when it is absent), or null when git cannot read it.
+function linesAt(top, rev, path, present) {
+  if (!present) return [];
+  const out = git(top, ["cat-file", "blob", `${rev}:${path}`]);
+  if (out === null) return null;
+  const lines = out.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+// `git blame --reverse to..onto`: Map line in `to` → line in `onto`, for the lines of `to`'s `path` that
+// `onto` still holds. null when git cannot answer.
+function survivors(top, { to, onto, path }) {
+  const args = ["blame", "--reverse", "--porcelain", "--ignore-revs-file", ""];
+  const out = git(top, [...args, `${to}..${onto}`, "--", path]);
+  if (out === null) return null;
+  const kept = new Map();
+  const fileOf = new Map();
+  let at = null;
+  for (const line of out.split("\n")) {
+    const head = /^([0-9a-f]{40,64}) (\d+) (\d+)/.exec(line);
+    if (head) at = { sha: head[1], there: Number(head[2]), here: Number(head[3]) };
+    else if (at && line.startsWith("filename ")) fileOf.set(at.sha, line.slice("filename ".length));
+    else if (at && line.startsWith("\t") && at.sha === onto && fileOf.get(onto) === path)
+      kept.set(at.here, at.there);
+  }
+  return kept;
+}
+
+const countOf = (lines, value) => lines.reduce((n, l) => n + (l === value), 0);
+
+// One hunk against `onto`: null while it holds, else { line, what } (`line` in `to`).
+function hunkHolds({ was, now, kept, hunk }) {
+  const added = Array.from({ length: hunk.count }, (_, i) => hunk.start + i);
+  const gone = added.find((n) => !kept.has(n));
+  if (gone !== undefined) return { line: gone, what: "added" };
+  const own = new Set([...hunk.removed, ...added.map((n) => was[n - 1])]);
+  let before = hunk.count ? hunk.start - 1 : hunk.start;
+  let after = hunk.count ? hunk.start + hunk.count : hunk.start + 1;
+  const repeats = (n) => n >= 1 && n <= was.length && own.has(was[n - 1]);
+  if (!hunk.removed.length && !repeats(before) && !repeats(after)) return null;
+  while (repeats(before)) before--;
+  while (repeats(after)) after++;
+  // The window: `to`'s lines strictly between `before` and `after`, and `onto`'s between where those are now.
+  const low = before === 0 ? 0 : kept.get(before);
+  const high = after > was.length ? now.length + 1 : kept.get(after);
+  if (low === undefined || high === undefined || low >= high)
+    return { line: Math.max(1, before), what: "around" };
+  const then = was.slice(before, after - 1);
+  const there = now.slice(low, high - 1);
+  if (hunk.removed.some((l) => countOf(there, l) > countOf(then, l)))
+    return { line: Math.max(1, before), what: "removed" };
+  const fewer = added.find((n) => countOf(there, was[n - 1]) < countOf(then, was[n - 1]));
+  return fewer === undefined ? null : { line: fewer, what: "added" };
+}
+
+/** Is the net change `from..to` still in effect on commit `onto` (`to` or a descendant of it), at the place
+ *  it landed? All three are full SHAs. null when it is; else `{ file, line?, what }`, `what` being `added`
+ *  (a line it added is gone or changed), `removed` (a line it removed is back), `around` (the lines around
+ *  a removal changed, so where it was cannot be told), `file` (a binary or empty file differs) or `git`
+ *  (git could not tell). Read-only; see the comment above for why this is blame and not `git apply`. */
+export function inEffect(root, { from, to, onto }) {
+  const top = topLevel(root);
+  if (!top || ![from, to, onto].every((c) => FULL_SHA.test(c ?? ""))) return { what: "git" };
+  if (to === onto) return null;
+  if (!isAncestor(top, to, onto)) return { what: "git" };
+  const files = changedFiles(top, from, to);
+  // cat-file reads one name per line: a path with a newline in it cannot be asked.
+  if (!files || files.some((f) => f.path.includes("\n"))) return { what: "git" };
+  const objects = objectsAt(
+    top,
+    files.flatMap((f) => [`${to}:${f.path}`, `${onto}:${f.path}`]),
+  );
+  if (!objects) return { what: "git" };
+  for (const { path, text } of files) {
+    const [was, now] = [to, onto].map((c) => objects.get(`${c}:${path}`));
+    if (was?.sha === now?.sha) continue;
+    const blobs = [was, now].every((o) => !o || o.type === "blob");
+    if (!text || !blobs) return { file: path, what: "file" };
+    const hunks = hunksOf(top, from, to, path);
+    const before = linesAt(top, to, path, was);
+    const after = linesAt(top, onto, path, now);
+    const kept = was ? survivors(top, { to, onto, path }) : new Map();
+    if (!hunks || !before || !after || !kept) return { file: path, what: "git" };
+    for (const hunk of hunks) {
+      const off = hunkHolds({ was: before, now: after, kept, hunk });
+      if (off) return { file: path, ...off };
+    }
+  }
+  return null;
+}
+
+/** True when the net change `from..to` reverse-applies to commit `onto`'s tree (`git apply --check -R`).
+ *  It matches at any offset, so it is only a hint that a change LOOKS present (a squash nobody can name
+ *  commits for); never a proof that it is still where it landed (that is `inEffect`). False for an
  *  empty change. Checked on a throwaway index from the top of the tree, so a board in a subfolder still
  *  checks the whole change, and the repository's own index and files are never touched. */
 export function reverseApplies(root, { from, to, onto }) {

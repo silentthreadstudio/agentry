@@ -9,6 +9,7 @@ import { after, before, test } from "node:test";
 import {
   defaultBranch,
   hasCommit,
+  inEffect,
   knownCommits,
   log,
   patchIds,
@@ -129,6 +130,68 @@ test("reverseApplies: a change is in a tree only while all its lines are; the re
   assert.equal(reverseApplies(repo, { ...change, onto: "--all" }), false);
   assert.equal(reverseApplies(outside, { ...change, onto: "main" }), false);
   assert.equal(run("status", "--porcelain"), "");
+});
+
+// A throwaway history on main: `texts` is the file's content commit by commit; the SHAs, oldest first.
+function history(file, texts) {
+  const shas = [];
+  for (const [i, text] of texts.entries()) shas.push(commit(file, text, `chore: ${file} ${i}`));
+  return shas;
+}
+
+test("inEffect: an added line must still be there, wherever it moved, not a twin elsewhere", () => {
+  const block = "p\nq\nX\nr\ns\n";
+  const bare = "p\nq\nr\ns\n";
+  const [base, task, moved, undone] = history("in-effect.txt", [
+    `${block}-\n${bare}`,
+    `${block}-\n${block}`,
+    `top\n${block}-\n${block}`,
+    `top\n${block}-\n${bare}`,
+  ]);
+  const change = { from: base, to: task };
+  assert.equal(inEffect(repo, { ...change, onto: task }), null, "right where it landed");
+  assert.equal(inEffect(repo, { ...change, onto: moved }), null, "moved down by a later line");
+  assert.deepEqual(inEffect(repo, { ...change, onto: undone }), {
+    file: "in-effect.txt",
+    line: 9,
+    what: "added",
+  });
+});
+
+test("inEffect: a removed line must not be back at its place, though it may live elsewhere", () => {
+  const block = "p\nq\nX\nr\ns\n";
+  const bare = "p\nq\nr\ns\n";
+  const [base, task, other, back] = history("removed.txt", [
+    `${bare}-\n${block}`,
+    `${bare}-\n${bare}`,
+    `X\n${bare}-\n${bare}`,
+    `X\n${bare}-\n${block}`,
+  ]);
+  const change = { from: base, to: task };
+  assert.equal(inEffect(repo, { ...change, onto: other }), null, "X elsewhere is not X back");
+  assert.equal(inEffect(repo, { ...change, onto: back })?.what, "removed");
+});
+
+test("inEffect: a whole file removed must stay removed; bad input is `git`, never a pass", () => {
+  const [made] = history("gone.txt", ["a\nb\n"]);
+  run("rm", "-q", "gone.txt");
+  run("commit", "-q", "-m", "chore: remove gone.txt");
+  const removed = run("rev-parse", "HEAD");
+  const change = { from: made, to: removed };
+  assert.equal(inEffect(repo, { ...change, onto: removed }), null);
+  const [back] = history("gone.txt", ["b\n"]);
+  assert.deepEqual(inEffect(repo, { ...change, onto: back }), {
+    file: "gone.txt",
+    line: 1,
+    what: "removed",
+  });
+  assert.deepEqual(inEffect(repo, { ...change, onto: "main" }), { what: "git" }, "not a full SHA");
+  assert.deepEqual(
+    inEffect(repo, { from: made, to: back, onto: removed }),
+    { what: "git" },
+    "`to` is not on it",
+  );
+  assert.deepEqual(inEffect(outside, { ...change, onto: removed }), { what: "git" });
 });
 
 test("worktrees: each path with its head and branch", () => {
