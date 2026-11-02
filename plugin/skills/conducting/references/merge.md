@@ -14,7 +14,7 @@ leaves the task in verify.
 | :--- | :--- |
 | `lane merge <id> [--branch <b>] --preflight` | Reads what landing needs and changes nothing on main. With `--branch`, adopts work built outside exec. |
 | `lane merge <id> --check <skill>=pass\|fail [--note <t>]` | Records one repo check's outcome on the branch's current tip. |
-| `lane merge <id> [--branch <b>] --message <m> [--summary <t>]` | The land: pick → gate or skip → record → board commit. |
+| `lane merge <id> [--branch <b>] --message <m> [--summary <t>] [--drop-carry]` | The land: pick → gate or skip → record → board commit. `--drop-carry` lands without exec's writes the ledger holds, on the owner's call only. |
 | `lane merge <id> --push [--approved]` | Pushes main per `merge.push`. |
 | `lane merge <id> --cleanup [--discard-ignored]` | Removes the task's worktree and branch. |
 
@@ -25,6 +25,7 @@ checkout and read the exit code. A pipe would report the last command's exit, no
 Each call is idempotent from the task's ledger (`.agentry/run/process/ledger/<id>.json`). Re-run the land
 after fixing what stopped it, and it resumes. Picks already on main are not picked again, and a gate
 already green on main's HEAD does not run again. A land that already finished prints "already merged".
+A land that was killed resumes the same way: see [A killed land](#a-killed-land).
 
 ## The land, row by row
 
@@ -33,12 +34,13 @@ already green on main's HEAD does not run again. A land that already finished pr
 | `ledger` | The exec ledger (state `verified`), or a new one adopted from `--branch` (origin `adopted`, counted as a bypassed dispatch). A `stopped` exec lane lands only on the owner's call, with `--branch <its branch>`, and is adopted from then on. | No ledger and no `--branch`; the lane is still building, verifying or fixing; it is stopped and its branch isn't named. |
 | `board` | The id is on the board once, in the lifecycle's kind. | It isn't. With no `lifecycle` the row is skipped and nothing is written. |
 | `checks` | Each `extensions.merge.checks` skill exists in `.claude/skills/<name>/SKILL.md` and has an outcome recorded on the branch's current tip. | A skill is missing (exit 2), a check is unrecorded or was recorded on an older tip (exit 2), or a check failed (exit 1). |
-| `main` | The main checkout is on the main branch and `git status` is empty, untracked files included. One exception: plain edits of the board file the lifecycle's status and verdict writes go to (exec leaves them uncommitted). | Any other change. Commit it or move it away first. |
-| `carry` | Exec's uncommitted board writes are set aside as a patch in the task's run dir, so the picks, the gate and a rollback see a clean tree. They go back on top of the picks before `record` and land in the board commit. | The patch no longer applies after the picks: the row names the patch file. On any stop, main gets them back, uncommitted, as they were. |
+| `recover` | Only after a killed land: what it left, dealt with before anything else. See [A killed land](#a-killed-land). | The gate it left will not die, or git is in the middle of a cherry-pick that is not this land's. |
+| `main` | The main checkout is on the main branch and `git status` is empty, untracked files included. One exception: uncommitted edits that are exactly lifecycle cells (status, verdict, commit) of tasks with an open lane, read at the board's model level against HEAD. The landing task's own cells count: they go into the board commit as they are, so a verdict edited by hand lands with it. | Any other change, a stray edit next to exec's write included: each is named. Commit it or undo it first. |
+| `carry` | Exec's uncommitted board writes are recorded in the ledger first (`merge.carry`: the patch and its sha256), then set aside, so the picks, the gate and a rollback see a clean tree and a kill cannot lose them. They go back on top of the picks before `record` and land in the board commit. | They no longer apply after the picks: they stay in the ledger and every rerun stops, until the owner passes `--drop-carry`. On any other stop, main gets them back, uncommitted, as they were. |
 | `land` | `git cherry-pick <shas…>` of every branch commit not already on main by patch. | A merge commit on the branch (rebase first). A pick stops: the sequence is aborted (`cherry-pick --abort`) and main is asserted back at `preHead`, clean. Then the builder rebases its branch. |
 | `gate` | Skipped only when the ledger holds a green full worktree gate, clean before and after, main's tree after the picks equals the branch tip's tree, and every file changed since that gate matches `gate.after`. Otherwise it runs the tier `pickTier` picks (`quick` only when every landed file matches `gate.quick.only`). The row names the tier and why, or the gate it trusted and the `after` glob each later file matched. | The gate exits non-zero or leaves files. Main is reset to `preHead`, but only after asserting that main's first-parent chain since `preHead` is exactly the picked commits and the tree is clean. Otherwise it stops and says so. |
-| `record` | The lifecycle's `merged` event: status, the commit cell (`<first>…<last>`) and the handoff line. Then `board check` runs again. | A rule fails for an item it didn't fail for before. The written files are restored, and the picks stay on main. |
-| `commit` | One commit of exactly the files `record` wrote and the carried board file, with the repo's own hooks. | Main holds any other change; a hook refuses (the files are restored); main isn't clean after the commit. |
+| `record` | Exec's carried writes go back, then the lifecycle's `merged` event: status, the commit cell (`<first>…<last>`) and the handoff line. `board check` is compared with the board as committed before either write. | A rule fails for an item it didn't fail for before, whichever write brought it. The written files are restored, the picks stay on main, and exec's writes go back on main uncommitted. |
+| `commit` | One commit of exactly the files `record` wrote and the carried board files, with the repo's own hooks. | Main holds any other change; a hook refuses (the files are restored); main isn't clean after the commit. |
 
 The board commit message follows the repo's commit conventions and carries the author only. A message with
 AI attribution (a co-author trailer, a session link, a "generated with" line) is refused before anything
@@ -46,6 +48,26 @@ runs. `--summary` is the handoff text. Without it, the first landed commit's sub
 
 A long gate (more than the host's foreground limit) is the reason to run the land in the host's background
 mode. Then wait for its single exit notice. The ledger records the outcome either way.
+
+## A killed land
+
+A land can be killed at any point, by a host's time limit most often. It writes what it is about to do to
+the ledger before it does it, so the answer is always the same: run the land again. Don't clean up by hand
+first. The preflight says what the land will clear.
+
+| Killed | The rerun |
+| :--- | :--- |
+| Before the carry was set aside | Finds exec's writes still on the tree and lets go of the ledger's copy, then takes them again. |
+| During the picks, git mid-sequence | Aborts its own cherry-pick (two aborts when git kept a stale `CHERRY_PICK_HEAD`), takes off the picks left on main and picks them all again. |
+| After the picks | Reads from main which picks it holds and does not pick twice. |
+| During the gate | Stops the gate's process group, found by its pid file and nonce (a pid another process reused is left alone), and gates again. The killed gate's log stays. |
+| After a red gate, in the rollback | Finishes the rollback, gives the lane its state back and exec's writes back to main, and reports the red gate. |
+| After the board writes, before the commit | Restores those board files to HEAD (staged or not) and writes them again from its green gate. |
+| After the board commit | Takes the commit one past exactly the picks, with only board files in it, as its own and records the land as merged. |
+
+`--drop-carry` is the one owner's call here. It keeps the patch in the task's run dir
+(`merge-carry-dropped-<n>.patch`), takes the edits off main's tree if they are still there, and lands
+without them.
 
 ## Repo checks
 
@@ -80,6 +102,9 @@ the owner wants to keep, and re-run with `--discard-ignored` only on their yes.
 | Red gate, rollback refused | Main holds more than the picks, or the gate left files. Show the owner. Don't reset by hand. |
 | New board finding | Fix what the finding names, then land again. It resumes after the picks. |
 | Main moved since the land | Someone committed between two runs. Show the owner the log since `preHead`. |
+| Exec's writes no longer apply | Show the owner `git diff` and `merge.carry`. Only on their call, land again with `--drop-carry`. |
+| A cherry-pick that is not this land's | Someone else's, or another task's killed land. Show the owner; that task's own land clears its pick. |
+| A killed land | Run the land again. See [A killed land](#a-killed-land). |
 
 Never finish a stopped step by hand: no hand cherry-pick, `reset`, board edit, commit or push. A hand step
 leaves the ledger behind the repo, and the next call refuses or repeats work.
