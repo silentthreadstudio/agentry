@@ -45,8 +45,10 @@ function render(found, done, discardIgnored) {
           ? "STILL RUNNING:"
           : "already gone:";
     row(`${verb} process ${p.pid}  ${p.command}`);
+    for (const w of p.with) row(`  with process ${w.pid}  ${w.command}`);
   }
   for (const p of found.leftAlone) row(`left alone: ${p.reason} ${p.pid}  ${p.command}`);
+  if (done?.signalled.length) row(`signalled: ${done.signalled.join(", ")}`);
   if (done?.survivors.length) row(`still running after SIGKILL: ${done.survivors.join(", ")}`);
   for (const w of found.warnings) row(`warning: ${w}`);
   if (lines.length === 1) row("nothing to clean");

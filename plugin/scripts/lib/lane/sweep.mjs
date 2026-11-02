@@ -12,7 +12,8 @@
 //              a worktree one sits in is kept (`inUse`)
 //   warnings   disk under 10 GB free; `lsof` missing (a process is then judged by its executable and script
 //              only, so one that merely stands in the run directory is not seen)
-// `apply` then stops the strays (each with its whole descendant tree, confirming all of it is gone) and
+// `apply` then stops the strays (each with its whole descendant tree, and its process group when it leads one;
+// what it signals is listed with the stray, a live lane's process is spared, and it confirms all of it is gone) and
 // removes the cleanable worktrees (through `worktree.remove`, which keeps a dirty one and any branch with
 // unlanded work; one holding ignored files is kept unless `discardIgnored`). Nothing else is ever touched.
 // Node built-ins only.
@@ -69,14 +70,15 @@ export function freeBytes(dir) {
   }
 }
 
-// `{ pid, ppid, tty, stat, command }` for every process on the machine except this one and its parent (the
-// command that ran the sweep may itself sit under the run directory). `tty`: it has a controlling terminal.
+// `{ pid, ppid, pgid, tty, stat, command }` for every process on the machine except this one and its whole
+// ancestor chain (whatever ran the sweep may itself sit under the run directory, and is never ours to stop).
+// `tty`: it has a controlling terminal.
 function processes() {
   const res = spawnSync("ps", ["-axo", "pid=,ppid=,pgid=,tty=,stat=,command="], {
     encoding: "utf8",
   });
   if (res.status !== 0) return [];
-  return res.stdout
+  const all = res.stdout
     .split("\n")
     .map((line) => line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/))
     .filter(Boolean)
@@ -87,8 +89,11 @@ function processes() {
       tty: !["??", "?", "-"].includes(m[4]),
       stat: m[5],
       command: m[6],
-    }))
-    .filter((p) => p.pid !== process.pid && p.pid !== process.ppid);
+    }));
+  const parent = new Map(all.map((p) => [p.pid, p.ppid]));
+  const mine = new Set();
+  for (let pid = process.pid; pid > 1 && !mine.has(pid); pid = parent.get(pid)) mine.add(pid);
+  return all.filter((p) => !mine.has(p.pid));
 }
 
 // Whether `p` is on a controlling terminal or is a login shell (`-zsh`): the owner's own, whatever started it.
@@ -176,19 +181,29 @@ const laneDirs = (root, l) =>
     .filter(Boolean)
     .flatMap((d) => [...new Set([d, real(d)])]);
 
+// Whether a lane still building owns `p`, by its footprint: it stands in the lane's worktree or run files.
+// It claims a process even where a finished ledger does too (a merged ledger whose worktree is the repo root
+// contains everything).
+const ownedByLive = (root, all, p, cwd) => {
+  const feet = footprint(p, cwd.get(p.pid));
+  return all.some(
+    (l) =>
+      !FINISHED.includes(l.state) && laneDirs(root, l).some((d) => feet.some((f) => within(f, d))),
+  );
+};
+
 // The processes started under the run directory that no live lane owns: `{ strays, leftAlone, lsofMissing }`.
-// A lane still building claims a process even where a finished ledger does too (a merged ledger whose
-// worktree is the repo root contains everything).
 function findStrays(root, all) {
   const dir = join(root, ".agentry", "run");
   const run = [...new Set([dir, real(dir)])];
   const cwd = cwds();
   const found = { strays: [], leftAlone: [], lsofMissing: cwd.missing };
-  for (const p of processes()) {
+  const procs = processes();
+  const owned = (q) => ownedByLive(root, all, q, cwd.map);
+  for (const p of procs) {
     const feet = footprint(p, cwd.map.get(p.pid));
     if (!feet.some((f) => run.some((r) => within(f, r)))) continue;
-    const owners = all.filter((l) => laneDirs(root, l).some((d) => feet.some((f) => within(f, d))));
-    if (owners.some((l) => !FINISHED.includes(l.state))) continue;
+    if (owned(p)) continue;
     if (interactive(p))
       found.leftAlone.push({
         pid: p.pid,
@@ -196,7 +211,16 @@ function findStrays(root, all) {
         reason: "interactive shell",
         cwd: cwd.map.get(p.pid),
       });
-    else found.strays.push({ pid: p.pid, command: p.command });
+    else {
+      const also = reach(p, procs, owned);
+      found.strays.push({
+        pid: p.pid,
+        command: p.command,
+        with: procs
+          .filter((q) => q.pid !== p.pid && also.has(q.pid))
+          .map((q) => ({ pid: q.pid, command: q.command })),
+      });
+    }
   }
   return found;
 }
@@ -251,57 +275,79 @@ const stillRunning = (pids) =>
 const ownGroup = () =>
   Number(spawnSync("ps", ["-o", "pgid=", "-p", String(process.pid)], { encoding: "utf8" }).stdout);
 
-// SIGTERM, then SIGKILL after SETTLE_MS, to the stray, everything below it and the rest of its process group
-// (a double-forked child keeps the group), never to a terminal or a login shell among them (nor what hangs
-// under one), and never to a group that holds one or this sweep. Only the stray's own subtree is judged: a
-// terminal above it (the normal case: Claude Code runs on one) does not spare it. The set grows with
-// children that appear and keeps the pids of ones whose parent died first (they are re-parented).
-// Returns the pids still running afterwards.
-function stop(stray) {
+// What sweep can prove is `stray`'s, among `procs`: the stray, everything below it and, only when the stray
+// leads its process group (pgid == pid), the rest of that group (a double-forked child keeps the group). A
+// stray that merely sits in someone else's group takes nothing of it: the group's other members are not
+// ours to name. Never a terminal or a login shell, nor what hangs under one, never a process `owned` by a
+// lane still building, nor what hangs under that; never a group that holds a terminal or this sweep.
+// `led` remembers whether the stray led its group when first seen (the group outlives its leader).
+function reach(stray, procs, owned, led = {}) {
+  const self = procs.find((p) => p.pid === stray.pid);
+  led.group ??= self && self.pgid === self.pid ? self.pid : null;
   const members = new Set([stray.pid]);
-  let group = null;
-  const grow = () => {
-    const procs = processes();
-    group ??= procs.find((p) => p.pid === stray.pid)?.pgid ?? null;
-    const mates = group > 1 ? procs.filter((p) => p.pgid === group) : [];
-    const shared = mates.some((p) => onTerminal(p) || runsInteractive(p)) || group === ownGroup();
+  if (led.group) {
+    const mates = procs.filter((p) => p.pgid === led.group);
+    const shared =
+      mates.some((p) => onTerminal(p) || runsInteractive(p)) || led.group === ownGroup();
     if (!shared) for (const p of mates) members.add(p.pid);
-    for (const top of [...members]) for (const pid of treeOf(top, procs)) members.add(pid);
-    for (const p of procs)
-      if (members.has(p.pid) && p.pid !== stray.pid && onTerminal(p))
-        for (const pid of treeOf(p.pid, procs)) members.delete(pid);
-  };
+  }
+  for (const top of [...members]) for (const pid of treeOf(top, procs)) members.add(pid);
+  for (const p of procs)
+    if (members.has(p.pid) && p.pid !== stray.pid && (onTerminal(p) || owned(p)))
+      for (const pid of treeOf(p.pid, procs)) members.delete(pid);
+  return members;
+}
+
+// SIGTERM, then SIGKILL after SETTLE_MS, to what `reach` names, re-judged on each round: the set grows with
+// children that appear and keeps the pids of ones whose parent died first (they are re-parented).
+// Returns `{ left, signalled }`: the pids still running afterwards, and every pid that was signalled.
+function stop(stray, root, all) {
+  const members = new Set([stray.pid]);
+  const signalled = new Set();
+  const led = {};
   const nap = new Int32Array(new SharedArrayBuffer(4));
   for (const signal of ["SIGTERM", "SIGKILL"]) {
-    grow();
+    const cwd = cwds().map;
+    const owned = (p) => ownedByLive(root, all, p, cwd);
+    for (const pid of reach(stray, processes(), owned, led)) members.add(pid);
     for (const pid of stillRunning(members)) {
       try {
         process.kill(pid, signal);
+        signalled.add(pid);
       } catch {
         // already gone
       }
     }
     for (let waited = 0; waited < SETTLE_MS; waited += 100) {
-      if (!stillRunning(members).length) return [];
+      if (!stillRunning(members).length) return { left: [], signalled: [...signalled] };
       Atomics.wait(nap, 0, 0, 100);
     }
   }
-  return stillRunning(members);
+  return { left: stillRunning(members), signalled: [...signalled] };
 }
 
 /** Do what `found` (a `plan`) lists: `{ removed: [{ id, branchDeleted }], kept: [{ id, reason }], killed: [pid],
- *  gone: [pid], survived: [pid], survivors: [pid] }`. A worktree `worktree.remove` keeps, or one holding
+ *  gone: [pid], survived: [pid], survivors: [pid], signalled: [pid] }`. A worktree `worktree.remove` keeps, or one holding
  *  ignored files while `discardIgnored` is off, is `kept` with its reason; a process already gone is `gone`;
- *  a stray with anything of its tree still running after SIGKILL is `survived` (its pid), and the pids still
- *  running are `survivors`. */
+ *  a stray with anything of its tree still running after SIGKILL is `survived` (its pid), the pids still
+ *  running are `survivors`, and every pid that got a signal is `signalled`. */
 export function apply(root, found, { discardIgnored = false } = {}) {
-  const done = { removed: [], kept: [], killed: [], gone: [], survived: [], survivors: [] };
+  const done = {
+    removed: [],
+    kept: [],
+    killed: [],
+    gone: [],
+    survived: [],
+    survivors: [],
+    signalled: [],
+  };
   for (const p of found.strays) {
     if (!stillRunning(new Set([p.pid])).length) {
       done.gone.push(p.pid);
       continue;
     }
-    const left = stop(p);
+    const { left, signalled } = stop(p, root, ledgers.list(root));
+    done.signalled.push(...signalled);
     if (left.length) {
       done.survived.push(p.pid);
       done.survivors.push(...left);

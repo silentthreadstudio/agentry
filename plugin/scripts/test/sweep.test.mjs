@@ -452,3 +452,108 @@ test("a merged worktree a spared shell sits in is kept: in use by a shell", asyn
   assert.ok(existsSync(merged.path));
   assert.ok(alive(shell.pid));
 });
+
+// ---- fix round 4 (R1b-7 re-verify): sweep signals only what it can prove is the stray's ----
+
+/** A detached shell outside the run directory (no terminal, leads a group) running `body`; its background jobs
+ *  share its group. The whole group is killed when the tests end. */
+function plantLeader(body) {
+  const dir = mkdtempSync(join(tmpdir(), "sweep-lead-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "leader.sh");
+  writeFileSync(file, body);
+  const leader = spawn("/bin/sh", [file], { stdio: "ignore", cwd: tmpdir(), detached: true });
+  children.push(leader);
+  cleanups.push(() => {
+    try {
+      process.kill(-leader.pid, "SIGKILL");
+    } catch {
+      // gone
+    }
+  });
+  return leader;
+}
+/** The pid of the process in `group` whose command line matches `pattern`. */
+const inGroup = (group, pattern) =>
+  Number(
+    spawnSync("pgrep", ["-g", String(group), "-f", pattern], { encoding: "utf8" })
+      .stdout.split("\n")[0]
+      .trim(),
+  );
+const strayScript = (root, name, body = "sleep 300\n") => {
+  const file = runFile(root, name);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, body);
+  return file;
+};
+
+test("a stray under a leader that is not a stray leaves the leader and its other children alone", async () => {
+  const { root } = fixture();
+  const script = strayScript(root, "runs/T1/under-leader.sh");
+  const leader = plantLeader(`/bin/sh ${script} &\nsleep 311 &\nwait\n`);
+  await settle();
+  const stray = inGroup(leader.pid, "under-leader.sh");
+  const bystander = inGroup(leader.pid, "sleep 311");
+  assert.ok(stray > 0 && bystander > 0, "the leader should have started both");
+  const res = sweep(root, "--apply", "--json");
+  assert.equal(res.status, 0, res.stdout);
+  assert.ok(await waitDead(stray), "the stray goes");
+  assert.ok(alive(bystander), "a bystander in the stray's group is not the stray's");
+  assert.ok(alive(leader.pid), "a no-terminal group leader above the stray is not the stray's");
+});
+
+test("a live lane's process in the stray's group or tree survives", async () => {
+  const { root, live } = fixture();
+  const script = strayScript(
+    root,
+    "runs/T1/near-live.sh",
+    `(cd ${live.path} && exec sleep 313) &\nsleep 300\n`,
+  );
+  const leader = plantLeader(`(cd ${live.path} && exec sleep 312) &\n/bin/sh ${script} &\nwait\n`);
+  await settle();
+  const inTree = inGroup(leader.pid, "sleep 313");
+  const inSameGroup = inGroup(leader.pid, "sleep 312");
+  const stray = inGroup(leader.pid, "near-live.sh");
+  assert.ok(inTree > 0 && inSameGroup > 0 && stray > 0);
+  const res = sweep(root, "--apply", "--json");
+  assert.equal(res.status, 0, res.stdout);
+  assert.ok(await waitDead(stray));
+  assert.ok(alive(inSameGroup), "a live lane's process in the group must survive");
+  assert.ok(alive(inTree), "a live lane's process in the stray's tree must survive");
+});
+
+test("a stray that leads its group is stopped with the group, and the dry run lists all of it", async () => {
+  const { root } = fixture();
+  const script = strayScript(root, "runs/T1/leads.sh", "( sleep 300 & )\nsleep 300\n");
+  const leader = spawn("/bin/sh", [script], { stdio: "ignore", detached: true });
+  children.push(leader);
+  await settle();
+  const orphan = sleepsIn(leader.pid).find((pid) => pid !== childOf(leader.pid));
+  assert.ok(orphan, "the group should hold a sleep that is not the stray's child");
+  const dry = sweep(root).stdout;
+  assert.match(dry, new RegExp(`would stop process ${leader.pid}`));
+  assert.match(dry, new RegExp(`with process ${orphan}`));
+  const res = sweep(root, "--apply", "--json");
+  assert.ok(JSON.parse(res.stdout).applied.signalled.includes(orphan), "the result names it");
+  assert.ok(await waitDead(orphan));
+});
+
+test("the sweep's whole ancestor chain is spared, not only its parent", async () => {
+  const { root, merged } = fixture();
+  const dir = mkdtempSync(join(tmpdir(), "sweep-anc-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const done = join(dir, "reached");
+  const caller = join(dir, "caller.sh");
+  writeFileSync(
+    caller,
+    `cd ${merged.path}\nsh -c 'node ${LANE} sweep --apply --root ${root} >/dev/null 2>&1; :'\necho reached > ${done}\n`,
+  );
+  const child = spawn("/bin/sh", [caller], {
+    stdio: "ignore",
+    cwd: tmpdir(),
+    env: { ...process.env, ...gitEnv, NO_COLOR: "1" },
+  });
+  children.push(child);
+  await new Promise((r) => child.once("exit", r));
+  assert.ok(existsSync(done), "the caller shell, in a merged worktree, must outlive the sweep");
+});

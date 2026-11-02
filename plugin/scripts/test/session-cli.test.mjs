@@ -104,6 +104,7 @@ test("close gathers drafts, the fix plan, ledgers and sweep findings, and writes
   // T1 merged and T5 stopped without an episode, T3 with a payload nobody wrote.
   assert.deepEqual(data.episodesPending.sort(), ["T1", "T3", "T5"]);
   assert.deepEqual(data.strays, []);
+  assert.deepEqual(data.leftAlone, []);
   assert.equal(typeof data.diskFree, "number");
   assert.equal(read(root, "plan/BOARD.md"), before);
 });

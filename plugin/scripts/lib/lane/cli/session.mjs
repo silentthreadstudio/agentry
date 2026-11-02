@@ -76,7 +76,7 @@ function start({ root, spec, model }) {
 function closing({ root, spec, model }) {
   const runRoot = mainRoot(root) ?? root;
   const all = ledgers.list(runRoot);
-  const { cleanable, unknown, strays, diskFree, warnings } = plan(runRoot);
+  const { cleanable, unknown, strays, leftAlone, diskFree, warnings } = plan(runRoot);
   const dry = fix(["--dry-run", "--json"], { root, spec, model });
   return {
     drafts: drafts.pending(runRoot),
@@ -84,6 +84,7 @@ function closing({ root, spec, model }) {
     ledgers: all.map(summary),
     cleanable,
     strays,
+    leftAlone,
     unknown,
     warnings,
     diskFree,

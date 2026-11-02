@@ -54,10 +54,16 @@ Without `--apply` it only reports. With it:
   and the exit is 1;
 - never signals an interactive shell: a process on a controlling terminal, a login shell (`-zsh`), or a
   shell run with `-i` (only an option before the script or `-c` counts). A terminal above a stray never
-  spares it, and a `-i` shell with no terminal that a stray started is part of the stray. The stray's
-  process group goes too, unless it holds a terminal, a login shell or the sweep itself. The owner's
+  spares it, and a `-i` shell with no terminal that a stray started is part of the stray. The owner's
   terminal can sit in a merged worktree; it is listed as `left alone: interactive shell`, and the worktree
   it sits in is kept ("in use by a shell") until the owner leaves that directory.
+- signals only what it can prove is the stray's: the stray, its own descendant tree, and its process group
+  only when the stray leads it (pid equals pgid). A stray that sits in someone else's group (a parent that
+  did not detach it) takes none of that group: the leader and its other children are left alone. A
+  double-forked child of such a stray, left in the group it does not lead, cannot be proven ours and is
+  left running; stop it by hand. A process a lane still building owns is never signalled, even inside a
+  stray's tree, and neither is the sweep's own ancestor chain. Everything that would be signalled is listed
+  under its stray in the dry run (`with process …`) and, after `--apply`, in `signalled`.
 
 A worktree no ledger knows is listed as unknown and left alone, as is any worktree of a task still in flight.
 Working-directory strays need `lsof`; without it sweep warns and judges by executable and script only.
