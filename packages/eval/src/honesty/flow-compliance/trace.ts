@@ -39,12 +39,22 @@ export interface TaskFile {
   mtimeMs: number;
 }
 
+/** One agent the Flow roster (`run-state.json`, written by `agent_state`) records as dispatched into the run. */
+export interface RosterAgent {
+  /** The roster key — the agent id. */
+  agent: string;
+  /** When it entered its current state (ISO8601), when the roster carries it; older rosters have none. */
+  since?: string;
+}
+
 /** The observable trace of one run dir — the pure input the assertion module consumes. */
 export interface RunTrace {
   /** The run dir read (`.agentry/work/<id>/`), echoed for provenance. */
   runDir: string;
   /** Whether `run-state.json` is present (one of the two "a run exists" signals). */
   hasRunState: boolean;
+  /** The agents in `run-state.json`'s roster — dispatch evidence now that nothing writes `agent-started` lines. */
+  roster: readonly RosterAgent[];
   /** The parsed `events.jsonl` lines in file order (empty if the file is absent). */
   events: readonly TraceEvent[];
   /** Whether `spec.md` is present in the run dir. */
@@ -86,6 +96,24 @@ function readEvents(runDir: string): TraceEvent[] {
   return out;
 }
 
+/** Read the agent roster off `run-state.json` (`{ agents: { "<id>": { state, since? } } }`); absent/foreign ⇒ []. */
+function readRoster(runDir: string): RosterAgent[] {
+  const path = join(runDir, "run-state.json");
+  if (!existsSync(path)) return [];
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return [];
+  }
+  const agents = (raw as { agents?: unknown } | null)?.agents;
+  if (typeof agents !== "object" || agents === null) return [];
+  return Object.entries(agents).map(([agent, entry]) => {
+    const since = (entry as { since?: unknown } | null)?.since;
+    return typeof since === "string" ? { agent, since } : { agent };
+  });
+}
+
 /** Read the `tasks/NNN-*.md` files, sorted by name (the create order the numeric prefix encodes). */
 function readTaskFiles(runDir: string): TaskFile[] {
   const tasksDir = join(runDir, "tasks");
@@ -111,6 +139,7 @@ export function readRunTrace(runDir: string): RunTrace {
   return {
     runDir,
     hasRunState: existsSync(join(runDir, "run-state.json")),
+    roster: readRoster(runDir),
     events: readEvents(runDir),
     hasSpec,
     specMtimeMs: hasSpec ? statSync(specPath).mtimeMs : null,

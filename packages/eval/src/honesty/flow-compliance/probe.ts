@@ -8,7 +8,7 @@ import { writeFileSync } from "node:fs";
 
 import type { EvalObserver } from "../../store/schema.ts";
 
-import { type Check, runAllChecks } from "./assertions.ts";
+import { type Check, type FlowResult, runAllChecks } from "./assertions.ts";
 import { readRunTrace } from "./trace.ts";
 
 /** The caveat pinned onto every verdict — what this probe does and does not claim. */
@@ -20,7 +20,9 @@ export const FLOW_COMPLIANCE_CAVEAT =
 export interface FlowComplianceArtifact {
   /** The run dir the verdict is over (provenance). */
   runDir: string;
-  /** PASS iff no check failed (N/A checks do not fail). */
+  /** `pass`, `fail`, or `inconclusive` (no check failed but a required one could not be observed). */
+  result: FlowResult;
+  /** `result === "pass"` — an inconclusive run is NOT a pass. */
   pass: boolean;
   /** The four ordered checks with their pass/fail + evidence. */
   checks: readonly Check[];
@@ -69,6 +71,7 @@ export function runFlowComplianceProbe(opts: FlowComplianceProbeOptions): FlowCo
 
   const artifact: FlowComplianceArtifact = {
     runDir: opts.runDir,
+    result: verdict.result,
     pass: verdict.pass,
     checks: verdict.checks,
     caveat: FLOW_COMPLIANCE_CAVEAT,

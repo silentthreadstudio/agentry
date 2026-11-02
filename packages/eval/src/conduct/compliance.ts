@@ -14,6 +14,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { FlowResult } from "../honesty/flow-compliance/assertions.ts";
 import { runFlowComplianceProbe } from "../honesty/flow-compliance/probe.ts";
 
 /**
@@ -25,13 +26,16 @@ import { runFlowComplianceProbe } from "../honesty/flow-compliance/probe.ts";
  * `capturedWorkDir` MUST be an existing run dir (`.agentry/work/<slug>/`) — the caller gets it from
  * {@link locateAgentWorkDir} and only calls this when that returned a path (a null work dir ⇒ no compliance run).
  */
-export function runComplianceFor(capturedWorkDir: string): { pass: boolean } {
+export function runComplianceFor(capturedWorkDir: string): {
+  pass: boolean;
+  result: FlowResult;
+} {
   const outPath = join(
     mkdtempSync(join(tmpdir(), "rightsizing-compliance-")),
     "flow-compliance.json",
   );
   const { artifact } = runFlowComplianceProbe({ runDir: capturedWorkDir, outPath });
-  return { pass: artifact.pass };
+  return { pass: artifact.pass, result: artifact.result };
 }
 
 /**
@@ -43,7 +47,7 @@ export function runComplianceFor(capturedWorkDir: string): { pass: boolean } {
  *   - expected one-shot,  run opened ⇒ FAIL  (over-routed — ceremony a one-shot didn't need)
  *   - expected escalated, no run    ⇒ FAIL  (under-routed — should have opened a run)
  *   - expected escalated, run opened ⇒ the flow-compliance verdict over that run (run_start-before-dispatch,
- *                                       single-frontmatter, no skip-flag, …)
+ *                                       single-frontmatter, …); an inconclusive verdict is NOT a pass
  */
 export function shapeAwareCompliance(
   expectedShape: string,
@@ -71,10 +75,17 @@ export function shapeAwareCompliance(
   return {
     pass: probe.pass,
     routed: "escalated",
-    detail: probe.pass
-      ? `escalated + flow-compliant (expected ${expectedShape})`
-      : "escalated but flow-compliance failed",
+    detail: complianceDetail(probe.result, expectedShape),
   };
+}
+
+/** The readable verdict for an escalated run: an inconclusive one (a required check unobservable) is never "compliant". */
+function complianceDetail(result: FlowResult, expectedShape: string): string {
+  if (result === "pass") return `escalated + flow-compliant (expected ${expectedShape})`;
+  if (result === "inconclusive") {
+    return "escalated but flow-compliance inconclusive (a required check could not be observed)";
+  }
+  return "escalated but flow-compliance failed";
 }
 
 /**

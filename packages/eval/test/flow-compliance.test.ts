@@ -18,12 +18,14 @@ import {
   readdirSync,
   rmSync,
   utimesSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { shapeAwareCompliance } from "../src/conduct/compliance.ts";
 import {
   checkNoSkipFlag,
   checkRunStartBeforeDispatch,
@@ -52,9 +54,11 @@ function trace(over: Partial<RunTrace> = {}): RunTrace {
   return {
     runDir: "/synthetic",
     hasRunState: false,
+    roster: [],
     events: [],
     hasSpec: false,
     specMtimeMs: null,
+    hasPlan: false,
     taskFiles: [],
     ...over,
   };
@@ -86,10 +90,28 @@ test("check1: dispatch with NO FLOW line anywhere ⇒ fail", () => {
   assert.equal(c.status, "fail");
 });
 
-test("check1: no dispatch line at all ⇒ N/A (hook retired), never a pass", () => {
+test("check1: no dispatch evidence at all ⇒ N/A, never a pass", () => {
   const c = checkRunStartBeforeDispatch(trace({ events: [flowLine("2026-01-01T00:00:00Z")] }));
   assert.equal(c.status, "na");
-  assert.equal(c.detail, "N/A (hook retired)");
+});
+
+test("check1: roster agent started after run_start ⇒ pass; before it ⇒ fail; undated ⇒ N/A", () => {
+  const events = [flowLine("2026-01-01T00:01:00Z")];
+  const run = (since?: string) =>
+    checkRunStartBeforeDispatch(
+      trace({ events, roster: [{ agent: "a", ...(since ? { since } : {}) }] }),
+    ).status;
+  assert.equal(run("2026-01-01T00:02:00Z"), "pass");
+  assert.equal(run("2026-01-01T00:00:00Z"), "fail");
+  assert.equal(run(), "na");
+});
+
+test("runAllChecks: a required check N/A ⇒ inconclusive (not pass); a fail still wins", () => {
+  const noDispatch = runAllChecks(trace({ events: [flowLine("2026-01-01T00:00:00Z")] }));
+  assert.equal(noDispatch.result, "inconclusive");
+  assert.equal(noDispatch.pass, false);
+  const failed = runAllChecks(trace({ roster: [{ agent: "a", since: "2026-01-01T00:00:00Z" }] }));
+  assert.equal(failed.result, "fail");
 });
 
 test("check1: a backstop-only line (kind, no type) is NOT a run_start signal", () => {
@@ -240,7 +262,8 @@ function probeOver(runDir: string): ReturnType<typeof runFlowComplianceProbe>["a
 
 test("probe: the compliant fixture ⇒ PASS (all four checks green)", () => {
   const a = probeOver(stagedFixture("compliant"));
-  assert.equal(a.pass, true, JSON.stringify(a.checks, null, 2));
+  assert.equal(a.result, "pass", JSON.stringify(a.checks, null, 2));
+  assert.equal(a.pass, true);
   assert.ok(a.checks.every((c) => c.status !== "fail"));
 });
 
@@ -251,14 +274,62 @@ test("probe: dispatch-before-run ⇒ FAIL on check 1 only", () => {
   assert.deepEqual(failing, ["run-start-before-dispatch"]);
 });
 
-test("probe: a run with no events.jsonl is not a PASS on check 1 (dispatch unobservable ⇒ N/A)", () => {
-  // Regression: dispatch evidence lived only in events.jsonl; without it the check used to pass vacuously.
+/** Write a Flow roster (`run-state.json`) into a staged run dir; `since` per agent id. */
+function writeRoster(dir: string, agents: Record<string, { since?: string }>): void {
+  const body = Object.fromEntries(
+    Object.entries(agents).map(([id, e]) => [id, { state: "working", ...e }]),
+  );
+  writeFileSync(join(dir, "run-state.json"), JSON.stringify({ agents: body }));
+}
+
+test("probe: no events.jsonl and no roster ⇒ check 1 N/A and the overall verdict is inconclusive, not PASS", () => {
+  // Regression: dispatch was unobservable, yet the aggregate used to read "no check failed" ⇒ PASS.
   const dir = stagedFixture("dispatch-before-run");
   rmSync(join(dir, "events.jsonl"));
   const a = probeOver(dir);
   const c1 = a.checks.find((c) => c.id === "run-start-before-dispatch");
   assert.equal(c1?.status, "na");
-  assert.equal(c1?.detail, "N/A (hook retired)");
+  assert.equal(a.result, "inconclusive");
+  assert.equal(a.pass, false);
+});
+
+test("shapeAwareCompliance: an inconclusive escalated run is not reported as flow-compliant", () => {
+  const sandbox = mkdtempSync(join(tmpdir(), "flowcomp-sandbox-"));
+  const runDir = join(sandbox, ".agentry", "work", "r1");
+  cpSync(stagedFixture("dispatch-before-run"), runDir, {
+    recursive: true,
+    preserveTimestamps: true,
+  });
+  rmSync(join(runDir, "events.jsonl"));
+  const v = shapeAwareCompliance("decompose+verify", sandbox);
+  assert.equal(v.pass, false);
+  assert.match(v.detail, /inconclusive/);
+  assert.doesNotMatch(v.detail, /flow-compliant/);
+});
+
+test("probe: agents in the roster with no run_start (events.jsonl gone) ⇒ overall FAIL on check 1", () => {
+  const dir = stagedFixture("dispatch-before-run");
+  rmSync(join(dir, "events.jsonl"));
+  writeRoster(dir, { "agentry:implementer": { since: "2026-06-19T22:05:00.000Z" } });
+  const a = probeOver(dir);
+  assert.equal(a.result, "fail");
+  assert.equal(a.pass, false);
+  assert.deepEqual(
+    a.checks.filter((c) => c.status === "fail").map((c) => c.id),
+    ["run-start-before-dispatch"],
+  );
+});
+
+test("probe: run_start precedes the roster's agents ⇒ overall PASS from roster evidence alone", () => {
+  const dir = stagedFixture("compliant");
+  writeFileSync(
+    join(dir, "events.jsonl"),
+    `${JSON.stringify({ ts: "2026-06-19T22:09:39.686Z", type: "routing-decision" })}\n`,
+  );
+  writeRoster(dir, { "agentry:implementer": { since: "2026-06-19T22:19:52.108Z" } });
+  const a = probeOver(dir);
+  assert.equal(a.result, "pass");
+  assert.equal(a.pass, true);
 });
 
 test("probe: N/A checks emit no observer event (neither task-done nor gate-fired)", () => {
@@ -287,8 +358,9 @@ test("probe: double-frontmatter ⇒ FAIL on check 3 only", () => {
   assert.deepEqual(failing, ["single-frontmatter"]);
 });
 
-test("probe: a skip-flag fixture no longer fails; no-skip-flag reports N/A", () => {
+test("probe: a skip-flag fixture still passes; no-skip-flag N/A alone is not inconclusive", () => {
   const a = probeOver(stagedFixture("skip-flag"));
+  assert.equal(a.result, "pass");
   assert.equal(a.pass, true);
   const c4 = a.checks.find((c) => c.id === "no-skip-flag");
   assert.equal(c4?.status, "na");
@@ -328,6 +400,7 @@ test("runAllChecks: pass iff every check passes", () => {
       taskFiles: [{ name: "001.md", text: "---\nt: 1\n---\n", mtimeMs: 2 }],
     }),
   );
+  assert.equal(allGreen.result, "pass");
   assert.equal(allGreen.pass, true);
   assert.equal(allGreen.checks.length, 4);
 });
