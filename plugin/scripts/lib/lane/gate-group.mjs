@@ -29,6 +29,20 @@ const alive = (pgid) => {
   }
 };
 
+// The whole argv of process `pid` as `{ text }` ("" when it has gone), or `{ error }`. The nonce sits
+// past the wrapper's long script, so nothing may cut it short: /proc where there is one (Linux), else
+// `ps -ww` (unlimited width; a plain `ps` may cut a pipe's output to 80 columns).
+function leaderArgv(pid) {
+  try {
+    return { text: readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " ").trim() };
+  } catch {
+    // no /proc here, or no such process: ps says which
+  }
+  const ps = spawnSync("ps", ["-ww", "-o", "command=", "-p", String(pid)], { encoding: "utf8" });
+  if (ps.error) return { error: ps.error.message };
+  return { text: ps.status === 0 ? ps.stdout.trim() : "" };
+}
+
 /**
  * End the gate a killed run left behind (`run` = `{ pidFile, nonce }`, as the ledger recorded it).
  * `{ ok: true, pgid, killed }` (`killed`: a group was still running and is gone now), or `{ ok: false,
@@ -45,15 +59,10 @@ export function endStrayGate(run) {
   }
   if (!Number.isInteger(pgid) || pgid <= 1 || !alive(pgid))
     return { ok: true, pgid, killed: false };
-  const ps = spawnSync("ps", ["-o", "command=", "-p", String(pgid)], { encoding: "utf8" });
-  if (ps.error)
-    return {
-      ok: false,
-      pgid,
-      reason: `ps cannot say what process ${pgid} is: ${ps.error.message}`,
-    };
-  const leader = ps.status === 0 ? ps.stdout.trim() : "";
-  if (leader && !leader.includes(run.nonce)) return { ok: true, pgid, killed: false }; // a reused pid
+  const leader = leaderArgv(pgid);
+  if (leader.error)
+    return { ok: false, pgid, reason: `ps cannot say what process ${pgid} is: ${leader.error}` };
+  if (leader.text && !leader.text.includes(run.nonce)) return { ok: true, pgid, killed: false }; // a reused pid
   try {
     process.kill(-pgid, "SIGKILL");
   } catch (error) {

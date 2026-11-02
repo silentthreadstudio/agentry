@@ -7,7 +7,7 @@
 // Run: node --test plugin/scripts/test/land.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { applyPatch, sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
@@ -183,6 +183,33 @@ test("endStrayGate kills the gate group a killed run left, and leaves a reused p
   });
   process.kill(-other.pgid, 0); // still alive
   endStrayGate(other);
+});
+
+// R1b-5 re-verify item 11: the nonce sits past the wrapper's long script in the argv, so a `ps` that
+// cuts its output to 80 columns (procps documents that default for a pipe) lost it and took the gate
+// for a reused pid. A `ps` in front of the real one cuts like that unless asked for unlimited width.
+test("endStrayGate finds the nonce even where ps cuts its output short", () => {
+  const gate = strayGate(["sleep", "30"], "c0ffee03");
+  const realPs = process.env.PATH.split(":")
+    .map((dir) => join(dir, "ps"))
+    .find((file) => existsSync(file));
+  const dir = join(repo.dir, ".git", "narrow");
+  mkdirSync(dir);
+  const shim = `#!/bin/sh\n[ "$1" = -ww ] && exec "${realPs}" "$@"\n"${realPs}" "$@" | cut -c1-80\n`;
+  writeFileSync(join(dir, "ps"), shim);
+  chmodSync(join(dir, "ps"), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${dir}:${path}`;
+  try {
+    assert.deepEqual(endStrayGate(gate), { ok: true, pgid: gate.pgid, killed: true });
+  } finally {
+    process.env.PATH = path;
+    try {
+      process.kill(-gate.pgid, "SIGKILL");
+    } catch {
+      // gone already: the case the test wants
+    }
+  }
 });
 
 test("the gate wrapper passes the gate's argv and exit code through", () => {
