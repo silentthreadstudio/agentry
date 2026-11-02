@@ -747,7 +747,12 @@ test("a rerun stops the gate a killed land left running, then gates again", asyn
     assert.equal(alive(pgid), false);
     const ledger = readLedger(root, ID);
     assert.equal(ledger.merge.gateRun, undefined);
-    assert.equal(ledger.gates.filter((g) => g.where === "main").length, 1); // the rerun's gate
+    const mainGates = ledger.gates.filter((g) => g.where === "main");
+    assert.equal(mainGates.length, 1); // the rerun's gate
+    // R1b-5 re-verify item 9: the rerun's gate wrote over the killed gate's log.
+    const killedLog = join(dirname(gatePidFile()), "merge-gate-1.log");
+    assert.match(readFileSync(killedLog, "utf8"), /gate tier/);
+    assert.notEqual(mainGates[0].log, killedLog);
   } finally {
     endGroup(pgid);
   }

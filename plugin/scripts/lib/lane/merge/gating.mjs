@@ -2,7 +2,7 @@
 // run the tier `pickTier` picks on main, in a process group the ledger names first (`merge.gateRun`) so
 // a rerun can stop it if this run dies. A red gate takes the picks off main again (`rollBack`).
 import { randomBytes } from "node:crypto";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { runDir } from "../../process/ledger.mjs";
 import { gateArgv } from "../gate-group.mjs";
@@ -48,8 +48,10 @@ export function gateStep(lane, rows) {
     return null;
   }
   const { tier, reason } = pickTier(gate, changedSince(root, merge.preHead, "HEAD") ?? []);
-  const n = gates.filter((g) => g.where === "main").length + 1;
   const dir = runDir(root, id);
+  // A number no log holds yet: a killed gate is not in the ledger, and its log is the evidence of it.
+  let n = gates.filter((g) => g.where === "main").length + 1;
+  while (existsSync(join(dir, `merge-gate-${n}.log`))) n++;
   const logFile = join(dir, `merge-gate-${n}.log`);
   // The gate's process group, written down before it starts, so a rerun can stop it if this run dies.
   const gateRun = {
