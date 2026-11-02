@@ -1,5 +1,6 @@
 // Evidence rules: what a finished item must show (commits, handoff, verdict, sign-off). Pure; git is
-// reached only through ctx.hasCommit.
+// reached only through ctx.hasCommit. What a handoff line is (`handoffLines`, `namesCommits`) is exported:
+// `board fix` (drift.mjs) counts a task's handoff by the same definition this rule checks.
 import {
   CLOSED,
   EXCEPT,
@@ -15,6 +16,10 @@ import {
 } from "./structure.mjs";
 
 const SHA = /^[0-9a-f]{7,40}$/i;
+
+/** The commits a commits/evidence cell holds (as the board read it: tokens, or a string), as the rules
+ *  read them. */
+export const commitsIn = (value) => evidenceOf(value).shas;
 
 // A commits/evidence cell, as an array of tokens or a string, split into commits and the rest.
 function evidenceOf(value) {
@@ -61,6 +66,15 @@ function names(line, shas, mode) {
   return mode === "first" ? match(shas[0]) : shas.some(match);
 }
 
+/** Task `id`'s handoff lines among a section's bold leads (`md.boldLeads`): those whose lead names the id
+ *  as a whole token. A plain line, or another task's line that mentions the id, is not one. */
+export const handoffLines = (leads, id) => leads.filter((l) => leadTokens(l.lead).includes(id));
+
+/** Does one of a task's handoff `lines` name its commits `shas` the way `mode` asks (`first`: the first
+ *  one, `any`: any)? Nothing is asked for `none` or a task with no commits. */
+export const namesCommits = (lines, shas, mode) =>
+  mode === "none" || shas.length === 0 || lines.some((l) => names(l.text ?? l.lead, shas, mode));
+
 const doneHasHandoff = {
   id: "done-has-handoff",
   params: {
@@ -85,15 +99,13 @@ const doneHasHandoff = {
         );
         continue;
       }
-      const leads = parent.own.sections[section]?.leads ?? [];
-      const mine = leads.filter((l) => leadTokens(l.lead).includes(item.id));
+      const mine = handoffLines(parent.own.sections[section]?.leads ?? [], item.id);
       const where = parent.own.path;
       if (mine.length === 0) {
         out.push(finding("done-has-handoff", item, `no handoff line in ${where}`));
         continue;
       }
-      const { shas } = field ? evidenceOf(item.fields[field]) : { shas: [] };
-      if (shas.length > 0 && !mine.some((l) => names(l.text ?? l.lead, shas, mode))) {
+      if (!namesCommits(mine, field ? commitsIn(item.fields[field]) : [], mode)) {
         out.push(
           finding("done-has-handoff", item, `handoff line in ${where} names no matching commit`),
         );
