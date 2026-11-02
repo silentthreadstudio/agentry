@@ -91,14 +91,30 @@ function resumeRecording(lane, rows) {
   return { exit: 0, next: afterLand(lane) };
 }
 
-// git mid-cherry-pick in the main checkout. This land's own (the ledger says it was picking, and git
-// stopped on one of its planned commits) is aborted, as the pick step aborts any stop of its own; the
-// land step then takes off whatever picks the abort left. Any other is not merge's to end.
+// The cherry-pick git is in the middle of is this land's: the ledger says it was picking, and git
+// stopped on one of its planned commits.
+function ownPick({ root, ledger }) {
+  const merge = ledger.merge;
+  const at = commitOf(root, "CHERRY_PICK_HEAD");
+  return merge?.step === "picking" && (!at || merge.planned.includes(at));
+}
+
+/** What a killed land left on main that the land itself clears, in words for the preflight; null when
+ *  it left nothing of that kind. */
+export function clearedByTheLand(lane) {
+  if (lane.ledger.merge?.step === "recording")
+    return "a killed land was writing the board: the land clears it";
+  if (pickInProgress(lane.root).length > 0 && ownPick(lane))
+    return "a killed land left a cherry-pick: the land clears it";
+  return null;
+}
+
+// git mid-cherry-pick in the main checkout. This land's own is aborted, as the pick step aborts any
+// stop of its own; the land step then takes off whatever picks the abort left. Any other is not
+// merge's to end.
 function endOwnPick(lane, rows, busy) {
   const { root } = lane;
-  const merge = lane.ledger.merge;
-  const at = commitOf(root, "CHERRY_PICK_HEAD");
-  const own = merge?.step === "picking" && (!at || merge.planned.includes(at));
+  const own = ownPick(lane);
   const ended = own ? abortPick(root) : null;
   if (ended?.ok) {
     const times = ended.aborts > 1 ? ` (${ended.aborts} aborts)` : "";

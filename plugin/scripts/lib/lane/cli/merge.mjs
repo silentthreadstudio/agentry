@@ -30,7 +30,7 @@ import { FRESH, afterLand, checkNext, done, landNext, ok, red, short } from "../
 import { check, cleanupMode, pushMode } from "../merge/modes.mjs";
 import { landStep } from "../merge/picks.mjs";
 import { commitStep, recordStep } from "../merge/record.mjs";
-import { recoverStep } from "../merge/recover.mjs";
+import { clearedByTheLand, recoverStep } from "../merge/recover.mjs";
 import {
   boardRow,
   checksState,
@@ -108,11 +108,13 @@ function preflight(lane) {
     rows.push(ok("land", `already merged (board commit ${short(lane.ledger.merge?.boardCommit)})`));
     return done(0, lane, rows, afterLand(lane));
   }
-  const busy = pickInProgress(lane.root);
-  if (busy.length > 0)
-    rows.push(red("recover", "git is in the middle of a cherry-pick in the main checkout"));
+  const cleared = clearedByTheLand(lane);
+  if (cleared) rows.push(ok("recover", cleared));
+  else if (pickInProgress(lane.root).length > 0)
+    rows.push(red("recover", "git is in the middle of a cherry-pick that is not this land's"));
   const merge = lane.ledger.merge;
-  rows.push(boardRow(lane), mainRow(lane, { carry: true }));
+  rows.push(boardRow(lane));
+  if (!cleared) rows.push(mainRow(lane, { carry: true }));
   if (merge?.carry)
     rows.push(
       ok(

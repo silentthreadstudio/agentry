@@ -645,6 +645,10 @@ test("a land killed with its board writes staged takes them back on the rerun an
   const pre = head();
   landKilledAt("^-C [^ ]+ commit --quiet -m", "before");
   assert.match(status(), /^M {2}plan\/BOARD\.md$/m); // the writes, staged
+  // /agentry:merge starts with the preflight: it must point at the land, not at a hand clean-up.
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 0, out(pf));
+  assert.match(pf.stdout, /✓ recover +a killed land was writing the board: the land clears it/);
   const res = merge(ID, "--message", "docs(board): land T1");
   assert.equal(res.status, 0, out(res));
   assert.match(res.stdout, /✓ recover +took back the board writes a killed run left uncommitted/);
@@ -828,6 +832,9 @@ test("a land killed after its first pick's commit lands on the rerun, with no ab
   const pre = head();
   assert.equal(merge(ID, "--message", "docs(board): land T1").signal, "SIGKILL");
   assert.equal(chainSince(pre).length, 1); // the first pick, mid-sequence
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 0, out(pf));
+  assert.match(pf.stdout, /✓ recover +a killed land left a cherry-pick: the land clears it/);
   const res = merge(ID, "--message", "docs(board): land T1");
   assert.equal(res.status, 0, out(res));
   assert.match(res.stdout, /✓ recover +aborted the cherry-pick a killed run left/);
