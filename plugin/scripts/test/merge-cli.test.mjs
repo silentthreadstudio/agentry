@@ -1694,6 +1694,22 @@ test("a flaky red that fails again alone rolls main back and names the re-run, n
   assert.doesNotMatch(res.stdout, /resume the builder/);
 });
 
+test("a re-run that fails in a different, unlisted test does not blame the flaky one", () => {
+  const marker = join(home, "flaky-ran");
+  const script = `const fs = require("node:fs");
+const again = fs.existsSync(${JSON.stringify(marker)});
+fs.writeFileSync(${JSON.stringify(marker)}, "");
+console.log(again ? "FAILED test_real" : "FAILED test_budget");
+process.exit(1);`;
+  commitSpec({ ...SPEC, gate: { command: ["node", "-e", script], flaky: ["test_budget"] } });
+  build({ "src/a.txt": "a\n" });
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.equal(mainGates().length, 2);
+  assert.doesNotMatch(res.stdout, /failed again on the re-run alone/);
+  assert.match(res.stdout, /resume the builder/);
+});
+
 test("a land gate red in an unlisted test is not re-run and still says to fix the branch", () => {
   commitSpec({
     ...SPEC,

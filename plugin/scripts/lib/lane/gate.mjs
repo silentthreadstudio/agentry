@@ -165,30 +165,55 @@ function logsMatching(globs, { cwd, since }) {
   });
 }
 
+// The test a line of an extra log names as failing, or null: `FAILED TEST: <name>`, `not ok N - <name>`,
+// `✗ <name>` and `FAIL <name>`. A failure line that names no test (an engine's `ERROR:` line) is noise there.
+const NAMED_FAILURE = [
+  /\bFAILED TEST:\s*(\S.*)/,
+  /^\s*not ok\s+\d+\s*-?\s*(\S.*)/,
+  /[✗✖×]\s*(\S.*)/,
+  /\bFAIL\s+(\S.*)/,
+];
+const namedFailure = (line) => {
+  if (SUMMARY_LINE.test(line)) return null;
+  for (const re of NAMED_FAILURE) {
+    const m = re.exec(line);
+    if (m) return m[1];
+  }
+  return null;
+};
+
 /** The listed `flaky` tests a gate's log shows failing, or null unless the red is ALL flaky: at least one
  *  failure line, and every failure line (count lines aside) naming a listed test. Anything else (an unlisted
- *  failure, no failure line to read, an unreadable log) is null: a real red. `logs` (the gate's
- *  `flakyLogs` globs, from `cwd` or `$TMPDIR/`) adds the logs the gate's own steps wrote, for a gate that
- *  prints only a summary; only files modified since `since` (ms, when the gate started) are read. */
+ *  failure, no failure line to read, an unreadable log) is null: a real red. The gate's own log decides when
+ *  it has failure lines. Only when it has none (it prints a summary) are the `logs` (the gate's `flakyLogs`
+ *  globs, from `cwd` or `$TMPDIR/`) read, for the lines in them that name a failing test; those must all be
+ *  listed, and unnamed noise there is ignored. Only files modified since `since` (ms, when the gate
+ *  started) are read. */
 export function flakyReds(logFile, flaky, { logs = [], cwd = ".", since = 0 } = {}) {
   if (!flaky?.length) return null;
-  const texts = [];
+  let text;
   try {
-    texts.push(readFileSync(logFile, "utf8"));
+    text = readFileSync(logFile, "utf8");
   } catch {
     return null;
   }
+  const hit = new Set();
+  const judge = (lines, nameOf) => {
+    for (const line of lines) {
+      const name = nameOf(line);
+      if (name === null) continue;
+      const names = flaky.filter((n) => name.includes(n));
+      if (names.length === 0) return false;
+      for (const n of names) hit.add(n);
+    }
+    return true;
+  };
+  const own = text.split("\n").filter((l) => FAILURE_LINE.test(l) && !SUMMARY_LINE.test(l));
+  if (own.length > 0) return judge(own, (line) => line) && hit.size > 0 ? [...hit] : null;
   for (const file of logsMatching(logs, { cwd, since })) {
     try {
-      texts.push(readFileSync(file, "utf8"));
+      if (!judge(readFileSync(file, "utf8").split("\n"), namedFailure)) return null;
     } catch {}
-  }
-  const hit = new Set();
-  for (const line of texts.flatMap((text) => text.split("\n"))) {
-    if (!FAILURE_LINE.test(line) || SUMMARY_LINE.test(line)) continue;
-    const names = flaky.filter((name) => line.includes(name));
-    if (names.length === 0) return null;
-    for (const name of names) hit.add(name);
   }
   return hit.size > 0 ? [...hit] : null;
 }

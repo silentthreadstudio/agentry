@@ -30,8 +30,10 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **Flaky gate reds on the land, names from step logs, a queued gate speaks** — `lane merge`
   applies `gate.flaky` as `exec gate` does: a red only in listed tests is re-run alone once and
   both runs are recorded; a re-run that fails again stops without sending the builder back.
-  `gate.flakyLogs` (globs from the gate's cwd or `$TMPDIR/`, files newer than the run) are read for
-  failure names when the gate prints only a summary. A queued gate writes `waiting for gate slot N
+  `gate.flakyLogs` (globs from the gate's cwd or `$TMPDIR/`, files newer than the run) are read
+  when the gate's own output prints only a summary: a line there counts only if it names a failing
+  test (`FAILED TEST: <name>`, `not ok N - <name>`, `✗ <name>`, `FAIL <name>`); noise is ignored and
+  a red that names no test stays real. A queued gate writes `waiting for gate slot N
   (held by … since HH:MM)` and `slot acquired` to its log, and `lane session start` lists held slots.
 - **`gates` in the exec output** — `gate` and `verdict` print "1 green, 1 red on this tip", so a
   green run no longer hides a later red on the same commit.

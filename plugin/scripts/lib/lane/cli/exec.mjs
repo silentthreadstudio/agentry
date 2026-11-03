@@ -17,7 +17,15 @@
 // stopped (or the gate is red), 2 = usage or refusal (nothing changed).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { appendFileSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, isAbsolute, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
@@ -839,7 +847,10 @@ function gate(ctx, id) {
   let startedAt = 0;
   const once = (exclusive) => {
     // The log exists before the wait, so a queued gate says so there (a gate that is waiting is not hung).
-    const logFile = join(ledgers.runDir(root, id), "logs", `gate-${++runs}.log`);
+    // A number no log holds yet: a killed gate is not in the ledger, and its log must not be written into.
+    let logFile;
+    do logFile = join(ledgers.runDir(root, id), "logs", `gate-${++runs}.log`);
+    while (existsSync(logFile));
     const held = holdGate(lockDir, {
       slots: config.concurrency,
       exclusive,

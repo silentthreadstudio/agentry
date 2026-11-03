@@ -1145,7 +1145,7 @@ test("a flaky red that fails again on the alone re-run stops the lane, both runs
 
 // A gate whose own output is only a summary: the failing name is in a step log under the temp directory
 // (written while the gate runs unless `stale`), which `gate.flakyLogs` points at.
-function stepLogGate({ names = "FAILED test_budget", stale = false, logs }) {
+function stepLogGate({ names = "FAILED TEST: suite/test_budget", stale = false, logs }) {
   const dir = join(tmpdir(), `agentry-steplog-${process.pid}-${temps.length}`);
   temps.push(dir);
   mkdirSync(dir, { recursive: true });
@@ -1188,6 +1188,62 @@ test("a flakyLogs file older than the gate run never decides a red", () => {
   const gated = lane(r, "gate", "T1");
   assert.equal(gated.exit, 1);
   assert.equal(ledgerOf(r.root, "T1").gates.length, 1);
+});
+
+test("engine noise in a step log does not turn a named flaky failure into a real red", () => {
+  const names = "ERROR: GodRays: holo is not a light preset\\nFAILED TEST: suite/test_budget";
+  const r = atGate(stepLogGate({ names }));
+  assert.equal(lane(r, "gate", "T1").exit, 0);
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 2);
+});
+
+test("a step log that names an unlisted failing test keeps the red real", () => {
+  const names = "FAILED TEST: suite/test_budget\\nnot ok 4 - suite/test_real";
+  const r = atGate(stepLogGate({ names }));
+  assert.equal(lane(r, "gate", "T1").exit, 1);
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 1);
+});
+
+test("a step log whose failures name no test (only noise) keeps the red real", () => {
+  const r = atGate(stepLogGate({ names: "ERROR: GodRays: holo is not a light preset" }));
+  assert.equal(lane(r, "gate", "T1").exit, 1);
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 1);
+});
+
+test("flakyLogs never turns a red the gate's own output names as flaky into a real one", () => {
+  const dirless = stepLogGate({ names: "ERROR: GodRays: holo is not a light preset" });
+  const r = atGate({
+    ...dirless,
+    command: [
+      "sh",
+      "-c",
+      `test -f out.txt && if [ -f '${join(temp("own-"), "ran")}' ]; then exit 0; else echo 'FAILED TEST: suite/test_budget'; exit 1; fi`,
+    ],
+  });
+  // the gate never passes (its marker is never made): that it ran twice is what is asserted
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 1);
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 2);
+  assert.deepEqual(gated.json.gate.flaky, ["test_budget"]);
+});
+
+test("a log a killed gate left under the next number is not written into or read as this run's", () => {
+  const r = atGate({
+    command: ["sh", "-c", "test -f out.txt && echo 'tests FAIL TESTS: 3 passed, 1 failed'; exit 1"],
+    flaky: ["test_budget"],
+  });
+  const logs = join(r.root, ".agentry", "run", "process", "runs", "T1", "logs");
+  mkdirSync(logs, { recursive: true });
+  writeFileSync(join(logs, "gate-1.log"), "FAILED test_budget\n");
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 1);
+  assert.equal(
+    ledgerOf(r.root, "T1").gates.length,
+    1,
+    "a stale failure line made it a flaky re-run",
+  );
+  assert.equal(readFileSync(join(logs, "gate-1.log"), "utf8"), "FAILED test_budget\n");
+  assert.ok(gated.json.gate.log.endsWith("logs/gate-2.log"));
 });
 
 test("a gate that waits for its slot says so in its log, before the gate ends", async () => {

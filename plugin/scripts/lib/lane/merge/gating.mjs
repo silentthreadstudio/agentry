@@ -143,7 +143,11 @@ export function gateStep(lane, rows) {
     return null;
   }
   rows.push(red("gate", `${tier} ran on ${mainBranch}: exit ${res.exit} in ${res.seconds} s`, why));
-  return rollBack(lane, rows, reran ? flaky : null);
+  // The flaky wording only when the re-run itself is red in listed tests alone: a different failure there is real.
+  const again2 = reran
+    ? flakyReds(res.log, gate.flaky, { logs: gate.flakyLogs, cwd: root, since: again.startedAt })
+    : null;
+  return rollBack(lane, rows, again2);
 }
 
 /** After a red gate, take the picks off main again. The intent goes to the ledger first (`step:
