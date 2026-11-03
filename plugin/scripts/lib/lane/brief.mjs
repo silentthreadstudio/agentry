@@ -85,6 +85,18 @@ const CONTEXT_ASIDE = /:\d|\bstays\b/i;
 // A code span may cross one line break (never a blank line): the break and its indentation are dropped.
 const TICKED = /`([^`\n]+(?:[ \t]*\n[ \t]*[^`\s][^`\n]*)?)`/g;
 const MAX_BRACED = 64;
+// A sentence of the owns clause that says its paths are out of scope ("a fix that needs `x` stops and
+// reports 'needs context' first"): the paths it points at are not owned.
+const OUT_OF_SCOPE =
+  /\bstops\b|\bneeds context\b|\bask first\b|after the owner['’]s OK|\bnot owned\b|\bnever\b|\bdon['’]?t touch\b|\bdo not touch\b/i;
+// Where a sentence ends: after a `.`, `!` or `?`, a space and an upper-case letter or a quote, or the end of
+// a line when the next line is not indented, not a list item and not a bold label (those go on, or end the clause on their own).
+const SENTENCE_BREAK = /^(?:[ \t]+["'“‘A-Z]|[ \t]*\n(?=\S)(?![-*+]\s|\*\*))/;
+// A list-form clause opens with a line break and a bullet; an owns label in the next sentence carries the
+// clause on, like a step label.
+const LIST_CLAUSE = /^[ \t]*\n\s*[-*+]\s/;
+const OWNS_AGAIN = /^\s*owns\b/i;
+const ABBREVIATION = /\b(?:e\.g|i\.e)\.$/i;
 
 // A code span is an owned path when it is made of path characters and either ends in a known file
 // extension or names a folder or glob (has a `/`) whose last part is not a bare number (`KEY_1/2` is a
@@ -144,8 +156,63 @@ function braced(span) {
     .slice(0, MAX_BRACED);
 }
 
+// Where the sentences of `part` end: each sentence break outside code spans and parentheses, not after
+// `e.g.` or `i.e.`.
+function sentenceEnds(part) {
+  const masked = part.replace(TICKED, (span) => " ".repeat(span.length));
+  const ends = [];
+  let depth = 0;
+  for (let i = 0; i < masked.length; i += 1) {
+    const ch = masked[i];
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (
+      depth === 0 &&
+      ".!?".includes(ch) &&
+      !ABBREVIATION.test(masked.slice(0, i + 1)) &&
+      SENTENCE_BREAK.test(masked.slice(i + 1)) &&
+      !OWNS_AGAIN.test(masked.slice(i + 1))
+    )
+      ends.push(i + 1);
+  }
+  return ends;
+}
+
+// Where the clause's first sentence ends, or the clause's length. A clause set out as a list (the label,
+// then bullets) runs over its items, whatever they end with.
+const sentenceEnd = (part) =>
+  LIST_CLAUSE.test(part) ? part.length : (sentenceEnds(part)[0] ?? part.length);
+
+// The masked clause with every parenthesised aside blanked (same length, so indexes still line up).
+function outsideAsides(masked) {
+  let depth = 0;
+  let out = "";
+  for (const ch of masked) {
+    if (ch === "(") depth += 1;
+    out += depth > 0 ? " " : ch;
+    if (ch === ")" && depth > 0) depth -= 1;
+  }
+  return out;
+}
+
+// Where a part of a sentence ends and the next begins: a `;`, a "but" or a dash.
+const LIST_ITEM = /\n[ \t]*[-*+]\s/g;
+const SENTENCE_PART = /;|\bbut\b|\s[—–]\s/g;
+
+// Does the part of the sentence that holds `at` say its paths are out of scope? Its trigger comes before
+// `at`, or, for a path in an aside, right after the aside ("(`x`, `y`) stops …": no comma or code span
+// between). `outer` is the clause with its asides blanked and `raw` the same with its code spans kept.
+function saysOut({ outer, raw }, cuts, at, inAside) {
+  const start = cuts.findLast((cut) => cut <= at) ?? 0;
+  const end = cuts.find((cut) => cut > at) ?? outer.length;
+  const trigger = OUT_OF_SCOPE.exec(outer.slice(start, end));
+  if (!trigger) return false;
+  const found = start + trigger.index;
+  return found < at || (inAside && !/[,`]/.test(raw.slice(at, found)));
+}
+
 // Where the owns clause ends in `part` (the text after the label): the first of the next labelled part,
-// the next ` · ` and the next bold label that is not an owns or step label.
+// the next ` · `, the next bold label that is not an owns or step label, and the end of the sentence.
 function clauseEnd(part) {
   const bold = [...part.matchAll(BOLD_LABEL)].find(
     (m) => !OWNS.test(m[0]) && !STEP_LABEL.test(m[0]),
@@ -154,12 +221,14 @@ function clauseEnd(part) {
     NEXT_PART.exec(part)?.index ?? part.length,
     SEPARATOR.exec(part)?.index ?? part.length,
     bold?.index ?? part.length,
+    sentenceEnd(part),
   );
 }
 
 // The parenthesised aside that holds `at`, or "". `masked` is the clause with its code spans blanked,
 // so only the prose's own parentheses count; an aside does not run past a blank line or a list item.
-function asideAt(part, masked, at) {
+// With `toAt` it is the aside's text up to `at`.
+function asideAt(part, masked, at, toAt = false) {
   const para = masked
     .slice(0, at)
     .split(/\n\s*\n|\n\s*[-*]\s/)
@@ -171,7 +240,7 @@ function asideAt(part, masked, at) {
   }
   if (!open.length) return "";
   const close = masked.indexOf(")", at);
-  return part.slice(open[0], close < 0 ? part.length : close);
+  return part.slice(open[0], toAt ? at : close < 0 ? part.length : close);
 }
 
 // A fence opens a line with three or more backticks or tildes and closes at the same mark, at least as
@@ -245,6 +314,17 @@ function readOwns(block, dir) {
   const outside = [];
   let from = 0;
   let negated = false;
+  // Past the leading list of paths, a sentence that says its paths are out of scope drops them: those
+  // after prose, and those in an aside that says it.
+  const outer = outsideAsides(masked);
+  const raw = outsideAsides(part);
+  const cuts = [
+    ...[...outer.matchAll(SENTENCE_PART)].map((m) => m.index),
+    ...[...outer.matchAll(LIST_ITEM)].map((m) => m.index),
+    ...sentenceEnds(part),
+  ].sort((x, y) => x - y);
+  let tail = false;
+  let seen = false;
   for (const m of part.matchAll(TICKED)) {
     const span = m[1].replace(/\s*\n\s*/g, "");
     const between = part.slice(from, m.index);
@@ -252,6 +332,8 @@ function readOwns(block, dir) {
     // ("(no new class)") left out.
     const clause = between.split(/;|\.\s|\n\s*\n|\n\s*[-*]\s/).at(-1);
     from = m.index + m[0].length;
+    if (seen && !LIST_GAP.test(between.replace(/\([^()]*\)/g, " ").replace(/,/g, " "))) tail = true;
+    seen = true;
     // A negation holds to the next comma: a span right after a comma ("not `a`, `b`") shares the
     // previous span's reading, but words after a comma ("`a`, without touching x, `b`") end it.
     const pieces = clause.replace(/\([^()]*\)/g, " ").split(",");
@@ -263,6 +345,12 @@ function readOwns(block, dir) {
     // A path cited with a `:NN` right after it, or inside an aside that cites lines or says what
     // "stays", is context the contract mentions, not a file it owns.
     if (CITED.test(part.slice(from)) || CONTEXT_ASIDE.test(asideAt(part, masked, m.index)))
+      continue;
+    const before = asideAt(part, masked, m.index, true).replace(TICKED, " ");
+    if (
+      (tail && saysOut({ outer, raw }, cuts, m.index, Boolean(before))) ||
+      OUT_OF_SCOPE.test(before)
+    )
       continue;
     for (const one of braced(span)) {
       const path = pathOf(one, tracked);

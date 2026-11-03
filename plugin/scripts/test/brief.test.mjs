@@ -276,6 +276,123 @@ test("ownedFiles on a step contract: owned files once each, cited and kept-as-is
   ]);
 });
 
+test("ownedFiles ends the owns clause at a sentence boundary outside backticks and parentheses", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, `b.ts`. The run reads `c.ts` first."), [
+    "a.ts",
+    "b.ts",
+  ]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`! Then `c.ts`"), ["a.ts"]);
+  assert.deepEqual(ownedFiles('**Owns:** `a.ts`? "Quoted" `c.ts`'), ["a.ts"]);
+  // The end of a line ends it when the next line is not indented; an indented line, a lower-case word
+  // after the stop, and a stop inside parentheses do not.
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`.\nSee `c.ts`"), ["a.ts"]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`.\n  `c.ts`"), ["a.ts", "c.ts"]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`. and `c.ts`"), ["a.ts", "c.ts"]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts` (the host. Then more), `c.ts`"), ["a.ts", "c.ts"]);
+});
+
+test("ownedFiles: a path after e.g. or i.e. stays owned, and a stop inside backticks is no boundary", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, e.g. `b.ts`, i.e. `c.ts`"), [
+    "a.ts",
+    "b.ts",
+    "c.ts",
+  ]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, i.e. Some `b.ts`"), ["a.ts", "b.ts"]);
+  assert.deepEqual(ownedFiles("**Owns:** `v2.1 New` and `a.ts`, `b.ts`"), ["a.ts", "b.ts"]);
+});
+
+test("ownedFiles drops the paths of a sentence that says they are out of scope", () => {
+  // The contract's example, with the aside after a dash and after a comma instead of a separator.
+  for (const join of [" · ", " - ", ", "]) {
+    assert.deepEqual(
+      ownedFiles(
+        `**Owns:** \`a.gd\`, \`b.gd\`${join}a fix that needs a game file (\`ui/title.*\`, \`i18n/strings.csv\`) stops and reports 'needs context' first`,
+      ),
+      ["a.gd", "b.gd"],
+    );
+  }
+  for (const phrase of [
+    "stops",
+    "Needs Context",
+    "ask first",
+    "after the owner's OK",
+    "not owned",
+    "NEVER",
+    "don't touch",
+    "do not touch",
+  ])
+    assert.deepEqual(
+      ownedFiles(`**Owns:** \`a.ts\`, then the extra file (\`x/y.ts\`) ${phrase}`),
+      ["a.ts"],
+      phrase,
+    );
+  // An aside that says it holds paths that are not owned, whatever the rest of the sentence says.
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, `b.ts` (needs context for `c.ts`), `d.ts`"), [
+    "a.ts",
+    "b.ts",
+    "d.ts",
+  ]);
+});
+
+test("ownedFiles keeps a path listed before a sentence part that stops about something else", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, `b.ts` and the run stops when red, `c.ts`"), [
+    "a.ts",
+    "b.ts",
+  ]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, tests `b.ts`; a red run stops there, `c.ts`"), [
+    "a.ts",
+    "b.ts",
+  ]);
+  assert.deepEqual(
+    ownedFiles("**Owns:** `a.ts`, tests `b.ts`; a red run stops, but `c.ts` is owned"),
+    ["a.ts", "b.ts", "c.ts"],
+  );
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts` (the run stops when red), `b.ts`"), [
+    "a.ts",
+    "b.ts",
+  ]);
+});
+
+test("ownedFiles: the sentence rules leave step labels, exclusions, fences, .. paths and :NN citations as they were", () => {
+  assert.deepEqual(
+    ownedFiles(["**step 1 owns:** `a.ts`.", "**step 2 owns:** `b.ts`", "**deps:** T1"].join("\n")),
+    ["a.ts", "b.ts"],
+  );
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, not `b.ts`, `c.ts`"), ["a.ts"]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts` (not more than 200 lines), `b.ts`"), [
+    "a.ts",
+    "b.ts",
+  ]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`\n```\n`x.ts` stops.\n```\n, `b.ts`"), [
+    "a.ts",
+    "b.ts",
+  ]);
+  assert.deepEqual(outsideOwns("**Owns:** `a.ts`, `../x.ts`"), ["../x.ts"]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, `b.ts`:12 and `c.ts` (`:4`)"), ["a.ts"]);
+});
+
+test("ownedFiles: a list-form clause and a repeated owns label run over sentence ends; a stop in one item stays in that item", () => {
+  const list = [
+    "**owns:**",
+    "- `a.ts`: the config line. Nothing else in the file.",
+    "- `b.ts` (a run never survives). Then `c.ts`",
+    "- `d.ts`, never `e.ts`",
+    "- `f.ts`",
+    "**deps:** T1",
+  ].join("\n");
+  assert.deepEqual(ownedFiles(list), ["a.ts", "b.ts", "c.ts", "d.ts", "f.ts"]);
+  assert.deepEqual(ownedFiles("(`x.ts` owns it). Owns `a.ts`, `b.ts`. Then `c.ts`"), [
+    "a.ts",
+    "b.ts",
+  ]);
+  // An aside's own stop drops only the paths after it; one that precedes the aside's paths is not theirs.
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts` (`b.ts`; never `c.ts`), `d.ts` (`e.ts`) stops"), [
+    "a.ts",
+    "b.ts",
+    "d.ts",
+  ]);
+});
+
 test("ownedFiles caps a brace expansion at 64 paths", () => {
   assert.equal(ownedFiles("**Owns:** `{a,b,c,d}/{a,b,c,d}/{a,b,c,d}/{a,b,c,d}.md`").length, 64);
 });
