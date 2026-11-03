@@ -13,6 +13,7 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import { basename, join, relative } from "node:path";
 import { usageError } from "../../cli/help.mjs";
+import { nextStep } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
 import { run as fix } from "../../process/cli/fix.mjs";
@@ -58,7 +59,7 @@ function recallFor(root, task) {
   }));
 }
 
-const summary = (l) => ({ id: l.id, state: l.state, next: l.next });
+const summary = (l) => ({ id: l.id, state: l.state, next: l.next && nextStep(l.next) });
 // A ledger whose episode was not written: one with a payload waiting, and any finished lane (merged, closed,
 // stopped) that never wrote one (merged without an exec close, stopped).
 const pendingEpisodes = (all) =>
