@@ -2,8 +2,10 @@
 // still holds on main, or an owner's --accept whose change is still in effect), `--dry-run` writes nothing,
 // a second run finds nothing, and what it cannot decide is reported. A property test walks random pick /
 // revert / reset / squash / merge / chmod sequences and checks done is written only while main's copy of
-// the task's files is the branch's, mode and bytes.
+// the task's files is the branch's, mode and bytes. By default it walks a few seeds that between them reach
+// every outcome; AGENTRY_PROPERTY_FULL=1 walks all 40 (slow: run it after touching inEffect).
 // Run: node --test plugin/scripts/test/fix-cli.test.mjs
+//      AGENTRY_PROPERTY_FULL=1 node --test --test-name-pattern=property plugin/scripts/test/fix-cli.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, writeFileSync } from "node:fs";
@@ -672,9 +674,15 @@ function fixIn(root, argv) {
 }
 const isDone = (root) => /^\| T1 +\| S1 +\| done /.test(row(read(root, "plan/BOARD.md"), "T1"));
 
+// The seeds walked: all of them under AGENTRY_PROPERTY_FULL=1, else a few that between them reach every
+// outcome (proven by a record, accepted, refused while on main) and a task that sets a mode.
+const SEEDS = process.env.AGENTRY_PROPERTY_FULL
+  ? Array.from({ length: 40 }, (_, i) => i + 1)
+  : [4, 13, 17, 20, 27, 36];
+
 test("property: random pick/revert/reset/squash/no-ff/revert -m 1/chmod walks write done only when on main", () => {
   const done = { record: 0, accept: 0, refused: 0 };
-  for (let seed = 1; seed <= 25; seed++) {
+  for (const seed of SEEDS) {
     const pick = random(seed);
     const { root } = fresh();
     const shape = [null, "add", "drop", "mode"][Math.floor(pick() * 4)];
