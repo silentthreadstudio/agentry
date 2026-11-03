@@ -5,6 +5,8 @@ argument-hint: <task id> [--branch <branch>]
 
 Land task `$ARGUMENTS` on main. What each row means and every edge case: the `conducting` skill's `references/merge.md`.
 
+Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
+
 Run each call from the main checkout, in the foreground, and read its exit code: 0 = done, `next` printed; 1 = a red step stopped it; 2 = usage or refusal. Never pipe it into `grep`/`tail` to decide. Show each step table as printed.
 
 Before the first `--preflight`, main must be clean: `git status` empty, with the setup committed (`.agentry/process.json`, the conductor prompt, `AGENTS.md`, the board rows `/agentry:new` added). Otherwise the `main` row is red and names each file; ask the owner to commit or undo them (never commit for them).

@@ -5,6 +5,8 @@ argument-hint: <task id, as written on the repo's board>
 
 Run the **exec lane** for task `$ARGUMENTS`. The script carries the sequence: run the step it names and dispatch the prompt it prints, nothing else. The rules are in the `conducting` skill's `references/lanes.md`.
 
+Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
+
 1. Only for an id matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` (otherwise ask first), run `agentry lane exec start '<id>'` in the main checkout. Exit 2: show the message (contract candidates, open writers) and stop. Never guess a contract.
 2. Read the printed text (`--json` prints the same fields as one object) and act on `next`. After `start`, check the `owned` list against the contract; a wrong list is fixed with the `amend` line (`agentry lane exec owns <id> --set <paths> --apply`), which also rewrites the waiting brief:
    - `build`, `verify`, `final`: dispatch a fresh agent with `prompt`, verbatim, as the whole prompt. `dispatch.agent` names the type (for a build it is a suggestion: you decide designer or implementer). No worktree isolation option: the worktree exists.

@@ -4,6 +4,8 @@ description: Close the session the same way every time — the owner's pending d
 
 Close the session. Run `agentry lane` and `agentry board` from the main checkout, in the foreground. The details of every field: the `conducting` skill's `references/session.md`.
 
+Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
+
 1. Run `agentry lane session close`. It prints one JSON object and writes nothing: `drafts`, `fixPlan`, `ledgers`, `cleanable`, `strays`, `leftAlone`, `unknown`, `warnings`, `diskFree`, `episodesPending`.
 2. **Drafts.** Re-read the session for owner calls that were never drafted and run `agentry board draft add` for each (the `process` skill's `references/drafts.md`). Then show every pending draft (`agentry board draft list`, and `agentry board draft apply <n>` for what one would write) and ask the owner to OK, drop or correct it. Run `agentry board draft apply <n> --apply` only on that draft's OK.
 3. **Board.** If `fixPlan` lists fixes (it is `agentry board fix` without `--apply`: what it would write), run `agentry board fix --apply` and show what it wrote. Show what it leaves for the owner, each with its command.

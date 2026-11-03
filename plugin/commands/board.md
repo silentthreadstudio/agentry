@@ -5,6 +5,8 @@ argument-hint: "[status|check] [--why <id>] [--ready] [fix [--accept <id>] [--ap
 
 Show this repo's board. Load the `process` skill; `agentry board` (exit 0 OK, 1 findings, 2 refused, usage or bad config; `agentry board <sub> --help` for any subcommand).
 
+Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
+
 Pick the calls from `$ARGUMENTS`:
 - nothing → `agentry board status`, then `agentry board check`;
 - `status` or `check` → that one only;

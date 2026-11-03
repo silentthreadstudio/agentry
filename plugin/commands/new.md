@@ -5,6 +5,8 @@ argument-hint: "<kind> [title or text]"
 
 Add one item. `$ARGUMENTS`: the first word is the kind, the rest is its title or text. Load the `process` skill;
 
+Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
+
 1. **Kind.** No `.agentry/process.json` → say so, point to `/agentry:init`, stop. Read the kinds with `agentry board explain --json`; a missing or unknown kind → list the learned kinds and ask. A kind with no `create` → say no create rule was learned for it and offer `/agentry:init --relearn <kind>`.
 2. **Decision drafts.** For `decision`, run `agentry board draft list` first and follow the skill's `references/drafts.md`: show each pending decision draft and let the owner apply it (`agentry board draft apply <n>` shows what it would add; on OK, `agentry board draft apply <n> --apply` adds the decision and ends this command for that item), drop it (to edit one, drop it and add the corrected draft), or go on to a new decision.
 3. **Before.** Run `agentry board check --json` and keep its findings for the delta.

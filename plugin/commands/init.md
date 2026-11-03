@@ -5,6 +5,8 @@ argument-hint: "[--relearn <kind>] — re-learn one kind of an existing setup"
 
 Set up this repo's process. Load the `process` skill and follow its `references/learn.md`; the file format is in `references/format.md`. `agentry board` (exit 0 OK, 1 findings, 2 usage or spec error).
 
+Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
+
 Pick the state, then follow its section of `learn.md`:
 
 1. **Set up** — `.agentry/process.json` exists. Run `agentry board explain`; show kinds × location × count, the rules on and their findings, and its `lanes` block (gate, conductor, trigger block, default agent, push policy, merge checks, the `.agentry/` commit policy per subfolder, the file's `version`: each ✓ or ✗ with the command that sets it), then any drift (a heading or column gone, unknown status words, an older `version`). A ✗ lane is a step to offer, not an error. Offer repairs one at a time; change nothing unless asked. `$ARGUMENTS` = `--relearn <kind>` → re-learn that kind only.
