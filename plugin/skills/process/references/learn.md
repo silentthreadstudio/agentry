@@ -84,7 +84,7 @@ converted into one; step 11 offers the template's debt kind instead.
 ## (c) Set up — show and repair
 
 1. Run `agentry board explain`. Show kinds × location × count, rules on with their finding counts and its `lanes`
-   block: the workflow file (`.agentry/workflow.json` and its key count, or none), gate, gate.quick, conductor prompt and rules, trigger block, default agent, `merge.push`, merge
+   block: the workflow file (`.agentry/workflow.json` and its key count, or none), gate.tiers, gate.roles (and gate.checklist when set), conductor prompt and rules, trigger block, default agent, `merge.push`, merge
    checks, the `.agentry/` commit policy per subfolder (tracked, ignored or undecided; `memory/` tracked is
    a privacy choice to point out) and the file's `version`. Each is ✓ or ✗ with the command that sets it; a
    ✗ is a lane not wired yet (exit stays 0), offered in the order of "Wiring the lanes". Read the rest of the
@@ -123,12 +123,18 @@ and § guard and cleanup.
    `CONTRIBUTING.md`) naming the merge gate; a gate script (`tools/ci/gate*`, `scripts/gate*`, a `Makefile`
    target such as `check` or `ci`); the CI config (`.github/workflows/*.yml`, `.gitlab-ci.yml`); the
    `package.json` scripts. Prefer the one command the repo itself calls its gate.
-   - `gate.command` is argv, run with no shell in the git root: `["tools/ci/gate.sh"]`,
-     `["pnpm", "run", "check"]`. Propose it as argv, never through a shell. With no single command, or
-     steps that genuinely need a shell (`&&`, a pipe), point to the repo's own script that runs them
-     (`scripts/gate.sh`) and offer to write one with the owner's OK.
-   - `gate.quick` only when the repo has a cheaper tier with a stated scope (a `--quick` flag "for docs-only
-     changes"): its `command`, and `only` globs for exactly that scope (`["docs/**", "**/*.md"]`).
+   - `gate.tiers`: the repo's gate is the last tier, `{ "name": "full", "command": [...] }`. Each tier's
+     `command` is argv, run with no shell in the git root: `["tools/ci/gate.sh"]`, `["pnpm", "run",
+     "check"]`. Propose it as argv, never through a shell. With no single command, or steps that genuinely
+     need a shell (`&&`, a pipe), point to the repo's own script that runs them (`scripts/gate.sh`) and
+     offer to write one with the owner's OK.
+   - A cheaper tier goes before the last one only when the repo states its scope (a `--quick` flag "for
+     docs-only changes"): its `name`, its `command`, and `"when": { "only": [...] }` with globs for exactly
+     that scope (`["docs/**", "**/*.md"]`). With no stated scope, the gate is the one tier.
+   - Leave `gate.roles` out (build pick, verify none, merge pick) unless the owner asks for another; never
+     write `gate.command` or `gate.quick`: 0.3 refuses both. An existing workflow file that has them is
+     rewritten this way: the command becomes the last tier, the quick tier a tier with `"when": { "only":
+     <its only> }` before it.
    - `gate.after`: files the repo's workflow changes after the gate is green (a changelog written at merge).
      Default none.
    - Show the proposal with where each part came from, and confirm it. Don't run the gate unasked: it may be

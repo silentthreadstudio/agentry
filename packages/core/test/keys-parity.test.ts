@@ -76,3 +76,11 @@ test("the config defaults agree: push ask, three writers", () => {
   assert.deepEqual(parsed.merge, { push: "ask" });
   assert.deepEqual(parsed.lanes, { maxWriters: 3 });
 });
+
+test("the keys 0.3 replaced point to gate.tiers in zod, as in the plugin", () => {
+  const old = { gate: { tiers: [{ name: "full", command: ["x"] }], command: ["x"], quick: {} } };
+  const issues = Workflow.safeParse(old).error?.issues ?? [];
+  const at = (key: string) => issues.find((i) => dotted(i.path) === `gate.${key}`)?.message ?? "";
+  assert.match(at("command"), /^replaced by gate\.tiers \(0\.3\): make it the last tier/);
+  assert.match(at("quick"), /^replaced by gate\.tiers: a tier with "when": \{ "only"/);
+});

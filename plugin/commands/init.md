@@ -17,7 +17,7 @@ Then ask, once each and only what can't be inferred: is `.agentry/` committed, `
 
 Then wire the lanes, in order, following `learn.md` § Wiring the lanes. A step already set up is shown, not asked again; every step writes to `.agentry/workflow.json`, each change through the draft (`.agentry/run/process/workflow.json`) and `agentry board explain --process .agentry/run/process/process.json`:
 
-1. **Gate.** Learn it from the repo's workflow doc, gate scripts, CI config and `package.json` scripts; show where each part came from; confirm `gate.command`, `gate.quick` (only with a stated scope) and `gate.after`.
+1. **Gate.** Learn it from the repo's workflow doc, gate scripts, CI config and `package.json` scripts; show where each part came from; confirm `gate.tiers` (the repo's gate as the last tier; a cheaper tier before it only with a stated scope, as its `when.only`) and `gate.after`. Never write `gate.command` or `gate.quick`: rewrite an old one as tiers.
 2. **Conductor prompt.** Offer the repo's own or the template `templates/CONDUCTOR.md` → `conductor.prompt` and `conductor.rules`.
 3. **Trigger block.** Show `agentry board instructions` (the block for `AGENTS.md` and the `@AGENTS.md` import for an existing `CLAUDE.md`, or `@../AGENTS.md` for `.claude/CLAUDE.md` when that is where the instructions live); on OK, `agentry board instructions --apply`. Propose replacements for competing lines in the repo's instruction files; edit them only on OK.
 4. **Default agent.** `agentry board default-agent`; on OK `--apply`, then `--verify`; `--verify live` only with the owner's OK (one small request). Say that teammates without Agentry fall back to plain Claude Code.

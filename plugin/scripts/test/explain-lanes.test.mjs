@@ -47,13 +47,21 @@ test("a repo with no lanes set up lists each as ✗ with its command, and still 
     assert.equal(res.status, 0);
     const block = res.stdout.split("\nlanes")[1];
     assert.ok(block, "a lanes block follows the rules");
-    for (const lane of ["gate", "conductor.prompt", "trigger block", "default agent", "merge.push"])
+    for (const lane of [
+      "gate.tiers",
+      "conductor.prompt",
+      "trigger block",
+      "default agent",
+      "merge.push",
+    ])
       assert.match(block, new RegExp(`^✗ +${lane.replace(".", "\\.")} `, "m"), lane);
     assert.match(block, /set: board instructions --apply/);
     assert.match(block, /set: board default-agent --apply/);
     assert.match(block, /set: \/agentry:config merge\.push=/);
     const rows = lanes();
-    assert.equal(rows.gate.ok, false);
+    assert.equal(rows["gate.tiers"].ok, false);
+    assert.equal(rows.gate, undefined);
+    assert.equal(rows["gate.roles"], undefined);
     assert.equal(rows["merge.checks"].ok, false);
     assert.equal(rows["process version"].ok, true);
     assert.match(rows["process version"].value, /^1 · plugin \d/);
@@ -65,8 +73,23 @@ test("a repo with no lanes set up lists each as ✗ with its command, and still 
 test("the lanes block fits 80 columns", () => {
   const { root, board } = repo({
     gate: {
-      command: ["tools/ci/gate.sh", "--with-a-long-flag-name", "--and-another-long-flag-name"],
-      quick: { command: ["tools/ci/gate.sh", "--quick"], only: ["docs/**", "**/*.md"] },
+      tiers: [
+        {
+          name: "docs-and-markdown-only",
+          command: ["tools/ci/gate.sh", "--quick"],
+          when: { only: ["docs/**", "**/*.md"] },
+        },
+        {
+          name: "the-whole-test-suite",
+          command: ["tools/ci/gate.sh", "--with-a-long-flag-name"],
+          when: { any: ["src/**"], flag: true },
+        },
+        { name: "full", command: ["tools/ci/gate.sh"] },
+      ],
+      checklist: [
+        { name: "ui-smoke", text: "Open each screen", when: { any: ["src/ui/**"], flag: true } },
+        { name: "owner-saw-it-running", text: "The owner saw it" },
+      ],
     },
   });
   try {
@@ -79,7 +102,12 @@ test("the lanes block fits 80 columns", () => {
 
 test("each lane turns ✓ once it is wired", () => {
   const { root, board, lanes } = repo({
-    gate: { command: ["make", "check"], quick: { command: ["make", "docs"], only: ["docs/**"] } },
+    gate: {
+      tiers: [
+        { name: "docs", command: ["make", "docs"], when: { only: ["docs/**"] } },
+        { name: "full", command: ["make", "check"] },
+      ],
+    },
     extensions: { merge: { checks: ["repo-merge"] } },
     conductor: { prompt: "CONDUCTOR.md", rules: "Standing rules" },
   });
@@ -90,8 +118,8 @@ test("each lane turns ✓ once it is wired", () => {
     assert.equal(board("default-agent", "--apply").status, 0);
     const rows = lanes();
     for (const lane of [
-      "gate",
-      "gate.quick",
+      "gate.tiers",
+      "gate.roles",
       "conductor.prompt",
       "conductor.rules",
       "trigger block",
@@ -100,7 +128,7 @@ test("each lane turns ✓ once it is wired", () => {
       "merge.checks",
     ])
       assert.equal(rows[lane].ok, true, lane);
-    assert.equal(rows.gate.value, "make check");
+    assert.equal(rows["gate.tiers"].value, "docs (only 1 glob) → full");
     assert.equal(rows["conductor.rules"].value, "Standing rules (line 3)");
     assert.equal(rows["merge.push"].value, "auto");
   } finally {
@@ -155,7 +183,11 @@ test("each newer key that is set shows a row with what it matches; an unset one 
     worktrees: { keep: ["side-*"] },
     guard: { allow: ["notes/**"] },
     cleanup: { disposable: ["build/**"] },
-    gate: { command: ["make", "check"], flaky: ["a", "b", "c"], concurrency: 2 },
+    gate: {
+      tiers: [{ name: "full", command: ["make", "check"] }],
+      flaky: ["a", "b", "c"],
+      concurrency: 2,
+    },
   });
   try {
     const tree = `${root}-side`;
@@ -248,7 +280,9 @@ test("a long guard.allow list is cut in its globs, never in its count", () => {
 });
 
 test("the first lanes row names the workflow file and its keys, or none; --json names both files", () => {
-  const { root, board, lanes } = repo({ gate: { command: ["make", "check"] } });
+  const { root, board, lanes } = repo({
+    gate: { tiers: [{ name: "full", command: ["make", "check"] }] },
+  });
   try {
     const rows = lanes();
     assert.deepEqual(rows["workflow file"], {
@@ -287,6 +321,45 @@ test("the commit policy has a .agentry/workflow.json row right after .agentry/pr
       [lanes()[".agentry/workflow.json"].ok, lanes()[".agentry/workflow.json"].value],
       [true, "tracked"],
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the gate rows: its tiers in order, the tier each role runs, and the checklist", () => {
+  const { root, board, lanes } = repo({
+    gate: {
+      tiers: [
+        {
+          name: "docs",
+          command: ["scripts/gate.sh", "--quick"],
+          when: { only: ["docs/**", "*.md"] },
+        },
+        {
+          name: "tests",
+          command: ["scripts/gate.sh", "--tests"],
+          when: { only: ["src/ui/**", "tests/**"] },
+        },
+        { name: "full", command: ["scripts/gate.sh"] },
+      ],
+      roles: { build: "pick", verify: "none", merge: "pick" },
+      checklist: [
+        {
+          name: "ui-smoke",
+          text: "Open each changed screen",
+          when: { any: ["src/ui/**"], flag: true },
+        },
+      ],
+    },
+  });
+  try {
+    const block = board("explain").stdout.split("\nlanes")[1];
+    assert.match(block, /^✓ +gate\.tiers +docs \(only 2 globs\) → tests \(only 2 globs\) → full$/m);
+    assert.match(block, /^✓ +gate\.roles +build pick · verify none · merge pick$/m);
+    assert.match(block, /^✓ +gate\.checklist +1 item: ui-smoke \(any 1 glob, or flagged\)$/m);
+    assert.doesNotMatch(block, /^. +gate(\.quick)? /m);
+    // The roles row shows the defaults when gate.roles is not set.
+    assert.equal(lanes()["gate.roles"].value, "build pick · verify none · merge pick");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

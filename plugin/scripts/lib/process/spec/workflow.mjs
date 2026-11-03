@@ -10,11 +10,16 @@ import {
   FULL,
   distinct,
   filled,
+  has,
+  is,
   isObject,
+  join,
   like,
+  namesOf,
   oneOf,
   own,
   posInt,
+  quote,
   record,
   regex,
   repoPath,
@@ -37,8 +42,9 @@ const lifecycle = shape({
 /** One `exec.kinds` entry: the lifecycle mapping of a kind exec runs beside the lifecycle's. The key
  *  names the kind, and it writes no handoff. The format reference's "exec kinds" table is bound to it. */
 export const execKindSchema = shape({ "on!": on, write: shape(writes) }, FULL);
-// The repo's gate (argv, no shell), its quick tier and the files it may leave changed; the repo
-// skills merge runs as checks; the repo's conductor prompt (plan R1b §2, §3.1).
+// The repo's gate: its tiers (argv, no shell, each but the last with a `when`), the tier each role runs,
+// a manual checklist and the files it may leave changed; the repo skills merge runs as checks; the
+// repo's conductor prompt (plan R1b §2, §3.1).
 const argv = filled(text);
 const globs = filled(repoPath);
 // A log glob for `gate.flakyLogs`: from the gate's cwd, or from the temp directory when it starts `$TMPDIR/`.
@@ -49,10 +55,77 @@ const logGlob = (v, at, bad) => {
   if (rest === "" || rest.startsWith("/") || rest.split("/").some((x) => x === ".." || x === "."))
     bad(at, `"${v}" is not a glob from the gate's cwd or $TMPDIR/`);
 };
-const gate = shape(
+const name = like(/^[a-z0-9][a-z0-9-]*$/, "a name (lower-case letters, digits and -)");
+// `pick` and `none` are what a role says instead of a tier, so no tier is called that.
+const ROLE_WORDS = ["pick", "none"];
+const tierName = (v, at, bad) => {
+  name(v, at, bad);
+  if (ROLE_WORDS.includes(v)) bad(at, `cannot be "${v}": that is a gate.roles value`);
+};
+// When a tier (or a checklist item) applies: any one of its conditions holding is enough.
+const whenKeys = shape(
   {
-    "command!": argv,
-    quick: shape({ "command!": argv, "only!": globs }, FULL),
+    only: globs,
+    any: globs,
+    flag: is((v) => v === true, "takes only true (leave it out instead)"),
+  },
+  FULL,
+);
+const when = Object.assign(
+  (v, at, bad) => {
+    whenKeys(v, at, bad);
+    if (isObject(v) && !namesOf(whenKeys.keys).some((k) => has(v, k)))
+      bad(at, 'should hold "only", "any" or "flag"');
+  },
+  { keys: whenKeys.keys },
+);
+// A non-empty list of shapes with unique `name`s; `more` checks each item against the list. The item's
+// shape rides along (`item`) for the format reference.
+const named = (item, more = () => {}) =>
+  Object.assign(
+    (v, at, bad) => {
+      filled(item)(v, at, bad);
+      if (!Array.isArray(v)) return;
+      v.forEach((x, i) => {
+        const n = own(x, "name");
+        if (typeof n === "string" && v.findIndex((y) => own(y, "name") === n) < i)
+          bad(`${at}[${i}].name`, `repeats "${n}"`);
+        if (isObject(x)) more(x, i === v.length - 1, `${at}[${i}]`, bad);
+      });
+    },
+    { item },
+  );
+// The tiers in precedence order: the last is the fallback, so it alone has no `when`.
+const tiers = named(
+  shape({ "name!": tierName, "command!": argv, when }, FULL),
+  (t, last, at, bad) => {
+    if (t.name === "full" && !last) bad(`${at}.name`, '"full" names the last tier only');
+    if (last && has(t, "when"))
+      bad(`${at}.when`, "the last tier is the fallback: it takes no when");
+    if (!last && !has(t, "when")) bad(`${at}.when`, "is required on every tier but the last");
+  },
+);
+const checklist = named(shape({ "name!": name, "text!": text, when }, FULL));
+// What each role may name besides a tier.
+const ROLES = {
+  build: ["pick", "full"],
+  verify: ["pick", "full", "none"],
+  merge: ["pick", "full"],
+};
+const roles = shape({ build: str, verify: str, merge: str }, FULL);
+// The keys 0.3 replaced, refused with where their value goes now.
+const REPLACED = new Map([
+  [
+    "command",
+    'replaced by gate.tiers (0.3): make it the last tier, { "name": "full", "command": […] }',
+  ],
+  ["quick", 'replaced by gate.tiers: a tier with "when": { "only": […] } before the last'],
+]);
+const gateKeys = shape(
+  {
+    "tiers!": tiers,
+    roles,
+    checklist,
     after: globs,
     concurrency: posInt,
     flaky: filled(text),
@@ -60,6 +133,25 @@ const gate = shape(
     note: text,
   },
   FULL,
+);
+const gate = Object.assign(
+  (v, at, bad) => {
+    if (!isObject(v)) return gateKeys(v, at, bad);
+    for (const [key, message] of REPLACED) if (has(v, key)) bad(join(at, key), message);
+    gateKeys(Object.fromEntries(Object.entries(v).filter(([k]) => !REPLACED.has(k))), at, bad);
+    const names = Array.isArray(v.tiers)
+      ? v.tiers.map((t) => own(t, "name")).filter((n) => typeof n === "string")
+      : [];
+    for (const [role, words] of Object.entries(ROLES)) {
+      const value = own(own(v, "roles"), role);
+      if (typeof value === "string" && !words.includes(value) && !names.includes(value))
+        bad(
+          join(at, `roles.${role}`),
+          `names no tier ("${value}"): the tiers are ${quote(names)}; or say ${words.join(", ")}`,
+        );
+    }
+  },
+  { keys: gateKeys.keys },
 );
 const skill = like(/^[a-z0-9][a-z0-9-]*$/, "a skill name (lower-case letters, digits and -)");
 // The exec lane's own settings: which items a verifier reads, and which model each dispatch names.
@@ -100,9 +192,18 @@ export const workflowSchema = shape({
   commits: shape({ subjectMax: posInt, subjectPattern: pattern, forbid: filled(pattern) }, FULL),
 });
 
-/** Check a parsed workflow file: each problem goes to `bad(path, message)`. */
+/** Check a parsed workflow file: each problem goes to `bad(path, message)`. One `lane merge --check
+ *  <name>` records a checklist item or a merge check, so no name is both. */
 export function validateWorkflow(value, bad) {
   workflowSchema(value, "", (at, message) => bad(at || "the workflow file", message));
+  const items = own(own(value, "gate"), "checklist");
+  const checks = own(own(own(value, "extensions"), "merge"), "checks");
+  if (!Array.isArray(items) || !Array.isArray(checks)) return;
+  items.forEach((item, i) => {
+    const n = own(item, "name");
+    if (typeof n === "string" && checks.includes(n))
+      bad(`gate.checklist[${i}].name`, `"${n}" is also an extensions.merge.checks name`);
+  });
 }
 
 /** Which items the exec lane sends to a verifier: "all" (default), "flagged" or "none". */
@@ -160,14 +261,19 @@ export function modelFor(spec, role, { flagged = false, ui = false } = {}) {
   );
 }
 
-/** The repo's gate with its defaults filled (`after: []`, `concurrency: 1`, `flaky: []`, `flakyLogs: []`,
- *  no quick tier), or null when the workflow file has none. A copy: changing it never changes the spec. */
+// The tier each role runs when `gate.roles` does not say.
+const ROLE_DEFAULTS = { build: "pick", verify: "none", merge: "pick" };
+
+/** The repo's gate with its defaults filled (`roles` build pick, verify none, merge pick; `checklist: []`,
+ *  `after: []`, `concurrency: 1`, `flaky: []`, `flakyLogs: []`), or null when the workflow file has none.
+ *  A copy: changing it never changes the spec. */
 export function gateOf(spec) {
   const g = own(spec, "gate");
   if (!isObject(g)) return null;
   return structuredClone({
-    command: g.command,
-    quick: g.quick ?? null,
+    tiers: g.tiers,
+    roles: { ...ROLE_DEFAULTS, ...g.roles },
+    checklist: g.checklist ?? [],
     after: g.after ?? [],
     concurrency: g.concurrency ?? 1,
     flaky: g.flaky ?? [],

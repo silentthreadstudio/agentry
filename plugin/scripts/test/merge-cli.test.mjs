@@ -79,8 +79,10 @@ const SPEC = {
     handoff: "- **{id}** ({sha}): {summary}",
   },
   gate: {
-    command: ["node", "gate.mjs", "full"],
-    quick: { command: ["node", "gate.mjs", "quick"], only: ["docs/**"] },
+    tiers: [
+      { name: "docs", command: ["node", "gate.mjs", "docs"], when: { only: ["docs/**"] } },
+      { name: "full", command: ["node", "gate.mjs", "full"] },
+    ],
     after: ["docs/**"],
   },
 };
@@ -175,8 +177,10 @@ function build(files) {
   return { path, shas };
 }
 
-/** An exec ledger for T1, verified, with a green full worktree gate on `gated` (a commit SHA). */
-function execLedger({ path, gated }) {
+const FULL_CMD = ["node", "gate.mjs", "full"];
+// An exec ledger for the branch, verified; `gated` adds a green worktree gate of the full tier on that
+// commit, `record` changes that gate record (a tier, an argv, an exit, no command).
+function execLedger({ path, gated, record = {} }) {
   writeLedger(root, {
     v: 1,
     id: ID,
@@ -194,7 +198,9 @@ function execLedger({ path, gated }) {
       ? [
           {
             where: "worktree",
+            role: "build",
             tier: "full",
+            command: FULL_CMD,
             commit: gated,
             tree: git(root, "rev-parse", `${gated}^{tree}`),
             exit: 0,
@@ -203,6 +209,7 @@ function execLedger({ path, gated }) {
             log: "/dev/null",
             seconds: 1,
             at: "2026-10-31T00:00:00.000Z",
+            ...record,
           },
         ]
       : [],
@@ -247,7 +254,10 @@ test("an adopted branch lands: picks, full gate, done + commit cell + handoff, o
   for (const step of ["ledger", "board", "checks", "main", "land", "gate", "record", "commit"])
     assert.match(res.stdout, new RegExp(`[✓·] ${step}`), step);
   assert.match(res.stdout, /full ran on main: exit 0/);
-  assert.match(res.stdout, /full: src\/a\.txt is outside the quick tier's "only" globs/);
+  assert.match(
+    res.stdout,
+    /full: no earlier tier's "when" holds \(docs: src\/a\.txt is outside its "only"\)/,
+  );
   assert.match(res.stdout, /not skipped: no gate record/);
 
   // main: preHead → the two picks → the board commit, nothing else; clean.
@@ -271,7 +281,7 @@ test("an adopted branch lands: picks, full gate, done + commit cell + handoff, o
   assert.equal(readLedger(root, ID).state, "merged");
 });
 
-test("the gate is skipped only on a green full worktree gate whose tree is main's after the land", () => {
+test("the gate is skipped only on a green worktree gate of the land's tier and argv whose tree is main's after the land", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
   execLedger({ path, gated: shas[0] });
   const res = merge(ID, "--message", "docs(board): land T1");
@@ -279,6 +289,52 @@ test("the gate is skipped only on a green full worktree gate whose tree is main'
   assert.match(res.stdout, new RegExp(`skipped: gate on ${shas[0].slice(0, 7)}, tree identical`));
   assert.equal(readLedger(root, ID).gates.filter((g) => g.where === "main").length, 0);
 });
+
+test("a green record of a cheaper tier before a full land runs full, saying why", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({
+    path,
+    gated: shas[0],
+    record: { tier: "docs", command: ["node", "gate.mjs", "docs"] },
+  });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /full ran on main: exit 0/);
+  assert.match(res.stdout, /not skipped: the recorded gate ran docs, the land needs full/);
+  const ran = readLedger(root, ID).gates.at(-1);
+  assert.deepEqual(
+    [ran.where, ran.role, ran.tier, ran.command],
+    ["main", "merge", "full", FULL_CMD],
+  );
+});
+
+// A worktree record the land cannot trust, and the reason its gate row gives.
+for (const [what, record, why] of [
+  [
+    "whose tier command was edited since",
+    { command: ["node", "gate.mjs", "full", "--old"] },
+    /not skipped: the full tier's command changed since the gate ran/,
+  ],
+  ["that is red", { exit: 1 }, /not skipped: the recorded gate exited 1/],
+  [
+    "from before tiers",
+    { command: undefined },
+    /not skipped: the recorded gate \(full tier\) has no command/,
+  ],
+  [
+    "of the old quick tier",
+    { tier: "quick", command: undefined },
+    /not skipped: the recorded gate \(quick tier\) has no command/,
+  ],
+])
+  test(`a worktree record ${what} never lets the land skip`, () => {
+    const { path, shas } = build({ "src/a.txt": "a\n" });
+    execLedger({ path, gated: shas[0], record });
+    const res = merge(ID, "--message", "docs(board): land T1");
+    assert.equal(res.status, 0, out(res));
+    assert.match(res.stdout, /full ran on main: exit 0/);
+    assert.match(res.stdout, why);
+  });
 
 test("a post-gate docs commit inside `after` still skips, and the table names the glob it matched", () => {
   const { path, shas } = build({ "src/a.txt": "a\n", "docs/notes.md": "later\n" });
@@ -338,14 +394,27 @@ test("a recorded worktree gate is not trusted after main moved, and an episode o
   assert.equal(readLedger(root, ID).state, "merged");
 });
 
-test("a docs-only change runs the quick tier and says why", () => {
+test("a docs-only change runs the docs tier and says why", () => {
   build({ "docs/guide.md": "words\n" });
   const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
   assert.equal(res.status, 0, out(res));
-  assert.match(res.stdout, /quick ran on main: exit 0/);
-  assert.match(res.stdout, /quick: all 1 changed file\(s\) match the quick tier's "only"/);
-  const log = readLedger(root, ID).gates.at(-1).log;
-  assert.match(readFileSync(log, "utf8"), /gate tier quick/);
+  assert.match(res.stdout, /docs ran on main: exit 0/);
+  assert.match(res.stdout, /docs: every changed file \(1\) matches its "only"/);
+  const ran = readLedger(root, ID).gates.at(-1);
+  assert.deepEqual(
+    [ran.role, ran.tier, ran.command],
+    ["merge", "docs", ["node", "gate.mjs", "docs"]],
+  );
+  assert.match(readFileSync(ran.log, "utf8"), /gate tier docs/);
+});
+
+test("merge: full runs the last tier on a docs-only change", () => {
+  commitSpec({ ...SPEC, gate: { ...SPEC.gate, roles: { merge: "full" } } });
+  build({ "docs/guide.md": "words\n" });
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /full ran on main: exit 0/);
+  assert.match(res.stdout, /full: gate\.roles\.merge is "full"/);
 });
 
 test("the land's gate on main runs behind the gate lock, taking over an old empty lock file", () => {
@@ -1452,6 +1521,124 @@ test("a check recorded on an older tip does not count once the branch moved", ()
   assert.match(out(res), /repo-merge: pass on .*, but the branch is at .*: record it again/);
 });
 
+// The gate with a manual checklist: `ui-smoke` for a change under src/ui/ or a flagged lane, `owner-ok`
+// on every land; `repo-merge` a skill check beside them.
+const withChecklist = () => {
+  commitSpec({
+    ...SPEC,
+    gate: {
+      ...SPEC.gate,
+      checklist: [
+        {
+          name: "ui-smoke",
+          text: "Open each changed screen; no errors in the console",
+          when: { any: ["src/ui/**"], flag: true },
+        },
+      ],
+    },
+    extensions: { merge: { checks: ["repo-merge"] } },
+  });
+  mkdirSync(join(root, ".claude", "skills", "repo-merge"), { recursive: true });
+  writeFileSync(join(root, ".claude", "skills", "repo-merge", "SKILL.md"), "# repo merge\n");
+  writeFileSync(join(root, ".git", "info", "exclude"), ".claude/\n");
+};
+
+test("an applicable checklist item blocks the land until recorded pass; skill and item records stay apart", () => {
+  withChecklist();
+  build({ "src/ui/a.txt": "a\n" });
+  const pf = merge(ID, "--branch", BRANCH, "--preflight");
+  assert.equal(pf.status, 0, out(pf));
+  assert.match(pf.stdout, /repo-merge: not recorded/);
+  assert.match(
+    pf.stdout,
+    /ui-smoke: not recorded: "Open each changed screen; no errors in the console"/,
+  );
+  assert.match(pf.stdout, /0\/2 passed/);
+  assert.equal(merge(ID, "--check", "repo-merge=pass").status, 0);
+  const pre = head();
+  const refused = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(refused.status, 2, out(refused));
+  assert.match(out(refused), /next: lane merge T1 --check ui-smoke=pass\|fail/);
+  assert.equal(head(), pre);
+  const skill = readLedger(root, ID).checks["repo-merge"];
+  const rec = merge(ID, "--check", "ui-smoke=pass", "--note", "seen");
+  assert.equal(rec.status, 0, out(rec));
+  assert.match(rec.stdout, /ui-smoke: pass on/);
+  const checks = readLedger(root, ID).checks;
+  assert.deepEqual(checks["repo-merge"], skill);
+  assert.equal(checks["ui-smoke"].result, "pass");
+  // Recording the skill again leaves the item's record as it was.
+  const item = checks["ui-smoke"];
+  assert.equal(merge(ID, "--check", "repo-merge=pass", "--note", "again").status, 0);
+  assert.deepEqual(readLedger(root, ID).checks["ui-smoke"], item);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /ui-smoke: pass \(seen\)/);
+});
+
+test("a checklist item that does not apply is not listed", () => {
+  withChecklist();
+  build({ "src/a.txt": "a\n" });
+  const pf = merge(ID, "--branch", BRANCH, "--preflight");
+  assert.doesNotMatch(pf.stdout, /ui-smoke/);
+  assert.match(pf.stdout, /0\/1 passed/);
+});
+
+test("a checklist item recorded on an older tip is pending again", () => {
+  withChecklist();
+  const { path } = build({ "src/ui/a.txt": "a\n" });
+  assert.equal(merge(ID, "--branch", BRANCH, "--preflight").status, 0);
+  assert.equal(merge(ID, "--check", "repo-merge=pass").status, 0);
+  assert.equal(merge(ID, "--check", "ui-smoke=pass").status, 0);
+  commitFile(path, "src/ui/b.txt", "b\n");
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /ui-smoke: pass on .*, but the branch is at .*: record it again/);
+});
+
+test("--check naming neither a merge check nor a checklist item exits 2 and writes nothing", () => {
+  withChecklist();
+  build({ "src/ui/a.txt": "a\n" });
+  assert.equal(merge(ID, "--branch", BRANCH, "--preflight").status, 0);
+  const before = readLedger(root, ID);
+  const bad = merge(ID, "--check", "other=pass");
+  assert.equal(bad.status, 2, out(bad));
+  assert.match(
+    bad.stderr,
+    /"other" is not in extensions\.merge\.checks \(repo-merge\) or gate\.checklist \(ui-smoke\)/,
+  );
+  assert.deepEqual(readLedger(root, ID), before);
+});
+
+test("an old gate.command or gate.quick refuses the preflight at load, naming gate.tiers, writing nothing", () => {
+  setSpec({
+    ...SPEC,
+    gate: { command: ["node", "gate.mjs"], quick: { command: ["x"], only: ["docs/**"] } },
+  });
+  build({ "src/a.txt": "a\n" });
+  const pf = merge(ID, "--branch", BRANCH, "--preflight");
+  assert.equal(pf.status, 2, out(pf));
+  assert.match(out(pf), /gate\.command replaced by gate\.tiers \(0\.3\): make it the last tier/);
+  assert.match(out(pf), /gate\.quick replaced by gate\.tiers: a tier with "when"/);
+  assert.equal(readLedger(root, ID), null);
+});
+
+test("a checklist name equal to a merge check is refused at load", () => {
+  const spec = {
+    ...SPEC,
+    gate: { ...SPEC.gate, checklist: [{ name: "repo-merge", text: "look" }] },
+    extensions: { merge: { checks: ["repo-merge"] } },
+  };
+  setSpec(spec);
+  build({ "src/a.txt": "a\n" });
+  const pf = merge(ID, "--branch", BRANCH, "--preflight");
+  assert.equal(pf.status, 2, out(pf));
+  assert.match(
+    out(pf),
+    /gate\.checklist\[0\]\.name "repo-merge" is also an extensions\.merge\.checks name/,
+  );
+});
+
 test("a recorded fail stops the land", () => {
   commitSpec({ ...SPEC, extensions: { merge: { checks: ["repo-merge"] } } });
   mkdirSync(join(root, ".claude", "skills", "repo-merge"), { recursive: true });
@@ -1674,7 +1861,7 @@ console.log("FAILED test_budget");
 process.exit(1);`;
   commitSpec({
     ...SPEC,
-    gate: { command: ["node", "-e", script], flaky: ["test_budget"] },
+    gate: { tiers: [{ name: "full", command: ["node", "-e", script] }], flaky: ["test_budget"] },
   });
   build({ "src/a.txt": "a\n" });
 };
@@ -1716,7 +1903,10 @@ const again = fs.existsSync(${JSON.stringify(marker)});
 fs.writeFileSync(${JSON.stringify(marker)}, "");
 console.log(again ? "FAILED test_real" : "FAILED test_budget");
 process.exit(1);`;
-  commitSpec({ ...SPEC, gate: { command: ["node", "-e", script], flaky: ["test_budget"] } });
+  commitSpec({
+    ...SPEC,
+    gate: { tiers: [{ name: "full", command: ["node", "-e", script] }], flaky: ["test_budget"] },
+  });
   build({ "src/a.txt": "a\n" });
   const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
   assert.equal(res.status, 1, out(res));
@@ -1732,7 +1922,11 @@ console.log("FAILED test_budget");
 process.exit(1);`;
   commitSpec({
     ...SPEC,
-    gate: { command: ["node", "-e", script], flaky: ["test_budget"], concurrency: 2 },
+    gate: {
+      tiers: [{ name: "full", command: ["node", "-e", script] }],
+      flaky: ["test_budget"],
+      concurrency: 2,
+    },
   });
   build({ "src/a.txt": "a\n" });
   // Slot 2 is held by a process that leaves a stray file in main once the first run is over, then exits:
@@ -1784,7 +1978,12 @@ test("a land gate red in an unlisted test is not re-run and still says to fix th
   commitSpec({
     ...SPEC,
     gate: {
-      command: ["node", "-e", 'console.log("FAILED test_real"); process.exit(1)'],
+      tiers: [
+        {
+          name: "full",
+          command: ["node", "-e", 'console.log("FAILED test_real"); process.exit(1)'],
+        },
+      ],
       flaky: ["test_budget"],
     },
   });

@@ -35,7 +35,7 @@ import {
   workingBoard,
   writtenByScript,
 } from "../carry-io.mjs";
-import { pickTier } from "../gate.mjs";
+import { globMatch } from "../gate.mjs";
 import {
   commitOf,
   currentBranch,
@@ -128,9 +128,8 @@ function sharedFiles({ root }, diff) {
     ]),
   );
 }
-// A glob test with the gate's own matcher (a quick tier whose only globs are these), as exec's guard does.
-const matchesAny = (globs, path) =>
-  globs.length > 0 && pickTier({ quick: { command: ["-"], only: globs } }, [path]).tier === "quick";
+// A glob test with the gate's own matcher, as exec's guard does.
+const matchesAny = (globs, path) => globMatch(globs, path);
 const PLAIN_EDIT = /^(?: M|M |MM)$/;
 
 // The entries that are the owner's plain edits of a `guard.allow` file, or a new untracked one. A board

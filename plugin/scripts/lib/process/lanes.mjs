@@ -21,6 +21,7 @@ import { readInside } from "./read.mjs";
 import { columns } from "./render.mjs";
 import { WORKFLOW_KEYS } from "./spec.mjs";
 import { SPEC_VERSION } from "./spec/board.mjs";
+import { gateOf } from "./spec/workflow.mjs";
 
 const INIT = "/agentry:init";
 // What `.agentry/` holds, and the command that decides each when it is neither tracked nor ignored.
@@ -110,6 +111,38 @@ function push(root) {
 
 const count = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
+// A tier's or checklist item's `when` in a few words: `only 2 globs, or flagged`.
+const whenText = (when) =>
+  [
+    when.only && `only ${count(when.only.length, "glob")}`,
+    when.any && `any ${count(when.any.length, "glob")}`,
+    when.flag && "flagged",
+  ]
+    .filter(Boolean)
+    .join(", or ");
+// The gate's rows: its tiers in order, the tier each role runs, and the checklist when it has one.
+function gateRows(spec) {
+  const gate = gateOf(spec);
+  if (!gate) return [["gate.tiers", null]];
+  const { tiers, roles, checklist } = gate;
+  return [
+    [
+      "gate.tiers",
+      tiers.map((t) => (t.when ? `${t.name} (${whenText(t.when)})` : t.name)).join(" → "),
+    ],
+    [
+      "gate.roles",
+      Object.entries(roles)
+        .map(([role, value]) => `${role} ${value}`)
+        .join(" · "),
+    ],
+    checklist.length > 0 && [
+      "gate.checklist",
+      `${count(checklist.length, "item")}: ${checklist.map((i) => `${i.name} (${i.when ? whenText(i.when) : "every land"})`).join(", ")}`,
+    ],
+  ].filter(Boolean);
+}
+
 /** A path as the output shows it: from `root` when it is inside, else as given. */
 export const shownPath = (root, path) =>
   relative(root, path).startsWith("..") ? path : relative(root, path);
@@ -166,7 +199,7 @@ function keys({ root, spec }) {
 }
 
 export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workflow.json") }) {
-  const { gate, extensions, conductor } = spec;
+  const { extensions, conductor } = spec;
   const row = (lane, found, value, set = INIT) => ({
     lane,
     ok: Boolean(found),
@@ -176,11 +209,9 @@ export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workf
   const text = conductor?.prompt ? readInside(root, join(root, conductor.prompt)) : null;
   const rules = conductor?.rules && text !== null ? md.section(text, conductor.rules) : null;
   const checks = extensions?.merge?.checks;
-  const quick = gate?.quick;
   return [
     workflowFile(root, spec, workflowPath),
-    row("gate", gate, gate?.command.join(" ")),
-    row("gate.quick", quick, quick && `${quick.command.join(" ")} (${quick.only.join(", ")})`),
+    ...gateRows(spec).map(([lane, value]) => row(lane, value, value)),
     row("conductor.prompt", conductor, conductor?.prompt),
     row("conductor.rules", rules, `${conductor?.rules} (line ${rules?.line})`),
     { lane: "trigger block", ...triggerBlock(root, spec) },

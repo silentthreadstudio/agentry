@@ -3,8 +3,9 @@
 // `runGate` reads the gate command's OWN exit code: argv, no shell, so nothing can pipe the failure away
 // (#1). It refuses to start on a dirty tree (an untracked file made "tree identical" lie, #2), counts a gate
 // that leaves files behind as red, and writes the command's stdout and stderr to a per-run log file (appended to, as it runs).
-// `pickTier` and `canSkip` are pure: which tier a change needs, and whether a merge may skip the main gate.
-// Node built-ins only.
+// `pickTier`, `checklistFor` and `canSkip` are pure: which tier a role runs on a change, which manual
+// checks a land waits on, and whether a merge may skip the main gate. `globMatch` is the one glob test
+// every lane step uses. Node built-ins only.
 import { spawnSync } from "node:child_process";
 import {
   closeSync,
@@ -124,6 +125,54 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
 const FAILURE_LINE = /\b(?:FAIL(?:ED|URES?)?|ERROR)\b|\bnot ok\b|[✗✖×]/;
 const SUMMARY_LINE =
   /\d+\s+(?:tests?\s+)?(?:FAILED|failed|failures?|errors?)\b|\b(?:FAILED|FAILURES?|ERRORS?)\s*[:=(]?\s*\d+/;
+// A JSON test event fails when its status, outcome, result or event says so (any case).
+const JSON_STATUS = ["status", "outcome", "result", "event"];
+const JSON_FAILED = ["fail", "failed", "failure", "error"];
+
+// A JSON object line as a test event: `{ failed, name }`, the name its string `test` (or null). Null when the
+// line is not one whole JSON object (a list, a cut line, plain text).
+function jsonEvent(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{")) return null;
+  let value;
+  try {
+    value = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const failed = JSON_STATUS.some(
+    (key) => typeof value[key] === "string" && JSON_FAILED.includes(value[key].toLowerCase()),
+  );
+  return { failed, name: typeof value.test === "string" ? value.test : null };
+}
+
+// What a log line says about a failure: null when it reports none (a pass, a summary, a JSON event that
+// did not fail), else `{ name }`, the test it names or null. Named forms: `FAILED TEST: <name>`, `not ok N
+// - <name>`, `✗ <name>`, `FAIL <name>`, `FAILED <name>` (the next token), a `<path>::<test>` token, and a
+// JSON event's `test`.
+function failureOf(line) {
+  const event = jsonEvent(line);
+  if (event) return event.failed ? { name: event.name } : null;
+  if (!FAILURE_LINE.test(line) || SUMMARY_LINE.test(line)) return null;
+  for (const re of NAMED_FAILURE) {
+    const m = re.exec(line);
+    if (m) return { name: m[1] };
+  }
+  return { name: null };
+}
+
+// Does `text` hold the listed test `name` as a whole name: `test_slow` is not in `test_slow_case`.
+const holdsName = (text, name) => {
+  const word = /\w/;
+  for (let at = text.indexOf(name); at !== -1; at = text.indexOf(name, at + 1)) {
+    const before = at > 0 && word.test(name[0]) && word.test(text[at - 1]);
+    const end = at + name.length;
+    const after = end < text.length && word.test(name.at(-1)) && word.test(text[end]);
+    if (!before && !after) return true;
+  }
+  return false;
+};
 
 // The files a `flakyLogs` glob names, modified at or after `since` (ms): the glob runs from `cwd`, or from the
 // temp directory when it starts `$TMPDIR/`. Matched per segment like the other globs here; `**` crosses
@@ -165,30 +214,27 @@ function logsMatching(globs, { cwd, since }) {
   });
 }
 
-// The test a line of an extra log names as failing, or null: `FAILED TEST: <name>`, `not ok N - <name>`,
-// `✗ <name>` and `FAIL <name>`. A failure line that names no test (an engine's `ERROR:` line) is noise there.
+// The forms a failure line names its test in (the first that matches wins): `FAILED TEST: <name>`,
+// `not ok N - <name>`, `✗ <name>`, `FAIL <name>`, `FAILED <name>` (the next token) and a `<path>::<test>`
+// token. A failure line that names no test (an engine's `ERROR:` line) is noise in an extra log.
 const NAMED_FAILURE = [
   /\bFAILED TEST:\s*(\S.*)/,
   /^\s*not ok\s+\d+\s*-?\s*(\S.*)/,
   /[✗✖×]\s*(\S.*)/,
   /\bFAIL\s+(\S.*)/,
+  /\bFAILED\s+(\S+)/,
+  /(\S+::\S+)/,
 ];
-const namedFailure = (line) => {
-  if (SUMMARY_LINE.test(line)) return null;
-  for (const re of NAMED_FAILURE) {
-    const m = re.exec(line);
-    if (m) return m[1];
-  }
-  return null;
-};
 
 /** The listed `flaky` tests a gate's log shows failing, or null unless the red is ALL flaky: at least one
  *  failure line, and every failure line (count lines aside) naming a listed test. Anything else (an unlisted
- *  failure, no failure line to read, an unreadable log) is null: a real red. The gate's own log decides when
- *  it has failure lines. Only when it has none (it prints a summary) are the `logs` (the gate's `flakyLogs`
- *  globs, from `cwd` or `$TMPDIR/`) read, for the lines in them that name a failing test; those must all be
- *  listed, and unnamed noise there is ignored. Only files modified since `since` (ms, when the gate
- *  started) are read. */
+ *  failure, no failure line to read, an unreadable log) is null: a real red. A line that names its test (the
+ *  forms above, or a JSON event line `{"test": …, "status": "failed"}`) is judged by that name, any other
+ *  failure line by its whole text; a listed name counts only whole (`test_slow` is not `test_slow_case`).
+ *  The gate's own log decides when it has failure lines. Only when it has none (it prints a summary) are
+ *  the `logs` (the gate's `flakyLogs` globs, from `cwd` or `$TMPDIR/`) read, for the lines in them that name
+ *  a failing test; those must all be listed, and unnamed noise there is ignored. Only files modified since
+ *  `since` (ms, when the gate started) are read. CRLF line ends read as LF. */
 export function flakyReds(logFile, flaky, { logs = [], cwd = ".", since = 0 } = {}) {
   if (!flaky?.length) return null;
   let text;
@@ -197,23 +243,32 @@ export function flakyReds(logFile, flaky, { logs = [], cwd = ".", since = 0 } = 
   } catch {
     return null;
   }
+  const lines = (t) => t.split(/\r?\n/);
   const hit = new Set();
-  const judge = (lines, nameOf) => {
-    for (const line of lines) {
-      const name = nameOf(line);
-      if (name === null) continue;
-      const names = flaky.filter((n) => name.includes(n));
+  // Every failure is a listed test: `failures` are [text to look for the listed names in].
+  const judge = (failures) => {
+    for (const text of failures) {
+      const names = flaky.filter((n) => holdsName(text, n));
       if (names.length === 0) return false;
       for (const n of names) hit.add(n);
     }
     return true;
   };
-  const own = text.split("\n").filter((l) => FAILURE_LINE.test(l) && !SUMMARY_LINE.test(l));
-  if (own.length > 0) return judge(own, (line) => line) && hit.size > 0 ? [...hit] : null;
+  const own = lines(text).flatMap((line) => {
+    const failure = failureOf(line);
+    return failure ? [failure.name ?? line] : [];
+  });
+  if (own.length > 0) return judge(own) && hit.size > 0 ? [...hit] : null;
   for (const file of logsMatching(logs, { cwd, since })) {
+    let named;
     try {
-      if (!judge(readFileSync(file, "utf8").split("\n"), namedFailure)) return null;
-    } catch {}
+      named = lines(readFileSync(file, "utf8"))
+        .map((line) => failureOf(line)?.name)
+        .filter((name) => typeof name === "string");
+    } catch {
+      continue;
+    }
+    if (!judge(named)) return null;
   }
   return hit.size > 0 ? [...hit] : null;
 }
@@ -258,21 +313,76 @@ const matcher = (globs) => {
   };
 };
 
-/** The tier a change needs: `quick` only when the gate has one and EVERY changed file matches its `only`
- *  globs; otherwise `full`. Always with the reason. */
-export function pickTier(gate, changedFiles) {
-  const quick = gate?.quick;
-  if (!quick?.command?.length) return { tier: "full", reason: "the gate has no quick tier" };
-  if (!changedFiles?.length)
-    return { tier: "full", reason: "no changed files to judge a quick run by" };
-  const inOnly = matcher(quick.only);
-  const outside = changedFiles.find((file) => !inOnly(file));
-  if (outside !== undefined)
-    return { tier: "full", reason: `${outside} is outside the quick tier's "only" globs` };
-  return {
-    tier: "quick",
-    reason: `all ${changedFiles.length} changed file(s) match the quick tier's "only"`,
-  };
+/** Does `path` (repo-relative) match one of `globs`: `*` and `?` stay inside one folder, a `**` segment
+ *  crosses folders, case counts, and a `..` or absolute path never matches. */
+export const globMatch = (globs, path) => matcher(globs)(path);
+
+// Does a tier's or checklist item's `when` hold for a change: any one of its conditions is enough. `only`:
+// every changed file matches (no changed files never does); `any`: some changed file does; `flag`: the
+// item is flagged. Returns `{ holds, reason }`, the reason naming what held or each miss.
+function whenHolds(when, { changed, flagged }) {
+  const misses = [];
+  if (when?.only) {
+    const outside = changed.find((file) => !globMatch(when.only, file));
+    if (changed.length > 0 && outside === undefined)
+      return { holds: true, reason: `every changed file (${changed.length}) matches its "only"` };
+    misses.push(
+      changed.length ? `${outside} is outside its "only"` : 'no changed files for its "only"',
+    );
+  }
+  if (when?.any) {
+    const hit = changed.find((file) => globMatch(when.any, file));
+    if (hit !== undefined) return { holds: true, reason: `${hit} matches its "any"` };
+    misses.push('no changed file matches its "any"');
+  }
+  if (when?.flag === true) {
+    if (flagged) return { holds: true, reason: "the item is flagged" };
+    misses.push("the item is not flagged");
+  }
+  return { holds: false, reason: misses.join(", ") };
+}
+
+const tierAt = (tier, why) => ({
+  tier: tier.name,
+  command: tier.command,
+  reason: `${tier.name}: ${why}`,
+});
+
+/** The tier `role` (build, verify or merge) runs on a change, with its argv and why: `gate` is `gateOf`'s
+ *  (roles filled; a role it lacks reads as "pick"), `changed` the changed files, `flagged` whether the
+ *  item's flag is set. `gate.roles[role]`: `pick` = the first tier whose `when` holds (the last tier when
+ *  none does), `full` = the last tier, a tier name = that tier, `none` = no tier (`{ tier: null, command:
+ *  null }`). */
+export function pickTier(gate, role, { changed = [], flagged = false } = {}) {
+  const tiers = gate?.tiers ?? [];
+  const value = gate?.roles?.[role] ?? "pick";
+  const says = `gate.roles.${role} is "${value}"`;
+  if (value === "none" || tiers.length === 0)
+    return { tier: null, command: null, reason: value === "none" ? says : "the gate has no tiers" };
+  const last = tiers.at(-1);
+  if (value === "full") return tierAt(last, says);
+  if (value !== "pick") {
+    const named = tiers.find((t) => t.name === value);
+    return named ? tierAt(named, says) : tierAt(last, `${says}, which names no tier`);
+  }
+  const files = Array.isArray(changed) ? changed : [];
+  const misses = [];
+  for (const tier of tiers.slice(0, -1)) {
+    const res = whenHolds(tier.when, { changed: files, flagged });
+    if (res.holds) return tierAt(tier, res.reason);
+    misses.push(`${tier.name}: ${res.reason}`);
+  }
+  if (misses.length === 0) return tierAt(last, "the gate's only tier");
+  return tierAt(last, `no earlier tier's "when" holds (${misses.join("; ")})`);
+}
+
+/** The checklist items a land waits on for this change: each with no `when`, or whose `when` holds
+ *  (`changed`, `flagged` as `pickTier` takes them). */
+export function checklistFor(gate, { changed = [], flagged = false } = {}) {
+  const files = Array.isArray(changed) ? changed : [];
+  return (gate?.checklist ?? [])
+    .filter((item) => !item.when || whenHolds(item.when, { changed: files, flagged }).holds)
+    .map(({ name, text }) => ({ name, text }));
 }
 
 /** The files that differ between `commit` (the gated commit) and `tip` (default HEAD): the input `canSkip`
@@ -304,18 +414,32 @@ function commitOf(dir, rev) {
 }
 
 /** May a merge skip re-running the gate on main? Only when the recorded worktree gate was green and clean
- *  both sides, main's tree equals the branch tip's tree, and everything changed since that gate matches
- *  `after` (docs and the like). `changedSinceGate` must be known (see `changedSince`): missing, or empty
- *  while the tree moved since the gate, is "unknown" and never skips. Each refusal names its reason. */
-export function canSkip({ record, mainTree, branchTipTree, changedSinceGate, after }) {
+ *  both sides, ran the tier and argv the land needs (`need`, `pickTier`'s `{ tier, command }`), main's tree
+ *  equals the branch tip's tree, and everything changed since that gate matches `after` (docs and the
+ *  like). A record with no `command` (from before gate tiers, such as an old `quick` one) never skips.
+ *  `changedSinceGate` must be known (see `changedSince`): missing, or empty while the tree moved since the
+ *  gate, is "unknown" and never skips. Each refusal names its reason. */
+export function canSkip({ record, need, mainTree, branchTipTree, changedSinceGate, after }) {
   if (!record) return { skip: false, reason: "no gate record" };
   if (record.exit !== 0) return { skip: false, reason: `the recorded gate exited ${record.exit}` };
-  // A quick-tier gate only proved the files it was allowed to cover; it never stands in for the full gate on main.
-  if (record.tier !== "full")
+  if (!Array.isArray(record.command))
     return {
       skip: false,
-      reason: `the recorded gate ran the ${record.tier ?? "unknown"} tier, not full`,
+      reason: `the recorded gate (${record.tier ?? "unknown"} tier) has no command: it ran before gate tiers`,
     };
+  if (!need?.tier || !Array.isArray(need.command))
+    return { skip: false, reason: "the land needs no tier the record could stand in for" };
+  // A tier only proved what its own command covers; it never stands in for another on main.
+  if (record.tier !== need.tier)
+    return {
+      skip: false,
+      reason: `the recorded gate ran ${record.tier ?? "an unknown tier"}, the land needs ${need.tier}`,
+    };
+  if (
+    record.command.length !== need.command.length ||
+    record.command.some((arg, i) => arg !== need.command[i])
+  )
+    return { skip: false, reason: `the ${need.tier} tier's command changed since the gate ran` };
   if (record.cleanBefore !== true || record.cleanAfter !== true)
     return {
       skip: false,
@@ -334,8 +458,7 @@ export function canSkip({ record, mainTree, branchTipTree, changedSinceGate, aft
     };
   if (after != null && !(Array.isArray(after) && after.every((g) => typeof g === "string")))
     return { skip: false, reason: 'the gate\'s "after" is not a list of globs' };
-  const inAfter = matcher(after);
-  const stray = changedSinceGate.find((file) => !inAfter(file));
+  const stray = changedSinceGate.find((file) => !globMatch(after, file));
   if (stray !== undefined)
     return { skip: false, reason: `${stray} changed since the gate and is not in "after"` };
   return { skip: true, reason: "green clean gate on this tree; only post-gate files changed" };

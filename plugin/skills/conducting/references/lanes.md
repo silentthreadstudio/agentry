@@ -31,7 +31,7 @@ An open debt lane and an open task lane pass each other's board writes.
 | `start <id> [--cite A40,A41]` | finds the contract, refuses at `lanes.maxWriters` and a contract whose Steps part has a problem, cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder on the first run of steps (`steps:` lists them); `--cite` adds decisions to every brief by id (a decision whose row names the task is quoted anyway) | `dispatched` |
 | `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round; a run that ends at `→ owner OK` holds the lane instead | `built` when a verifier (or, under `exec.verify`, the gate alone) is next |
 | `verdict <id> [--agent a]` | reads the verifier's report and its tip, briefs the next round | the verdict (`FAIL` also `failed`) |
-| `gate <id>` | waits for the gate lock, runs the repo's `gate` in the worktree as argv, records `{commit, tree, exit, clean before and after, log}`; a red whose log (or `gate.flakyLogs` files) fails only in `gate.flaky` tests is re-run alone once and both runs are recorded; a gate that queues writes `waiting for gate slot N (held by <who> since HH:MM)` and `slot acquired` to its log, and its output streams there as it runs | none |
+| `gate <id>` | picks the tier: the `verify` role's while a verifier is out (`expects` is `verdict`), else the `build` role's (`gate.roles`, on the files the branch changed since its base and the item's flag); under `verify: none` a call while a verifier is out exits 2, runs nothing and records nothing: the verifier reads the recorded gate, and the build tier runs after the verdict. Else waits for the gate lock, runs that tier's argv in the worktree, records `{role, tier, command, commit, tree, exit, clean before and after, log}`; a red whose log (or `gate.flakyLogs` files) fails only in `gate.flaky` tests is re-run alone once and both runs are recorded; a gate that queues writes `waiting for gate slot N (held by <who> since HH:MM)` and `slot acquired` to its log, and its output streams there as it runs | none |
 | `fix <id> --notes N1,N3` | after `PASS WITH NOTES` (gate or close next): a builder round (resume) on those notes of the verifier's report, then the usual `recheck` | none |
 | `close <id> [--episode e]` | prints the `episode_write` payload; `--episode` stamps the id it returned | none (`done` comes at merge) |
 | `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
@@ -253,9 +253,12 @@ templates, once:
   `continue` brief quotes the owner's answer with its time and says to go on, rework the same steps, or carry
   on with them; a parked lane's says to read `git status` first. The verify brief lists each approval under
   `The owner reviewed and approved these; judge the rest against the contract, not the owner's call:`.
-- When the latest worktree gate run on the dispatched tip and tree is green, the verify, recheck and final briefs
-  say `the gate is recorded green on <sha> (<log>): read it; do not re-run it` and the verifier runs only
-  its own probes; a moved tip, or a red run after the green, gets the full gate line. `exec gate` run while a
+- When the latest worktree gate run on the dispatched tip and tree is green and of the tier the verify (or
+  build) role runs, the verify, recheck and final briefs say `the gate is recorded green on <sha> (<log>):
+  read it; do not re-run it` and the verifier runs only its own probes. Without one, under
+  `gate.roles.verify: none` they say `The gate is not yours: the lane records the <build> tier and the land
+  runs the merge tier. Run only your own probes.`; otherwise (a moved tip, a red run after the green, a
+  verify role that runs a tier) the full gate line. `exec gate` run while a
   verifier is next rewrites that waiting brief, whatever the gate's exit. Each dispatch prints `model:` when `models` in the workflow file names one for its role (builder:
   `build`; verifier: `verify.flagged`, `verify.ui` when a designer builds, else `verify.default`).
 - The verifier changes and commits nothing, runs the printed gate line (or reads the recorded one), states the bar for any input or

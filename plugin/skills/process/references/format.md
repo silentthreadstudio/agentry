@@ -37,7 +37,7 @@ No `version`, and every key is optional.
 | `lifecycle` | no | What the harness writes as work moves. Absent: the checker never writes on its own. |
 | `drafts` | no | How an answered question becomes a decision draft. |
 | `worktrees` | no | `{ "keep": [names or globs] }`: worktrees kept on purpose. |
-| `gate` | no | The repo's gate: the command `exec` and `merge` run, its quick tier, the files it may leave changed. |
+| `gate` | no | The repo's gate: its tiers (the commands `exec` and `merge` run), the tier each role runs, a manual checklist, the files it may leave changed. |
 | `extensions` | no | Repo skills Agentry's commands run as extra checks (`merge.checks`). |
 | `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
 | `guard` | no | `{ "allow": [globs] }`: main-checkout files a running lane's guard lets change. |
@@ -276,8 +276,15 @@ In `workflow.json`:
 
 ```json
 "gate": {
-  "command": ["scripts/gate.sh"],
-  "quick": { "command": ["scripts/gate.sh", "--quick"], "only": ["docs/**", "*.md"] },
+  "tiers": [
+    { "name": "docs", "command": ["scripts/gate.sh", "--quick"], "when": { "only": ["docs/**", "*.md"] } },
+    { "name": "tests", "command": ["scripts/gate.sh", "--tests"], "when": { "only": ["src/ui/**", "tests/**"] } },
+    { "name": "full", "command": ["scripts/gate.sh"] }
+  ],
+  "roles": { "build": "pick", "verify": "none", "merge": "pick" },
+  "checklist": [
+    { "name": "ui-smoke", "text": "Open each changed screen; no errors in the console", "when": { "any": ["src/ui/**"], "flag": true } }
+  ],
   "after": ["CHANGELOG.md"],
   "note": "the full gate takes about ten minutes"
 },
@@ -287,14 +294,28 @@ In `workflow.json`:
 
 | Key | Required | What |
 | :--- | :--- | :--- |
-| `gate.command` | yes | The gate, as argv: run with no shell, in the git root of the tree under test; its exit code is the verdict. |
-| `gate.quick` | no | A cheaper tier: `command` and `only`, both required. |
-| `gate.quick.command` | yes | The quick tier's argv. |
-| `gate.quick.only` | yes | Globs (from the git root). The quick tier applies only when every changed file matches one of them. |
+| `gate.tiers` | yes | The gate's tiers, in precedence order (at least one). Every tier but the last has a `when`; the last has none: it is the fallback. |
+| `gate.tiers[].name` | yes | Lower-case letters, digits and `-`; unique; never `pick` or `none`. `full` names only the last tier. |
+| `gate.tiers[].command` | yes | The tier, as argv: run with no shell, in the git root of the tree under test; its exit code is the verdict. |
+| `gate.tiers[].when` | no | When the tier applies: one or more of `only`, `any`, `flag`, and it holds when any one of them does. Required on every tier but the last, refused on the last; `{}` is refused. |
+| `gate.tiers[].when.only` | no | Globs (from the git root): holds when every changed file matches one. No changed files never matches. |
+| `gate.tiers[].when.any` | no | Globs: holds when some changed file matches one. |
+| `gate.tiers[].when.flag` | no | `true` only (`false` is refused): holds when the item's `flag` field is set. |
+| `gate.roles` | no | The tier each role runs: `pick` (the first tier whose `when` holds, else the last), `full` (the last tier) or a tier's name. Default `build: pick`, `verify: none`, `merge: pick`. A value that names no tier is refused, listing the tier names. |
+| `gate.roles.build` | no | The tier `lane exec gate` runs when no verifier is out (after the verdict, or with no verifier). |
+| `gate.roles.verify` | no | The tier `lane exec gate` runs while a verifier is out; also `none`: the verifier runs no gate (its brief says the gate is not its), the lane runs the build tier after the verdict, and `lane exec gate` while a verifier is out exits 2. |
+| `gate.roles.merge` | no | The tier the land runs on main, picked on the files the picks change and the lane's flag. The land skips it only on a green worktree record of that same tier and argv (see `merge.md`). |
+| `gate.checklist` | no | Manual checks the land waits on, each recorded like a merge check: `lane merge <id> --check <name>=pass\|fail`, on the branch's tip. |
+| `gate.checklist[].name` | yes | Lower-case letters, digits and `-`; unique; never an `extensions.merge.checks` name. |
+| `gate.checklist[].text` | yes | What to check, as the checks row shows it. |
+| `gate.checklist[].when` | no | When the item applies, as a tier's `when` (on the files the branch changes past main, and the lane's flag). No `when`: every land. |
+| `gate.checklist[].when.only` | no | As `gate.tiers[].when.only`. |
+| `gate.checklist[].when.any` | no | As `gate.tiers[].when.any`. |
+| `gate.checklist[].when.flag` | no | As `gate.tiers[].when.flag`. |
 | `gate.after` | no | Globs of the files allowed to change after the gate ran green. Default `[]`: none. |
 | `gate.concurrency` | no | How many lane gates may run at once in this checkout. Default `1`: lanes queue their gates behind a lock in `.agentry/run/`, so load-sensitive tests are not run against each other. |
 | `gate.flaky` | no | Names of tests known to fail under load. A red gate whose output fails only in these is re-run alone once, by `lane exec gate` and by the land (`lane merge`) alike; both runs are recorded. The gate's output (or the `gate.flakyLogs` files) must name each failing test, else every red is real. |
-| `gate.flakyLogs` | no | Globs of extra logs (a gate's step logs) read for failure names, only when the gate's own output has no failure line, only a summary. Each is from the gate's cwd, or starts with `$TMPDIR/` (the temp directory); no absolute path, no `..` and no `.` segment. Only files modified since the gate run started are read. In them a line counts only if it names a failing test (`FAILED TEST: <name>`, `not ok N - <name>`, `✗ <name>`, `FAIL <name>`); unnamed noise such as an engine's `ERROR:` line is ignored. If they name no failing test either, the red stays real. |
+| `gate.flakyLogs` | no | Globs of extra logs (a gate's step logs) read for failure names, only when the gate's own output has no failure line, only a summary. Each is from the gate's cwd, or starts with `$TMPDIR/` (the temp directory); no absolute path, no `..` and no `.` segment. Only files modified since the gate run started are read. In them a line counts only if it names a failing test (`FAILED TEST: <name>`, `not ok N - <name>`, `✗ <name>`, `FAIL <name>`, `FAILED <name>` (the next token), a failure line holding a `<path>::<test>` token, or a JSON object line with a string `"test"` whose `status`, `outcome`, `result` or `event` is `fail`, `failed`, `failure` or `error`, any case); unnamed noise such as an engine's `ERROR:` line is ignored. A JSON line that is not a failure, and a count line (`2 failed, 10 passed`, `FAILED: 2`), names none. A listed name counts only whole: `test_slow` does not cover `test_slow_case`. If they name no failing test either, the red stays real. |
 | `gate.note` | no | Free text. |
 | `extensions.merge` | yes | What `/agentry:merge` adds. |
 | `extensions.merge.checks` | yes | Repo skills by their own names (lower-case letters, digits, `-`; each once); `[]` names none. Merge refuses to land until each has a recorded outcome. |
@@ -303,8 +324,10 @@ In `workflow.json`:
 
 These keys fail strict: a typo makes a check stricter or is refused, never laxer. An unknown key, a wrong
 type, an empty string or list (`merge.checks` aside: `[]` is no check), a repeated check, or a path that is absolute or climbs out with `..` is refused
-at load (exit 2, naming the path: `gate.command[1]`, `gate.quick.only`). A misspelled `after` glob allows
-less; a misspelled `only` glob makes the quick tier apply less often.
+at load (exit 2, naming the path: `gate.tiers[0].command[1]`, `gate.tiers[0].when`). A misspelled `after`
+glob allows less; a misspelled `only` glob makes its tier apply less often. `gate.command` and `gate.quick`
+(before 0.3) are refused with where they go now: the command becomes the last tier (`{ "name": "full",
+"command": […] }`), a quick tier a tier with `"when": { "only": […] }` before it.
 
 `conductor.prompt` and `conductor.rules` are also read against the repo by `agentry board explain` and `agentry board check`: the
 prompt must be a file inside it and hold the `rules` heading, matched the way `agentry board draft apply` matches it.

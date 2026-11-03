@@ -157,10 +157,10 @@ function preflight(lane) {
     const { root, ledger } = lane;
     const base = mergeBaseOf(root, ledger.mainBranch, ledger.branch);
     const changed = (base && changedSince(root, base, ledger.branch)) || [];
-    const { tier, reason } = pickTier(gate, changed);
-    const record = lastWorktreeGate(ledger);
+    const need = pickTier(gate, "merge", { changed, flagged: Boolean(ledger.route?.flagged) });
+    const record = lastWorktreeGate(ledger, need.tier) ?? lastWorktreeGate(ledger);
     rows.push(
-      ok("gate", `${tier} would run (${reason})`, [
+      ok("gate", `${need.tier} would run (${need.reason})`, [
         record
           ? `worktree gate: ${record.tier} exit ${record.exit} on ${short(record.commit)}; the land skips only when canSkip holds`
           : "no worktree gate recorded: the land runs the gate on main",

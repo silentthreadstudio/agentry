@@ -6,8 +6,9 @@ import { readConfig } from "../../config.mjs";
 import { defaultBranch, worktrees } from "../../process/git.mjs";
 import { read as readLedger, write as writeLedger } from "../../process/ledger.mjs";
 import { own } from "../../process/spec/shape.mjs";
-import { flaggedItem, lifecycleOf } from "../../process/spec/workflow.mjs";
+import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { headBoard } from "../carry-io.mjs";
+import { changedSince, checklistFor } from "../gate.mjs";
 import { commitOf, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
 import { dirtyEntries } from "../own-memory.mjs";
 import { verdicts } from "../rounds.mjs";
@@ -116,9 +117,12 @@ export function ledgerStep(lane, { adopt }) {
 // Repo skills live in the host's own folder (A28); `extensions.merge.checks` names them natively.
 export const SKILL_DIR = ".claude/skills";
 export const skillExists = (root, name) => existsSync(join(root, SKILL_DIR, name, "SKILL.md"));
-/** The last gate the ledger holds from the worktree, or null. */
-export const lastWorktreeGate = (ledger) =>
-  (ledger.gates ?? []).findLast((g) => g.where === "worktree") ?? null;
+/** The last green gate of `tier` the ledger holds from the worktree; with no `tier`, the last worktree
+ *  gate of any tier and exit. Null when there is none. */
+export const lastWorktreeGate = (ledger, tier) =>
+  (ledger.gates ?? []).findLast(
+    (g) => g.where === "worktree" && (tier === undefined || (g.tier === tier && g.exit === 0)),
+  ) ?? null;
 
 /** The item on the board, of the lane's kind. After a land killed while it wrote the board, the working
  *  copy holds that land's writes ("done" already), so the board is read as committed. */
@@ -181,13 +185,32 @@ export function subjectsRow({ root, spec, ledger }) {
   return red("commits", line(broken[0]), broken.slice(1).map(line));
 }
 
-/** The repo checks: each named skill must exist (exit 2) and have an outcome recorded on the branch's
- *  current tip; `pending` lists the ones to record, `failed` the ones recorded as fail. */
+/** The checklist items this land waits on (`gate.checklist`): on the files the branch changes past its
+ *  merge base with main (what the picks bring) and the lane's flag. */
+function checklistItems({ root, spec, ledger }) {
+  const gate = gateOf(spec);
+  if (!gate?.checklist.length) return [];
+  const base = ledger.branch && mergeBaseOf(root, ledger.mainBranch, ledger.branch);
+  const changed = (base && changedSince(root, base, ledger.branch)) || [];
+  return checklistFor(gate, { changed, flagged: Boolean(ledger.route?.flagged) });
+}
+
+/** The repo checks: each named skill must exist (exit 2), and it and each checklist item this land waits
+ *  on must have an outcome recorded on the branch's current tip; `pending` lists the ones to record,
+ *  `failed` the ones recorded as fail. */
 export function checksState(lane) {
   const { root, spec, ledger } = lane;
   const names = spec.extensions?.merge?.checks ?? [];
-  if (names.length === 0)
-    return { row: skip("checks", "none named (extensions.merge.checks)"), pending: [], failed: [] };
+  const items = checklistItems(lane);
+  if (names.length === 0 && items.length === 0)
+    return {
+      row: skip(
+        "checks",
+        `none named (extensions.merge.checks)${spec.gate?.checklist ? "; no gate.checklist item applies" : ""}`,
+      ),
+      pending: [],
+      failed: [],
+    };
   const missing = names.filter((name) => !skillExists(root, name));
   if (missing.length > 0)
     return {
@@ -202,11 +225,12 @@ export function checksState(lane) {
   const pending = [];
   const failed = [];
   const more = [];
-  for (const name of names) {
+  const all = [...names.map((name) => ({ name })), ...items];
+  for (const { name, text } of all) {
     const check = own(ledger.checks ?? {}, name);
     if (!check) {
       pending.push(name);
-      more.push(`${name}: not recorded`);
+      more.push(`${name}: not recorded${text ? `: "${text}"` : ""}`);
     } else if (check.tip && check.tip !== tip) {
       pending.push(name);
       more.push(
@@ -218,8 +242,8 @@ export function checksState(lane) {
     }
   }
   const mark = failed.length > 0 ? red : pending.length > 0 ? wait : ok;
-  const passed = names.length - pending.length - failed.length;
-  return { row: mark("checks", `${passed}/${names.length} passed`, more), pending, failed };
+  const passed = all.length - pending.length - failed.length;
+  return { row: mark("checks", `${passed}/${all.length} passed`, more), pending, failed };
 }
 
 export function pushRow({ root }) {

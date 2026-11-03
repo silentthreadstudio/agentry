@@ -5,7 +5,15 @@
 // Run: node --test plugin/scripts/test/exec-route.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -53,7 +61,7 @@ const SPEC = {
     on: { dispatched: "doing", built: "verify", failed: "doing", merged: "done" },
     write: { status: "status", verdict: "verdict", commit: "commit" },
   },
-  gate: { command: ["sh", "-c", "test -f out.txt"] },
+  gate: { tiers: [{ name: "full", command: ["sh", "-c", "test -f out.txt"] }] },
 };
 const BOARD_MD = `# Route
 
@@ -150,7 +158,10 @@ test("exec.verify flagged: an item with no flag goes from built straight to the 
 });
 
 test("exec.verify flagged: a red gate still stops a lane with no verifier", () => {
-  const r = repo({ exec: { verify: "flagged" }, gate: { command: ["sh", "-c", "exit 3"] } });
+  const r = repo({
+    exec: { verify: "flagged" },
+    gate: { tiers: [{ name: "full", command: ["sh", "-c", "exit 3"] }] },
+  });
   build(lane(r, "start", "T1").json);
   lane(r, "report", "T1");
   const gated = lane(r, "gate", "T1");
@@ -291,8 +302,11 @@ test("models keys are checked at load", () => {
 
 // ---- a recorded green gate (#43) --------------------------------------------------------------------
 
+// The verifier runs the gate itself here (gate.roles.verify "pick"; the default "none" gives it none).
+const VERIFY_GATES = { gate: { ...SPEC.gate, roles: { verify: "pick" } } };
+
 test("a gate that went green on the tip is read, not re-run, in the waiting verify brief", () => {
-  const r = repo();
+  const r = repo(VERIFY_GATES);
   const started = lane(r, "start", "T1");
   build(started.json);
   const built = lane(r, "report", "T1");
@@ -310,7 +324,7 @@ test("a gate that went green on the tip is read, not re-run, in the waiting veri
 });
 
 test("a tip that moved since the green gate gets the full gate line", () => {
-  const r = repo();
+  const r = repo(VERIFY_GATES);
   const started = lane(r, "start", "T1");
   build(started.json);
   const built = lane(r, "report", "T1");
@@ -325,9 +339,22 @@ test("a tip that moved since the green gate gets the full gate line", () => {
 });
 
 test("a red gate leaves the full gate line in the verify brief", () => {
-  const r = repo({ gate: { command: ["sh", "-c", "exit 1"] } });
+  const r = repo({
+    gate: { tiers: [{ name: "full", command: ["sh", "-c", "exit 1"] }], roles: { verify: "pick" } },
+  });
   build(lane(r, "start", "T1").json);
   const built = lane(r, "report", "T1");
   assert.equal(lane(r, "gate", "T1").exit, 1);
   assert.match(readFileSync(built.json.brief, "utf8"), /Run the gate as the lane records it/);
+});
+
+test("exec start refuses an old gate.command or gate.quick at load, naming gate.tiers, writing nothing", () => {
+  const r = repo({
+    gate: { command: ["make"], quick: { command: ["make", "q"], only: ["docs/**"] } },
+  });
+  const res = lane(r, "start", "T1");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /gate\.command replaced by gate\.tiers \(0\.3\): make it the last tier/);
+  assert.match(res.stderr, /gate\.quick replaced by gate\.tiers: a tier with "when"/);
+  assert.equal(existsSync(join(r.root, ".agentry", "run")), false);
 });

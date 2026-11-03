@@ -77,8 +77,10 @@ const SPEC = {
     on: { dispatched: "doing", built: "verify", failed: "doing", merged: "done" },
     write: { status: "status", verdict: "verdict", commit: "commit" },
   },
-  gate: { command: ["sh", "-c", "test -f out.txt"] },
+  gate: { tiers: [{ name: "full", command: ["sh", "-c", "test -f out.txt"] }] },
 };
+// The process file whose verifier runs the gate itself (gate.roles.verify "pick").
+const VERIFY_GATES = { ...SPEC, gate: { ...SPEC.gate, roles: { verify: "pick" } } };
 const BOARD_MD = `# Exec
 
 ## Sprints
@@ -383,8 +385,13 @@ test("a full lane: build → verify PASS → gate → close; the board moves onl
   assert.deepEqual(out.dispatch, { agent: "verifier" });
   assert.equal(out.prompt.split("\n")[0], "agentry-task: T1 role=verify round=2");
   assert.deepEqual(row(r.root, "T1"), ["T1", "S1", "verify", "", ""]);
+  // gate.roles.verify defaults to none: the verifier runs no gate; the lane runs the build tier after it.
   const verifyBrief = readFileSync(out.brief, "utf8");
-  assert.match(verifyBrief, /exec gate T1 --root/);
+  assert.match(
+    verifyBrief,
+    /- The gate is not yours: the lane records the full tier and the land runs the merge tier\. Run only your own probes\./,
+  );
+  assert.doesNotMatch(verifyBrief, /exec gate T1 --root/);
 
   judge(out, "PASS");
   const judged = lane(r, "verdict", "T1", "--agent", "verifier-1");
@@ -786,7 +793,7 @@ test("a verdict given after the branch tip moved is void: recheck, and no verdic
 });
 
 test("a red gate exits 1; run at the gate step it stops the lane", () => {
-  const r = repo();
+  const r = repo({ spec: VERIFY_GATES });
   let out = lane(r, "start", "T1").json;
   build(out, "other.txt");
   out = lane(r, "report", "T1").json;
@@ -1249,9 +1256,12 @@ test("a new symlink, a dangling one, a type change with the same content and a c
   }
 });
 
-// A lane built and verified (PASS) up to the gate step; `gate` is the process file's gate.
+// The process file's gate with `command` as its one tier, and the other gate keys in `more`.
+const oneTier = ({ command, ...more }) => ({ tiers: [{ name: "full", command }], ...more });
+// A lane built and verified (PASS) up to the gate step; `gate` is the process file's gate (`command` its one
+// tier when it has no `tiers`).
 function atGate(gate, verdict = "PASS") {
-  const r = repo({ spec: { ...SPEC, gate } });
+  const r = repo({ spec: { ...SPEC, gate: gate.tiers ? gate : oneTier(gate) } });
   let out = lane(r, "start", "T1").json;
   build(out);
   out = lane(r, "report", "T1", "--agent", "builder-1").json;
@@ -1411,6 +1421,35 @@ test("flakyLogs never turns a red the gate's own output names as flaky into a re
   assert.deepEqual(gated.json.gate.flaky, ["test_budget"]);
 });
 
+// A49: FAILED <name>, a <path>::<test> token and a JSON test event, in the gate's own log and in a step log.
+for (const line of [
+  "FAILED tests/test_a.py::test_budget - AssertionError",
+  "tests/test_a.py::test_budget ERROR",
+  '{"test":"test_budget","outcome":"failed"}',
+]) {
+  test(`the own log's ${JSON.stringify(line)} is a flaky red: re-run alone`, () => {
+    const r = atGate(flakyGate(join(temp("flaky-"), "ran"), line));
+    const gated = lane(r, "gate", "T1");
+    assert.equal(gated.exit, 0, gated.stderr);
+    assert.deepEqual(gated.json.gate.flaky, ["test_budget"]);
+    assert.equal(ledgerOf(r.root, "T1").gates.length, 2);
+  });
+  test(`a step log's ${JSON.stringify(line)} is a flaky red: re-run alone`, () => {
+    const r = atGate(stepLogGate({ names: line }));
+    assert.equal(lane(r, "gate", "T1").exit, 0);
+    assert.equal(ledgerOf(r.root, "T1").gates.length, 2);
+  });
+}
+
+test("FAILED other_test (unlisted) stays a real red, in the own log and in a step log", () => {
+  const own = atGate(flakyGate(join(temp("flaky-"), "ran"), "FAILED other_test - E"));
+  assert.equal(lane(own, "gate", "T1").exit, 1);
+  assert.equal(ledgerOf(own.root, "T1").gates.length, 1);
+  const step = atGate(stepLogGate({ names: "FAILED other_test - E" }));
+  assert.equal(lane(step, "gate", "T1").exit, 1);
+  assert.equal(ledgerOf(step.root, "T1").gates.length, 1);
+});
+
 test("a log a killed gate left under the next number is not written into or read as this run's", () => {
   const r = atGate({
     command: ["sh", "-c", "test -f out.txt && echo 'tests FAIL TESTS: 3 passed, 1 failed'; exit 1"],
@@ -1460,8 +1499,83 @@ test("a gate that waits for its slot says so in its log, before the gate ends", 
   }
 });
 
+// Two tiers: `tests` when the change is out.txt alone, else `full`; `roles` as given.
+const TIERED = (roles) => ({
+  ...SPEC,
+  gate: {
+    tiers: [
+      { name: "tests", command: ["sh", "-c", "test -f out.txt"], when: { only: ["out.txt"] } },
+      { name: "full", command: ["sh", "-c", "test -f out.txt && true"] },
+    ],
+    ...(roles && { roles }),
+  },
+});
+
+test("exec gate after the verdict runs the build role's tier and records role, tier and command", () => {
+  const r = repo({ spec: TIERED() });
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  judge(out, "PASS");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 0, gated.stderr);
+  assert.equal(gated.json.gate.role, "build");
+  assert.equal(gated.json.gate.tier, "tests");
+  assert.match(gated.json.gate.why, /^tests: every changed file \(1\) matches its "only"$/);
+  const [record] = ledgerOf(r.root, "T1").gates;
+  assert.deepEqual(
+    [record.where, record.role, record.tier, record.command],
+    ["worktree", "build", "tests", ["sh", "-c", "test -f out.txt"]],
+  );
+});
+
+test("under gate.roles.verify none, exec gate while a verifier is out exits 2 and runs nothing", () => {
+  const r = repo({ spec: TIERED() });
+  const out = lane(r, "start", "T1").json;
+  build(out);
+  const reported = lane(r, "report", "T1").json;
+  assert.equal(reported.next, "verify");
+  assert.match(
+    readFileSync(reported.brief, "utf8"),
+    /- The gate is not yours: the lane records the tests tier and the land runs the merge tier\. Run only your own probes\./,
+  );
+  const before = readFileSync(
+    join(r.root, ".agentry", "run", "process", "ledger", "T1.json"),
+    "utf8",
+  );
+  const res = lane(r, "gate", "T1");
+  assert.equal(res.exit, 2);
+  assert.match(
+    res.stderr,
+    /gate\.roles\.verify is "none": the verifier reads the recorded gate; the lane runs the build tier after the verdict/,
+  );
+  assert.equal(
+    readFileSync(join(r.root, ".agentry", "run", "process", "ledger", "T1.json"), "utf8"),
+    before,
+  );
+  assert.equal(existsSync(join(r.root, ".agentry", "run", "gate-locks")), false);
+  assert.equal(
+    existsSync(join(r.root, ".agentry", "run", "process", "runs", "T1", "logs", "gate-1.log")),
+    false,
+  );
+});
+
+test("with gate.roles.verify set, exec gate while a verifier is out runs the verify tier", () => {
+  const r = repo({ spec: TIERED({ verify: "full" }) });
+  const out = lane(r, "start", "T1").json;
+  build(out);
+  const reported = lane(r, "report", "T1").json;
+  assert.match(readFileSync(reported.brief, "utf8"), /Run the gate as the lane records it/);
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 0, gated.stderr);
+  const [record] = ledgerOf(r.root, "T1").gates;
+  assert.deepEqual([record.role, record.tier], ["verify", "full"]);
+  assert.match(readFileSync(reported.brief, "utf8"), /recorded green on [0-9a-f]{7}/);
+});
+
 test("the verdict shows the gate runs already recorded on its tip", () => {
-  const r = repo();
+  const r = repo({ spec: VERIFY_GATES });
   let out = lane(r, "start", "T1").json;
   build(out);
   out = lane(r, "report", "T1").json;
@@ -1881,7 +1995,13 @@ test("a hand commit on main touching only a guard.allow path passes the report; 
 });
 
 test("a green then a red gate on one tip says the latest is red, and the waiting verify brief runs the gate", () => {
-  const spec = { ...SPEC, gate: { command: ["sh", "-c", 'test ! -f "$HOME/red"'] } };
+  const spec = {
+    ...SPEC,
+    gate: {
+      tiers: [{ name: "full", command: ["sh", "-c", 'test ! -f "$HOME/red"'] }],
+      roles: { verify: "pick" },
+    },
+  };
   const r = repo({ spec });
   let out = lane(r, "start", "T1").json;
   build(out);

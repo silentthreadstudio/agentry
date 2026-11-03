@@ -62,20 +62,114 @@ const LogGlob = Text.refine(
 const Argv = z.array(Text).min(1);
 const Globs = z.array(RepoPath).min(1);
 
-/** The repo's gate: argv run with no shell in the git root of the tree under test. `quick` applies
- *  only when every changed file matches `only`; `after` lists the files it may leave changed;
- *  `concurrency` is how many lane gates run at once; `flaky` names tests a red may fail in and be re-run; `flakyLogs` are extra logs it reads for their names. */
+const Name = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]*$/, { message: "expected a name (lower-case, digits, -)" });
+
+/** When a tier or a checklist item applies: `only` (every changed file matches; none changed never
+ *  does), `any` (some changed file matches), `flag: true` (the item's flag is set). Any one holding is
+ *  enough; at least one is given. */
+export const When = z
+  .object({ only: Globs.optional(), any: Globs.optional(), flag: z.literal(true).optional() })
+  .strict()
+  .refine((w) => w.only !== undefined || w.any !== undefined || w.flag !== undefined, {
+    message: 'expected "only", "any" or "flag"',
+  });
+export type When = z.infer<typeof When>;
+
+/** One tier of the gate: argv run with no shell in the git root of the tree under test. */
+export const GateTier = z
+  .object({
+    name: Name.refine((n) => n !== "pick" && n !== "none", {
+      message: "pick and none are gate.roles values",
+    }),
+    command: Argv,
+    when: When.optional(),
+  })
+  .strict();
+export type GateTier = z.infer<typeof GateTier>;
+
+// A list whose items' `name`s are unique.
+const uniqueNames = (items: { name: string }[], ctx: z.RefinementCtx) =>
+  items.forEach((item, i) => {
+    if (items.findIndex((x) => x.name === item.name) < i)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [i, "name"],
+        message: `repeats "${item.name}"`,
+      });
+  });
+
+/** The tiers in precedence order: every tier but the last has a `when`; the last, the fallback, has
+ *  none, and only it may be called `full`. */
+const Tiers = z
+  .array(GateTier)
+  .min(1)
+  .superRefine((tiers, ctx) => {
+    uniqueNames(tiers, ctx);
+    const last = tiers.length - 1;
+    tiers.forEach((tier, i) => {
+      const issue = (path: string, message: string) =>
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [i, path], message });
+      if (tier.name === "full" && i !== last) issue("name", '"full" names the last tier only');
+      if (i === last && tier.when) issue("when", "the last tier is the fallback: it takes no when");
+      if (i !== last && !tier.when) issue("when", "required on every tier but the last");
+    });
+  });
+
+/** A manual check the land waits on, recorded like a merge check; no `when` = every land. */
+export const ChecklistItem = z.object({ name: Name, text: Text, when: When.optional() }).strict();
+export type ChecklistItem = z.infer<typeof ChecklistItem>;
+
+// What each role may name besides a tier.
+const ROLE_WORDS = {
+  build: ["pick", "full"],
+  verify: ["pick", "full", "none"],
+  merge: ["pick", "full"],
+};
+// A key 0.3 replaced: any value is refused, with where it goes now.
+const Replaced = (message: string) => z.never({ invalid_type_error: message }).optional();
+
+/** The repo's gate: `tiers`; `roles`, the tier each role runs (`pick` = the first tier whose `when`
+ *  holds, `full` = the last tier, or a tier's name; `verify` also `none`); `checklist`, manual checks
+ *  the land waits on; `after` lists the files it may leave changed; `concurrency` is how many lane gates
+ *  run at once; `flaky` names tests a red may fail in and be re-run; `flakyLogs` are extra logs it reads
+ *  for their names. `command` and `quick` are refused: `tiers` replaced them. */
 export const Gate = z
   .object({
-    command: Argv,
-    quick: z.object({ command: Argv, only: Globs }).strict().optional(),
+    tiers: Tiers,
+    roles: z
+      .object({
+        build: z.string().optional(),
+        verify: z.string().optional(),
+        merge: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    checklist: z.array(ChecklistItem).min(1).superRefine(uniqueNames).optional(),
     after: Globs.optional(),
     concurrency: z.number().int().positive().optional(),
     flaky: z.array(Text).min(1).optional(),
     flakyLogs: z.array(LogGlob).min(1).optional(),
     note: Text.optional(),
+    command: Replaced(
+      'replaced by gate.tiers (0.3): make it the last tier, { "name": "full", "command": […] }',
+    ),
+    quick: Replaced('replaced by gate.tiers: a tier with "when": { "only": […] } before the last'),
   })
-  .strict();
+  .strict()
+  .superRefine((gate, ctx) => {
+    const names = gate.tiers.map((t) => t.name);
+    for (const [role, words] of Object.entries(ROLE_WORDS)) {
+      const value = gate.roles?.[role as keyof typeof ROLE_WORDS];
+      if (value !== undefined && !words.includes(value) && !names.includes(value))
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["roles", role],
+          message: `names no tier ("${value}"): the tiers are ${names.join(", ")}; or say ${words.join(", ")}`,
+        });
+    }
+  });
 export type Gate = z.infer<typeof Gate>;
 
 const SkillName = z
@@ -175,8 +269,22 @@ export const Commits = z
   .strict();
 export type Commits = z.infer<typeof Commits>;
 
-/** The workflow file: no `version`, every key optional, no other key. */
-export const Workflow = z
+// One `lane merge --check <name>` records a checklist item or a merge check, so no name is both.
+const checklistApart = (
+  w: { gate?: Gate | undefined; extensions?: Extensions | undefined },
+  ctx: z.RefinementCtx,
+): void =>
+  (w.gate?.checklist ?? []).forEach((item, i) => {
+    if (w.extensions?.merge.checks.includes(item.name))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["gate", "checklist", i, "name"],
+        message: `"${item.name}" is also an extensions.merge.checks name`,
+      });
+  });
+
+// The workflow file's keys, before the checks that read two of them.
+const WorkflowKeys = z
   .object({
     lifecycle: Lifecycle.optional(),
     drafts: Drafts.optional(),
@@ -192,8 +300,11 @@ export const Workflow = z
     commits: Commits.optional(),
   })
   .strict();
+
+/** The workflow file: no `version`, every key optional, no other key. */
+export const Workflow = WorkflowKeys.superRefine(checklistApart);
 export type Workflow = z.infer<typeof Workflow>;
 
 /** The loaded value: the process file's board and the workflow file's keys, merged. */
-export const ProcessSpec = ProcessBoard.merge(Workflow);
+export const ProcessSpec = ProcessBoard.merge(WorkflowKeys).superRefine(checklistApart);
 export type ProcessSpec = z.infer<typeof ProcessSpec>;

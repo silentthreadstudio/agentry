@@ -30,25 +30,31 @@ test("the shared table: every good case loads, every bad case names exactly its 
   }
 });
 
+const FULL_TIER = [{ name: "full", command: ["make", "test"] }];
+
 test("gateOf fills the defaults, copies, and is null without a gate", () => {
   assert.equal(gateOf(BASE), null);
-  const spec = { ...structuredClone(BASE), gate: { command: ["make", "test"] } };
+  const spec = { ...structuredClone(BASE), gate: { tiers: FULL_TIER } };
   const gate = gateOf(spec);
   assert.deepEqual(gate, {
-    command: ["make", "test"],
-    quick: null,
+    tiers: FULL_TIER,
+    roles: { build: "pick", verify: "none", merge: "pick" },
+    checklist: [],
     after: [],
     concurrency: 1,
     flaky: [],
     flakyLogs: [],
     note: null,
   });
-  gate.command.push("--changed");
-  assert.deepEqual(spec.gate.command, ["make", "test"]);
-  const quick = { command: ["make", "quick"], only: ["docs/**"] };
-  assert.deepEqual(gateOf({ ...spec, gate: { command: ["x"], quick, after: ["a.md"] } }), {
-    command: ["x"],
-    quick,
+  gate.tiers[0].command.push("--changed");
+  gate.roles.build = "full";
+  assert.deepEqual(spec.gate, { tiers: [{ name: "full", command: ["make", "test"] }] });
+  const checklist = [{ name: "ui-smoke", text: "look" }];
+  const set = { tiers: FULL_TIER, roles: { merge: "full" }, checklist, after: ["a.md"] };
+  assert.deepEqual(gateOf({ ...spec, gate: set }), {
+    tiers: FULL_TIER,
+    roles: { build: "pick", verify: "none", merge: "full" },
+    checklist,
     after: ["a.md"],
     concurrency: 1,
     flaky: [],
@@ -71,10 +77,23 @@ test("board check refuses a bad harness key with exit 2, naming its path", () =>
       encoding: "utf8",
     });
   };
-  assert.equal(runWith({ gate: { command: ["make", "test"] } }).status, 0);
-  const bad = runWith({ gate: { command: ["x"], quick: { command: ["x", "--quick"] } } });
+  assert.equal(runWith({ gate: { tiers: FULL_TIER } }).status, 0);
+  const bad = runWith({ gate: { tiers: [{ name: "Docs", command: ["x"] }] } });
   assert.equal(bad.status, 2);
-  assert.match(bad.stderr, /gate\.quick\.only is required/);
+  assert.match(bad.stderr, /gate\.tiers\[0\]\.name should be a name/);
+  // The keys 0.3 replaced: refused with the pointer to gate.tiers.
+  const old = runWith({
+    gate: { command: ["x"], quick: { command: ["x", "-q"], only: ["d/**"] } },
+  });
+  assert.equal(old.status, 2);
+  assert.match(
+    old.stderr,
+    /gate\.command replaced by gate\.tiers \(0\.3\): make it the last tier, \{ "name": "full", "command": \[…\] \}/,
+  );
+  assert.match(
+    old.stderr,
+    /gate\.quick replaced by gate\.tiers: a tier with "when": \{ "only": \[…\] \} before the last/,
+  );
   const typo = runWith({ extensions: { merge: { checks: ["a", "a"] } } });
   assert.equal(typo.status, 2);
   assert.match(typo.stderr, /extensions\.merge\.checks\[1\] repeats "a"/);

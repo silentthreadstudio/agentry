@@ -1,4 +1,5 @@
-// Tests for lib/lane/gate.mjs: runGate on throwaway repos, and the pure pickTier / canSkip tables.
+// Tests for lib/lane/gate.mjs: runGate on throwaway repos, the pure pickTier / checklistFor / canSkip
+// tables, globMatch, and flakyReds on logs written to disk.
 import assert from "node:assert/strict";
 import {
   existsSync,
@@ -12,7 +13,15 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { canSkip, changedSince, flakyReds, pickTier, runGate } from "../lib/lane/gate.mjs";
+import {
+  canSkip,
+  changedSince,
+  checklistFor,
+  flakyReds,
+  globMatch,
+  pickTier,
+  runGate,
+} from "../lib/lane/gate.mjs";
 import { commitFile, git, tempRepo } from "./git-repo.mjs";
 
 let repo;
@@ -171,31 +180,157 @@ test("runGate rejects an empty or non-array command", () => {
   assert.throws(() => runGate(repo.dir, "npm test", { tier: "full", logFile: log }), TypeError);
 });
 
-const gate = { command: ["t"], quick: { command: ["q"], only: ["docs/**", "*.md"] } };
+// The contract's example gate: docs, tests, then the full fallback.
+const DOCS = ["scripts/gate.sh", "--quick"];
+const TESTS = ["scripts/gate.sh", "--tests"];
+const FULL = ["scripts/gate.sh"];
+const gateWith = (roles = {}, more = {}) => ({
+  tiers: [
+    { name: "docs", command: DOCS, when: { only: ["docs/**", "*.md"] } },
+    { name: "tests", command: TESTS, when: { only: ["src/ui/**", "tests/**"] } },
+    { name: "full", command: FULL },
+  ],
+  roles: { build: "pick", verify: "none", merge: "pick", ...roles },
+  ...more,
+});
+const gate = gateWith();
 
-test("pickTier: quick only when every changed file matches only", () => {
-  assert.equal(pickTier(gate, ["docs/a/b.md", "README.md"]).tier, "quick");
-  assert.equal(pickTier(gate, ["docs/a.md", "src/x.mjs"]).tier, "full");
+test("pickTier: pick takes the first tier whose when holds, with its argv and the reason", () => {
+  assert.deepEqual(pickTier(gate, "build", { changed: ["docs/a/b.md", "README.md", "x.md"] }), {
+    tier: "docs",
+    command: DOCS,
+    reason: 'docs: every changed file (3) matches its "only"',
+  });
+  assert.equal(pickTier(gate, "merge", { changed: ["tests/a.mjs", "src/ui/b.tsx"] }).tier, "tests");
+  assert.deepEqual(pickTier(gate, "build", { changed: ["src/a.ts"] }), {
+    tier: "full",
+    command: FULL,
+    reason:
+      'full: no earlier tier\'s "when" holds (docs: src/a.ts is outside its "only"; tests: src/a.ts is outside its "only")',
+  });
 });
 
-test("pickTier: every full result carries a reason", () => {
-  const cases = [
-    [{ command: ["t"] }, ["a.md"], /no quick tier/],
-    [gate, [], /no changed files/],
-    [gate, ["src/x.mjs"], /src\/x\.mjs is outside/],
-    [gate, ["nested/README.md"], /nested\/README\.md is outside/], // `*` stays in one segment
-  ];
-  for (const [g, files, why] of cases) {
-    const res = pickTier(g, files);
-    assert.equal(res.tier, "full");
-    assert.match(res.reason, why);
+test("pickTier: first match wins when two tiers' whens hold", () => {
+  const both = {
+    tiers: [
+      { name: "a", command: ["a"], when: { any: ["src/**"] } },
+      { name: "b", command: ["b"], when: { only: ["src/**"] } },
+      { name: "full", command: ["f"] },
+    ],
+    roles: { build: "pick" },
+  };
+  assert.equal(pickTier(both, "build", { changed: ["src/x"] }).tier, "a");
+  const swapped = { ...both, tiers: [both.tiers[1], both.tiers[0], both.tiers[2]] };
+  assert.equal(pickTier(swapped, "build", { changed: ["src/x"] }).tier, "b");
+});
+
+test("pickTier: only, any and flag, alone and with no changed files", () => {
+  const g = (when) => ({
+    tiers: [
+      { name: "t", command: ["t"], when },
+      { name: "full", command: ["f"] },
+    ],
+    roles: { build: "pick" },
+  });
+  const tierOf = (when, facts) => pickTier(g(when), "build", facts).tier;
+  // only: every changed file matches; none changed never matches.
+  assert.equal(tierOf({ only: ["docs/**"] }, { changed: ["docs/a.md"] }), "t");
+  assert.equal(tierOf({ only: ["docs/**"] }, { changed: ["docs/a.md", "src/b"] }), "full");
+  assert.equal(tierOf({ only: ["docs/**"] }, { changed: [] }), "full");
+  assert.match(pickTier(g({ only: ["d/**"] }), "build").reason, /no changed files for its "only"/);
+  // any: some changed file matches; none changed never matches.
+  assert.equal(tierOf({ any: ["src/ui/**"] }, { changed: ["a", "src/ui/b"] }), "t");
+  assert.equal(tierOf({ any: ["src/ui/**"] }, { changed: ["a"] }), "full");
+  assert.equal(tierOf({ any: ["src/ui/**"] }, { changed: [] }), "full");
+  // flag: the item's flag, with or without changed files.
+  assert.equal(tierOf({ flag: true }, { changed: [], flagged: true }), "t");
+  assert.equal(tierOf({ flag: true }, { changed: ["a"], flagged: false }), "full");
+  assert.match(
+    pickTier(g({ flag: true }), "build", { flagged: true }).reason,
+    /^t: the item is flagged$/,
+  );
+  // Any one condition is enough: no changed files, but flagged.
+  assert.equal(tierOf({ only: ["docs/**"], flag: true }, { changed: [], flagged: true }), "t");
+  assert.equal(tierOf({ any: ["x/**"], flag: true }, { changed: ["x/y"], flagged: false }), "t");
+  assert.equal(tierOf({ any: ["x/**"], flag: true }, { changed: ["z"], flagged: false }), "full");
+});
+
+test("pickTier: each role value: pick, full, a tier name, none", () => {
+  const docsOnly = { changed: ["docs/a.md"] };
+  for (const role of ["build", "verify", "merge"]) {
+    assert.equal(pickTier(gateWith({ [role]: "pick" }), role, docsOnly).tier, "docs", role);
+    assert.deepEqual(pickTier(gateWith({ [role]: "full" }), role, docsOnly), {
+      tier: "full",
+      command: FULL,
+      reason: `full: gate.roles.${role} is "full"`,
+    });
+    assert.deepEqual(pickTier(gateWith({ [role]: "tests" }), role, docsOnly), {
+      tier: "tests",
+      command: TESTS,
+      reason: `tests: gate.roles.${role} is "tests"`,
+    });
   }
-  assert.match(pickTier(gate, ["a.md"]).reason, /match/);
+  assert.deepEqual(pickTier(gate, "verify", docsOnly), {
+    tier: null,
+    command: null,
+    reason: 'gate.roles.verify is "none"',
+  });
+  // `full` is the last tier, whatever it is called.
+  const ci = { tiers: [{ name: "ci", command: ["c"] }], roles: { merge: "full" } };
+  assert.equal(pickTier(ci, "merge").tier, "ci");
+  assert.match(pickTier({ ...ci, roles: { merge: "pick" } }, "merge").reason, /only tier/);
+});
+
+test("checklistFor: items with no when, or whose when holds", () => {
+  const g = gateWith(
+    {},
+    {
+      checklist: [
+        {
+          name: "ui-smoke",
+          text: "Open each changed screen",
+          when: { any: ["src/ui/**"], flag: true },
+        },
+        { name: "owner-ok", text: "The owner saw it" },
+        { name: "docs-read", text: "Read the docs", when: { only: ["docs/**"] } },
+      ],
+    },
+  );
+  const names = (facts) => checklistFor(g, facts).map((i) => i.name);
+  assert.deepEqual(checklistFor(g, { changed: ["src/ui/a.tsx"] }), [
+    { name: "ui-smoke", text: "Open each changed screen" },
+    { name: "owner-ok", text: "The owner saw it" },
+  ]);
+  assert.deepEqual(names({ changed: ["src/a.ts"] }), ["owner-ok"]);
+  assert.deepEqual(names({ changed: [], flagged: true }), ["ui-smoke", "owner-ok"]);
+  assert.deepEqual(names({ changed: ["docs/a.md"] }), ["owner-ok", "docs-read"]);
+  assert.deepEqual(checklistFor({ tiers: [] }, {}), []);
+});
+
+test("globMatch: * and ? stay in one folder, ** crosses folders, case counts", () => {
+  assert.equal(globMatch(["*.md"], "README.md"), true);
+  assert.equal(globMatch(["*.md"], "docs/a.md"), false);
+  assert.equal(globMatch(["docs/**"], "docs/a/b.md"), true);
+  assert.equal(globMatch(["docs/**"], "Docs/a.md"), false);
+  assert.equal(globMatch(["a?.md"], "ab.md"), true);
+  assert.equal(globMatch(["a?.md"], "a/.md"), false);
+  assert.equal(globMatch([], "a.md"), false);
+  assert.equal(globMatch(["x", "docs/**"], "docs/y"), true);
+});
+
+test("a rename out of docs/ lists both paths, so it is never docs-only", () => {
+  commitFile(repo.dir, "docs/a.md", "a\n".repeat(20));
+  const before = git(repo.dir, "rev-parse", "HEAD");
+  mkdirSync(join(repo.dir, "src"));
+  git(repo.dir, "mv", "docs/a.md", "src/a.txt");
+  git(repo.dir, "commit", "-q", "-m", "move");
+  const changed = changedSince(repo.dir, before);
+  assert.deepEqual(changed.sort(), ["docs/a.md", "src/a.txt"]);
+  assert.equal(pickTier(gateWith({ build: "pick" }, {}), "build", { changed }).tier, "full");
 });
 
 test("globs: ** never crosses a .. segment or a partial segment, and odd paths never match", () => {
-  const only = (glob, file) =>
-    pickTier({ command: ["t"], quick: { command: ["q"], only: [glob] } }, [file]).tier === "quick";
+  const only = (glob, file) => globMatch([glob], file);
   assert.equal(only("docs/**", "docs/a/b.md"), true);
   assert.equal(only("**/*.md", "a/b/c.md"), true);
   assert.equal(only("docs/**/x.md", "docs/x.md"), true);
@@ -210,9 +345,18 @@ test("globs: ** never crosses a .. segment or a partial segment, and odd paths n
   assert.equal(only("docs/../src/**", "docs/../src/x"), false);
 });
 
-const record = { exit: 0, tier: "full", cleanBefore: true, cleanAfter: true, tree: "t1" };
+const record = {
+  exit: 0,
+  role: "build",
+  tier: "full",
+  command: FULL,
+  cleanBefore: true,
+  cleanAfter: true,
+  tree: "t1",
+};
 const ok = {
   record,
+  need: { tier: "full", command: FULL },
   mainTree: "t1",
   branchTipTree: "t1",
   changedSinceGate: [],
@@ -222,6 +366,36 @@ const ok = {
 test("canSkip: skips under all four conditions, including post-gate docs", () => {
   assert.equal(canSkip(ok).skip, true);
   assert.equal(canSkip({ ...ok, changedSinceGate: ["docs/x.md"] }).skip, true);
+});
+
+test("canSkip: the record's tier and argv must be the land's", () => {
+  const tests = { ...record, tier: "tests", command: TESTS };
+  assert.deepEqual(canSkip({ ...ok, record: tests }), {
+    skip: false,
+    reason: "the recorded gate ran tests, the land needs full",
+  });
+  assert.equal(
+    canSkip({ ...ok, record: tests, need: { tier: "tests", command: TESTS } }).skip,
+    true,
+  );
+  const edited = { ...ok, need: { tier: "full", command: ["scripts/gate.sh", "--all"] } };
+  assert.deepEqual(canSkip(edited), {
+    skip: false,
+    reason: "the full tier's command changed since the gate ran",
+  });
+  const longer = { ...ok, need: { tier: "full", command: [...FULL, "--x"] } };
+  assert.match(canSkip(longer).reason, /full tier's command changed/);
+  // A record from before tiers (no command, or the old quick tier) never skips.
+  for (const old of [
+    { ...record, command: undefined },
+    { ...record, tier: "quick", command: undefined },
+  ])
+    assert.match(
+      canSkip({ ...ok, record: old }).reason,
+      /has no command: it ran before gate tiers/,
+    );
+  assert.equal(canSkip({ ...ok, record: { ...record, tier: "quick" } }).skip, false);
+  assert.match(canSkip({ ...ok, need: { tier: null, command: null } }).reason, /needs no tier/);
 });
 
 test("canSkip: a moved tree skips only when the listed docs files explain it", () => {
@@ -273,8 +447,9 @@ test("canSkip: each failed condition refuses with its own reason", () => {
   const cases = [
     [{ ...ok, record: null }, /no gate record/],
     [{ ...ok, record: { ...record, exit: 1 } }, /exited 1/],
-    [{ ...ok, record: { ...record, tier: "quick" } }, /quick tier, not full/],
-    [{ ...ok, record: { ...record, tier: undefined } }, /unknown tier, not full/],
+    [{ ...ok, record: { ...record, exit: 1, tier: "tests" } }, /exited 1/],
+    [{ ...ok, record: { ...record, tier: "quick" } }, /ran quick, the land needs full/],
+    [{ ...ok, record: { ...record, tier: undefined } }, /ran an unknown tier, the land needs full/],
     [{ ...ok, record: { ...record, cleanBefore: false } }, /clean tree/],
     [{ ...ok, record: { ...record, cleanAfter: false } }, /clean tree/],
     [{ ...ok, branchTipTree: "t2" }, /tree differs/],
@@ -320,4 +495,71 @@ test("flakyReds is null when any failure is unlisted, none is readable, or nothi
   assert.equal(flakyReds(listed, []), null);
   assert.equal(flakyReds(listed, undefined), null);
   assert.equal(flakyReds(join(logs, "missing.log"), ["test_budget"]), null);
+});
+
+// A step log beside the gate's own, matched by a flakyLogs glob from `logs`.
+const stepLog = (text) => {
+  writeFileSync(join(logs, "step.log"), text);
+  return { logs: ["step.log"], cwd: logs };
+};
+const SUMMARY_ONLY = "the run failed: see the step logs\n";
+
+test("flakyReds reads FAILED <name>, <path>::<test> and JSON test lines, in the own log and a flakyLogs file", () => {
+  const forms = [
+    ["FAILED tests/test_a.py::test_b - AssertionError\n", "tests/test_a.py::test_b", "test_b"],
+    ["FAILED tests/a.py::test_b[x-1] - E\n", "tests/a.py::test_b[x-1]", "tests/a.py::test_b[x-1]"],
+    ["tests/a.py::test_c ERROR [ 50%]\n", "tests/a.py::test_c", "tests/a.py::test_c"],
+    ['{"test":"t","status":"FAILED"}\n', "t", "t"],
+    ['{"test": "t2", "outcome": "failure"}\n', "t2", "t2"],
+    ['{"test":"t3","result":"Error","ms":3}\n', "t3", "t3"],
+    ['{"event":"fail","test":"t4"}\n', "t4", "t4"],
+  ];
+  for (const [line, , listed] of forms) {
+    assert.deepEqual(
+      flakyReds(logWith(`ok a\n${line}1 failed\n`), [listed]),
+      [listed],
+      `own: ${line}`,
+    );
+    const extra = stepLog(`ok a\n${line}`);
+    assert.deepEqual(flakyReds(logWith(SUMMARY_ONLY), [listed], extra), [listed], `step: ${line}`);
+  }
+  // An unlisted test in the same forms stays a real red.
+  assert.equal(flakyReds(logWith("FAILED other_test - E\n"), ["test_budget"]), null);
+  const unlisted = stepLog("FAILED other_test - E\nFAILED test_budget\n");
+  assert.equal(flakyReds(logWith(SUMMARY_ONLY), ["test_budget"], unlisted), null);
+  assert.equal(flakyReds(logWith('{"test":"other","status":"failed"}\n'), ["t"]), null);
+});
+
+test("flakyReds: summaries, passing JSON lines and cut JSON name no failure", () => {
+  for (const line of [
+    "FAILED",
+    "0 FAILED",
+    "FAILED: 2",
+    "2 failed, 10 passed",
+    "== 1 failed in 3s ==",
+  ]) {
+    const extra = stepLog(`${line}\n`);
+    assert.equal(flakyReds(logWith(SUMMARY_ONLY), ["x"], extra), null, line);
+  }
+  for (const line of [
+    '{"test":"t","status":"passed"}',
+    '[{"test":"t"}]',
+    '{"test":',
+    '{"test":"t"}',
+  ]) {
+    // In the own log, such a line is no failure line, so the step log decides (and names t failing).
+    const extra = stepLog('{"test":"t","status":"failed"}\n');
+    assert.deepEqual(flakyReds(logWith(`${line}\n`), ["t"], extra), ["t"], line);
+    assert.equal(flakyReds(logWith(SUMMARY_ONLY), ["t"], stepLog(`${line}\n`)), null, line);
+  }
+});
+
+test("flakyReds: a listed name counts only whole, and a CRLF log reads as LF", () => {
+  assert.equal(flakyReds(logWith("FAILED test_slow_case\n"), ["test_slow"]), null);
+  assert.equal(flakyReds(logWith("FAIL test_slow_case (1 s)\n"), ["test_slow"]), null);
+  assert.deepEqual(flakyReds(logWith("FAILED test_slow (1 s)\n"), ["test_slow"]), ["test_slow"]);
+  const crlf = 'ok a\r\nFAILED test_budget\r\n{"test":"t","status":"failed"}\r\n1 failed\r\n';
+  assert.deepEqual(flakyReds(logWith(crlf), ["test_budget", "t"]), ["test_budget", "t"]);
+  const extra = stepLog('{"test":"t","status":"failed"}\r\n');
+  assert.deepEqual(flakyReds(logWith(SUMMARY_ONLY.replace("\n", "\r\n")), ["t"], extra), ["t"]);
 });

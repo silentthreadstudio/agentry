@@ -1,5 +1,5 @@
-// merge/gating — the land's `gate` step (plan R1b-5): skip on a trusted worktree gate (`canSkip`), or
-// run the tier `pickTier` picks on main, in a process group the ledger names first (`merge.gateRun`) so
+// merge/gating — the land's `gate` step (plan R1b-5): skip on a trusted worktree gate of the tier the
+// `merge` role needs (`canSkip`), or run that tier (`pickTier`) on main, in a process group the ledger names first (`merge.gateRun`) so
 // a rerun can stop it if this run dies. A red gate takes the picks off main again (`rollBack`).
 import { randomBytes } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
@@ -7,17 +7,14 @@ import { join } from "node:path";
 import { runDir } from "../../process/ledger.mjs";
 import { gateArgv } from "../gate-group.mjs";
 import { gateLockDir, holdGate } from "../gate-lock.mjs";
-import { canSkip, changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
+import { canSkip, changedSince, flakyReds, globMatch, pickTier, runGate } from "../gate.mjs";
 import { commitOf, rollback, treeOf } from "../land.mjs";
 import { now, ok, red, save, setMerge, short } from "./lane.mjs";
 import { lastWorktreeGate } from "./rows.mjs";
 
-// The `after` glob a post-gate file matched, found with the gate's own matcher (a quick tier whose only
-// glob is that one), so the table never names a glob the skip decision did not use.
-const globOf = (file, globs) =>
-  globs.find(
-    (glob) => pickTier({ quick: { command: ["-"], only: [glob] } }, [file]).tier === "quick",
-  );
+// The `after` glob a post-gate file matched, found with the gate's own matcher, so the table never names a
+// glob the skip decision did not use.
+const globOf = (file, globs) => globs.find((glob) => globMatch([glob], file));
 
 export function gateStep(lane, rows) {
   const { root, id, gate } = lane;
@@ -27,10 +24,17 @@ export function gateStep(lane, rows) {
     rows.push(ok("gate", `already passed: ${merge.gate.detail}`));
     return null;
   }
-  const record = lastWorktreeGate(lane.ledger);
+  // The merge role's tier, on what the picks changed on main and the lane's flag. The record to trust is
+  // the last green one of that tier; failing one, the last of any, so the row says why it is not enough.
+  const need = pickTier(gate, "merge", {
+    changed: changedSince(root, merge.preHead, "HEAD") ?? [],
+    flagged: Boolean(lane.ledger.route?.flagged),
+  });
+  const record = lastWorktreeGate(lane.ledger, need.tier) ?? lastWorktreeGate(lane.ledger);
   const since = record ? changedSince(root, record.commit, merge.tip) : null;
   const decision = canSkip({
     record,
+    need,
     mainTree: treeOf(root, "HEAD"),
     branchTipTree: treeOf(root, merge.tip),
     changedSinceGate: since,
@@ -39,6 +43,7 @@ export function gateStep(lane, rows) {
   if (decision.skip) {
     const detail = `skipped: gate on ${short(record.commit)}, tree identical`;
     const more = [
+      need.reason,
       decision.reason,
       ...since.map((file) => `${file} matched after "${globOf(file, gate.after)}"`),
     ];
@@ -48,9 +53,8 @@ export function gateStep(lane, rows) {
     rows.push(ok("gate", detail, more));
     return null;
   }
-  const { tier, reason } = pickTier(gate, changedSince(root, merge.preHead, "HEAD") ?? []);
+  const { tier, command: cmd } = need;
   const dir = runDir(root, id);
-  const cmd = tier === "quick" ? gate.quick.command : gate.command;
   let busy = null;
   // One run of the gate on main, behind the same lock as the lanes' gates, so load-sensitive tests never run
   // against each other (a flaky re-run takes every slot, so it runs alone). `n` is a number no log holds yet: a
@@ -123,12 +127,21 @@ export function gateStep(lane, rows) {
   save(lane, {
     gates: [
       ...gates,
-      { where: "main", ...first.res, ...(again && { flakyRed: flaky }), at: now() },
-      ...(reran ? [{ where: "main", ...again.res, rerun: true, at: now() }] : []),
+      {
+        where: "main",
+        role: "merge",
+        ...first.res,
+        command: cmd,
+        ...(again && { flakyRed: flaky }),
+        at: now(),
+      },
+      ...(reran
+        ? [{ where: "main", role: "merge", ...again.res, command: cmd, rerun: true, at: now() }]
+        : []),
     ],
   });
   const res = reran ? again.res : first.res;
-  const why = [`${tier}: ${reason}`, `not skipped: ${decision.reason}`, `log ${res.log}`];
+  const why = [need.reason, `not skipped: ${decision.reason}`, `log ${res.log}`];
   if (reran)
     why.push(
       `first run failed only in flaky tests (${flaky.join(", ")}); re-run alone, log ${first.res.log}`,

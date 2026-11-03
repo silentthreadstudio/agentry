@@ -9,7 +9,7 @@
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { pickTier } from "./gate.mjs";
+import { globMatch } from "./gate.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
 import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
 
@@ -389,10 +389,9 @@ export function disposableMatcher(globs = []) {
     const g = glob.replace(/\/+$/, "");
     return g.endsWith("/**") ? [g, g.slice(0, -3)] : [g];
   });
-  const quick = { command: ["-"], only: forms };
   return (entry) => {
     const parts = entry.replace(/\/$/, "").split("/");
     const paths = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
-    return paths.some((path) => pickTier({ quick }, [path]).tier === "quick");
+    return paths.some((path) => globMatch(forms, path));
   };
 }

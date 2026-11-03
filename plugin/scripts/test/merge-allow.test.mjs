@@ -76,7 +76,7 @@ const SPEC = {
     on: { dispatched: "doing", built: "verify", failed: "doing", merged: "done" },
     write: { status: "status", verdict: "verdict", commit: "commit" },
   },
-  gate: { command: ["node", "gate.mjs"] },
+  gate: { tiers: [{ name: "full", command: ["node", "gate.mjs"] }] },
   guard: { allow: ["docs/**", "NOTES.md"] },
 };
 const BOARD_MD = `# Allow

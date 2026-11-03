@@ -473,6 +473,8 @@ const VALUES = {
   reportPath: "/m/r2.report.md",
   gateLine: "cd /w && gate",
   gateGreen: false,
+  gateNotYours: false,
+  buildTier: "full",
   gateRun: true,
   gateSha: "",
   gateLog: "",

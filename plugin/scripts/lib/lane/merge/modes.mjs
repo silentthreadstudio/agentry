@@ -1,10 +1,11 @@
 // merge/modes — the three small `lane merge` modes around the land (plan R1b-5): `--check` records a
-// repo check on the branch's tip, `--push` pushes main per `merge.push`, `--cleanup` takes the worktree
+// repo check or a gate checklist item on the branch's tip, `--push` pushes main per `merge.push`, `--cleanup` takes the worktree
 // and branch down, found by branch.
 import { join } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { read as readLedger } from "../../process/ledger.mjs";
+import { gateOf } from "../../process/spec/workflow.mjs";
 import { cleanup, commitOf, isAncestor, push } from "../land.mjs";
 import { worktreesDir } from "../worktree.mjs";
 import { mainRow } from "./carry.mjs";
@@ -37,11 +38,15 @@ export function check(lane) {
   if (!CHECK_RESULTS.includes(result))
     return usageError("lane merge", `--check takes <skill>=pass|fail, not "${value}"`);
   const names = spec.extensions?.merge?.checks ?? [];
-  if (!names.includes(skill)) {
-    const named = names.length ? names.join(", ") : "none named";
-    return no(`"${skill}" is not in extensions.merge.checks (${named})`);
+  // A checklist item is recorded the same way, under its own name (never a merge check's).
+  const items = (gateOf(spec)?.checklist ?? []).map((item) => item.name);
+  if (!names.includes(skill) && !items.includes(skill)) {
+    const named = (xs) => (xs.length ? xs.join(", ") : "none named");
+    return no(
+      `"${skill}" is not in extensions.merge.checks (${named(names)}) or gate.checklist (${named(items)})`,
+    );
   }
-  if (!skillExists(root, skill))
+  if (names.includes(skill) && !skillExists(root, skill))
     return no(
       `extensions.merge.checks names "${skill}", but ${SKILL_DIR}/${skill}/SKILL.md is missing`,
     );

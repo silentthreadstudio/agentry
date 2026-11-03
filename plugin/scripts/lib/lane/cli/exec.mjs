@@ -77,7 +77,7 @@ import {
   routeText,
 } from "../exec-view.mjs";
 import { gateLockDir, holdGate } from "../gate-lock.mjs";
-import { changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
+import { changedSince, flakyReds, globMatch, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import { idleOf } from "../idle.mjs";
 import { commitsBetween } from "../land.mjs";
@@ -456,9 +456,8 @@ function allowedCommit(root, spec, all) {
   };
 }
 
-// A glob test with the gate's own matcher (a quick tier whose only globs are these), as merge does.
-const matchesAny = (globs, path) =>
-  globs.length > 0 && pickTier({ quick: { command: ["-"], only: globs } }, [path]).tier === "quick";
+// A glob test with the gate's own matcher, as merge does.
+const matchesAny = (globs, path) => globMatch(globs, path);
 
 // Does an entry of a contract's owned files (a path, a directory, a glob, a bare file name, a
 // `path:lines`) cover `path`? Read wide, case ignored: a doubt keeps the guard on.
@@ -568,18 +567,35 @@ function gateLine(root, spec, ledger) {
   return `cd ${q(ledger.worktree)} && ${laneLine(root, "gate", ledger.id)}`;
 }
 
-// The recorded green gate a verify brief points at instead of re-running: the latest worktree gate run on
-// this very tip and tree (a moved tip never matches), when it ran green on a clean tree. A red after a
-// green is the latest, so the brief carries the full gate line. The slots every brief is given.
-function recordedGate(root, ledger, tip) {
+// The tier `role` runs in the lane's worktree: on the files the branch changed since its base, and the
+// item's flag.
+const laneTier = (ctx, ledger, config, role) =>
+  pickTier(config, role, {
+    changed: changedSince(ledger.worktree, ledger.base, "HEAD") ?? [],
+    flagged: isFlagged(ctx, ledger),
+  });
+
+// The gate part of a verify brief. A green record to read instead of re-running: the latest worktree gate
+// run on this very tip and tree (a moved tip never matches), green on a clean tree, of the tier the verify
+// (or build) role runs. A red after a green is the latest, so it is not read. Without one, under
+// `gate.roles.verify: "none"` the gate is not the verifier's (the lane runs the build tier after the
+// verdict); else the brief carries the full gate line. The slots every brief is given.
+function recordedGate(ctx, ledger, tip) {
+  const { root, spec } = ctx;
+  const config = gateOf(spec);
   const tree = headOf(root, `${tip}^{tree}`);
   const latest = (ledger.gates ?? []).findLast(
     (g) => g.where === "worktree" && g.commit === tip && (g.tree === undefined || g.tree === tree),
   );
-  const record = latest && greenOn([latest], tip) ? latest : null;
+  const build = config ? laneTier(ctx, ledger, config, "build").tier : null;
+  const tiers = config ? [laneTier(ctx, ledger, config, "verify").tier, build] : [];
+  const record = latest && greenOn([latest], tip) && tiers.includes(latest.tier) ? latest : null;
+  const notYours = !record && config?.roles.verify === "none";
   return {
     gateGreen: !!record,
-    gateRun: !record,
+    gateNotYours: notYours,
+    gateRun: !record && !notYours,
+    buildTier: build ?? "",
     gateSha: record ? short(record.commit) : "",
     gateLog: record?.log ?? "",
   };
@@ -641,7 +657,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
     logDir,
     reportPath: join(dir, `${name}.report.md`),
     gateLine: gateLine(root, spec, ledger),
-    ...recordedGate(root, ledger, tip),
+    ...recordedGate({ root, spec, model }, ledger, tip),
     tip: short(tip),
     from: dispatch.from ?? "",
     reason: dispatch.reason ?? "",
@@ -1106,8 +1122,14 @@ function gate(ctx, id) {
     refuse(`the lane is ${ledger.state} (next ${ledger.next}): no gate to run`);
   const config = gateOf(spec);
   if (!config) refuse("the workflow file has no gate: add one (/agentry:init) to run it here");
-  const tier = pickTier(config, changedSince(ledger.worktree, ledger.base, "HEAD") ?? []);
-  const command = tier.tier === "quick" ? config.quick.command : config.command;
+  // While a verifier is out the gate runs the verify role's tier; else the build role's.
+  const role = expects(ledger) === "verdict" ? "verify" : "build";
+  const tier = laneTier(ctx, ledger, config, role);
+  if (!tier.tier)
+    refuse(
+      `${tier.reason}: the verifier reads the recorded gate; the lane runs the build tier after the verdict`,
+    );
+  const { command } = tier;
   const lockDir = gateLockDir(root);
   let runs = ledger.gates?.length ?? 0;
   let startedAt = 0;
@@ -1158,8 +1180,18 @@ function gate(ctx, id) {
   const reran = again && !again.refused;
   const ran = reran ? again : first;
   const records = [
-    { where: "worktree", ...first, ...(reran && { flakyRed: flaky }), why: tier.reason, at: now() },
-    ...(reran ? [{ where: "worktree", ...again, rerun: true, why: tier.reason, at: now() }] : []),
+    {
+      where: "worktree",
+      role,
+      ...first,
+      command,
+      ...(reran && { flakyRed: flaky }),
+      why: tier.reason,
+      at: now(),
+    },
+    ...(reran
+      ? [{ where: "worktree", role, ...again, command, rerun: true, why: tier.reason, at: now() }]
+      : []),
   ];
   let res = { ledger };
   for (const record of records) res = stepWith(res.ledger, { type: "gate", record });
@@ -1173,6 +1205,7 @@ function gate(ctx, id) {
       ...(refreshed && { briefUpdated: refreshed }),
       gate: {
         exit: ran.exit,
+        role,
         tier: ran.tier,
         why: tier.reason,
         commit: short(ran.commit),

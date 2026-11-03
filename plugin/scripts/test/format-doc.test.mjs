@@ -84,11 +84,13 @@ test("the capability table words every capability a rule can need, once", () => 
   );
 });
 
-// A shape's keys as [path, "yes" | "no"] (required or not), each followed by its nested shape's keys.
+// A shape's keys as [path, "yes" | "no"] (required or not), each followed by its nested shape's keys; a
+// list of shapes (`gate.tiers`) by its item's keys, as `gate.tiers[].name`.
 const keyRows = (keys, at = "") =>
   Object.entries(keys).flatMap(([key, check]) => {
     const path = `${at}${key.replace(/!$/, "")}`;
     const row = [path, key.endsWith("!") ? "yes" : "no"];
+    if (check.item) return [row, ...keyRows(check.item.keys, `${path}[].`)];
     return [row, ...(check.keys ? keyRows(check.keys, `${path}.`) : [])];
   });
 const HARNESS = ["gate", "extensions", "conductor"];
@@ -138,5 +140,9 @@ test("init and the learn reference offer lifecycle writes once, saying what they
     assert.doesNotMatch(doc, /`explain` and the merge print|explain\` and the\s+merge print/, file);
     assert.doesNotMatch(doc, /Harness writes on\?/, file);
     assert.match(doc, /ignored `\.env`/, file);
+    // init proposes tiers, never the keys 0.3 replaced.
+    assert.match(doc, /`gate\.tiers`/, file);
+    assert.match(doc, /last tier/, file);
+    assert.match(doc, /[Nn]ever\s+write `gate\.command` or `gate\.quick`/, file);
   }
 });

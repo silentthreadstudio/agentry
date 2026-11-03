@@ -159,13 +159,13 @@ test("a workflow.json that is not JSON, or cannot be read, is exit 2 naming it",
 });
 
 test("problems in both files print one block per file, the process file first", () => {
-  const res = scratch({ ...BASE, name: 7 }, { gate: { command: [] } }).check();
+  const res = scratch({ ...BASE, name: 7 }, { gate: { tiers: [] } }).check();
   assert.equal(res.status, 2);
   const lines = res.stderr.trimEnd().split("\n");
   assert.match(lines[0], /^✗ process\.json: cannot use the process file → /);
   assert.equal(lines[1], "  name should be a string");
   assert.match(lines[2], /^✗ workflow\.json: cannot use the workflow file → /);
-  assert.equal(lines[3], "  gate.command should not be empty");
+  assert.equal(lines[3], "  gate.tiers should not be empty");
   assert.equal(lines.length, 4);
 });
 

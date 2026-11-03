@@ -3,7 +3,7 @@
 // file, and config.json `merge`, `lanes`. Each case is run through the plugin's validator
 // (`spec-keys.test.mjs`, `config.test.mjs`) and, side by side with core's zod, in
 // `packages/core/test/keys-parity.test.ts`: both must give the same verdict, naming the same paths.
-// `bad` lists every path a bad case must name (`gate.command[1]`); a good case has none. Synthetic
+// `bad` lists every path a bad case must name (`gate.tiers[0].command[1]`); a good case has none. Synthetic
 // shapes only.
 import { BOARD_KEYS, WORKFLOW_KEYS } from "../lib/process/spec.mjs";
 
@@ -33,6 +33,9 @@ export const specOf = (c) => ({
 });
 
 const gate = (g) => ({ workflow: { gate: g } });
+const tier = (name, command, when) => ({ name, command, ...(when !== undefined && { when }) });
+// The plainest valid tiers: one fallback tier.
+const T = [tier("full", ["x"])];
 const life = (write) => ({ workflow: { lifecycle: { kind: "task", on: {}, write } } });
 const briefs = (b) => ({ workflow: { briefs: b } });
 const commits = (c) => ({ workflow: { commits: c } });
@@ -100,12 +103,23 @@ export const PROCESS_CASES = [
   { name: "a comma and space as a commits join", ...joined(", ") },
   { name: "a range mark as a commits join", ...joined("…") },
   { name: "a dotted range mark as a commits join", ...joined("..") },
-  { name: "a gate with only a command", ...gate({ command: ["make", "test"] }) },
+  { name: "a gate with one tier", ...gate({ tiers: [tier("full", ["make", "test"])] }) },
   {
     name: "a full gate",
     ...gate({
-      command: ["tools/gate.sh"],
-      quick: { command: ["tools/gate.sh", "--quick"], only: ["docs/**", "*.md"] },
+      tiers: [
+        tier("docs", ["scripts/gate.sh", "--quick"], { only: ["docs/**", "*.md"] }),
+        tier("tests", ["scripts/gate.sh", "--tests"], { only: ["src/ui/**", "tests/**"] }),
+        tier("full", ["scripts/gate.sh"]),
+      ],
+      roles: { build: "pick", verify: "none", merge: "pick" },
+      checklist: [
+        {
+          name: "ui-smoke",
+          text: "Open each changed screen; no errors in the console",
+          when: { any: ["src/ui/**"], flag: true },
+        },
+      ],
       after: ["CHANGELOG.md"],
       concurrency: 2,
       flaky: ["test_budget"],
@@ -113,10 +127,25 @@ export const PROCESS_CASES = [
       note: "the repo's own gate",
     }),
   },
-  { name: "an argv item with spaces", ...gate({ command: ["node", "--test", "a b"] }) },
+  {
+    name: "roles naming a tier, full and pick, and a last tier not called full",
+    ...gate({
+      tiers: [tier("ui", ["x", "--ui"], { flag: true }), tier("ci", ["x"])],
+      roles: { build: "ui", verify: "full", merge: "pick" },
+    }),
+  },
+  { name: "a verify role of none alone", ...gate({ tiers: T, roles: { verify: "none" } }) },
+  {
+    name: "a checklist item with no when",
+    ...gate({ tiers: T, checklist: [{ name: "owner-ok", text: "The owner saw it run" }] }),
+  },
+  {
+    name: "an argv item with spaces",
+    ...gate({ tiers: [tier("full", ["node", "--test", "a b"])] }),
+  },
   {
     name: "paths that normalise inside",
-    ...gate({ command: ["x"], after: ["./docs/a.md", "a/../b.md"] }),
+    ...gate({ tiers: T, after: ["./docs/a.md", "a/../b.md"] }),
   },
   { name: "one merge check", ...checks(["repo-merge"]) },
   { name: "several merge checks", ...checks(["repo-merge", "a1", "0-x"]) },
@@ -128,7 +157,7 @@ export const PROCESS_CASES = [
   {
     name: "all three keys",
     workflow: {
-      gate: { command: ["x"] },
+      gate: { tiers: T },
       extensions: { merge: { checks: ["y"] } },
       conductor: { prompt: "z.md" },
     },
@@ -163,102 +192,207 @@ export const PROCESS_CASES = [
   // bad: gate
   { name: "a gate as a string", ...gate("make test"), bad: ["gate"] },
   { name: "a gate as a list", ...gate(["make"]), bad: ["gate"] },
-  { name: "a gate with no command", ...gate({}), bad: ["gate.command"] },
-  { name: "a command as a string", ...gate({ command: "make test" }), bad: ["gate.command"] },
-  { name: "an empty command", ...gate({ command: [] }), bad: ["gate.command"] },
-  { name: "a non-string argv item", ...gate({ command: ["make", 1] }), bad: ["gate.command[1]"] },
-  { name: "an empty argv item", ...gate({ command: ["make", ""] }), bad: ["gate.command[1]"] },
-  { name: "a null argv item", ...gate({ command: [null] }), bad: ["gate.command[0]"] },
+  { name: "a gate with no tiers", ...gate({}), bad: ["gate.tiers"] },
   {
-    name: "a misspelled gate key",
-    ...gate({ command: ["x"], comand: ["y"] }),
-    bad: ["gate.comand"],
+    name: "an old gate.command beside tiers",
+    ...gate({ tiers: T, command: ["make", "test"] }),
+    bad: ["gate.command"],
   },
   {
-    name: "a quick tier without only",
-    ...gate({ command: ["x"], quick: { command: ["x", "--quick"] } }),
-    bad: ["gate.quick.only"],
+    name: "an old gate with only a command",
+    ...gate({ command: ["make", "test"] }),
+    bad: ["gate.command", "gate.tiers"],
   },
   {
-    name: "a quick tier without a command",
-    ...gate({ command: ["x"], quick: { only: ["docs/**"] } }),
-    bad: ["gate.quick.command"],
+    name: "an old quick tier",
+    ...gate({ tiers: T, quick: { command: ["x", "--quick"], only: ["docs/**"] } }),
+    bad: ["gate.quick"],
+  },
+  { name: "tiers as an object", ...gate({ tiers: tier("full", ["x"]) }), bad: ["gate.tiers"] },
+  { name: "an empty tiers list", ...gate({ tiers: [] }), bad: ["gate.tiers"] },
+  {
+    name: "a tier with no command",
+    ...gate({ tiers: [{ name: "full" }] }),
+    bad: ["gate.tiers[0].command"],
   },
   {
-    name: "a quick tier with an empty only",
-    ...gate({ command: ["x"], quick: { command: ["x"], only: [] } }),
-    bad: ["gate.quick.only"],
+    name: "a tier with no name",
+    ...gate({ tiers: [{ command: ["x"] }] }),
+    bad: ["gate.tiers[0].name"],
+  },
+  {
+    name: "a command as a string",
+    ...gate({ tiers: [tier("full", "make test")] }),
+    bad: ["gate.tiers[0].command"],
+  },
+  {
+    name: "an empty command",
+    ...gate({ tiers: [tier("full", [])] }),
+    bad: ["gate.tiers[0].command"],
+  },
+  {
+    name: "a non-string argv item",
+    ...gate({ tiers: [tier("full", ["make", 1])] }),
+    bad: ["gate.tiers[0].command[1]"],
+  },
+  {
+    name: "an empty argv item",
+    ...gate({ tiers: [tier("full", ["make", ""])] }),
+    bad: ["gate.tiers[0].command[1]"],
+  },
+  {
+    name: "a null argv item",
+    ...gate({ tiers: [tier("full", [null])] }),
+    bad: ["gate.tiers[0].command[0]"],
+  },
+  {
+    name: "two tiers with one name",
+    ...gate({ tiers: [tier("docs", ["x"], { only: ["docs/**"] }), tier("docs", ["x"])] }),
+    bad: ["gate.tiers[1].name"],
+  },
+  {
+    name: "full that is not the last tier",
+    ...gate({ tiers: [tier("full", ["x"], { only: ["docs/**"] }), tier("ci", ["x"])] }),
+    bad: ["gate.tiers[0].name"],
+  },
+  {
+    name: "a tier named pick",
+    ...gate({ tiers: [tier("pick", ["x"])] }),
+    bad: ["gate.tiers[0].name"],
+  },
+  {
+    name: "a tier named none",
+    ...gate({ tiers: [tier("none", ["x"])] }),
+    bad: ["gate.tiers[0].name"],
+  },
+  {
+    name: "an upper-case tier name",
+    ...gate({ tiers: [tier("Docs", ["x"])] }),
+    bad: ["gate.tiers[0].name"],
+  },
+  {
+    name: "a last tier with a when",
+    ...gate({ tiers: [tier("full", ["x"], { only: ["docs/**"] })] }),
+    bad: ["gate.tiers[0].when"],
+  },
+  {
+    name: "an earlier tier with no when",
+    ...gate({ tiers: [tier("docs", ["x"]), tier("full", ["x"])] }),
+    bad: ["gate.tiers[0].when"],
+  },
+  {
+    name: "an empty when",
+    ...gate({ tiers: [tier("docs", ["x"], {}), tier("full", ["x"])] }),
+    bad: ["gate.tiers[0].when"],
+  },
+  {
+    name: "a flag of false",
+    ...gate({ tiers: [tier("ui", ["x"], { flag: false }), tier("full", ["x"])] }),
+    bad: ["gate.tiers[0].when.flag"],
+  },
+  {
+    name: "a misspelled when key",
+    ...gate({ tiers: [tier("docs", ["x"], { onyl: ["docs/**"] }), tier("full", ["x"])] }),
+    bad: ["gate.tiers[0].when.onyl", "gate.tiers[0].when"],
   },
   {
     name: "an absolute only glob",
-    ...gate({ command: ["x"], quick: { command: ["x"], only: ["/etc/*"] } }),
-    bad: ["gate.quick.only[0]"],
+    ...gate({ tiers: [tier("docs", ["x"], { only: ["/etc/*"] }), tier("full", ["x"])] }),
+    bad: ["gate.tiers[0].when.only[0]"],
   },
   {
-    name: "an only glob that climbs out",
-    ...gate({ command: ["x"], quick: { command: ["x"], only: ["docs/**", "../x/**"] } }),
-    bad: ["gate.quick.only[1]"],
+    name: "an any glob that climbs out",
+    ...gate({ tiers: [tier("ui", ["x"], { any: ["src/**", "../x/**"] }), tier("full", ["x"])] }),
+    bad: ["gate.tiers[0].when.any[1]"],
   },
   {
-    name: "an only glob as a string",
-    ...gate({ command: ["x"], quick: { command: ["x"], only: "docs/**" } }),
-    bad: ["gate.quick.only"],
+    name: "an empty only list",
+    ...gate({ tiers: [tier("docs", ["x"], { only: [] }), tier("full", ["x"])] }),
+    bad: ["gate.tiers[0].when.only"],
   },
   {
-    name: "a misspelled only",
-    ...gate({ command: ["x"], quick: { command: ["x"], onyl: ["docs/**"] } }),
-    bad: ["gate.quick.onyl", "gate.quick.only"],
+    name: "a role naming no tier",
+    ...gate({ tiers: T, roles: { merge: "docs" } }),
+    bad: ["gate.roles.merge"],
   },
   {
-    name: "a quick tier as a flag",
-    ...gate({ command: ["x"], quick: "--quick" }),
-    bad: ["gate.quick"],
+    name: "a build role of none",
+    ...gate({ tiers: T, roles: { build: "none" } }),
+    bad: ["gate.roles.build"],
   },
   {
-    name: "a zero concurrency",
-    ...gate({ command: ["x"], concurrency: 0 }),
-    bad: ["gate.concurrency"],
+    name: "a misspelled role",
+    ...gate({ tiers: T, roles: { biuld: "pick" } }),
+    bad: ["gate.roles.biuld"],
   },
-  { name: "an empty flaky list", ...gate({ command: ["x"], flaky: [] }), bad: ["gate.flaky"] },
   {
-    name: "an empty flaky name",
-    ...gate({ command: ["x"], flaky: ["a", ""] }),
-    bad: ["gate.flaky[1]"],
+    name: "a role as a list",
+    ...gate({ tiers: T, roles: { build: ["full"] } }),
+    bad: ["gate.roles.build"],
   },
+  {
+    name: "a checklist name repeated",
+    ...gate({
+      tiers: T,
+      checklist: [
+        { name: "ui-smoke", text: "a" },
+        { name: "ui-smoke", text: "b" },
+      ],
+    }),
+    bad: ["gate.checklist[1].name"],
+  },
+  {
+    name: "a checklist name that is a merge check",
+    workflow: {
+      gate: { tiers: T, checklist: [{ name: "repo-merge", text: "a" }] },
+      extensions: { merge: { checks: ["repo-merge"] } },
+    },
+    bad: ["gate.checklist[0].name"],
+  },
+  {
+    name: "a checklist item with no text",
+    ...gate({ tiers: T, checklist: [{ name: "ui-smoke" }] }),
+    bad: ["gate.checklist[0].text"],
+  },
+  { name: "an empty checklist", ...gate({ tiers: T, checklist: [] }), bad: ["gate.checklist"] },
+  {
+    name: "a misspelled gate key",
+    ...gate({ tiers: T, comand: ["y"] }),
+    bad: ["gate.comand"],
+  },
+  { name: "a zero concurrency", ...gate({ tiers: T, concurrency: 0 }), bad: ["gate.concurrency"] },
+  { name: "an empty flaky list", ...gate({ tiers: T, flaky: [] }), bad: ["gate.flaky"] },
+  { name: "an empty flaky name", ...gate({ tiers: T, flaky: ["a", ""] }), bad: ["gate.flaky[1]"] },
   {
     name: "an empty flakyLogs list",
-    ...gate({ command: ["x"], flakyLogs: [] }),
+    ...gate({ tiers: T, flakyLogs: [] }),
     bad: ["gate.flakyLogs"],
   },
   {
     name: "flakyLogs globs that are absolute, climb out or are empty",
     ...gate({
-      command: ["x"],
+      tiers: T,
       flakyLogs: ["/var/log/a.log", "a/../b.log", "$TMPDIR/../x", "$TMPDIR/"],
     }),
     bad: ["gate.flakyLogs[0]", "gate.flakyLogs[1]", "gate.flakyLogs[2]", "gate.flakyLogs[3]"],
   },
   {
     name: "flakyLogs globs with a . segment",
-    ...gate({ command: ["x"], flakyLogs: ["./sub/a.log", "sub/./a.log", "$TMPDIR/./a.log"] }),
+    ...gate({ tiers: T, flakyLogs: ["./sub/a.log", "sub/./a.log", "$TMPDIR/./a.log"] }),
     bad: ["gate.flakyLogs[0]", "gate.flakyLogs[1]", "gate.flakyLogs[2]"],
   },
-  { name: "an empty after", ...gate({ command: ["x"], after: [] }), bad: ["gate.after"] },
+  { name: "an empty after", ...gate({ tiers: T, after: [] }), bad: ["gate.after"] },
   {
     name: "an after glob that climbs out",
-    ...gate({ command: ["x"], after: ["a/../../x"] }),
+    ...gate({ tiers: T, after: ["a/../../x"] }),
     bad: ["gate.after[0]"],
   },
-  {
-    name: "an empty after glob",
-    ...gate({ command: ["x"], after: [""] }),
-    bad: ["gate.after[0]"],
-  },
-  { name: "an empty note", ...gate({ command: ["x"], note: "" }), bad: ["gate.note"] },
-  { name: "a number note", ...gate({ command: ["x"], note: 5 }), bad: ["gate.note"] },
+  { name: "an empty after glob", ...gate({ tiers: T, after: [""] }), bad: ["gate.after[0]"] },
+  { name: "an empty note", ...gate({ tiers: T, note: "" }), bad: ["gate.note"] },
+  { name: "a number note", ...gate({ tiers: T, note: 5 }), bad: ["gate.note"] },
   {
     name: "a __proto__ key in the gate",
-    json: '{ "gate": { "command": ["x"], "__proto__": { "after": [] } } }',
+    json: '{ "gate": { "tiers": [{ "name": "full", "command": ["x"] }], "__proto__": { "after": [] } } }',
     bad: ["gate.__proto__"],
   },
   { name: "a misspelled top-level key", board: { gates: { command: ["x"] } }, bad: ["gates"] },
@@ -654,5 +788,5 @@ export const CONFIG_CASES = [
 /** The config value of a case. */
 export const configOf = (c) => (c.json ? JSON.parse(c.json) : structuredClone(c.value));
 
-/** A validator message's path: the text before its first space (`gate.command[1] should be …`). */
+/** A validator message's path: the text before its first space (`gate.tiers[0].command[1] should be …`). */
 export const pathOf = (message) => message.split(" ")[0];

@@ -76,6 +76,9 @@ The builder's report: {{builderReport}}
 - Gate: the gate is recorded green on {{gateSha}} ({{gateLog}}): read it; do not re-run it. Your own probes
   are the only runs of yours.
 {{/gateGreen}}
+{{#gateNotYours}}
+- The gate is not yours: the lane records the {{buildTier}} tier and the land runs the merge tier. Run only your own probes.
+{{/gateNotYours}}
 {{#gateRun}}
 - Run the gate as the lane records it, in the foreground, and read its exit code: `{{gateLine}}`
 {{/gateRun}}

@@ -108,6 +108,19 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `board contract` finds.
 
 ### Changed
+- **Gate tiers, a gate per role, a manual checklist** — `gate.command` and `gate.quick` are replaced by
+  `gate.tiers`: named tiers in precedence order, each an argv, every one but the last with a `when`
+  (`only` globs, `any` globs, `flag: true`; any one holding is enough), the last the fallback. An old
+  workflow file is refused at load with where each key goes now (the command becomes the last tier, a
+  quick tier a tier with `when.only` before it). `gate.roles` says which tier `build`, `verify` and
+  `merge` run (`pick`, `full` or a tier name; `verify` also `none`, the default, so a verifier runs no
+  gate and `lane exec gate` while one is out exits 2). Gate records carry their `role` and `command`; the
+  land skips only on a green worktree record of the tier and argv it needs, so a record from before tiers
+  never skips. `gate.checklist` items are manual checks the land waits on when their `when` holds,
+  recorded with `lane merge --check <name>=pass|fail` like a skill check. `gate.flaky` names are also
+  read from `FAILED <name>`, a `<path>::<test>` token and JSON test events, and a listed name counts only
+  whole. `board explain` shows `gate.tiers`, `gate.roles` and `gate.checklist`; `/agentry:init`
+  proposes tiers.
 - **Commits on main during a lane** — a commit touching only `guard.allow` paths that no running lane owns
   no longer stops the lane; the report says `main moved by allowed commits: <n> (<shas>)`, and a commit
   that touches anything else names the path that tripped. A red gate after a green one on the same tip now

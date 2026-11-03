@@ -55,7 +55,7 @@ const SPEC = {
     on: { dispatched: "doing", built: "verify", failed: "doing", merged: "done" },
     write: { status: "status", verdict: "verdict" },
   },
-  gate: { command: ["sh", "-c", "true"] },
+  gate: { tiers: [{ name: "full", command: ["sh", "-c", "true"] }] },
 };
 const BOARD_MD = `# Hold
 
