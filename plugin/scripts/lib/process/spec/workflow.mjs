@@ -1,3 +1,4 @@
+import { locks } from "./locks.mjs";
 // workflow — the workflow file (`.agentry/workflow.json`, optional): how the harness works this repo,
 // one schema entry per key (mirrors core's `Workflow`, `packages/core/src/workflow.ts`), and the accessors
 // that read a key with its default. An absent key is today's behaviour for it. Nothing here reads the
@@ -169,14 +170,6 @@ const policyLines = (v, at, bad) => {
 const pattern = (v, at, bad) => {
   text(v, at, bad);
   if (typeof v === "string" && v) regex(v, at, bad);
-};
-
-// Named locks (`agentry run --lock`, `agentry lock take`): `{ "<name>": <slots, at least 1> }`, one entry or more.
-const locks = (v, at, bad) => {
-  record(posInt)(v, at, bad);
-  if (!isObject(v)) return;
-  if (Object.keys(v).length === 0) bad(at, "should not be empty");
-  for (const k of Object.keys(v)) if (k !== "__proto__") name(k, join(at, k), bad);
 };
 
 /** The workflow file's checker; `workflowSchema.keys` (and each nested shape's `keys`) lists its keys.

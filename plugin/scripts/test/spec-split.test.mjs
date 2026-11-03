@@ -59,7 +59,7 @@ function scratch(board, workflow) {
   return { root, check };
 }
 
-test("the key lists come from the two schemas and split the twelve workflow keys from the six board keys", () => {
+test("the key lists come from the two schemas and split the thirteen workflow keys from the six board keys", () => {
   assert.deepEqual(BOARD_KEYS, ["version", "name", "root", "kinds", "rules", "status"]);
   assert.deepEqual(WORKFLOW_KEYS, [
     "lifecycle",
@@ -74,6 +74,7 @@ test("the key lists come from the two schemas and split the twelve workflow keys
     "models",
     "briefs",
     "commits",
+    "locks",
   ]);
   assert.ok(!WORKFLOW_KEYS.includes("version"));
   assert.ok(WORKFLOW_KEYS.every((k) => !BOARD_KEYS.includes(k)));
