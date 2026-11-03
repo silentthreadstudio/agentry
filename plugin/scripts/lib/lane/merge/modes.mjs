@@ -112,6 +112,7 @@ export function cleanupMode(lane) {
   const merge = ledger.merge;
   if (merge.cleaned?.removed && merge.cleaned.branchDeleted) {
     const gone = `already done: ${merge.cleaned.path} and ${ledger.branch} are gone`;
+    if (ledger.next) save(lane, { next: null });
     return done(0, lane, [ok("cleanup", gone)]);
   }
   const discard = Boolean(opts["--discard-ignored"]);
@@ -134,7 +135,8 @@ export function cleanupMode(lane) {
     branchDeleted: res.branchDeleted,
     at: now(),
   };
-  save(lane, { merge: { ...merge, cleaned } });
+  // Done: no next step is left, so a stale one (the cleanup itself) must not outlive it in the ledger.
+  save(lane, { merge: { ...merge, cleaned }, ...(res.ok && { next: null }) });
   if (!res.ok) {
     const why = res.reason ?? "the worktree or the branch is still there";
     return done(1, lane, [red("cleanup", why)]);

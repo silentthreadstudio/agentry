@@ -1525,6 +1525,20 @@ test("cleanup removes the worktree and branch by branch; ignored files hold it u
   assert.match(again.stdout, /already done/);
 });
 
+test("after cleanup the ledger names no next step, so session close shows none", () => {
+  build({ "src/a.txt": "a\n" });
+  mustLand("--branch", BRANCH);
+  assert.match(readLedger(root, ID).next ?? "", /lane merge T1/);
+  assert.equal(merge(ID, "--cleanup").status, 0);
+  assert.equal(readLedger(root, ID).next, null);
+  const session = spawnSync("node", [LANE, "session", "close", "--root", root], {
+    encoding: "utf8",
+    env: { ...gitEnv, NO_COLOR: "1" },
+  });
+  const mine = JSON.parse(session.stdout).ledgers.find((l) => l.id === ID);
+  assert.equal(mine.next, null);
+});
+
 test("cleanup finds a custom-named, locked worktree by its branch", () => {
   git(root, "branch", "feature/x");
   const path = join(root, ".claude", "worktrees", "agent-1");
