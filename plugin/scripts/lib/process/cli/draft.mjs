@@ -6,12 +6,15 @@
 // after the owner's OK. The drafts live in the main checkout, so `apply` edits the main checkout's board: from
 // inside a linked worktree it refuses rather than write the edit in one checkout and the state in another. A
 // line of the drafts file that is not a draft is kept as written and named in the output of list, drop and
-// apply.
+// apply. `apply <n>` alone shows what it would write and writes nothing; `apply <n> --apply` writes it
+// (A39). `add` and `drop` write only the drafts file under `.agentry/run`, never the repo: holding a draft
+// is their job, and the drafts are the preview.
 //
-// run(argv, { root, spec, model }) -> { exit, out }   exit 0 = done, 2 = usage or refusal (nothing written)
+// run(argv, { root, spec, model }) -> { exit, out }   exit 0 = done or previewed, 2 = usage or refusal
+// (nothing written)
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
-import { refuse, usageError } from "../../cli/help.mjs";
+import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
 import { git, mainRoot } from "../../lane/worktree.mjs";
 import * as drafts from "../drafts.mjs";
 import { fit } from "../render.mjs";
@@ -21,7 +24,7 @@ import { run as addItem } from "./add.mjs";
 import { run as nextId } from "./next-id.mjs";
 
 export const help = {
-  usage: ["draft add --json '{…}'", "draft list", "draft drop <n>", "draft apply <n>"],
+  usage: ["draft add --json '{…}'", "draft list", "draft drop <n>", "draft apply <n> [--apply]"],
   purpose: "The owner's calls caught in conversation, held until the owner says OK.",
   args: {
     "add|list|drop|apply": "keep a draft, show the pending ones, forget one, write one",
@@ -30,9 +33,10 @@ export const help = {
   flags: {
     "--json <draft>":
       'for add: {"kind":"decision"|"rule","answer":"…"} (question, unpicked, source)',
+    "--apply": "for apply: write it (without: show what it would write, and write nothing)",
   },
-  exits: { 0: "done", 2: "usage, or refused (nothing written)" },
-  example: "board draft apply 2",
+  exits: { 0: "done, or previewed", 2: "usage, or refused (nothing written)" },
+  example: "board draft apply 2 --apply",
 };
 const fail = (why, next) => refuse("board draft", why, next);
 const usage = (why) => usageError("board draft", why);
@@ -52,7 +56,7 @@ function fill(template, draft) {
   });
 }
 
-function applyDecision(draft, { root, spec, model }) {
+function applyDecision(draft, { root, spec, model }, write) {
   const def = own(spec.drafts, "decision");
   if (!def)
     return fail("the process file has no drafts.decision: nothing says how a decision is filled");
@@ -65,26 +69,28 @@ function applyDecision(draft, { root, spec, model }) {
     if (e instanceof WriteError) return fail(`drafts.decision.map: ${e.message}`);
     throw e;
   }
-  return addItem([def.kind, "--json", JSON.stringify({ ...fields, id: id.out })], {
+  const args = [def.kind, "--json", JSON.stringify({ ...fields, id: id.out })];
+  return addItem(write ? [...args, "--apply"] : args, {
     root,
     spec,
     model,
   });
 }
 
-function applyRule(draft, { root, spec }) {
+function applyRule(draft, { root, spec }, write) {
   const heading = spec.conductor?.rules;
   const prompt = spec.conductor?.prompt;
   if (!heading || !prompt)
     return fail("the process file has no conductor.rules heading: nowhere to append a rule");
+  const line = `- ${oneLine(draft.answer)}`;
   try {
-    apply(join(root, prompt), (text) =>
-      appendLine(text, { heading, line: `- ${oneLine(draft.answer)}` }),
-    );
+    apply(join(root, prompt), (text) => appendLine(text, { heading, line }), { preview: !write });
   } catch (e) {
     if (e instanceof WriteError) return fail(e.message);
     throw e;
   }
+  if (!write)
+    return { exit: 0, out: `would add a rule under "${heading}" (${prompt})\n    + ${line}` };
   return { exit: 0, out: `rule added under "${heading}" (${prompt})` };
 }
 
@@ -115,8 +121,10 @@ function number(word) {
 }
 
 export function run(argv, ctx) {
-  const [action, ...rest] = argv;
+  const write = argv.includes("--apply");
+  const [action, ...rest] = argv.filter((a) => a !== "--apply");
   const runRoot = mainRoot(ctx.root) ?? ctx.root;
+  if (write && action !== "apply") return usage("--apply goes with apply <n>");
   if (action === "list") {
     if (rest.length) return usage("list takes nothing more");
     const open = drafts.pending(runRoot);
@@ -158,8 +166,13 @@ export function run(argv, ctx) {
     return fail(
       `draft apply edits the main checkout's board, and ${tree} is a worktree: run it from ${runRoot}`,
     );
-  const done = draft.kind === "decision" ? applyDecision(draft, ctx) : applyRule(draft, ctx);
+  const done =
+    draft.kind === "decision" ? applyDecision(draft, ctx, write) : applyRule(draft, ctx, write);
   if (done.exit !== 0) return done;
+  if (!write) {
+    const body = done.out.split("\n").filter((l) => l !== PREVIEW);
+    return { exit: 0, out: withTorn([`draft ${n}:`, ...body, PREVIEW].join("\n"), runRoot) };
+  }
   drafts.mark(runRoot, n, "applied");
   return { exit: 0, out: withTorn(`applied draft ${n}: ${done.out.split("\n")[0]}`, runRoot) };
 }

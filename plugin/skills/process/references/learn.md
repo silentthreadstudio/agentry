@@ -132,13 +132,13 @@ conductor.
    Claude Code reads it beside a `CLAUDE.md` only through that import. Project instructions can also live in
    `.claude/CLAUDE.md`: with no root `CLAUDE.md` the import goes there as `@../AGENTS.md` (relative to that
    file); with both, in the root one only. An import inside a code fence, an HTML comment or a code span
-   doesn't count. On OK, `board instructions --write`; it writes both files or neither (exit 2 with the
+   doesn't count. On OK, `board instructions --apply`; it writes both files or neither (exit 2 with the
    reason when one can't be written).
    Text outside the markers is never touched, and a re-run changes nothing. If the repo's instruction files
    carry a competing line (every task through `/agentry:go`, a hand checker to keep green), list it and
    propose its replacement; edit it only on the owner's OK.
 4. **The default agent.** Run `board default-agent` and show `current`. Offer to make `agentry:conductor`
-   the project's main-session agent: `board default-agent --write`, then `--verify` (static). A different
+   the project's main-session agent: `board default-agent --apply`, then `--verify` (static). A different
    `agent` already set is shown and replaced only on an explicit OK. The live check (`--verify live`) costs
    one small request (about 15k tokens); run it only with the owner's OK. Show `resolved` and `how`; on
    `no`, the cause. Say: it takes effect in the next session; `.claude/settings.local.json` overrides it;

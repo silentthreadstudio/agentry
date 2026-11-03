@@ -1,7 +1,7 @@
 // Tests for lib/process/instructions.mjs and `board instructions` (cli/instructions.mjs): the Agentry block
 // upserted into AGENTS.md between its markers (no file, a file without the block, an older block, CRLF,
 // broken markers), the `@AGENTS.md` import added to an existing CLAUDE.md (with and without it, never
-// creating one), byte-idempotent re-runs, and the dry run writing nothing.
+// creating one), byte-idempotent re-runs, and the preview writing nothing.
 // Run: node --test plugin/scripts/test/instructions.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -163,7 +163,7 @@ test("the import keeps CRLF and goes after a byte-order mark", () => {
 
 // board instructions (the CLI)
 
-test("the dry run prints the block as + lines and writes nothing", () => {
+test("the preview prints the block as + lines and writes nothing", () => {
   const root = repo({ "CLAUDE.md": "# C\n" });
   const { exit, out } = run([], { root, spec: SPEC });
   assert.equal(exit, 0);
@@ -171,14 +171,14 @@ test("the dry run prints the block as + lines and writes nothing", () => {
   assert.match(out, /^\+ <!-- agentry:begin v1 -->$/m);
   assert.match(out, /^\+ .*`docs\/CONDUCTOR\.md`/m);
   assert.match(out, /^CLAUDE\.md: add `@AGENTS\.md` as its first line$/m);
-  assert.match(out, /dry run: nothing written/);
+  assert.match(out, /preview: nothing written; add --apply to write it/);
   assert.equal(existsSync(join(root, "AGENTS.md")), false);
   assert.equal(read(root, "CLAUDE.md"), "# C\n");
 });
 
-test("--write creates AGENTS.md and imports it from CLAUDE.md; a second run changes nothing", () => {
+test("--apply creates AGENTS.md and imports it from CLAUDE.md; a second run changes nothing", () => {
   const root = repo({ "CLAUDE.md": "# C\n" });
-  const first = run(["--write"], { root, spec: SPEC });
+  const first = run(["--apply"], { root, spec: SPEC });
   assert.equal(first.exit, 0);
   assert.match(first.out, /wrote AGENTS\.md, CLAUDE\.md/);
   const agents = read(root, "AGENTS.md");
@@ -186,7 +186,7 @@ test("--write creates AGENTS.md and imports it from CLAUDE.md; a second run chan
   assert.ok(agents.endsWith(`${END}\n`));
   assert.match(agents, /`docs\/CONDUCTOR\.md`/);
   assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n# C\n");
-  const second = run(["--write"], { root, spec: SPEC });
+  const second = run(["--apply"], { root, spec: SPEC });
   assert.match(second.out, /up to date/);
   assert.match(second.out, /already imports AGENTS\.md/);
   assert.match(second.out, /nothing to write/);
@@ -194,9 +194,9 @@ test("--write creates AGENTS.md and imports it from CLAUDE.md; a second run chan
   assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n# C\n");
 });
 
-test("--write never creates CLAUDE.md", () => {
+test("--apply never creates CLAUDE.md", () => {
   const root = repo();
-  const { out } = run(["--write"], { root, spec: SPEC });
+  const { out } = run(["--apply"], { root, spec: SPEC });
   assert.match(out, /CLAUDE\.md: none \(not created/);
   assert.equal(existsSync(join(root, "CLAUDE.md")), false);
   assert.ok(existsSync(join(root, "AGENTS.md")));
@@ -206,7 +206,7 @@ test("an old block shows as - and + lines and only the block changes", () => {
   const before =
     "# A\r\n\r\n<!-- agentry:begin v0 -->\r\nold\r\n<!-- agentry:end -->\r\n\r\nmine\r\n";
   const root = repo({ "AGENTS.md": before });
-  const { out } = run(["--write"], { root, spec: SPEC });
+  const { out } = run(["--apply"], { root, spec: SPEC });
   assert.match(out, /^AGENTS\.md: replace the Agentry block$/m);
   assert.match(out, /^- old$/m);
   assert.match(out, /^\+ <!-- agentry:begin v1 -->$/m);
@@ -218,7 +218,7 @@ test("an old block shows as - and + lines and only the block changes", () => {
 
 test("broken markers are exit 2 and nothing is written", () => {
   const root = repo({ "AGENTS.md": `${BEGIN}\nhalf\n`, "CLAUDE.md": "# C\n" });
-  const { exit, out } = run(["--write"], { root, spec: SPEC });
+  const { exit, out } = run(["--apply"], { root, spec: SPEC });
   assert.equal(exit, 2);
   assert.match(out, /nothing written/);
   assert.equal(read(root, "AGENTS.md"), `${BEGIN}\nhalf\n`);
@@ -229,11 +229,11 @@ test("AGENTS.md as a symlink out of the repo, or a broken one, is refused", () =
   const outside = repo({ "AGENTS.md": "elsewhere\n" });
   const root = repo();
   symlinkSync(join(outside, "AGENTS.md"), join(root, "AGENTS.md"));
-  assert.match(run(["--write"], { root, spec: SPEC }).out, /symlink out of the repository/);
+  assert.match(run(["--apply"], { root, spec: SPEC }).out, /symlink out of the repository/);
   assert.equal(read(outside, "AGENTS.md"), "elsewhere\n");
   const dangling = repo();
   symlinkSync(join(outside, "gone.md"), join(dangling, "AGENTS.md"));
-  const res = run(["--write"], { root: dangling, spec: SPEC });
+  const res = run(["--apply"], { root: dangling, spec: SPEC });
   assert.equal(res.exit, 2);
   assert.equal(existsSync(join(outside, "gone.md")), false);
 });
@@ -241,14 +241,14 @@ test("AGENTS.md as a symlink out of the repo, or a broken one, is refused", () =
 test("a CLAUDE.md that links to AGENTS.md does not import itself", () => {
   const root = repo({ "AGENTS.md": "# Shared\n" });
   symlinkSync("AGENTS.md", join(root, "CLAUDE.md"));
-  const { out } = run(["--write"], { root, spec: SPEC });
+  const { out } = run(["--apply"], { root, spec: SPEC });
   assert.match(out, /the same file as AGENTS\.md/);
   assert.doesNotMatch(read(root, "AGENTS.md"), /@AGENTS\.md/);
 });
 
 test("without conductor.prompt the block names no prompt and says so", () => {
   const root = repo();
-  const { out } = run(["--write"], { root, spec: {} });
+  const { out } = run(["--apply"], { root, spec: {} });
   assert.match(out, /no conductor\.prompt/);
   assert.doesNotMatch(read(root, "AGENTS.md"), /\{prompt\}|conductor prompt is/);
 });
@@ -260,7 +260,7 @@ test("`board instructions` routes through the CLI on a real process file", () =>
   cpSync(join(HERE, "fixtures", "table-board", "process.json"), proc);
   const res = spawnSync(
     process.execPath,
-    [BOARD, "instructions", "--write", "--root", root, "--process", proc],
+    [BOARD, "instructions", "--apply", "--root", root, "--process", proc],
     { encoding: "utf8" },
   );
   assert.equal(res.status, 0, res.stderr);
@@ -326,11 +326,11 @@ test("project instructions in .claude/CLAUDE.md get `@../AGENTS.md`, and a re-ru
   const root = repo();
   mkdirSync(join(root, ".claude"));
   writeFileSync(join(root, ".claude", "CLAUDE.md"), "# C\n");
-  const first = run(["--write"], { root, spec: SPEC });
+  const first = run(["--apply"], { root, spec: SPEC });
   assert.match(first.out, /^\.claude\/CLAUDE\.md: add `@\.\.\/AGENTS\.md` as its first line$/m);
   assert.equal(read(root, ".claude/CLAUDE.md"), "@../AGENTS.md\n# C\n");
   assert.equal(existsSync(join(root, "CLAUDE.md")), false);
-  const second = run(["--write"], { root, spec: SPEC });
+  const second = run(["--apply"], { root, spec: SPEC });
   assert.match(second.out, /\.claude\/CLAUDE\.md: already imports/);
   assert.equal(read(root, ".claude/CLAUDE.md"), "@../AGENTS.md\n# C\n");
 });
@@ -339,7 +339,7 @@ test("with both CLAUDE.md files, only the root one gets the import", () => {
   const root = repo({ "CLAUDE.md": "# R\n" });
   mkdirSync(join(root, ".claude"));
   writeFileSync(join(root, ".claude", "CLAUDE.md"), "# D\n");
-  run(["--write"], { root, spec: SPEC });
+  run(["--apply"], { root, spec: SPEC });
   assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n# R\n");
   assert.equal(read(root, ".claude/CLAUDE.md"), "# D\n");
 });
@@ -347,7 +347,7 @@ test("with both CLAUDE.md files, only the root one gets the import", () => {
 test("a read-only CLAUDE.md is exit 2 and AGENTS.md is not written either", () => {
   const root = repo({ "CLAUDE.md": "# C\n" });
   chmodSync(join(root, "CLAUDE.md"), 0o444);
-  const res = run(["--write"], { root, spec: SPEC });
+  const res = run(["--apply"], { root, spec: SPEC });
   assert.equal(res.exit, 2);
   assert.match(res.out, /nothing written/);
   assert.equal(existsSync(join(root, "AGENTS.md")), false);

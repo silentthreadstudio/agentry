@@ -1,28 +1,31 @@
-// board set <kind> <id> <field>=<value> — change one mechanical field of one item: a table cell, or a
-// frontmatter key for a one-file-per-item kind. One cell per write, every other byte kept (plan F13 §2.4).
+// board set <kind> <id> <field>=<value> [--apply] — change one mechanical field of one item: a table cell,
+// or a frontmatter key for a one-file-per-item kind. One cell per write, every other byte kept (plan F13
+// §2.4). Without `--apply` it runs the same edit and refusals and writes nothing (A39).
 //
-// run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written, 2 = usage or refusal (nothing written)
+// run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written or previewed, 2 = usage or refusal
+// (nothing written)
 import { join } from "node:path";
-import { refuse, usageError } from "../../cli/help.mjs";
+import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, apply, setCell, setKey } from "../write.mjs";
 
 export const help = {
-  usage: "set <kind> <id> <field>=<value>",
+  usage: "set <kind> <id> <field>=<value> [--apply]",
   purpose: "Change one field of one item: its table cell, or its frontmatter key.",
   args: {
     "<kind>": "a kind the process file knows",
     "<id>": "the item's id",
     "<field>=<value>": "a field of that kind (not its id) and the text to write",
   },
-  flags: {},
-  exits: { 0: "written", 2: "usage, or refused (nothing written)" },
-  example: "board set task T-4 status=blocked",
+  flags: { "--apply": "write it (without: say what it would write, and write nothing)" },
+  exits: { 0: "written, or previewed", 2: "usage, or refused (nothing written)" },
+  example: "board set task T-4 status=blocked --apply",
 };
 const fail = (why, next) => refuse("board set", why, next);
 
 export function run(argv, { root, spec, model }) {
   const [kindName, id, assignment] = argv.filter((a) => !a.startsWith("--"));
+  const write = argv.includes("--apply");
   const at = assignment?.indexOf("=") ?? -1;
   if (!kindName || !id || at < 1)
     return usageError("board set", "needs <kind> <id> <field>=<value>");
@@ -61,10 +64,11 @@ export function run(argv, { root, spec, model }) {
         })
     : (text) => setKey(text, { key: field.column, value });
   try {
-    apply(join(root, spec.root, file), edit);
+    apply(join(root, spec.root, file), edit, { preview: !write });
   } catch (error) {
     if (error instanceof WriteError) return fail(`${file}: ${error.message}`);
     throw error;
   }
-  return { exit: 0, out: `set ${kindName} ${id} ${fieldName}=${value} (${file})` };
+  const line = `${kindName} ${id} ${fieldName}=${value} (${file})`;
+  return { exit: 0, out: write ? `set ${line}` : `would set ${line}\n${PREVIEW}` };
 }

@@ -36,7 +36,7 @@ export function run(argv, { root }) {
 }
 
 function render(found, done, discardIgnored) {
-  const lines = [done ? "sweep (applied)" : "sweep (dry run: nothing changed; --apply to act)"];
+  const lines = [done ? "sweep (applied)" : "sweep (preview: nothing changed; add --apply to act)"];
   // Paths and command lines are shown whole: cutting one would hide what is about to be stopped.
   const row = (text) => lines.push(`  ${text}`);
   for (const w of found.cleanable) {

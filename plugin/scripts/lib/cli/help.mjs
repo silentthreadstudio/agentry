@@ -11,6 +11,7 @@
 // say(what, why, next?) -> string                             the error line
 // refuse(what, why, next?) -> { exit: 2, out }                that line as a refusal
 // usageError(what, why) -> { exit: 2, out }                   a refusal pointing at `<what> --help`
+// PREVIEW                                                     the line a write prints without --apply
 
 const PAD = 2;
 
@@ -63,6 +64,9 @@ export function renderIndex(cli, subs) {
     "(default <root>/.agentry/process.json).",
   ].join("\n");
 }
+
+/** What a write command prints after its preview: it wrote nothing, and how to write it. */
+export const PREVIEW = "preview: nothing written; add --apply to write it";
 
 export const say = (what, why, next) => `✗ ${what}: ${why}${next ? ` → ${next}` : ""}`;
 export const refuse = (what, why, next) => ({ exit: 2, out: say(what, why, next) });

@@ -52,9 +52,9 @@ function call(argv, ctx) {
   return { ...res, json: res.exit === 2 ? null : JSON.parse(res.out) };
 }
 
-test("--write creates the settings file when there is none", () => {
+test("--apply creates the settings file when there is none", () => {
   const ctx = project();
-  const { exit, json } = call(["--write"], ctx);
+  const { exit, json } = call(["--apply"], ctx);
   assert.equal(exit, 0);
   assert.deepEqual(json, {
     settings: join(ctx.root, ".claude", "settings.json"),
@@ -66,9 +66,9 @@ test("--write creates the settings file when there is none", () => {
   assert.equal(settingsOf(ctx.root), `{\n  "agent": "${AGENT}"\n}\n`);
 });
 
-test("--write keeps every other key in place and writes 2-space JSON", () => {
+test("--apply keeps every other key in place and writes 2-space JSON", () => {
   const ctx = project('{"model":"opus","permissions":{"allow":["Bash(ls:*)"]},"env":{"A":"1"}}');
-  const { exit, json } = call(["--write"], ctx);
+  const { exit, json } = call(["--apply"], ctx);
   assert.equal(exit, 0);
   assert.equal(json.wrote, true);
   assert.equal(
@@ -91,7 +91,7 @@ test("--write keeps every other key in place and writes 2-space JSON", () => {
   );
 });
 
-test("a different agent is reported, and replaced in its place only with --write", () => {
+test("a different agent is reported, and replaced in its place only with --apply", () => {
   const before = '{\n  "agent": "someone:else",\n  "model": "opus"\n}\n';
   const ctx = project(before);
   const report = call([], ctx);
@@ -100,16 +100,16 @@ test("a different agent is reported, and replaced in its place only with --write
   assert.equal(report.json.wrote, false);
   assert.equal(settingsOf(ctx.root), before);
 
-  const written = call(["--write"], ctx);
+  const written = call(["--apply"], ctx);
   assert.equal(written.json.current, "someone:else");
   assert.equal(written.json.wrote, true);
   assert.equal(settingsOf(ctx.root), `{\n  "agent": "${AGENT}",\n  "model": "opus"\n}\n`);
 });
 
-test("--write leaves a file that already names the agent byte for byte", () => {
+test("--apply leaves a file that already names the agent byte for byte", () => {
   const before = `{    "agent":"${AGENT}" }`;
   const ctx = project(before);
-  const { json } = call(["--write"], ctx);
+  const { json } = call(["--apply"], ctx);
   assert.equal(json.wrote, false);
   assert.equal(json.current, AGENT);
   assert.equal(settingsOf(ctx.root), before);
@@ -123,7 +123,7 @@ for (const [name, text] of [
 ]) {
   test(`${name} is refused with exit 2 and never overwritten`, () => {
     const ctx = project(text);
-    for (const argv of [[], ["--write"], ["--write", "--verify"]]) {
+    for (const argv of [[], ["--apply"], ["--apply", "--verify"]]) {
       const res = run(argv, ctx);
       assert.equal(res.exit, 2, argv.join(" "));
       assert.match(res.out, /settings\.json: .*not changed/);
@@ -138,7 +138,7 @@ test("a settings file linked to the plugin's own settings.json is never written"
   writeFileSync(own, "{}\n");
   mkdirSync(join(ctx.root, ".claude"));
   symlinkSync(own, join(ctx.root, ".claude", "settings.json"));
-  const res = run(["--write"], ctx);
+  const res = run(["--apply"], ctx);
   assert.equal(res.exit, 2);
   assert.match(res.out, /plugin's own settings\.json/);
   assert.equal(readFileSync(own, "utf8"), "{}\n");
@@ -147,7 +147,7 @@ test("a settings file linked to the plugin's own settings.json is never written"
 test("a .claude folder linked to the plugin never creates the plugin's settings.json", () => {
   const ctx = project();
   symlinkSync(ctx.pluginRoot, join(ctx.root, ".claude"));
-  const res = run(["--write"], ctx);
+  const res = run(["--apply"], ctx);
   assert.equal(res.exit, 2);
   assert.equal(existsSync(join(ctx.pluginRoot, "settings.json")), false);
 });
@@ -157,7 +157,7 @@ test("a broken settings symlink is refused, so the write never lands where it po
   const own = join(ctx.pluginRoot, "settings.json");
   mkdirSync(join(ctx.root, ".claude"));
   symlinkSync(own, join(ctx.root, ".claude", "settings.json"));
-  const res = run(["--write"], ctx);
+  const res = run(["--apply"], ctx);
   assert.equal(res.exit, 2);
   assert.match(res.out, /broken symlink/);
   assert.equal(existsSync(own), false);
@@ -169,7 +169,7 @@ test("a settings file hard-linked to the plugin's own settings.json is never wri
   writeFileSync(own, "{}\n");
   mkdirSync(join(ctx.root, ".claude"));
   linkSync(own, join(ctx.root, ".claude", "settings.json"));
-  const res = run(["--write"], ctx);
+  const res = run(["--apply"], ctx);
   assert.equal(res.exit, 2);
   assert.match(res.out, /plugin's own settings\.json/);
   assert.equal(readFileSync(own, "utf8"), "{}\n");
@@ -202,9 +202,9 @@ test("--verify (static) answers yes for the exact name and an existing agent fil
   assert.match(json.how, /^static: /);
 });
 
-test("--write --verify checks the value it just wrote", () => {
+test("--apply --verify checks the value it just wrote", () => {
   const ctx = project('{"agent":"someone:else"}');
-  const { exit, json } = call(["--write", "--verify", "static"], ctx);
+  const { exit, json } = call(["--apply", "--verify", "static"], ctx);
   assert.equal(exit, 0);
   assert.equal(json.resolved, "yes");
 });
@@ -314,7 +314,7 @@ test("--verify live is unchecked, exit 1, when claude cannot run", () => {
 test("no live request without --verify live", () => {
   const ctx = project(`{"agent":"${AGENT}"}`);
   const claude = fakeClaude(loaded);
-  for (const argv of [[], ["--write"], ["--verify"]]) call(argv, { ...ctx, claude: claude.bin });
+  for (const argv of [[], ["--apply"], ["--verify"]]) call(argv, { ...ctx, claude: claude.bin });
   assert.throws(claude.call, /ENOENT/);
 });
 

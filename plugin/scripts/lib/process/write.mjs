@@ -146,19 +146,34 @@ function readOrRefuse(file) {
 
 /** Apply edits `[{ file, edit }]` (`edit`: text → text, may throw `WriteError`) as one step: read
  *  every file and compute every edit first, re-read to check nothing changed meanwhile, then write.
- *  Any refusal or changed file → nothing is written. Several edits on one file compose in order. */
-export function applyAll(edits) {
+ *  Any refusal or changed file → nothing is written. Several edits on one file compose in order.
+ *  `preview` runs every read, edit and refusal the same way and writes nothing. Returns each file with
+ *  its text `before` and `after`. */
+export function applyAll(edits, { preview = false } = {}) {
   const seen = new Map(); // file → { before, after }
   for (const { file, edit } of edits) {
     const state = seen.get(file) ?? { before: readOrRefuse(file) };
     seen.set(file, { before: state.before, after: edit(state.after ?? state.before) });
   }
+  const result = [...seen].map(([file, texts]) => ({ file, ...texts }));
+  if (preview) return result;
   for (const [file, { before }] of seen)
     if (readOrRefuse(file) !== before)
       refuse(`${file} changed while it was being edited; nothing written`);
   for (const [file, { after }] of seen) writeFileSync(file, after);
-  return [...seen.keys()];
+  return result;
+}
+
+/** The lines `after` holds where `before` differs: what an insert adds, for a preview to show. */
+export function addedLines(before, after) {
+  const a = before.split(/\r?\n/);
+  const b = after.split(/\r?\n/);
+  let top = 0;
+  while (top < a.length && top < b.length && a[top] === b[top]) top++;
+  let end = 0;
+  while (end < a.length - top && end < b.length - top && a.at(-1 - end) === b.at(-1 - end)) end++;
+  return b.slice(top, b.length - end);
 }
 
 /** One file: `applyAll` for a single edit. */
-export const apply = (file, edit) => applyAll([{ file, edit }]);
+export const apply = (file, edit, opts) => applyAll([{ file, edit }], opts);

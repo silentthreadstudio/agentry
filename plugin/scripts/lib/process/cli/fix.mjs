@@ -1,4 +1,4 @@
-// board fix [--dry-run] [--accept <id>] [--json] — write what is provable, report the rest (A23, A31; plan
+// board fix [--accept <id>] [--apply] [--json] — write what is provable, report the rest (A23, A31; plan
 // R1b-6). A task whose `lane merge` record still holds on main (`drift.mechanical`: it matches its branch,
 // its landed commits are main's first-parent history and their change is still in effect where it landed)
 // and whose board row lacks the done status, the commit cell or the handoff line gets the lifecycle's
@@ -8,12 +8,13 @@
 // it with `--accept <id>`, which writes it only while the commits carrying it are still in effect on main
 // (`drift.accepted`). Anything unsure writes nothing and is listed, as is every other drift, with the
 // command that deals with it. The output lists exactly the writes made; running it again finds nothing to
-// do; `--dry-run` writes nothing. A row wider than 80 columns wraps between words: a command is never cut.
+// do; without `--apply` it writes nothing and says what it would fix (A39). A row wider than 80 columns
+// wraps between words: a command is never cut.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = nothing left for the owner, 1 = items left
 // to report, 2 = usage
 import { basename } from "node:path";
-import { usageError } from "../../cli/help.mjs";
+import { PREVIEW, usageError } from "../../cli/help.mjs";
 import { mainRoot } from "../../lane/worktree.mjs";
 import { accepted, mechanical, nudges } from "../drift.mjs";
 import { applyEvent } from "../lifecycle.mjs";
@@ -23,17 +24,17 @@ import { titleOf } from "../status.mjs";
 import { WriteError } from "../write.mjs";
 
 export const help = {
-  usage: "fix [--dry-run] [--accept <id>] [--json]",
+  usage: "fix [--accept <id>] [--apply] [--json]",
   purpose:
     "Write the board cells a lane merge record proves (done, commit, handoff); list the rest.",
   args: {},
   flags: {
-    "--dry-run": "write nothing; say what it would fix",
+    "--apply": "write the fixes (without: say what it would fix, and write nothing)",
     "--accept <id>": "a task the owner says was merged by hand: fix it while its commits hold",
-    "--json": "print { dryRun, fixed, left, nudges } as one JSON object",
+    "--json": "print { applied, fixed, left, nudges } as one JSON object",
   },
   exits: { 0: "nothing left for the owner", 1: "items left for the owner", 2: "usage" },
-  example: "board fix --accept T-4",
+  example: "board fix --accept T-4 --apply",
 };
 const WIDTH = 80;
 
@@ -55,7 +56,7 @@ const narrowed = (spec, need) => ({
 });
 
 export function run(argv, { root, spec, model }) {
-  const dryRun = argv.includes("--dry-run");
+  const dryRun = !argv.includes("--apply");
   const id = acceptOf(argv);
   if (id === null) return usageError("board fix", "--accept needs a task id");
   const runRoot = mainRoot(root) ?? root;
@@ -99,7 +100,7 @@ export function run(argv, { root, spec, model }) {
   const rest = nudges({ root, runRoot, spec, model: after }).filter((n) => !id || n.id !== id);
   const exit = left.length || rest.length ? 1 : 0;
   if (argv.includes("--json"))
-    return { exit, out: JSON.stringify({ dryRun, fixed, left, nudges: rest }) };
+    return { exit, out: JSON.stringify({ applied: !dryRun, fixed, left, nudges: rest }) };
   return { exit, out: render({ dryRun, fixed, left, rest }) };
 }
 
@@ -111,7 +112,7 @@ function rows(text) {
 
 function render({ dryRun, fixed, left, rest }) {
   const verb = dryRun ? "would fix" : "fixed";
-  const head = `${verb} ${fixed.length}, ${left.length + rest.length} left for you${dryRun ? " (dry run: nothing written)" : ""}`;
+  const head = `${verb} ${fixed.length}, ${left.length + rest.length} left for you`;
   const lines = [head];
   for (const f of fixed) {
     const what = f.writes ? f.writes.join(", ") : `${f.need.join(", ")} from commit ${f.sha}`;
@@ -123,5 +124,6 @@ function render({ dryRun, fixed, left, rest }) {
     const subject = n.id ?? basename(n.path ?? n.branch ?? "");
     lines.push(...rows(`${n.kind} ${subject} → ${n.command}`));
   }
+  if (dryRun && fixed.length) lines.push(PREVIEW);
   return lines.join("\n");
 }

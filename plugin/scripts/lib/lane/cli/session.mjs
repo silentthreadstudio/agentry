@@ -87,7 +87,7 @@ function closing({ root, spec, model }) {
   const runRoot = mainRoot(root) ?? root;
   const all = ledgers.list(runRoot);
   const { cleanable, unknown, strays, leftAlone, diskFree, warnings } = plan(runRoot);
-  const dry = fix(["--dry-run", "--json"], { root, spec, model });
+  const dry = fix(["--json"], { root, spec, model });
   return {
     drafts: drafts.pending(runRoot),
     fixPlan: JSON.parse(dry.out),

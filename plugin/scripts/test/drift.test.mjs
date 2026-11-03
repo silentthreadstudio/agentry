@@ -94,7 +94,7 @@ test("commits cherry-picked onto main by hand: merged-by-hand, naming merge", ()
   assert.equal(n.id, "T2");
   assert.equal(
     n.command,
-    "/agentry:merge T2 --branch agentry/T2, then /agentry:board --fix --accept T2",
+    "/agentry:merge T2 --branch agentry/T2, then /agentry:board fix --accept T2",
   );
   assert.ok(!nudgesOf(root).some((x) => x.kind === "unlisted-worktree"));
 });
@@ -106,7 +106,7 @@ test("a ledgered branch on main with no merge record nudges fix --accept, and fi
   assert.ok(!nudgesOf(root).some((x) => x.kind === "merged-by-hand"), "not on main yet");
   pickOntoMain(root, sha);
   const [n] = nudgesOf(root).filter((x) => x.kind === "merged-by-hand");
-  assert.deepEqual([n.id, n.command], ["T1", "/agentry:board --fix --accept T1"]);
+  assert.deepEqual([n.id, n.command], ["T1", "/agentry:board fix --accept T1"]);
   const spec = loadSpec(join(root, ".agentry", "process.json"), { root }).spec;
   assert.deepEqual(mechanical({ root, spec, model: readProcess({ root, spec }) }).fixes, []);
 });
@@ -261,7 +261,7 @@ test("a hand worktree merged --no-ff or fast-forwarded is merged-by-hand, not un
     ["worktree-agent-T2", "worktree-agent-x7"].map((branch) => [
       "merged-by-hand",
       branch,
-      `/agentry:merge <id> --branch ${branch}, then /agentry:board --fix --accept <id>`,
+      `/agentry:merge <id> --branch ${branch}, then /agentry:board fix --accept <id>`,
     ]),
   );
 });

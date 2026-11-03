@@ -463,7 +463,7 @@ function taskIdOf(tree, items) {
 
 const exec = (id) => `/agentry:exec ${id ?? "<id>"}`;
 const merge = (id) => `/agentry:merge ${id ?? "<id>"}`;
-const accept = (id) => `/agentry:board --fix --accept ${id ?? "<id>"}`;
+const accept = (id) => `/agentry:board fix --accept ${id ?? "<id>"}`;
 // Work merged by hand from a worktree no ledger knows: `--branch` adopts it (a ledger; merge then finds
 // nothing left to land), and only then can the owner accept it.
 const adopt = (id, branch) => `${merge(id)} --branch ${branch}, then ${accept(id)}`;

@@ -1,7 +1,7 @@
-// board default-agent [--write] [--verify [static|live]] — the project's default main-session agent
+// board default-agent [--apply] [--verify [static|live]] — the project's default main-session agent
 // (F23), for `/agentry:init`. Prints JSON `{ settings, current, wrote, resolved, how }`: the settings
 // file, its `agent` before any write (null when unset), whether this run wrote it, and whether
-// `agentry:conductor` resolves ("unchecked" without `--verify`). `--write` sets it (replacing a
+// `agentry:conductor` resolves ("unchecked" without `--verify`). `--apply` sets it (replacing a
 // different value) in `<root>/.claude/settings.json`; without it a different value is only reported.
 // `--verify` is static (no request); `--verify live` runs one small `claude -p` request in the root and
 // reads its system/init event, so it only runs when asked. Needs no process file. Exit 0, 1 when a
@@ -21,11 +21,11 @@ import {
 
 export const noSpec = true;
 export const help = {
-  usage: "default-agent [--write] [--verify [static|live]]",
+  usage: "default-agent [--apply] [--verify [static|live]]",
   purpose: "The project's default main-session agent in .claude/settings.json, as one JSON object.",
   args: {},
   flags: {
-    "--write": "set agent to agentry:conductor (replacing a different value)",
+    "--apply": "set agent to agentry:conductor (replacing a different value)",
     "--verify [static|live]":
       "check it resolves: static reads files, live spends one claude -p request",
   },
@@ -56,7 +56,7 @@ export function run(argv, { root, pluginRoot, claude }) {
   if (read.error) return refuse(read.file, `${read.error}; not changed`);
   const current = read.data.agent ?? null;
   let wrote = false;
-  if (argv.includes("--write")) {
+  if (argv.includes("--apply")) {
     const written = writeAgent(root, { pluginRoot });
     if (written.error) return refuse(written.file, `${written.error}; not changed`);
     wrote = written.wrote;

@@ -95,10 +95,24 @@ test("a bad draft is refused with exit 2 and stores nothing", () => {
   assert.match(board(root, "draft", "list").stdout, /no pending drafts/);
 });
 
+test("apply without --apply shows what it would write, writes nothing and keeps the draft", () => {
+  const { root } = fresh();
+  add(root, DECISION);
+  const before = read(root, "plan/DECISIONS.md");
+  const out = board(root, "draft", "apply", "1");
+  assert.equal(out.status, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /^draft 1:\nwould add decision D2\n/);
+  assert.match(out.stdout, /\+ \| D2 +\| Keep the board in markdown/);
+  assert.match(out.stdout, /\npreview: nothing written; add --apply to write it\n$/);
+  assert.equal(read(root, "plan/DECISIONS.md"), before);
+  assert.match(board(root, "draft", "list").stdout, /decision/, "still pending");
+  assert.equal(board(root, "draft", "drop", "1", "--apply").status, 2, "--apply is apply's only");
+});
+
 test("apply of a decision goes through next-id and add, filling the process file's map", () => {
   const { root } = fresh();
   add(root, DECISION);
-  const out = board(root, "draft", "apply", "1");
+  const out = board(root, "draft", "apply", "1", "--apply");
   assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.match(out.stdout, /^applied draft 1: added decision D2/);
   assert.match(
@@ -106,7 +120,7 @@ test("apply of a decision goes through next-id and add, filling the process file
     /\| D2 +\| Keep the board in markdown +\| Where\? +\|/,
   );
   assert.match(board(root, "draft", "list").stdout, /no pending drafts/);
-  assert.equal(board(root, "draft", "apply", "1").status, 2, "applied once only");
+  assert.equal(board(root, "draft", "apply", "1", "--apply").status, 2, "applied once only");
   assert.equal(board(root, "check").status, 0);
 });
 
@@ -115,7 +129,7 @@ test("apply of a decision needs drafts.decision in the process file", () => {
   const { root } = fresh({ spec: bare });
   add(root, DECISION);
   const before = read(root, "plan/DECISIONS.md");
-  const out = board(root, "draft", "apply", "1");
+  const out = board(root, "draft", "apply", "1", "--apply");
   assert.equal(out.status, 2);
   assert.match(out.stderr, /no drafts\.decision/);
   assert.equal(read(root, "plan/DECISIONS.md"), before);
@@ -126,7 +140,7 @@ test("a placeholder the map does not know is refused", () => {
   const spec = { ...SPEC, drafts: { decision: { kind: "decision", map: { decision: "{nope}" } } } };
   const { root } = fresh({ spec });
   add(root, DECISION);
-  const out = board(root, "draft", "apply", "1");
+  const out = board(root, "draft", "apply", "1", "--apply");
   assert.equal(out.status, 2);
   assert.match(out.stderr, /unknown placeholder \{nope\}/);
 });
@@ -134,7 +148,7 @@ test("a placeholder the map does not know is refused", () => {
 test("apply of a rule appends it under conductor.rules in the conductor prompt", () => {
   const { root } = fresh();
   add(root, { kind: "rule", answer: "Recall before any change." });
-  const out = board(root, "draft", "apply", "1");
+  const out = board(root, "draft", "apply", "1", "--apply");
   assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.match(
     read(root, "CONDUCTOR.md"),
@@ -147,7 +161,7 @@ test("a rule draft with no conductor.rules heading is exit 2 and writes nothing"
   const { root } = fresh({ spec });
   add(root, { kind: "rule", answer: "Recall before any change." });
   const before = read(root, "CONDUCTOR.md");
-  const out = board(root, "draft", "apply", "1");
+  const out = board(root, "draft", "apply", "1", "--apply");
   assert.equal(out.status, 2);
   assert.match(out.stderr, /no conductor\.rules heading/);
   assert.equal(read(root, "CONDUCTOR.md"), before);
@@ -157,7 +171,7 @@ test("a rule whose heading is not in the prompt is exit 2 and the draft stays pe
   const spec = { ...SPEC, conductor: { prompt: "CONDUCTOR.md", rules: "No such heading" } };
   const { root } = fresh({ spec });
   add(root, { kind: "rule", answer: "Recall before any change." });
-  const out = board(root, "draft", "apply", "1");
+  const out = board(root, "draft", "apply", "1", "--apply");
   assert.equal(out.status, 2, out.stdout);
   assert.match(board(root, "draft", "list").stdout, /rule/);
 });
@@ -185,7 +199,7 @@ test("a line that is not a draft is kept as written on drop and apply, and named
   );
   const drop = board(root, "draft", "drop", "1");
   assert.match(drop.stdout, /^dropped draft 1\nnote: drafts\.jsonl line 2 could not be read; kept/);
-  const apply = board(root, "draft", "apply", String(drafts.pending(root)[0].n));
+  const apply = board(root, "draft", "apply", String(drafts.pending(root)[0].n), "--apply");
   assert.equal(apply.status, 0, apply.stderr);
   assert.match(apply.stdout, /line 2 could not be read/);
   assert.equal(readFileSync(file, "utf8").split("\n")[1], torn);
@@ -198,11 +212,11 @@ test("apply from inside a worktree refuses: the edit and the run state stay in o
   const { path } = builtBranch(root, "T1");
   add(path, { kind: "rule", answer: "From a worktree." });
   const before = [read(root, "CONDUCTOR.md"), read(path, "CONDUCTOR.md")];
-  const out = board(path, "draft", "apply", "1");
+  const out = board(path, "draft", "apply", "1", "--apply");
   assert.equal(out.status, 2);
   assert.match(out.stderr, /is a worktree: run it from /);
   assert.deepEqual([read(root, "CONDUCTOR.md"), read(path, "CONDUCTOR.md")], before);
   assert.equal(drafts.pending(root).length, 1, "still pending in the main checkout");
-  assert.equal(board(root, "draft", "apply", "1").status, 0, "and applies from there");
+  assert.equal(board(root, "draft", "apply", "1", "--apply").status, 0, "and applies from there");
   assert.match(read(root, "CONDUCTOR.md"), /- From a worktree\./);
 });

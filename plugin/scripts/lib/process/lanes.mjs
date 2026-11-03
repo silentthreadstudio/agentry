@@ -62,7 +62,7 @@ function pluginVersion() {
 
 // The trigger block in AGENTS.md against the one `board instructions` would write.
 function triggerBlock(root, spec) {
-  const set = "board instructions --write";
+  const set = "board instructions --apply";
   const agents = readFile(root, "AGENTS.md");
   if (agents.error) return { ok: false, value: agents.error, set };
   const block = renderBlock(readFileSync(TEMPLATE, "utf8"), { prompt: spec.conductor?.prompt });
@@ -75,7 +75,7 @@ function triggerBlock(root, spec) {
 }
 
 function defaultAgent(root) {
-  const set = "board default-agent --write";
+  const set = "board default-agent --apply";
   const read = readSettings(root);
   if (read.error) return { ok: false, value: read.error, set };
   const local = localAgent(root);

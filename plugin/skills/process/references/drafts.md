@@ -2,7 +2,7 @@
 
 An owner's decision often arrives in prose: a proposal rejected or changed, a rule stated, an answer typed into a
 question's "Other" field. A **draft** holds that call until the owner says OK. Nothing in a draft is final, and no
-board or prompt file changes until `board draft apply`.
+board or prompt file changes until `board draft apply <n> --apply`.
 
 `board` means `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"`. Drafts live in
 `.agentry/run/process/drafts.jsonl` under the main checkout: local, never committed.
@@ -33,7 +33,8 @@ board draft add --json '{"kind":"decision","answer":"Keep the board in markdown"
 board draft add --json '{"kind":"rule","answer":"Recall before any change outside a command."}'
 board draft list
 board draft drop 3
-board draft apply 3
+board draft apply 3            # shows what it would write; writes nothing
+board draft apply 3 --apply    # writes it, after the owner's OK
 ```
 
 The JSON is one single-quoted argument, `'` written `'\''`. Unknown keys, an unknown kind or an empty answer exit 2
@@ -51,7 +52,8 @@ and store nothing.
 
 ## Applying
 
-Only after the owner's OK for that draft, run `board draft apply <n>` and show its output.
+Run `board draft apply <n>` to show the owner exactly what it would write (it writes nothing). Only after
+the owner's OK for that draft, run `board draft apply <n> --apply` and show its output.
 
 - **decision**: the process file needs `drafts.decision` (`kind`, `map`). Its `map` fills the kind's fields from
   `{answer}`, `{question}` and `{unpicked}`; any other placeholder exits 2. The kind's `create.id` must be a pattern

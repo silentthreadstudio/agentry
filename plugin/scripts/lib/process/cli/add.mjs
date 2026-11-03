@@ -1,29 +1,32 @@
-// board add <kind> --json '{"id": "…", …}' — write a new item at every `create` location of its kind:
-// each row (own table, or the parent's file) and each block (plan F13 §2.2, §2.4). The id is passed in
-// (`next-id` proposes it) or, when `create.id` is a pattern and none is given, filled the same way and
-// printed; only `create.id: "ask"` requires it. A duplicate id is refused. All files are edited as one step, or none. A
-// parent given as one of its field's `also` values (LATER) is no item: the parent-file rows and the
-// blocks that name `{parent.…}` are skipped, and the output says so.
+// board add <kind> --json '{"id": "…", …}' [--apply] — write a new item at every `create` location of its
+// kind: each row (own table, or the parent's file) and each block (plan F13 §2.2, §2.4). The id is passed
+// in (`next-id` proposes it) or, when `create.id` is a pattern and none is given, filled the same way and
+// printed; only `create.id: "ask"` requires it. A duplicate id is refused. All files are edited as one
+// step, or none. A parent given as one of its field's `also` values (LATER) is no item: the parent-file
+// rows and the blocks that name `{parent.…}` are skipped, and the output says so. Without `--apply` it
+// runs the same edits and refusals, prints the lines each place would get, and writes nothing (A39).
 //
-// run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written, 2 = usage or refusal
-import { join } from "node:path";
-import { refuse, usageError } from "../../cli/help.mjs";
+// run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written or previewed, 2 = usage
+// or refusal
+import { join, relative } from "node:path";
+import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
 import { findContract } from "../contract.mjs";
 import { nextId } from "../ids.mjs";
 import { contractHome } from "../rules/structure.mjs";
 import { escapesRoot, own } from "../spec.mjs";
-import { WriteError, appendBlock, applyAll, insertRow } from "../write.mjs";
+import { WriteError, addedLines, appendBlock, applyAll, insertRow } from "../write.mjs";
 
 export const help = {
-  usage: 'add <kind> --json \'{"id": "…", …}\'',
+  usage: 'add <kind> --json \'{"id": "…", …}\' [--apply]',
   purpose: "Add one item at every create location of its kind, as one write or none.",
   args: { "<kind>": "a kind the process file knows, with a create rule" },
   flags: {
     "--json <fields>":
       "the item's fields as one JSON object; id optional when create.id is a pattern",
+    "--apply": "write it (without: print each place and the lines it would get, write nothing)",
   },
-  exits: { 0: "written", 2: "usage, or refused (nothing written)" },
-  example: 'board add task --json \'{"title": "Ship the CLI help", "sprint": "S2"}\'',
+  exits: { 0: "written, or previewed", 2: "usage, or refused (nothing written)" },
+  example: 'board add task --json \'{"title": "Ship the CLI help", "sprint": "S2"}\' --apply',
 };
 const fail = (why, next) => refuse("board add", why, next);
 const isoToday = () => new Date().toLocaleDateString("sv-SE");
@@ -37,6 +40,8 @@ function show(value, def) {
 
 export function run(argv, { root, spec, model, today = isoToday() }) {
   const kindName = argv.find((a) => !a.startsWith("--"));
+  const write = argv.includes("--apply");
+  let planned;
   const json = argv[argv.indexOf("--json") + 1];
   if (!kindName || argv.indexOf("--json") < 0 || json === undefined)
     return usageError("board add", "needs <kind> --json '<fields>'");
@@ -168,7 +173,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
         `block under "${under}"`,
       );
     }
-    applyAll(edits);
+    planned = applyAll(edits, { preview: !write });
   } catch (error) {
     if (error instanceof WriteError) return fail(error.message);
     throw error;
@@ -178,5 +183,16 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
     const home = contractHome(kind.contract, id);
     notes.push(`no contract for ${id}: add ${home}; board contract ${id} finds none yet`);
   }
-  return { exit: 0, out: [`added ${kindName} ${id}`, ...notes.map((n) => `  ${n}`)].join("\n") };
+  if (write)
+    return { exit: 0, out: [`added ${kindName} ${id}`, ...notes.map((n) => `  ${n}`)].join("\n") };
+  const lines = planned.flatMap((p) => [
+    `  ${relative(join(root, spec.root), p.file)}:`,
+    ...addedLines(p.before, p.after).map((l) => `    + ${l}`),
+  ]);
+  return {
+    exit: 0,
+    out: [`would add ${kindName} ${id}`, ...notes.map((n) => `  ${n}`), ...lines, PREVIEW].join(
+      "\n",
+    ),
+  };
 }

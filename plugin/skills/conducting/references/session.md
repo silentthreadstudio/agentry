@@ -28,7 +28,7 @@ Reads only; prints one JSON object.
 | Field | Meaning |
 | :--- | :--- |
 | `drafts` | Pending decision and rule drafts (`process` skill, `references/drafts.md`). |
-| `fixPlan` | `board fix --dry-run --json`: what `board fix` would write, and what it leaves for the owner. |
+| `fixPlan` | `board fix --json` (no `--apply`): what `board fix --apply` would write (`applied: false`), and what it leaves for the owner. |
 | `ledgers` | `{ id, state, next }` of every ledger. |
 | `cleanable` | Worktrees of tasks whose ledger says `merged` or `closed`: what `lane sweep --apply` removes. |
 | `strays` | Processes started under `<root>/.agentry/run/` (by executable, script or working directory): what `lane sweep --apply` stops. |
@@ -38,7 +38,7 @@ Reads only; prints one JSON object.
 | `episodesPending` | Ids of ledgers with an episode nobody wrote: `lane exec close <id>` prints it. |
 
 The order of the ending is fixed: drafts, `board fix`, sweep, episodes, note, handoff. A draft is applied only on
-the owner's OK. `board fix` writes only the mechanical pieces a board lacks.
+the owner's OK. `board fix --apply` writes only the mechanical pieces a board lacks.
 
 ## `lane sweep [--apply [--discard-ignored]] [--json]`
 
@@ -63,7 +63,7 @@ Without `--apply` it only reports. With it:
   double-forked child of such a stray, left in the group it does not lead, cannot be proven ours and is
   left running; stop it by hand. A process a lane still building owns is never signalled, even inside a
   stray's tree, and neither is the sweep's own ancestor chain. Everything that would be signalled is listed
-  under its stray in the dry run (`with process …`) and, after `--apply`, in `signalled`.
+  under its stray in the preview (`with process …`) and, after `--apply`, in `signalled`.
 
 A worktree no ledger knows is listed as unknown and left alone, as is any worktree of a task still in flight.
 Working-directory strays need `lsof`; without it sweep warns and judges by executable and script only.

@@ -1,7 +1,7 @@
-// board instructions [--write] — the Agentry block in `<root>/AGENTS.md` and the `@AGENTS.md` import in
+// board instructions [--apply] — the Agentry block in `<root>/AGENTS.md` and the `@AGENTS.md` import in
 // `<root>/CLAUDE.md` (or `<root>/.claude/CLAUDE.md` as `@../AGENTS.md`, when that is where the repo's
 // project instructions live and there is no root one), for `/agentry:init` (plan R1b-8, F18). Without
-// `--write` it prints what would change (the block's lines as `-`/`+`) and writes nothing; with it, it
+// `--apply` it prints what would change (the block's lines as `-`/`+`) and writes nothing; with it, it
 // writes the same. AGENTS.md is created when absent; CLAUDE.md never is, and gets the import only when it
 // exists without one. The block comes from the process skill's `templates/agents-block.md`, with the
 // process file's `conductor.prompt`. Exit 0, or 2 for markers that don't make one block, a file a symlink
@@ -23,7 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { refuse } from "../../cli/help.mjs";
+import { PREVIEW, refuse } from "../../cli/help.mjs";
 import { TEMPLATE, readFile } from "../instruction-files.mjs";
 import {
   CLAUDE_DIR_IMPORT,
@@ -34,16 +34,16 @@ import {
 } from "../instructions.mjs";
 
 export const help = {
-  usage: "instructions [--write]",
+  usage: "instructions [--apply]",
   purpose:
     "The Agentry block in AGENTS.md and the @AGENTS.md import in CLAUDE.md: what would change.",
   args: {},
-  flags: { "--write": "write both files, or neither" },
+  flags: { "--apply": "write both files, or neither" },
   exits: {
-    0: "printed (and written with --write)",
+    0: "printed (and written with --apply)",
     2: "markers that don't make one block, a file out of the repository, or a failed write",
   },
-  example: "board instructions --write",
+  example: "board instructions --apply",
 };
 const SAYS = {
   create: "AGENTS.md: create it with the Agentry block",
@@ -98,7 +98,7 @@ function writeAll(root, writes) {
 }
 
 export function run(argv, { root, spec }) {
-  const write = argv.includes("--write");
+  const write = argv.includes("--apply");
   const prompt = spec.conductor?.prompt;
   const agents = readFile(root, "AGENTS.md");
   const claudeName =
@@ -134,7 +134,7 @@ export function run(argv, { root, spec }) {
     imp.action === "import" && [claudeName, imp.text],
   ].filter(Boolean);
   if (!writes.length) out.push("nothing to write");
-  else if (!write) out.push("dry run: nothing written; pass --write to write it");
+  else if (!write) out.push(PREVIEW);
   else {
     try {
       writeAll(root, writes);

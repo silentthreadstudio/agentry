@@ -95,7 +95,7 @@ test("close gathers drafts, the fix plan, ledgers and sweep findings, and writes
   assert.equal(res.status, 0, res.stderr);
   const data = JSON.parse(res.stdout);
   assert.equal(data.drafts.length, 1);
-  assert.equal(data.fixPlan.dryRun, true);
+  assert.equal(data.fixPlan.applied, false);
   assert.equal(data.fixPlan.fixed[0].id, "T1");
   assert.deepEqual(
     data.cleanable.map((w) => w.id),

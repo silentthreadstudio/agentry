@@ -369,7 +369,7 @@ test("the router hands a subcommand its argv untouched (add takes --json <fields
   try {
     cpSync(join(FIXTURES, "table-board"), root, { recursive: true });
     const fields = JSON.stringify({ id: "Q-03", question: "Ring the bell?", blocks: "W5" });
-    const argv = [BOARD, "add", "question", "--json", fields, "--root", root];
+    const argv = [BOARD, "add", "question", "--json", fields, "--apply", "--root", root];
     const out = spawnSync("node", [...argv, "--process", join(root, "process.json")], {
       encoding: "utf8",
     });

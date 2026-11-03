@@ -93,9 +93,9 @@ function shortOf(root, sha) {
  * Apply one harness event to item `id` of the lifecycle's kind. `model` is the board as read
  * (`readProcess`). Returns { writes: [{ file, what }], skipped: [{ what, why }] }; throws a
  * `WriteError` (nothing written) on a bad event, bad data, an id not on the board once, or an edit
- * the board refuses.
+ * the board refuses. `preview`: the same result, every refusal included, with nothing written.
  */
-export function applyEvent({ root, spec, model, event, id, data = {} }) {
+export function applyEvent({ root, spec, model, event, id, data = {}, preview = false }) {
   if (!has(STEPS, event)) refuse(`unknown event "${event}" (${EVENTS.join(", ")})`);
   checkData(event, data);
   const steps = STEPS[event].steps(data);
@@ -176,7 +176,7 @@ export function applyEvent({ root, spec, model, event, id, data = {} }) {
     }
     setField(step, target, value);
   }
-  if (edits.length) applyAll(edits);
+  if (edits.length) applyAll(edits, { preview });
   const writes = [];
   for (const { step, file, what, changed } of planned)
     if (changed) writes.push({ file, what });

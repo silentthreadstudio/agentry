@@ -44,8 +44,8 @@ test("a repo with no lanes set up lists each as ✗ with its command, and still 
     assert.ok(block, "a lanes block follows the rules");
     for (const lane of ["gate", "conductor.prompt", "trigger block", "default agent", "merge.push"])
       assert.match(block, new RegExp(`^✗ +${lane.replace(".", "\\.")} `, "m"), lane);
-    assert.match(block, /set: board instructions --write/);
-    assert.match(block, /set: board default-agent --write/);
+    assert.match(block, /set: board instructions --apply/);
+    assert.match(block, /set: board default-agent --apply/);
     assert.match(block, /set: \/agentry:config merge\.push=/);
     const rows = lanes();
     assert.equal(rows.gate.ok, false);
@@ -81,8 +81,8 @@ test("each lane turns ✓ once it is wired", () => {
   try {
     write(root, "CONDUCTOR.md", "# Conductor\n\n## Standing rules\n\n- one\n");
     write(root, ".agentry/config.json", JSON.stringify({ merge: { push: "auto" } }));
-    assert.equal(board("instructions", "--write").status, 0);
-    assert.equal(board("default-agent", "--write").status, 0);
+    assert.equal(board("instructions", "--apply").status, 0);
+    assert.equal(board("default-agent", "--apply").status, 0);
     const rows = lanes();
     for (const lane of [
       "gate",
@@ -107,7 +107,7 @@ test("a trigger block that is out of date, or a bad default agent, is ✗", () =
   const { root, board, lanes } = repo({ conductor: { prompt: "CONDUCTOR.md" } });
   try {
     write(root, "CONDUCTOR.md", "# Conductor\n");
-    assert.equal(board("instructions", "--write").status, 0);
+    assert.equal(board("instructions", "--apply").status, 0);
     write(root, ".claude/settings.json", JSON.stringify({ agent: "other:agent" }));
     write(root, "AGENTS.md", readFileSync(join(root, "AGENTS.md"), "utf8").replace("every", "any"));
     const rows = lanes();

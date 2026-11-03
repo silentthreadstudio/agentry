@@ -40,7 +40,7 @@ function call(cli, root, argv, extra = {}) {
 }
 const text = (root, rel) => readFileSync(join(root, rel), "utf8");
 const addTask = (root, fields, kind = "task") =>
-  call(add, root, [kind, "--json", JSON.stringify(fields)]);
+  call(add, root, [kind, "--json", JSON.stringify(fields), "--apply"]);
 const findings = (root) => {
   const { spec } = loadSpec(join(root, "process.json"));
   const model = readProcess({ root, spec });
@@ -50,6 +50,27 @@ const findings = (root) => {
   };
   return check(model, spec.rules, ctx).map((f) => `${f.rule}|${f.id}|${f.message}`);
 };
+
+test("without --apply, add and set print what they would write and change nothing", () => {
+  const root = copy("write");
+  const before = ["board/BOARD.md", "board/TASKS.md", "board/sprints/A1_one.md"].map((f) =>
+    text(root, f),
+  );
+  const added = call(add, root, ["task", "--json", '{"id":"W4","sprint":"A1","note":"Fourth"}']);
+  assert.equal(added.exit, 0, added.out);
+  assert.match(added.out, /^would add task W4\n/);
+  assert.match(added.out, /\n {2}BOARD\.md:\n {4}\+ \| W4 \| A1 \| todo \|/);
+  assert.match(added.out, /\npreview: nothing written; add --apply to write it$/);
+  const cell = call(set, root, ["task", "W3", "status=doing"]);
+  assert.equal(cell.exit, 0, cell.out);
+  assert.match(cell.out, /^would set task W3 status=doing \(BOARD\.md\)\npreview: /);
+  const now = ["board/BOARD.md", "board/TASKS.md", "board/sprints/A1_one.md"].map((f) =>
+    text(root, f),
+  );
+  assert.deepEqual(now, before);
+  // A preview refuses what the write would refuse.
+  assert.equal(call(add, root, ["task", "--json", '{"id":"W1","sprint":"A1"}']).exit, 2);
+});
 
 test("add writes the row after the sprint's last row, the sprint file row and the templated block", () => {
   const root = copy("write");
@@ -207,6 +228,7 @@ test("add on table-board, then check: findings are unchanged", () => {
     "question",
     "--json",
     JSON.stringify({ id: "Q-03", question: "Open the door?", blocks: ["W6"] }),
+    "--apply",
   ]);
   assert.equal(q.exit, 0, q.out);
   assert.match(
@@ -279,7 +301,7 @@ test("add skips the parent-file row for a sprint that has no file, and says so",
 test("set changes one status cell and nothing else", () => {
   const root = copy("write");
   const before = text(root, "board/BOARD.md");
-  const result = call(set, root, ["task", "W3", "status=doing"]);
+  const result = call(set, root, ["task", "W3", "status=doing", "--apply"]);
   assert.equal(result.exit, 0, result.out);
   assert.equal(
     text(root, "board/BOARD.md"),
@@ -303,7 +325,7 @@ test("set refuses an unknown status, field, item and an id column", () => {
 test("set writes a frontmatter key for a one-file-per-item kind", () => {
   const root = copy("frontmatter-board");
   const before = text(root, "plan/stories/S-2.md");
-  const result = call(set, root, ["story", "S-2", "status=done"]);
+  const result = call(set, root, ["story", "S-2", "status=done", "--apply"]);
   assert.equal(result.exit, 0, result.out);
   const after = text(root, "plan/stories/S-2.md");
   assert.equal(after.split("\n").length, before.split("\n").length);

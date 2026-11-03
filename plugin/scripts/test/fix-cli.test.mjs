@@ -1,5 +1,5 @@
 // Tests for `board fix` (lib/process/cli/fix.mjs): it writes done only when provable (a merge record that
-// still holds on main, or an owner's --accept whose change is still in effect), `--dry-run` writes nothing,
+// still holds on main, or an owner's --accept whose change is still in effect), without `--apply` it writes nothing,
 // a second run finds nothing, and what it cannot decide is reported. A property test walks random pick /
 // revert / reset / squash / merge / chmod sequences and checks done is written only while main's copy of
 // the task's files is the branch's, mode and bytes. By default it walks a few seeds that between them reach
@@ -64,7 +64,7 @@ test("a merged ledger and a board still at doing: fix writes done, the SHA and t
   const { root } = fresh();
   const main = landedWithRecord(root);
   const before = files(root);
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.match(out.stdout, /^fixed 1, 0 left for you/);
   const now = files(root);
@@ -77,11 +77,11 @@ test("a merged ledger and a board still at doing: fix writes done, the SHA and t
   assert.equal(check.status, 0, check.stdout);
 });
 
-test("--dry-run writes nothing and says what it would fix", () => {
+test("without --apply it writes nothing and says what it would fix", () => {
   const { root } = fresh();
   landedWithRecord(root);
   const before = files(root);
-  const out = board(root, "fix", "--dry-run");
+  const out = board(root, "fix");
   assert.deepEqual(files(root), before);
   assert.match(out.stdout, /^would fix 1/);
   assert.match(out.stdout, /T1 +status, commit, handoff/);
@@ -91,9 +91,9 @@ test("--dry-run writes nothing and says what it would fix", () => {
 test("a second run finds nothing to do and leaves the files as they were", () => {
   const { root } = fresh();
   landedWithRecord(root);
-  board(root, "fix");
+  board(root, "fix", "--apply");
   const once = files(root);
-  const again = board(root, "fix");
+  const again = board(root, "fix", "--apply");
   assert.match(again.stdout, /^fixed 0, 0 left for you/);
   assert.deepEqual(files(root), once);
 });
@@ -104,11 +104,11 @@ test("a hand cherry-pick (no merge record) is never written by fix alone: a nudg
   pickOntoMain(root, sha);
   ledger(root, "T1");
   const before = files(root);
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.deepEqual(files(root), before);
   assert.equal(out.status, 1);
   assert.match(out.stdout, /^fixed 0, 1 left for you/);
-  assert.match(out.stdout, /merged-by-hand T1 → \/agentry:board --fix --accept T1/);
+  assert.match(out.stdout, /merged-by-hand T1 → \/agentry:board fix --accept T1/);
 });
 
 test("--accept <id> writes a hand cherry-pick (no merge record) with main's commit", () => {
@@ -116,7 +116,7 @@ test("--accept <id> writes a hand cherry-pick (no merge record) with main's comm
   const { sha } = builtBranch(root, "T1");
   const main = pickOntoMain(root, sha);
   ledger(root, "T1");
-  const out = board(root, "fix", "--accept", "T1");
+  const out = board(root, "fix", "--apply", "--accept", "T1");
   assert.equal(out.status, 0, out.stdout + out.stderr);
   const short = main.slice(0, 7);
   assert.match(row(read(root, "plan/BOARD.md"), "T1"), new RegExp(`done +\\| +\\| ${short}`));
@@ -132,7 +132,7 @@ test("done with no SHA: fix adds the SHA and the handoff line and leaves the sta
     "| T1   | S1     | done   |         |        | The first  |",
   );
   writeFileSync(join(root, "plan", "BOARD.md"), text);
-  const out = board(root, "fix", "--json");
+  const out = board(root, "fix", "--apply", "--json");
   const result = JSON.parse(out.stdout);
   assert.deepEqual(
     result.fixed.map((f) => f.need),
@@ -153,7 +153,7 @@ test("a commit cell that names other commits is reported and left alone", () => 
   );
   writeFileSync(join(root, "plan", "BOARD.md"), text);
   const before = files(root);
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.equal(out.status, 1);
   assert.match(out.stdout, /T1: commit cell "abc1234" is not the landed \w+; left alone/);
   assert.deepEqual(files(root), before);
@@ -172,7 +172,7 @@ function pickedByHand(root) {
   return main;
 }
 // The owner confirms T1's hand merge.
-const accept = (root, ...more) => board(root, "fix", "--accept", "T1", ...more);
+const accept = (root, ...more) => board(root, "fix", "--apply", "--accept", "T1", ...more);
 
 test("work picked onto main and then reverted is never written as done", () => {
   for (const record of [false, true]) {
@@ -183,7 +183,7 @@ test("work picked onto main and then reverted is never written as done", () => {
     const merge = mergeRecord(git(root, "rev-parse", `${main}^`), [sha], [main]);
     ledger(root, "T1", record ? { state: "merged", merge } : { state: "verified" });
     const before = files(root);
-    for (const out of [board(root, "fix"), accept(root)]) {
+    for (const out of [board(root, "fix", "--apply"), accept(root)]) {
       assert.deepEqual(files(root), before, record ? "with a merge record" : "picked by hand");
       assert.match(out.stdout, /^fixed 0/);
       assert.equal(out.status, 1);
@@ -207,10 +207,10 @@ test("--accept refuses a squash: its change is on main but no commit there can b
 
 test("--accept needs a ledger for the id, and an id", () => {
   const { root } = fresh();
-  const out = board(root, "fix", "--accept", "T2");
+  const out = board(root, "fix", "--apply", "--accept", "T2");
   assert.match(out.stdout, /T2: no ledger names its branch; nothing to accept/);
   assert.equal(out.status, 1);
-  assert.equal(board(root, "fix", "--accept").status, 2);
+  assert.equal(board(root, "fix", "--apply", "--accept").status, 2);
 });
 
 test("a merge record reset off main is unsure, even with its commits still in the repo", () => {
@@ -220,7 +220,7 @@ test("a merge record reset off main is unsure, even with its commits still in th
   const [main] = mergeOntoMain(root, "T1", [sha]);
   git(root, "reset", "-q", "--hard", before);
   git(root, "merge", "-q", "--no-ff", "--no-edit", main); // the commit is back, but not first-parent
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.match(out.stdout, /^fixed 0/);
   assert.match(out.stdout, /T1: merged, but those commits are no longer main's history/);
 });
@@ -271,10 +271,10 @@ test("a revert is seen where the task's lines were, even where the same lines re
   for (const shape of ["add", "drop"]) {
     const { root } = fresh();
     const [, two] = mergeOntoMain(root, "T1", repeatedTask(root, shape));
-    assert.equal(board(root, "fix", "--dry-run").status, 0, `${shape}: holds at first`);
+    assert.equal(board(root, "fix").status, 0, `${shape}: holds at first`);
     git(root, "revert", "--no-edit", two);
     const before = files(root);
-    const out = board(root, "fix");
+    const out = board(root, "fix", "--apply");
     assert.deepEqual(files(root), before, `${shape}: nothing written`);
     assert.match(out.stdout, /^fixed 0, 1 left/, shape);
     assert.match(out.stdout, /T1: merged, but .*rep\.txt/, shape);
@@ -302,7 +302,7 @@ test("a re-added line is a new line: a record whose lines went and came back is 
   mergeOntoMain(root, "T1", taskChanging(root, "src.txt", "a\nb\nNEW\nc\n"));
   commitFile(root, "src.txt", "a\nb\nc\n", "chore: drop it by hand");
   commitFile(root, "src.txt", "top\na\nb\nNEW\nc\n", "chore: type it back, and more");
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.match(out.stdout, /^fixed 0/);
   assert.match(out.stdout, /T1: merged, but the line it added at src\.txt:3 is not there now/);
 });
@@ -312,9 +312,9 @@ test("a revert of the revert leaves the file byte for byte as it landed: done", 
   commitFile(root, "src.txt", "a\nb\nc\n", "chore: src");
   const [, two] = mergeOntoMain(root, "T1", taskChanging(root, "src.txt", "a\nb\nNEW\nc\n"));
   git(root, "revert", "--no-edit", two);
-  assert.match(board(root, "fix", "--dry-run").stdout, /^would fix 0/);
+  assert.match(board(root, "fix").stdout, /^would fix 0/);
   git(root, "revert", "--no-edit", "HEAD");
-  assert.match(board(root, "fix").stdout, /^fixed 1, 0 left/);
+  assert.match(board(root, "fix", "--apply").stdout, /^fixed 1, 0 left/);
 });
 
 test("a later commit next to a line the task added leaves it done, and rewriting the line does not", () => {
@@ -326,10 +326,13 @@ test("a later commit next to a line the task added leaves it done, and rewriting
   };
   const near = setup();
   commitFile(near, "ctx.txt", "a\nb\nC2\nNEW\nd\ne\nf\n", "feat: T2 edits its neighbour");
-  assert.match(board(near, "fix").stdout, /^fixed 1, 0 left/);
+  assert.match(board(near, "fix", "--apply").stdout, /^fixed 1, 0 left/);
   const over = setup();
   commitFile(over, "ctx.txt", "a\nb\nc\nNEWER\nd\ne\nf\n", "feat: T2 rewrites the line");
-  assert.match(board(over, "fix").stdout, /line it added at ctx\.txt:4 is not there now/);
+  assert.match(
+    board(over, "fix", "--apply").stdout,
+    /line it added at ctx\.txt:4 is not there now/,
+  );
 });
 
 test("a later edit around a line the task removed is unsure and says so, not that it was reverted", () => {
@@ -337,7 +340,7 @@ test("a later edit around a line the task removed is unsure and says so, not tha
   commitFile(root, "ctx.txt", "a\nb\nOLD\nc\nd\n", "chore: ctx");
   mergeOntoMain(root, "T1", taskChanging(root, "ctx.txt", "a\nb\nc\nd\n"));
   commitFile(root, "ctx.txt", "a\nB2\nc\nd\n", "feat: T2 edits its neighbour");
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.match(out.stdout, /^fixed 0/);
   assert.match(out.stdout, /lines around its change at ctx\.txt:2 were edited since/);
   assert.doesNotMatch(out.stdout, /reverted/);
@@ -348,7 +351,7 @@ test("a line the task added beside its twin: a revert that removes either copy i
   commitFile(root, "twin.txt", "a\nX\nb\n", "chore: twin");
   const [, two] = mergeOntoMain(root, "T1", taskChanging(root, "twin.txt", "a\nX\nX\nb\n"));
   git(root, "revert", "--no-edit", two);
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.match(out.stdout, /^fixed 0/);
   assert.match(out.stdout, /twin\.txt/);
 });
@@ -363,7 +366,7 @@ test("a binary or empty file the task added is checked by its content", () => {
   mergeOntoMain(root, "T1", [sha, git(path, "rev-parse", "HEAD")]);
   git(root, "rm", "-q", "empty.txt");
   git(root, "commit", "-q", "-m", "chore: drop the empty file");
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.match(out.stdout, /^fixed 0/);
   assert.match(out.stdout, /T1: merged, but empty\.txt is not as it landed/);
 });
@@ -376,10 +379,10 @@ test("a mode-only change reverted on main is never written as done", () => {
   git(path, "add", "run.sh");
   git(path, "commit", "-q", "-m", "feat: T1 makes run.sh executable");
   const [, landed] = mergeOntoMain(root, "T1", [sha, git(path, "rev-parse", "HEAD")]);
-  assert.match(board(root, "fix", "--dry-run").stdout, /^would fix 1/, "holds while it is +x");
+  assert.match(board(root, "fix").stdout, /^would fix 1/, "holds while it is +x");
   git(root, "revert", "--no-edit", landed);
   const before = files(root);
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.deepEqual(files(root), before);
   assert.match(out.stdout, /^fixed 0/);
   assert.match(out.stdout, /T1: merged, but run\.sh is not as it landed/);
@@ -391,7 +394,7 @@ test("a removed block retyped elsewhere in the file is never written as done", (
   commitFile(root, "src.js", `a\n${body}b\nc\n`, "chore: src");
   mergeOntoMain(root, "T1", taskChanging(root, "src.js", "a\nb\nc\n"));
   commitFile(root, "src.js", `a\nb\nc\n${body}`, "chore: put old() back at the end");
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.match(out.stdout, /^fixed 0/);
   assert.match(out.stdout, /T1: merged, but a line it removed from src\.js is back/);
 });
@@ -404,14 +407,20 @@ test("a record not about the ledger's branch is unsure: an unrelated commit, or 
     state: "merged",
     merge: mergeRecord(git(unrelated, "rev-parse", `${other}^`), [one.sha], [other]),
   });
-  assert.match(board(unrelated, "fix").stdout, /T1: merged, but its merge record does not match/);
+  assert.match(
+    board(unrelated, "fix", "--apply").stdout,
+    /T1: merged, but its merge record does not match/,
+  );
 
   const part = fresh().root;
   const two = builtBranch(part, "T1");
   commitFile(two.path, "T1b.txt", "b\n", "feat: T1 second");
   const [landed] = mergeOntoMain(part, "T1", [two.sha]);
   assert.ok(landed);
-  assert.match(board(part, "fix").stdout, /T1: merged, but its merge record does not match/);
+  assert.match(
+    board(part, "fix", "--apply").stdout,
+    /T1: merged, but its merge record does not match/,
+  );
 });
 
 test("a record with no plan of what it picked is unsure", () => {
@@ -420,7 +429,7 @@ test("a record with no plan of what it picked is unsure", () => {
   const [main] = mergeOntoMain(root, "T1", [sha]);
   const preHead = git(root, "rev-parse", `${main}^`);
   ledger(root, "T1", { state: "merged", merge: { preHead, landed: [main], step: "done" } });
-  assert.match(board(root, "fix").stdout, /its merge record does not match/);
+  assert.match(board(root, "fix", "--apply").stdout, /its merge record does not match/);
 });
 
 test("a record whose branch was cleaned up still holds, by the tip it wrote at the land", () => {
@@ -429,7 +438,7 @@ test("a record whose branch was cleaned up still holds, by the tip it wrote at t
   const [main] = mergeOntoMain(root, "T1", [sha]);
   git(root, "worktree", "remove", "-f", path);
   git(root, "branch", "-D", branch);
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.match(out.stdout, /^fixed 1, 0 left/, out.stdout);
   assert.ok(read(root, "plan/BOARD.md").includes(main.slice(0, 7)));
 });
@@ -457,7 +466,7 @@ test("a long id wraps the row: the command is whole and no line is wider than 80
     `| ${long} | S1 | doing |`,
   );
   writeFileSync(join(root, "plan", "BOARD.md"), text);
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.ok(!out.stdout.includes("…"), out.stdout);
   assert.ok(out.stdout.replaceAll(/\s+/g, " ").includes(`/agentry:exec ${long}`), out.stdout);
   for (const line of out.stdout.split("\n")) assert.ok([...line].length <= 80, line);
@@ -493,11 +502,11 @@ test("a line board check does not count as T1's handoff gets T1 its own line, an
     const main = landedWithRecord(root);
     sprintWith(root, shape(main.slice(0, 7)));
     git(root, "commit", "-qam", "a hand line");
-    const [fixed] = JSON.parse(board(root, "fix", "--json").stdout).fixed;
+    const [fixed] = JSON.parse(board(root, "fix", "--apply", "--json").stdout).fixed;
     assert.deepEqual(fixed.need, ["status", "commit", "handoff"], shape("<sha>"));
     const check = board(root, "check");
     assert.equal(check.status, 0, `${shape("<sha>")}${check.stdout}`);
-    assert.match(board(root, "fix").stdout, /^fixed 0, 0 left for you/);
+    assert.match(board(root, "fix", "--apply").stdout, /^fixed 0, 0 left for you/);
   }
 });
 
@@ -522,7 +531,11 @@ test("the output lists exactly the writes made, and the run after a fix exits 0"
   );
   assert.equal(out.status, 0, "the verified ledger's work is on main: no stale nudge is left");
   assert.equal(git(root, "diff", "--numstat"), "1\t1\tplan/BOARD.md\n2\t0\tplan/sprints/S1.md");
-  assert.match(board(root, "fix").stdout, /^fixed 0, 0 left for you/, "and fix then has nothing");
+  assert.match(
+    board(root, "fix", "--apply").stdout,
+    /^fixed 0, 0 left for you/,
+    "and fix then has nothing",
+  );
 });
 
 test("a ledgered branch merged by hand with --no-ff or fast-forwarded is accepted with its commit", () => {
@@ -544,7 +557,7 @@ test("a ledgered branch merged by hand with --no-ff or fast-forwarded is accepte
 test("what is not mechanical is listed with its command, and the exit is 1", () => {
   const { root } = fresh();
   handBranch(root, ".claude/worktrees/agent-z9", "worktree-agent-z9");
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.equal(out.status, 1);
   assert.match(out.stdout, /left for you:/);
   assert.match(out.stdout, /unlisted-worktree agent-z9 → \/agentry:exec <id>/);
@@ -558,7 +571,7 @@ test("a merge in progress is not touched", () => {
   const main = pickOntoMain(root, sha);
   ledger(root, "T1", { state: "merging", merge: { preHead: "x", landed: [main], step: "gate" } });
   const before = files(root);
-  board(root, "fix");
+  board(root, "fix", "--apply");
   assert.deepEqual(files(root), before);
 });
 
@@ -568,14 +581,14 @@ test("without a lifecycle fix writes nothing and has nothing to report", () => {
   const { root } = fresh({ spec: bare });
   landedWithRecord(root);
   const before = files(root);
-  const out = board(root, "fix");
+  const out = board(root, "fix", "--apply");
   assert.equal(out.status, 0, out.stdout);
   assert.deepEqual(files(root), before);
 });
 
 test("fix takes no operands", () => {
   const { root } = fresh();
-  const out = board(root, "fix", "--bogus");
+  const out = board(root, "fix", "--apply", "--bogus");
   assert.equal(out.status, 2);
 });
 
@@ -709,13 +722,13 @@ test("property: random pick/revert/reset/squash/no-ff/revert -m 1/chmod walks wr
       ops.push(step(root, { ...walk, step: n }));
     const on = onMain(root, walk);
     const why = `seed ${seed} (${shape ?? "plain"}): ${ops.join(" → ")}`;
-    fixIn(root, []);
+    fixIn(root, ["--apply"]);
     if (isDone(root)) {
       assert.ok(on, `fix wrote done with the lines off main (${why})`);
       done.record++;
       continue;
     }
-    fixIn(root, ["--accept", "T1"]);
+    fixIn(root, ["--apply", "--accept", "T1"]);
     assert.ok(!isDone(root) || on, `--accept wrote done with the lines off main (${why})`);
     if (isDone(root)) done.accept++;
     else if (on) done.refused++;

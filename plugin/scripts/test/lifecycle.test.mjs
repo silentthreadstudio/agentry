@@ -149,6 +149,7 @@ test("board lifecycle merged writes the status, the a…b commit cell and a hand
     shas[1],
     "--summary",
     "first slice landed",
+    "--apply",
   );
   assert.equal(out.status, 0, out.stderr);
   const [a, b] = shas.map((s) => s.slice(0, 7));
@@ -198,8 +199,38 @@ test("merging twice writes nothing the second time: every step is skipped as alr
     { what: "handoff", why: "already there" },
   ]);
   assert.deepEqual(files(root), once);
-  const out = board(root, "lifecycle", "merged", "T1", "--sha", shas[0], "--summary", "done");
+  const out = board(
+    root,
+    "lifecycle",
+    "merged",
+    "T1",
+    "--sha",
+    shas[0],
+    "--summary",
+    "done",
+    "--apply",
+  );
   assert.match(out.stdout, /0 written, 3 skipped/);
+});
+
+test("board lifecycle without --apply says what it would write and writes nothing", () => {
+  const { root } = repo();
+  const before = files(root);
+  const out = board(root, "lifecycle", "dispatched", "T1");
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(
+    out.stdout,
+    /^lifecycle dispatched T1: 1 would be written, 0 skipped\n {2}would write status/,
+  );
+  assert.match(out.stdout, /\npreview: nothing written; add --apply to write it\n$/);
+  assert.deepEqual(files(root), before);
+  const json = JSON.parse(board(root, "lifecycle", "built", "T1", "--json").stdout);
+  assert.equal(json.applied, false);
+  assert.equal(
+    board(root, "lifecycle", "merged", "T9", "--summary", "x").status,
+    2,
+    "refuses alike",
+  );
 });
 
 test("a handoff line put there since the board was read is not added again", () => {
@@ -332,7 +363,7 @@ test("with no lifecycle every event writes nothing and reports each step skipped
       skipped: steps.map((what) => ({ what, why: "lifecycle off" })),
     });
   }
-  const cli = board(root, "lifecycle", "built", "T1");
+  const cli = board(root, "lifecycle", "built", "T1", "--apply");
   assert.equal(cli.status, 0);
   assert.match(cli.stdout, /0 written, 1 skipped\n {2}skipped status: lifecycle off/);
   assert.deepEqual(files(root), before);
