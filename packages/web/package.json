@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Agentry's public marketing site — a static Astro one-pager (\"show the receipts\" observatory) that embeds the real eval dashboard. Deployable, never published; nothing imports it.",
+  "description": "Agentry's public site: a static Astro landing page plus the /docs area. Deployed on Vercel, never published; nothing imports it.",
   "engines": {
     "node": ">=24"
   },

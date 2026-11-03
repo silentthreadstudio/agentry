@@ -1,10 +1,7 @@
-# `@agentry/web` — Agentry's public marketing site
+# `@agentry/web` — Agentry's public site
 
-A static [Astro](https://astro.build) one-pager — the "show the receipts" observatory that leads with
-methodology and evidence (the corrections log, the controls, the reproducible self-eval), embeds the **real**
-eval dashboard, and is one copy-paste from installed. See [`VISION.md`](./VISION.md) for the full brief.
-
-Private workspace package: a deployable, never published to npm — nothing imports it.
+A static [Astro](https://astro.build) site: the landing page and the `/docs` area. Private workspace
+package: deployed, never published to npm, and nothing imports it.
 
 ## Develop
 
@@ -15,16 +12,18 @@ pnpm --filter @agentry/web preview    # serve the built dist/ locally
 pnpm --filter @agentry/web typecheck  # astro check
 ```
 
-`build` runs a `prebuild` data step first (load metrics + embed the dashboard). Those scripts live in
-`scripts/` and only run when present, so the package builds cleanly while they're still being built.
+## Layout
+
+- `src/pages/index.astro` composes the landing page, one component per section in
+  `src/components/` (Hero, Harness, Lanes, Agents, Extensible, Scriptable, Day, BoardView, Memory,
+  Guardrails, FieldLog, Install), with the shared Nav and Footer from `src/layouts/Base.astro`.
+- `src/styles/tokens.css` holds every design token; `global.css` the base layer and shared
+  primitives; `docs.css` the docs prose classes. Fonts: Bricolage Grotesque and JetBrains Mono.
+- Internal links and assets go through `withBase()` (`src/lib/base.ts`), so the site also works
+  under a sub-path.
 
 ## Deploy
 
-Static output (`dist/`) ships to **GitHub Pages** via a dedicated `deploy.yml` workflow (push to `main`
-touching `packages/web/**`). `site`/`base` are env-overridable (`SITE_URL` / `BASE_PATH`) — defaults target
-`https://silentthreadstudio.github.io/agentry`, so moving to a custom domain is a one-line change.
-
-## Provenance
-
-This site was built and conducted end-to-end through **`/agentry:go`** — the dogfood showcase. The thesis is
-"measured, not asserted," and the footer says so because it's true.
+Vercel builds the site from the repo at `https://agentry.silentthreadstudio.com`. `site` and `base`
+default to that domain and `/`; the `SITE_URL` and `BASE_PATH` environment variables override them
+(for example, a preview under a sub-path).
