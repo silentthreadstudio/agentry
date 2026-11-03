@@ -137,6 +137,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   and `fix` keep their shapes and write the spec, plan and task files as plain files under
   `.agentry/work/<run>/`; review and approval happen in the chat. The plugin check fails if
   `plugin/` names either again.
+- **`/agentry:go` with no task claiming queued work.** It now asks what to work on, and points to
+  `agentry board status` and `/agentry:exec` when the repo has a board.
 
 ## [0.2.0] — 2026-06-21
 
