@@ -30,6 +30,7 @@ import {
   carryBackStep,
   dropNext,
   giveBack,
+  heldRow,
   mainRow,
   mainStep,
   takeCarryStep,
@@ -228,6 +229,9 @@ function land(lane) {
     // At a stop, main gets exec's writes back, unless git is mid-pick or they would not go back.
     const back = stop.keepCarry ? null : giveBack(lane);
     if (back) rows.push(back);
+    // A stop that gives nothing back holds the set-aside files in the ledger: say which, and how they return.
+    const held = stop.keepCarry ? heldRow(lane) : null;
+    if (held) rows.push(held);
     // A give-back that is itself a conflict has its own next; "land again" would only hit it again.
     return done(stop.exit, lane, rows, back?.mark === "red" ? dropNext(lane) : stop.next);
   }

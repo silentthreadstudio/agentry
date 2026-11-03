@@ -12,21 +12,57 @@
 // writes and need no board cell, but the picks, the gate and the board commit all need a clean tree. So
 // the land sets them aside the same way (the patch and its sha256 in `merge.allow`, recorded first), and
 // puts them back after the board commit, at any stop, or first thing on the rerun of a killed land. An
-// edit that no longer applies on the landed files is saved to a patch file and said, never lost.
+// edit that no longer applies on the landed files is saved to a patch file and said, never lost. A new,
+// untracked file under `guard.allow` is carried the same way (its patch is a new-file patch; set aside
+// is deleting it), and so is a file only `agentry board add` / `board set --apply` changed, by the
+// content ids they recorded (`merge.writes`, the same record plus the cells for a pick that touches
+// the file). Those two are never committed by the land: they go back to the owner uncommitted.
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { boardFiles, cellText, diffBoard, strayChanges } from "../../process/board-diff.mjs";
 import { list as listLedgers, runDir } from "../../process/ledger.mjs";
-import { headBoard, putCells, sha256, uncommittedPatch, workingBoard } from "../carry-io.mjs";
+import {
+  asidePatch,
+  headBoard,
+  putCells,
+  removeFiles,
+  sha256,
+  uncommittedPatch,
+  workingBoard,
+  writtenByScript,
+} from "../carry-io.mjs";
 import { pickTier } from "../gate.mjs";
-import { commitOf, currentBranch, notEdits, restoreFiles, statusEntries } from "../land.mjs";
+import {
+  commitOf,
+  currentBranch,
+  filesOf,
+  notEdits,
+  restoreFiles,
+  statusEntries,
+  toLand,
+} from "../land.mjs";
 import { git } from "../worktree.mjs";
-import { now, ok, red, setMerge, short, warn } from "./lane.mjs";
+import { landNext, now, ok, red, setMerge, short, warn } from "./lane.mjs";
 
 // A lane in any other state is open: its task is not on main, so its lifecycle writes may wait there.
 const CLOSED = ["merged", "closed"];
 const CARRY_RULE =
   "only lifecycle cells (status, verdict, commit) of tasks with an open lane may wait on main for the land";
+
+// The changed `cells` of a board diff with their text on each side, found by id (null: not read back).
+const readCells = (spec, before, after, cells) =>
+  cells.map(({ kind, id, field, column, file }) => {
+    const where = { kind, id, column };
+    return {
+      kind,
+      id,
+      field,
+      column,
+      file,
+      from: cellText(spec, before, where),
+      to: cellText(spec, after, where),
+    };
+  });
 
 // Why main's uncommitted edits of `files` cannot wait for the land, one line each; [] when they are
 // exactly lifecycle cells of tasks whose lane is open (exec's writes), read at the model level against
@@ -41,11 +77,7 @@ function carryProblems(lane, files, ignore) {
   const all = diffBoard({ spec, before, after, files });
   const kept = (change) => !ignore.includes(change.file);
   const diff = { cells: all.cells.filter(kept), other: all.other.filter(kept) };
-  lane.carryCells = diff.cells.map(({ kind, id: item, field, column, file }) => {
-    const where = { kind, id: item, column };
-    const [from, to] = [cellText(spec, before, where), cellText(spec, after, where)];
-    return { kind, id: item, field, column, file, from, to };
-  });
+  lane.carryCells = readCells(spec, before, after, diff.cells);
   const open = listLedgers(root).filter((l) => !CLOSED.includes(l.state));
   const sameText = files
     .filter((file) => before.text(file) !== null && before.text(file) === after.text(file))
@@ -53,27 +85,107 @@ function carryProblems(lane, files, ignore) {
   const unread = lane.carryCells
     .filter((c) => c.from === null || c.to === null)
     .map((c) => `${c.file}: ${c.id} ${c.field} cannot be read back by its id, so not set back`);
-  return [
-    ...sameText,
-    ...strayChanges(spec, diff, { ids: [id, ...open.map((l) => l.id)] }),
-    ...unread,
-  ];
+  const stray = strayChanges(spec, diff, { ids: [id, ...open.map((l) => l.id)] }).map((line) =>
+    line.replace(/: not a board file$/, ": not a board file, not in guard.allow"),
+  );
+  return [...sameText, ...stray, ...unread];
 }
 // A glob test with the gate's own matcher (a quick tier whose only globs are these), as exec's guard does.
 const matchesAny = (globs, path) =>
   globs.length > 0 && pickTier({ quick: { command: ["-"], only: globs } }, [path]).tier === "quick";
 const PLAIN_EDIT = /^(?: M|M |MM)$/;
 
-// The entries that are the owner's plain edits of a `guard.allow` file. A board file is never one: its
-// edits are exec's lifecycle writes, carried into the board commit.
+// The entries that are the owner's plain edits of a `guard.allow` file, or a new untracked one. A board
+// file is never one: its edits are exec's lifecycle writes, carried into the board commit.
 function allowedEdits({ spec, model }, entries) {
   const globs = spec.guard?.allow ?? [];
   if (globs.length === 0) return [];
   const board = new Set(boardFiles(spec, model ?? { kinds: {} }));
   return entries.filter((entry) => {
-    const path = entry.slice(3);
-    return PLAIN_EDIT.test(entry.slice(0, 2)) && !board.has(path) && matchesAny(globs, path);
+    const [how, path] = [entry.slice(0, 2), entry.slice(3)];
+    return (PLAIN_EDIT.test(how) || how === "??") && !board.has(path) && matchesAny(globs, path);
   });
+}
+
+// The files among `entries` (plain edits) that only recorded board-script writes changed, with what to
+// say about them: `{ files, by, cells, loose }`. `cells` are the cell changes of the files a pick could be
+// merged with by cell; `loose` are those it could not (a row added, prose, a cell not read by its id).
+function scriptWrites(lane, entries) {
+  const { root, spec } = lane;
+  const none = { files: [], by: {}, cells: [], loose: [] };
+  const plain = entries.filter((e) => PLAIN_EDIT.test(e.slice(0, 2))).map((e) => e.slice(3));
+  let by;
+  try {
+    by = writtenByScript(root, plain);
+  } catch {
+    return none; // git cannot say: the files stay what they were, dirt
+  }
+  const files = Object.keys(by);
+  if (files.length === 0) return none;
+  try {
+    const after = workingBoard(root, spec);
+    const before = headBoard(root, spec, after.model);
+    const diff = diffBoard({ spec, before, after, files });
+    const cells = readCells(spec, before, after, diff.cells);
+    const loose = files.filter(
+      (file) =>
+        diff.other.some((o) => o.file === file) ||
+        !cells.some((c) => c.file === file) ||
+        cells.some((c) => c.file === file && (c.from === null || c.to === null)),
+    );
+    return { files, by, cells: cells.filter((c) => !loose.includes(c.file)), loose };
+  } catch {
+    return { files, by, cells: [], loose: files };
+  }
+}
+
+// The git-added path list of commit `sha`.
+function addedBy(root, sha) {
+  const res = git(root, [
+    "diff-tree",
+    "--no-commit-id",
+    "--name-only",
+    "--diff-filter=A",
+    "-z",
+    "-r",
+    sha,
+    "--",
+  ]);
+  return res.status === 0 ? res.stdout.split("\0").filter(Boolean) : [];
+}
+
+// Why a pick would run into what main carries, before any pick: an untracked guard.allow file a picked
+// commit adds, or a board-script write a picked commit touches that cannot merge by cell. One line each.
+function pickProblems(lane) {
+  const { root, ledger, allowNew, writes } = lane;
+  if (allowNew.length === 0 && writes.loose.length === 0) return [];
+  const plan = toLand(root, { main: ledger.mainBranch, branch: ledger.branch });
+  if (plan.error) return []; // the commits row says so
+  const seen = new Set();
+  const out = [];
+  for (const sha of plan.picks) {
+    const touched = filesOf(root, sha) ?? [];
+    const lines = [
+      ...addedBy(root, sha)
+        .filter((path) => allowNew.includes(path))
+        .map((path) => [
+          path,
+          `${path}: untracked on main and added by ${short(sha)} → move it aside or commit it, then rerun`,
+        ]),
+      ...writes.loose
+        .filter((file) => touched.includes(file))
+        .map((file) => [
+          file,
+          `${file}: written on main by ${writes.by[file].join("; ")} and changed by ${short(sha)}, which cannot merge by cell → commit or undo the write, then rerun`,
+        ]),
+    ];
+    for (const [path, line] of lines)
+      if (!seen.has(path)) {
+        seen.add(path);
+        out.push(line);
+      }
+  }
+  return out;
 }
 const show = (text) => JSON.stringify(text ?? "");
 const cellLine = (c) => `${c.id} ${c.field}: ${show(c.from)} → ${show(c.to)} (${c.file})`;
@@ -97,6 +209,8 @@ export function mainRow(lane, { carry = false, ignore = [] } = {}) {
   const { root, ledger } = lane;
   lane.carried = [];
   lane.allowFiles = [];
+  lane.allowNew = [];
+  lane.writes = { files: [], by: {}, cells: [], loose: [] };
   const on = currentBranch(root);
   if (on !== ledger.mainBranch)
     return red(
@@ -106,33 +220,42 @@ export function mainRow(lane, { carry = false, ignore = [] } = {}) {
   const all = statusEntries(root);
   if (!all) return red("main", "git status failed in the main checkout");
   const rest = all.filter((entry) => !ignore.includes(entry.slice(3)));
-  const kept = allowedEdits(lane, rest);
+  lane.writes = scriptWrites(lane, rest);
+  const scripted = (entry) =>
+    PLAIN_EDIT.test(entry.slice(0, 2)) && lane.writes.files.includes(entry.slice(3));
+  const left = rest.filter((entry) => !scripted(entry));
+  const kept = allowedEdits(lane, left);
   lane.allowFiles = kept.map((entry) => entry.slice(3));
-  const entries = rest.filter((entry) => !kept.includes(entry));
+  lane.allowNew = kept.filter((entry) => entry.startsWith("?? ")).map((entry) => entry.slice(3));
+  const entries = left.filter((entry) => !kept.includes(entry));
   const at = `${ledger.mainBranch} at ${short(commitOf(root, "HEAD"))}`;
+  const fate = carry ? "set aside for the land, then put back as they were" : "left as they are";
   const allowLine =
-    kept.length > 0
-      ? [
-          `${lane.allowFiles.join(", ")}: uncommitted, in guard.allow; ${
-            carry ? "set aside for the land, then put back as they were" : "left as they are"
-          }`,
-        ]
-      : [];
-  if (entries.length === 0)
-    return ok(
-      "main",
-      `${at}, clean${kept.length > 0 ? " but for guard.allow edits" : ""}`,
-      allowLine,
-    );
+    kept.length > 0 ? [`${lane.allowFiles.join(", ")}: uncommitted, in guard.allow; ${fate}`] : [];
+  const writeLine = lane.writes.files.map(
+    (file) => `${file}: written by ${lane.writes.by[file].join("; ")}, uncommitted; ${fate}`,
+  );
+  const extras = [
+    ...(kept.length > 0 ? ["guard.allow edits"] : []),
+    ...(lane.writes.files.length > 0 ? ["recorded board writes"] : []),
+  ];
+  const but = extras.length > 0 ? ` but for ${extras.join(" and ")}` : "";
+  const stuck = pickProblems(lane);
+  if (stuck.length > 0) return red("main", stuck[0], stuck.slice(1, 10));
+  if (entries.length === 0) return ok("main", `${at}, clean${but}`, [...allowLine, ...writeLine]);
   const files = entries.map((entry) => entry.slice(3));
   const dirty = carry ? notEdits(entries, files) : entries;
   if (dirty.length > 0) {
     const ours = dirty.some((entry) => entry.slice(3).startsWith(".agentry/run/"));
-    return red("main", `${ledger.mainBranch} is not clean: ${dirty.length} change(s)`, [
-      ...dirty.slice(0, 10),
-      ...(carry ? [`${CARRY_RULE}; commit or undo the rest, then land again`] : []),
-      ...(ours ? ["add .agentry/run/ to .gitignore: the lane's own files live there"] : []),
-    ]);
+    return red(
+      "main",
+      `${ledger.mainBranch} is not clean: ${dirty.length} change(s) not in guard.allow`,
+      [
+        ...dirty.slice(0, 10),
+        ...(carry ? [`${CARRY_RULE}; commit or undo the rest, then land again`] : []),
+        ...(ours ? ["add .agentry/run/ to .gitignore: the lane's own files live there"] : []),
+      ],
+    );
   }
   const problems = carryProblems(lane, files, ignore);
   if (problems.length > 0)
@@ -146,6 +269,7 @@ export function mainRow(lane, { carry = false, ignore = [] } = {}) {
     ...lane.carryCells.map(cellLine),
     `${files.join(", ")}: set aside for the land, then carried into the board commit`,
     ...allowLine,
+    ...writeLine,
   ]);
 }
 
@@ -233,7 +357,7 @@ export function carryBackStep(lane, rows) {
 /** Record main's carry-able edits in the ledger (the patch and its sha256), and only then set them
  *  aside, so the picks, the gate and a rollback see a clean tree and a killed run cannot lose them. */
 export function takeCarryStep(lane, rows) {
-  return takeLifecycle(lane, rows) ?? takeAllowStep(lane, rows);
+  return takeLifecycle(lane, rows) ?? takeAside(lane, rows, ALLOW) ?? takeAside(lane, rows, WRITES);
 }
 
 function takeLifecycle(lane, rows) {
@@ -263,66 +387,142 @@ function takeLifecycle(lane, rows) {
   return null;
 }
 
-/** Record the owner's `guard.allow` edits in the ledger (the patch and its sha256), then set them aside. */
-function takeAllowStep(lane, rows) {
-  const files = lane.allowFiles ?? [];
+// The two records of files set aside to be put back uncommitted: the owner's `guard.allow` edits and new
+// files (`merge.allow`) and the files only board-script writes changed (`merge.writes`, with the cells a
+// pick that touched the file is merged back by).
+const ALLOW = {
+  key: "allow",
+  noun: "guard.allow file(s)",
+  edits: "guard.allow edits",
+  patch: "merge-allow",
+  files: (lane) => lane.allowFiles ?? [],
+  untracked: (lane) => lane.allowNew ?? [],
+  cells: () => undefined,
+};
+const WRITES = {
+  key: "writes",
+  noun: "board-write file(s)",
+  edits: "board writes",
+  patch: "merge-writes",
+  files: (lane) => lane.writes?.files ?? [],
+  untracked: () => [],
+  cells: (lane) => lane.writes?.cells,
+};
+
+/** Record `kind`'s files in the ledger (the patch and its sha256), then set them aside: put back to HEAD,
+ *  or deleted when HEAD does not hold them. */
+function takeAside(lane, rows, kind) {
+  const files = kind.files(lane);
   if (files.length === 0) return null;
-  const made = uncommittedPatch(lane.root, files);
+  const untracked = kind.untracked(lane);
+  const made = asidePatch(lane.root, files, untracked);
   if (made.error) {
-    rows.push(red("allow", `cannot read the guard.allow edits: ${made.error}`));
+    rows.push(red(kind.key, `cannot read the ${kind.edits}: ${made.error}`));
     return { exit: 1 };
   }
-  setMerge(lane, { allow: { files, patch: made.patch, sha256: made.sha256, at: now() } });
-  const aside = restoreFiles(lane.root, files);
-  if (!aside.ok) {
-    rows.push(red("allow", `could not set the guard.allow edits aside: ${aside.reason}`));
+  const cells = kind.cells(lane);
+  const cellsSha256 = cells && sha256(JSON.stringify(cells));
+  setMerge(lane, {
+    [kind.key]: {
+      files,
+      untracked,
+      patch: made.patch,
+      sha256: made.sha256,
+      cells,
+      cellsSha256,
+      at: now(),
+    },
+  });
+  const aside = restoreFiles(
+    lane.root,
+    files.filter((file) => !untracked.includes(file)),
+  );
+  const gone = aside.ok ? removeFiles(lane.root, untracked) : aside;
+  if (!gone.ok) {
+    rows.push(red(kind.key, `could not set the ${kind.edits} aside: ${gone.reason}`));
     return { exit: 1 };
   }
   rows.push(
-    ok("allow", `${files.length} guard.allow file(s) set aside, recorded in the ledger first`, [
+    ok(kind.key, `${files.length} ${kind.noun} set aside, recorded in the ledger first`, [
       `${files.join(", ")}: sha256 ${made.sha256.slice(0, 12)}…, put back after the land`,
     ]),
   );
   return null;
 }
 
-// Where an edit that cannot go back is kept: the first merge-allow-<n>.patch the run directory lacks.
-function keepPatch(lane, patch) {
+// Where an edit that cannot go back is kept: the first <name>-<n>.patch the run directory lacks.
+function keepPatch(lane, name, patch) {
   const dir = runDir(lane.root, lane.id);
   let n = 1;
-  while (existsSync(join(dir, `merge-allow-${n}.patch`))) n++;
-  const file = join(dir, `merge-allow-${n}.patch`);
+  while (existsSync(join(dir, `${name}-${n}.patch`))) n++;
+  const file = join(dir, `${name}-${n}.patch`);
   writeFileSync(file, patch);
   return file;
 }
 
-/** Put the guard.allow edits the ledger holds back onto main's working tree and let go of them. Edits
- *  already back (a run killed after it put them back) are left; edits that no longer apply, or whose
- *  record fails its sha256, are saved to a patch file and said (a warning: the land is not undone for
- *  them, and nothing is lost). A row, or null when the ledger holds none. */
-export function putBackAllow(lane) {
-  const allow = lane.ledger.merge?.allow;
-  if (!allow) return null;
-  const files = allow.files.join(", ");
-  const apply = (...flags) => git(lane.root, ["apply", "--binary", ...flags], allow.patch);
-  const intactRecord = sha256(allow.patch) === allow.sha256;
+/** Put the files `kind`'s record holds back onto main's working tree and let go of them. Edits already
+ *  back (a run killed after it put them back) are left. A file a pick changed is merged back by cell when
+ *  the record has its cells. Edits that no longer apply, or whose record fails its sha256, are saved to a
+ *  patch file and said (a warning: the land is not undone for them, and nothing is lost). A row, or null
+ *  when the ledger holds none. */
+function putBackAside(lane, kind) {
+  const held = lane.ledger.merge?.[kind.key];
+  if (!held) return null;
+  const files = held.files.join(", ");
+  const apply = (...flags) => git(lane.root, ["apply", "--binary", ...flags], held.patch);
+  const intactRecord = sha256(held.patch) === held.sha256;
   const done = (row) => {
-    setMerge(lane, { allow: undefined }); // only once the edits are on main or in a patch file
+    setMerge(lane, { [kind.key]: undefined }); // only once the edits are on main or in a patch file
     return row;
   };
   if (intactRecord && apply("--reverse", "--check").status === 0)
-    return done(ok("allow", `guard.allow edits are on main already (${files})`));
+    return done(ok(kind.key, `${kind.edits} are on main already (${files})`));
   if (intactRecord && apply().status === 0)
     return done(
-      ok("allow", `guard.allow edits are on main again, uncommitted, as they were (${files})`),
+      ok(kind.key, `${kind.edits} are on main again, uncommitted, as they were (${files})`),
     );
-  const file = keepPatch(lane, allow.patch);
+  if (
+    intactRecord &&
+    held.cells?.length &&
+    sha256(JSON.stringify(held.cells)) === held.cellsSha256
+  ) {
+    const back = putCells(lane.root, lane.spec, held.cells);
+    if (back.ok)
+      return done(
+        ok(
+          kind.key,
+          `${kind.edits} are on main again, uncommitted, set cell by cell on the landed files (${files})`,
+        ),
+      );
+  }
+  const file = keepPatch(lane, kind.patch, held.patch);
   const why = intactRecord
     ? "they no longer apply to the landed files"
     : "the ledger's copy fails its sha256 check";
   return done(
-    warn("allow", `guard.allow edits were not put back (${files}): ${why}`, [
+    warn(kind.key, `${kind.edits} were not put back (${files}): ${why}`, [
       `your edits are saved in ${file}: look at them, then git apply it by hand`,
     ]),
   );
+}
+
+const WORST = ["red", "warn", "ok"];
+/** Put back what the ledger holds of the owner's `guard.allow` files and of board-script writes: one
+ *  row, or null when it holds none. */
+export function putBackAllow(lane) {
+  const [a, b] = [putBackAside(lane, ALLOW), putBackAside(lane, WRITES)];
+  if (!a || !b) return a ?? b;
+  const mark = WORST.find((m) => a.mark === m || b.mark === m);
+  return { ...a, mark, more: [...a.more, b.detail, ...b.more] };
+}
+
+/** The row for a stop that keeps the ledger's set-aside files (nothing put them back yet): which they
+ *  are and the command that does, so a hold is never silent. Null when the ledger holds none. */
+export function heldRow(lane) {
+  const held = [ALLOW, WRITES].flatMap((kind) => lane.ledger.merge?.[kind.key]?.files ?? []);
+  if (held.length === 0) return null;
+  const shown = held.slice(0, 5).join(", ") + (held.length > 5 ? `, +${held.length - 5}` : "");
+  return warn("allow", "files set aside by this land are still in the ledger", [
+    `allow: ${held.length} file(s) set aside (${shown}) → restored by ${landNext(lane.id)}`,
+  ]);
 }
