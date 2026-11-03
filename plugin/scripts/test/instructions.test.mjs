@@ -690,3 +690,17 @@ test("--apply removes a leftover temp file of a dead pid, says so, and keeps a l
   assert.equal(existsSync(live), true);
   assert.doesNotMatch(run(["--apply"], { root, spec: SPEC }).out, /leftover/);
 });
+
+test("learn.md numbers its wiring steps in sequence, and init.md points at the right one", () => {
+  const plugin = join(HERE, "..", "..");
+  const learn = readFileSync(join(plugin, "skills", "process", "references", "learn.md"), "utf8");
+  const wiring = learn.slice(learn.indexOf("1. **The gate.**"));
+  const steps = [...wiring.matchAll(/^(\d+)\. \*\*([^*]+)\*\*/gm)];
+  assert.deepEqual(
+    steps.map((s) => Number(s[1])),
+    steps.map((_, i) => i + 1),
+  );
+  const drafts = steps.find((s) => s[2].startsWith("Decision drafts"));
+  const init = readFileSync(join(plugin, "commands", "init.md"), "utf8");
+  assert.match(init, new RegExp(`\`learn\\.md\` step ${drafts[1]}\\b`));
+});

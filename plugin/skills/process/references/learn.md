@@ -223,7 +223,7 @@ and § guard and cleanup.
     it, outside the sprints. When the board has no such kind and its debt is a list without ids, offer the
     template's debt kind (`kinds.debt`, its rule, `exec.kinds.debt`, the `## Debt` table and the `# Debt`
     section) instead; never convert the list. A no is final: do not ask again.
-12. **Decision drafts.** Only when the process file has a decision kind (the lifecycle-free kind named `decision`,
+13. **Decision drafts.** Only when the process file has a decision kind (the lifecycle-free kind named `decision`,
     else the only kind with a `decision` field) and the workflow file has no `drafts.decision`. Write it from
     the kind: `kind` its name, `map` of `decision` → `{answer}`, `why` → `{why}` (the draft's why, else its
     question) and `rejected` → `{unpicked}`, only for the fields the kind has. Say so: `draft apply` would derive
