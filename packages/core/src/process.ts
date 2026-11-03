@@ -181,12 +181,15 @@ const Argv = z.array(Text).min(1);
 const Globs = z.array(RepoPath).min(1);
 
 /** The repo's gate: argv run with no shell in the git root of the tree under test. `quick` applies
- *  only when every changed file matches `only`; `after` lists the files it may leave changed. */
+ *  only when every changed file matches `only`; `after` lists the files it may leave changed;
+ *  `concurrency` is how many lane gates run at once; `flaky` names tests a red may fail in and be re-run. */
 export const Gate = z
   .object({
     command: Argv,
     quick: z.object({ command: Argv, only: Globs }).strict().optional(),
     after: Globs.optional(),
+    concurrency: z.number().int().positive().optional(),
+    flaky: z.array(Text).min(1).optional(),
     note: Text.optional(),
   })
   .strict();

@@ -264,6 +264,8 @@ the owner's approval.
 | `gate.quick.command` | yes | The quick tier's argv. |
 | `gate.quick.only` | yes | Globs (from the git root). The quick tier applies only when every changed file matches one of them. |
 | `gate.after` | no | Globs of the files allowed to change after the gate ran green. Default `[]`: none. |
+| `gate.concurrency` | no | How many lane gates may run at once in this checkout. Default `1`: lanes queue their gates behind a lock in `.agentry/run/`, so load-sensitive tests are not run against each other. |
+| `gate.flaky` | no | Names of tests known to fail under load. A red gate whose log fails only in these is re-run alone once; both runs are recorded. |
 | `gate.note` | no | Free text. |
 | `extensions.merge` | yes | What `/agentry:merge` adds. |
 | `extensions.merge.checks` | yes | Repo skills by their own names (lower-case letters, digits, `-`; each once); `[]` names none. Merge refuses to land until each has a recorded outcome. |

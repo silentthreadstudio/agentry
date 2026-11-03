@@ -30,7 +30,14 @@ test("gateOf fills the defaults, copies, and is null without a gate", () => {
   assert.equal(gateOf(BASE), null);
   const spec = { ...structuredClone(BASE), gate: { command: ["make", "test"] } };
   const gate = gateOf(spec);
-  assert.deepEqual(gate, { command: ["make", "test"], quick: null, after: [], note: null });
+  assert.deepEqual(gate, {
+    command: ["make", "test"],
+    quick: null,
+    after: [],
+    concurrency: 1,
+    flaky: [],
+    note: null,
+  });
   gate.command.push("--changed");
   assert.deepEqual(spec.gate.command, ["make", "test"]);
   const quick = { command: ["make", "quick"], only: ["docs/**"] };
@@ -38,6 +45,8 @@ test("gateOf fills the defaults, copies, and is null without a gate", () => {
     command: ["x"],
     quick,
     after: ["a.md"],
+    concurrency: 1,
+    flaky: [],
     note: null,
   });
 });

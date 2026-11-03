@@ -181,6 +181,8 @@ const gate = shape(
     "command!": argv,
     quick: shape({ "command!": argv, "only!": globs }, FULL),
     after: globs,
+    concurrency: posInt,
+    flaky: filled(text),
     note: text,
   },
   FULL,
@@ -208,7 +210,7 @@ const processFile = shape({
  *  trailing `!` marking a required one. The format reference is bound to it. */
 export const schema = processFile;
 
-/** The repo's gate with its defaults filled (`after: []`, no quick tier), or null when the process
+/** The repo's gate with its defaults filled (`after: []`, `concurrency: 1`, `flaky: []`, no quick tier), or null when the process
  *  file has none. A copy: changing it never changes the spec. */
 export function gateOf(spec) {
   const g = own(spec, "gate");
@@ -217,6 +219,8 @@ export function gateOf(spec) {
     command: g.command,
     quick: g.quick ?? null,
     after: g.after ?? [],
+    concurrency: g.concurrency ?? 1,
+    flaky: g.flaky ?? [],
     note: g.note ?? null,
   });
 }

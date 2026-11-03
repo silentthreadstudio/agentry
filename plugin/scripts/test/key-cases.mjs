@@ -42,6 +42,8 @@ export const PROCESS_CASES = [
       command: ["tools/gate.sh"],
       quick: { command: ["tools/gate.sh", "--quick"], only: ["docs/**", "*.md"] },
       after: ["CHANGELOG.md"],
+      concurrency: 2,
+      flaky: ["test_budget"],
       note: "the repo's own gate",
     }),
   },
@@ -115,6 +117,17 @@ export const PROCESS_CASES = [
     name: "a quick tier as a flag",
     add: gate({ command: ["x"], quick: "--quick" }),
     bad: ["gate.quick"],
+  },
+  {
+    name: "a zero concurrency",
+    add: gate({ command: ["x"], concurrency: 0 }),
+    bad: ["gate.concurrency"],
+  },
+  { name: "an empty flaky list", add: gate({ command: ["x"], flaky: [] }), bad: ["gate.flaky"] },
+  {
+    name: "an empty flaky name",
+    add: gate({ command: ["x"], flaky: ["a", ""] }),
+    bad: ["gate.flaky[1]"],
   },
   { name: "an empty after", add: gate({ command: ["x"], after: [] }), bad: ["gate.after"] },
   {
