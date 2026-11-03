@@ -13,7 +13,7 @@ import { nextStep } from "../cli/invoke.mjs";
 import { checkConfig } from "../config.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
 import { trackedFiles, worktrees } from "./git.mjs";
-import { TEMPLATE, readFile } from "./instruction-files.mjs";
+import { LOCAL, TEMPLATE, localCaveat, locateBlock } from "./instruction-files.mjs";
 import { renderBlock, upsertBlock } from "./instructions.mjs";
 import { isKept } from "./keep.mjs";
 import * as md from "./markdown.mjs";
@@ -65,18 +65,25 @@ function pluginVersion() {
   }
 }
 
-// The trigger block in AGENTS.md against the one `board instructions` would write.
+// The trigger block, in AGENTS.md or CLAUDE.local.md, against the one `board instructions` would write.
+// A block in CLAUDE.local.md that git tracks or does not ignore would reach the repo's history.
 function triggerBlock(root, spec) {
   const set = "board instructions --apply";
-  const agents = readFile(root, "AGENTS.md");
-  if (agents.error) return { ok: false, value: agents.error, set };
+  const found = locateBlock(root);
+  if (found.error) return { ok: false, value: found.error, set };
+  const name = found.at ?? "AGENTS.md";
   const block = renderBlock(readFileSync(TEMPLATE, "utf8"), { prompt: spec.conductor?.prompt });
-  const up = upsertBlock(agents.text, block);
+  const up = upsertBlock(found.files[name].text, block);
   if (up.error) return { ok: false, value: up.error, set };
   const value = { create: "no AGENTS.md", append: "no block", replace: "out of date" }[up.action];
-  return up.action === "unchanged"
-    ? { ok: true, value: "AGENTS.md block is current", set }
-    : { ok: false, value, set };
+  if (up.action !== "unchanged") return { ok: false, value, set };
+  if (name === LOCAL && localCaveat(root))
+    return {
+      ok: false,
+      value: `${name} block is current, but git does not ignore it`,
+      set: `echo ${LOCAL} >> .gitignore`,
+    };
+  return { ok: true, value: `${name} block is current`, set };
 }
 
 function defaultAgent(root) {

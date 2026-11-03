@@ -7,6 +7,15 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **Competing-line lint and a local trigger block** — `board instructions --lint` reads `AGENTS.md`,
+  `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` and the conductor prompt and points at lines that
+  compete with the Agentry block (every task through `/agentry:go`, a session routine, landing by hand, the
+  gate run by hand), each with the replacement to offer; it only suggests and never writes (exit 1 with
+  findings). `board instructions --target local` puts the block in `CLAUDE.local.md` instead of `AGENTS.md`,
+  for a repo that is public: no import is added, a block already in the other file moves (removed there and
+  written here in one all-or-nothing write), and a note says when git tracks or does not ignore the file.
+  A block in both files is refused. `board explain` reads the trigger block from either file. `/agentry:init`
+  asks where the block should live and offers each lint replacement one at a time.
 - **Steps and the owner's holds in a lane** — a contract may carry a `**Steps:**` part: numbered steps,
   an owner gate on any step ending `→ owner OK`, and acceptance items tagged `Step N:`. `lane exec` builds
   the steps in runs (one round up to each owner gate), holds the lane for the owner's review at a gate, and

@@ -145,17 +145,23 @@ and § guard and cleanup.
    the git root) and `conductor.rules`, the heading standing rules are appended under (`Standing rules` for
    the template; for an existing file a heading of that kind, or propose adding one with the owner's OK).
    Without `rules`, a rule draft can't be applied.
-3. **The trigger block.** Run `agentry board instructions` and show its output: the block it would write between
-   `<!-- agentry:begin v1 -->` and `<!-- agentry:end -->` in `AGENTS.md` (created if absent) and the
-   `@AGENTS.md` line it would add to an existing `CLAUDE.md` (never created). Every host reads `AGENTS.md`;
+3. **The trigger block.** Ask once whether the block should stay out of the repo; recommend `--target local` when
+   `CLAUDE.md` is gitignored or the owner says the repo is public. Run `agentry board instructions` (or
+   `agentry board instructions --target local`) and show its output: the block it would write between
+   `<!-- agentry:begin v1 -->` and `<!-- agentry:end -->` in `AGENTS.md` (created if absent), or in
+   `CLAUDE.local.md` with `--target local`, and the `@AGENTS.md` line it would add to an existing `CLAUDE.md`
+   (never created; none for `CLAUDE.local.md`, which Claude Code loads itself). Every host reads `AGENTS.md`;
    Claude Code reads it beside a `CLAUDE.md` only through that import. Project instructions can also live in
    `.claude/CLAUDE.md`: with no root `CLAUDE.md` the import goes there as `@../AGENTS.md` (relative to that
    file); with both, in the root one only. An import inside a code fence, an HTML comment or a code span
-   doesn't count. On OK, `agentry board instructions --apply`; it writes both files or neither (exit 2 with the
-   reason when one can't be written).
-   Text outside the markers is never touched, and a re-run changes nothing. If the repo's instruction files
-   carry a competing line (every task through `/agentry:go`, a hand checker to keep green), list it and
-   propose its replacement; edit it only on the owner's OK.
+   doesn't count. A block already in the other file moves; it is never left in both. A `CLAUDE.local.md` that git
+   tracks or does not ignore gets a note: it would be committed. On OK, `--apply`; it writes the files or none
+   (exit 2 with the reason when one can't be written). Text outside the markers is never touched, and a re-run
+   changes nothing.
+   Then run `agentry board instructions --lint`: it lists the lines in `AGENTS.md`, `CLAUDE.md`,
+   `.claude/CLAUDE.md`, `CLAUDE.local.md` and the conductor prompt that compete with the block (every task
+   through `/agentry:go`, a session routine, landing by hand, the gate run by hand), each with its replacement.
+   Offer each replacement one at a time; edit a line only on the owner's OK.
 4. **The default agent.** Run `agentry board default-agent` and show `current`. Offer to make `agentry:conductor`
    the project's main-session agent: `agentry board default-agent --apply`, then `--verify` (static). A different
    `agent` already set is shown and replaced only on an explicit OK. The live check (`--verify live`) costs

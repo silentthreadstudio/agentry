@@ -4,7 +4,7 @@
 // creating one), byte-idempotent re-runs, and the preview writing nothing.
 // Run: node --test plugin/scripts/test/instructions.test.mjs
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   cpSync,
@@ -15,6 +15,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -23,7 +24,16 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { run } from "../lib/process/cli/instructions.mjs";
-import { BEGIN, END, addImport, renderBlock, upsertBlock } from "../lib/process/instructions.mjs";
+import { TEMPLATE, locateBlock } from "../lib/process/instruction-files.mjs";
+import {
+  BEGIN,
+  END,
+  addImport,
+  hasBlock,
+  removeBlock,
+  renderBlock,
+  upsertBlock,
+} from "../lib/process/instructions.mjs";
 import { writeSpec } from "./spec-files.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -356,3 +366,304 @@ test("a read-only CLAUDE.md is exit 2 and AGENTS.md is not written either", () =
   assert.equal(read(root, "CLAUDE.md"), "# C\n");
   assert.deepEqual(readdirSync(root).sort(), ["CLAUDE.md"]);
 });
+
+// removeBlock / hasBlock
+
+test("removeBlock is the exact inverse of an append, for every starting state", () => {
+  for (const start of [
+    "",
+    "# Agents\n",
+    "a\n\nb\n",
+    "a\r\nb\r\n",
+    "\n",
+    "\uFEFF# A\r\n",
+    "\uFEFF",
+  ]) {
+    const added = upsertBlock(start, BLOCK).text;
+    const res = removeBlock(added);
+    assert.equal(res.action, "remove", JSON.stringify(start));
+    assert.equal(res.text, start, JSON.stringify(start));
+    assert.equal(res.old, BLOCK.split("\n").join(added.includes("\r\n") ? "\r\n" : "\n"));
+  }
+});
+
+test("removeBlock keeps every byte outside the marker range, a block in the middle too", () => {
+  const head = "# A\r\nmine\r\n";
+  const tail = "\r\nafter  \r\n";
+  const text = `${head}\r\n${BLOCK.split("\n").join("\r\n")}\r\n${tail}`;
+  assert.equal(removeBlock(text).text, `${head}${tail}`);
+  assert.equal(removeBlock(`x\n${BLOCK}\n`).text, "x\n", "no blank line before it: none taken");
+});
+
+test("removeBlock: no block is none, broken markers an error, a fenced example untouched", () => {
+  assert.deepEqual(removeBlock("# A\n"), { text: "# A\n", action: "none", old: null });
+  assert.match(removeBlock(`${BEGIN}\nhalf\n`).error, /fix them by hand/);
+  const fenced = `\`\`\`\n${BLOCK}\n\`\`\`\n`;
+  assert.equal(removeBlock(fenced).action, "none");
+});
+
+test("hasBlock sees a marker outside a fence only", () => {
+  assert.equal(hasBlock(`x\n${BLOCK}\n`), true);
+  assert.equal(hasBlock(`\uFEFF${BLOCK}\n`), true);
+  assert.equal(hasBlock(`${BEGIN}\n`), true);
+  assert.equal(hasBlock(`\`\`\`\n${BLOCK}\n\`\`\`\n`), false);
+  assert.equal(hasBlock("# A\n"), false);
+});
+
+// locateBlock
+
+test("locateBlock names the file that holds the block, once", () => {
+  const none = locateBlock(repo({ "AGENTS.md": "# A\n" }));
+  assert.equal(none.at, null);
+  assert.equal(none.files["AGENTS.md"].text, "# A\n");
+  assert.equal(none.files["CLAUDE.local.md"].text, null);
+  assert.equal(locateBlock(repo({ "AGENTS.md": `${BLOCK}\n` })).at, "AGENTS.md");
+  assert.equal(locateBlock(repo({ "CLAUDE.local.md": `${BLOCK}\n` })).at, "CLAUDE.local.md");
+  assert.equal(locateBlock(repo()).at, null);
+});
+
+test("locateBlock: a block in both files is an error; a link between them is one file", () => {
+  const both = locateBlock(repo({ "AGENTS.md": `${BLOCK}\n`, "CLAUDE.local.md": `${BLOCK}\n` }));
+  assert.match(both.error, /^AGENTS\.md and CLAUDE\.local\.md both hold an Agentry block/);
+  const root = repo({ "AGENTS.md": `${BLOCK}\n` });
+  symlinkSync("AGENTS.md", join(root, "CLAUDE.local.md"));
+  const one = locateBlock(root);
+  assert.equal(one.at, "AGENTS.md");
+  assert.deepEqual(Object.keys(one.files), ["AGENTS.md"]);
+});
+
+test("locateBlock refuses a CLAUDE.local.md that links out of the repo", () => {
+  const outside = repo({ "x.md": "elsewhere\n" });
+  const root = repo();
+  symlinkSync(join(outside, "x.md"), join(root, "CLAUDE.local.md"));
+  assert.match(locateBlock(root).error, /CLAUDE\.local\.md is a symlink out of the repository/);
+});
+
+// board instructions --target
+
+const snapshot = (root) =>
+  readdirSync(root, { recursive: true })
+    .sort()
+    .map((name) => {
+      const st = statSync(join(root, name));
+      return [name, st.isFile() ? readFileSync(join(root, name)).toString("hex") : "", st.mtimeMs];
+    });
+const go = (root, ...argv) => run(argv, { root, spec: SPEC });
+// The block as `board instructions` renders it for SPEC, then a line end.
+const blockFile = () =>
+  `${renderBlock(readFileSync(TEMPLATE, "utf8"), { prompt: SPEC.conductor.prompt })}\n`;
+
+test("--target local --apply creates CLAUDE.local.md, touches nothing else, and a re-run writes nothing", () => {
+  const root = repo({ "CLAUDE.md": "# C\n", "AGENTS.md": "# A\n" });
+  const first = go(root, "--target", "local", "--apply");
+  assert.equal(first.exit, 0, first.out);
+  assert.match(first.out, /^CLAUDE\.local\.md: create it with the Agentry block$/m);
+  assert.match(first.out, /^CLAUDE\.md: no import needed \(the block is in CLAUDE\.local\.md\)$/m);
+  assert.match(first.out, /wrote CLAUDE\.local\.md$/m);
+  assert.equal(read(root, "CLAUDE.local.md"), blockFile());
+  assert.equal(read(root, "CLAUDE.md"), "# C\n");
+  assert.equal(read(root, "AGENTS.md"), "# A\n");
+  const before = snapshot(root);
+  const again = go(root, "--target", "local", "--apply");
+  assert.match(again.out, /^CLAUDE\.local\.md: the Agentry block is up to date$/m);
+  assert.match(again.out, /nothing to write/);
+  assert.deepEqual(snapshot(root), before);
+});
+
+test("--target local moves a block out of AGENTS.md and --target agents puts every byte back", () => {
+  const mine = "\uFEFF# Agents\r\n\r\nHouse rules.  \r\n";
+  const root = repo();
+  writeFileSync(join(root, "AGENTS.md"), mine);
+  go(root, "--target", "agents", "--apply");
+  const original = read(root, "AGENTS.md");
+  assert.ok(original.startsWith(`${mine}\r\n${BEGIN}\r\n`));
+  const toLocal = go(root, "--target", "local", "--apply");
+  assert.match(
+    toLocal.out,
+    /^AGENTS\.md: remove the Agentry block \(it moves to CLAUDE\.local\.md\)$/m,
+  );
+  assert.equal(read(root, "AGENTS.md"), mine);
+  assert.equal(read(root, "CLAUDE.local.md"), blockFile());
+  const back = go(root, "--target", "agents", "--apply");
+  assert.match(
+    back.out,
+    /^CLAUDE\.local\.md: remove the Agentry block \(it moves to AGENTS\.md\)$/m,
+  );
+  assert.equal(read(root, "AGENTS.md"), original);
+  assert.equal(read(root, "CLAUDE.local.md"), "");
+});
+
+test("a file that held only the block is left empty, never deleted", () => {
+  const root = repo();
+  go(root, "--apply");
+  go(root, "--target", "local", "--apply");
+  assert.equal(existsSync(join(root, "AGENTS.md")), true);
+  assert.equal(read(root, "AGENTS.md"), "");
+});
+
+test("the removal is written first, so a stop between the writes leaves no block anywhere", () => {
+  const root = repo({ "AGENTS.md": `# A\n\n${BLOCK}\n` });
+  const res = go(root, "--target", "local", "--apply", "--json");
+  const data = JSON.parse(res.out);
+  assert.deepEqual(data.files, ["AGENTS.md", "CLAUDE.local.md"]);
+  assert.deepEqual([data.target, data.agents, data.local], ["local", "remove", "create"]);
+  // That stopped state: the removal in place, the target not written. The same command finishes it.
+  const stopped = repo({ "AGENTS.md": "# A\n" });
+  assert.equal(locateBlock(stopped).at, null);
+  const rerun = go(stopped, "--target", "local", "--apply");
+  assert.equal(rerun.exit, 0);
+  assert.equal(locateBlock(stopped).at, "CLAUDE.local.md");
+  assert.equal(read(stopped, "AGENTS.md"), "# A\n");
+});
+
+test("without --target the block stays where it is, and goes to AGENTS.md when it is nowhere", () => {
+  const root = repo({ "CLAUDE.local.md": `${BLOCK.replace("first", "eventually")}\n` });
+  const res = go(root, "--apply");
+  assert.match(res.out, /^CLAUDE\.local\.md: replace the Agentry block$/m);
+  assert.equal(existsSync(join(root, "AGENTS.md")), false);
+  assert.equal(locateBlock(root).at, "CLAUDE.local.md");
+  const nowhere = repo({ "CLAUDE.local.md": "# mine\n" });
+  go(nowhere, "--apply");
+  assert.equal(locateBlock(nowhere).at, "AGENTS.md");
+  assert.equal(read(nowhere, "CLAUDE.local.md"), "# mine\n");
+});
+
+test("a block in both files is exit 2 and nothing is written", () => {
+  const root = repo({ "AGENTS.md": `${BLOCK}\n`, "CLAUDE.local.md": `${BLOCK}\n` });
+  const before = snapshot(root);
+  const res = go(root, "--target", "local", "--apply");
+  assert.equal(res.exit, 2);
+  assert.equal(
+    res.out,
+    "✗ board instructions: AGENTS.md and CLAUDE.local.md both hold an Agentry block; remove one by hand; nothing written",
+  );
+  assert.deepEqual(snapshot(root), before);
+});
+
+test("the import in CLAUDE.md is left, with a note, after a move to local", () => {
+  const root = repo({ "AGENTS.md": `# A\n\n${BLOCK}\n`, "CLAUDE.md": "@AGENTS.md\n# C\n" });
+  const { out } = go(root, "--target", "local", "--apply");
+  assert.match(
+    out,
+    /^note: CLAUDE\.md still imports AGENTS\.md; drop the import by hand if AGENTS\.md held only the block$/m,
+  );
+  assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n# C\n");
+  const json = JSON.parse(go(root, "--target", "local", "--json").out);
+  assert.equal(json.claude.action, "not-needed");
+});
+
+test("refusals are exit 2 with every file byte- and mtime-identical", () => {
+  const outside = repo({ "x.md": "elsewhere\n" });
+  const root = repo({ "AGENTS.md": `# A\n\n${BLOCK}\n`, "CLAUDE.md": "# C\n" });
+  const before = snapshot(root);
+  for (const argv of [
+    ["--lint", "--apply"],
+    ["--lint", "--target", "local"],
+    ["--target", "LOCAL", "--apply"],
+    ["--target", "nope", "--apply"],
+    ["--target"],
+    ["--target", "local", "--target", "agents"],
+  ])
+    assert.equal(go(root, ...argv).exit, 2, argv.join(" "));
+  assert.deepEqual(snapshot(root), before);
+  const linked = repo({ "AGENTS.md": "# A\n" });
+  symlinkSync(join(outside, "x.md"), join(linked, "CLAUDE.local.md"));
+  const kept = snapshot(linked);
+  const res = go(linked, "--target", "local", "--apply");
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /CLAUDE\.local\.md is a symlink out of the repository/);
+  assert.deepEqual(snapshot(linked), kept);
+  assert.equal(read(outside, "x.md"), "elsewhere\n");
+});
+
+test("--target local with a CLAUDE.local.md that links to AGENTS.md writes the one file", () => {
+  const root = repo({ "AGENTS.md": "# A\n" });
+  symlinkSync("AGENTS.md", join(root, "CLAUDE.local.md"));
+  const res = go(root, "--target", "local", "--apply");
+  assert.equal(res.exit, 0, res.out);
+  assert.equal(read(root, "AGENTS.md"), `# A\n\n${blockFile()}`);
+});
+
+test("a file that is not UTF-8 is never rewritten: exit 2, every file identical", () => {
+  const odd = Buffer.concat([Buffer.from("# A \n"), Buffer.from([0xff, 0xfe]), Buffer.from("\n")]);
+  for (const [files, argv] of [
+    [{}, ["--apply"]],
+    [{ "CLAUDE.local.md": `${BLOCK}\n` }, ["--target", "agents", "--apply"]],
+  ]) {
+    const root = repo(files);
+    writeFileSync(join(root, "AGENTS.md"), odd);
+    const before = snapshot(root);
+    const res = go(root, ...argv);
+    assert.equal(res.exit, 2, argv.join(" "));
+    assert.match(res.out, /AGENTS\.md is not UTF-8 text; nothing written/);
+    assert.deepEqual(snapshot(root), before);
+  }
+  const holder = repo();
+  writeFileSync(join(holder, "AGENTS.md"), Buffer.concat([odd, Buffer.from(`${BLOCK}\n`)]));
+  const moved = go(holder, "--target", "local", "--apply");
+  assert.equal(moved.exit, 2);
+  assert.match(moved.out, /AGENTS\.md is not UTF-8 text; nothing written/);
+  assert.equal(existsSync(join(holder, "CLAUDE.local.md")), false);
+});
+
+// git notes on a block in CLAUDE.local.md
+
+function gitRepo(files = {}) {
+  const root = repo(files);
+  execFileSync("git", ["-C", root, "init", "-q"]);
+  return root;
+}
+// A developer's own global ignore file must not decide these.
+function cleanGit(body) {
+  const keep = { ...process.env };
+  process.env.XDG_CONFIG_HOME = scratch();
+  process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  try {
+    body();
+  } finally {
+    for (const k of ["XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"])
+      if (keep[k] === undefined) delete process.env[k];
+      else process.env[k] = keep[k];
+  }
+}
+const IGNORE_NOTE =
+  "note: git does not ignore CLAUDE.local.md → echo CLAUDE.local.md >> .gitignore";
+const TRACKED_NOTE = "note: CLAUDE.local.md is tracked by git; the block would be committed";
+
+test("a block going to CLAUDE.local.md that git does not ignore gets the .gitignore note", () =>
+  cleanGit(() => {
+    const root = gitRepo();
+    const { out } = go(root, "--target", "local");
+    assert.ok(out.split("\n").includes(IGNORE_NOTE), out);
+    assert.ok(!out.includes("is tracked by git"));
+    writeFileSync(join(root, ".gitignore"), "CLAUDE.local.md\n");
+    assert.doesNotMatch(
+      go(root, "--target", "local").out,
+      /^note: (git does not|CLAUDE\.local\.md is tracked)/m,
+    );
+  }));
+
+test("a tracked CLAUDE.local.md gets the tracked note, even when it is also ignored", () =>
+  cleanGit(() => {
+    const root = gitRepo({ "CLAUDE.local.md": "# mine\n", ".gitignore": "CLAUDE.local.md\n" });
+    execFileSync("git", ["-C", root, "add", "-f", "CLAUDE.local.md"]);
+    const { out } = go(root, "--target", "local");
+    assert.ok(out.split("\n").includes(TRACKED_NOTE), out);
+    assert.ok(!out.includes("does not ignore"));
+  }));
+
+test("the note also shows when the block is found in CLAUDE.local.md, and for no other target", () =>
+  cleanGit(() => {
+    const root = gitRepo({ "CLAUDE.local.md": `${BLOCK}\n` });
+    assert.ok(go(root).out.split("\n").includes(IGNORE_NOTE));
+    assert.ok(!go(root, "--target", "agents").out.includes("does not ignore"));
+  }));
+
+test("outside a git work tree no git note prints and nothing fails", () =>
+  cleanGit(() => {
+    const root = repo();
+    const res = go(root, "--target", "local", "--apply");
+    assert.equal(res.exit, 0, res.out);
+    assert.doesNotMatch(res.out, /note: (git|CLAUDE\.local\.md is tracked)/);
+  }));

@@ -1,6 +1,6 @@
 # Conductor
 
-How the main session works in this repo. The conductor reads this file at the start of every session
+How the main session works in this repo. The conductor reads this file once per session, at `/agentry:start`
 (`AGENTS.md` points here). It is yours: edit it freely. Replace each `<…>` with your own words, or delete
 the line. When you state a rule in conversation ("from now on…"), Agentry proposes it as a line under
 **Standing rules** and writes it only with your OK.

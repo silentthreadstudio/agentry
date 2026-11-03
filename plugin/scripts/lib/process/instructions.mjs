@@ -10,6 +10,10 @@
 //   action "create" (no file) | "append" (no block yet) | "replace" (an older or edited block) | "unchanged"
 // addImport(text, ref?) -> { text, action }         action "import" | "has-import"; `ref` is `@AGENTS.md`
 //   (a root CLAUDE.md, the default) or `@../AGENTS.md` (the one in `.claude/`)
+// hasBlock(text) -> boolean                         a marker outside a fenced code block
+// removeBlock(text) -> { text, action, old } | { error }   the exact inverse of `upsertBlock`'s append:
+//   the marker range, its line end and the one blank line before it; action "remove" | "none"
+// maskFences(text), maskBlocks(masked)              the text with fences / Agentry blocks blanked out
 
 export const BEGIN = "<!-- agentry:begin v1 -->";
 export const END = "<!-- agentry:end -->";
@@ -19,6 +23,8 @@ export const CLAUDE_DIR_IMPORT = "@../AGENTS.md";
 const BEGIN_LINE = /^<!-- agentry:begin v\d+ -->[ \t]*\r?$/gm;
 const END_LINE = /^<!-- agentry:end -->[ \t]*\r?$/gm;
 const BOM = "﻿";
+// One line against a marker pattern (the patterns are global, so `.test` would carry state).
+const matches = (re, line) => new RegExp(re.source).test(line);
 
 const eolOf = (text) => (text.includes("\r\n") ? "\r\n" : "\n");
 const withEol = (text, eol) => text.split("\n").join(eol);
@@ -26,7 +32,7 @@ const withEol = (text, eol) => text.split("\n").join(eol);
 const blank = (text) => text.replace(/[^\r\n]/g, " ");
 
 /** `text` with each fenced code block blanked out. An unclosed fence runs to the end. */
-function maskFences(text) {
+export function maskFences(text) {
   let fence = null;
   return text
     .split(/(?<=\n)/)
@@ -71,26 +77,78 @@ export function upsertBlock(text, block) {
   return res.error ? res : { ...res, text: BOM + res.text };
 }
 
-function upsert(text, block) {
-  const eol = eolOf(text);
-  const next = withEol(block, eol);
-  const masked = maskFences(text);
+// The marker range [start, stop) of the one block in `masked` (fences blanked), null when it has none, or
+// an `error` when the markers don't make one block.
+function blockRange(masked) {
   const begins = [...masked.matchAll(BEGIN_LINE)];
   const ends = [...masked.matchAll(END_LINE)];
-  if (!begins.length && !ends.length) {
-    const base = text === "" || text.endsWith("\n") ? text : `${text}${eol}`;
-    const gap = base.trim() ? eol : "";
-    return { text: `${base}${gap}${next}${eol}`, action: "append", old: null };
-  }
+  if (!begins.length && !ends.length) return null;
   if (begins.length !== 1 || ends.length !== 1 || ends[0].index < begins[0].index)
     return {
       error: `${begins.length} begin and ${ends.length} end marker(s) that don't make one block; fix them by hand`,
     };
-  const start = begins[0].index;
-  const stop = ends[0].index + ends[0][0].replace(/\r$/, "").length;
+  return { start: begins[0].index, stop: ends[0].index + ends[0][0].replace(/\r$/, "").length };
+}
+
+function upsert(text, block) {
+  const eol = eolOf(text);
+  const next = withEol(block, eol);
+  const range = blockRange(maskFences(text));
+  if (!range) {
+    const base = text === "" || text.endsWith("\n") ? text : `${text}${eol}`;
+    const gap = base.trim() ? eol : "";
+    return { text: `${base}${gap}${next}${eol}`, action: "append", old: null };
+  }
+  if (range.error) return range;
+  const { start, stop } = range;
   const old = text.slice(start, stop);
   if (old === next) return { text, action: "unchanged", old };
   return { text: text.slice(0, start) + next + text.slice(stop), action: "replace", old };
+}
+
+/** True when `text` has an Agentry marker line outside a fenced code block (whole block or not). */
+export function hasBlock(text) {
+  const masked = maskFences(text.startsWith(BOM) ? text.slice(BOM.length) : text);
+  return [BEGIN_LINE, END_LINE].some((re) => masked.search(re) >= 0);
+}
+
+/** `text` with the block taken out: its marker range, the line end after it and the one blank line
+ *  before it (what an append added); every other byte stays, a byte-order mark and CRLF included. A file
+ *  that held only the block comes back empty. No block is `action: "none"`; markers that don't make
+ *  one block is an `error`. */
+export function removeBlock(text) {
+  const bom = text.startsWith(BOM) ? BOM : "";
+  const rest = text.slice(bom.length);
+  const range = blockRange(maskFences(rest));
+  if (!range) return { text, action: "none", old: null };
+  if (range.error) return range;
+  const { start, stop } = range;
+  let before = rest.slice(0, start);
+  const gap = /\r?\n$/.exec(before);
+  if (gap) {
+    const kept = before.slice(0, gap.index);
+    if (/\n$/.test(kept) && kept.trim()) before = kept;
+  }
+  const after = rest.slice(stop).replace(/^\r?\n/, "");
+  return { text: bom + before + after, action: "remove", old: rest.slice(start, stop) };
+}
+
+/** `masked` (fences already blanked) with every Agentry block, markers included, blanked out; a block
+ *  with no end marker runs to the end. */
+export function maskBlocks(masked) {
+  let inside = false;
+  return masked
+    .split(/(?<=\n)/)
+    .map((line) => {
+      const bare = line.replace(/\r?\n$/, "");
+      const begins = !inside && matches(BEGIN_LINE, bare);
+      const ends = inside && matches(END_LINE, bare);
+      const hide = inside || begins;
+      if (begins) inside = true;
+      if (ends) inside = false;
+      return hide ? blank(line) : line;
+    })
+    .join("");
 }
 
 /** `text` (an existing CLAUDE.md) with `ref` as its first line, unless it already imports it. */

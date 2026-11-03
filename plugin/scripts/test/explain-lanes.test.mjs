@@ -157,6 +157,77 @@ test("a trigger block that is out of date, or a bad default agent, is ✗", () =
   }
 });
 
+// A developer's own global ignore file must not decide whether CLAUDE.local.md is ignored.
+function withCleanGit(body) {
+  const keep = { ...process.env };
+  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "agentry-xdg-"));
+  process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  try {
+    body();
+  } finally {
+    rmSync(process.env.XDG_CONFIG_HOME, { recursive: true, force: true });
+    for (const k of ["XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"])
+      if (keep[k] === undefined) delete process.env[k];
+      else process.env[k] = keep[k];
+  }
+}
+
+test("a trigger block in CLAUDE.local.md is ✓ when git ignores the file", () =>
+  withCleanGit(() => {
+    const { root, board, lanes } = repo({ conductor: { prompt: "CONDUCTOR.md" } });
+    try {
+      write(root, "CONDUCTOR.md", "# Conductor\n");
+      write(root, ".gitignore", "CLAUDE.local.md\n");
+      assert.equal(board("instructions", "--target", "local", "--apply").status, 0);
+      const row = lanes()["trigger block"];
+      assert.deepEqual([row.ok, row.value], [true, "CLAUDE.local.md block is current"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+test("a trigger block in CLAUDE.local.md that git does not ignore, or tracks, is ✗ with the .gitignore line", () =>
+  withCleanGit(() => {
+    const { root, board, lanes } = repo({ conductor: { prompt: "CONDUCTOR.md" } });
+    try {
+      write(root, "CONDUCTOR.md", "# Conductor\n");
+      assert.equal(board("instructions", "--target", "local", "--apply").status, 0);
+      const row = lanes()["trigger block"];
+      assert.deepEqual(
+        [row.ok, row.value, row.set],
+        [
+          false,
+          "CLAUDE.local.md block is current, but git does not ignore it",
+          "echo CLAUDE.local.md >> .gitignore",
+        ],
+      );
+      assert.match(board("explain").stdout, /set: echo CLAUDE\.local\.md >> \.gitignore/);
+      write(root, ".gitignore", "CLAUDE.local.md\n");
+      execFileSync("git", ["-C", root, "add", "-f", "CLAUDE.local.md"]);
+      assert.equal(lanes()["trigger block"].ok, false, "tracked, though ignored");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+test("a block in both AGENTS.md and CLAUDE.local.md is ✗ with the refusal's words", () => {
+  const { root, board, lanes } = repo({ conductor: { prompt: "CONDUCTOR.md" } });
+  try {
+    write(root, "CONDUCTOR.md", "# Conductor\n");
+    assert.equal(board("instructions", "--apply").status, 0);
+    write(root, "CLAUDE.local.md", readFileSync(join(root, "AGENTS.md"), "utf8"));
+    const row = lanes()["trigger block"];
+    assert.equal(row.ok, false);
+    assert.equal(
+      row.value,
+      "AGENTS.md and CLAUDE.local.md both hold an Agentry block; remove one by hand",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("the .agentry commit policy is shown per subfolder: tracked, ignored or undecided", () => {
   const { root, lanes } = repo();
   try {
