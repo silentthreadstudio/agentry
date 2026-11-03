@@ -167,6 +167,30 @@ test("add refuses bad input: no id, bad JSON, unknown kind or parent, unknown pl
   );
 });
 
+test("add refuses a field value holding a line break (LF, CR, U+2028, U+2029), writing nothing", () => {
+  const root = copy("write");
+  const files = ["board/BOARD.md", "board/sprints/A1_one.md", "board/TASKS.md"];
+  const before = files.map((f) => text(root, f));
+  for (const brk of ["\n", "\r", "\r\n", "\u2028", "\u2029"]) {
+    const result = addTask(root, { id: "W4", sprint: "A1", note: `one${brk}two` });
+    assert.equal(result.exit, 2, JSON.stringify(brk));
+    assert.match(result.out, /✗ board add: note holds a line break; one line only/);
+    assert.deepEqual(
+      files.map((f) => text(root, f)),
+      before,
+    );
+  }
+  // A list value is read the way a cell shows it: a break in one item counts.
+  assert.match(addTask(root, { id: "W4", sprint: "A1", note: ["a", "b\nc"] }).out, /note holds/);
+});
+
+test("add still writes a one-line value with a tab or unicode", () => {
+  const root = copy("write");
+  const result = addTask(root, { id: "W4", sprint: "A1", note: "tab\there, café ✓" });
+  assert.equal(result.exit, 0, result.out);
+  assert.match(text(root, "board/BOARD.md"), /tab\there, café ✓/);
+});
+
 test("add refuses a create target that is missing or a dangling symlink, naming it, and writes nothing", () => {
   for (const make of [
     (file) => rmSync(file),

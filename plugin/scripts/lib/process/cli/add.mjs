@@ -41,6 +41,10 @@ function show(value, def) {
   return value === undefined || value === null ? "" : String(value);
 }
 
+// A value written into a cell or a block line stays on one line: LF, CR and the Unicode line and
+// paragraph separators would split it.
+const LINE_BREAK = /[\n\r\u2028\u2029]/;
+
 export function run(argv, { root, spec, model, today = isoToday() }) {
   const kindName = argv.find((a) => !a.startsWith("--"));
   const write = argv.includes("--apply");
@@ -68,6 +72,8 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   }
   if (given === null || typeof given !== "object" || Array.isArray(given))
     return fail("--fields must be an object");
+  for (const [name, value] of Object.entries(given))
+    if (LINE_BREAK.test(show(value))) return fail(`${name} holds a line break; one line only`);
   // An id the caller gives wins; else a pattern fills it as `next-id` does, and only "ask" requires it.
   let id = typeof given.id === "string" ? given.id.trim() : "";
   if (!id && create.id === "ask") return fail('--fields needs an "id" (see next-id)');
