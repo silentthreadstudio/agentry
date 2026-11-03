@@ -982,6 +982,23 @@ test("a rerun after a kill at recording stops on a board file it wrote that chan
   assert.equal(readLedger(root, ID).merge.step, "recording");
 });
 
+// R1b-5 notes item 2: an edit only staged did not show in `git diff HEAD` (the working copy), so the
+// printed recovery ("save that edit, then git restore --staged --worktree") erased it unseen.
+test("after a kill at recording, an edit only staged is named as staged and shown by the recovery", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  landKilledAt(KILL_AT_COMMIT, "before");
+  const written = sprint();
+  writeFileSync(join(root, "plan", "sprints", "S1.md"), `${written}\nSTAGED NOTE\n`);
+  git(root, "add", "plan/sprints/S1.md");
+  writeFileSync(join(root, "plan", "sprints", "S1.md"), written);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /plan\/sprints\/S1\.md: staged holds neither HEAD's text/);
+  assert.match(res.stdout, /next: .*git diff --cached HEAD -- plan\/sprints\/S1\.md \(staged\)/);
+  assert.match(git(root, "show", ":plan/sprints/S1.md"), /STAGED NOTE/);
+});
+
 // R1b-5 round 4 item 2: a board-only commit someone else made on the picks was taken for the land's
 // board commit: the land was "done", T1 never written, exec's carried writes erased.
 test("a board-only commit on the picks that is not the land's stops it; the carry is kept", () => {

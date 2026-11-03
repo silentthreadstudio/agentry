@@ -31,23 +31,26 @@ const readText = (root, file) => {
   }
 };
 
-// The record's files a killed run left written: `mine`, where the index and the working copy each hold
-// HEAD's text or the text the record wrote (and not both HEAD's), and `foreign`, where either holds
-// anything else.
+// The record's files a killed run left written: `mine` (files), where the index and the working copy
+// each hold HEAD's text or the text the record wrote (and not both HEAD's), and `foreign` (`{ file,
+// where }`), where either holds anything else: `where` names which, "staged", "working copy" or both.
 function writesLeft({ root, ledger }) {
   const record = ledger.merge.record ?? { files: [], sha256: {} };
   const mine = [];
   const foreign = [];
   for (const file of record.files) {
     const head = textAt(root, "HEAD", file);
-    const copies = [textAt(root, "", file), readText(root, file)];
+    const copies = { staged: textAt(root, "", file), "working copy": readText(root, file) };
     const known = (text) =>
       text !== null && (text === head || sha256(text) === record.sha256[file]);
-    if (!copies.every(known)) foreign.push(file);
-    else if (copies.some((text) => text !== head)) mine.push(file);
+    const odd = Object.keys(copies).filter((copy) => !known(copies[copy]));
+    if (odd.length > 0) foreign.push({ file, where: odd.join(" and ") });
+    else if (Object.values(copies).some((text) => text !== head)) mine.push(file);
   }
   return { mine, foreign };
 }
+const foreignLine = ({ file, where }) =>
+  `${file}: ${where} holds neither HEAD's text nor what the land wrote`;
 
 // Why commit `sha` is not provably this land's board commit, or null when it is: it changes exactly the
 // files the record names, each to the text the record wrote.
@@ -95,15 +98,18 @@ function resumeRecording(lane, rows) {
   if (left.foreign.length > 0) {
     rows.push(
       red("recover", "a killed land was writing the board, and a file it wrote changed since", [
-        ...left.foreign.map((file) => `${file}: neither HEAD's text nor what the land wrote`),
+        ...left.foreign.map(foreignLine),
         "nothing is taken back or written",
       ]),
     );
-    const files = left.foreign.join(" ");
+    const files = left.foreign.map((f) => f.file);
+    const paths = files.join(" ");
+    // Both copies, each against HEAD: an edit only staged does not show in the working copy's diff,
+    // and the restore below takes both.
     return {
       exit: 1,
       keepCarry: true,
-      next: `in ${root}: git diff HEAD -- ${files} shows the land's writes and the edit since; save that edit, then ${restoreCmd(left.foreign)} and land again (it writes the board again)`,
+      next: `in ${root}: git diff --cached HEAD -- ${paths} (staged) and git diff HEAD -- ${paths} (working copy) each show the land's writes and the edit since; save the edit from both, then ${restoreCmd(files)} and land again (it writes the board again)`,
     };
   }
   if (left.mine.length > 0) {
@@ -230,7 +236,7 @@ export function recoverPreview(lane) {
       row: red(
         "recover",
         "a killed land was writing the board, and a file it wrote changed since",
-        left.foreign,
+        left.foreign.map(foreignLine),
       ),
       ignore: left.mine,
       skipMain: false,
