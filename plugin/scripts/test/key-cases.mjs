@@ -539,6 +539,22 @@ export const PROCESS_CASES = [
     workflow: { cleanup: { disposable: ["../build"] } },
     bad: ["cleanup.disposable[0]"],
   },
+  // locks
+  { name: "one editor lock", workflow: { locks: { editor: 1 } } },
+  { name: "two locks, one with two slots", workflow: { locks: { editor: 1, "sim-2": 2 } } },
+  { name: "no locks at all", workflow: { locks: {} }, bad: ["locks"] },
+  { name: "a lock of zero slots", workflow: { locks: { editor: 0 } }, bad: ["locks.editor"] },
+  {
+    name: "a lock of half a slot or a string",
+    workflow: { locks: { editor: 1.5, sim: "1" } },
+    bad: ["locks.editor", "locks.sim"],
+  },
+  {
+    name: "a lock name that is not a name",
+    workflow: { locks: { Editor: 1 } },
+    bad: ["locks.Editor"],
+  },
+  { name: "locks as a list", workflow: { locks: ["editor"] }, bad: ["locks"] },
   {
     name: "a hand status file and its heading",
     board: { status: { file: "docs/STATUS.md", next: "Next" } },

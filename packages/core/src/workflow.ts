@@ -276,6 +276,13 @@ export const Commits = z
   .strict();
 export type Commits = z.infer<typeof Commits>;
 
+/** Named locks `agentry run --lock <name>` and `agentry lock take <name>` hold: each name's slots (at
+ *  least 1, e.g. `{ "editor": 1 }`). One entry or more. */
+export const Locks = z
+  .record(Name, z.number().int().positive())
+  .refine((locks) => Object.keys(locks).length > 0, { message: "expected at least one lock" });
+export type Locks = z.infer<typeof Locks>;
+
 // One `lane merge --check <name>` records a checklist item or a merge check, so no name is both.
 const checklistApart = (
   w: { gate?: Gate | undefined; extensions?: Extensions | undefined },
@@ -305,6 +312,7 @@ const WorkflowKeys = z
     models: Models.optional(),
     briefs: Briefs.optional(),
     commits: Commits.optional(),
+    locks: Locks.optional(),
   })
   .strict();
 

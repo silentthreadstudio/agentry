@@ -46,6 +46,7 @@ No `version`, and every key is optional.
 | `models` | no | `{ "build": "<model>", "verify": { "default", "ui", "flagged" } }`: the model each exec dispatch names. See "exec and models". |
 | `briefs` | no | `{ "build": ["<line>", …], "verify": ["<line>", …] }`: repo policy lines printed in every builder or verifier brief. See "briefs and commits". |
 | `commits` | no | `{ "subjectMax", "subjectPattern", "forbid": ["<regex>", …] }`: rules a builder's commits must keep. See "briefs and commits". |
+| `locks` | no | `{ "<name>": <slots> }` (slots at least 1, e.g. `{ "editor": 1 }`): named locks shared by every worktree. `agentry run --limit <dur> --lock <name> -- <cmd>` waits for a slot and holds it while the command runs; `agentry lock take <name>` / `drop <name>` hold one across tool calls (a shared editor driven through MCP), until its ttl (default 30m) or its session ends; `agentry lock show` lists the holders. |
 
 ## Kind
 

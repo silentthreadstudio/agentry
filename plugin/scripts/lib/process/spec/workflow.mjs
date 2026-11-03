@@ -171,6 +171,14 @@ const pattern = (v, at, bad) => {
   if (typeof v === "string" && v) regex(v, at, bad);
 };
 
+// Named locks (`agentry run --lock`, `agentry lock take`): `{ "<name>": <slots, at least 1> }`, one entry or more.
+const locks = (v, at, bad) => {
+  record(posInt)(v, at, bad);
+  if (!isObject(v)) return;
+  if (Object.keys(v).length === 0) bad(at, "should not be empty");
+  for (const k of Object.keys(v)) if (k !== "__proto__") name(k, join(at, k), bad);
+};
+
 /** The workflow file's checker; `workflowSchema.keys` (and each nested shape's `keys`) lists its keys.
  *  None is required. The format reference is bound to it. */
 export const workflowSchema = shape({
@@ -189,6 +197,7 @@ export const workflowSchema = shape({
   ),
   briefs: shape({ build: policyLines, verify: policyLines }, FULL),
   commits: shape({ subjectMax: posInt, subjectPattern: pattern, forbid: filled(pattern) }, FULL),
+  locks,
 });
 
 /** Check a parsed workflow file: each problem goes to `bad(path, message)`. One `lane merge --check
