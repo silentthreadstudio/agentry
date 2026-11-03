@@ -238,3 +238,26 @@ test("start flags the note stale when every id it names is done, and not while o
   writeFileSync(note, "# Note\n\nNo ids here.\n");
   assert.doesNotMatch(session(root, "start").stdout, /note: stale/);
 });
+
+test("a bare number in the note is no id: it does not hide a stale note", () => {
+  const spec = structuredClone(SPEC);
+  spec.kinds.decision = {
+    label: "Decision",
+    at: { table: "BOARD.md", heading: "Decisions" },
+    id: { column: "#" },
+    fields: { decision: { column: "Decision" } },
+  };
+  const repo = boardRepo({ spec });
+  cleanups.push(repo.cleanup);
+  const { root } = repo;
+  writeFileSync(
+    join(root, "plan", "BOARD.md"),
+    read(root, "plan/BOARD.md")
+      .replace("| T2   | S1     | todo", "| T2   | S1     | done")
+      .concat("\n## Decisions\n\n| # | Decision |\n| - | - |\n| 2 | Use files |\n"),
+  );
+  writeFileSync(join(root, ".agentry", "NOTE.md"), "# Note\n\nT2 merged; step 2 next.\n");
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /^note: stale, every id it names is done \(T2\)/m);
+});

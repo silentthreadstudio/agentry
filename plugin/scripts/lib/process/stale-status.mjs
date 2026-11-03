@@ -30,7 +30,7 @@ export function staleStatus({ root, spec, model }) {
   };
 }
 
-/** The ids the note `lines` name when there is at least one and every one is done (a question answered is
+/** The ids the note `lines` name (digit-only tokens and items with no status left out) when there is at least one and every one is done (a question answered is
  *  a done phase too); null when it names none, or any is still open. An id on several kinds counts as done
  *  only when each of its items is. */
 export function staleNote(model, lines) {
@@ -38,8 +38,13 @@ export function staleNote(model, lines) {
     .join("\n")
     .split(/[^\w.-]+/)
     .map((t) => t.replace(/^[.-]+|[.-]+$/g, ""));
-  const named = [...new Set(tokens)].filter((t) => t && Object.hasOwn(model.index, t));
-  return named.length && named.every((t) => withId(model, t).every((i) => i.phase === "done"))
+  // A bare number in prose (`step 2`) is no id, as in a brief; a decision `2` is named `D2`.
+  // An item with no status (a decision) is neither open nor finished, so it names nothing here.
+  const phased = (t) => withId(model, t).filter((i) => i.phase);
+  const named = [...new Set(tokens)].filter(
+    (t) => /[A-Za-z]/.test(t) && Object.hasOwn(model.index, t) && phased(t).length,
+  );
+  return named.length && named.every((t) => phased(t).every((i) => i.phase === "done"))
     ? named
     : null;
 }
