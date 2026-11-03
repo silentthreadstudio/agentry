@@ -4,17 +4,34 @@
 // carried; this only reads and writes. Every git call is an argv array; a refusal is `{ ok: false,
 // reason }`, not a throw. The same patch holds the owner's `guard.allow` files (a new, untracked one as a
 // new-file patch) and the files only `agentry board add` / `board set --apply` changed.
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { boardFiles, cellEdits } from "../process/board-diff.mjs";
 import { contentOf } from "../process/board-writes.mjs";
+import * as md from "../process/markdown.mjs";
 import { readProcess } from "../process/read.mjs";
 import { WriteError, applyAll } from "../process/write.mjs";
 import { git } from "./worktree.mjs";
 
 const first = (text) => text.trim().split("\n")[0] ?? "";
+
+// A patch is bytes, not text: it is kept as a latin1 string (one char per byte), so a file that is not
+// UTF-8 survives the ledger, the sha256 and `git apply` byte for byte. `worktree.git` decodes as UTF-8.
+function rawGit(dir, args, input) {
+  const res = spawnSync("git", ["-C", dir, ...args], {
+    encoding: "latin1",
+    input: input === undefined ? undefined : Buffer.from(input, "latin1"),
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  return { status: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+}
+
+/** `git apply --binary <flags>` of a patch this module made (a latin1 string): `{ status, … }`. */
+export const applyPatch = (root, patch, ...flags) =>
+  rawGit(root, ["apply", "--binary", ...flags], patch);
 
 /** The sha256 of `text`, hex. */
 export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
@@ -22,7 +39,7 @@ export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 /** The uncommitted edits of `files` against HEAD as one binary patch, and its sha256: `{ patch,
  *  sha256 }`, or `{ error }` when git cannot say. */
 export function uncommittedPatch(root, files) {
-  const res = git(root, ["--literal-pathspecs", "diff", "--binary", "HEAD", "--", ...files]);
+  const res = rawGit(root, ["--literal-pathspecs", "diff", "--binary", "HEAD", "--", ...files]);
   if (res.status !== 0) return { error: first(res.stderr) || "git diff failed" };
   return { patch: res.stdout, sha256: sha256(res.stdout) };
 }
@@ -38,7 +55,7 @@ export function asidePatch(root, files, untracked = []) {
     parts.push(made.patch);
   }
   for (const file of untracked) {
-    const res = git(root, ["diff", "--no-index", "--binary", "--", "/dev/null", file]);
+    const res = rawGit(root, ["diff", "--no-index", "--binary", "--", "/dev/null", file]);
     if (res.status !== 1)
       return { error: first(res.stderr) || `git diff --no-index ${file} failed` };
     parts.push(res.stdout);
@@ -152,14 +169,14 @@ export function workingBoard(root, spec) {
   return { model: readProcess({ root, spec }), text };
 }
 
-/** HEAD's board in the same shape: HEAD's copy of each board file `model` (the working board's) was
- *  read from goes to a scratch directory and is read there, by the same reader. */
-export function headBoard(root, spec, model) {
+/** HEAD's board (or `rev`'s) in the same shape: that commit's copy of each board file `model` (the
+ *  working board's) was read from goes to a scratch directory and is read there, by the same reader. */
+export function headBoard(root, spec, model, rev = "HEAD") {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentry-head-")));
   const texts = new Map();
   try {
     for (const file of boardFiles(spec, model)) {
-      const res = git(root, ["--literal-pathspecs", "cat-file", "blob", `HEAD:${file}`]);
+      const res = git(root, ["--literal-pathspecs", "cat-file", "blob", `${rev}:${file}`]);
       if (res.status !== 0) continue;
       texts.set(file, res.stdout);
       mkdirSync(dirname(join(dir, file)), { recursive: true });
@@ -169,4 +186,87 @@ export function headBoard(root, spec, model) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** The table rows `afterText` added to `beforeText`, when adding rows is all it did (every line of the
+ *  first is still in the second, in order, and each added line is a row of a table): `[{ heading,
+ *  header, idColumn, key, prev, text }]` in file order, `prev` the key of the row above it (null:
+ *  first), or null when it did anything else. `idColumn(heading, header)` names the column that keys a
+ *  row; the rows are found again by that key, so a neighbour changing its other cells does not matter. */
+export function addedRows(beforeText, afterText, idColumn) {
+  const [was, now] = [beforeText.split("\n"), afterText.split("\n")];
+  const added = [];
+  let i = 0;
+  now.forEach((line, k) => {
+    if (i < was.length && line === was[i]) i++;
+    else added.push(k + 1);
+  });
+  if (i < was.length || added.length === 0) return null;
+  const tables = md.tables(afterText);
+  const rows = [];
+  for (const n of added) {
+    const table = tables.find((t) => t.rows.some((r) => r.line === n));
+    if (!table) return null;
+    const column = idColumn(table.heading, table.header) ?? table.header[0];
+    const at = table.rows.findIndex((r) => r.line === n);
+    const keyOf = (row) => md.plain(row.cells[column] ?? "");
+    rows.push({
+      heading: table.heading,
+      header: table.header,
+      idColumn: column,
+      key: keyOf(table.rows[at]),
+      prev: at === 0 ? null : keyOf(table.rows[at - 1]),
+      text: now[n - 1],
+    });
+  }
+  return rows;
+}
+
+// `text` with `row` inserted under the same table after the row its `prev` key names (right under the
+// separator for the first), or as a conflict: `{ text }` or `{ conflict }`. A row already there is left.
+function insertAdded(text, row) {
+  const table = md
+    .tables(text)
+    .find(
+      (t) => t.heading === row.heading && t.header.join("\u0000") === row.header.join("\u0000"),
+    );
+  if (!table) return { conflict: `no "${row.heading}" table like the one it was written in` };
+  const keyOf = (r) => md.plain(r.cells[row.idColumn] ?? "");
+  if (table.rows.some((r) => keyOf(r) === row.key)) return { text };
+  let after = table.line + 1; // the separator
+  if (row.prev !== null) {
+    const above = table.rows.filter((r) => keyOf(r) === row.prev);
+    if (above.length !== 1)
+      return { conflict: `the row above ${row.key} (${row.prev}) is not there once` };
+    after = above[0].line;
+  }
+  const lines = text.split("\n");
+  lines.splice(after, 0, row.text);
+  return { text: lines.join("\n") };
+}
+
+/** Put the added `rows` (`addedRows`, each with its `file`) back on the files under `root`, all or
+ *  nothing: `{ ok, write() }` when every one has its place, else `{ ok: false, reason }`. Nothing is
+ *  written until `write()`. */
+export function planRows(root, rows) {
+  const texts = new Map();
+  for (const row of rows) {
+    let text = texts.get(row.file);
+    if (text === undefined) {
+      try {
+        text = readFileSync(join(root, row.file), "utf8");
+      } catch {
+        return { ok: false, reason: `${row.file} cannot be read` };
+      }
+    }
+    const put = insertAdded(text, row);
+    if (put.conflict) return { ok: false, reason: `${row.file}: ${put.conflict}` };
+    texts.set(row.file, put.text);
+  }
+  return {
+    ok: true,
+    write: () => {
+      for (const [file, text] of texts) writeFileSync(join(root, file), text);
+    },
+  };
 }

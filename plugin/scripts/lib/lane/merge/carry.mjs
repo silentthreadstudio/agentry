@@ -18,12 +18,15 @@
 // content ids they recorded (`merge.writes`, the same record plus the cells for a pick that touches
 // the file). Those two are never committed by the land: they go back to the owner uncommitted.
 import { existsSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { boardFiles, cellText, diffBoard, strayChanges } from "../../process/board-diff.mjs";
 import { list as listLedgers, runDir } from "../../process/ledger.mjs";
 import {
+  addedRows,
+  applyPatch,
   asidePatch,
   headBoard,
+  planRows,
   putCells,
   removeFiles,
   sha256,
@@ -108,11 +111,13 @@ function allowedEdits({ spec, model }, entries) {
 }
 
 // The files among `entries` (plain edits) that only recorded board-script writes changed, with what to
-// say about them: `{ files, by, cells, loose }`. `cells` are the cell changes of the files a pick could be
-// merged with by cell; `loose` are those it could not (a row added, prose, a cell not read by its id).
+// say about them: `{ files, by, cells, loose, rows }`. `cells` are the cell changes of the files a pick could
+// be merged with by cell; `loose` are those it could not (a row added, prose, a cell not read by its id);
+// `rows` are the rows added to a loose file when that is all it changed, so they can be put back by their
+// neighbour's id on a file the land itself rewrote.
 function scriptWrites(lane, entries) {
   const { root, spec } = lane;
-  const none = { files: [], by: {}, cells: [], loose: [] };
+  const none = { files: [], by: {}, cells: [], loose: [], rows: [] };
   const plain = entries.filter((e) => PLAIN_EDIT.test(e.slice(0, 2))).map((e) => e.slice(3));
   let by;
   try {
@@ -133,9 +138,19 @@ function scriptWrites(lane, entries) {
         !cells.some((c) => c.file === file) ||
         cells.some((c) => c.file === file && (c.from === null || c.to === null)),
     );
-    return { files, by, cells: cells.filter((c) => !loose.includes(c.file)), loose };
+    const idColumn = (file) => (heading) =>
+      Object.values(spec.kinds ?? {}).find(
+        (kind) =>
+          kind.at?.heading === heading && posix.join(spec.root ?? ".", kind.at.table) === file,
+      )?.id?.column;
+    const rows = loose.flatMap((file) =>
+      (addedRows(before.text(file) ?? "", after.text(file) ?? "", idColumn(file)) ?? []).map(
+        (row) => ({ file, ...row }),
+      ),
+    );
+    return { files, by, cells: cells.filter((c) => !loose.includes(c.file)), loose, rows };
   } catch {
-    return { files, by, cells: [], loose: files };
+    return { files, by, cells: [], loose: files, rows: [] };
   }
 }
 
@@ -157,10 +172,24 @@ function addedBy(root, sha) {
 // Why a pick would run into what main carries, before any pick: an untracked guard.allow file a picked
 // commit adds, or a board-script write a picked commit touches that cannot merge by cell. One line each.
 function pickProblems(lane) {
-  const { root, ledger, allowNew, writes } = lane;
-  if (allowNew.length === 0 && writes.loose.length === 0) return [];
+  const { root, spec, ledger, allowNew, writes } = lane;
+  if (allowNew.length === 0 && writes.loose.length === 0 && writes.cells.length === 0) return [];
   const plan = toLand(root, { main: ledger.mainBranch, branch: ledger.branch });
   if (plan.error) return []; // the commits row says so
+  const model = writes.cells.length > 0 ? workingBoard(root, spec).model : null;
+  // Does commit `sha` change a cell the owner's board set wrote in `file`, or take its row away?
+  const touchesCells = (sha, file) => {
+    const cells = writes.cells.filter((c) => c.file === file);
+    try {
+      const [x, y] = [`${sha}^`, sha].map((rev) => headBoard(root, spec, model, rev));
+      return cells.some((c) => {
+        const where = { kind: c.kind, id: c.id, column: c.column };
+        return cellText(spec, x, where) !== cellText(spec, y, where);
+      });
+    } catch {
+      return true; // unreadable: not merged by guess
+    }
+  };
   const seen = new Set();
   const out = [];
   for (const sha of plan.picks) {
@@ -172,8 +201,9 @@ function pickProblems(lane) {
           path,
           `${path}: untracked on main and added by ${short(sha)} → move it aside or commit it, then rerun`,
         ]),
-      ...writes.loose
-        .filter((file) => touched.includes(file))
+      ...[...writes.loose, ...writes.cells.map((c) => c.file)]
+        .filter((file, i, all) => all.indexOf(file) === i && touched.includes(file))
+        .filter((file) => writes.loose.includes(file) || touchesCells(sha, file))
         .map((file) => [
           file,
           `${file}: written on main by ${writes.by[file].join("; ")} and changed by ${short(sha)}, which cannot merge by cell → commit or undo the write, then rerun`,
@@ -210,7 +240,7 @@ export function mainRow(lane, { carry = false, ignore = [] } = {}) {
   lane.carried = [];
   lane.allowFiles = [];
   lane.allowNew = [];
-  lane.writes = { files: [], by: {}, cells: [], loose: [] };
+  lane.writes = { files: [], by: {}, cells: [], loose: [], rows: [] };
   const on = currentBranch(root);
   if (on !== ledger.mainBranch)
     return red(
@@ -328,7 +358,7 @@ export function carryBackStep(lane, rows) {
     const { carry, droppedCarries = [] } = merge;
     const n = droppedCarries.length + 1;
     const file = join(runDir(lane.root, lane.id), `merge-carry-dropped-${n}.patch`);
-    writeFileSync(file, carry.patch);
+    writeFileSync(file, carry.patch, "latin1");
     // A carried cell still on the tree (a run killed before it set the carry aside) comes off it too:
     // dropped means the land goes on without those edits, not that it takes them again as a new carry.
     // A cell that reads anything else is not exec's write any more: it is left as it is.
@@ -398,6 +428,7 @@ const ALLOW = {
   files: (lane) => lane.allowFiles ?? [],
   untracked: (lane) => lane.allowNew ?? [],
   cells: () => undefined,
+  rows: () => undefined,
 };
 const WRITES = {
   key: "writes",
@@ -407,6 +438,7 @@ const WRITES = {
   files: (lane) => lane.writes?.files ?? [],
   untracked: () => [],
   cells: (lane) => lane.writes?.cells,
+  rows: (lane) => lane.writes?.rows,
 };
 
 /** Record `kind`'s files in the ledger (the patch and its sha256), then set them aside: put back to HEAD,
@@ -420,8 +452,8 @@ function takeAside(lane, rows, kind) {
     rows.push(red(kind.key, `cannot read the ${kind.edits}: ${made.error}`));
     return { exit: 1 };
   }
-  const cells = kind.cells(lane);
-  const cellsSha256 = cells && sha256(JSON.stringify(cells));
+  const [cells, added] = [kind.cells(lane), kind.rows(lane)];
+  const cellsSha256 = cells && sha256(JSON.stringify([cells, added ?? []]));
   setMerge(lane, {
     [kind.key]: {
       files,
@@ -429,6 +461,7 @@ function takeAside(lane, rows, kind) {
       patch: made.patch,
       sha256: made.sha256,
       cells,
+      rows: added,
       cellsSha256,
       at: now(),
     },
@@ -456,7 +489,7 @@ function keepPatch(lane, name, patch) {
   let n = 1;
   while (existsSync(join(dir, `${name}-${n}.patch`))) n++;
   const file = join(dir, `${name}-${n}.patch`);
-  writeFileSync(file, patch);
+  writeFileSync(file, patch, "latin1"); // the patch is bytes kept one per char
   return file;
 }
 
@@ -469,7 +502,7 @@ function putBackAside(lane, kind) {
   const held = lane.ledger.merge?.[kind.key];
   if (!held) return null;
   const files = held.files.join(", ");
-  const apply = (...flags) => git(lane.root, ["apply", "--binary", ...flags], held.patch);
+  const apply = (...flags) => applyPatch(lane.root, held.patch, ...flags);
   const intactRecord = sha256(held.patch) === held.sha256;
   const done = (row) => {
     setMerge(lane, { [kind.key]: undefined }); // only once the edits are on main or in a patch file
@@ -481,19 +514,24 @@ function putBackAside(lane, kind) {
     return done(
       ok(kind.key, `${kind.edits} are on main again, uncommitted, as they were (${files})`),
     );
-  if (
-    intactRecord &&
-    held.cells?.length &&
-    sha256(JSON.stringify(held.cells)) === held.cellsSha256
-  ) {
-    const back = putCells(lane.root, lane.spec, held.cells);
-    if (back.ok)
+  // A file a pick or the board commit changed: set again by the cell ids and the rows' neighbours.
+  const [cells, added] = [held.cells ?? [], held.rows ?? []];
+  const covered = held.files.every(
+    (file) => cells.some((c) => c.file === file) || added.some((r) => r.file === file),
+  );
+  if (intactRecord && covered && sha256(JSON.stringify([cells, added])) === held.cellsSha256) {
+    const plan = planRows(lane.root, added);
+    const back = plan.ok ? putCells(lane.root, lane.spec, cells) : plan;
+    if (back.ok) {
+      plan.write();
+      const how = [cells.length > 0 && "cell by cell", added.length > 0 && "row by row"];
       return done(
         ok(
           kind.key,
-          `${kind.edits} are on main again, uncommitted, set cell by cell on the landed files (${files})`,
+          `${kind.edits} are on main again, uncommitted, set ${how.filter(Boolean).join(" and ")} on the landed files (${files})`,
         ),
       );
+    }
   }
   const file = keepPatch(lane, kind.patch, held.patch);
   const why = intactRecord
@@ -516,6 +554,14 @@ export function putBackAllow(lane) {
   return { ...a, mark, more: [...a.more, b.detail, ...b.more] };
 }
 
+// The land command as this call ran it, so the line can be run as it stands.
+function landCommand({ id, opts }) {
+  const message = opts?.["--message"];
+  if (message === undefined) return landNext(id);
+  const branch = opts["--branch"] === undefined ? "" : ` --branch ${opts["--branch"]}`;
+  return `lane merge ${id}${branch} --message ${JSON.stringify(message)}`;
+}
+
 /** The row for a stop that keeps the ledger's set-aside files (nothing put them back yet): which they
  *  are and the command that does, so a hold is never silent. Null when the ledger holds none. */
 export function heldRow(lane) {
@@ -523,6 +569,6 @@ export function heldRow(lane) {
   if (held.length === 0) return null;
   const shown = held.slice(0, 5).join(", ") + (held.length > 5 ? `, +${held.length - 5}` : "");
   return warn("allow", "files set aside by this land are still in the ledger", [
-    `allow: ${held.length} file(s) set aside (${shown}) → restored by ${landNext(lane.id)}`,
+    `allow: ${held.length} file(s) set aside (${shown}) → restored by ${landCommand(lane)}`,
   ]);
 }

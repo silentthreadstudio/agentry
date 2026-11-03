@@ -50,6 +50,10 @@ const SPEC = {
       label: "Task",
       at: { table: "BOARD.md", heading: "Tasks" },
       id: { column: "Task" },
+      create: {
+        id: "ask",
+        rows: [{ in: "self", at: "end", cells: { Task: "{id}", Status: "todo" } }],
+      },
       fields: {
         status: { column: "Status" },
         verdict: { column: "Verdict" },
@@ -467,7 +471,7 @@ test("a pick that stops and cannot be aborted names the set-aside files and the 
     assert.match(res.stdout, /cherry-pick stopped/);
     assert.match(
       res.stdout,
-      /allow: 1 file\(s\) set aside \(docs\/status\.md\) → restored by lane merge T1 --message/,
+      /allow: 1 file\(s\) set aside \(docs\/status\.md\) → restored by lane merge T1 --branch agentry\/T1 --message "docs\(board\): land T1"/,
     );
     assert.ok(readLedger(root, ID).merge.allow);
   } finally {
@@ -521,5 +525,60 @@ test("a recovery stop that keeps the carry names the set-aside files and the com
   assert.match(
     res.stdout,
     /allow: 6 file\(s\) set aside \(NOTES\.md, docs\/a\.md, docs\/b\.md, docs\/c\.md, docs\/d\.md, \+1\) → restored by lane merge T1 --message/,
+  );
+});
+
+const decisionSet = (value) => boardCli("set", "decision", "D1", `decision=${value}`, "--apply");
+
+test("a picked commit that changes the very cell a board set wrote refuses before any pick", () => {
+  build({ "plan/DECISIONS.md": DECISIONS_MD.replace("First", "Branch") });
+  assert.equal(decisionSet("Mine").status, 0);
+  const pre = git(root, "rev-parse", "HEAD");
+  const res = land();
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    /plan\/DECISIONS\.md: written on main by board set decision D1 .* changed by [0-9a-f]{7}, which cannot merge by cell/,
+  );
+  assert.equal(git(root, "rev-parse", "HEAD"), pre);
+  assert.equal(at("plan/DECISIONS.md"), DECISIONS_MD.replace("First", "Mine "));
+});
+
+test("a picked commit that deletes the row a board set wrote refuses before any pick", () => {
+  build({ "plan/DECISIONS.md": DECISIONS_MD.replace("| D1 | First | Because |\n", "") });
+  assert.equal(decisionSet("Mine").status, 0);
+  const pre = git(root, "rev-parse", "HEAD");
+  const res = land();
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /plan\/DECISIONS\.md: written on main by .* cannot merge by cell/);
+  assert.equal(git(root, "rev-parse", "HEAD"), pre);
+});
+
+test("a board add in the board file the land commits is put back next to the rows it was written beside", () => {
+  build({ "src/a.txt": "a\n" });
+  const add = boardCli("add", "task", "--fields", '{"id": "T3"}', "--apply");
+  assert.equal(add.status, 0, add.stderr);
+  const res = land();
+  assert.equal(res.status, 0, out(res));
+  assert.doesNotMatch(res.stdout, /! writes/);
+  assert.match(res.stdout, /✓ writes +board writes are on main again, uncommitted, set row by row/);
+  assert.equal(status(), " M plan/BOARD.md");
+  assert.match(at("plan/BOARD.md"), /\| T1 +\| done .*\n\| T3 +\| todo/);
+  assert.doesNotMatch(git(root, "show", "HEAD:plan/BOARD.md"), /T3/);
+  assert.equal(readLedger(root, ID).merge.writes, undefined);
+});
+
+const LATIN1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a, 0x6e, 0xe3, 0x6f, 0x0a]);
+
+test("a file that is not UTF-8 comes back byte for byte, new or edited", () => {
+  build({ "src/a.txt": "a\n" });
+  writeFileSync(join(root, "docs", "latin1.txt"), LATIN1);
+  writeFileSync(join(root, "docs", "status.md"), Buffer.concat([Buffer.from(STATUS_MD), LATIN1]));
+  const res = land();
+  assert.equal(res.status, 0, out(res));
+  assert.deepEqual(readFileSync(join(root, "docs", "latin1.txt")), LATIN1);
+  assert.deepEqual(
+    readFileSync(join(root, "docs", "status.md")),
+    Buffer.concat([Buffer.from(STATUS_MD), LATIN1]),
   );
 });
