@@ -85,6 +85,15 @@ test("the page sets html.js before first paint so the menu never shifts in", () 
   );
 });
 
+test("internal docs links end in a slash, like the canonicals", () => {
+  const bare = /withBase\("docs[^"]*[^/"]"\)|href: "docs[^"]*[^/"]"/;
+  const hits = files(SRC)
+    .filter((file) => bare.test(readFileSync(file, "utf8")))
+    .map((file) => relative(WEB, file));
+  assert.deepEqual(hits, []);
+  assert.match(read("astro.config.mjs"), /trailingSlash: "always"/);
+});
+
 test("a 404 page exists on the site layout, kept out of search, linking home and to the docs", () => {
   const page = read("src/pages/404.astro");
   assert.match(page, /import Base from "\.\.\/layouts\/Base\.astro"/);

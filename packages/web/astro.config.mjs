@@ -7,4 +7,6 @@ export default defineConfig({
   output: "static",
   site: process.env.SITE_URL || "https://agentry.silentthreadstudio.com",
   base: process.env.BASE_PATH || "/",
+  // Every page is a directory with a canonical ending in "/"; links must match it.
+  trailingSlash: "always",
 });
