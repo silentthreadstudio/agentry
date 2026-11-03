@@ -1,6 +1,7 @@
 // lanes — whether a repo has its lanes wired, for the `lanes` block of `board explain`. One row per
-// lane: `{ lane, ok, value, set }`, where `set` is the one command that sets a missing lane. A missing
-// lane is information, not an error. Nothing is computed here that another reader already knows: the
+// lane: `{ lane, ok, value, set, optional? }`, where `set` is the one command that sets a missing lane. A
+// missing lane is information, not an error; an optional workflow key that is absent (`optional`) shows
+// `·`, not `✗`. The exec rows show each value as the preset resolves it, and where it comes from. Nothing is computed here that another reader already knows: the
 // trigger block is `board instructions`' own comparison, the default agent is `board default-agent`'s
 // static verify, the config is `lib/config.mjs`' strict reader.
 //
@@ -23,7 +24,8 @@ import { columns } from "./render.mjs";
 import { WORKFLOW_KEYS } from "./spec.mjs";
 import { SPEC_VERSION } from "./spec/board.mjs";
 import { sessionChecks } from "./spec/extensions.mjs";
-import { gateOf } from "./spec/workflow.mjs";
+import { flagField, resolveWorkflow } from "./spec/presets.mjs";
+import { gateOf, runKinds } from "./spec/workflow.mjs";
 
 const INIT = "/agentry:init";
 // What `.agentry/` holds, and the command that decides each when it is neither tracked nor ignored.
@@ -129,6 +131,15 @@ const whenText = (when) =>
   ]
     .filter(Boolean)
     .join(", or ");
+// Where a resolved value comes from: the file sets it, or its preset does.
+const sourceOf = (set, key) => (set.includes(key) ? "set" : "preset");
+// The gate roles' source: `preset`, `set`, or the roles the file sets when it sets some.
+function rolesSource(set) {
+  const given = ["build", "verify", "merge"].filter((r) => set.includes(`gate.roles.${r}`));
+  if (given.length === 0) return "preset";
+  return given.length === 3 ? "set" : `${given.join(", ")} set`;
+}
+
 // The gate's rows: its tiers in order, the tier each role runs, and its checklist (none when it has none).
 function gateRows(spec) {
   const gate = gateOf(spec);
@@ -145,9 +156,9 @@ function gateRows(spec) {
     ],
     [
       "gate.roles",
-      Object.entries(roles)
+      `${Object.entries(roles)
         .map(([role, value]) => `${role} ${value}`)
-        .join(" · "),
+        .join(" · ")} · ${rolesSource(resolveWorkflow(spec).set)}`,
     ],
     [
       "gate.checklist",
@@ -161,16 +172,54 @@ function gateRows(spec) {
 export const shownPath = (root, path) =>
   relative(root, path).startsWith("..") ? path : relative(root, path);
 
-// The workflow file in use and how many keys it sets; none when there is no such file.
+// The workflow file in use and its preset; none when there is no such file. The row carries
+// `resolveWorkflow`'s object (`workflow`) and the keys the file sets (`keys`) for `--json`.
 function workflowFile(root, spec, path) {
-  if (!existsSync(path)) return { lane: "workflow file", ok: false, value: "none", set: INIT };
-  const n = WORKFLOW_KEYS.filter((k) => Object.hasOwn(spec, k)).length;
+  const workflow = resolveWorkflow(spec);
+  if (!existsSync(path))
+    return { lane: "workflow", ok: false, value: `${workflow.preset} · none`, set: INIT, workflow };
   return {
-    lane: "workflow file",
+    lane: "workflow",
     ok: true,
-    value: `${shownPath(root, path)} · ${count(n, "key")}`,
+    value: `${workflow.preset} · ${shownPath(root, path)}`,
     set: INIT,
+    workflow,
+    keys: WORKFLOW_KEYS.filter((k) => Object.hasOwn(spec, k)),
   };
+}
+
+// The exec keys as the preset resolves them, each with its source; `exec.verify: "flagged"` says which field
+// it keys on.
+function execRows(spec) {
+  const { exec, set } = resolveWorkflow(spec);
+  const kinds = runKinds(spec);
+  const names = kinds.length ? kinds : ["task"];
+  const keyed = `keys on the ${names.join(" and ")} kind${names.length > 1 ? "s'" : "'s"} "${flagField(spec)}" field`;
+  const row = (key, value) => ({
+    lane: `exec.${key}`,
+    ok: true,
+    value: `${value} · ${sourceOf(set, `exec.${key}`)}`,
+    set: INIT,
+  });
+  return [
+    row("verify", exec.verify === "flagged" ? `flagged · ${keyed}` : exec.verify),
+    row("noteRounds", exec.noteRounds),
+    row("final", exec.final),
+    row("rebase", exec.rebase),
+  ];
+}
+
+// `build sonnet · verify haiku, ui sonnet, flagged opus`: the model each exec dispatch names.
+function modelsValue(models) {
+  if (!models) return null;
+  const verify = ["default", "ui", "flagged"]
+    .filter((k) => models.verify?.[k])
+    .map((k) => (k === "default" ? models.verify[k] : `${k} ${models.verify[k]}`));
+  return (
+    [models.build && `build ${models.build}`, verify.length && `verify ${verify.join(", ")}`]
+      .filter(Boolean)
+      .join(" · ") || null
+  );
 }
 
 // `build 2 lines · verify 1 line`: the roles that set policy lines, with how many.
@@ -230,18 +279,25 @@ export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workf
     value: found ? value : "none",
     set,
   });
+  // An optional workflow key: `·` when absent, never `✗`.
+  const optional = (lane, found, value) => ({
+    ...row(lane, found, value),
+    ...(!found && { optional: true }),
+  });
   const text = conductor?.prompt ? readInside(root, join(root, conductor.prompt)) : null;
   const rules = conductor?.rules && text !== null ? md.section(text, conductor.rules) : null;
   const checks = extensions?.merge?.checks;
   return [
     workflowFile(root, spec, workflowPath),
-    ...gateRows(spec).map(([lane, value]) => row(lane, value, value)),
-    row("conductor.prompt", conductor, conductor?.prompt),
-    row("conductor.rules", rules, `${conductor?.rules} (line ${rules?.line})`),
+    ...execRows(spec),
+    ...gateRows(spec).map(([lane, value]) => optional(lane, value, value)),
+    optional("models", modelsValue(spec.models), modelsValue(spec.models)),
+    optional("conductor.prompt", conductor, conductor?.prompt),
+    optional("conductor.rules", rules, `${conductor?.rules} (line ${rules?.line})`),
     { lane: "trigger block", ...triggerBlock(root, spec) },
     { lane: "default agent", ...defaultAgent(root) },
     { lane: "merge.push", ...push(root) },
-    row("merge.checks", checks, checks?.join(", ")),
+    optional("merge.checks", checks, checks?.join(", ")),
     ...keys({ root, spec }),
     ...POLICY.map((entry) => policy(root, entry)),
     {
@@ -253,15 +309,16 @@ export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workf
   ];
 }
 
-/** The rows as lines of at most `width` columns: `✓ lane  value`, and under a `✗` row an indented
- *  `set:` line with its command. */
+/** The rows as lines of at most `width` columns: `✓ lane  value`, `· lane  none` for an absent optional key,
+ *  and under a `✗` row an indented `set:` line with its command. */
 export function renderLanes(rows, width) {
+  const mark = (r) => (r.ok ? "✓" : r.optional ? "·" : "✗");
   const lines = columns(
-    rows.map((r) => [r.ok ? "✓" : "✗", r.lane, r.value]),
+    rows.map((r) => [mark(r), r.lane, r.value]),
     width,
   );
   return rows.flatMap((r, i) => [
     lines[i],
-    ...(r.ok ? [] : [`    set: ${nextStep(r.set)}`.slice(0, width)]),
+    ...(r.ok || r.optional ? [] : [`    set: ${nextStep(r.set)}`.slice(0, width)]),
   ]);
 }

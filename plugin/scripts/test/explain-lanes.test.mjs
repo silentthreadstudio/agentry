@@ -40,21 +40,24 @@ const write = (root, path, text) => {
   writeFileSync(join(root, path), text);
 };
 
-test("a repo with no lanes set up lists each as ✗ with its command, and still exits 0", () => {
+test("a repo with no lanes set up lists each as ✗ with its command, an absent optional key as ·, and still exits 0", () => {
   const { root, board, lanes } = repo();
   try {
     const res = board("explain");
     assert.equal(res.status, 0);
     const block = res.stdout.split("\nlanes")[1];
     assert.ok(block, "a lanes block follows the rules");
+    for (const lane of ["trigger block", "default agent", "merge.push"])
+      assert.match(block, new RegExp(`^✗ +${lane.replace(".", "\\.")} `, "m"), lane);
     for (const lane of [
       "gate.tiers",
+      "gate.checklist",
       "conductor.prompt",
-      "trigger block",
-      "default agent",
-      "merge.push",
+      "models",
+      "merge.checks",
     ])
-      assert.match(block, new RegExp(`^✗ +${lane.replace(".", "\\.")} `, "m"), lane);
+      assert.match(block, new RegExp(`^· +${lane.replace(".", "\\.")} +none$`, "m"), lane);
+    assert.doesNotMatch(block, /set: \/agentry:init\n.*\n?^· /m);
     assert.match(block, /set: board instructions --apply/);
     assert.match(block, /set: board default-agent --apply/);
     assert.match(block, /set: \/agentry:config merge\.push=/);
@@ -350,20 +353,27 @@ test("a long guard.allow list is cut in its globs, never in its count", () => {
   }
 });
 
-test("the first lanes row names the workflow file and its keys, or none; --json names both files", () => {
+test("the first lanes row names the preset and the workflow file, or none; --json names both files", () => {
   const { root, board, lanes } = repo({
     gate: { tiers: [{ name: "full", command: ["make", "check"] }] },
   });
   try {
     const rows = lanes();
-    assert.deepEqual(rows["workflow file"], {
-      lane: "workflow file",
+    assert.deepEqual(rows.workflow, {
+      lane: "workflow",
       ok: true,
-      value: "workflow.json · 3 keys",
+      value: "standard · workflow.json",
       set: "/agentry:init",
+      workflow: {
+        preset: "standard",
+        exec: { verify: "all", noteRounds: 1, final: "after-fix", rebase: "recheck" },
+        roles: { build: "pick", verify: "none", merge: "pick" },
+        set: [],
+      },
+      keys: ["lifecycle", "drafts", "gate"],
     });
     const block = board("explain").stdout.split("\nlanes")[1].split("\n");
-    assert.match(block[1], /^✓ +workflow file +workflow\.json · 3 keys$/);
+    assert.match(block[1], /^✓ +workflow +standard · workflow\.json$/);
     const data = JSON.parse(board("explain", "--json").stdout);
     assert.deepEqual(data.files, { process: "process.json", workflow: "workflow.json" });
   } finally {
@@ -371,9 +381,12 @@ test("the first lanes row names the workflow file and its keys, or none; --json 
   }
   const bare = repo({}, { only: true });
   try {
-    const row = bare.lanes()["workflow file"];
-    assert.deepEqual([row.ok, row.value, row.set], [false, "none", "/agentry:init"]);
-    assert.match(bare.board("explain").stdout, /^✗ +workflow file +none\n +set: \/agentry:init$/m);
+    const row = bare.lanes().workflow;
+    assert.deepEqual([row.ok, row.value, row.set], [false, "standard · none", "/agentry:init"]);
+    assert.match(
+      bare.board("explain").stdout,
+      /^✗ +workflow +standard · none\n +set: \/agentry:init$/m,
+    );
     assert.equal(JSON.parse(bare.board("explain", "--json").stdout).files.workflow, null);
   } finally {
     rmSync(bare.root, { recursive: true, force: true });
@@ -426,11 +439,11 @@ test("the gate rows: its tiers in order, the tier each role runs, and the checkl
   try {
     const block = board("explain").stdout.split("\nlanes")[1];
     assert.match(block, /^✓ +gate\.tiers +docs \(only 2 globs\) → tests \(only 2 globs\) → full$/m);
-    assert.match(block, /^✓ +gate\.roles +build pick · verify none · merge pick$/m);
+    assert.match(block, /^✓ +gate\.roles +build pick · verify none · merge pick · set$/m);
     assert.match(block, /^✓ +gate\.checklist +1 item: ui-smoke \(any 1 glob, or flagged\)$/m);
     assert.doesNotMatch(block, /^. +gate(\.quick)? /m);
     // The roles row shows the defaults when gate.roles is not set.
-    assert.equal(lanes()["gate.roles"].value, "build pick · verify none · merge pick");
+    assert.equal(lanes()["gate.roles"].value, "build pick · verify none · merge pick · set");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -441,8 +454,12 @@ test("the gate.checklist row is always shown: none when the gate has no checklis
     const { root, board, lanes } = repo(keys);
     try {
       const row = lanes()["gate.checklist"];
-      assert.deepEqual([row.ok, row.value], [false, "none"], JSON.stringify(keys));
-      assert.match(board("explain").stdout.split("\nlanes")[1], /^✗ +gate\.checklist +none$/m);
+      assert.deepEqual(
+        [row.ok, row.value, row.optional],
+        [false, "none", true],
+        JSON.stringify(keys),
+      );
+      assert.match(board("explain").stdout.split("\nlanes")[1], /^· +gate\.checklist +none$/m);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -478,6 +495,70 @@ test("no start or close rows when extensions names only merge", () => {
   try {
     const names = Object.keys(lanes());
     assert.ok(!names.some((n) => /^extensions\.(start|close)/.test(n)));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the exec rows show each value as the preset resolves it, and where it comes from", () => {
+  const { root, board, lanes } = repo({
+    gate: { tiers: [{ name: "full", command: ["make", "check"] }] },
+    exec: { final: "never" },
+  });
+  try {
+    const block = board("explain").stdout.split("\nlanes")[1].split("\n").slice(1, 7);
+    const expected = [
+      /^✓ +workflow +standard · workflow\.json$/,
+      /^✓ +exec\.verify +all · preset$/,
+      /^✓ +exec\.noteRounds +1 · preset$/,
+      /^✓ +exec\.final +never · set$/,
+      /^✓ +exec\.rebase +recheck · preset$/,
+      /^✓ +gate\.tiers +full$/,
+    ];
+    expected.forEach((re, i) => assert.match(block[i], re));
+    assert.match(
+      board("explain").stdout,
+      /^✓ +gate\.roles +build pick · verify none · merge pick · preset$/m,
+    );
+    const data = JSON.parse(board("explain", "--json").stdout);
+    const workflow = data.lanes.find((l) => l.lane === "workflow").workflow;
+    assert.deepEqual(workflow.set, ["exec.final"]);
+    assert.equal(workflow.exec.final, "never");
+    assert.equal(lanes()["exec.final"].value, "never · set");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("exec.verify flagged says which field it keys on; a models row names each model, or · none", () => {
+  const flagged = (spec) => ({
+    ...spec,
+    kinds: {
+      ...spec.kinds,
+      task: {
+        ...spec.kinds.task,
+        fields: { ...spec.kinds.task.fields, flag: { column: "Flag", type: "flag" } },
+      },
+    },
+  });
+  const root0 = mkdtempSync(join(tmpdir(), "agentry-lanes-"));
+  cpSync(join(HERE, "fixtures", "table-board"), root0, { recursive: true });
+  const base = JSON.parse(readFileSync(join(root0, "process.json"), "utf8"));
+  rmSync(root0, { recursive: true, force: true });
+  const { root, lanes } = repo({
+    ...flagged(base),
+    exec: { preset: "lean" },
+    models: { build: "sonnet", verify: { default: "haiku", ui: "sonnet", flagged: "opus" } },
+  });
+  try {
+    const rows = lanes();
+    assert.equal(
+      rows["exec.verify"].value,
+      'flagged · keys on the task kind\'s "flag" field · preset',
+    );
+    assert.equal(rows["exec.noteRounds"].value, "0 · preset");
+    assert.equal(rows.models.value, "build sonnet · verify haiku, ui sonnet, flagged opus");
+    assert.equal(rows.models.ok, true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

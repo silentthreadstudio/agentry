@@ -222,12 +222,25 @@ export type Cleanup = z.infer<typeof Cleanup>;
 export const ExecKind = z.object({ on: On, write: z.object(Writes).strict().optional() }).strict();
 export type ExecKind = z.infer<typeof ExecKind>;
 
-/** The exec lane's own settings: `verify` says which items get an independent verifier (`all` by default;
- *  `flagged` only those whose `flag` field is set, which needs a `flag` field on every kind exec runs);
- *  `kinds` the kinds it runs beside the lifecycle's. */
+/** The exec lane's own settings, every key optional: `preset` (`lean`, `standard` by default, `strict`) sets
+ *  the defaults of `verify`, `noteRounds`, `final`, `rebase` and the gate roles, and a key given here wins
+ *  over it. `verify` says which items get an independent verifier (`all`; `flagged` only those whose flag
+ *  field is set, which needs that field on every kind exec runs; `none`); `noteRounds` how many notes-fix
+ *  rounds a lane may run (0–3); `final` when a fresh final verifier follows a recheck (`never`,
+ *  `after-fix`: unless the recheck covered every note and the tip moved only by fix commits, `always`);
+ *  `rebase` what checks a rebase that cleared a land conflict (`recheck`: a verifier reads the
+ *  resolution, `gate`); `flagField` the flag field `verify` reads (`flag`); `idleMinutes` the quiet
+ *  minutes that make a building lane idle (≥ 5, default 20); `kinds` the kinds it runs beside the
+ *  lifecycle's. */
 export const Exec = z
   .object({
+    preset: z.enum(["lean", "standard", "strict"]).optional(),
     verify: z.enum(["all", "flagged", "none"]).optional(),
+    noteRounds: z.number().int().min(0).max(3).optional(),
+    final: z.enum(["never", "after-fix", "always"]).optional(),
+    rebase: z.enum(["recheck", "gate"]).optional(),
+    flagField: Text.optional(),
+    idleMinutes: z.number().int().min(5).optional(),
     kinds: z.record(ExecKind).optional(),
   })
   .strict();

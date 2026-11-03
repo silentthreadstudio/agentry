@@ -42,6 +42,16 @@ const commits = (c) => ({ workflow: { commits: c } });
 const lines = (n) => Array.from({ length: n }, (_, i) => `line ${i + 1}`);
 const checks = (c) => ({ workflow: { extensions: { merge: { checks: c } } } });
 const ext = (e) => ({ workflow: { extensions: e } });
+const exec = (e) => ({ workflow: { exec: e } });
+// BASE with a flag field on its task kind, so `exec.verify` may be "flagged" (the lean preset's).
+const FLAGGED = {
+  kinds: {
+    task: {
+      ...BASE.kinds.task,
+      fields: { ...BASE.kinds.task.fields, flag: { column: "Flag", type: "flag" } },
+    },
+  },
+};
 
 // BASE with a commits field `commit` carrying `join`.
 const joined = (join) => ({
@@ -187,6 +197,26 @@ export const PROCESS_CASES = [
   },
   { name: "a debt kind exec runs", ...debt({ on: ON, write: WRITE }) },
   { name: "an exec kind with only its events", ...debt({ on: { dispatched: "doing" } }) },
+  // good: exec presets and the keys a file sets over them
+  { name: "the standard preset", ...exec({ preset: "standard" }) },
+  { name: "the strict preset", ...exec({ preset: "strict" }) },
+  {
+    name: "the lean preset on a board with a flag field",
+    board: FLAGGED,
+    ...exec({ preset: "lean" }),
+  },
+  { name: "no notes rounds", ...exec({ noteRounds: 0 }) },
+  { name: "three notes rounds", ...exec({ noteRounds: 3 }) },
+  { name: "each final", ...exec({ final: "never" }) },
+  { name: "a final after a fix", ...exec({ final: "after-fix" }) },
+  { name: "an always final", ...exec({ final: "always" }) },
+  { name: "a gate after a rebase", ...exec({ rebase: "gate" }) },
+  { name: "a recheck after a rebase", ...exec({ rebase: "recheck" }) },
+  { name: "the shortest idle", ...exec({ idleMinutes: 5 }) },
+  {
+    name: "a preset with every key set over it",
+    ...exec({ preset: "strict", verify: "all", noteRounds: 1, final: "never", rebase: "gate" }),
+  },
   // bad: join
   { name: "an empty join", ...joined(""), bad: [JOIN] },
   { name: "a join with a letter", ...joined("x"), bad: [JOIN] },
@@ -598,6 +628,17 @@ export const PROCESS_CASES = [
     ...briefs({ build: ["a\rb"] }),
     bad: ["briefs.build[0]"],
   },
+  // bad: exec presets and keys
+  { name: "an unknown preset", ...exec({ preset: "fast" }), bad: ["exec.preset"] },
+  { name: "a negative noteRounds", ...exec({ noteRounds: -1 }), bad: ["exec.noteRounds"] },
+  { name: "four noteRounds", ...exec({ noteRounds: 4 }), bad: ["exec.noteRounds"] },
+  { name: "a fractional noteRounds", ...exec({ noteRounds: 1.5 }), bad: ["exec.noteRounds"] },
+  { name: "noteRounds as a string", ...exec({ noteRounds: "1" }), bad: ["exec.noteRounds"] },
+  { name: "an unknown final", ...exec({ final: "sometimes" }), bad: ["exec.final"] },
+  { name: "an unknown rebase", ...exec({ rebase: "never" }), bad: ["exec.rebase"] },
+  { name: "an idle threshold under 5", ...exec({ idleMinutes: 4 }), bad: ["exec.idleMinutes"] },
+  { name: "a fractional idle threshold", ...exec({ idleMinutes: 7.5 }), bad: ["exec.idleMinutes"] },
+  { name: "an empty flag field name", ...exec({ flagField: "" }), bad: ["exec.flagField"] },
   { name: "commits as a list", ...commits(["a"]), bad: ["commits"] },
   { name: "a misspelled commits key", ...commits({ subjectMx: 72 }), bad: ["commits.subjectMx"] },
   { name: "a zero subjectMax", ...commits({ subjectMax: 0 }), bad: ["commits.subjectMax"] },
@@ -833,6 +874,36 @@ export const ACROSS_CASES = [
       },
     ),
     bad: ["exec.verify"],
+    file: "workflow.json",
+  },
+  {
+    name: "the lean preset with no flag field: its flagged route",
+    ...exec({ preset: "lean" }),
+    bad: ["exec.verify"],
+    file: "workflow.json",
+  },
+  {
+    name: "a flag field that no runnable kind has as a flag",
+    board: FLAGGED,
+    ...exec({ flagField: "urgent" }),
+    bad: ["exec.flagField"],
+    file: "workflow.json",
+  },
+  {
+    name: "a flag field the debt kind lacks, under the none route",
+    ...execKinds(
+      { debt: { on: ON, write: WRITE } },
+      {
+        kinds: {
+          task: {
+            ...BASE.kinds.task,
+            fields: { ...BASE.kinds.task.fields, urgent: { column: "Urgent", type: "flag" } },
+          },
+        },
+        exec: { verify: "none", flagField: "urgent" },
+      },
+    ),
+    bad: ["exec.flagField"],
     file: "workflow.json",
   },
 ];

@@ -8,6 +8,7 @@
 // `test/key-cases.mjs`).
 import { extensions } from "./extensions.mjs";
 import { locks } from "./locks.mjs";
+import { execSchema, flagField, resolveWorkflow } from "./presets.mjs";
 import {
   FULL,
   filled,
@@ -17,7 +18,6 @@ import {
   join,
   like,
   namesOf,
-  oneOf,
   own,
   posInt,
   quote,
@@ -154,8 +154,6 @@ const gate = Object.assign(
   },
   { keys: gateKeys.keys },
 );
-// The exec lane's own settings: which items a verifier reads, and which model each dispatch names.
-const VERIFY_ROUTES = ["all", "flagged", "none"];
 // The repo's policy lines for a brief (one line each, at most BRIEF_LINES) and its commit rules.
 const BRIEF_LINES = 20;
 const policyLine = (v, at, bad) => {
@@ -183,7 +181,7 @@ export const workflowSchema = shape({
   conductor: shape({ "prompt!": repoPath, rules: text }, FULL),
   guard: shape({ "allow!": globs }, FULL),
   cleanup: shape({ "disposable!": globs }, FULL),
-  exec: shape({ verify: oneOf(...VERIFY_ROUTES), kinds: record(execKindSchema) }, FULL),
+  exec: execSchema(record(execKindSchema)),
   models: shape(
     { build: text, verify: shape({ default: text, ui: text, flagged: text }, FULL) },
     FULL,
@@ -207,11 +205,8 @@ export function validateWorkflow(value, bad) {
   });
 }
 
-/** Which items the exec lane sends to a verifier: "all" (default), "flagged" or "none". */
-export const verifyRoute = (spec) => own(own(spec, "exec"), "verify") ?? "all";
-
-/** The field name `exec.verify: "flagged"` reads from each kind exec runs (`task` when there is none). */
-export const FLAG_FIELD = "flag";
+/** Which items the exec lane sends to a verifier: "all", "flagged" or "none", the file's or its preset's. */
+export const verifyRoute = (spec) => resolveWorkflow(spec).exec.verify;
 
 const lifeKind = (spec) => {
   const kind = own(own(spec, "lifecycle"), "kind");
@@ -240,12 +235,14 @@ export function lifecycleOf(spec, kind) {
   return { kind, on: isObject(def.on) ? def.on : {}, write, ...handoff };
 }
 
-/** Is item `id` of `kind` (the lifecycle's by default) flagged on the board `model`: its `flag` field is
- *  set (and is a flag field). False when the kind has no such field or the item is not on the board. */
+/** Is item `id` of `kind` (the lifecycle's by default) flagged on the board `model`: its flag field
+ *  (`flagField`) is set (and is a flag field). False when the kind has no such field or the item is not on
+ *  the board. */
 export function flaggedItem(spec, model, id, kind = lifeKind(spec) ?? "task") {
-  if (own(own(own(spec?.kinds, kind), "fields"), FLAG_FIELD)?.type !== "flag") return false;
+  const field = flagField(spec);
+  if (own(own(own(spec?.kinds, kind), "fields"), field)?.type !== "flag") return false;
   const item = own(model?.kinds, kind)?.items?.find((i) => i.id === id);
-  return Boolean(own(item?.fields, FLAG_FIELD));
+  return Boolean(own(item?.fields, field));
 }
 
 /** The model a dispatch names, or null: `role` "build", or "verify" with the item's `flagged` and `ui`
@@ -262,18 +259,15 @@ export function modelFor(spec, role, { flagged = false, ui = false } = {}) {
   );
 }
 
-// The tier each role runs when `gate.roles` does not say.
-const ROLE_DEFAULTS = { build: "pick", verify: "none", merge: "pick" };
-
-/** The repo's gate with its defaults filled (`roles` build pick, verify none, merge pick; `checklist: []`,
- *  `after: []`, `concurrency: 1`, `flaky: []`, `flakyLogs: []`), or null when the workflow file has none.
- *  A copy: changing it never changes the spec. */
+/** The repo's gate with its defaults filled (`roles` from the preset, per role: standard's build pick,
+ *  verify none, merge pick; `checklist: []`, `after: []`, `concurrency: 1`, `flaky: []`, `flakyLogs: []`),
+ *  or null when the workflow file has none. A copy: changing it never changes the spec. */
 export function gateOf(spec) {
   const g = own(spec, "gate");
   if (!isObject(g)) return null;
   return structuredClone({
     tiers: g.tiers,
-    roles: { ...ROLE_DEFAULTS, ...g.roles },
+    roles: resolveWorkflow(spec).roles,
     checklist: g.checklist ?? [],
     after: g.after ?? [],
     concurrency: g.concurrency ?? 1,

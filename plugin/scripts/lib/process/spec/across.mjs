@@ -10,20 +10,13 @@
 //   whose keys name a kind with no parent field (`checkExecKinds`).
 import { boldLeads } from "../markdown.mjs";
 import { FIELD, ruleOf, withDefaults } from "../rules/index.mjs";
+import { flagField, resolveWorkflow } from "./presets.mjs";
 import { describe, fieldsOf, parentOf, refsOf, sectionsOf } from "./rules.mjs";
 import { entries, has, isObject, own, quote } from "./shape.mjs";
-import {
-  FLAG_FIELD,
-  SLOT,
-  SLOTS,
-  fillHandoff,
-  lifecycleOf,
-  runKinds,
-  verifyRoute,
-} from "./workflow.mjs";
+import { SLOT, SLOTS, fillHandoff, lifecycleOf, runKinds } from "./workflow.mjs";
 
-/** The workflow's names of the board: `lifecycle.kind` and each `drafts.*.kind` name a kind, the flag
- *  field `exec.verify: "flagged"` reads, and what `checkLifecycle` holds the lifecycle to. */
+/** The workflow's names of the board: `lifecycle.kind` and each `drafts.*.kind` name a kind, the flag field
+ *  `exec.verify` reads, and what `checkLifecycle` holds the lifecycle to. */
 export function checkAcross(spec, bad) {
   const kinds = isObject(spec.kinds) ? spec.kinds : {};
   const known = (name, at) =>
@@ -82,20 +75,26 @@ function checkExecKinds(spec, kinds, bad) {
   }
 }
 
-// `exec.verify: "flagged"` sends an item to a verifier by its flag, so every kind exec runs must have one:
-// a field named "flag" of type "flag". Otherwise its items would skip verification, which refuses at load
-// instead.
+// `exec.verify: "flagged"` (given, or the preset's) needs a flag field (`exec.flagField`) on every kind exec
+// runs, else its items would skip verification: refused at load, naming where "flagged" came from. A
+// flagField the file names must be a flag field of every kind exec runs, whatever the route.
 function checkVerifyRoute(spec, kinds, bad) {
-  if (verifyRoute(spec) !== "flagged") return;
+  const field = flagField(spec);
   const names = runKinds(spec);
-  for (const name of names.length ? names : ["task"]) {
-    const field = fieldsOf(kinds[name])[FLAG_FIELD];
-    if (!has(kinds, name) || field?.type !== "flag")
-      bad(
-        "exec.verify",
-        `is "flagged", but the ${name} kind has no field named "${FLAG_FIELD}" of type "flag"`,
-      );
-  }
+  const lacking = (names.length ? names : ["task"]).filter(
+    (name) => own(fieldsOf(own(kinds, name)), field)?.type !== "flag",
+  );
+  const no = (name) => `the ${name} kind has no flag field named "${field}"`;
+  if (has(own(spec, "exec"), "flagField"))
+    return lacking.forEach((name) => bad("exec.flagField", `is "${field}", but ${no(name)}`));
+  const { preset, exec, set } = resolveWorkflow(spec);
+  if (exec.verify !== "flagged") return;
+  const from = set.includes("exec.verify") ? "set" : `preset ${preset}`;
+  for (const name of lacking)
+    bad(
+      "exec.verify",
+      `is "flagged" (${from}), but the ${name} kind has no field named "${field}" of type "flag"`,
+    );
 }
 
 // Each runnable kind's mapping (`lifecycleOf`) with the path its problems start with.

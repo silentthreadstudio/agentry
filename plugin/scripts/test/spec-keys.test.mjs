@@ -1,6 +1,7 @@
 // Tests for the harness keys and the lifecycle invariants in lib/process/spec.mjs (plan R1b §2):
-// the shared table through the plugin's validator, `gateOf`, the CLI refusing a bad key (exit 2,
-// naming it), the lifecycle writer's targets and the handoff self-consistency check.
+// the shared table through the plugin's validator, `gateOf`, the exec presets (`resolveWorkflow`), the CLI
+// refusing a bad key (exit 2, naming it), the lifecycle writer's targets and the handoff self-consistency
+// check.
 // Run: node --test plugin/scripts/test/spec-keys.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -10,6 +11,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { validateSpec } from "../lib/process/spec.mjs";
+import { PRESETS, resolveWorkflow } from "../lib/process/spec/presets.mjs";
 import { gateOf } from "../lib/process/spec/workflow.mjs";
 import { BASE, PROCESS_CASES, pathOf, specOf } from "./key-cases.mjs";
 import { splitSpec, writeSpec } from "./spec-files.mjs";
@@ -63,6 +65,78 @@ test("gateOf fills the defaults, copies, and is null without a gate", () => {
   });
 });
 
+// ---- exec presets ------------------------------------------------------------------------------------
+
+const GATED = { gate: { tiers: FULL_TIER } };
+const TABLE = {
+  lean: ["flagged", 0, "never", "gate", { build: "pick", verify: "none", merge: "pick" }],
+  standard: ["all", 1, "after-fix", "recheck", { build: "pick", verify: "none", merge: "pick" }],
+  strict: ["all", 3, "always", "recheck", { build: "full", verify: "none", merge: "full" }],
+};
+const five = ({ exec, roles }) => [exec.verify, exec.noteRounds, exec.final, exec.rebase, roles];
+
+test("resolveWorkflow: each preset's five values, and standard when no preset is named", () => {
+  assert.deepEqual(Object.keys(PRESETS), Object.keys(TABLE));
+  for (const [preset, values] of Object.entries(TABLE)) {
+    const got = resolveWorkflow({ ...GATED, exec: { preset } });
+    assert.equal(got.preset, preset);
+    assert.deepEqual(five(got), values, preset);
+    assert.deepEqual(got.set, ["exec.preset"], preset);
+  }
+  const bare = resolveWorkflow(GATED);
+  assert.deepEqual([bare.preset, ...five(bare)], ["standard", ...TABLE.standard]);
+  assert.deepEqual(bare.set, []);
+});
+
+test("resolveWorkflow: a key in the file wins over its preset, alone; gate.roles per role", () => {
+  const over = {
+    "exec.verify": ["verify", "none"],
+    "exec.noteRounds": ["noteRounds", 2],
+    "exec.final": ["final", "never"],
+    "exec.rebase": ["rebase", "gate"],
+  };
+  for (const preset of Object.keys(TABLE))
+    for (const [path, [key, value]] of Object.entries(over)) {
+      const got = resolveWorkflow({ ...GATED, exec: { preset, [key]: value } });
+      const want = resolveWorkflow({ ...GATED, exec: { preset } });
+      assert.equal(got.exec[key], value, `${preset} ${path}`);
+      for (const other of Object.keys(want.exec).filter((k) => k !== key))
+        assert.equal(got.exec[other], want.exec[other], `${preset} ${path} leaves ${other}`);
+      assert.deepEqual(got.set, ["exec.preset", path]);
+    }
+  const roles = resolveWorkflow({
+    gate: { tiers: FULL_TIER, roles: { merge: "pick" } },
+    exec: { preset: "strict" },
+  });
+  assert.deepEqual(roles.roles, { build: "full", verify: "none", merge: "pick" });
+  assert.deepEqual(roles.set, ["exec.preset", "gate.roles.merge"]);
+  // set lists only the file's keys: one override, no preset named.
+  assert.deepEqual(resolveWorkflow({ exec: { final: "never" } }).set, ["exec.final"]);
+});
+
+test("resolveWorkflow: roles are null without a gate; gateOf reads the preset's roles", () => {
+  assert.equal(resolveWorkflow({ exec: { preset: "strict" } }).roles, null);
+  const strict = { ...structuredClone(BASE), ...GATED, exec: { preset: "strict" } };
+  assert.deepEqual(gateOf(strict).roles, { build: "full", verify: "none", merge: "full" });
+});
+
+test("the lean preset on a kind with no flag field is refused naming where flagged came from", () => {
+  const problems = (exec) =>
+    validateSpec({ board: structuredClone(BASE), workflow: { exec } }).problems.map(
+      (p) => p.message,
+    );
+  assert.deepEqual(problems({ preset: "lean" }), [
+    'exec.verify is "flagged" (preset lean), but the task kind has no field named "flag" of type "flag"',
+  ]);
+  assert.deepEqual(problems({ verify: "flagged" }), [
+    'exec.verify is "flagged" (set), but the task kind has no field named "flag" of type "flag"',
+  ]);
+  assert.deepEqual(problems({ preset: "lean", verify: "all" }), []);
+  assert.deepEqual(problems({ flagField: "urgent" }), [
+    'exec.flagField is "urgent", but the task kind has no flag field named "urgent"',
+  ]);
+});
+
 test("board check refuses a bad harness key with exit 2, naming its path", () => {
   const root = mkdtempSync(join(tmpdir(), "agentry-keys-"));
   temps.push(root);
@@ -99,6 +173,20 @@ test("board check refuses a bad harness key with exit 2, naming its path", () =>
   assert.match(typo.stderr, /extensions\.merge\.checks\[1\] repeats "a"/);
   const none = runWith({ extensions: { merge: { checks: [] } } });
   assert.equal(none.status, 0, `merge.checks [] names no repo check: ${none.stderr}`);
+  // The exec keys: each bad value exits 2 at load, naming its key.
+  for (const [key, value] of [
+    ["preset", "fast"],
+    ["noteRounds", -1],
+    ["noteRounds", 4],
+    ["noteRounds", 1.5],
+    ["noteRounds", "1"],
+    ["final", "sometimes"],
+    ["idleMinutes", 4],
+  ]) {
+    const res = runWith({ exec: { [key]: value } });
+    assert.equal(res.status, 2, `${key} ${JSON.stringify(value)}`);
+    assert.match(res.stderr, new RegExp(`exec\\.${key} should be`), key);
+  }
 });
 
 // A board with a lifecycle on tasks: sprints own a file with a bold-lead handoff section.
