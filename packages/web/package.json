@@ -12,7 +12,8 @@
     "build": "astro build",
     "metrics": "node scripts/load-metrics.mjs",
     "preview": "astro preview",
-    "typecheck": "astro check"
+    "typecheck": "astro check",
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

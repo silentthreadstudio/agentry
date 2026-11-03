@@ -1,6 +1,12 @@
 ---
 // Nav.astro — the site header: brand mark home, the section anchors, Docs, GitHub, and the
 // Install pill. Anchors are base-aware (`/#sized`) so they also work from the /docs pages.
+//
+// At phone width (760 px and below, where the full row would start to wrap) the header shows
+// the brand, Install and a Menu button that opens the links as a stacked panel over the page.
+// Without JS there is no button and the links render as a plain stacked list; Base.astro sets
+// `html.js` before first paint so the enhanced layout never shifts in after load. The button
+// sits before the links in the DOM so that, once open, Tab moves straight into them.
 import { withBase } from "../lib/base.ts";
 import Mark from "./Mark.astro";
 
@@ -17,13 +23,23 @@ const links = [
 ];
 ---
 
-<header>
+<header class="site-header" data-menu-root>
   <nav aria-label="Main" class="nav">
     <a href={home} class="brand">
       <Mark />
       <span class="brand__name">agentry</span>
     </a>
-    <ul class="links">
+    <button
+      type="button"
+      class="menu-btn"
+      aria-expanded="false"
+      aria-controls="site-links"
+      data-menu-btn
+    >
+      <span class="menu-btn__icon" aria-hidden="true"><span></span><span></span><span></span></span>
+      Menu
+    </button>
+    <ul id="site-links" class="links" data-menu-panel>
       {
         links.map((link) => (
           <li>
@@ -33,23 +49,25 @@ const links = [
           </li>
         ))
       }
-      <li>
-        <a href={`${home}#install`} class="cta">Install</a>
-      </li>
     </ul>
+    <a href={`${home}#install`} class="cta">Install</a>
   </nav>
 </header>
 
 <style>
+  .site-header {
+    position: relative;
+    z-index: 20;
+  }
+
   .nav {
-    max-width: var(--wrap);
+    max-width: calc(var(--wrap) + 2 * var(--gutter));
     margin: 0 auto;
     padding: 22px var(--gutter);
     display: flex;
     flex-wrap: wrap;
-    justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: 16px 22px;
   }
 
   .brand {
@@ -57,6 +75,7 @@ const links = [
     align-items: center;
     gap: 10px;
     min-height: 44px;
+    margin-right: auto;
     text-decoration: none;
   }
 
@@ -71,14 +90,15 @@ const links = [
     flex-wrap: wrap;
     align-items: center;
     gap: 4px 22px;
-    font-size: 16px;
-    font-weight: 700;
   }
 
-  .links a {
+  .links a,
+  .cta {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
+    font-size: 16px;
+    font-weight: 700;
     text-decoration: none;
   }
 
@@ -89,21 +109,123 @@ const links = [
     text-underline-offset: 6px;
   }
 
-  .links .cta {
+  .cta {
     padding: 12px 20px;
+    line-height: 1.2;
     border-radius: var(--pill);
     background: var(--ink);
     color: var(--surface);
   }
 
-  .links .cta:hover {
+  .cta:hover {
     background: var(--two);
     color: var(--on-two);
   }
 
-  @media (max-width: 600px) {
+  .menu-btn {
+    display: none;
+  }
+
+  /* ---- phone width ---- */
+  @media (max-width: 760px) {
+    .nav {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 12px 10px;
+      padding-block: 14px;
+    }
+
+    .brand {
+      margin-right: 0;
+    }
+
+    .cta {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    /* no JS: the links stay a plain stacked list under the bar */
     .links {
-      gap: 0 18px;
+      grid-column: 1 / -1;
+      grid-row: 2;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+      border-top: var(--border);
+    }
+
+    .links li {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .links a {
+      display: flex;
+      min-height: 48px;
+      padding-inline: 4px;
+      font-size: 18px;
+    }
+
+    /* with JS: a Menu button opens the same list as a panel over the page */
+    :global(.js) .menu-btn {
+      grid-column: 3;
+      grid-row: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 0 14px;
+      font-family: var(--sans);
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--ink);
+      background: var(--surface);
+      border: var(--border);
+      border-radius: var(--pill);
+      cursor: pointer;
+    }
+
+    :global(.js) .menu-btn[aria-expanded="true"] {
+      background: var(--ink);
+      color: var(--surface);
+    }
+
+    .menu-btn__icon {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .menu-btn__icon span {
+      display: block;
+      width: 16px;
+      height: 2px;
+      background: currentColor;
+    }
+
+    :global(.js) .links {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      display: none;
+      padding: 0 var(--gutter) 12px;
+      background: var(--paper);
+      border-bottom: var(--border);
+    }
+
+    :global(.js) .links.is-open {
+      display: flex;
     }
   }
 </style>
+
+<script>
+  import { bindMenu } from "../scripts/menu.ts";
+
+  const root = document.querySelector<HTMLElement>("[data-menu-root]");
+  const button = document.querySelector<HTMLButtonElement>("[data-menu-btn]");
+  const panel = document.querySelector<HTMLElement>("[data-menu-panel]");
+  if (root && button && panel) {
+    bindMenu(button, panel, root, document, (target) => target instanceof HTMLAnchorElement);
+  }
+</script>
