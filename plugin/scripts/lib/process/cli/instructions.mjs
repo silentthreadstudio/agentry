@@ -13,7 +13,7 @@
 // rewritten, or a file that can't be written. Files are written to temporary names first and then renamed
 // in, and a failure puts the first back: never half-done.
 //
-// `--lint` reads instead (`./instructions-lint.mjs`): the lines that compete with the block. Never writes.
+// `--lint` reads instead (`../instructions-lint.mjs`): the lines that compete with the block. Never writes.
 //
 // run(argv, { root, spec }) -> { exit, out }
 import {
@@ -40,6 +40,7 @@ import {
   readFile,
   sameFile,
 } from "../instruction-files.mjs";
+import { runLint } from "../instructions-lint.mjs";
 import {
   CLAUDE_DIR_IMPORT,
   IMPORT,
@@ -48,7 +49,6 @@ import {
   renderBlock,
   upsertBlock,
 } from "../instructions.mjs";
-import { runLint } from "./instructions-lint.mjs";
 
 export const help = {
   usage: "instructions [--target agents|local] [--apply] [--json] | instructions --lint [--json]",

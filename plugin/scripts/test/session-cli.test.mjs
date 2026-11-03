@@ -414,3 +414,200 @@ test("start shows three held lanes and counts the fourth", () => {
   assert.doesNotMatch(res.stdout, /^lanes: /m);
   assert.equal(JSON.parse(session(root, "start", "--json").stdout).held.length, 4);
 });
+
+// --- session checks (A42): extensions.start.checks and extensions.close.checks ----------------------------
+
+const CHECKS_FILE = ".agentry/run/process/session-checks.jsonl";
+// A repo naming `extensions` in its workflow file, holding the SKILL.md of each skill in `skills`.
+function checkedRepo(extensions, skills = ["repo-session"]) {
+  const repo = boardRepo({ spec: { ...SPEC, extensions } });
+  cleanups.push(repo.cleanup);
+  for (const s of skills) {
+    mkdirSync(join(repo.root, ".claude", "skills", s), { recursive: true });
+    writeFileSync(join(repo.root, ".claude", "skills", s, "SKILL.md"), "# s\n");
+  }
+  return repo.root;
+}
+const BOTH = {
+  start: { checks: ["repo-session"] },
+  close: { checks: ["repo-session", "repo-ui"] },
+};
+const entries = (root) =>
+  read(root, CHECKS_FILE)
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+
+test("with no check named, start prints and carries nothing about checks", () => {
+  const root = fresh();
+  assert.doesNotMatch(session(root, "start").stdout, /checks:|last close:/);
+  assert.equal(Object.hasOwn(JSON.parse(session(root, "start", "--json").stdout), "checks"), false);
+  assert.equal(Object.hasOwn(JSON.parse(session(root, "close").stdout), "checks"), false);
+});
+
+test("start lists the checks to run right after the prompt line, before the held lanes", () => {
+  const root = checkedRepo(BOTH);
+  ledger(root, "T1", {
+    state: "held",
+    hold: { for: "later", when: "building", since: new Date().toISOString() },
+  });
+  const lines = session(root, "start").stdout.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("conductor prompt:"));
+  assert.equal(lines[at + 1], "start checks: repo-session (run each, then record it)");
+  assert.match(
+    lines[at + 2],
+    /^ {2}→ .*lane session start --check <skill>=pass\|fail --note "<line>"$/,
+  );
+  assert.match(lines[at + 3], /^parked: T1/);
+});
+
+test("start says a named skill with no SKILL.md has none", () => {
+  const root = checkedRepo({ start: { checks: ["repo-session", "ghost"] } });
+  const { stdout } = session(root, "start");
+  assert.match(stdout, /^start checks: repo-session, ghost \(run each, then record it\)$/m);
+  assert.match(
+    stdout,
+    /^start checks: ghost has no \.claude\/skills\/ghost\/SKILL\.md → \/agentry:init$/m,
+  );
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  assert.deepEqual(data.checks.start.missing, ["ghost"]);
+  assert.deepEqual(data.checks.close, {
+    named: [],
+    recorded: [],
+    pending: [],
+    failed: [],
+    missing: [],
+  });
+});
+
+test("--check records one entry and prints the outcome with the counts", () => {
+  const root = checkedRepo(BOTH, ["repo-session", "repo-ui"]);
+  const pass = session(root, "close", "--check", "repo-session=pass");
+  assert.equal(pass.status, 0, pass.stderr);
+  assert.equal(
+    pass.stdout.trimEnd(),
+    "✓ close check repo-session: pass\nclose checks: 1/2 recorded · pending: repo-ui",
+  );
+  const fail = session(root, "close", "--check", "repo-ui=fail", "--note", "screens\nare red");
+  assert.equal(
+    fail.stdout.trimEnd(),
+    "✗ close check repo-ui: fail · screens are red\nclose checks: 2/2 recorded · failed: repo-ui",
+  );
+  const [first, second] = entries(root);
+  assert.deepEqual(
+    [first.phase, first.skill, first.result, first.note],
+    ["close", "repo-session", "pass", undefined],
+  );
+  assert.equal(second.note, "screens\nare red", "the note is stored whole");
+  assert.ok(!Number.isNaN(Date.parse(second.at)));
+});
+
+test("--check --json carries the entry and the counts", () => {
+  const root = checkedRepo(BOTH);
+  const data = JSON.parse(
+    session(root, "start", "--check", "repo-session=fail", "--note", "red", "--json").stdout,
+  );
+  const { at, ...rest } = data;
+  assert.ok(at);
+  assert.deepEqual(rest, {
+    phase: "start",
+    skill: "repo-session",
+    result: "fail",
+    note: "red",
+    recorded: 1,
+    total: 1,
+    pending: [],
+    failed: ["repo-session"],
+  });
+});
+
+test("--check from a lane worktree writes the main checkout's record", () => {
+  const root = checkedRepo(BOTH);
+  const built = builtBranch(root, "T1");
+  mkdirSync(join(built.path, ".claude", "skills", "repo-session"), { recursive: true });
+  writeFileSync(join(built.path, ".claude", "skills", "repo-session", "SKILL.md"), "# s\n");
+  const res = session(built.path, "start", "--check", "repo-session=pass");
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(entries(root).length, 1);
+  assert.throws(() => read(built.path, CHECKS_FILE), { code: "ENOENT" });
+});
+
+test("--check refuses a skill the phase does not name, and one with no SKILL.md", () => {
+  const root = checkedRepo({ ...BOTH, close: { checks: ["repo-session", "ghost"] } });
+  const other = session(root, "start", "--check", "repo-ui=pass");
+  assert.equal(other.status, 2);
+  assert.equal(
+    other.stderr.trimEnd(),
+    '✗ lane session start --check: "repo-ui" is not in extensions.start.checks (repo-session)',
+  );
+  const none = session(
+    checkedRepo({ close: { checks: ["repo-session"] } }),
+    "start",
+    "--check",
+    "a=pass",
+  );
+  assert.match(none.stderr, /\(none named\)\n$/);
+  const ghost = session(root, "close", "--check", "ghost=pass");
+  assert.equal(ghost.status, 2);
+  assert.equal(
+    ghost.stderr.trimEnd(),
+    '✗ lane session close --check: extensions.close.checks names "ghost", but .claude/skills/ghost/SKILL.md is missing',
+  );
+  assert.throws(() => read(root, CHECKS_FILE), { code: "ENOENT" });
+});
+
+test("--check takes exactly <skill>=pass|fail, and --note goes with it", () => {
+  const root = checkedRepo(BOTH);
+  for (const bad of [
+    "repo-session",
+    "repo-session=PASS",
+    "=pass",
+    "repo-session=pass=pass",
+    "repo-session=ok",
+  ])
+    assert.equal(session(root, "start", "--check", bad).status, 2, bad);
+  const note = session(root, "start", "--note", "alone");
+  assert.equal(note.status, 2);
+  assert.match(note.stderr, /--note goes with --check/);
+  assert.throws(() => read(root, CHECKS_FILE), { code: "ENOENT" });
+});
+
+test("start shows how the last close went, cuts a note to one line, and a start check ends it", () => {
+  const root = checkedRepo({ ...BOTH, close: { checks: ["a", "b", "c", "d", "e"] } }, [
+    "repo-session",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+  ]);
+  session(root, "close", "--check", "a=pass");
+  for (const s of ["b", "c", "d", "e"])
+    session(
+      root,
+      "close",
+      "--check",
+      `${s}=fail`,
+      "--note",
+      `${s} is red\nsecond line ${"x".repeat(120)}`,
+    );
+  const lines = session(root, "start").stdout.split("\n");
+  const last = lines.filter((l) => l.startsWith("last close: "));
+  assert.match(last[0], /^last close: 1\/5 passed \(\d{4}-\d\d-\d\dT\d\d:\d\dZ\)$/);
+  assert.equal(last.length, 5);
+  assert.match(last[1], /^last close: b failed · b is red second line x+…$/);
+  assert.equal([...last[1]].length, 100);
+  assert.equal(last[4], "last close: +1 more failed");
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  assert.equal(data.checks.close.recorded.length, 5);
+  session(root, "start", "--check", "repo-session=pass");
+  assert.doesNotMatch(session(root, "start").stdout, /last close:/);
+});
+
+test("close carries checks and still writes nothing without --check", () => {
+  const root = checkedRepo(BOTH);
+  const data = JSON.parse(session(root, "close").stdout);
+  assert.deepEqual(data.checks.close.pending, ["repo-session", "repo-ui"]);
+  assert.deepEqual(data.checks.close.missing, ["repo-ui"]);
+  assert.throws(() => read(root, CHECKS_FILE), { code: "ENOENT" });
+});

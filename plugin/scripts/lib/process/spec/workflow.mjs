@@ -154,6 +154,18 @@ const gate = Object.assign(
   { keys: gateKeys.keys },
 );
 const skill = like(/^[a-z0-9][a-z0-9-]*$/, "a skill name (lower-case letters, digits and -)");
+// The repo skills each command runs as checks: merge's, and the session's at start and at close.
+const PHASES = ["merge", "start", "close"];
+const skillChecks = shape({ "checks!": distinct(skill) }, FULL);
+const extensionKeys = shape(Object.fromEntries(PHASES.map((p) => [p, skillChecks])), FULL);
+const extensions = Object.assign(
+  (v, at, bad) => {
+    extensionKeys(v, at, bad);
+    if (isObject(v) && !PHASES.some((p) => has(v, p)))
+      bad(at, `names none of ${PHASES.join(", ")}`);
+  },
+  { keys: extensionKeys.keys },
+);
 // The exec lane's own settings: which items a verifier reads, and which model each dispatch names.
 const VERIFY_ROUTES = ["all", "flagged", "none"];
 // The repo's policy lines for a brief (one line each, at most BRIEF_LINES) and its commit rules.
@@ -179,7 +191,7 @@ export const workflowSchema = shape({
   drafts: record(shape({ "kind!": str, "map!": record(str) })),
   worktrees: shape({ "keep!": filled(text) }, FULL),
   gate,
-  extensions: shape({ "merge!": shape({ "checks!": distinct(skill) }, FULL) }, FULL),
+  extensions,
   conductor: shape({ "prompt!": repoPath, rules: text }, FULL),
   guard: shape({ "allow!": globs }, FULL),
   cleanup: shape({ "disposable!": globs }, FULL),
@@ -205,6 +217,13 @@ export function validateWorkflow(value, bad) {
       bad(`gate.checklist[${i}].name`, `"${n}" is also an extensions.merge.checks name`);
   });
 }
+
+/** The repo skills `/agentry:start` (`phase` "start") or `/agentry:close` ("close") runs and records as
+ *  checks (`extensions.<phase>.checks`); `[]` when the workflow file names none. */
+export const sessionChecks = (spec, phase) => {
+  const checks = own(own(own(spec, "extensions"), phase), "checks");
+  return Array.isArray(checks) ? [...checks] : [];
+};
 
 /** Which items the exec lane sends to a verifier: "all" (default), "flagged" or "none". */
 export const verifyRoute = (spec) => own(own(spec, "exec"), "verify") ?? "all";

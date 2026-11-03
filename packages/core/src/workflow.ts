@@ -176,25 +176,32 @@ const SkillName = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]*$/, { message: "expected a skill name (lower-case, digits, -)" });
 
-/** The repo skills `/agentry:merge` runs as checks (native names); `[]` names none. */
-export const Extensions = z
+/** The repo skills a command runs as checks (native names): `/agentry:merge`'s, and the session's at
+ *  `/agentry:start` and `/agentry:close`. Each phase is optional, `[]` names none; the object names one. */
+const SkillChecks = z
   .object({
-    merge: z
-      .object({
-        checks: z.array(SkillName).superRefine((names, ctx) =>
-          names.forEach((name, i) => {
-            if (names.indexOf(name) < i)
-              ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                path: [i],
-                message: `repeats "${name}"`,
-              });
-          }),
-        ),
-      })
-      .strict(),
+    checks: z.array(SkillName).superRefine((names, ctx) =>
+      names.forEach((name, i) => {
+        if (names.indexOf(name) < i)
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [i],
+            message: `repeats "${name}"`,
+          });
+      }),
+    ),
   })
   .strict();
+export const Extensions = z
+  .object({
+    merge: SkillChecks.optional(),
+    start: SkillChecks.optional(),
+    close: SkillChecks.optional(),
+  })
+  .strict()
+  .refine((e) => e.merge || e.start || e.close, {
+    message: "names none of merge, start, close",
+  });
 export type Extensions = z.infer<typeof Extensions>;
 
 /** The repo's conductor prompt, and the heading standing-rule appends go under. */
@@ -275,7 +282,7 @@ const checklistApart = (
   ctx: z.RefinementCtx,
 ): void =>
   (w.gate?.checklist ?? []).forEach((item, i) => {
-    if (w.extensions?.merge.checks.includes(item.name))
+    if (w.extensions?.merge?.checks.includes(item.name))
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["gate", "checklist", i, "name"],

@@ -667,3 +667,11 @@ test("outside a git work tree no git note prints and nothing fails", () =>
     assert.equal(res.exit, 0, res.out);
     assert.doesNotMatch(res.out, /note: (git|CLAUDE\.local\.md is tracked)/);
   }));
+
+test("the lint is reached through --lint only: instructions-lint is no subcommand", () => {
+  const res = spawnSync("node", [BOARD, "instructions-lint", "--root", scratch()], {
+    encoding: "utf8",
+  });
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /instructions-lint/);
+});

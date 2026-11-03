@@ -448,3 +448,37 @@ test("the gate.checklist row is always shown: none when the gate has no checklis
     }
   }
 });
+
+test("start and close check rows name the skills, and turn ✗ when one has no SKILL.md", () => {
+  const { root, lanes } = repo({
+    extensions: {
+      start: { checks: ["repo-session"] },
+      close: { checks: ["repo-session", "ghost"] },
+    },
+  });
+  try {
+    write(root, ".claude/skills/repo-session/SKILL.md", "# s\n");
+    const rows = lanes();
+    assert.deepEqual(
+      [rows["extensions.start.checks"].ok, rows["extensions.start.checks"].value],
+      [true, "1 skill: repo-session"],
+    );
+    assert.deepEqual(
+      [rows["extensions.close.checks"].ok, rows["extensions.close.checks"].value],
+      [false, "2 skills: repo-session, ghost"],
+    );
+    assert.equal(rows["extensions.close.checks"].set, "/agentry:init");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("no start or close rows when extensions names only merge", () => {
+  const { root, lanes } = repo({ extensions: { merge: { checks: ["repo-merge"] } } });
+  try {
+    const names = Object.keys(lanes());
+    assert.ok(!names.some((n) => /^extensions\.(start|close)/.test(n)));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -78,8 +78,8 @@ workflow key, its sibling `.agentry/run/process/workflow.json`, read with
 and rule as it is.
 
 A debt, chores or cleanup table with ids (`DEBT-4`, `C-12`) is a kind like any other: steps 1–7 learn it.
-Wiring step 11 offers to run it through exec. A debt list without ids (bullets in a status file) is never
-converted into one; step 11 offers the template's debt kind instead.
+Wiring step 12 offers to run it through exec. A debt list without ids (bullets in a status file) is never
+converted into one; step 12 offers the template's debt kind instead.
 
 ## (c) Set up — show and repair
 
@@ -104,7 +104,7 @@ Ask each once, only when it cannot be inferred, in one `AskUserQuestion` where p
   committed. Ask only when neither tells. If the user wants
   it ignored and it isn't, propose the `.gitignore` line; don't edit `.gitignore` unasked.
 - **Session-start status?** Sets `status.prime`.
-- **Harness writes?** Not asked here: wiring step 10 is the one question about `lifecycle` (status, commit,
+- **Harness writes?** Not asked here: wiring step 11 is the one question about `lifecycle` (status, commit,
   verdict and handoff written as work moves), so it is never asked twice in a run.
 - **Map the code?** Only when `.agentry/context.md` is missing: offer `/agentry:onboard`.
 
@@ -178,11 +178,23 @@ and § guard and cleanup.
    must see, rules only this repo has, extra files to update), with the steps merge now does (cherry-pick,
    gate, board writes, push, cleanup) removed. Show the full proposed text; edit the skill only on the
    owner's OK, never unasked.
-7. **The guard allowlist.** Only when the owner keeps files on main by hand while lanes run (the status file
+7. **The session skill.** If the repo has a skill that describes a start and/or an end of a session
+   (`.claude/skills/*/SKILL.md`: a routine of status, owner questions, picking the next task, drafts, board
+   fix, cleanup, handoff), `/agentry:start` and `/agentry:close` overlap it. Offer to name it in
+   `extensions.start.checks` and/or `extensions.close.checks` by its own name (the same skill may be named
+   in both), through the workflow draft and `agentry board explain`: `/agentry:start` and `/agentry:close`
+   then run it and record each outcome (`agentry lane session <start|close> --check <skill>=pass|fail`).
+   Propose its shrunk text: a `## Start` and a `## Close` section holding only the checks that are the
+   repo's own, with the steps the commands already do removed (status, owner questions, picking the next
+   task, drafts, board fix, worktree cleanup, episodes, the note, the handoff). A commit or push step stays
+   the owner's, since close never commits: the shrunk text says so. Change the description to say that
+   `/agentry:start` and `/agentry:close` run it, so it no longer triggers on its own. Show the full proposed
+   text; edit the skill only on the owner's OK, never unasked.
+8. **The guard allowlist.** Only when the owner keeps files on main by hand while lanes run (the status file
    `status.file` names, a folder of drafts), offer them as `guard.allow`. Board files need no entry:
    `agentry board add` and `agentry board set --apply` writes are recorded and never stop a lane. Never offer a folder a
    task contract could own (source, tests); an edit in a running lane's owned files stops it anyway.
-8. **Disposable files.** Read the repo's `.gitignore` files and propose `cleanup.disposable` from the lines
+9. **Disposable files.** Read the repo's `.gitignore` files and propose `cleanup.disposable` from the lines
    that are build output or caches the toolchain makes again (an import cache such as `.godot/`, `dist/`,
    `build/`, `__pycache__/`, compiled files such as `*.translation` or `*.pyc`), as globs from the
    repository root: a line with no `/` except a trailing one matches at any depth, so `.godot/` becomes
@@ -192,16 +204,16 @@ and § guard and cleanup.
    included (gitignore semantics), so propose a folder only when nothing local lives there. Show each glob beside its
    `.gitignore` line; write only the ones the owner confirms. `agentry lane merge --cleanup` discards those without
    asking and still asks for any other ignored file.
-9. **The permission rule.** If the owner wants fewer prompts, suggest the rule `Bash(agentry:*)` (the plugin's
+10. **The permission rule.** If the owner wants fewer prompts, suggest the rule `Bash(agentry:*)` (the plugin's
    `agentry` command), never a rule bound to a path. Suggest it only; settings are the owner's.
-10. **Lifecycle writes.** Only when the workflow file has no `lifecycle` (the merge's board row and the lifecycle's skips
+11. **Lifecycle writes.** Only when the workflow file has no `lifecycle` (the merge's board row and the lifecycle's skips
     print `lifecycle off`), so the board never shows `doing` or `verify`. Offer it once and say what it
     writes into the board's own files, visible in the owner's diff: the task's status as the lane moves
     (dispatched, built, failed, merged), the verifier's verdict, and the landed commit (with a handoff line
     when the task's parent has a file section for it). Draft the block from the task kind's own status words
     and fields (format.md § lifecycle and drafts), keep only the `write` keys the board has a field for, and
     write it on the owner's OK. A no is final: do not ask again. A `lifecycle` already set is shown, not asked.
-11. **Kinds exec runs beside the lifecycle.** Only with a `lifecycle`, and only for a learned kind with a status
+12. **Kinds exec runs beside the lifecycle.** Only with a `lifecycle`, and only for a learned kind with a status
     field, a commits field and no parent field (debt, chores) that `exec.kinds` does not name yet. Offer it
     once: an `exec.kinds.<kind>` entry drafted from its own status words (`on`: dispatched, built, failed,
     merged; `write`: status, verdict, commit, only the fields it has; format.md § exec kinds), and its light

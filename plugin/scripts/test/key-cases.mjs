@@ -41,6 +41,7 @@ const briefs = (b) => ({ workflow: { briefs: b } });
 const commits = (c) => ({ workflow: { commits: c } });
 const lines = (n) => Array.from({ length: n }, (_, i) => `line ${i + 1}`);
 const checks = (c) => ({ workflow: { extensions: { merge: { checks: c } } } });
+const ext = (e) => ({ workflow: { extensions: e } });
 
 // BASE with a commits field `commit` carrying `join`.
 const joined = (join) => ({
@@ -149,6 +150,13 @@ export const PROCESS_CASES = [
   },
   { name: "one merge check", ...checks(["repo-merge"]) },
   { name: "several merge checks", ...checks(["repo-merge", "a1", "0-x"]) },
+  { name: "a start extension only", ...ext({ start: { checks: ["repo-session"] } }) },
+  { name: "a close extension only", ...ext({ close: { checks: ["repo-session"] } }) },
+  {
+    name: "one session skill at start and at close",
+    ...ext({ start: { checks: ["repo-session"] }, close: { checks: ["repo-session"] } }),
+  },
+  { name: "an empty start checks list", ...ext({ start: { checks: [] } }) },
   { name: "a conductor prompt", workflow: { conductor: { prompt: "docs/CONDUCTOR.md" } } },
   {
     name: "a conductor prompt and rules heading",
@@ -397,7 +405,12 @@ export const PROCESS_CASES = [
   },
   { name: "a misspelled top-level key", board: { gates: { command: ["x"] } }, bad: ["gates"] },
   // bad: extensions
-  { name: "extensions with no merge", workflow: { extensions: {} }, bad: ["extensions.merge"] },
+  { name: "extensions naming no phase", ...ext({}), bad: ["extensions"] },
+  {
+    name: "a start extension with no checks",
+    ...ext({ start: {} }),
+    bad: ["extensions.start.checks"],
+  },
   {
     name: "a merge extension with no checks",
     workflow: { extensions: { merge: {} } },
@@ -434,7 +447,22 @@ export const PROCESS_CASES = [
   {
     name: "a misspelled merge",
     workflow: { extensions: { marge: { checks: ["a"] } } },
-    bad: ["extensions.marge", "extensions.merge"],
+    bad: ["extensions.marge", "extensions"],
+  },
+  {
+    name: "an unknown extensions phase beside a good one",
+    ...ext({ merge: { checks: ["a"] }, session: { checks: ["a"] } }),
+    bad: ["extensions.session"],
+  },
+  {
+    name: "a start check with a bad skill name",
+    ...ext({ start: { checks: ["Repo-Start"] } }),
+    bad: ["extensions.start.checks[0]"],
+  },
+  {
+    name: "a repeated close check",
+    ...ext({ close: { checks: ["a", "a"] } }),
+    bad: ["extensions.close.checks[1]"],
   },
   // bad: conductor
   { name: "a conductor with no prompt", workflow: { conductor: {} }, bad: ["conductor.prompt"] },

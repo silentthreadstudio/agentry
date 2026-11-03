@@ -38,7 +38,7 @@ No `version`, and every key is optional.
 | `drafts` | no | How an answered question becomes a decision draft. |
 | `worktrees` | no | `{ "keep": [names or globs] }`: worktrees kept on purpose. |
 | `gate` | no | The repo's gate: its tiers (the commands `exec` and `merge` run), the tier each role runs, a manual checklist, the files it may leave changed. |
-| `extensions` | no | Repo skills Agentry's commands run as extra checks (`merge.checks`). |
+| `extensions` | no | Repo skills Agentry's commands run as extra checks: `merge`, `start` and `close` (`<phase>.checks`); at least one. |
 | `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
 | `guard` | no | `{ "allow": [globs] }`: main-checkout files a running lane's guard lets change. |
 | `cleanup` | no | `{ "disposable": [globs] }`: ignored files a lane's cleanup discards without asking. |
@@ -288,7 +288,11 @@ In `workflow.json`:
   "after": ["CHANGELOG.md"],
   "note": "the full gate takes about ten minutes"
 },
-"extensions": { "merge": { "checks": ["repo-merge-checks"] } },
+"extensions": {
+  "merge": { "checks": ["repo-merge-checks"] },
+  "start": { "checks": ["repo-session"] },
+  "close": { "checks": ["repo-session"] }
+},
 "conductor": { "prompt": "docs/CONDUCTOR.md", "rules": "Standing rules" }
 ```
 
@@ -317,13 +321,17 @@ In `workflow.json`:
 | `gate.flaky` | no | Names of tests known to fail under load. A red gate whose output fails only in these is re-run alone once, by `lane exec gate` and by the land (`lane merge`) alike; both runs are recorded. The gate's output (or the `gate.flakyLogs` files) must name each failing test, else every red is real. |
 | `gate.flakyLogs` | no | Globs of extra logs (a gate's step logs) read for failure names, only when the gate's own output has no failure line, only a summary. Each is from the gate's cwd, or starts with `$TMPDIR/` (the temp directory); no absolute path, no `..` and no `.` segment. Only files modified since the gate run started are read. In them a line counts only if it names a failing test (`FAILED TEST: <name>`, `not ok N - <name>`, `✗ <name>`, `FAIL <name>`, `FAILED <name>` (the next token), a failure line holding a `<path>::<test>` token, or a JSON object line with a string `"test"` whose `status`, `outcome`, `result` or `event` is `fail`, `failed`, `failure` or `error`, any case); unnamed noise such as an engine's `ERROR:` line is ignored. A JSON line that is not a failure, and a count line (`2 failed, 10 passed`, `FAILED: 2`), names none. A listed name counts only whole: `test_slow` does not cover `test_slow_case`. If they name no failing test either, the red stays real. |
 | `gate.note` | no | Free text. |
-| `extensions.merge` | yes | What `/agentry:merge` adds. |
+| `extensions.merge` | no | What `/agentry:merge` adds. |
 | `extensions.merge.checks` | yes | Repo skills by their own names (lower-case letters, digits, `-`; each once); `[]` names none. Merge refuses to land until each has a recorded outcome. |
+| `extensions.start` | no | What `/agentry:start` adds. |
+| `extensions.start.checks` | yes | Repo skills as `merge.checks` names them (`[]` names none). `/agentry:start` runs each and records it: `lane session start --check <skill>=pass\|fail`. The same skill may be named in `close`. |
+| `extensions.close` | no | What `/agentry:close` adds. |
+| `extensions.close.checks` | yes | As `start.checks`, for `/agentry:close`: `lane session close --check <skill>=pass\|fail`. Nothing refuses a close over a failed or pending check; the handoff names each. |
 | `conductor.prompt` | yes | The repo's conductor prompt, from the git root. |
 | `conductor.rules` | no | The heading in that prompt where a standing rule the owner states is appended. Matched as the full heading text with its numbering (`## 10. Standing rules` is `"10. Standing rules"`, not `"Standing rules"`); spaces collapse, a leading `#` run also pins the level. |
 
 These keys fail strict: a typo makes a check stricter or is refused, never laxer. An unknown key, a wrong
-type, an empty string or list (`merge.checks` aside: `[]` is no check), a repeated check, or a path that is absolute or climbs out with `..` is refused
+type, an empty string or list (`<phase>.checks` aside: `[]` is no check), a repeated check, or a path that is absolute or climbs out with `..` is refused
 at load (exit 2, naming the path: `gate.tiers[0].command[1]`, `gate.tiers[0].when`). A misspelled `after`
 glob allows less; a misspelled `only` glob makes its tier apply less often. `gate.command` and `gate.quick`
 (before 0.3) are refused with where they go now: the command becomes the last tier (`{ "name": "full",

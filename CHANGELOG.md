@@ -7,6 +7,16 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **Session checks from the repo's own session skill** — `extensions` takes `start` and `close` beside
+  `merge`, each `{ "checks": [<skill>, …] }` (one skill may be named in both; `extensions: {}` is refused).
+  `/agentry:start` and `/agentry:close` run each named skill (its `## Start` / `## Close` section, or the
+  whole skill) and record the outcome with `lane session <start|close> --check <skill>=pass|fail
+  [--note <t>]`, appended to `.agentry/run/process/session-checks.jsonl` (local, never committed).
+  `lane session start` lists the checks to run and how the last close's went; start and close `--json` carry
+  `checks`; the handoff names each failed or pending close check. `board explain` shows the
+  `extensions.start.checks` and `extensions.close.checks` rows. `/agentry:init` offers to absorb a session
+  skill the way it absorbs the merge skill, showing its shrunk text. `board instructions-lint` is no longer a
+  subcommand of its own; `board instructions --lint` is unchanged.
 - **Competing-line lint and a local trigger block** — `board instructions --lint` reads `AGENTS.md`,
   `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` and the conductor prompt and points at lines that
   compete with the Agentry block (every task through `/agentry:go`, a session routine, landing by hand, the

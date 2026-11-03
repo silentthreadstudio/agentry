@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { nextStep } from "../cli/invoke.mjs";
 import { checkConfig } from "../config.mjs";
+import { skillExists } from "../lane/merge/rows.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
 import { trackedFiles, worktrees } from "./git.mjs";
 import { LOCAL, TEMPLATE, localCaveat, locateBlock } from "./instruction-files.mjs";
@@ -21,7 +22,7 @@ import { readInside } from "./read.mjs";
 import { columns } from "./render.mjs";
 import { WORKFLOW_KEYS } from "./spec.mjs";
 import { SPEC_VERSION } from "./spec/board.mjs";
-import { gateOf } from "./spec/workflow.mjs";
+import { gateOf, sessionChecks } from "./spec/workflow.mjs";
 
 const INIT = "/agentry:init";
 // What `.agentry/` holds, and the command that decides each when it is neither tracked nor ignored.
@@ -187,6 +188,14 @@ const commitsValue = ({ subjectMax, subjectPattern, forbid }) =>
     .filter(Boolean)
     .join(" · ") || "no rules";
 
+// `extensions.<phase>.checks` as a row when set: the skills it names, ✗ when one has no SKILL.md here.
+function sessionRow(root, spec, phase) {
+  if (!spec.extensions?.[phase]) return null;
+  const names = sessionChecks(spec, phase);
+  const value = names.length ? `${count(names.length, "skill")}: ${names.join(", ")}` : "0 skills";
+  return [`extensions.${phase}.checks`, value, names.every((n) => skillExists(root, n))];
+}
+
 // The newer keys, one row each when set (an unset one is no lane to wire, so no row), each with what it
 // matches here (the count first, so a long glob list cuts the globs, not the count): the kept worktrees, the tracked files a guard glob lets through, the flaky names.
 function keys({ root, spec }) {
@@ -206,8 +215,10 @@ function keys({ root, spec }) {
     gate?.concurrency !== undefined && ["gate.concurrency", count(gate.concurrency, "slot")],
     briefs && ["briefs", briefsValue(briefs)],
     commits && ["commits", commitsValue(commits)],
+    sessionRow(root, spec, "start"),
+    sessionRow(root, spec, "close"),
   ];
-  return rows.filter(Boolean).map(([lane, value]) => ({ lane, ok: true, value, set: INIT }));
+  return rows.filter(Boolean).map(([lane, value, ok = true]) => ({ lane, ok, value, set: INIT }));
 }
 
 export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workflow.json") }) {

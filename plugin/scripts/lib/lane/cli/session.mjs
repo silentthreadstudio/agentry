@@ -7,13 +7,18 @@
 //   close   what the ending walks through: the pending drafts, what `board fix` would write, the ledgers, what
 //           `lane sweep --apply` would clean, the disk, and the episodes nobody wrote. Always JSON.
 //
-// It only reads: board fix, the drafts and the sweep each do their own writing, when the command says so. The
-// mode comes from the config reader (`mode` in `.agentry/config.json`) and is never interpreted here (A29).
+//   <start|close> --check <skill>=pass|fail [--note <t>]
+//           records one session check (`extensions.start.checks` / `extensions.close.checks`, A42) in
+//           `session-checks.jsonl` (`../session-checks.mjs`): the only thing here that writes.
+//
+// Without `--check` it only reads: board fix, the drafts and the sweep each do their own writing, when the
+// command says so. The mode comes from the config reader (`mode` in `.agentry/config.json`) and is never
+// interpreted here (A29). With checks named, start and close carry `checks: { start, close }` (a View each).
 // Exit 0, or 2 for a usage error.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
 import { basename, join, relative } from "node:path";
-import { usageError } from "../../cli/help.mjs";
+import { refuse, usageError } from "../../cli/help.mjs";
 import { nextStep } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
@@ -21,24 +26,37 @@ import { run as fix } from "../../process/cli/fix.mjs";
 import * as drafts from "../../process/drafts.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { fit } from "../../process/render.mjs";
+import { sessionChecks } from "../../process/spec/workflow.mjs";
 import { statusView, titleOf, workKind } from "../../process/status.mjs";
 import { runText } from "../../process/steps.mjs";
 import { forThisRepo, primeLimitOf } from "../brief.mjs";
 import { clock, idleHead } from "../exec-view.mjs";
 import { gateLockDir, heldSlots } from "../gate-lock.mjs";
 import { idleOf } from "../idle.mjs";
+import { SKILL_DIR, skillExists } from "../merge/rows.mjs";
+import * as sessionChecksFile from "../session-checks.mjs";
 import { plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
 export const help = {
-  usage: "session <start|close> [--json]",
-  purpose: "What opening or ending a session needs, in one read. Writes nothing.",
+  usage: [
+    "session <start|close> [--json]",
+    "session <start|close> --check <skill>=pass|fail [--note <t>]",
+  ],
+  purpose:
+    "What opening or ending a session needs, in one read; or record one of its repo checks (the only write).",
   args: {
     start: "prompt, mode, status, recall, open questions, lanes (40 lines, or --json)",
     close: "drafts, the board fix plan, ledgers, the sweep plan, pending episodes (always JSON)",
   },
-  flags: { "--json": "print start as one JSON object (close always is)" },
-  exits: { 0: "printed", 2: "usage, or a process file it cannot use" },
+  flags: {
+    "--json":
+      "print start as one JSON object (close always is); with --check, the entry and the counts",
+    "--check <skill>=pass|fail":
+      "record one check named in extensions.start.checks or extensions.close.checks",
+    "--note <t>": "with --check: one line on why",
+  },
+  exits: { 0: "printed or recorded", 2: "usage, a refused check, or a process file it cannot use" },
   example: "lane session start",
 };
 const WIDTH = 80;
@@ -46,6 +64,8 @@ const MAX_LINES = 40;
 const MAX_LIST = 4; // lines one list may take
 const NOTE_LINES = 3; // lines of the note that start prints
 const MAX_HELD = 3; // held and parked lanes start prints, the rest counted
+const NOTE_COLUMNS = 100; // a failed close check's line, note included, as start prints it
+const MAX_FAILED = 3; // failed close checks start names, the rest counted
 
 // The mode in `.agentry/config.json` (null: none set) and, when the reader refuses a config file, its error:
 // `lane exec` refuses the same file, so start says so rather than reading it as no mode.
@@ -107,6 +127,12 @@ const idleOfAll = (all) =>
       : [];
   });
 
+// The `checks` field of start and close: each phase's View, or nothing when neither names a check.
+function checksField(runRoot, { root, spec }) {
+  const checks = sessionChecksFile.checksView(spec, sessionChecksFile.read(runRoot), root);
+  return checks ? { checks } : {};
+}
+
 function start({ root, spec, model }) {
   const runRoot = mainRoot(root) ?? root;
   const work = workKind(spec);
@@ -129,6 +155,7 @@ function start({ root, spec, model }) {
     ].map(summary),
     mergedToday: mergedToday(all),
     gateSlots: heldSlots(gateLockDir(runRoot)),
+    ...checksField(runRoot, { root, spec }),
   };
 }
 
@@ -148,13 +175,35 @@ function closing({ root, spec, model }) {
     warnings,
     diskFree,
     episodesPending: pendingEpisodes(all).map((l) => l.id),
+    ...checksField(runRoot, { root, spec }),
   };
+}
+
+// A note on one line (each line break a space), cut to NOTE_COLUMNS with the rest of its line.
+const oneLine = (text) => text.replace(/\s*[\r\n]+\s*/g, " ").trim();
+const minute = (at) => (Number.isNaN(new Date(at).getTime()) ? at : `${at.slice(0, 16)}Z`);
+
+// The check lines of start: what to run now, a named skill the repo lacks, and how the last close went.
+function startChecks({ start: now, close: last }, { add, addList }) {
+  if (now.pending.length) {
+    addList("start checks: ", now.pending, " (run each, then record it)");
+    add(`  → ${nextStep('lane session start --check <skill>=pass|fail --note "<line>"')}`);
+  }
+  for (const m of now.missing)
+    add(`start checks: ${m} has no ${SKILL_DIR}/${m}/SKILL.md → /agentry:init`);
+  if (!last.recorded.length) return;
+  const passed = last.recorded.filter((r) => r.result === "pass").length;
+  add(`last close: ${passed}/${last.named.length} passed (${minute(last.recorded.at(-1).at)})`);
+  const failed = last.recorded.filter((r) => r.result === "fail");
+  for (const f of failed.slice(0, MAX_FAILED))
+    add(`last close: ${f.skill} failed${f.note ? ` · ${oneLine(f.note)}` : ""}`, NOTE_COLUMNS);
+  if (failed.length > MAX_FAILED) add(`last close: +${failed.length - MAX_FAILED} more failed`);
 }
 
 function renderStart(s, { name, root }) {
   const mode = s.configError ? "unreadable" : (s.mode ?? "none set");
   const lines = [fit(`${name} · session start · mode ${mode}`, WIDTH)];
-  const add = (text) => lines.push(fit(text, WIDTH));
+  const add = (text, width = WIDTH) => lines.push(fit(text, width));
   if (s.configError) add(`config: ${s.configError.replace(`${root}/`, "")}`);
   // A list wraps onto up to MAX_LIST lines; what does not fit is counted, never silently cut. `tail` ends
   // its last line, after the count too.
@@ -184,6 +233,7 @@ function renderStart(s, { name, root }) {
       ? `conductor prompt: ${relative(root, s.prompt)} (read it once)`
       : "conductor prompt: none set",
   );
+  if (s.checks) startChecks(s.checks, { add, addList });
   // The lanes that wait on the owner, before anything else the session holds.
   for (const h of s.held.slice(0, MAX_HELD)) {
     if (h.for === "later") {
@@ -247,11 +297,90 @@ function renderStart(s, { name, root }) {
   return lines.slice(0, MAX_LINES).join("\n");
 }
 
+// argv → { words, json, check, note } or { error }; the router has already refused any other option.
+function parse(argv) {
+  const out = { words: [], json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--json") out.json = true;
+    else if (arg === "--check" || arg === "--note") {
+      const key = arg.slice(2);
+      if (Object.hasOwn(out, key)) return { error: `${arg} is given twice` };
+      const value = argv[++i];
+      if (value === undefined || value.startsWith("--")) return { error: `${arg} needs a value` };
+      out[key] = value;
+    } else out.words.push(arg);
+  }
+  return out;
+}
+
+// `<k>/<n> recorded · pending: a, b · failed: c`, an empty part left out.
+const countsLine = (phase, v) =>
+  [
+    `${phase} checks: ${v.recorded.length}/${v.named.length} recorded`,
+    v.pending.length && `pending: ${v.pending.join(", ")}`,
+    v.failed.length && `failed: ${v.failed.join(", ")}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+// Record `--check <skill>=pass|fail` for `phase`: validated like `lane merge --check`, then one entry.
+function check(phase, { check: value, note, json }, { root, spec }) {
+  const what = `lane session ${phase} --check`;
+  const given = /^([^=]+)=(pass|fail)$/.exec(value);
+  if (!given) return usageError("lane session", `--check takes <skill>=pass|fail, not "${value}"`);
+  const [, skill, result] = given;
+  const names = sessionChecks(spec, phase);
+  if (!names.includes(skill))
+    return refuse(
+      what,
+      `"${skill}" is not in extensions.${phase}.checks (${names.length ? names.join(", ") : "none named"})`,
+    );
+  if (!skillExists(root, skill))
+    return refuse(
+      what,
+      `extensions.${phase}.checks names "${skill}", but ${SKILL_DIR}/${skill}/SKILL.md is missing`,
+    );
+  const runRoot = mainRoot(root) ?? root;
+  const entry = {
+    phase,
+    skill,
+    result,
+    ...(note?.trim() && { note }),
+    at: new Date().toISOString(),
+  };
+  sessionChecksFile.record(runRoot, entry);
+  const view = sessionChecksFile.checksView(spec, sessionChecksFile.read(runRoot), root)[phase];
+  if (json) {
+    const { phase: _, ...rest } = entry;
+    const { recorded, named, pending, failed } = view;
+    return {
+      exit: 0,
+      out: JSON.stringify({
+        phase,
+        ...rest,
+        recorded: recorded.length,
+        total: named.length,
+        pending,
+        failed,
+      }),
+    };
+  }
+  const mark = result === "pass" ? "✓" : "✗";
+  const said = `${mark} ${phase} check ${skill}: ${result}${entry.note ? ` · ${oneLine(entry.note)}` : ""}`;
+  return { exit: 0, out: `${said}\n${countsLine(phase, view)}` };
+}
+
 export function run(argv, ctx) {
-  const [sub, ...rest] = argv.filter((a) => a !== "--json");
+  const opts = parse(argv);
+  if (opts.error) return usageError("lane session", opts.error);
+  const [sub, ...rest] = opts.words;
   if (!["start", "close"].includes(sub) || rest.length)
     return usageError("lane session", "needs start or close");
+  if (opts.note !== undefined && opts.check === undefined)
+    return usageError("lane session", "--note goes with --check");
+  if (opts.check !== undefined) return check(sub, opts, ctx);
   const data = sub === "start" ? start(ctx) : closing(ctx);
-  if (argv.includes("--json") || sub === "close") return { exit: 0, out: JSON.stringify(data) };
+  if (opts.json || sub === "close") return { exit: 0, out: JSON.stringify(data) };
   return { exit: 0, out: renderStart(data, { name: ctx.spec.name, root: ctx.root }) };
 }
