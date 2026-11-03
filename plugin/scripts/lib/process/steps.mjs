@@ -28,9 +28,11 @@ const FENCE = /^\s*(```|~~~)/;
 const indentOf = (line) => /^\s*/.exec(line)[0].length;
 
 // The lines of the first part `name` opens (the label or heading line left out), or null when none does.
+// A bold run more indented than the list item above it is that item's text, not a label.
 function partOf(lines, name) {
   let fenced = false;
   let body = null;
+  let item = -1; // the indent of the last list item in the part
   for (const line of lines) {
     if (FENCE.test(line)) fenced = !fenced;
     const heading = !fenced && HEADING.exec(line);
@@ -39,7 +41,9 @@ function partOf(lines, name) {
       if (opens) body = [];
       continue;
     }
-    if (!fenced && (heading || LABEL.test(line))) break;
+    const label = LABEL.test(line) && (item < 0 || indentOf(line) <= item);
+    if (!fenced && (heading || label)) break;
+    if (!fenced && LISTED.test(line)) item = indentOf(line);
     body.push(fenced || FENCE.test(line) ? "" : line);
   }
   return body;

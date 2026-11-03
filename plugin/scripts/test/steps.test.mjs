@@ -127,3 +127,20 @@ test("findContract adds steps only to a block that has a Steps part", () => {
     "steps must be numbered 1 to N with no gap (found 1, 3)",
   );
 });
+
+test("a bold run indented under a step is its text, not a label that ends the part", () => {
+  const block =
+    "- **Steps:**\n  1. First\n     **careful** with this\n  2. Second\n- **Deps:** none";
+  assert.deepEqual(stepsOf(block), {
+    steps: [
+      { n: 1, text: "First **careful** with this", gate: null, accept: [] },
+      { n: 2, text: "Second", gate: null, accept: [] },
+    ],
+    problem: null,
+  });
+  const heading = "### Steps\n\n1. First\n   **careful** with this\n2. Second\n**Accept:** x";
+  assert.deepEqual(
+    stepsOf(heading).steps.map((s) => s.n),
+    [1, 2],
+  );
+});
