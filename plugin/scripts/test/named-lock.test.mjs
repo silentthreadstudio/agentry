@@ -132,6 +132,23 @@ test("a take ends when its session's pid is gone, long before its ttl", async ()
   assert.match(lock(dir, ["show"]).stdout, /slot 1: T-2 since/);
 });
 
+test("a take gives up after --wait: exit 75 naming the holder, and takes nothing", () => {
+  const dir = repo();
+  const host = session();
+  assert.equal(lock(dir, ["take", "editor", "--for", "T-1"], host.pid).status, 0);
+  const started = Date.now();
+  const busy = lock(dir, ["take", "editor", "--for", "T-2", "--wait", "1s"], host.pid);
+  assert.equal(busy.status, 75);
+  assert.match(
+    busy.stderr,
+    new RegExp(
+      `^waiting for lock editor \\(held by T-1 since ${HHMM}\\)\\n✗ lock take: lock editor busy \\(held by T-1 since ${HHMM}\\) → agentry lock show\\n$`,
+    ),
+  );
+  assert.ok(Date.now() - started >= 950);
+  assert.match(lock(dir, ["show"]).stdout, /^editor 1\/1\n {2}slot 1: T-1 since/);
+});
+
 test("the same session taking again for the same lane keeps its slot, with no wait", () => {
   const dir = repo();
   const host = session();
@@ -149,6 +166,8 @@ test("an undeclared lock, a bad --ttl and a missing name are refused with exit 2
     ["drop", "sim"],
     ["take", "editor", "--ttl", "0s"],
     ["take", "editor", "--ttl", "x"],
+    ["take", "editor", "--wait", "0s"],
+    ["drop", "editor", "--wait", "1s"],
     ["take"],
     ["show", "editor"],
     ["take", "editor", "--wait"],

@@ -1,17 +1,17 @@
 // run — the `agentry run` and `agentry lock` groups: one portable time limit, and the workflow file's
 // named locks (`locks`, `lane/named-lock.mjs`).
 //
-//   agentry run --limit <dur> [--lock <name>] -- <cmd> [args…]
+//   agentry run --limit <dur> [--lock <name> [--wait <dur>]] -- <cmd> [args…]
 //     runs argv (no shell) in its own process group with stdio inherited and exits with its code; at the
 //     limit the group gets SIGTERM, then SIGKILL 5 s later, and the exit is 124. `--lock` waits for a
-//     slot first and holds it until the command is gone.
-//   agentry lock take <name> [--for <lane>] [--ttl <dur>] · lock drop <name> [--for <lane>] · lock show
+//     slot first (for up to `--wait`, default 30m: then exit 75) and holds it until the command is gone.
+//   agentry lock take <name> [--for <lane>] [--ttl <dur>] [--wait <dur>] · lock drop <name> [--for <lane>] · lock show
 //     a lock held across tool calls, for a session that drives a shared editor through MCP. A take is
 //     the session's (the host's `CLAUDE_PID`, when it gives one) and ends at its ttl (default 30m) or
 //     when that process is gone.
 //
 // The locks live in the main checkout, so every worktree shares them. Exit 0 = ok, 1 = not held, 2 =
-// usage or a lock the workflow file does not declare. Node built-ins only.
+// usage or a lock the workflow file does not declare, 75 = the lock stayed busy for the whole wait. Node built-ins only.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { constants } from "node:os";
@@ -35,12 +35,15 @@ import { renderHelp, say } from "./help.mjs";
 export const LIMIT_EXIT = 124;
 /** How long a group has between SIGTERM and SIGKILL. */
 export const GRACE_KILL_MS = 5000;
+/** The exit when a lock stayed busy for the whole wait (EX_TEMPFAIL). */
+export const BUSY_EXIT = 75;
 const TAKE_TTL = "30m";
+const WAIT = "30m";
 const UNITS = { s: 1000, m: 60_000, h: 3_600_000 };
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
 const RUN_HELP = {
-  usage: "run --limit <dur> [--lock <name>] -- <cmd> [args…]",
+  usage: "run --limit <dur> [--lock <name> [--wait <dur>]] -- <cmd> [args…]",
   purpose:
     "Run a command (no shell) in its own process group and stop the whole group at the limit: SIGTERM, then SIGKILL 5 s later.",
   args: { "<cmd> [args…]": "the command, after --" },
@@ -48,6 +51,7 @@ const RUN_HELP = {
     "--limit <dur>": "the time limit: <n>s, <n>m or <n>h (n above 0)",
     "--lock <name>":
       "wait for a slot of a lock the workflow file's locks declares, and hold it while the command runs",
+    "--wait <dur>": "how long --lock waits for a slot before it gives up (default 30m)",
     "--root <dir>": "the git root (default: the main checkout of the current directory)",
     "--process <file>": "the process file; the workflow file is its sibling workflow.json",
   },
@@ -56,13 +60,14 @@ const RUN_HELP = {
     124: "the command hit the limit and was stopped",
     127: "the command could not be started",
     2: "usage, or a lock the workflow file does not declare",
+    75: "the lock stayed busy for the whole --wait; the command never ran",
   },
   example: "agentry run --limit 10m --lock editor -- godot --headless --path . -s tests/run.gd",
 };
 
 const LOCK_HELP = {
   usage: [
-    "lock take <name> [--for <lane>] [--ttl <dur>]",
+    "lock take <name> [--for <lane>] [--ttl <dur>] [--wait <dur>]",
     "lock drop <name> [--for <lane>]",
     "lock show",
   ],
@@ -72,6 +77,7 @@ const LOCK_HELP = {
   flags: {
     "--for <lane>": "who holds it (default: the lane whose worktree this is)",
     "--ttl <dur>": "when a take ends on its own: <n>s, <n>m or <n>h (default 30m)",
+    "--wait <dur>": "how long take waits for a slot before it gives up (default 30m)",
     "--root <dir>": "the git root (default: the main checkout of the current directory)",
     "--process <file>": "the process file; the workflow file is its sibling workflow.json",
   },
@@ -79,6 +85,7 @@ const LOCK_HELP = {
     0: "taken, dropped or shown",
     1: "drop: not held by you",
     2: "usage, or an undeclared lock",
+    75: "take: the lock stayed busy for the whole --wait",
   },
   example: "agentry lock take editor --for T-4",
 };
@@ -144,6 +151,10 @@ function declaredLocks(root, processArg, what) {
   return { locks: locksOf(value), file };
 }
 
+// The refusal line of a lock that stayed busy for the whole wait.
+const busyLine = (what, name, { who, since }) =>
+  say(what, `lock ${name} busy (held by ${who} since ${since})`, "agentry lock show");
+
 // Lock `name` as the workflow file declares it: `{ slots }`, or the refusal.
 function lockNamed(name, { locks, file }, what) {
   if (Object.hasOwn(locks, name)) return { slots: locks[name] };
@@ -154,8 +165,10 @@ function lockNamed(name, { locks, file }, what) {
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-// Wait for a slot, printing the wait once and the arrival after it: the `tryLock` result.
-async function acquire(root, name, opts) {
+// Wait up to `waitMs` for a slot, printing the wait once and the arrival after it: the `tryLock` result,
+// `{ busy }` when the wait ran out.
+async function acquire(root, name, waitMs, opts) {
+  const deadline = Date.now() + waitMs;
   let waited = false;
   for (;;) {
     const got = tryLock(root, name, opts);
@@ -163,6 +176,7 @@ async function acquire(root, name, opts) {
       if (waited) process.stderr.write(`lock ${name} acquired\n`);
       return got;
     }
+    if (Date.now() >= deadline) return got;
     if (!waited) {
       waited = true;
       process.stderr.write(
@@ -242,13 +256,19 @@ export async function runCli(argv) {
     process.stdout.write(`${renderHelp("agentry", "run", RUN_HELP)}\n`);
     return 0;
   }
-  const parsed = optionsOf(before, "agentry run", ["--limit", "--lock", "--root", "--process"]);
+  const parsed = optionsOf(before, "agentry run", [
+    "--limit",
+    "--lock",
+    "--wait",
+    "--root",
+    "--process",
+  ]);
   const checked = parsed.err ? parsed : runArgs(parsed, cmd);
   if (checked.err) {
     process.stderr.write(`${checked.err}\n`);
     return checked.exit;
   }
-  const { limitMs, limitText, lockName } = checked;
+  const { limitMs, limitText, lockName, waitMs } = checked;
   let held = null;
   if (lockName) {
     const { root, lane } = placeOf(parsed.got["--root"]);
@@ -259,7 +279,12 @@ export async function runCli(argv) {
       return lock.exit;
     }
     const who = `${lane ? `${lane}: ` : ""}${basename(cmd[0])}`;
-    const { slot } = await acquire(root, lockName, { slots: lock.slots, who });
+    const got = await acquire(root, lockName, waitMs, { slots: lock.slots, who });
+    if (got.busy) {
+      process.stderr.write(`${busyLine("run", lockName, got.busy)}\n`);
+      return BUSY_EXIT;
+    }
+    const { slot } = got;
     held = () => releaseLock(root, lockName, slot);
     process.once("exit", held);
   }
@@ -285,7 +310,24 @@ function runArgs({ got, rest }, cmd) {
       `--limit "${limitText}" is not a time limit: <n>s, <n>m or <n>h, n above 0`,
       `${what} --help`,
     );
-  return { limitMs, limitText, lockName: got["--lock"] ?? null };
+  const lockName = got["--lock"] ?? null;
+  if (got["--wait"] !== undefined && !lockName)
+    return fail(what, "--wait is for --lock: there is no lock to wait for", `${what} --help`);
+  const waitMs = waitOf(got, what);
+  if (waitMs.err) return waitMs;
+  return { limitMs, limitText, lockName, waitMs };
+}
+
+// `--wait` in milliseconds (default 30m), or the refusal.
+function waitOf(got, what) {
+  const text = got["--wait"] ?? WAIT;
+  const ms = durationMs(text);
+  if (ms !== null) return ms;
+  return fail(
+    what,
+    `--wait "${text}" is not a time: <n>s, <n>m or <n>h, n above 0`,
+    `${what} --help`,
+  );
 }
 
 // The session a take belongs to: the host's process when it names one that runs, else none (ttl only).
@@ -311,7 +353,7 @@ export async function lockCli(argv) {
       2,
       say("agentry lock", `unknown subcommand "${sub}" (take, drop, show)`, "agentry lock --help"),
     );
-  const takes = { take: ["--for", "--ttl"], drop: ["--for"], show: [] }[sub];
+  const takes = { take: ["--for", "--ttl", "--wait"], drop: ["--for"], show: [] }[sub];
   const parsed = optionsOf(args, what, [...takes, "--root", "--process"]);
   if (parsed.err) return out(2, parsed.err);
   const { got, rest } = parsed;
@@ -344,7 +386,13 @@ export async function lockCli(argv) {
         `${what} --help`,
       ),
     );
-  await acquire(root, name, { slots: lock.slots, pid, who, ttlMs });
+  const waitMs = waitOf(got, what);
+  if (waitMs.err) return out(2, waitMs.err);
+  const taken = await acquire(root, name, waitMs, { slots: lock.slots, pid, who, ttlMs });
+  if (taken.busy) {
+    process.stderr.write(`${busyLine("lock take", name, taken.busy)}\n`);
+    return BUSY_EXIT;
+  }
   const until = clock(new Date(Date.now() + ttlMs).toISOString());
   return out(
     0,

@@ -288,3 +288,56 @@ test("a lane's worktree shares the main checkout's locks, named by its lane", as
   assert.match(show.stdout, /^editor 1\/1\n {2}slot 1: T-1: node since \d\d:\d\d \(pid \d+\)\n$/);
   assert.equal((await held).status, 0);
 });
+
+test("--lock gives up after --wait: exit 75 naming the holder, and the command never runs", async () => {
+  const dir = repo({ editor: 1 });
+  const started = join(dir, "started");
+  const holder = agentry(
+    [
+      "run",
+      "--limit",
+      "20s",
+      "--lock",
+      "editor",
+      "--",
+      ...js(`require('fs').writeFileSync(${JSON.stringify(started)},'');setTimeout(()=>{},3000)`),
+    ],
+    { cwd: dir },
+  );
+  await until(() => existsSync(started));
+  const marker = join(dir, "ran");
+  const run = await agentry(
+    [
+      "run",
+      "--limit",
+      "5s",
+      "--lock",
+      "editor",
+      "--wait",
+      "1s",
+      "--",
+      ...js(`require('fs').writeFileSync(${JSON.stringify(marker)},'')`),
+    ],
+    { cwd: dir },
+  );
+  assert.equal(run.status, 75);
+  assert.match(
+    run.stderr,
+    /^waiting for lock editor \(held by node since \d\d:\d\d\)\n✗ run: lock editor busy \(held by node since \d\d:\d\d\) → agentry lock show\n$/,
+  );
+  assert.ok(run.ms >= 950 && run.ms < 5000, `${run.ms} ms`);
+  assert.equal(existsSync(marker), false);
+  assert.equal((await holder).status, 0);
+});
+
+test("--wait without --lock, and a --wait that is not a time, are refused", async () => {
+  const dir = repo({ editor: 1 });
+  for (const args of [
+    ["--limit", "5s", "--wait", "1s", "--", ...js("")],
+    ["--limit", "5s", "--lock", "editor", "--wait", "0s", "--", ...js("")],
+  ]) {
+    const run = await agentry(["run", ...args], { cwd: dir });
+    assert.equal(run.status, 2, args.join(" "));
+    assert.match(run.stderr, /^✗ agentry run: .*--wait/);
+  }
+});
