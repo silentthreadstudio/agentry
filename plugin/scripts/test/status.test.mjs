@@ -295,6 +295,16 @@ test("--why traces one item: where it sits, the rule that fails, the rules that 
   assert.ok(lines.some((l) => /^✓ ids-unique · refs-resolve/.test(l)));
 });
 
+test("--why says what an item is blocked by, before the rules that hold", () => {
+  const { spec, model, report } = board("evidence-board");
+  const lines = renderWhy({ spec, model, report, id: "H2" }).split("\n");
+  const blocked = lines.indexOf("blocked by: K0, H1");
+  assert.ok(blocked > 0, lines.join("\n"));
+  assert.ok(blocked < lines.findIndex((l) => l.startsWith("✓")));
+  const done = renderWhy({ spec, model, report, id: "K0-1" });
+  assert.ok(!done.includes("blocked by"));
+});
+
 // Drift and drafts in the view: a temp repo with a hand worktree, a started task, a pending draft.
 function driftView(extra = () => {}) {
   const repo = boardRepo();

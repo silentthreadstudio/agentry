@@ -103,7 +103,7 @@ function tally(items, verify) {
 }
 
 // The dependency field of the work kind: the deps-done rule's, else its first list naming that kind.
-function depsOf(spec, model, work) {
+export function depsOf(spec, model, work) {
   const fields = Object.entries(spec.kinds[work].fields ?? {});
   const named = spec.rules.find((r) => r.rule === "deps-done" && r.kind === work)?.field;
   const [name, def] =

@@ -5,7 +5,7 @@
 import { basename } from "node:path";
 import { refuse } from "../cli/help.mjs";
 import { withId } from "./rules/structure.mjs";
-import { titleOf } from "./status.mjs";
+import { depsOf, titleOf, workKind } from "./status.mjs";
 
 export const WIDTH = 80;
 const LABEL = 11;
@@ -275,6 +275,8 @@ export function renderWhy({ spec, model, report, id, tty = false }) {
       const applies = spec.rules.filter((e) => !e.kind || e.kind === item.kind);
       const failing = applies.filter((e) => mine.some((f) => f.rule === e.rule));
       const holds = [...new Set(applies.filter((e) => !failing.includes(e)).map((e) => e.rule))];
+      const waiting = item.kind === workKind(spec) ? depsOf(spec, model, item.kind)(item) : [];
+      const open = waiting.filter((d) => d.phase !== "done").map((d) => d.id);
       const r = widest(mine.map((x) => x.rule));
       const fail = mine.flatMap((f) => {
         const [first, ...rest] = wrapText(f.message, Math.max(20, WIDTH - r - 4));
@@ -286,6 +288,7 @@ export function renderWhy({ spec, model, report, id, tty = false }) {
         s.dim(fit(`     ${where}`, WIDTH)),
         "",
         ...fail,
+        ...(open.length ? wrapText(`blocked by: ${open.join(", ")}`, WIDTH) : []),
         ...(holds.length
           ? wrap(holds, WIDTH - 2).map((l, n) => `${n ? " " : s.green("✓")} ${l}`)
           : []),
