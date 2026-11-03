@@ -53,8 +53,12 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
   with no file), `sections` (`{ "handoff": { "heading": "Handoff", "as": "bold-lead" } }`, or
   `"as": "table"` with the `column` holding ids). A bold lead names every id that is a token of it:
   `**T4/T5**` names both, `**T4 merged**` names T4.
-- **`contract`** — where a task's contract block lives: `blocks` (files, first hit wins) and `lead`
-  (`heading` for `### T4 · …`, `bold` for `- **T4** …`).
+- **`contract`** — where a task's contract block lives: `blocks` (files) and `lead` (`heading` for
+  `### T4 · …`, `bold` for `- **T4** …`; a table row `| T4 | … |` always counts). `board contract`
+  searches the files the task's own rows link as `[contract](path#anchor)` (on the board or in its
+  parent's file) first, then `blocks`. A titled or owning block (`**T4 · Door**`, `owns …`) beats an
+  `accept`-only line, which beats a bare amendment or deps line; the others come back as `related`.
+  Two titled or owning blocks are `ambiguous` unless the task's link names one.
 - **`create`** — how `/agentry:new` adds one: `ask` (the fields to ask, nothing else), `id` (a pattern such
   as `T{n}` or `Q-{n:02}`, `{n}` for plain numbers, or `ask`), `rows` and `blocks`:
   - row: `{ "in": "self" | "parent.file:<section>", "at": "end" | "after-last:<field>", "cells": { "<header>": "<template>" } }`

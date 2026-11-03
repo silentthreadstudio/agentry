@@ -23,7 +23,7 @@ spec error (including a missing process file: point to `/agentry:init`).
 | `status` | the derived view: what's current, in flight, under review, next, blocked | nothing |
 | `scan` | every table, id-led block and frontmatter document in the repo's tracked markdown | nothing |
 | `explain` | per kind: found?, items, unmapped columns, unknown status words, unresolved refs; per rule: findings; the `lanes` block (what is wired, each ✓ or ✗ with its command) | nothing |
-| `contract <id>` | the item's contract block | nothing |
+| `contract <task id>` | the task's contract block (`--kind` for another kind); `ambiguous` when two real contracts match | nothing |
 | `next-id <kind>` | the next free id from the kind's `create.id` pattern | nothing |
 | `add <kind> --json '<fields>'` | inserts the item at every `create` location; refuses a duplicate id | board files |
 | `set <kind> <id> <field>=<value>` | one mechanical field | board files |
