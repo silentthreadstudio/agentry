@@ -57,6 +57,7 @@ import {
   bullets,
   citedDecisions,
   notesSection,
+  outsideOwns,
   ownedFiles,
   policySlots,
   shellQuote as q,
@@ -933,7 +934,10 @@ function start(ctx, id) {
     state: "building",
     next: "build",
   };
-  const overlap = ownsOverlap(root, ledger.owned);
+  const outside = outsideOwns(found.block, tree.path).map(
+    (path) => `! owns names a path outside the repository: ${path} (dropped)`,
+  );
+  const overlap = [...outside, ownsOverlap(root, ledger.owned)].filter(Boolean).join("\n");
   ledger = dispatchNext(ctx, ledger, begin(ledger.steps).dispatch);
   ledgers.write(root, ledger);
   return view(ctx, ledger, {

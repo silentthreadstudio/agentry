@@ -2,8 +2,11 @@
 // `references/briefs/` (ADR-R3): the same brief every time, on disk, quoting the board instead of memory.
 //
 //   ownedFiles      the paths the contract's "owns" clause names (backticked, brace globs expanded,
-//                   negations, `:NN`-cited paths and "stays" asides left out), in order; given the
-//                   tree, a dotted symbol is not a path unless a file matches
+//                   negations, `:NN`-cited paths, "stays" asides and paths that leave the
+//                   repository left out), in order; given the tree, a dotted symbol is not a path unless
+//                   a file matches
+//   outsideOwns     the paths of that clause that leave the repository (a `..` segment): the ones
+//                   `ownedFiles` dropped for it (a leading-`/` span is dropped silently, never owned)
 //   withNew         those paths, each marked `new` when the tree has no such file; a path missing at the
 //                   root is looked up among the tree's tracked files as a suffix (`merge/gating.mjs`, a bare
 //                   name, a glob's folder): one hit is that path, several are all listed `ambiguous`; a new
@@ -171,6 +174,9 @@ function asideAt(part, masked, at) {
   return part.slice(open[0], close < 0 ? part.length : close);
 }
 
+// Does the path leave the repository: a `..` segment, even one that would come back in?
+const leaves = (path) => path.split("/").includes("..");
+
 /** The paths the block's "owns" clause names in backticks, de-duplicated, in order. The clause runs to
  *  the next ` · `, labelled part or bold label (an owns label, like "**step 2 owns:**", carries on). Only
  *  spans shaped like a path count, `path:lines` read as the path, a brace glob (`a/{b,c}.md`) expanded;
@@ -179,6 +185,15 @@ function asideAt(part, masked, at) {
  *  tracked files decide a doubtful name (`a.b.c`, an extensionless name); without it only well-known names count. Empty when
  *  the block has no "owns" part or it names no path. */
 export function ownedFiles(block, dir) {
+  return readOwns(block, dir).owned;
+}
+
+/** The paths the block's "owns" clause names that leave the repository (`ownedFiles` drops them), in order. */
+export function outsideOwns(block, dir) {
+  return readOwns(block, dir).outside;
+}
+
+function readOwns(block, dir) {
   const text = String(block ?? "");
   let list;
   const tracked = () => {
@@ -186,7 +201,7 @@ export function ownedFiles(block, dir) {
     return list;
   };
   const at = BOLD_OWNS.exec(text) ?? OWNS.exec(text);
-  if (!at) return [];
+  if (!at) return { owned: [], outside: [] };
   let part = text.slice(at.index + at[0].length);
   part = part.slice(0, clauseEnd(part));
   let masked = part.replace(TICKED, (span) => " ".repeat(span.length));
@@ -202,6 +217,7 @@ export function ownedFiles(block, dir) {
     masked = blank(masked);
   }
   const out = [];
+  const outside = [];
   let from = 0;
   let negated = false;
   for (const m of part.matchAll(TICKED)) {
@@ -225,10 +241,11 @@ export function ownedFiles(block, dir) {
       continue;
     for (const one of braced(span)) {
       const path = pathOf(one, tracked);
-      if (path && !out.includes(path)) out.push(path);
+      const list = path && leaves(path) ? outside : out;
+      if (path && !list.includes(path)) list.push(path);
     }
   }
-  return out;
+  return { owned: out, outside };
 }
 
 const trackedFiles = (dir) => {

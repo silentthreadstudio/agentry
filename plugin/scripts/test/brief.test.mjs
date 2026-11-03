@@ -13,6 +13,7 @@ import {
   decisionKind,
   fill,
   notesSection,
+  outsideOwns,
   ownedFiles,
   policySlots,
   recalledFacts,
@@ -796,4 +797,14 @@ test("withNew puts a new file under the one tracked folder of its first folder, 
     { path: "src/new.py", new: true },
     { path: "nowhere/z.py", new: true },
   ]);
+});
+
+test("ownedFiles drops a path with a .. segment, even one that resolves back inside, and outsideOwns names it", () => {
+  const block =
+    "**Owns:** `a/b.mjs`, `../x/y.md`, `a/../a/c.md`, `d/{e,../f}.md`, `/build/`, `/etc/hosts.conf`, `g.md`";
+  assert.deepEqual(ownedFiles(block), ["a/b.mjs", "d/e.md", "g.md"]);
+  // A leading-slash span is dropped as before: never owned, never named.
+  assert.deepEqual(outsideOwns(block), ["../x/y.md", "a/../a/c.md", "d/../f.md"]);
+  assert.deepEqual(outsideOwns("**Owns:** `a.md`, `/plan`"), []);
+  assert.deepEqual(outsideOwns(""), []);
 });

@@ -330,6 +330,29 @@ test("start warns, without refusing, when its owned files overlap a running lane
   assert.equal(ledgerOf(r.root, "T2").state, "building", "a warning does not stop the lane");
 });
 
+test("start names an owns path with a .. segment in its warning and drops it from the owned files", () => {
+  const tasks = [
+    "# Tasks",
+    "",
+    "- **T1** (S1): owns `src/a.ts`, `../outside/x.md`, `src/../src/b.ts`, `/build/`. Accept: x.",
+    "",
+  ].join("\n");
+  const r = repo({ tasks });
+  const started = lane(r, "start", "T1");
+  assert.equal(started.exit, 0);
+  assert.equal(
+    started.json.warning,
+    [
+      "! owns names a path outside the repository: ../outside/x.md (dropped)",
+      "! owns names a path outside the repository: src/../src/b.ts (dropped)",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    started.json.owned.map((o) => o.path),
+    ["src/a.ts"],
+  );
+});
+
 test("start's overlap warning ignores a lane that is closed, and one with no shared file", () => {
   const tasks = [
     "# Tasks",
