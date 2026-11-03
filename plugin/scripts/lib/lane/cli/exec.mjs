@@ -21,6 +21,7 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
+import { prefix } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { episodeStored } from "../../memory/episodes.mjs";
 import { contentOf as contentIds, recordedSince } from "../../process/board-writes.mjs";
@@ -107,7 +108,7 @@ const refuse = (message) => {
 const now = () => new Date().toISOString();
 const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
-  `node ${q(LANE)} exec ${sub} ${id} --root ${q(root)}${extra}`;
+  `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
 // argv → { step, id, value, set, apply, json } or { error }. `value` is the --agent / --episode / --notes value.
 function parse(argv) {

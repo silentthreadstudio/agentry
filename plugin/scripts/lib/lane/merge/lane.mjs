@@ -2,6 +2,7 @@
 // opts, ledger, … }`), its step table (rows, rendered), the ledger writes, and the next steps a call
 // names. The steps (`merge/*.mjs`) take the lane and the rows so far, push their own row, and return
 // null to go on or `{ exit, next?, keepCarry? }` to stop.
+import { nextStep } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { write as writeLedger } from "../../process/ledger.mjs";
 import { commitOf } from "../land.mjs";
@@ -28,14 +29,17 @@ function render(lane, rows, next) {
     `  ${MARK[r.mark]} ${r.step.padEnd(7)} ${r.detail}`,
     ...r.more.map((m) => `            ${m}`),
   ]);
-  return [head, ...body, ...(next ? [`next: ${next}`] : [])].join("\n");
+  return nextStep([head, ...body, ...(next ? [`next: ${next}`] : [])].join("\n"));
 }
 /** The call's result; a next step it names is kept in the ledger too (`next`), for a cold resume. */
 export function done(exit, lane, rows, next) {
   if (lane.ledger && next && lane.ledger.next !== next) save(lane, { next });
   if (lane.opts?.["--json"]) {
     const { branch, mainBranch: main } = lane.ledger ?? {};
-    return { exit, out: JSON.stringify({ id: lane.id, branch, main, rows, next: next ?? null }) };
+    return {
+      exit,
+      out: JSON.stringify({ id: lane.id, branch, main, rows, next: next ? nextStep(next) : null }),
+    };
   }
   return { exit, out: render(lane, rows, next) };
 }

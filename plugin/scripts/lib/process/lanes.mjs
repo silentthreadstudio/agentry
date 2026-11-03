@@ -9,6 +9,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { nextStep } from "../cli/invoke.mjs";
 import { checkConfig } from "../config.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
 import { trackedFiles } from "./git.mjs";
@@ -142,5 +143,8 @@ export function renderLanes(rows, width) {
     rows.map((r) => [r.ok ? "✓" : "✗", r.lane, r.value]),
     width,
   );
-  return rows.flatMap((r, i) => [lines[i], ...(r.ok ? [] : [`    set: ${r.set}`.slice(0, width)])]);
+  return rows.flatMap((r, i) => [
+    lines[i],
+    ...(r.ok ? [] : [`    set: ${nextStep(r.set)}`.slice(0, width)]),
+  ]);
 }

@@ -13,6 +13,8 @@
 // usageError(what, why) -> { exit: 2, out }                   a refusal pointing at `<what> --help`
 // PREVIEW                                                     the line a write prints without --apply
 
+import { nextStep } from "./invoke.mjs";
+
 const PAD = 2;
 
 /** The options a subcommand takes, from its help: name → whether it takes a value. */
@@ -68,6 +70,6 @@ export function renderIndex(cli, subs) {
 /** What a write command prints after its preview: it wrote nothing, and how to write it. */
 export const PREVIEW = "preview: nothing written; add --apply to write it";
 
-export const say = (what, why, next) => `✗ ${what}: ${why}${next ? ` → ${next}` : ""}`;
+export const say = (what, why, next) => `✗ ${what}: ${why}${next ? ` → ${nextStep(next)}` : ""}`;
 export const refuse = (what, why, next) => ({ exit: 2, out: say(what, why, next) });
 export const usageError = (what, why) => refuse(what, why, `${what} --help`);
