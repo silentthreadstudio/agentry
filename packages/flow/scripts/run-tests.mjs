@@ -17,6 +17,17 @@ const timer = setTimeout(() => {
   process.kill(-child.pid, "SIGKILL");
 }, CAP_MS);
 
+// The suite runs in its own process group, so a Ctrl-C or a killed gate never reaches it: pass the
+// signal on, or the stalled file this runner exists to catch would outlive it.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {}
+    process.exit(1);
+  });
+}
+
 child.on("exit", (code, signal) => {
   clearTimeout(timer);
   process.exit(signal === null ? (code ?? 1) : 1);
