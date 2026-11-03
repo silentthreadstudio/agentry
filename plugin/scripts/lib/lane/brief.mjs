@@ -2,7 +2,7 @@
 // `references/briefs/` (ADR-R3): the same brief every time, on disk, quoting the board instead of memory.
 //
 //   ownedFiles      the paths the contract's "owns" clause names (backticked, brace globs expanded,
-//                   negations, `:NN`-cited paths, "stays" asides and paths that leave the
+//                   negations, `:NN`-cited paths, "stays" asides, code fences and paths that leave the
 //                   repository left out), in order; given the tree, a dotted symbol is not a path unless
 //                   a file matches
 //   outsideOwns     the paths of that clause that leave the repository (a `..` segment): the ones
@@ -174,6 +174,31 @@ function asideAt(part, masked, at) {
   return part.slice(open[0], close < 0 ? part.length : close);
 }
 
+// A fence opens a line with three or more backticks or tildes and closes at the same mark, at least as
+// long (an unclosed one runs to the end). The lines inside, and the fence lines, are not prose.
+const FENCE = /^\s*(`{3,}|~{3,})/;
+function unfenced(text) {
+  let open = null;
+  return text
+    .split("\n")
+    .filter((line) => {
+      const mark = FENCE.exec(line)?.[1];
+      if (!open) {
+        open = mark ?? null;
+        return !mark;
+      }
+      if (
+        mark &&
+        mark[0] === open[0] &&
+        mark.length >= open.length &&
+        !line.trim().slice(mark.length)
+      )
+        open = null;
+      return false;
+    })
+    .join("\n");
+}
+
 // Does the path leave the repository: a `..` segment, even one that would come back in?
 const leaves = (path) => path.split("/").includes("..");
 
@@ -194,7 +219,7 @@ export function outsideOwns(block, dir) {
 }
 
 function readOwns(block, dir) {
-  const text = String(block ?? "");
+  const text = unfenced(String(block ?? ""));
   let list;
   const tracked = () => {
     list ??= dir ? trackedFiles(dir) : [];

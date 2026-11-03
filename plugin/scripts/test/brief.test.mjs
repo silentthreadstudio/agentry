@@ -808,3 +808,22 @@ test("ownedFiles drops a path with a .. segment, even one that resolves back ins
   assert.deepEqual(outsideOwns("**Owns:** `a.md`, `/plan`"), []);
   assert.deepEqual(outsideOwns(""), []);
 });
+
+test("ownedFiles ignores backticked paths inside a fenced block, whatever the fence is made of", () => {
+  const fenced = (open, close) =>
+    `**Owns:** \`a.mjs\`\n${open}\nexample: \`b/in-fence.md\`\n${close}\n- also \`c.md\`\n**Exposes:** \`d.md\``;
+  for (const [open, close] of [
+    ["```", "```"],
+    ["````", "````"],
+    ["~~~", "~~~"],
+    ["```md", "```"],
+  ])
+    assert.deepEqual(ownedFiles(fenced(open, close)), ["a.mjs", "c.md"], open);
+  // A shorter or different mark inside does not close the fence.
+  assert.deepEqual(ownedFiles("**Owns:** `a.mjs`\n````\n```\n`b.md`\n```\n````\n`c.md`"), [
+    "a.mjs",
+    "c.md",
+  ]);
+  // An unclosed fence runs to the end.
+  assert.deepEqual(ownedFiles("**Owns:** `a.mjs`\n```\n`b.md`"), ["a.mjs"]);
+});
