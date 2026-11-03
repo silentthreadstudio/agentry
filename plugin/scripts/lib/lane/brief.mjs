@@ -1,9 +1,11 @@
 // brief — what an exec round's brief says, rendered from the templates in the conducting skill's
 // `references/briefs/` (ADR-R3): the same brief every time, on disk, quoting the board instead of memory.
 //
-//   ownedFiles      the paths the contract's "owns" names (backticked, negations left out), in order
-//   withNew         those paths, each marked `new` when the tree has no such file; a bare file name is
-//                   looked up among the tree's tracked files (one hit: that path, several: all, `ambiguous`)
+//   ownedFiles      the paths the contract's "owns" names (backticked, brace globs expanded, negations
+//                   left out), in order; given the tree, a dotted symbol is not a path unless a file matches
+//   withNew         those paths, each marked `new` when the tree has no such file; a path missing at the
+//                   root is looked up among the tree's tracked files as a suffix (`merge/gating.mjs`, a bare
+//                   name, a glob's folder): one hit is that path, several are all listed `ambiguous`
 //   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
 //   citedDecisions  every decision of the board's decision kind the block cites by id, the rows that name
 //                   the task (decided after the contract was written) and those the owner asked for with
@@ -55,7 +57,9 @@ const TICKED = /`([^`\n]+)`/g;
 
 // A code span is an owned path when it is made of path characters and either ends in a known file
 // extension or names a folder or glob (has a `/`) whose last part is not a bare number (`KEY_1/2` is a
-// string key). `Type.method()` and `a.b.c` are symbols: no known extension.
+// string key). `Type.method()` and `a.b.c` are symbols: no known extension, or (`a.b.c`) a bare name with
+// more dots than an extension and no tracked file of that name. A bare name without a dot is a path only
+// when it is a well-known extensionless file or a tracked file has that name.
 const PATH_CHARS = /^[\w@.~*+-]+(\/[\w@.~*+-]+)*\/?$/;
 const EXTENSIONS = new Set(
   (
@@ -64,6 +68,9 @@ const EXTENSIONS = new Set(
     "yaml yml xml svg png jpg jpeg gif webp wav ogg mp3 glsl shader gdshader sql sh csv lock"
   ).split(" "),
 );
+const PLAIN_NAMES = new Set(["Makefile", "Dockerfile", "LICENSE"]);
+// The part before the extension that makes `a.test.mjs` a file name, not a symbol path.
+const COMPOUND = new Set(["test", "spec", "d", "min", "config", "stories"]);
 // What a span may carry after the path: `:12`, `:12-30`, `#L12`.
 const LOCATION = /(?::\d+(?:[-–—]\d+)?|#L\d+(?:-L?\d+)?)+$/;
 // Words before a span that say its file is NOT owned ("no line in", "but not", "never", …).
@@ -72,22 +79,49 @@ const NEGATION =
 // What may sit between two spans of one list: a comma, "and", "or".
 const LIST_GAP = /^\s*(and|or|&)?\s*$/i;
 
-function pathOf(span) {
+// Is a tracked file named `name` (as a whole path tail)?
+const hasFile = (tracked, name) =>
+  tracked().some((file) => file === name || file.endsWith(`/${name}`));
+
+function pathOf(span, tracked) {
   const path = span.trim().replace(LOCATION, "");
   if (!PATH_CHARS.test(path)) return null;
   if (path.includes("/"))
     return /^\d+$/.test(path.replace(/\/$/, "").split("/").at(-1)) ? null : path;
-  const name = path.split("/").at(-1);
-  return name.lastIndexOf(".") > 0 && EXTENSIONS.has(name.split(".").at(-1).toLowerCase())
+  const dot = path.lastIndexOf(".");
+  if (dot <= 0) return PLAIN_NAMES.has(path) || hasFile(tracked, path) ? path : null;
+  const parts = path.split(".");
+  if (!EXTENSIONS.has(parts.at(-1).toLowerCase())) return null;
+  return parts.length === 2 || COMPOUND.has(parts.at(-2).toLowerCase()) || hasFile(tracked, path)
     ? path
     : null;
 }
 
+// `a/{b,c}.md` as `a/b.md` and `a/c.md`: each group of alternatives, left to right. A span with a space
+// in it is not a path list.
+function braced(span) {
+  const group = /\{([^{}]*)\}/.exec(span);
+  if (!group || /\s/.test(span)) return [span];
+  const [whole, alts] = group;
+  return alts
+    .split(",")
+    .flatMap((alt) =>
+      braced(span.slice(0, group.index) + alt + span.slice(group.index + whole.length)),
+    );
+}
+
 /** The paths the block's "owns" part names in backticks, de-duplicated, in order: only spans shaped like
- *  a path, `path:lines` read as the path, and a span after a negation ("no line in `x`", "but not `y`")
- *  left out. Empty when the block has no "owns" part or it names no path. */
-export function ownedFiles(block) {
+ *  a path, `path:lines` read as the path, a brace glob (`a/{b,c}.md`) expanded, and a span after a
+ *  negation ("no line in `x`", "but not `y`") left out. `dir` is the tree whose tracked files decide a
+ *  doubtful name (`a.b.c`, an extensionless name); without it only well-known names count. Empty when
+ *  the block has no "owns" part or it names no path. */
+export function ownedFiles(block, dir) {
   const text = String(block ?? "");
+  let list;
+  const tracked = () => {
+    list ??= dir ? trackedFiles(dir) : [];
+    return list;
+  };
   const at = OWNS.exec(text);
   if (!at) return [];
   let part = text.slice(at.index + at[0].length);
@@ -109,8 +143,11 @@ export function ownedFiles(block) {
     const joined =
       pieces.length > 1 && clause === between && !clause.includes(")") && LIST_GAP.test(last);
     negated = joined ? negated : NEGATION.test(last);
-    const path = negated ? null : pathOf(m[1]);
-    if (path && !out.includes(path)) out.push(path);
+    if (negated) continue;
+    for (const one of braced(m[1])) {
+      const path = pathOf(one, tracked);
+      if (path && !out.includes(path)) out.push(path);
+    }
   }
   return out;
 }
@@ -129,21 +166,41 @@ const trackedFiles = (dir) => {
   }
 };
 
+// Where `path` sits in the tracked files: the leading folders its fixed part is found under ("" when
+// it is at the root). The fixed part is the whole path, or for a glob or folder the folders before the
+// first `*` or `?`; a path with no fixed part (`*.md`) is found nowhere.
+function leadsOf(tracked, path) {
+  const wild = path.search(/[*?]/);
+  const fixed = wild < 0 ? path : path.slice(0, path.lastIndexOf("/", wild) + 1);
+  if (!fixed) return [];
+  const folder = fixed.endsWith("/");
+  const leads = new Set();
+  for (const file of tracked) {
+    if (folder ? file.startsWith(fixed) : file === fixed) leads.add("");
+    else if (folder) {
+      const at = file.indexOf(`/${fixed}`);
+      if (at >= 0) leads.add(file.slice(0, at + 1));
+    } else if (file.endsWith(`/${fixed}`)) leads.add(file.slice(0, file.length - fixed.length));
+  }
+  return [...leads].sort();
+}
+
 /** `paths` as `{ path, new }`: `new` when the path is a plain file that does not exist in `dir` (a glob
- *  or folder names what is there, so it is never new). A bare file name missing at the root is looked up
- *  among the tracked files: one file of that name is that path, several are all listed with `ambiguous:
- *  true`, none means the file is new. */
+ *  or folder names what is there, so it is never new). A path missing at the root is looked up among the
+ *  tracked files as the tail of a path (a bare name, `merge/gating.mjs`, a glob's folders): found at the
+ *  root it stays as written; one other place is that path; several are all listed with `ambiguous: true`;
+ *  none means a plain file is new and a glob or folder stays as written. */
 export function withNew(dir, paths) {
   let tracked;
   return paths.flatMap((path) => {
-    if (/[*?]/.test(path) || path.endsWith("/") || existsSync(join(dir, path)))
-      return [{ path, new: false }];
-    if (path.includes("/")) return [{ path, new: true }];
+    const open = /[*?]/.test(path) || path.endsWith("/");
+    if (!open && existsSync(join(dir, path))) return [{ path, new: false }];
     tracked ??= trackedFiles(dir);
-    const hits = tracked.filter((file) => file.split("/").at(-1) === path);
-    if (hits.length === 0) return [{ path, new: true }];
-    if (hits.length === 1) return [{ path: hits[0], new: false }];
-    return hits.map((hit) => ({ path: hit, new: false, ambiguous: true }));
+    const leads = leadsOf(tracked, path);
+    if (leads.length === 0 || leads.includes(""))
+      return [{ path, new: !open && leads.length === 0 }];
+    const hits = leads.map((lead) => ({ path: `${lead}${path}`, new: false }));
+    return hits.length === 1 ? hits : hits.map((hit) => ({ ...hit, ambiguous: true }));
   });
 }
 
@@ -157,13 +214,20 @@ const UI_DIRS = new Set([
   "theme",
   "themes",
 ]);
-const UI_EXT = /\.(css|scss|sass|less|vue|svelte|html|tscn)$/i;
+// A glob under one of these names a whole front end (`web/**`), where a plain file there may be anything.
+const FRONT_DIRS = new Set(["web", "app", "ui"]);
+const UI_EXT = /\.(css|scss|sass|less|vue|svelte|astro|html|tscn)$/i;
 
 /** Which builder the owned paths suggest: `{ agent, why }`. A suggestion: the conductor decides. */
 export function suggestBuilder(owned) {
-  const ui = owned.find(
-    (path) => UI_EXT.test(path) || path.split("/").some((part) => UI_DIRS.has(part.toLowerCase())),
-  );
+  const ui = owned.find((path) => {
+    const parts = path.toLowerCase().split("/");
+    return (
+      UI_EXT.test(path) ||
+      parts.some((part) => UI_DIRS.has(part)) ||
+      (/[*?]/.test(path) && parts.slice(0, -1).some((part) => FRONT_DIRS.has(part)))
+    );
+  });
   return ui
     ? { agent: "designer", why: `${ui} is UI-shaped` }
     : { agent: "implementer", why: "no owned path is UI-shaped" };

@@ -595,6 +595,37 @@ function boardEvent(ctx, event, id, data) {
   return { board, moves: files.map((file) => ({ file, from: before[file], to: after[file] })) };
 }
 
+// The owned files `owned` shares with a running lane (not merged or closed), as warning lines: `! owns
+// overlap with R1c-4: plugin/commands/go.md`. A pair overlaps when one entry covers the other; the
+// narrower of the two is named. A running lane whose owned files can't be read is skipped.
+const OVERLAP_SHOWN = 5;
+function ownsOverlap(root, owned) {
+  const mine = owned.map((o) => o.path);
+  const lines = [];
+  for (const lane of ledgers.list(root)) {
+    if (lane.state === "merged" || lane.state === "closed") continue;
+    let theirs;
+    try {
+      theirs = ownedOf(root, lane).map((o) => (typeof o === "string" ? o : o.path));
+    } catch {
+      continue;
+    }
+    const shared = new Set();
+    for (const a of mine)
+      for (const b of theirs) {
+        if (ownsPath(a, b)) shared.add(b);
+        else if (ownsPath(b, a)) shared.add(a);
+      }
+    if (!shared.size) continue;
+    const names = [...shared];
+    const more = names.length - OVERLAP_SHOWN;
+    lines.push(
+      `! owns overlap with ${lane.id}: ${names.slice(0, OVERLAP_SHOWN).join(", ")}${more > 0 ? ` (+${more} more)` : ""}`,
+    );
+  }
+  return lines.join("\n");
+}
+
 function start(ctx, id) {
   const { root, spec, model, cite } = ctx;
   const unknown = unknownCites({ spec, model, cite });
@@ -659,7 +690,7 @@ function start(ctx, id) {
     branch: tree.branch,
     mainAtStart: mainSnapshot(root),
     worktreesAtStart: worktrees(root).map((t) => t.path),
-    owned: withNew(tree.path, ownedFiles(found.block)),
+    owned: withNew(tree.path, ownedFiles(found.block, tree.path)),
     ...(cite.length && { cite }),
     rounds: [],
     gates: [],
@@ -671,6 +702,7 @@ function start(ctx, id) {
     state: "building",
     next: "build",
   };
+  const overlap = ownsOverlap(root, ledger.owned);
   ledger = dispatchNext(ctx, ledger, begin().dispatch);
   ledgers.write(root, ledger);
   return view(root, ledger, {
@@ -679,6 +711,7 @@ function start(ctx, id) {
       owned: ledger.owned,
       amend: laneLine(root, "owns", id, " --set <paths> --apply"),
       board,
+      ...(overlap && { warning: overlap }),
     },
   });
 }

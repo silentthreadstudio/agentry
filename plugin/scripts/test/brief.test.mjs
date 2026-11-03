@@ -99,6 +99,80 @@ test("withNew resolves a bare name against the tracked files: one hit is that pa
   ]);
 });
 
+test("withNew: a path that is the tail of exactly one tracked file resolves to it, several are ambiguous, none is new", () => {
+  const dir = temp();
+  git(dir, "init", "-q");
+  commitFile(dir, "plugin/lib/merge/gating.mjs", "");
+  commitFile(dir, "plugin/lib/a/cli/exec.mjs", "");
+  commitFile(dir, "plugin/lib/b/cli/exec.mjs", "");
+  assert.deepEqual(withNew(dir, ["merge/gating.mjs", "cli/exec.mjs", "merge/other.mjs"]), [
+    { path: "plugin/lib/merge/gating.mjs", new: false },
+    { path: "plugin/lib/a/cli/exec.mjs", new: false, ambiguous: true },
+    { path: "plugin/lib/b/cli/exec.mjs", new: false, ambiguous: true },
+    { path: "merge/other.mjs", new: true },
+  ]);
+});
+
+test("withNew: a glob or folder resolves by its folders; a top folder that exists at the root is kept", () => {
+  const dir = temp();
+  git(dir, "init", "-q");
+  commitFile(dir, "plugin/skills/conducting/SKILL.md", "");
+  commitFile(dir, "plugin/skills/conducting/references/a.md", "");
+  commitFile(dir, "plugin/scripts/x.mjs", "");
+  commitFile(dir, "scripts/check.mjs", "");
+  commitFile(dir, "a/docs/x.md", "");
+  commitFile(dir, "b/docs/y.md", "");
+  assert.deepEqual(
+    withNew(dir, [
+      "skills/conducting/references/*.md",
+      "skills/conducting/",
+      "scripts/**",
+      "scripts/check.mjs",
+      "docs/**",
+      "nothing/**",
+      "*.md",
+    ]),
+    [
+      { path: "plugin/skills/conducting/references/*.md", new: false },
+      { path: "plugin/skills/conducting/", new: false },
+      { path: "scripts/**", new: false },
+      { path: "scripts/check.mjs", new: false },
+      { path: "a/docs/**", new: false, ambiguous: true },
+      { path: "b/docs/**", new: false, ambiguous: true },
+      { path: "nothing/**", new: false },
+      { path: "*.md", new: false },
+    ],
+  );
+});
+
+test("ownedFiles expands a brace glob into each path, in order", () => {
+  assert.deepEqual(
+    ownedFiles("**Owns:** `commands/{go,spec}.md`, `x.mjs`, `skills/{a,b}/SKILL.md`."),
+    ["commands/go.md", "commands/spec.md", "x.mjs", "skills/a/SKILL.md", "skills/b/SKILL.md"],
+  );
+  assert.deepEqual(ownedFiles("**Owns:** `x.mjs`, but not `commands/{go,spec}.md`"), ["x.mjs"]);
+  assert.deepEqual(ownedFiles("**Owns:** `{ a, b }`, `fn({x})`"), []);
+});
+
+test("ownedFiles: a.b.c-shaped symbols are paths only when a tracked file matches; extensionless known files are paths", () => {
+  const dir = temp();
+  git(dir, "init", "-q");
+  commitFile(dir, "docs/notes.draft.md", "");
+  commitFile(dir, "bin/runner", "");
+  const block =
+    "**Owns:** `config.items.go`, `a.b.c`, `notes.draft.md`, `new.test.mjs`, `Makefile`, `runner`, `LICENSE`, `word`, `index.d.ts`";
+  assert.deepEqual(ownedFiles(block, dir), [
+    "notes.draft.md",
+    "new.test.mjs",
+    "Makefile",
+    "runner",
+    "LICENSE",
+    "index.d.ts",
+  ]);
+  // Without a tree nothing can match: only the shapes that need no tree are paths.
+  assert.deepEqual(ownedFiles(block), ["new.test.mjs", "Makefile", "LICENSE", "index.d.ts"]);
+});
+
 test("withNew marks a plain file the tree lacks, never an existing file, a glob or a folder", () => {
   const dir = temp();
   mkdirSync(join(dir, "src"));
@@ -121,6 +195,16 @@ test("suggestBuilder: a UI-shaped owned path suggests the designer, else the imp
     why: "no owned path is UI-shaped",
   });
   assert.equal(suggestBuilder([]).agent, "implementer");
+});
+
+test("suggestBuilder: .astro, .svelte, .vue and .css files, and globs under a web, app or ui folder, suggest the designer", () => {
+  for (const path of ["src/pages/Home.astro", "src/Nav.svelte", "src/Nav.vue", "theme.css"])
+    assert.equal(suggestBuilder([path]).agent, "designer", path);
+  for (const path of ["web/**", "packages/web/src/*.ts", "app/**", "ui/**"])
+    assert.equal(suggestBuilder([path]).agent, "designer", path);
+  // A plain file under app/ is not enough: only a glob names a whole front end there.
+  assert.equal(suggestBuilder(["app/models/user.rb"]).agent, "implementer");
+  assert.equal(suggestBuilder(["website/**", "src/**"]).agent, "implementer");
 });
 
 const DECISIONS = `# Decisions

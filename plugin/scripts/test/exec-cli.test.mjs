@@ -110,7 +110,13 @@ const DECISIONS_MD = `# Decisions
 
 /** A repo on `main` with the board committed; `home` is an empty HOME for the CLI (no global config or
  *  memory leaks in). */
-function repo({ spec = SPEC, config, prefix = "exec-repo-", decisions = DECISIONS_MD } = {}) {
+function repo({
+  spec = SPEC,
+  config,
+  prefix = "exec-repo-",
+  decisions = DECISIONS_MD,
+  tasks = TASKS_MD,
+} = {}) {
   const root = temp(prefix);
   const home = temp("exec-home-");
   git(root, "init", "-q", "-b", "main");
@@ -119,7 +125,7 @@ function repo({ spec = SPEC, config, prefix = "exec-repo-", decisions = DECISION
   if (config) writeFileSync(join(root, ".agentry", "config.json"), JSON.stringify(config));
   commitFile(root, ".gitignore", ".agentry/run/\n.agentry/config.json\n");
   commitFile(root, "plan/BOARD.md", BOARD_MD);
-  commitFile(root, "plan/TASKS.md", TASKS_MD);
+  commitFile(root, "plan/TASKS.md", tasks);
   commitFile(root, "plan/DECISIONS.md", decisions);
   commitFile(root, ".agentry/process.json", JSON.stringify(spec, null, 2));
   return { root, home };
@@ -293,6 +299,47 @@ test("start refuses at lanes.maxWriters and names the open ledgers and unowned w
   assert.match(refused.stderr, /-hand \(by-hand, no ledger\)/);
   assert.equal(board(r.root), before, "a refusal writes nothing");
   assert.equal(existsSync(join(r.root, ".agentry", "run", "worktrees", "T2")), false);
+});
+
+test("start warns, without refusing, when its owned files overlap a running lane's", () => {
+  const tasks = [
+    "# Tasks",
+    "",
+    "- **T1** (S1): owns `docs/guide/intro.md`, `docs/*.md`, `src/a.ts`. Accept: x.",
+    "- **T2** (S1): owns `docs/guide/intro.md`, `docs/{api,faq}.md`, `src/b.ts`. Accept: y.",
+    "",
+  ].join("\n");
+  const r = repo({ tasks, config: { lanes: { maxWriters: 3 } } });
+  const first = lane(r, "start", "T1");
+  assert.equal(first.exit, 0);
+  assert.equal(first.json.warning, undefined, "nothing runs yet, nothing overlaps");
+  const second = lane(r, "start", "T2");
+  assert.equal(second.exit, 0);
+  assert.equal(
+    second.json.warning,
+    "! owns overlap with T1: docs/guide/intro.md, docs/api.md, docs/faq.md",
+  );
+  assert.equal(ledgerOf(r.root, "T2").state, "building", "a warning does not stop the lane");
+});
+
+test("start's overlap warning ignores a lane that is closed, and one with no shared file", () => {
+  const tasks = [
+    "# Tasks",
+    "",
+    "- **T1** (S1): owns `src/a.ts`. Accept: x.",
+    "- **T2** (S1): owns `src/b.ts`. Accept: y.",
+    "",
+  ].join("\n");
+  const r = repo({ tasks, config: { lanes: { maxWriters: 3 } } });
+  assert.equal(lane(r, "start", "T1").exit, 0);
+  const ledgerFile = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const ledger = ledgerOf(r.root, "T1");
+  ledger.owned = [{ path: "src/b.ts", new: true }];
+  ledger.state = "closed";
+  writeFileSync(ledgerFile, JSON.stringify(ledger));
+  const started = lane(r, "start", "T2");
+  assert.equal(started.exit, 0);
+  assert.equal(started.json.warning, undefined);
 });
 
 test("start refuses a second lane for the same id, an unknown contract and a broken config", () => {

@@ -15,6 +15,13 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   with what they match. `lane session start` flags `.agentry/NOTE.md` stale when every id it names
   is done. An exec brief also quotes decisions whose row names the task, and `exec start --cite`
   adds decisions by id. `exec owns --apply` keeps a section appended after the brief's last section.
+- **Owned files read from a contract** — a path that is the tail of exactly one tracked file
+  resolves to it (`merge/gating.mjs`), several are listed as ambiguous, none is new; brace globs
+  (`commands/{go,spec}.md`) expand, and a glob or folder resolves by its folders. `a.b.c` symbols are
+  not paths unless a tracked file matches, and `Makefile`, `Dockerfile`, `LICENSE` and tracked
+  extensionless files are. `.astro` files and globs under `web`, `app` or `ui` suggest the designer.
+  `exec start` warns, without refusing, when its owned files overlap a running lane's:
+  `! owns overlap with R1c-4: plugin/commands/go.md`.
 - **`agentry` command** — the plugin's `bin/agentry` is on the Bash tool's PATH while the plugin is
   enabled: `agentry board …`, `agentry lane …`, `agentry draft …`, `--version`, `--help`. Next
   steps the CLIs print name it when it is this plugin's bin, and the docs use it; hosts without it
