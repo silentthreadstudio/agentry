@@ -3,11 +3,13 @@
 // removed), the processes left running under `.agentry/run/` by a finished lane or by none (an interactive
 // shell among them is listed as left alone, never stopped), and a low-disk or no-lsof warning. With
 // `--apply` it stops those processes (each with its descendants) and removes the worktrees, and nothing
-// else; a worktree holding ignored files (`.env`, build output) stays unless `--discard-ignored`.
-// Needs no process file.
+// else; a worktree holding ignored files (`.env`, screenshots) stays unless `--discard-ignored`. Build
+// output (`node_modules`, `dist`, and the process file's `cleanup.disposable`) is discarded without asking.
+// Needs no process file: without one, only the defaults are disposable.
 // Exit 0 = done or reported, 1 = `--apply` left a worktree it could not remove or a process running.
 //
 // run(argv, { root }) -> { exit, out }
+import { loadSpec } from "../../process/read.mjs";
 import { apply, keepReason, plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
@@ -25,9 +27,10 @@ export const help = {
 };
 export const noSpec = true;
 
-export function run(argv, { root }) {
+export function run(argv, { root, processPath }) {
   const runRoot = mainRoot(root) ?? root;
-  const found = plan(runRoot);
+  const { spec } = loadSpec(processPath, { root });
+  const found = plan(runRoot, { disposable: spec?.cleanup?.disposable ?? [] });
   const discardIgnored = argv.includes("--discard-ignored");
   const done = argv.includes("--apply") ? apply(runRoot, found, { discardIgnored }) : null;
   const exit = done?.kept.length || done?.survived.length ? 1 : 0;
@@ -44,7 +47,12 @@ function render(found, done, discardIgnored) {
     const kept = done?.kept.find((k) => k.id === w.id);
     const why = kept ? kept.reason : keepReason(w, discardIgnored);
     const verb = !done ? (why ? "would keep" : "would remove") : kept ? "kept" : "removed";
-    row(`${verb} worktree ${w.id}${why && verb !== "removed" ? `: ${why}` : ""}`);
+    const thrown = w.disposable?.length ?? 0;
+    const discard =
+      !why && thrown
+        ? ` (${done ? "discarded" : "would discard"} ${thrown} disposable file(s))`
+        : "";
+    row(`${verb} worktree ${w.id}${why && verb !== "removed" ? `: ${why}` : ""}${discard}`);
   }
   for (const w of found.unknown) row(`unknown worktree ${w.path} (left alone)`);
   for (const p of found.strays) {

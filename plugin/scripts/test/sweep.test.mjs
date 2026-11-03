@@ -190,6 +190,55 @@ test("a merged worktree holding an ignored file is kept unless --discard-ignored
   assert.ok(!existsSync(merged.path));
 });
 
+test("a merged worktree holding only node_modules and dist output is swept, and the line says so", () => {
+  const { root, merged } = fixture();
+  appendFileSync(join(root, ".git", "info", "exclude"), "node_modules/\ndist/\n");
+  mkdirSync(join(merged.path, "node_modules", "pkg"), { recursive: true });
+  writeFileSync(join(merged.path, "node_modules", "pkg", "index.js"), "x");
+  mkdirSync(join(merged.path, "dist"));
+  writeFileSync(join(merged.path, "dist", "out.js"), "x");
+  const dry = sweep(root);
+  assert.match(dry.stdout, /would remove worktree T1 \(would discard 2 disposable file\(s\)\)/);
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 0, res.stdout);
+  assert.match(res.stdout, /removed worktree T1 \(discarded 2 disposable file\(s\)\)/);
+  assert.ok(!existsSync(merged.path));
+});
+
+test("cleanup.disposable from the process file adds to the defaults in the sweep", () => {
+  const { root, merged } = fixture();
+  const file = join(root, ".agentry", "process.json");
+  const spec = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, JSON.stringify({ ...spec, cleanup: { disposable: ["cache/**"] } }));
+  appendFileSync(join(root, ".git", "info", "exclude"), "cache/\ndist/\n");
+  for (const dir of ["cache", "dist"]) {
+    mkdirSync(join(merged.path, dir));
+    writeFileSync(join(merged.path, dir, "out"), "x");
+  }
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 0, res.stdout);
+  assert.match(res.stdout, /discarded 2 disposable file\(s\)/);
+  assert.ok(!existsSync(merged.path));
+});
+
+test("a stray untracked file or any other ignored file keeps a worktree that also holds build output", () => {
+  const { root, merged } = fixture();
+  appendFileSync(join(root, ".git", "info", "exclude"), "node_modules/\n.env\n");
+  mkdirSync(join(merged.path, "node_modules"));
+  writeFileSync(join(merged.path, "node_modules", "x.js"), "x");
+  writeFileSync(join(merged.path, "scratch.txt"), "mine\n");
+  const stray = sweep(root, "--apply");
+  assert.equal(stray.status, 1, stray.stdout);
+  assert.match(stray.stdout, /kept worktree T1: .*uncommitted changes.*scratch\.txt/);
+  assert.ok(existsSync(join(merged.path, "node_modules", "x.js")));
+  rmSync(join(merged.path, "scratch.txt"));
+  writeFileSync(join(merged.path, ".env"), "SECRET=1\n");
+  const env = sweep(root, "--apply");
+  assert.equal(env.status, 1, env.stdout);
+  assert.match(env.stdout, /kept worktree T1: holds 1 ignored file\(s\).*\.env/);
+  assert.ok(existsSync(join(merged.path, "node_modules", "x.js")));
+});
+
 test("a closed task's worktree is cleanable too", () => {
   const { root } = fixture();
   const done = builtBranch(root, "T4");

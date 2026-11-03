@@ -340,7 +340,7 @@ export function push(root, { branch }) {
  * Take down the worktree that has `branch` checked out (found by branch, whatever its directory is
  * called; `fallbackPath` when none has it) with `-f -f`, and delete the branch when everything on it is
  * on `main`. Refused while the worktree holds ignored files (screenshots, a local `.env`: they would be
- * lost) that no `disposable` glob matches, unless `discardIgnored`. Returns `{ ok, path, removed,
+ * lost) that no default (`DEFAULT_DISPOSABLE`) or `disposable` glob matches, unless `discardIgnored`. Returns `{ ok, path, removed,
  * branchDeleted, ignored?, disposable?, reason? }`: `ignored` the others, `disposable` the matched ones.
  */
 export function cleanup(
@@ -375,16 +375,20 @@ export function cleanup(
   return { ok, path, ...res, ...kept };
 }
 
-// Is an ignored entry (`dir/` for a wholly ignored directory) one of `globs`? Matched with the gate's own
-// glob test, as its path without the slash; a `dir/**` glob also takes `dir` itself. A glob that names a
-// folder covers what is under it (gitignore semantics): an entry is matched as itself and as each of its
-// parent folders.
-function disposableMatcher(globs) {
-  const forms = globs.flatMap((glob) => {
+/** Ignored files every lane worktree's cleanup and the sweep discard without asking, on top of the
+ *  process file's `cleanup.disposable`: dependency installs and build output. */
+export const DEFAULT_DISPOSABLE = ["**/node_modules/**", "**/dist/**"];
+
+/** Is an ignored entry (`dir/` for a wholly ignored directory) one of `DEFAULT_DISPOSABLE` or `globs`
+ *  (the configured `cleanup.disposable`)? Matched with the gate's own glob test, as its path without the
+ *  slash; a `dir/**` glob also takes `dir` itself. A glob that names a folder covers what is under it
+ *  (gitignore semantics): an entry is matched as itself and as each of its parent folders. Only ignored
+ *  files are ever asked about, so a tracked file is never discarded. */
+export function disposableMatcher(globs = []) {
+  const forms = [...DEFAULT_DISPOSABLE, ...globs].flatMap((glob) => {
     const g = glob.replace(/\/+$/, "");
     return g.endsWith("/**") ? [g, g.slice(0, -3)] : [g];
   });
-  if (!forms.length) return () => false;
   const quick = { command: ["-"], only: forms };
   return (entry) => {
     const parts = entry.replace(/\/$/, "").split("/");

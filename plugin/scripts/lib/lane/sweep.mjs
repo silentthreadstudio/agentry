@@ -1,7 +1,9 @@
 // sweep — what a finished session leaves behind, and the removal of the part that is safely Agentry's (plan
 // R1b-7, #8, #9). `plan` only looks: it lists
 //   cleanable  the worktrees of tasks whose ledger says `merged` or `closed`, each with the ignored files
-//              (`.env`, build output) removal would delete
+//              (`.env`, screenshots) removal would delete, and the disposable ones (`DEFAULT_DISPOSABLE` and
+//              the process file's `cleanup.disposable`, as `merge --cleanup` matches them) it discards
+//              without asking
 //   unknown    worktrees in the lane's own directory that no ledger knows (reported, never removed)
 //   strays     processes started under `<root>/.agentry/run/`: their executable, their script (for an
 //              interpreter) or their working directory is there. A process that only names such a path in
@@ -15,13 +17,14 @@
 // `apply` then stops the strays (each with its whole descendant tree, and its process group when it leads one;
 // what it signals is listed with the stray, a live lane's process is spared, and it confirms all of it is gone) and
 // removes the cleanable worktrees (through `worktree.remove`, which keeps a dirty one and any branch with
-// unlanded work; one holding ignored files is kept unless `discardIgnored`). Nothing else is ever touched.
+// unlanded work; one holding ignored files that are not disposable is kept unless `discardIgnored`). Nothing else is ever touched.
 // Node built-ins only.
 import { spawnSync } from "node:child_process";
 import { realpathSync, statfsSync } from "node:fs";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { worktrees } from "../process/git.mjs";
 import * as ledgers from "../process/ledger.mjs";
+import { disposableMatcher } from "./land.mjs";
 import { ignoredFiles, remove, worktreesDir } from "./worktree.mjs";
 
 const GB = 1024 ** 3;
@@ -225,8 +228,10 @@ function findStrays(root, all) {
   return found;
 }
 
-/** What a sweep would do in the repo whose main checkout is `root`. `free` overrides the disk reading. */
-export function plan(root, { free = freeBytes(root) } = {}) {
+/** What a sweep would do in the repo whose main checkout is `root`. `free` overrides the disk reading;
+ *  `disposable` is the process file's `cleanup.disposable`, on top of `DEFAULT_DISPOSABLE`. */
+export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
+  const isDisposable = disposableMatcher(disposable);
   const all = ledgers.list(root);
   const cleanable = [];
   const unknown = [];
@@ -247,7 +252,8 @@ export function plan(root, { free = freeBytes(root) } = {}) {
         id: ledger.id,
         path: tree.path,
         branch: tree.branch,
-        ignored,
+        ignored: ignored.filter((entry) => !isDisposable(entry)),
+        disposable: ignored.filter(isDisposable),
         inUse: false,
       });
     }

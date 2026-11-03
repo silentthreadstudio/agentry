@@ -13,6 +13,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
 import { endStrayGate, gateArgv } from "../lib/lane/gate-group.mjs";
 import {
+  DEFAULT_DISPOSABLE,
   attributionIn,
   boardCommit,
   cherryPick,
@@ -321,6 +322,59 @@ test("a disposable glob naming a folder covers the files under it, not a near na
   assert.ok(res.disposable.every((entry) => entry.startsWith("src/data/")));
   assert.ok(res.ignored.includes("src/database/a.json"));
   assert.ok(res.ignored.every((entry) => !entry.startsWith("src/data/")));
+});
+
+// A branch whose only commit ignores build output, landed on main by hand so cleanup can delete it.
+function ignoringBranch() {
+  const shas = branch({
+    ".gitignore": "node_modules/\ndist/\n.env\n",
+    "packages/web/package.json": "{}\n",
+  });
+  for (const sha of shas) git(repo.dir, "cherry-pick", sha);
+  return join(repo.dir, ".agentry", "run", "worktrees", "B");
+}
+function plant(path, ...files) {
+  for (const file of files) {
+    mkdirSync(join(path, file, ".."), { recursive: true });
+    writeFileSync(join(path, file), "x");
+  }
+}
+
+test("cleanup discards ignored node_modules and dist output at any depth with no prompt and no config", () => {
+  const path = ignoringBranch();
+  plant(path, "node_modules/pkg/index.js", "packages/web/node_modules/dep.js", "dist/out.js");
+  const res = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: path });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(res.ignored, undefined);
+  assert.deepEqual(res.disposable.sort(), ["dist/", "node_modules/", "packages/web/node_modules/"]);
+  assert.ok(!existsSync(path));
+  assert.deepEqual(DEFAULT_DISPOSABLE, ["**/node_modules/**", "**/dist/**"]);
+});
+
+test("the default disposables add to the configured ones, and any other ignored file still asks", () => {
+  const path = ignoringBranch();
+  plant(path, "dist/out.js", ".env");
+  const res = cleanup(repo.dir, {
+    branch: "b",
+    main: "main",
+    fallbackPath: path,
+    disposable: ["cache/**"],
+  });
+  assert.equal(res.ok, false);
+  assert.deepEqual(res.ignored, [".env"]);
+  assert.deepEqual(res.disposable, ["dist/"]);
+  assert.ok(existsSync(path));
+});
+
+test("a tracked file under dist is never discarded: only the ignored output is listed", () => {
+  const [sha] = branch({ "dist/tracked.js": "kept\n" });
+  git(repo.dir, "cherry-pick", sha);
+  const path = join(repo.dir, ".agentry", "run", "worktrees", "B");
+  writeFileSync(join(repo.dir, ".git", "info", "exclude"), ".agentry/\ndist/out.js\n");
+  plant(path, "dist/out.js");
+  const res = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: path });
+  assert.deepEqual(res.disposable, ["dist/out.js"]);
+  assert.equal(readFileSync(join(repo.dir, "dist", "tracked.js"), "utf8"), "kept\n");
 });
 
 // A worktree holding ignored files at several depths, cleaned up with `disposable`.
