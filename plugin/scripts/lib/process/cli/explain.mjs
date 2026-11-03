@@ -23,7 +23,7 @@ export const help = {
   args: {},
   flags: { "--json": "print it as one JSON object" },
   exits: { 0: "printed", 2: "usage, or a process file or conductor key it cannot use" },
-  example: "board explain --process .agentry/run/process/draft.json",
+  example: "board explain --process .agentry/run/process/process.json",
 };
 const WIDTH = 100;
 const LANES_WIDTH = 80;

@@ -67,10 +67,25 @@ export const workflowPathOf = (path) => join(dirname(path), "workflow.json");
 
 /** Read and validate a process file and its workflow file (`workflowPathOf`), merged into one spec. A
  *  missing or unreadable process file is a problem, not a throw; a missing workflow file is no problem
- *  (every workflow key absent), an unreadable one is. Given the repository `root`, a path of either
- *  file that a symlink takes out of it is a problem too. Each problem's `file` is the file it is about. */
+ *  (every workflow key absent), an unreadable one is. A process file named `workflow.json` is refused
+ *  (its sibling would be itself). Given the repository `root`, either file, or a path inside them, that
+ *  a symlink takes out of it is a problem too, and a file that does is never read. Each problem's
+ *  `file` is the file it is about; the one about the process file's own name has none. */
 export function loadSpec(path, { root } = {}) {
   const files = { board: path, workflow: workflowPathOf(path) };
+  if (basename(path) === "workflow.json") {
+    const message =
+      "the process file cannot be named workflow.json (its sibling workflow file would be itself) → use .agentry/process.json";
+    return { spec: null, problems: [{ rule: "spec", message }] };
+  }
+  const linked = Object.values(files)
+    .filter((file) => root !== undefined && !staysInside(root, file))
+    .map((file) => ({
+      rule: "spec",
+      message: `${basename(file)} leaves the repository through a symlink`,
+      file,
+    }));
+  if (linked.length) return { spec: null, problems: linked };
   const read = (file, what) => {
     try {
       return { text: readFileSync(file, "utf8") };

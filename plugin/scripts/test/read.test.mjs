@@ -4,7 +4,16 @@
 // (one file per item), broken (a spec and a board that no longer match).
 // Run: node --test plugin/scripts/test/read.test.mjs
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -313,4 +322,81 @@ test("ranks do not depend on the order the kinds are declared in", () => {
   assert.deepEqual(ranks(["question", ...names.filter((k) => k !== "question")]), last);
   assert.deepEqual(ranks(names.toReversed()), last);
   assert.equal(last.task.find(([id]) => id === "W3")[1], 2, "W3 keeps its sprint's rank");
+});
+
+// ---- loadSpec: the sibling workflow file and the files that leave the repository ----------------
+
+const BOARD_JSON = readFileSync(join(FIXTURES, "table-board", "process.json"), "utf8");
+const GATE = JSON.stringify({ gate: { command: ["npm", "test"] } });
+// A scratch repo (root) with an outside directory beside it, and `put(rel, text)` writing into root.
+function sandbox() {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-load-")));
+  temps.push(tmp);
+  const root = join(tmp, "repo");
+  const outside = join(tmp, "outside");
+  mkdirSync(root);
+  mkdirSync(outside);
+  const put = (rel, text) => {
+    mkdirSync(dirname(join(root, rel)), { recursive: true });
+    writeFileSync(join(root, rel), text);
+    return join(root, rel);
+  };
+  return { root, outside, put };
+}
+
+test("loadSpec refuses a process file named workflow.json, with the file it should be", () => {
+  const { root, put } = sandbox();
+  const path = put(".agentry/workflow.json", BOARD_JSON);
+  const { spec, problems } = loadSpec(path, { root });
+  assert.equal(spec, null);
+  assert.deepEqual(
+    problems.map((p) => p.message),
+    [
+      "the process file cannot be named workflow.json (its sibling workflow file would be itself) → use .agentry/process.json",
+    ],
+  );
+});
+
+test("loadSpec refuses a workflow.json or process.json that a symlink takes out of the repository", () => {
+  for (const name of ["workflow.json", "process.json"]) {
+    const { root, outside, put } = sandbox();
+    const path = join(root, ".agentry", "process.json");
+    if (name === "workflow.json") put(".agentry/process.json", BOARD_JSON);
+    else mkdirSync(join(root, ".agentry"));
+    writeFileSync(join(outside, "x.json"), name === "workflow.json" ? GATE : BOARD_JSON);
+    symlinkSync(join(outside, "x.json"), join(root, ".agentry", name));
+    const { spec, problems } = loadSpec(path, { root });
+    assert.equal(spec, null, name);
+    assert.deepEqual(
+      problems.map((p) => [p.message, p.file]),
+      [[`${name} leaves the repository through a symlink`, join(root, ".agentry", name)]],
+      name,
+    );
+  }
+});
+
+test("loadSpec still loads a workflow.json that is a symlink inside the repository", () => {
+  const { root, put } = sandbox();
+  const path = put(".agentry/process.json", BOARD_JSON);
+  put("shared/gate.json", GATE);
+  symlinkSync(join(root, "shared", "gate.json"), join(root, ".agentry", "workflow.json"));
+  const { spec, problems } = loadSpec(path, { root });
+  assert.deepEqual(problems, []);
+  assert.deepEqual(spec.gate.command, ["npm", "test"]);
+});
+
+test("loadSpec with a root still treats a missing workflow.json as no problem", () => {
+  const { root, put } = sandbox();
+  const { spec, problems } = loadSpec(put(".agentry/process.json", BOARD_JSON), { root });
+  assert.deepEqual(problems, []);
+  assert.equal(spec.gate, undefined);
+});
+
+test("loadSpec reads the workflow.json beside any process file name", () => {
+  const { root, put } = sandbox();
+  const path = put("cfg/x/board.json", BOARD_JSON);
+  put("cfg/x/workflow.json", GATE);
+  const { spec, problems } = loadSpec(path, { root });
+  assert.deepEqual(problems, []);
+  assert.deepEqual(spec.gate.command, ["npm", "test"]);
 });

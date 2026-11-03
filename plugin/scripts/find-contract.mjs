@@ -40,8 +40,10 @@ if (!id || extra !== undefined) usage();
 const root = resolve(rootArg ?? gitRootOf(process.cwd()) ?? process.cwd());
 const specPath = resolve(processArg ?? join(root, ".agentry", "process.json"));
 const loaded = existsSync(specPath) ? loadSpec(specPath, { root }) : { spec: null, problems: [] };
-if (loaded.problems.length)
-  process.stderr.write(`${specPath}: not used (${loaded.problems[0].message})\n`);
+if (loaded.problems.length) {
+  const [problem] = loaded.problems;
+  process.stderr.write(`${problem.file ?? specPath}: not used (${problem.message})\n`);
+}
 const spec = loaded.problems.length ? null : loaded.spec;
 const result = findContract({ root, spec, id, kind });
 process.stdout.write(`${JSON.stringify(result)}\n`);

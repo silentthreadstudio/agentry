@@ -6,7 +6,16 @@
 // Run: node --test plugin/scripts/test/spec-split.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { after, test } from "node:test";
@@ -147,6 +156,53 @@ test("problems in both files print one block per file, the process file first", 
   assert.equal(lines.length, 4);
 });
 
+// ---- the process file's own name and the files a symlink takes out --------------------------------
+
+// `board check` on `file` under the scratch repo's root, as the process file.
+const checkAs = (root, file) =>
+  spawnSync("node", [BOARD, "check", "--root", root, "--process", file], {
+    encoding: "utf8",
+    env: { ...process.env, NO_COLOR: "1" },
+  });
+
+test("a process file named workflow.json is exit 2 pointing at .agentry/process.json", () => {
+  const { root } = scratch(BASE, {});
+  const file = join(root, "workflow.json");
+  writeFileSync(file, JSON.stringify(BASE));
+  const res = checkAs(root, file);
+  assert.equal(res.status, 2);
+  assert.match(
+    res.stderr,
+    /the process file cannot be named workflow\.json \(its sibling workflow file would be itself\) → use \.agentry\/process\.json/,
+  );
+});
+
+test("a workflow.json or process.json that a symlink takes out of the repository is exit 2", () => {
+  for (const name of ["workflow.json", "process.json"]) {
+    const { root, check } = scratch(BASE, {});
+    const outside = mkdtempSync(join(tmpdir(), "agentry-outside-"));
+    temps.push(outside);
+    writeFileSync(join(outside, "x.json"), name === "workflow.json" ? "{}" : JSON.stringify(BASE));
+    rmSync(join(root, name));
+    symlinkSync(join(outside, "x.json"), join(root, name));
+    const res = check();
+    assert.equal(res.status, 2, name);
+    assert.match(
+      res.stderr,
+      new RegExp(`${name.replace(".", "\\.")} leaves the repository through a symlink`),
+    );
+  }
+});
+
+test("a workflow.json that is a symlink inside the repository still loads", () => {
+  const { root, check } = scratch(BASE, {});
+  rmSync(join(root, "workflow.json"));
+  writeFileSync(join(root, "real-workflow.json"), "{}");
+  symlinkSync(join(root, "real-workflow.json"), join(root, "workflow.json"));
+  const res = check();
+  assert.notEqual(res.status, 2, res.stderr);
+});
+
 // ---- the checks that read both files (across.mjs) ------------------------------------------------
 
 const FILES = { board: "process.json", workflow: "workflow.json" };
@@ -232,16 +288,28 @@ test("done-signoff on the lifecycle's kind fails from across.mjs, naming rules[i
 
 const PROCESS = join(SCRIPTS, "lib", "process");
 const lines = (file) => readFileSync(file, "utf8").split("\n").length - 1;
-const importsOf = (file) =>
-  [...readFileSync(file, "utf8").matchAll(/^import\s+(?:\{([^}]*)\}\s+from\s+)?"([^"]+)";/gms)].map(
-    ([, names = "", from]) => ({
-      names: names
-        .split(",")
-        .map((n) => n.trim().split(/\s+as\s+/)[0])
-        .filter(Boolean),
+// Every import a module's text makes, once: `import … from`, bare `import "x"`, `export … from` and
+// dynamic `import("x")`. `names` are the named imports plus "default" for a default one.
+const importsIn = (text) => {
+  const named = (clause) =>
+    (/\{([^}]*)\}/.exec(clause)?.[1] ?? "")
+      .split(",")
+      .map((n) => n.trim().split(/\s+as\s+/)[0])
+      .filter(Boolean);
+  const hasDefault = (clause) => /^\s*[\w$]+\s*(,|$)/.test(clause);
+  const statics = [
+    ...text.matchAll(/^(?:import|export)\s+(?:([^;"']+?)\s+from\s+)?["']([^"']+)["']/gm),
+  ];
+  const dynamics = [...text.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)];
+  return [
+    ...statics.map(([, clause = "", from]) => ({
+      names: [...(hasDefault(clause) ? ["default"] : []), ...named(clause)],
       from,
-    }),
-  );
+    })),
+    ...dynamics.map(([, from]) => ({ names: [], from })),
+  ];
+};
+const importsOf = (file) => importsIn(readFileSync(file, "utf8"));
 const sources = (dir) =>
   readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter(
@@ -261,20 +329,50 @@ test("spec.mjs is at most 120 lines and no spec/*.mjs file is over 300", () => {
     );
 });
 
+// What each spec module must not import, by the module's file name.
+const FORBIDDEN = {
+  "workflow.mjs": /\/(board|rules|across)\.mjs$/,
+  "board.mjs": /\/(workflow|across)\.mjs$/,
+  "rules.mjs": /^\.\/(board|workflow|across)\.mjs$/,
+};
+const breaks = (name, file) =>
+  importsOf(file)
+    .map((i) => i.from)
+    .filter((f) => FORBIDDEN[name].test(f));
+
 test("the imports point one way: workflow.mjs sees no board, board.mjs no workflow", () => {
-  const from = (name) => importsOf(join(PROCESS, "spec", name)).map((i) => i.from);
-  assert.deepEqual(
-    from("workflow.mjs").filter((f) => /\/(board|rules|across)\.mjs$/.test(f)),
-    [],
-  );
-  assert.deepEqual(
-    from("board.mjs").filter((f) => /\/(workflow|across)\.mjs$/.test(f)),
-    [],
-  );
-  assert.deepEqual(
-    from("rules.mjs").filter((f) => /^\.\/(board|workflow|across)\.mjs$/.test(f)),
-    [],
-  );
+  for (const name of Object.keys(FORBIDDEN))
+    assert.deepEqual(breaks(name, join(PROCESS, "spec", name)), [], name);
+});
+
+test("the import reader sees each form once: named, default, namespace, bare, export-from, dynamic", () => {
+  const text = [
+    'import { a, b as c } from "./named.mjs";',
+    'import dflt from "./default.mjs";',
+    'import * as ns from "./namespace.mjs";',
+    'import "./bare.mjs";',
+    'export { d } from "./reexport.mjs";',
+    'const lazy = await import("./dynamic.mjs");',
+    'export const local = "./not-an-import.mjs";',
+  ].join("\n");
+  assert.deepEqual(importsIn(text), [
+    { names: ["a", "b"], from: "./named.mjs" },
+    { names: ["default"], from: "./default.mjs" },
+    { names: [], from: "./namespace.mjs" },
+    { names: [], from: "./bare.mjs" },
+    { names: ["d"], from: "./reexport.mjs" },
+    { names: [], from: "./dynamic.mjs" },
+  ]);
+});
+
+test("a namespace import of workflow.mjs planted in a copy of board.mjs fails the direction rule", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-planted-"));
+  temps.push(dir);
+  const copy = join(dir, "board.mjs");
+  copyFileSync(join(PROCESS, "spec", "board.mjs"), copy);
+  assert.deepEqual(breaks("board.mjs", copy), []);
+  writeFileSync(copy, `${readFileSync(copy, "utf8")}\nimport * as W from "./workflow.mjs";\n`);
+  assert.deepEqual(breaks("board.mjs", copy), ["./workflow.mjs"]);
 });
 
 test("nothing imports a moved name from spec.mjs", () => {

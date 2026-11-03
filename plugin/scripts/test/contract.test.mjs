@@ -10,6 +10,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { scan } from "../lib/process/cli/scan.mjs";
 import { blocksIn, findContract } from "../lib/process/contract.mjs";
+import { BASE } from "./key-cases.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "find-contract.mjs");
 const dirs = [];
@@ -323,6 +324,19 @@ test("find-contract.mjs: an invalid process file is reported on stderr, then the
   assert.match(res.stderr, /process\.json: not used \(the process file is missing "root"/);
 });
 
+test("find-contract.mjs: a broken workflow.json is reported under its own path, not the process file's", () => {
+  const root = repo({
+    ".agentry/process.json": JSON.stringify(BASE),
+    ".agentry/workflow.json": "{ not json",
+    "docs/TASKS.md": "- **KX-06** owns the gate.\n",
+  });
+  const res = spawnSync("node", [CLI, "KX-06", "--root", root], { encoding: "utf8" });
+  assert.equal(res.status, 0);
+  assert.equal(JSON.parse(res.stdout).source, "discovered");
+  assert.match(res.stderr, new RegExp(`^${join(root, ".agentry", "workflow.json")}: not used \\(`));
+  assert.doesNotMatch(res.stderr, /process\.json/);
+});
+
 // One block for several tasks: every `**<id> · …**` lead before the first colon declares an id.
 const SHARED = [
   "## Sprint S3",
@@ -439,4 +453,10 @@ test("board contract's usage says it takes a task id", () => {
   const res = board(repo(LINKED), "contract");
   assert.equal(res.status, 2);
   assert.match(res.stderr, /^✗ board contract: needs an id → board contract --help/);
+});
+
+test("board explain's help example names the process file the run keeps", () => {
+  const res = board(repo(LINKED), "explain", "--help");
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /board explain --process \.agentry\/run\/process\/process\.json\n/);
 });
