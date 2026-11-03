@@ -181,12 +181,20 @@ const leavesRepo = (path: string): boolean => {
   return false;
 };
 const RepoPath = Text.refine((p) => !leavesRepo(p), { message: "leaves the repository" });
+/** A log glob from the gate's cwd, or from the temp directory after a literal `$TMPDIR/`. */
+const LogGlob = Text.refine(
+  (p) => {
+    const rest = p.startsWith("$TMPDIR/") ? p.slice("$TMPDIR/".length) : p;
+    return rest !== "" && !rest.startsWith("/") && !rest.split("/").includes("..");
+  },
+  { message: "expected a glob from the gate's cwd or $TMPDIR/" },
+);
 const Argv = z.array(Text).min(1);
 const Globs = z.array(RepoPath).min(1);
 
 /** The repo's gate: argv run with no shell in the git root of the tree under test. `quick` applies
  *  only when every changed file matches `only`; `after` lists the files it may leave changed;
- *  `concurrency` is how many lane gates run at once; `flaky` names tests a red may fail in and be re-run. */
+ *  `concurrency` is how many lane gates run at once; `flaky` names tests a red may fail in and be re-run; `flakyLogs` are extra logs it reads for their names. */
 export const Gate = z
   .object({
     command: Argv,
@@ -194,6 +202,7 @@ export const Gate = z
     after: Globs.optional(),
     concurrency: z.number().int().positive().optional(),
     flaky: z.array(Text).min(1).optional(),
+    flakyLogs: z.array(LogGlob).min(1).optional(),
     note: Text.optional(),
   })
   .strict();

@@ -269,7 +269,8 @@ the owner's approval.
 | `gate.quick.only` | yes | Globs (from the git root). The quick tier applies only when every changed file matches one of them. |
 | `gate.after` | no | Globs of the files allowed to change after the gate ran green. Default `[]`: none. |
 | `gate.concurrency` | no | How many lane gates may run at once in this checkout. Default `1`: lanes queue their gates behind a lock in `.agentry/run/`, so load-sensitive tests are not run against each other. |
-| `gate.flaky` | no | Names of tests known to fail under load. A red gate whose log fails only in these is re-run alone once; both runs are recorded. |
+| `gate.flaky` | no | Names of tests known to fail under load. A red gate whose output fails only in these is re-run alone once, by `lane exec gate` and by the land (`lane merge`) alike; both runs are recorded. The gate's output (or the `gate.flakyLogs` files) must name each failing test, else every red is real. |
+| `gate.flakyLogs` | no | Globs of extra logs read for failure names when the gate's own output prints only a summary (its step logs). Each is from the gate's cwd, or starts with `$TMPDIR/` (the temp directory); no absolute path and no `..`. Only files modified since the gate run started are read. |
 | `gate.note` | no | Free text. |
 | `extensions.merge` | yes | What `/agentry:merge` adds. |
 | `extensions.merge.checks` | yes | Repo skills by their own names (lower-case letters, digits, `-`; each once); `[]` names none. Merge refuses to land until each has a recorded outcome. |

@@ -177,6 +177,14 @@ const lifecycle = shape({
 // skills merge runs as checks; the repo's conductor prompt (plan R1b §2, §3.1).
 const argv = filled(text);
 const globs = filled(repoPath);
+// A log glob for `gate.flakyLogs`: from the gate's cwd, or from the temp directory when it starts `$TMPDIR/`.
+// Absolute paths and any `..` segment are refused.
+const logGlob = (v, at, bad) => {
+  if (typeof v !== "string" || v.length === 0) return text(v, at, bad);
+  const rest = v.startsWith("$TMPDIR/") ? v.slice("$TMPDIR/".length) : v;
+  if (rest === "" || rest.startsWith("/") || rest.split("/").includes(".."))
+    bad(at, `"${v}" is not a glob from the gate's cwd or $TMPDIR/`);
+};
 const gate = shape(
   {
     "command!": argv,
@@ -184,6 +192,7 @@ const gate = shape(
     after: globs,
     concurrency: posInt,
     flaky: filled(text),
+    flakyLogs: filled(logGlob),
     note: text,
   },
   FULL,
@@ -213,7 +222,7 @@ const processFile = shape({
  *  trailing `!` marking a required one. The format reference is bound to it. */
 export const schema = processFile;
 
-/** The repo's gate with its defaults filled (`after: []`, `concurrency: 1`, `flaky: []`, no quick tier), or null when the process
+/** The repo's gate with its defaults filled (`after: []`, `concurrency: 1`, `flaky: []`, `flakyLogs: []`, no quick tier), or null when the process
  *  file has none. A copy: changing it never changes the spec. */
 export function gateOf(spec) {
   const g = own(spec, "gate");
@@ -224,6 +233,7 @@ export function gateOf(spec) {
     after: g.after ?? [],
     concurrency: g.concurrency ?? 1,
     flaky: g.flaky ?? [],
+    flakyLogs: g.flakyLogs ?? [],
     note: g.note ?? null,
   });
 }

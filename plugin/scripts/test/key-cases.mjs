@@ -57,6 +57,7 @@ export const PROCESS_CASES = [
       after: ["CHANGELOG.md"],
       concurrency: 2,
       flaky: ["test_budget"],
+      flakyLogs: ["logs/*.log", "$TMPDIR/gate.*/tests.log"],
       note: "the repo's own gate",
     }),
   },
@@ -146,6 +147,19 @@ export const PROCESS_CASES = [
     name: "an empty flaky name",
     add: gate({ command: ["x"], flaky: ["a", ""] }),
     bad: ["gate.flaky[1]"],
+  },
+  {
+    name: "an empty flakyLogs list",
+    add: gate({ command: ["x"], flakyLogs: [] }),
+    bad: ["gate.flakyLogs"],
+  },
+  {
+    name: "flakyLogs globs that are absolute, climb out or are empty",
+    add: gate({
+      command: ["x"],
+      flakyLogs: ["/var/log/a.log", "a/../b.log", "$TMPDIR/../x", "$TMPDIR/"],
+    }),
+    bad: ["gate.flakyLogs[0]", "gate.flakyLogs[1]", "gate.flakyLogs[2]", "gate.flakyLogs[3]"],
   },
   { name: "an empty after", add: gate({ command: ["x"], after: [] }), bad: ["gate.after"] },
   {

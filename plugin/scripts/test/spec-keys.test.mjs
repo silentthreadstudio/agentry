@@ -36,6 +36,7 @@ test("gateOf fills the defaults, copies, and is null without a gate", () => {
     after: [],
     concurrency: 1,
     flaky: [],
+    flakyLogs: [],
     note: null,
   });
   gate.command.push("--changed");
@@ -47,6 +48,7 @@ test("gateOf fills the defaults, copies, and is null without a gate", () => {
     after: ["a.md"],
     concurrency: 1,
     flaky: [],
+    flakyLogs: [],
     note: null,
   });
 });
