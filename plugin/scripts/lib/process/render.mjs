@@ -216,6 +216,8 @@ function driftLines(view, s) {
     const glyph = first.startsWith("!") ? s.cyan("!") + first.slice(1) : first;
     return [row(n ? "" : "Drift", glyph, s), ...rest.map((l) => `${" ".repeat(LABEL + 2)}${l}`)];
   });
+  if (view.kept?.length)
+    lines.push(row("Kept", line(view.kept.map((k) => basename(k.path)).join(", ")), s));
   if (view.drafts)
     lines.push(row("Drafts", line(`${view.drafts} pending · /agentry:board draft list`), s));
   return lines;

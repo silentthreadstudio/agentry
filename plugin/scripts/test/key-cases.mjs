@@ -203,6 +203,25 @@ export const PROCESS_CASES = [
     add: { conductor: { promt: "C.md" } },
     bad: ["conductor.promt", "conductor.prompt"],
   },
+  // worktrees.keep and the hand status file
+  { name: "worktrees to keep", add: { worktrees: { keep: ["main-*", "docs"] } } },
+  { name: "an empty keep list", add: { worktrees: { keep: [] } }, bad: ["worktrees.keep"] },
+  {
+    name: "a keep entry that is empty",
+    add: { worktrees: { keep: [""] } },
+    bad: ["worktrees.keep[0]"],
+  },
+  { name: "worktrees with no keep", add: { worktrees: {} }, bad: ["worktrees.keep"] },
+  {
+    name: "a hand status file and its heading",
+    add: { status: { file: "docs/STATUS.md", next: "Next" } },
+  },
+  {
+    name: "a status file outside the repository",
+    add: { status: { file: "../STATUS.md" } },
+    bad: ["status.file"],
+  },
+  { name: "an empty status heading", add: { status: { next: "" } }, bad: ["status.next"] },
   // bad: lifecycle writes
   {
     name: "a misspelled lifecycle write",

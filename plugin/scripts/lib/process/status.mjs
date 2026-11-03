@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { check } from "./check.mjs";
 import { findContract } from "./contract.mjs";
 import * as drafts from "./drafts.mjs";
-import { nudges } from "./drift.mjs";
+import { keptTrees, nudges } from "./drift.mjs";
 import * as git from "./git.mjs";
 import { readInside } from "./read.mjs";
 import { refKinds, resolve } from "./rules/structure.mjs";
@@ -180,6 +180,7 @@ export function statusView({ root, spec, model, runRoot = root }) {
       .filter((p) => p.total > 0 || !p.tally.parked),
     parked: items.filter((i) => i.phase === "parked").length,
     nudges: nudges({ root, runRoot, spec, model }),
+    kept: keptTrees({ root, runRoot, spec }).map((t) => ({ path: t.path, branch: t.branch })),
     drafts: drafts.pending(runRoot).length,
     recent: git.log(root, { ref: branch, n: 10, firstParent: true }),
     ...(note ? { note } : {}),

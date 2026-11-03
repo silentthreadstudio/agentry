@@ -22,6 +22,7 @@
 import { realpathSync } from "node:fs";
 import { basename, join, sep } from "node:path";
 import * as git from "./git.mjs";
+import { isKept } from "./keep.mjs";
 import * as ledgers from "./ledger.mjs";
 import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
@@ -468,19 +469,30 @@ const accept = (id) => `/agentry:board fix --accept ${id ?? "<id>"}`;
 // nothing left to land), and only then can the owner accept it.
 const adopt = (id, branch) => `${merge(id)} --branch ${branch}, then ${accept(id)}`;
 
+// The agent worktrees no ledger knows. The checkout the board is in comes from its repository root: a board
+// kept in a subfolder sees the worktrees too.
+function unlistedTrees(root, runRoot, all) {
+  const top = git.topLevel(root) || root;
+  return git
+    .worktrees(root)
+    .filter((t) => isAgentTree(t, { top, runRoot }))
+    .filter((t) => !all.some((l) => l.worktree === t.path || (t.branch && l.branch === t.branch)));
+}
+
+/** The unlisted agent worktrees the process file keeps on purpose (`worktrees.keep`): shown, never drift. */
+export function keptTrees({ root, runRoot = root, spec }) {
+  if (!spec.worktrees?.keep) return [];
+  return unlistedTrees(root, runRoot, ledgers.list(runRoot)).filter((t) => isKept(spec, t));
+}
+
 export function nudges({ root, runRoot = root, spec, model }) {
   const life = spec.lifecycle;
   const items = workItems(spec, model);
   const all = ledgers.list(runRoot);
   const byId = new Map(all.map((l) => [l.id, l]));
   const onto = git.defaultBranch(root);
-  // The checkout the board is in, from its git root: a board kept in a subfolder sees the worktrees too.
-  const top = git.topLevel(root) || root;
   const found = [];
-  const unlisted = git
-    .worktrees(root)
-    .filter((t) => isAgentTree(t, { top, runRoot }))
-    .filter((t) => !all.some((l) => l.worktree === t.path || (t.branch && l.branch === t.branch)));
+  const unlisted = unlistedTrees(root, runRoot, all).filter((t) => !isKept(spec, t));
   // Every branch whose landing is asked, surveyed in one go: git is asked per run, not per branch.
   const asked = [
     ...unlisted.map((t) => t.branch),

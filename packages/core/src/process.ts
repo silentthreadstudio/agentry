@@ -230,9 +230,16 @@ export const StatusConfig = z
     note: z.string().optional(),
     prime: z.boolean().optional(),
     lines: z.number().int().positive().optional(),
+    /** A hand-kept status file, and the heading in it that lists what is next. */
+    file: RepoPath.optional(),
+    next: Text.optional(),
   })
   .strict();
 export type StatusConfig = z.infer<typeof StatusConfig>;
+
+/** Worktrees that are kept on purpose: names or globs of a branch or directory, shown as kept, never drift. */
+export const Worktrees = z.object({ keep: z.array(Text).min(1) }).strict();
+export type Worktrees = z.infer<typeof Worktrees>;
 
 export const ProcessSpec = z
   .object({
@@ -246,6 +253,7 @@ export const ProcessSpec = z
     lifecycle: Lifecycle.optional(),
     drafts: Drafts.optional(),
     status: StatusConfig.optional(),
+    worktrees: Worktrees.optional(),
     gate: Gate.optional(),
     extensions: Extensions.optional(),
     conductor: Conductor.optional(),

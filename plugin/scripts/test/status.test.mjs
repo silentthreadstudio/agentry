@@ -348,6 +348,28 @@ test("the view carries nudges and the pending draft count, and status shows both
   assert.match(text, /^Drafts {5}1 pending · \/agentry:board draft list$/m);
 });
 
+test("a worktree matching worktrees.keep shows as Kept and is not drift", () => {
+  const kept = driftView((root) => {
+    handBranch(root, ".claude/worktrees/agent-keep", "worktree-agent-keep");
+    handBranch(root, ".claude/worktrees/agent-q1", "worktree-agent-q1");
+  });
+  assert.deepEqual(
+    kept.view.nudges.filter((n) => n.kind === "unlisted-worktree").map((n) => n.branch),
+    ["worktree-agent-keep", "worktree-agent-q1"],
+  );
+  const spec = { ...kept.spec, worktrees: { keep: ["agent-ke?p", "nothing-*"] } };
+  const view = statusView({ root: kept.root, spec, model: readProcess({ root: kept.root, spec }) });
+  assert.deepEqual(
+    view.nudges.filter((n) => n.kind === "unlisted-worktree").map((n) => n.branch),
+    ["worktree-agent-q1"],
+  );
+  assert.deepEqual(
+    view.kept.map((k) => k.branch),
+    ["worktree-agent-keep"],
+  );
+  assert.match(renderStatus({ ...kept, spec, view }), /^Kept {7}agent-keep$/m);
+});
+
 test("with more than four nudges the rest are counted, and no line passes 80 columns", () => {
   const { spec, report, view, work } = driftView((root) => {
     for (const n of ["a", "b", "c", "d"])

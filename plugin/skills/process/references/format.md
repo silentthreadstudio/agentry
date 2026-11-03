@@ -19,7 +19,8 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
 | `rules` | yes | The rules turned on, each `{ "rule": "<catalog id>", …params }`. |
 | `lifecycle` | no | What the harness writes as work moves. Absent: the checker never writes on its own. |
 | `drafts` | no | How an answered question becomes a decision draft. |
-| `status` | no | The derived view: `now` (the kind that is "current", e.g. `sprint`), `note` (the hand-written note, default `.agentry/NOTE.md`), `prime` (inject it at session start), `lines` (how many). |
+| `status` | no | The derived view: `now` (the kind that is "current", e.g. `sprint`), `note` (the hand-written note, default `.agentry/NOTE.md`), `prime` (inject it at session start), `lines` (how many), `file` and `next` (a hand-kept status file, see the last section). |
+| `worktrees` | no | `{ "keep": [names or globs] }`: worktrees kept on purpose. |
 | `gate` | no | The repo's gate: the command `exec` and `merge` run, its quick tier, the files it may leave changed. |
 | `extensions` | no | Repo skills Agentry's commands run as extra checks (`merge.checks`). |
 | `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
@@ -278,3 +279,16 @@ less; a misspelled `only` glob makes the quick tier apply less often.
 prompt must be a file inside it and hold the `rules` heading, matched the way `board draft apply` matches it.
 A miss is exit 2 naming the key and what was looked for, with the nearest heading when one is close
 (`"10. Standing rules"` for `"Standing rules"`).
+
+## status file and kept worktrees
+
+```json
+"status": { "file": "docs/STATUS.md", "next": "Next" },
+"worktrees": { "keep": ["scratch-*", "release"] }
+```
+
+- `status.file` and `status.next` (a path from the repository root, and a heading in that file) name a
+  status file kept by hand. `board status` and `session start` nudge once when an id listed under that
+  heading is already done on the board, so the file does not drift. Both are optional; the nudge needs both.
+- `worktrees.keep` is a non-empty list of names or globs (`*` and `?`), matched against a worktree's
+  branch and its directory name. A match is shown as *kept* in `board status`, never as drift.
