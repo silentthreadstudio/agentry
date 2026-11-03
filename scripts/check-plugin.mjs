@@ -7,6 +7,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { docFlagProblems } from "./lib/doc-flags.mjs";
+import { missingServerPaths, retiredMentions } from "./lib/retired.mjs";
 import { bundleSrcHash, distHash, parseStamp } from "./lib/src-hash.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -288,23 +289,15 @@ else {
   ok("bin/agentry", "executable, routes board, lane and draft");
 }
 
-// 10. Retired surfaces — the plugin ships one MCP server (mem) and no web UI, so no payload file may name
-// the removed ones: an agent told to call a tool that is not there stalls or improvises.
-const RETIRED = [/workbench/i, /mcp__plugin_agentry_flow/, /channel_reply/];
-const payloadFiles = (dir) =>
-  readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-    e.isDirectory() ? payloadFiles(join(dir, e.name)) : [join(dir, e.name)],
+// 10. Retired surfaces — no payload file may name the removed web UI, its run-state MCP server, its tools
+// or its channels, and every server the manifest starts must have its bundle (scripts/lib/retired.mjs).
+const retired = [...retiredMentions(PLUGIN), ...missingServerPaths(PLUGIN)];
+for (const p of retired) err(`plugin/${p}`);
+if (!retired.length)
+  ok(
+    "no retired surfaces",
+    "no removed UI, flow tool or channel names; every MCP server bundle exists",
   );
-let retired = 0;
-for (const file of payloadFiles(PLUGIN)) {
-  const text = readFileSync(file, "utf8");
-  for (const re of RETIRED) {
-    if (!re.test(text)) continue;
-    retired += 1;
-    err(`plugin/${relative(PLUGIN, file)} names a removed surface (${re.source})`);
-  }
-}
-if (retired === 0) ok("no retired surfaces", "no workbench, flow MCP or channel names in plugin/");
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));
