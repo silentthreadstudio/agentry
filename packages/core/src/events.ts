@@ -1,4 +1,4 @@
-// Work event log — the Workbench live feed (doc 08 §5).
+// Work event log — one line per run event (doc 08 §5).
 import { z } from "zod";
 
 export const WorkEvent = z.object({

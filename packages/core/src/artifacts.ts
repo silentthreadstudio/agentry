@@ -16,7 +16,7 @@ export const TaskFrontmatter = z.object({
   title: z.string(),
   status: TaskStatus,
   owner: z.string().optional(),
-  lockedBy: z.string().optional(), // Workbench lock while in-progress (doc 08 §3)
+  lockedBy: z.string().optional(), // who holds the task while in-progress (doc 08 §3)
   version: z.string().optional(), // content-hash for optimistic concurrency (doc 08 §2)
   satisfies: z.array(z.string()).default([]), // → Spec AC ids (coverage)
   deps: z.array(z.string()).default([]), // serialize only where contracts overlap

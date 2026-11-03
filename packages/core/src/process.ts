@@ -1,6 +1,6 @@
 // Process — the per-repo process file (`.agentry/process.json`) and the shapes the board checker
-// reports. One concern: the typed contract the dependency-free checker, its hooks and (later) the
-// Workbench all agree on. Readers and writers live in `plugin/scripts/lib/process/`, not here.
+// reports. One concern: the typed contract the dependency-free checker and its hooks agree on.
+// Readers and writers live in `plugin/scripts/lib/process/`, not here.
 import { z } from "zod";
 
 /** The fixed vocabulary every rule speaks; a kind maps its own status words onto these. */
