@@ -28,6 +28,10 @@ Each row carries a mark: `✓` holds, `!` holds with a warning to show the owner
 main's tip: the picks may conflict), `✗` red, `·` skipped, `…` waiting. `--json` with any mode prints the
 same rows and `next` as one object.
 
+Before the first `--preflight` in a repo, main must be clean and the setup committed: the process file,
+the conductor prompt, `AGENTS.md` and any board rows added by hand or by `/agentry:new`. The `main` row
+refuses anything else uncommitted (see below), so a fresh setup left uncommitted stops the first land.
+
 Each call is idempotent from the task's ledger (`.agentry/run/process/ledger/<id>.json`). Re-run the land
 after fixing what stopped it, and it resumes. Picks already on main are not picked again, and a gate
 already green on main's HEAD does not run again. A land that already finished prints "already merged".
