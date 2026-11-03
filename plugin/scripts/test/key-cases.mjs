@@ -33,8 +33,21 @@ const gate = (g) => ({ gate: g });
 const life = (write) => ({ lifecycle: { kind: "task", on: {}, write } });
 const checks = (c) => ({ extensions: { merge: { checks: c } } });
 
+// BASE with a commits field `commit` carrying `join`.
+const joined = (join) => ({
+  kinds: {
+    task: {
+      ...BASE.kinds.task,
+      fields: { ...BASE.kinds.task.fields, commit: { column: "Commit", type: "commits", join } },
+    },
+  },
+});
+const JOIN = "kinds.task.fields.commit.join";
+
 export const PROCESS_CASES = [
   // good
+  { name: "a space as a commits join", add: joined(" ") },
+  { name: "a comma and space as a commits join", add: joined(", ") },
   { name: "a gate with only a command", add: gate({ command: ["make", "test"] }) },
   {
     name: "a full gate",
@@ -64,6 +77,11 @@ export const PROCESS_CASES = [
     add: { ...gate({ command: ["x"] }), ...checks(["y"]), conductor: { prompt: "z.md" } },
   },
   { name: "a lifecycle status write", add: life({ status: "status" }) },
+  // bad: join
+  { name: "an empty join", add: joined(""), bad: [JOIN] },
+  { name: "a join with a letter", add: joined("x"), bad: [JOIN] },
+  { name: "a join with a digit", add: joined(" 1 "), bad: [JOIN] },
+  { name: "a join that is not a string", add: joined(3), bad: [JOIN] },
   // bad: gate
   { name: "a gate as a string", add: gate("make test"), bad: ["gate"] },
   { name: "a gate as a list", add: gate(["make"]), bad: ["gate"] },

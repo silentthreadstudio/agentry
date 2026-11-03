@@ -18,6 +18,10 @@ export const Field = z
     role: z.enum(["parent", "children"]).optional(),
     also: z.array(z.string()).optional(),
     mark: z.string().optional(),
+    join: z
+      .string()
+      .regex(/^[^0-9A-Za-z]+$/, { message: "a separator with no letters or digits" })
+      .optional(),
     match: z.string().optional(),
     case: z.literal("upper").optional(),
   })
