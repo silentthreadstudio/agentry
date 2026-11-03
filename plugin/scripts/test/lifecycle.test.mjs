@@ -468,3 +468,55 @@ test("renderHandoff fills id, sha and summary, each on one line", () => {
     WriteError,
   );
 });
+
+// A repo whose board already holds a done row T0 with the given Commit cell; `spec` may pin `join`.
+function repoWithDone(cell, { join: pin, commits = 2 } = {}) {
+  const spec = structuredClone(SPEC);
+  if (pin !== undefined) spec.kinds.task.fields.commit.join = pin;
+  const made = repo({ spec, commits });
+  const path = join(made.root, "plan", "BOARD.md");
+  writeFileSync(
+    path,
+    readFileSync(path, "utf8").replace(
+      "| T1   |",
+      `| T0   | S1     | done   |         | ${cell} | Older       |\n| T1   |`,
+    ),
+  );
+  return made;
+}
+const commitCell = (root, id = "T1") =>
+  cells(
+    read(root, "plan/BOARD.md")
+      .split("\n")
+      .find((l) => l.startsWith(`| ${id} `)),
+  )[5];
+
+test("several commits join with the separator the board's done rows already use", () => {
+  for (const [cell, sep] of [
+    ["aaaaaaa bbbbbbb", " "],
+    ["aaaaaaa, bbbbbbb", ", "],
+    ["aaaaaaa + bbbbbbb", " + "],
+  ]) {
+    const { root, shas } = repoWithDone(cell);
+    event(root, "merged", "T1", { shas, summary: "done" });
+    assert.equal(commitCell(root), shas.map((s) => s.slice(0, 7)).join(sep), cell);
+  }
+});
+
+test("a pinned join wins over what the rows show, and nothing learned keeps the a…b range", () => {
+  const pinned = repoWithDone("aaaaaaa bbbbbbb", { join: ", " });
+  event(pinned.root, "merged", "T1", { shas: pinned.shas, summary: "done" });
+  assert.equal(commitCell(pinned.root), pinned.shas.map((s) => s.slice(0, 7)).join(", "));
+
+  const none = repoWithDone("aaaaaaa");
+  event(none.root, "merged", "T1", { shas: none.shas, summary: "done" });
+  const [a, b] = none.shas.map((s) => s.slice(0, 7));
+  assert.equal(commitCell(none.root), `${a}…${b}`);
+});
+
+test("a three-commit land with a learned range mark still writes first…last", () => {
+  const { root, shas } = repoWithDone("aaaaaaa…bbbbbbb", { commits: 3 });
+  event(root, "merged", "T1", { shas, summary: "done" });
+  const [a, , c] = shas.map((s) => s.slice(0, 7));
+  assert.equal(commitCell(root), `${a}…${c}`);
+});

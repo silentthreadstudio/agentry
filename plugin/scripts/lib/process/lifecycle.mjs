@@ -7,10 +7,12 @@
 // Events: dispatched · built · failed → the status `on` maps them to. verdict (data.verdict) → the
 // verdict field; FAIL also applies "failed"; a pass leaves the status (only the merge makes a task
 // done, A23). merged (data.shas, first landed first; data.summary) → `on.merged`, the commit cell
-// `<first>` or `<first>…<last>` (short SHAs) and the handoff line in the parent's file, naming the
+// `<first>` or, for several, the shas joined by the separator the board's done rows use (the field's `join`
+// pins it; `<first>…<last>` when nothing is learned) (short SHAs) and the handoff line in the parent's file, naming the
 // first. A `writes` file is relative to the git root. A step whose edit changes nothing (already set,
 // the handoff line already there) is in `skipped`, not `writes`.
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import * as md from "./markdown.mjs";
 import { escapesRoot, fillHandoff, handoffRejection, own } from "./spec.mjs";
@@ -30,6 +32,8 @@ const STEPS = {
   merged: { steps: () => ["status", "commit", "handoff"], takes: ["shas", "summary"] },
 };
 const SHA = /^[0-9a-f]{7,40}$/;
+const RANGE = ["…", "..", "..."];
+const TOKEN = /[0-9a-f]{7,40}/g;
 
 const refuse = (message) => {
   throw new WriteError(message);
@@ -60,6 +64,38 @@ function checkData(event, data) {
       refuse(`"${sha}" is not a commit SHA (7 to 40 lower-case hex)`);
   if (data.summary !== undefined && typeof data.summary !== "string")
     refuse("summary should be text");
+}
+
+// What separates the commits in the done rows' cells of `column`: the text between two neighbouring
+// SHAs (short, so a note between them is no separator), the most common one; null when no done row
+// holds two. Table kinds only: a one-file-per-item kind has no neighbouring cells to learn from.
+function learnedJoin({ root, spec, kind, model, column }) {
+  if (kind.at.table === undefined) return null;
+  const file = join(root, spec.root, kind.at.table);
+  let text;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+  const sec = md.section(text, kind.at.heading);
+  const table = sec && md.tableIn(text, sec);
+  const done = new Set(
+    (own(model.kinds, spec.lifecycle.kind)?.items ?? [])
+      .filter((i) => i.phase === "done")
+      .map((i) => i.id),
+  );
+  const seen = new Map();
+  for (const row of table?.rows ?? []) {
+    if (!done.has(md.plain(row.cells[kind.id.column] ?? ""))) continue;
+    const cell = md.plain(row.cells[column] ?? "");
+    const found = [...cell.matchAll(TOKEN)];
+    for (let i = 1; i < found.length; i++) {
+      const gap = cell.slice(found[i - 1].index + found[i - 1][0].length, found[i].index);
+      if (gap && gap.length <= 4) seen.set(gap, (seen.get(gap) ?? 0) + 1);
+    }
+  }
+  return [...seen].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
 // git's answer to `args` in `root`, trimmed; null when it fails.
@@ -147,7 +183,13 @@ export function applyEvent({ root, spec, model, event, id, data = {}, preview = 
   const values = {
     status: () => own(life.on, event === "verdict" ? "failed" : event),
     verdict: () => data.verdict,
-    commit: () => (shas.length === 1 ? shas[0] : `${shas[0]}…${shas.at(-1)}`),
+    commit: () => {
+      if (shas.length === 1) return shas[0];
+      const def = kind.fields[write.commit];
+      const sep =
+        def.join ?? learnedJoin({ root, spec, kind, model, column: def.column }) ?? RANGE[0];
+      return RANGE.includes(sep.trim()) ? `${shas[0]}${sep}${shas.at(-1)}` : shas.join(sep);
+    },
   };
 
   for (const step of steps) {

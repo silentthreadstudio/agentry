@@ -124,6 +124,7 @@ const field = shape({
   role: oneOf("parent", "children"),
   also: list(str),
   mark: str,
+  join: str,
   match: regex,
   case: oneOf("upper"),
 });
@@ -412,6 +413,8 @@ function checkTree(kinds, name, at, bad) {
       if (!has(def, "prefix"))
         bad(here, `is a "mentions" field and needs a "prefix" (such as "D")`);
     }
+    if (has(def, "join") && typed && !["commits", "evidence"].includes(type))
+      bad(`${here}.join`, `is read only on a "commits" or "evidence" field, and "${f}" is ${type}`);
     // On a ref it would upper-case the id before the tree links it, so a mixed-case id never links.
     if (has(def, "case") && typed && type !== "text")
       bad(`${here}.case`, `is read only on a text field, and "${f}" is ${type}`);

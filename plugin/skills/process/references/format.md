@@ -45,6 +45,7 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
   | `prefix` | On a `mentions` field (which also needs `ref`): the letters before the number, e.g. `{ "type": "mentions", "ref": "decision", "prefix": "D" }`. A mention `D2` resolves to the item with id `D2`, else the one with id `2` (kinds that number plainly); `refs-resolve` reports one that names none. A prefix inside a word or a longer token (`AD2`, `D2x`, `D2.5`) is no mention. |
   | `role` | `parent` on the child's `ref` field (a task's sprint), `children` on the parent's `list` field (a milestone's sprints). Together they make the tree. |
   | `also` | Literal values allowed besides ids (a parking word such as `LATER`). |
+  | `join` | On a `commits` or `evidence` field the lifecycle writes: what goes between several landed commits, e.g. `" "` or `", "`. Without it, the separator the board's done rows already use is learned (the most common text between two SHAs in one cell), and `<first>…<last>` is written when none is. A range mark (`…`, `..`) as the separator writes `<first>…<last>`; any other joins every SHA. |
   | `mark`, `match`, `case` | The flag glyph; a regex applied before the type; `upper` to compare case-blind. |
 
   Cells are read plain: `**` and backticks are stripped, `\|` is a literal pipe.
@@ -228,7 +229,8 @@ a verifier failing it, its commits landing on the default branch. A verifier pas
 leaves the status where it is; a `FAIL` verdict also applies `failed`; only the merge makes a task done.
 `write` names where each value goes, and takes exactly these keys: `status` (the kind's status field),
 `verdict` (a text field: `PASS`, `PASS WITH NOTES` or `FAIL`), `commit` (a commits or evidence field: the
-first landed commit, or `<first>…<last>`, as short SHAs) and `handoff` (`parent.file:<section>`, a bold-lead
+first landed commit, or several joined by the separator the board's done rows use (the field's `join` pins
+it), `<first>…<last>` when nothing is learned, as short SHAs) and `handoff` (`parent.file:<section>`, a bold-lead
 section of the parent's file, where the `handoff` line is appended). A step with no `on` word or no `write`
 key is skipped and reported, and without `lifecycle` nothing is ever written. Writes are mechanical only
 and land in the user's files, visible in their diff; `agentry board lifecycle <event> <id>` applies one event.
