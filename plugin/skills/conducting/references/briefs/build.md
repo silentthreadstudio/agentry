@@ -66,8 +66,8 @@ Not this round: {{notThisRound}}
   command itself. Only a check longer than your host's foreground limit runs in the host's background
   mode: wait for its one exit notice and read the same exit code.
 - No command other than the gate may run longer than 10 minutes: give an engine, server, simulator or
-  watcher you start a time limit (the host's command timeout, or the tool's own flag) and treat hitting it
-  as a finding to report, never a wait.
+  watcher you start a time limit (run it with `agentry run --limit <dur> -- …`) and treat hitting it as a
+  finding to report, never a wait.
 - The repo's gate, as the lane records it (it refuses a dirty tree): `{{gateLine}}`
 - Commit on `{{branch}}` following the repo's commit conventions, with no AI attribution. Leave no
   uncommitted or untracked files behind. Do not merge, push or rebase, and once you have reported, don't
