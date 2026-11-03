@@ -466,7 +466,7 @@ test("scan points at the ignored folder with the most markdown, counts the rest 
   }
 });
 
-test("scan never cuts the arrow off the not-scanned line, however long the folder names are", () => {
+test("scan moves the arrow and command to an indented next line when the not-scanned line would pass 100 columns", () => {
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-scan-")));
   try {
     const table = "| Code |\n| --- |\n| T1 |\n";
@@ -484,10 +484,32 @@ test("scan never cuts the arrow off the not-scanned line, however long the folde
       encoding: "utf8",
       env: { ...process.env, NO_COLOR: "1" },
     });
-    const line = res.stdout.trimEnd().split("\n").at(-1);
-    assert.match(line, /^not scanned \(ignored\): .*board scan \.b{40}\/…$/);
+    const [line, next] = res.stdout.trimEnd().split("\n").slice(-2);
+    assert.match(line, /^not scanned \(ignored\): .*\+\d more$/);
     assert.ok([...line].length <= 100, line);
-    assert.match(line, /\+\d more/);
+    assert.match(next, /^ {2}→ .*board scan \.b{40}\/…$/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("scan keeps the arrow whole under a 140-column folder, the folder cut on the line above", () => {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-scan-")));
+  try {
+    const dir = `.${"d".repeat(139)}`;
+    mkdirSync(join(tmp, dir), { recursive: true });
+    writeFileSync(join(tmp, dir, "b.md"), "| Code |\n| --- |\n| T1 |\n");
+    writeFileSync(join(tmp, ".gitignore"), `${dir}/\n`);
+    const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+    spawnSync("git", ["-C", tmp, "init", "-q"], { env });
+    const res = spawnSync("node", [BOARD, "scan", "--root", tmp], {
+      encoding: "utf8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    const [line, next] = res.stdout.trimEnd().split("\n").slice(-2);
+    assert.match(line, /^not scanned \(ignored\): .*…$/);
+    assert.ok([...line].length <= 100, line);
+    assert.match(next, new RegExp(`^ {2}→ .*board scan ${dir}/…$`));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

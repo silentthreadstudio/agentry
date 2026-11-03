@@ -109,7 +109,7 @@ test("withNew: a path that is the tail of exactly one tracked file resolves to i
     { path: "plugin/lib/merge/gating.mjs", new: false },
     { path: "plugin/lib/a/cli/exec.mjs", new: false, ambiguous: true },
     { path: "plugin/lib/b/cli/exec.mjs", new: false, ambiguous: true },
-    { path: "merge/other.mjs", new: true },
+    { path: "plugin/lib/merge/other.mjs", new: true },
   ]);
 });
 
@@ -633,4 +633,55 @@ test("the recheck and final briefs carry the recorded-green line too", () => {
   const green = { ...VALUES, gateGreen: true, gateRun: false, gateSha: "def5678", gateLog: "/l" };
   for (const step of ["recheck", "final"])
     assert.match(renderBrief(step, green), /do not re-run it/, step);
+});
+
+test("ownedFiles starts at the bold owns label, not at the word owns in earlier prose", () => {
+  const block = [
+    "- **Deps:** none (beside R1d-6: it owns `ownedFiles` and its helpers only).",
+    "- **Owns:** `lib/a.mjs`, `test/a.test.mjs`.",
+    "- **Exposes:** `x.y`",
+  ].join("\n");
+  assert.deepEqual(ownedFiles(block), ["lib/a.mjs", "test/a.test.mjs"]);
+  assert.deepEqual(ownedFiles("the lane owns `x.mjs`.\n**OWNS**: `lib/a.mjs`"), ["lib/a.mjs"]);
+  assert.deepEqual(ownedFiles("the lane owns `x.mjs`."), ["x.mjs"]);
+});
+
+test("ownedFiles carries on through bold step labels and ends at any other bold label", () => {
+  assert.deepEqual(
+    ownedFiles("**Owns:**\n**step 1:** `a.ts`\n**Step 2 (mock):** `b.ts`\n**STEP 3** `c.ts`"),
+    ["a.ts", "b.ts", "c.ts"],
+  );
+  assert.deepEqual(ownedFiles("**Owns:**\n**step 1:** `a.ts`\n**Notes:** `b.ts`"), ["a.ts"]);
+});
+
+test("ownedFiles drops the paths of an exclusion opened by Not:, Not, Excludes: or Except:", () => {
+  assert.deepEqual(
+    ownedFiles("**Owns:** `a.mjs`; CHANGELOG.md. Not: `lib/config.mjs`, either repo's `.agentry/`"),
+    ["a.mjs"],
+  );
+  for (const opener of ["Not ", "NOT: ", "Excludes: ", "Except: ", "not "]) {
+    assert.deepEqual(
+      ownedFiles(`**Owns:** \`a.mjs\`; ${opener}\`b.mjs\`, \`c.mjs\``),
+      ["a.mjs"],
+      opener,
+    );
+    assert.deepEqual(ownedFiles(`**Owns:** \`a.mjs\`. ${opener}\`b.mjs\``), ["a.mjs"], opener);
+    assert.deepEqual(ownedFiles(`**Owns:** \`a.mjs\` (${opener}\`b.mjs\`)`), ["a.mjs"], opener);
+  }
+  assert.deepEqual(ownedFiles("**Owns:** Not: `b.mjs`"), []);
+});
+
+test("withNew puts a new file under the one tracked folder of its first folder, several are ambiguous", () => {
+  const dir = temp();
+  git(dir, "init", "-q");
+  commitFile(dir, "tools/pt/run.py", "");
+  commitFile(dir, "tools/two/x.py", "");
+  commitFile(dir, "other/two/y.py", "");
+  commitFile(dir, "src/keep.py", "");
+  assert.deepEqual(withNew(dir, ["pt/cmd_new.py", "two/z.py", "src/new.py", "nowhere/z.py"]), [
+    { path: "tools/pt/cmd_new.py", new: true },
+    { path: "two/z.py", new: true, ambiguous: "other/two/, tools/two/" },
+    { path: "src/new.py", new: true },
+    { path: "nowhere/z.py", new: true },
+  ]);
 });

@@ -100,7 +100,8 @@ export function ignoredDirs(root) {
 }
 
 // The last line: the biggest ignored folders first, the rest counted, and an arrow to the biggest. The arrow
-// is never cut: folders drop into `+N more` until the whole line fits, and only the first one is fitted.
+// is never cut: folders drop into `+N more` until the whole line fits; when even one folder and the arrow
+// pass the width, the arrow and command go on the next line, indented two spaces.
 function hiddenLine(ignored) {
   const label = "not scanned (ignored): ";
   const arrow = nextStep(` → board scan ${ignored[0].dir}/…`);
@@ -115,8 +116,8 @@ function hiddenLine(ignored) {
     if ([...line].length <= WIDTH) return line;
   }
   const tail = ignored.length > 1 ? `, +${ignored.length - 1} more` : "";
-  const room = Math.max(1, WIDTH - [...label].length - [...arrow].length - [...tail].length);
-  return `${label}${fit(entry(ignored[0]), room)}${tail}${arrow}`;
+  const room = Math.max(1, WIDTH - [...label].length - [...tail].length);
+  return `${label}${fit(entry(ignored[0]), room)}${tail}\n ${arrow}`;
 }
 
 function render(all, dir, ignored) {

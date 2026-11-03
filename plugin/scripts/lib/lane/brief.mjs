@@ -6,7 +6,8 @@
 //                   tree, a dotted symbol is not a path unless a file matches
 //   withNew         those paths, each marked `new` when the tree has no such file; a path missing at the
 //                   root is looked up among the tree's tracked files as a suffix (`merge/gating.mjs`, a bare
-//                   name, a glob's folder): one hit is that path, several are all listed `ambiguous`
+//                   name, a glob's folder): one hit is that path, several are all listed `ambiguous`; a new
+//                   file under a first folder found only deeper (`pt/x.py` → `tools/pt/x.py`) goes there
 //   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
 //   citedDecisions  every decision of the board's decision kind the block cites by id, the rows that name
 //                   the task (decided after the contract was written) and those the owner asked for with
@@ -53,6 +54,14 @@ const TEMPLATE_OF = {
 
 // Where a contract's own-list ends: the next labelled part of the contract.
 const OWNS = /\bowns\b\s*[:*]*/i;
+// A bold owns label (`**Owns:**`, `**Owns**:`) starts the clause wherever the word "owns" shows up earlier in
+// prose; the prose form is read only when the block has no such label.
+const BOLD_OWNS = /\*\*\s*owns\s*(?::\s*\*\*|\*\*\s*:?)/i;
+// A bold step label (`**step 1:**`, `**Step 2 (mock):**`) carries the owns clause on, like an owns label.
+const STEP_LABEL = /\*\*\s*step\s*\d/i;
+// Where an exclusion opens in the clause: "Not:", "Not ", "Excludes:" or "Except:" at the clause start or
+// after a `;`, `.` or `(`. It runs to the end of the clause.
+const EXCLUSION = /(?:^|[;.(])\s*(?:not[:\s]|excludes\s*:|except\s*:)/i;
 const NEXT_PART =
   /\b(exposes|interface|excludes|deps|accept(?:ance)?|out of scope|goal|rules)\b\s*[:*]/i;
 // The owns clause also ends at a ` · ` and at a bold label, unless the label is itself an owns label
@@ -127,9 +136,11 @@ function braced(span) {
 }
 
 // Where the owns clause ends in `part` (the text after the label): the first of the next labelled part,
-// the next ` · ` and the next bold label that is not an owns label.
+// the next ` · ` and the next bold label that is not an owns or step label.
 function clauseEnd(part) {
-  const bold = [...part.matchAll(BOLD_LABEL)].find((m) => !OWNS.test(m[0]));
+  const bold = [...part.matchAll(BOLD_LABEL)].find(
+    (m) => !OWNS.test(m[0]) && !STEP_LABEL.test(m[0]),
+  );
   return Math.min(
     NEXT_PART.exec(part)?.index ?? part.length,
     SEPARATOR.exec(part)?.index ?? part.length,
@@ -168,11 +179,22 @@ export function ownedFiles(block, dir) {
     list ??= dir ? trackedFiles(dir) : [];
     return list;
   };
-  const at = OWNS.exec(text);
+  const at = BOLD_OWNS.exec(text) ?? OWNS.exec(text);
   if (!at) return [];
   let part = text.slice(at.index + at[0].length);
   part = part.slice(0, clauseEnd(part));
-  const masked = part.replace(TICKED, (span) => " ".repeat(span.length));
+  let masked = part.replace(TICKED, (span) => " ".repeat(span.length));
+  const excluded = EXCLUSION.exec(masked);
+  if (excluded) {
+    // Opened after a `(`, it ends at that aside's `)` ("(not more than 200 lines), `b.ts`" still owns b.ts).
+    const aside = excluded[0].startsWith("(");
+    const close = aside ? masked.indexOf(")", excluded.index) : -1;
+    const end = close < 0 ? part.length : close;
+    const blank = (text) =>
+      text.slice(0, excluded.index) + " ".repeat(end - excluded.index) + text.slice(end);
+    part = blank(part);
+    masked = blank(masked);
+  }
   const out = [];
   let from = 0;
   let negated = false;
@@ -236,11 +258,25 @@ function leadsOf(tracked, path) {
   return [...leads].sort();
 }
 
+// The tracked folders whose last part is `first`, below the root (`tools/pt/` for `pt`), sorted.
+function deepFolders(tracked, first) {
+  const folders = new Set();
+  for (const file of tracked) {
+    const parts = file.split("/").slice(0, -1);
+    parts.forEach((part, i) => {
+      if (i > 0 && part === first) folders.add(`${parts.slice(0, i + 1).join("/")}/`);
+    });
+  }
+  return [...folders].sort();
+}
+
 /** `paths` as `{ path, new }`: `new` when the path is a plain file that does not exist in `dir` (a glob
  *  or folder names what is there, so it is never new). A path missing at the root is looked up among the
  *  tracked files as the tail of a path (a bare name, `merge/gating.mjs`, a glob's folders): found at the
  *  root it stays as written; one other place is that path; several are all listed with `ambiguous: true`;
- *  none means a plain file is new and a glob or folder stays as written. */
+ *  none means a plain file is new and a glob or folder stays as written. A new plain file whose first
+ *  folder is absent at the root resolves under the one tracked folder of that name found deeper
+ *  (`pt/x.py` → `tools/pt/x.py`, new); with several it stays as written, `ambiguous` listing them. */
 export function withNew(dir, paths) {
   let tracked;
   return paths.flatMap((path) => {
@@ -248,6 +284,17 @@ export function withNew(dir, paths) {
     if (!open && existsSync(join(dir, path))) return [{ path, new: false }];
     tracked ??= trackedFiles(dir);
     const leads = leadsOf(tracked, path);
+    if (leads.length === 0 && !open && path.includes("/")) {
+      // A new file whose first folder is not at the root but is one tracked folder deeper lives there.
+      const first = path.split("/")[0];
+      const deep =
+        existsSync(join(dir, first)) || tracked.some((file) => file.startsWith(`${first}/`))
+          ? []
+          : deepFolders(tracked, first);
+      if (deep.length === 1)
+        return [{ path: `${deep[0]}${path.slice(first.length + 1)}`, new: true }];
+      if (deep.length > 1) return [{ path, new: true, ambiguous: deep.join(", ") }];
+    }
     if (leads.length === 0 || leads.includes(""))
       return [{ path, new: !open && leads.length === 0 }];
     const hits = leads.map((lead) => ({ path: `${lead}${path}`, new: false }));
