@@ -222,6 +222,14 @@ test("--json prints the step table as rows and the next step, with any mode", ()
   assert.match(data.next, /^lane merge T1 --message/);
 });
 
+test("a branch not cut from main's tip is a warning row, not a green tick", () => {
+  build({ "src/a.txt": "a\n" });
+  commitFile(root, "src/z.txt", "z\n");
+  const pf = merge(ID, "--branch", BRANCH, "--preflight");
+  assert.equal(pf.status, 0, out(pf));
+  assert.match(pf.stdout, /\n {2}! commits +1 to land\n(.*\n)*.*is not cut from main's tip/);
+});
+
 test("an adopted branch lands: picks, full gate, done + commit cell + handoff, one board commit", () => {
   build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
   const pre = head();

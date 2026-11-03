@@ -24,6 +24,10 @@ at `main` may first have done what the rows above it say (a killed run's own wri
 writes put back on main). Run every call in the foreground from the main checkout and read the exit code.
 A pipe would report the last command's exit, not merge's.
 
+Each row carries a mark: `✓` holds, `!` holds with a warning to show the owner (a branch not cut from
+main's tip: the picks may conflict), `✗` red, `·` skipped, `…` waiting. `--json` with any mode prints the
+same rows and `next` as one object.
+
 Each call is idempotent from the task's ledger (`.agentry/run/process/ledger/<id>.json`). Re-run the land
 after fixing what stopped it, and it resumes. Picks already on main are not picked again, and a gate
 already green on main's HEAD does not run again. A land that already finished prints "already merged".

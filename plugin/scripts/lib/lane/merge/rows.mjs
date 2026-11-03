@@ -10,7 +10,7 @@ import { headBoard } from "../carry-io.mjs";
 import { commitOf, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
 import { dirtyEntries } from "../own-memory.mjs";
 import { findByBranch } from "../worktree.mjs";
-import { ok, red, save, short, skip, tipOf, wait } from "./lane.mjs";
+import { ok, red, save, short, skip, tipOf, wait, warn } from "./lane.mjs";
 
 // The ledger states a land may start or resume from; an exec lane still building or verifying is not
 // done, and a stopped one needs the owner.
@@ -140,9 +140,10 @@ export function commitsRow({ root, ledger }) {
   const more = plan.picks.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`);
   if (plan.onMain.length > 0)
     more.push(`${plan.onMain.length} commit(s) already on ${mainBranch} (same patch), not picked`);
-  if (!isAncestor(root, mainBranch, branch))
-    more.push(`${branch} is not cut from ${mainBranch}'s tip: the picks may conflict`);
-  return { plan, row: ok("commits", `${plan.picks.length} to land`, more) };
+  const behind = !isAncestor(root, mainBranch, branch);
+  if (behind) more.push(`${branch} is not cut from ${mainBranch}'s tip: the picks may conflict`);
+  // Not cut from main's tip lands as a rule, but may conflict: a warning, not a green tick.
+  return { plan, row: (behind ? warn : ok)("commits", `${plan.picks.length} to land`, more) };
 }
 
 /** The repo checks: each named skill must exist (exit 2) and have an outcome recorded on the branch's

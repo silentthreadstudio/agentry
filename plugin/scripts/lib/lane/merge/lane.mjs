@@ -8,13 +8,14 @@ import { commitOf } from "../land.mjs";
 
 // The land steps from which nothing of this land is on main: a run starts the picks over.
 export const FRESH = [undefined, "conflict", "rolled-back"];
-const MARK = { ok: "✓", red: "✗", skip: "·", wait: "…" };
+const MARK = { ok: "✓", warn: "!", red: "✗", skip: "·", wait: "…" };
 export const short = (sha) => (sha ? sha.slice(0, 7) : "-");
 export const now = () => new Date().toISOString();
 const row =
   (mark) =>
   (step, detail, more = []) => ({ step, mark, detail, more });
 export const ok = row("ok");
+export const warn = row("warn"); // goes on, but says something the owner should see
 export const red = row("red");
 export const skip = row("skip");
 export const wait = row("wait");
