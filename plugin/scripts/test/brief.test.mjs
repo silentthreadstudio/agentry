@@ -184,6 +184,95 @@ test("ownedFiles ends the owns part at an Interface label, and neither negates",
   assert.deepEqual(ownedFiles("**Owns:** neither `a.ts`, `c.ts`"), []);
 });
 
+test("ownedFiles stops the owns clause at a ` · `, and at a bold label but not at emphasis", () => {
+  assert.deepEqual(ownedFiles("**T1** · owns `a.ts`, `b.ts` · deps `c.ts` · accept `d.ts`"), [
+    "a.ts",
+    "b.ts",
+  ]);
+  const block = [
+    "**Owns:** `a.ts`, the same **object** in `b.ts`.",
+    "**Strings** (draft): `c.ts`",
+  ].join("\n");
+  assert.deepEqual(ownedFiles(block), ["a.ts", "b.ts"]);
+  // A title that says "our own" is not the clause.
+  assert.deepEqual(ownedFiles("**T2 · Make it our own** (P1) · owns `a.ts` · deps T1"), ["a.ts"]);
+});
+
+test("ownedFiles keeps the files of every step the clause names", () => {
+  const block = [
+    "**T3 · Two steps**",
+    "**step 1 owns:** `src/mock.ts`",
+    "**step 2 owns:**",
+    "- New `src/feature.ts`",
+    "- `src/shell.ts` (294 -> **<= 297**)",
+    "**deps:** T1",
+  ].join("\n");
+  assert.deepEqual(ownedFiles(block), ["src/mock.ts", "src/feature.ts", "src/shell.ts"]);
+});
+
+test("ownedFiles drops a path that is only cited with a :NN, and one inside an aside that cites or says what stays", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `a/b.ts` (`:48,:75`), `a/c.ts`:12, `a/d.ts`"), ["a/d.ts"]);
+  assert.deepEqual(ownedFiles("**Owns:** `a/b.ts` (the host, `a/ctx.ts:61,90`), `a/e.ts`"), [
+    "a/b.ts",
+    "a/e.ts",
+  ]);
+  assert.deepEqual(
+    ownedFiles(
+      "**Owns:** `a/b.ts`; `x.key` stays, because kit tests pin it (`t/one.ts:86-88`, `t/two.ts:9`), `a/f.ts`",
+    ),
+    ["a/b.ts", "a/f.ts"],
+  );
+  assert.deepEqual(ownedFiles("**Owns:** `a/b.ts` (`t/other.ts` stays as it is), `a/g.ts`"), [
+    "a/b.ts",
+    "a/g.ts",
+  ]);
+  // An aside with no citation names what is owned; so does an inline path:lines outside any aside.
+  assert.deepEqual(
+    ownedFiles("**Owns:** the raws (`art/one/`, `art/two/`), `t/x.ts:10-20` rewritten"),
+    ["art/one/", "art/two/", "t/x.ts"],
+  );
+  assert.deepEqual(
+    ownedFiles(
+      "**Owns:** a new pure `a/flags.ts` (to stay near its cap, split out of `a/main.ts`)",
+    ),
+    ["a/flags.ts", "a/main.ts"],
+  );
+});
+
+test("ownedFiles on a step contract: owned files once each, cited and kept-as-is files left out", () => {
+  const block = [
+    "**NEW-1 · Wipe the save** (P2; step 1 is a mock)",
+    "",
+    "On the title, New game wipes the profile (`src/core/keeper.ts:40`).",
+    "",
+    "**step 1 (no code):**",
+    "- A mock in `src/debug/mock_home.ts` plus its line in `src/debug/mock_shots.ts`.",
+    "",
+    "**step 2 owns:**",
+    "- New `src/main/new_game.ts`, beside the intro gate:",
+    "  - the wipe: `keeper.wipe()`; the intro gate (`src/main/intro_gate.ts:38-46`, `src/main/shell.ts:10`);",
+    "- `src/main/committer.ts` (155 -> <= 175), *proposed* `wipe()`:",
+    "  - puts `profile` back **in place**, the object the flow holds (`src/main/flow.ts:61,90`);",
+    "  - uses the copy `discard` already does (`committer.ts:80-89`).",
+    "- `src/main/shell.ts` (294 -> **<= 297**): `_intro` (`:48,:75`) becomes `_new_game`.",
+    "- `i18n/strings.csv`: new rows. `MENU_OLD` stays, because kit tests pin it",
+    "  (`tests/kit_a.ts:86-88`, `tests/kit_b.ts:286`).",
+    "- Tests: new `tests/new_game.ts`; the cases of `tests/shell.ts:208-271` rewritten.",
+    "",
+    "**strings** (draft): `src/ui/copy.ts`",
+    "**deps:** NEW-0",
+    "**accept:** `src/main/other.ts` is untouched",
+  ].join("\n");
+  assert.deepEqual(ownedFiles(block), [
+    "src/main/new_game.ts",
+    "src/main/committer.ts",
+    "src/main/shell.ts",
+    "i18n/strings.csv",
+    "tests/new_game.ts",
+    "tests/shell.ts",
+  ]);
+});
+
 test("ownedFiles caps a brace expansion at 64 paths", () => {
   assert.equal(ownedFiles("**Owns:** `{a,b,c,d}/{a,b,c,d}/{a,b,c,d}/{a,b,c,d}.md`").length, 64);
 });

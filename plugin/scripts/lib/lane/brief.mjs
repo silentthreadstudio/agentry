@@ -1,8 +1,9 @@
 // brief — what an exec round's brief says, rendered from the templates in the conducting skill's
 // `references/briefs/` (ADR-R3): the same brief every time, on disk, quoting the board instead of memory.
 //
-//   ownedFiles      the paths the contract's "owns" names (backticked, brace globs expanded, negations
-//                   left out), in order; given the tree, a dotted symbol is not a path unless a file matches
+//   ownedFiles      the paths the contract's "owns" clause names (backticked, brace globs expanded,
+//                   negations, `:NN`-cited paths and "stays" asides left out), in order; given the
+//                   tree, a dotted symbol is not a path unless a file matches
 //   withNew         those paths, each marked `new` when the tree has no such file; a path missing at the
 //                   root is looked up among the tree's tracked files as a suffix (`merge/gating.mjs`, a bare
 //                   name, a glob's folder): one hit is that path, several are all listed `ambiguous`
@@ -51,9 +52,18 @@ const TEMPLATE_OF = {
 };
 
 // Where a contract's own-list ends: the next labelled part of the contract.
-const OWNS = /\bowns?\b\s*[:*]*/i;
+const OWNS = /\bowns\b\s*[:*]*/i;
 const NEXT_PART =
   /\b(exposes|interface|excludes|deps|accept(?:ance)?|out of scope|goal|rules)\b\s*[:*]/i;
+// The owns clause also ends at a ` · ` and at a bold label, unless the label is itself an owns label
+// ("**step 2 owns:**"), which the clause carries on through.
+const SEPARATOR = /\s·\s/;
+// A label opens a line or follows a full stop; bold in the middle of a sentence ("**in place**") is emphasis.
+const BOLD_LABEL = /(?:^|\n|[.;]\s)[ \t]*(?:[-*]\s+)?\*\*[^*\n]+\*\*/g;
+// What follows a path that is cited, not owned: `x.gd` (`:48`), `x.gd`:48.
+const CITED = /^\s*\(?\s*`?:\d/;
+// An aside that cites lines (`:48`) or says what stays is context.
+const CONTEXT_ASIDE = /:\d|\bstays\b/i;
 // A code span may cross one line break (never a blank line): the break and its indentation are dropped.
 const TICKED = /`([^`\n]+(?:[ \t]*\n[ \t]*[^`\s][^`\n]*)?)`/g;
 const MAX_BRACED = 64;
@@ -116,10 +126,40 @@ function braced(span) {
     .slice(0, MAX_BRACED);
 }
 
-/** The paths the block's "owns" part names in backticks, de-duplicated, in order: only spans shaped like
- *  a path, `path:lines` read as the path, a brace glob (`a/{b,c}.md`) expanded, and a span after a
- *  negation ("no line in `x`", "but not `y`") left out. `dir` is the tree whose tracked files decide a
- *  doubtful name (`a.b.c`, an extensionless name); without it only well-known names count. Empty when
+// Where the owns clause ends in `part` (the text after the label): the first of the next labelled part,
+// the next ` · ` and the next bold label that is not an owns label.
+function clauseEnd(part) {
+  const bold = [...part.matchAll(BOLD_LABEL)].find((m) => !OWNS.test(m[0]));
+  return Math.min(
+    NEXT_PART.exec(part)?.index ?? part.length,
+    SEPARATOR.exec(part)?.index ?? part.length,
+    bold?.index ?? part.length,
+  );
+}
+
+// The parenthesised aside that holds `at`, or "". `masked` is the clause with its code spans blanked,
+// so only the prose's own parentheses count; an aside does not run past a blank line or a list item.
+function asideAt(part, masked, at) {
+  const para = masked
+    .slice(0, at)
+    .split(/\n\s*\n|\n\s*[-*]\s/)
+    .at(-1);
+  const open = [];
+  for (let i = at - para.length; i < at; i += 1) {
+    if (masked[i] === "(") open.push(i);
+    else if (masked[i] === ")") open.pop();
+  }
+  if (!open.length) return "";
+  const close = masked.indexOf(")", at);
+  return part.slice(open[0], close < 0 ? part.length : close);
+}
+
+/** The paths the block's "owns" clause names in backticks, de-duplicated, in order. The clause runs to
+ *  the next ` · `, labelled part or bold label (an owns label, like "**step 2 owns:**", carries on). Only
+ *  spans shaped like a path count, `path:lines` read as the path, a brace glob (`a/{b,c}.md`) expanded;
+ *  left out: a span after a negation ("no line in `x`", "but not `y`"), a path followed by a `:NN`
+ *  citation, and a path inside an aside that cites lines or says what "stays". `dir` is the tree whose
+ *  tracked files decide a doubtful name (`a.b.c`, an extensionless name); without it only well-known names count. Empty when
  *  the block has no "owns" part or it names no path. */
 export function ownedFiles(block, dir) {
   const text = String(block ?? "");
@@ -131,8 +171,8 @@ export function ownedFiles(block, dir) {
   const at = OWNS.exec(text);
   if (!at) return [];
   let part = text.slice(at.index + at[0].length);
-  const end = NEXT_PART.exec(part);
-  if (end) part = part.slice(0, end.index);
+  part = part.slice(0, clauseEnd(part));
+  const masked = part.replace(TICKED, (span) => " ".repeat(span.length));
   const out = [];
   let from = 0;
   let negated = false;
@@ -151,6 +191,10 @@ export function ownedFiles(block, dir) {
       pieces.length > 1 && clause === between && !clause.includes(")") && LIST_GAP.test(last);
     negated = joined ? negated : NEGATION.test(last);
     if (negated) continue;
+    // A path cited with a `:NN` right after it, or inside an aside that cites lines or says what
+    // "stays", is context the contract mentions, not a file it owns.
+    if (CITED.test(part.slice(from)) || CONTEXT_ASIDE.test(asideAt(part, masked, m.index)))
+      continue;
     for (const one of braced(span)) {
       const path = pathOf(one, tracked);
       if (path && !out.includes(path)) out.push(path);
