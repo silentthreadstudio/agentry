@@ -232,7 +232,7 @@ test("start flags the note stale when every id it names is done, and not while o
   assert.equal(stale.status, 0, stale.stderr);
   assert.match(
     stale.stdout,
-    /^note: stale, every id it names is done \(T2\) → edit \.agentry\/NOTE\.md$/m,
+    /^note: stale, every id it names is done → edit \.agentry\/NOTE\.md \(T2\)$/m,
   );
   writeFileSync(note, "# Note\n\nWatch T2 and T1 land.\n");
   assert.doesNotMatch(session(root, "start").stdout, /note: stale/);
@@ -260,7 +260,7 @@ test("a bare number in the note is no id: it does not hide a stale note", () => 
   writeFileSync(join(root, ".agentry", "NOTE.md"), "# Note\n\nT2 merged; step 2 next.\n");
   const res = session(root, "start");
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /^note: stale, every id it names is done \(T2\)/m);
+  assert.match(res.stdout, /^note: stale, every id it names is done → edit [^\n]* \(T2\)$/m);
 });
 
 test("start lists the gate slots a running gate holds, and none when they are free", () => {
@@ -283,4 +283,24 @@ test("start lists the gate slots a running gate holds, and none when they are fr
     data.gateSlots.map((g) => [g.slot, g.who, g.pid]),
     [[1, "lane T1", process.pid]],
   );
+});
+
+test("start counts the gate slots that do not fit on the line, and never cuts one", () => {
+  const root = fresh();
+  const locks = join(root, ".agentry", "run", "gate-locks");
+  mkdirSync(locks, { recursive: true });
+  const at = new Date().toISOString();
+  const hold = (n) =>
+    writeFileSync(
+      join(locks, `slot-${n}.lock`),
+      JSON.stringify({ pid: process.pid, who: `lane T${n}`, at }),
+    );
+  for (const n of [1, 2, 3]) hold(n);
+  const three = session(root, "start").stdout;
+  for (const n of [1, 2, 3]) assert.match(three, new RegExp(`slot ${n} held by lane T${n} since`));
+  assert.doesNotMatch(three, /more/);
+  for (let n = 4; n <= 12; n++) hold(n);
+  const many = session(root, "start").stdout;
+  assert.match(many, /^ {2}slot \d+ held by .*, \+\d+ more$/m);
+  assert.ok(many.split("\n").every((l) => [...l].length <= 80));
 });

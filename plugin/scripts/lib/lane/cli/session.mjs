@@ -147,7 +147,7 @@ function renderStart(s, { name, root }) {
   const stale = s.status.note?.stale;
   if (stale)
     add(
-      `note: stale, every id it names is done (${stale.join(", ")}) → edit ${s.status.note.path}`,
+      `note: stale, every id it names is done → edit ${s.status.note.path} (${stale.join(", ")})`,
     );
   if (s.status.inFlight.length)
     addList(
@@ -170,8 +170,9 @@ function renderStart(s, { name, root }) {
       s.ledgers.map((l) => `${l.id} ${l.state}`),
     );
   if (s.gateSlots.length)
-    add(
-      `gate: ${s.gateSlots.map((g) => `slot ${g.slot} held by ${g.who || "unknown"} since ${g.since}`).join(", ")}`,
+    addList(
+      "gate: ",
+      s.gateSlots.map((g) => `slot ${g.slot} held by ${g.who || "unknown"} since ${g.since}`),
     );
   for (const f of s.recall.slice(0, 3)) add(`recall: ${f.text}`);
   return lines.slice(0, MAX_LINES).join("\n");
