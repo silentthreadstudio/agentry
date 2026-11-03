@@ -85,8 +85,10 @@ function checkVerifyRoute(spec, kinds, bad) {
     (name) => own(fieldsOf(own(kinds, name)), field)?.type !== "flag",
   );
   const no = (name) => `the ${name} kind has no flag field named "${field}"`;
-  if (has(own(spec, "exec"), "flagField"))
-    return lacking.forEach((name) => bad("exec.flagField", `is "${field}", but ${no(name)}`));
+  if (has(own(spec, "exec"), "flagField")) {
+    for (const name of lacking) bad("exec.flagField", `is "${field}", but ${no(name)}`);
+    return;
+  }
   const { preset, exec, set } = resolveWorkflow(spec);
   if (exec.verify !== "flagged") return;
   const from = set.includes("exec.verify") ? "set" : `preset ${preset}`;
