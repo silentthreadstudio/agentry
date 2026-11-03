@@ -303,6 +303,26 @@ test("a dir/** disposable glob takes the wholly ignored directory; a near name s
   assert.ok(existsSync(path));
 });
 
+test("a disposable glob naming a folder covers the files under it, not a near name", () => {
+  branch({ ".gitignore": "src/data/*.json\nsrc/database/*.json\n" });
+  const path = join(repo.dir, ".agentry", "run", "worktrees", "B");
+  for (const dir of ["src/data", "src/database"]) {
+    mkdirSync(join(path, dir), { recursive: true });
+    writeFileSync(join(path, dir, "a.json"), "{}");
+  }
+  const res = cleanup(repo.dir, {
+    branch: "b",
+    main: "main",
+    fallbackPath: path,
+    disposable: ["src/data"],
+  });
+  assert.equal(res.ok, false);
+  assert.ok(res.disposable.includes("src/data/a.json"));
+  assert.ok(res.disposable.every((entry) => entry.startsWith("src/data/")));
+  assert.ok(res.ignored.includes("src/database/a.json"));
+  assert.ok(res.ignored.every((entry) => !entry.startsWith("src/data/")));
+});
+
 test("cleanup keeps a branch whose commits are not on main", () => {
   branch({ "a.txt": "a\n" });
   const res = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: "/nowhere" });

@@ -376,7 +376,9 @@ export function cleanup(
 }
 
 // Is an ignored entry (`dir/` for a wholly ignored directory) one of `globs`? Matched with the gate's own
-// glob test, as its path without the slash; a `dir/**` glob also takes `dir` itself.
+// glob test, as its path without the slash; a `dir/**` glob also takes `dir` itself. A glob that names a
+// folder covers what is under it (gitignore semantics): an entry is matched as itself and as each of its
+// parent folders.
 function disposableMatcher(globs) {
   const forms = globs.flatMap((glob) => {
     const g = glob.replace(/\/+$/, "");
@@ -384,5 +386,9 @@ function disposableMatcher(globs) {
   });
   if (!forms.length) return () => false;
   const quick = { command: ["-"], only: forms };
-  return (entry) => pickTier({ quick }, [entry.replace(/\/$/, "")]).tier === "quick";
+  return (entry) => {
+    const parts = entry.replace(/\/$/, "").split("/");
+    const paths = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+    return paths.some((path) => pickTier({ quick }, [path]).tier === "quick");
+  };
 }
