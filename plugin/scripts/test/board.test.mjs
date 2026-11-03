@@ -397,3 +397,36 @@ test("the process skill's templates make a board every enabled rule passes", () 
   };
   assert.deepEqual(check(model, spec.rules, ctx), []);
 });
+
+test("scan with no dir ends by naming the ignored folders it did not read", () => {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-scan-")));
+  try {
+    const table = "| Code |\n| --- |\n| T1 |\n";
+    for (const dir of ["docs", ".notes/a", "node_modules/x", ".agentry/run"]) {
+      mkdirSync(join(tmp, dir), { recursive: true });
+      writeFileSync(join(tmp, dir, "b.md"), table);
+    }
+    writeFileSync(join(tmp, ".gitignore"), ".notes/\nnode_modules/\n.agentry/\n");
+    const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+    for (const args of [
+      ["init", "-q"],
+      ["add", "docs", ".gitignore"],
+    ])
+      spawnSync("git", ["-C", tmp, ...args], { env });
+    const cli = (...args) =>
+      spawnSync("node", [BOARD, "scan", ...args, "--root", tmp], {
+        encoding: "utf8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+    const all = cli();
+    assert.match(
+      all.stdout,
+      /\nnot scanned \(ignored\): \.notes \(1 md\) → .*board scan \.notes\/…\n$/,
+    );
+    assert.doesNotMatch(all.stdout, /node_modules|\.agentry/);
+    assert.doesNotMatch(cli(".notes").stdout, /not scanned/);
+    assert.doesNotMatch(cli("--json").stdout, /not scanned/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
