@@ -84,3 +84,11 @@ test("the page sets html.js before first paint so the menu never shifts in", () 
     /<script is:inline>document\.documentElement\.classList\.add\("js"\);<\/script>/,
   );
 });
+
+test("a 404 page exists on the site layout, kept out of search, linking home and to the docs", () => {
+  const page = read("src/pages/404.astro");
+  assert.match(page, /import Base from "\.\.\/layouts\/Base\.astro"/);
+  assert.match(page, /\bnoindex\b/);
+  assert.match(page, /withBase\(""\)/);
+  assert.match(page, /withBase\("docs\/"\)/);
+});

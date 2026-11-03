@@ -1,0 +1,68 @@
+---
+// 404 — a missing page, on the site tokens, with a way home and to the docs.
+import Base from "../layouts/Base.astro";
+import { withBase } from "../lib/base.ts";
+---
+
+<Base
+  title="Page not found · Agentry"
+  description="This page does not exist. Go back to the Agentry home page or the docs."
+  noindex
+>
+  <section class="wrap missing" aria-labelledby="missing-title">
+    <span class="eyebrow">404 · NOT FOUND</span>
+    <h1 id="missing-title" class="missing__title">This page isn't on the board.</h1>
+    <p class="lede">The link may be old, or the page moved. Start again from one of these.</p>
+    <ul class="missing__links">
+      <li><a class="missing__home" href={withBase("")}>Home</a></li>
+      <li><a class="missing__docs" href={withBase("docs/")}>Docs</a></li>
+    </ul>
+  </section>
+</Base>
+
+<style>
+  .missing {
+    padding-block: 72px 104px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .missing__title {
+    max-width: 900px;
+    font-size: clamp(44px, 6vw, 88px);
+    line-height: 0.92;
+    letter-spacing: -0.045em;
+  }
+
+  .missing__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .missing__links a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 52px;
+    padding: 0 22px;
+    font-weight: 700;
+    font-size: 16px;
+    text-decoration: none;
+    border: var(--border);
+    border-radius: var(--radius-m);
+  }
+
+  .missing__home {
+    background: var(--one);
+  }
+
+  .missing__docs {
+    background: var(--surface);
+  }
+
+  .missing__links a:hover {
+    color: var(--ink);
+    background: var(--three);
+  }
+</style>

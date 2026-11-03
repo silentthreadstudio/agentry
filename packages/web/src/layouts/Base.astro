@@ -18,10 +18,13 @@ interface Props {
   title: string;
   /** Meta description + OG/Twitter description. */
   description?: string;
+  /** Keep the page out of search results and drop its canonical (the 404 page). */
+  noindex?: boolean;
 }
 
 const {
   title,
+  noindex = false,
   description = "Agentry is the harness around Claude Code. It sizes the process to the task, runs your own board as verified lanes, remembers what it learned, and every move it makes is a command you can script.",
 } = Astro.props;
 
@@ -38,7 +41,7 @@ const ogImage = site ? new URL(withBase("og.png"), site).href : withBase("og.png
     <script is:inline>document.documentElement.classList.add("js");</script>
     <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
+    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
     <link rel="icon" type="image/svg+xml" href={withBase("favicon.svg")} />
     <link rel="apple-touch-icon" href={withBase("apple-touch-icon.png")} />
 
