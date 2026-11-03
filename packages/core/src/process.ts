@@ -196,14 +196,13 @@ const SkillName = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]*$/, { message: "expected a skill name (lower-case, digits, -)" });
 
-/** The repo skills `/agentry:merge` runs as checks (native names). */
+/** The repo skills `/agentry:merge` runs as checks (native names); `[]` names none. */
 export const Extensions = z
   .object({
     merge: z
       .object({
         checks: z
           .array(SkillName)
-          .min(1)
           .superRefine((names, ctx) =>
             names.forEach((name, i) => {
               if (names.indexOf(name) < i)

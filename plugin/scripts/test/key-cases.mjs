@@ -142,7 +142,7 @@ export const PROCESS_CASES = [
     add: { extensions: { merge: {} } },
     bad: ["extensions.merge.checks"],
   },
-  { name: "an empty checks list", add: checks([]), bad: ["extensions.merge.checks"] },
+  { name: "an empty checks list names no repo check", add: checks([]) },
   { name: "checks as a string", add: checks("repo-merge"), bad: ["extensions.merge.checks"] },
   {
     name: "an upper-case skill name",

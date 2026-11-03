@@ -265,12 +265,12 @@ the owner's approval.
 | `gate.after` | no | Globs of the files allowed to change after the gate ran green. Default `[]`: none. |
 | `gate.note` | no | Free text. |
 | `extensions.merge` | yes | What `/agentry:merge` adds. |
-| `extensions.merge.checks` | yes | Repo skills by their own names (lower-case letters, digits, `-`; each once). Merge refuses to land until each has a recorded outcome. |
+| `extensions.merge.checks` | yes | Repo skills by their own names (lower-case letters, digits, `-`; each once); `[]` names none. Merge refuses to land until each has a recorded outcome. |
 | `conductor.prompt` | yes | The repo's conductor prompt, from the git root. |
 | `conductor.rules` | no | The heading in that prompt where a standing rule the owner states is appended. Matched as the full heading text with its numbering (`## 10. Standing rules` is `"10. Standing rules"`, not `"Standing rules"`); spaces collapse, a leading `#` run also pins the level. |
 
 These keys fail strict: a typo makes a check stricter or is refused, never laxer. An unknown key, a wrong
-type, an empty string or list, a repeated check, or a path that is absolute or climbs out with `..` is refused
+type, an empty string or list (`merge.checks` aside: `[]` is no check), a repeated check, or a path that is absolute or climbs out with `..` is refused
 at load (exit 2, naming the path: `gate.command[1]`, `gate.quick.only`). A misspelled `after` glob allows
 less; a misspelled `only` glob makes the quick tier apply less often.
 

@@ -104,8 +104,9 @@ const repoPath = (v, at, bad) =>
     : text(v, at, bad);
 const filled = (item) => (v, at, bad) =>
   Array.isArray(v) && v.length === 0 ? bad(at, "should not be empty") : list(item)(v, at, bad);
+// A list without repeats; empty is allowed (`merge.checks: []` names no repo check, as format.md says).
 const distinct = (item) => (v, at, bad) => {
-  filled(item)(v, at, bad);
+  list(item)(v, at, bad);
   if (Array.isArray(v))
     v.forEach((x, i) => v.indexOf(x) < i && bad(`${at}[${i}]`, `repeats ${JSON.stringify(x)}`));
 };

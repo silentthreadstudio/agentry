@@ -63,6 +63,8 @@ test("board check refuses a bad harness key with exit 2, naming its path", () =>
   const typo = runWith({ extensions: { merge: { checks: ["a", "a"] } } });
   assert.equal(typo.status, 2);
   assert.match(typo.stderr, /extensions\.merge\.checks\[1\] repeats "a"/);
+  const none = runWith({ extensions: { merge: { checks: [] } } });
+  assert.equal(none.status, 0, `merge.checks [] names no repo check: ${none.stderr}`);
 });
 
 // A board with a lifecycle on tasks: sprints own a file with a bold-lead handoff section.
