@@ -48,6 +48,8 @@ export const PROCESS_CASES = [
   // good
   { name: "a space as a commits join", add: joined(" ") },
   { name: "a comma and space as a commits join", add: joined(", ") },
+  { name: "a range mark as a commits join", add: joined("…") },
+  { name: "a dotted range mark as a commits join", add: joined("..") },
   { name: "a gate with only a command", add: gate({ command: ["make", "test"] }) },
   {
     name: "a full gate",
@@ -85,6 +87,8 @@ export const PROCESS_CASES = [
   { name: "a join with a line break", add: joined(",\n"), bad: [JOIN] },
   { name: "a join with a carriage return", add: joined(", \r"), bad: [JOIN] },
   { name: "a join with a tab", add: joined("\t"), bad: [JOIN] },
+  { name: "a join with a next-line character", add: joined("\u0085"), bad: [JOIN] },
+  { name: "a join with a delete character", add: joined("\u007f"), bad: [JOIN] },
   { name: "a join that is not a string", add: joined(3), bad: [JOIN] },
   // bad: gate
   { name: "a gate as a string", add: gate("make test"), bad: ["gate"] },

@@ -125,5 +125,8 @@ test("init and the learn reference offer lifecycle writes once, saying what they
     assert.match(doc, /\*\*Lifecycle writes\.\*\*/, file);
     assert.match(doc, /lifecycle off/, file);
     assert.match(doc, /verdict/, file);
+    assert.doesNotMatch(doc, /`explain` and the merge print|explain\` and the\s+merge print/, file);
+    assert.doesNotMatch(doc, /Harness writes on\?/, file);
+    assert.match(doc, /ignored `\.env`/, file);
   }
 });

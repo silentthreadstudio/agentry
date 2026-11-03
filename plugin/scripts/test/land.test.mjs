@@ -323,6 +323,37 @@ test("a disposable glob naming a folder covers the files under it, not a near na
   assert.ok(res.ignored.every((entry) => !entry.startsWith("src/data/")));
 });
 
+// A worktree holding ignored files at several depths, cleaned up with `disposable`.
+function cleanWith(disposable) {
+  branch({ ".gitignore": "*.json\n.env\n" });
+  const path = join(repo.dir, ".agentry", "run", "worktrees", "B");
+  for (const file of [
+    "src/data/gen.json",
+    "src/data/nested/deep.json",
+    "src/data/.env",
+    "src/data-old/keep.json",
+    ".env",
+  ]) {
+    mkdirSync(join(path, file, ".."), { recursive: true });
+    writeFileSync(join(path, file), "x");
+  }
+  return cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: path, disposable });
+}
+
+for (const glob of ["src/data", "src/data/", "src/data/**"])
+  test(`disposable ${glob}: takes the folder's files and its ignored .env, not a near name or the root .env`, () => {
+    const res = cleanWith([glob]);
+    const taken = res.disposable.filter((f) => f.endsWith(".env") || f.endsWith("deep.json"));
+    assert.deepEqual(taken.sort(), ["src/data/.env", "src/data/nested/deep.json"]);
+    assert.ok(res.ignored.includes("src/data-old/keep.json"));
+    assert.ok(res.ignored.includes(".env"));
+  });
+
+for (const glob of ["src/dat", "*.json"])
+  test(`disposable ${glob}: keeps the files under src/data`, () => {
+    assert.ok(cleanWith([glob]).ignored.includes("src/data/gen.json"));
+  });
+
 test("cleanup keeps a branch whose commits are not on main", () => {
   branch({ "a.txt": "a\n" });
   const res = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: "/nowhere" });
