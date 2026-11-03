@@ -544,6 +544,13 @@ test("every template uses only the slots the CLI fills, and renders with none le
     }
   }
   assert.throws(() => renderBrief("merge", VALUES), /no brief template/);
+  // The time-limit rule rides in every builder's and verifier's brief.
+  for (const step of ["build", "continue", "verify", "final"])
+    assert.match(
+      renderBrief(step, VALUES),
+      /No command other than the gate may run longer than 10 minutes: give an engine, server, simulator or\n {2}watcher you start a time limit/,
+      step,
+    );
 });
 
 test("the brief rules are in the templates: cd prefix, foreground checks, logs, no rebase, gate, probes", () => {

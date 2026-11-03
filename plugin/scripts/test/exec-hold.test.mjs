@@ -169,6 +169,7 @@ test("a two-step lane holds for the owner after step 1, resumes its builder on s
   const again = lane(r, "hold", "T1", "--for", "owner");
   assert.equal(again.exit, 0, again.stderr);
   assert.equal(ledgerOf(r.root, "T1").hold.since, since, "a second hold keeps since");
+  assert.equal(board(r.root), started, "nor does a hold step");
 
   // A held lane is no writer: another lane starts at maxWriters 1, and then T1's resume is refused.
   const t4 = lane(r, "start", "T4");
@@ -218,6 +219,10 @@ test("a two-step lane holds for the owner after step 1, resumes its builder on s
     ledgerOf(r.root, "T1").rounds.map((x) => x.step),
     ["build", "continue", "verify"],
   );
+  writeFileSync(out.reportPath, "All checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  assert.match(lane(r, "close", "T1").json.episode.outcome, /; owner holds: 1$/);
 });
 
 test("a main edit made while the lane is held refuses the resume, and the lane stays held until it is undone", () => {
@@ -267,6 +272,10 @@ test("a lane without steps: hold waits for the saved reply, then holds mid-build
   assert.match(redo.stderr, /--redo goes back over a finished run; this hold is during one/);
   assert.match(lane(r, "resume", "T3").stderr, /resume needs --note "<the owner's words>"/);
 
+  assert.match(lane(r, "close", "T3").stderr, /the lane is not done \(state held, next resume\)/);
+  const owns = lane(r, "owns", "T3", "--set", "three.txt,more.txt", "--apply");
+  assert.equal(owns.exit, 0, owns.stderr);
+  assert.equal(owns.json.rewrote, undefined, "a held lane has no brief waiting");
   const merge = spawnLane(r, ["merge", "T3", "--message", "feat: land T3"]);
   assert.notEqual(merge.status, 0);
   assert.match(merge.stdout + merge.stderr, /T3's lane is "held": only a verified lane lands/);
