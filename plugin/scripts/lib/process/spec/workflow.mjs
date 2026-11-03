@@ -1,4 +1,3 @@
-import { locks } from "./locks.mjs";
 // workflow — the workflow file (`.agentry/workflow.json`, optional): how the harness works this repo,
 // one schema entry per key (mirrors core's `Workflow`, `packages/core/src/workflow.ts`), and the accessors
 // that read a key with its default. An absent key is today's behaviour for it. Nothing here reads the
@@ -8,6 +7,7 @@ import { locks } from "./locks.mjs";
 // inside the repository, skill names unique. Core's zod gives the same verdict on each (the shared table,
 // `test/key-cases.mjs`).
 import { extensions } from "./extensions.mjs";
+import { locks } from "./locks.mjs";
 import {
   FULL,
   filled,
