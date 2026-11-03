@@ -393,6 +393,36 @@ test("ownedFiles: a list-form clause and a repeated owns label run over sentence
   ]);
 });
 
+test("ownedFiles: an end of line is a boundary before a line that opens with a code span", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`.\n`c.ts` is read only"), ["a.ts"]);
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`!\n`c.ts`"), ["a.ts"]);
+});
+
+test("ownedFiles: a stop inside a code span is no boundary even with a space after it", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`, `v2. New` and `b.ts`"), ["a.ts", "b.ts"]);
+});
+
+test("ownedFiles: a stop before the first path leaves the leading list of paths owned", () => {
+  assert.deepEqual(ownedFiles("**Owns:** if red it stops, then `a.ts`, `b.ts`"), ["a.ts", "b.ts"]);
+});
+
+test("ownedFiles: a sentence end never ends the clause while a step label follows", () => {
+  for (const block of [
+    "**step 1 owns:** `a.ts`. Stops here\n**step 2 owns:** `b.ts`.",
+    "**step 1 owns:** `a.ts`. It also does x.\n**step 2 owns:** `b.ts`.",
+    "**step 1 owns:** `a.ts`. It also does x. **step 2 owns:** `b.ts`.",
+    "- **step 1** owns `a.ts`. Then more text.\n- **step 2** owns `b.ts`.",
+    "**Step 1 (owns):** `a.ts`. Done.\n**Step 2 (owns):** `b.ts`.",
+    "step 1 owns `a.ts`. Step 2 owns `b.ts`.",
+  ])
+    assert.deepEqual(ownedFiles(block), ["a.ts", "b.ts"], block);
+  assert.deepEqual(ownedFiles("step 1 owns `a.ts`; step 2 owns `b.ts`. Then step 3 owns `c.ts`."), [
+    "a.ts",
+    "b.ts",
+    "c.ts",
+  ]);
+});
+
 test("ownedFiles caps a brace expansion at 64 paths", () => {
   assert.equal(ownedFiles("**Owns:** `{a,b,c,d}/{a,b,c,d}/{a,b,c,d}/{a,b,c,d}.md`").length, 64);
 });

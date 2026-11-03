@@ -170,8 +170,8 @@ function sentenceEnds(part) {
       depth === 0 &&
       ".!?".includes(ch) &&
       !ABBREVIATION.test(masked.slice(0, i + 1)) &&
-      SENTENCE_BREAK.test(masked.slice(i + 1)) &&
-      !OWNS_AGAIN.test(masked.slice(i + 1))
+      SENTENCE_BREAK.test(part.slice(i + 1)) &&
+      !OWNS_AGAIN.test(part.slice(i + 1))
     )
       ends.push(i + 1);
   }
@@ -180,8 +180,11 @@ function sentenceEnds(part) {
 
 // Where the clause's first sentence ends, or the clause's length. A clause set out as a list (the label,
 // then bullets) runs over its items, whatever they end with.
+// A step label further on carries the clause on: every step's paths stay owned.
 const sentenceEnd = (part) =>
-  LIST_CLAUSE.test(part) ? part.length : (sentenceEnds(part)[0] ?? part.length);
+  LIST_CLAUSE.test(part)
+    ? part.length
+    : (sentenceEnds(part).find((end) => !STEP_AHEAD.test(part.slice(end))) ?? part.length);
 
 // The masked clause with every parenthesised aside blanked (same length, so indexes still line up).
 function outsideAsides(masked) {
@@ -196,6 +199,8 @@ function outsideAsides(masked) {
 }
 
 // Where a part of a sentence ends and the next begins: a `;`, a "but" or a dash.
+const STEP_AHEAD = /\*\*\s*step\s*\d|\bstep\s*\d+\s*\(?\s*owns\b/i;
+const STEP_AT = new RegExp(STEP_AHEAD.source, "gi");
 const LIST_ITEM = /\n[ \t]*[-*+]\s/g;
 const SENTENCE_PART = /;|\bbut\b|\s[—–]\s/g;
 
@@ -321,6 +326,7 @@ function readOwns(block, dir) {
   const cuts = [
     ...[...outer.matchAll(SENTENCE_PART)].map((m) => m.index),
     ...[...outer.matchAll(LIST_ITEM)].map((m) => m.index),
+    ...[...outer.matchAll(STEP_AT)].map((m) => m.index),
     ...sentenceEnds(part),
   ].sort((x, y) => x - y);
   let tail = false;
