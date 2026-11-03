@@ -1,12 +1,12 @@
 // Tests for `board fix` (lib/process/cli/fix.mjs): it writes done only when provable (a merge record that
 // still holds on main, or an owner's --accept whose change is still in effect), `--dry-run` writes nothing,
 // a second run finds nothing, and what it cannot decide is reported. A property test walks random pick /
-// revert / reset / squash / merge sequences and checks done is written only while main's copy of the task's
-// files is the branch's, byte for byte.
+// revert / reset / squash / merge / chmod sequences and checks done is written only while main's copy of
+// the task's files is the branch's, mode and bytes.
 // Run: node --test plugin/scripts/test/fix-cli.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { run as fix } from "../lib/process/cli/fix.mjs";
@@ -366,6 +366,23 @@ test("a binary or empty file the task added is checked by its content", () => {
   assert.match(out.stdout, /T1: merged, but empty\.txt is not as it landed/);
 });
 
+test("a mode-only change reverted on main is never written as done", () => {
+  const { root } = fresh();
+  commitFile(root, "run.sh", "echo hi\n", "chore: a script");
+  const { path, sha } = builtBranch(root, "T1");
+  chmodSync(join(path, "run.sh"), 0o755);
+  git(path, "add", "run.sh");
+  git(path, "commit", "-q", "-m", "feat: T1 makes run.sh executable");
+  const [, landed] = mergeOntoMain(root, "T1", [sha, git(path, "rev-parse", "HEAD")]);
+  assert.match(board(root, "fix", "--dry-run").stdout, /^would fix 1/, "holds while it is +x");
+  git(root, "revert", "--no-edit", landed);
+  const before = files(root);
+  const out = board(root, "fix");
+  assert.deepEqual(files(root), before);
+  assert.match(out.stdout, /^fixed 0/);
+  assert.match(out.stdout, /T1: merged, but run\.sh is not as it landed/);
+});
+
 test("a record not about the ledger's branch is unsure: an unrelated commit, or only part of the branch", () => {
   const unrelated = fresh().root;
   const other = commitFile(unrelated, "other.txt", "o\n", "feat: someone else");
@@ -577,12 +594,13 @@ const firstParents = (root) => git(root, "rev-list", "--first-parent", "main").s
 const isMerge = (root, sha) => git(root, "rev-list", "--parents", "-n1", sha).split(" ").length > 2;
 
 // One step on main: pick / land (a pick with a `lane merge` record) / revert / revert -m 1 / reset /
-// squash / no-ff, or a hand edit that takes the task's file out. Main moves on first half the time. Lands
-// and reverts come up most, so a walk often ends on the revert of a landed commit.
+// squash / no-ff, or a hand edit that takes the task's file out or clears run.sh's executable bit. Main
+// moves on first half the time. Lands and reverts come up most, so a walk often ends on the revert of a
+// landed commit.
 function step(root, { pick, branch, fork, step: n }) {
   if (pick() < 0.5) commitFile(root, `m${n}.txt`, `main ${n}\n`, `chore: main ${n}`);
   const ops = ["land", "land", "land", "pick", "revert", "revert", "revert", "revert"];
-  ops.push("revert-m", "reset", "squash", "no-ff", "hand");
+  ops.push("revert-m", "reset", "squash", "no-ff", "hand", "chmod");
   const op = ops[Math.floor(pick() * ops.length)];
   const history = firstParents(root).slice(0, -1); // never the root commit
   const choose = (list) => list[Math.floor(pick() * list.length)];
@@ -617,6 +635,11 @@ function step(root, { pick, branch, fork, step: n }) {
     if (attempt(root, "merge", "--squash", branch)) attempt(root, "commit", "-q", "-m", "squash");
   } else if (op === "no-ff") {
     attempt(root, "merge", "--no-ff", "--no-edit", branch);
+  } else if (op === "chmod") {
+    if (!existsSync(join(root, "run.sh"))) return op;
+    chmodSync(join(root, "run.sh"), 0o644);
+    if (attempt(root, "add", "run.sh"))
+      attempt(root, "commit", "-q", "-m", "chore: run.sh not executable by hand");
   } else if (attempt(root, "rm", "-q", "T1.txt")) {
     git(root, "commit", "-q", "-m", "drop T1 by hand");
   }
@@ -624,16 +647,12 @@ function step(root, { pick, branch, fork, step: n }) {
 }
 
 // The oracle, position-exact: nothing on main but the task's own commits (picked, merged, squashed,
-// reverted, reset) and the hand removal touches the files the branch changed, so its change is on main
-// exactly when main's copy of each such file is the branch's, byte for byte (absent on both counts).
+// reverted, reset) and the hand edits touch the files the branch changed, so its change is on main exactly
+// when main's entry for each such file is the branch's: the same mode and blob (absent on both counts).
 function onMain(root, { fork, branch }) {
   const changed = git(root, "diff", "--name-only", fork, branch).split("\n").filter(Boolean);
-  const show = (ref, file) =>
-    spawnSync("git", ["-C", root, "show", `${ref}:${file}`], { encoding: "utf8", env: gitEnv });
-  return changed.every((file) => {
-    const [theirs, mine] = [show("main", file), show(branch, file)];
-    return theirs.status === mine.status && theirs.stdout === mine.stdout;
-  });
+  const entry = (ref, file) => git(root, "ls-tree", ref, "--", file);
+  return changed.every((file) => entry("main", file) === entry(branch, file));
 }
 
 function fixIn(root, argv) {
@@ -642,18 +661,23 @@ function fixIn(root, argv) {
 }
 const isDone = (root) => /^\| T1 +\| S1 +\| done /.test(row(read(root, "plan/BOARD.md"), "T1"));
 
-test("property: random pick/revert/reset/squash/no-ff/revert -m 1 walks write done only when on main", () => {
+test("property: random pick/revert/reset/squash/no-ff/revert -m 1/chmod walks write done only when on main", () => {
   const done = { record: 0, accept: 0, refused: 0 };
   for (let seed = 1; seed <= 25; seed++) {
     const pick = random(seed);
     const { root } = fresh();
-    const shape = [null, "add", "drop"][Math.floor(pick() * 3)];
-    if (shape) commitFile(root, "rep.txt", REPEATED[shape].before, "chore: a repeated block");
+    const shape = [null, "add", "drop", "mode"][Math.floor(pick() * 4)];
+    if (shape === "mode") commitFile(root, "run.sh", "echo T1\n", "chore: a script");
+    else if (shape) commitFile(root, "rep.txt", REPEATED[shape].before, "chore: a repeated block");
     const fork = git(root, "rev-parse", "HEAD");
     const { path, branch } = builtBranch(root, "T1");
     if (pick() < 0.5) commitFile(path, "T1.txt", "work of T1\nmore of T1\n", "feat: T1 more");
     if (pick() < 0.5) commitFile(path, "T1b.txt", "second\n", "feat: T1 second");
-    if (shape) commitFile(path, "rep.txt", REPEATED[shape].after, `feat: T1 ${shape}s X`);
+    if (shape === "mode") {
+      chmodSync(join(path, "run.sh"), 0o755);
+      git(path, "add", "run.sh");
+      git(path, "commit", "-q", "-m", "feat: T1 makes run.sh executable");
+    } else if (shape) commitFile(path, "rep.txt", REPEATED[shape].after, `feat: T1 ${shape}s X`);
     ledger(root, "T1", { state: "verified" });
     const ops = [];
     const walk = { pick, branch, fork };

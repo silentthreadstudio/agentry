@@ -202,47 +202,53 @@ export function identities(root, shas) {
 //     of the removed lines may be back (no more copies of a removed line there than `to` had).
 // Diffs match equal lines arbitrarily (in `x X b` → `x X X b` either X is the new one), so when a hunk's
 // own lines repeat right next to it the window grows to the nearest line not among them, and a line the
-// hunk added may not have fewer copies in that window than `to` had either. A file whose blob is the same
-// in `to` and `onto` holds outright, however it got back (a revert of the revert): byte for byte, every
-// line is where it landed. A binary, empty or non-file entry that differs is not provable, and neither is
-// anything git cannot answer. The answer is conservative by design: a line next to a removal edited since,
-// or a line re-added in a file that also differs otherwise, is reported, never written as done.
+// hunk added may not have fewer copies in that window than `to` had either. A file whose mode and blob are
+// the same in `to` and `onto` holds outright, however it got back (a revert of the revert): byte for byte,
+// every line is where it landed. The mode and the type (file, symlink, submodule) count as much as the
+// lines: a mode the change set must still be set, a file must still be a file, and a change with no lines
+// (a `chmod`, an empty file) is judged on them and on whether the file is there. A binary or submodule
+// entry that differs is not provable, and neither is anything git cannot answer. The answer is
+// conservative by design: a line next to a removal edited since, or a line re-added in a file that also
+// differs otherwise, is reported, never written as done.
 
-// Each object `rev:path` names: Map key → { sha, type } (absent keys left out), in one cat-file call;
-// null when git cannot answer, or answers anything but an object or "missing" for a key.
-function objectsAt(top, keys) {
-  const input = `${keys.join("\n")}\n`;
-  const out = git(top, ["cat-file", "--batch-check=%(objectname) %(objecttype)"], input);
-  const lines = out?.split("\n") ?? [];
+// A tree entry's kind by its mode (none for any other mode).
+const KIND = { 100644: "file", 100755: "file", 120000: "link", 160000: "submodule" };
+
+// `git diff --raw` of `a..b`, restricted to `paths` when given: Map path → { a, b, lines }, `a`/`b` each
+// side's { mode, sha } or null when absent. With `numstat`, `lines` is true when the entry changed lines,
+// false when it changed none (a mode, an empty file) and null for a binary. A path not in the map is the
+// same on both sides, mode and blob. null when git cannot answer.
+function rawDiff(top, a, b, { numstat = false, paths } = {}) {
+  const args = ["diff", "--raw", "-z", "--no-renames", "--no-abbrev", "--no-ext-diff"];
+  const only = (paths ?? []).map((p) => `:(literal)${p}`);
+  const out = git(top, [...args, ...(numstat ? ["--numstat"] : []), a, b, "--", ...only]);
+  if (out === null) return null;
+  const side = (mode, sha) => (mode === "000000" ? null : { mode, sha });
   const found = new Map();
-  for (const [i, key] of keys.entries()) {
-    const m = /^([0-9a-f]{40,64}) (\w+)$/.exec(lines[i] ?? "");
-    if (m) found.set(key, { sha: m[1], type: m[2] });
-    else if (!lines[i]?.endsWith(" missing")) return null;
+  const tokens = out.split("\0");
+  const RAW = /^:(\d{6}) (\d{6}) (\w+) (\w+) \w+$/;
+  let i = 0;
+  for (; RAW.test(tokens[i] ?? ""); i += 2) {
+    const [, modeA, modeB, shaA, shaB] = RAW.exec(tokens[i]);
+    found.set(tokens[i + 1], { a: side(modeA, shaA), b: side(modeB, shaB), lines: null });
   }
+  for (; i < tokens.length; i++) {
+    const [added, removed, ...path] = tokens[i].split("\t");
+    const entry = found.get(path.join("\t"));
+    if (entry && added !== "-") entry.lines = `${added}${removed}` !== "00";
+  }
+  if (paths) for (const path of found.keys()) if (!paths.includes(path)) found.delete(path);
   return found;
 }
 
-// The files `from..to` changes: { path, text } (text false for a binary or an entry with no lines changed).
-function changedFiles(top, from, to) {
-  const out = git(top, [
-    "diff",
-    "--numstat",
-    "-z",
-    "--no-renames",
-    "--no-ext-diff",
-    from,
-    to,
-    "--",
-  ]);
-  if (out === null) return null;
-  return out
-    .split("\0")
-    .filter(Boolean)
-    .map((entry) => {
-      const [added, removed, ...path] = entry.split("\t");
-      return { path: path.join("\t"), text: added !== "-" && `${added}${removed}` !== "00" };
-    });
+// Is `to`'s entry `was` (the change made it so from `prior`) still what the change left in `onto`'s
+// `now`, as far as no line can tell: the same kind, not a submodule, the mode the change set. True when
+// it is.
+function entryHolds({ prior, was, now }) {
+  const [then, there] = [was, now].map((e) => (e ? KIND[e.mode] : null));
+  if ((was && now && then !== there) || [then, there].includes("submodule")) return false;
+  const chmod = prior && was && prior.mode !== was.mode;
+  return !(chmod && now && now.mode !== was.mode);
 }
 
 // The -U0 hunks of `from..to` in `path`: { start, count, removed: [line…] } with `start`/`count` the
@@ -329,26 +335,25 @@ function hunkHolds({ was, now, kept, hunk }) {
 /** Is the net change `from..to` still in effect on commit `onto` (`to` or a descendant of it), at the place
  *  it landed? All three are full SHAs. null when it is; else `{ file, line?, what }`, `what` being `added`
  *  (a line it added is gone or changed), `removed` (a line it removed is back), `around` (the lines around
- *  a removal changed, so where it was cannot be told), `file` (a binary or empty file differs) or `git`
- *  (git could not tell). Read-only; see the comment above for why this is blame and not `git apply`. */
+ *  a removal changed, so where it was cannot be told), `file` (its mode, its type or whether it is there
+ *  is not as the change left it, or a binary differs) or `git` (git could not tell). Read-only; see the
+ *  comment above for why this is blame and not `git apply`. */
 export function inEffect(root, { from, to, onto }) {
   const top = topLevel(root);
   if (!top || ![from, to, onto].every((c) => FULL_SHA.test(c ?? ""))) return { what: "git" };
   if (to === onto) return null;
   if (!isAncestor(top, to, onto)) return { what: "git" };
-  const files = changedFiles(top, from, to);
-  // cat-file reads one name per line: a path with a newline in it cannot be asked.
-  if (!files || files.some((f) => f.path.includes("\n"))) return { what: "git" };
-  const objects = objectsAt(
-    top,
-    files.flatMap((f) => [`${to}:${f.path}`, `${onto}:${f.path}`]),
-  );
-  if (!objects) return { what: "git" };
-  for (const { path, text } of files) {
-    const [was, now] = [to, onto].map((c) => objects.get(`${c}:${path}`));
-    if (was?.sha === now?.sha) continue;
-    const blobs = [was, now].every((o) => !o || o.type === "blob");
-    if (!text || !blobs) return { file: path, what: "file" };
+  const change = rawDiff(top, from, to, { numstat: true });
+  const since = change?.size ? rawDiff(top, to, onto, { paths: [...change.keys()] }) : change;
+  if (!change || !since) return { what: "git" };
+  for (const [path, { a: prior, b: was, lines }] of change) {
+    if (!since.has(path)) continue; // mode and blob as it landed: byte for byte
+    const now = since.get(path).b;
+    if (!entryHolds({ prior, was, now }) || lines === null) return { file: path, what: "file" };
+    if (!lines) {
+      if (!was !== !now) return { file: path, what: "file" };
+      continue;
+    }
     const hunks = hunksOf(top, from, to, path);
     const before = linesAt(top, to, path, was);
     const after = linesAt(top, onto, path, now);

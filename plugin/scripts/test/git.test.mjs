@@ -2,7 +2,15 @@
 // Run: node --test plugin/scripts/test/git.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -192,6 +200,52 @@ test("inEffect: a whole file removed must stay removed; bad input is `git`, neve
     "`to` is not on it",
   );
   assert.deepEqual(inEffect(outside, { ...change, onto: removed }), { what: "git" });
+});
+
+// Commit `file` with the executable bit set (`exec`) or cleared; returns the commit.
+function chmodCommit(file, exec) {
+  chmodSync(join(repo, file), exec ? 0o755 : 0o644);
+  run("add", file);
+  run("commit", "-q", "-m", `chore: chmod ${exec ? "+x" : "-x"} ${file}`);
+  return run("rev-parse", "HEAD");
+}
+
+test("inEffect: a mode-only change holds while the mode does, though the content moved on", () => {
+  const [base] = history("run.sh", ["echo hi\n"]);
+  const task = chmodCommit("run.sh", true);
+  const change = { from: base, to: task };
+  const [edited] = history("run.sh", ["echo hi\necho more\n"]);
+  assert.equal(inEffect(repo, { ...change, onto: edited }), null, "still executable");
+  const reverted = chmodCommit("run.sh", false);
+  assert.deepEqual(inEffect(repo, { ...change, onto: reverted }), {
+    file: "run.sh",
+    what: "file",
+  });
+});
+
+test("inEffect: a mode taken back on the same content is not in effect", () => {
+  const [base] = history("tool.sh", ["a\n"]);
+  writeFileSync(join(repo, "tool.sh"), "a\nb\n");
+  const task = chmodCommit("tool.sh", true); // a line and the executable bit, in one commit
+  const reverted = chmodCommit("tool.sh", false); // same blob as `task`, mode back
+  assert.deepEqual(inEffect(repo, { from: base, to: task, onto: reverted }), {
+    file: "tool.sh",
+    what: "file",
+  });
+});
+
+test("inEffect: a file turned into a symlink with the same bytes is not as it landed", () => {
+  const [base, task] = history("link.txt", ["old", "target"]);
+  run("rm", "-q", "link.txt");
+  symlinkSync("target", join(repo, "link.txt"));
+  run("add", "link.txt");
+  run("commit", "-q", "-m", "chore: link.txt is a symlink now");
+  const linked = run("rev-parse", "HEAD");
+  assert.equal(run("rev-parse", `${task}:link.txt`), run("rev-parse", `${linked}:link.txt`));
+  assert.deepEqual(inEffect(repo, { from: base, to: task, onto: linked }), {
+    file: "link.txt",
+    what: "file",
+  });
 });
 
 test("worktrees: each path with its head and branch", () => {
