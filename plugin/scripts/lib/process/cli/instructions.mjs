@@ -22,8 +22,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { TEMPLATE, readFile } from "../instruction-files.mjs";
 import {
   CLAUDE_DIR_IMPORT,
   IMPORT,
@@ -31,13 +31,9 @@ import {
   renderBlock,
   upsertBlock,
 } from "../instructions.mjs";
-import { staysInside } from "../read.mjs";
 
 export const usage = "instructions [--write]";
 export const flags = { "--write": false };
-// cli/ → process/ → lib/ → scripts/ → the plugin root.
-const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
-export const TEMPLATE = join(PLUGIN, "skills", "process", "templates", "agents-block.md");
 const SAYS = {
   create: "AGENTS.md: create it with the Agentry block",
   append: "AGENTS.md: append the Agentry block",
@@ -53,21 +49,6 @@ function sameFile(a, b) {
   const sa = statSync(a, { throwIfNoEntry: false });
   const sb = statSync(b, { throwIfNoEntry: false });
   return Boolean(sa && sb && sa.dev === sb.dev && sa.ino === sb.ino);
-}
-
-// The file's text, null when absent, or the reason it can't be used.
-export function readFile(root, name) {
-  const file = join(root, name);
-  if (!staysInside(root, file)) return { error: `${name} is a symlink out of the repository` };
-  // A write would follow a broken symlink to wherever it points.
-  if (lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink() && !existsSync(file))
-    return { error: `${name} is a broken symlink` };
-  if (!existsSync(file)) return { text: null };
-  try {
-    return { text: readFileSync(file, "utf8") };
-  } catch (e) {
-    return { error: `cannot read ${name} (${e.code ?? e.message})` };
-  }
 }
 
 const lines = (mark, text) =>
