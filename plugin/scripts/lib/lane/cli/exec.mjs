@@ -190,18 +190,16 @@ const stagedKey = (entry) => `${entry[0]}${entry.slice(3)}`; // index column + p
 const headOf = (dir, ref = "HEAD") =>
   git(dir, ["rev-parse", "--verify", "--quiet", ref]).stdout.trim();
 
-// Main's changed paths (Agentry's run files and new memory records left out) → their `git status` entry; a rename or copy
-// lists its source too.
+// Main's changed paths (Agentry's run files and new memory records left out) → their `git status` entry; a rename
+// comes as its delete and its add (`porcelain`), so both paths are checked.
 function dirtyPaths(root) {
   const parts = dirtyEntries(root);
   if (!parts) refuse(`git status failed in ${root}`);
   const out = new Map();
-  for (let i = 0; i < parts.length; i++) {
-    const entry = parts[i];
-    const paths = [entry.slice(3), ...(/^[RC]/.test(entry) ? [parts[++i]] : [])];
-    for (const path of paths)
-      if (!OWN_DIRS.some((d) => path.startsWith(d)) && !STAGED.test(out.get(path) ?? ""))
-        out.set(path, entry); // a staged entry stays when the path is also untracked (`rm --cached`)
+  for (const entry of parts) {
+    const path = entry.slice(3);
+    if (!OWN_DIRS.some((d) => path.startsWith(d)) && !STAGED.test(out.get(path) ?? ""))
+      out.set(path, entry); // a staged entry stays when the path is also untracked (`rm --cached`)
   }
   return out;
 }

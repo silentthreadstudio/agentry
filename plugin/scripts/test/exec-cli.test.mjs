@@ -1321,3 +1321,33 @@ test("guard.allow lets nothing through while a running lane's owned files cannot
   assert.equal(res.exit, 1);
   assert.match(res.json.reason, /docs\/STATUS\.md/);
 });
+
+test("a staged rename never carries an owned file past guard.allow, and a lone rename does not crash", () => {
+  const spec = { ...SPEC, guard: { allow: ["**/*.md", "two.txt"] } };
+  const breaches = {
+    "an owned file renamed into an allowed path": (root) =>
+      git(root, "mv", "two.txt", "docs/two.md"),
+    "an owned file edited beside an allowed rename": (root) => {
+      writeFileSync(join(root, "two.txt"), "edited\n");
+      git(root, "mv", "docs/A.md", "docs/C.md");
+    },
+  };
+  for (const [what, act] of Object.entries(breaches)) {
+    const r = repo({ spec });
+    commitFile(r.root, "two.txt", "two\n");
+    commitFile(r.root, "docs/A.md", "# A\n");
+    build(lane(r, "start", "T1").json);
+    assert.equal(lane(r, "start", "T2").exit, 0, what);
+    act(r.root);
+    const stopped = lane(r, "report", "T1");
+    assert.equal(stopped.exit, 1, `${what}: ${stopped.stderr}`);
+    assert.match(stopped.json.reason, /main touched: files changed/, what);
+  }
+  const r = repo({ spec });
+  commitFile(r.root, "docs/A.md", "# A\n");
+  build(lane(r, "start", "T1").json);
+  git(r.root, "mv", "docs/A.md", "docs/Z.md");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+});

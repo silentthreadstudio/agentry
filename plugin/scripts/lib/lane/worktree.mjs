@@ -59,19 +59,13 @@ export function findByBranch(root, branch) {
 }
 
 /** `git status` as `"XY path"` entries, untracked files listed one by one (never collapsed to a
- *  directory). Empty when the tree is clean. Throws when `dir` is not a work tree. */
+ *  directory) and a rename as its delete and its add (`--no-renames`), so every path is its own entry.
+ *  Empty when the tree is clean. Throws when `dir` is not a work tree. */
 export function porcelain(dir) {
   // Not `must`: it trims, which would eat the leading space of the first entry (" M f" → "M f").
-  const res = git(dir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  const res = git(dir, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"]);
   if (res.status !== 0) throw new Error(`git status: ${res.stderr.trim()}`);
-  const out = res.stdout;
-  const parts = out.split("\0").filter(Boolean);
-  const entries = [];
-  for (let i = 0; i < parts.length; i++) {
-    entries.push(parts[i]);
-    if (/^[RC]/.test(parts[i])) i++; // a rename or copy carries its source as the next field
-  }
-  return entries;
+  return res.stdout.split("\0").filter(Boolean);
 }
 
 /** Ignored files and directories in `dir` (a wholly ignored directory is one entry, `dir/`). */

@@ -18,7 +18,7 @@ export const isMemoryPath = (path) => STORE.test(path);
 export const isMemoryWrite = (entry) => entry.startsWith("?? ") && isMemoryPath(entry.slice(3));
 
 /** The `git status` entries of `dir` that are not Agentry's own new memory records, as `"XY path"`, read
- *  by the one porcelain parser (`worktree.porcelain`: a rename or copy is one entry, its destination);
+ *  by the one porcelain parser (`worktree.porcelain`: a rename is its delete and its add, one path each);
  *  null when git fails. The one answer to "is this checkout clean": exec's main guard, the land, the
  *  carry, the recovery and the gate use it. */
 export function dirtyEntries(dir) {

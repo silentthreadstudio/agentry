@@ -53,11 +53,14 @@ test("mainRoot is null outside a repository", () => {
   assert.equal(mainRoot("/"), null);
 });
 
-test("porcelain lists untracked files one by one, renames once, nothing when clean", () => {
+test("porcelain lists untracked files one by one, a rename as delete and add, nothing when clean", () => {
   assert.deepEqual(porcelain(repo.dir), []);
   writeFileSync(join(repo.dir, "new.txt"), "x");
   git(repo.dir, "mv", "README.md", "MOVED.md");
-  assert.deepEqual(porcelain(repo.dir).sort(), ["?? new.txt", "R  MOVED.md"]);
+  assert.deepEqual(
+    porcelain(repo.dir).sort(),
+    ["?? new.txt", "A  MOVED.md", "D  README.md"].sort(),
+  );
   commitFile(repo.dir, "d/a.txt", "a");
   writeFileSync(join(repo.dir, "d", "b.txt"), "b");
   assert.ok(porcelain(repo.dir).includes("?? d/b.txt"));

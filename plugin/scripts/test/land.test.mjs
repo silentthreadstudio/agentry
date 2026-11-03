@@ -149,10 +149,10 @@ test("uncommittedPatch records an edit against HEAD with its sha256", () => {
 
 // R1b-5 notes item 4: the clean check split git's output on its own, so a rename's source came out as
 // an entry of its own, cut to "n/TASKS.md".
-test("statusEntries reads a rename as one entry, by its destination", () => {
+test("statusEntries reads a rename as its delete and its add", () => {
   commitFile(repo.dir, "plan/TASKS.md", "tasks\n");
   git(repo.dir, "mv", "plan/TASKS.md", "plan/T.md");
-  assert.deepEqual(statusEntries(repo.dir), ["R  plan/T.md"]);
+  assert.deepEqual(statusEntries(repo.dir).sort(), ["A  plan/T.md", "D  plan/TASKS.md"]);
 });
 
 // A gate the way a merge runs it, from a parent that then dies (as a killed merge does): the wrapper is
