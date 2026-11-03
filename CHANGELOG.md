@@ -35,6 +35,14 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   stray processes started under `.agentry/run/`. Unknown, live or dirty worktrees, and worktrees
   holding ignored files, are kept.
 - **`mode` config key** — read by `start`.
+- **`board status --ready`** — open tasks per sprint, with whether each has a contract and
+  whether its dependencies are done.
+- **`board status --why <id>`** says what an item is blocked by.
+- **Process file keys:** `worktrees.keep` (worktrees kept on purpose are shown as kept, not
+  drift), `status` (a hand-written status file whose "next" section is checked against the
+  board), and a `mentions` field type so `refs-resolve` checks ids cited in text.
+- **`ready-has-contract` rule** — an open task in an active sprint must have a contract that
+  `board contract` finds.
 
 ### Changed
 - **`/agentry:exec`** now drives the build and verify rounds through `lane exec`, records the
@@ -51,6 +59,20 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   findings or stopped, 2 refused, usage or bad config), errors are one `✗ what: why → next` line,
   and ids are read in any case and in their cited form (`D7`).
 - **`extensions.merge.checks: []`** is accepted and names no repo check.
+- **`board contract`** finds a task's real contract on a lived-in board: shared blocks under
+  every id they lead, contracts written as table rows, contracts in a file the task's row links,
+  and a later one-line amendment no longer wins over the titled contract. Ids are read in any
+  case. `/agentry:exec` briefs carry those later notes after the contract.
+- **`board add`** fills a pattern id itself; `explain` and `check` refuse a conductor prompt or
+  rules heading that doesn't exist, and `explain` lists which lanes are set up.
+- **`board fix`** proves work is still on main by line history and file mode, not a text match,
+  and asks git a fixed number of times per run.
+- **`lane merge`** puts a carried board write back cell by cell, and a rerun after a kill acts
+  only on what it can prove it wrote.
+- **`lane sweep`** stops only what it can prove is a stray's, never an interactive shell or a live
+  lane's process.
+- **`board status`** shows what is on you, blocked and ahead even on a clean board; `start`
+  prints the count first and the repo's `.agentry/NOTE.md`.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a
