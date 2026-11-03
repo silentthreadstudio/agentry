@@ -617,6 +617,8 @@ test("held: resume with redo → continue on the same run, and the lane holds ag
   const round = res.ledger.rounds.at(-1);
   assert.deepEqual([res.next, round.stepRun, round.redo], ["continue", [1, 1], true]);
   assert.equal(res.ledger.holds[0].redo, true);
+  // Sent back, even step 1 must come back with a commit made since the redo was dispatched.
+  assert.match(pure(res.ledger, done(TIP)).reason, /no commits since step 1 began/);
   const again = pure(res.ledger, done(MOVED));
   assert.equal(again.next, "resume");
   assert.equal(again.ledger.hold.when, "after");
@@ -663,8 +665,22 @@ test("{ type: hold } while a builder's round is out → held during it; the roun
   });
   assert.equal(res.ledger.rounds[0].held, true);
   assert.equal(res.ledger.rounds[0].report, undefined);
-  const parked = step(res.ledger, { type: "hold", for: "later", evidence: null, at: LATER });
-  assert.deepEqual([parked.ledger.hold.for, parked.ledger.hold.since], ["later", AT]);
+  const parked = step(res.ledger, {
+    type: "hold",
+    for: "later",
+    evidence: null,
+    at: LATER,
+    why: "stopped",
+    agent: "builder-7",
+  });
+  assert.deepEqual(
+    [parked.ledger.hold.for, parked.ledger.hold.since, parked.ledger.hold.why],
+    ["later", AT, "stopped"],
+  );
+  assert.equal(parked.ledger.rounds[0].agent, "builder-7", "the hold names the round's builder");
+  const owner = step(parked.ledger, { type: "hold", for: "owner", evidence: "/e", at: LATER });
+  assert.equal(owner.ledger.hold.why, undefined, "a new hold drops the old reason");
+  assert.equal(step(owner.ledger, resume()).ledger.rounds.at(-1).agent, "builder-7");
   assert.throws(
     () => step(go(lane(), report("DONE")).ledger, { type: "hold", for: "owner", at: AT }),
     /hold is for a builder's round: the lane is verifying \(next verify\)/,

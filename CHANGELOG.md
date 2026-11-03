@@ -12,7 +12,7 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   the steps in runs (one round up to each owner gate), holds the lane for the owner's review at a gate, and
   sends one fresh verifier over the whole contract after the last step, with the owner's approvals in its
   brief. `lane exec hold <id> --for owner` holds a round whose reply is saved; `--for later` parks a lane
-  whose builder was stopped, its worktree kept. `lane exec resume <id> --note "<the OK>"` records the
+  whose builder was stopped, its worktree kept, and `--agent` names the builder the resume goes back to. `lane exec resume <id> --note "<the OK>"` records the
   answer and resumes the builder (`--redo` builds the run again, `--fresh` sends a new builder). A held
   lane is no writer, writes no board cell and is refused by merge and close; `lane session start` lists it
   first. `exec show` and `lane session start` flag a building lane with no change for 20 minutes as idle.

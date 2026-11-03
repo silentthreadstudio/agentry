@@ -7,7 +7,7 @@
 // heldText(hold, total) -> string      the `held:` line's text (`total`: the contract's steps, 0 for none)
 // holdWhere(hold, total) -> string     `after step 1 of 2`, `during steps 2–3 of 3`, `mid-build`
 // answerLine(entry, total) -> string   one owner's answer: `approved: step 1 of 2 at <ISO>: "<note>"`
-// idleText(id, idle) -> string         the `idle:` line's text (field 53)
+// idleText(id, idle) -> string         the `idle:` line's text (field 53); idleHead, up to its park step
 // clock(iso) -> "HH:MM"                local time
 import { runText } from "../process/steps.mjs";
 
@@ -32,9 +32,9 @@ export const heldText = (hold, total) =>
     : `for the owner, ${holdWhere(hold, total)}, since ${hold.since} · evidence ${hold.evidence}`;
 
 /** How one owner's answer (a ledger `holds[]` entry) reads: `approved` after a run, `sent back` to redo
- *  it, `noted` after a hold during a round. */
+ *  it, `noted` after a hold during a round or a parked one. */
 export const answerLabel = (h) =>
-  h.redo ? "sent back" : h.when === "after" ? "approved" : "noted";
+  h.redo ? "sent back" : h.when === "after" && h.for === "owner" ? "approved" : "noted";
 /** The answer after its label: `step 1 of 2 at <ISO>: "<note>"`. */
 export const answerText = (h, total) =>
   `${h.stepRun && total ? runText(h.stepRun, total) : "mid-build"} at ${h.resumedAt}: "${h.note}"`;
@@ -56,9 +56,11 @@ export const span = (minutes) =>
     : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
 
 /** The idle line (field 53): `<id> 2h13m: last change 11:44 (<file>) → check the builder; <park> to park
- *  it`. `idle` is `{ minutes, lastChange, file, park }` (`file` null when the newest change is a commit). */
-export const idleText = (id, idle) =>
-  `${id} ${span(idle.minutes)}: last change ${clock(idle.lastChange)} (${idle.file ?? "the last commit"}) → check the builder; ${idle.park} to park it`;
+ *  it`. `idle` is `{ minutes, lastChange, file, park }` (`file` null when no file is the newest change). */
+export const idleText = (id, idle) => `${idleHead(id, idle)}; ${idle.park} to park it`;
+/** The idle line up to its park step: `<id> 2h13m: last change 11:44 (<file>) → check the builder`. */
+export const idleHead = (id, idle) =>
+  `${id} ${span(idle.minutes)}: last change ${clock(idle.lastChange)} (${idle.file ?? "no file changed"}) → check the builder`;
 
 const HEADER = new Set(["id", "step", "next", "state"]);
 const indent = (text) =>

@@ -24,7 +24,7 @@ import { fit } from "../../process/render.mjs";
 import { statusView, titleOf, workKind } from "../../process/status.mjs";
 import { runText } from "../../process/steps.mjs";
 import { forThisRepo, primeLimitOf } from "../brief.mjs";
-import { clock, idleText } from "../exec-view.mjs";
+import { clock, idleHead } from "../exec-view.mjs";
 import { gateLockDir, heldSlots } from "../gate-lock.mjs";
 import { idleOf } from "../idle.mjs";
 import { plan } from "../sweep.mjs";
@@ -188,7 +188,11 @@ function renderStart(s, { name, root }) {
   }
   if (s.held.length > MAX_HELD)
     add(`held: +${s.held.length - MAX_HELD} more → ${nextStep("lane session start --json")}`);
-  for (const i of s.idle) add(`idle: ${idleText(i.id, i)}`);
+  // The park step on its own line, as the held block's resume, so 80 columns never cut it.
+  for (const i of s.idle) {
+    add(`idle: ${idleHead(i.id, i)}`);
+    add(`  → ${i.park} to park it`);
+  }
   // The count comes before the name, so a long name is what the line loses.
   for (const n of s.status.now)
     add(`now: ${n.id} ${n.done}/${n.total}${n.name ? ` · ${n.name}` : ""}`);

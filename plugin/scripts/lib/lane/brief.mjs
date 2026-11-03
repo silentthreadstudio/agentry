@@ -553,7 +553,8 @@ export function stepSlots({ steps = [], stepRun = null, holds = [], step, fresh 
         : answer.when === "after"
           ? "Go on to the steps below."
           : "Carry on with the same steps, to that answer.",
-    parked: answer?.for === "later",
+    // A lane parked mid-round may hold uncommitted work; one parked at a run's end does not.
+    parked: answer?.for === "later" && answer.when === "during",
     approved: approvals.length > 0,
     approvals: approvals.map((h) => `- ${answerLine(h, total)}`).join("\n"),
   };

@@ -1669,9 +1669,13 @@ test("owns --apply keeps a section appended after the brief's last template sect
 
 // ---- idle lanes, commits guard.allow lets through, a red gate after a green -------------------------
 
-// The lane's branch commit and every file in its worktree, made `minutes` ago.
-function age(worktree, minutes) {
+// The lane's branch commit, every file in its worktree and its round's dispatch, made `minutes` ago.
+function age(worktree, minutes, root) {
   const when = new Date(Date.now() - minutes * 60_000);
+  const file = ledgerFile(root, basename(worktree));
+  const ledger = JSON.parse(readFileSync(file, "utf8"));
+  ledger.rounds.at(-1).at = when.toISOString();
+  writeFileSync(file, JSON.stringify(ledger, null, 2));
   const env = {
     ...gitEnv,
     GIT_AUTHOR_DATE: when.toISOString(),
@@ -1693,7 +1697,7 @@ const textOf = (r, ...args) =>
 test("idle.test: a building lane with nothing changed for 25 minutes prints the idle line; 15 minutes and a held lane print none", () => {
   const r = repo();
   const out = lane(r, "start", "T1").json;
-  age(out.worktree, 25);
+  age(out.worktree, 25, r.root);
   const shown = lane(r, "show", "T1").json;
   assert.ok(shown.idle.minutes >= 25 && shown.idle.minutes < 30, JSON.stringify(shown.idle));
   assert.match(shown.idle.lastChange, /^\d{4}-\d\d-\d\dT/);
@@ -1707,11 +1711,24 @@ test("idle.test: a building lane with nothing changed for 25 minutes prints the 
     encoding: "utf8",
     env: { ...gitEnv, HOME: r.home },
   }).stdout;
-  assert.match(started, /^idle: T1 2\dm: last change/m);
+  // The session prints the park step on its own line, so 80 columns never cut it.
+  assert.match(
+    started,
+    /^idle: T1 2\dm: last change \d\d:\d\d \(.+\) → check the builder\n {2}→ (agentry )?lane exec hold T1 --for later to park it$/m,
+  );
 
   const fresh = repo();
-  age(lane(fresh, "start", "T1").json.worktree, 15);
+  age(lane(fresh, "start", "T1").json.worktree, 15, fresh.root);
   assert.equal(lane(fresh, "show", "T1").json.idle, undefined);
+
+  // A builder just sent is not idle, however old the worktree: the round's dispatch counts as a change.
+  const sent = repo();
+  const wt = lane(sent, "start", "T1").json.worktree;
+  age(wt, 25, sent.root);
+  const ledger = JSON.parse(readFileSync(ledgerFile(sent.root, "T1"), "utf8"));
+  ledger.rounds.at(-1).at = new Date().toISOString();
+  writeFileSync(ledgerFile(sent.root, "T1"), JSON.stringify(ledger, null, 2));
+  assert.equal(lane(sent, "show", "T1").json.idle, undefined);
 
   writeFileSync(out.reportPath, "DONE\nsee it\n");
   assert.equal(lane(r, "hold", "T1", "--for", "owner").exit, 0);

@@ -26,6 +26,7 @@
 //                                           → hold (held) when step g ends "→ owner OK"; else g is the last
 //                                             step: as build above (verify, or the gate under exec.verify)
 //   build / fix / continue on run a..g (a > 1): no commits since step a began → fix (resume) with the reason
+//                                             (a run the owner sent back with redo, from its own dispatch)
 //   { type: "hold" } while a builder's round is out → hold (held); the round is left unread
 //   held: { type: "resume", note }           → continue (resume the builder) on the next run; on the same run
 //                                             after a "during" hold or with redo; after the last step → verify
@@ -189,7 +190,7 @@ const resend = (ledger, round, reason) =>
  *   { type: "verdict", verdict, report, agent?, summary?, tip, gate: true | false (one configured) }
  *   { type: "gate", record }   (recorded at any time; decides only when the gate is the next step)
  *   { type: "notes", notes }   (a verified PASS WITH NOTES lane back to its builder)
- *   { type: "hold", for: "owner" | "later", evidence, at, why? }
+ *   { type: "hold", for: "owner" | "later", evidence, at, why?, agent? }
  *   { type: "resume", note, redo?, at, skipVerify?, tip, gate }
  */
 export function step(ledger, event) {
@@ -226,9 +227,9 @@ function inRun(ledger, res) {
 
 const sameRun = (a, b) => a?.[0] === b?.[0] && a?.[1] === b?.[1];
 
-// The branch tip when the run `round` builds began: the first builder round of that run since the
-// owner's last answer that sent it back (a redo), else since the run was first dispatched.
-function runStartTip(ledger, round) {
+// The round the run `round` builds began with: the first builder round of that run since the owner's
+// last answer that sent it back (a redo), else since the run was first dispatched.
+function runStart(ledger, round) {
   let start = round;
   for (const r of builders(ledger).toReversed()) {
     if (r.n > round.n) continue;
@@ -236,7 +237,7 @@ function runStartTip(ledger, round) {
     start = r;
     if (r.redo) break;
   }
-  return start.tip;
+  return start;
 }
 
 function onReport(ledger, round, event) {
@@ -263,13 +264,10 @@ function onReport(ledger, round, event) {
   if (guards.dirty?.length)
     trips.push(`uncommitted files in the worktree: ${guards.dirty.slice(0, 10).join(", ")}`);
   if (guards.commits === 0) trips.push("no commits past base");
+  // A run past step 1, or one the owner sent back (any run), must add a commit since it began.
   const from = round.stepRun?.[0];
-  if (
-    from > 1 &&
-    !verdicts(ledger).length &&
-    tip !== undefined &&
-    runStartTip(ledger, round) === tip
-  )
+  const begun = from && !verdicts(ledger).length ? runStart(ledger, round) : null;
+  if (begun && (from > 1 || begun.redo) && tip !== undefined && begun.tip === tip)
     trips.push(`no commits since step ${from} began`);
   if (trips.length) {
     round.guards = trips;
@@ -331,9 +329,13 @@ const hold = (ledger, entry, reason) => {
 // The owner looks at a builder's round that is out (`for: "owner"`), or the conductor parks a lane whose
 // builder was stopped (`for: "later"`): the round is left unread. A held lane takes the new `for` and
 // evidence and keeps its `since`.
-function onHold(ledger, { for: who, evidence = null, at, why }) {
+function onHold(ledger, { for: who, evidence = null, at, why, agent }) {
+  // `agent`: the builder out on the round, so the resume can send `continue` to it.
+  if (agent) ledger.rounds[(ledger.hold?.round ?? ledger.rounds.length) - 1].agent = agent;
   if (ledger.state === "held") {
-    ledger.hold = { ...ledger.hold, for: who, evidence, ...(why && { why }) };
+    // A new hold says its own why: the reason of the old one does not carry over.
+    const { why: _old, ...kept } = ledger.hold;
+    ledger.hold = { ...kept, for: who, evidence, ...(why && { why }) };
     return { ledger, next: ledger.next };
   }
   if (expects(ledger) !== "report")

@@ -12,8 +12,8 @@
 //   show <id>                 the ledger and the pending step, for a cold resume
 //   owns <id> [--set a,b]     the owned files the briefs name (parsed once at start); `--set … --apply`
 //                             replaces them, and the brief waiting to be answered is rewritten
-//   hold <id> --for owner|later   a builder's round waits for the owner's review (its reply saved), or is
-//                             parked (its builder stopped); the ledger alone is written
+//   hold <id> --for owner|later [--agent a]   a builder's round waits for the owner's review (its reply
+//                             saved), or is parked (its builder stopped); the ledger alone is written
 //   resume <id> --note "<the OK>" [--redo] [--fresh]   the owner's answer to a hold, then the next round
 //
 // Board writes go through `applyEvent` only (no `lifecycle` → none). Exit 0 = next printed, 1 = the lane
@@ -121,7 +121,7 @@ export const help = {
   },
   flags: {
     "--agent <agent id>":
-      "report and verdict: the agent that answered, so a later round resumes it",
+      "report and verdict: the agent that answered, so a later round resumes it; hold: the builder out on the round",
     "--episode <episode id>": "close: the id episode_write returned",
     "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
     "--cite <A40,A41>":
@@ -141,7 +141,7 @@ export const help = {
 };
 const flags = flagsOf(help);
 const STEPS_OF = {
-  "--agent": ["report", "verdict"],
+  "--agent": ["report", "verdict", "hold"],
   "--episode": ["close"],
   "--notes": ["fix"],
   "--cite": ["start"],
@@ -1228,7 +1228,7 @@ const saved = (path) => {
 // A builder's round waits: for the owner, who reviews what its saved reply points at (`--evidence`, by
 // default that reply), or for later, a parked lane whose builder was stopped mid-round (no reply needed,
 // the worktree kept as it is). The ledger alone is written: no board cell, nothing on main.
-function hold(ctx, id) {
+function hold(ctx, id, agent) {
   const { root, holdFor, evidence: given, note } = ctx;
   if (!["owner", "later"].includes(holdFor)) refuse("--for takes owner or later");
   const ledger = mustLedger(root, id);
@@ -1253,6 +1253,7 @@ function hold(ctx, id) {
     evidence: evidence ?? (holdFor === "owner" ? round.reportPath : null),
     at: now(),
     ...(note && { why: note }),
+    ...(agent && { agent }),
   });
   ledgers.write(root, res.ledger);
   return view(ctx, res.ledger, {

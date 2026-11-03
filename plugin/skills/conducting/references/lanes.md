@@ -29,7 +29,7 @@ prompt the step printed. It never composes a brief, picks the next round or writ
 | `close <id> [--episode e]` | prints the `episode_write` payload; `--episode` stamps the id it returned | none (`done` comes at merge) |
 | `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
 | `owns <id> [--set a,b] [--apply]` | the owned files every brief names, parsed once at `start` and kept in the ledger; `--set … --apply` replaces them and rewrites the brief still waiting for its agent, keeping any section appended after the brief's last template section such as `## The fact` (without `--apply` it only shows the new list; a held lane has no brief waiting: the round after the resume reads the new list) | none |
-| `hold <id> --for owner [--evidence <path>]` | a builder's round whose reply is saved waits for the owner's review (also on a lane with no steps: the owner looks mid-build); the evidence defaults to that round's report; on a held lane it replaces `for` and the evidence and keeps `since` | none |
+| `hold <id> --for owner [--evidence <path>] [--agent a]` | a builder's round whose reply is saved waits for the owner's review (`--agent` names the builder out on it, so the resume goes back to that agent) (also on a lane with no steps: the owner looks mid-build); the evidence defaults to that round's report; on a held lane it replaces `for` and the evidence and keeps `since` | none |
 | `hold <id> --for later [--note "<why>"]` | parks a lane whose builder was stopped mid-round: no saved reply needed, the worktree kept as it is (uncommitted files allowed) | none |
 | `resume <id> --note "<the OK>" [--redo] [--fresh]` | records the owner's answer with its time (`holds[]`), then dispatches `continue` to the held round's builder, or after the last step the verifier (or the gate); `--redo` builds the same run again and holds at its end; `--fresh` sends a fresh builder the same brief | `built` when a verifier (or the gate) is next |
 
@@ -65,9 +65,10 @@ run: agentry lane exec resume <id> --root '<root>' --note "<the OK>"
 
 The hold reads `during steps 2–3 of 3` for a hold during a round, `mid-build` with no steps, and
 `parked, since <ISO>: "<why>"` for `--for later`. `resume` prints `approved: step 1 of 2 at <ISO>: "<note>"`
-(`sent back:` with `--redo`, `noted:` after a hold during a round). Under `--json` the same names, `held`,
+(`sent back:` with `--redo`, `noted:` after a hold during a round or a parked one). Under `--json` the same names, `held`,
 `steps` and `holds` as strings. `show` on a lane in `building` or `fixing` with no change in its worktree
-for 20 minutes (the newest of the branch's last commit and the mtime of every file git does not ignore)
+for 20 minutes (the newest of the round's dispatch, the branch's last commit and the mtime of every file git
+does not ignore, so a builder just sent back is never idle)
 prints right after the header:
 
 ```text
@@ -100,7 +101,7 @@ Under `--json` that is `idle: { minutes, lastChange, file }`.
 | gate | red only in `gate.flaky` tests | the same gate step runs again alone, once; its record decides |
 | start, the contract has steps | | `build` (fresh) on the first run: steps 1..g, g the first step ending `→ owner OK`, else the last |
 | build, fix, continue on run a..g, no verdict yet | `DONE` / `DONE_WITH_CONCERNS`, guards hold | held (`next resume`) when step g ends `→ owner OK`; else g is the last step and the work goes on as a build does |
-| build, fix, continue on run a..g (a > 1) | no commits since step a began | `fix` (resume) with the reason, as the other worktree guards |
+| build, fix, continue on run a..g (a > 1, or any run the owner sent back with `--redo`) | no commits since step a began (for a redo, since the redo was dispatched) | `fix` (resume) with the reason, as the other worktree guards |
 | a builder's round is out | `agentry lane exec hold <id> --for owner\|later` | held; the round is left unread (`held: true`) |
 | held | `agentry lane exec resume <id> --note "…"` | `continue` (resume the builder) on the next run; on the same run after a hold during a round, or with `--redo`; after the last step `verify` (fresh), or the gate under `exec.verify` |
 | held | a report, verdict or notes fix | refused: the lane expects a resume; a gate run is recorded and decides nothing |

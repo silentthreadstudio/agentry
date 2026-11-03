@@ -5,7 +5,15 @@
 // Run: node --test plugin/scripts/test/exec-hold.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -339,4 +347,42 @@ test("a parked lane resumes its builder with the parked line, or a fresh builder
   out = lane(r, "resume", "T1", "--note", "a new agent", "--fresh").json;
   assert.deepEqual([out.next, out.mode, out.agent], ["continue", "fresh", undefined]);
   assert.match(readFileSync(out.brief, "utf8"), /The lane was parked with uncommitted work/);
+});
+
+test("a hold may name the builder out on the round, and the resume goes back to it", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  writeFileSync(out.reportPath, "DONE\nhave a look\n");
+  assert.equal(lane(r, "hold", "T3", "--for", "owner", "--agent", "builder-9").exit, 0);
+  const resumed = lane(r, "resume", "T3", "--note", "fine").json;
+  assert.deepEqual(
+    [resumed.next, resumed.mode, resumed.agent],
+    ["continue", "resume", "builder-9"],
+  );
+});
+
+test("an after-step hold parked for later resumes as noted, with no parked line, and goes on", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  build(out, "one.txt");
+  lane(r, "report", "T1", "--agent", "builder-1");
+  assert.equal(lane(r, "hold", "T1", "--for", "later", "--note", "lunch").exit, 0);
+  const resumed = lane(r, "resume", "T1", "--note", "back").json;
+  assert.equal(resumed.approved, undefined);
+  assert.match(resumed.noted, /^step 1 of 2 at .*: "back"$/);
+  const brief = readFileSync(resumed.brief, "utf8");
+  assert.doesNotMatch(brief, /parked with uncommitted work/);
+  assert.match(brief, /Go on to the steps below\./);
+  assert.match(brief, /## This round: step 2 of 2/);
+});
+
+test("lane sweep --apply keeps a held lane's worktree", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  build(out, "one.txt");
+  assert.equal(lane(r, "report", "T1").json.state, "held");
+  const sweep = spawnLane(r, ["sweep", "--apply"]);
+  assert.equal(sweep.status, 0, sweep.stdout + sweep.stderr);
+  assert.ok(existsSync(out.worktree), "the held worktree is kept");
+  assert.equal(ledgerOf(r.root, "T1").state, "held");
 });
