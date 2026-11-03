@@ -1,11 +1,13 @@
 // board add <kind> --json '{"id": "…", …}' — write a new item at every `create` location of its kind:
 // each row (own table, or the parent's file) and each block (plan F13 §2.2, §2.4). The id is passed in
-// (`next-id` proposes it); a duplicate id is refused. All files are edited as one step, or none. A
+// (`next-id` proposes it) or, when `create.id` is a pattern and none is given, filled the same way and
+// printed; only `create.id: "ask"` requires it. A duplicate id is refused. All files are edited as one step, or none. A
 // parent given as one of its field's `also` values (LATER) is no item: the parent-file rows and the
 // blocks that name `{parent.…}` are skipped, and the output says so.
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written, 2 = usage or refusal
 import { join } from "node:path";
+import { nextId } from "../ids.mjs";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, appendBlock, applyAll, insertRow } from "../write.mjs";
 
@@ -38,8 +40,14 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   }
   if (given === null || typeof given !== "object" || Array.isArray(given))
     return fail("--json must be an object");
-  const id = typeof given.id === "string" ? given.id.trim() : "";
-  if (!id) return fail('--json needs an "id" (see next-id)');
+  // An id the caller gives wins; else a pattern fills it as `next-id` does, and only "ask" requires it.
+  let id = typeof given.id === "string" ? given.id.trim() : "";
+  if (!id && create.id === "ask") return fail('--json needs an "id" (see next-id)');
+  if (!id) {
+    const next = nextId(kindName, kind, model);
+    if (next.error) return fail(next.error);
+    id = next.id;
+  }
   if (model.kinds[kindName].items.some((i) => i.id === id))
     return fail(`${kindName} "${id}" is already on the board`);
 

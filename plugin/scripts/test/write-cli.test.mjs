@@ -303,3 +303,44 @@ test("set writes a frontmatter key for a one-file-per-item kind", () => {
   assert.equal(after.split("\n").length, before.split("\n").length);
   assert.match(after, /^status: done$/m);
 });
+
+// A scratch copy of the write board whose task kind takes its ids from `pattern`.
+function patterned(pattern) {
+  const root = copy("write");
+  const file = join(root, "process.json");
+  const spec = JSON.parse(readFileSync(file, "utf8"));
+  spec.kinds.task.create.id = pattern;
+  writeFileSync(file, JSON.stringify(spec));
+  return root;
+}
+
+test("add fills the id from the create.id pattern when --json gives none, and prints it", () => {
+  const root = patterned("W{n}");
+  const result = addTask(root, { sprint: "A1", note: "Fourth" });
+  assert.equal(result.exit, 0, result.out);
+  assert.match(result.out, /^added task W4\b/);
+  assert.match(text(root, "board/BOARD.md"), /\| W4 +\| A1 +\| todo +\| +\| +\| Fourth +\|\n/);
+});
+
+test("add keeps an id the caller gives even when create.id is a pattern", () => {
+  const root = patterned("W{n}");
+  const result = addTask(root, { id: "W9", sprint: "A1", note: "Ninth" });
+  assert.equal(result.exit, 0, result.out);
+  assert.match(result.out, /^added task W9\b/);
+});
+
+test("add still requires an id when create.id is ask", () => {
+  const root = patterned("ask");
+  const result = addTask(root, { sprint: "A1", note: "No id" });
+  assert.equal(result.exit, 2);
+  assert.match(result.out, /needs an "id"/);
+});
+
+test("add refuses a pattern that needs more than a number, writing nothing", () => {
+  const root = patterned("W-{parent}-{n}");
+  const before = text(root, "board/BOARD.md");
+  const result = addTask(root, { sprint: "A1", note: "Odd" });
+  assert.equal(result.exit, 2);
+  assert.match(result.out, /needs more than a number/);
+  assert.equal(text(root, "board/BOARD.md"), before);
+});
