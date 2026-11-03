@@ -6,7 +6,7 @@
 // needs the owner, 2 = refused / usage / bad config, the same in every subcommand.
 //
 // flagsOf(help) -> { "--why": true, "--json": false }        true = takes a value
-// renderHelp(cli, sub, help) -> string                        one subcommand
+// renderHelp(cli, sub, help, env?) -> string                      one subcommand
 // renderIndex(cli, subs: [{ name, help }]) -> string          `<cli> --help`
 // say(what, why, next?) -> string                             the error line
 // refuse(what, why, next?) -> { exit: 2, out }                that line as a refusal
@@ -54,8 +54,9 @@ function table(rows) {
   return rows.map(([k, v]) => `  ${k.padEnd(width + PAD)}${v}`.trimEnd());
 }
 
-/** One subcommand's help: usage, purpose, args, flags, exit codes, one example. */
-export function renderHelp(cli, sub, given) {
+/** One subcommand's help: usage, purpose, args, flags, exit codes, one example (as `agentry …` when
+ *  the plugin's bin is on PATH, like every next step). */
+export function renderHelp(cli, sub, given, env = process.env) {
   const help = given ?? { usage: sub, purpose: "" };
   const usage = [help.usage].flat().map((u) => `${cli} ${u}`);
   return [
@@ -69,7 +70,7 @@ export function renderHelp(cli, sub, given) {
     "exits:",
     ...table(Object.entries(help.exits ?? {})),
     "example:",
-    `  ${help.example ?? ""}`,
+    `  ${nextStep(help.example ?? "", env)}`,
     "",
     version(),
   ].join("\n");

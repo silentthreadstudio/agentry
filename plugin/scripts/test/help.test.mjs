@@ -3,12 +3,12 @@
 // it, exit 0, without a process file.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { flagsOf, say } from "../lib/cli/help.mjs";
+import { flagsOf, renderHelp, say } from "../lib/cli/help.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLIS = {
@@ -73,5 +73,20 @@ test("--help, on a sub and on the index, ends with the plugin's version", () => 
     });
     assert.equal(res.status, 0, res.stderr);
     assert.equal(res.stdout.trimEnd().split("\n").at(-1), `agentry plugin ${version}`);
+  }
+});
+
+test("the example reads `agentry board …` when the bin is on PATH, and keeps its form otherwise", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-help-"));
+  try {
+    symlinkSync(join(HERE, "..", "..", "bin", "agentry"), join(dir, "agentry"));
+    const help = { usage: "scan", purpose: "x.", example: "board scan docs --json" };
+    assert.match(
+      renderHelp("board", "scan", help, { PATH: dir }),
+      /\n {2}agentry board scan docs --json\n/,
+    );
+    assert.match(renderHelp("board", "scan", help, { PATH: "" }), /\n {2}board scan docs --json\n/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
