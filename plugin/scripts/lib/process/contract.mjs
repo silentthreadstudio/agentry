@@ -17,6 +17,7 @@ import { trackedFiles } from "./git.mjs";
 import * as md from "./markdown.mjs";
 import { readInside, readProcess } from "./read.mjs";
 import { own } from "./spec/shape.mjs";
+import { stepsOf } from "./steps.mjs";
 
 /** A token that reads as an item id: a capital, letters, an optional dash, then a digit (`F1`, `R0-6`,
  *  `T29a`, `AB-01`). Used to tell block starts from emphasis (`**Owns:**`, `**the seam**`). */
@@ -230,10 +231,20 @@ function processHit(hits, linked, id) {
   return rest.length ? { ...found, related: rest.map(where) } : found;
 }
 
+// A found result with its block's steps (`steps.mjs`) when the block has a Steps part, and the problem
+// with them when there is one; any other result as it is.
+function withSteps(result) {
+  if (result.status !== "found") return result;
+  const { steps, problem } = stepsOf(result.block);
+  if (!steps.length && !problem) return result;
+  return { ...result, steps, ...(problem && { stepsProblem: problem }) };
+}
+
 /** `findContract({ root, spec?, id, kind = "task", model? })` → the F2 result:
- *  `{ status: "found", id, file, line, source: "process"|"agentry"|"discovered", block, related? }` or
- *  `{ status: "not-found"|"ambiguous", id, candidates: [{ file, line }] }`. `file` is relative to
- *  `root`; `id` is spelled as the board spells it. `model` is read from `spec` when not given. */
+ *  `{ status: "found", id, file, line, source: "process"|"agentry"|"discovered", block, related?,
+ *  steps?, stepsProblem? }` or `{ status: "not-found"|"ambiguous", id, candidates: [{ file, line }] }`.
+ *  `file` is relative to `root`; `id` is spelled as the board spells it. `model` is read from `spec`
+ *  when not given. `steps` comes only with a block that has a Steps part. */
 export function findContract({ root, spec, id: asked, kind = "task", model }) {
   let id = asked;
   if (spec) {
@@ -245,7 +256,7 @@ export function findContract({ root, spec, id: asked, kind = "task", model }) {
     const linked = item ? contractLinks(root, base, board, item) : [];
     const blocks = (contract?.blocks ?? []).map((f) => posix(join(base, f)));
     const hits = hitsIn(root, [...new Set([...linked, ...blocks])], id, contract?.lead);
-    if (hits.length) return processHit(hits, linked, id);
+    if (hits.length) return withSteps(processHit(hits, linked, id));
   }
   const tiers = [
     ["agentry", () => agentryHits(root, id)],
@@ -254,7 +265,8 @@ export function findContract({ root, spec, id: asked, kind = "task", model }) {
   for (const [source, hits] of tiers) {
     const found = hits();
     const [hit] = found;
-    if (found.length === 1) return { status: "found", id, ...where(hit), source, block: hit.block };
+    if (found.length === 1)
+      return withSteps({ status: "found", id, ...where(hit), source, block: hit.block });
     if (found.length > 1) return { status: "ambiguous", id, candidates: found.map(where) };
   }
   return { status: "not-found", id, candidates: [] };
