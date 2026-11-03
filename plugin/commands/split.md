@@ -11,4 +11,4 @@ Brief for the architect (using the `planning` craft):
 - Pre-fill each task's **Gotchas** from recalled memory for its `owns` files; make **Acceptance** independently checkable; fill Background + Out-of-scope.
 - Build the **criterion→task coverage matrix** — every Spec `AC` must trace to ≥1 task. Flag any uncovered criterion before the build.
 
-Output: one Task per unit, written as a plain file `.agentry/work/<run>/tasks/NNN-slug.md` — exactly one frontmatter block (`title`, `status: todo`), then the contract/Gotchas/Acceptance sections as markdown (the canonical task file is in the `planning` skill) — plus the coverage matrix in `tasks/coverage.md`.
+Output: one Task per unit, written as a plain file `.agentry/work/<run>/tasks/NNN-slug.md` — exactly one frontmatter block (`title`, `status: todo`), then the contract/Gotchas/Acceptance sections as markdown (the canonical task file is in the `planning` skill) — plus the coverage matrix in `.agentry/work/<run>/coverage.md` (at the run root, not in `tasks/`, which holds task files only).

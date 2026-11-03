@@ -60,7 +60,7 @@ Put it in `spec.md` for spec-gate forks and in `plan.md` (or the relevant `adr/N
 ## Work-folder layout (unchanged in both modes)
 
 `<cwd>/.agentry/work/<slug>/`:
-- `spec.md`, `plan.md` — single docs at the **root**.
-- `adr/NNN-slug.md`, `tasks/NNN-slug.md` (+ `tasks/coverage.md`) — **always folders**, numbered append-only series, even with a single entry.
+- `spec.md`, `plan.md`, `coverage.md` — single docs at the **root**.
+- `adr/NNN-slug.md`, `tasks/NNN-slug.md` — **always folders**, numbered append-only series, even with a single entry; `tasks/` holds task files only.
 
 Auto-pilot writes the **same files in the same places**; it does not introduce a new layout.

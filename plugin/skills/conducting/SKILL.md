@@ -81,7 +81,7 @@ On **spec-first and decompose+verify these gates are mandatory stops, in order �
 
 > The anti-pattern that bit us live: a clear task tempts you to inline the ACs, skip `spec.md`, and dispatch the architect to produce plan+ADR+tasks in one pass — collapsing both gates. Don't. The artifact + the stops are the point — and the artifact is a **file on disk** in `.agentry/work/<run>/`, not a chat message.
 
-**Work-folder layout** (the same in every repo): `.agentry/work/<run>/`, where `<run>` is a short kebab-case slug of the goal (add `-2`, `-3` if the folder exists). `spec.md` and `plan.md` are single docs at the **root**; **`adr/NNN-slug.md`** and **`tasks/NNN-slug.md`** (+ `tasks/coverage.md`) are **always folders** — ADRs and tasks are numbered, append-only series, so `adr/` and `tasks/` are folders *even with a single entry*. An ADR at the work-dir root is wrong; it goes in `adr/`.
+**Work-folder layout** (the same in every repo): `.agentry/work/<run>/`, where `<run>` is a short kebab-case slug of the goal (add `-2`, `-3` if the folder exists). `spec.md`, `plan.md` and `coverage.md` (the criterion→task matrix) are single docs at the **root**; **`adr/NNN-slug.md`** and **`tasks/NNN-slug.md`** are **always folders** — ADRs and tasks are numbered, append-only series, so `adr/` and `tasks/` are folders *even with a single entry*. An ADR at the work-dir root is wrong; it goes in `adr/`. `tasks/` holds task files only, so the coverage matrix stays out of it.
 
 ## The work folder — the run's record (escalated runs only)
 
