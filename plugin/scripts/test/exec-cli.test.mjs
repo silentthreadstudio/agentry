@@ -15,10 +15,11 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
@@ -1140,6 +1141,83 @@ test("a flaky red that fails again on the alone re-run stops the lane, both runs
   assert.equal(gated.json.next, "stop");
   assert.equal(ledgerOf(r.root, "T1").gates.length, 2);
   assert.equal(gated.json.gates, "0 green, 2 red on this tip (1 red only in flaky tests)");
+});
+
+// A gate whose own output is only a summary: the failing name is in a step log under the temp directory
+// (written while the gate runs unless `stale`), which `gate.flakyLogs` points at.
+function stepLogGate({ names = "FAILED test_budget", stale = false, logs }) {
+  const dir = join(tmpdir(), `agentry-steplog-${process.pid}-${temps.length}`);
+  temps.push(dir);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "tests.log");
+  const marker = join(temp("steplog-"), "ran");
+  if (stale) {
+    writeFileSync(file, `${names}\n`);
+    const old = new Date(Date.now() - 3_600_000);
+    utimesSync(file, old, old);
+  }
+  const write = stale ? "" : `printf '${names}\\n' > '${file}'; `;
+  return {
+    command: [
+      "sh",
+      "-c",
+      `test -f out.txt && if [ -f '${marker}' ]; then exit 0; else touch '${marker}'; ${write}echo 'tests FAIL TESTS: 3 passed, 1 failed'; echo 'GATE: FAILED (1 step(s))'; exit 1; fi`,
+    ],
+    flaky: ["test_budget"],
+    ...(logs !== false && { flakyLogs: logs ?? [`$TMPDIR/${basename(dir)}/tests.log`] }),
+  };
+}
+
+test("a summary-only gate log plus gate.flakyLogs finds the flaky name and re-runs", () => {
+  const r = atGate(stepLogGate({}));
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 0, gated.stderr);
+  assert.deepEqual(gated.json.gate.flaky, ["test_budget"]);
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 2);
+});
+
+test("without gate.flakyLogs the same summary-only red is real", () => {
+  const r = atGate(stepLogGate({ logs: false }));
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 1);
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 1);
+});
+
+test("a flakyLogs file older than the gate run never decides a red", () => {
+  const r = atGate(stepLogGate({ stale: true }));
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 1);
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 1);
+});
+
+test("a gate that waits for its slot says so in its log, before the gate ends", async () => {
+  const r = atGate({ command: ["sh", "-c", "test -f out.txt && echo ran"] });
+  const locks = join(r.root, ".agentry", "run", "gate-locks");
+  mkdirSync(locks, { recursive: true });
+  const holder = spawn("node", ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+  writeFileSync(
+    join(locks, "slot-1.lock"),
+    JSON.stringify({ pid: holder.pid, who: "lane T9", at: new Date().toISOString() }),
+  );
+  const log = join(r.root, ".agentry", "run", "process", "runs", "T1", "logs", "gate-1.log");
+  const child = spawn("node", [LANE, "exec", "gate", "T1", "--json", "--root", r.root], {
+    env: { ...gitEnv, HOME: r.home },
+    stdio: "ignore",
+  });
+  const exited = new Promise((resolve) => child.on("exit", resolve));
+  const text = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
+  try {
+    for (let i = 0; i < 500 && !text().includes("waiting for gate slot 1"); i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.match(text(), /waiting for gate slot 1 \(held by lane T9 since \d\d:\d\d\)/);
+    assert.equal(child.exitCode, null);
+    holder.kill("SIGKILL");
+    assert.equal(await exited, 0);
+    assert.match(text(), /slot acquired\nran\n/);
+  } finally {
+    holder.kill("SIGKILL");
+    child.kill("SIGKILL");
+  }
 });
 
 test("the verdict shows the gate runs already recorded on its tip", () => {

@@ -2,12 +2,21 @@
 //
 // `runGate` reads the gate command's OWN exit code: argv, no shell, so nothing can pipe the failure away
 // (#1). It refuses to start on a dirty tree (an untracked file made "tree identical" lie, #2), counts a gate
-// that leaves files behind as red, and writes the command's stdout and stderr to a per-run log file.
+// that leaves files behind as red, and writes the command's stdout and stderr to a per-run log file (appended to, as it runs).
 // `pickTier` and `canSkip` are pure: which tier a change needs, and whether a merge may skip the main gate.
 // Node built-ins only.
 import { spawnSync } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
-import { dirname } from "node:path";
+import {
+  closeSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { dirtyEntries } from "./own-memory.mjs";
 import { git } from "./worktree.mjs";
 
@@ -56,7 +65,8 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
   const tree = git(dir, ["rev-parse", "HEAD^{tree}"]).stdout.trim();
 
   mkdirSync(dirname(logFile), { recursive: true });
-  const fd = openSync(logFile, "w");
+  // Appended to: a queued gate has already written its waiting lines there.
+  const fd = openSync(logFile, "a");
   const started = Date.now();
   let res;
   let timedOut = false;
@@ -115,19 +125,66 @@ const FAILURE_LINE = /\b(?:FAIL(?:ED|URES?)?|ERROR)\b|\bnot ok\b|[✗✖×]/;
 const SUMMARY_LINE =
   /\d+\s+(?:tests?\s+)?(?:FAILED|failed|failures?|errors?)\b|\b(?:FAILED|FAILURES?|ERRORS?)\s*[:=(]?\s*\d+/;
 
+// The files a `flakyLogs` glob names, modified at or after `since` (ms): the glob runs from `cwd`, or from the
+// temp directory when it starts `$TMPDIR/`. Matched per segment like the other globs here; `**` crosses
+// directories. Symlinks are not followed.
+function logsMatching(globs, { cwd, since }) {
+  const found = new Set();
+  const walk = (dir, segments) => {
+    const [segment, ...rest] = segments;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    if (segment === "**" && rest.length > 0) walk(dir, rest);
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      if (segment === "**") {
+        if (entry.isDirectory()) walk(path, segments);
+        else if (rest.length === 0 && entry.isFile()) found.add(path);
+      } else if (new RegExp(`^${segmentToRegExp(segment)}$`).test(entry.name)) {
+        if (rest.length === 0 && entry.isFile()) found.add(path);
+        else if (rest.length > 0 && entry.isDirectory()) walk(path, rest);
+      }
+    }
+  };
+  for (const glob of globs) {
+    const tmp = glob.startsWith("$TMPDIR/");
+    const segments = (tmp ? glob.slice("$TMPDIR/".length) : glob).split("/").filter(Boolean);
+    if (segments.includes("..") || segments.length === 0) continue;
+    walk(tmp ? tmpdir() : cwd, segments);
+  }
+  return [...found].filter((file) => {
+    try {
+      return statSync(file).mtimeMs >= since;
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** The listed `flaky` tests a gate's log shows failing, or null unless the red is ALL flaky: at least one
  *  failure line, and every failure line (count lines aside) naming a listed test. Anything else (an unlisted
- *  failure, no failure line to read, an unreadable log) is null: a real red. */
-export function flakyReds(logFile, flaky) {
+ *  failure, no failure line to read, an unreadable log) is null: a real red. `logs` (the gate's
+ *  `flakyLogs` globs, from `cwd` or `$TMPDIR/`) adds the logs the gate's own steps wrote, for a gate that
+ *  prints only a summary; only files modified since `since` (ms, when the gate started) are read. */
+export function flakyReds(logFile, flaky, { logs = [], cwd = ".", since = 0 } = {}) {
   if (!flaky?.length) return null;
-  let text;
+  const texts = [];
   try {
-    text = readFileSync(logFile, "utf8");
+    texts.push(readFileSync(logFile, "utf8"));
   } catch {
     return null;
   }
+  for (const file of logsMatching(logs, { cwd, since })) {
+    try {
+      texts.push(readFileSync(file, "utf8"));
+    } catch {}
+  }
   const hit = new Set();
-  for (const line of text.split("\n")) {
+  for (const line of texts.flatMap((text) => text.split("\n"))) {
     if (!FAILURE_LINE.test(line) || SUMMARY_LINE.test(line)) continue;
     const names = flaky.filter((name) => line.includes(name));
     if (names.length === 0) return null;

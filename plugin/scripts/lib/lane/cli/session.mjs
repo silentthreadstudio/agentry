@@ -22,6 +22,7 @@ import * as ledgers from "../../process/ledger.mjs";
 import { fit } from "../../process/render.mjs";
 import { statusView, titleOf, workKind } from "../../process/status.mjs";
 import { forThisRepo, primeLimitOf } from "../brief.mjs";
+import { gateLockDir, heldSlots } from "../gate-lock.mjs";
 import { plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
@@ -82,6 +83,7 @@ function start({ root, spec, model }) {
     recall: recallFor(root, task),
     questions: status.onYou.filter((i) => i.kind !== work),
     ledgers: all.filter((l) => l.state !== "closed").map(summary),
+    gateSlots: heldSlots(gateLockDir(runRoot)),
   };
 }
 
@@ -166,6 +168,10 @@ function renderStart(s, { name, root }) {
     addList(
       "lanes: ",
       s.ledgers.map((l) => `${l.id} ${l.state}`),
+    );
+  if (s.gateSlots.length)
+    add(
+      `gate: ${s.gateSlots.map((g) => `slot ${g.slot} held by ${g.who || "unknown"} since ${g.since}`).join(", ")}`,
     );
   for (const f of s.recall.slice(0, 3)) add(`recall: ${f.text}`);
   return lines.slice(0, MAX_LINES).join("\n");

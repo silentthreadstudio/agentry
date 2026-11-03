@@ -17,7 +17,7 @@
 // stopped (or the gate is red), 2 = usage or refusal (nothing changed).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { appendFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
@@ -836,15 +836,29 @@ function gate(ctx, id) {
   const command = tier.tier === "quick" ? config.quick.command : config.command;
   const lockDir = gateLockDir(root);
   let runs = ledger.gates?.length ?? 0;
+  let startedAt = 0;
   const once = (exclusive) => {
-    const held = holdGate(lockDir, { slots: config.concurrency, exclusive, who: `lane ${id}` });
+    // The log exists before the wait, so a queued gate says so there (a gate that is waiting is not hung).
+    const logFile = join(ledgers.runDir(root, id), "logs", `gate-${++runs}.log`);
+    const held = holdGate(lockDir, {
+      slots: config.concurrency,
+      exclusive,
+      who: `lane ${id}`,
+      log: logFile,
+    });
     if (held.busy)
       refuse(
         `another gate holds the gate lock (${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"}) at ${held.busy.file} and did not end within an hour: run this step again when it has, or delete that file if nothing holds it`,
       );
     try {
-      const logFile = join(ledgers.runDir(root, id), "logs", `gate-${++runs}.log`);
-      return runGate(ledger.worktree, command, { tier: tier.tier, logFile });
+      startedAt = Date.now();
+      const res = runGate(ledger.worktree, command, { tier: tier.tier, logFile });
+      // A refused run wrote nothing but the wait: the next run starts that number's log afresh.
+      if (res.refused) {
+        rmSync(logFile, { force: true });
+        runs--;
+      }
+      return res;
     } finally {
       held.release();
     }
@@ -855,7 +869,14 @@ function gate(ctx, id) {
       `the worktree is not clean, so the gate did not run: ${first.files.slice(0, 10).join(", ")}`,
     );
   // A red that failed only in listed flaky tests, on a clean tree, is re-run once, alone.
-  const flaky = first.exit !== 0 && first.cleanAfter ? flakyReds(first.log, config.flaky) : null;
+  const flaky =
+    first.exit !== 0 && first.cleanAfter
+      ? flakyReds(first.log, config.flaky, {
+          logs: config.flakyLogs,
+          cwd: ledger.worktree,
+          since: startedAt,
+        })
+      : null;
   const again = flaky ? once(true) : null;
   const reran = again && !again.refused;
   const ran = reran ? again : first;

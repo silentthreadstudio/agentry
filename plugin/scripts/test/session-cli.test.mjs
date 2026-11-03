@@ -103,6 +103,7 @@ test("start --json carries prompt, mode, status, recall, questions and ledgers",
   ledger(root, "T1");
   const data = JSON.parse(session(root, "start", "--json").stdout);
   assert.deepEqual(Object.keys(data).sort(), [
+    "gateSlots",
     "ledgers",
     "mode",
     "prompt",
@@ -260,4 +261,26 @@ test("a bare number in the note is no id: it does not hide a stale note", () => 
   const res = session(root, "start");
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /^note: stale, every id it names is done \(T2\)/m);
+});
+
+test("start lists the gate slots a running gate holds, and none when they are free", () => {
+  const root = fresh();
+  assert.doesNotMatch(session(root, "start").stdout, /^gate:/m);
+  const locks = join(root, ".agentry", "run", "gate-locks");
+  mkdirSync(locks, { recursive: true });
+  const at = new Date().toISOString();
+  writeFileSync(
+    join(locks, "slot-1.lock"),
+    JSON.stringify({ pid: process.pid, who: "lane T1", at }),
+  );
+  const dead = spawnSync(process.execPath, ["-e", "0"]);
+  writeFileSync(join(locks, "slot-2.lock"), JSON.stringify({ pid: dead.pid, who: "lane T2", at }));
+  const res = session(root, "start");
+  assert.match(res.stdout, /^gate: slot 1 held by lane T1 since \d\d:\d\d$/m);
+  assert.doesNotMatch(res.stdout, /T2/);
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  assert.deepEqual(
+    data.gateSlots.map((g) => [g.slot, g.who, g.pid]),
+    [[1, "lane T1", process.pid]],
+  );
 });

@@ -1645,3 +1645,145 @@ test("merge runs only from the main checkout", () => {
   assert.equal(res.status, 2, res.stderr);
   assert.match(res.stderr, /run merge from the main checkout/);
 });
+
+// --- flaky reds, and a queued land that says so ------------------------------------------------------
+
+// A land gate that fails once, in `test_budget`, then passes (the marker lives outside the repo); `again`
+// is what the re-run does: "pass" or "fail".
+const flakyLand = (again) => {
+  const marker = join(home, "flaky-ran");
+  const script = `const fs = require("node:fs");
+if (fs.existsSync(${JSON.stringify(marker)}) && ${JSON.stringify(again)} === "pass") process.exit(0);
+fs.writeFileSync(${JSON.stringify(marker)}, "");
+console.log("FAILED test_budget");
+process.exit(1);`;
+  commitSpec({
+    ...SPEC,
+    gate: { command: ["node", "-e", script], flaky: ["test_budget"] },
+  });
+  build({ "src/a.txt": "a\n" });
+};
+const mainGates = () => readLedger(root, ID).gates.filter((g) => g.where === "main");
+
+test("a land gate red only in listed flaky tests is re-run alone once; both runs are recorded; green lands", () => {
+  flakyLand("pass");
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /re-run alone after a red only in flaky tests/);
+  assert.deepEqual(
+    mainGates().map((g) => [g.exit, g.flakyRed ?? null, g.rerun ?? false]),
+    [
+      [1, ["test_budget"], false],
+      [0, null, true],
+    ],
+  );
+  assert.equal(readLedger(root, ID).state, "merged");
+});
+
+test("a flaky red that fails again alone rolls main back and names the re-run, not the builder", () => {
+  flakyLand("fail");
+  const pre = head();
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.equal(head(), pre);
+  assert.equal(mainGates().length, 2);
+  assert.match(
+    res.stdout,
+    /test_budget \(listed in gate\.flaky\) failed again on the re-run alone/,
+  );
+  assert.doesNotMatch(res.stdout, /resume the builder/);
+});
+
+test("a land gate red in an unlisted test is not re-run and still says to fix the branch", () => {
+  commitSpec({
+    ...SPEC,
+    gate: {
+      command: ["node", "-e", 'console.log("FAILED test_real"); process.exit(1)'],
+      flaky: ["test_budget"],
+    },
+  });
+  build({ "src/a.txt": "a\n" });
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.equal(mainGates().length, 1);
+  assert.match(res.stdout, /resume the builder/);
+});
+
+const landLog = (n) => join(root, ".agentry", "run", "process", "runs", ID, `merge-gate-${n}.log`);
+const logHas = (file, text) => existsSync(file) && readFileSync(file, "utf8").includes(text);
+
+test("a queued land writes the waiting line at once, and slot acquired when it gets the slot", async () => {
+  build({ "src/a.txt": "a\n" });
+  const holder = spawn("node", ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+  const locks = join(root, ".agentry", "run", "gate-locks");
+  mkdirSync(locks, { recursive: true });
+  const at = new Date().toISOString();
+  writeFileSync(
+    join(locks, "slot-1.lock"),
+    JSON.stringify({ pid: holder.pid, who: "lane T9", at }),
+  );
+  const args = [
+    LANE,
+    "merge",
+    ID,
+    "--branch",
+    BRANCH,
+    "--message",
+    "docs(board): land T1",
+    "--root",
+    root,
+  ];
+  const child = spawn("node", args, {
+    env: { ...gitEnv, HOME: home, NO_COLOR: "1" },
+    stdio: "ignore",
+  });
+  const exited = new Promise((resolve) => child.on("exit", resolve));
+  try {
+    const waiting = () => logHas(landLog(1), "waiting for gate slot 1 (held by lane T9 since ");
+    for (let i = 0; i < 500 && !waiting(); i++) await sleep(20);
+    assert.ok(waiting(), "no waiting line while the slot is held");
+    assert.match(readFileSync(landLog(1), "utf8"), /held by lane T9 since \d\d:\d\d\)/);
+    assert.equal(logHas(landLog(1), "slot acquired"), false);
+    holder.kill("SIGKILL");
+    assert.equal(await exited, 0);
+    assert.equal(logHas(landLog(1), "slot acquired"), true);
+    assert.equal(logHas(landLog(1), "gate tier full"), true);
+  } finally {
+    holder.kill("SIGKILL");
+    child.kill("SIGKILL");
+  }
+});
+
+test("the gate's output reaches the log while the gate is still running", async () => {
+  build({ "src/a.txt": "a\n" });
+  const hang = join(home, "hang");
+  writeFileSync(hang, "");
+  const args = [
+    LANE,
+    "merge",
+    ID,
+    "--branch",
+    BRANCH,
+    "--message",
+    "docs(board): land T1",
+    "--root",
+    root,
+  ];
+  const child = spawn("node", args, {
+    env: { ...gitEnv, HOME: home, NO_COLOR: "1", MERGE_TEST_HANG: hang },
+    stdio: "ignore",
+  });
+  const exited = new Promise((resolve) => child.on("exit", resolve));
+  try {
+    for (let i = 0; i < 500 && !logHas(landLog(1), "gate tier full"); i++) await sleep(20);
+    assert.ok(logHas(landLog(1), "gate tier full"), "nothing in the log while the gate runs");
+    assert.equal(child.exitCode, null, "the land had ended");
+    rmSync(hang);
+    child.kill("SIGKILL");
+    await exited;
+  } finally {
+    child.kill("SIGKILL");
+    const pgid = gateGroup();
+    endGroup(pgid);
+  }
+});

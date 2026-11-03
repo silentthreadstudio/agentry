@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { runDir } from "../../process/ledger.mjs";
 import { gateArgv } from "../gate-group.mjs";
 import { gateLockDir, holdGate } from "../gate-lock.mjs";
-import { canSkip, changedSince, pickTier, runGate } from "../gate.mjs";
+import { canSkip, changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { commitOf, rollback, treeOf } from "../land.mjs";
 import { now, ok, red, save, setMerge, short } from "./lane.mjs";
 import { lastWorktreeGate } from "./rows.mjs";
@@ -49,13 +49,50 @@ export function gateStep(lane, rows) {
     return null;
   }
   const { tier, reason } = pickTier(gate, changedSince(root, merge.preHead, "HEAD") ?? []);
-  // Behind the same lock as the lanes' gates, so load-sensitive tests never run against each other.
-  const held = holdGate(gateLockDir(root), { slots: gate.concurrency, who: `land ${id}` });
-  if (held.busy) {
+  const dir = runDir(root, id);
+  const cmd = tier === "quick" ? gate.quick.command : gate.command;
+  let busy = null;
+  // One run of the gate on main, behind the same lock as the lanes' gates, so load-sensitive tests never run
+  // against each other (a flaky re-run takes every slot, so it runs alone). `n` is a number no log holds yet: a
+  // killed gate is not in the ledger, and its log is the evidence of it. The log exists before the wait, so a
+  // queued land says so there.
+  let n = gates.filter((g) => g.where === "main").length;
+  const runOnMain = (exclusive) => {
+    n++;
+    while (existsSync(join(dir, `merge-gate-${n}.log`))) n++;
+    const logFile = join(dir, `merge-gate-${n}.log`);
+    const held = holdGate(gateLockDir(root), {
+      slots: gate.concurrency,
+      exclusive,
+      who: `land ${id}`,
+      log: logFile,
+    });
+    if (held.busy) {
+      busy = held.busy;
+      return null;
+    }
+    // The gate's process group, written down before it starts, so a rerun can stop it if this run dies.
+    const gateRun = {
+      pidFile: join(dir, `merge-gate-${n}.pid`),
+      nonce: randomBytes(8).toString("hex"),
+    };
+    setMerge(lane, { step: "gating", gateRun });
+    const startedAt = Date.now();
+    let res;
+    try {
+      res = runGate(root, gateArgv(cmd, gateRun), { tier, logFile });
+    } finally {
+      held.release();
+    }
+    rmSync(gateRun.pidFile, { force: true });
+    return { res, startedAt };
+  };
+  const first = runOnMain(false);
+  if (busy) {
     rows.push(
       red(
         "gate",
-        `another gate holds the gate lock (${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"}) at ${held.busy.file}`,
+        `another gate holds the gate lock (${busy.who || "unknown"}, pid ${busy.pid ?? "?"}) at ${busy.file}`,
       ),
     );
     return {
@@ -63,49 +100,57 @@ export function gateStep(lane, rows) {
       next: "land again when that gate has ended (it resumes), or delete the lock file if nothing holds it",
     };
   }
-  const dir = runDir(root, id);
-  // A number no log holds yet: a killed gate is not in the ledger, and its log is the evidence of it.
-  let n = gates.filter((g) => g.where === "main").length + 1;
-  while (existsSync(join(dir, `merge-gate-${n}.log`))) n++;
-  const logFile = join(dir, `merge-gate-${n}.log`);
-  // The gate's process group, written down before it starts, so a rerun can stop it if this run dies.
-  const gateRun = {
-    pidFile: join(dir, `merge-gate-${n}.pid`),
-    nonce: randomBytes(8).toString("hex"),
-  };
-  setMerge(lane, { step: "gating", gateRun });
-  const cmd = tier === "quick" ? gate.quick.command : gate.command;
-  let res;
-  try {
-    res = runGate(root, gateArgv(cmd, gateRun), { tier, logFile });
-  } finally {
-    held.release();
-  }
-  rmSync(gateRun.pidFile, { force: true });
-  if (res.refused) {
+  if (first.res.refused) {
     setMerge(lane, { step: "landed", gateRun: undefined });
-    rows.push(red("gate", `refused: ${mainBranch} is not clean`, res.files.slice(0, 10)));
+    rows.push(red("gate", `refused: ${mainBranch} is not clean`, first.res.files.slice(0, 10)));
     return {
       exit: 1,
       next: `move what makes ${mainBranch} dirty away, then land again (it resumes)`,
     };
   }
-  save(lane, { gates: [...gates, { where: "main", ...res, at: now() }] });
-  const why = [`${tier}: ${reason}`, `not skipped: ${decision.reason}`, `log ${logFile}`];
+  // A red that failed only in listed flaky tests, on a clean tree, is re-run once, alone, as `exec gate` does.
+  const flaky =
+    first.res.exit !== 0 && first.res.cleanAfter
+      ? flakyReds(first.res.log, gate.flaky, {
+          logs: gate.flakyLogs,
+          cwd: root,
+          since: first.startedAt,
+        })
+      : null;
+  const again = flaky ? runOnMain(true) : null;
+  if (again && !again.res.refused) {
+    save(lane, {
+      gates: [
+        ...gates,
+        { where: "main", ...first.res, flakyRed: flaky, at: now() },
+        { where: "main", ...again.res, rerun: true, at: now() },
+      ],
+    });
+  } else {
+    save(lane, { gates: [...gates, { where: "main", ...first.res, at: now() }] });
+  }
+  const reran = again && !again.res.refused;
+  const res = reran ? again.res : first.res;
+  const why = [`${tier}: ${reason}`, `not skipped: ${decision.reason}`, `log ${res.log}`];
+  if (reran)
+    why.push(
+      `first run failed only in flaky tests (${flaky.join(", ")}); re-run alone, log ${first.res.log}`,
+    );
   if (res.exit === 0) {
-    const detail = `${tier} ran on ${mainBranch}: exit 0 in ${res.seconds} s`;
-    setMerge(lane, { step: "gated", gateRun: undefined, gate: { tier, detail, log: logFile } });
+    const detail = `${tier} ran on ${mainBranch}: exit 0 in ${res.seconds} s${reran ? " (re-run alone after a red only in flaky tests)" : ""}`;
+    setMerge(lane, { step: "gated", gateRun: undefined, gate: { tier, detail, log: res.log } });
     rows.push(ok("gate", detail, why));
     return null;
   }
   rows.push(red("gate", `${tier} ran on ${mainBranch}: exit ${res.exit} in ${res.seconds} s`, why));
-  return rollBack(lane, rows);
+  return rollBack(lane, rows, reran ? flaky : null);
 }
 
 /** After a red gate, take the picks off main again. The intent goes to the ledger first (`step:
  *  "rolling-back"`), so a rerun after a kill finishes it: main already at preHead is the reset the
- *  killed run made. Always a stop: the gate was red. */
-export function rollBack(lane, rows) {
+ *  killed run made. Always a stop: the gate was red. `flaky` names the listed tests a red failed in that
+ *  also failed on the re-run alone: the stop says so, and does not send the builder back for it. */
+export function rollBack(lane, rows, flaky = null) {
   const { root } = lane;
   const { mainBranch, branch } = lane.ledger;
   setMerge(lane, { step: "rolling-back", gateRun: undefined });
@@ -129,6 +174,8 @@ export function rollBack(lane, rows) {
   const log = lane.ledger.gates.findLast((g) => g.where === "main")?.log;
   return {
     exit: 1,
-    next: `read ${log}, fix on ${branch} (resume the builder), then land again`,
+    next: flaky
+      ? `${flaky.join(", ")} (listed in gate.flaky) failed again on the re-run alone, so it is not load: read ${log}, then land again once it passes alone, or fix it on ${branch}`
+      : `read ${log}, fix on ${branch} (resume the builder), then land again`,
   };
 }

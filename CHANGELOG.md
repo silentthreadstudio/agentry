@@ -27,6 +27,12 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   behind a lock in `.agentry/run/`, with stale-process recovery, so timing tests stop failing under
   load. `gate.flaky` names tests that may fail under load: a red whose log fails only in them is
   re-run alone once, and both runs are recorded.
+- **Flaky gate reds on the land, names from step logs, a queued gate speaks** — `lane merge`
+  applies `gate.flaky` as `exec gate` does: a red only in listed tests is re-run alone once and
+  both runs are recorded; a re-run that fails again stops without sending the builder back.
+  `gate.flakyLogs` (globs from the gate's cwd or `$TMPDIR/`, files newer than the run) are read for
+  failure names when the gate prints only a summary. A queued gate writes `waiting for gate slot N
+  (held by … since HH:MM)` and `slot acquired` to its log, and `lane session start` lists held slots.
 - **`gates` in the exec output** — `gate` and `verdict` print "1 green, 1 red on this tip", so a
   green run no longer hides a later red on the same commit.
 - **`/agentry:exec <task-id>`** — builds a task whose contract is already written. It finds the
