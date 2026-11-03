@@ -5,12 +5,26 @@
 // skipped; one that can't be read prints `skip: <name>: <why>` and the rest still run. Exit 1 with
 // findings, else 0.
 //
-// runLint({ root, spec }, { json }) -> { exit, out }
+// runLint({ root, spec }, { json }) -> { exit, out }   what `board instructions --lint` calls
+// run(argv, { root, spec })                        the same as a subcommand of its own (the router makes
+//                                                  every file here one): `board instructions-lint [--json]`
 import { statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { AGENTS, LOCAL, readFile } from "../instruction-files.mjs";
 import { lintText } from "../instruction-lint.mjs";
 import { gateOf } from "../spec/workflow.mjs";
+
+export const help = {
+  usage: "instructions-lint [--json]",
+  purpose:
+    "The instruction-file lines that compete with the Agentry block, as board instructions --lint.",
+  args: {},
+  flags: { "--json": "print { files, findings } as one JSON object" },
+  exits: { 0: "no competing line", 1: "a competing line was found", 2: "usage" },
+  example: "board instructions-lint",
+};
+
+export const run = (argv, ctx) => runLint(ctx, { json: argv.includes("--json") });
 
 // A regular file under the root (a folder, a missing path or one too odd to stat is not).
 function isFile(root, word) {
