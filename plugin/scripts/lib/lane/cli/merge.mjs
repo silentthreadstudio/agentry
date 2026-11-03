@@ -30,6 +30,7 @@ import {
   carryBackStep,
   dropNext,
   giveBack,
+  hasOldRecord,
   heldRow,
   mainRow,
   mainStep,
@@ -212,7 +213,7 @@ function land(lane) {
   if (checks.failed.length > 0)
     return done(1, lane, rows, `fix what ${checks.failed.join(", ")} found, then record it again`);
   if (checks.pending.length > 0) return done(2, lane, rows, checkNext(id, checks.pending));
-  if (opts["--drop-carry"] && !merged?.carry)
+  if (opts["--drop-carry"] && !merged?.carry && !hasOldRecord(merged))
     return done(2, lane, [
       ...rows,
       red("carry", "--drop-carry: the ledger holds no set-aside board writes, so nothing to drop"),

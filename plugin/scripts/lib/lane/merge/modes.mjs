@@ -143,7 +143,7 @@ export function cleanupMode(lane) {
     return done(1, lane, [red("cleanup", why)]);
   }
   const more = [
-    ...(res.disposable ? [`discarded ${res.disposable.length} disposable file(s)`] : []),
+    ...(res.disposable ? [`discarded ${res.disposable.length} disposable path(s)`] : []),
     ...(res.ignored ? [`discarded ${res.ignored.length} ignored file(s)`] : []),
   ];
   const detail = `removed ${res.path}; deleted ${ledger.branch}`;

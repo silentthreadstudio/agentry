@@ -1604,7 +1604,21 @@ test("cleanup discards cleanup.disposable files without asking, and still asks f
   rmSync(join(path, "shots"), { recursive: true });
   const res = merge(ID, "--cleanup");
   assert.equal(res.status, 0, out(res));
-  assert.match(res.stdout, /discarded 2 disposable file\(s\)/);
+  assert.match(res.stdout, /discarded 2 disposable path\(s\)/);
+  assert.equal(existsSync(path), false);
+});
+
+test("cleanup counts an ignored folder once: node_modules of 300 files is 1 disposable path", () => {
+  const { path } = build({ "src/a.txt": "a\n" });
+  writeFileSync(join(path, ".gitignore"), ".agentry/run/\nnode_modules/\n");
+  git(path, "add", ".gitignore");
+  git(path, "commit", "-q", "-m", "ignore node_modules");
+  mustLand("--branch", BRANCH);
+  mkdirSync(join(path, "node_modules", "pkg"), { recursive: true });
+  for (let i = 0; i < 300; i++) writeFileSync(join(path, "node_modules", "pkg", `f${i}.js`), "x");
+  const res = merge(ID, "--cleanup");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /discarded 1 disposable path\(s\)/);
   assert.equal(existsSync(path), false);
 });
 

@@ -12,6 +12,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -20,8 +21,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { heldRow, mainRow, putBackAllow } from "../lib/lane/merge/carry.mjs";
+import { commitStep } from "../lib/lane/merge/record.mjs";
 import { create } from "../lib/lane/worktree.mjs";
-import { read as readLedger, write as writeLedger } from "../lib/process/ledger.mjs";
+import { read as readLedger, runDir, write as writeLedger } from "../lib/process/ledger.mjs";
+import { loadSpec } from "../lib/process/read.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
 import { writeSpec } from "./spec-files.mjs";
 
@@ -251,7 +255,15 @@ test("a rerun after a kill puts back the edits the ledger holds before anything 
     usedMemories: [],
     state: "verified",
     next: "",
-    merge: { allow: { files: ["docs/status.md"], patch, sha256, at: "2026-11-01T00:00:00.000Z" } },
+    merge: {
+      allow: {
+        enc: "bytes",
+        files: ["docs/status.md"],
+        patch,
+        sha256,
+        at: "2026-11-01T00:00:00.000Z",
+      },
+    },
   });
   const res = merge(ID, "--message", "docs(board): land T1");
   assert.equal(res.status, 0, out(res));
@@ -471,7 +483,7 @@ test("a pick that stops and cannot be aborted names the set-aside files and the 
     assert.match(res.stdout, /cherry-pick stopped/);
     assert.match(
       res.stdout,
-      /allow: 1 file\(s\) set aside \(docs\/status\.md\) → restored by lane merge T1 --branch agentry\/T1 --message "docs\(board\): land T1"/,
+      /allow: 1 file\(s\) set aside \(docs\/status\.md\) → restored by lane merge T1 --branch agentry\/T1 --message 'docs\(board\): land T1'/,
     );
     assert.ok(readLedger(root, ID).merge.allow);
   } finally {
@@ -509,6 +521,7 @@ test("a recovery stop that keeps the carry names the set-aside files and the com
     next: "",
     merge: {
       allow: {
+        enc: "bytes",
         files: ["NOTES.md", "docs/a.md", "docs/b.md", "docs/c.md", "docs/d.md", "docs/e.md"],
         patch,
         sha256: createHash("sha256").update(patch).digest("hex"),
@@ -581,4 +594,371 @@ test("a file that is not UTF-8 comes back byte for byte, new or edited", () => {
     readFileSync(join(root, "docs", "status.md")),
     Buffer.concat([Buffer.from(STATUS_MD), LATIN1]),
   );
+});
+
+// --- a record written before the byte fix is never applied (R1d-17) ------------------------------------
+
+// A ledger for the task with `merge` in it, as a killed or stopped land left it.
+function seedLedger(path, merge, extra = {}) {
+  const head = git(root, "rev-parse", "main");
+  writeLedger(root, {
+    v: 1,
+    id: ID,
+    kind: "task",
+    contract: { file: "plan/TASKS.md", line: 1 },
+    origin: "exec",
+    mainBranch: "main",
+    base: head,
+    worktree: path,
+    branch: `agentry/${ID}`,
+    mainAtStart: { head, porcelain: [] },
+    worktreesAtStart: [],
+    rounds: [],
+    gates: [],
+    checks: {},
+    usedMemories: [],
+    state: "verified",
+    next: "",
+    merge,
+    ...extra,
+  });
+}
+const ledgerBytes = () =>
+  readFileSync(join(root, ".agentry", "run", "process", "ledger", `${ID}.json`));
+// A patch that would apply to docs/status.md, then a CRLF and a byte that is not UTF-8 (0xff): the shape of
+// a text patch an older version kept.
+function oldPatch() {
+  edit("docs/status.md", STATUS_MD.replace("ten", "TEN"));
+  const diff = git(root, "diff", "--binary", "HEAD", "--", "docs/status.md");
+  git(root, "restore", "--source=HEAD", "--staged", "--worktree", "--", "docs/status.md");
+  return `${diff}\nkept\r\n\xff\n`;
+}
+const oldRecord = (patch, enc) => ({
+  ...(enc === undefined ? {} : { enc }),
+  files: ["docs/status.md"],
+  untracked: [],
+  patch,
+  sha256: createHash("sha256").update(patch).digest("hex"),
+  at: "2026-11-01T00:00:00.000Z",
+});
+const REFUSAL =
+  /✗ carry +recorded by an older version \(text patch\) → restore it by hand from (\S+merge-(?:allow|writes)-\d+\.patch), then rerun with --drop-carry/;
+const patchFiles = () => readdirSync(runDir(root, ID)).filter((n) => n.endsWith(".patch"));
+const mainState = () => ({
+  status: status(),
+  index: git(root, "diff", "--cached", "--binary"),
+  tree: git(root, "diff", "--binary"),
+  status_md: at("docs/status.md"),
+  head: git(root, "rev-parse", "HEAD"),
+});
+
+for (const [key, enc, patchName] of [
+  ["allow", undefined, "merge-allow-1.patch"],
+  ["allow", "text", "merge-allow-1.patch"],
+  ["writes", undefined, "merge-writes-1.patch"],
+]) {
+  test(`a merge.${key} record with enc ${JSON.stringify(enc)} refuses, keeps its patch once, and --drop-carry drops it`, () => {
+    const path = build({ "src/a.txt": "a\n" });
+    const patch = oldPatch();
+    seedLedger(path, { [key]: oldRecord(patch, enc) });
+    const before = mainState();
+    const res = merge(ID, "--message", "docs(board): land T1");
+    assert.equal(res.status, 2, out(res));
+    const kept = REFUSAL.exec(out(res))?.[1];
+    assert.equal(kept, join(runDir(root, ID), patchName), out(res));
+    assert.deepEqual(readFileSync(kept), Buffer.from(patch, "latin1")); // bytes exactly: 0xff and CRLF kept
+    assert.deepEqual(mainState(), before); // nothing applied, nothing set aside, nothing picked
+    const record = readLedger(root, ID).merge[key];
+    assert.equal(record.patch, patch); // the record stays in the ledger
+    assert.equal(record.patchFile, kept);
+    // a rerun names the same file and writes no second
+    const again = merge(ID, "--message", "docs(board): land T1");
+    assert.equal(again.status, 2, out(again));
+    assert.equal(REFUSAL.exec(out(again))?.[1], kept);
+    assert.deepEqual(patchFiles(), [patchName]);
+    // dropped on the owner's call: the patch stays, the land goes on
+    const drop = merge(ID, "--message", "docs(board): land T1", "--drop-carry");
+    assert.equal(drop.status, 0, out(drop));
+    assert.match(drop.stdout, /✓ carry +dropped .* recorded by an older version/);
+    assert.equal(readLedger(root, ID).merge[key], undefined);
+    assert.equal(readLedger(root, ID).state, "merged");
+    assert.deepEqual(patchFiles(), [patchName]);
+    assert.equal(at("docs/status.md"), STATUS_MD); // the dropped edit was not applied
+  });
+}
+
+test("--drop-carry still refuses when the ledger holds no carry and no old record", () => {
+  build({ "src/a.txt": "a\n" });
+  const res = merge(
+    ID,
+    "--branch",
+    `agentry/${ID}`,
+    "--message",
+    "docs(board): land T1",
+    "--drop-carry",
+  );
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /--drop-carry: the ledger holds no set-aside board writes/);
+});
+
+test("an old record also stops commitStep, with nothing put back and the ledger not merged", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  const patch = oldPatch();
+  for (const files of [[], ["plan/BOARD.md"]]) {
+    seedLedger(path, { allow: oldRecord(patch), step: "recording" });
+    if (files.length > 0) edit("plan/BOARD.md", at("plan/BOARD.md").replace("PASS   ", "PASS ok"));
+    const before = mainState();
+    const lane = {
+      root,
+      id: ID,
+      files,
+      opts: { "--message": "docs(board): land T1" },
+      ledger: readLedger(root, ID),
+    };
+    const rows = [];
+    const stop = commitStep(lane, rows);
+    assert.equal(stop.exit, 2);
+    assert.equal(stop.keepCarry, true);
+    assert.match(
+      rows.at(-1).detail,
+      /^recorded by an older version \(text patch\) → restore it by hand from \S+merge-allow-\d+\.patch, then rerun with --drop-carry$/,
+    );
+    assert.equal(readLedger(root, ID).state, "verified"); // not merged: the rerun gets here again
+    assert.ok(readLedger(root, ID).merge.allow);
+    assert.equal(at("docs/status.md"), STATUS_MD);
+    // the board commit itself is made (or nothing to commit), the working tree otherwise as it was
+    if (files.length === 0) assert.deepEqual(mainState(), before);
+    else assert.notEqual(git(root, "rev-parse", "HEAD"), before.head);
+    git(root, "reset", "-q", "--hard", before.head);
+    rmSync(runDir(root, ID), { recursive: true, force: true });
+  }
+});
+
+test("an old record also stops recover, which has proven the board commit, and --drop-carry then finishes", () => {
+  build({ "src/a.txt": "a\n" });
+  const first = land();
+  assert.equal(first.status, 0, out(first));
+  // the ledger as a run killed right after its board commit left it
+  const done = readLedger(root, ID);
+  const sha = createHash("sha256").update(at("plan/BOARD.md")).digest("hex");
+  const patch = oldPatch();
+  const { boardCommit, cleaned, ...merged } = done.merge;
+  seedLedger(done.worktree, {
+    ...merged,
+    step: "recording",
+    record: { files: ["plan/BOARD.md"], sha256: { "plan/BOARD.md": sha } },
+    allow: oldRecord(patch),
+  });
+  const before = mainState();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), REFUSAL);
+  assert.deepEqual(mainState(), before);
+  assert.equal(readLedger(root, ID).state, "verified");
+  assert.equal(readLedger(root, ID).merge.step, "recording");
+  const drop = merge(ID, "--message", "docs(board): land T1", "--drop-carry");
+  assert.equal(drop.status, 0, out(drop));
+  assert.match(drop.stdout, /✓ recover +a killed run had made the board commit/);
+  assert.equal(readLedger(root, ID).state, "merged");
+  assert.equal(readLedger(root, ID).merge.allow, undefined);
+});
+
+// --- the hold line is one shell word per argument ---------------------------------------------------------
+
+const ARGV = "console.log(JSON.stringify(process.argv.slice(2)));";
+// The hold line's command for a land called with `opts`, split off its "lane merge " and run through sh
+// with node printing the argv it got, in a scratch directory (a command substitution would make x there).
+function heldCommand(opts) {
+  const lane = {
+    id: ID,
+    opts,
+    ledger: { merge: { allow: { enc: "bytes", files: ["docs/status.md"] } } },
+  };
+  const line = heldRow(lane).more[0];
+  const command = line.slice(line.indexOf("restored by ") + "restored by ".length);
+  const dir = mkdtempSync(join(home, "quote-"));
+  writeFileSync(join(home, "argv.mjs"), ARGV);
+  const res = spawnSync(
+    "sh",
+    ["-c", `node ${join(home, "argv.mjs")} ${command.slice("lane merge ".length)}`],
+    {
+      cwd: dir,
+      encoding: "utf8",
+    },
+  );
+  return {
+    command,
+    argv: JSON.parse(res.stdout),
+    x: existsSync(join(dir, "x")),
+    stderr: res.stderr,
+  };
+}
+
+for (const [name, message, summary] of [
+  [
+    "a quote, a command substitution, a backtick and !",
+    "it's $(touch x) `touch x` !",
+    "$(touch x)",
+  ],
+  ["a newline and a tab", "one\ntwo\tthree", "a\tb"],
+  ["an empty --summary", "docs(board): land T1", ""],
+  ["a non-ASCII letter", "café", "é"],
+  ["a leading dash", "-n", "-x"],
+]) {
+  test(`the hold line quotes ${name}, and sh gives the exact argv back`, () => {
+    const opts = { "--branch": "agentry/T1", "--message": message, "--summary": summary };
+    const run = heldCommand(opts);
+    assert.deepEqual(
+      run.argv,
+      [ID, "--branch", "agentry/T1", "--message", message, "--summary", summary],
+      run.stderr,
+    );
+    assert.equal(run.x, false);
+    assert.ok(run.command.includes(`--message '`), run.command);
+    assert.ok(run.command.includes(`--summary '`), run.command);
+  });
+}
+
+test("a branch with a space is quoted, and a message of only safe characters prints bare", () => {
+  const run = heldCommand({ "--branch": "my branch", "--message": "docs/board:land-T1_v1.0+x" });
+  assert.deepEqual(run.argv, [
+    ID,
+    "--branch",
+    "my branch",
+    "--message",
+    "docs/board:land-T1_v1.0+x",
+  ]);
+  assert.equal(
+    run.command,
+    "lane merge T1 --branch 'my branch' --message docs/board:land-T1_v1.0+x",
+  );
+});
+
+// --- a record with one file in both cells and rows is a bug, never written -----------------------------------
+
+test("a record with a file in both cells and rows throws before it writes anything", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  const file = "plan/DECISIONS.md";
+  const patch = git(root, "diff", "--binary", "HEAD", "--", file);
+  const cells = [
+    {
+      kind: "decision",
+      id: "D1",
+      field: "decision",
+      column: "Decision",
+      file,
+      from: "First",
+      to: "Hand",
+    },
+  ];
+  const rows = [
+    {
+      file,
+      heading: "Decisions",
+      header: ["#", "Decision", "Why"],
+      idColumn: "#",
+      key: "D2",
+      prev: "D1",
+      text: "| D2 | A | B |",
+    },
+  ];
+  seedLedger(path, {
+    writes: {
+      enc: "bytes",
+      files: [file],
+      untracked: [],
+      patch,
+      sha256: createHash("sha256").update(patch).digest("hex"),
+      cells,
+      rows,
+      cellsSha256: createHash("sha256")
+        .update(JSON.stringify([cells, rows]))
+        .digest("hex"),
+      at: "2026-11-01T00:00:00.000Z",
+    },
+  });
+  const [tree, ledger] = [mainState(), ledgerBytes()];
+  const lane = {
+    root,
+    id: ID,
+    opts: {},
+    ledger: readLedger(root, ID),
+    spec: loadSpec(join(root, ".agentry", "process.json"), { root }).spec,
+  };
+  assert.throws(
+    () => putBackAllow(lane),
+    /carry: plan\/DECISIONS\.md has both cells and rows; this is a bug, nothing was written/,
+  );
+  assert.deepEqual(mainState(), tree);
+  assert.deepEqual(ledgerBytes(), ledger);
+});
+
+test("scriptWrites never gives one file both cells and rows", () => {
+  build({ "src/a.txt": "a\n" });
+  const spec = loadSpec(join(root, ".agentry", "process.json"), { root }).spec;
+  const writesOf = () => {
+    const lane = { root, spec, ledger: { mainBranch: "main" } };
+    mainRow(lane);
+    return lane.writes;
+  };
+  const file = "plan/DECISIONS.md";
+  const shapes = [];
+  assert.equal(decisionSet("Cited").status, 0); // a cell only
+  shapes.push(writesOf());
+  git(root, "restore", file);
+  assert.equal(addDecision().status, 0); // a row only
+  shapes.push(writesOf());
+  git(root, "restore", file);
+  assert.equal(decisionSet("Cited").status, 0); // a cell and an added row
+  assert.equal(addDecision().status, 0);
+  shapes.push(writesOf());
+  for (const writes of shapes) {
+    assert.deepEqual(writes.files, [file]);
+    const [inCells, inRows] = [writes.cells, writes.rows].map((list) =>
+      list.some((e) => e.file === file),
+    );
+    assert.equal(inCells && inRows, false);
+  }
+  const [cellOnly, rowOnly, mixed] = shapes;
+  assert.equal(cellOnly.cells.length > 0 && cellOnly.rows.length === 0, true);
+  assert.equal(rowOnly.rows.length > 0 && rowOnly.cells.length === 0, true);
+  assert.deepEqual([mixed.loose, mixed.cells], [[file], []]); // a cell edit makes the file loose: no rows either
+});
+
+// --- an exec cell and a board add in one file (N3) ----------------------------------------------------------------
+
+const execWrite = () =>
+  edit("plan/BOARD.md", at("plan/BOARD.md").replace("| PASS    |", "| FAIL    |"));
+const addTask = () => boardCli("add", "task", "--fields", '{"id": "T3"}', "--apply");
+
+test("an exec cell and a board add row in one BOARD.md refuse naming both, and set nothing aside", () => {
+  build({ "src/a.txt": "a\n" });
+  assert.equal(addTask().status, 0);
+  execWrite();
+  const before = mainState();
+  const res = land();
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    /plan\/BOARD\.md: a lifecycle write by T1 and a board add by board add task T3 share this file → land T1 first, or commit the added row/,
+  );
+  assert.deepEqual(mainState(), before);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.merge?.allow, undefined);
+  assert.equal(ledger.merge?.writes, undefined);
+  assert.equal(ledger.merge?.carry, undefined);
+});
+
+test("the same two writes in two files land, and both are restored", () => {
+  build({ "src/a.txt": "a\n" });
+  assert.equal(addDecision().status, 0);
+  execWrite();
+  const res = land();
+  assert.equal(res.status, 0, out(res));
+  assert.equal(status(), " M plan/DECISIONS.md");
+  assert.equal(at("plan/DECISIONS.md"), DECISIONS_ADDED);
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| done +\| FAIL/);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.merge.writes, undefined);
+  assert.equal(ledger.merge.carry, undefined);
 });

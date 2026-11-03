@@ -138,6 +138,24 @@ export function writtenByScript(root, files) {
   return out;
 }
 
+/** The `by` of the recorded writes of each of `files` that start at its content on HEAD or end at its
+ *  content now: `{ file: [by, …] }`, a file with none left out. Where `writtenByScript` asks whether the
+ *  whole path from HEAD is recorded, this finds a recorded write in a file that has other changes too. */
+export function recordedFor(root, files) {
+  if (files.length === 0) return {};
+  const now = contentOf(root, files);
+  const head = blobIds(root, "HEAD", files);
+  const log = recordedWrites(root);
+  const out = {};
+  for (const file of files) {
+    const by = log
+      .filter((m) => m.file === file && (m.from === head[file] || m.to === now[file]))
+      .map((m) => m.by);
+    if (by.length > 0) out[file] = by;
+  }
+  return out;
+}
+
 /** Set the carried `cells` on the board under `dir` (main's checkout, or a scratch copy of its board)
  *  at the model level (`board-diff.cellEdits`): each that reads its `from` is set to its `to` through
  *  the board writer, all or nothing, and each that reads its `to` already is left. A cell that reads

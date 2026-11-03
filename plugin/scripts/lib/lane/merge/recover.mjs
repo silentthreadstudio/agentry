@@ -21,7 +21,7 @@ import {
   textAt,
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
-import { putBackAllow } from "./carry.mjs";
+import { oldNext, putBackAllow } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
 import { afterLand, now, ok, red, save, setMerge, short } from "./lane.mjs";
 
@@ -157,11 +157,16 @@ function recordedCommit(lane, rows, { commit, later, why }) {
         : `in ${root}: git show --stat ${short(commit)}. If it is this land's board commit (a hook changed it): git reset --keep ${short(commit)}~1, then land again (it writes and commits the board again). If it is not: ${moved}`;
     return { exit: 1, keepCarry: true, next };
   }
+  // The owner's set-aside files go back first: a record from an older version stops here, with the
+  // ledger still recording, so the rerun (and its --drop-carry) gets here again.
+  const back = putBackAllow(lane);
+  if (back) rows.push(back);
+  if (back?.mark === "red") return { exit: 2, keepCarry: true, next: oldNext(lane) };
   // The record's files, carried writes included, are in that commit as written: the ledger lets go.
   save(lane, {
     state: "merged",
     merge: {
-      ...merge,
+      ...lane.ledger.merge,
       carry: undefined,
       record: undefined,
       step: "committed",
@@ -169,8 +174,6 @@ function recordedCommit(lane, rows, { commit, later, why }) {
       at: now(),
     },
   });
-  const back = putBackAllow(lane);
-  if (back) rows.push(back);
   rows.push(
     ok(
       "recover",

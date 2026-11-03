@@ -351,6 +351,14 @@ test("cleanup discards ignored node_modules and dist output at any depth with no
   assert.deepEqual(DEFAULT_DISPOSABLE, ["**/node_modules/**", "**/dist/**"]);
 });
 
+test("an ignored folder is one disposable entry, however many files it holds", () => {
+  const path = ignoringBranch();
+  for (let i = 0; i < 300; i++) plant(path, `node_modules/pkg/f${i}.js`);
+  const res = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: path });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.deepEqual(res.disposable, ["node_modules/"]);
+});
+
 test("the default disposables add to the configured ones, and any other ignored file still asks", () => {
   const path = ignoringBranch();
   plant(path, "dist/out.js", ".env");
