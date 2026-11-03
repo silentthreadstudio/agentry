@@ -114,7 +114,7 @@ const SPEC = {
     handoff: "- **{id}** ({sha}): {summary}",
   },
   exec: { kinds: { debt: { on: ON, write: WRITE } } },
-  gate: { command: ["node", "-e", "process.exit(0)"] },
+  gate: { tiers: [{ name: "full", command: ["node", "-e", "process.exit(0)"] }] },
 };
 const BOARD_MD = `# Board
 
@@ -526,7 +526,7 @@ function noLifecycleRun(plugin) {
       },
     },
     rules: [{ rule: "ids-unique" }, { rule: "status-known" }],
-    gate: { command: ["node", "-e", "process.exit(0)"] },
+    gate: { tiers: [{ name: "full", command: ["node", "-e", "process.exit(0)"] }] },
   });
   run(root, "add", ".agentry");
   run(root, "commit", "-q", "-m", "process");

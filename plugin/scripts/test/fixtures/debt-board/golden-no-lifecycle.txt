@@ -150,8 +150,9 @@ run: node '<PLUGIN>/scripts/lane.mjs' exec close T-1 --root '<ROOT>'
 gate:
   {
     "exit": 0,
+    "role": "build",
     "tier": "full",
-    "why": "the gate has no quick tier",
+    "why": "full: the gate's only tier",
     "commit": "<SHA>",
     "seconds": <N>,
     "log": "<ROOT>/.agentry/run/process/runs/T-1/logs/gate-1.log"
@@ -185,7 +186,7 @@ merge T-1 · agentry/T-1 → main
   ✓ commits 1 to land
             <SHA> feat: one
   · commits no rules (commits in the workflow file)
-  ✓ gate    full would run (the gate has no quick tier)
+  ✓ gate    full would run (full: the gate's only tier)
             worktree gate: full exit 0 on <SHA>; the land skips only when canSkip holds
   · checks  none named (extensions.merge.checks)
   ✓ push    merge.push is "ask": the owner is asked before the push
@@ -201,6 +202,7 @@ merge T-1 · agentry/T-1 → main
   ✓ land    1 commit(s) picked onto <SHA>
             <SHA> feat: one
   ✓ gate    skipped: gate on <SHA>, tree identical
+            full: the gate's only tier
             green clean gate on this tree; only post-gate files changed
   · record  lifecycle off: nothing written to the board
   · commit  nothing written to the board, nothing to commit
