@@ -370,6 +370,39 @@ test("a worktree matching worktrees.keep shows as Kept and is not drift", () => 
   assert.match(renderStatus({ ...kept, spec, view }), /^Kept {7}agent-keep$/m);
 });
 
+test("a hand status file listing a done task under its heading draws one nudge", () => {
+  const base = driftView((root) => {
+    const file = join(root, "plan", "BOARD.md");
+    writeFileSync(
+      file,
+      readFileSync(file, "utf8").replace("| T2   | S1     | todo", "| T2   | S1     | done"),
+    );
+    writeFileSync(
+      join(root, "STATUS.md"),
+      "# Status\n\n## Next\n\n- T1 the first\n- T2 the second\n\n## Later\n\n- T2 mentioned again\n",
+    );
+  });
+  const spec = { ...base.spec, status: { file: "STATUS.md", next: "Next" } };
+  const model = readProcess({ root: base.root, spec });
+  const view = statusView({ root: base.root, spec, model });
+  const stale = view.nudges.filter((n) => n.kind === "stale-status");
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0].command, "edit STATUS.md: T2 done on the board");
+  const report = boardReport({ root: base.root, spec, model });
+  assert.match(
+    renderStatus({ spec, report, view, work: base.work }),
+    /^ +! stale-status STATUS\.md → edit/m,
+  );
+  const none = { ...spec, status: { file: "STATUS.md", next: "Later later" } };
+  assert.equal(
+    statusView({ root: base.root, spec: none, model }).nudges.filter(
+      (n) => n.kind === "stale-status",
+    ).length,
+    0,
+    "a heading that is not in the file draws nothing",
+  );
+});
+
 test("with more than four nudges the rest are counted, and no line passes 80 columns", () => {
   const { spec, report, view, work } = driftView((root) => {
     for (const n of ["a", "b", "c", "d"])

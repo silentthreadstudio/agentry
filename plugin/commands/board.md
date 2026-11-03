@@ -14,7 +14,7 @@ Pick the calls from `$ARGUMENTS`:
 
 `--json` and `--why <id>` pass through unchanged to every call. `status --ready` lists each sprint's open tasks with whether the contract is found and the dependencies are done: what can be built next.
 
-`board status` adds a **Drift** block when work went around the commands: an agent worktree no ledger knows (`unlisted-worktree`), a task the board shows started with no ledger (`started-by-hand`), commits on main no merge covers (`merged-by-hand`), a verified task waiting for its merge (`verified-not-merged`), and an episode nobody wrote (`episode-pending`). Each row names the command to run; a **Drafts** row counts the owner's calls not yet written down.
+`board status` adds a **Drift** block when work went around the commands: an agent worktree no ledger knows (`unlisted-worktree`), a task the board shows started with no ledger (`started-by-hand`), commits on main no merge covers (`merged-by-hand`), a verified task waiting for its merge (`verified-not-merged`), an episode nobody wrote (`episode-pending`), and a hand status file still listing a finished task (`stale-status`, when the process file sets `status.file` and `status.next`). A worktree matching `worktrees.keep` shows on a **Kept** row instead. Each row names the command to run; a **Drafts** row counts the owner's calls not yet written down.
 
 Show the output as printed: no rewording, no rebuilt tables, no findings dropped. Exit 1 is the normal "findings" result, not a failure. Exit 2 → show the message; when the process file is missing, point to `/agentry:init`.
 

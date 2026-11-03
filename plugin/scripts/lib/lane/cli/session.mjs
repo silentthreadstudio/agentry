@@ -11,7 +11,7 @@
 // Exit 0, or 2 for a usage error.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
@@ -152,7 +152,7 @@ function renderStart(s, { name, root }) {
       s.status.onYou.map((i) => `${i.id} (${i.status})`),
     );
   for (const n of s.status.nudges.slice(0, 5))
-    add(`drift: ${n.kind} ${n.id ?? n.branch ?? ""} → ${n.command}`);
+    add(`drift: ${n.kind} ${n.id ?? n.branch ?? basename(n.path ?? "")} → ${n.command}`);
   if (s.status.nudges.length > 5)
     add(`drift: +${s.status.nudges.length - 5} more (/agentry:board)`);
   if (s.status.drafts) add(`drafts: ${s.status.drafts} pending → /agentry:close`);

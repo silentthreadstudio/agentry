@@ -81,6 +81,23 @@ test("start puts the count before a long name, prints the note, and lists a ques
   assert.doesNotMatch(res.stdout, /open questions:/);
 });
 
+test("start nudges once when the hand status file lists a task the board finished", () => {
+  const spec = { ...SPEC, status: { file: "STATUS.md", next: "Next" } };
+  const repo = boardRepo({ spec });
+  cleanups.push(repo.cleanup);
+  const { root } = repo;
+  const board = read(root, "plan/BOARD.md").replace(
+    "| T2   | S1     | todo",
+    "| T2   | S1     | done",
+  );
+  writeFileSync(join(root, "plan", "BOARD.md"), board);
+  writeFileSync(join(root, "STATUS.md"), "## Next\n\n- T2 the second\n");
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const lines = res.stdout.split("\n").filter((l) => l.includes("stale-status"));
+  assert.deepEqual(lines, ["drift: stale-status STATUS.md → edit STATUS.md: T2 done on the board"]);
+});
+
 test("start --json carries prompt, mode, status, recall, questions and ledgers", () => {
   const root = fresh();
   ledger(root, "T1");

@@ -8,8 +8,8 @@
 //
 // A nudge kind: `unlisted-worktree` (an agent worktree no ledger knows), `started-by-hand` (a task the board
 // has started and no ledger tracks), `merged-by-hand` (a branch whose work is on main with no merge record),
-// `verified-not-merged` (verified, its work not on main yet) and `episode-pending` (an episode payload nobody
-// wrote). A task gets one nudge at most, in that order of precedence: merged-by-hand, verified-not-merged,
+// `verified-not-merged` (verified, its work not on main yet), `episode-pending` (an episode payload nobody
+// wrote) and `stale-status` (a hand status file still listing a finished task; one for the file). A task gets one nudge at most, in that order of precedence: merged-by-hand, verified-not-merged,
 // episode-pending. Without a `lifecycle` the board has no started words, so `started-by-hand` stays quiet.
 //
 // Done is written only when provable (A23): a `lane merge` record that matches its branch, whose landed
@@ -29,6 +29,7 @@ import { readInside } from "./read.mjs";
 import { commitsIn, handoffLines, namesCommits } from "./rules/evidence.mjs";
 import { parentOf } from "./rules/structure.mjs";
 import { own } from "./spec.mjs";
+import { staleStatus } from "./stale-status.mjs";
 
 const MERGED_STATES = ["merged", "closed"];
 const SHA_TOKEN = /[0-9a-f]{7,40}/gi;
@@ -529,6 +530,9 @@ export function nudges({ root, runRoot = root, spec, model }) {
   for (const item of items)
     if (started.includes(item.status) && !byId.has(item.id))
       found.push({ kind: "started-by-hand", id: item.id, command: exec(item.id) });
+
+  const stale = staleStatus({ root, spec, model });
+  if (stale) found.push(stale);
 
   // One nudge per task: the first one found for its id.
   const once = new Set();
