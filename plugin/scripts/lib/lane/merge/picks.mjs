@@ -132,12 +132,13 @@ export function landStep(lane, rows) {
   // The intent, written before main changes: what is picked onto what. The lane's state before this
   // land is kept too, given back if a red gate takes the picks off main again.
   const stateBefore = state === "merging" ? (merge.stateBefore ?? state) : state;
-  const { carry, droppedCarries } = merge;
+  const { carry, droppedCarries, allow } = merge;
   save(lane, {
     state: "merging",
     merge: {
       carry,
       droppedCarries,
+      allow,
       preHead: commitOf(root, "HEAD"),
       planned: plan.picks,
       landed: [],

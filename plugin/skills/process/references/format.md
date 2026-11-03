@@ -26,6 +26,8 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
 | `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
 | `guard` | no | `{ "allow": [globs] }`: main-checkout files a running lane's guard lets change. |
 | `cleanup` | no | `{ "disposable": [globs] }`: ignored files a lane's cleanup discards without asking. |
+| `exec` | no | `{ "verify": "all" \| "flagged" \| "none" }`: which items the exec lane sends to an independent verifier. See "exec and models". |
+| `models` | no | `{ "build": "<model>", "verify": { "default", "ui", "flagged" } }`: the model each exec dispatch names. See "exec and models". |
 
 ## Kind
 
@@ -300,6 +302,26 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
 - `worktrees.keep` is a non-empty list of names or globs (`*` and `?`), matched against a worktree's
   branch and its directory name. A match is shown as *kept* in `agentry board status`, never as drift.
 
+## exec and models
+
+```json
+"exec": { "verify": "flagged" },
+"models": { "build": "sonnet", "verify": { "default": "sonnet", "ui": "opus", "flagged": "opus" } }
+```
+
+- `exec.verify` is `"all"` (the default: every item goes from built to a verifier, then the gate),
+  `"flagged"` (only an item whose `flag` field is set has a verifier; any other goes from built straight to the
+  gate, which stands in for it) or `"none"` (no item is routed to a verifier unless its flag is set). An item
+  whose flag is set always has its verifier, however the route is set, and a flagged item with no verdict does
+  not land. `"flagged"` needs a field named `flag` of type `flag` on the lifecycle kind (`task` with no
+  lifecycle); without it the file is refused at load. With no `gate`, a verifier is still sent: nothing else
+  would check the work. `agentry lane exec start` and `show` print the route, and the episode records it.
+- `models` is free text: any string, every key optional, nothing checked against a list of models. Each
+  `lane exec` dispatch prints a `model:` line from it: the builder rounds use `build`; a verifier round uses
+  `verify.flagged` when the item's flag is set, else `verify.ui` when the suggested builder is the designer (an
+  owned path is UI-shaped), else `verify.default`. A key left out falls back to `verify.default`, and with
+  no name for a dispatch it prints no `model:` line. Nothing here changes which agent runs.
+
 ## guard and cleanup
 
 ```json
@@ -311,7 +333,9 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
   `gate.after`). While a lane runs, an uncommitted edit in the main checkout to a file one of them matches
   does not stop it, unless a running lane's contract owns that file: an edit there still does. A commit on
   main still does too. `agentry board add` and `agentry board set --apply` need no entry: each write is recorded and let
-  through as exactly what it wrote.
+  through as exactly what it wrote. `agentry lane merge` lets such an edit stand too: it sets it aside
+  (recorded in the ledger first), lands, and puts it back as it was, so a land no longer stops on it. Any
+  other uncommitted change still refuses the land.
 - `cleanup.disposable` is a non-empty list of globs for ignored files `agentry lane merge --cleanup` discards without
   asking (build output, import caches). A wholly ignored directory is matched as its path (`build`,
   `**/.godot`; `build/**` also takes `build` itself). Any other ignored file still stops the cleanup and is

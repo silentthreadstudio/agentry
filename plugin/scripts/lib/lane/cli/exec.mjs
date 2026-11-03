@@ -39,7 +39,7 @@ import { boardId } from "../../process/ids.mjs";
 import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
-import { gateOf, own } from "../../process/spec.mjs";
+import { flaggedItem, gateOf, modelFor, own, verifyRoute } from "../../process/spec.mjs";
 import { WriteError } from "../../process/write.mjs";
 import {
   appendedAfter,
@@ -55,7 +55,7 @@ import {
   unknownCites,
   withNew,
 } from "../brief.mjs";
-import { humanView, ownedMark } from "../exec-view.mjs";
+import { humanView, ownedMark, routeText } from "../exec-view.mjs";
 import { gateLockDir, holdGate } from "../gate-lock.mjs";
 import { changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
@@ -68,7 +68,9 @@ import {
   begin,
   expects,
   gateTally,
+  greenOn,
   notesBudget,
+  skipsVerifier,
   verdicts,
 } from "../rounds.mjs";
 import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
@@ -441,6 +443,21 @@ function gateLine(root, spec, ledger) {
   return `cd ${q(ledger.worktree)} && ${laneLine(root, "gate", ledger.id)}`;
 }
 
+// The recorded green gate a verify brief points at instead of re-running: a worktree gate that ran green
+// on a clean tree at this very tip and tree (a moved tip never matches). The slots every brief is given.
+function recordedGate(root, ledger, tip) {
+  const tree = headOf(root, `${tip}^{tree}`);
+  const record = (ledger.gates ?? []).findLast(
+    (g) => greenOn([g], tip) && (g.tree === undefined || g.tree === tree),
+  );
+  return {
+    gateGreen: !!record,
+    gateRun: !record,
+    gateSha: record ? short(record.commit) : "",
+    gateLog: record?.log ?? "",
+  };
+}
+
 function factsLine(root, owned, block) {
   const { prime, facts } = recalledFacts(root, { owned, block });
   if (prime !== "all") return `none (memory.prime is "${prime}": briefs carry no recalled facts)`;
@@ -497,6 +514,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
     logDir,
     reportPath: join(dir, `${name}.report.md`),
     gateLine: gateLine(root, spec, ledger),
+    ...recordedGate(root, ledger, tip),
     tip: short(tip),
     from: dispatch.from ?? "",
     reason: dispatch.reason ?? "",
@@ -523,7 +541,8 @@ const dispatchNext = (ctx, ledger, dispatch) =>
 
 // ---- output ---------------------------------------------------------------------------------------
 
-function view(root, ledger, { step, guards = [], nested = [], extra = {} }) {
+function view(ctx, ledger, { step, guards = [], nested = [], extra = {} }) {
+  const { root, spec, model } = ctx;
   const round = ledger.rounds.at(-1);
   const out = {
     id: ledger.id,
@@ -546,10 +565,13 @@ function view(root, ledger, { step, guards = [], nested = [], extra = {} }) {
     out.role = round.role;
     out.mode = round.mode === "resume" && round.agent ? "resume" : "fresh";
     if (out.mode === "resume") out.agent = round.agent;
-    out.dispatch =
-      round.role === "verify"
-        ? { agent: "verifier" }
-        : suggestBuilder(ownedOf(root, ledger).map((o) => o.path));
+    const builder = suggestBuilder(ownedOf(root, ledger).map((o) => o.path));
+    out.dispatch = round.role === "verify" ? { agent: "verifier" } : builder;
+    const picked = modelFor(spec, round.role, {
+      flagged: isFlagged(ctx, ledger),
+      ui: builder.agent === "designer",
+    });
+    if (picked) out.model = picked;
     if (round.step === "needs-context" && !round.resend)
       out.todo = `append the fact under "## The fact" at the end of ${round.brief} before sending it; if the contract, the repo and memory don't hold it, ask the owner first`;
     out.after = `${laneLine(root, waiting, ledger.id)} --agent <the agent's id>`;
@@ -564,6 +586,10 @@ function view(root, ledger, { step, guards = [], nested = [], extra = {} }) {
     out: JSON.stringify({ ...out, ...extra }, null, 2),
   };
 }
+
+// Is the item flagged: when the lane started, or on the board now (a flag set since still counts).
+const isFlagged = ({ spec, model }, ledger) =>
+  Boolean(ledger.route?.flagged) || flaggedItem(spec, model, ledger.id);
 
 // The owned files every brief names: parsed once at start and kept in the ledger (amended by `owns`).
 // A ledger from before that is parsed from its contract file.
@@ -692,6 +718,7 @@ function start(ctx, id) {
     worktreesAtStart: worktrees(root).map((t) => t.path),
     owned: withNew(tree.path, ownedFiles(found.block, tree.path)),
     ...(cite.length && { cite }),
+    route: { verify: verifyRoute(spec), flagged: flaggedItem(spec, model, id) },
     rounds: [],
     gates: [],
     checks: {},
@@ -705,11 +732,12 @@ function start(ctx, id) {
   const overlap = ownsOverlap(root, ledger.owned);
   ledger = dispatchNext(ctx, ledger, begin().dispatch);
   ledgers.write(root, ledger);
-  return view(root, ledger, {
+  return view(ctx, ledger, {
     step: "start",
     extra: {
       owned: ledger.owned,
       amend: laneLine(root, "owns", id, " --set <paths> --apply"),
+      route: routeText(ledger.route),
       board,
       ...(overlap && { warning: overlap }),
     },
@@ -794,6 +822,7 @@ function report(ctx, id, agent) {
     dirty,
     commits: count.status === 0 ? Number(count.stdout.trim()) : 0,
   };
+  const flagged = isFlagged(ctx, ledger);
   const res = stepWith(ledger, {
     type: "report",
     status: builderStatus(text),
@@ -801,18 +830,24 @@ function report(ctx, id, agent) {
     agent,
     summary: summaryOf(text),
     guards,
+    skipVerify: skipsVerifier(ledger.route, flagged),
+    tip: headOf(root, ledger.branch),
+    gate: gateOf(ctx.spec) !== null,
   });
   let next = res.ledger;
+  if (ledger.route) next.route = { ...ledger.route, flagged };
   next.usedMemories = [...new Set([...(next.usedMemories ?? []), ...usedMemories(text)])];
   next.nested = nestedTrees(root, next);
-  const built = ["verify", "recheck"].includes(res.dispatch?.step)
-    ? boardEvent(ctx, "built", id)
-    : null;
+  // Built is written when the item goes to a verifier, or straight to the gate when none reads it.
+  const built =
+    ["verify", "recheck"].includes(res.dispatch?.step) || ["gate", "close"].includes(res.next)
+      ? boardEvent(ctx, "built", id)
+      : null;
   const board = built?.board ?? null;
   next.boardWrites = [...(next.boardWrites ?? []), ...(built?.moves ?? [])];
   next = dispatchNext(ctx, next, res.dispatch);
   ledgers.write(root, next);
-  return view(root, next, {
+  return view(ctx, next, {
     step: "report",
     guards: next.rounds.at(res.dispatch ? -2 : -1).guards ?? [],
     nested: next.nested,
@@ -850,7 +885,7 @@ function verdict(ctx, id, agent) {
   next.boardWrites = [...(next.boardWrites ?? []), ...(written?.moves ?? [])];
   next = dispatchNext(ctx, next, res.dispatch);
   ledgers.write(root, next);
-  return view(root, next, {
+  return view(ctx, next, {
     step: "verdict",
     nested: next.nested,
     extra: {
@@ -862,6 +897,17 @@ function verdict(ctx, id, agent) {
       ...(board && { board }),
     },
   });
+}
+
+// A verifier's brief that is waiting is written again from its template, so a gate that went green on its
+// tip since (#43) is read, not re-run. What the conductor appended after the last section is put back.
+function refreshBrief(ctx, ledger) {
+  const round = ledger.rounds.at(-1);
+  const old = readFileSync(round.brief, "utf8");
+  brief(ctx, { ...ledger, rounds: ledger.rounds.slice(0, -1) }, round);
+  const kept = appendedAfter(old, readFileSync(round.brief, "utf8"));
+  if (kept) appendFileSync(round.brief, kept);
+  return round.brief;
 }
 
 // Gates queue behind the lock (`gate.concurrency` slots, in the main checkout's run directory); a flaky
@@ -932,9 +978,12 @@ function gate(ctx, id) {
   for (const record of records) res = stepWith(res.ledger, { type: "gate", record });
   ledger = res.ledger;
   ledgers.write(root, ledger);
-  const shown = view(root, ledger, {
+  const refreshed =
+    ran.exit === 0 && expects(ledger) === "verdict" ? refreshBrief(ctx, ledger) : null;
+  const shown = view(ctx, ledger, {
     step: "gate",
     extra: {
+      ...(refreshed && { briefUpdated: refreshed }),
       gate: {
         exit: ran.exit,
         tier: ran.tier,
@@ -1011,7 +1060,7 @@ function fix(ctx, id, given) {
   const next = dispatchNext(ctx, res.ledger, res.dispatch);
   next.nested = nestedTrees(root, next);
   ledgers.write(root, next);
-  return view(root, next, {
+  return view(ctx, next, {
     step: "fix",
     nested: next.nested,
     extra: { notes: labels, ...(res.reason && { why: res.reason }) },
@@ -1031,13 +1080,16 @@ function episodeOf(ledger) {
       ? `stopped: ${ledger.stopReason ?? "unknown"}`
       : ledger.origin === "adopted"
         ? "adopted: not built or verified by a lane"
-        : `verified (${judged.at(-1)?.verdict})`,
+        : judged.length === 0
+          ? "gated: no verifier read it (exec.verify)"
+          : `verified (${judged.at(-1)?.verdict})`,
     `rounds: ${ledger.rounds.map((r) => `${r.step}${r.resend ? " (resent)" : ""}`).join(", ")}`,
     `verdicts: ${judged.map((r) => r.verdict).join(", ") || "none"}`,
     `void verdicts: ${ledger.rounds.filter((r) => r.void).length}`,
     `guard trips: ${guardTrips.length ? guardTrips.join(" | ") : "none"}`,
     `worktree gate: ${lastGate ? `${lastGate.exit === 0 ? "green" : "red"} ${lastGate.tier} on ${short(lastGate.commit)}` : "none"}`,
     `nested worktrees: ${ledger.nested?.length ?? 0}`,
+    `verify route: ${routeText(ledger.route)}`,
   ].join("; ");
   return {
     task: what ? `${ledger.id}: ${what}` : ledger.id,
@@ -1094,7 +1146,7 @@ function close(ctx, id, episodeId) {
     ...(ledger.state === "verified" && { next: "merge" }),
   };
   ledgers.write(root, ledger);
-  const shown = view(root, ledger, {
+  const shown = view(ctx, ledger, {
     step: "close",
     extra: {
       episode: payload,
@@ -1107,11 +1159,12 @@ function close(ctx, id, episodeId) {
 function show(ctx, id) {
   const { root } = ctx;
   const ledger = mustLedger(root, id);
-  return view(root, ledger, {
+  return view(ctx, ledger, {
     step: "show",
     nested: nestedTrees(root, ledger),
     extra: {
       owned: ownedOf(root, ledger),
+      route: routeText(ledger.route),
       rounds: ledger.rounds.map((r) => ({
         n: r.n,
         step: r.step,

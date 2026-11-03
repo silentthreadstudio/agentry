@@ -21,6 +21,7 @@ import {
   textAt,
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
+import { putBackAllow } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
 import { afterLand, now, ok, red, save, setMerge, short } from "./lane.mjs";
 
@@ -168,6 +169,8 @@ function recordedCommit(lane, rows, { commit, later, why }) {
       at: now(),
     },
   });
+  const back = putBackAllow(lane);
+  if (back) rows.push(back);
   rows.push(
     ok(
       "recover",

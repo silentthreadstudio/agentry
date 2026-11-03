@@ -381,6 +381,10 @@ const VALUES = {
   logDir: "/m/logs",
   reportPath: "/m/r2.report.md",
   gateLine: "cd /w && gate",
+  gateGreen: false,
+  gateRun: true,
+  gateSha: "",
+  gateLog: "",
   tip: "def5678",
   from: "/m/r1.report.md",
   reason: "a reason",
@@ -511,4 +515,33 @@ test("build and verify briefs (and the fix/final that wrap them) carry later not
     );
     assert.doesNotMatch(renderBrief(step, VALUES), /Later notes/, `${step} without notes`);
   }
+});
+
+test("a verify brief on a tip with a recorded green gate says to read it, not re-run it", () => {
+  const text = renderBrief("verify", {
+    ...VALUES,
+    gateGreen: true,
+    gateRun: false,
+    gateSha: "def5678",
+    gateLog: "/m/logs/gate-1.log",
+  });
+  assert.match(
+    text,
+    /the gate is recorded green on def5678 \(\/m\/logs\/gate-1\.log\): read it; do not re-run it/,
+  );
+  assert.doesNotMatch(text, /Run the gate as the lane records it/);
+});
+
+test("a verify or final brief on a tip with no green gate keeps the full gate line", () => {
+  for (const step of ["verify", "recheck", "final"]) {
+    const text = renderBrief(step, VALUES);
+    assert.match(text, /Run the gate as the lane records it, in the foreground/, step);
+    assert.doesNotMatch(text, /do not re-run it/, step);
+  }
+});
+
+test("the recheck and final briefs carry the recorded-green line too", () => {
+  const green = { ...VALUES, gateGreen: true, gateRun: false, gateSha: "def5678", gateLog: "/l" };
+  for (const step of ["recheck", "final"])
+    assert.match(renderBrief(step, green), /do not re-run it/, step);
 });

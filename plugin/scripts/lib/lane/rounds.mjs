@@ -4,6 +4,8 @@
 //
 //   start                                   → build (fresh)
 //   build / fix: DONE or DONE_WITH_CONCERNS → verify (fresh) when no verdict yet, else recheck (resume)
+//   build / fix: DONE, and the report says to skip the verifier (exec.verify) and a gate is configured
+//                                           → gate (green on this tip) → close: the gate stands in for the verifier
 //   build / fix: main touched (any status)  → stop
 //   build / fix: uncommitted files or no commits past base → fix (resume) with the reason; twice → stop
 //   build / fix: NEEDS_CONTEXT              → needs-context (resume) once, then stop
@@ -81,6 +83,12 @@ export const greenOn = (gates, tip) =>
       g.commit === tip,
   );
 
+/** Does `route` (the ledger's `{ verify, flagged }`, absent on an older ledger) send a built item straight
+ *  to the gate? Only when verification is off for it: `flagged` and `none` skip every item that is not
+ *  flagged; a flagged item always has a verifier. */
+export const skipsVerifier = (route, flagged = false) =>
+  ["flagged", "none"].includes(route?.verify) && !flagged && !route?.flagged;
+
 /** The worktree gates recorded for commit `tip`, counted: `{ green, red, flaky }`. `flaky` is the part of
  *  `red` that failed only in tests the process file lists as flaky (and was re-run). `text` is the one
  *  line the verdict shows ("1 green, 1 red on this tip"), or null when there is no gate on this tip. */
@@ -150,7 +158,8 @@ const resend = (ledger, round, reason) =>
  * round to send next (pass it to `addRound` with the brief rendered for it). Throws on an event the
  * ledger does not expect (out of order).
  *
- *   { type: "report", status, report, agent?, summary?, guards: { mainTouched?, dirty?, commits? } }
+ *   { type: "report", status, report, agent?, summary?, guards: { mainTouched?, dirty?, commits? },
+ *     skipVerify?: true (exec.verify routes this item past the verifier), tip, gate: true | false }
  *   { type: "verdict", verdict, report, agent?, summary?, tip, gate: true | false (one configured) }
  *   { type: "gate", record }   (recorded at any time; decides only when the gate is the next step)
  */
@@ -169,7 +178,7 @@ export function step(ledger, event) {
   return event.type === "report" ? onReport(out, round, event) : onVerdict(out, round, event);
 }
 
-function onReport(ledger, round, { status, guards = {} }) {
+function onReport(ledger, round, { status, guards = {}, skipVerify = false, tip, gate = true }) {
   round.status = status;
   // A builder that changed the main checkout stops the lane whatever it reports.
   if (guards.mainTouched) {
@@ -202,7 +211,14 @@ function onReport(ledger, round, { status, guards = {} }) {
       trips.join("; "),
     );
   }
-  if (verdicts(ledger).length === 0) return send(ledger, "verify", {});
+  if (verdicts(ledger).length === 0) {
+    // Skipping the verifier needs a gate to stand in for it: with none, nothing would check the work.
+    if (!skipVerify || !gate) return send(ledger, "verify", {});
+    round.builtTip = tip;
+    if (greenOn(ledger.gates, tip))
+      return settle(ledger, "close", "a green worktree gate on this tip");
+    return settle(ledger, "gate", "no verifier for this item: the gate decides");
+  }
   const verifier = verdicts(ledger).at(-1);
   return send(ledger, "recheck", { from: verifier.reportPath, agent: verifier.agent }, null);
 }
@@ -274,7 +290,8 @@ function onGate(ledger, record) {
   if (ledger.next !== "gate") return { ledger, next: ledger.next };
   // A red that failed only in listed flaky tests is re-run alone; the re-run's record decides.
   if (record.flakyRed?.length) return { ledger, next: ledger.next };
-  const verified = verdicts(ledger).at(-1)?.tip;
+  const verified =
+    verdicts(ledger).at(-1)?.tip ?? ledger.rounds.findLast((r) => r.builtTip)?.builtTip;
   if (record.commit !== verified)
     return stop(ledger, `the branch moved from ${short(verified)} since the verdict`);
   if (!greenOn([record], verified))

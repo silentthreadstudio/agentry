@@ -22,7 +22,7 @@ prompt the step printed. It never composes a brief, picks the next round or writ
 | Step | Does | Board (through `lifecycle`) |
 | :--- | :--- | :--- |
 | `start <id> [--cite A40,A41]` | finds the contract, refuses at `lanes.maxWriters`, cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder; `--cite` adds decisions to every brief by id (a decision whose row names the task is quoted anyway) | `dispatched` |
-| `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round | `built` when a verifier is next |
+| `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round | `built` when a verifier (or, under `exec.verify`, the gate alone) is next |
 | `verdict <id> [--agent a]` | reads the verifier's report and its tip, briefs the next round | the verdict (`FAIL` also `failed`) |
 | `gate <id>` | waits for the gate lock, runs the repo's `gate` in the worktree as argv, records `{commit, tree, exit, clean before and after, log}`; a red whose log (or `gate.flakyLogs` files) fails only in `gate.flaky` tests is re-run alone once and both runs are recorded; a gate that queues writes `waiting for gate slot N (held by <who> since HH:MM)` and `slot acquired` to its log, and its output streams there as it runs | none |
 | `fix <id> --notes N1,N3` | after `PASS WITH NOTES` (gate or close next): a builder round (resume) on those notes of the verifier's report, then the usual `recheck` | none |
@@ -49,6 +49,7 @@ conductor's call; a red that failed only in listed flaky tests is marked as such
 | build, fix | main's HEAD or files changed (any status) | `stop` |
 | build, fix | `DONE` / `DONE_WITH_CONCERNS`, uncommitted files or no commits past base | `fix` with the reason (resume); the same again → `stop` |
 | build, fix | `DONE` / `DONE_WITH_CONCERNS`, guards hold | `verify` (fresh) when there is no verdict yet; `recheck` (resume the last verifier) after a fix |
+| build, fix | the same, no verdict yet, `exec.verify` is `flagged` or `none`, the item's flag is not set and the process file has a gate | `gate` (built is written), then `close`: no verifier. A flagged item is verified as above; a red gate stops the lane |
 | build, fix | `NEEDS_CONTEXT` | `needs-context` once (resume, with the fact), then `stop` |
 | build, fix | `BLOCKED` | `stop` |
 | any | no status line / no `Verdict:` last line | `resend` (resume) once per role in the lane, then `stop` |
@@ -140,7 +141,12 @@ templates, once:
   runs in the host's background mode, read by the same exit code.
 - Logs and scratch files only under the round's log dir.
 - Commits on `agentry/<id>` with no AI attribution; no merge, push or rebase.
-- The verifier changes and commits nothing, runs the printed gate line, states the bar for any input or
+- When the ledger holds a worktree gate green on the dispatched tip and tree, the verify, recheck and final briefs
+  say `the gate is recorded green on <sha> (<log>): read it; do not re-run it` and the verifier runs only
+  its own probes; a moved tip gets the full gate line. `exec gate` run while a verifier is next rewrites that
+  waiting brief. Each dispatch prints `model:` when `models` in the process file names one for its role (builder:
+  `build`; verifier: `verify.flagged`, `verify.ui` when a designer builds, else `verify.default`).
+- The verifier changes and commits nothing, runs the printed gate line (or reads the recorded one), states the bar for any input or
   interaction before testing it, and names each probe so the fix round commits it as a test.
 
 ### Close and handoff

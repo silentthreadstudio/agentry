@@ -9,9 +9,9 @@ Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH,
 
 1. Only for an id matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` (otherwise ask first), run `agentry lane exec start '<id>'` in the main checkout. Exit 2: show the message (contract candidates, open writers) and stop. Never guess a contract.
 2. Read the printed text (`--json` prints the same fields as one object) and act on `next`. After `start`, check the `owned` list against the contract; a wrong list is fixed with the `amend` line (`agentry lane exec owns <id> --set <paths> --apply`), which also rewrites the waiting brief:
-   - `build`, `verify`, `final`: dispatch a fresh agent with `prompt`, verbatim, as the whole prompt. `dispatch.agent` names the type (for a build it is a suggestion: you decide designer or implementer). No worktree isolation option: the worktree exists.
+   - `build`, `verify`, `final`: dispatch a fresh agent with `prompt`, verbatim, as the whole prompt. `dispatch.agent` names the type (for a build it is a suggestion: you decide designer or implementer). When a `model` is printed, dispatch with that model. No worktree isolation option: the worktree exists.
    - `fix`, `recheck`, `needs-context`, `resend`: when `mode` is `resume`, send `prompt` to the agent `agent` (resume it); otherwise dispatch fresh as above. For `needs-context`, do `todo` first.
-   - `gate`, `close`: run `run` and read its exit code (a gate past the host's foreground limit: `lanes.md`, Dispatching).
+   - `gate`, `close`: run `run` and read its exit code (after a `report` with `route` not `all`, a `gate` next is an item with no verifier: the gate is its only check) (a gate past the host's foreground limit: `lanes.md`, Dispatching).
    - `stop`: tell the owner `reason`, with every verdict (`agentry lane exec show <id>`). Don't retry by hand.
    - `merge`: the lane is done; hand off (step 4).
 3. When an agent returns, save its full reply to `reportPath` if that file is missing or empty, then run `after` with the agent's id. Back to step 2.

@@ -58,7 +58,13 @@ The builder's report: {{builderReport}}
 - Each acceptance item: PASS, FAIL or UNVERIFIED, with its evidence (the command and its exit code,
   `file:line`, a screenshot path).
 - The branch changes only the owned files: `{{cd}} && git diff --stat {{base}}..HEAD`.
+{{#gateGreen}}
+- Gate: the gate is recorded green on {{gateSha}} ({{gateLog}}): read it; do not re-run it. Your own probes
+  are the only runs of yours.
+{{/gateGreen}}
+{{#gateRun}}
 - Run the gate as the lane records it, in the foreground, and read its exit code: `{{gateLine}}`
+{{/gateRun}}
 - For any input, setting or interaction the contract handles, write down the bar first (what must never
   happen, edge cases included), then test against it.
 - Each probe you write to test a claim (a script, a test) goes under {{logDir}} and is named in your

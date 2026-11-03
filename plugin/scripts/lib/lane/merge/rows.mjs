@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { readConfig } from "../../config.mjs";
 import { defaultBranch, worktrees } from "../../process/git.mjs";
 import { read as readLedger, write as writeLedger } from "../../process/ledger.mjs";
-import { own } from "../../process/spec.mjs";
+import { flaggedItem, own } from "../../process/spec.mjs";
 import { headBoard } from "../carry-io.mjs";
 import { commitOf, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
 import { dirtyEntries } from "../own-memory.mjs";
+import { verdicts } from "../rounds.mjs";
 import { findByBranch } from "../worktree.mjs";
 import { ok, red, save, short, skip, tipOf, wait, warn } from "./lane.mjs";
 
@@ -47,6 +48,23 @@ export function ledgerStep(lane, { adopt }) {
             ledger.state === "stopped"
               ? `${id}'s lane is "stopped": land it anyway only on the owner's call, with --branch ${ledger.branch}`
               : `${id}'s lane is "${ledger.state}": only a verified lane lands (lane exec show ${id})`,
+          ),
+        ],
+      };
+    // exec.verify can route an item past its verifier; a flagged one never lands that way, whenever the
+    // flag was set (the lane reads it again at its report, this reads it again at the land).
+    if (
+      ledger.origin === "exec" &&
+      ledger.state !== "merged" &&
+      verdicts(ledger).length === 0 &&
+      flaggedItem(spec, lane.model, id)
+    )
+      return {
+        exit: 2,
+        rows: [
+          red(
+            "ledger",
+            `${id} is flagged on the board, but no verifier read it (exec.verify skipped it): a flagged item lands only after a verdict`,
           ),
         ],
       };

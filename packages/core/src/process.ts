@@ -270,6 +270,24 @@ export type Guard = z.infer<typeof Guard>;
 export const Cleanup = z.object({ disposable: Globs }).strict();
 export type Cleanup = z.infer<typeof Cleanup>;
 
+/** The exec lane's own settings: `verify` says which items get an independent verifier (`all` by default;
+ *  `flagged` only those whose `flag` field is set, which needs a `flag` field on the lifecycle kind). */
+export const Exec = z.object({ verify: z.enum(["all", "flagged", "none"]).optional() }).strict();
+export type Exec = z.infer<typeof Exec>;
+
+/** The model each exec dispatch names, by role: `build`, and `verify` by the item (`ui`: a designer
+ *  builds it, `flagged`: its flag is set) with `default` for the rest. Any string; all optional. */
+export const Models = z
+  .object({
+    build: Text.optional(),
+    verify: z
+      .object({ default: Text.optional(), ui: Text.optional(), flagged: Text.optional() })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type Models = z.infer<typeof Models>;
+
 export const ProcessSpec = z
   .object({
     version: z.literal(1),
@@ -288,6 +306,8 @@ export const ProcessSpec = z
     conductor: Conductor.optional(),
     guard: Guard.optional(),
     cleanup: Cleanup.optional(),
+    exec: Exec.optional(),
+    models: Models.optional(),
   })
   .strict();
 export type ProcessSpec = z.infer<typeof ProcessSpec>;

@@ -13,6 +13,16 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   (`SoftwareApplication` and `WebSite` on the home page, `BreadcrumbList` on docs pages), a canonical,
   `og:url` and `og:locale` on every page except the 404, meta descriptions of at most 160
   characters, and a `vercel.json` with cache rules and safe headers.
+- **Fewer round trips in a lane** — `exec.verify` in the process file (`all` by default, `flagged`,
+  `none`) sends an item whose `flag` field is not set from built straight to the gate; a flagged item
+  keeps its independent verifier and a flagged item with no verdict does not land. `flagged` needs a
+  `flag` field on the lifecycle kind and is refused at load without it. The route shows in `exec start`
+  and `show`, and the episode records it. `models` names the model each dispatch prints (`model:`):
+  `build`, and `verify.default`, `verify.ui`, `verify.flagged`. A verify, recheck or final brief on a tip
+  whose gate is already recorded green says to read that gate, not to re-run it (`exec gate` rewrites the
+  waiting verify brief). `lane merge` no longer stops on the owner's uncommitted `guard.allow` files: it
+  sets them aside, recorded in the ledger first, lands, and puts them back; a stop or a rerun after a kill
+  puts them back too, and an edit that no longer applies is saved to a patch file.
 - **Board and briefs** — `board lifecycle`/`lane merge` write several commits into the Commit cell
   with the separator the board's done rows already use (a field's `join` pins it; `first…last` when
   nothing is learned). An old `--json '{…}'` on `board add`/`board set` exits 2 with a pointer to

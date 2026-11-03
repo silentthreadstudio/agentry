@@ -4,6 +4,15 @@
 //
 // humanView(result) -> string
 
+/** The verify route a lane runs, as one line (`route` is the ledger's `{ verify, flagged }`). */
+export function routeText(route) {
+  const verify = route?.verify ?? "all";
+  if (verify === "all") return "all: every item has a verifier";
+  if (route.flagged) return `${verify}: this item is flagged, so a verifier reads it`;
+  const why = verify === "none" ? "no verifier" : "this item is not flagged, so no verifier";
+  return `${verify}: ${why}; built goes straight to the gate`;
+}
+
 const HEADER = new Set(["id", "step", "next", "state"]);
 const indent = (text) =>
   String(text)

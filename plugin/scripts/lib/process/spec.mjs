@@ -203,6 +203,13 @@ const gate = shape(
 const skill = like(/^[a-z0-9][a-z0-9-]*$/, "a skill name (lower-case letters, digits and -)");
 const extensions = shape({ "merge!": shape({ "checks!": distinct(skill) }, FULL) }, FULL);
 const conductor = shape({ "prompt!": repoPath, rules: text }, FULL);
+// The exec lane's own settings: which items a verifier reads, and which model each dispatch names.
+const VERIFY_ROUTES = ["all", "flagged", "none"];
+const exec = shape({ verify: oneOf(...VERIFY_ROUTES) }, FULL);
+const models = shape(
+  { build: text, verify: shape({ default: text, ui: text, flagged: text }, FULL) },
+  FULL,
+);
 /** The process-file `version` this plugin reads. */
 export const SPEC_VERSION = 1;
 const processFile = shape({
@@ -220,10 +227,41 @@ const processFile = shape({
   conductor,
   guard: shape({ "allow!": globs }, FULL),
   cleanup: shape({ "disposable!": globs }, FULL),
+  exec,
+  models,
 });
 /** The process file's checker; `schema.keys` (and each nested shape's `keys`) lists its keys, a
  *  trailing `!` marking a required one. The format reference is bound to it. */
 export const schema = processFile;
+
+/** Which items the exec lane sends to a verifier: "all" (default), "flagged" or "none". */
+export const verifyRoute = (spec) => own(own(spec, "exec"), "verify") ?? "all";
+
+/** The field name `exec.verify: "flagged"` reads from the lifecycle kind (`task` when there is none). */
+export const FLAG_FIELD = "flag";
+
+/** Is item `id` of the exec kind flagged on the board `model`: its `flag` field is set (and is a flag
+ *  field). False when the kind has no such field or the item is not on the board. */
+export function flaggedItem(spec, model, id) {
+  const name = typeof spec?.lifecycle?.kind === "string" ? spec.lifecycle.kind : "task";
+  if (own(own(own(spec?.kinds, name), "fields"), FLAG_FIELD)?.type !== "flag") return false;
+  const item = own(model?.kinds, name)?.items?.find((i) => i.id === id);
+  return Boolean(own(item?.fields, FLAG_FIELD));
+}
+
+/** The model a dispatch names, or null: `role` "build", or "verify" with the item's `flagged` and `ui`
+ *  facts (flagged first, then ui, then the verify default). Null when the process file names none. */
+export function modelFor(spec, role, { flagged = false, ui = false } = {}) {
+  const models = own(spec, "models");
+  if (role === "build") return own(models, "build") ?? null;
+  const verify = own(models, "verify");
+  return (
+    (flagged && own(verify, "flagged")) ||
+    (ui && own(verify, "ui")) ||
+    own(verify, "default") ||
+    null
+  );
+}
 
 /** The repo's gate with its defaults filled (`after: []`, `concurrency: 1`, `flaky: []`, `flakyLogs: []`, no quick tier), or null when the process
  *  file has none. A copy: changing it never changes the spec. */
@@ -504,12 +542,26 @@ function crossCheck(spec, bad) {
   if (Array.isArray(spec.rules))
     spec.rules.forEach((r, i) => checkRule(r, `rules[${i}]`, kinds, bad));
   known(spec.lifecycle?.kind, "lifecycle.kind");
+  checkVerifyRoute(spec, kinds, bad);
   known(spec.status?.now, "status.now");
   const note = spec.status?.note;
   if (typeof note === "string" && escapesRoot(".", note))
     bad("status.note", `"${note}" leaves the repository`);
   for (const [d, def] of entries(spec.drafts)) known(def?.kind, `drafts.${d}.kind`);
   checkLifecycle(spec, bad);
+}
+
+// `exec.verify: "flagged"` sends an item to a verifier by its flag, so the exec kind must have one: a field
+// named "flag" of type "flag". Otherwise every item would skip verification, which refuses at load instead.
+function checkVerifyRoute(spec, kinds, bad) {
+  if (verifyRoute(spec) !== "flagged") return;
+  const name = typeof spec.lifecycle?.kind === "string" ? spec.lifecycle.kind : "task";
+  const field = fieldsOf(kinds[name])[FLAG_FIELD];
+  if (!has(kinds, name) || field?.type !== "flag")
+    bad(
+      "exec.verify",
+      `is "flagged", but the ${name} kind has no field named "${FLAG_FIELD}" of type "flag"`,
+    );
 }
 
 // What the lifecycle writer (`lifecycle.mjs`) takes for granted: each `on` word is a status of the

@@ -23,6 +23,7 @@ import { boardReport } from "../../process/status.mjs";
 import { WriteError } from "../../process/write.mjs";
 import { putCells, sha256 } from "../carry-io.mjs";
 import { boardCommit, restoreFiles, subjectOf, textAt } from "../land.mjs";
+import { putBackAllow } from "./carry.mjs";
 import { conflictLine, dropNext } from "./carry.mjs";
 import { now, ok, red, save, setMerge, short, skip } from "./lane.mjs";
 
@@ -148,11 +149,18 @@ export function recordStep(lane, rows) {
 
 export function commitStep(lane, rows) {
   const { root, files } = lane;
-  const merge = lane.ledger.merge;
   if (files.length === 0) {
+    const back = putBackAllow(lane);
+    if (back) rows.push(back);
     save(lane, {
       state: "merged",
-      merge: { ...merge, record: undefined, step: "committed", boardCommit: null, at: now() },
+      merge: {
+        ...lane.ledger.merge,
+        record: undefined,
+        step: "committed",
+        boardCommit: null,
+        at: now(),
+      },
     });
     rows.push(skip("commit", "nothing written to the board, nothing to commit"));
     return null;
@@ -170,11 +178,14 @@ export function commitStep(lane, rows) {
     const next = "fix the message or what the hook names, then land again (it resumes)";
     return unrecorded(lane, { exit: 1, next });
   }
-  // The carried board writes are in this commit now: the ledger lets go of them.
+  // The owner's guard.allow edits go back before the lane is "merged": a run killed in between finds them
+  // in the ledger still. The carried board writes are in this commit now: the ledger lets go of them.
+  const back = putBackAllow(lane);
+  if (back) rows.push(back);
   save(lane, {
     state: "merged",
     merge: {
-      ...merge,
+      ...lane.ledger.merge,
       carry: undefined,
       record: undefined,
       step: "committed",
