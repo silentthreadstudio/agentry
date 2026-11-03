@@ -1,9 +1,12 @@
 ---
 // Base.astro — the chrome every page shares: the full <head> (meta, Open Graph, fonts,
-// favicon), the skip link, the site Nav and Footer. Pages fill the <main> slot.
+// favicon), the skip link, the site Nav and Footer, and Vercel Analytics + Speed Insights
+// (no-ops outside Vercel). Pages fill the <main> slot.
 //
 // Base-path rule: Astro does not prefix hand-written URLs. Internal hrefs/srcs go through
 // withBase(); absolute URLs for canonical/OG are built from the configured `site`.
+import Analytics from "@vercel/analytics/astro";
+import SpeedInsights from "@vercel/speed-insights/astro";
 import Footer from "../components/Footer.astro";
 import Nav from "../components/Nav.astro";
 import { withBase } from "../lib/base.ts";
@@ -67,6 +70,8 @@ const ogImage = site ? new URL(withBase("og.png"), site).href : withBase("og.png
       <slot />
     </main>
     <Footer />
+    <Analytics />
+    <SpeedInsights />
   </body>
 </html>
 

@@ -26,4 +26,5 @@ pnpm --filter @agentry/web typecheck  # astro check
 
 Vercel builds the site from the repo at `https://agentry.silentthreadstudio.com`. `site` and `base`
 default to that domain and `/`; the `SITE_URL` and `BASE_PATH` environment variables override them
-(for example, a preview under a sub-path).
+(for example, a preview under a sub-path). The base layout includes Vercel Analytics and Speed
+Insights, which only report when served by Vercel.
