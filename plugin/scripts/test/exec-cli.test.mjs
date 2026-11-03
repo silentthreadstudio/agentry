@@ -219,6 +219,16 @@ test("a later note on the task rides in the build and verify briefs, with its fi
   assert.doesNotMatch(readFileSync(one.json.brief, "utf8"), /Later notes/);
 });
 
+test("an id in another case starts the board's task, spelled as the board spells it", () => {
+  const r = repo();
+  const { exit, json } = lane(r, "start", "t1");
+  assert.equal(exit, 0);
+  assert.equal(json.id, "T1");
+  assert.equal(json.branch, "agentry/T1");
+  assert.equal(ledgerOf(r.root, "T1").id, "T1");
+  assert.equal(lane(r, "show", "t1").json.id, "T1");
+});
+
 test("the brief carries recalled facts when memory.prime is all, none at off", () => {
   for (const prime of ["all", "off"]) {
     const r = repo({ config: { memory: { prime } } });

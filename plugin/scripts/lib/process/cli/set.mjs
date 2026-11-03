@@ -6,6 +6,7 @@
 // (nothing written)
 import { join } from "node:path";
 import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
+import { boardId } from "../ids.mjs";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, apply, setCell, setKey } from "../write.mjs";
 
@@ -14,7 +15,7 @@ export const help = {
   purpose: "Change one field of one item: its table cell, or its frontmatter key.",
   args: {
     "<kind>": "a kind the process file knows",
-    "<id>": "the item's id",
+    "<id>": "the item's id, any case (D7 for a decision numbered 7)",
     "<field>=<value>": "a field of that kind (not its id) and the text to write",
   },
   flags: {
@@ -27,10 +28,10 @@ export const help = {
 const fail = (why, next) => refuse("board set", why, next);
 
 export function run(argv, { root, spec, model }) {
-  const [kindName, id, assignment] = argv.filter((a) => !a.startsWith("--"));
+  const [kindName, typed, assignment] = argv.filter((a) => !a.startsWith("--"));
   const write = argv.includes("--apply");
   const at = assignment?.indexOf("=") ?? -1;
-  if (!kindName || !id || at < 1)
+  if (!kindName || !typed || at < 1)
     return usageError("board set", "needs <kind> <id> <field>=<value>");
   const fieldName = assignment.slice(0, at);
   const value = assignment.slice(at + 1);
@@ -45,6 +46,7 @@ export function run(argv, { root, spec, model }) {
   const known = kind.status?.values;
   if (kind.status?.field === fieldName && known && !Object.hasOwn(known, value))
     return fail(`"${value}" is not a ${kindName} status (${Object.keys(known).join(", ")})`);
+  const id = boardId(spec, model, typed, kindName);
   const items = model.kinds[kindName].items.filter((i) => i.id === id);
   if (items.length !== 1)
     return fail(

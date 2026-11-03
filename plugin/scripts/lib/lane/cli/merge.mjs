@@ -21,6 +21,7 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import { realpathSync } from "node:fs";
 import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
+import { boardId } from "../../process/ids.mjs";
 import { gateOf } from "../../process/spec.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
@@ -51,7 +52,7 @@ export const help = {
     "merge <id> --cleanup [--discard-ignored]",
   ],
   purpose: "Land one task on main, one mode per call; each prints a step table and the next step.",
-  args: { "<id>": "the task's id, as the board writes it" },
+  args: { "<id>": "the task's id, any case" },
   flags: {
     "--preflight": "what landing needs; changes nothing on main",
     "--check <skill>=pass|fail":
@@ -236,6 +237,7 @@ const RUN = {
 export function run(argv, { root, spec, model }) {
   const parsed = parse(argv);
   if (parsed.error) return usageError("lane merge", parsed.error);
+  parsed.id = boardId(spec, model, parsed.id, spec.lifecycle?.kind ?? "task");
   const problem = idProblem(parsed.id);
   if (problem) return usageError("lane merge", problem);
   const main = mainRoot(root);

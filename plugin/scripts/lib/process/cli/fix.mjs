@@ -17,6 +17,7 @@ import { basename } from "node:path";
 import { PREVIEW, usageError } from "../../cli/help.mjs";
 import { mainRoot } from "../../lane/worktree.mjs";
 import { accepted, mechanical, nudges } from "../drift.mjs";
+import { boardId } from "../ids.mjs";
 import { applyEvent } from "../lifecycle.mjs";
 import { readProcess } from "../read.mjs";
 import { wrapText } from "../render.mjs";
@@ -57,8 +58,9 @@ const narrowed = (spec, need) => ({
 
 export function run(argv, { root, spec, model }) {
   const dryRun = !argv.includes("--apply");
-  const id = acceptOf(argv);
-  if (id === null) return usageError("board fix", "--accept needs a task id");
+  const typed = acceptOf(argv);
+  if (typed === null) return usageError("board fix", "--accept needs a task id");
+  const id = typed && spec.lifecycle ? boardId(spec, model, typed, spec.lifecycle.kind) : typed;
   const runRoot = mainRoot(root) ?? root;
   const plan = mechanical({ root, runRoot, spec, model });
   if (id !== undefined && !plan.fixes.some((f) => f.id === id)) {

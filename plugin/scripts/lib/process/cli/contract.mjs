@@ -6,11 +6,12 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import { usageError } from "../../cli/help.mjs";
 import { findContract } from "../contract.mjs";
+import { boardId } from "../ids.mjs";
 
 export const help = {
   usage: "contract <id> [--kind <kind>] [--json]",
   purpose: "A task's contract block (owns, exposes, acceptance) as one JSON line. Writes nothing.",
-  args: { "<id>": "the item's id, as the board writes it" },
+  args: { "<id>": "a task's id, any case; another kind's with --kind (decision, sprint…)" },
   flags: {
     "--kind <kind>": "another kind that has contracts (default: task)",
     "--json": "accepted for symmetry: the output is always JSON",
@@ -25,6 +26,13 @@ export function run(argv, { root, spec, model }) {
   const id = argv.find((a, i) => !a.startsWith("--") && (at < 0 || i !== at + 1));
   if (!id) return usageError("board contract", "needs an id");
   if (!kind) return usageError("board contract", "--kind needs a kind");
-  const result = findContract({ root, spec, id, kind, model });
+  const known = Object.hasOwn(spec.kinds, kind);
+  const result = findContract({
+    root,
+    spec,
+    id: known ? boardId(spec, model, id, kind) : id,
+    kind,
+    model,
+  });
   return { exit: result.status === "found" ? 0 : 1, out: JSON.stringify(result) };
 }

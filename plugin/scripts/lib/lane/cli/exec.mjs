@@ -27,6 +27,7 @@ import { flagsOf, say, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
+import { boardId } from "../../process/ids.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { gateOf, own } from "../../process/spec.mjs";
@@ -62,7 +63,7 @@ export const help = {
     gate: "run the repo's gate in the worktree and record it",
     close: "print the episode payload (--episode stamps the id episode_write gave)",
     show: "the ledger and the pending step, for a cold resume",
-    "<id>": "the task's id, as the board writes it",
+    "<id>": "the task's id, any case",
   },
   flags: {
     "--agent <agent id>":
@@ -109,8 +110,9 @@ function parse(argv) {
 }
 
 export function run(argv, ctx) {
-  const { step, id, value, error } = parse(argv);
+  const { step, id: typed, value, error } = parse(argv);
   if (error) return usageError("lane exec", error);
+  const id = boardId(ctx.spec, ctx.model, typed, ctx.spec.lifecycle?.kind ?? "task");
   const what = `lane exec ${step} ${id}`;
   const problem = idProblem(id);
   if (problem) return usageError("lane exec", problem);

@@ -8,6 +8,7 @@ import { relative } from "node:path";
 import { usageError } from "../../cli/help.mjs";
 import { mainRoot } from "../../lane/worktree.mjs";
 import { refuseConductor } from "../conductor.mjs";
+import { boardId } from "../ids.mjs";
 import { renderStatus, why } from "../render.mjs";
 import { boardReport, statusView, workKind } from "../status.mjs";
 
@@ -17,7 +18,8 @@ export const help = {
   args: {},
   flags: {
     "--json": "print the report and the view as one JSON object",
-    "--why <id>": "one item of any kind (task, sprint, decision…): each rule failing or holding",
+    "--why <id>":
+      "one item of any kind, any case (task, sprint, D7…): each rule failing or holding",
   },
   exits: {
     0: "no findings",
@@ -35,7 +37,7 @@ export function run(argv, { root, processPath, spec, model }) {
   const report = boardReport({ root, spec, model });
   const exit = report.ok ? 0 : 1;
   const at = argv.indexOf("--why");
-  const id = argv[at + 1];
+  const id = boardId(spec, model, argv[at + 1]);
   if (at >= 0 && (!id || id.startsWith("--")))
     return usageError("board status", "--why needs an id");
   if (at >= 0) return why({ spec, model, report, id, tty: tty() });
