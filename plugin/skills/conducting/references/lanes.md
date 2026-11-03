@@ -22,14 +22,14 @@ prompt the step printed. It never composes a brief, picks the next round or writ
 
 | Step | Does | Board (through `lifecycle`) |
 | :--- | :--- | :--- |
-| `start <id>` | finds the contract, refuses at `lanes.maxWriters`, cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder | `dispatched` |
+| `start <id> [--cite A40,A41]` | finds the contract, refuses at `lanes.maxWriters`, cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder; `--cite` adds decisions to every brief by id (a decision whose row names the task is quoted anyway) | `dispatched` |
 | `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round | `built` when a verifier is next |
 | `verdict <id> [--agent a]` | reads the verifier's report and its tip, briefs the next round | the verdict (`FAIL` also `failed`) |
 | `gate <id>` | waits for the gate lock, runs the repo's `gate` in the worktree as argv, records `{commit, tree, exit, clean before and after, log}`; a red whose log fails only in `gate.flaky` tests is re-run alone once and both runs are recorded | none |
 | `fix <id> --notes N1,N3` | after `PASS WITH NOTES` (gate or close next): a builder round (resume) on those notes of the verifier's report, then the usual `recheck` | none |
 | `close <id> [--episode e]` | prints the `episode_write` payload; `--episode` stamps the id it returned | none (`done` comes at merge) |
 | `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
-| `owns <id> [--set a,b] [--apply]` | the owned files every brief names, parsed once at `start` and kept in the ledger; `--set … --apply` replaces them and rewrites the brief still waiting for its agent (without `--apply` it only shows the new list) | none |
+| `owns <id> [--set a,b] [--apply]` | the owned files every brief names, parsed once at `start` and kept in the ledger; `--set … --apply` replaces them and rewrites the brief still waiting for its agent, keeping any section appended after the brief's last template section such as `## The fact` (without `--apply` it only shows the new list) | none |
 
 Exit 0: `next` is printed. Exit 1: the lane stopped (or, for `gate`, the gate is red). Exit 2: usage or a
 refusal, nothing changed (an out-of-order step, a missing report file, a dirty worktree at the gate, a run from
@@ -130,7 +130,7 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
 (`.agentry/run/process/runs/<id>/`): `build.md`; `fix.md` (wraps the build brief: the verifier's fix list, a
 refused report, or the supplied fact); `verify.md` (with a recheck section when resuming); `final.md` (wraps the
 verify brief). Each brief carries the contract block verbatim, the owned files, the decisions it cites quoted
-from the board's decision kind by id, the facts recalled for the owned files when `memory.prime` is `all` (from
+from the board's decision kind by id (and the ones whose row names the task, and any given to `start --cite`), the facts recalled for the owned files when `memory.prime` is `all` (from
 this repo's store and the user's `scope: user` facts only, never another project's), the worktree, the gate
 line, the log dir and the report path. The rules builders and verifiers follow live in those
 templates, once:

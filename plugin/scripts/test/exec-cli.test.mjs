@@ -109,7 +109,7 @@ const DECISIONS_MD = `# Decisions
 
 /** A repo on `main` with the board committed; `home` is an empty HOME for the CLI (no global config or
  *  memory leaks in). */
-function repo({ spec = SPEC, config, prefix = "exec-repo-" } = {}) {
+function repo({ spec = SPEC, config, prefix = "exec-repo-", decisions = DECISIONS_MD } = {}) {
   const root = temp(prefix);
   const home = temp("exec-home-");
   git(root, "init", "-q", "-b", "main");
@@ -119,7 +119,7 @@ function repo({ spec = SPEC, config, prefix = "exec-repo-" } = {}) {
   commitFile(root, ".gitignore", ".agentry/run/\n.agentry/config.json\n");
   commitFile(root, "plan/BOARD.md", BOARD_MD);
   commitFile(root, "plan/TASKS.md", TASKS_MD);
-  commitFile(root, "plan/DECISIONS.md", DECISIONS_MD);
+  commitFile(root, "plan/DECISIONS.md", decisions);
   commitFile(root, ".agentry/process.json", JSON.stringify(spec, null, 2));
   return { root, home };
 }
@@ -1395,4 +1395,48 @@ test("a staged rename never carries an owned file past guard.allow, and a lone r
   const res = lane(r, "report", "T1");
   assert.equal(res.exit, 0, res.stderr);
   assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+});
+
+// ---- decisions made after the contract, and a section the conductor appended -----------------------
+
+const LATER_DECISIONS = `${DECISIONS_MD}| 3 | Pick option A (T1 may go ahead) |
+| 4 | Unrelated, mentions T10 only |
+| 5 | Chosen by the owner later |
+`;
+
+test("a brief quotes a decision whose row names the task, though the contract never cites it", () => {
+  const r = repo({ decisions: LATER_DECISIONS });
+  const brief = readFileSync(lane(r, "start", "T1").json.brief, "utf8");
+  assert.match(brief, /- D1: \| 1 \| Plain files \|/);
+  assert.match(brief, /- D3: \| 3 \| Pick option A \(T1 may go ahead\) \|/);
+  assert.doesNotMatch(brief, /T10 only/);
+  assert.doesNotMatch(brief, /Not cited/);
+});
+
+test("start --cite adds decisions by id to every brief, and refuses an id the board lacks", () => {
+  const r = repo({ decisions: LATER_DECISIONS });
+  const bad = lane(r, "start", "T1", "--cite", "D5,D99");
+  assert.equal(bad.exit, 2);
+  assert.match(bad.stderr, /--cite names no decision on the board: D99/);
+  assert.equal(existsSync(join(r.root, ".agentry", "run", "worktrees", "T1")), false);
+  const out = lane(r, "start", "T1", "--cite", "d5").json;
+  assert.match(readFileSync(out.brief, "utf8"), /- D5: \| 5 \| Chosen by the owner later \|/);
+  build(out);
+  const verify = lane(r, "report", "T1").json;
+  assert.match(readFileSync(verify.brief, "utf8"), /- D5: /);
+  assert.match(lane(r, "show", "T1", "--cite", "D5").stderr, /show takes no --cite/);
+});
+
+test("owns --apply keeps a section appended after the brief's last template section", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  const fact = "\n## The fact\n\nThe clock is injected, not read.\n";
+  writeFileSync(out.brief, readFileSync(out.brief, "utf8") + fact);
+  assert.equal(lane(r, "owns", "T1", "--set", "a.ts", "--apply").exit, 0);
+  const brief = readFileSync(out.brief, "utf8");
+  assert.match(brief, /- `a\.ts` \(new\)/);
+  assert.ok(brief.endsWith(fact), "the appended section is still last");
+  // A second rewrite does not duplicate it.
+  assert.equal(lane(r, "owns", "T1", "--set", "b.ts", "--apply").exit, 0);
+  assert.equal(readFileSync(out.brief, "utf8").split("## The fact").length, 2);
 });

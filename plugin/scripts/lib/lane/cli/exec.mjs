@@ -17,7 +17,7 @@
 // stopped (or the gate is red), 2 = usage or refusal (nothing changed).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
@@ -34,6 +34,7 @@ import { applyEvent } from "../../process/lifecycle.mjs";
 import { gateOf, own } from "../../process/spec.mjs";
 import { WriteError } from "../../process/write.mjs";
 import {
+  appendedAfter,
   bullets,
   citedDecisions,
   notesSection,
@@ -43,6 +44,7 @@ import {
   relatedNotes,
   renderBrief,
   suggestBuilder,
+  unknownCites,
   withNew,
 } from "../brief.mjs";
 import { humanView, ownedMark } from "../exec-view.mjs";
@@ -67,7 +69,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = join(HERE, "..", "..", "..", "lane.mjs");
 const STEPS = ["start", "report", "verdict", "gate", "fix", "close", "show", "owns"];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--set <paths>] [--apply] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--cite <A40,A41>] [--set <paths>] [--apply] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -85,6 +87,8 @@ export const help = {
       "report and verdict: the agent that answered, so a later round resumes it",
     "--episode <episode id>": "close: the id episode_write returned",
     "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
+    "--cite <A40,A41>":
+      "start: decisions to quote in every brief, by id (rows naming the task are quoted anyway)",
     "--set <paths>": "owns: the comma-separated owned files to use from now on",
     "--apply": "owns: write the --set list (without it the new list is only shown)",
     "--json": "print the step's one JSON object instead of the readable text",
@@ -97,6 +101,7 @@ const STEPS_OF = {
   "--agent": ["report", "verdict"],
   "--episode": ["close"],
   "--notes": ["fix"],
+  "--cite": ["start"],
   "--set": ["owns"],
   "--apply": ["owns"],
 };
@@ -110,7 +115,7 @@ const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
-// argv → { step, id, value, set, apply, json } or { error }. `value` is the --agent / --episode / --notes value.
+// argv → { step, id, value, set, cite, apply, json } or { error }. `value` is the --agent / --episode / --notes value.
 function parse(argv) {
   const words = [];
   const given = {};
@@ -142,13 +147,14 @@ function parse(argv) {
     id,
     value: given["--agent"] ?? given["--episode"] ?? given["--notes"] ?? null,
     set: given["--set"] ?? null,
+    cite: given["--cite"]?.split(",").map((c) => c.trim()) ?? [],
     apply: Boolean(given["--apply"]),
     json: Boolean(given["--json"]),
   };
 }
 
 export function run(argv, ctx) {
-  const { step, id: typed, value, set, apply, json, error } = parse(argv);
+  const { step, id: typed, value, set, cite, apply, json, error } = parse(argv);
   if (error) return usageError("lane exec", error);
   const id = boardId(ctx.spec, ctx.model, typed, ctx.spec.lifecycle?.kind ?? "task");
   const what = `lane exec ${step} ${id}`;
@@ -162,7 +168,7 @@ export function run(argv, ctx) {
       out: say(what, `runs from the main checkout: pass --root ${main ?? "<the repository>"}`),
     };
   try {
-    const res = HANDLERS[step]({ ...ctx, root, set, apply }, id, value);
+    const res = HANDLERS[step]({ ...ctx, root, set, cite, apply }, id, value);
     return json ? res : { ...res, out: humanView(JSON.parse(res.out)) };
   } catch (e) {
     if (e instanceof Refusal || e instanceof WriteError)
@@ -466,7 +472,9 @@ function brief({ root, spec, model }, ledger, dispatch) {
     notes: notesSection(ledger.contract.related),
     owned: bullets(owned.map((o) => `\`${o.path}\`${ownedMark(o).slice(o.path.length)}`)),
     decisions: bullets(
-      citedDecisions({ root, spec, model, block }).map((d) => `${d.id}: ${d.text}`),
+      citedDecisions({ root, spec, model, block, task: ledger.id, cite: ledger.cite }).map(
+        (d) => `${d.id}: ${d.text}`,
+      ),
     ),
     facts: factsLine(
       root,
@@ -580,7 +588,9 @@ function boardEvent(ctx, event, id, data) {
 }
 
 function start(ctx, id) {
-  const { root, spec, model } = ctx;
+  const { root, spec, model, cite } = ctx;
+  const unknown = unknownCites({ spec, model, cite });
+  if (unknown.length) refuse(`--cite names no decision on the board: ${unknown.join(", ")}`);
   const existing = (() => {
     try {
       return ledgers.read(root, id);
@@ -642,6 +652,7 @@ function start(ctx, id) {
     mainAtStart: mainSnapshot(root),
     worktreesAtStart: worktrees(root).map((t) => t.path),
     owned: withNew(tree.path, ownedFiles(found.block)),
+    ...(cite.length && { cite }),
     rounds: [],
     gates: [],
     checks: {},
@@ -689,7 +700,14 @@ function owns(ctx, id) {
   const round = ledger.rounds.at(-1);
   const waiting = round && expects(ledger);
   ledgers.write(root, ledger);
-  if (waiting) brief(ctx, { ...ledger, rounds: ledger.rounds.slice(0, -1) }, round);
+  if (waiting) {
+    // The brief is rendered again from its template: a section the conductor appended to it (the fact a
+    // needs-context round asks for) goes back at the end.
+    const old = readFileSync(round.brief, "utf8");
+    brief(ctx, { ...ledger, rounds: ledger.rounds.slice(0, -1) }, round);
+    const kept = appendedAfter(old, readFileSync(round.brief, "utf8"));
+    if (kept) appendFileSync(round.brief, kept);
+  }
   return shown({ applied: true, ...(waiting && { rewrote: round.brief }) });
 }
 

@@ -5,7 +5,11 @@
 //   withNew         those paths, each marked `new` when the tree has no such file; a bare file name is
 //                   looked up among the tree's tracked files (one hit: that path, several: all, `ambiguous`)
 //   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
-//   citedDecisions  every decision of the board's decision kind the block cites by id, its row quoted
+//   citedDecisions  every decision of the board's decision kind the block cites by id, the rows that name
+//                   the task (decided after the contract was written) and those the owner asked for with
+//                   `--cite`, each row quoted
+//   appendedAfter   what a brief holds after its last template section (a section the conductor added),
+//                   so a rewrite of the brief can put it back
 //   relatedNotes    the lines elsewhere that mention the task (amendments), read verbatim with file:line
 //   notesSection    those notes as the brief's "Later notes" lines, capped
 //   recalledFacts   the memory facts ranked for the owned files, only when `memory.prime` is "all": this
@@ -203,23 +207,61 @@ export function notesSection(notes) {
 
 const literal = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Every decision the block cites, as `{ id, text }`: `id` as the board writes it (the kind's display
- *  `prefix` + its id, `D12`), `text` its table row quoted from the file (or its fields for a
- *  one-file-per-item kind). An id made of digits only is never matched in prose. */
-export function citedDecisions({ root, spec, model, block }) {
+const mentions = (text, id) =>
+  new RegExp(`(?<![A-Za-z0-9_-])${literal(id)}(?![A-Za-z0-9_])`).test(text);
+
+/** Every decision to quote, as `{ id, text }`: `id` as the board writes it (the kind's display `prefix` +
+ *  its id, `D12`), `text` its table row quoted from the file (or its fields for a one-file-per-item
+ *  kind). A decision is in when the block cites it by id, when its row names the task `task` (a decision
+ *  made after the contract was written), or when its id is in `cite` (any case). An id made of digits
+ *  only is never matched in prose. */
+export function citedDecisions({ root, spec, model, block, task, cite = [] }) {
   const name = decisionKind(spec);
   if (!name) return [];
   const kind = spec.kinds[name];
   const prefix = kind.id?.prefix ?? "";
   const text = String(block ?? "");
+  const asked = new Set(cite.map((c) => c.toLowerCase()));
+  const named = typeof task === "string" && /[A-Za-z]/.test(task);
   const out = [];
   for (const item of own(model?.kinds, name)?.items ?? []) {
     const id = `${prefix}${item.id}`;
-    if (!/[A-Za-z]/.test(id) || out.some((d) => d.id === id)) continue;
-    if (!new RegExp(`(?<![A-Za-z0-9_-])${literal(id)}(?![A-Za-z0-9_])`).test(text)) continue;
-    out.push({ id, text: quoteOf(root, spec, kind, item) });
+    if (out.some((d) => d.id === id)) continue;
+    const quote = () => quoteOf(root, spec, kind, item);
+    const prose = /[A-Za-z]/.test(id) && mentions(text, id);
+    if (prose || asked.has(id.toLowerCase())) out.push({ id, text: quote() });
+    else if (named) {
+      const row = quote();
+      if (mentions(row, task)) out.push({ id, text: row });
+    }
   }
   return out;
+}
+
+/** The decision ids in `cite` that name no decision on the board (as written, any case). */
+export function unknownCites({ spec, model, cite }) {
+  const name = decisionKind(spec);
+  const known = new Set(
+    (own(model?.kinds, name)?.items ?? []).map((i) =>
+      `${spec.kinds[name].id?.prefix ?? ""}${i.id}`.toLowerCase(),
+    ),
+  );
+  return cite.filter((c) => !known.has(c.toLowerCase()));
+}
+
+/** What `old` (a brief as it was on disk) holds after the last section of `fresh` (the same brief
+ *  rendered again): a section someone appended at the end. The last section's heading is looked for in
+ *  `old`, taking the place where the rendered section matches in full. Empty when there is nothing
+ *  after it, or the old brief does not match the template. */
+export function appendedAfter(old, fresh) {
+  const headings = [...fresh.matchAll(/^## .*$/gm)];
+  const last = headings.at(-1);
+  if (!last) return "";
+  const section = fresh.slice(last.index).trimEnd();
+  for (let at = old.indexOf(last[0]); at >= 0; at = old.indexOf(last[0], at + 1))
+    if (old.startsWith(section, at))
+      return old.slice(at + section.length).trim() ? old.slice(at + section.length) : "";
+  return "";
 }
 
 function quoteOf(root, spec, kind, item) {
