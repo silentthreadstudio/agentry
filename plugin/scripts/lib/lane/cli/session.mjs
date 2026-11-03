@@ -2,8 +2,8 @@
 //
 //   start   what the conductor needs once, in one object: the conductor prompt's path, the mode, the held
 //           and idle lanes, the derived status (nudges and pending drafts included), recall ranked against the
-//           work in flight, the owner's open questions and the lane ledgers. Printed as at most 40 lines, or
-//           `--json`.
+//           work in flight, the owner's open questions, the lane ledgers and how many merged today. Printed
+//           as at most 40 lines, or `--json`.
 //   close   what the ending walks through: the pending drafts, what `board fix` would write, the ledgers, what
 //           `lane sweep --apply` would clean, the disk, and the episodes nobody wrote. Always JSON.
 //
@@ -91,6 +91,13 @@ const heldOf = (runRoot, all) =>
       resume: nextStep(`lane exec resume ${l.id} --note "<the OK>"`),
     }));
 
+// The merged lanes whose merge record is from today, local time (field 60); one with no time is not.
+const mergedToday = (all) => {
+  const today = new Date().toDateString();
+  return all.filter((l) => l.state === "merged" && new Date(l.merge?.at).toDateString() === today)
+    .length;
+};
+
 // The building lanes nothing changed in for `IDLE_MINUTES` (field 53).
 const idleOfAll = (all) =>
   all.flatMap((l) => {
@@ -120,6 +127,7 @@ function start({ root, spec, model }) {
       ...open.filter((l) => l.state === "held"),
       ...open.filter((l) => l.state !== "held"),
     ].map(summary),
+    mergedToday: mergedToday(all),
     gateSlots: heldSlots(gateLockDir(runRoot)),
   };
 }
@@ -148,17 +156,19 @@ function renderStart(s, { name, root }) {
   const lines = [fit(`${name} · session start · mode ${mode}`, WIDTH)];
   const add = (text) => lines.push(fit(text, WIDTH));
   if (s.configError) add(`config: ${s.configError.replace(`${root}/`, "")}`);
-  // A list wraps onto up to MAX_LIST lines; what does not fit is counted, never silently cut.
-  const addList = (label, items) => {
+  // A list wraps onto up to MAX_LIST lines; what does not fit is counted, never silently cut. `tail` ends
+  // its last line, after the count too.
+  const addList = (label, items, tail = "") => {
     let line = label;
     let sep = "";
     let used = 1;
     for (const [i, item] of items.entries()) {
       // Keep room for what follows the item unless it is the final one: the ", +N more" tail on the last
       // line, else the comma a wrapped line ends with.
-      const room = WIDTH - (i === items.length - 1 ? 0 : used === MAX_LIST ? 12 : 1);
+      const room =
+        WIDTH - (i === items.length - 1 ? tail.length : used === MAX_LIST ? 12 + tail.length : 1);
       if ([...(line + sep + item)].length > room && line.trim() !== label.trim() && line.trim()) {
-        if (used === MAX_LIST) return add(`${line}, +${items.length - i} more`);
+        if (used === MAX_LIST) return add(`${line}, +${items.length - i} more${tail}`);
         add(`${line},`);
         used++;
         line = "  ";
@@ -167,7 +177,7 @@ function renderStart(s, { name, root }) {
       line += sep + item;
       sep = ", ";
     }
-    add(line);
+    add(line + tail);
   };
   add(
     s.prompt
@@ -220,11 +230,13 @@ function renderStart(s, { name, root }) {
   if (s.status.nudges.length > 5)
     add(`drift: +${s.status.nudges.length - 5} more (/agentry:board)`);
   if (s.status.drafts) add(`drafts: ${s.status.drafts} pending → /agentry:close`);
-  const lanes = s.ledgers.filter((l) => l.state !== "held");
-  if (lanes.length)
+  // The open lanes (the held ones are above), then how many merged today (field 60).
+  const lanes = s.ledgers.filter((l) => !["held", "merged", "closed"].includes(l.state));
+  if (lanes.length || s.mergedToday)
     addList(
       "lanes: ",
-      lanes.map((l) => `${l.id} ${l.state}`),
+      lanes.length ? lanes.map((l) => `${l.id} ${l.state}`) : ["none open"],
+      ` · ${s.mergedToday} merged today`,
     );
   if (s.gateSlots.length)
     addList(

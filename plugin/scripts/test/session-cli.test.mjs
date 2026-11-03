@@ -107,6 +107,7 @@ test("start --json carries prompt, mode, status, recall, questions and ledgers",
     "held",
     "idle",
     "ledgers",
+    "mergedToday",
     "mode",
     "prompt",
     "questions",
@@ -115,6 +116,32 @@ test("start --json carries prompt, mode, status, recall, questions and ledgers",
   ]);
   assert.equal(data.mode, null);
   assert.deepEqual(data.ledgers, [{ id: "T1", state: "building", next: "report" }]);
+  assert.equal(data.mergedToday, 0);
+});
+
+test("lanes: lists the open lanes only, then how many merged today; --json keeps every ledger", () => {
+  const root = fresh();
+  const merged = (id, at) => ledger(root, id, { state: "merged", next: null, merge: { at } });
+  ledger(root, "B1");
+  merged("M1", new Date().toISOString());
+  merged("M2", new Date(Date.now() - 2 * 86_400_000).toISOString());
+  merged("M3", undefined);
+  ledger(root, "C1", { state: "closed", next: null });
+  const lines = session(root, "start").stdout.split("\n");
+  assert.deepEqual(
+    lines.filter((l) => l.startsWith("lanes: ")),
+    ["lanes: B1 building · 1 merged today"],
+  );
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  assert.equal(data.mergedToday, 1, "a merge from another day, or with no time, is not today's");
+  assert.deepEqual(
+    data.ledgers.map((l) => l.id),
+    ["B1", "M1", "M2", "M3"],
+  );
+
+  const quiet = fresh();
+  ledger(quiet, "M1", { state: "merged", next: null, merge: { at: new Date().toISOString() } });
+  assert.match(session(quiet, "start").stdout, /^lanes: none open · 1 merged today$/m);
 });
 
 test("start ranks this repo's remembered facts against the work in flight", () => {
@@ -174,7 +201,7 @@ test("a long lanes list wraps and counts what it drops instead of cutting it mid
   assert.ok(lines.length <= 40 && lines.every((l) => [...l].length <= 80));
   const at = lines.findIndex((l) => l.startsWith("lanes: "));
   assert.ok(lines[at + 1].startsWith("  LANE-"), "the list continues on the next line");
-  assert.match(res.stdout, /, \+\d+ more/);
+  assert.match(res.stdout, /, \+\d+ more · 0 merged today$/m);
   assert.ok(lines.slice(at).join(" ").includes("LANE-01 building"));
 });
 
@@ -350,7 +377,7 @@ test("start prints each held lane after the prompt line and before now:, and lea
   assert.equal(lines[at + 4], `parked: P1 since ${hhmm(SINCE)}`);
   assert.match(lines[at + 5], /^now: /);
   const lanes = lines.find((l) => l.startsWith("lanes: "));
-  assert.equal(lanes, "lanes: B1 building");
+  assert.equal(lanes, "lanes: B1 building · 0 merged today");
 
   const data = JSON.parse(session(root, "start", "--json").stdout);
   assert.deepEqual(data.held[0], {
