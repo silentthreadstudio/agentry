@@ -9,6 +9,7 @@
 // Exit 0 = done or reported, 1 = `--apply` left a worktree it could not remove or a process running.
 //
 // run(argv, { root }) -> { exit, out }
+import { existsSync } from "node:fs";
 import { loadSpec } from "../../process/read.mjs";
 import { apply, keepReason, plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
@@ -27,22 +28,38 @@ export const help = {
 };
 export const noSpec = true;
 
+// The configured `cleanup.disposable`, only from a spec that loaded clean and holds a list of strings;
+// anything else is `[]` (the defaults still apply) and `note` says why, so a bad config never stops a sweep.
+function disposableOf({ spec, problems }, processPath) {
+  if (problems.length > 0) {
+    if (!existsSync(processPath)) return { globs: [] }; // no process file: nothing was configured
+    const [{ message, file }] = problems;
+    return { globs: [], note: `${message} (${file ?? processPath})` };
+  }
+  const value = spec?.cleanup?.disposable;
+  if (value === undefined) return { globs: [] };
+  if (Array.isArray(value) && value.every((glob) => typeof glob === "string"))
+    return { globs: value };
+  return { globs: [], note: `it is not a list of strings (${processPath})` };
+}
+
 export function run(argv, { root, processPath }) {
   const runRoot = mainRoot(root) ?? root;
-  const { spec } = loadSpec(processPath, { root });
-  const found = plan(runRoot, { disposable: spec?.cleanup?.disposable ?? [] });
+  const { globs, note } = disposableOf(loadSpec(processPath, { root }), processPath);
+  const found = plan(runRoot, { disposable: globs });
   const discardIgnored = argv.includes("--discard-ignored");
   const done = argv.includes("--apply") ? apply(runRoot, found, { discardIgnored }) : null;
   const exit = done?.kept.length || done?.survived.length ? 1 : 0;
   if (argv.includes("--json"))
     return { exit, out: JSON.stringify({ applied: Boolean(done), ...found, result: done }) };
-  return { exit, out: render(found, done, discardIgnored) };
+  return { exit, out: render(found, done, discardIgnored, note) };
 }
 
-function render(found, done, discardIgnored) {
+function render(found, done, discardIgnored, note) {
   const lines = [done ? "sweep (applied)" : "sweep (preview: nothing changed; add --apply to act)"];
   // Paths and command lines are shown whole: cutting one would hide what is about to be stopped.
   const row = (text) => lines.push(`  ${text}`);
+  if (note) row(`! cleanup.disposable ignored: ${note}`);
   for (const w of found.cleanable) {
     const kept = done?.kept.find((k) => k.id === w.id);
     const why = kept ? kept.reason : keepReason(w, discardIgnored);
@@ -50,7 +67,7 @@ function render(found, done, discardIgnored) {
     const thrown = w.disposable?.length ?? 0;
     const discard =
       !why && thrown
-        ? ` (${done ? "discarded" : "would discard"} ${thrown} disposable file(s))`
+        ? ` (${done ? "discarded" : "would discard"} ${thrown} disposable path(s))`
         : "";
     row(`${verb} worktree ${w.id}${why && verb !== "removed" ? `: ${why}` : ""}${discard}`);
   }

@@ -199,11 +199,61 @@ test("a merged worktree holding only node_modules and dist output is swept, and 
   mkdirSync(join(merged.path, "dist"));
   writeFileSync(join(merged.path, "dist", "out.js"), "x");
   const dry = sweep(root);
-  assert.match(dry.stdout, /would remove worktree T1 \(would discard 2 disposable file\(s\)\)/);
+  assert.match(dry.stdout, /would remove worktree T1 \(would discard 2 disposable path\(s\)\)/);
   const res = sweep(root, "--apply");
   assert.equal(res.status, 0, res.stdout);
-  assert.match(res.stdout, /removed worktree T1 \(discarded 2 disposable file\(s\)\)/);
+  assert.match(res.stdout, /removed worktree T1 \(discarded 2 disposable path\(s\)\)/);
   assert.ok(!existsSync(merged.path));
+});
+
+test("a node_modules folder of 300 files counts as one disposable path", () => {
+  const { root, merged } = fixture();
+  appendFileSync(join(root, ".git", "info", "exclude"), "node_modules/\n");
+  mkdirSync(join(merged.path, "node_modules", "pkg"), { recursive: true });
+  for (let i = 0; i < 300; i++)
+    writeFileSync(join(merged.path, "node_modules", "pkg", `f${i}.js`), "x");
+  const dry = sweep(root);
+  assert.match(dry.stdout, /would remove worktree T1 \(would discard 1 disposable path\(s\)\)/);
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 0, res.stdout);
+  assert.match(res.stdout, /removed worktree T1 \(discarded 1 disposable path\(s\)\)/);
+});
+
+// A bad cleanup.disposable (or a workflow file that is not JSON) never stops the sweep: the defaults still
+// apply and one line says what was ignored.
+const BAD_DISPOSABLE = ["5", '{"a":1}', "true", "[1,null]", '"x"', "null"];
+for (const value of [...BAD_DISPOSABLE, undefined]) {
+  test(`a workflow file with cleanup.disposable ${value ?? "that is not JSON"} is ignored by the sweep, not a crash`, () => {
+    const { root, merged } = fixture();
+    const file = join(root, ".agentry", "workflow.json");
+    writeFileSync(
+      file,
+      value === undefined ? "{ not json" : `{ "cleanup": { "disposable": ${value} } }`,
+    );
+    appendFileSync(join(root, ".git", "info", "exclude"), "node_modules/\n");
+    mkdirSync(join(merged.path, "node_modules"));
+    writeFileSync(join(merged.path, "node_modules", "x.js"), "x");
+    for (const args of [[], ["--apply"], ["--json"]]) {
+      const res = sweep(root, ...args);
+      assert.ok([0, 1].includes(res.status), `${args}: ${res.status}\n${res.stdout}${res.stderr}`);
+      assert.doesNotMatch(res.stderr, /TypeError|at .*\.mjs:\d+/);
+      if (!args.includes("--json"))
+        assert.match(res.stdout, /! cleanup\.disposable ignored: .*\(.*workflow\.json\)/);
+    }
+    assert.ok(!existsSync(merged.path), "the default node_modules is still discarded");
+  });
+}
+
+test("a good cleanup.disposable, or no process file at all, prints no ignored line", () => {
+  const { root } = fixture();
+  const res = sweep(root);
+  assert.doesNotMatch(res.stdout, /cleanup\.disposable ignored/);
+  rmSync(join(root, ".agentry", "process.json"));
+  rmSync(join(root, ".agentry", "workflow.json"), { force: true });
+  const bare = sweep(root);
+  assert.equal(bare.status, 0, bare.stdout + bare.stderr);
+  assert.doesNotMatch(bare.stdout, /cleanup\.disposable ignored/);
+  assert.doesNotMatch(bare.stderr, /TypeError/);
 });
 
 test("cleanup.disposable from the workflow file adds to the defaults in the sweep", () => {
@@ -222,7 +272,7 @@ test("cleanup.disposable from the workflow file adds to the defaults in the swee
   }
   const res = sweep(root, "--apply");
   assert.equal(res.status, 0, res.stdout);
-  assert.match(res.stdout, /discarded 2 disposable file\(s\)/);
+  assert.match(res.stdout, /discarded 2 disposable path\(s\)/);
   assert.ok(!existsSync(merged.path));
 });
 
