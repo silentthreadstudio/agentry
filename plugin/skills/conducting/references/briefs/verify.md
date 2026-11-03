@@ -12,8 +12,8 @@ asks. Change nothing else.
 ## Recheck
 
 You verified this branch before; your report is {{from}}. The builder has worked on it since (its report:
-{{builderReport}}). Re-check each of your findings on the new tip, then check that the change broke
-nothing next to it.
+{{builderReport}}). Re-check each of your findings on the new tip (only the notes the conductor sent back, when they
+are listed below), then check that the change broke nothing next to it.
 
 {{/recheck}}
 {{#picked}}

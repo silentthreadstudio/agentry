@@ -107,7 +107,7 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `/agentry:init` proposes the globs from `.gitignore`.
 - **`lane exec` briefs and gate lock** — a notes-fix brief keeps its "Notes to fix" after
   `owns --apply`, and the recheck brief names the notes the builder was sent back on. Notes rounds
-  stop at the three-verdict budget. A bare file name in a contract's owns is looked up among the
+  stop after three notes rounds. A bare file name in a contract's owns is looked up among the
   worktree's tracked files, and a bracketed aside no longer drops the next owned path. An empty or
   unreadable gate lock file is taken over, a lock refusal names the file, and the land's own gate
   on main waits behind the same lock.
