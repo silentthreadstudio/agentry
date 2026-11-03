@@ -18,7 +18,7 @@ export const help = {
   flags: {
     "--apply": "stop those processes and remove those worktrees (without it: only report)",
     "--discard-ignored": "with --apply: also remove a worktree that holds ignored files",
-    "--json": "print the plan (and what --apply did) as one JSON object",
+    "--json": "print { applied, …the plan, result } (result: what --apply did, else null)",
   },
   exits: { 0: "done or reported", 1: "--apply left a worktree or a process" },
   example: "lane sweep --apply",
@@ -31,7 +31,8 @@ export function run(argv, { root }) {
   const discardIgnored = argv.includes("--discard-ignored");
   const done = argv.includes("--apply") ? apply(runRoot, found, { discardIgnored }) : null;
   const exit = done?.kept.length || done?.survived.length ? 1 : 0;
-  if (argv.includes("--json")) return { exit, out: JSON.stringify({ ...found, applied: done }) };
+  if (argv.includes("--json"))
+    return { exit, out: JSON.stringify({ applied: Boolean(done), ...found, result: done }) };
   return { exit, out: render(found, done, discardIgnored) };
 }
 

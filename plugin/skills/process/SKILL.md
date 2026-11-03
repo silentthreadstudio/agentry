@@ -18,7 +18,8 @@ The process file defaults to `<git root>/.agentry/process.json`. Exit 0 = OK, 1 
 needs the owner, 2 = refused, usage or bad config (including a missing process file: point to
 `/agentry:init`); `lane.mjs` means the same. An error is one line, `✗ <what>: <why> → <next command>`.
 `board <sub> --help` (and `lane <sub> --help`) prints the usage, purpose, args, flags, exit codes and an
-example; `board --help` lists every subcommand. A command that writes previews by default: it runs the
+example; `board --help` lists every subcommand. Every subcommand takes `--json` (JSON on stdout only;
+input JSON goes in `--fields`). A command that writes previews by default: it runs the
 same edits and refusals, prints what it would write and writes nothing until `--apply` (`lane exec` and
 `lane merge` steps excepted: writing their lane is their job).
 
@@ -30,11 +31,11 @@ same edits and refusals, prints what it would write and writes nothing until `--
 | `explain` | per kind: found?, items, unmapped columns, unknown status words, unresolved refs; per rule: findings; the `lanes` block (what is wired, each ✓ or ✗ with its command) | nothing |
 | `contract <task id>` | the task's contract block (`--kind` for another kind); `ambiguous` when two real contracts match | nothing |
 | `next-id <kind>` | the next free id from the kind's `create.id` pattern | nothing |
-| `add <kind> --json '<fields>' [--apply]` | inserts the item at every `create` location; refuses a duplicate id | board files, with `--apply` |
+| `add <kind> --fields '<json>' [--apply]` | inserts the item at every `create` location; refuses a duplicate id | board files, with `--apply` |
 | `set <kind> <id> <field>=<value> [--apply]` | one mechanical field | board files, with `--apply` |
 | `fix [--accept <id>] [--apply]` | fills mechanical drift, reports the rest | board files, with `--apply` |
 
-Pass user text to `--json` as one single-quoted argument, with each `'` written as `'\''`. Show the
+Pass user text to `--fields` as one single-quoted argument, with each `'` written as `'\''`. Show the
 script's output as printed; don't re-derive what it already computed.
 
 ## The write rule

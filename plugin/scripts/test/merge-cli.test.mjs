@@ -211,6 +211,17 @@ function execLedger({ path, gated }) {
   });
 }
 
+test("--json prints the step table as rows and the next step, with any mode", () => {
+  build({ "src/a.txt": "a\n" });
+  const pf = merge(ID, "--branch", BRANCH, "--preflight", "--json");
+  assert.equal(pf.status, 0, out(pf));
+  const data = JSON.parse(pf.stdout);
+  assert.equal(data.id, ID);
+  assert.equal(data.branch, BRANCH);
+  assert.ok(data.rows.some((r) => r.step === "commits" && r.mark === "ok"));
+  assert.match(data.next, /^lane merge T1 --message/);
+});
+
 test("an adopted branch lands: picks, full gate, done + commit cell + handoff, one board commit", () => {
   build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
   const pre = head();

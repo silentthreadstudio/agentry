@@ -1,4 +1,4 @@
-// board add <kind> --json '{"id": "…", …}' [--apply] — write a new item at every `create` location of its
+// board add <kind> --fields '{"id": "…", …}' [--apply] — write a new item at every `create` location of its
 // kind: each row (own table, or the parent's file) and each block (plan F13 §2.2, §2.4). The id is passed
 // in (`next-id` proposes it) or, when `create.id` is a pattern and none is given, filled the same way and
 // printed; only `create.id: "ask"` requires it. A duplicate id is refused. All files are edited as one
@@ -17,16 +17,17 @@ import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, addedLines, appendBlock, applyAll, insertRow } from "../write.mjs";
 
 export const help = {
-  usage: 'add <kind> --json \'{"id": "…", …}\' [--apply]',
+  usage: 'add <kind> --fields \'{"id": "…", …}\' [--apply] [--json]',
   purpose: "Add one item at every create location of its kind, as one write or none.",
   args: { "<kind>": "a kind the process file knows, with a create rule" },
   flags: {
-    "--json <fields>":
+    "--fields <json>":
       "the item's fields as one JSON object; id optional when create.id is a pattern",
     "--apply": "write it (without: print each place and the lines it would get, write nothing)",
+    "--json": "print { kind, id, applied, notes, files: [{ file, added }] } as one JSON object",
   },
   exits: { 0: "written, or previewed", 2: "usage, or refused (nothing written)" },
-  example: 'board add task --json \'{"title": "Ship the CLI help", "sprint": "S2"}\' --apply',
+  example: 'board add task --fields \'{"title": "Ship the CLI help", "sprint": "S2"}\' --apply',
 };
 const fail = (why, next) => refuse("board add", why, next);
 const isoToday = () => new Date().toLocaleDateString("sv-SE");
@@ -42,9 +43,9 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   const kindName = argv.find((a) => !a.startsWith("--"));
   const write = argv.includes("--apply");
   let planned;
-  const json = argv[argv.indexOf("--json") + 1];
-  if (!kindName || argv.indexOf("--json") < 0 || json === undefined)
-    return usageError("board add", "needs <kind> --json '<fields>'");
+  const json = argv[argv.indexOf("--fields") + 1];
+  if (!kindName || argv.indexOf("--fields") < 0 || json === undefined)
+    return usageError("board add", "needs <kind> --fields '<fields>'");
   const kind = own(spec.kinds, kindName);
   if (!kind)
     return fail(`unknown kind "${kindName}" (kinds: ${Object.keys(spec.kinds).join(", ")})`);
@@ -54,13 +55,13 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   try {
     given = JSON.parse(json);
   } catch (error) {
-    return fail(`--json is not valid JSON (${error.message})`);
+    return fail(`--fields is not valid JSON (${error.message})`);
   }
   if (given === null || typeof given !== "object" || Array.isArray(given))
-    return fail("--json must be an object");
+    return fail("--fields must be an object");
   // An id the caller gives wins; else a pattern fills it as `next-id` does, and only "ask" requires it.
   let id = typeof given.id === "string" ? given.id.trim() : "";
-  if (!id && create.id === "ask") return fail('--json needs an "id" (see next-id)');
+  if (!id && create.id === "ask") return fail('--fields needs an "id" (see next-id)');
   if (!id) {
     const next = nextId(kindName, kind, model);
     if (next.error) return fail(next.error);
@@ -166,7 +167,7 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
         continue;
       }
       if (typeof under !== "string" || !under)
-        throw new WriteError('--json needs an "under" heading for the block');
+        throw new WriteError('--fields needs an "under" heading for the block');
       place(
         block.file,
         (text) => appendBlock(text, { under, block: lines }),
@@ -183,12 +184,18 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
     const home = contractHome(kind.contract, id);
     notes.push(`no contract for ${id}: add ${home}; board contract ${id} finds none yet`);
   }
+  const files = planned.map((p) => ({
+    file: relative(join(root, spec.root), p.file),
+    added: addedLines(p.before, p.after),
+  }));
+  if (argv.includes("--json"))
+    return {
+      exit: 0,
+      out: JSON.stringify({ kind: kindName, id, applied: write, notes, files }),
+    };
   if (write)
     return { exit: 0, out: [`added ${kindName} ${id}`, ...notes.map((n) => `  ${n}`)].join("\n") };
-  const lines = planned.flatMap((p) => [
-    `  ${relative(join(root, spec.root), p.file)}:`,
-    ...addedLines(p.before, p.after).map((l) => `    + ${l}`),
-  ]);
+  const lines = files.flatMap((f) => [`  ${f.file}:`, ...f.added.map((l) => `    + ${l}`)]);
   return {
     exit: 0,
     out: [`would add ${kindName} ${id}`, ...notes.map((n) => `  ${n}`), ...lines, PREVIEW].join(

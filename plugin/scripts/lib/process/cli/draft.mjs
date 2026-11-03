@@ -1,4 +1,4 @@
-// board draft add --json '{…}' | list | drop <n> | apply <n> — the owner's calls the conductor caught in
+// board draft add --fields '{…}' | list | drop <n> | apply <n> — the owner's calls the conductor caught in
 // conversation, held until the owner says OK (plan R1b §5). `add` keeps a draft in `.agentry/run`, `list` shows
 // the pending ones, `drop` forgets one, and `apply` writes it: a decision through `next-id` and `add` with the
 // process file's `drafts.decision.map` (`{answer}`, `{question}`, `{unpicked}`), a rule as a line under
@@ -24,16 +24,22 @@ import { run as addItem } from "./add.mjs";
 import { run as nextId } from "./next-id.mjs";
 
 export const help = {
-  usage: ["draft add --json '{…}'", "draft list", "draft drop <n>", "draft apply <n> [--apply]"],
+  usage: [
+    "draft add --fields '{…}' [--json]",
+    "draft list [--json]",
+    "draft drop <n> [--json]",
+    "draft apply <n> [--apply] [--json]",
+  ],
   purpose: "The owner's calls caught in conversation, held until the owner says OK.",
   args: {
     "add|list|drop|apply": "keep a draft, show the pending ones, forget one, write one",
     "<n>": "a pending draft's number (see draft list)",
   },
   flags: {
-    "--json <draft>":
+    "--fields <json>":
       'for add: {"kind":"decision"|"rule","answer":"…"} (question, unpicked, source)',
     "--apply": "for apply: write it (without: show what it would write, and write nothing)",
+    "--json": "print the result as JSON (list: the pending drafts)",
   },
   exits: { 0: "done, or previewed", 2: "usage, or refused (nothing written)" },
   example: "board draft apply 2 --apply",
@@ -69,7 +75,7 @@ function applyDecision(draft, { root, spec, model }, write) {
     if (e instanceof WriteError) return fail(`drafts.decision.map: ${e.message}`);
     throw e;
   }
-  const args = [def.kind, "--json", JSON.stringify({ ...fields, id: id.out })];
+  const args = [def.kind, "--fields", JSON.stringify({ ...fields, id: id.out })];
   return addItem(write ? [...args, "--apply"] : args, {
     root,
     spec,
@@ -122,8 +128,15 @@ function number(word) {
 
 export function run(argv, ctx) {
   const write = argv.includes("--apply");
-  const [action, ...rest] = argv.filter((a) => a !== "--apply");
+  const json = argv.includes("--json");
+  const words = argv.filter((a) => a !== "--apply" && a !== "--json");
+  const [action, ...rest] = words;
   const runRoot = mainRoot(ctx.root) ?? ctx.root;
+  // `text` as printed, or `data` as JSON with `--json`.
+  const done = (text, data) => ({
+    exit: 0,
+    out: json ? JSON.stringify(data) : withTorn(text, runRoot),
+  });
   if (write && action !== "apply") return usage("--apply goes with apply <n>");
   if (action === "list") {
     if (rest.length) return usage("list takes nothing more");
@@ -135,21 +148,24 @@ export function run(argv, ctx) {
           )
           .join("\n")
       : "no pending drafts";
-    return { exit: 0, out: withTorn(shown, runRoot) };
+    return done(shown, { pending: open, unreadable: drafts.unreadable(runRoot) });
   }
   if (action === "add") {
-    const at = rest.indexOf("--json");
-    if (at < 0 || rest.length !== 2) return usage("add needs --json '<draft>'");
+    const at = rest.indexOf("--fields");
+    if (at < 0 || rest.length !== 2) return usage("add needs --fields '<draft>'");
     let given;
     try {
       given = JSON.parse(rest[at + 1]);
     } catch (e) {
-      return fail(`--json is not valid JSON (${e.message})`);
+      return fail(`--fields is not valid JSON (${e.message})`);
     }
     const why = drafts.problem(given);
     if (why) return fail(why);
     const d = drafts.add(runRoot, given);
-    return { exit: 0, out: `drafted ${d.n}: ${d.kind}, ${fit(oneLine(d.answer), 50)}` };
+    return {
+      exit: 0,
+      out: json ? JSON.stringify(d) : `drafted ${d.n}: ${d.kind}, ${fit(oneLine(d.answer), 50)}`,
+    };
   }
   if (action !== "drop" && action !== "apply")
     return usage("needs add, list, drop <n> or apply <n>");
@@ -159,20 +175,19 @@ export function run(argv, ctx) {
   if (!draft) return fail(`no pending draft ${n}`, "board draft list");
   if (action === "drop") {
     drafts.mark(runRoot, n, "dropped");
-    return { exit: 0, out: withTorn(`dropped draft ${n}`, runRoot) };
+    return done(`dropped draft ${n}`, { n, state: "dropped" });
   }
   const tree = linkedTree(ctx.root, runRoot);
   if (tree)
     return fail(
       `draft apply edits the main checkout's board, and ${tree} is a worktree: run it from ${runRoot}`,
     );
-  const done =
+  const wrote =
     draft.kind === "decision" ? applyDecision(draft, ctx, write) : applyRule(draft, ctx, write);
-  if (done.exit !== 0) return done;
-  if (!write) {
-    const body = done.out.split("\n").filter((l) => l !== PREVIEW);
-    return { exit: 0, out: withTorn([`draft ${n}:`, ...body, PREVIEW].join("\n"), runRoot) };
-  }
+  if (wrote.exit !== 0) return wrote;
+  const body = wrote.out.split("\n").filter((l) => l !== PREVIEW);
+  if (!write)
+    return done([`draft ${n}:`, ...body, PREVIEW].join("\n"), { n, applied: false, body });
   drafts.mark(runRoot, n, "applied");
-  return { exit: 0, out: withTorn(`applied draft ${n}: ${done.out.split("\n")[0]}`, runRoot) };
+  return done(`applied draft ${n}: ${body[0]}`, { n, applied: true, body });
 }

@@ -79,7 +79,7 @@ test("a built-in name (constructor, toString) is no kind, field or item to the s
       ["set", "task", "W1", "status=hasOwnProperty"],
       /^✗ board set: "hasOwnProperty" is not a task status/,
     ],
-    [["add", "toString", "--json", '{"id": "Z1"}'], /^✗ board add: unknown kind "toString"/],
+    [["add", "toString", "--fields", '{"id": "Z1"}'], /^✗ board add: unknown kind "toString"/],
   ];
   for (const [args, expected] of cases) {
     const out = run("table-board", ...args);
@@ -349,6 +349,8 @@ test("next-id: the next number of the pattern; exit 2 when ids are asked", () =>
   const next = run("table-board", "next-id", "question");
   assert.deepEqual([next.status, next.stdout], [0, "Q-03\n"]);
   assert.equal(run("table-board", "next-id", "task").status, 2);
+  const json = run("table-board", "next-id", "question", "--json");
+  assert.deepEqual(JSON.parse(json.stdout), { kind: "question", id: "Q-03" });
 });
 
 test("contract: the block as one JSON line", () => {
@@ -369,7 +371,7 @@ test("the router hands a subcommand its argv untouched (add takes --json <fields
   try {
     cpSync(join(FIXTURES, "table-board"), root, { recursive: true });
     const fields = JSON.stringify({ id: "Q-03", question: "Ring the bell?", blocks: "W5" });
-    const argv = [BOARD, "add", "question", "--json", fields, "--apply", "--root", root];
+    const argv = [BOARD, "add", "question", "--fields", fields, "--apply", "--root", root];
     const out = spawnSync("node", [...argv, "--process", join(root, "process.json")], {
       encoding: "utf8",
     });

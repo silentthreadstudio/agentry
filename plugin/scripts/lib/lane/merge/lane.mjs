@@ -32,6 +32,10 @@ function render(lane, rows, next) {
 /** The call's result; a next step it names is kept in the ledger too (`next`), for a cold resume. */
 export function done(exit, lane, rows, next) {
   if (lane.ledger && next && lane.ledger.next !== next) save(lane, { next });
+  if (lane.opts?.["--json"]) {
+    const { branch, mainBranch: main } = lane.ledger ?? {};
+    return { exit, out: JSON.stringify({ id: lane.id, branch, main, rows, next: next ?? null }) };
+  }
   return { exit, out: render(lane, rows, next) };
 }
 

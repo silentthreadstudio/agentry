@@ -10,14 +10,17 @@ import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, apply, setCell, setKey } from "../write.mjs";
 
 export const help = {
-  usage: "set <kind> <id> <field>=<value> [--apply]",
+  usage: "set <kind> <id> <field>=<value> [--apply] [--json]",
   purpose: "Change one field of one item: its table cell, or its frontmatter key.",
   args: {
     "<kind>": "a kind the process file knows",
     "<id>": "the item's id",
     "<field>=<value>": "a field of that kind (not its id) and the text to write",
   },
-  flags: { "--apply": "write it (without: say what it would write, and write nothing)" },
+  flags: {
+    "--apply": "write it (without: say what it would write, and write nothing)",
+    "--json": "print { kind, id, field, value, file, applied } as one JSON object",
+  },
   exits: { 0: "written, or previewed", 2: "usage, or refused (nothing written)" },
   example: "board set task T-4 status=blocked --apply",
 };
@@ -68,6 +71,10 @@ export function run(argv, { root, spec, model }) {
   } catch (error) {
     if (error instanceof WriteError) return fail(`${file}: ${error.message}`);
     throw error;
+  }
+  if (argv.includes("--json")) {
+    const data = { kind: kindName, id, field: fieldName, value, file, applied: write };
+    return { exit: 0, out: JSON.stringify(data) };
   }
   const line = `${kindName} ${id} ${fieldName}=${value} (${file})`;
   return { exit: 0, out: write ? `set ${line}` : `would set ${line}\n${PREVIEW}` };

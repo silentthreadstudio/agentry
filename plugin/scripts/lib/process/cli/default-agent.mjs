@@ -21,11 +21,12 @@ import {
 
 export const noSpec = true;
 export const help = {
-  usage: "default-agent [--apply] [--verify [static|live]]",
+  usage: "default-agent [--apply] [--verify [static|live]] [--json]",
   purpose: "The project's default main-session agent in .claude/settings.json, as one JSON object.",
   args: {},
   flags: {
     "--apply": "set agent to agentry:conductor (replacing a different value)",
+    "--json": "accepted for symmetry: the output is always JSON",
     "--verify [static|live]":
       "check it resolves: static reads files, live spends one claude -p request",
   },

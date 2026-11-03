@@ -28,6 +28,7 @@ for (const [cli, dir] of Object.entries(CLIS))
       assert.equal(typeof help.args, "object");
       for (const key of Object.keys(help.flags)) assert.match(key, /^--[a-z-]+( .+)?$/);
       assert.ok(Object.hasOwn(help.exits, 0), "exit 0 is described");
+      assert.equal(flagsOf(help)["--json"], false, "takes --json, an output switch");
       for (const code of Object.keys(help.exits)) assert.ok(["0", "1", "2"].includes(code));
       assert.match(help.example, new RegExp(`^${cli} ${sub}\\b`));
       // Every flag the usage line names is one the parser takes.

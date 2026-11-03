@@ -18,7 +18,7 @@ function fresh(opts) {
   cleanups.push(repo.cleanup);
   return repo;
 }
-const add = (root, draft) => board(root, "draft", "add", "--json", JSON.stringify(draft));
+const add = (root, draft) => board(root, "draft", "add", "--fields", JSON.stringify(draft));
 const DECISION = { kind: "decision", answer: "Keep the board in markdown", question: "Where?" };
 
 test("problem: a draft needs a known kind and some answer text, and nothing unknown", () => {
@@ -90,7 +90,7 @@ test("add, list and drop keep drafts in the run state and never write the repo",
 test("a bad draft is refused with exit 2 and stores nothing", () => {
   const { root } = fresh();
   assert.equal(add(root, { kind: "idea", answer: "x" }).status, 2);
-  assert.equal(board(root, "draft", "add", "--json", "{nope").status, 2);
+  assert.equal(board(root, "draft", "add", "--fields", "{nope").status, 2);
   assert.equal(board(root, "draft", "add").status, 2);
   assert.match(board(root, "draft", "list").stdout, /no pending drafts/);
 });
@@ -106,6 +106,11 @@ test("apply without --apply shows what it would write, writes nothing and keeps 
   assert.match(out.stdout, /\npreview: nothing written; add --apply to write it\n$/);
   assert.equal(read(root, "plan/DECISIONS.md"), before);
   assert.match(board(root, "draft", "list").stdout, /decision/, "still pending");
+  const listed = JSON.parse(board(root, "draft", "list", "--json").stdout);
+  assert.deepEqual(
+    listed.pending.map((d) => [d.n, d.kind]),
+    [[1, "decision"]],
+  );
   assert.equal(board(root, "draft", "drop", "1", "--apply").status, 2, "--apply is apply's only");
 });
 

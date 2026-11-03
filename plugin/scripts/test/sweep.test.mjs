@@ -85,11 +85,19 @@ test("a dry run reports merged worktrees, unknown ones and strays, and changes n
   assert.ok(alive(stray.pid));
 });
 
+test("--json says whether it applied: false on the preview, true with --apply", () => {
+  const { root } = fixture();
+  const dry = JSON.parse(sweep(root, "--json").stdout);
+  assert.equal(dry.applied, false);
+  assert.equal(dry.result, null);
+  assert.equal(JSON.parse(sweep(root, "--apply", "--json").stdout).applied, true);
+});
+
 test("--apply removes only the merged task's worktree, and leaves live and unknown ones", () => {
   const { root, merged, live, stranger } = fixture();
   const res = sweep(root, "--apply", "--json");
   assert.equal(res.status, 0, res.stderr);
-  assert.equal(JSON.parse(res.stdout).applied.removed[0].id, "T1");
+  assert.equal(JSON.parse(res.stdout).result.removed[0].id, "T1");
   assert.ok(!existsSync(merged.path));
   assert.equal(git(root, "branch", "--list", "agentry/T1"), "");
   assert.ok(existsSync(live.path));
@@ -162,7 +170,7 @@ test("--apply takes the stray's whole process group down, children included", as
   assert.ok(kid > 0, "the shell should have a sleeping child");
   const res = sweep(root, "--apply", "--json");
   assert.equal(res.status, 0, res.stdout);
-  assert.deepEqual(JSON.parse(res.stdout).applied.survived, []);
+  assert.deepEqual(JSON.parse(res.stdout).result.survived, []);
   assert.ok(await waitDead(kid), "the child must not be orphaned and left running");
   assert.ok(await waitDead(leader.pid));
 });
@@ -236,7 +244,7 @@ test("a stray that does not lead its group is stopped with its whole descendant 
   assert.ok(kid > 0, "the shell should have a sleeping child");
   const res = sweep(root, "--apply", "--json");
   assert.equal(res.status, 0, res.stdout);
-  assert.deepEqual(JSON.parse(res.stdout).applied.survived, []);
+  assert.deepEqual(JSON.parse(res.stdout).result.survived, []);
   assert.ok(await waitDead(stray.pid));
   assert.ok(await waitDead(kid), "the child must not be orphaned and left running");
 });
@@ -534,7 +542,7 @@ test("a stray that leads its group is stopped with the group, and the dry run li
   assert.match(dry, new RegExp(`would stop process ${leader.pid}`));
   assert.match(dry, new RegExp(`with process ${orphan}`));
   const res = sweep(root, "--apply", "--json");
-  assert.ok(JSON.parse(res.stdout).applied.signalled.includes(orphan), "the result names it");
+  assert.ok(JSON.parse(res.stdout).result.signalled.includes(orphan), "the result names it");
   assert.ok(await waitDead(orphan));
 });
 

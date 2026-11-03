@@ -34,11 +34,14 @@ import {
 } from "../instructions.mjs";
 
 export const help = {
-  usage: "instructions [--apply]",
+  usage: "instructions [--apply] [--json]",
   purpose:
     "The Agentry block in AGENTS.md and the @AGENTS.md import in CLAUDE.md: what would change.",
   args: {},
-  flags: { "--apply": "write both files, or neither" },
+  flags: {
+    "--apply": "write both files, or neither",
+    "--json": "print { agents, claude, files, applied, lines } as one JSON object",
+  },
   exits: {
     0: "printed (and written with --apply)",
     2: "markers that don't make one block, a file out of the repository, or a failed write",
@@ -142,6 +145,13 @@ export function run(argv, { root, spec }) {
       return refuse("board instructions", `cannot write (${e.code ?? e.message}); nothing written`);
     }
     out.push(`wrote ${writes.map(([name]) => name).join(", ")}`);
+  }
+  if (argv.includes("--json")) {
+    const files = writes.map(([name]) => name);
+    const claudeAt = { file: claudeName, action: imp.action };
+    const applied = write && files.length > 0;
+    const data = { agents: up.action, claude: claudeAt, files, applied, lines: out };
+    return { exit: 0, out: JSON.stringify(data) };
   }
   return { exit: 0, out: out.join("\n") };
 }

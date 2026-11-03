@@ -8,10 +8,10 @@ import { nextId } from "../ids.mjs";
 import { own } from "../spec.mjs";
 
 export const help = {
-  usage: "next-id <kind>",
+  usage: "next-id <kind> [--json]",
   purpose: "The next free id of a kind, from its create.id pattern. Writes nothing.",
   args: { "<kind>": "a kind the process file knows (task, sprint, decision…)" },
-  flags: {},
+  flags: { "--json": "print { kind, id } as one JSON object" },
   exits: { 0: "printed", 2: "usage, or the kind's ids are chosen by hand" },
   example: "board next-id task",
 };
@@ -25,5 +25,6 @@ export function run(argv, { spec, model }) {
       `${name ? `unknown kind "${name}"` : "needs a kind"} (kinds: ${Object.keys(spec.kinds).join(", ")})`,
     );
   const { id, error } = nextId(name, kind, model);
-  return error ? refuse("board next-id", error) : { exit: 0, out: id };
+  if (error) return refuse("board next-id", error);
+  return { exit: 0, out: argv.includes("--json") ? JSON.stringify({ kind: name, id }) : id };
 }

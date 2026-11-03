@@ -44,7 +44,7 @@ import { mainRoot } from "../worktree.mjs";
 
 export const help = {
   usage: [
-    "merge <id> [--branch <b>] --preflight",
+    "merge <id> [--branch <b>] --preflight [--json]",
     "merge <id> --check <skill>=pass|fail [--note <t>]",
     "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
     "merge <id> --push [--approved]",
@@ -65,6 +65,7 @@ export const help = {
     "--approved": "with --push: the owner said yes (merge.push ask)",
     "--cleanup": "remove the task's worktree and branch",
     "--discard-ignored": "with --cleanup: also when the worktree holds ignored files",
+    "--json": "with any mode: print { id, branch, main, rows, next } as one JSON object",
   },
   exits: { 0: "done, next printed", 1: "a red step stopped it", 2: "usage or refusal" },
   example: "lane merge T-4 --preflight",
@@ -101,7 +102,9 @@ function parse(argv) {
   const modes = Object.keys(MODES).filter((m) => Object.hasOwn(opts, m));
   if (modes.length !== 1) return { error: `give exactly one of ${Object.keys(MODES).join(", ")}` };
   const [mode] = modes;
-  const stray = Object.keys(opts).find((k) => k !== mode && !MODES[mode].includes(k));
+  const stray = Object.keys(opts).find(
+    (k) => k !== mode && k !== "--json" && !MODES[mode].includes(k),
+  );
   if (stray) return { error: `${stray} does not go with ${mode}` };
   return { id: words[0], mode, opts };
 }

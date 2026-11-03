@@ -29,8 +29,8 @@ Run `board draft add` and say one line ("drafted 3: decision, keep the board in 
 Do not draft a plain yes, a clarification or a preference for this one task.
 
 ```sh
-board draft add --json '{"kind":"decision","answer":"Keep the board in markdown","question":"Where does the board live?","unpicked":["a database"],"source":"session"}'
-board draft add --json '{"kind":"rule","answer":"Recall before any change outside a command."}'
+board draft add --fields '{"kind":"decision","answer":"Keep the board in markdown","question":"Where does the board live?","unpicked":["a database"],"source":"session"}'
+board draft add --fields '{"kind":"rule","answer":"Recall before any change outside a command."}'
 board draft list
 board draft drop 3
 board draft apply 3            # shows what it would write; writes nothing

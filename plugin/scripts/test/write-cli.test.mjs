@@ -40,7 +40,7 @@ function call(cli, root, argv, extra = {}) {
 }
 const text = (root, rel) => readFileSync(join(root, rel), "utf8");
 const addTask = (root, fields, kind = "task") =>
-  call(add, root, [kind, "--json", JSON.stringify(fields), "--apply"]);
+  call(add, root, [kind, "--fields", JSON.stringify(fields), "--apply"]);
 const findings = (root) => {
   const { spec } = loadSpec(join(root, "process.json"));
   const model = readProcess({ root, spec });
@@ -56,7 +56,7 @@ test("without --apply, add and set print what they would write and change nothin
   const before = ["board/BOARD.md", "board/TASKS.md", "board/sprints/A1_one.md"].map((f) =>
     text(root, f),
   );
-  const added = call(add, root, ["task", "--json", '{"id":"W4","sprint":"A1","note":"Fourth"}']);
+  const added = call(add, root, ["task", "--fields", '{"id":"W4","sprint":"A1","note":"Fourth"}']);
   assert.equal(added.exit, 0, added.out);
   assert.match(added.out, /^would add task W4\n/);
   assert.match(added.out, /\n {2}BOARD\.md:\n {4}\+ \| W4 \| A1 \| todo \|/);
@@ -69,7 +69,7 @@ test("without --apply, add and set print what they would write and change nothin
   );
   assert.deepEqual(now, before);
   // A preview refuses what the write would refuse.
-  assert.equal(call(add, root, ["task", "--json", '{"id":"W1","sprint":"A1"}']).exit, 2);
+  assert.equal(call(add, root, ["task", "--fields", '{"id":"W1","sprint":"A1"}']).exit, 2);
 });
 
 test("add writes the row after the sprint's last row, the sprint file row and the templated block", () => {
@@ -147,7 +147,7 @@ test("add refuses when any location cannot be written, leaving every file as it 
 test("add refuses bad input: no id, bad JSON, unknown kind or parent, unknown placeholder", () => {
   const root = copy("write");
   assert.match(addTask(root, { sprint: "A1" }).out, /needs an "id"/);
-  assert.match(call(add, root, ["task", "--json", "{nope"]).out, /not valid JSON/);
+  assert.match(call(add, root, ["task", "--fields", "{nope"]).out, /not valid JSON/);
   assert.match(call(add, root, ["task"]).out, /→ board add --help/);
   assert.match(addTask(root, { id: "W4" }, "story").out, /unknown kind "story"/);
   assert.match(addTask(root, { id: "W4", sprint: "Z9" }).out, /sprint "Z9" is not on the board/);
@@ -156,7 +156,7 @@ test("add refuses bad input: no id, bad JSON, unknown kind or parent, unknown pl
   spec.kinds.task.create.rows[0].cells.Note = "{whatever}";
   const model = readProcess({ root, spec });
   assert.match(
-    add(["task", "--json", '{"id":"W4","sprint":"A1"}'], { root, spec, model }).out,
+    add(["task", "--fields", '{"id":"W4","sprint":"A1"}'], { root, spec, model }).out,
     /unknown placeholder \{whatever\}/,
   );
 });
@@ -195,7 +195,7 @@ test("add reads a field named like a built-in from the given JSON only", () => {
     .replaceAll("after-last:sprint", "after-last:toString");
   const spec = JSON.parse(renamed);
   const model = readProcess({ root, spec });
-  const result = add(["task", "--json", '{"id":"W4","note":"x"}'], { root, spec, model });
+  const result = add(["task", "--fields", '{"id":"W4","note":"x"}'], { root, spec, model });
   assert.equal(result.exit, 2);
   assert.match(result.out, /^✗ board add: toString "" is not on the board$/);
 });
@@ -226,7 +226,7 @@ test("add on table-board, then check: findings are unchanged", () => {
   assert.deepEqual(findings(root), baseline);
   const q = call(add, root, [
     "question",
-    "--json",
+    "--fields",
     JSON.stringify({ id: "Q-03", question: "Open the door?", blocks: ["W6"] }),
     "--apply",
   ]);

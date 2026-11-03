@@ -53,7 +53,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = join(HERE, "..", "..", "..", "lane.mjs");
 const STEPS = ["start", "report", "verdict", "gate", "close", "show"];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints JSON.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -68,6 +68,7 @@ export const help = {
     "--agent <agent id>":
       "report and verdict: the agent that answered, so a later round resumes it",
     "--episode <episode id>": "close: the id episode_write returned",
+    "--json": "accepted for symmetry: every step prints one JSON object",
   },
   exits: { 0: "next printed", 1: "the lane stopped, or the gate is red", 2: "usage or refusal" },
   example: "lane exec start T-4",
@@ -90,6 +91,7 @@ function parse(argv) {
   let value = null;
   let flag = null;
   for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--json") continue; // every step prints JSON already
     if (!Object.hasOwn(flags, argv[i])) {
       words.push(argv[i]);
       continue;

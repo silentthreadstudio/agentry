@@ -8,6 +8,6 @@ This repo runs its work through Agentry's commands. Without Agentry installed, i
 - A question about the repo, a library or a design goes through `/agentry:ask <question>`.
 - Before any change made outside these commands, recall first: `memory_recall` with the task as the query.
 - When the owner rejects or changes a proposal, or states a rule ("from now on…"), propose a draft in one line
-  (`/agentry:board draft add`, then `--json '{"kind":"decision","answer":"<the call>"}'`; `"kind":"rule"` for
+  (`/agentry:board draft add`, then `--fields '{"kind":"decision","answer":"<the call>"}'`; `"kind":"rule"` for
   a standing rule). Drafts are confirmed at `/agentry:close`; never write one unconfirmed.
 - The conductor prompt is `{prompt}`: read it at the start of every session and follow it.
