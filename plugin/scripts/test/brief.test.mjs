@@ -154,23 +154,69 @@ test("ownedFiles expands a brace glob into each path, in order", () => {
   assert.deepEqual(ownedFiles("**Owns:** `{ a, b }`, `fn({x})`"), []);
 });
 
+test("ownedFiles reads a code span that wraps across one line break, never across a blank line", () => {
+  // The shape of a real owns paragraph: a brace span broken over two lines, more spans after it.
+  const block = [
+    "- **Owns:** `lib/a.json` (drop `x.y`), `docs/{one,two,three,",
+    "  four}.md`, every file that calls it: `commands/{go,",
+    "  spec}.md`, `agents/{p,q}.md`; `lib/b.mjs`.",
+    "- **Exposes:** `z.mjs`",
+  ].join("\n");
+  assert.deepEqual(ownedFiles(block), [
+    "lib/a.json",
+    "docs/one.md",
+    "docs/two.md",
+    "docs/three.md",
+    "docs/four.md",
+    "commands/go.md",
+    "commands/spec.md",
+    "agents/p.md",
+    "agents/q.md",
+    "lib/b.mjs",
+  ]);
+  assert.ok(!ownedFiles("**Owns:** `a/b.md`, `c/d\n\ne.md`, `f.md`").includes("c/de.md"));
+});
+
+test("ownedFiles ends the owns part at an Interface label, and neither negates", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `a.ts`. **Interface:** neither lane writes `b.md`"), [
+    "a.ts",
+  ]);
+  assert.deepEqual(ownedFiles("**Owns:** neither `a.ts`, `c.ts`"), []);
+});
+
+test("ownedFiles caps a brace expansion at 64 paths", () => {
+  assert.equal(ownedFiles("**Owns:** `{a,b,c,d}/{a,b,c,d}/{a,b,c,d}/{a,b,c,d}.md`").length, 64);
+});
+
 test("ownedFiles: a.b.c-shaped symbols are paths only when a tracked file matches; extensionless known files are paths", () => {
   const dir = temp();
   git(dir, "init", "-q");
   commitFile(dir, "docs/notes.draft.md", "");
   commitFile(dir, "bin/runner", "");
   const block =
-    "**Owns:** `config.items.go`, `a.b.c`, `notes.draft.md`, `new.test.mjs`, `Makefile`, `runner`, `LICENSE`, `word`, `index.d.ts`";
+    "**Owns:** `config.items.go`, `a.b.c`, `notes.draft.md`, `new.test.mjs`, `Makefile`, `runner`, `LICENSE`, `word`, `index.d.ts`, `.eslintrc.json`";
   assert.deepEqual(ownedFiles(block, dir), [
     "notes.draft.md",
     "new.test.mjs",
     "Makefile",
-    "runner",
     "LICENSE",
     "index.d.ts",
+    ".eslintrc.json",
   ]);
   // Without a tree nothing can match: only the shapes that need no tree are paths.
-  assert.deepEqual(ownedFiles(block), ["new.test.mjs", "Makefile", "LICENSE", "index.d.ts"]);
+  assert.deepEqual(ownedFiles(block), [
+    "new.test.mjs",
+    "Makefile",
+    "LICENSE",
+    "index.d.ts",
+    ".eslintrc.json",
+  ]);
+  // A bare word is not a tracked extensionless file (`runner` in prose); a tracked dotfile is a path.
+  commitFile(dir, "pkg/.srchash", "");
+  assert.deepEqual(ownedFiles("**Owns:** `runner`, `.srchash`, `bin/runner`", dir), [
+    ".srchash",
+    "bin/runner",
+  ]);
 });
 
 test("withNew marks a plain file the tree lacks, never an existing file, a glob or a folder", () => {

@@ -52,14 +52,18 @@ const TEMPLATE_OF = {
 
 // Where a contract's own-list ends: the next labelled part of the contract.
 const OWNS = /\bowns?\b\s*[:*]*/i;
-const NEXT_PART = /\b(exposes|excludes|deps|accept(?:ance)?|out of scope|goal|rules)\b\s*[:*]/i;
-const TICKED = /`([^`\n]+)`/g;
+const NEXT_PART =
+  /\b(exposes|interface|excludes|deps|accept(?:ance)?|out of scope|goal|rules)\b\s*[:*]/i;
+// A code span may cross one line break (never a blank line): the break and its indentation are dropped.
+const TICKED = /`([^`\n]+(?:[ \t]*\n[ \t]*[^`\s][^`\n]*)?)`/g;
+const MAX_BRACED = 64;
 
 // A code span is an owned path when it is made of path characters and either ends in a known file
 // extension or names a folder or glob (has a `/`) whose last part is not a bare number (`KEY_1/2` is a
 // string key). `Type.method()` and `a.b.c` are symbols: no known extension, or (`a.b.c`) a bare name with
-// more dots than an extension and no tracked file of that name. A bare name without a dot is a path only
-// when it is a well-known extensionless file or a tracked file has that name.
+// more dots than an extension and no tracked file of that name (a leading dot is not one). A bare name
+// without a dot is a path only when it is a well-known extensionless file; a bare dotfile (`.srchash`),
+// only when a tracked file has that name.
 const PATH_CHARS = /^[\w@.~*+-]+(\/[\w@.~*+-]+)*\/?$/;
 const EXTENSIONS = new Set(
   (
@@ -75,7 +79,7 @@ const COMPOUND = new Set(["test", "spec", "d", "min", "config", "stories"]);
 const LOCATION = /(?::\d+(?:[-–—]\d+)?|#L\d+(?:-L?\d+)?)+$/;
 // Words before a span that say its file is NOT owned ("no line in", "but not", "never", …).
 const NEGATION =
-  /\b(no|not|never|none|nothing|without|except|excluding|exclude|forbidden|don'?t|doesn'?t|out of scope)\b/i;
+  /\b(no|not|never|neither|none|nothing|without|except|excluding|exclude|forbidden|don'?t|doesn'?t|out of scope)\b/i;
 // What may sit between two spans of one list: a comma, "and", "or".
 const LIST_GAP = /^\s*(and|or|&)?\s*$/i;
 
@@ -89,8 +93,9 @@ function pathOf(span, tracked) {
   if (path.includes("/"))
     return /^\d+$/.test(path.replace(/\/$/, "").split("/").at(-1)) ? null : path;
   const dot = path.lastIndexOf(".");
-  if (dot <= 0) return PLAIN_NAMES.has(path) || hasFile(tracked, path) ? path : null;
-  const parts = path.split(".");
+  if (dot < 0) return PLAIN_NAMES.has(path) ? path : null;
+  if (dot === 0 && !path.slice(1).includes(".")) return hasFile(tracked, path) ? path : null;
+  const parts = path.replace(/^\./, "").split(".");
   if (!EXTENSIONS.has(parts.at(-1).toLowerCase())) return null;
   return parts.length === 2 || COMPOUND.has(parts.at(-2).toLowerCase()) || hasFile(tracked, path)
     ? path
@@ -107,7 +112,8 @@ function braced(span) {
     .split(",")
     .flatMap((alt) =>
       braced(span.slice(0, group.index) + alt + span.slice(group.index + whole.length)),
-    );
+    )
+    .slice(0, MAX_BRACED);
 }
 
 /** The paths the block's "owns" part names in backticks, de-duplicated, in order: only spans shaped like
@@ -131,6 +137,7 @@ export function ownedFiles(block, dir) {
   let from = 0;
   let negated = false;
   for (const m of part.matchAll(TICKED)) {
+    const span = m[1].replace(/\s*\n\s*/g, "");
     const between = part.slice(from, m.index);
     // The words between the previous span and this one, in this clause only, a closed aside
     // ("(no new class)") left out.
@@ -144,7 +151,7 @@ export function ownedFiles(block, dir) {
       pieces.length > 1 && clause === between && !clause.includes(")") && LIST_GAP.test(last);
     negated = joined ? negated : NEGATION.test(last);
     if (negated) continue;
-    for (const one of braced(m[1])) {
+    for (const one of braced(span)) {
       const path = pathOf(one, tracked);
       if (path && !out.includes(path)) out.push(path);
     }
