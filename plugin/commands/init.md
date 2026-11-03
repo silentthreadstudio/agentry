@@ -27,6 +27,7 @@ Then wire the lanes, in order, following `learn.md` § Wiring the lanes. A step 
 8. **Disposable files.** Propose `cleanup.disposable` globs from the `.gitignore` lines that are build output or caches (never `.env*`, local config, logs, screenshots; a folder glob also discards an ignored `.env` inside it, so propose a folder only when nothing local lives there); write only the ones the owner confirms.
 9. **Permission rule.** If the owner wants fewer prompts, suggest `Bash(agentry:*)` for their settings, never a rule bound to a path; suggest it only, never write settings.
 10. **Lifecycle writes.** The one question about harness writes. Only when the workflow file has no `lifecycle` (the merge's board row and the lifecycle's skips print `lifecycle off`): offer once to write the task's status, the verifier's verdict and the landed commit onto the board as work moves, saying what each key writes; draft the block from the task kind's own words and fields (`format.md` § lifecycle and drafts), and write it on the owner's OK. A no is final; a `lifecycle` already set is shown, not asked.
+11. **Decision drafts.** Only when the board has a decision kind and the workflow file no `drafts.decision`: write it from the kind's `decision`, `why` and `rejected` fields (`learn.md` step 12) and say so; one already set is shown, not rewritten.
 
 Never guess a mapping `explain` hasn't confirmed. Never commit or push; the board files, instruction files and repo skills stay the user's. End with the paths written and the last `agentry board check` result.
 

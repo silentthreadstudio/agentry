@@ -1,6 +1,6 @@
 // drafts — the owner's calls the conductor caught in conversation and has not yet written down (plan R1b §5):
 // `<main root>/.agentry/run/process/drafts.jsonl`, one JSON object per line, never committed. A draft is
-// `{ n, kind: "decision" | "rule", answer, question?, unpicked?, source?, at, state }`. `n` is the line it
+// `{ n, kind: "decision" | "rule", answer, why?, question?, unpicked?, source?, at, state }`. `n` is the line it
 // was added on and is never reused: applying or dropping a draft changes its `state`, it does not remove
 // the line. A line that is not a draft is never removed either: it is kept as written and reported
 // (`unreadable`). Nothing here writes a decision or a rule; `cli/draft.mjs` does that, on the owner's OK.
@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 
 export const KINDS = ["decision", "rule"];
 export const STATES = ["pending", "applied", "dropped"];
-const TEXT = ["answer", "question", "source"];
+const TEXT = ["answer", "why", "question", "source"];
 const MAX = 2000;
 
 const fileOf = (root) => join(root, ".agentry", "run", "process", "drafts.jsonl");
@@ -20,7 +20,7 @@ const fileOf = (root) => join(root, ".agentry", "run", "process", "drafts.jsonl"
 export function problem(draft) {
   if (draft === null || typeof draft !== "object" || Array.isArray(draft))
     return "a draft must be a JSON object";
-  const allowed = ["kind", "answer", "question", "unpicked", "source"];
+  const allowed = ["kind", "answer", "why", "question", "unpicked", "source"];
   const extra = Object.keys(draft).find((k) => !allowed.includes(k));
   if (extra) return `a draft has no "${extra}" (keys: ${allowed.join(", ")})`;
   if (!KINDS.includes(draft.kind)) return `kind must be one of ${KINDS.join(", ")}`;
@@ -89,11 +89,13 @@ export function add(root, draft) {
 }
 
 /** Move draft `n` to `state` (rewritten atomically, every other line as it was); returns it, or null when
- *  there is no such draft. */
-export function mark(root, n, state) {
+ *  there is no such draft. `patch` is merged into the draft first: an apply that edits the answer or the why
+ *  stores the new text and, as `edited`, the text it replaced. */
+export function mark(root, n, state, patch = {}) {
   const { lines } = read(root);
   const found = lines.find((l) => l.draft?.n === n);
   if (!found) return null;
+  Object.assign(found.draft, patch);
   found.draft.state = state;
   found.raw = JSON.stringify(found.draft);
   const tmp = `${fileOf(root)}.${process.pid}.tmp`;

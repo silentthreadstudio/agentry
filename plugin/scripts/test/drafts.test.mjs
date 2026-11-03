@@ -27,6 +27,8 @@ test("problem: a draft needs a known kind and some answer text, and nothing unkn
   assert.match(drafts.problem({ kind: "rule", answer: "  " }), /answer must be some text/);
   assert.match(drafts.problem({ ...DECISION, extra: 1 }), /no "extra"/);
   assert.match(drafts.problem({ ...DECISION, unpicked: [1] }), /unpicked/);
+  assert.equal(drafts.problem({ ...DECISION, why: "Because" }), null);
+  assert.match(drafts.problem({ ...DECISION, why: 1 }), /why must be text/);
   assert.match(drafts.problem([]), /JSON object/);
 });
 
@@ -129,9 +131,10 @@ test("apply of a decision goes through next-id and add, filling the process file
   assert.equal(board(root, "check").status, 0);
 });
 
-test("apply of a decision needs drafts.decision in the process file", () => {
+test("apply of a decision with no drafts.decision and no decision kind is refused", () => {
   const { drafts: _, ...bare } = SPEC;
-  const { root } = fresh({ spec: bare });
+  const { decision: __, ...kinds } = bare.kinds;
+  const { root } = fresh({ spec: { ...bare, kinds } });
   add(root, DECISION);
   const before = read(root, "plan/DECISIONS.md");
   const out = board(root, "draft", "apply", "1", "--apply");
