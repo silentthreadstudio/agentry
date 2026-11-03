@@ -17,6 +17,7 @@
 // is deleting it), and so is a file only `agentry board add` / `board set --apply` changed, by the
 // content ids they recorded (`merge.writes`, the same record plus the cells for a pick that touches
 // the file). Those two are never committed by the land: they go back to the owner uncommitted.
+import { isUtf8 } from "node:buffer";
 import { existsSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { boardFiles, cellText, diffBoard, strayChanges } from "../../process/board-diff.mjs";
@@ -387,7 +388,8 @@ function giveBackCarry(lane) {
 export function carryBackStep(lane, rows) {
   const edits = putBackAllow(lane);
   if (edits) rows.push(edits);
-  if (edits?.mark === "red") return { exit: 2, keepCarry: true, next: oldNext(lane) };
+  const stop = backStop(lane, edits);
+  if (stop) return stop;
   const merge = lane.ledger.merge;
   if (!merge?.carry) return null;
   if (lane.opts["--drop-carry"]) {
@@ -541,11 +543,8 @@ function putBackAside(lane, kind) {
   if (isOld(held)) return oldRecord(lane, kind, held);
   const files = held.files.join(", ");
   const [cells, added] = [held.cells ?? [], held.rows ?? []];
-  const both = held.files.find(
-    (file) => cells.some((c) => c.file === file) && added.some((r) => r.file === file),
-  );
-  if (both)
-    throw new Error(`carry: ${both} has both cells and rows; this is a bug, nothing was written`);
+  const both = bothKinds(held);
+  if (both) throw new Error(`carry: ${bothMessage(both)}`);
   const apply = (...flags) => applyPatch(lane.root, held.patch, ...flags);
   const intactRecord = sha256(held.patch) === held.sha256;
   const done = (row) => {
@@ -587,15 +586,43 @@ function putBackAside(lane, kind) {
   );
 }
 
+// The first file of `held` that has both recorded cells and added rows (never made by `scriptWrites`).
+const bothKinds = (held) =>
+  held.files.find(
+    (file) =>
+      (held.cells ?? []).some((c) => c.file === file) &&
+      (held.rows ?? []).some((r) => r.file === file),
+  );
+const bothMessage = (file) => `${file} has both cells and rows; this is a bug, nothing was written`;
+
 // A record without `enc: "bytes"` was written before the patch was kept as bytes (a text patch): it is
 // never applied, whatever it holds.
 const isOld = (held) => held.enc !== "bytes";
 /** Does the ledger's `merge` hold a set-aside record written by an older version? `--drop-carry` drops it. */
 export const hasOldRecord = (merge) =>
   [ALLOW, WRITES].some((kind) => merge?.[kind.key] && isOld(merge[kind.key]));
-/** The next step of a stop on an old record. */
-export const oldNext = (lane) =>
-  `restore the kept patch by hand, then ${landCommand(lane)} --drop-carry`;
+const DROP_CARRY = " --drop-carry";
+/** The stop for a put-back row that refused (red: an old record, or a record that is a bug), else null. */
+export function backStop(lane, back) {
+  if (back?.mark !== "red") return null;
+  const old = hasOldRecord(lane.ledger.merge);
+  const next = old
+    ? `restore the kept patch by hand, then ${landCommand(lane)}${DROP_CARRY}`
+    : "show the owner the carry row: nothing was written or put back";
+  return { exit: 2, keepCarry: true, next };
+}
+
+// The bytes of an old record's patch. Before the byte fix the patch was UTF-8-decoded text; after it, a
+// latin1 string. A string with a character above U+00FF, or whose latin1 bytes are not valid UTF-8, was
+// decoded from UTF-8 text and goes back as UTF-8; any other is the latin1 bytes.
+function oldPatchBytes(patch) {
+  const text = String(patch ?? "");
+  const latin1 = Buffer.from(text, "latin1");
+  const wide = [...text].some((ch) => ch.codePointAt(0) > 0xff);
+  return wide || (/[\u0080-\u00ff]/.test(text) && !isUtf8(latin1))
+    ? Buffer.from(text, "utf8")
+    : latin1;
+}
 
 // An old record's patch kept once in the run dir (`patchFile` in the record: a rerun names the same file),
 // then a red row that stops the land, or on `--drop-carry` an ok row and the record let go.
@@ -607,7 +634,7 @@ function oldRecord(lane, kind, held) {
     while (existsSync(join(dir, `${kind.patch}-${n}.patch`))) n++;
     file = join(dir, `${kind.patch}-${n}.patch`);
   }
-  if (!existsSync(file)) writeFileSync(file, String(held.patch ?? ""), "latin1");
+  if (!existsSync(file)) writeFileSync(file, oldPatchBytes(held.patch));
   if (lane.opts?.["--drop-carry"]) {
     setMerge(lane, { [kind.key]: undefined });
     return ok(
@@ -631,6 +658,12 @@ const WORST = ["red", "warn", "ok"];
  *  passed `--drop-carry`. */
 export function putBackAllow(lane) {
   const kinds = [ALLOW, WRITES];
+  // A record that is a bug stops everything before the first one is put back.
+  for (const kind of kinds) {
+    const held = lane.ledger.merge?.[kind.key];
+    const both = held && !isOld(held) && bothKinds(held);
+    if (both) return red("carry", bothMessage(both));
+  }
   const old = kinds.filter(
     (kind) => lane.ledger.merge?.[kind.key] && isOld(lane.ledger.merge[kind.key]),
   );
@@ -643,9 +676,10 @@ export function putBackAllow(lane) {
 }
 
 const SAFE_WORD = /^[A-Za-z0-9_./:=@%+-]+$/;
-// `word` as one shell word: bare when it is only safe characters (and not a leading `-`), else single-quoted.
+// `word` as one shell word: bare when it is only safe characters (and not a leading `-`, an option, or `=`,
+// which zsh expands), else single-quoted.
 const quote = (word) =>
-  SAFE_WORD.test(word) && !word.startsWith("-") ? word : `'${word.replaceAll("'", "'\\''")}'`;
+  SAFE_WORD.test(word) && !/^[-=]/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 
 // The land command as this call ran it, every argument one shell word, so the line can be run as it stands.
 function landCommand({ id, opts }) {
@@ -671,8 +705,9 @@ export function heldRow(lane) {
     return record && !isOld(record) ? record.files : []; // an old record is never restored by this command
   });
   if (held.length === 0) return null;
+  const command = landCommand(lane) + (hasOldRecord(lane.ledger.merge) ? DROP_CARRY : "");
   const shown = held.slice(0, 5).join(", ") + (held.length > 5 ? `, +${held.length - 5}` : "");
   return warn("allow", "files set aside by this land are still in the ledger", [
-    `allow: ${held.length} file(s) set aside (${shown}) → restored by ${landCommand(lane)}`,
+    `allow: ${held.length} file(s) set aside (${shown}) → restored by ${command}`,
   ]);
 }

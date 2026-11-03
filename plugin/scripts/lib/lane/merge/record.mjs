@@ -23,7 +23,7 @@ import { boardReport } from "../../process/status.mjs";
 import { WriteError } from "../../process/write.mjs";
 import { putCells, sha256 } from "../carry-io.mjs";
 import { boardCommit, restoreFiles, subjectOf, textAt } from "../land.mjs";
-import { conflictLine, dropNext, oldNext, putBackAllow } from "./carry.mjs";
+import { backStop, conflictLine, dropNext, putBackAllow } from "./carry.mjs";
 import { now, ok, red, save, setMerge, short, skip } from "./lane.mjs";
 
 // A finding is "new" when its rule fails for an item it did not fail for before the board write. The
@@ -151,7 +151,8 @@ export function commitStep(lane, rows) {
   if (files.length === 0) {
     const back = putBackAllow(lane);
     if (back) rows.push(back);
-    if (back?.mark === "red") return { exit: 2, keepCarry: true, next: oldNext(lane) };
+    const stop = backStop(lane, back);
+    if (stop) return stop;
     save(lane, {
       state: "merged",
       merge: {
@@ -184,7 +185,8 @@ export function commitStep(lane, rows) {
   if (back) rows.push(back);
   // An old record stops here with the board commit made and the ledger still recording: the rerun proves
   // the commit (merge/recover.mjs) and stops on the record the same way until it is dropped.
-  if (back?.mark === "red") return { exit: 2, keepCarry: true, next: oldNext(lane) };
+  const stop = backStop(lane, back);
+  if (stop) return stop;
   save(lane, {
     state: "merged",
     merge: {

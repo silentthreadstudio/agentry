@@ -625,13 +625,13 @@ function seedLedger(path, merge, extra = {}) {
 }
 const ledgerBytes = () =>
   readFileSync(join(root, ".agentry", "run", "process", "ledger", `${ID}.json`));
-// A patch that would apply to docs/status.md, then a CRLF and a byte that is not UTF-8 (0xff): the shape of
-// a text patch an older version kept.
+// A patch that would apply to docs/status.md, then a CRLF and the two bytes of a UTF-8 é as latin1 characters
+// (the latin1-era record that has no `enc`).
 function oldPatch() {
   edit("docs/status.md", STATUS_MD.replace("ten", "TEN"));
   const diff = git(root, "diff", "--binary", "HEAD", "--", "docs/status.md");
   git(root, "restore", "--source=HEAD", "--staged", "--worktree", "--", "docs/status.md");
-  return `${diff}\nkept\r\n\xff\n`;
+  return `${diff}\nkept\r\n\u00c3\u00a9\n`;
 }
 const oldRecord = (patch, enc) => ({
   ...(enc === undefined ? {} : { enc }),
@@ -666,7 +666,7 @@ for (const [key, enc, patchName] of [
     assert.equal(res.status, 2, out(res));
     const kept = REFUSAL.exec(out(res))?.[1];
     assert.equal(kept, join(runDir(root, ID), patchName), out(res));
-    assert.deepEqual(readFileSync(kept), Buffer.from(patch, "latin1")); // bytes exactly: 0xff and CRLF kept
+    assert.deepEqual(readFileSync(kept), Buffer.from(patch, "latin1")); // bytes exactly: the é bytes and CRLF kept
     assert.deepEqual(mainState(), before); // nothing applied, nothing set aside, nothing picked
     const record = readLedger(root, ID).merge[key];
     assert.equal(record.patch, patch); // the record stays in the ledger
@@ -768,18 +768,18 @@ test("an old record also stops recover, which has proven the board commit, and -
 const ARGV = "console.log(JSON.stringify(process.argv.slice(2)));";
 // The hold line's command for a land called with `opts`, split off its "lane merge " and run through sh
 // with node printing the argv it got, in a scratch directory (a command substitution would make x there).
-function heldCommand(opts) {
-  const lane = {
-    id: ID,
-    opts,
-    ledger: { merge: { allow: { enc: "bytes", files: ["docs/status.md"] } } },
-  };
+function heldCommand(
+  opts,
+  shell = "sh",
+  merge = { allow: { enc: "bytes", files: ["docs/status.md"] } },
+) {
+  const lane = { id: ID, opts, ledger: { merge } };
   const line = heldRow(lane).more[0];
   const command = line.slice(line.indexOf("restored by ") + "restored by ".length);
   const dir = mkdtempSync(join(home, "quote-"));
   writeFileSync(join(home, "argv.mjs"), ARGV);
   const res = spawnSync(
-    "sh",
+    shell,
     ["-c", `node ${join(home, "argv.mjs")} ${command.slice("lane merge ".length)}`],
     {
       cwd: dir,
@@ -885,13 +885,148 @@ test("a record with a file in both cells and rows throws before it writes anythi
     ledger: readLedger(root, ID),
     spec: loadSpec(join(root, ".agentry", "process.json"), { root }).spec,
   };
-  assert.throws(
-    () => putBackAllow(lane),
-    /carry: plan\/DECISIONS\.md has both cells and rows; this is a bug, nothing was written/,
+  const row = putBackAllow(lane);
+  assert.equal(row.mark, "red");
+  assert.equal(
+    row.detail,
+    "plan/DECISIONS.md has both cells and rows; this is a bug, nothing was written",
   );
   assert.deepEqual(mainState(), tree);
   assert.deepEqual(ledgerBytes(), ledger);
 });
+
+test("a both-kinds record beside a good one stops the land before the good one is put back", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  edit("NOTES.md", "notes\nmine\n");
+  const notes = git(root, "diff", "--binary", "HEAD", "--", "NOTES.md").concat("\n");
+  git(root, "restore", "--source=HEAD", "--staged", "--worktree", "--", "NOTES.md");
+  const file = "plan/DECISIONS.md";
+  const cells = [
+    {
+      kind: "decision",
+      id: "D1",
+      field: "decision",
+      column: "Decision",
+      file,
+      from: "First",
+      to: "Hand",
+    },
+  ];
+  const rows = [
+    {
+      file,
+      heading: "Decisions",
+      header: ["#", "Decision", "Why"],
+      idColumn: "#",
+      key: "D2",
+      prev: "D1",
+      text: "| D2 | A | B |",
+    },
+  ];
+  const bad = {
+    enc: "bytes",
+    files: [file],
+    untracked: [],
+    patch: "x",
+    sha256: createHash("sha256").update("x").digest("hex"),
+    cells,
+    rows,
+    cellsSha256: createHash("sha256")
+      .update(JSON.stringify([cells, rows]))
+      .digest("hex"),
+    at: "2026-11-01T00:00:00.000Z",
+  };
+  seedLedger(path, {
+    allow: {
+      enc: "bytes",
+      files: ["NOTES.md"],
+      untracked: [],
+      patch: notes,
+      sha256: createHash("sha256").update(notes).digest("hex"),
+      at: "2026-11-01T00:00:00.000Z",
+    },
+    writes: bad,
+  });
+  const [tree, merged] = [mainState(), readLedger(root, ID).merge];
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    /✗ carry +plan\/DECISIONS\.md has both cells and rows; this is a bug, nothing was written/,
+  );
+  assert.doesNotMatch(out(res), /\bat .*\.mjs:\d+/);
+  assert.deepEqual(mainState(), tree);
+  assert.equal(at("NOTES.md"), "notes\n");
+  assert.deepEqual(readLedger(root, ID).merge, merged); // the stop's next is the only ledger write
+});
+
+// --- the kept patch of an old record is the record's own text, whichever way it was made -------------------
+
+// The record a version before the byte fix made: git's output decoded as UTF-8. Applied by hand from the kept
+// file, it must give the edit back as the owner typed it.
+test("a pre-byte-fix record with → é and · keeps its patch as UTF-8, and git apply restores the edit exactly", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  const typed = STATUS_MD.replace("ten", "TEN → café · done");
+  edit("docs/status.md", typed);
+  const patch = spawnSync("git", ["-C", root, "diff", "--binary", "HEAD", "--", "docs/status.md"], {
+    encoding: "utf8",
+    env: gitEnv,
+  }).stdout; // decoded as UTF-8, as the old worktree.git did
+  git(root, "restore", "--source=HEAD", "--staged", "--worktree", "--", "docs/status.md");
+  seedLedger(path, { allow: oldRecord(patch) });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  const kept = REFUSAL.exec(out(res))?.[1];
+  assert.deepEqual(readFileSync(kept), Buffer.from(patch, "utf8"));
+  const applied = spawnSync("git", ["-C", root, "apply", kept], { encoding: "utf8", env: gitEnv });
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.deepEqual(readFileSync(join(root, "docs", "status.md")), Buffer.from(typed, "utf8"));
+});
+
+test("a latin1-era record without enc keeps the raw bytes of a UTF-8 é, and git apply restores the edit exactly", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  const typed = STATUS_MD.replace("ten", "café");
+  edit("docs/status.md", typed);
+  const raw = spawnSync("git", ["-C", root, "diff", "--binary", "HEAD", "--", "docs/status.md"], {
+    env: gitEnv,
+  }).stdout;
+  git(root, "restore", "--source=HEAD", "--staged", "--worktree", "--", "docs/status.md");
+  seedLedger(path, { allow: oldRecord(raw.toString("latin1")) }); // a latin1 string: one char per byte
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  const kept = REFUSAL.exec(out(res))?.[1];
+  assert.deepEqual(readFileSync(kept), raw);
+  const applied = spawnSync("git", ["-C", root, "apply", kept], { encoding: "utf8", env: gitEnv });
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.deepEqual(readFileSync(join(root, "docs", "status.md")), Buffer.from(typed, "utf8"));
+});
+
+test("with an old record beside a valid one, the held line names --drop-carry", () => {
+  const run = heldCommand({ "--message": "docs(board): land T1" }, "sh", {
+    allow: { enc: "bytes", files: ["docs/status.md"] },
+    writes: { files: ["plan/DECISIONS.md"], patch: "x" },
+  });
+  assert.match(run.command, / --drop-carry$/);
+  assert.equal(run.argv.at(-1), "--drop-carry");
+});
+
+// zsh expands a word that starts with = ; every shell must give the exact argv back.
+for (const shell of ["sh", "bash", "zsh"]) {
+  const present = spawnSync(shell, ["-c", "true"]).status === 0;
+  test(
+    `a word starting with = is quoted and round-trips through ${shell}`,
+    { skip: !present },
+    () => {
+      for (const message of ["=ls", "=x", "a=b"]) {
+        const run = heldCommand({ "--message": message, "--summary": "=ls" }, shell);
+        assert.deepEqual(run.argv, [ID, "--message", message, "--summary", "=ls"], run.stderr);
+        if (message.startsWith("="))
+          assert.ok(run.command.includes(`--message '${message}'`), run.command);
+        else assert.ok(run.command.includes(`--message ${message}`), run.command);
+      }
+    },
+  );
+}
 
 test("scriptWrites never gives one file both cells and rows", () => {
   build({ "src/a.txt": "a\n" });

@@ -21,7 +21,7 @@ import {
   textAt,
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
-import { oldNext, putBackAllow } from "./carry.mjs";
+import { backStop, putBackAllow } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
 import { afterLand, now, ok, red, save, setMerge, short } from "./lane.mjs";
 
@@ -161,7 +161,8 @@ function recordedCommit(lane, rows, { commit, later, why }) {
   // ledger still recording, so the rerun (and its --drop-carry) gets here again.
   const back = putBackAllow(lane);
   if (back) rows.push(back);
-  if (back?.mark === "red") return { exit: 2, keepCarry: true, next: oldNext(lane) };
+  const stop = backStop(lane, back);
+  if (stop) return stop;
   // The record's files, carried writes included, are in that commit as written: the ledger lets go.
   save(lane, {
     state: "merged",
