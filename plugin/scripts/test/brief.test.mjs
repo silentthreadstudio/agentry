@@ -17,6 +17,7 @@ import {
   ownedFiles,
   policySlots,
   recalledFacts,
+  recheckSlots,
   relatedNotes,
   renderBrief,
   slotsOf,
@@ -645,6 +646,10 @@ const VALUES = {
   policyLines: "",
   locked: false,
   lockTake: "",
+  // the notes a recheck judges, main's branch, the range-diff a resolve check reads (recheckSlots)
+  sentBack: "N1, N2",
+  mainBranch: "main",
+  rangeDiff: "/m/logs/range-diff-1.txt",
   // a contract built in steps (stepSlots): off unless a test turns a section on
   stepped: false,
   thisRun: "",
@@ -688,7 +693,8 @@ test("every template uses only the slots the CLI fills, and renders with none le
     [],
     "VALUES lists every step slot",
   );
-  for (const step of ["build", "fix", "needs-context", "continue", "verify", "recheck", "final"]) {
+  const all = ["build", "fix", "needs-context", "continue", "rebase", "verify", "recheck", "final"];
+  for (const step of [...all, "resolve"]) {
     for (const values of [VALUES, { ...VALUES, ...stepped, ownerGate: true, approved: true }]) {
       const text = renderBrief(step, {
         ...values,
@@ -785,6 +791,48 @@ test("the policy section is in every builder and verifier brief, after the contr
     );
   for (const step of [...BUILDER_STEPS, ...VERIFIER_STEPS])
     assert.doesNotMatch(renderBrief(step, VALUES), /Repo policy/, `${step} with no briefs key`);
+});
+
+test("the rebase and resolve briefs carry the policy section of their role, after the contract", () => {
+  const spec = { briefs: { build: ["Use pnpm."], verify: ["Read the changelog."] } };
+  for (const [step, line, other] of [
+    ["rebase", "- Use pnpm.", /changelog/],
+    ["resolve", "- Read the changelog.", /Use pnpm/],
+  ]) {
+    const text = renderBrief(step, { ...VALUES, ...policySlots(spec, step) });
+    assert.equal(text.split(POLICY_HEAD).length, 2, `${step} has the section once`);
+    assert.ok(text.indexOf("owns `a.txt`") < text.indexOf(POLICY_HEAD), step);
+    assert.ok(text.includes(`${POLICY_HEAD}\n\n${line}\n`), step);
+    assert.doesNotMatch(text, other, step);
+    assert.doesNotMatch(renderBrief(step, VALUES), /Repo policy/, `${step} with no briefs key`);
+  }
+});
+
+test("the rebase brief rebases onto main and changes nothing else; the resolve brief judges the range-diff", () => {
+  const rebase = renderBrief("rebase", VALUES);
+  assert.match(rebase, /`cd '\/w' && git rebase main` \(no `-i`\)/);
+  assert.match(rebase, /keep both sides' intent/);
+  assert.match(rebase, /Change nothing else/);
+  assert.match(rebase, /The gate is the lane's/);
+  const resolve = renderBrief("resolve", VALUES);
+  assert.match(
+    resolve,
+    /The range-diff of the old branch against the rebased one is in \/m\/logs\/range-diff-1\.txt/,
+  );
+  assert.match(resolve, /Judge only its changed pairs/);
+  assert.match(resolve, /Run probes on those hunks only/);
+  assert.match(resolve, /The gate is not yours/);
+  assert.match(resolve, /exactly one\s+of `Verdict: PASS`/);
+});
+
+test("the recheck section asks for one N<k>: PASS|FAIL line per note sent back, naming them", () => {
+  const text = renderBrief("recheck", { ...VALUES, recheck: true });
+  assert.match(text, /For each note sent back \(N1, N2\), write one line/);
+  assert.match(text, /`N1: PASS <evidence>` or `N1: FAIL <evidence>`/);
+  assert.match(text, /outside any code block/);
+  assert.doesNotMatch(renderBrief("verify", VALUES), /For each note sent back/);
+  assert.equal(recheckSlots().sentBack, "none: your report labelled no note");
+  assert.equal(recheckSlots({ sentBack: ["N3"] }).sentBack, "N3");
 });
 
 test("a policy line is printed as written: a slot name, backticks and a pipe are not read", () => {

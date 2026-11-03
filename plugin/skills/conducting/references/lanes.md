@@ -99,11 +99,24 @@ Under `--json` that is `idle: { minutes, lastChange, file }`.
 | any | no status line / no `Verdict:` last line | `resend` (resume) once per role in the lane, then `stop` |
 | verify, recheck, final | the branch tip moved since the dispatch | `recheck`: the verdict is void, nothing written; the 3rd void → `stop` |
 | verify | `PASS` / `PASS WITH NOTES` | `gate` when no green worktree gate is on this tip, then `close` |
-| recheck | `PASS` / `PASS WITH NOTES` | `final`: a fresh verifier against the full acceptance |
+| recheck | `PASS` / `PASS WITH NOTES`, `exec.final: "always"` | `final`: a fresh verifier against the full acceptance |
+| recheck | `PASS` / `PASS WITH NOTES`, `exec.final: "never"` | `gate`, or `close` when green on this tip |
+| recheck | `PASS` / `PASS WITH NOTES`, `exec.final: "after-fix"`, `covered` and `onlyFixCommits` | `gate` / `close`: no final |
+| recheck | `PASS` / `PASS WITH NOTES`, `exec.final: "after-fix"`, otherwise | `final` |
 | final | `PASS` / `PASS WITH NOTES` | `gate`, then `close` |
 | final | `FAIL` | `stop` |
 | verify, recheck | `FAIL`, fewer than 3 verdicts | `fix` (resume the builder) |
-| verified `PASS WITH NOTES` | `agentry lane exec fix <id> --notes N1,N3` | `fix` (resume the builder) on those notes, then `recheck` |
+| verified `PASS WITH NOTES` | `agentry lane exec fix <id> --notes N1,N3`, notes rounds used < `exec.noteRounds` | `fix` (resume the builder) on those notes, then `recheck` |
+| verified `PASS WITH NOTES` | notes rounds used = `exec.noteRounds` (0 under `lean`) | the lane goes on to `gate` / `close`; the notes are kept as `openNotes`; `fix --notes` exits 2 naming `exec.noteRounds` |
+| verified (next `close` or `merge`) | `agentry lane exec rebase <id>` (a land conflict names it) | `rebase` (resume the last builder): rebase `agentry/<id>` onto main, change nothing else |
+| verified, the branch already on main past `closedTip` | `agentry lane exec rebase <id>` | recorded as rebased, no builder round; then as a rebase report below |
+| rebase | `DONE` / `DONE_WITH_CONCERNS`, guards hold, the range-diff changed, `exec.rebase: "recheck"` | `resolve`: a fresh verifier reads only the range-diff's changed pairs |
+| rebase | `DONE` / `DONE_WITH_CONCERNS`, guards hold, otherwise | `gate` on the new tip, or `close` when green on it |
+| rebase | a guard trips / `NEEDS_CONTEXT` | `rebase` again with the reason, twice → `stop` / `stop` |
+| resolve | `PASS` / `PASS WITH NOTES` | `gate` / `close` (no notes round) |
+| resolve | `FAIL` | `stop`: the conflict resolution failed its check |
+| resolve | the branch tip moved since the dispatch | void, `resolve` again (counts toward the three voids) |
+| verified with no verdict (the route skipped the verifier) | `agentry lane exec reverify <id>` | `verify` (fresh), then the rows above |
 | verify, recheck | `FAIL` at the 3rd verdict | `stop`: report every verdict to the owner |
 | gate | red, or the branch moved since the verdict | `stop` |
 | gate | red only in `gate.flaky` tests | the same gate step runs again alone, once; its record decides |
@@ -118,6 +131,24 @@ A run is the steps from a to g, g the first step from a with an owner gate, else
 with no gate between them are built in one round. A lane without steps is one run of the whole contract and
 behaves as it always has; so does an older ledger. The owner's answers spend no budget: a hold waits, and the
 resume picks up where the lane was. One fresh verifier reads the whole contract after the last step.
+
+The route is fixed at `start`: the ledger keeps `route: { verify, flagged, preset, noteRounds, final, rebase }`
+(the workflow file's `exec` keys as its preset resolves them), so an edit of the workflow file changes no
+running lane, and a ledger without these keys runs on the `standard` values. `exec start` and `show` print
+the `workflow:` line, `show` also `route fixed at start: …`, and `route: all (fixed at start; workflow.json
+now says flagged)` when the file says otherwise now. A task flagged after its start is still read by a
+verifier when the lane routes it at its report; one closed with no verifier before the flag was set is
+refused at the land: run `agentry lane exec reverify <id>`. `exec.idleMinutes` is read live from the file.
+
+A recheck's facts are computed by the lane and pinned on the round: `covered` (every note sent back, the
+picked labels or every `N<k>` of the FAIL report, has an `N<k>: PASS` line and no `N<k>: FAIL` line in the
+recheck report, outside a fenced block; none sent back is not covered) and `onlyFixCommits` (the last
+verdict's tip is an ancestor of this one and no merge commit lies between). A rebase report runs the guards
+from the new merge base, sets `base` to it and writes `logs/range-diff-<n>.txt` (`changed` when a pair is not
+marked `=`, or git cannot compute it); `rebases[]` keeps `{ fromBase, fromTip, toBase, toTip, changed,
+rangeDiff }`, written before the dispatch so a killed `exec rebase` reruns on its entry. A report while a
+rebase is still in progress in the worktree is refused. Every time the lane settles `close` it writes
+`closedTip`; the land refuses a branch moved past it.
 
 A void verdict doesn't count toward the three verdicts; voids have their own cap of three. A recheck `PASS`
 at the third verdict still goes to `final`, so a lane can hold four verdicts: the cap of three stops FAILs,

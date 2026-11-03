@@ -26,6 +26,22 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   written here in one all-or-nothing write), and a note says when git tracks or does not ignore the file.
   A block in both files is refused. `board explain` reads the trigger block from either file. `/agentry:init`
   asks where the block should live and offers each lint replacement one at a time.
+- **Workflow presets for the exec lane** — `exec.preset` (`lean`, `standard` by default, `strict`) sets
+  `exec.verify`, `exec.noteRounds` (0 / 1 / 3 notes-fix rounds), `exec.final` (`never`, `after-fix`,
+  `always`), `exec.rebase` (`gate`, `recheck`) and the `gate.roles` defaults; a key in the file wins, the
+  roles per role. `board explain` shows each resolved value with its source (`preset` or `set`), an
+  `exec.verify` and a `models` row, and `·` for an absent optional key; `exec start` and `show` print the
+  `workflow:` line. The ledger fixes the route at start, so an edit mid-lane changes no running lane.
+  Under `final: after-fix` a recheck that passes every note sent back (`N1: PASS …` lines) on a tip moved
+  only by fix commits closes with no final verifier. Notes past the budget are kept as `openNotes` in the
+  ledger, `show` and the episode.
+- **Rebase and the resolution recheck** — a land conflict on an exec lane names `lane exec rebase <id>`:
+  the builder rebases onto main, the range-diff goes to `logs/range-diff-<n>.txt`, and a fresh verifier
+  checks only its changed pairs (`exec.rebase: "recheck"`) before the gate on the new tip. A land on a
+  branch moved past the tip its lane closed on is refused with the same pointer. `lane exec reverify <id>`
+  sends a verifier to a lane the route closed without one, and a flagged one's merge names it.
+- **`exec.flagField` and `exec.idleMinutes`** — the field the verify route reads (default `flag`, checked
+  on every kind exec runs) and the idle threshold (whole minutes ≥ 5, default 20).
 - **Steps and the owner's holds in a lane** — a contract may carry a `**Steps:**` part: numbered steps,
   an owner gate on any step ending `→ owner OK`, and acceptance items tagged `Step N:`. `lane exec` builds
   the steps in runs (one round up to each owner gate), holds the lane for the owner's review at a gate, and
@@ -127,6 +143,15 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `board contract` finds.
 
 ### Changed
+- **The standard preset is the default** — with no `exec` keys a lane now runs one notes-fix round (was
+  three) and skips the final verifier after a recheck that covered every note on a fix-only tip. Set
+  `exec.preset: "strict"` (or `noteRounds`, `final`) for the old budget and an always-fresh final.
+- **Lane guards** — an uncommitted edit of `.agentry/process.json` or `workflow.json` that changes the
+  `guard` or `gate` key trips the main guard (commit it between lanes); a lane held for the owner after a
+  step can no longer be parked; a hold's evidence must be a file; a commit list git cannot read at a
+  report is a read failure to check, never a subject to reword; the land and the lane read the newest gate
+  record of the tier they need, and a recorded green is trusted only for the tier's current argv; the
+  idle line says `(the last commit)` when that is the newest change.
 - **Gate tiers, a gate per role, a manual checklist** — `gate.command` and `gate.quick` are replaced by
   `gate.tiers`: named tiers in precedence order, each an argv, every one but the last with a `when`
   (`only` globs, `any` globs, `flag: true`; any one holding is enough), the last the fallback. An old

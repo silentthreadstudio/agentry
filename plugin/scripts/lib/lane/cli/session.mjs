@@ -27,6 +27,7 @@ import * as drafts from "../../process/drafts.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { fit } from "../../process/render.mjs";
 import { sessionChecks } from "../../process/spec/extensions.mjs";
+import { idleMinutes } from "../../process/spec/presets.mjs";
 import { statusView, titleOf, workKind } from "../../process/status.mjs";
 import { runText } from "../../process/steps.mjs";
 import { forThisRepo, primeLimitOf } from "../brief.mjs";
@@ -118,10 +119,10 @@ const mergedToday = (all) => {
     .length;
 };
 
-// The building lanes nothing changed in for `IDLE_MINUTES` (field 53).
-const idleOfAll = (all) =>
+// The building lanes nothing changed in for `exec.idleMinutes` (field 53), read live from the workflow file.
+const idleOfAll = (all, spec) =>
   all.flatMap((l) => {
-    const idle = idleOf(l.worktree, l, Date.now());
+    const idle = idleOf(l.worktree, l, Date.now(), idleMinutes(spec));
     return idle
       ? [{ id: l.id, ...idle, park: nextStep(`lane exec hold ${l.id} --for later`) }]
       : [];
@@ -145,7 +146,7 @@ function start({ root, spec, model }) {
     prompt: spec.conductor?.prompt ? join(root, spec.conductor.prompt) : null,
     ...modeOf(root),
     held: heldOf(runRoot, all),
-    idle: idleOfAll(all),
+    idle: idleOfAll(all, spec),
     status,
     recall: recallFor(root, task),
     questions: status.onYou.filter((i) => i.kind !== work),

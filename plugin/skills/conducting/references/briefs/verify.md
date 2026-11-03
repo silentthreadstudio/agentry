@@ -15,6 +15,10 @@ You verified this branch before; your report is {{from}}. The builder has worked
 {{builderReport}}). Re-check each of your findings on the new tip (only the notes the conductor sent back, when they
 are listed below), then check that the change broke nothing next to it.
 
+For each note sent back ({{sentBack}}), write one line in your report, outside any code block, that starts with
+its label: `N1: PASS <evidence>` or `N1: FAIL <evidence>`. Only such lines count: a note with no `N<k>: PASS`
+line, or with any `N<k>: FAIL` line, is not covered.
+
 {{/recheck}}
 {{#picked}}
 ## Notes sent back

@@ -14,12 +14,26 @@
 //   verify / recheck / final: tip moved     → recheck: the verdict is void (no rebase while one reads);
 //                                             the 3rd void verdict → stop
 //   verify: PASS*                           → gate (no green worktree gate on this tip), then close
-//   recheck: PASS*                          → final (fresh, against the full bar)
+//   recheck: PASS*, route final "always"    → final (fresh, against the full bar)
+//   recheck: PASS*, route final "never"     → gate, or close when green on this tip
+//   recheck: PASS*, final "after-fix", the verdict `covered` every note sent back and the tip moved only by
+//            fix commits (`onlyFixCommits`) → gate / close; otherwise → final
 //   final: PASS* / FAIL                     → gate → close / stop
 //   verify / recheck: FAIL                  → fix (resume the builder); at the 3rd verdict → stop
 //   no `Verdict:` last line                 → resend once, then stop
-//   verified PASS WITH NOTES (gate or close next): { type: "notes" } → fix (resume the builder) on the named
-//                                             notes, then the usual recheck
+//   verified PASS WITH NOTES (gate or close next): { type: "notes" }, notes rounds used < route noteRounds
+//                                           → fix (resume the builder) on the named notes, then the usual
+//                                             recheck; at the budget (0 under lean) refused: the lane goes on to
+//                                             gate / close with its notes kept open
+//   verified (next close or merge): { type: "rebase" } → rebase (resume the last builder)
+//   verified, the branch already moved: { type: "rebased", tip, changed } → as a rebase report below
+//   rebase: DONE*, guards hold, `changed`, route rebase "recheck" → resolve (a fresh verifier)
+//   rebase: DONE*, guards hold, otherwise   → gate on the new tip, or close when green on it
+//   rebase: a guard trips                   → rebase again (resume) with the reason; twice → stop
+//   rebase: NEEDS_CONTEXT                   → stop: a conflict the builder can't settle goes to the owner
+//   resolve: PASS*                          → gate / close; FAIL → stop; tip moved → void, resolve again
+//   verified with no verdict (the route skipped the verifier): { type: "reverify" } → verify (fresh), then
+//                                             the usual rows
 //   gate: red only in listed flaky tests    → no decision: the alone re-run's record decides
 //   start, the contract has steps            → build (fresh) on the first run: steps 1..g, g the first step
 //                                             ending "→ owner OK", else the last step
@@ -41,9 +55,15 @@
 //
 // A round in the ledger: { n, step, role, mode, final?, resend?, guard?, agent?, from?, reason?,
 // stepRun?, redo?, brief, reportPath, tip, at } plus, once reported, { report, status | verdict, void?,
-// summary?, guards? }, or `held: true` when the lane was held before its report was read. A held lane
-// has `hold: { for, when, stepRun, evidence, since, round, why? }`; each resume appends its answer to
-// `holds[]`: { for, when, stepRun, evidence, since, resumedAt, note, redo, why? }.
+// summary?, guards?, covered?, onlyFixCommits? }, or `held: true` when the lane was held before its report
+// was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }`; each resume appends
+// its answer to `holds[]`: { for, when, stepRun, evidence, since, resumedAt, note, redo, why? }.
+//
+// The route is the ledger's snapshot from start, `route: { verify, flagged, preset, noteRounds, final,
+// rebase }`: an edit of the workflow file mid-lane changes no running lane, and a key the ledger lacks reads
+// as the standard preset's. The machine writes `gateTip` whenever it settles `gate` and `closedTip`
+// whenever it settles `close`: the tips the gate and the land check.
+import { PRESETS } from "../process/spec/presets.mjs";
 import { runOf, runText } from "../process/steps.mjs";
 
 export const MAX_VERDICTS = 3;
@@ -56,9 +76,11 @@ const STEPS = {
   fix: { role: "build", mode: "resume" },
   "needs-context": { role: "build", mode: "resume" },
   continue: { role: "build", mode: "resume" },
+  rebase: { role: "build", mode: "resume" },
   verify: { role: "verify", mode: "fresh" },
   recheck: { role: "verify", mode: "resume" },
   final: { role: "verify", mode: "fresh", final: true },
+  resolve: { role: "verify", mode: "fresh" },
 };
 export const DISPATCHES = [...Object.keys(STEPS), "resend"];
 
@@ -67,10 +89,12 @@ const STATE = {
   build: "building",
   "needs-context": "building",
   continue: "building",
+  rebase: "building",
   fix: "fixing",
   verify: "verifying",
   recheck: "verifying",
   final: "verifying",
+  resolve: "verifying",
   gate: "verifying",
   close: "verified",
   resume: "held",
@@ -84,6 +108,9 @@ const verifiers = (ledger) => ledger.rounds.filter((r) => r.role === "verify");
 export const verdicts = (ledger) =>
   verifiers(ledger).filter((r) => typeof r.verdict === "string" && !r.void);
 
+/** The lane's route: its ledger snapshot, each key it lacks (an older ledger) the standard preset's. */
+export const routeOf = (ledger) => ({ ...PRESETS.standard.exec, ...ledger?.route });
+
 /** What the lane waits for: "report" (a builder's), "verdict" (a verifier's), "gate", "close", "resume"
  *  (the owner's answer to a hold), or null when nothing is dispatched or due (stopped, or already closed). */
 export function expects(ledger) {
@@ -95,18 +122,22 @@ export function expects(ledger) {
   return round.role === "build" ? "report" : "verdict";
 }
 
-/** A green worktree gate record for commit `tip`: exit 0 on a tree clean before and after. */
-export const greenOn = (gates, tip) =>
-  (gates ?? []).some(
-    (g) =>
-      g.where === "worktree" &&
-      g.exit === 0 &&
-      g.cleanBefore === true &&
-      g.cleanAfter === true &&
-      g.commit === tip,
+/** Is the newest worktree gate record (of `tier`, when given) green on commit `tip`: exit 0 on a tree clean
+ *  before and after. A red record after a green one is the newest, so the green no longer counts. */
+export const greenOn = (gates, tip, tier) => {
+  const g = (gates ?? []).findLast(
+    (r) => r.where === "worktree" && (tier === undefined || r.tier === tier),
   );
+  return (
+    g !== undefined &&
+    g.exit === 0 &&
+    g.cleanBefore === true &&
+    g.cleanAfter === true &&
+    g.commit === tip
+  );
+};
 
-/** Does `route` (the ledger's `{ verify, flagged }`, absent on an older ledger) send a built item straight
+/** Does `route` (the ledger's `{ verify, flagged, … }`, absent on an older ledger) send a built item straight
  *  to the gate? Only when verification is off for it: `flagged` and `none` skip every item that is not
  *  flagged; a flagged item always has a verifier. */
 export const skipsVerifier = (route, flagged = false) =>
@@ -152,10 +183,21 @@ const stop = (ledger, reason) => {
   ledger.stopReason = reason;
   return { ledger, next: "stop", reason };
 };
-const settle = (ledger, next, reason) => {
+// The tip a settled gate must run on, and the one a closed lane lands: kept in the ledger.
+const settle = (ledger, next, reason, tip) => {
   ledger.next = next;
   ledger.state = STATE[next];
+  if (next === "gate" && tip !== undefined) ledger.gateTip = tip;
+  if (next === "close" && tip !== undefined) ledger.closedTip = tip;
   return { ledger, next, reason };
+};
+// Checked work goes on to the gate, or closes on a green gate of the build tier on this tip (or with no gate).
+const gateOrClose = (ledger, tip, { gate = true, tier }, reason) => {
+  if (!gate)
+    return settle(ledger, "close", "no gate in the workflow file: closes on the verdict", tip);
+  if (greenOn(ledger.gates, tip, tier))
+    return settle(ledger, "close", "a green worktree gate on this tip", tip);
+  return settle(ledger, "gate", reason ?? "no green worktree gate on this tip yet", tip);
 };
 const send = (ledger, step, extra, reason) => ({
   ledger,
@@ -186,13 +228,19 @@ const resend = (ledger, round, reason) =>
  * round to send next (pass it to `addRound` with the brief rendered for it). Throws on an event the
  * ledger does not expect (out of order).
  *
- *   { type: "report", status, report, agent?, summary?, guards: { mainTouched?, dirty?, commits?, subjects?: [{ sha, subject, why }] },
- *     skipVerify?: true (exec.verify routes this item past the verifier), tip, gate: true | false, at }
- *   { type: "verdict", verdict, report, agent?, summary?, tip, gate: true | false (one configured) }
+ *   { type: "report", status, report, agent?, summary?, guards: { mainTouched?, dirty?, commits?, subjects?: [{ sha, subject, why, failed? }] },
+ *     skipVerify?: true (exec.verify routes this item past the verifier), tip, gate: true | false, tier?,
+ *     changed? (a rebase report: the range-diff has a pair not marked `=`), at }
+ *   { type: "verdict", verdict, report, agent?, summary?, tip, gate: true | false (one configured), tier?,
+ *     covered?, onlyFixCommits? (a recheck's facts, computed by the caller and pinned on the round) }
  *   { type: "gate", record }   (recorded at any time; decides only when the gate is the next step)
  *   { type: "notes", notes }   (a verified PASS WITH NOTES lane back to its builder)
  *   { type: "hold", for: "owner" | "later", evidence, at, why?, agent? }
- *   { type: "resume", note, redo?, at, skipVerify?, tip, gate }
+ *   { type: "resume", note, redo?, at, skipVerify?, tip, gate, tier? }
+ *   { type: "rebase" } / { type: "rebased", tip, changed, gate, tier? } / { type: "reverify" }
+ *                              (a verified lane: rebased by its builder, already rebased, or verified late)
+ *
+ * `tier` is the gate tier the build role runs: a green record of it on the tip closes the lane.
  */
 export function step(ledger, event) {
   const out = structuredClone(ledger);
@@ -201,6 +249,9 @@ export function step(ledger, event) {
   if (out.state === "held" && !["hold", "resume"].includes(event.type))
     throw new Error(`the lane is held: it expects a resume, not a ${event.type}`);
   if (event.type === "notes") return onNotes(out, event.notes);
+  if (event.type === "rebase") return onRebase(out);
+  if (event.type === "rebased") return afterRebase(verified(out, "rebased"), event);
+  if (event.type === "reverify") return onReverify(out);
   if (event.type === "hold") return onHold(out, event);
   if (event.type === "resume") return onResume(out, event);
   const want = expects(out);
@@ -226,14 +277,16 @@ function inRun(ledger, res) {
   return run ? { ...res, dispatch: { ...d, stepRun: run } } : res;
 }
 
-// One trip line per commit that breaks a `commits` rule, at most SUBJECT_TRIPS, then how many more.
+// One trip line per commit that breaks a `commits` rule, at most SUBJECT_TRIPS, then how many more. A
+// commit git could not read (`failed`) is not a subject to reword: the branch needs a look.
 const SUBJECT_TRIPS = 5;
 function subjectTrips(broken = []) {
   const lines = broken
     .slice(0, SUBJECT_TRIPS)
-    .map(
-      (c) =>
-        `commit ${short(c.sha)} "${c.subject}": ${c.why} → reword it on the branch (git commit --amend for the tip, or a rebase with exec, no -i)`,
+    .map((c) =>
+      c.failed
+        ? `cannot read commit ${c.sha.includes("..") ? c.sha : short(c.sha)}: ${c.why} → check the branch, then report again`
+        : `commit ${short(c.sha)} "${c.subject}": ${c.why} → reword it on the branch (git commit --amend for the tip, or a rebase with exec, no -i)`,
     );
   if (broken.length > SUBJECT_TRIPS) lines.push(`+${broken.length - SUBJECT_TRIPS}`);
   return lines;
@@ -264,6 +317,9 @@ function onReport(ledger, round, event) {
   }
   if (!status) return resend(ledger, round, "the report has no status line");
   if (status === "BLOCKED") return stop(ledger, "the builder reported BLOCKED");
+  const rebasing = round.step === "rebase";
+  if (status === "NEEDS_CONTEXT" && rebasing)
+    return stop(ledger, "NEEDS_CONTEXT on the rebase: the conflict goes to the owner");
   if (status === "NEEDS_CONTEXT") {
     if (builders(ledger).some((r) => r.step === "needs-context"))
       return stop(ledger, "NEEDS_CONTEXT again after the one re-dispatch with a supplied fact");
@@ -289,10 +345,14 @@ function onReport(ledger, round, event) {
     if (round.guard) return stop(ledger, `${trips.join("; ")}, again after a fix for it`);
     return send(
       ledger,
-      "fix",
+      rebasing ? "rebase" : "fix",
       { guard: true, from: round.reportPath, agent: round.agent },
       trips.join("; "),
     );
+  }
+  if (rebasing) {
+    round.builtTip = tip;
+    return afterRebase(ledger, event);
   }
   return verdicts(ledger).length
     ? routeBuilt(ledger, round, event)
@@ -323,14 +383,12 @@ function afterRun(ledger, round, event) {
 // Where built work goes, after a report or the owner's last answer: a fresh verifier when there is no
 // verdict yet (or, when exec.verify skips the verifier and a gate is configured, the gate), else the
 // last verifier resumed to recheck.
-function routeBuilt(ledger, round, { skipVerify = false, tip, gate = true }) {
+function routeBuilt(ledger, round, { skipVerify = false, tip, gate = true, tier }) {
   if (verdicts(ledger).length === 0) {
     // Skipping the verifier needs a gate to stand in for it: with none, nothing would check the work.
     if (!skipVerify || !gate) return send(ledger, "verify", {});
     round.builtTip = tip;
-    if (greenOn(ledger.gates, tip))
-      return settle(ledger, "close", "a green worktree gate on this tip");
-    return settle(ledger, "gate", "no verifier for this item: the gate decides");
+    return gateOrClose(ledger, tip, { tier }, "no verifier for this item: the gate decides");
   }
   const verifier = verdicts(ledger).at(-1);
   return send(ledger, "recheck", { from: verifier.reportPath, agent: verifier.agent }, null);
@@ -400,6 +458,14 @@ function onResume(ledger, event) {
       reason,
     );
   const total = ledger.steps?.length ?? 0;
+  // A rebase held during its round carries on as the rebase, so its report is read as one.
+  if (held.when !== "after" && round.step === "rebase")
+    return send(
+      ledger,
+      "rebase",
+      { from: held.evidence ?? round.reportPath, agent: round.agent },
+      "the held rebase carries on",
+    );
   if (held.when !== "after")
     return carryOn(
       held.stepRun,
@@ -418,7 +484,8 @@ function onResume(ledger, event) {
   return routeBuilt(ledger, round, event);
 }
 
-function onVerdict(ledger, round, { verdict, tip, gate = true }) {
+function onVerdict(ledger, round, event) {
+  const { verdict, tip, gate = true, tier } = event;
   if (tip !== round.tip) {
     round.void = true;
     if (ledger.rounds.filter((r) => r.void).length >= MAX_VOIDS)
@@ -426,15 +493,17 @@ function onVerdict(ledger, round, { verdict, tip, gate = true }) {
         ledger,
         `${MAX_VOIDS} void verdicts: the branch tip kept moving while its verifiers read`,
       );
-    return send(
-      ledger,
-      "recheck",
-      { from: round.reportPath, agent: round.agent },
-      `the branch tip moved from ${short(round.tip)} to ${short(tip)} while the verifier read; its verdict is void`,
-    );
+    const moved = `the branch tip moved from ${short(round.tip)} to ${short(tip)} while the verifier read; its verdict is void`;
+    // A resolution is read again by a fresh verifier: it judges the range-diff, not earlier findings.
+    if (round.step === "resolve") return send(ledger, "resolve", {}, moved);
+    return send(ledger, "recheck", { from: round.reportPath, agent: round.agent }, moved);
   }
   if (!verdict) return resend(ledger, round, "the report has no `Verdict:` last line");
   round.verdict = verdict;
+  if (round.step === "resolve") {
+    if (verdict === "FAIL") return stop(ledger, "the conflict resolution failed its check");
+    return gateOrClose(ledger, tip, { gate, tier });
+  }
   if (verdict === "FAIL") {
     if (round.step === "final") return stop(ledger, "the final verifier's verdict is FAIL");
     if (verdicts(ledger).length >= MAX_VERDICTS)
@@ -447,30 +516,49 @@ function onVerdict(ledger, round, { verdict, tip, gate = true }) {
       "the verifier's FAIL",
     );
   }
-  if (round.step === "recheck") return send(ledger, "final", {}, null);
-  if (!gate) return settle(ledger, "close", "no gate in the workflow file: closes on the verdict");
-  if (greenOn(ledger.gates, tip))
-    return settle(ledger, "close", "a green worktree gate on this tip");
-  return settle(ledger, "gate", "no green worktree gate on this tip yet");
+  if (round.step === "recheck") {
+    round.covered = Boolean(event.covered);
+    round.onlyFixCommits = Boolean(event.onlyFixCommits);
+    const why = finalWhy(routeOf(ledger).final, round);
+    if (why) return send(ledger, "final", {}, why);
+  }
+  return gateOrClose(ledger, tip, { gate, tier });
 }
 
-/** The notes-fix rounds a lane has run and the most it may: the verdict budget, so fixing notes cannot
- *  outlast the cap the verdicts have. */
+// Why a recheck's PASS sends a final verifier (null: it does not): always under `final: "always"`, never
+// under "never", and under "after-fix" unless the recheck covered every note sent back and the tip moved
+// only by the fix commits.
+function finalWhy(final, round) {
+  if (final === "never") return null;
+  if (final === "always") return 'exec.final is "always"';
+  if (!round.covered)
+    return 'exec.final is "after-fix" and the recheck did not pass every note sent back';
+  if (!round.onlyFixCommits)
+    return 'exec.final is "after-fix" and the tip moved by more than fix commits since the last verdict';
+  return null;
+}
+
+/** The notes-fix rounds a lane has run and the most it may: the route's `noteRounds` (the preset's). */
 export const notesBudget = (ledger) => ({
   used: ledger.rounds.filter((r) => r.notes).length,
-  max: MAX_VERDICTS,
+  max: routeOf(ledger).noteRounds,
 });
 
 // A verified lane (PASS WITH NOTES, gate or close next) sends the builder back to fix the named notes; the
-// round after it is the usual recheck by the verifier.
+// round after it is the usual recheck by the verifier. A resolve verdict opens no notes round.
 function onNotes(ledger, notes) {
   const verifier = verdicts(ledger).at(-1);
-  if (verifier?.verdict !== "PASS WITH NOTES" || !["gate", "close"].includes(ledger.next))
+  if (
+    verifier?.verdict !== "PASS WITH NOTES" ||
+    verifier.step === "resolve" ||
+    !["gate", "close"].includes(ledger.next)
+  )
     throw new Error(
       `notes can be fixed only after a PASS WITH NOTES verdict, before the lane closes (state ${ledger.state})`,
     );
   const { used, max } = notesBudget(ledger);
-  if (used >= max) throw new Error(`${used} of ${max} notes rounds are used`);
+  if (used >= max)
+    throw new Error(`${used} of ${max} notes rounds are used (exec.noteRounds is ${max})`);
   const builder = builders(ledger).at(-1);
   return send(
     ledger,
@@ -480,18 +568,64 @@ function onNotes(ledger, notes) {
   );
 }
 
+// A verified lane: refused otherwise, naming the event.
+function verified(ledger, what) {
+  if (ledger.state !== "verified")
+    throw new Error(`${what} is for a verified lane (state ${ledger.state}, next ${ledger.next})`);
+  return ledger;
+}
+
+// A verified lane's branch goes back to its last builder, to be rebased onto main.
+function onRebase(ledger) {
+  verified(ledger, "a rebase");
+  const builder = builders(ledger).at(-1);
+  return send(
+    ledger,
+    "rebase",
+    { from: builder?.reportPath, agent: builder?.agent },
+    "rebase the branch onto main",
+  );
+}
+
+// After a rebase (reported, or found done): a resolution that changed the commits is read by a fresh
+// verifier under `rebase: "recheck"`; else the gate checks the new tip.
+function afterRebase(ledger, { tip, changed = true, gate = true, tier }) {
+  if (changed && routeOf(ledger).rebase === "recheck")
+    return send(
+      ledger,
+      "resolve",
+      {},
+      "the rebase changed the commits: a verifier reads the resolution",
+    );
+  const why = changed
+    ? 'exec.rebase is "gate": the gate checks the rebased tip'
+    : "the rebase changed no commit: the gate checks the new tip";
+  return gateOrClose(ledger, tip, { gate, tier }, why);
+}
+
+// A lane closed with no verdict (the route skipped its verifier) gets one fresh verifier now.
+function onReverify(ledger) {
+  verified(ledger, "reverify");
+  if (verdicts(ledger).length)
+    throw new Error("reverify is for a lane closed without a verifier; a verifier closed this one");
+  return send(ledger, "verify", {}, "a verifier reads the work the route sent past one");
+}
+
 function onGate(ledger, record) {
   ledger.gates.push(record);
   if (ledger.next !== "gate") return { ledger, next: ledger.next };
   // A red that failed only in listed flaky tests is re-run alone; the re-run's record decides.
   if (record.flakyRed?.length) return { ledger, next: ledger.next };
+  // The tip the lane settled the gate on (a ledger from before `gateTip`: its last verdict's or build's).
   const verified =
-    verdicts(ledger).at(-1)?.tip ?? ledger.rounds.findLast((r) => r.builtTip)?.builtTip;
+    ledger.gateTip ??
+    verdicts(ledger).at(-1)?.tip ??
+    ledger.rounds.findLast((r) => r.builtTip)?.builtTip;
   if (record.commit !== verified)
     return stop(ledger, `the branch moved from ${short(verified)} since the verdict`);
   if (!greenOn([record], verified))
     return stop(ledger, `the worktree gate is red (${gateWhy(record)})`);
-  return settle(ledger, "close", "the worktree gate is green");
+  return settle(ledger, "close", "the worktree gate is green", verified);
 }
 
 const gateWhy = (r) =>

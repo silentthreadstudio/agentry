@@ -25,6 +25,8 @@
 //   stepSlots       the slots a contract with steps fills: the round's run, the owner's answer a
 //                   `continue` round carries, the approvals a verifier is told of (all off without steps)
 //   policySlots     the repo's policy lines (workflow file `briefs`) for a dispatch, as the brief's section
+//   recheckSlots    what a recheck, rebase and resolve brief name: the notes sent back, main's branch and
+//                   the range-diff the resolve check reads
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
 //
 // Reads the board's files and the memory store; writes nothing. Node built-ins only.
@@ -56,9 +58,11 @@ const TEMPLATE_OF = {
   fix: "fix",
   "needs-context": "fix",
   continue: "fix",
+  rebase: "rebase",
   verify: "verify",
   recheck: "verify",
   final: "final",
+  resolve: "resolve",
 };
 
 // Where a contract's own-list ends: the next labelled part of the contract.
@@ -654,12 +658,13 @@ export function renderBrief(step, values) {
 }
 
 /** The repo-policy slots for dispatch `step`: the workflow file's `briefs` list for its role (`build` for a
- *  builder's step, `verify` for a verifier's), each line a bullet, printed as written. No list, no section.
+ *  builder's step, the rebase included; `verify` for a verifier's, the resolve check included), each line a
+ *  bullet, printed as written. No list, no section.
  *  With the workflow file's `locks`, the time-limit rule's lock line (`locked`): `lockTake` is the take
  *  command, the lock named when there is one, else `<name>` and the names. */
 export function policySlots(spec, step) {
   const name = Object.hasOwn(TEMPLATE_OF, step) ? TEMPLATE_OF[step] : null;
-  const role = name === "build" || name === "fix" ? "build" : "verify";
+  const role = ["build", "fix", "rebase"].includes(name) ? "build" : "verify";
   const lines = own(own(spec, "briefs"), role) ?? [];
   const locks = Object.keys(own(spec, "locks") ?? {});
   const lockTake =
@@ -673,6 +678,15 @@ export function policySlots(spec, step) {
     lockTake: locks.length ? lockTake : "",
   };
 }
+
+/** The slots a recheck, rebase and resolve brief fill: `sentBack` the labels of the notes sent back (the
+ *  picked ones, or every `N<k>` of the FAIL report), `mainBranch`, and `rangeDiff` the range-diff file the
+ *  resolve check judges ("" when there is none). */
+export const recheckSlots = ({ sentBack = [], mainBranch = "main", rangeDiff = "" } = {}) => ({
+  sentBack: sentBack.length ? sentBack.join(", ") : "none: your report labelled no note",
+  mainBranch,
+  rangeDiff,
+});
 
 const NOT_THIS_ROUND_WIDTH = 100;
 

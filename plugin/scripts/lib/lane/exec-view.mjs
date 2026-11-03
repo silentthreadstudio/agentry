@@ -9,6 +9,8 @@
 // answerLine(entry, total) -> string   one owner's answer: `approved: step 1 of 2 at <ISO>: "<note>"`
 // idleText(id, idle) -> string         the `idle:` line's text (field 53); idleHead, up to its park step
 // clock(iso) -> "HH:MM"                local time
+// workflowText(resolved) -> string     the `workflow:` line: `standard · verify all · notes 1 · final never (set) · …`
+// routeFixedText(route) -> string      a ledger's route snapshot: `standard · verify all · notes 1 · …`
 import { runText } from "../process/steps.mjs";
 
 /** The verify route a lane runs, as one line (`route` is the ledger's `{ verify, flagged }`). */
@@ -19,6 +21,29 @@ export function routeText(route) {
   const why = verify === "none" ? "no verifier" : "this item is not flagged, so no verifier";
   return `${verify}: ${why}; built goes straight to the gate`;
 }
+
+const ROLES = ["build", "verify", "merge"];
+
+/** The workflow as `resolveWorkflow` resolves it, as one line: each value, `(set)` after one the file gives
+ *  itself, then the tier each gate role runs (`gate none` with no gate). */
+export function workflowText({ preset, exec, roles, set }) {
+  const of = (key, value) => `${value}${set.includes(key) ? " (set)" : ""}`;
+  const gate = roles
+    ? `gate ${ROLES.map((r) => `${r} ${of(`gate.roles.${r}`, roles[r])}`).join(", ")}`
+    : "gate none";
+  return [
+    of("exec.preset", preset),
+    `verify ${of("exec.verify", exec.verify)}`,
+    `notes ${of("exec.noteRounds", exec.noteRounds)}`,
+    `final ${of("exec.final", exec.final)}`,
+    `rebase ${of("exec.rebase", exec.rebase)}`,
+    gate,
+  ].join(" · ");
+}
+
+/** A lane's route as fixed at start (the ledger's snapshot, the standard values filled in). */
+export const routeFixedText = (route) =>
+  `${route.preset ?? "standard"} · verify ${route.verify} · notes ${route.noteRounds} · final ${route.final} · rebase ${route.rebase}`;
 
 /** Where a hold sits, as words: `after step 1 of 2`, `during steps 2–3 of 3`, or `mid-build` (no steps). */
 export const holdWhere = (hold, total) =>
@@ -56,11 +81,12 @@ export const span = (minutes) =>
     : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
 
 /** The idle line (field 53): `<id> 2h13m: last change 11:44 (<file>) → check the builder; <park> to park
- *  it`. `idle` is `{ minutes, lastChange, file, park }` (`file` null when no file is the newest change). */
+ *  it`. `idle` is `{ minutes, lastChange, file, newest, park }`: in the parentheses the file, `the last
+ *  commit` when the branch's last commit is the newest change, else `no file changed` (the dispatch is). */
 export const idleText = (id, idle) => `${idleHead(id, idle)}; ${idle.park} to park it`;
 /** The idle line up to its park step: `<id> 2h13m: last change 11:44 (<file>) → check the builder`. */
 export const idleHead = (id, idle) =>
-  `${id} ${span(idle.minutes)}: last change ${clock(idle.lastChange)} (${idle.file ?? "no file changed"}) → check the builder`;
+  `${id} ${span(idle.minutes)}: last change ${clock(idle.lastChange)} (${idle.file ?? (idle.newest === "commit" ? "the last commit" : "no file changed")}) → check the builder`;
 
 const HEADER = new Set(["id", "step", "next", "state"]);
 const indent = (text) =>
@@ -88,6 +114,7 @@ function ownedBlock(owned, amend) {
 function field(key, value, result) {
   if (key === "owned" && Array.isArray(value)) return ownedBlock(value, result.amend);
   if (key === "idle" && typeof value === "object") return [`idle: ${idleText(result.id, value)}`];
+  if (key === "workflow" && value?.exec) return [`workflow: ${workflowText(value)}`];
   if (key === "amend" && Array.isArray(result.owned)) return [];
   if (key === "preview") return [value];
   if (Array.isArray(value) && !value.length) return [`${key}: none`];

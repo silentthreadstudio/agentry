@@ -1,6 +1,8 @@
 // Tests for the exec lane's fewer-round-trips keys on temp git repos: `exec.verify` (all | flagged | none) sends
-// a built item straight to the gate unless its flag is set, `models` names the model each dispatch prints, and
-// a verify brief on a tip whose gate is already green says to read that gate, not re-run it. A builder or
+// a built item straight to the gate unless its flag is set, `models` names the model each dispatch prints,
+// a verify brief on a tip whose gate is already green says to read that gate, not re-run it, and the presets'
+// keys: notes rounds, the final after a fix, the route fixed at start, reverify, the flag field and the idle
+// threshold. A builder or
 // verifier is simulated by committing in the worktree and writing its report file.
 // Run: node --test plugin/scripts/test/exec-route.test.mjs
 import assert from "node:assert/strict";
@@ -12,12 +14,14 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { idleHead } from "../lib/lane/exec-view.mjs";
 import { validateSpec } from "../lib/process/spec.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
 import { splitSpec, writeSpec } from "./spec-files.mjs";
@@ -243,7 +247,7 @@ test("the workflow file refuses flagged without a flag field on the exec kind, a
   const refused = validateSpec(splitSpec({ ...noFlag, exec: { verify: "flagged" } }));
   assert.match(
     refused.problems[0].message,
-    /exec\.verify is "flagged", but the task kind has no field named "flag"/,
+    /exec\.verify is "flagged" \(set\), but the task kind has no field named "flag"/,
   );
   const wrongType = structuredClone(SPEC);
   wrongType.kinds.task.fields.flag.type = "text";
@@ -357,4 +361,524 @@ test("exec start refuses an old gate.command or gate.quick at load, naming gate.
   assert.match(res.stderr, /gate\.command replaced by gate\.tiers \(0\.3\): make it the last tier/);
   assert.match(res.stderr, /gate\.quick replaced by gate\.tiers: a tier with "when"/);
   assert.equal(existsSync(join(r.root, ".agentry", "run")), false);
+});
+
+// ---- presets: notes rounds, the final, the route snapshot (A47, #49) ----------------------------------
+
+const ledgerBytes = (root, id) =>
+  readFileSync(join(root, ".agentry", "run", "process", "ledger", `${id}.json`), "utf8");
+const say = (out, text) => writeFileSync(out.reportPath, text);
+const NOTES = "Checked.\nN1: rename the helper\nN2: a comment is stale\nused_memories: none\n";
+const failWith = (out) => say(out, `${NOTES}Verdict: FAIL\n`);
+const notesWith = (out) => say(out, `${NOTES}Verdict: PASS WITH NOTES\n`);
+// A builder's fix on the worktree: a commit and a DONE report.
+function fixIt(out, file = "fix.txt") {
+  commitFile(out.worktree, file, "fixed\n", `fix: ${file}`);
+  say(out, "DONE\nfixed\nused_memories: none\n");
+}
+// T1 built, then judged by `verdict(out)`: returns the verdict step's result.
+function judged(r, verdict) {
+  const started = lane(r, "start", "T1").json;
+  build(started);
+  const verify = lane(r, "report", "T1", "--agent", "builder-1").json;
+  verdict(verify);
+  return lane(r, "verdict", "T1", "--agent", "verifier-1");
+}
+
+test("noteRounds 0: PASS WITH NOTES goes on to the gate and closes; the notes stay open; fix exits 2", () => {
+  const r = repo({ exec: { noteRounds: 0 } });
+  const v = judged(r, notesWith);
+  assert.equal(v.json.next, "gate");
+  assert.equal(v.json.notes, "notes kept open (exec.noteRounds is 0)");
+  assert.deepEqual(ledgerOf(r.root, "T1").openNotes, [
+    "N1 rename the helper",
+    "N2 a comment is stale",
+  ]);
+  const before = ledgerBytes(r.root, "T1");
+  const fix = lane(r, "fix", "T1", "--notes", "N1");
+  assert.equal(fix.exit, 2);
+  assert.match(fix.stderr, /0 of 0 notes rounds are used \(exec\.noteRounds is 0/);
+  assert.equal(ledgerBytes(r.root, "T1"), before, "a refusal writes nothing");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  const closed = lane(r, "close", "T1").json;
+  assert.match(closed.episode.outcome, /open notes: N1 rename the helper \| N2 a comment is stale/);
+  assert.deepEqual(lane(r, "show", "T1").json.openNotes, ledgerOf(r.root, "T1").openNotes);
+});
+
+test("noteRounds 1: one notes round is sent, a second is refused naming the key", () => {
+  const r = repo({ exec: { noteRounds: 1, final: "never" } });
+  const v = judged(r, notesWith);
+  assert.match(v.json.notes, /exec fix T1 .*--notes N1,N2$/);
+  const fix = lane(r, "fix", "T1", "--notes", "N1").json;
+  assert.equal(fix.next, "fix");
+  fixIt(fix);
+  const recheck = lane(r, "report", "T1").json;
+  assert.equal(recheck.next, "recheck");
+  say(
+    recheck,
+    "N1: PASS renamed\nN3: one more thing\nused_memories: none\nVerdict: PASS WITH NOTES\n",
+  );
+  const again = lane(r, "verdict", "T1").json;
+  assert.equal(again.next, "gate");
+  assert.equal(again.notes, "notes kept open (exec.noteRounds is 1)");
+  // N2 was never sent back and N1 passed: the open notes are N3 and N2.
+  assert.deepEqual(ledgerOf(r.root, "T1").openNotes, [
+    "N3 one more thing",
+    "N2 a comment is stale",
+  ]);
+  const before = ledgerBytes(r.root, "T1");
+  const second = lane(r, "fix", "T1", "--notes", "N3");
+  assert.equal(second.exit, 2);
+  assert.match(second.stderr, /1 of 1 notes rounds are used \(exec\.noteRounds is 1/);
+  assert.equal(ledgerBytes(r.root, "T1"), before);
+});
+
+// A lane at its recheck after a FAIL labelled N1 and N2 (`fix` makes the builder's fix round).
+function atRecheck(r, fix = fixIt) {
+  const v = judged(r, failWith).json;
+  assert.equal(v.next, "fix");
+  fix(v);
+  const recheck = lane(r, "report", "T1").json;
+  assert.equal(recheck.next, "recheck");
+  return recheck;
+}
+
+test("final after-fix: a recheck passing every label sent back on a fast-forward tip closes with no final", () => {
+  const r = repo({ exec: { final: "after-fix" } });
+  const recheck = atRecheck(r);
+  const brief = readFileSync(recheck.brief, "utf8");
+  assert.match(brief, /For each note sent back \(N1, N2\), write one line/);
+  say(recheck, "- N1: PASS renamed\nn2: pass fixed\nused_memories: none\nVerdict: PASS\n");
+  const v = lane(r, "verdict", "T1").json;
+  assert.equal(v.next, "gate");
+  const round = ledgerOf(r.root, "T1").rounds.at(-1);
+  assert.deepEqual([round.covered, round.onlyFixCommits], [true, true]);
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+});
+
+test("final after-fix: a label missing, fenced, in prose, or with a FAIL line too sends a final", () => {
+  const reports = {
+    missing: "N1: PASS renamed\n",
+    fenced: "N1: PASS renamed\n```\nN2: PASS fixed\n```\n",
+    prose: "N1: PASS renamed\nN2 passes now\n",
+    both: "N1: PASS renamed\nN2: PASS fixed\nN2: FAIL still stale\n",
+  };
+  for (const [why, lines] of Object.entries(reports)) {
+    const r = repo({ exec: { final: "after-fix" } });
+    say(atRecheck(r), `${lines}used_memories: none\nVerdict: PASS\n`);
+    const v = lane(r, "verdict", "T1").json;
+    assert.equal(v.next, "final", why);
+    assert.match(v.why, /did not pass every note sent back/, why);
+  }
+});
+
+test("final after-fix: a rewritten tip, or one with a merge commit since the verdict, sends a final", () => {
+  const amend = (out) => {
+    // The fix rewrites the verified commit: the old tip is no ancestor of the new one.
+    writeFileSync(join(out.worktree, "out.txt"), "remade\n");
+    git(out.worktree, "commit", "-q", "-a", "--amend", "-m", "feat: add out.txt again");
+    say(out, "DONE\nfixed\nused_memories: none\n");
+  };
+  const merged = (out) => {
+    git(out.worktree, "checkout", "-q", "-b", "side");
+    commitFile(out.worktree, "side.txt", "side\n", "feat: side");
+    git(out.worktree, "checkout", "-q", "agentry/T1");
+    git(out.worktree, "merge", "-q", "--no-ff", "-m", "merge side", "side");
+    git(out.worktree, "branch", "-q", "-D", "side");
+    say(out, "DONE\nfixed\nused_memories: none\n");
+  };
+  for (const [why, fix] of Object.entries({ amend, merged })) {
+    const r = repo({ exec: { final: "after-fix" } });
+    say(atRecheck(r, fix), "N1: PASS ok\nN2: PASS ok\nused_memories: none\nVerdict: PASS\n");
+    const v = lane(r, "verdict", "T1").json;
+    assert.equal(v.next, "final", why);
+    assert.match(v.why, /more than fix commits/, why);
+    assert.equal(ledgerOf(r.root, "T1").rounds.at(-2).onlyFixCommits, false, why);
+  }
+});
+
+test("the route is fixed at start: a mid-lane edit to strict changes no running lane", () => {
+  const r = repo({ exec: { noteRounds: 0, final: "never" } });
+  const started = lane(r, "start", "T1");
+  assert.deepEqual(ledgerOf(r.root, "T1").route, {
+    verify: "all",
+    flagged: false,
+    preset: "standard",
+    noteRounds: 0,
+    final: "never",
+    rebase: "recheck",
+  });
+  build(started.json);
+  const spec = { ...SPEC, exec: { preset: "strict" } };
+  writeSpec(join(r.root, ".agentry"), spec); // uncommitted, and no guard or gate key changes
+  const verify = lane(r, "report", "T1").json;
+  assert.equal(verify.next, "verify");
+  notesWith(verify);
+  const v = lane(r, "verdict", "T1").json;
+  assert.equal(v.notes, "notes kept open (exec.noteRounds is 0)");
+  assert.equal(lane(r, "fix", "T1", "--notes", "N1").exit, 2);
+  const shown = lane(r, "show", "T1").json;
+  assert.equal(
+    shown["route fixed at start"],
+    "standard · verify all · notes 0 · final never · rebase recheck",
+  );
+  assert.equal(shown.workflow.preset, "strict");
+});
+
+test("exec start and show print the workflow line for a file with one override; --json the object", () => {
+  const r = repo({ exec: { final: "never" } });
+  const text = lane(r, "start", "T1", "--text");
+  assert.match(
+    text.stdout,
+    /^workflow: standard · verify all · notes 1 · final never \(set\) · rebase recheck · gate build pick, verify none, merge pick$/m,
+  );
+  const shown = lane(r, "show", "T1");
+  assert.equal(shown.json.workflow.set.join(), "exec.final");
+  assert.deepEqual(shown.json.workflow.exec, {
+    verify: "all",
+    noteRounds: 1,
+    final: "never",
+    rebase: "recheck",
+  });
+  assert.match(
+    lane(r, "show", "T1", "--text").stdout,
+    /^route fixed at start: standard · verify all/m,
+  );
+});
+
+test("show says when the route fixed at start differs from what the workflow file says now", () => {
+  const r = repo();
+  lane(r, "start", "T1");
+  writeSpec(join(r.root, ".agentry"), { ...SPEC, exec: { verify: "flagged" } });
+  assert.equal(
+    lane(r, "show", "T1").json.route,
+    "all (fixed at start; workflow.json now says flagged)",
+  );
+});
+
+// ---- reverify, the flag field, the idle threshold (R1c-9 N4, N5) ------------------------------------
+
+// T1 built under exec.verify none: gated and closed with no verifier.
+function gateClosed(r) {
+  build(lane(r, "start", "T1").json);
+  assert.equal(lane(r, "report", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+}
+
+test("reverify on a gate-closed lane dispatches a fresh verifier, then the usual rows", () => {
+  const r = repo({ exec: { verify: "none" } });
+  gateClosed(r);
+  const re = lane(r, "reverify", "T1").json;
+  assert.equal(re.next, "verify");
+  assert.deepEqual([re.mode, re.role, re.dispatch.agent], ["fresh", "verify", "verifier"]);
+  judge(re, "PASS");
+  const v = lane(r, "verdict", "T1").json;
+  assert.equal(v.next, "close", "the gate is green on this tip already");
+  assert.equal(status(r.root, "T1"), "verify");
+});
+
+test("reverify on a lane a verifier closed, or one not closed, exits 2 with the ledger as it was", () => {
+  const r = repo();
+  const started = lane(r, "start", "T1").json;
+  let before = ledgerBytes(r.root, "T1");
+  assert.equal(lane(r, "reverify", "T1").exit, 2);
+  assert.equal(ledgerBytes(r.root, "T1"), before);
+  build(started);
+  judge(lane(r, "report", "T1").json, "PASS");
+  lane(r, "verdict", "T1");
+  lane(r, "gate", "T1");
+  before = ledgerBytes(r.root, "T1");
+  const res = lane(r, "reverify", "T1");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /a verifier closed T1 \(PASS\)/);
+  assert.equal(ledgerBytes(r.root, "T1"), before);
+});
+
+test("exec.flagField urgent: the route keys on that field", () => {
+  const spec = structuredClone(SPEC);
+  const { flag, ...rest } = spec.kinds.task.fields;
+  spec.kinds.task.fields = { ...rest, urgent: { ...flag, column: "Flag" } };
+  const r = repo({ ...spec, exec: { verify: "flagged", flagField: "urgent" } });
+  // T2 has its Flag column set: under the urgent field it is flagged, so a verifier reads it.
+  const two = lane(r, "start", "T2");
+  assert.match(two.json.route, /this item is flagged/);
+  build(two.json);
+  assert.equal(lane(r, "report", "T2").json.next, "verify");
+  const one = lane(r, "start", "T1");
+  build(one.json);
+  assert.equal(lane(r, "report", "T1").json.next, "gate");
+});
+
+test("exec.idleMinutes 5 flags a lane quiet for 6 minutes; the default 20 does not", () => {
+  const quiet = (r) => {
+    const started = lane(r, "start", "T1").json;
+    const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+    const l = JSON.parse(readFileSync(file, "utf8"));
+    const old = new Date(Date.now() - 6 * 60_000);
+    const older = new Date(old.getTime() - 60_000); // the dispatch and the files: before the commit
+    l.rounds.at(-1).at = older.toISOString();
+    writeFileSync(file, JSON.stringify(l, null, 2));
+    spawnSync("git", ["-C", started.worktree, "commit", "-q", "--amend", "--no-edit"], {
+      env: { ...gitEnv, GIT_COMMITTER_DATE: old.toISOString() },
+    });
+    for (const f of git(started.worktree, "ls-files").split("\n"))
+      if (f) utimesSync(join(started.worktree, f), older, older);
+    return lane(r, "show", "T1").json.idle;
+  };
+  const idle = quiet(repo({ exec: { idleMinutes: 5 } }));
+  assert.ok(idle && idle.minutes >= 6, JSON.stringify(idle));
+  assert.equal(idle.newest, "commit");
+  assert.equal(quiet(repo()), undefined);
+});
+
+test("the idle text names the last commit when it is the newest change, no file changed for the dispatch", () => {
+  const head = (newest, file = null) =>
+    idleHead("T1", { minutes: 25, lastChange: "2026-11-03T10:00:00.000Z", file, newest });
+  assert.match(head("commit"), /\(the last commit\) → check the builder$/);
+  assert.match(head("dispatch"), /\(no file changed\) → check the builder$/);
+  assert.match(head("file", "a.txt"), /\(a\.txt\) → check the builder$/);
+});
+
+// ---- the land conflict, the rebase and the resolution recheck (A48) -----------------------------------
+
+const ALLOW = { guard: { allow: ["notes/**"] } };
+const land = ({ root, home }) =>
+  spawnSync("node", [LANE, "merge", "T1", "--message", "docs(board): land T1", "--root", root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: home, NO_COLOR: "1" },
+  });
+// T1 built (out.txt and notes/shared.md on its branch), verified PASS and gated green: closed.
+function closedT1(r) {
+  const started = lane(r, "start", "T1").json;
+  commitFile(started.worktree, "notes/shared.md", "branch side\n", "docs: branch side");
+  build(started);
+  judge(lane(r, "report", "T1", "--agent", "builder-1").json, "PASS");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  return started;
+}
+// The builder rebases in the worktree: a conflict on notes/shared.md is resolved keeping both sides.
+function rebaseBy(out, { finish = true } = {}) {
+  const res = spawnSync("git", ["-C", out.worktree, "rebase", "main"], {
+    env: gitEnv,
+    encoding: "utf8",
+  });
+  if (res.status !== 0) {
+    writeFileSync(join(out.worktree, "notes", "shared.md"), "main side\nbranch side\n");
+    git(out.worktree, "add", "notes/shared.md");
+    if (finish)
+      spawnSync("git", ["-C", out.worktree, "rebase", "--continue"], {
+        env: { ...gitEnv, GIT_EDITOR: "true" },
+      });
+  }
+  writeFileSync(out.reportPath, "DONE\nrebased onto main\nused_memories: none\n");
+}
+
+test("a land conflict names lane exec rebase; the resolved conflict sends resolve with the range-diff", () => {
+  const r = repo(ALLOW);
+  closedT1(r);
+  commitFile(r.root, "notes/shared.md", "main side\n", "docs: main side");
+  const pre = git(r.root, "rev-parse", "HEAD");
+  const landed = land(r);
+  assert.equal(landed.status, 1, landed.stdout);
+  assert.match(landed.stdout, /next: (agentry )?lane exec rebase T1$/m);
+  assert.equal(git(r.root, "rev-parse", "HEAD"), pre);
+  const rebase = lane(r, "rebase", "T1").json;
+  assert.equal(rebase.next, "rebase");
+  assert.deepEqual([rebase.role, rebase.mode, rebase.agent], ["build", "resume", "builder-1"]);
+  assert.match(readFileSync(rebase.brief, "utf8"), /git rebase main` \(no `-i`\)/);
+  const entry = ledgerOf(r.root, "T1").rebases[0];
+  assert.ok(entry.fromBase && entry.fromTip && entry.toTip === undefined);
+  rebaseBy(rebase);
+  const resolve = lane(r, "report", "T1").json;
+  assert.equal(resolve.next, "resolve");
+  assert.deepEqual([resolve.role, resolve.mode], ["verify", "fresh"]);
+  const diff = join(r.root, ".agentry", "run", "process", "runs", "T1", "logs", "range-diff-1.txt");
+  assert.ok(existsSync(diff));
+  assert.match(
+    readFileSync(resolve.brief, "utf8"),
+    new RegExp(`is in ${diff.replace(/[.]/g, "\\.")}`),
+  );
+  const l = ledgerOf(r.root, "T1");
+  assert.equal(l.base, pre, "the base is the new merge base with main");
+  assert.equal(l.rebases[0].changed, true);
+  // a resolve FAIL stops the lane
+  judge(resolve, "FAIL");
+  const failed = lane(r, "verdict", "T1");
+  assert.equal(failed.exit, 1);
+  assert.equal(failed.json.reason, "the conflict resolution failed its check");
+});
+
+test("a resolve PASS goes to the gate and closes on the new tip; the land then goes through", () => {
+  const r = repo(ALLOW);
+  closedT1(r);
+  commitFile(r.root, "notes/shared.md", "main side\n", "docs: main side");
+  assert.equal(land(r).status, 1);
+  rebaseBy(lane(r, "rebase", "T1").json);
+  const resolve = lane(r, "report", "T1").json;
+  judge(resolve, "PASS");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  const tip = git(r.root, "rev-parse", "agentry/T1");
+  assert.equal(ledgerOf(r.root, "T1").closedTip, tip);
+  const landed = land(r);
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+});
+
+test("a clean rebase (every pair =) goes to the gate; rebase gate goes to the gate on a changed one", () => {
+  const clean = repo(ALLOW);
+  closedT1(clean);
+  commitFile(clean.root, "notes/other.md", "other\n", "docs: other");
+  rebaseBy(lane(clean, "rebase", "T1").json);
+  const gated = lane(clean, "report", "T1").json;
+  assert.equal(gated.next, "gate");
+  assert.match(gated.why, /the rebase changed no commit/);
+  assert.equal(ledgerOf(clean.root, "T1").rebases[0].changed, false);
+  assert.equal(lane(clean, "gate", "T1").json.next, "close");
+  const r = repo({ ...ALLOW, exec: { rebase: "gate" } });
+  closedT1(r);
+  commitFile(r.root, "notes/shared.md", "main side\n", "docs: main side");
+  rebaseBy(lane(r, "rebase", "T1").json);
+  const out = lane(r, "report", "T1").json;
+  assert.equal(out.next, "gate");
+  assert.match(out.why, /exec\.rebase is "gate"/);
+});
+
+test("a rebase report with a rebase still in progress is refused, naming the worktree", () => {
+  const r = repo(ALLOW);
+  const started = closedT1(r);
+  commitFile(r.root, "notes/shared.md", "main side\n", "docs: main side");
+  rebaseBy(lane(r, "rebase", "T1").json, { finish: false });
+  const before = ledgerBytes(r.root, "T1");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 2);
+  assert.match(
+    res.stderr,
+    new RegExp(`a rebase is still in progress in the worktree ${started.worktree}`),
+  );
+  assert.equal(ledgerBytes(r.root, "T1"), before);
+});
+
+test("exec rebase killed after its rebases[] entry reruns on it: one entry, one dispatch", () => {
+  const r = repo(ALLOW);
+  closedT1(r);
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const l = JSON.parse(readFileSync(file, "utf8"));
+  const tip = git(r.root, "rev-parse", "agentry/T1");
+  l.rebases = [{ fromBase: l.base, fromTip: tip, at: "2026-11-03T10:00:00.000Z" }];
+  writeFileSync(file, JSON.stringify(l, null, 2)); // what a run killed before its dispatch left
+  const rounds = l.rounds.length;
+  const first = lane(r, "rebase", "T1").json;
+  assert.equal(first.next, "rebase");
+  const again = lane(r, "rebase", "T1");
+  assert.equal(again.exit, 0, "a rerun with the round out prints it again");
+  const after = ledgerOf(r.root, "T1");
+  assert.equal(after.rebases.length, 1);
+  assert.equal(after.rebases[0].at, "2026-11-03T10:00:00.000Z");
+  assert.equal(after.rounds.length, rounds + 1);
+});
+
+test("exec rebase on a lane that is not verified exits 2 with the ledger byte-identical", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  lane(r, "report", "T1");
+  const before = ledgerBytes(r.root, "T1");
+  const res = lane(r, "rebase", "T1");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /rebase is for a verified lane: T1 is verifying/);
+  assert.equal(ledgerBytes(r.root, "T1"), before);
+});
+
+test("a branch already rebased onto main past closedTip is recorded with no builder round", () => {
+  const r = repo(ALLOW);
+  const started = closedT1(r);
+  const closedTip = ledgerOf(r.root, "T1").closedTip;
+  commitFile(r.root, "notes/other.md", "other\n", "docs: other");
+  git(started.worktree, "rebase", "-q", "main");
+  const rounds = ledgerOf(r.root, "T1").rounds.length;
+  const res = lane(r, "rebase", "T1").json;
+  assert.equal(res.next, "gate");
+  assert.match(res.rangeDiff, /range-diff-1\.txt$/);
+  const l = ledgerOf(r.root, "T1");
+  assert.equal(l.rounds.length, rounds, "no builder round");
+  assert.equal(l.rebases[0].fromTip, closedTip);
+  assert.equal(l.rebases[0].toTip, git(r.root, "rev-parse", "agentry/T1"));
+});
+
+test("each rebase writes its own range-diff file", () => {
+  const r = repo(ALLOW);
+  closedT1(r);
+  for (const n of [1, 2]) {
+    commitFile(r.root, `notes/other-${n}.md`, "other\n", `docs: other ${n}`);
+    rebaseBy(lane(r, "rebase", "T1").json);
+    assert.equal(lane(r, "report", "T1").json.next, "gate");
+    assert.equal(lane(r, "gate", "T1").json.next, "close");
+  }
+  const logs = join(r.root, ".agentry", "run", "process", "runs", "T1", "logs");
+  assert.ok(
+    existsSync(join(logs, "range-diff-1.txt")) && existsSync(join(logs, "range-diff-2.txt")),
+  );
+  assert.equal(ledgerOf(r.root, "T1").rebases.length, 2);
+});
+
+test("a resolve verdict on a moved tip voids and sends resolve again", () => {
+  const r = repo(ALLOW);
+  closedT1(r);
+  commitFile(r.root, "notes/shared.md", "main side\n", "docs: main side");
+  rebaseBy(lane(r, "rebase", "T1").json);
+  const resolve = lane(r, "report", "T1").json;
+  commitFile(resolve.worktree, "late.txt", "late\n", "fix: late");
+  judge(resolve, "PASS");
+  const v = lane(r, "verdict", "T1").json;
+  assert.equal(v.verdict, "void");
+  assert.equal(v.next, "resolve");
+  assert.equal(v.mode, "fresh");
+});
+
+test("a land on a branch moved past closedTip is refused with the pointer, main untouched", () => {
+  const r = repo();
+  const started = lane(r, "start", "T1").json;
+  build(started);
+  judge(lane(r, "report", "T1").json, "PASS");
+  lane(r, "verdict", "T1");
+  lane(r, "gate", "T1");
+  const closedTip = ledgerOf(r.root, "T1").closedTip;
+  commitFile(started.worktree, "extra.txt", "extra\n", "feat: extra");
+  const pre = git(r.root, "rev-parse", "HEAD");
+  const dirty = git(r.root, "status", "--porcelain");
+  const boardBefore = readFileSync(join(r.root, "plan", "BOARD.md"), "utf8");
+  const before = ledgerBytes(r.root, "T1");
+  const res = land(r);
+  assert.equal(res.status, 2, res.stdout);
+  assert.match(
+    res.stdout + res.stderr,
+    new RegExp(
+      `agentry/T1 moved since the lane closed on ${closedTip.slice(0, 7)}: (agentry )?lane exec rebase T1`,
+    ),
+  );
+  assert.equal(git(r.root, "rev-parse", "HEAD"), pre);
+  assert.equal(git(r.root, "status", "--porcelain"), dirty);
+  assert.equal(readFileSync(join(r.root, "plan", "BOARD.md"), "utf8"), boardBefore);
+  assert.equal(ledgerBytes(r.root, "T1"), before);
+});
+
+test("merge on a flagged lane closed with no verifier names lane exec reverify", () => {
+  const r = repo({ exec: { verify: "none" } });
+  build(lane(r, "start", "T2").json); // T2 is flagged: it has a verifier, so close one by hand
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T2.json");
+  lane(r, "report", "T2");
+  const l = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(
+    file,
+    JSON.stringify({ ...l, rounds: l.rounds.slice(0, 1), state: "verified", next: "merge" }),
+  );
+  const res = spawnSync("node", [LANE, "merge", "T2", "--preflight", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home, NO_COLOR: "1" },
+  });
+  assert.equal(res.status, 2);
+  assert.match(
+    res.stdout + res.stderr,
+    /a flagged item lands only after a verdict: (agentry )?lane exec reverify T2/,
+  );
 });

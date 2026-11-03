@@ -1740,7 +1740,8 @@ test("owns --set --apply during a notes-fix round keeps the brief's notes to fix
 });
 
 test("fix stops at the notes-round budget, exit 2, and says what to do next", () => {
-  const r = repo();
+  // strict: three notes rounds, and a fresh final after each recheck.
+  const r = repo({ spec: { ...SPEC, exec: { preset: "strict" } } });
   let out = lane(r, "start", "T1").json;
   build(out);
   out = lane(r, "report", "T1", "--agent", "builder-1").json;
@@ -1759,7 +1760,10 @@ test("fix stops at the notes-round budget, exit 2, and says what to do next", ()
   const rounds = ledgerOf(r.root, "T1").rounds.length;
   const over = lane(r, "fix", "T1", "--notes", "N2");
   assert.equal(over.exit, 2);
-  assert.match(over.stderr, /3 of 3 notes rounds are used.* → .*exec (gate|close) T1/);
+  assert.match(
+    over.stderr,
+    /3 of 3 notes rounds are used \(exec\.noteRounds is 3; next is (gate|close)\) → .*exec (gate|close) T1/,
+  );
   assert.equal(ledgerOf(r.root, "T1").rounds.length, rounds, "a refusal changes nothing");
 });
 
@@ -2217,4 +2221,179 @@ test("a green then a red gate on one tip says the latest is red, and the waiting
     brief,
     /Run the gate as the lane records it, in the foreground.*\n?.*exec gate T1 --root/,
   );
+});
+
+// ---- config edits can't widen the guard (R1d-21 N3); R1d-21's probes P1, P7 and P8 ---------------------
+
+// The workflow file in `.agentry/` with `change` made to its parsed value, left uncommitted.
+function editWorkflow(root, change) {
+  const file = join(root, ".agentry", "workflow.json");
+  const value = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, `${JSON.stringify(change(value), null, 2)}\n`);
+}
+
+test("an uncommitted config edit that changes the guard or gate key trips; other edits keep passing", () => {
+  const trips = {
+    guard: (w) => ({ ...w, guard: { allow: ["**"] } }),
+    gate: (w) => ({ ...w, gate: { tiers: [{ name: "full", command: ["true"] }] } }),
+  };
+  for (const [key, change] of Object.entries(trips)) {
+    const r = repo();
+    build(lane(r, "start", "T1").json);
+    editWorkflow(r.root, change);
+    const res = lane(r, "report", "T1");
+    assert.equal(res.exit, 1, key);
+    assert.equal(
+      res.json.reason,
+      `main touched: .agentry/workflow.json changes ${key} while lanes run → commit it between lanes`,
+      key,
+    );
+  }
+  for (const [why, change] of Object.entries({
+    "a re-indented file": (w) => w,
+    "another key": (w) => ({ ...w, models: { build: "sonnet" } }),
+  })) {
+    const r = repo();
+    build(lane(r, "start", "T1").json);
+    editWorkflow(r.root, change);
+    const res = lane(r, "report", "T1");
+    assert.equal(res.exit, 0, `${why}: ${res.json?.reason}`);
+    assert.deepEqual(res.json.guards, [], why);
+  }
+});
+
+test("a committed config change of the guard key keeps passing (R1d-21)", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  editWorkflow(r.root, (w) => ({ ...w, guard: { allow: ["notes/**"] } }));
+  git(r.root, "add", ".agentry/workflow.json");
+  git(r.root, "commit", "-q", "-m", "chore: allow notes");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.json?.reason);
+  assert.match(res.json.guards[0], /^main moved by allowed commits: 1 /);
+});
+
+test("P1: a building lane and a parked one both pass the guard on their next report after a config commit", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  const t2 = lane(r, "start", "T2").json;
+  writeFileSync(join(t2.worktree, "two.txt"), "half\n");
+  assert.equal(lane(r, "hold", "T2", "--for", "later").exit, 0);
+  const sha = commitConfig(r.root).slice(0, 7);
+  const line = [`main moved by allowed commits: 1 (${sha})`];
+  assert.deepEqual(lane(r, "report", "T1").json.guards, line);
+  const resumed = lane(r, "resume", "T2", "--note", "back").json;
+  git(t2.worktree, "add", "two.txt");
+  git(t2.worktree, "commit", "-q", "-m", "feat: two");
+  writeFileSync(resumed.reportPath, "DONE\nadded two.txt\nused_memories: none\n");
+  const rep = lane(r, "report", "T2");
+  assert.equal(rep.exit, 0, rep.stderr);
+  assert.deepEqual(rep.json.guards, line);
+});
+
+test("P7: the idle nudge on a tripped main names the park step, and the park exits 0", () => {
+  const r = repo();
+  const t1 = lane(r, "start", "T1").json;
+  writeFileSync(join(t1.worktree, "out.txt"), "half\n");
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const l = JSON.parse(readFileSync(file, "utf8"));
+  const old = new Date(Date.now() - 60 * 60_000);
+  l.rounds.at(-1).at = old.toISOString();
+  writeFileSync(file, JSON.stringify(l, null, 2));
+  spawnSync("git", ["-C", t1.worktree, "commit", "-q", "--amend", "--no-edit", "--allow-empty"], {
+    env: { ...gitEnv, GIT_COMMITTER_DATE: old.toISOString(), GIT_AUTHOR_DATE: old.toISOString() },
+  });
+  for (const f of git(t1.worktree, "ls-files", "--cached", "--others", "--exclude-standard").split(
+    "\n",
+  ))
+    if (f) utimesSync(join(t1.worktree, f), old, old);
+  commitFile(r.root, "stray.txt", "x\n", "chore: by hand"); // trips T1
+  const session = spawnSync("node", [LANE, "session", "start", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home, NO_COLOR: "1" },
+  });
+  assert.ok(
+    session.stdout.split("\n").some((x) => /exec hold T1 --for later/.test(x)),
+    session.stdout,
+  );
+  const park = lane(r, "hold", "T1", "--for", "later");
+  assert.equal(park.exit, 0, park.stderr);
+  assert.match(park.json["main moved while parked"], /HEAD moved/);
+});
+
+test("P8: with .agentry/run not gitignored the run files stay Agentry's own, and a config commit passes", () => {
+  const r = repo();
+  writeFileSync(join(r.root, ".gitignore"), ".agentry/config.json\n");
+  git(r.root, "commit", "-qam", "chore: no run ignore");
+  build(lane(r, "start", "T1").json);
+  editConfig(join(r.root, ".agentry"));
+  // Only the two config files: the run files beside them are untracked, and stay so.
+  git(r.root, "add", ".agentry/process.json", ".agentry/workflow.json");
+  git(r.root, "commit", "-q", "-m", "chore: tune");
+  const sha = git(r.root, "rev-parse", "--short=7", "HEAD");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.json?.reason);
+  assert.deepEqual(res.json.guards, [`main moved by allowed commits: 1 (${sha})`]);
+});
+
+// ---- hold: the owner's gate, the evidence (R1d-6 N9, final N3) ------------------------------------------
+
+const STEPS_MD = `# Tasks
+
+### T1 · Two steps
+
+- **Owns:** \`out.txt\`, \`two.txt\`
+- **Steps:**
+  1. Write out.txt → owner OK
+  2. Write two.txt
+- **Acceptance:**
+  - Step 1: out.txt exists
+  - two.txt exists
+
+### T2 · Other
+
+- **Owns:** \`two.txt\`. Accept: two.txt exists.
+`;
+
+test("a park on a lane held for the owner after a step is refused, nothing written; a during hold still parks", () => {
+  const r = repo({ tasks: STEPS_MD });
+  build(lane(r, "start", "T1").json);
+  assert.equal(lane(r, "report", "T1").json.state, "held");
+  const before = readFileSync(
+    join(r.root, ".agentry", "run", "process", "ledger", "T1.json"),
+    "utf8",
+  );
+  const res = lane(r, "hold", "T1", "--for", "later");
+  assert.equal(res.exit, 2);
+  assert.match(
+    res.stderr,
+    /T1 waits for the owner after step 1: resume it with the owner's words \(exec resume T1 --note "…"\), or keep it held/,
+  );
+  assert.equal(
+    readFileSync(join(r.root, ".agentry", "run", "process", "ledger", "T1.json"), "utf8"),
+    before,
+  );
+  const other = repo();
+  const t1 = lane(other, "start", "T1").json;
+  build(t1);
+  assert.equal(lane(other, "hold", "T1", "--for", "owner").exit, 0);
+  assert.equal(lane(other, "hold", "T1", "--for", "later").exit, 0, "a during hold may be parked");
+});
+
+test("a hold's evidence must be a file: a directory or a missing path is refused", () => {
+  const r = repo();
+  const t1 = lane(r, "start", "T1").json;
+  build(t1);
+  mkdirSync(join(r.root, "shots"));
+  for (const given of ["shots", "nope.png"]) {
+    const res = lane(r, "hold", "T1", "--for", "owner", "--evidence", given);
+    assert.equal(res.exit, 2, given);
+    assert.match(
+      res.stderr,
+      new RegExp(
+        `no file at ${given.replace(".", "\\.")}: save the builder's reply there first, or pass --evidence`,
+      ),
+    );
+  }
+  assert.equal(lane(r, "hold", "T1", "--for", "owner", "--evidence", t1.reportPath).exit, 0);
 });

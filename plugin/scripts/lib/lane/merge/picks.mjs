@@ -45,8 +45,13 @@ function pickStep(lane, rows) {
         : `aborted, but ${mainBranch} is NOT back at ${short(preHead)} and clean`,
     ]),
   );
+  // An exec lane rebases through its own step, which then checks the resolution before the land.
+  const rebase =
+    lane.ledger.origin === "exec"
+      ? `lane exec rebase ${lane.id}`
+      : `ask the builder to rebase ${branch} onto ${mainBranch}, then land again`;
   return res.restored
-    ? { exit: 1, next: `ask the builder to rebase ${branch} onto ${mainBranch}, then land again` }
+    ? { exit: 1, next: rebase }
     : {
         exit: 1,
         keepCarry: true,

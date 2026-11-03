@@ -67,7 +67,24 @@ export function ledgerStep(lane, { adopt }) {
         rows: [
           red(
             "ledger",
-            `${id} is flagged on the board, but no verifier read it (exec.verify skipped it): a flagged item lands only after a verdict`,
+            `${id} is flagged on the board, but no verifier read it (exec.verify skipped it): a flagged item lands only after a verdict: lane exec reverify ${id}`,
+          ),
+        ],
+      };
+    // What the lane closed on is what lands: a branch moved since (a rebase, a commit) is checked again first.
+    const tip = commitOf(root, `refs/heads/${ledger.branch}`);
+    if (
+      ledger.origin === "exec" &&
+      ledger.state !== "merged" &&
+      ledger.closedTip &&
+      tip !== ledger.closedTip
+    )
+      return {
+        exit: 2,
+        rows: [
+          red(
+            "ledger",
+            `${ledger.branch} moved since the lane closed on ${short(ledger.closedTip)}: lane exec rebase ${id}`,
           ),
         ],
       };
@@ -192,7 +209,9 @@ function checklistItems({ root, spec, ledger }) {
   const gate = gateOf(spec);
   if (!gate?.checklist.length) return [];
   const base = ledger.branch && mergeBaseOf(root, ledger.mainBranch, ledger.branch);
-  const changed = (base && changedSince(root, base, ledger.branch)) || [];
+  const changed = base ? changedSince(root, base, ledger.branch) : null;
+  // A diff git cannot give (no merge base) fails safe, as the land's tier does: every item applies.
+  if (!changed) return gate.checklist.map(({ name, text }) => ({ name, text }));
   return checklistFor(gate, { changed, flagged: Boolean(ledger.route?.flagged) });
 }
 

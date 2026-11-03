@@ -9,6 +9,8 @@ import {
   begin,
   expects,
   gateTally,
+  greenOn,
+  notesBudget,
   step,
   verdicts,
 } from "../lib/lane/rounds.mjs";
@@ -774,4 +776,281 @@ test("a round sent back inside a run (a resend) builds the same run", () => {
   const res = pure(stepped(), report(null, ok, { at: AT }));
   assert.equal(res.next, "resend");
   assert.deepEqual(res.ledger.rounds.at(-1).stepRun, [1, 1]);
+});
+
+// ---- presets: the final, the notes rounds, the rebase and the resolution recheck (A47, A48) ----------
+
+// A lane whose route is `route` (the ledger's snapshot from start), its first build round dispatched.
+const routed = (route) => ({ ...lane(), route: { verify: "all", flagged: false, ...route } });
+// A lane rechecking after a FAIL: build, FAIL, fix, the recheck out on TIP.
+function rechecking(route) {
+  let { ledger } = go(routed(route), report("DONE", ok, { agent: "builder-1" }));
+  ({ ledger } = go(ledger, judge("FAIL", TIP, { agent: "verifier-1" })));
+  ({ ledger } = go(ledger, report("DONE")));
+  assert.equal(ledger.rounds.at(-1).step, "recheck");
+  return ledger;
+}
+const covering = { covered: true, onlyFixCommits: true };
+
+test("recheck PASS under final always → final (today's row)", () => {
+  const res = go(rechecking({ final: "always" }), judge("PASS", TIP, covering));
+  assert.equal(res.next, "final");
+  assert.match(res.reason, /exec\.final is "always"/);
+});
+
+test("recheck PASS under final never → gate, or close when green on this tip", () => {
+  const res = go(rechecking({ final: "never" }), judge("PASS WITH NOTES"));
+  assert.equal(res.next, "gate");
+  assert.equal(res.ledger.gateTip, TIP);
+  const green1 = { ...rechecking({ final: "never" }), gates: [green()] };
+  const closed = go(green1, judge("PASS", TIP, { tier: "full" }));
+  assert.equal(closed.next, "close");
+  assert.equal(closed.ledger.closedTip, TIP);
+});
+
+test("recheck PASS under after-fix, covering every note on a fix-only tip → gate / close, no final", () => {
+  const res = go(rechecking({ final: "after-fix" }), judge("PASS", TIP, covering));
+  assert.equal(res.next, "gate");
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual([round.covered, round.onlyFixCommits], [true, true], "the facts are pinned");
+});
+
+test("recheck PASS under after-fix with a label missing → final", () => {
+  const res = go(
+    rechecking({ final: "after-fix" }),
+    judge("PASS", TIP, { covered: false, onlyFixCommits: true }),
+  );
+  assert.equal(res.next, "final");
+  assert.match(res.reason, /did not pass every note sent back/);
+});
+
+test("recheck PASS under after-fix on a rewritten tip, or one with a merge commit since → final", () => {
+  // Both are `onlyFixCommits: false` to the machine: exec computes the fact from git.
+  for (const why of ["a rewritten tip", "a merge commit in the range"]) {
+    const res = go(
+      rechecking({ final: "after-fix" }),
+      judge("PASS", TIP, { covered: true, onlyFixCommits: false }),
+    );
+    assert.equal(res.next, "final", why);
+    assert.match(res.reason, /more than fix commits/, why);
+  }
+});
+
+test("a ledger whose route has only verify and flagged runs on the standard values", () => {
+  const ledger = rechecking({});
+  const old = { ...ledger, route: { verify: "all", flagged: false } };
+  assert.equal(go(old, judge("PASS", TIP, covering)).next, "gate", "after-fix: no final");
+  assert.equal(go(old, judge("PASS")).next, "final", "after-fix: no facts → final");
+  assert.equal(notesBudget(old).max, 1);
+  const none = lane(); // no route at all
+  assert.equal(notesBudget(none).max, 1);
+});
+
+// A lane verified PASS WITH NOTES (gate next) on `route`, after `rounds` notes rounds.
+function noted(route, rounds = 0) {
+  let { ledger } = go(routed(route), report("DONE", ok, { agent: "builder-1" }));
+  ({ ledger } = go(ledger, judge("PASS WITH NOTES", TIP, { agent: "verifier-1" })));
+  for (let i = 0; i < rounds; i++) {
+    ({ ledger } = go(ledger, { type: "notes", notes: ["N1"] }));
+    ({ ledger } = go(ledger, report("DONE")));
+    ({ ledger } = go(ledger, judge("PASS WITH NOTES", TIP, covering)));
+  }
+  return ledger;
+}
+
+test("verified PASS WITH NOTES, rounds used < noteRounds → fix → recheck", () => {
+  const res = go(noted({ noteRounds: 1 }), { type: "notes", notes: ["N2"] });
+  assert.equal(res.next, "fix");
+  assert.equal(go(res.ledger, report("DONE")).next, "recheck");
+});
+
+test("verified PASS WITH NOTES at the budget: a notes round is refused naming exec.noteRounds", () => {
+  for (const [route, rounds] of [
+    [{ noteRounds: 0 }, 0],
+    [{ noteRounds: 1 }, 1],
+  ]) {
+    const ledger = noted({ ...route, final: "never" }, rounds);
+    assert.equal(ledger.next, "gate", "the lane goes on to the gate");
+    assert.throws(
+      () => step(ledger, { type: "notes", notes: ["N1"] }),
+      new RegExp(
+        `${rounds} of ${route.noteRounds} notes rounds are used \\(exec\\.noteRounds is ${route.noteRounds}\\)`,
+      ),
+    );
+  }
+});
+
+// A lane closed on a green gate, verified PASS by a verifier (or none: `verified: false`).
+function closedLane(route = {}, { verified = true } = {}) {
+  let ledger = routed(route);
+  if (verified) {
+    ({ ledger } = go(ledger, report("DONE", ok, { agent: "builder-1" })));
+    ({ ledger } = go(ledger, judge("PASS")));
+  } else {
+    ({ ledger } = go(
+      ledger,
+      report("DONE", ok, { agent: "builder-1", skipVerify: true, tip: TIP }),
+    ));
+  }
+  ({ ledger } = go(ledger, { type: "gate", record: green() }));
+  assert.equal(ledger.next, "close");
+  assert.equal(ledger.closedTip, TIP);
+  return ledger;
+}
+
+test("verified { type: rebase } → rebase (role build, resuming the last builder)", () => {
+  for (const next of ["close", "merge"]) {
+    const res = go({ ...closedLane(), next }, { type: "rebase" });
+    assert.equal(res.next, "rebase");
+    const round = res.ledger.rounds.at(-1);
+    assert.deepEqual([round.role, round.mode, round.agent], ["build", "resume", "builder-1"]);
+    assert.equal(res.ledger.state, "building");
+    assert.equal(expects(res.ledger), "report");
+  }
+  assert.throws(() => step(lane(), { type: "rebase" }), /a rebase is for a verified lane/);
+});
+
+// A closed lane with its rebase round out.
+const rebasing = (route) => go(closedLane(route), { type: "rebase" }).ledger;
+
+test("rebase DONE, guards hold, changed, rebase recheck → resolve (role verify, fresh)", () => {
+  const res = go(
+    rebasing({ rebase: "recheck" }),
+    report("DONE", ok, { tip: MOVED, changed: true }),
+    MOVED,
+  );
+  assert.equal(res.next, "resolve");
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual([round.role, round.mode, round.step], ["verify", "fresh", "resolve"]);
+});
+
+test("rebase DONE, guards hold, otherwise → gate on the new tip, or close when green on it", () => {
+  const clean = go(
+    rebasing({ rebase: "recheck" }),
+    report("DONE", ok, { tip: MOVED, changed: false }),
+  );
+  assert.equal(clean.next, "gate");
+  assert.equal(clean.ledger.gateTip, MOVED);
+  assert.equal(step(clean.ledger, { type: "gate", record: green(MOVED) }).next, "close");
+  assert.equal(step(clean.ledger, { type: "gate", record: green(MOVED) }).ledger.closedTip, MOVED);
+  const gated = go(rebasing({ rebase: "gate" }), report("DONE", ok, { tip: MOVED, changed: true }));
+  assert.equal(gated.next, "gate");
+  assert.match(gated.reason, /exec\.rebase is "gate"/);
+  const green2 = { ...rebasing({ rebase: "gate" }), gates: [green(MOVED)] };
+  const closed = go(green2, report("DONE", ok, { tip: MOVED, changed: false, tier: "full" }));
+  assert.equal(closed.next, "close");
+  assert.equal(closed.ledger.closedTip, MOVED);
+});
+
+test("rebase: a guard trip sends the rebase back once, then stops; NEEDS_CONTEXT stops", () => {
+  const dirty = { dirty: ["x.txt"], commits: 1 };
+  const once = go(rebasing(), report("DONE", dirty));
+  assert.equal(once.next, "rebase");
+  assert.equal(once.ledger.rounds.at(-1).guard, true);
+  assert.equal(go(once.ledger, report("DONE", dirty)).next, "stop");
+  const asked = go(rebasing(), report("NEEDS_CONTEXT"));
+  assert.equal(asked.next, "stop");
+  assert.match(asked.reason, /NEEDS_CONTEXT on the rebase/);
+});
+
+test("verified, branch already moved: { type: rebased } goes as the rebase report rows", () => {
+  const changed = go(
+    closedLane({ rebase: "recheck" }),
+    { type: "rebased", tip: MOVED, changed: true },
+    MOVED,
+  );
+  assert.equal(changed.next, "resolve");
+  const clean = step(closedLane(), { type: "rebased", tip: MOVED, changed: false });
+  assert.deepEqual([clean.next, clean.ledger.gateTip], ["gate", MOVED]);
+  assert.throws(
+    () => step(lane(), { type: "rebased", tip: MOVED }),
+    /rebased is for a verified lane/,
+  );
+});
+
+// A lane with its resolve round out, dispatched on MOVED.
+const resolving = () =>
+  go(rebasing({ rebase: "recheck" }), report("DONE", ok, { tip: MOVED, changed: true }), MOVED)
+    .ledger;
+
+test("resolve PASS* → gate / close; FAIL → stop naming the resolution", () => {
+  for (const verdict of ["PASS", "PASS WITH NOTES"]) {
+    const res = go(resolving(), judge(verdict, MOVED));
+    assert.deepEqual([res.next, res.ledger.gateTip], ["gate", MOVED], verdict);
+  }
+  const green3 = { ...resolving(), gates: [green(MOVED)] };
+  assert.equal(go(green3, judge("PASS", MOVED)).next, "close");
+  const fail = go(resolving(), judge("FAIL", MOVED));
+  assert.equal(fail.next, "stop");
+  assert.equal(fail.reason, "the conflict resolution failed its check");
+});
+
+test("resolve on a moved tip: void, resolve again; the third void stops the lane", () => {
+  let ledger = resolving();
+  const voids = ledger.rounds.filter((r) => r.void).length;
+  for (let i = voids; i < 2; i++) {
+    const res = go(ledger, judge("PASS", TIP), MOVED);
+    assert.equal(res.next, "resolve");
+    assert.deepEqual(
+      [res.ledger.rounds.at(-1).step, res.ledger.rounds.at(-1).mode],
+      ["resolve", "fresh"],
+    );
+    assert.equal(res.ledger.rounds.at(-2).void, true);
+    ledger = res.ledger;
+  }
+  const third = go(ledger, judge("PASS", TIP));
+  assert.equal(third.next, "stop");
+  assert.match(third.reason, /3 void verdicts/);
+});
+
+test("a resolve verdict opens no notes round", () => {
+  const ledger = go(resolving(), judge("PASS WITH NOTES", MOVED)).ledger;
+  assert.throws(() => step(ledger, { type: "notes", notes: ["N1"] }), /notes can be fixed only/);
+});
+
+test("reverify on a lane closed without a verifier → verify (fresh); refused once a verifier closed it", () => {
+  const res = go(closedLane({ verify: "flagged" }, { verified: false }), { type: "reverify" });
+  assert.equal(res.next, "verify");
+  assert.deepEqual([res.ledger.rounds.at(-1).mode, res.ledger.state], ["fresh", "verifying"]);
+  assert.equal(go(res.ledger, judge("PASS")).next, "close", "green on this tip already: closes");
+  assert.throws(() => step(closedLane(), { type: "reverify" }), /a verifier closed this one/);
+  assert.throws(() => step(lane(), { type: "reverify" }), /reverify is for a verified lane/);
+});
+
+test("greenOn judges the newest record of the tier: a red after a green is not green", () => {
+  const red = { ...green(), exit: 1 };
+  assert.equal(greenOn([green(), red], TIP), false);
+  assert.equal(greenOn([red, green()], TIP), true);
+  assert.equal(greenOn([green(), { ...red, tier: "docs" }], TIP, "full"), true);
+  assert.equal(greenOn([green(), { ...red, tier: "docs" }], TIP), false);
+  assert.equal(greenOn([green(MOVED)], TIP), false);
+});
+
+test("a commit git could not read is named as a read failure, never as a subject to reword", () => {
+  const failed = [
+    {
+      sha: `${TIP.slice(0, 7)}..${MOVED.slice(0, 7)}`,
+      subject: "",
+      why: "git rev-list failed: bad",
+      failed: true,
+    },
+  ];
+  const res = go(lane(), report("DONE", { ...ok, subjects: failed }));
+  assert.equal(res.next, "fix");
+  assert.equal(
+    res.reason,
+    `cannot read commit ${failed[0].sha}: git rev-list failed: bad → check the branch, then report again`,
+  );
+  assert.doesNotMatch(res.reason, /reword/);
+});
+
+test("every lane still ends with the new rows: rebase, resolve and notes walks stop or close", () => {
+  // The budgets are the lane's as before: a resolve that keeps voiding stops at three, a notes budget
+  // refuses the next round, and a rebase guard that trips twice stops.
+  assert.equal(
+    go(go(resolving(), judge("FAIL", MOVED)).ledger, { type: "gate", record: green() }).next,
+    "stop",
+  );
+  const ledger = noted({ noteRounds: 3, final: "never" }, 3);
+  assert.throws(() => step(ledger, { type: "notes", notes: ["N1"] }), /3 of 3/);
 });

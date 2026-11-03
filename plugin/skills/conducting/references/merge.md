@@ -117,7 +117,7 @@ their yes.
 
 | Stop | Do |
 | :--- | :--- |
-| Cherry-pick conflict | Resume the builder (or a fresh one in the same worktree) to rebase `agentry/<id>` onto main, then re-run the gate in the worktree (`agentry lane exec gate <id>`) and land again. |
+| Cherry-pick conflict | An exec lane: the land names `agentry lane exec rebase <id>`. Run it: the builder rebases `agentry/<id>` onto main, a fresh verifier reads only the resolution (the range-diff's changed pairs, `exec.rebase: "recheck"`) or the gate checks the new tip (`"gate"`, or a rebase that changed no pair), and the lane closes again on the new tip; then land again. An adopted branch: ask its builder to rebase it onto main, then land again. A branch moved past the tip its lane closed on is refused at the ledger row with the same pointer. |
 | Red gate, rolled back | Read the log the row names. Fix on the branch through the exec lane, then land again. A red only in `gate.flaky` tests was already re-run alone once: if the stop says it failed again alone, it is not load. |
 | Red gate, rollback refused | Main holds more than the picks, or files changed while the gate ran. A lane's lifecycle write made meanwhile is not lost: run the same land again, and it sets the write aside, gates again and lands or rolls back. Anything else it names: show the owner. Don't reset by hand. |
 | New board finding | Fix what the finding names, then land again. It resumes after the picks. |
