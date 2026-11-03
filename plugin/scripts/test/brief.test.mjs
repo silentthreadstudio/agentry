@@ -22,6 +22,7 @@ import {
   withNew,
 } from "../lib/lane/brief.mjs";
 import { readProcess } from "../lib/process/read.mjs";
+import { commitFile, git } from "./git-repo.mjs";
 
 const temps = [];
 after(() => {
@@ -62,6 +63,39 @@ test("ownedFiles keeps paths only: no symbols, string keys or negated spans; pat
     "scenes/*.tscn",
     "src/ui/",
     "src/ok.gd",
+  ]);
+});
+
+test("a closed aside or a comma-ended negation does not drop the next owned path", () => {
+  const owned = (text) => ownedFiles(`**owns** ${text}`);
+  assert.deepEqual(owned("`src/a.gd` (no new class), `src/b.gd`"), ["src/a.gd", "src/b.gd"]);
+  assert.deepEqual(owned("`src/a.gd` (not more than 200 lines), `src/b.gd`"), [
+    "src/a.gd",
+    "src/b.gd",
+  ]);
+  assert.deepEqual(owned("`src/a.gd`, without touching the bus, `src/b.gd`"), [
+    "src/a.gd",
+    "src/b.gd",
+  ]);
+  // A negation still covers its whole list, and an aside that opens before the span still negates.
+  assert.deepEqual(owned("`src/a.gd`, but not `src/b.gd`, `src/c.gd`"), ["src/a.gd"]);
+  assert.deepEqual(owned("`src/a.gd` (but not `src/b.gd`), `src/c.gd`"), ["src/a.gd", "src/c.gd"]);
+});
+
+test("withNew resolves a bare name against the tracked files: one hit is that path, several are ambiguous, none is new", () => {
+  const dir = temp();
+  git(dir, "init", "-q");
+  commitFile(dir, "data/rows/row1.tres", "");
+  commitFile(dir, "src/a/run.gd", "");
+  commitFile(dir, "src/b/run.gd", "");
+  commitFile(dir, "top.gd", "");
+  assert.deepEqual(withNew(dir, ["row1.tres", "run.gd", "fresh.gd", "top.gd", "src/x/y.gd"]), [
+    { path: "data/rows/row1.tres", new: false },
+    { path: "src/a/run.gd", new: false, ambiguous: true },
+    { path: "src/b/run.gd", new: false, ambiguous: true },
+    { path: "fresh.gd", new: true },
+    { path: "top.gd", new: false },
+    { path: "src/x/y.gd", new: true },
   ]);
 });
 
@@ -227,6 +261,8 @@ const VALUES = {
   needed: false,
   related: false,
   notes: "",
+  picked: false,
+  pickedNotes: "",
   builderReport: "/m/r1.report.md",
   earlier: "/m/r2.report.md",
 };
@@ -287,6 +323,14 @@ test("a recheck brief names the earlier report; a final brief wraps the verify b
     recheck,
     /## Recheck\n\nYou verified this branch before; your report is \/m\/r1\.report\.md/,
   );
+  const picked = renderBrief("recheck", {
+    ...VALUES,
+    recheck: true,
+    picked: true,
+    pickedNotes: "- N2: the reset path skips the queue",
+  });
+  assert.match(picked, /## Notes sent back\n[\s\S]*\n- N2: the reset path skips the queue/);
+  assert.doesNotMatch(recheck, /Notes sent back/);
   const final = renderBrief("final", VALUES);
   assert.match(final, /^# Final verify T1, round 2/);
   assert.match(final, /before\nyou open the earlier reports: \/m\/r2\.report\.md/);

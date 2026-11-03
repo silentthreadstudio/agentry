@@ -2,7 +2,8 @@
 // `references/briefs/` (ADR-R3): the same brief every time, on disk, quoting the board instead of memory.
 //
 //   ownedFiles      the paths the contract's "owns" names (backticked, negations left out), in order
-//   withNew         those paths, each marked `new` when the tree has no such file
+//   withNew         those paths, each marked `new` when the tree has no such file; a bare file name is
+//                   looked up among the tree's tracked files (one hit: that path, several: all, `ambiguous`)
 //   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
 //   citedDecisions  every decision of the board's decision kind the block cites by id, its row quoted
 //   relatedNotes    the lines elsewhere that mention the task (amendments), read verbatim with file:line
@@ -13,6 +14,7 @@
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
 //
 // Reads the board's files and the memory store; writes nothing. Node built-ins only.
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +65,8 @@ const LOCATION = /(?::\d+(?:[-–—]\d+)?|#L\d+(?:-L?\d+)?)+$/;
 // Words before a span that say its file is NOT owned ("no line in", "but not", "never", …).
 const NEGATION =
   /\b(no|not|never|none|nothing|without|except|excluding|exclude|forbidden|don'?t|doesn'?t|out of scope)\b/i;
+// What may sit between two spans of one list: a comma, "and", "or".
+const LIST_GAP = /^\s*(and|or|&)?\s*$/i;
 
 function pathOf(span) {
   const path = span.trim().replace(LOCATION, "");
@@ -87,26 +91,57 @@ export function ownedFiles(block) {
   if (end) part = part.slice(0, end.index);
   const out = [];
   let from = 0;
+  let negated = false;
   for (const m of part.matchAll(TICKED)) {
-    // The words between the previous span and this one, in this clause only.
-    const clause = part
-      .slice(from, m.index)
-      .split(/;|\.\s|\n\s*\n|\n\s*[-*]\s/)
-      .at(-1);
+    const between = part.slice(from, m.index);
+    // The words between the previous span and this one, in this clause only, a closed aside
+    // ("(no new class)") left out.
+    const clause = between.split(/;|\.\s|\n\s*\n|\n\s*[-*]\s/).at(-1);
     from = m.index + m[0].length;
-    const path = NEGATION.test(clause) ? null : pathOf(m[1]);
+    // A negation holds to the next comma: a span right after a comma ("not `a`, `b`") shares the
+    // previous span's reading, but words after a comma ("`a`, without touching x, `b`") end it.
+    const pieces = clause.replace(/\([^()]*\)/g, " ").split(",");
+    const last = pieces.at(-1);
+    const joined =
+      pieces.length > 1 && clause === between && !clause.includes(")") && LIST_GAP.test(last);
+    negated = joined ? negated : NEGATION.test(last);
+    const path = negated ? null : pathOf(m[1]);
     if (path && !out.includes(path)) out.push(path);
   }
   return out;
 }
 
+const trackedFiles = (dir) => {
+  try {
+    return execFileSync("git", ["-C", dir, "ls-files", "-z"], {
+      encoding: "utf8",
+      maxBuffer: 1 << 28,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .split("\0")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+};
+
 /** `paths` as `{ path, new }`: `new` when the path is a plain file that does not exist in `dir` (a glob
- *  or folder names what is there, so it is never new). */
-export const withNew = (dir, paths) =>
-  paths.map((path) => ({
-    path,
-    new: !/[*?]/.test(path) && !path.endsWith("/") && !existsSync(join(dir, path)),
-  }));
+ *  or folder names what is there, so it is never new). A bare file name missing at the root is looked up
+ *  among the tracked files: one file of that name is that path, several are all listed with `ambiguous:
+ *  true`, none means the file is new. */
+export function withNew(dir, paths) {
+  let tracked;
+  return paths.flatMap((path) => {
+    if (/[*?]/.test(path) || path.endsWith("/") || existsSync(join(dir, path)))
+      return [{ path, new: false }];
+    if (path.includes("/")) return [{ path, new: true }];
+    tracked ??= trackedFiles(dir);
+    const hits = tracked.filter((file) => file.split("/").at(-1) === path);
+    if (hits.length === 0) return [{ path, new: true }];
+    if (hits.length === 1) return [{ path: hits[0], new: false }];
+    return hits.map((hit) => ({ path: hit, new: false, ambiguous: true }));
+  });
+}
 
 const UI_DIRS = new Set([
   "ui",

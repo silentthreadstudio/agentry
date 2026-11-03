@@ -1189,6 +1189,51 @@ test("fix <id> --notes sends the builder back on the named notes, then the usual
   const rechecked = lane(r, "report", "T1");
   assert.equal(rechecked.json.next, "recheck");
   assert.equal(rechecked.json.agent, "verifier-1");
+  const recheckBrief = readFileSync(rechecked.json.brief, "utf8");
+  assert.match(recheckBrief, /## Notes sent back/);
+  assert.match(recheckBrief, /- N2: the reset path skips the queue\n- N3: minor naming/);
+  assert.doesNotMatch(recheckBrief, /N1: copy says/);
+});
+
+test("owns --set --apply during a notes-fix round keeps the brief's notes to fix", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  notesReport(out);
+  lane(r, "verdict", "T1", "--agent", "verifier-1");
+  lane(r, "gate", "T1");
+  const fixed = lane(r, "fix", "T1", "--notes", "N2").json;
+  const applied = lane(r, "owns", "T1", "--set", "src/other.gd", "--apply");
+  assert.equal(applied.exit, 0, applied.stderr);
+  const brief = readFileSync(fixed.brief, "utf8");
+  assert.match(brief, /- `src\/other\.gd` \(new\)/);
+  assert.match(brief, /## Notes to fix\n[\s\S]*- N2: the reset path skips the queue/);
+  assert.doesNotMatch(brief, /N3: minor naming/);
+});
+
+test("fix stops at the notes-round budget, exit 2, and says what to do next", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  notesReport(out);
+  lane(r, "verdict", "T1", "--agent", "verifier-1");
+  for (let i = 1; i <= 3; i++) {
+    const fixed = lane(r, "fix", "T1", "--notes", "N2").json;
+    commitFile(fixed.worktree, `n${i}.txt`, "x\n", `fix: round ${i}`);
+    writeFileSync(fixed.reportPath, "DONE\nfixed\nused_memories: none\n");
+    const recheck = lane(r, "report", "T1").json;
+    notesReport(recheck);
+    const final = lane(r, "verdict", "T1").json;
+    notesReport(final);
+    assert.match(lane(r, "verdict", "T1").json.next, /gate|close/);
+  }
+  const rounds = ledgerOf(r.root, "T1").rounds.length;
+  const over = lane(r, "fix", "T1", "--notes", "N2");
+  assert.equal(over.exit, 2);
+  assert.match(over.stderr, /3 of 3 notes rounds are used.* → .*exec (gate|close) T1/);
+  assert.equal(ledgerOf(r.root, "T1").rounds.length, rounds, "a refusal changes nothing");
 });
 
 test("fix is refused without notes, for a note the report lacks, and outside a PASS WITH NOTES lane", () => {

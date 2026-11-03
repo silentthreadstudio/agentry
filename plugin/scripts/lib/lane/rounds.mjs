@@ -243,6 +243,13 @@ function onVerdict(ledger, round, { verdict, tip, gate = true }) {
   return settle(ledger, "gate", "no green worktree gate on this tip yet");
 }
 
+/** The notes-fix rounds a lane has run and the most it may: the verdict budget, so fixing notes cannot
+ *  outlast the cap the verdicts have. */
+export const notesBudget = (ledger) => ({
+  used: ledger.rounds.filter((r) => r.notes).length,
+  max: MAX_VERDICTS,
+});
+
 // A verified lane (PASS WITH NOTES, gate or close next) sends the builder back to fix the named notes; the
 // round after it is the usual recheck by the verifier.
 function onNotes(ledger, notes) {
@@ -251,6 +258,8 @@ function onNotes(ledger, notes) {
     throw new Error(
       `notes can be fixed only after a PASS WITH NOTES verdict, before the lane closes (state ${ledger.state})`,
     );
+  const { used, max } = notesBudget(ledger);
+  if (used >= max) throw new Error(`${used} of ${max} notes rounds are used`);
   const builder = builders(ledger).at(-1);
   return send(
     ledger,

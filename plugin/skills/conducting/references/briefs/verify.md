@@ -16,6 +16,15 @@ You verified this branch before; your report is {{from}}. The builder has worked
 nothing next to it.
 
 {{/recheck}}
+{{#picked}}
+## Notes sent back
+
+The conductor sent the builder back on these notes only; the other notes of your report were left as
+they are. Re-check these, not the rest:
+
+{{pickedNotes}}
+
+{{/picked}}
 ## Where you work
 
 - Worktree: {{worktree}}, branch `{{branch}}` at {{tip}}, cut from {{base}}. Read and run there; prefix

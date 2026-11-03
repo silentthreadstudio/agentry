@@ -11,10 +11,14 @@ const indent = (text) =>
     .map((line) => `  ${line}`)
     .join("\n");
 
+/** An owned entry as text: the path, marked when new or ambiguous. */
+export const ownedMark = (o) =>
+  `${o.path}${o.new ? " (new)" : ""}${o.ambiguous ? " (ambiguous: several files have this name)" : ""}`;
+
 // The parsed owned files: one per line, new ones marked, the way to amend them on the last line.
 function ownedBlock(owned, amend) {
   const items = owned.length
-    ? owned.map((o) => `  - ${o.path}${o.new ? " (new)" : ""}`)
+    ? owned.map((o) => `  - ${ownedMark(o)}`)
     : ["  none: the contract's owns part names no path"];
   return [
     "owned files (parsed from the contract):",

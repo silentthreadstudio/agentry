@@ -44,8 +44,8 @@ import {
   suggestBuilder,
   withNew,
 } from "../brief.mjs";
-import { humanView } from "../exec-view.mjs";
-import { holdGate } from "../gate-lock.mjs";
+import { humanView, ownedMark } from "../exec-view.mjs";
+import { gateLockDir, holdGate } from "../gate-lock.mjs";
 import { changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
@@ -57,6 +57,7 @@ import {
   begin,
   expects,
   gateTally,
+  notesBudget,
   verdicts,
 } from "../rounds.mjs";
 import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
@@ -448,6 +449,13 @@ function brief({ root, spec, model }, ledger, dispatch) {
   const builder = ledger.rounds.filter((r) => r.role === "build").at(-1);
   const tip = headOf(root, ledger.branch);
   const fresh = !dispatch.resend;
+  // The notes the conductor picked: a notes-fix round carries them, and so does the recheck after it.
+  const picked =
+    dispatch.step === "recheck" && fresh && builder?.notes
+      ? builder
+      : dispatch.step === "fix" && dispatch.notes
+        ? dispatch
+        : null;
   const values = {
     id: ledger.id,
     round: n,
@@ -455,7 +463,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
     block: block.trimEnd(),
     related: !!ledger.contract.related?.length,
     notes: notesSection(ledger.contract.related),
-    owned: bullets(owned.map((o) => `\`${o.path}\`${o.new ? " (new)" : ""}`)),
+    owned: bullets(owned.map((o) => `\`${o.path}\`${ownedMark(o).slice(o.path.length)}`)),
     decisions: bullets(
       citedDecisions({ root, spec, model, block }).map((d) => `${d.id}: ${d.text}`),
     ),
@@ -477,6 +485,8 @@ function brief({ root, spec, model }, ledger, dispatch) {
     reason: dispatch.reason ?? "",
     resend: !!dispatch.resend,
     recheck: dispatch.step === "recheck" && fresh,
+    picked: !!picked,
+    pickedNotes: picked ? noteLines(picked.from, picked.notes) : "",
     fail: dispatch.step === "fix" && !dispatch.guard && !dispatch.notes && fresh,
     guard: !!dispatch.guard && fresh,
     needed: dispatch.step === "needs-context" && fresh,
@@ -486,7 +496,8 @@ function brief({ root, spec, model }, ledger, dispatch) {
       .join(", "),
   };
   const file = join(dir, `${name}.md`);
-  writeFileSync(file, renderBrief(dispatch.step, values));
+  const text = renderBrief(dispatch.step, values);
+  writeFileSync(file, dispatch.step === "fix" && picked ? withNotesToFix(text, picked) : text);
   return { brief: file, reportPath: values.reportPath, tip, at: now() };
 }
 
@@ -804,13 +815,13 @@ function gate(ctx, id) {
   if (!config) refuse("the process file has no gate: add one (/agentry:init) to run it here");
   const tier = pickTier(config, changedSince(ledger.worktree, ledger.base, "HEAD") ?? []);
   const command = tier.tier === "quick" ? config.quick.command : config.command;
-  const lockDir = join(root, ".agentry", "run", "gate-locks");
+  const lockDir = gateLockDir(root);
   let runs = ledger.gates?.length ?? 0;
   const once = (exclusive) => {
     const held = holdGate(lockDir, { slots: config.concurrency, exclusive, who: `lane ${id}` });
     if (held.busy)
       refuse(
-        `another gate holds the gate lock (${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"}) and did not end within an hour: run this step again when it has`,
+        `another gate holds the gate lock (${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"}) at ${held.busy.file} and did not end within an hour: run this step again when it has, or delete that file if nothing holds it`,
       );
     try {
       const logFile = join(ledgers.runDir(root, id), "logs", `gate-${++runs}.log`);
@@ -866,6 +877,31 @@ function notesOf(text) {
   return notes;
 }
 
+// `- N1: text` for each label, read from the verifier report at `path` (an unreadable report gives bare labels).
+function noteLines(path, labels) {
+  let found = new Map();
+  try {
+    found = notesOf(readFileSync(path, "utf8"));
+  } catch {}
+  return labels.map((n) => `- ${n}: ${found.get(n) ?? ""}`.trimEnd()).join("\n");
+}
+
+// A notes-fix brief: the notes section goes in before the first of the brief's own sections.
+function withNotesToFix(text, { from, notes }) {
+  const section = [
+    "## Notes to fix",
+    "",
+    `The verifier passed this with notes (${from}). Fix exactly these, each with a committed test where it is behavior, and leave the other notes alone:`,
+    "",
+    noteLines(from, notes),
+    "",
+  ].join("\n");
+  const at = text.indexOf("\n## ");
+  return at === -1
+    ? `${text}\n${section}`
+    : `${text.slice(0, at + 1)}${section}\n${text.slice(at + 1)}`;
+}
+
 // A verified lane (PASS WITH NOTES) goes back to its builder for the notes the conductor names; the rounds
 // after it are the usual recheck. The board is not written: the next verdict is.
 function fix(ctx, id, given) {
@@ -874,6 +910,11 @@ function fix(ctx, id, given) {
   const labels = [...new Set(given.split(",").map((n) => n.trim().toUpperCase()))];
   if (!labels.every((n) => /^N\d+$/.test(n)))
     refuse(`--notes takes the verifier's note labels, like N1,N3 (got ${given})`);
+  const { used, max } = notesBudget(ledger);
+  if (used >= max)
+    refuse(
+      `${used} of ${max} notes rounds are used (next is ${ledger.next}) → ${laneLine(root, ledger.next === "close" ? "close" : "gate", id)}, or send what is left to the owner`,
+    );
   const res = stepWith(ledger, { type: "notes", notes: labels });
   const verifier = verdicts(ledger).at(-1);
   const report = verifier ? readReport(verifier.reportPath, "verifier") : "";
@@ -884,24 +925,7 @@ function fix(ctx, id, given) {
       `${missing.join(", ")} not in the verifier's report ${verifier?.reportPath ?? "(none)"} (it has ${[...found.keys()].join(", ") || "no N<number> notes"})`,
     );
   const next = dispatchNext(ctx, res.ledger, res.dispatch);
-  const round = next.rounds.at(-1);
-  const section = [
-    "## Notes to fix",
-    "",
-    `The verifier passed this with notes (${verifier.reportPath}). Fix exactly these, each with a committed test where it is behavior, and leave the other notes alone:`,
-    "",
-    ...labels.map((n) => `- ${n}: ${found.get(n)}`),
-    "",
-  ].join("\n");
-  const brief = readFileSync(round.brief, "utf8");
-  const at = brief.indexOf("\n## ");
-  writeFileSync(
-    round.brief,
-    at === -1
-      ? `${brief}\n${section}`
-      : `${brief.slice(0, at + 1)}${section}\n${brief.slice(at + 1)}`,
-  );
-  next.nested = nestedTrees(root, next, ledgers.list(root));
+  next.nested = nestedTrees(root, next);
   ledgers.write(root, next);
   return view(root, next, {
     step: "fix",
