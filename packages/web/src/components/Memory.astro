@@ -1,0 +1,104 @@
+---
+// Memory.astro — 08 · memory: the first run writes the decision down, the next run
+// recalls it and drops to a one-shot.
+---
+
+<section id="memory" class="wrap section memory" aria-labelledby="memory-title">
+  <div class="memory__copy">
+    <span class="eyebrow">08 · MEMORY</span>
+    <h2 id="memory-title" class="title">The next run knows what this one decided.</h2>
+    <p class="lede">
+      Decisions, gotchas and repo facts are written as plain files with where they came from,
+      recalled few and ranked when a task needs them, and distilled from each run. Local, plain
+      files, yours.
+    </p>
+  </div>
+  <ol class="runs">
+    <li class="run">
+      <span class="run__key">FIRST RUN</span>
+      <span class="run__shape run__shape--three">spec-first</span>
+      <span class="run__text">No prior decision: shape it, gate it, write the decision down.</span>
+    </li>
+    <li class="arrow" aria-hidden="true">→</li>
+    <li class="run">
+      <span class="run__key">NEXT RUN</span>
+      <span class="run__shape run__shape--one">one-shot</span>
+      <span class="run__text">The decision is recalled. Nothing to re-derive.</span>
+    </li>
+  </ol>
+</section>
+
+<style>
+  .memory {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 48px;
+  }
+
+  .memory__copy {
+    flex: 1 1 440px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .runs {
+    flex: 1 1 520px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .run {
+    flex: 1 1 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 22px;
+    background: var(--surface);
+    border: var(--border);
+    border-radius: var(--radius-l);
+  }
+
+  .run__key {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+
+  .run__shape {
+    align-self: flex-start;
+    padding: 8px 12px;
+    border-radius: var(--radius-s);
+    font-weight: 700;
+  }
+
+  .run__shape--three {
+    background: var(--three);
+  }
+
+  .run__shape--one {
+    background: var(--one);
+  }
+
+  .run__text {
+    font-size: 15px;
+    color: var(--ink-2);
+  }
+
+  .arrow {
+    font-size: 28px;
+    font-weight: 800;
+  }
+
+  @media (max-width: 600px) {
+    .arrow {
+      flex-basis: 100%;
+      text-align: center;
+      transform: rotate(90deg);
+      line-height: 1;
+    }
+  }
+</style>

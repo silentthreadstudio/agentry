@@ -1,0 +1,78 @@
+---
+// Day.astro — 06 · the day, same every time: the four session commands.
+const steps = [
+  ["/agentry:start", "Where things stand in five lines, what's on you, one recommendation."],
+  ["/agentry:exec", "One lane per task, as many as your writer cap allows."],
+  ["/agentry:merge", "Lands commits, board row, SHA and handoff in one go. Pushes by your policy."],
+  [
+    "/agentry:close",
+    "Your calls from the day drafted for OK, worktrees swept, a handoff for tomorrow.",
+  ],
+];
+---
+
+<section id="day" class="band day" aria-labelledby="day-title">
+  <div class="wrap section day__inner">
+    <div class="day__head">
+      <span class="eyebrow">06 · THE DAY, SAME EVERY TIME</span>
+      <h2 id="day-title" class="title">Open. Build. Land. Close.</h2>
+    </div>
+    <ol class="steps">
+      {
+        steps.map(([command, text]) => (
+          <li class="step">
+            <code class="step__cmd">{command}</code>
+            <span class="step__text">{text}</span>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .day {
+    background: var(--surface);
+  }
+
+  .day__inner {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .day__head {
+    max-width: 760px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .step {
+    flex: 1 1 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 22px;
+    background: var(--paper);
+    border: var(--border);
+    border-radius: var(--radius-l);
+  }
+
+  .step__cmd {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .step__text {
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--ink-2);
+  }
+</style>

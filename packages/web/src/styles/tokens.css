@@ -1,32 +1,65 @@
 /*
- * tokens.css — the single source of truth for the site's design tokens (ADR 003).
- * Transcribed EXACTLY from VISION.md §5. Do not invent, rename, reorder, or add tokens.
- * This file is pure tokens: it defines only :root. No other selectors live here.
- * Brand-critical values are drift-checked against the eval dashboard template (ADR 003).
+ * tokens.css — the site's design tokens, from the approved landing design (site C).
+ * Pure tokens: only :root lives here. Every other stylesheet and component reads these.
  *
- * Observatory aesthetic: neutral near-black canvas · violet = ACTIONS only ·
- * amber = brand spark / headline · green/coral/cyan/bad = DATA meaning only.
+ * Light paper canvas, ink lines, three signal colors (one = build, two = verify,
+ * three = plan/gate), a dark "night" family for terminals and the board view.
  */
 :root {
-  --bg: #0b0b0f;
-  --bg-2: #08080b;
-  --panel: #14141a;
-  --panel-2: #1c1c24;
-  --line: #26262f;
-  --line-soft: #1b1b21;
-  --ink: #eaeaf0;
-  --muted: #9a9aa7;
-  --faint: #61616d;
-  --amber: #f4a93c;
-  --violet: #8b5cf6;
-  --violet-2: #a78bfa;
-  --violet-dim: rgba(139, 92, 246, 0.14);
-  --good: #46c98a;
-  --coral: #ef8a5c;
-  --cyan: #56b6c2;
-  --bad: #f0604d;
-  --action: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  --brand: linear-gradient(120deg, #f4a93c, #ef8a5c 42%, #8b5cf6);
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* paper + ink */
+  --paper: #eef0f2;
+  --paper-2: #dde1e6;
+  --surface: #ffffff;
+  --ink: #111114;
+  --ink-2: #3a3a42;
+  --line: #111114;
+
+  /* the three signal colors */
+  --one: #ff7a3d;
+  --two: #5b3df5;
+  --three: #2ed3a0;
+  --on-two: #ffffff;
+  --on-two-soft: #ece8ff;
+
+  /* warning (a stopped lane) */
+  --warn-bg: #ffe3da;
+  --warn-line: #c2410c;
+  --warn-ink: #7c2d12;
+
+  /* night: terminals, code, the board view */
+  --on-ink: #f1f1f4;
+  --on-ink-2: #d7d7de;
+  --night: #16161b;
+  --night-2: #1c1c22;
+  --night-3: #26262e;
+  --night-line: #33333c;
+  --night-ink: #e6e6ec;
+  --night-ink-2: #b8b8c4;
+  --night-ink-3: #8e8e9a;
+  --night-ink-4: #c9c9d1;
+  --night-gutter: #80808c; /* line numbers: dim, still 4.5:1 on --night */
+  --syntax-key: #c3b5ff;
+  --syntax-str: #8fe8c8;
+  --term-chip: #24242c;
+  --term-preview-bg: #3a3359;
+  --term-preview-ink: #dcd3ff;
+  --term-bad-bg: #5a2a22;
+  --term-bad-ink: #ffc9b8;
+
+  /* type */
+  --sans: "Bricolage Grotesque", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* shape */
+  --border: 2px solid var(--line);
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+  --radius-xl: 20px;
+  --pill: 999px;
+
+  /* layout */
+  --wrap: 1240px;
+  --gutter: 24px;
+  --section-y: 88px;
 }

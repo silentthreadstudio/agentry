@@ -1,0 +1,485 @@
+---
+// Agents.astro — 03 · the agents: the nine roles as a bento grid (4 → 2 → 1 columns), plus
+// the "bring your own agents" tile. Each tile keeps its own color and decorative figure.
+---
+
+<section id="team" class="wrap section team" aria-labelledby="team-title">
+  <div class="head">
+    <div class="head__title">
+      <span class="eyebrow">03 · THE AGENTS</span>
+      <h2 id="team-title" class="title">One job each. Called only when earned.</h2>
+    </div>
+    <p class="head__lede lede">
+      Nine roles cover the whole path a change takes: what and why, the shape, the build, the
+      check, and what's worth keeping, plus two read-only helpers for unfamiliar code and outside
+      facts. Nothing forces all nine: a one-line fix meets an implementer and a verifier.
+    </p>
+  </div>
+
+  <div class="bento">
+    <article class="tile tile--conductor w2 h2">
+      <span class="fig fig--bars" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span class="tag tag--light">conductor</span>
+      <h3 class="tile__big">Routes the work. Dispatches the team. Asks you at the forks.</h3>
+      <div class="tile__foot">
+        <p><strong>Owns:</strong> the shape of the work, who gets dispatched, and every approval gate.</p>
+        <p><strong>Never:</strong> grades work it dispatched, or builds big work itself.</p>
+        <p class="when when--night"><strong>Called when:</strong> always. It is the session you talk to.</p>
+      </div>
+    </article>
+
+    <article class="tile tile--implementer w2">
+      <span class="fig fig--block" aria-hidden="true"></span>
+      <span class="tag tag--outline">implementer</span>
+      <h3 class="tile__mid">Clean code and tests inside the contract.</h3>
+      <p class="tile__body">
+        <strong>Owns</strong> the files its contract names and their tests. <strong>Hands back</strong>
+        commits and a report: done, done with concerns, or needs context. Repro-first on bugs.
+      </p>
+      <p class="when when--glass"><strong>Called when:</strong> there is code to write.</p>
+    </article>
+
+    <article class="tile tile--verifier h2">
+      <span class="fig fig--ring" aria-hidden="true"></span>
+      <span class="tag tag--light">verifier</span>
+      <h3 class="tile__mid">Never the author. Tries to prove it wrong.</h3>
+      <p class="tile__body">
+        <strong>Owns</strong> the verdict on the exact tip: pass, pass with notes, or fail, with
+        evidence and a security lens.
+      </p>
+      <p class="tile__body"><strong>Never</strong> fixes what it finds. Notes go back to the builder.</p>
+      <p class="when when--tint"><strong>Called when:</strong> anything is built.</p>
+    </article>
+
+    <article class="tile tile--small tile--po">
+      <span class="fig fig--dot" aria-hidden="true"></span>
+      <span class="tag tag--outline">product-owner</span>
+      <h3 class="tile__small">"Make it better" becomes a spec you can check.</h3>
+      <p class="when when--plain"><strong>Called when:</strong> "done" isn't clear yet.</p>
+    </article>
+
+    <article class="tile tile--small">
+      <span class="fig fig--grid" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <span class="tag tag--paper">architect</span>
+      <h3 class="tile__small">Boundaries, decisions on record, task contracts.</h3>
+      <p class="when when--plain"><strong>Called when:</strong> the work spans parts or hides a design choice.</p>
+    </article>
+
+    <article class="tile tile--small">
+      <span class="fig fig--corner" aria-hidden="true"></span>
+      <span class="tag tag--paper">designer</span>
+      <h3 class="tile__small">UI that fits your system, checked on the rendered screen.</h3>
+      <p class="when when--plain"><strong>Called when:</strong> the change has a screen.</p>
+    </article>
+
+    <article class="tile tile--small tile--librarian">
+      <span class="fig fig--stack" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span class="tag tag--white">librarian</span>
+      <h3 class="tile__small">Keeps memory clean. Proposes skills, never installs them.</h3>
+      <p class="when when--plain"><strong>Called when:</strong> a run ends with something worth keeping.</p>
+    </article>
+
+    <article class="tile w2">
+      <span class="fig fig--dash" aria-hidden="true"></span>
+      <span class="tags"><span class="tag tag--paper">explorer</span><span class="tag tag--paper">researcher</span></span>
+      <h3 class="tile__mid tile__mid--wide">Read-only scouts for what nobody knows yet.</h3>
+      <p class="tile__body tile__body--muted">
+        The explorer maps an unfamiliar codebase and edits nothing. The researcher answers an
+        outside unknown with cited sources and says what it changes in the plan.
+      </p>
+    </article>
+
+    <article class="tile tile--own w2">
+      <span class="fig fig--plus" aria-hidden="true">+</span>
+      <span class="tag tag--three">your own agents</span>
+      <h3 class="tile__mid tile__mid--wide">Bring the agents you already use.</h3>
+      <p class="tile__body tile__body--muted">
+        A lane's brief is a plain prompt. The script suggests an agent; the conductor can hand it
+        to yours: a mobile specialist, your security reviewer, a team-standard implementer. The
+        rules still hold: the builder never checks its own work, and the gate decides.
+      </p>
+    </article>
+  </div>
+</section>
+
+<style>
+  .team {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-auto-flow: dense;
+    gap: 12px;
+  }
+
+  .w2 {
+    grid-column: span 2;
+  }
+
+  .h2 {
+    grid-row: span 2;
+  }
+
+  @media (max-width: 980px) {
+    .bento {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 600px) {
+    .bento {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .w2,
+    .h2 {
+      grid-column: auto;
+      grid-row: auto;
+    }
+  }
+
+  /* ---- tiles ---- */
+  .tile {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px;
+    background: var(--surface);
+    border: var(--border);
+    border-radius: var(--radius-xl);
+  }
+
+  .tile--small {
+    gap: 10px;
+    padding: 22px;
+  }
+
+  .tile--conductor {
+    gap: 16px;
+    padding: 28px;
+    background: var(--ink);
+    color: var(--surface);
+  }
+
+  .tile--implementer {
+    background: var(--one);
+  }
+
+  .tile--verifier {
+    background: var(--two);
+    color: var(--on-two);
+  }
+
+  .tile--po {
+    background: var(--three);
+  }
+
+  .tile--librarian {
+    background: var(--paper-2);
+  }
+
+  .tile--own {
+    border-style: dashed;
+  }
+
+  .tile__big {
+    max-width: 420px;
+    font-size: clamp(30px, 3.2vw, 40px);
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
+  .tile__mid {
+    max-width: 400px;
+    font-size: 26px;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+
+  .tile__mid--wide {
+    max-width: 460px;
+  }
+
+  .tile__small {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .tile__body {
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .tile--verifier .tile__body {
+    color: var(--on-two-soft);
+  }
+
+  .tile--verifier .tile__body strong {
+    color: var(--on-two);
+  }
+
+  .tile__body--muted {
+    color: var(--ink-2);
+  }
+
+  .tile__foot {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--on-ink-2);
+  }
+
+  .tile__foot strong {
+    color: var(--surface);
+  }
+
+  /* ---- labels ---- */
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tag {
+    align-self: flex-start;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .tag--light {
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  .tag--outline {
+    padding-block: 2px;
+    background: var(--surface);
+    border: var(--border);
+  }
+
+  .tag--paper {
+    background: var(--paper);
+  }
+
+  .tag--white {
+    background: var(--surface);
+  }
+
+  .tag--three {
+    padding-block: 2px;
+    background: var(--three);
+    border: var(--border);
+  }
+
+  .when {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .when--night {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--night-3);
+    color: var(--surface);
+  }
+
+  .when--glass,
+  .when--tint {
+    align-self: flex-start;
+    padding: 8px 12px;
+    border-radius: 10px;
+  }
+
+  .when--glass {
+    background: rgba(255, 255, 255, 0.7);
+  }
+
+  .when--tint {
+    margin-top: auto;
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .when--plain {
+    font-size: 12px;
+  }
+
+  /* ---- decorative figures (aria-hidden), painted under the tile's text ---- */
+  .tile > :not(.fig) {
+    position: relative;
+  }
+
+  .fig {
+    position: absolute;
+  }
+
+  .fig--bars {
+    top: 28px;
+    right: 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .fig--bars span {
+    height: 18px;
+    border-radius: 6px;
+  }
+
+  .fig--bars span:nth-child(1) {
+    width: 120px;
+    background: var(--one);
+  }
+
+  .fig--bars span:nth-child(2) {
+    width: 84px;
+    background: var(--two);
+  }
+
+  .fig--bars span:nth-child(3) {
+    width: 104px;
+    background: var(--three);
+  }
+
+  .fig--block {
+    top: 22px;
+    right: 22px;
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    background: var(--ink);
+    transform: rotate(12deg);
+  }
+
+  .fig--ring {
+    bottom: -40px;
+    right: -40px;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    border: 14px solid rgba(255, 255, 255, 0.25);
+  }
+
+  .fig--dot {
+    top: -26px;
+    right: 18px;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--ink);
+  }
+
+  .fig--grid {
+    top: 20px;
+    right: 20px;
+    display: grid;
+    grid-template-columns: repeat(2, 14px);
+    gap: 4px;
+  }
+
+  .fig--grid span {
+    height: 14px;
+    border: var(--border);
+  }
+
+  .fig--grid span:nth-child(1) {
+    background: var(--ink);
+  }
+
+  .fig--grid span:nth-child(4) {
+    border: 0;
+    background: var(--two);
+  }
+
+  .fig--corner {
+    top: 0;
+    right: 0;
+    width: 64px;
+    height: 64px;
+    border-bottom-left-radius: 64px;
+    background: var(--one);
+  }
+
+  .fig--stack {
+    top: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .fig--stack span {
+    width: 40px;
+    height: 8px;
+    border-radius: 3px;
+    background: var(--ink);
+  }
+
+  .fig--stack span:nth-child(2) {
+    opacity: 0.6;
+  }
+
+  .fig--stack span:nth-child(3) {
+    opacity: 0.3;
+  }
+
+  .fig--dash {
+    top: 20px;
+    right: 24px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 4px dashed var(--ink);
+  }
+
+  .fig--plus {
+    top: 10px;
+    right: 22px;
+    font-weight: 800;
+    font-size: 72px;
+    line-height: 1;
+    color: var(--three);
+  }
+
+  /* on one column, keep the conductor's figure from crowding its headline */
+  @media (max-width: 600px) {
+    .fig--bars span:nth-child(1) {
+      width: 72px;
+    }
+
+    .fig--bars span:nth-child(2) {
+      width: 50px;
+    }
+
+    .fig--bars span:nth-child(3) {
+      width: 62px;
+    }
+
+    .fig--bars {
+      gap: 5px;
+    }
+
+    .fig--bars span {
+      height: 8px;
+    }
+
+    .fig--block {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+    }
+  }
+</style>

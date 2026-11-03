@@ -1,0 +1,57 @@
+---
+// Guardrails.astro — 09 · guardrails: what Agentry never does.
+const nevers = [
+  "Lets an agent grade its own work.",
+  "Pushes without your policy saying so.",
+  "Merges on a base that moved, or a gate that didn't run.",
+  "Installs a skill or writes your settings without asking.",
+];
+---
+
+<section id="never" class="never" aria-labelledby="never-title">
+  <div class="wrap section never__inner">
+    <div class="never__head">
+      <span class="eyebrow">09 · GUARDRAILS</span>
+      <h2 id="never-title" class="title">What it never does.</h2>
+    </div>
+    <ul class="list">
+      {nevers.map((item) => <li>{item}</li>)}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .never {
+    background: var(--surface);
+    border-top: var(--border);
+  }
+
+  .never__inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 48px;
+  }
+
+  .never__head {
+    flex: 1 1 440px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .list {
+    flex: 1 1 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 19px;
+    font-weight: 700;
+  }
+
+  .list li {
+    padding: 16px 18px;
+    background: var(--paper);
+    border: var(--border);
+    border-radius: var(--radius-m);
+  }
+</style>

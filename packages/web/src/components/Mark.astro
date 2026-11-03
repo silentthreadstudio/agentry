@@ -1,0 +1,63 @@
+---
+// Mark.astro — the three-bar brand mark (one · two · three). Decorative: the wordmark
+// next to it carries the name.
+interface Props {
+  /** Small = the 14/10/12 px figure mark; default = the 26/18/22 px nav mark. */
+  size?: "nav" | "small";
+}
+const { size = "nav" } = Astro.props;
+---
+
+<span class:list={["mark", `mark--${size}`]} aria-hidden="true">
+  <span class="mark__bar mark__bar--one"></span>
+  <span class="mark__bar mark__bar--two"></span>
+  <span class="mark__bar mark__bar--three"></span>
+</span>
+
+<style>
+  .mark {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .mark__bar {
+    display: block;
+    height: 6px;
+  }
+
+  .mark__bar--one {
+    width: 26px;
+    background: var(--one);
+  }
+
+  .mark__bar--two {
+    width: 18px;
+    background: var(--two);
+  }
+
+  .mark__bar--three {
+    width: 22px;
+    background: var(--three);
+  }
+
+  .mark--small {
+    flex-direction: row;
+  }
+
+  .mark--small .mark__bar {
+    border-radius: 3px;
+  }
+
+  .mark--small .mark__bar--one {
+    width: 14px;
+  }
+
+  .mark--small .mark__bar--two {
+    width: 10px;
+  }
+
+  .mark--small .mark__bar--three {
+    width: 12px;
+  }
+</style>

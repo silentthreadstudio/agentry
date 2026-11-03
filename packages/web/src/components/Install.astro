@@ -1,147 +1,77 @@
 ---
-// Install.astro — the 20-second copy-paste (VISION §4.8). The primary CTA's destination.
-//   - the install command in a mono block + the copy button (T6's ui.ts drives [data-copy]).
-//   - the Node ≥ 24 prerequisite note.
-//   - a one-line next step: then `/agentry:go <task>`.
-//
-// id="install" so the nav + hero + footer anchors resolve. class="reveal".
-// Color discipline: the copy button is the action → btn-primary (violet). The command block is
-// neutral panel. The success "Copied" swap is handled by ui.ts (informational, not motion).
-//
-// Base-path rule: no internal asset/href here (the install string is a literal command, the next
-// step is a literal command) → no withBase needed. The command is the literal marketplace add.
-const INSTALL_CMD = "/plugin marketplace add silentthreadstudio/agentry";
-const NEXT_CMD = "/agentry:go <task>";
+// Install.astro — the three install lines and the requirements.
+const lines = [
+  "/plugin marketplace add silentthreadstudio/agentry",
+  "/plugin install agentry@agentry-dev",
+  "/agentry:init",
+];
 ---
 
-<section id="install" class="install section reveal" aria-labelledby="install-title">
-  <div class="container install__inner">
-    <p class="eyebrow install__eyebrow">Install</p>
-    <h2 id="install-title" class="install__title">One copy-paste from installed.</h2>
-    <p class="install__sub muted">
-      Paste this into Claude Code. It adds Agentry from its GitHub repo — no account, no build step.
-    </p>
-
-    <div class="install__cmd">
-      <code class="install__code">
-        <span class="install__sigil" aria-hidden="true">$</span>{INSTALL_CMD}
-      </code>
-      <button class="btn btn-primary install__copy" data-copy data-clipboard={INSTALL_CMD}>
-        Copy
-      </button>
-    </div>
-
-    <ul class="install__notes" role="list">
-      <li class="install__note">
-        <span class="install__notekey label">Requires</span>
-        <span class="muted">Node ≥ 24 (the repo standard) and Claude Code.</span>
-      </li>
-      <li class="install__note">
-        <span class="install__notekey label">Then</span>
-        <span class="muted">run <code class="install__inline">{NEXT_CMD}</code> — and Agentry routes it for you.</span>
-      </li>
-    </ul>
-  </div>
+<section id="install" class="wrap install" aria-labelledby="install-title">
+  <h2 id="install-title" class="install__title">Three lines. Then your board.</h2>
+  <ol class="lines">
+    {
+      lines.map((line, i) => (
+        <li class="line" tabindex="0" aria-label={`Step ${i + 1}: ${line}`}>
+          <span class="line__n" aria-hidden="true">{i + 1}</span>
+          <code>{line}</code>
+        </li>
+      ))
+    }
+  </ol>
+  <p class="install__note">Needs Claude Code and Node 24 or newer. MIT.</p>
 </section>
 
 <style>
-  .install__inner {
-    max-width: 760px;
-  }
-
-  .install__eyebrow {
-    margin-bottom: 16px;
+  .install {
+    padding-block: 104px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
   }
 
   .install__title {
-    margin-bottom: 14px;
+    font-size: clamp(44px, 6vw, 88px);
+    line-height: 0.92;
+    letter-spacing: -0.045em;
   }
 
-  .install__sub {
-    font-size: 16px;
-    line-height: 1.6;
-    max-width: 52ch;
-    margin-bottom: 28px;
-  }
-
-  /* the command block: neutral panel, the copy action sits at the right */
-  .install__cmd {
-    display: flex;
-    align-items: stretch;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 24px;
-  }
-
-  .install__code {
-    flex: 1 1 320px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-    padding: 16px 20px;
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    font-family: var(--mono);
-    font-size: clamp(13px, 1.3vw, 15px);
-    color: var(--ink);
-    /* a long command scrolls inside the block rather than breaking the layout */
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-
-  .install__sigil {
-    color: var(--violet-2);
-    flex: none;
-    user-select: none;
-  }
-
-  .install__copy {
-    flex: none;
-    /* matches the command block height visually */
-    min-width: 104px;
-  }
-
-  /* the transient success state (ui.ts sets data-copied) — a calm confirmation, no motion */
-  .install__copy[data-copied] {
-    background: var(--good);
-    color: var(--bg);
-    border-color: transparent;
-  }
-
-  .install__notes {
+  .lines {
+    max-width: 760px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 15px;
+  }
+
+  .line {
+    display: flex;
+    gap: 18px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    white-space: nowrap;
+    background: var(--surface);
+    border: var(--border);
+    border-radius: var(--radius-m);
+  }
+
+  .line__n {
+    color: var(--ink-2);
   }
 
   .install__note {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    flex-wrap: wrap;
     font-size: 15px;
-    line-height: 1.55;
+    color: var(--ink-2);
   }
 
-  .install__notekey {
-    flex: none;
-    /* fixed-ish width so the two notes' values align into a clean column */
-    min-width: 72px;
-    color: var(--faint);
-  }
+  @media (max-width: 600px) {
+    .install {
+      padding-block: 72px;
+    }
 
-  .install__inline {
-    color: var(--violet-2);
-    background: var(--violet-dim);
-    padding: 1px 6px;
-    border-radius: 6px;
-  }
-
-  @media (max-width: 520px) {
-    .install__copy {
-      width: 100%;
+    .lines {
+      font-size: 14px;
     }
   }
 </style>

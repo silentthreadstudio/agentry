@@ -1,46 +1,30 @@
 ---
+// Base.astro — the chrome every page shares: the full <head> (meta, Open Graph, fonts,
+// favicon), the skip link, the site Nav and Footer. Pages fill the <main> slot.
+//
+// Base-path rule: Astro does not prefix hand-written URLs. Internal hrefs/srcs go through
+// withBase(); absolute URLs for canonical/OG are built from the configured `site`.
 import Footer from "../components/Footer.astro";
-// Base.astro — the chrome every page shares (T4 final).
-// Owns the full <head> (charset/viewport, title, meta description, Open Graph + Twitter card,
-// favicon), the shared Nav + Footer, and the ONE page-global <script> that imports T6's
-// self-initializing helpers (scroll-reveal + nav-blur/copy-button).
-//
-// System fonts only (VISION §5: "system sans" for prose, system mono for code) — no webfont,
-// no <link> to an external font. The stacks live in tokens.css (--sans / --mono).
-//
-// Base-path rule (the #1 failure mode): Astro does NOT auto-prefix hand-written URLs. Every
-// internal href/src here is built from import.meta.env.BASE_URL; the canonical/OG URL is built
-// from import.meta.env.SITE. Get this wrong and assets 404 under /agentry.
 import Nav from "../components/Nav.astro";
-
-// T2 wires tokens.css + global.css (tokens first — single source of truth — then the base layer).
-// Preserve these imports (per T4 contract).
+import { withBase } from "../lib/base.ts";
 import "../styles/tokens.css";
 import "../styles/global.css";
 
 interface Props {
   /** <title> + OG/Twitter title. */
   title: string;
-  /** Meta description + OG/Twitter description. Optional with a measured default (VISION §1/§8). */
+  /** Meta description + OG/Twitter description. */
   description?: string;
 }
 
 const {
   title,
-  description = "Agentry — an adaptive agentic layer for Claude Code that measures itself. Right-sized orchestration, SDLC specialists, and durable memory. Measured, not asserted.",
+  description = "Agentry is the harness around Claude Code. It sizes the process to the task, runs your own board as verified lanes, remembers what it learned, and every move it makes is a command you can script.",
 } = Astro.props;
 
-// BASE_URL may or may not carry a trailing slash depending on config; join safely so we never
-// emit "/agentryfavicon.svg" (missing slash → 404). `withBase("favicon.svg")` → "/agentry/favicon.svg".
-const base = import.meta.env.BASE_URL;
-const withBase = (path: string) => `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
-
-// import.meta.env.SITE is the configured `site` (astro.config.mjs). Build absolute URLs for
-// canonical/OG from it; fall back gracefully if it's ever unset in a non-build context.
 const site = import.meta.env.SITE ?? "";
-const canonical = site ? new URL(base, site).href : base;
+const canonical = site ? new URL(Astro.url.pathname, site).href : Astro.url.pathname;
 const ogImage = site ? new URL(withBase("og.png"), site).href : withBase("og.png");
-const favicon = withBase("favicon.svg");
 ---
 
 <!doctype html>
@@ -51,43 +35,56 @@ const favicon = withBase("favicon.svg");
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={withBase("favicon.svg")} />
 
-    <!-- Favicon: the constellation mark as an SVG icon (path via BASE_URL). -->
-    <link rel="icon" type="image/svg+xml" href={favicon} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap"
+    />
 
-    <!-- Open Graph -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Agentry" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogImage} />
-
-    <!-- Twitter card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
-
-    <!-- Tab/UI color matches the observatory canvas (no white flash on supporting browsers). -->
-    <meta name="theme-color" content="#0b0b0f" />
+    <meta name="theme-color" content="#eef0f2" />
   </head>
   <body>
+    <a class="skip" href="#main">Skip to content</a>
     <Nav />
-    <main id="main">
+    <main id="main" tabindex="-1">
       <slot />
     </main>
     <Footer />
-
-    <!--
-      The one page-global script (T4 contract): T6's self-initializing helpers.
-      reveal.ts = scroll-reveal (.reveal → .in); ui.ts = nav-blur (.scrolled) + copy-button.
-      These files are T6's and land in parallel — importing them is correct; the build resolves
-      at the end. Each guards prefers-reduced-motion internally (T6's responsibility).
-    -->
-    <script>
-      import "../islands/reveal.ts";
-      import "../islands/ui.ts";
-    </script>
   </body>
 </html>
+
+<style>
+  .skip {
+    position: absolute;
+    left: 12px;
+    top: -60px;
+    z-index: 10;
+    padding: 10px 16px;
+    border: var(--border);
+    border-radius: var(--radius-m);
+    background: var(--surface);
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .skip:focus {
+    top: 12px;
+  }
+
+  main:focus {
+    outline: none;
+  }
+</style>

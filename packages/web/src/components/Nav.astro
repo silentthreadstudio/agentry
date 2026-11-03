@@ -1,231 +1,109 @@
 ---
-// Nav.astro — the sticky site chrome (VISION §4.1).
-// A small SEEDED constellation mark (the §5 node-graph motif: amber→violet nodes/edges) as the
-// brand logo linking home, the anchor nav, the GitHub external link, and the Install CTA.
-//
-// Interaction contract (T6 owns the JS): this renders <header data-nav>; T6's islands/ui.ts adds a
-// `.scrolled` class past a scroll threshold — styled below for the blur/condense (un-scrolled state
-// is transparent/minimal). No JS is needed for the responsive collapse (CSS-only, see <900px rules).
-//
-// Base-path rule (the #1 failure mode): every hand-written INTERNAL href is prefixed with
-// import.meta.env.BASE_URL or it 404s under /agentry. In-page anchors (#proof) stay bare. GitHub is
-// an absolute EXTERNAL URL.
-const base = import.meta.env.BASE_URL;
-const GITHUB = "https://github.com/silentthreadstudio/agentry";
+// Nav.astro — the site header: brand mark home, the section anchors, Docs, GitHub, and the
+// Install pill. Anchors are base-aware (`/#sized`) so they also work from the /docs pages.
+import { withBase } from "../lib/base.ts";
+import Mark from "./Mark.astro";
 
-// Slash-safe join with the base (same helper Base.astro uses): Docs is a REAL route, so it
-// must be base-prefixed — NOT a bare # anchor like the landing sections (which 404s under /agentry).
-const withBase = (path: string) => `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
-const DOCS = withBase("docs");
-
-// The landing-section anchors (VISION §4.1: Proof · How it works · Pillars · Install). "Proof" leads —
-// the centerpiece (§4.7) + the north-star "show the receipts" (§1). These point at sections on the LANDING
-// page, so they must be `withBase("")+"#id"` (= /agentry/#proof), NOT a bare `#proof`: bare anchors only
-// resolve on the landing itself and go dead on the /docs/* routes that reuse this shared nav. The base-aware
-// form is a same-page jump on the landing and a cross-navigation everywhere else.
 const home = withBase("");
-const anchors = [
-  { href: `${home}#proof`, label: "Proof" },
-  { href: `${home}#how`, label: "How it works" },
-  { href: `${home}#pillars`, label: "Pillars" },
-  { href: `${home}#install`, label: "Install" },
+const docs = withBase("docs/");
+const inDocs = Astro.url.pathname.startsWith(docs);
+const links = [
+  { href: `${home}#sized`, label: "Harness" },
+  { href: `${home}#team`, label: "Agents" },
+  { href: `${home}#extend`, label: "Extend" },
+  { href: `${home}#script`, label: "Script" },
+  { href: docs, label: "Docs" },
+  { href: "https://github.com/silentthreadstudio/agentry", label: "GitHub" },
 ];
 ---
 
-<header data-nav>
-  <nav class="nav container" aria-label="Primary">
-    <!-- Brand: seeded constellation mark + wordmark, links home. -->
-    <a class="brand" href={base} aria-label="Agentry — home">
-      <span class="mark" aria-hidden="true">
-        <!-- Seeded constellation node-graph (§5 motif): fixed coords = deterministic.
-             Edges first (under nodes), amber spark → violet network. -->
-        <svg viewBox="0 0 28 28" width="28" height="28" role="img" focusable="false">
-          <g class="edges" stroke="url(#navEdge)" stroke-width="1" fill="none" opacity="0.65">
-            <line x1="6" y1="9" x2="14" y2="5" />
-            <line x1="14" y1="5" x2="22" y2="10" />
-            <line x1="6" y1="9" x2="11" y2="18" />
-            <line x1="11" y1="18" x2="22" y2="10" />
-            <line x1="11" y1="18" x2="20" y2="22" />
-            <line x1="22" y1="10" x2="20" y2="22" />
-          </g>
-          <g class="nodes">
-            <circle cx="14" cy="5" r="2.4" fill="var(--amber)" />
-            <circle cx="6" cy="9" r="1.7" fill="var(--violet-2)" />
-            <circle cx="22" cy="10" r="1.9" fill="var(--violet)" />
-            <circle cx="11" cy="18" r="1.7" fill="var(--violet-2)" />
-            <circle cx="20" cy="22" r="1.6" fill="var(--violet)" />
-          </g>
-          <defs>
-            <linearGradient id="navEdge" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stop-color="var(--amber)" />
-              <stop offset="1" stop-color="var(--violet)" />
-            </linearGradient>
-          </defs>
-        </svg>
-      </span>
-      <span class="wordmark">Agentry</span>
+<header>
+  <nav aria-label="Main" class="nav">
+    <a href={home} class="brand">
+      <Mark />
+      <span class="brand__name">agentry</span>
     </a>
-
-    <!-- Landing-section anchors (base-aware, so they work from /docs/* too) + GitHub (absolute external). -->
-    <ul class="links" role="list">
-      {anchors.map((a) => (
-        <li><a href={a.href}>{a.label}</a></li>
-      ))}
+    <ul class="links">
+      {
+        links.map((link) => (
+          <li>
+            <a href={link.href} aria-current={link.href === docs && inDocs ? "page" : undefined}>
+              {link.label}
+            </a>
+          </li>
+        ))
+      }
       <li>
-        <a href={GITHUB} target="_blank" rel="noopener noreferrer">
-          GitHub
-          <span class="ext" aria-hidden="true">↗</span>
-        </a>
+        <a href={`${home}#install`} class="cta">Install</a>
       </li>
     </ul>
-
-    <!-- Docs: a REAL route (base-prefixed), not a landing anchor. Kept reachable past the
-         <900px collapse where the in-page anchor cluster hides. -->
-    <a class="nav__docs" href={DOCS}>Docs</a>
-
-    <!-- Install CTA — the ONLY violet in the chrome (color discipline §5: violet = action). -->
-    <a class="btn btn-primary cta" href={`${home}#install`}>Install</a>
   </nav>
 </header>
 
 <style>
-  /* The sticky chrome. Height ≈ 64px content + 1px line ≈ matches global.css
-     scroll-padding-top:84px / rail top:110px assumptions. Un-scrolled = transparent/minimal. */
-  header[data-nav] {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    background: transparent;
-    border-bottom: 1px solid transparent;
-    transition: background 0.25s ease, border-color 0.25s ease, backdrop-filter 0.25s ease;
-  }
-
-  /* Scrolled state (T6's ui.ts toggles .scrolled): condense + glass blur (§4.1 "blurs on scroll").
-     Uses the same blur recipe as global.css .glass for consistency. */
-  header[data-nav].scrolled {
-    background: color-mix(in srgb, var(--bg) 72%, transparent);
-    border-bottom-color: var(--line);
-    -webkit-backdrop-filter: blur(14px) saturate(120%);
-    backdrop-filter: blur(14px) saturate(120%);
-  }
-
   .nav {
+    max-width: var(--wrap);
+    margin: 0 auto;
+    padding: 22px var(--gutter);
     display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
     align-items: center;
-    gap: 24px;
-    height: 64px;
+    gap: 16px;
   }
 
-  /* Brand ----------------------------------------------------------------- */
   .brand {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 10px;
-    /* 44px hit target on the tap-critical home link */
     min-height: 44px;
-    padding-right: 4px;
+    text-decoration: none;
   }
 
-  .mark {
-    display: inline-flex;
-    /* a soft brand glow behind the mark so it reads as the spark */
-    filter: drop-shadow(0 0 6px rgba(244, 169, 60, 0.25));
-  }
-
-  .wordmark {
+  .brand__name {
     font-weight: 800;
-    font-size: 18px;
+    font-size: 26px;
     letter-spacing: -0.02em;
-    color: var(--ink);
   }
 
-  /* Anchors --------------------------------------------------------------- */
   .links {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
-    /* push the link cluster + CTA to the right of the brand */
-    margin-left: auto;
+    gap: 4px 22px;
+    font-size: 16px;
+    font-weight: 700;
   }
 
   .links a {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    /* 44px hit target, comfortable horizontal padding */
     min-height: 44px;
-    padding: 0 12px;
-    border-radius: 8px;
-    font-size: 14.5px;
-    font-weight: 500;
-    color: var(--muted);
-    transition: color 0.18s ease, background 0.18s ease;
+    text-decoration: none;
   }
 
-  .links a:hover {
-    color: var(--ink);
-    background: var(--violet-dim);
+  .links a[aria-current="page"] {
+    text-decoration: underline;
+    text-decoration-thickness: 3px;
+    text-decoration-color: var(--one);
+    text-underline-offset: 6px;
   }
 
-  .ext {
-    font-size: 0.85em;
-    color: var(--faint);
+  .links .cta {
+    padding: 12px 20px;
+    border-radius: var(--pill);
+    background: var(--ink);
+    color: var(--surface);
   }
 
-  /* Docs link: same cosmetics as the anchor cluster, but a standalone real-route link that
-     stays visible after the <900px collapse (it is NOT inside .links). */
-  .nav__docs {
-    display: inline-flex;
-    align-items: center;
-    /* carry the right-push when the .links cluster (which owns margin-left:auto) is hidden <900px */
-    margin-left: auto;
-    min-height: 44px;
-    padding: 0 12px;
-    border-radius: 8px;
-    font-size: 14.5px;
-    font-weight: 500;
-    color: var(--muted);
-    transition: color 0.18s ease, background 0.18s ease;
+  .links .cta:hover {
+    background: var(--two);
+    color: var(--on-two);
   }
 
-  .nav__docs:hover {
-    color: var(--ink);
-    background: var(--violet-dim);
-  }
-
-  /* Install CTA ----------------------------------------------------------- */
-  .cta {
-    /* keep the 44px hit-target floor (WCAG 2.5.5) but a touch tighter padding so it
-       sits comfortably in the 64px bar */
-    min-height: 44px;
-    padding: 10px 18px;
-    font-size: 14px;
-    flex: none;
-  }
-
-  /* Responsive (VISION §4.1 collapse <900px): CSS-only, no hamburger island.
-     Hide secondary anchors; keep brand + Install always reachable. The sections
-     remain reachable by scroll, and the footer repeats the key links. */
-  @media (max-width: 900px) {
-    .nav {
-      gap: 16px;
-      /* with the anchor links hidden, split the two remaining items to the edges:
-         brand hard-left, Install hard-right (not bunched in the middle) */
-      justify-content: space-between;
-    }
+  @media (max-width: 600px) {
     .links {
-      gap: 0;
-    }
-    /* hide in-page section anchors + GitHub; brand + Install stay */
-    .links {
-      display: none;
-    }
-  }
-
-  /* Very small screens: keep the wordmark but ensure the CTA never crowds it. */
-  @media (max-width: 380px) {
-    .wordmark {
-      font-size: 16px;
+      gap: 0 18px;
     }
   }
 </style>

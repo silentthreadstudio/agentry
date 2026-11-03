@@ -1,0 +1,231 @@
+---
+// Scriptable.astro — 05 · scriptable: the CLI conventions and a short terminal session
+// against an example billing repo.
+const conventions = [
+  { before: "Writes preview until ", code: "--apply", after: "" },
+  { before: "", code: "--json", after: " on every command" },
+  { before: "Exit 0 ok · 1 stopped · 2 refused", code: "", after: "" },
+  { before: "Errors name the next command", code: "", after: "" },
+];
+---
+
+<section id="script" class="wrap section script" aria-labelledby="script-title">
+  <div class="script__copy">
+    <span class="eyebrow">05 · SCRIPTABLE</span>
+    <h2 id="script-title" class="title">Every move is a command.</h2>
+    <p class="lede">
+      The slash commands are thin. Underneath is one dependency-free CLI the agents call, and so
+      can you, your scripts, or another agent host.
+    </p>
+    <ul class="rules">
+      {
+        conventions.map((c) => (
+          <li>
+            {c.before}
+            {c.code && <code class="code">{c.code}</code>}
+            {c.after}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+
+  <figure class="term">
+    <figcaption class="term__cap">
+      <span class="term__groups">
+        <span class="group group--on">board</span>
+        <span class="group">lane</span>
+        <span class="group">draft</span>
+      </span>
+      <span class="term__cwd">~/billing</span>
+    </figcaption>
+    <div class="term__screen" tabindex="0" role="region" aria-label="Terminal session">
+      <div class="term__lines">
+        <div class="cmd">
+          <span><span class="prompt" aria-hidden="true">›</span> agentry board status --ready</span>
+          <span class="out">
+            <span class="chip chip--dim">S3</span>T-19 Refund export<span class="chip chip--ok">contract ✓</span><span class="chip chip--ok">deps ✓</span>
+          </span>
+        </div>
+        <div class="rule" aria-hidden="true"></div>
+        <div class="cmd">
+          <span><span class="prompt" aria-hidden="true">›</span> agentry board add task --fields '&#123;"sprint":"S3","what":"Audit log"&#125;'</span>
+          <span class="out">
+            <span class="chip chip--preview">preview</span>would add T-20 to BOARD.md › Tasks and sprints/S3.md
+          </span>
+          <span class="hint">add --apply to write it</span>
+        </div>
+        <div class="rule" aria-hidden="true"></div>
+        <div class="cmd">
+          <span><span class="prompt" aria-hidden="true">›</span> agentry lane exec start T-19 --json | jq -r .next</span>
+          <span class="out">dispatch builder</span>
+        </div>
+        <div class="rule" aria-hidden="true"></div>
+        <div class="cmd">
+          <span><span class="prompt" aria-hidden="true">›</span> agentry lane merge T-19 --preflight</span>
+          <span class="out out--wrap">
+            <span class="chip chip--bad">exit 2</span>the gate has not run on this tip
+          </span>
+          <span class="hint">→ <span class="hint__cmd">agentry lane exec gate T-19</span></span>
+        </div>
+      </div>
+    </div>
+  </figure>
+</section>
+
+<style>
+  .script {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 48px;
+  }
+
+  .script__copy {
+    flex: 1 1 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .rules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .rules li {
+    padding: 10px 14px;
+    font-size: 15px;
+    background: var(--surface);
+    border: var(--border);
+    border-radius: 10px;
+  }
+
+  .rules .code {
+    font-size: 1em;
+  }
+
+  .term {
+    flex: 1 1 600px;
+    min-width: 0;
+    align-self: flex-start;
+    padding: 8px;
+    background: var(--surface);
+    border: var(--border);
+    border-radius: 18px;
+  }
+
+  .term__cap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .term__groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-weight: 600;
+  }
+
+  .group {
+    padding: 5px 12px;
+    background: var(--paper);
+    border-radius: var(--pill);
+  }
+
+  .group--on {
+    background: var(--ink);
+    color: var(--surface);
+  }
+
+  .term__cwd {
+    color: var(--ink-2);
+  }
+
+  .term__screen {
+    padding: 18px 0;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--night-ink);
+    background: var(--night);
+    border-radius: var(--radius-m);
+  }
+
+  .term__lines {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 560px;
+  }
+
+  .cmd {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 20px;
+  }
+
+  .prompt {
+    color: var(--one);
+    font-weight: 600;
+  }
+
+  .out {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--night-ink-2);
+  }
+
+  .out--wrap {
+    flex-wrap: wrap;
+  }
+
+  .hint {
+    color: var(--night-ink-3);
+  }
+
+  .hint__cmd {
+    color: var(--night-ink);
+  }
+
+  .rule {
+    height: 1px;
+    background: var(--night-3);
+  }
+
+  .chip {
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+
+  .chip--dim {
+    background: var(--term-chip);
+  }
+
+  .chip--ok {
+    background: var(--three);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .chip--preview {
+    background: var(--term-preview-bg);
+    color: var(--term-preview-ink);
+    font-weight: 600;
+  }
+
+  .chip--bad {
+    background: var(--term-bad-bg);
+    color: var(--term-bad-ink);
+    font-weight: 600;
+  }
+</style>

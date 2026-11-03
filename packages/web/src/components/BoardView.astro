@@ -1,0 +1,190 @@
+---
+// BoardView.astro — 07 · your board, made visible: the derived status view of a plain
+// markdown board (now · on you · blocked · ahead).
+---
+
+<section id="board" class="board" aria-labelledby="board-title">
+  <div class="wrap section board__inner">
+    <div class="board__copy">
+      <span class="eyebrow board__eyebrow">07 · YOUR BOARD, MADE VISIBLE</span>
+      <h2 id="board-title" class="title">No dashboard. Your board, read for you.</h2>
+      <p class="board__lede">
+        The board stays plain markdown in your repo. Agentry derives the view: what's moving,
+        what's on you, what's blocked and why, what's next. A new repo gets a ready-made board:
+        milestones, sprints, tasks, questions, decisions.
+      </p>
+    </div>
+
+    <div class="view">
+      <div class="card">
+        <span class="card__key">NOW</span>
+        <div class="now">
+          <strong class="now__name">S3 · Invoices</strong>
+          <div class="meter" role="img" aria-label="6 of 9 tasks done, 1 in progress, 2 to go">
+            <span class="meter__done"></span>
+            <span class="meter__doing"></span>
+            <span class="meter__todo"></span>
+          </div>
+          <span class="now__count">6/9</span>
+        </div>
+      </div>
+      <div class="pair">
+        <div class="card">
+          <span class="card__key">ON YOU</span>
+          <span class="asks"><span class="ask">T-12 look</span><span class="ask">Q4 answer</span></span>
+        </div>
+        <div class="card">
+          <span class="card__key">BLOCKED</span>
+          <span class="card__text">T-21, T-22 behind T-14</span>
+        </div>
+      </div>
+      <div class="card card--row">
+        <span class="card__key">AHEAD</span>
+        <span class="card__text">S4 0/7 · S5 0/5 · 3 parked</span>
+        <span class="card__cmd">agentry board status</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .board {
+    background: var(--ink);
+    color: var(--on-ink);
+    border-bottom: var(--border);
+  }
+
+  .board__inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 48px;
+  }
+
+  .board__copy {
+    flex: 1 1 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .board__eyebrow {
+    color: var(--three);
+  }
+
+  .board__lede {
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--night-ink-4);
+  }
+
+  .view {
+    flex: 1 1 560px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .pair {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .pair .card {
+    flex: 1 1 240px;
+    gap: 10px;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    background: var(--night-2);
+    border: 2px solid var(--night-line);
+    border-radius: var(--radius-l);
+  }
+
+  .card--row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 24px;
+  }
+
+  .card__key {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--night-ink-2);
+  }
+
+  .card__text {
+    font-size: 15px;
+  }
+
+  .card__cmd {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--night-ink-3);
+  }
+
+  .now {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .now__name {
+    width: 150px;
+    font-size: 18px;
+  }
+
+  .now__count {
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  .meter {
+    flex: 1 1 260px;
+    display: flex;
+    gap: 4px;
+  }
+
+  .meter span {
+    height: 14px;
+    border-radius: 4px;
+  }
+
+  .meter__done {
+    flex: 6;
+    background: var(--three);
+  }
+
+  .meter__doing {
+    flex: 1;
+    background: var(--two);
+  }
+
+  .meter__todo {
+    flex: 2;
+    background: var(--night-line);
+  }
+
+  .asks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .ask {
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--one);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 14px;
+  }
+</style>

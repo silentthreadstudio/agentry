@@ -1,0 +1,187 @@
+---
+// Lanes.astro — 02 · your board, as lanes: three pre-planned tasks on rails, one merged,
+// one in a fix round, one stopped by the guard.
+type Tone = "one" | "two" | "three" | "ink" | "wait" | "stop";
+interface Lane {
+  id: string;
+  name: string;
+  steps: { label: string; tone: Tone; grow?: number }[];
+}
+
+const lanes: Lane[] = [
+  {
+    id: "T-14",
+    name: "Invoices",
+    steps: [
+      { label: "build", tone: "one" },
+      { label: "verify", tone: "two" },
+      { label: "gate", tone: "three" },
+      { label: "merged", tone: "ink" },
+    ],
+  },
+  {
+    id: "T-16",
+    name: "Refunds",
+    steps: [
+      { label: "build", tone: "one" },
+      { label: "verify · 2 notes", tone: "two" },
+      { label: "fix N2", tone: "one" },
+      { label: "recheck…", tone: "wait" },
+    ],
+  },
+  {
+    id: "T-17",
+    name: "Tax rules",
+    steps: [
+      { label: "build", tone: "one" },
+      { label: "stopped: main moved under it", tone: "stop", grow: 3 },
+    ],
+  },
+];
+---
+
+<section id="lanes" class="band lanes" aria-labelledby="lanes-title">
+  <div class="wrap section lanes__inner">
+    <div class="head">
+      <div class="head__title">
+        <span class="eyebrow">02 · YOUR BOARD, AS LANES</span>
+        <h2 id="lanes-title" class="title">Pre-planned work runs on rails.</h2>
+      </div>
+      <p class="head__lede lede">
+        When the contract is already written, <code class="code">/agentry:exec T-14</code> skips the
+        planning: its own worktree, a builder, an independent verifier, your gate, then
+        <code class="code">/agentry:merge</code>. Several lanes at once; gates queue; a guard stops
+        any lane whose base moved.
+      </p>
+    </div>
+
+    <ul class="rows">
+      {
+        lanes.map((lane) => (
+          <li class="row">
+            <span class="row__id">{lane.id}</span>
+            <ol class="row__strip" aria-label={`${lane.id} ${lane.name}`}>
+              {lane.steps.map((step) => (
+                <li class={`step step--${step.tone}`} style={`flex: ${step.grow ?? 1}`}>
+                  {step.label}
+                </li>
+              ))}
+            </ol>
+            <span class="row__name">{lane.name}</span>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .lanes {
+    background: var(--surface);
+  }
+
+  .lanes__inner {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    background: var(--paper);
+    border: var(--border);
+    border-radius: var(--radius-l);
+  }
+
+  .row__id {
+    width: 64px;
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .row__strip {
+    flex: 1 1 600px;
+    min-width: 0;
+    display: flex;
+    gap: 6px;
+  }
+
+  .row__name {
+    width: 150px;
+    font-size: 15px;
+    color: var(--ink-2);
+  }
+
+  .step {
+    padding: 12px 14px;
+    border-radius: var(--radius-s);
+    font-weight: 700;
+    font-size: 15px;
+  }
+
+  .step--one {
+    background: var(--one);
+  }
+
+  .step--two {
+    background: var(--two);
+    color: var(--on-two);
+  }
+
+  .step--three {
+    background: var(--three);
+  }
+
+  .step--ink {
+    background: var(--ink);
+    color: var(--surface);
+  }
+
+  .step--wait {
+    padding: 10px 12px;
+    border: 2px dashed var(--line);
+  }
+
+  .step--stop {
+    padding: 10px 12px;
+    background: var(--warn-bg);
+    border: 2px solid var(--warn-line);
+    color: var(--warn-ink);
+  }
+
+  @media (max-width: 600px) {
+    .row__strip {
+      order: 3;
+      flex-basis: 100%;
+    }
+
+    .row__id {
+      width: auto;
+    }
+
+    .row__name {
+      width: auto;
+    }
+
+    .step {
+      padding-inline: 8px;
+      font-size: 14px;
+    }
+
+    .step--wait,
+    .step--stop {
+      padding-inline: 6px;
+    }
+  }
+</style>

@@ -1,30 +1,31 @@
 ---
+// The landing page: pure composition of the section components, in the approved order.
+import Agents from "../components/Agents.astro";
+import BoardView from "../components/BoardView.astro";
+import Day from "../components/Day.astro";
+import Extensible from "../components/Extensible.astro";
+import FieldLog from "../components/FieldLog.astro";
+import Guardrails from "../components/Guardrails.astro";
+import Harness from "../components/Harness.astro";
 import Hero from "../components/Hero.astro";
 import Install from "../components/Install.astro";
-import Moat from "../components/Moat.astro";
-import Pillars from "../components/Pillars.astro";
-import Proof from "../components/Proof.astro";
-import RoutingDemo from "../components/RoutingDemo.astro";
-import Why from "../components/Why.astro";
-// The one landing page (T8 — composition root). Pure composition: imports Base + the seven
-// section components and renders them in IA order (VISION §4: claim → why → how → proof → install).
-// No section logic, no styles of its own — every section owns its own markup, styles, and ids.
-//
-// Anchor integrity: Nav links to #proof, #how, #pillars, #install. Each component owns its own
-// section id — Proof (#proof), Pillars (#pillars), Install (#install), and RoutingDemo (#how, with
-// its own "How it works" section chrome). index.astro stays pure composition.
+import Lanes from "../components/Lanes.astro";
+import Memory from "../components/Memory.astro";
+import Scriptable from "../components/Scriptable.astro";
 import Base from "../layouts/Base.astro";
 ---
 
-<Base
-  title="Agentry — the agentic layer that measures itself"
-  description="Agentry is an adaptive agentic layer for Claude Code: right-sized orchestration, SDLC specialists, and durable memory — that proves its work instead of asserting it."
->
+<Base title="Agentry · the harness around Claude Code">
   <Hero />
-  <Why />
-  <Pillars />
-  <RoutingDemo />
-  <Moat />
-  <Proof />
+  <Harness />
+  <Lanes />
+  <Agents />
+  <Extensible />
+  <Scriptable />
+  <Day />
+  <BoardView />
+  <Memory />
+  <Guardrails />
+  <FieldLog />
   <Install />
 </Base>

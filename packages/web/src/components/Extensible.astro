@@ -1,0 +1,267 @@
+---
+// Extensible.astro — 04 · extensible: the process file /agentry:init drafts, shown as a
+// highlighted JSON listing with line numbers.
+import Mark from "./Mark.astro";
+
+const points = [
+  ["Any kinds.", "Tasks, sprints, epics, questions, decisions, or your own."],
+  ["Any shape.", "Markdown tables, headings or frontmatter files."],
+  ["17 rules", "to switch on, mirroring the checks you already run."],
+  ["Your gate,", "with a quick tier and a list of known-flaky tests."],
+  ["Your skills as merge checks,", "your own conductor prompt, your own agents."],
+];
+
+// The listing as [kind, text] tokens per line: k = key, s = string, p = plain punctuation.
+type Tok = ["k" | "s" | "p", string];
+const k = (t: string): Tok => ["k", `"${t}"`];
+const s = (t: string): Tok => ["s", `"${t}"`];
+const p = (t: string): Tok => ["p", t];
+const lines: Tok[][] = [
+  [p("{")],
+  [p("  "), k("kinds"), p(": {")],
+  [
+    p("    "),
+    k("task"),
+    p(": { "),
+    k("at"),
+    p(": { "),
+    k("table"),
+    p(": "),
+    s("BOARD.md"),
+    p(", "),
+    k("heading"),
+    p(": "),
+    s("Tasks"),
+    p(" } },"),
+  ],
+  [
+    p("    "),
+    k("decision"),
+    p(": { "),
+    k("at"),
+    p(": { "),
+    k("table"),
+    p(": "),
+    s("DECISIONS.md"),
+    p(" } }"),
+  ],
+  [p("  },")],
+  [p("  "), k("rules"), p(": [")],
+  [
+    p("    { "),
+    k("rule"),
+    p(": "),
+    s("deps-done"),
+    p(", "),
+    k("kind"),
+    p(": "),
+    s("task"),
+    p(" },"),
+  ],
+  [
+    p("    { "),
+    k("rule"),
+    p(": "),
+    s("ready-has-contract"),
+    p(", "),
+    k("kind"),
+    p(": "),
+    s("task"),
+    p(" }"),
+  ],
+  [p("  ],")],
+  [p("  "), k("gate"), p(": {")],
+  [p("    "), k("command"), p(": ["), s("pnpm"), p(", "), s("test"), p("],")],
+  [
+    p("    "),
+    k("quick"),
+    p(": { "),
+    k("command"),
+    p(": ["),
+    s("pnpm"),
+    p(", "),
+    s("lint"),
+    p("], "),
+    k("only"),
+    p(": ["),
+    s("docs/**"),
+    p("] },"),
+  ],
+  [p("    "), k("flaky"), p(": ["), s("render budget"), p("]")],
+  [p("  },")],
+  [
+    p("  "),
+    k("extensions"),
+    p(": { "),
+    k("merge"),
+    p(": { "),
+    k("checks"),
+    p(": ["),
+    s("release-notes"),
+    p("] } },"),
+  ],
+  [p("  "), k("conductor"), p(": { "), k("prompt"), p(": "), s("docs/CONDUCTOR.md"), p(" },")],
+  [p("  "), k("guard"), p(": { "), k("allow"), p(": ["), s("docs/STATUS.md"), p("] }")],
+  [p("}")],
+];
+---
+
+<section id="extend" class="band extend" aria-labelledby="extend-title">
+  <div class="wrap section extend__inner">
+    <div class="extend__copy">
+      <span class="eyebrow">04 · EXTENSIBLE</span>
+      <h2 id="extend-title" class="title">It learns your process. It doesn't replace it.</h2>
+      <p class="extend__lede">
+        One small file maps Agentry onto how your repo already works.
+        <code class="code">/agentry:init</code> drafts it from what it finds; you confirm each part.
+      </p>
+      <ul class="points">
+        {points.map(([lead, rest]) => <li><strong>{lead}</strong> {rest}</li>)}
+      </ul>
+    </div>
+
+    <figure class="file">
+      <figcaption class="file__cap">
+        <span class="file__name"><Mark size="small" /><span>.agentry/process.json</span></span>
+        <span class="file__badge">drafted by /agentry:init</span>
+      </figcaption>
+      <div class="file__code" tabindex="0" role="region" aria-label=".agentry/process.json listing">
+        <pre class="file__gutter" aria-hidden="true">{lines.map((_, i) => `${i + 1}`).join("\n")}</pre>
+        <pre class="file__src"><code>{lines.map((line, i) => (
+          <>{line.map(([kind, text]) => kind === "p" ? text : <span class={`tok-${kind}`}>{text}</span>)}{i < lines.length - 1 ? "\n" : ""}</>
+        ))}</code></pre>
+      </div>
+      <div class="file__checks">
+        <span class="check check--ok">✓ agentry board check · OK · 2 rules</span>
+        <span class="check">57 tasks found</span>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<style>
+  .extend {
+    background: var(--two);
+    color: var(--on-two);
+  }
+
+  .extend__inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 48px;
+  }
+
+  .extend__copy {
+    flex: 1 1 440px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .extend__lede {
+    font-size: 18px;
+    line-height: 1.55;
+  }
+
+  .points {
+    display: flex;
+    flex-direction: column;
+    font-size: 17px;
+    border-top: 2px solid rgba(255, 255, 255, 0.4);
+  }
+
+  .points li {
+    padding: 14px 0;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.4);
+  }
+
+  .file {
+    flex: 1 1 540px;
+    min-width: 0;
+    align-self: flex-start;
+    padding: 8px;
+    background: var(--surface);
+    color: var(--ink);
+    border: var(--border);
+    border-radius: 18px;
+  }
+
+  .file__cap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px 12px;
+  }
+
+  .file__name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .file__badge {
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--paper);
+    border-radius: var(--pill);
+  }
+
+  .file__code {
+    display: flex;
+    overflow-x: auto;
+    background: var(--night);
+    border-radius: var(--radius-m);
+  }
+
+  .file__code pre {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.75;
+  }
+
+  .file__gutter {
+    padding: 20px 12px 20px 16px;
+    text-align: right;
+    color: var(--night-gutter);
+    user-select: none;
+  }
+
+  .file__src {
+    padding: 20px 20px 20px 8px;
+    color: var(--night-ink);
+  }
+
+  .tok-k {
+    color: var(--syntax-key);
+  }
+
+  .tok-s {
+    color: var(--syntax-str);
+  }
+
+  .file__checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 8px 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .check {
+    padding: 5px 10px;
+    background: var(--paper);
+    border-radius: var(--pill);
+  }
+
+  .check--ok {
+    background: var(--three);
+  }
+</style>

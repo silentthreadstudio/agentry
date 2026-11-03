@@ -1,0 +1,188 @@
+---
+// Harness.astro — 01 · the right-sized harness: the three shapes /agentry:go picks between,
+// each drawn as a strip of steps.
+type Tone = "one" | "two" | "three" | "ink" | "ask";
+interface Step {
+  label: string;
+  tone: Tone;
+  /** flex shorthand for this step's share of the strip */
+  flex: string;
+}
+interface Shape {
+  name: string;
+  example: string;
+  steps: Step[];
+  wrap?: boolean;
+}
+
+const shapes: Shape[] = [
+  {
+    name: "One-shot",
+    example: '"The date formatter drops the timezone"',
+    steps: [
+      { label: "implement", tone: "one", flex: "0 1 22%" },
+      { label: "verify", tone: "two", flex: "0 1 18%" },
+    ],
+  },
+  {
+    name: "Spec-first",
+    example: '"Make onboarding better"',
+    steps: [
+      { label: "spec", tone: "three", flex: "0 1 18%" },
+      { label: "you approve", tone: "ask", flex: "0 1 18%" },
+      { label: "build", tone: "one", flex: "0 1 20%" },
+      { label: "verify", tone: "two", flex: "0 1 16%" },
+    ],
+  },
+  {
+    name: "Decompose + verify",
+    example: '"Paginate users across API, service, data"',
+    wrap: true,
+    steps: [
+      { label: "spec", tone: "three", flex: "1 1 70px" },
+      { label: "plan", tone: "three", flex: "1 1 70px" },
+      { label: "split", tone: "three", flex: "1 1 70px" },
+      { label: "build × 3", tone: "one", flex: "2 1 120px" },
+      { label: "verify", tone: "two", flex: "1 1 70px" },
+      { label: "assemble", tone: "ink", flex: "1 1 90px" },
+    ],
+  },
+];
+---
+
+<section id="sized" class="wrap section harness" aria-labelledby="sized-title">
+  <div class="head">
+    <div class="head__title">
+      <span class="eyebrow">01 · THE RIGHT-SIZED HARNESS</span>
+      <h2 id="sized-title" class="title">The least process that wins.</h2>
+    </div>
+    <p class="head__lede lede">
+      <code class="code">/agentry:go</code> reads the task and picks its shape. A hidden decision
+      vetoes a one-shot; coupled parts earn a plan. You approve at every fork.
+    </p>
+  </div>
+
+  <ul class="shapes">
+    {
+      shapes.map((shape) => (
+        <li class="shape">
+          <div class="shape__name">
+            <strong>{shape.name}</strong>
+            <span class="shape__example">{shape.example}</span>
+          </div>
+          <ol class:list={["strip", { "strip--wrap": shape.wrap }]} aria-label={`${shape.name} steps`}>
+            {shape.steps.map((step) => (
+              <li class={`step step--${step.tone}`} style={`flex: ${step.flex}`}>
+                {step.label}
+              </li>
+            ))}
+          </ol>
+        </li>
+      ))
+    }
+  </ul>
+  <p class="harness__note">Most tasks never meet most of the agents. That's the point.</p>
+</section>
+
+<style>
+  .harness {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .shapes {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .shape {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 20px;
+    padding: 18px;
+    background: var(--surface);
+    border: var(--border);
+    border-radius: var(--radius-l);
+  }
+
+  .shape__name {
+    flex: 0 1 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .shape__name strong {
+    font-size: 22px;
+  }
+
+  .shape__example {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  .strip {
+    flex: 1 1 560px;
+    min-width: 0;
+    display: flex;
+    gap: 6px;
+  }
+
+  .strip--wrap {
+    flex-wrap: wrap;
+  }
+
+  .step {
+    padding: 12px 14px;
+    border-radius: var(--radius-s);
+    font-weight: 700;
+    font-size: 15px;
+  }
+
+  .strip--wrap .step {
+    padding-inline: 10px;
+  }
+
+  .step--one {
+    background: var(--one);
+  }
+
+  .step--two {
+    background: var(--two);
+    color: var(--on-two);
+  }
+
+  .step--three {
+    background: var(--three);
+  }
+
+  .step--ink {
+    background: var(--ink);
+    color: var(--surface);
+  }
+
+  .step--ask {
+    padding: 10px 12px;
+    border: 2px dashed var(--line);
+  }
+
+  .harness__note {
+    margin-top: -20px;
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  @media (max-width: 600px) {
+    .strip {
+      flex-wrap: wrap;
+    }
+
+    .step {
+      padding-inline: 10px;
+    }
+  }
+</style>
