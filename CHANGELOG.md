@@ -7,6 +7,14 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **Board and briefs** — `board lifecycle`/`lane merge` write several commits into the Commit cell
+  with the separator the board's done rows already use (a field's `join` pins it; `first…last` when
+  nothing is learned). An old `--json '{…}'` on `board add`/`board set` exits 2 with a pointer to
+  the new form, and every `--help` ends with the plugin version. `board explain` lists
+  `worktrees.keep`, `guard.allow`, `cleanup.disposable`, `gate.flaky` and `gate.concurrency` when set,
+  with what they match. `lane session start` flags `.agentry/NOTE.md` stale when every id it names
+  is done. An exec brief also quotes decisions whose row names the task, and `exec start --cite`
+  adds decisions by id. `exec owns --apply` keeps a section appended after the brief's last section.
 - **`agentry` command** — the plugin's `bin/agentry` is on the Bash tool's PATH while the plugin is
   enabled: `agentry board …`, `agentry lane …`, `agentry draft …`, `--version`, `--help`. Next
   steps the CLIs print name it when it is this plugin's bin, and the docs use it; hosts without it
