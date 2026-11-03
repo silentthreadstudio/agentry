@@ -117,11 +117,12 @@ export function ledgerStep(lane, { adopt }) {
 // Repo skills live in the host's own folder (A28); `extensions.merge.checks` names them natively.
 export const SKILL_DIR = ".claude/skills";
 export const skillExists = (root, name) => existsSync(join(root, SKILL_DIR, name, "SKILL.md"));
-/** The last green gate of `tier` the ledger holds from the worktree; with no `tier`, the last worktree
- *  gate of any tier and exit. Null when there is none. */
+/** The newest gate of `tier` the ledger holds from the worktree, whatever its exit (`canSkip` refuses a
+ *  red one, so a red run after a green one is never passed over; a flaky red's green re-run is newer);
+ *  with no `tier`, the newest worktree gate of any tier. Null when there is none. */
 export const lastWorktreeGate = (ledger, tier) =>
   (ledger.gates ?? []).findLast(
-    (g) => g.where === "worktree" && (tier === undefined || (g.tier === tier && g.exit === 0)),
+    (g) => g.where === "worktree" && (tier === undefined || g.tier === tier),
   ) ?? null;
 
 /** The item on the board, of the lane's kind. After a land killed while it wrote the board, the working

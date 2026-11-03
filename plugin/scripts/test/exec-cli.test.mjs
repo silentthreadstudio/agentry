@@ -518,6 +518,53 @@ const merge = ({ root, home }, ...args) =>
   });
 const ledgerFile = (root, id) => join(root, ".agentry", "run", "process", "ledger", `${id}.json`);
 
+// The land trusts the newest worktree gate of its tier on the tip, whatever its exit: a red run after a
+// green one makes the land run the gate on main; a flaky red with a green re-run after it still skips.
+test("a red gate after a green one on the same tip and tier makes the land run the gate on main", () => {
+  const spec = {
+    ...SPEC,
+    gate: {
+      tiers: [{ name: "full", command: ["sh", "-c", 'test -f out.txt && test ! -f "$HOME/red"'] }],
+    },
+  };
+  const r = repo({ spec });
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  judge(out, "PASS");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").exit, 0);
+  writeFileSync(join(r.home, "red"), "");
+  // Run again on the same tip once the lane is set to close: red, recorded, and the lane still closes.
+  assert.equal(lane(r, "gate", "T1").exit, 1);
+  rmSync(join(r.home, "red"));
+  const gates = ledgerOf(r.root, "T1").gates.map((g) => [g.tier, g.exit]);
+  assert.deepEqual(gates.at(-1), ["full", 1]);
+  assert.equal(lane(r, "close", "T1").exit, 0);
+  const pf = merge(r, "T1", "--preflight");
+  assert.match(pf.stdout, /worktree gate: full exit 1/, pf.stdout + pf.stderr);
+  const landed = merge(r, "T1", "--message", "chore(board): land T1");
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  assert.match(landed.stdout, /full ran on main: exit 0/);
+  assert.match(landed.stdout, /not skipped: the recorded gate exited 1/);
+});
+
+test("a flaky red with a green re-run after it still lets the land skip the gate", () => {
+  const marker = join(temp("flaky-"), "ran");
+  const r = atGate(flakyGate(marker));
+  assert.equal(lane(r, "gate", "T1").exit, 0);
+  assert.deepEqual(
+    ledgerOf(r.root, "T1").gates.map((g) => g.exit),
+    [1, 0],
+  );
+  assert.equal(lane(r, "close", "T1").exit, 0);
+  const pf = merge(r, "T1", "--preflight");
+  assert.match(pf.stdout, /worktree gate: full exit 0/, pf.stdout + pf.stderr);
+  const landed = merge(r, "T1", "--message", "chore(board): land T1");
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  assert.match(landed.stdout, /skipped: gate on [0-9a-f]{7}, tree identical/);
+});
+
 test("a commit on main stops the lane; another lane's real merge does not", () => {
   const r = repo();
   const out = lane(r, "start", "T1").json;
