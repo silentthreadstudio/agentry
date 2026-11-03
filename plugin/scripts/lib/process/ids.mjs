@@ -7,6 +7,11 @@
 // pattern needs more than a number.
 // boardId(spec, model, typed, kind?) -> string      the board's spelling of `typed` (of `kind` when
 // given); `typed` itself when the board has no item it names, or more than one.
+// runId(spec, model, typed) -> { id, kind } | { error }   the item exec and merge run: `boardId` over
+// each kind they run (`runKinds`); the kind that holds it, else the lifecycle's (`task` with none). Two
+// kinds holding it is the error.
+import { runKinds } from "./spec/workflow.mjs";
+
 const NUMBER = /\{n(?::0(\d+))?\}/;
 const literal = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -29,6 +34,18 @@ export function boardId(spec, model, typed, kind) {
     for (const i of model.kinds[k]?.items ?? []) if (i.id === n) cited.add(i.id);
   }
   return only(cited) ?? typed;
+}
+
+export function runId(spec, model, typed) {
+  const held = runKinds(spec).flatMap((kind) => {
+    const id = boardId(spec, model, typed, kind);
+    return model.kinds[kind]?.items.some((i) => i.id === id) ? [{ id, kind }] : [];
+  });
+  if (held.length === 1) return held[0];
+  if (held.length > 1)
+    return { error: `"${typed}" names ${held.map((h) => `a ${h.kind}`).join(" and ")}` };
+  const kind = spec.lifecycle?.kind ?? "task";
+  return { id: boardId(spec, model, typed, kind), kind };
 }
 
 export function nextId(name, kind, model) {

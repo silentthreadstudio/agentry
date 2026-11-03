@@ -38,12 +38,18 @@ import { episodeStored } from "../../memory/episodes.mjs";
 import { contentOf as contentIds, recordedSince } from "../../process/board-writes.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
-import { boardId } from "../../process/ids.mjs";
+import { runId } from "../../process/ids.mjs";
 import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { own } from "../../process/spec/shape.mjs";
-import { flaggedItem, gateOf, modelFor, verifyRoute } from "../../process/spec/workflow.mjs";
+import {
+  flaggedItem,
+  gateOf,
+  lifecycleOf,
+  modelFor,
+  verifyRoute,
+} from "../../process/spec/workflow.mjs";
 import { WriteError } from "../../process/write.mjs";
 import {
   appendedAfter,
@@ -213,7 +219,9 @@ function parse(argv) {
 export function run(argv, ctx) {
   const { step, id: typed, value, json, error, ...given } = parse(argv);
   if (error) return usageError("lane exec", error);
-  const id = boardId(ctx.spec, ctx.model, typed, ctx.spec.lifecycle?.kind ?? "task");
+  const resolved = runId(ctx.spec, ctx.model, typed);
+  if (resolved.error) return { exit: 2, out: say(`lane exec ${step} ${typed}`, resolved.error) };
+  const { id } = resolved;
   const what = `lane exec ${step} ${id}`;
   const problem = idProblem(id);
   if (problem) return usageError("lane exec", problem);
@@ -224,8 +232,14 @@ export function run(argv, ctx) {
       exit: 2,
       out: say(what, `runs from the main checkout: pass --root ${main ?? "<the repository>"}`),
     };
+  // The lane's kind: its ledger's (the lifecycle's for a ledger from before kinds), else the id's.
+  let lane = null;
   try {
-    const res = HANDLERS[step]({ ...ctx, root, ...given }, id, value);
+    lane = ledgers.read(root, id);
+  } catch {} // the step itself refuses an unreadable ledger
+  const kind = lane ? kindOf(ctx.spec, lane) : resolved.kind;
+  try {
+    const res = HANDLERS[step]({ ...ctx, root, kind, ...given }, id, value);
     return json ? res : { ...res, out: humanView(JSON.parse(res.out)) };
   } catch (e) {
     if (e instanceof Refusal || e instanceof WriteError)
@@ -304,12 +318,14 @@ function mainSnapshot(root) {
   };
 }
 
-// The files a lifecycle event of this lane writes (relative to the git root).
-function boardFiles(spec, model, id) {
-  const life = spec.lifecycle;
-  if (!life) return [];
-  const kind = own(spec.kinds, life.kind);
-  const item = own(model.kinds, life.kind)?.items.find((i) => i.id === id);
+// A lane's kind, as its ledger records it; a ledger with none is the lifecycle's.
+const kindOf = (spec, ledger) => ledger.kind ?? spec.lifecycle?.kind ?? "task";
+
+// The files a lifecycle event of item `id` of `name` writes (relative to the git root).
+function boardFiles(spec, model, id, name) {
+  if (!spec.lifecycle) return [];
+  const kind = own(spec.kinds, name);
+  const item = own(model.kinds, name)?.items.find((i) => i.id === id);
   const file = kind?.at?.table ?? item?.file;
   return file ? [posix.join(spec.root, file)] : [];
 }
@@ -492,7 +508,7 @@ function mainGuard({ root, spec, model }, ledger, all) {
         `HEAD moved ${short(was.head)} → ${short(head)}${moved.why ? ` (${moved.why})` : ""}`,
       );
   }
-  const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id)));
+  const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id, kindOf(spec, l))));
   const stray = strayFiles(root, ledger, head, all, boards, allowedEdit(root, spec, all));
   if (stray.length) reasons.push(`files changed: ${stray.slice(0, 10).join(", ")}`);
   return { touched: reasons.length ? reasons.join("; ") : null, allowed };
@@ -727,7 +743,7 @@ function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, extra = 
 
 // Is the item flagged: when the lane started, or on the board now (a flag set since still counts).
 const isFlagged = ({ spec, model }, ledger) =>
-  Boolean(ledger.route?.flagged) || flaggedItem(spec, model, ledger.id);
+  Boolean(ledger.route?.flagged) || flaggedItem(spec, model, ledger.id, kindOf(spec, ledger));
 
 // The owned files every brief names: parsed once at start and kept in the ledger (amended by `owns`).
 // A ledger from before that is parsed from its contract file, against its worktree as `start` does.
@@ -751,12 +767,12 @@ function mustLedger(root, id) {
   return ledger;
 }
 
-// One lifecycle event, and what it did to each file as `{ file, from, to }` content ids: the writes the
-// main guard follows (`boardWrites` in the ledger).
+// One lifecycle event on item `id` of the lane's kind (`ctx.kind`), and what it did to each file as
+// `{ file, from, to }` content ids: the writes the main guard follows (`boardWrites` in the ledger).
 function boardEvent(ctx, event, id, data) {
-  const { root, spec, model } = ctx;
-  const before = contentOf(root, boardFiles(spec, model, id));
-  const board = applyEvent({ root, spec, model, event, id, data });
+  const { root, spec, model, kind } = ctx;
+  const before = contentOf(root, boardFiles(spec, model, id, kind));
+  const board = applyEvent({ root, spec, model, event, id, kind, data });
   const files = [...new Set(board.writes.map((w) => w.file))];
   const after = contentOf(root, files);
   return { board, moves: files.map((file) => ({ file, from: before[file], to: after[file] })) };
@@ -793,8 +809,14 @@ function ownsOverlap(root, owned) {
   return lines.join("\n");
 }
 
+// A light contract (an `exec.kinds` kind's): an Owns line naming at least one path, and a bold Acceptance
+// label with text after it on its line.
+const ACCEPTANCE = /\*\*acceptance:?\*\*:?[ \t]*\S/i;
+const lightContract = (block, root) =>
+  ownedFiles(block, root).length > 0 && block.split("\n").some((l) => ACCEPTANCE.test(l));
+
 function start(ctx, id) {
-  const { root, spec, model, cite } = ctx;
+  const { root, spec, model, cite, kind } = ctx;
   const unknown = unknownCites({ spec, model, cite });
   if (unknown.length) refuse(`--cite names no decision on the board: ${unknown.join(", ")}`);
   const existing = (() => {
@@ -809,13 +831,16 @@ function start(ctx, id) {
       `a lane for ${id} exists (state ${existing.state}, next ${existing.next}): ${laneLine(root, "show", id)}`,
     );
   refuseAtWriterCap(root, spec);
-  const kind = spec.lifecycle?.kind ?? "task";
   const found = findContract({ root, spec, id, kind });
   if (found.status !== "found") {
     const where = found.candidates.map((c) => `  ${c.file}:${c.line}`).join("\n");
     refuse(`contract ${id}: ${found.status}${where ? `\n${where}` : ""}`);
   }
   if (found.stepsProblem) refuse(`contract ${id}: ${found.stepsProblem}`);
+  if (kind !== spec.lifecycle?.kind && lifecycleOf(spec, kind) && !lightContract(found.block, root))
+    refuse(
+      `contract ${id} is light and needs an Owns line naming files and an Acceptance line: ${found.file}:${found.line}`,
+    );
   const mainBranch = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).stdout.trim();
   if (!mainBranch) refuse("the main checkout is on a detached HEAD");
   const base = headOf(root);
@@ -855,7 +880,7 @@ function start(ctx, id) {
     owned: withNew(tree.path, ownedFiles(found.block, tree.path)),
     ...(found.steps?.length && { steps: found.steps }),
     ...(cite.length && { cite }),
-    route: { verify: verifyRoute(spec), flagged: flaggedItem(spec, model, id) },
+    route: { verify: verifyRoute(spec), flagged: flaggedItem(spec, model, id, kind) },
     rounds: [],
     gates: [],
     checks: {},

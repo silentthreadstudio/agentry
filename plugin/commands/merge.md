@@ -1,9 +1,9 @@
 ---
-description: Land one task on main — preflight, the repo's own checks, cherry-pick, the gate (or the recorded gate it may trust), the board's done row, SHA and handoff line in one commit, then push per policy and cleanup. Stops at the first red step.
-argument-hint: <task id> [--branch <branch>]
+description: Land one task (or debt item) on main — preflight, the repo's own checks, cherry-pick, the gate (or the recorded gate it may trust), the board's done row, SHA and handoff line in one commit, then push per policy and cleanup. Stops at the first red step.
+argument-hint: <task or debt id> [--branch <branch>]
 ---
 
-Land task `$ARGUMENTS` on main. What each row means and every edge case: the `conducting` skill's `references/merge.md`.
+Land task `$ARGUMENTS` on main. A debt id (`DEBT-2`) lands the same way: its row gets the done status and the commit, and no handoff line is written (the record row says `no handoff: debt is outside the tree`), so `--summary` is not needed. What each row means and every edge case: the `conducting` skill's `references/merge.md`.
 
 Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
 

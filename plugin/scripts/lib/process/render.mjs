@@ -148,6 +148,23 @@ const line = (text) => fit(text, WIDTH - LABEL) || "—";
 // The first `n` entries joined by `sep`, then "+N more" for the rest.
 const top = (xs, n) => [...xs.slice(0, n), ...(xs.length > n ? [`+${xs.length - n} more`] : [])];
 
+const SIDE_ACTIVE = 3;
+
+// One row per kind exec runs beside the lifecycle: `Debt       2 open · DEBT-3 doing · 5 done`, the
+// first few active items, then "+N". A clean board shows only the kinds with something open.
+function sideLines(view, s, clean) {
+  return (view.side ?? [])
+    .filter((x) => !clean || x.open > 0)
+    .map((x) => {
+      const active = x.active.map((a) => `${a.id} ${a.status}`);
+      const shown = [
+        ...active.slice(0, SIDE_ACTIVE),
+        ...(active.length > SIDE_ACTIVE ? [`+${active.length - SIDE_ACTIVE}`] : []),
+      ];
+      return row(x.label, line([`${x.open} open`, ...shown, `${x.done} done`].join(" · ")), s);
+    });
+}
+
 function blockLines(view, s, clean = false) {
   const verify = new Set(view.onYou.map((x) => x.id));
   const groups = new Map();
@@ -189,13 +206,15 @@ function blockLines(view, s, clean = false) {
     ahead: row("Ahead", ahead ? s.dim(line(ahead)) : "—", s),
   };
   // A clean board shows what waits on the owner always, and what is blocked or ahead only when there is some.
+  const side = sideLines(view, s, clean);
   if (clean)
     return [
       rows.onYou,
+      ...side,
       ...(view.blocked.length ? [rows.blocked] : []),
       ...(view.ahead.length || view.parked ? [rows.ahead] : []),
     ];
-  return Object.values(rows);
+  return [rows.flight, rows.onYou, ...side, rows.blocked, rows.ahead];
 }
 
 const SHOWN = 4;

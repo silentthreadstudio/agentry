@@ -246,6 +246,18 @@ export const StatusView = z.object({
   blocked: z.array(z.object({ id: z.string(), by: z.array(z.string()) })).default([]),
   ahead: z.array(Progress).default([]),
   parked: count.default(0),
+  /** Each kind exec runs beside the lifecycle (`exec.kinds`, e.g. debt), in key order, counted on its own. */
+  side: z
+    .array(
+      z.object({
+        kind: z.string(),
+        label: z.string(),
+        open: count,
+        active: z.array(z.object({ id: z.string(), status: z.string().optional() })),
+        done: count,
+      }),
+    )
+    .default([]),
   recent: z.array(z.object({ sha: z.string(), subject: z.string() })).default([]),
   note: z.object({ path: z.string(), lines: z.array(z.string()) }).optional(),
 });

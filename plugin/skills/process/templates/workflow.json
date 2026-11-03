@@ -10,6 +10,14 @@
     },
     "handoff": "- **{id}** ({sha}): {summary}"
   },
+  "exec": {
+    "kinds": {
+      "debt": {
+        "on": { "dispatched": "doing", "built": "verify", "failed": "doing", "merged": "done" },
+        "write": { "status": "status", "verdict": "verdict", "commit": "commit" }
+      }
+    }
+  },
   "drafts": {
     "decision": {
       "kind": "decision",

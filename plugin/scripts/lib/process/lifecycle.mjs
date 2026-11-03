@@ -17,7 +17,7 @@ import { join, posix } from "node:path";
 import * as md from "./markdown.mjs";
 import { handoffRejection } from "./spec/across.mjs";
 import { escapesRoot, own } from "./spec/shape.mjs";
-import { fillHandoff } from "./spec/workflow.mjs";
+import { fillHandoff, lifecycleOf } from "./spec/workflow.mjs";
 import { WriteError, appendLine, applyAll, setCell, setKey } from "./write.mjs";
 
 export const EVENTS = ["dispatched", "built", "failed", "verdict", "merged"];
@@ -71,7 +71,7 @@ function checkData(event, data) {
 // What separates the commits in the done rows' cells of `column`: the text between two neighbouring
 // SHAs (short, so a note between them is no separator), the most common one; null when no done row
 // holds two. Table kinds only: a one-file-per-item kind has no neighbouring cells to learn from.
-function learnedJoin({ root, spec, kind, model, column }) {
+function learnedJoin({ root, spec, name, kind, model, column }) {
   if (kind.at.table === undefined) return null;
   const file = join(root, spec.root, kind.at.table);
   let text;
@@ -83,9 +83,7 @@ function learnedJoin({ root, spec, kind, model, column }) {
   const sec = md.section(text, kind.at.heading);
   const table = sec && md.tableIn(text, sec);
   const done = new Set(
-    (own(model.kinds, spec.lifecycle.kind)?.items ?? [])
-      .filter((i) => i.phase === "done")
-      .map((i) => i.id),
+    (own(model.kinds, name)?.items ?? []).filter((i) => i.phase === "done").map((i) => i.id),
   );
   const seen = new Map();
   for (const row of table?.rows ?? []) {
@@ -128,17 +126,28 @@ function shortOf(root, sha) {
 }
 
 /**
- * Apply one harness event to item `id` of the lifecycle's kind. `model` is the board as read
- * (`readProcess`). Returns { writes: [{ file, what }], skipped: [{ what, why }] }; throws a
+ * Apply one harness event to item `id` of `kind`, a kind exec runs (the lifecycle's by default, else an
+ * `exec.kinds` key, written as its entry maps it). `model` is the board as read (`readProcess`). Returns { writes: [{ file, what }], skipped: [{ what, why }] }; throws a
  * `WriteError` (nothing written) on a bad event, bad data, an id not on the board once, or an edit
  * the board refuses. `preview`: the same result, every refusal included, with nothing written.
  */
-export function applyEvent({ root, spec, model, event, id, data = {}, preview = false }) {
+export function applyEvent({
+  root,
+  spec,
+  model,
+  event,
+  id,
+  kind: asked,
+  data = {},
+  preview = false,
+}) {
   if (!has(STEPS, event)) refuse(`unknown event "${event}" (${EVENTS.join(", ")})`);
   checkData(event, data);
   const steps = STEPS[event].steps(data);
-  const life = spec.lifecycle;
-  if (!life) return { writes: [], skipped: steps.map((what) => ({ what, why: "lifecycle off" })) };
+  if (!spec.lifecycle)
+    return { writes: [], skipped: steps.map((what) => ({ what, why: "lifecycle off" })) };
+  const life = lifecycleOf(spec, asked ?? spec.lifecycle.kind);
+  if (!life) refuse(`"${asked}" is not a kind exec runs (lifecycle.kind or exec.kinds)`);
 
   const name = life.kind;
   const kind = spec.kinds[name];
@@ -146,7 +155,7 @@ export function applyEvent({ root, spec, model, event, id, data = {}, preview = 
   if (items.length !== 1)
     refuse(`${items.length ? "several" : "no"} ${name} "${id}" on the board; nothing written`);
   const [item] = items;
-  const write = life.write ?? {};
+  const { write } = life;
   const shas = event === "merged" ? data.shas.map((sha) => shortOf(root, sha)) : [];
 
   const edits = [];
@@ -189,7 +198,7 @@ export function applyEvent({ root, spec, model, event, id, data = {}, preview = 
       if (shas.length === 1) return shas[0];
       const def = kind.fields[write.commit];
       const sep =
-        def.join ?? learnedJoin({ root, spec, kind, model, column: def.column }) ?? RANGE[0];
+        def.join ?? learnedJoin({ root, spec, name, kind, model, column: def.column }) ?? RANGE[0];
       return RANGE.includes(sep.trim()) ? `${shas[0]}${sep}${shas.at(-1)}` : shas.join(sep);
     },
   };

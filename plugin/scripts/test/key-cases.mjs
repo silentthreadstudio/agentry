@@ -52,6 +52,34 @@ const joined = (join) => ({
 });
 const JOIN = "kinds.task.fields.commit.join";
 
+// BASE with a debt kind beside the task kind and the lifecycle on tasks, and `entry` as `exec.kinds`:
+// what the exec-kinds cases change one piece of. `kinds` adds kinds, `rules` rule entries, `exec` other
+// exec keys; `lifecycle: null` leaves the lifecycle out.
+const DEBT = {
+  label: "Debt",
+  at: { table: "BOARD.md", heading: "Debt" },
+  id: { column: "Debt" },
+  fields: {
+    status: { column: "Status" },
+    verdict: { column: "Verdict" },
+    commit: { column: "Commit", type: "commits" },
+  },
+  status: {
+    field: "status",
+    values: { todo: "planned", doing: "active", verify: "active", done: "done" },
+  },
+};
+const ON = { dispatched: "doing", built: "verify", failed: "doing", merged: "done" };
+const WRITE = { status: "status", verdict: "verdict", commit: "commit" };
+const execKinds = (entry, { kinds = {}, rules = [], exec = {}, lifecycle } = {}) => ({
+  board: { kinds: { ...BASE.kinds, debt: DEBT, ...kinds }, rules: [...BASE.rules, ...rules] },
+  workflow: {
+    ...(lifecycle === null ? {} : { lifecycle: lifecycle ?? { kind: "task", on: {} } }),
+    exec: { ...exec, kinds: entry },
+  },
+});
+const debt = (entry) => execKinds({ debt: entry });
+
 // A key of one file put in the other: refused by its name, whatever it holds.
 const MISPLACED = [
   ...WORKFLOW_KEYS.map((key) => ({
@@ -120,6 +148,8 @@ export const PROCESS_CASES = [
       forbid: ["^Co-Authored-By:", "x"],
     }),
   },
+  { name: "a debt kind exec runs", ...debt({ on: ON, write: WRITE }) },
+  { name: "an exec kind with only its events", ...debt({ on: { dispatched: "doing" } }) },
   // bad: join
   { name: "an empty join", ...joined(""), bad: [JOIN] },
   { name: "a join with a letter", ...joined("x"), bad: [JOIN] },
@@ -417,7 +447,140 @@ export const PROCESS_CASES = [
     bad: ["commits.forbid[1]"],
   },
   { name: "forbid as a string", ...commits({ forbid: "a" }), bad: ["commits.forbid"] },
+  // bad: an exec.kinds entry is the lifecycle mapping with no kind and no handoff
+  {
+    name: "an exec kind entry naming its kind",
+    ...debt({ kind: "debt", on: ON }),
+    bad: ["exec.kinds.debt.kind"],
+  },
+  {
+    name: "an exec kind entry with a handoff template",
+    ...debt({ on: ON, handoff: "- **{id}**" }),
+    bad: ["exec.kinds.debt.handoff"],
+  },
+  {
+    name: "an exec kind entry writing a handoff",
+    ...debt({ on: ON, write: { ...WRITE, handoff: "parent.file:handoff" } }),
+    bad: ["exec.kinds.debt.write.handoff"],
+  },
+  { name: "an exec kind entry with no on", ...debt({ write: WRITE }), bad: ["exec.kinds.debt.on"] },
+  { name: "exec kinds as a list", ...execKinds(["debt"]), bad: ["exec.kinds"] },
   ...MISPLACED,
+];
+
+/** The `exec.kinds` refusals that read both files (`spec/across.mjs`): no zod parity, as core's
+ *  `Workflow` never sees the board. Each names its paths (`bad`) and the file that holds them. */
+export const ACROSS_CASES = [
+  {
+    name: "an exec kind that is not declared",
+    ...execKinds({ chore: { on: {} } }),
+    bad: ["exec.kinds.chore"],
+    file: "workflow.json",
+  },
+  {
+    name: "the lifecycle kind as an exec kind",
+    ...execKinds({ task: { on: {} } }),
+    bad: ["exec.kinds.task"],
+    file: "workflow.json",
+  },
+  {
+    name: "exec kinds with no lifecycle",
+    ...execKinds({ debt: { on: ON, write: WRITE } }, { lifecycle: null }),
+    bad: ["exec.kinds"],
+    file: "workflow.json",
+  },
+  {
+    name: "an exec kind with a parent field",
+    ...execKinds(
+      { debt: { on: ON } },
+      {
+        kinds: {
+          debt: {
+            ...DEBT,
+            fields: {
+              ...DEBT.fields,
+              of: { column: "Of", type: "ref", ref: "task", role: "parent" },
+            },
+          },
+        },
+      },
+    ),
+    bad: ["exec.kinds.debt"],
+    file: "workflow.json",
+  },
+  {
+    name: "an exec kind event naming no status of its kind",
+    ...debt({ on: { ...ON, built: "review" } }),
+    bad: ["exec.kinds.debt.on.built"],
+    file: "workflow.json",
+  },
+  {
+    name: "an exec kind writing its status to another field",
+    ...debt({ on: ON, write: { ...WRITE, status: "verdict" } }),
+    bad: ["exec.kinds.debt.write.status"],
+    file: "workflow.json",
+  },
+  {
+    name: "an exec kind writing its verdict to no field",
+    ...debt({ on: ON, write: { ...WRITE, verdict: "grade" } }),
+    bad: ["exec.kinds.debt.write.verdict"],
+    file: "workflow.json",
+  },
+  {
+    name: "an exec kind writing its commits to a text field",
+    ...debt({ on: ON, write: { ...WRITE, commit: "verdict" } }),
+    bad: ["exec.kinds.debt.write.commit"],
+    file: "workflow.json",
+  },
+  {
+    name: "an exec kind finished by another event than merged",
+    ...debt({ on: { ...ON, built: "done" } }),
+    bad: ["exec.kinds.debt.on.built"],
+    file: "workflow.json",
+  },
+  {
+    name: "an exec kind that leaves out the commits done-has-evidence reads",
+    ...execKinds(
+      { debt: { on: ON, write: { status: "status" } } },
+      { rules: [{ rule: "done-has-evidence", kind: "debt", field: "commit", evidence: "commit" }] },
+    ),
+    bad: ["exec.kinds.debt.write.commit"],
+    file: "workflow.json",
+  },
+  {
+    name: "a dated sign-off on an exec kind",
+    ...execKinds(
+      { debt: { on: ON, write: WRITE } },
+      {
+        kinds: {
+          debt: {
+            ...DEBT,
+            fields: { ...DEBT.fields, signoff: { column: "Signed", type: "date" } },
+          },
+        },
+        rules: [{ rule: "done-signoff", kind: "debt", field: "signoff" }],
+      },
+    ),
+    bad: ["rules[1]"],
+    file: "process.json",
+  },
+  {
+    name: "verify flagged with no flag field on an exec kind",
+    ...execKinds(
+      { debt: { on: ON, write: WRITE } },
+      {
+        kinds: {
+          task: {
+            ...BASE.kinds.task,
+            fields: { ...BASE.kinds.task.fields, flag: { column: "Flag", type: "flag" } },
+          },
+        },
+        exec: { verify: "flagged" },
+      },
+    ),
+    bad: ["exec.verify"],
+    file: "workflow.json",
+  },
 ];
 
 export const CONFIG_CASES = [

@@ -42,7 +42,7 @@ A land that was killed resumes the same way: see [A killed land](#a-killed-land)
 | Row | Checks | Red or refused when |
 | :--- | :--- | :--- |
 | `ledger` | The exec ledger (state `verified`), or a new one adopted from `--branch` (origin `adopted`, counted as a bypassed dispatch). A `stopped` exec lane lands only on the owner's call, with `--branch <its branch>`, and is adopted from then on. | No ledger and no `--branch`; the lane is still building, verifying or fixing; it is stopped and its branch isn't named. |
-| `board` | The id is on the board once, in the lifecycle's kind. | It isn't. With no `lifecycle` the row is skipped and nothing is written. |
+| `board` | The id is on the board once, in the lane's kind: the lifecycle's, or a kind in `exec.kinds` (`debt DEBT-2 is "verify"; landing makes it "done"`). | It isn't. With no `lifecycle` the row is skipped and nothing is written. |
 | `checks` | Each `extensions.merge.checks` skill exists in `.claude/skills/<name>/SKILL.md` and has an outcome recorded on the branch's current tip. | A skill is missing (exit 2), a check is unrecorded or was recorded on an older tip (exit 2), or a check failed (exit 1). |
 | `recover` | Only after a killed land: what it left, dealt with before anything else. See [A killed land](#a-killed-land). | The gate it left will not die; git is in the middle of a cherry-pick or revert that is not provably this land's; a board file it wrote changed since, or the commit after its picks is not provably its board commit. |
 | `main` | The main checkout is on the main branch and `git status` is empty, untracked files included. Two exceptions. A new, untracked memory record (`.agentry/memory/facts/` or `episodes/<slug>-<ULID>.md`, Agentry's own write) doesn't count, and the land leaves it as it is. Uncommitted edits that are exactly lifecycle cells (status, verdict, commit) of tasks with an open lane, read at the board's model level against HEAD, are carried. The landing task's own cells count: they go into the board commit as they are, so a verdict edited by hand lands with it. | Any other change, a stray edit next to exec's write included: each is named, and the stop says it is not in `guard.allow`. Commit it or undo it first. |
@@ -56,7 +56,10 @@ A land that was killed resumes the same way: see [A killed land](#a-killed-land)
 
 The board commit message follows the repo's commit conventions and carries the author only. A message with
 AI attribution (a co-author trailer, a session link, a "generated with" line) is refused before anything
-runs. `--summary` is the handoff text. Without it, the first landed commit's subject is used.
+runs. `--summary` is the handoff text. Without it, the first landed commit's subject is used. A debt item
+(`DEBT-2`, a kind in `exec.kinds`) has no handoff: `record` writes its done status and commit cell and skips
+the handoff (`no handoff: debt is outside the tree`), and a task's open lane and a debt's open lane carry each
+other's cells.
 
 A long gate (more than the host's foreground limit) is the reason to run the land in the host's background
 mode. Then wait for its single exit notice. The ledger records the outcome either way.

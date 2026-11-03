@@ -23,17 +23,20 @@ import {
   text,
 } from "./shape.mjs";
 
+const on = shape({ dispatched: str, built: str, failed: str, merged: str });
+const writes = { status: str, verdict: str, commit: str };
 const lifecycle = shape({
   "kind!": str,
-  "on!": shape({ dispatched: str, built: str, failed: str, merged: str }),
+  "on!": on,
   write: shape({
-    status: str,
-    verdict: str,
-    commit: str,
+    ...writes,
     handoff: like(/^parent\.file:.+$/, '"parent.file:<section>"'),
   }),
   handoff: str,
 });
+/** One `exec.kinds` entry: the lifecycle mapping of a kind exec runs beside the lifecycle's. The key
+ *  names the kind, and it writes no handoff. The format reference's "exec kinds" table is bound to it. */
+export const execKindSchema = shape({ "on!": on, write: shape(writes) }, FULL);
 // The repo's gate (argv, no shell), its quick tier and the files it may leave changed; the repo
 // skills merge runs as checks; the repo's conductor prompt (plan R1b §2, §3.1).
 const argv = filled(text);
@@ -88,7 +91,7 @@ export const workflowSchema = shape({
   conductor: shape({ "prompt!": repoPath, rules: text }, FULL),
   guard: shape({ "allow!": globs }, FULL),
   cleanup: shape({ "disposable!": globs }, FULL),
-  exec: shape({ verify: oneOf(...VERIFY_ROUTES) }, FULL),
+  exec: shape({ verify: oneOf(...VERIFY_ROUTES), kinds: record(execKindSchema) }, FULL),
   models: shape(
     { build: text, verify: shape({ default: text, ui: text, flagged: text }, FULL) },
     FULL,
@@ -105,15 +108,41 @@ export function validateWorkflow(value, bad) {
 /** Which items the exec lane sends to a verifier: "all" (default), "flagged" or "none". */
 export const verifyRoute = (spec) => own(own(spec, "exec"), "verify") ?? "all";
 
-/** The field name `exec.verify: "flagged"` reads from the lifecycle kind (`task` when there is none). */
+/** The field name `exec.verify: "flagged"` reads from each kind exec runs (`task` when there is none). */
 export const FLAG_FIELD = "flag";
 
-/** Is item `id` of the exec kind flagged on the board `model`: its `flag` field is set (and is a flag
- *  field). False when the kind has no such field or the item is not on the board. */
-export function flaggedItem(spec, model, id) {
-  const name = typeof spec?.lifecycle?.kind === "string" ? spec.lifecycle.kind : "task";
-  if (own(own(own(spec?.kinds, name), "fields"), FLAG_FIELD)?.type !== "flag") return false;
-  const item = own(model?.kinds, name)?.items?.find((i) => i.id === id);
+const lifeKind = (spec) => {
+  const kind = own(own(spec, "lifecycle"), "kind");
+  return typeof kind === "string" ? kind : null;
+};
+const execKinds = (spec) => {
+  const kinds = own(own(spec, "exec"), "kinds");
+  return isObject(kinds) ? kinds : {};
+};
+
+/** The kinds exec and merge run: the lifecycle's, then each `exec.kinds` key. `[]` with no lifecycle. */
+export function runKinds(spec) {
+  const life = lifeKind(spec);
+  return life ? [life, ...Object.keys(execKinds(spec)).filter((k) => k !== life)] : [];
+}
+
+/** How exec writes items of `kind`: `{ kind, on, write, handoff? }`, the lifecycle itself for its kind,
+ *  an `exec.kinds` entry (no handoff) for another runnable kind; null for a kind exec does not run. */
+export function lifecycleOf(spec, kind) {
+  const life = lifeKind(spec);
+  if (!life || typeof kind !== "string") return null;
+  const def = kind === life ? spec.lifecycle : own(execKinds(spec), kind);
+  if (!isObject(def)) return null;
+  const write = isObject(def.write) ? def.write : {};
+  const handoff = kind === life && Object.hasOwn(def, "handoff") ? { handoff: def.handoff } : {};
+  return { kind, on: isObject(def.on) ? def.on : {}, write, ...handoff };
+}
+
+/** Is item `id` of `kind` (the lifecycle's by default) flagged on the board `model`: its `flag` field is
+ *  set (and is a flag field). False when the kind has no such field or the item is not on the board. */
+export function flaggedItem(spec, model, id, kind = lifeKind(spec) ?? "task") {
+  if (own(own(own(spec?.kinds, kind), "fields"), FLAG_FIELD)?.type !== "flag") return false;
+  const item = own(model?.kinds, kind)?.items?.find((i) => i.id === id);
   return Boolean(own(item?.fields, FLAG_FIELD));
 }
 

@@ -17,16 +17,19 @@ If `scan` finds something but the user says it is not their board, treat it as (
 
 ## (a) New repo — scaffold
 
-1. Offer the kinds in `templates/process.json`: milestone, sprint, task, question, decision, and epic as an
-   option (one question, epic unchecked by default).
+1. Offer the kinds in `templates/process.json`: milestone, sprint, task, question, decision, and epic and debt
+   as options (one question; epic unchecked, debt checked by default). Debt is work outside the sprints with a
+   light contract (owned files, one acceptance line) that `/agentry:exec DEBT-1` and `/agentry:merge DEBT-1` run.
 2. Ask where the board goes; default `docs/work/`. Refuse a path outside the repository.
 3. Copy `templates/BOARD.md`, `TASKS.md`, `PROCESS.md`, `DECISIONS.md` and `templates/sprints/` there. Never
    overwrite an existing file: stop and ask.
 4. Write `.agentry/process.json` from `templates/process.json` with `root` set to that path, and
    `.agentry/workflow.json` from `templates/workflow.json`. Without epics, drop `kinds.epic` and the
-   `## Epics` section of `BOARD.md`.
-5. Run `agentry board check`; it must print OK. Tell the user the example rows (`M1`, `S1`, `T1`, `E1`) are theirs to
-   replace.
+   `## Epics` section of `BOARD.md`. Without debt, drop `kinds.debt` and its rule (`done-has-evidence` on
+   `debt`) from the process file, `exec.kinds.debt` from the workflow file (and `exec` when that leaves it
+   empty), the `## Debt` section of `BOARD.md` and the `# Debt` section of `TASKS.md`.
+5. Run `agentry board check`; it must print OK. Tell the user the example rows (`M1`, `S1`, `T1`, `E1`, `DEBT-1`)
+   are theirs to replace.
 
 ## (b) Existing process — learn
 
@@ -73,6 +76,10 @@ workflow key, its sibling `.agentry/run/process/workflow.json`, read with
 
 `--relearn <kind>` runs steps 1–7 for that kind only, inside the existing file, and leaves every other kind
 and rule as it is.
+
+A debt, chores or cleanup table with ids (`DEBT-4`, `C-12`) is a kind like any other: steps 1–7 learn it.
+Wiring step 11 offers to run it through exec. A debt list without ids (bullets in a status file) is never
+converted into one; step 11 offers the template's debt kind instead.
 
 ## (c) Set up — show and repair
 
@@ -182,6 +189,16 @@ and § guard and cleanup.
     when the task's parent has a file section for it). Draft the block from the task kind's own status words
     and fields (format.md § lifecycle and drafts), keep only the `write` keys the board has a field for, and
     write it on the owner's OK. A no is final: do not ask again. A `lifecycle` already set is shown, not asked.
+11. **Kinds exec runs beside the lifecycle.** Only with a `lifecycle`, and only for a learned kind with a status
+    field, a commits field and no parent field (debt, chores) that `exec.kinds` does not name yet. Offer it
+    once: an `exec.kinds.<kind>` entry drafted from its own status words (`on`: dispatched, built, failed,
+    merged; `write`: status, verdict, commit, only the fields it has; format.md § exec kinds), and its light
+    contract: `contract.blocks` (the file its blocks go in, `TASKS.md` by default) and a `create.blocks`
+    template `### {id} · {what}` / `- **Owns:** {owns}` / `- **Acceptance:** {acceptance}` with `owns` and
+    `acceptance` in `create.ask`. Then `/agentry:exec DEBT-4` builds an item and `/agentry:merge DEBT-4` lands
+    it, outside the sprints. When the board has no such kind and its debt is a list without ids, offer the
+    template's debt kind (`kinds.debt`, its rule, `exec.kinds.debt`, the `## Debt` table and the `# Debt`
+    section) instead; never convert the list. A no is final: do not ask again.
 
 End with what was written (paths), what was left as it was, and the last `agentry board check` result. Nothing is
 committed: the user reviews the diff.

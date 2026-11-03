@@ -6,7 +6,8 @@
 // The "work" kind is the lifecycle's (else the leaf of the parent tree, ties by name); "now" is
 // `status.now` (else that parent's kind). `nudges` are the work done outside Agentry's commands (`drift.mjs`)
 // and `drafts` the count of the owner's calls not yet written down (`drafts.mjs`); both read `runRoot`, the
-// main checkout, and add nothing to a repo with neither.
+// main checkout, and add nothing to a repo with neither. Each kind exec runs beside the lifecycle
+// (`exec.kinds`: debt) is counted on its own in `side`, and nowhere else.
 import { join } from "node:path";
 import { check } from "./check.mjs";
 import { findContract } from "./contract.mjs";
@@ -15,6 +16,7 @@ import { keptTrees, nudges } from "./drift.mjs";
 import * as git from "./git.mjs";
 import { readInside } from "./read.mjs";
 import { refKinds, resolve } from "./rules/structure.mjs";
+import { own } from "./spec/shape.mjs";
 import { staleNote } from "./stale-status.mjs";
 
 const parentField = (kind) =>
@@ -116,6 +118,23 @@ export function depsOf(spec, model, work) {
     [item.fields[name] ?? []].flat().flatMap((id) => resolve(model, id, refKinds(def)).slice(0, 1));
 }
 
+// Each `exec.kinds` kind, in key order: its open count (planned and active), its active items, its done.
+function sideOf(spec, model) {
+  return Object.keys(own(spec.exec, "kinds") ?? {}).map((kind) => {
+    const items = own(model.kinds, kind)?.items ?? [];
+    const count = (...phases) => items.filter((i) => phases.includes(i.phase)).length;
+    return {
+      kind,
+      label: spec.kinds[kind]?.label ?? kind,
+      open: count("planned", "active"),
+      active: items
+        .filter((i) => i.phase === "active")
+        .map((i) => ({ id: i.id, status: i.status })),
+      done: count("done"),
+    };
+  });
+}
+
 function readNote(root, path) {
   const text = readInside(root, join(root, path));
   return text === null ? undefined : { path, lines: text.trimEnd().split("\n") };
@@ -155,8 +174,13 @@ export function statusView({ root, spec, model, runRoot = root }) {
         .flatMap(refKinds),
     ),
   );
+  const side = sideOf(spec, model);
+  const beside = new Set(side.map((x) => x.kind));
   const loose = Object.entries(spec.kinds)
-    .filter(([k, def]) => k !== work && !tree.has(k) && def.status?.field && !parentField(def))
+    .filter(
+      ([k, def]) =>
+        k !== work && !tree.has(k) && !beside.has(k) && def.status?.field && !parentField(def),
+    )
     .flatMap(([k]) => model.kinds[k]?.items ?? []);
   const deps = depsOf(spec, model, work);
   const blocked = items
@@ -186,6 +210,7 @@ export function statusView({ root, spec, model, runRoot = root }) {
       .map(progress)
       .filter((p) => p.total > 0 || !p.tally.parked),
     parked: items.filter((i) => i.phase === "parked").length,
+    side,
     nudges: nudges({ root, runRoot, spec, model }),
     kept: keptTrees({ root, runRoot, spec }).map((t) => ({ path: t.path, branch: t.branch })),
     drafts: drafts.pending(runRoot).length,

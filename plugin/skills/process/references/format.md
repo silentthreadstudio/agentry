@@ -42,7 +42,7 @@ No `version`, and every key is optional.
 | `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
 | `guard` | no | `{ "allow": [globs] }`: main-checkout files a running lane's guard lets change. |
 | `cleanup` | no | `{ "disposable": [globs] }`: ignored files a lane's cleanup discards without asking. |
-| `exec` | no | `{ "verify": "all" \| "flagged" \| "none" }`: which items the exec lane sends to an independent verifier. See "exec and models". |
+| `exec` | no | `{ "verify": "all" \| "flagged" \| "none", "kinds": { … } }`: which items the exec lane sends to an independent verifier, and `kinds`, the kinds it runs beside the lifecycle's (debt). See "exec and models" and "exec kinds". |
 | `models` | no | `{ "build": "<model>", "verify": { "default", "ui", "flagged" } }`: the model each exec dispatch names. See "exec and models". |
 | `briefs` | no | `{ "build": ["<line>", …], "verify": ["<line>", …] }`: repo policy lines printed in every builder or verifier brief. See "briefs and commits". |
 | `commits` | no | `{ "subjectMax", "subjectPattern", "forbid": ["<regex>", …] }`: rules a builder's commits must keep. See "briefs and commits". |
@@ -339,8 +339,8 @@ In `workflow.json`:
   `"flagged"` (only an item whose `flag` field is set has a verifier; any other goes from built straight to the
   gate, which stands in for it) or `"none"` (no item is routed to a verifier unless its flag is set). An item
   whose flag is set always has its verifier, however the route is set, and a flagged item with no verdict does
-  not land. `"flagged"` needs a field named `flag` of type `flag` on the lifecycle kind (`task` with no
-  lifecycle); without it the file is refused at load. With no `gate`, a verifier is still sent: nothing else
+  not land. `"flagged"` needs a field named `flag` of type `flag` on every kind exec runs (the lifecycle kind,
+  `task` with no lifecycle, and each `exec.kinds` key); without it the file is refused at load. With no `gate`, a verifier is still sent: nothing else
   would check the work. `agentry lane exec start` and `show` print the route, and the episode records it.
 - `models` is free text: any string, every key optional, nothing checked against a list of models. Each
   `lane exec` dispatch prints a `model:` line from it: the builder rounds use `build`; a verifier round uses
@@ -370,6 +370,56 @@ In `workflow.json`:
   load.
 - `lane exec report` sends the builder back (a fix round, once) for a commit past base that breaks a rule. `lane
   merge --preflight` shows a `commits` row, and the land refuses before any pick, when a commit it would pick does.
+
+## exec kinds
+
+In `workflow.json`, beside `exec.verify`:
+
+```json
+"exec": {
+  "kinds": {
+    "debt": {
+      "on": { "dispatched": "doing", "built": "verify", "failed": "doing", "merged": "done" },
+      "write": { "status": "status", "verdict": "verdict", "commit": "commit" }
+    }
+  }
+}
+```
+
+| Key | Required | What |
+| :--- | :--- | :--- |
+| `exec.kinds.<kind>` | no | A kind exec and merge run beside the lifecycle's: the key names a declared kind with no parent field. |
+| `on` | yes | The status word each harness event sets, as in `lifecycle.on`. |
+| `on.dispatched` | no | A builder dispatched (`lane exec start`). |
+| `on.built` | no | The builder reported done. |
+| `on.failed` | no | A verifier failed it. |
+| `on.merged` | no | Its commits landed on main; the only event that may set a `done` status. |
+| `write` | no | Where each value goes, as in `lifecycle.write`, with no `handoff`. |
+| `write.status` | no | The kind's status field. |
+| `write.verdict` | no | A text field for the verdict. |
+| `write.commit` | no | A commits or evidence field for the landed commits. |
+
+An entry is the `lifecycle` mapping with no `kind` (the key names it) and no handoff: the item sits outside
+the tree, so a land writes its status and commit cell and skips the handoff. The kinds exec runs are
+`lifecycle.kind` and then each key; `exec.kinds` needs a `lifecycle`, and a key that is the lifecycle's kind,
+an undeclared kind or a kind with a parent field is refused at load, as is any other key in an entry. The
+checks `lifecycle` gets hold for each entry too, under `exec.kinds.<kind>.on.*` and `.write.*`: each `on` word
+is a status of the kind, only `merged` sets a `done` one, and a `done-has-evidence` rule on the kind reads the
+field `write.commit` names.
+
+Its items take a light contract in the kind's `contract.blocks`, led by the id:
+
+```markdown
+### DEBT-2 · Rename the helper
+- **Owns:** `src/helper.ts`, `src/helper.test.ts`
+- **Acceptance:** the old name is gone and the tests pass
+```
+
+`agentry lane exec start DEBT-2` refuses it (exit 2, nothing written) when its Owns line names no path or it
+has no bold `Acceptance` label with text after it. An id is read in any case and must name one item of one
+of these kinds; one that two kinds hold is refused. `agentry board status` shows each kind on its own row
+after On you (`Debt       2 open · DEBT-3 doing · 5 done`), never in Now, In flight, On you, Blocked or Ahead;
+a clean board shows the row only while something is open.
 
 ## guard and cleanup
 

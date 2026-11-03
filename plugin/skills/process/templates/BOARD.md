@@ -21,6 +21,12 @@ decisions in [DECISIONS.md](DECISIONS.md). Replace the example rows; `/agentry:b
 | --- | --- | --- | --- | --- | --- | --- |
 | T1 | S1 | The first task | todo |  |  |  |
 
+## Debt
+
+| Debt | What | Status | Verdict | Commit |
+| --- | --- | --- | --- | --- |
+| DEBT-1 | The first cleanup | todo |  |  |
+
 ## Epics
 
 | Epic | Name | Tasks |

@@ -1,7 +1,7 @@
 # Lanes: `exec` and `ask`
 
 Reference for the `conducting` skill. A lane is an explicit command for work whose shape is already known, so it
-skips routing. `/agentry:exec <task-id>` builds a contract that already exists; `/agentry:ask <question>` answers
+skips routing. `/agentry:exec <task-id>` builds a contract that already exists (a debt id such as `DEBT-2` too); `/agentry:ask <question>` answers
 a question. `/agentry:go` stays the full pipeline and never routes to a lane on its own.
 
 ## What a lane never does
@@ -18,6 +18,13 @@ The lane's state is a ledger, `.agentry/run/process/ledger/<id>.json` in the mai
 `agentry lane exec <step> <id>` (`scripts/lane.mjs`). Each step checks that the ledger expects it, does the git and board
 work, writes the ledger and prints one JSON object. The conductor runs the step `next` names and dispatches the
 prompt the step printed. It never composes a brief, picks the next round or writes the board itself.
+
+The id is any item of a kind exec runs: the lifecycle's kind (tasks), or a kind in the workflow file's
+`exec.kinds` (debt). Every step reads it in any case (`debt-2` is `DEBT-2`), and an id two kinds hold is
+refused (exit 2). The ledger's `kind` records which. A debt item gets the same status, verdict and failed
+writes in its own row, and no sprint is read. Its contract is light: an Owns line naming at least one path and
+a bold Acceptance line with text; `start` refuses one without either, before any worktree or board write.
+An open debt lane and an open task lane pass each other's board writes.
 
 | Step | Does | Board (through `lifecycle`) |
 | :--- | :--- | :--- |

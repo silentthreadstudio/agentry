@@ -6,23 +6,29 @@
 import { z } from "zod";
 import { ProcessBoard, RepoPath, Text } from "./process.js";
 
+/** The harness events and the status word each one sets. */
+const On = z
+  .object({
+    dispatched: z.string().optional(),
+    built: z.string().optional(),
+    failed: z.string().optional(),
+    merged: z.string().optional(),
+  })
+  .strict();
+const Writes = {
+  status: z.string().optional(),
+  verdict: z.string().optional(),
+  commit: z.string().optional(),
+};
+
 /** What the harness writes as events arrive. Absent = the checker is read-only. */
 export const Lifecycle = z
   .object({
     kind: z.string(),
-    on: z
-      .object({
-        dispatched: z.string().optional(),
-        built: z.string().optional(),
-        failed: z.string().optional(),
-        merged: z.string().optional(),
-      })
-      .strict(),
+    on: On,
     write: z
       .object({
-        status: z.string().optional(),
-        verdict: z.string().optional(),
-        commit: z.string().optional(),
+        ...Writes,
         handoff: z
           .string()
           .regex(/^parent\.file:.+$/, { message: 'expected "parent.file:<section>"' })
@@ -110,9 +116,20 @@ export type Guard = z.infer<typeof Guard>;
 export const Cleanup = z.object({ disposable: Globs }).strict();
 export type Cleanup = z.infer<typeof Cleanup>;
 
+/** A kind exec runs beside the lifecycle (`exec.kinds.<kind>`, e.g. debt): the lifecycle mapping with no
+ *  `kind` (the key names it) and no handoff. Its kind needs no parent field; the loader checks that. */
+export const ExecKind = z.object({ on: On, write: z.object(Writes).strict().optional() }).strict();
+export type ExecKind = z.infer<typeof ExecKind>;
+
 /** The exec lane's own settings: `verify` says which items get an independent verifier (`all` by default;
- *  `flagged` only those whose `flag` field is set, which needs a `flag` field on the lifecycle kind). */
-export const Exec = z.object({ verify: z.enum(["all", "flagged", "none"]).optional() }).strict();
+ *  `flagged` only those whose `flag` field is set, which needs a `flag` field on every kind exec runs);
+ *  `kinds` the kinds it runs beside the lifecycle's. */
+export const Exec = z
+  .object({
+    verify: z.enum(["all", "flagged", "none"]).optional(),
+    kinds: z.record(ExecKind).optional(),
+  })
+  .strict();
 export type Exec = z.infer<typeof Exec>;
 
 /** The model each exec dispatch names, by role: `build`, and `verify` by the item (`ui`: a designer

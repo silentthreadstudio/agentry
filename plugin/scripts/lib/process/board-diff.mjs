@@ -22,9 +22,10 @@
 //     reads the same, a file that is not the board's.
 //
 //   strayChanges(spec, diff, { ids }) -> string[]
-//     One line per change that is NOT a lifecycle cell (a field `lifecycle.write` names for status,
-//     verdict or commit, on `lifecycle.kind`) of an item whose id is in `ids`: every `other`, and every
-//     other cell. [] means the diff is exactly lifecycle cells of those items.
+//     One line per change that is NOT a lifecycle cell (a field a kind exec runs names in its `write`
+//     for status, verdict or commit: `lifecycle.write` on `lifecycle.kind`, an `exec.kinds` entry's on
+//     its kind) of an item whose id is in `ids`: every `other`, and every other cell. [] means the diff
+//     is exactly lifecycle cells of those items.
 //
 //   cellText(spec, board, { kind, id, column }) -> string | null
 //     The text of item `id`'s cell under `column`, found by the id wherever its row is now: a table
@@ -40,6 +41,7 @@
 import { posix } from "node:path";
 import * as md from "./markdown.mjs";
 import { own } from "./spec/shape.mjs";
+import { lifecycleOf } from "./spec/workflow.mjs";
 import { setCell, setKey } from "./write.mjs";
 
 const LIFECYCLE_WRITES = ["status", "verdict", "commit"];
@@ -201,16 +203,16 @@ export function diffBoard({ spec, before, after, files = [] }) {
 
 /** The changes in `diff` that are not lifecycle cells of the items in `ids` (see the header). */
 export function strayChanges(spec, diff, { ids }) {
-  const life = spec.lifecycle;
-  const write = life?.write ?? {};
-  const fields = new Set(LIFECYCLE_WRITES.map((key) => own(write, key)).filter(Boolean));
+  const writes = (kind) => {
+    const write = lifecycleOf(spec, kind)?.write ?? {};
+    return new Set(LIFECYCLE_WRITES.map((key) => own(write, key)).filter(Boolean));
+  };
   const open = new Set(ids);
   const where = (c) => `${c.file}${c.line ? `:${c.line}` : ""}`;
   const out = diff.other.map((o) => `${where(o)}: ${o.what}`);
   for (const c of diff.cells) {
     const change = `${c.kind} ${c.id} ${c.field} ${show(c.from)} → ${show(c.to)}`;
-    if (c.kind !== life?.kind || !fields.has(c.field))
-      out.push(`${where(c)}: ${change} is not a lifecycle cell`);
+    if (!writes(c.kind).has(c.field)) out.push(`${where(c)}: ${change} is not a lifecycle cell`);
     else if (!open.has(c.id)) out.push(`${where(c)}: ${change}, but ${c.id} has no open lane`);
   }
   return out;

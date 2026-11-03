@@ -111,6 +111,53 @@
         ]
       }
     },
+    "debt": {
+      "label": "Debt",
+      "note": "Debt and chores outside the sprints. A light contract in TASKS.md (owned files, one acceptance line); exec and merge run it (exec.kinds).",
+      "at": { "table": "BOARD.md", "heading": "Debt" },
+      "id": { "column": "Debt" },
+      "fields": {
+        "what": { "column": "What" },
+        "status": { "column": "Status" },
+        "verdict": { "column": "Verdict", "case": "upper" },
+        "commit": { "column": "Commit", "type": "commits" }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped"
+        }
+      },
+      "contract": { "blocks": ["TASKS.md"] },
+      "create": {
+        "ask": ["what", "owns", "acceptance"],
+        "id": "DEBT-{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": {
+              "Debt": "{id}",
+              "What": "{what}",
+              "Status": "todo",
+              "Verdict": "",
+              "Commit": ""
+            }
+          }
+        ],
+        "blocks": [
+          {
+            "file": "TASKS.md",
+            "under": "# Debt",
+            "text": "### {id} · {what}\n- **Owns:** {owns}\n- **Acceptance:** {acceptance}"
+          }
+        ]
+      }
+    },
     "question": {
       "label": "Question",
       "note": "Something only the owner can answer. While open it holds the tasks it blocks.",
@@ -204,7 +251,8 @@
     { "rule": "sequential", "kind": "sprint" },
     { "rule": "question-blocks", "kind": "question", "field": "blocks" },
     { "rule": "deps-not-forward", "kind": "task", "field": "deps" },
-    { "rule": "ready-has-contract", "kind": "task" }
+    { "rule": "ready-has-contract", "kind": "task" },
+    { "rule": "done-has-evidence", "kind": "debt", "field": "commit", "evidence": "commit" }
   ],
   "status": { "now": "sprint", "note": ".agentry/NOTE.md", "prime": true, "lines": 12 }
 }

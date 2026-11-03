@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "name": "Debt",
+  "root": ".",
+  "kinds": {
+    "sprint": {
+      "label": "Sprint",
+      "at": { "table": "BOARD.md", "heading": "Sprints" },
+      "id": { "column": "Sprint" },
+      "fields": { "name": { "column": "Name" }, "status": { "column": "Status" } },
+      "status": {
+        "field": "status",
+        "values": { "todo": "planned", "doing": "active", "done": "done" }
+      }
+    },
+    "task": {
+      "label": "Task",
+      "at": { "table": "BOARD.md", "heading": "Tasks" },
+      "id": { "column": "Task" },
+      "fields": {
+        "sprint": { "column": "Sprint", "type": "ref", "ref": "sprint", "role": "parent" },
+        "what": { "column": "What" },
+        "status": { "column": "Status" },
+        "verdict": { "column": "Verdict", "case": "upper" },
+        "commit": { "column": "Commit", "type": "commits" }
+      },
+      "status": {
+        "field": "status",
+        "values": { "todo": "planned", "doing": "active", "verify": "active", "done": "done" }
+      },
+      "contract": { "blocks": ["TASKS.md"] }
+    },
+    "debt": {
+      "label": "Debt",
+      "at": { "table": "BOARD.md", "heading": "Debt" },
+      "id": { "column": "Debt" },
+      "fields": {
+        "what": { "column": "What" },
+        "status": { "column": "Status" },
+        "verdict": { "column": "Verdict", "case": "upper" },
+        "commit": { "column": "Commit", "type": "commits" }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped"
+        }
+      },
+      "contract": { "blocks": ["TASKS.md"] }
+    },
+    "question": {
+      "label": "Question",
+      "at": { "table": "BOARD.md", "heading": "Questions" },
+      "id": { "column": "#" },
+      "fields": { "question": { "column": "Question" }, "status": { "column": "Status" } },
+      "status": { "field": "status", "values": { "open": "active", "answered": "done" } }
+    }
+  },
+  "rules": [{ "rule": "ids-unique" }, { "rule": "status-known" }, { "rule": "refs-resolve" }],
+  "status": { "now": "sprint" }
+}

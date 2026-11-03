@@ -6,7 +6,7 @@
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written, previewed or every step skipped,
 // 2 = usage or refusal (nothing written)
 import { PREVIEW, flagsOf, refuse, usageError } from "../../cli/help.mjs";
-import { boardId } from "../ids.mjs";
+import { runId } from "../ids.mjs";
 import { EVENTS, applyEvent } from "../lifecycle.mjs";
 import { WriteError } from "../write.mjs";
 
@@ -15,7 +15,7 @@ export const help = {
   purpose: "Apply one harness event to a board item: the status, verdict, commit and handoff line.",
   args: {
     "<event>": EVENTS.join(", "),
-    "<id>": "the item's id (any case), of the workflow file's lifecycle.kind",
+    "<id>": "the item's id (any case), of a kind exec runs (lifecycle.kind or exec.kinds)",
   },
   flags: {
     "--verdict <v>": "the verdict, for the verdict event (PASS, PASS WITH NOTES, FAIL)",
@@ -60,10 +60,11 @@ function parse(argv) {
 export function run(argv, { root, spec, model }) {
   const { event, id: typed, data, json, write, error } = parse(argv);
   if (error) return usageError(what, error);
-  const id = spec.lifecycle ? boardId(spec, model, typed, spec.lifecycle.kind) : typed;
+  const { id, kind, error: ambiguous } = spec.lifecycle ? runId(spec, model, typed) : { id: typed };
+  if (ambiguous) return refuse(`${what} ${event} ${typed}`, ambiguous);
   let result;
   try {
-    result = applyEvent({ root, spec, model, event, id, data, preview: !write });
+    result = applyEvent({ root, spec, model, event, id, kind, data, preview: !write });
   } catch (e) {
     if (e instanceof WriteError) return refuse(`${what} ${event} ${id}`, e.message);
     throw e;

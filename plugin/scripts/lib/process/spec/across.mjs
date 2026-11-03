@@ -5,12 +5,22 @@
 //
 // - lifecycle: what the writer (`lifecycle.mjs`) puts where a rule reads it (`checkLifecycle`), a handoff
 //   template the enabled `done-has-handoff` rule accepts (`checkHandoff`), and a done status only
-//   `merged` writes, with what the "done" rules read (`checkDone`).
+//   `merged` writes, with what the "done" rules read (`checkDone`). The first and last hold for every kind
+//   exec runs: the lifecycle's (paths `lifecycle.*`) and each `exec.kinds` entry (`exec.kinds.<k>.*`),
+//   whose keys name a kind with no parent field (`checkExecKinds`).
 import { boldLeads } from "../markdown.mjs";
 import { FIELD, ruleOf, withDefaults } from "../rules/index.mjs";
 import { describe, fieldsOf, parentOf, refsOf, sectionsOf } from "./rules.mjs";
 import { entries, has, isObject, own, quote } from "./shape.mjs";
-import { FLAG_FIELD, SLOT, SLOTS, fillHandoff, verifyRoute } from "./workflow.mjs";
+import {
+  FLAG_FIELD,
+  SLOT,
+  SLOTS,
+  fillHandoff,
+  lifecycleOf,
+  runKinds,
+  verifyRoute,
+} from "./workflow.mjs";
 
 /** The workflow's names of the board: `lifecycle.kind` and each `drafts.*.kind` name a kind, the flag
  *  field `exec.verify: "flagged"` reads, and what `checkLifecycle` holds the lifecycle to. */
@@ -19,6 +29,7 @@ export function checkAcross(spec, bad) {
   const known = (name, at) =>
     typeof name !== "string" || has(kinds, name) || bad(at, `names an unknown kind "${name}"`);
   known(spec.lifecycle?.kind, "lifecycle.kind");
+  checkExecKinds(spec, kinds, bad);
   checkVerifyRoute(spec, kinds, bad);
   for (const [d, def] of entries(spec.drafts)) known(def?.kind, `drafts.${d}.kind`);
   checkLifecycle(spec, bad);
@@ -30,26 +41,62 @@ export function checkProbes(spec, bad) {
   checkDone(spec, bad);
 }
 
-// `exec.verify: "flagged"` sends an item to a verifier by its flag, so the exec kind must have one: a field
-// named "flag" of type "flag". Otherwise every item would skip verification, which refuses at load instead.
+// Each `exec.kinds` key names a declared kind other than the lifecycle's, with no parent field: exec runs
+// it beside the lifecycle, outside the tree. It needs the lifecycle, whose kind is the first runnable one.
+function checkExecKinds(spec, kinds, bad) {
+  const listed = entries(own(own(spec, "exec"), "kinds"));
+  if (listed.length === 0) return;
+  if (!isObject(spec.lifecycle))
+    return bad("exec.kinds", "needs lifecycle: exec runs these kinds beside the lifecycle's");
+  for (const [name] of listed) {
+    const at = `exec.kinds.${name}`;
+    if (name === spec.lifecycle.kind) bad(at, "is the lifecycle kind already");
+    else if (!has(kinds, name)) bad(at, `names an unknown kind "${name}"`);
+    else {
+      const parent = parentOf(kinds[name]);
+      if (parent)
+        bad(
+          at,
+          `the ${name} kind has a parent field "${parent[0]}"; a kind exec runs beside the lifecycle has none`,
+        );
+    }
+  }
+}
+
+// `exec.verify: "flagged"` sends an item to a verifier by its flag, so every kind exec runs must have one:
+// a field named "flag" of type "flag". Otherwise its items would skip verification, which refuses at load
+// instead.
 function checkVerifyRoute(spec, kinds, bad) {
   if (verifyRoute(spec) !== "flagged") return;
-  const name = typeof spec.lifecycle?.kind === "string" ? spec.lifecycle.kind : "task";
-  const field = fieldsOf(kinds[name])[FLAG_FIELD];
-  if (!has(kinds, name) || field?.type !== "flag")
-    bad(
-      "exec.verify",
-      `is "flagged", but the ${name} kind has no field named "${FLAG_FIELD}" of type "flag"`,
-    );
+  const names = runKinds(spec);
+  for (const name of names.length ? names : ["task"]) {
+    const field = fieldsOf(kinds[name])[FLAG_FIELD];
+    if (!has(kinds, name) || field?.type !== "flag")
+      bad(
+        "exec.verify",
+        `is "flagged", but the ${name} kind has no field named "${FLAG_FIELD}" of type "flag"`,
+      );
+  }
 }
+
+// Each runnable kind's mapping (`lifecycleOf`) with the path its problems start with.
+const mappings = (spec) =>
+  runKinds(spec).flatMap((name) => {
+    const life = lifecycleOf(spec, name);
+    const at = name === spec.lifecycle.kind ? "lifecycle" : `exec.kinds.${name}`;
+    return life ? [[life, at]] : [];
+  });
 
 /** What the lifecycle writer (`lifecycle.mjs`) takes for granted: each `on` word is a status of the
  *  kind, the status goes to its status field, the verdict to a text field, the commits to a commits
  *  field, the handoff line to a bold-lead section of the parent's file, from a one-line template that
  *  fills only {id}, {sha} and {summary}. Otherwise a write would land where no rule reads it. */
 export function checkLifecycle(spec, bad) {
-  const life = spec.lifecycle;
-  if (!isObject(life) || typeof life.kind !== "string" || !has(spec.kinds, life.kind)) return;
+  for (const [life, at] of mappings(spec)) checkMapping(spec, life, at, bad);
+}
+
+function checkMapping(spec, life, at, bad) {
+  if (!has(spec.kinds, life.kind)) return;
   const name = life.kind;
   const kind = isObject(spec.kinds[name]) ? spec.kinds[name] : {};
   const fields = fieldsOf(kind);
@@ -58,7 +105,7 @@ export function checkLifecycle(spec, bad) {
   for (const [event, word] of entries(life.on))
     if (typeof word === "string" && !has(words, word))
       bad(
-        `lifecycle.on.${event}`,
+        `${at}.on.${event}`,
         words
           ? `"${word}" is not a ${name} status (${quote(Object.keys(words))})`
           : `names a status, but ${name} has no status field`,
@@ -66,7 +113,7 @@ export function checkLifecycle(spec, bad) {
   const write = isObject(life.write) ? life.write : {};
   if (typeof write.status === "string" && write.status !== status.field)
     bad(
-      "lifecycle.write.status",
+      `${at}.write.status`,
       `is "${write.status}", but ${name}'s status is read from ${typeof status.field === "string" ? `"${status.field}"` : "its children"}`,
     );
   for (const [key, is] of [
@@ -75,13 +122,11 @@ export function checkLifecycle(spec, bad) {
   ]) {
     const f = write[key];
     if (typeof f !== "string") continue;
-    if (!has(fields, f)) bad(`lifecycle.write.${key}`, `names no ${name} field "${f}"`);
+    if (!has(fields, f)) bad(`${at}.write.${key}`, `names no ${name} field "${f}"`);
     else if (!FIELD[is].fits(fields[f], name))
-      bad(
-        `lifecycle.write.${key}`,
-        `names ${describe(fields[f], f)}; it needs ${FIELD[is].says()}`,
-      );
+      bad(`${at}.write.${key}`, `names ${describe(fields[f], f)}; it needs ${FIELD[is].says()}`);
   }
+  if (at !== "lifecycle") return; // an exec.kinds entry writes no handoff (its shape refuses one)
   const target = typeof write.handoff === "string" && /^parent\.file:.+$/.test(write.handoff);
   if (target) {
     const section = write.handoff.slice("parent.file:".length);
@@ -140,18 +185,18 @@ export function handoffRejection(spec, line, { id, sha, parent }) {
  *  `done-signoff` date is never written by the lifecycle (so that rule can't sit on its kind). Otherwise
  *  an event the writer applies would leave a done task the checker rejects. */
 export function checkDone(spec, bad) {
-  const life = spec.lifecycle;
-  if (!isObject(life) || !has(spec.kinds, life.kind)) return;
+  for (const [life, at] of mappings(spec)) doneOf(spec, life, at, bad);
+}
+
+function doneOf(spec, life, at, bad) {
+  if (!has(spec.kinds, life.kind)) return;
   const values = spec.kinds[life.kind]?.status?.values;
   const phaseOf = (word) => (isObject(values) && has(values, word) ? values[word] : undefined);
   let finishes = false;
   for (const [event, word] of entries(life.on)) {
     if (phaseOf(word) !== "done") continue;
     if (event !== "merged")
-      bad(
-        `lifecycle.on.${event}`,
-        `sets "${word}", a done status; only "merged" may finish a task`,
-      );
+      bad(`${at}.on.${event}`, `sets "${word}", a done status; only "merged" may finish a task`);
     else finishes = true;
   }
   if (!finishes) return;
@@ -160,7 +205,7 @@ export function checkDone(spec, bad) {
     if (!isObject(entry) || entry.kind !== life.kind) return;
     if (entry.rule === "done-has-evidence" && write.commit !== entry.field)
       bad(
-        "lifecycle.write.commit",
+        `${at}.write.commit`,
         `is ${write.commit === undefined ? "missing" : JSON.stringify(write.commit)}, but rules[${i}] (done-has-evidence) reads the commits of a done ${life.kind} from "${entry.field}"`,
       );
     if (entry.rule === "done-signoff")

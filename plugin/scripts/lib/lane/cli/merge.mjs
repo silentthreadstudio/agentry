@@ -21,7 +21,8 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import { realpathSync } from "node:fs";
 import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
-import { boardId } from "../../process/ids.mjs";
+import { runId } from "../../process/ids.mjs";
+import { read as readLedger } from "../../process/ledger.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
@@ -264,7 +265,9 @@ const RUN = {
 export function run(argv, { root, spec, model }) {
   const parsed = parse(argv);
   if (parsed.error) return usageError("lane merge", parsed.error);
-  parsed.id = boardId(spec, model, parsed.id, spec.lifecycle?.kind ?? "task");
+  const resolved = runId(spec, model, parsed.id);
+  if (resolved.error) return refuse(`lane merge ${parsed.id}`, resolved.error);
+  parsed.id = resolved.id;
   const problem = idProblem(parsed.id);
   if (problem) return usageError("lane merge", problem);
   const main = mainRoot(root);
@@ -274,6 +277,13 @@ export function run(argv, { root, spec, model }) {
       `run merge from the main checkout${main ? ` (${main})` : ""}, not ${root}`,
       main ? `pass --root ${main}` : undefined,
     );
-  const lane = { root, spec, model, id: parsed.id, opts: parsed.opts, ledger: null, files: [] };
+  // The lane's kind: its ledger's (the lifecycle's for a ledger from before kinds), else the id's.
+  let ledger = null;
+  try {
+    ledger = readLedger(root, parsed.id);
+  } catch {} // ledgerStep refuses an unreadable ledger
+  const kind = ledger ? (ledger.kind ?? spec.lifecycle?.kind ?? "task") : resolved.kind;
+  const { id, opts } = parsed;
+  const lane = { root, spec, model, id, kind, opts, ledger: null, files: [] };
   return RUN[parsed.mode](lane);
 }

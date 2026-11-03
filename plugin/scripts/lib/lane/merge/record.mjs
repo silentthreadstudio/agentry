@@ -42,7 +42,7 @@ const unrecorded = (lane, stop) => {
 // again, then the `merged` event. `{ texts: Map(file → text), result }` for each file that changes, or
 // `{ stop }` with its row pushed. Main is not touched.
 function planRecord(lane, rows) {
-  const { root, spec, id } = lane;
+  const { root, spec, id, kind } = lane;
   const merge = lane.ledger.merge;
   const carried = merge.carry?.files ?? [];
   const scratch = mkdtempSync(join(runDir(root, id), "record-"));
@@ -70,7 +70,7 @@ function planRecord(lane, rows) {
     try {
       const model = readProcess({ root: scratch, spec });
       const data = { shas: merge.landed, summary };
-      result = applyEvent({ root: scratch, spec, model, event: "merged", id, data });
+      result = applyEvent({ root: scratch, spec, model, event: "merged", id, kind, data });
     } catch (error) {
       if (!(error instanceof WriteError)) throw error;
       rows.push(red("record", error.message));
@@ -82,6 +82,10 @@ function planRecord(lane, rows) {
       const text = readFileSync(join(scratch, file), "utf8");
       if (text !== textAt(root, "HEAD", file)) texts.set(file, text);
     }
+    // A kind exec runs beside the lifecycle has no parent to hand off to.
+    if (kind !== spec.lifecycle.kind)
+      for (const s of result.skipped)
+        if (s.what === "handoff") s.why = `no handoff: ${kind} is outside the tree`;
     return { texts, result };
   } finally {
     rmSync(scratch, { recursive: true, force: true });

@@ -386,17 +386,58 @@ test("the router hands a subcommand its argv untouched (add takes --json <fields
   }
 });
 
-test("the process skill's templates make a board every enabled rule passes", () => {
-  const { spec, problems } = loadSpec(join(TEMPLATES, "process.json"));
+// The templates in `dir` load and make a board every enabled rule passes.
+function templatesPass(dir) {
+  const { spec, problems } = loadSpec(join(dir, "process.json"));
   assert.deepEqual(problems, []);
   const here = { ...spec, root: "." };
-  const model = readProcess({ root: TEMPLATES, spec: here });
+  const model = readProcess({ root: dir, spec: here });
   assert.deepEqual(model.problems, []);
   const ctx = {
     hasCommit: () => false,
-    contractOf: (kind, id) => findContract({ root: TEMPLATES, spec: here, id, kind }),
+    contractOf: (kind, id) => findContract({ root: dir, spec: here, id, kind }),
   };
   assert.deepEqual(check(model, spec.rules, ctx), []);
+  return model;
+}
+
+test("the process skill's templates make a board every enabled rule passes", () => {
+  const model = templatesPass(TEMPLATES);
+  assert.deepEqual(
+    model.kinds.debt.items.map((i) => [i.id, i.status]),
+    [["DEBT-1", "todo"]],
+  );
+});
+
+test("the templates still pass with the debt pieces dropped as learn.md says", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-templates-"));
+  try {
+    cpSync(TEMPLATES, dir, { recursive: true });
+    const edit = (file, change) =>
+      writeFileSync(join(dir, file), change(readFileSync(join(dir, file), "utf8")));
+    edit("process.json", (text) => {
+      const board = JSON.parse(text);
+      board.kinds.debt = undefined;
+      board.rules = board.rules.filter((r) => r.kind !== "debt");
+      return JSON.stringify(board, null, 2);
+    });
+    edit("workflow.json", (text) => {
+      const workflow = JSON.parse(text);
+      const { debt: _debt, ...kinds } = workflow.exec.kinds;
+      const { kinds: _kinds, ...exec } = workflow.exec;
+      const rest = Object.keys(kinds).length ? { ...exec, kinds } : exec;
+      workflow.exec = Object.keys(rest).length ? rest : undefined;
+      return JSON.stringify(workflow, null, 2);
+    });
+    edit("BOARD.md", (text) => text.replace(/## Debt\n[\s\S]*?(?=\n## )/, ""));
+    edit("TASKS.md", (text) => text.replace(/^# Debt\n[\s\S]*?(?=^# )/m, ""));
+    const model = templatesPass(dir);
+    assert.equal(model.kinds.debt, undefined);
+    assert.doesNotMatch(readFileSync(join(dir, "BOARD.md"), "utf8"), /Debt|DEBT/);
+    assert.doesNotMatch(readFileSync(join(dir, "TASKS.md"), "utf8"), /Debt|DEBT/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("scan with no dir ends by naming the ignored folders it did not read", () => {

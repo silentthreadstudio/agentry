@@ -6,7 +6,7 @@ import { readConfig } from "../../config.mjs";
 import { defaultBranch, worktrees } from "../../process/git.mjs";
 import { read as readLedger, write as writeLedger } from "../../process/ledger.mjs";
 import { own } from "../../process/spec/shape.mjs";
-import { flaggedItem } from "../../process/spec/workflow.mjs";
+import { flaggedItem, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { headBoard } from "../carry-io.mjs";
 import { commitOf, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
 import { dirtyEntries } from "../own-memory.mjs";
@@ -59,7 +59,7 @@ export function ledgerStep(lane, { adopt }) {
       ledger.origin === "exec" &&
       ledger.state !== "merged" &&
       verdicts(ledger).length === 0 &&
-      flaggedItem(spec, lane.model, id)
+      flaggedItem(spec, lane.model, id, lane.kind)
     )
       return {
         exit: 2,
@@ -94,7 +94,7 @@ export function ledgerStep(lane, { adopt }) {
   lane.ledger = writeLedger(root, {
     v: 1,
     id,
-    kind: spec.lifecycle?.kind ?? null,
+    kind: spec.lifecycle ? lane.kind : null,
     contract: null,
     origin: "adopted",
     mainBranch,
@@ -120,11 +120,13 @@ export const skillExists = (root, name) => existsSync(join(root, SKILL_DIR, name
 export const lastWorktreeGate = (ledger) =>
   (ledger.gates ?? []).findLast((g) => g.where === "worktree") ?? null;
 
-/** The task on the board. After a land killed while it wrote the board, the working copy holds that
- *  land's writes ("done" already), so the board is read as committed. */
-export function boardRow({ root, spec, model, id, ledger }) {
-  const life = spec.lifecycle;
-  if (!life) return skip("board", "lifecycle off: the merge writes nothing to the board");
+/** The item on the board, of the lane's kind. After a land killed while it wrote the board, the working
+ *  copy holds that land's writes ("done" already), so the board is read as committed. */
+export function boardRow({ root, spec, model, id, kind, ledger }) {
+  if (!spec.lifecycle) return skip("board", "lifecycle off: the merge writes nothing to the board");
+  const life = lifecycleOf(spec, kind);
+  if (!life)
+    return red("board", `"${kind}" is not a kind exec runs (lifecycle.kind or exec.kinds)`);
   const killed = ledger?.merge?.step === "recording";
   const board = killed ? headBoard(root, spec, model).model : model;
   const items = (own(board.kinds, life.kind)?.items ?? []).filter((item) => item.id === id);
