@@ -184,6 +184,7 @@ merge T-1 · agentry/T-1 → main
   ✓ main    main at <SHA>, clean
   ✓ commits 1 to land
             <SHA> feat: one
+  · commits no rules (commits in the workflow file)
   ✓ gate    full would run (the gate has no quick tier)
             worktree gate: full exit 0 on <SHA>; the land skips only when canSkip holds
   · checks  none named (extensions.merge.checks)
@@ -195,6 +196,7 @@ merge T-1 · agentry/T-1 → main
   ✓ ledger  exec ledger, state verified
   · board   lifecycle off: the merge writes nothing to the board
   · checks  none named (extensions.merge.checks)
+  · commits no rules (commits in the workflow file)
   ✓ main    main at <SHA>, clean
   ✓ land    1 commit(s) picked onto <SHA>
             <SHA> feat: one
