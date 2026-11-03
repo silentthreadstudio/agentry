@@ -190,7 +190,7 @@
 
   .tile__big {
     max-width: 420px;
-    font-size: clamp(30px, 3.2vw, 40px);
+    font-size: 40px;
     line-height: 1;
     letter-spacing: -0.03em;
   }
@@ -456,6 +456,10 @@
 
   /* on one column, keep the conductor's figure from crowding its headline */
   @media (max-width: 600px) {
+    .tile__big {
+      font-size: clamp(30px, 8.6vw, 40px);
+    }
+
     .fig--bars span:nth-child(1) {
       width: 72px;
     }

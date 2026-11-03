@@ -95,9 +95,10 @@ samp {
 }
 
 /* ============================== primitives ============================== */
+/* --wrap is the content column; the gutters sit outside it, as in the design */
 .wrap {
   width: 100%;
-  max-width: var(--wrap);
+  max-width: calc(var(--wrap) + 2 * var(--gutter));
   margin-inline: auto;
   padding-inline: var(--gutter);
 }
