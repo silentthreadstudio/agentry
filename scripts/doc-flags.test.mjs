@@ -47,3 +47,11 @@ test("a doc naming a flag or a subcommand the CLI lacks is a problem, with file 
     "commands/board.md:3: `board nope` is no board subcommand",
   ]);
 });
+
+test("mentions reads the agentry spellings, and `agentry draft` as board draft", () => {
+  const text = "Run `agentry lane merge --push` or `agentry draft add --fields x`.";
+  assert.deepEqual(mentions(text), [
+    { cli: "lane", sub: "merge", flags: ["--push"], line: 1 },
+    { cli: "board", sub: "draft", flags: ["--fields"], line: 1 },
+  ]);
+});

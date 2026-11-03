@@ -2,6 +2,7 @@
 // Agentry plugin gate — validates the plugin payload before commit (doc 09 §5).
 // Dependency-free. Exits non-zero on hard errors; warnings don't fail.
 
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -299,6 +300,28 @@ if (!existsSync(hooksJson) && !manifestHooks) ok("no hooks", "none shipped");
 const docProblems = await docFlagProblems(PLUGIN);
 for (const p of docProblems) err(`doc flags: ${p}`);
 if (!docProblems.length) ok("doc flags", "every board/lane call in the docs is one the CLI takes");
+
+// 9. The `agentry` command — plugin/bin/agentry is what the Bash tool's PATH gets, so it must exist, be
+// executable (in git too: an install copies the committed mode), and route the same groups the scripts are.
+const bin = join(PLUGIN, "bin", "agentry");
+if (!existsSync(bin)) err("bin/agentry missing — the plugin's one command");
+else {
+  const text = readFileSync(bin, "utf8");
+  if (!(statSync(bin).mode & 0o111)) err("bin/agentry is not executable (chmod 755)");
+  let tracked = "";
+  try {
+    tracked = execFileSync("git", ["ls-files", "-s", "--", bin], { cwd: ROOT, encoding: "utf8" });
+  } catch {
+    // not a git checkout: nothing to compare
+  }
+  if (tracked && !tracked.startsWith("100755"))
+    err("bin/agentry is not mode 100755 in git (git update-index --chmod=+x)");
+  for (const group of ["board", "lane"])
+    if (!text.includes(`${group}.mjs`) || !existsSync(join(PLUGIN, "scripts", `${group}.mjs`)))
+      err(`bin/agentry does not route \`${group}\` to scripts/${group}.mjs`);
+  if (!text.includes('"draft"')) err("bin/agentry does not route `draft` to `board draft`");
+  ok("bin/agentry", "executable, routes board, lane and draft");
+}
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));
