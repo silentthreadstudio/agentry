@@ -69,7 +69,10 @@ function pathOf(span) {
   if (!PATH_CHARS.test(path)) return null;
   if (path.includes("/"))
     return /^\d+$/.test(path.replace(/\/$/, "").split("/").at(-1)) ? null : path;
-  return path.includes(".") && EXTENSIONS.has(path.split(".").at(-1).toLowerCase()) ? path : null;
+  const name = path.split("/").at(-1);
+  return name.lastIndexOf(".") > 0 && EXTENSIONS.has(name.split(".").at(-1).toLowerCase())
+    ? path
+    : null;
 }
 
 /** The paths the block's "owns" part names in backticks, de-duplicated, in order: only spans shaped like
@@ -88,7 +91,7 @@ export function ownedFiles(block) {
     // The words between the previous span and this one, in this clause only.
     const clause = part
       .slice(from, m.index)
-      .split(/[;\n]|\.\s/)
+      .split(/;|\.\s|\n\s*\n|\n\s*[-*]\s/)
       .at(-1);
     from = m.index + m[0].length;
     const path = NEGATION.test(clause) ? null : pathOf(m[1]);

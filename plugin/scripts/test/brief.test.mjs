@@ -51,7 +51,7 @@ test("ownedFiles keeps paths only: no symbols, string keys or negated spans; pat
   const block = [
     "- **T2** (S1): **owns** `row1.tres`, `Desk.shown()`, `run.build.room().y`, `KEY_1/2`,",
     "  `src/strings/en.tres`, tests `tests/test_a.gd:289–301`, `tests/test_b.gd#L4-9`,",
-    "  `scenes/*.tscn`, `src/ui/`. T9's rule: no line in `shell.gd`; never `src/main.gd`,",
+    "  `scenes/*.tscn` + `.tscn`, `src/ui/`. (≤ 6 lines; T9's rule: no\n  line in `shell.gd`); never `src/main.gd`,",
     "  but `src/ok.gd` is owned. · **excludes** `src/other.gd`",
   ].join("\n");
   assert.deepEqual(ownedFiles(block), [
