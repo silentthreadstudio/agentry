@@ -215,3 +215,26 @@ test("a config the reader refuses is said at start, not shown as no mode", () =>
   const data = JSON.parse(session(root, "start", "--json").stdout);
   assert.match(data.configError, /mode should be a non-empty string/);
 });
+
+test("start flags the note stale when every id it names is done, and not while one is open", () => {
+  const repo = boardRepo();
+  cleanups.push(repo.cleanup);
+  const { root } = repo;
+  const board = read(root, "plan/BOARD.md").replace(
+    "| T2   | S1     | todo",
+    "| T2   | S1     | done",
+  );
+  writeFileSync(join(root, "plan", "BOARD.md"), board);
+  const note = join(root, ".agentry", "NOTE.md");
+  writeFileSync(note, "# Note\n\nWatch T2 land.\n");
+  const stale = session(root, "start");
+  assert.equal(stale.status, 0, stale.stderr);
+  assert.match(
+    stale.stdout,
+    /^note: stale, every id it names is done \(T2\) → edit \.agentry\/NOTE\.md$/m,
+  );
+  writeFileSync(note, "# Note\n\nWatch T2 and T1 land.\n");
+  assert.doesNotMatch(session(root, "start").stdout, /note: stale/);
+  writeFileSync(note, "# Note\n\nNo ids here.\n");
+  assert.doesNotMatch(session(root, "start").stdout, /note: stale/);
+});

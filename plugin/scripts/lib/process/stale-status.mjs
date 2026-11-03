@@ -1,7 +1,9 @@
 // stale-status — a status file kept by hand (`status.file`, its `status.next` heading) that still lists a
 // task the board has finished. One nudge for the whole file, naming the ids. Read only; nothing is edited.
+// The session note (`.agentry/NOTE.md`) is stale the same way once every id it names is done or answered.
 //
 //   staleStatus({ root, spec, model }) -> nudge | null
+//   staleNote(model, lines) -> string[] | null     the ids a note names, when all are finished
 import { join } from "node:path";
 import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
@@ -26,4 +28,18 @@ export function staleStatus({ root, spec, model }) {
     path: file,
     command: `edit ${file}: ${done.slice(0, SHOWN).join(", ")}${more} done on the board`,
   };
+}
+
+/** The ids the note `lines` name when there is at least one and every one is done (a question answered is
+ *  a done phase too); null when it names none, or any is still open. An id on several kinds counts as done
+ *  only when each of its items is. */
+export function staleNote(model, lines) {
+  const tokens = lines
+    .join("\n")
+    .split(/[^\w.-]+/)
+    .map((t) => t.replace(/^[.-]+|[.-]+$/g, ""));
+  const named = [...new Set(tokens)].filter((t) => t && Object.hasOwn(model.index, t));
+  return named.length && named.every((t) => withId(model, t).every((i) => i.phase === "done"))
+    ? named
+    : null;
 }

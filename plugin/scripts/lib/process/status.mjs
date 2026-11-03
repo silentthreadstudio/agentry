@@ -15,6 +15,7 @@ import { keptTrees, nudges } from "./drift.mjs";
 import * as git from "./git.mjs";
 import { readInside } from "./read.mjs";
 import { refKinds, resolve } from "./rules/structure.mjs";
+import { staleNote } from "./stale-status.mjs";
 
 const parentField = (kind) =>
   Object.entries(kind?.fields ?? {}).find(([, f]) => f.role === "parent");
@@ -120,6 +121,12 @@ function readNote(root, path) {
   return text === null ? undefined : { path, lines: text.trimEnd().split("\n") };
 }
 
+// `{ stale: ids }` when every id the note names is finished, else nothing to add.
+function stale(model, note) {
+  const ids = staleNote(model, note.lines);
+  return ids ? { stale: ids } : {};
+}
+
 export function statusView({ root, spec, model, runRoot = root }) {
   const work = workKind(spec);
   const now = spec.status?.now ?? refKinds(parentField(spec.kinds[work])?.[1])[0];
@@ -183,6 +190,6 @@ export function statusView({ root, spec, model, runRoot = root }) {
     kept: keptTrees({ root, runRoot, spec }).map((t) => ({ path: t.path, branch: t.branch })),
     drafts: drafts.pending(runRoot).length,
     recent: git.log(root, { ref: branch, n: 10, firstParent: true }),
-    ...(note ? { note } : {}),
+    ...(note ? { note: { ...note, ...stale(model, note) } } : {}),
   };
 }

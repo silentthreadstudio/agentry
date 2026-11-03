@@ -142,6 +142,11 @@ function renderStart(s, { name, root }) {
   // The note's first lines (headings and blanks skipped), the later ones indented under the label.
   const note = (s.status.note?.lines ?? []).filter((l) => l.trim() && !l.startsWith("#"));
   note.slice(0, NOTE_LINES).forEach((l, i) => add(i ? `      ${l.trim()}` : `note: ${l.trim()}`));
+  const stale = s.status.note?.stale;
+  if (stale)
+    add(
+      `note: stale, every id it names is done (${stale.join(", ")}) → edit ${s.status.note.path}`,
+    );
   if (s.status.inFlight.length)
     addList(
       "in flight: ",
