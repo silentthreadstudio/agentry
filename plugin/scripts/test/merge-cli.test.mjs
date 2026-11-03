@@ -582,6 +582,46 @@ test("on a one-file-per-item board, an open lane's write in its own file is carr
   assert.match(git(root, "show", "HEAD:stories/s2.md"), /state: done/);
 });
 
+test("a stop whose give-back conflicts names --drop-carry, not 'run the same land again'", () => {
+  // The gate changes the carried cell itself (T2 todo -> verify on main) and fails: the rollback is
+  // refused on the dirty tree, and the carry cannot go back over the changed cell.
+  commitFile(
+    root,
+    "gate.mjs",
+    `import { readFileSync, writeFileSync } from "node:fs";
+const board = readFileSync("plan/BOARD.md", "utf8");
+writeFileSync("plan/BOARD.md", board.replace("| T2   | S1     | todo   |", "| T2   | S1     | verify |"));
+process.exit(1);
+`,
+  );
+  const { path } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: null });
+  execWrites();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ carry +exec's board writes no longer apply to plan\/BOARD\.md/);
+  assert.match(res.stdout, /next: .*--drop-carry/);
+  assert.doesNotMatch(res.stdout, /next: .*run the same land again/);
+});
+
+test("a carry recorded without cells (an older version) says so and points at --drop-carry", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  commitFile(path, "plan/BOARD.md", BOARD_MD.replace(T2_DOING[0], "| T2   | S1     | verify |"));
+  execLedger({ path, gated: shas[0] });
+  execWrites();
+  merge(ID, "--message", "docs(board): land T1");
+  const ledger = readLedger(root, ID);
+  const { cells, cellsSha256, ...old } = ledger.merge.carry;
+  writeLedger(root, { ...ledger, merge: { ...ledger.merge, carry: old } });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(
+    res.stdout,
+    /recorded by an older version; rerun with --drop-carry \(the patch is kept\)/,
+  );
+  assert.doesNotMatch(res.stdout, /the ledger was edited/);
+});
+
 test("--drop-carry with nothing set aside is refused", () => {
   build({ "src/a.txt": "a\n" });
   const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1", "--drop-carry");

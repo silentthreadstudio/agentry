@@ -126,7 +126,10 @@ export function giveBack(lane) {
   const files = carry.files.join(", ");
   if (!intact(carry))
     return red("carry", `exec's board writes in the ledger (${files}) fail their sha256 check`, [
-      "the ledger was edited; nothing is put back",
+      // A carry with no cells was recorded before cells were (dev.4): not tampered with, just old.
+      carry.cells === undefined
+        ? "recorded by an older version; rerun with --drop-carry (the patch is kept)"
+        : "the ledger was edited; nothing is put back",
     ]);
   const back = putCells(lane.root, lane.spec, carry.cells);
   if (!back.ok)

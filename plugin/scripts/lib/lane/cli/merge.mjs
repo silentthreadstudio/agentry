@@ -26,7 +26,14 @@ import { gateOf } from "../../process/spec.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import { attributionIn, mergeBaseOf } from "../land.mjs";
-import { carryBackStep, giveBack, mainRow, mainStep, takeCarryStep } from "../merge/carry.mjs";
+import {
+  carryBackStep,
+  dropNext,
+  giveBack,
+  mainRow,
+  mainStep,
+  takeCarryStep,
+} from "../merge/carry.mjs";
 import { gateStep } from "../merge/gating.mjs";
 import { FRESH, afterLand, checkNext, done, landNext, ok, red, short } from "../merge/lane.mjs";
 import { check, cleanupMode, pushMode } from "../merge/modes.mjs";
@@ -221,7 +228,8 @@ function land(lane) {
     // At a stop, main gets exec's writes back, unless git is mid-pick or they would not go back.
     const back = stop.keepCarry ? null : giveBack(lane);
     if (back) rows.push(back);
-    return done(stop.exit, lane, rows, stop.next);
+    // A give-back that is itself a conflict has its own next; "land again" would only hit it again.
+    return done(stop.exit, lane, rows, back?.mark === "red" ? dropNext(lane) : stop.next);
   }
   return done(0, lane, rows, afterLand(lane));
 }
