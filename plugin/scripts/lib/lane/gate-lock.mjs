@@ -5,6 +5,7 @@
 // `exclusive` takes every slot (in order, so two of them cannot deadlock): a flaky re-run runs alone.
 // A lock file with no readable pid (empty, cut short, unreadable) is stale once it is `GRACE_MS` old: a
 // younger one may be a taker between create and write. Synchronous, like `runGate`. Node built-ins only.
+// The pid, holder and clock primitives are shared with `named-lock.mjs` (the workflow file's `locks`).
 import {
   appendFileSync,
   mkdirSync,
@@ -16,16 +17,17 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 
-const POLL_MS = 200;
-const GRACE_MS = 2000;
+/** How often a waiting taker looks again, and how old a lock file with no readable pid must be to be stale. */
+export const POLL_MS = 200;
+export const GRACE_MS = 2000;
 
 /** The directory every gate (a lane's, and the land's own on main) queues in. */
 export const gateLockDir = (root) => join(root, ".agentry", "run", "gate-locks");
 
 const slotFile = (dir, n) => join(dir, `slot-${n}.lock`);
 
-// Is `pid` a running process? EPERM means it is, and is not ours to signal.
-function running(pid) {
+/** Is `pid` a running process? EPERM means it is, and is not ours to signal. */
+export function running(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
@@ -35,7 +37,8 @@ function running(pid) {
   }
 }
 
-const holderOf = (file) => {
+/** The parsed content of a lock file, or null when it is missing or not JSON. */
+export const holderOf = (file) => {
   try {
     return JSON.parse(readFileSync(file, "utf8"));
   } catch {
@@ -76,7 +79,8 @@ function take(dir, n, who) {
   return false;
 }
 
-const clock = (iso) => {
+/** An ISO time as local HH:MM (`?` when it is not a time). */
+export const clock = (iso) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? "?"

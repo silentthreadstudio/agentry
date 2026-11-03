@@ -1,0 +1,372 @@
+// run — the `agentry run` and `agentry lock` groups: one portable time limit, and the workflow file's
+// named locks (`locks`, `lane/named-lock.mjs`).
+//
+//   agentry run --limit <dur> [--lock <name>] -- <cmd> [args…]
+//     runs argv (no shell) in its own process group with stdio inherited and exits with its code; at the
+//     limit the group gets SIGTERM, then SIGKILL 5 s later, and the exit is 124. `--lock` waits for a
+//     slot first and holds it until the command is gone.
+//   agentry lock take <name> [--for <lane>] [--ttl <dur>] · lock drop <name> [--for <lane>] · lock show
+//     a lock held across tool calls, for a session that drives a shared editor through MCP. A take is
+//     the session's (the host's `CLAUDE_PID`, when it gives one) and ends at its ttl (default 30m) or
+//     when that process is gone.
+//
+// The locks live in the main checkout, so every worktree shares them. Exit 0 = ok, 1 = not held, 2 =
+// usage or a lock the workflow file does not declare. Node built-ins only.
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { constants } from "node:os";
+import { basename, join, relative, resolve, sep } from "node:path";
+import { clock, running } from "../lane/gate-lock.mjs";
+import {
+  POLL_MS,
+  dropLock,
+  heldLocks,
+  locksOf,
+  releaseLock,
+  tryLock,
+} from "../lane/named-lock.mjs";
+import { mainRoot, worktreesDir } from "../lane/worktree.mjs";
+import { gitRootOf } from "../process/contract.mjs";
+import { workflowPathOf } from "../process/read.mjs";
+import { validateWorkflow } from "../process/spec/workflow.mjs";
+import { renderHelp, say } from "./help.mjs";
+
+/** The exit of a command stopped at its limit, as `timeout(1)` gives it. */
+export const LIMIT_EXIT = 124;
+/** How long a group has between SIGTERM and SIGKILL. */
+export const GRACE_KILL_MS = 5000;
+const TAKE_TTL = "30m";
+const UNITS = { s: 1000, m: 60_000, h: 3_600_000 };
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+const RUN_HELP = {
+  usage: "run --limit <dur> [--lock <name>] -- <cmd> [args…]",
+  purpose:
+    "Run a command (no shell) in its own process group and stop the whole group at the limit: SIGTERM, then SIGKILL 5 s later.",
+  args: { "<cmd> [args…]": "the command, after --" },
+  flags: {
+    "--limit <dur>": "the time limit: <n>s, <n>m or <n>h (n above 0)",
+    "--lock <name>":
+      "wait for a slot of a lock the workflow file's locks declares, and hold it while the command runs",
+    "--root <dir>": "the git root (default: the main checkout of the current directory)",
+    "--process <file>": "the process file; the workflow file is its sibling workflow.json",
+  },
+  exits: {
+    "<code>": "the command's own exit code (128 + the signal when a signal ended it)",
+    124: "the command hit the limit and was stopped",
+    127: "the command could not be started",
+    2: "usage, or a lock the workflow file does not declare",
+  },
+  example: "agentry run --limit 10m --lock editor -- godot --headless --path . -s tests/run.gd",
+};
+
+const LOCK_HELP = {
+  usage: [
+    "lock take <name> [--for <lane>] [--ttl <dur>]",
+    "lock drop <name> [--for <lane>]",
+    "lock show",
+  ],
+  purpose:
+    "Hold a named lock across tool calls (a shared editor driven through MCP): take it before, drop it after.",
+  args: { "<name>": "a lock the workflow file's locks declares" },
+  flags: {
+    "--for <lane>": "who holds it (default: the lane whose worktree this is)",
+    "--ttl <dur>": "when a take ends on its own: <n>s, <n>m or <n>h (default 30m)",
+    "--root <dir>": "the git root (default: the main checkout of the current directory)",
+    "--process <file>": "the process file; the workflow file is its sibling workflow.json",
+  },
+  exits: {
+    0: "taken, dropped or shown",
+    1: "drop: not held by you",
+    2: "usage, or an undeclared lock",
+  },
+  example: "agentry lock take editor --for T-4",
+};
+
+/** `<n>s|m|h` in milliseconds, or null when it is not one (or is 0, or too long for a timer). */
+export function durationMs(text) {
+  const m = /^(\d+)([smh])$/.exec(text ?? "");
+  const ms = m ? Number(m[1]) * UNITS[m[2]] : 0;
+  return ms > 0 && ms <= MAX_TIMER_MS ? ms : null;
+}
+
+const fail = (what, why, next) => ({ exit: 2, err: say(what, why, next) });
+
+// The options before `--` (each takes a value), or why one is refused.
+function optionsOf(argv, what, takes) {
+  const got = {};
+  const rest = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg.startsWith("--")) {
+      rest.push(arg);
+      continue;
+    }
+    const eq = arg.indexOf("=");
+    const name = eq < 0 ? arg : arg.slice(0, eq);
+    if (!takes.includes(name)) return fail(what, `unknown option "${name}"`, `${what} --help`);
+    const value = eq < 0 ? argv[++i] : arg.slice(eq + 1);
+    if (value === undefined || value === "" || (eq < 0 && value.startsWith("--")))
+      return fail(what, `${name} needs a value`, `${what} --help`);
+    got[name] = value;
+  }
+  return { got, rest };
+}
+
+// The main checkout the locks live in, and the lane whose worktree the current directory is in (or null).
+function placeOf(rootArg) {
+  const dir = resolve(rootArg ?? process.cwd());
+  const root = mainRoot(dir) ?? gitRootOf(dir) ?? dir;
+  const inside = relative(worktreesDir(root), process.cwd());
+  const lane =
+    inside && !inside.startsWith("..") && !inside.startsWith(sep) ? inside.split(sep)[0] : null;
+  return { root, lane };
+}
+
+// The workflow file's locks, or why it cannot be used.
+function declaredLocks(root, processArg, what) {
+  const processPath = resolve(processArg ?? join(root, ".agentry", "process.json"));
+  const file = workflowPathOf(processPath);
+  let value;
+  try {
+    value = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return { locks: {}, file };
+    return fail(
+      what,
+      `cannot read ${file} (${error.code ?? error.message})`,
+      "agentry board check",
+    );
+  }
+  const problems = [];
+  validateWorkflow(value, (at, message) => problems.push(`${at} ${message}`));
+  if (problems.length) return fail(what, `${file}: ${problems.join("; ")}`, "agentry board check");
+  return { locks: locksOf(value), file };
+}
+
+// Lock `name` as the workflow file declares it: `{ slots }`, or the refusal.
+function lockNamed(name, { locks, file }, what) {
+  if (Object.hasOwn(locks, name)) return { slots: locks[name] };
+  const names = Object.keys(locks);
+  const has = names.length ? `it declares ${names.join(", ")}` : "it declares no locks";
+  return fail(what, `no lock "${name}" in the locks of ${file} (${has})`, "agentry lock show");
+}
+
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+// Wait for a slot, printing the wait once and the arrival after it: the `tryLock` result.
+async function acquire(root, name, opts) {
+  let waited = false;
+  for (;;) {
+    const got = tryLock(root, name, opts);
+    if (!got.busy) {
+      if (waited) process.stderr.write(`lock ${name} acquired\n`);
+      return got;
+    }
+    if (!waited) {
+      waited = true;
+      process.stderr.write(
+        `waiting for lock ${name} (held by ${got.busy.who} since ${got.busy.since})\n`,
+      );
+    }
+    await sleep(POLL_MS);
+  }
+}
+
+// Does any process of group `pgid` still run?
+const groupAlive = (pgid) => {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+};
+const signalGroup = (pgid, signal) => {
+  try {
+    process.kill(-pgid, signal);
+  } catch {
+    // the group is gone already
+  }
+};
+
+const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"];
+
+// Run `cmd` in its own group under the limit: the exit code `agentry run` ends with.
+function supervise(cmd, limitMs, limitText) {
+  return new Promise((done) => {
+    const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", detached: true });
+    let timedOut = false;
+    let killTimer = null;
+    const forward = (signal) => signalGroup(child.pid, signal);
+    const limitTimer = setTimeout(() => {
+      timedOut = true;
+      signalGroup(child.pid, "SIGTERM");
+      killTimer = setTimeout(() => signalGroup(child.pid, "SIGKILL"), GRACE_KILL_MS);
+    }, limitMs);
+    const finish = (code) => {
+      clearTimeout(limitTimer);
+      clearTimeout(killTimer);
+      for (const signal of FORWARDED) process.off(signal, forward);
+      done(code);
+    };
+    child.on("error", (error) => {
+      process.stderr.write(
+        `${say("run", `cannot start ${cmd[0]}: ${error.code ?? error.message}`)}\n`,
+      );
+      finish(127);
+    });
+    child.on("exit", async (code, signal) => {
+      if (!timedOut) {
+        clearTimeout(limitTimer);
+        // A group the command left behind is not waited on; only a stopped one is cleared.
+        return finish(code ?? 128 + (constants.signals[signal] ?? 0));
+      }
+      // Stopped at the limit: the grandchildren go too, at SIGKILL time if they outlive SIGTERM.
+      while (groupAlive(child.pid)) await sleep(50);
+      process.stderr.write(
+        `${say("run", `${cmd[0]} hit the --limit ${limitText} and was stopped`)}\n`,
+      );
+      finish(LIMIT_EXIT);
+    });
+    for (const signal of FORWARDED) process.on(signal, forward);
+  });
+}
+
+/** `agentry run …` (argv after the group): the exit code. */
+export async function runCli(argv) {
+  const dash = argv.indexOf("--");
+  const before = dash < 0 ? argv : argv.slice(0, dash);
+  const cmd = dash < 0 ? [] : argv.slice(dash + 1);
+  if (before.includes("--help") || before.includes("-h")) {
+    process.stdout.write(`${renderHelp("agentry", "run", RUN_HELP)}\n`);
+    return 0;
+  }
+  const parsed = optionsOf(before, "agentry run", ["--limit", "--lock", "--root", "--process"]);
+  const checked = parsed.err ? parsed : runArgs(parsed, cmd);
+  if (checked.err) {
+    process.stderr.write(`${checked.err}\n`);
+    return checked.exit;
+  }
+  const { limitMs, limitText, lockName } = checked;
+  let held = null;
+  if (lockName) {
+    const { root, lane } = placeOf(parsed.got["--root"]);
+    const declared = declaredLocks(root, parsed.got["--process"], "agentry run");
+    const lock = declared.err ? declared : lockNamed(lockName, declared, "agentry run");
+    if (lock.err) {
+      process.stderr.write(`${lock.err}\n`);
+      return lock.exit;
+    }
+    const who = `${lane ? `${lane}: ` : ""}${basename(cmd[0])}`;
+    const { slot } = await acquire(root, lockName, { slots: lock.slots, who });
+    held = () => releaseLock(root, lockName, slot);
+    process.once("exit", held);
+  }
+  try {
+    return await supervise(cmd, limitMs, limitText);
+  } finally {
+    held?.();
+  }
+}
+
+// The checked `run` arguments, or the refusal.
+function runArgs({ got, rest }, cmd) {
+  const what = "agentry run";
+  if (rest.length)
+    return fail(what, `"${rest[0]}" before --: put the command after --`, `${what} --help`);
+  if (!cmd.length) return fail(what, "no command: put it after --", `${what} --help`);
+  const limitText = got["--limit"];
+  if (limitText === undefined) return fail(what, "--limit is required", `${what} --help`);
+  const limitMs = durationMs(limitText);
+  if (limitMs === null)
+    return fail(
+      what,
+      `--limit "${limitText}" is not a time limit: <n>s, <n>m or <n>h, n above 0`,
+      `${what} --help`,
+    );
+  return { limitMs, limitText, lockName: got["--lock"] ?? null };
+}
+
+// The session a take belongs to: the host's process when it names one that runs, else none (ttl only).
+function sessionPid() {
+  const pid = Number(process.env.CLAUDE_PID);
+  return Number.isInteger(pid) && pid > 0 && running(pid) ? pid : null;
+}
+
+/** `agentry lock …` (argv after the group): the exit code. */
+export async function lockCli(argv) {
+  const [sub, ...args] = argv;
+  if (sub === undefined || sub === "--help" || sub === "-h" || args.includes("--help")) {
+    process.stdout.write(`${renderHelp("agentry", "lock", LOCK_HELP)}\n`);
+    return 0;
+  }
+  const what = `agentry lock ${sub}`;
+  const out = (code, line) => {
+    (code === 2 ? process.stderr : process.stdout).write(`${line}\n`);
+    return code;
+  };
+  if (!["take", "drop", "show"].includes(sub))
+    return out(
+      2,
+      say("agentry lock", `unknown subcommand "${sub}" (take, drop, show)`, "agentry lock --help"),
+    );
+  const takes = { take: ["--for", "--ttl"], drop: ["--for"], show: [] }[sub];
+  const parsed = optionsOf(args, what, [...takes, "--root", "--process"]);
+  if (parsed.err) return out(2, parsed.err);
+  const { got, rest } = parsed;
+  const { root, lane } = placeOf(got["--root"]);
+  const declared = declaredLocks(root, got["--process"], what);
+  if (declared.err) return out(2, declared.err);
+  if (sub === "show") {
+    if (rest.length) return out(2, say(what, "takes no name", `${what} --help`));
+    return out(0, showLines(root, declared));
+  }
+  if (rest.length !== 1) return out(2, say(what, "name one lock", `${what} --help`));
+  const [name] = rest;
+  const lock = lockNamed(name, declared, what);
+  if (lock.err) return out(2, lock.err);
+  const who = got["--for"] ?? lane ?? "a session";
+  const pid = sessionPid();
+  if (sub === "drop") {
+    if (dropLock(root, name, { slots: lock.slots, pid, who }))
+      return out(0, `lock ${name} dropped`);
+    return out(1, say(what, `${name} is not held by ${who}`, "agentry lock show"));
+  }
+  const ttlText = got["--ttl"] ?? TAKE_TTL;
+  const ttlMs = durationMs(ttlText);
+  if (ttlMs === null)
+    return out(
+      2,
+      say(
+        what,
+        `--ttl "${ttlText}" is not a time: <n>s, <n>m or <n>h, n above 0`,
+        `${what} --help`,
+      ),
+    );
+  await acquire(root, name, { slots: lock.slots, pid, who, ttlMs });
+  const until = clock(new Date(Date.now() + ttlMs).toISOString());
+  return out(
+    0,
+    `lock ${name} taken by ${who} until ${until} → agentry lock drop ${name}${got["--for"] ? ` --for ${who}` : ""}`,
+  );
+}
+
+// `lock show`: one line per declared lock, its holders after it.
+function showLines(root, { locks, file }) {
+  const names = Object.keys(locks);
+  if (!names.length) return `no locks in ${file} → add "locks": { "editor": 1 } (format.md)`;
+  return names
+    .flatMap((name) => {
+      const held = heldLocks(root, name, locks[name]);
+      const head = `${name} ${held.length}/${locks[name]}${held.length ? "" : ": free"}`;
+      return [
+        head,
+        ...held.map(
+          (h) =>
+            `  slot ${h.slot}: ${h.who || "unknown"} since ${h.since}${h.until ? `, until ${h.until}` : ""}${h.pid ? ` (pid ${h.pid})` : ""}`,
+        ),
+      ];
+    })
+    .join("\n");
+}
