@@ -73,8 +73,12 @@ and rule as it is.
 
 ## (c) Set up — show and repair
 
-1. Run `board explain`. Show kinds × location × count, rules on with their finding counts, the effective
-   config (read it the way `/agentry:config` §1 does), and the `.agentry/` commit policy.
+1. Run `board explain`. Show kinds × location × count, rules on with their finding counts and its `lanes`
+   block: gate, gate.quick, conductor prompt and rules, trigger block, default agent, `merge.push`, merge
+   checks, the `.agentry/` commit policy per subfolder (tracked, ignored or undecided; `memory/` tracked is
+   a privacy choice to point out) and the file's `version`. Each is ✓ or ✗ with the command that sets it; a
+   ✗ is a lane not wired yet (exit stays 0), offered in the order of "Wiring the lanes". Read the rest of the
+   effective config the way `/agentry:config` §1 does.
 2. Drift is anything `explain` reports as missing: a heading not found (`scan` may show it renamed), a column
    gone or added, status words not in `values`, a `version` older than this plugin's. Report each as one
    line with its proposed repair.

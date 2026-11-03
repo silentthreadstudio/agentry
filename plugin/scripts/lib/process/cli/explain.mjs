@@ -1,13 +1,15 @@
 // board explain [--json] — how the process file meets the board (plan F13 §2.4), the ground truth
 // `/agentry:init` learns against: per kind, where it was found, its items, table columns no field
 // maps, unknown status values, unresolved refs and read problems; per catalog rule, on or off and its
-// finding count. Writes nothing; exit 0, or 2 for a `conductor.prompt` that is not a file or a
+// finding count; then the lanes (gate, conductor, trigger block, default agent, push policy, merge
+// checks, the `.agentry/` commit policy, the file's version), each set or not with the command that sets it. Writes nothing; exit 0, or 2 for a `conductor.prompt` that is not a file or a
 // `conductor.rules` heading it does not hold.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
 import { join } from "node:path";
 import { check } from "../check.mjs";
 import { refuseConductor } from "../conductor.mjs";
+import { lanes, renderLanes } from "../lanes.mjs";
 import * as md from "../markdown.mjs";
 import { readInside } from "../read.mjs";
 import { columns } from "../render.mjs";
@@ -17,6 +19,7 @@ import { boardReport } from "../status.mjs";
 export const usage = "explain [--json]";
 export const flags = { "--json": false };
 const WIDTH = 100;
+const LANES_WIDTH = 80;
 
 // A table kind's header names that neither the id nor any field reads.
 function unmapped(root, spec, kind) {
@@ -64,7 +67,13 @@ export function explain({ root, spec, model }) {
   const off = Object.keys(CATALOG)
     .filter((id) => !spec.rules.some((e) => e.rule === id))
     .map((rule) => ({ rule, on: false }));
-  return { name: spec.name, root: spec.root, kinds, rules: [...listed, ...off] };
+  return {
+    name: spec.name,
+    root: spec.root,
+    kinds,
+    rules: [...listed, ...off],
+    lanes: lanes({ root, spec }),
+  };
 }
 
 function render(data) {
@@ -95,6 +104,9 @@ function render(data) {
     ...notes.map((n) => `  ${n}`.slice(0, WIDTH)),
     "",
     ...columns([["", "rule", "kind", "findings"], ...ruleRows], WIDTH),
+    "",
+    `lanes · ${data.lanes.filter((l) => !l.ok).length} not set`,
+    ...renderLanes(data.lanes, LANES_WIDTH),
   ].join("\n");
 }
 

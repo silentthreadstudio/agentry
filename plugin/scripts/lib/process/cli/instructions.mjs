@@ -37,7 +37,7 @@ export const usage = "instructions [--write]";
 export const flags = { "--write": false };
 // cli/ → process/ → lib/ → scripts/ → the plugin root.
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
-const TEMPLATE = join(PLUGIN, "skills", "process", "templates", "agents-block.md");
+export const TEMPLATE = join(PLUGIN, "skills", "process", "templates", "agents-block.md");
 const SAYS = {
   create: "AGENTS.md: create it with the Agentry block",
   append: "AGENTS.md: append the Agentry block",
@@ -56,7 +56,7 @@ function sameFile(a, b) {
 }
 
 // The file's text, null when absent, or the reason it can't be used.
-function readFile(root, name) {
+export function readFile(root, name) {
   const file = join(root, name);
   if (!staysInside(root, file)) return { error: `${name} is a symlink out of the repository` };
   // A write would follow a broken symlink to wherever it points.

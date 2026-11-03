@@ -186,8 +186,10 @@ const gate = shape(
 const skill = like(/^[a-z0-9][a-z0-9-]*$/, "a skill name (lower-case letters, digits and -)");
 const extensions = shape({ "merge!": shape({ "checks!": distinct(skill) }, FULL) }, FULL);
 const conductor = shape({ "prompt!": repoPath, rules: text }, FULL);
+/** The process-file `version` this plugin reads. */
+export const SPEC_VERSION = 1;
 const processFile = shape({
-  "version!": oneOf(1),
+  "version!": oneOf(SPEC_VERSION),
   "name!": str,
   "root!": str,
   "kinds!": record(kind),
