@@ -3,24 +3,36 @@
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written, 2 = usage or refusal (nothing written)
 import { join } from "node:path";
+import { refuse, usageError } from "../../cli/help.mjs";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, apply, setCell, setKey } from "../write.mjs";
 
-export const usage = "set <kind> <id> <field>=<value>";
-export const flags = {};
-const fail = (out) => ({ exit: 2, out });
+export const help = {
+  usage: "set <kind> <id> <field>=<value>",
+  purpose: "Change one field of one item: its table cell, or its frontmatter key.",
+  args: {
+    "<kind>": "a kind the process file knows",
+    "<id>": "the item's id",
+    "<field>=<value>": "a field of that kind (not its id) and the text to write",
+  },
+  flags: {},
+  exits: { 0: "written", 2: "usage, or refused (nothing written)" },
+  example: "board set task T-4 status=blocked",
+};
+const fail = (why, next) => refuse("board set", why, next);
 
 export function run(argv, { root, spec, model }) {
   const [kindName, id, assignment] = argv.filter((a) => !a.startsWith("--"));
   const at = assignment?.indexOf("=") ?? -1;
-  if (!kindName || !id || at < 1) return fail(`usage: ${usage}`);
+  if (!kindName || !id || at < 1)
+    return usageError("board set", "needs <kind> <id> <field>=<value>");
   const fieldName = assignment.slice(0, at);
   const value = assignment.slice(at + 1);
   const kind = own(spec.kinds, kindName);
   if (!kind)
     return fail(`unknown kind "${kindName}" (kinds: ${Object.keys(spec.kinds).join(", ")})`);
   const field = own(kind.fields, fieldName);
-  if (!field) return fail(`${kindName} has no field "${fieldName}"`);
+  if (!field) return fail(`${kindName} has no field "${fieldName}"`, "board explain");
   const idKey = kind.id?.column ?? kind.at.id?.replace(/^frontmatter:/, "");
   if (field.column === idKey)
     return fail(`"${fieldName}" shares the id column; not rewriting an id`);
@@ -29,7 +41,10 @@ export function run(argv, { root, spec, model }) {
     return fail(`"${value}" is not a ${kindName} status (${Object.keys(known).join(", ")})`);
   const items = model.kinds[kindName].items.filter((i) => i.id === id);
   if (items.length !== 1)
-    return fail(`${items.length ? "several" : "no"} ${kindName} "${id}" on the board`);
+    return fail(
+      `${items.length ? "several" : "no"} ${kindName} "${id}" on the board`,
+      "board status",
+    );
 
   const table = kind.at.table !== undefined;
   const file = table ? kind.at.table : items[0].file;

@@ -231,7 +231,7 @@ test("--verify (static) answers no, exit 1, for a misspelled name or a missing a
 test("--verify takes only static or live", () => {
   const res = run(["--verify", "remote"], project("{}"));
   assert.equal(res.exit, 2);
-  assert.match(res.out, /usage: default-agent/);
+  assert.match(res.out, /--verify takes static or live → board default-agent --help/);
 });
 
 const init = (fields) => JSON.stringify({ type: "system", subtype: "init", ...fields });

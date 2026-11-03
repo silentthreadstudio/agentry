@@ -3,12 +3,26 @@
 // `conductor.prompt` that is not a file or a `conductor.rules` heading it does not hold.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
+import { usageError } from "../../cli/help.mjs";
 import { refuseConductor } from "../conductor.mjs";
 import { renderCheck, why } from "../render.mjs";
 import { boardReport, workKind } from "../status.mjs";
 
-export const usage = "check [--json] [--why <id>]";
-export const flags = { "--json": false, "--why": true };
+export const help = {
+  usage: "check [--json] [--why <id>]",
+  purpose: "Run the process file's rules on the board; print the verdict and every finding.",
+  args: {},
+  flags: {
+    "--json": "print the report as one JSON object",
+    "--why <id>": "one item of any kind (task, sprint, decision…): each rule failing or holding",
+  },
+  exits: {
+    0: "no findings",
+    1: "findings",
+    2: "usage, an id not on the board, or a process file or conductor key it cannot use",
+  },
+  example: "board check --why T-4",
+};
 const tty = () => Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
 
 export function run(argv, { root, processPath, spec, model }) {
@@ -18,7 +32,8 @@ export function run(argv, { root, processPath, spec, model }) {
   const exit = report.ok ? 0 : 1;
   const at = argv.indexOf("--why");
   const id = argv[at + 1];
-  if (at >= 0 && (!id || id.startsWith("--"))) return { exit: 2, out: `usage: ${usage}` };
+  if (at >= 0 && (!id || id.startsWith("--")))
+    return usageError("board check", "--why needs an id");
   if (at >= 0) return why({ spec, model, report, id, tty: tty() });
   if (argv.includes("--json")) return { exit, out: JSON.stringify(report) };
   return { exit, out: renderCheck({ spec, report, work: workKind(spec), tty: tty() }) };

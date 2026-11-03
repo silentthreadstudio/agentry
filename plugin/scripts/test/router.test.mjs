@@ -21,8 +21,14 @@ before(() => {
   writeFileSync(
     join(dir, "echo.mjs"),
     `export const noSpec = true;
-export const flags = { "--json": false, "--why": true };
-export const usage = "echo [--json] [--why <x>]";
+export const help = {
+  usage: "echo [--json] [--why <x>]",
+  purpose: "Echo the argv.",
+  args: {},
+  flags: { "--json": "as JSON", "--why <x>": "a value" },
+  exits: { 0: "ok" },
+  example: "cli echo --json",
+};
 export const run = (argv, ctx) => ({ exit: 0, out: JSON.stringify({ argv, root: ctx.root }) });
 `,
   );
@@ -51,7 +57,7 @@ test("unknown sub is a usage error naming the known subs", async () => {
 test("no sub and no default is a usage error", async () => {
   const res = await route([], { dir });
   assert.equal(res.exit, 2);
-  assert.match(res.out, /^no subcommand/);
+  assert.match(res.out, /^✗ cli: no subcommand/);
 });
 
 test("a missing sub directory lists no subs rather than throwing", async () => {
@@ -63,7 +69,7 @@ test("a missing sub directory lists no subs rather than throwing", async () => {
 test("unknown flag is a usage error with the sub's usage line", async () => {
   const res = await go("echo", "--bogus");
   assert.equal(res.exit, 2);
-  assert.match(res.out, /unknown option "--bogus"\nusage: echo \[--json\]/);
+  assert.equal(res.out, '✗ cli echo: unknown option "--bogus" → cli echo --help');
 });
 
 test("--flag=value reads as --flag value; a value on a boolean flag is refused", async () => {
@@ -85,13 +91,39 @@ test("a sub that needs the spec is refused on a broken process file", async () =
   writeFileSync(file, '{"kinds":{}}');
   const res = await go("needs-spec", "--root", tmp, "--process", file);
   assert.equal(res.exit, 2);
-  assert.match(res.out, /cannot use the process file\n {2}the process file is missing "version"/);
+  assert.match(
+    res.out,
+    /cannot use the process file → \/agentry:init\n {2}the process file is missing "version"/,
+  );
 });
 
 test("a missing process file is refused with the init hint", async () => {
   const res = await go("needs-spec", "--root", tmp, "--process", join(tmp, "absent.json"));
   assert.equal(res.exit, 2);
-  assert.match(res.out, /run \/agentry:init/);
+  assert.match(res.out, /no process file here → \/agentry:init/);
+});
+
+test("<sub> --help prints usage, purpose, args, flags, exits and an example, exit 0", async () => {
+  const res = await go("echo", "--help");
+  assert.equal(res.exit, 0);
+  assert.match(
+    res.out,
+    /^usage: cli echo \[--json\] \[--why <x>\]\nEcho the argv\.\n\nargs:\n {2}none\nflags:\n {2}--json {5}as JSON\n {2}--why <x> {2}a value\nexits:\n {2}0 {2}ok\nexample:\n {2}cli echo --json$/,
+  );
+});
+
+test("--help needs no process file and wins over a usage error", async () => {
+  const res = await go("needs-spec", "--help", "--bogus", "--process", join(tmp, "absent.json"));
+  assert.equal(res.exit, 0);
+  assert.match(res.out, /^usage: cli needs-spec\n/);
+});
+
+test("--help with no sub lists every sub with its purpose", async () => {
+  const res = await go("--help");
+  assert.equal(res.exit, 0);
+  assert.match(res.out, /^usage: cli <subcommand>/);
+  assert.match(res.out, /\n {2}echo {8}Echo the argv\.\n/);
+  assert.match(res.out, /\n {2}needs-spec\n/);
 });
 
 test("lane.mjs with no subs yet answers a usage error, exit 2", () => {

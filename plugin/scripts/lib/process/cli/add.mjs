@@ -7,15 +7,25 @@
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written, 2 = usage or refusal
 import { join } from "node:path";
+import { refuse, usageError } from "../../cli/help.mjs";
 import { findContract } from "../contract.mjs";
 import { nextId } from "../ids.mjs";
 import { contractHome } from "../rules/structure.mjs";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, appendBlock, applyAll, insertRow } from "../write.mjs";
 
-export const usage = 'add <kind> --json \'{"id": "…", …}\'';
-export const flags = { "--json": true };
-const fail = (out) => ({ exit: 2, out });
+export const help = {
+  usage: 'add <kind> --json \'{"id": "…", …}\'',
+  purpose: "Add one item at every create location of its kind, as one write or none.",
+  args: { "<kind>": "a kind the process file knows, with a create rule" },
+  flags: {
+    "--json <fields>":
+      "the item's fields as one JSON object; id optional when create.id is a pattern",
+  },
+  exits: { 0: "written", 2: "usage, or refused (nothing written)" },
+  example: 'board add task --json \'{"title": "Ship the CLI help", "sprint": "S2"}\'',
+};
+const fail = (why, next) => refuse("board add", why, next);
 const isoToday = () => new Date().toLocaleDateString("sv-SE");
 
 // How a JSON value reads in a cell: lists joined, a flag as its mark, null as nothing.
@@ -28,7 +38,8 @@ function show(value, def) {
 export function run(argv, { root, spec, model, today = isoToday() }) {
   const kindName = argv.find((a) => !a.startsWith("--"));
   const json = argv[argv.indexOf("--json") + 1];
-  if (!kindName || argv.indexOf("--json") < 0 || json === undefined) return fail(`usage: ${usage}`);
+  if (!kindName || argv.indexOf("--json") < 0 || json === undefined)
+    return usageError("board add", "needs <kind> --json '<fields>'");
   const kind = own(spec.kinds, kindName);
   if (!kind)
     return fail(`unknown kind "${kindName}" (kinds: ${Object.keys(spec.kinds).join(", ")})`);

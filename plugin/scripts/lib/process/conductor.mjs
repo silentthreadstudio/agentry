@@ -7,6 +7,7 @@
 // conductorProblems(root, spec) -> string[]      each message names the key and what was looked for
 // refuseConductor(root, spec, processPath) -> { exit: 2, out } | null
 import { join, relative } from "node:path";
+import { say } from "../cli/help.mjs";
 import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 
@@ -44,8 +45,6 @@ export function refuseConductor(root, spec, processPath) {
   if (!problems.length) return null;
   const rel = relative(root, processPath);
   const shown = rel.startsWith("..") ? processPath : rel;
-  return {
-    exit: 2,
-    out: [`✗ ${shown}: cannot use the process file`, ...problems.map((p) => `  ${p}`)].join("\n"),
-  };
+  const head = say(shown, "cannot use the process file", "/agentry:init");
+  return { exit: 2, out: [head, ...problems.map((p) => `  ${p}`)].join("\n") };
 }

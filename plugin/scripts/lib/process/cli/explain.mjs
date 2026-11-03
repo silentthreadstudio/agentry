@@ -16,8 +16,14 @@ import { columns } from "../render.mjs";
 import { CATALOG } from "../rules/index.mjs";
 import { boardReport } from "../status.mjs";
 
-export const usage = "explain [--json]";
-export const flags = { "--json": false };
+export const help = {
+  usage: "explain [--json]",
+  purpose: "How the process file meets the board: kinds, items, rules on and off, and the lanes.",
+  args: {},
+  flags: { "--json": "print it as one JSON object" },
+  exits: { 0: "printed", 2: "usage, or a process file or conductor key it cannot use" },
+  example: "board explain --process .agentry/run/process/draft.json",
+};
 const WIDTH = 100;
 const LANES_WIDTH = 80;
 

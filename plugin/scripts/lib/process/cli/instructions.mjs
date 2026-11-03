@@ -23,6 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { refuse } from "../../cli/help.mjs";
 import { TEMPLATE, readFile } from "../instruction-files.mjs";
 import {
   CLAUDE_DIR_IMPORT,
@@ -32,8 +33,18 @@ import {
   upsertBlock,
 } from "../instructions.mjs";
 
-export const usage = "instructions [--write]";
-export const flags = { "--write": false };
+export const help = {
+  usage: "instructions [--write]",
+  purpose:
+    "The Agentry block in AGENTS.md and the @AGENTS.md import in CLAUDE.md: what would change.",
+  args: {},
+  flags: { "--write": "write both files, or neither" },
+  exits: {
+    0: "printed (and written with --write)",
+    2: "markers that don't make one block, a file out of the repository, or a failed write",
+  },
+  example: "board instructions --write",
+};
 const SAYS = {
   create: "AGENTS.md: create it with the Agentry block",
   append: "AGENTS.md: append the Agentry block",
@@ -95,10 +106,10 @@ export function run(argv, { root, spec }) {
   const ref = claudeName === CLAUDE[0] ? IMPORT : CLAUDE_DIR_IMPORT;
   const claude = readFile(root, claudeName);
   const failed = agents.error ?? claude.error;
-  if (failed) return { exit: 2, out: `✗ ${failed}; nothing written` };
+  if (failed) return refuse("board instructions", `${failed}; nothing written`);
   const block = renderBlock(readFileSync(TEMPLATE, "utf8"), { prompt });
   const up = upsertBlock(agents.text, block);
-  if (up.error) return { exit: 2, out: `✗ AGENTS.md: ${up.error}; nothing written` };
+  if (up.error) return refuse("AGENTS.md", `${up.error}; nothing written`);
   const imp =
     claude.text === null
       ? { action: "absent" }
@@ -128,7 +139,7 @@ export function run(argv, { root, spec }) {
     try {
       writeAll(root, writes);
     } catch (e) {
-      return { exit: 2, out: `✗ cannot write (${e.code ?? e.message}); nothing written` };
+      return refuse("board instructions", `cannot write (${e.code ?? e.message}); nothing written`);
     }
     out.push(`wrote ${writes.map(([name]) => name).join(", ")}`);
   }

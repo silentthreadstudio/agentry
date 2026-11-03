@@ -4,12 +4,28 @@
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written (or every step skipped),
 // 2 = usage or refusal (nothing written)
+import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
 import { EVENTS, applyEvent } from "../lifecycle.mjs";
 import { WriteError } from "../write.mjs";
 
-export const usage = `lifecycle <${EVENTS.join("|")}> <id> [--verdict <v>] [--sha <sha>]… [--summary <text>] [--json]`;
-export const flags = { "--verdict": true, "--sha": true, "--summary": true, "--json": false };
-const fail = (out) => ({ exit: 2, out });
+export const help = {
+  usage: `lifecycle <${EVENTS.join("|")}> <id> [--verdict <v>] [--sha <sha>]… [--summary <text>] [--json]`,
+  purpose: "Apply one harness event to a board item: the status, verdict, commit and handoff line.",
+  args: {
+    "<event>": EVENTS.join(", "),
+    "<id>": "the item's id, of the process file's lifecycle.kind",
+  },
+  flags: {
+    "--verdict <v>": "the verdict, for the verdict event (PASS, PASS WITH NOTES, FAIL)",
+    "--sha <sha>": "a landed commit, for merged; repeat it, first landed first",
+    "--summary <text>": "the handoff text, for merged",
+    "--json": "print the writes and the skipped steps as one JSON object",
+  },
+  exits: { 0: "written, or every step skipped", 2: "usage, or refused (nothing written)" },
+  example: "board lifecycle verdict T-4 --verdict PASS",
+};
+const flags = flagsOf(help);
+const what = "board lifecycle";
 
 // argv → { event, id, data, json } or { error }. `--sha` may repeat (first landed first); the others
 // are given once.
@@ -30,18 +46,18 @@ function parse(argv) {
       else data[key] = value;
     }
   }
-  if (words.length !== 2) return { error: `usage: ${usage}` };
+  if (words.length !== 2) return { error: "needs <event> <id>" };
   return { event: words[0], id: words[1], data, json };
 }
 
 export function run(argv, { root, spec, model }) {
   const { event, id, data, json, error } = parse(argv);
-  if (error) return fail(error);
+  if (error) return usageError(what, error);
   let result;
   try {
     result = applyEvent({ root, spec, model, event, id, data });
   } catch (e) {
-    if (e instanceof WriteError) return fail(`lifecycle ${event} ${id}: ${e.message}`);
+    if (e instanceof WriteError) return refuse(`${what} ${event} ${id}`, e.message);
     throw e;
   }
   if (json) return { exit: 0, out: JSON.stringify({ event, id, ...result }) };

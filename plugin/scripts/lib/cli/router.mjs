@@ -1,19 +1,23 @@
 // router — the argv → subcommand router shared by `board.mjs` and `lane.mjs`: `<cli> [<sub>] [--root <git
-// root>] [--process <file>] …`. Routes to `<dir>/<sub>.mjs`, found by name, as `run(argv, ctx) -> { exit,
-// out }` with ctx `{ root, processPath, spec, model }`; a sub that exports `noSpec` runs without a process
-// file. `--root` and `--process` are the router's. A sub exports its `usage` line and the `flags` it takes
-// ({ "--json": false, "--why": true }, true = takes a value): any other option is a usage error, and
-// `--flag=value` reads as `--flag value`. Exit 0 = OK, 1 = findings, 2 = usage or process-file error.
-// Node built-ins only.
+// root>] [--process <file>] [--help] …`. Routes to `<dir>/<sub>.mjs`, found by name, as `run(argv, ctx) ->
+// { exit, out }` with ctx `{ root, processPath, spec, model }`; a sub that exports `noSpec` runs without a
+// process file. `--root`, `--process` and `--help` are the router's. A sub exports its `help`
+// (`help.mjs`): the options it takes are the keys of `help.flags`, any other option is a usage error, and
+// `--flag=value` reads as `--flag value`. `--help` prints the sub's help (or, with no sub named, every
+// sub's purpose) and exits 0 without reading the process file. Exit 0 = OK, 1 = findings, 2 = usage or
+// process-file error. Node built-ins only.
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gitRootOf } from "../process/contract.mjs";
 import { loadSpec, readProcess } from "../process/read.mjs";
 import { checkOnBoard } from "../process/spec.mjs";
+import { flagsOf, renderHelp, renderIndex, say, usageError } from "./help.mjs";
 
 const subsIn = (dir) =>
   existsSync(dir) ? readdirSync(dir).map((f) => f.replace(/\.mjs$/, "")) : [];
+const isSub = (dir, sub) => /^[a-z][a-z-]*$/.test(sub) && existsSync(join(dir, `${sub}.mjs`));
+const load = (dir, sub) => import(pathToFileURL(join(dir, `${sub}.mjs`)).href);
 
 // A router option's value: undefined when absent, null when given without one (last, followed by
 // another option, or `--root=`).
@@ -27,7 +31,8 @@ function take(argv, name) {
   return given ? value : null;
 }
 
-// The sub's argv with `--flag=value` spelled `--flag value`, or the first option it does not take.
+// The sub's argv with `--flag=value` spelled `--flag value`, or why the first option it does not take
+// is refused.
 function options(argv, takes) {
   const out = [];
   for (const arg of argv) {
@@ -44,39 +49,46 @@ function options(argv, takes) {
   return { argv: out };
 }
 
+// `<cli> --help`: each sub's purpose, read from its own help.
+async function index(dir, cli) {
+  const subs = [];
+  for (const name of subsIn(dir)) subs.push({ name, help: (await load(dir, name)).help });
+  return { exit: 0, out: renderIndex(cli, subs) };
+}
+
 /** Run `argv` against the subcommands in `dir`. `defaultSub` names the sub used when none is given
- *  (none given and no default → a usage error). Returns `{ exit, out }`. */
-export async function route(argv, { dir, defaultSub }) {
+ *  (none given and no default → a usage error); `name` is the CLI's name in help and errors.
+ *  Returns `{ exit, out }`. */
+export async function route(argv, { dir, defaultSub, name: cli = "cli" }) {
   const rootArg = take(argv, "--root");
   const processArg = take(argv, "--process");
   for (const [name, value] of [
     ["--root", rootArg],
     ["--process", processArg],
   ])
-    if (value === null) return { exit: 2, out: `${name} needs a value` };
+    if (value === null) return usageError(cli, `${name} needs a value`);
   const root = resolve(rootArg ?? gitRootOf(process.cwd()) ?? process.cwd());
   const processPath = resolve(processArg ?? join(root, ".agentry", "process.json"));
-  const sub = argv[0] && !argv[0].startsWith("--") ? argv.shift() : defaultSub;
-  const file = sub ? join(dir, `${sub}.mjs`) : null;
-  if (!sub || !/^[a-z][a-z-]*$/.test(sub) || !existsSync(file))
-    return {
-      exit: 2,
-      out: `${sub ? `unknown subcommand "${sub}"` : "no subcommand"} (subcommands: ${subsIn(dir).join(", ")})`,
-    };
-  const mod = await import(pathToFileURL(file).href);
-  const { argv: args, error } = options(argv, mod.flags ?? {});
-  if (error) return { exit: 2, out: `${error}\nusage: ${mod.usage ?? sub}` };
+  const named = argv[0] && !argv[0].startsWith("-") ? argv.shift() : null;
+  const helpAt = argv.indexOf("--help");
+  if (helpAt >= 0 && !named) return index(dir, cli);
+  const sub = named ?? defaultSub;
+  if (!sub || !isSub(dir, sub)) {
+    const why = sub ? `unknown subcommand "${sub}"` : "no subcommand";
+    return usageError(cli, `${why} (subcommands: ${subsIn(dir).join(", ")})`);
+  }
+  const mod = await load(dir, sub);
+  if (helpAt >= 0) return { exit: 0, out: renderHelp(cli, sub, mod.help) };
+  const { argv: args, error } = options(argv, flagsOf(mod.help));
+  if (error) return usageError(`${cli} ${sub}`, error);
   if (mod.noSpec) return mod.run(args, { root, processPath });
   const refuse = (problems) => {
     const shown = relative(root, processPath).startsWith("..")
       ? processPath
       : relative(root, processPath);
-    const hint = existsSync(processPath) ? "" : "\n  no process file here: run /agentry:init";
+    const why = existsSync(processPath) ? "cannot use the process file" : "no process file here";
     const lines = problems.map((p) => `  ${p.message}`);
-    return {
-      exit: 2,
-      out: [`✗ ${shown}: cannot use the process file`, ...lines].join("\n") + hint,
-    };
+    return { exit: 2, out: [say(shown, why, "/agentry:init"), ...lines].join("\n") };
   };
   const { spec, problems } = loadSpec(processPath, { root });
   if (!spec || problems.length) return refuse(problems);

@@ -20,6 +20,7 @@
 //
 // run(argv, { root, spec, model }) -> { exit, out }
 import { realpathSync } from "node:fs";
+import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
 import { gateOf } from "../../process/spec.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
@@ -41,26 +42,34 @@ import {
 } from "../merge/rows.mjs";
 import { mainRoot } from "../worktree.mjs";
 
-export const usage = [
-  "merge <id> [--branch <b>] --preflight",
-  "merge <id> --check <skill>=pass|fail [--note <t>]",
-  "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
-  "merge <id> --push [--approved]",
-  "merge <id> --cleanup [--discard-ignored]",
-].join("\n       ");
-export const flags = {
-  "--preflight": false,
-  "--check": true,
-  "--note": true,
-  "--branch": true,
-  "--message": true,
-  "--summary": true,
-  "--drop-carry": false,
-  "--push": false,
-  "--approved": false,
-  "--cleanup": false,
-  "--discard-ignored": false,
+export const help = {
+  usage: [
+    "merge <id> [--branch <b>] --preflight",
+    "merge <id> --check <skill>=pass|fail [--note <t>]",
+    "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
+    "merge <id> --push [--approved]",
+    "merge <id> --cleanup [--discard-ignored]",
+  ],
+  purpose: "Land one task on main, one mode per call; each prints a step table and the next step.",
+  args: { "<id>": "the task's id, as the board writes it" },
+  flags: {
+    "--preflight": "what landing needs; changes nothing on main",
+    "--check <skill>=pass|fail":
+      "record one repo check (extensions.merge.checks) on the branch tip",
+    "--note <t>": "with --check: one line on why",
+    "--branch <b>": "with --preflight or --message: adopt work built outside lane exec",
+    "--message <board commit>": "land: pick, gate or skip, record, board commit with this message",
+    "--summary <t>": "with --message: the handoff text (default: the first commit's subject)",
+    "--drop-carry": "with --message: land without exec's set-aside board writes (owner's call)",
+    "--push": "push main per merge.push (ask|auto|never)",
+    "--approved": "with --push: the owner said yes (merge.push ask)",
+    "--cleanup": "remove the task's worktree and branch",
+    "--discard-ignored": "with --cleanup: also when the worktree holds ignored files",
+  },
+  exits: { 0: "done, next printed", 1: "a red step stopped it", 2: "usage or refusal" },
+  example: "lane merge T-4 --preflight",
 };
+const flags = flagsOf(help);
 // Each mode and the options that go with it.
 const MODES = {
   "--preflight": ["--branch"],
@@ -88,10 +97,9 @@ function parse(argv) {
     if (value === undefined || value.startsWith("--")) return { error: `${arg} needs a value` };
     opts[arg] = value;
   }
-  if (words.length !== 1) return { error: `usage: ${usage}` };
+  if (words.length !== 1) return { error: "needs one task id" };
   const modes = Object.keys(MODES).filter((m) => Object.hasOwn(opts, m));
-  if (modes.length !== 1)
-    return { error: `give exactly one of ${Object.keys(MODES).join(", ")}\nusage: ${usage}` };
+  if (modes.length !== 1) return { error: `give exactly one of ${Object.keys(MODES).join(", ")}` };
   const [mode] = modes;
   const stray = Object.keys(opts).find((k) => k !== mode && !MODES[mode].includes(k));
   if (stray) return { error: `${stray} does not go with ${mode}` };
@@ -155,13 +163,13 @@ function land(lane) {
   const { id, opts } = lane;
   const message = opts["--message"];
   if (!message.trim())
-    return { exit: 2, out: "--message is empty: give the board commit's message" };
+    return usageError(`lane merge ${id}`, "--message is empty: give the board commit's message");
   const credit = attributionIn(message);
   if (credit)
-    return {
-      exit: 2,
-      out: `the board commit message carries AI attribution ("${credit}"): commits carry the author only`,
-    };
+    return refuse(
+      `lane merge ${id}`,
+      `the board commit message carries AI attribution ("${credit}"): commits carry the author only`,
+    );
   const got = ledgerStep(lane, { adopt: true });
   if (got.exit) return done(got.exit, lane, got.rows);
   const rows = [got];
@@ -224,15 +232,16 @@ const RUN = {
 
 export function run(argv, { root, spec, model }) {
   const parsed = parse(argv);
-  if (parsed.error) return { exit: 2, out: parsed.error };
+  if (parsed.error) return usageError("lane merge", parsed.error);
   const problem = idProblem(parsed.id);
-  if (problem) return { exit: 2, out: problem };
+  if (problem) return usageError("lane merge", problem);
   const main = mainRoot(root);
   if (!main || main !== realpathSync(root))
-    return {
-      exit: 2,
-      out: `run merge from the main checkout${main ? ` (${main})` : ""}, not ${root}`,
-    };
+    return refuse(
+      `lane merge ${parsed.id}`,
+      `run merge from the main checkout${main ? ` (${main})` : ""}, not ${root}`,
+      main ? `pass --root ${main}` : undefined,
+    );
   const lane = { root, spec, model, id: parsed.id, opts: parsed.opts, ledger: null, files: [] };
   return RUN[parsed.mode](lane);
 }

@@ -9,6 +9,7 @@
 // overwritten).
 //
 // run(argv, { root }) -> { exit, out }
+import { refuse, usageError } from "../../cli/help.mjs";
 import {
   AGENT,
   localAgent,
@@ -19,8 +20,22 @@ import {
 } from "../default-agent.mjs";
 
 export const noSpec = true;
-export const usage = "default-agent [--write] [--verify [static|live]]";
-export const flags = { "--write": false, "--verify": true };
+export const help = {
+  usage: "default-agent [--write] [--verify [static|live]]",
+  purpose: "The project's default main-session agent in .claude/settings.json, as one JSON object.",
+  args: {},
+  flags: {
+    "--write": "set agent to agentry:conductor (replacing a different value)",
+    "--verify [static|live]":
+      "check it resolves: static reads files, live spends one claude -p request",
+  },
+  exits: {
+    0: "printed",
+    1: "a verify did not answer yes",
+    2: "usage, or a settings file that is not a JSON object (never overwritten)",
+  },
+  example: "board default-agent --verify",
+};
 const MODES = ["static", "live"];
 
 // The verify mode: null without `--verify`, "static" when given bare.
@@ -36,14 +51,14 @@ function mode(argv) {
 
 export function run(argv, { root, pluginRoot, claude }) {
   const verify = mode(argv);
-  if (verify.error) return { exit: 2, out: `${verify.error}\nusage: ${usage}` };
+  if (verify.error) return usageError("board default-agent", verify.error);
   const read = readSettings(root);
-  if (read.error) return { exit: 2, out: `✗ ${read.file}: ${read.error}; not changed` };
+  if (read.error) return refuse(read.file, `${read.error}; not changed`);
   const current = read.data.agent ?? null;
   let wrote = false;
   if (argv.includes("--write")) {
     const written = writeAgent(root, { pluginRoot });
-    if (written.error) return { exit: 2, out: `✗ ${written.file}: ${written.error}; not changed` };
+    if (written.error) return refuse(written.file, `${written.error}; not changed`);
     wrote = written.wrote;
   }
   const now = wrote ? AGENT : read.data.agent;

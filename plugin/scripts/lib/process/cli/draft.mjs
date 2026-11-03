@@ -11,6 +11,7 @@
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = done, 2 = usage or refusal (nothing written)
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
+import { refuse, usageError } from "../../cli/help.mjs";
 import { git, mainRoot } from "../../lane/worktree.mjs";
 import * as drafts from "../drafts.mjs";
 import { fit } from "../render.mjs";
@@ -19,9 +20,22 @@ import { WriteError, appendLine, apply } from "../write.mjs";
 import { run as addItem } from "./add.mjs";
 import { run as nextId } from "./next-id.mjs";
 
-export const usage = "draft add --json '{…}' | list | drop <n> | apply <n>";
-export const flags = { "--json": true };
-const fail = (out) => ({ exit: 2, out });
+export const help = {
+  usage: ["draft add --json '{…}'", "draft list", "draft drop <n>", "draft apply <n>"],
+  purpose: "The owner's calls caught in conversation, held until the owner says OK.",
+  args: {
+    "add|list|drop|apply": "keep a draft, show the pending ones, forget one, write one",
+    "<n>": "a pending draft's number (see draft list)",
+  },
+  flags: {
+    "--json <draft>":
+      'for add: {"kind":"decision"|"rule","answer":"…"} (question, unpicked, source)',
+  },
+  exits: { 0: "done", 2: "usage, or refused (nothing written)" },
+  example: "board draft apply 2",
+};
+const fail = (why, next) => refuse("board draft", why, next);
+const usage = (why) => usageError("board draft", why);
 const WIDTH = 80;
 const oneLine = (text) => String(text).replace(/\s+/g, " ").trim();
 
@@ -43,7 +57,7 @@ function applyDecision(draft, { root, spec, model }) {
   if (!def)
     return fail("the process file has no drafts.decision: nothing says how a decision is filled");
   const id = nextId([def.kind], { spec, model });
-  if (id.exit !== 0) return fail(id.out);
+  if (id.exit !== 0) return id;
   let fields;
   try {
     fields = Object.fromEntries(Object.entries(def.map).map(([k, t]) => [k, fill(t, draft)]));
@@ -104,7 +118,7 @@ export function run(argv, ctx) {
   const [action, ...rest] = argv;
   const runRoot = mainRoot(ctx.root) ?? ctx.root;
   if (action === "list") {
-    if (rest.length) return fail(`usage: ${usage}`);
+    if (rest.length) return usage("list takes nothing more");
     const open = drafts.pending(runRoot);
     const shown = open.length
       ? open
@@ -117,7 +131,7 @@ export function run(argv, ctx) {
   }
   if (action === "add") {
     const at = rest.indexOf("--json");
-    if (at < 0 || rest.length !== 2) return fail(`usage: ${usage}`);
+    if (at < 0 || rest.length !== 2) return usage("add needs --json '<draft>'");
     let given;
     try {
       given = JSON.parse(rest[at + 1]);
@@ -129,11 +143,12 @@ export function run(argv, ctx) {
     const d = drafts.add(runRoot, given);
     return { exit: 0, out: `drafted ${d.n}: ${d.kind}, ${fit(oneLine(d.answer), 50)}` };
   }
-  if (action !== "drop" && action !== "apply") return fail(`usage: ${usage}`);
+  if (action !== "drop" && action !== "apply")
+    return usage("needs add, list, drop <n> or apply <n>");
   const n = number(rest[0]);
-  if (n === null || rest.length !== 1) return fail(`usage: ${usage}`);
+  if (n === null || rest.length !== 1) return usage(`${action} needs a draft number`);
   const draft = drafts.pending(runRoot).find((d) => d.n === n);
-  if (!draft) return fail(`no pending draft ${n} (see: draft list)`);
+  if (!draft) return fail(`no pending draft ${n}`, "board draft list");
   if (action === "drop") {
     drafts.mark(runRoot, n, "dropped");
     return { exit: 0, out: withTorn(`dropped draft ${n}`, runRoot) };

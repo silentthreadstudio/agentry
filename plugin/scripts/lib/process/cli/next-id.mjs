@@ -3,17 +3,27 @@
 // Writes nothing.
 //
 // run(argv, { spec, model }) -> { exit, out }
+import { refuse, usageError } from "../../cli/help.mjs";
 import { nextId } from "../ids.mjs";
 import { own } from "../spec.mjs";
 
-export const usage = "next-id <kind>";
-export const flags = {};
+export const help = {
+  usage: "next-id <kind>",
+  purpose: "The next free id of a kind, from its create.id pattern. Writes nothing.",
+  args: { "<kind>": "a kind the process file knows (task, sprint, decision…)" },
+  flags: {},
+  exits: { 0: "printed", 2: "usage, or the kind's ids are chosen by hand" },
+  example: "board next-id task",
+};
 
 export function run(argv, { spec, model }) {
   const name = argv.find((a) => !a.startsWith("--"));
   const kind = own(spec.kinds, name);
   if (!kind)
-    return { exit: 2, out: `usage: ${usage} (kinds: ${Object.keys(spec.kinds).join(", ")})` };
+    return usageError(
+      "board next-id",
+      `${name ? `unknown kind "${name}"` : "needs a kind"} (kinds: ${Object.keys(spec.kinds).join(", ")})`,
+    );
   const { id, error } = nextId(name, kind, model);
-  return error ? { exit: 2, out: error } : { exit: 0, out: id };
+  return error ? refuse("board next-id", error) : { exit: 0, out: id };
 }

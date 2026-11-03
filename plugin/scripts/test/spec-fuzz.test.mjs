@@ -276,7 +276,7 @@ for (const [where, set] of NAMED) {
       set(spec, b);
       const out = checkWith("table-board", spec.rules, spec);
       assert.equal(out.status, 2, `${where} = ${b}: ${out.stdout}${out.stderr}`);
-      assert.match(out.stderr, /cannot use the process file\n {2}\S/, `${where} = ${b}`);
+      assert.match(out.stderr, /cannot use the process file → \S+\n {2}\S/, `${where} = ${b}`);
       assert.doesNotMatch(out.stdout + out.stderr, /\n\s+at |TypeError|\[Function/, b);
     }
   });

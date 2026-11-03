@@ -438,5 +438,5 @@ test("board contract takes the id in any case and answers with the board's id", 
 test("board contract's usage says it takes a task id", () => {
   const res = board(repo(LINKED), "contract");
   assert.equal(res.status, 2);
-  assert.match(res.stderr, /^usage: contract <task id>/);
+  assert.match(res.stderr, /^✗ board contract: needs an id → board contract --help/);
 });

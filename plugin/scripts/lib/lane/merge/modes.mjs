@@ -2,6 +2,7 @@
 // repo check on the branch's tip, `--push` pushes main per `merge.push`, `--cleanup` takes the worktree
 // and branch down, found by branch.
 import { join } from "node:path";
+import { refuse, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { read as readLedger } from "../../process/ledger.mjs";
 import { cleanup, commitOf, isAncestor, push } from "../land.mjs";
@@ -29,37 +30,32 @@ function mergedLedger(lane, step) {
 
 export function check(lane) {
   const { root, spec, id, opts } = lane;
+  const no = (why, next) => refuse(`lane merge ${id} --check`, why, next);
   const value = opts["--check"];
   const at = value.lastIndexOf("=");
   const [skill, result] = at > 0 ? [value.slice(0, at), value.slice(at + 1)] : [value, ""];
   if (!CHECK_RESULTS.includes(result))
-    return { exit: 2, out: `--check takes <skill>=pass|fail, not "${value}"` };
+    return usageError("lane merge", `--check takes <skill>=pass|fail, not "${value}"`);
   const names = spec.extensions?.merge?.checks ?? [];
   if (!names.includes(skill)) {
     const named = names.length ? names.join(", ") : "none named";
-    return { exit: 2, out: `"${skill}" is not in extensions.merge.checks (${named})` };
+    return no(`"${skill}" is not in extensions.merge.checks (${named})`);
   }
   if (!skillExists(root, skill))
-    return {
-      exit: 2,
-      out: `extensions.merge.checks names "${skill}", but ${SKILL_DIR}/${skill}/SKILL.md is missing`,
-    };
+    return no(
+      `extensions.merge.checks names "${skill}", but ${SKILL_DIR}/${skill}/SKILL.md is missing`,
+    );
   let ledger;
   try {
     ledger = readLedger(root, id);
   } catch (error) {
-    return { exit: 2, out: error.message };
+    return no(error.message);
   }
-  if (!ledger)
-    return {
-      exit: 2,
-      out: `no ledger for ${id}: run lane merge ${id} --preflight [--branch <b>] first`,
-    };
+  if (!ledger) return no(`no ledger for ${id}`, `lane merge ${id} --preflight [--branch <b>]`);
   lane.ledger = ledger;
-  if (ledger.state === "merged")
-    return { exit: 2, out: `${id} is already landed; a check now changes nothing` };
+  if (ledger.state === "merged") return no(`${id} is already landed; a check now changes nothing`);
   const tip = tipOf(lane);
-  if (!tip) return { exit: 2, out: `${ledger.branch} is not a local branch any more` };
+  if (!tip) return no(`${ledger.branch} is not a local branch any more`);
   const note = opts["--note"];
   const entry = { result, ...(note !== undefined && { note }), tip, at: now() };
   save(lane, { checks: { ...(ledger.checks ?? {}), [skill]: entry } });

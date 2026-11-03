@@ -11,8 +11,18 @@
 import { apply, keepReason, plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
-export const usage = "sweep [--apply [--discard-ignored]] [--json]";
-export const flags = { "--apply": false, "--discard-ignored": false, "--json": false };
+export const help = {
+  usage: "sweep [--apply [--discard-ignored]] [--json]",
+  purpose: "Clean up after a session: finished lanes' worktrees and the processes left running.",
+  args: {},
+  flags: {
+    "--apply": "stop those processes and remove those worktrees (without it: only report)",
+    "--discard-ignored": "with --apply: also remove a worktree that holds ignored files",
+    "--json": "print the plan (and what --apply did) as one JSON object",
+  },
+  exits: { 0: "done or reported", 1: "--apply left a worktree or a process" },
+  example: "lane sweep --apply",
+};
 export const noSpec = true;
 
 export function run(argv, { root }) {

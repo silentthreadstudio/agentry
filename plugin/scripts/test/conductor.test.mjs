@@ -1,4 +1,4 @@
-// `board explain` and `board check` read `conductor.prompt` and `conductor.rules` against the repo: the
+// `board explain`, `check` and `status` read `conductor.prompt` and `conductor.rules` against the repo: the
 // prompt must be a file and hold the heading, found the way `rule apply` finds it. A miss is exit 2
 // naming the key. Run as a process on a copy of the synthetic table board.
 import assert from "node:assert/strict";
@@ -30,7 +30,7 @@ function repo(conductor, body) {
 
 const NUMBERED = "# Prompt\n\n## 10. Standing rules\n\n- one\n\n## Other\n";
 
-for (const sub of ["explain", "check"]) {
+for (const sub of ["explain", "check", "status"]) {
   test(`${sub}: a conductor.prompt that is not a file is exit 2 naming the key`, () => {
     const { root, cli } = repo({ prompt: "NOPE.md" }, null);
     try {

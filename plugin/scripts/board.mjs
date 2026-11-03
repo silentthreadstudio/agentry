@@ -10,4 +10,5 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 await main(process.argv.slice(2), {
   dir: join(HERE, "lib", "process", "cli"),
   defaultSub: "status",
+  name: "board",
 });

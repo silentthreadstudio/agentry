@@ -10,6 +10,7 @@
 // run(argv, { root }) -> { exit, out }
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { refuse } from "../../cli/help.mjs";
 import { ID_TOKEN, blockStarts, markdownFiles, repoMarkdown } from "../contract.mjs";
 import * as md from "../markdown.mjs";
 import { staysInside } from "../read.mjs";
@@ -17,8 +18,14 @@ import { fit } from "../render.mjs";
 import { escapesRoot } from "../spec.mjs";
 
 export const noSpec = true;
-export const usage = "scan [<dir>] [--json]";
-export const flags = { "--json": false };
+export const help = {
+  usage: "scan [<dir>] [--json]",
+  purpose: "Every board-like table, id-led block and frontmatter doc in the repo's markdown.",
+  args: { "<dir>": "narrow it to one directory (relative to the root), as it is on disk" },
+  flags: { "--json": "print the files found as one JSON array" },
+  exits: { 0: "printed", 2: "usage, or a <dir> outside the repository" },
+  example: "board scan docs/work --json",
+};
 const WIDTH = 100;
 const SAMPLE = 4;
 const OUTSIDE = "a symlink out of the repository; not read";
@@ -85,7 +92,7 @@ function render(all, dir) {
 export function run(argv, { root }) {
   const dir = argv.find((a) => !a.startsWith("--")) ?? "";
   if (escapesRoot(".", dir) || !staysInside(root, join(root, dir)))
-    return { exit: 2, out: `"${dir}" leaves the repository` };
+    return refuse("board scan", `"${dir}" leaves the repository`, "board scan");
   const found = scan(root, dir);
   return { exit: 0, out: argv.includes("--json") ? JSON.stringify(found) : render(found, dir) };
 }

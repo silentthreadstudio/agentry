@@ -127,7 +127,7 @@ test("add refuses bad input: no id, bad JSON, unknown kind or parent, unknown pl
   const root = copy("write");
   assert.match(addTask(root, { sprint: "A1" }).out, /needs an "id"/);
   assert.match(call(add, root, ["task", "--json", "{nope"]).out, /not valid JSON/);
-  assert.match(call(add, root, ["task"]).out, /usage/);
+  assert.match(call(add, root, ["task"]).out, /→ board add --help/);
   assert.match(addTask(root, { id: "W4" }, "story").out, /unknown kind "story"/);
   assert.match(addTask(root, { id: "W4", sprint: "Z9" }).out, /sprint "Z9" is not on the board/);
   assert.match(addTask(root, { id: "S1" }, "sprint").out, /no "create"/);
@@ -156,7 +156,10 @@ test("add refuses a create target that is missing or a dangling symlink, naming 
       result = addTask(root, { id: "W4", sprint: "A1", note: "Fourth" });
     });
     assert.equal(result.exit, 2);
-    assert.match(result.out, /^cannot read .*board\/TASKS\.md \(ENOENT\); nothing written$/);
+    assert.match(
+      result.out,
+      /^✗ board add: cannot read .*board\/TASKS\.md \(ENOENT\); nothing written$/,
+    );
     assert.equal(text(root, "board/BOARD.md"), before);
   }
 });
@@ -173,7 +176,7 @@ test("add reads a field named like a built-in from the given JSON only", () => {
   const model = readProcess({ root, spec });
   const result = add(["task", "--json", '{"id":"W4","note":"x"}'], { root, spec, model });
   assert.equal(result.exit, 2);
-  assert.match(result.out, /^toString "" is not on the board$/);
+  assert.match(result.out, /^✗ board add: toString "" is not on the board$/);
 });
 
 test("add on table-board, then check: findings are unchanged", () => {
@@ -290,7 +293,7 @@ test("set refuses an unknown status, field, item and an id column", () => {
   assert.match(call(set, root, ["task", "W3", "status=finished"]).out, /not a task status/);
   assert.match(call(set, root, ["task", "W3", "owner=me"]).out, /no field "owner"/);
   assert.match(call(set, root, ["task", "W9", "status=done"]).out, /no task "W9"/);
-  assert.match(call(set, root, ["task", "W3"]).out, /usage/);
+  assert.match(call(set, root, ["task", "W3"]).out, /→ board set --help/);
   assert.equal(call(set, root, ["task", "W3", "status=nope"]).exit, 2);
   assert.equal(text(root, "board/BOARD.md"), before);
   const tb = copy("table-board");

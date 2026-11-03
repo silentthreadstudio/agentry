@@ -377,7 +377,7 @@ test("every refusal is exit 2 and writes nothing", () => {
       ["lifecycle", "merged", "T9", "--sha", shas[0], "--summary", "x"],
       /no task "T9" on the board/,
     ],
-    [["lifecycle", "built"], /usage: lifecycle/],
+    [["lifecycle", "built"], /board lifecycle: needs <event> <id> → board lifecycle --help/],
     [["lifecycle", "built", "T1", "--summary", "a", "--summary", "b"], /--summary is given twice/],
     [["lifecycle", "built", "T1", "--sha"], /--sha needs a value/],
     [["lifecycle", "built", "T1", "--shas", "x"], /unknown option "--shas"/],

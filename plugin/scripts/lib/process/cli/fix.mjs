@@ -13,6 +13,7 @@
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = nothing left for the owner, 1 = items left
 // to report, 2 = usage
 import { basename } from "node:path";
+import { usageError } from "../../cli/help.mjs";
 import { mainRoot } from "../../lane/worktree.mjs";
 import { accepted, mechanical, nudges } from "../drift.mjs";
 import { applyEvent } from "../lifecycle.mjs";
@@ -21,8 +22,19 @@ import { wrapText } from "../render.mjs";
 import { titleOf } from "../status.mjs";
 import { WriteError } from "../write.mjs";
 
-export const usage = "fix [--dry-run] [--accept <id>] [--json]";
-export const flags = { "--dry-run": false, "--accept": true, "--json": false };
+export const help = {
+  usage: "fix [--dry-run] [--accept <id>] [--json]",
+  purpose:
+    "Write the board cells a lane merge record proves (done, commit, handoff); list the rest.",
+  args: {},
+  flags: {
+    "--dry-run": "write nothing; say what it would fix",
+    "--accept <id>": "a task the owner says was merged by hand: fix it while its commits hold",
+    "--json": "print { dryRun, fixed, left, nudges } as one JSON object",
+  },
+  exits: { 0: "nothing left for the owner", 1: "items left for the owner", 2: "usage" },
+  example: "board fix --accept T-4",
+};
 const WIDTH = 80;
 
 // The id `--accept` names: undefined when it is not given, null when it is given without one.
@@ -45,7 +57,7 @@ const narrowed = (spec, need) => ({
 export function run(argv, { root, spec, model }) {
   const dryRun = argv.includes("--dry-run");
   const id = acceptOf(argv);
-  if (id === null) return { exit: 2, out: `--accept needs a task id\nusage: ${usage}` };
+  if (id === null) return usageError("board fix", "--accept needs a task id");
   const runRoot = mainRoot(root) ?? root;
   const plan = mechanical({ root, runRoot, spec, model });
   if (id !== undefined && !plan.fixes.some((f) => f.id === id)) {

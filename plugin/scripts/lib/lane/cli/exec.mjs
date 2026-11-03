@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
+import { flagsOf, say, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
@@ -51,8 +52,27 @@ import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = join(HERE, "..", "..", "..", "lane.mjs");
 const STEPS = ["start", "report", "verdict", "gate", "close", "show"];
-export const usage = `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>]`;
-export const flags = { "--agent": true, "--episode": true };
+export const help = {
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>]`,
+  purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints JSON.",
+  args: {
+    start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
+    report: "read the builder's report, run the guards, brief the next round",
+    verdict: "read the verifier's report, write the verdict, brief the next round",
+    gate: "run the repo's gate in the worktree and record it",
+    close: "print the episode payload (--episode stamps the id episode_write gave)",
+    show: "the ledger and the pending step, for a cold resume",
+    "<id>": "the task's id, as the board writes it",
+  },
+  flags: {
+    "--agent <agent id>":
+      "report and verdict: the agent that answered, so a later round resumes it",
+    "--episode <episode id>": "close: the id episode_write returned",
+  },
+  exits: { 0: "next printed", 1: "the lane stopped, or the gate is red", 2: "usage or refusal" },
+  example: "lane exec start T-4",
+};
+const flags = flagsOf(help);
 const FLAG_OF = { report: "--agent", verdict: "--agent", close: "--episode" };
 
 class Refusal extends Error {}
@@ -80,27 +100,30 @@ function parse(argv) {
     if (value === undefined || value.startsWith("--")) return { error: `${flag} needs a value` };
   }
   const [step, id, ...rest] = words;
-  if (!STEPS.includes(step) || !id || rest.length) return { error: `usage: ${usage}` };
+  if (!STEPS.includes(step) || !id || rest.length)
+    return { error: `needs <${STEPS.join("|")}> <id>` };
   if (flag && FLAG_OF[step] !== flag) return { error: `${step} takes no ${flag}` };
   return { step, id, value };
 }
 
 export function run(argv, ctx) {
   const { step, id, value, error } = parse(argv);
-  if (error) return { exit: 2, out: error };
+  if (error) return usageError("lane exec", error);
+  const what = `lane exec ${step} ${id}`;
   const problem = idProblem(id);
-  if (problem) return { exit: 2, out: problem };
+  if (problem) return usageError("lane exec", problem);
   const root = realpathSync(ctx.root);
   const main = mainRoot(root);
   if (!main || realpathSync(main) !== root)
     return {
       exit: 2,
-      out: `lane exec runs from the main checkout: pass --root ${main ?? "<the repository>"}`,
+      out: say(what, `runs from the main checkout: pass --root ${main ?? "<the repository>"}`),
     };
   try {
     return HANDLERS[step]({ ...ctx, root }, id, value);
   } catch (e) {
-    if (e instanceof Refusal || e instanceof WriteError) return { exit: 2, out: e.message };
+    if (e instanceof Refusal || e instanceof WriteError)
+      return { exit: 2, out: say(what, e.message) };
     throw e;
   }
 }

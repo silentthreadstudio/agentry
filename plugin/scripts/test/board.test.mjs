@@ -71,12 +71,15 @@ test("--why <id> works on check and on status; an unknown id is exit 2", () => {
 
 test("a built-in name (constructor, toString) is no kind, field or item to the subcommands", () => {
   const cases = [
-    [["check", "--why", "constructor"], /^no item "constructor" on the board/],
-    [["next-id", "constructor"], /^usage: next-id <kind>/],
-    [["set", "toString", "W1", "status=done"], /^unknown kind "toString"/],
-    [["set", "task", "W1", "constructor=x"], /^task has no field "constructor"/],
-    [["set", "task", "W1", "status=hasOwnProperty"], /^"hasOwnProperty" is not a task status/],
-    [["add", "toString", "--json", '{"id": "Z1"}'], /^unknown kind "toString"/],
+    [["check", "--why", "constructor"], /^✗ --why constructor: no item "constructor" on the board/],
+    [["next-id", "constructor"], /^✗ board next-id: unknown kind "constructor"/],
+    [["set", "toString", "W1", "status=done"], /^✗ board set: unknown kind "toString"/],
+    [["set", "task", "W1", "constructor=x"], /^✗ board set: task has no field "constructor"/],
+    [
+      ["set", "task", "W1", "status=hasOwnProperty"],
+      /^✗ board set: "hasOwnProperty" is not a task status/,
+    ],
+    [["add", "toString", "--json", '{"id": "Z1"}'], /^✗ board add: unknown kind "toString"/],
   ];
   for (const [args, expected] of cases) {
     const out = run("table-board", ...args);
@@ -131,7 +134,7 @@ test("scan never reads through a symlink out of the repository", () => {
     symlinkSync(outside, join(root, "lnk"));
     const dir = cli("scan", "lnk");
     assert.equal(dir.status, 2);
-    assert.match(dir.stderr, /^"lnk" leaves the repository/);
+    assert.match(dir.stderr, /^✗ board scan: "lnk" leaves the repository/);
     assert.doesNotMatch(dir.stdout + dir.stderr, /SECRET|Secret/);
     // git lists a tracked symlink like a file: it is listed as skipped, never read.
     symlinkSync(join(outside, "secret.md"), join(root, "docs", "leak.md"));
@@ -213,7 +216,10 @@ test("usage and process-file errors are exit 2, on stderr", () => {
   assert.match(unknown.stderr, /unknown subcommand "frobnicate" \(subcommands: .*check.*\)/);
   const broken = run("broken", "check");
   assert.equal(broken.status, 2);
-  assert.match(broken.stderr, /cannot use the process file\n {2}kinds\.task\.fields\.deps\.type/);
+  assert.match(
+    broken.stderr,
+    /cannot use the process file → \/agentry:init\n {2}kinds\.task\.fields\.deps\.type/,
+  );
   const root = join(FIXTURES, "table-board");
   const empty = mkdtempSync(join(tmpdir(), "agentry-board-"));
   try {
@@ -228,7 +234,7 @@ test("usage and process-file errors are exit 2, on stderr", () => {
       assert.equal(res.status, 2, sub);
       assert.match(
         res.stderr,
-        /cannot use the process file\n {2}kinds should name at least one kind/,
+        /cannot use the process file → \/agentry:init\n {2}kinds should name at least one kind/,
       );
       assert.doesNotMatch(res.stderr, /TypeError|\.mjs:\d+/, "a problem, not a stack");
     }
@@ -242,7 +248,7 @@ test("usage and process-file errors are exit 2, on stderr", () => {
   }
   const missing = spawnSync("node", [BOARD, "check", "--root", root], { encoding: "utf8" });
   assert.equal(missing.status, 2);
-  assert.match(missing.stderr, /run \/agentry:init/);
+  assert.match(missing.stderr, /no process file here → \/agentry:init/);
 });
 
 test("scan needs no process file and lists every table with its row count", () => {
@@ -257,12 +263,15 @@ test("scan needs no process file and lists every table with its row count", () =
 
 test("an option the subcommand does not take is a usage error with its usage line", () => {
   const cases = [
-    [["check", "--bogus"], /^unknown option "--bogus"\nusage: check \[--json\] \[--why <id>\]\n$/],
-    [["--bogus"], /^unknown option "--bogus"\nusage: status /],
-    [["scan", "--bogus"], /^unknown option "--bogus"\nusage: scan /],
-    [["explain", "--why", "W3"], /^unknown option "--why"\nusage: explain \[--json\]/],
-    [["set", "task", "W1", "status=done", "--force"], /^unknown option "--force"\nusage: set /],
-    [["check", "--json=yes"], /^--json takes no value\nusage: check /],
+    [["check", "--bogus"], /^✗ board check: unknown option "--bogus" → board check --help\n$/],
+    [["--bogus"], /^✗ board status: unknown option "--bogus" → board status --help/],
+    [["scan", "--bogus"], /^✗ board scan: unknown option "--bogus" → board scan --help/],
+    [["explain", "--why", "W3"], /^✗ board explain: unknown option "--why" → board explain --help/],
+    [
+      ["set", "task", "W1", "status=done", "--force"],
+      /^✗ board set: unknown option "--force" → board set --help/,
+    ],
+    [["check", "--json=yes"], /^✗ board check: --json takes no value → board check --help/],
   ];
   for (const [args, expected] of cases) {
     const out = run("table-board", ...args);
@@ -282,7 +291,7 @@ test("--flag=value reads as --flag value, the router's options included", () => 
   assert.equal(out.status, 0, out.stderr);
   const empty = spawnSync("node", [BOARD, "check", "--root="], { encoding: "utf8" });
   assert.equal(empty.status, 2);
-  assert.match(empty.stderr, /^--root needs a value/);
+  assert.match(empty.stderr, /^✗ board: --root needs a value → board --help/);
 });
 
 test("--why with no id is a usage error, not a plain run", () => {
@@ -290,7 +299,7 @@ test("--why with no id is a usage error, not a plain run", () => {
     for (const args of [["--why"], ["--why", "--json"]]) {
       const out = run("evidence-board", sub, ...args);
       assert.equal(out.status, 2, `${sub} ${args}`);
-      assert.match(out.stderr, /^usage: (check|status) .*--why <id>/, sub);
+      assert.match(out.stderr, /^✗ board (check|status): --why needs an id → board \1 --help/);
     }
 });
 

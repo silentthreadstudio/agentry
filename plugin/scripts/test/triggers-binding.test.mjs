@@ -9,7 +9,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { usage as draftUsage } from "../lib/process/cli/draft.mjs";
+import { help as draftHelp } from "../lib/process/cli/draft.mjs";
 import { appendLine } from "../lib/process/write.mjs";
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -70,7 +70,7 @@ test("the block and the agent name the same Agentry commands, apart from the age
 });
 
 test("the draft step names `board draft add`, and the board CLI has it", () => {
-  assert.match(draftUsage, /^draft add\b/);
+  assert.match(draftHelp.usage[0], /^draft add\b/);
   assert.match(AGENT, /`board draft add`/);
   assert.match(BLOCK, /`\/agentry:board draft add`/);
   assert.match(read("commands", "board.md"), /draft list\|add/);

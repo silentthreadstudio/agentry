@@ -12,6 +12,7 @@
 //
 // run(argv, { root, spec, model }) -> { exit, out }
 import { join, relative } from "node:path";
+import { usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
 import { run as fix } from "../../process/cli/fix.mjs";
@@ -23,8 +24,17 @@ import { forThisRepo, primeLimitOf } from "../brief.mjs";
 import { plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
-export const usage = "session <start|close> [--json]";
-export const flags = { "--json": false };
+export const help = {
+  usage: "session <start|close> [--json]",
+  purpose: "What opening or ending a session needs, in one read. Writes nothing.",
+  args: {
+    start: "prompt, mode, status, recall, open questions, lanes (40 lines, or --json)",
+    close: "drafts, the board fix plan, ledgers, the sweep plan, pending episodes (always JSON)",
+  },
+  flags: { "--json": "print start as one JSON object (close always is)" },
+  exits: { 0: "printed", 2: "usage, or a process file it cannot use" },
+  example: "lane session start",
+};
 const WIDTH = 80;
 const MAX_LINES = 40;
 const MAX_LIST = 4; // lines one list may take
@@ -157,7 +167,8 @@ function renderStart(s, { name, root }) {
 
 export function run(argv, ctx) {
   const [sub, ...rest] = argv.filter((a) => a !== "--json");
-  if (!["start", "close"].includes(sub) || rest.length) return { exit: 2, out: `usage: ${usage}` };
+  if (!["start", "close"].includes(sub) || rest.length)
+    return usageError("lane session", "needs start or close");
   const data = sub === "start" ? start(ctx) : closing(ctx);
   if (argv.includes("--json") || sub === "close") return { exit: 0, out: JSON.stringify(data) };
   return { exit: 0, out: renderStart(data, { name: ctx.spec.name, root: ctx.root }) };

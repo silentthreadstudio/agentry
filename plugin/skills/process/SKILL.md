@@ -14,8 +14,11 @@ The split is fixed: **judgment in the session, every claim checked by the script
 ## The CLI
 
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs" <sub> [--root <git root>] [--process <file>] [--json]`.
-The process file defaults to `<git root>/.agentry/process.json`. Exit 0 = OK, 1 = findings, 2 = usage or
-spec error (including a missing process file: point to `/agentry:init`).
+The process file defaults to `<git root>/.agentry/process.json`. Exit 0 = OK, 1 = findings, stopped or
+needs the owner, 2 = refused, usage or bad config (including a missing process file: point to
+`/agentry:init`); `lane.mjs` means the same. An error is one line, `✗ <what>: <why> → <next command>`.
+`board <sub> --help` (and `lane <sub> --help`) prints the usage, purpose, args, flags, exit codes and an
+example; `board --help` lists every subcommand.
 
 | Sub | Does | Writes |
 | :--- | :--- | :--- |

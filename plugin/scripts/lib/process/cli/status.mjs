@@ -1,24 +1,43 @@
 // board status [--json] [--why <id>] — the derived view (plan F13 §3.5): what is in flight, what waits
 // on the owner, what is blocked and ahead, then the findings. Also what `board.mjs` runs with no
-// subcommand. Writes nothing. Exit 0 = OK, 1 = findings.
+// subcommand. Writes nothing. Exit 0 = OK, 1 = findings, 2 = a conductor key it cannot use (as
+// `board check`).
 //
 // run(argv, { root, processPath, spec, model }) -> { exit, out }
 import { relative } from "node:path";
+import { usageError } from "../../cli/help.mjs";
 import { mainRoot } from "../../lane/worktree.mjs";
+import { refuseConductor } from "../conductor.mjs";
 import { renderStatus, why } from "../render.mjs";
 import { boardReport, statusView, workKind } from "../status.mjs";
 
-export const usage = "status [--json] [--why <id>]";
-export const flags = { "--json": false, "--why": true };
+export const help = {
+  usage: "status [--json] [--why <id>]",
+  purpose: "The derived view: in flight, on the owner, blocked, ahead, drift, then the findings.",
+  args: {},
+  flags: {
+    "--json": "print the report and the view as one JSON object",
+    "--why <id>": "one item of any kind (task, sprint, decision…): each rule failing or holding",
+  },
+  exits: {
+    0: "no findings",
+    1: "findings",
+    2: "usage, an id not on the board, or a process file or conductor key it cannot use",
+  },
+  example: "board status --json",
+};
 const tty = () => Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
 const clock = () => new Date().toTimeString().slice(0, 5);
 
 export function run(argv, { root, processPath, spec, model }) {
+  const refused = refuseConductor(root, spec, processPath);
+  if (refused) return refused;
   const report = boardReport({ root, spec, model });
   const exit = report.ok ? 0 : 1;
   const at = argv.indexOf("--why");
   const id = argv[at + 1];
-  if (at >= 0 && (!id || id.startsWith("--"))) return { exit: 2, out: `usage: ${usage}` };
+  if (at >= 0 && (!id || id.startsWith("--")))
+    return usageError("board status", "--why needs an id");
   if (at >= 0) return why({ spec, model, report, id, tty: tty() });
   const view = statusView({ root, spec, model, runRoot: mainRoot(root) ?? root });
   if (argv.includes("--json")) return { exit, out: JSON.stringify({ ...report, status: view }) };
