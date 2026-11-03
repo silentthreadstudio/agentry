@@ -200,6 +200,37 @@ test("each newer key that is set shows a row with what it matches; an unset one 
   }
 });
 
+test("briefs and commits rows say what is set, and are absent when the keys are", () => {
+  const { root, board, lanes } = repo({
+    briefs: { build: ["a", "b"], verify: ["c"] },
+    commits: { subjectMax: 72, subjectPattern: "^feat", forbid: ["^Co-Authored-By:"] },
+  });
+  try {
+    const rows = lanes();
+    assert.equal(rows.briefs.value, "build 2 lines · verify 1 line");
+    assert.equal(rows.commits.value, "subject ≤ 72 · pattern · 1 forbid");
+    assert.equal(rows.briefs.ok, true);
+    assert.match(board("explain").stdout, /^✓ +briefs +build 2 lines · verify 1 line$/m);
+    assert.match(board("explain").stdout, /^✓ +commits +subject ≤ 72 · pattern · 1 forbid$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+  const part = repo({ briefs: { verify: ["c"] }, commits: { forbid: ["x", "y"] } });
+  try {
+    assert.equal(part.lanes().briefs.value, "verify 1 line");
+    assert.equal(part.lanes().commits.value, "2 forbid");
+  } finally {
+    rmSync(part.root, { recursive: true, force: true });
+  }
+  const bare = repo();
+  try {
+    assert.equal(bare.lanes().briefs, undefined);
+    assert.equal(bare.lanes().commits, undefined);
+  } finally {
+    rmSync(bare.root, { recursive: true, force: true });
+  }
+});
+
 test("a long guard.allow list is cut in its globs, never in its count", () => {
   const globs = ["notes/**", ...Array.from({ length: 8 }, (_, i) => `some/long/dir-${i}/**`)];
   const { root, board } = repo({ guard: { allow: globs } });

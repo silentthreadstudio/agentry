@@ -126,10 +126,26 @@ function workflowFile(root, spec, path) {
   };
 }
 
+// `build 2 lines · verify 1 line`: the roles that set policy lines, with how many.
+const briefsValue = (briefs) =>
+  ["build", "verify"]
+    .filter((role) => briefs[role])
+    .map((role) => `${role} ${count(briefs[role].length, "line")}`)
+    .join(" · ") || "no lines";
+// `subject ≤ 72 · pattern · 1 forbid`: each commit rule that is set.
+const commitsValue = ({ subjectMax, subjectPattern, forbid }) =>
+  [
+    subjectMax !== undefined && `subject ≤ ${subjectMax}`,
+    subjectPattern !== undefined && "pattern",
+    forbid && `${forbid.length} forbid`,
+  ]
+    .filter(Boolean)
+    .join(" · ") || "no rules";
+
 // The newer keys, one row each when set (an unset one is no lane to wire, so no row), each with what it
 // matches here (the count first, so a long glob list cuts the globs, not the count): the kept worktrees, the tracked files a guard glob lets through, the flaky names.
 function keys({ root, spec }) {
-  const { worktrees: wt, guard, cleanup, gate } = spec;
+  const { worktrees: wt, guard, cleanup, gate, briefs, commits } = spec;
   const allowed = guard?.allow.flatMap((glob) => trackedFiles(root, glob) ?? []);
   const rows = [
     wt?.keep && [
@@ -143,6 +159,8 @@ function keys({ root, spec }) {
     cleanup && ["cleanup.disposable", cleanup.disposable.join(", ")],
     gate?.flaky && ["gate.flaky", count(gate.flaky.length, "name")],
     gate?.concurrency !== undefined && ["gate.concurrency", count(gate.concurrency, "slot")],
+    briefs && ["briefs", briefsValue(briefs)],
+    commits && ["commits", commitsValue(commits)],
   ];
   return rows.filter(Boolean).map(([lane, value]) => ({ lane, ok: true, value, set: INIT }));
 }

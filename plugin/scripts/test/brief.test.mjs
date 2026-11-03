@@ -14,6 +14,7 @@ import {
   fill,
   notesSection,
   ownedFiles,
+  policySlots,
   recalledFacts,
   relatedNotes,
   renderBrief,
@@ -489,6 +490,9 @@ const VALUES = {
   pickedNotes: "",
   builderReport: "/m/r1.report.md",
   earlier: "/m/r2.report.md",
+  // the repo's policy lines (policySlots)
+  policy: false,
+  policyLines: "",
   // a contract built in steps (stepSlots): off unless a test turns a section on
   stepped: false,
   thisRun: "",
@@ -551,6 +555,67 @@ test("every template uses only the slots the CLI fills, and renders with none le
       /No command other than the gate may run longer than 10 minutes: give an engine, server, simulator or\n {2}watcher you start a time limit/,
       step,
     );
+});
+
+const POLICY_HEAD = "## Repo policy (overrides the contract where they differ)";
+const BUILDER_STEPS = ["build", "fix", "needs-context", "continue"];
+const VERIFIER_STEPS = ["verify", "recheck", "final"];
+
+test("policySlots gives each role its own lines as bullets, and nothing for a role with no list", () => {
+  const spec = { briefs: { build: ["Use pnpm.", "No `npm`."], verify: ["Read the changelog."] } };
+  for (const step of BUILDER_STEPS)
+    assert.deepEqual(policySlots(spec, step), {
+      policy: true,
+      policyLines: "- Use pnpm.\n- No `npm`.",
+    });
+  for (const step of VERIFIER_STEPS)
+    assert.deepEqual(policySlots(spec, step), {
+      policy: true,
+      policyLines: "- Read the changelog.",
+    });
+  const none = { policy: false, policyLines: "none" };
+  assert.deepEqual(policySlots({}, "build"), none);
+  assert.deepEqual(policySlots({ briefs: {} }, "verify"), none);
+  assert.deepEqual(policySlots({ briefs: { verify: ["a"] } }, "build"), none);
+  assert.deepEqual(policySlots({ briefs: { build: ["a"] } }, "final"), none);
+});
+
+test("the policy section is in every builder and verifier brief, after the contract, and in none without lines", () => {
+  const spec = { briefs: { build: ["Use pnpm."], verify: ["Read the changelog."] } };
+  const given = (step) => ({ ...VALUES, ...policySlots(spec, step), related: true, notes: "- n" });
+  for (const step of [...BUILDER_STEPS, ...VERIFIER_STEPS]) {
+    const text = renderBrief(step, given(step));
+    const line = BUILDER_STEPS.includes(step) ? "- Use pnpm." : "- Read the changelog.";
+    assert.equal(text.split(POLICY_HEAD).length, 2, `${step} has the section once`);
+    assert.ok(
+      text.indexOf("owns `a.txt`") < text.indexOf(POLICY_HEAD),
+      `${step}: after the contract`,
+    );
+    assert.ok(text.indexOf("Later notes") < text.indexOf(POLICY_HEAD), `${step}: after the notes`);
+    assert.ok(text.indexOf(POLICY_HEAD) < text.indexOf("Owned files:"), step);
+    assert.ok(
+      text.includes(`${POLICY_HEAD}\n\n${line}\n\nOwned files:`),
+      `${step}: one bullet per line`,
+    );
+    assert.doesNotMatch(text, /\{\{/, step);
+    // the other role's line is not here
+    assert.doesNotMatch(text, BUILDER_STEPS.includes(step) ? /changelog/ : /Use pnpm/, step);
+  }
+  // A role whose list is absent gets no section, even when the other role's list is set.
+  for (const step of BUILDER_STEPS)
+    assert.doesNotMatch(
+      renderBrief(step, { ...VALUES, ...policySlots({ briefs: { verify: ["v"] } }, step) }),
+      /Repo policy/,
+      step,
+    );
+  for (const step of [...BUILDER_STEPS, ...VERIFIER_STEPS])
+    assert.doesNotMatch(renderBrief(step, VALUES), /Repo policy/, `${step} with no briefs key`);
+});
+
+test("a policy line is printed as written: a slot name, backticks and a pipe are not read", () => {
+  const spec = { briefs: { build: ["Keep {{id}} and {{block}} as `a | b`, 100% of $1 \\n"] } };
+  const text = renderBrief("fix", { ...VALUES, ...policySlots(spec, "fix"), fail: true });
+  assert.ok(text.includes("- Keep {{id}} and {{block}} as `a | b`, 100% of $1 \\n\n"));
 });
 
 test("the brief rules are in the templates: cd prefix, foreground checks, logs, no rebase, gate, probes", () => {

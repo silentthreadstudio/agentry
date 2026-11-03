@@ -7,7 +7,8 @@
 //   build / fix: DONE, and the report says to skip the verifier (exec.verify) and a gate is configured
 //                                           → gate (green on this tip) → close: the gate stands in for the verifier
 //   build / fix: main touched (any status)  → stop
-//   build / fix: uncommitted files or no commits past base → fix (resume) with the reason; twice → stop
+//   build / fix: uncommitted files, no commits past base, or a commit that breaks the workflow file's
+//                `commits` rules                    → fix (resume) with the reason; twice → stop
 //   build / fix: NEEDS_CONTEXT              → needs-context (resume) once, then stop
 //   build / fix: BLOCKED                    → stop; no status line → resend once, then stop
 //   verify / recheck / final: tip moved     → recheck: the verdict is void (no rebase while one reads);
@@ -185,7 +186,7 @@ const resend = (ledger, round, reason) =>
  * round to send next (pass it to `addRound` with the brief rendered for it). Throws on an event the
  * ledger does not expect (out of order).
  *
- *   { type: "report", status, report, agent?, summary?, guards: { mainTouched?, dirty?, commits? },
+ *   { type: "report", status, report, agent?, summary?, guards: { mainTouched?, dirty?, commits?, subjects?: [{ sha, subject, why }] },
  *     skipVerify?: true (exec.verify routes this item past the verifier), tip, gate: true | false, at }
  *   { type: "verdict", verdict, report, agent?, summary?, tip, gate: true | false (one configured) }
  *   { type: "gate", record }   (recorded at any time; decides only when the gate is the next step)
@@ -223,6 +224,19 @@ function inRun(ledger, res) {
     return res;
   const run = builders(ledger).at(-1)?.stepRun;
   return run ? { ...res, dispatch: { ...d, stepRun: run } } : res;
+}
+
+// One trip line per commit that breaks a `commits` rule, at most SUBJECT_TRIPS, then how many more.
+const SUBJECT_TRIPS = 5;
+function subjectTrips(broken = []) {
+  const lines = broken
+    .slice(0, SUBJECT_TRIPS)
+    .map(
+      (c) =>
+        `commit ${short(c.sha)} "${c.subject}": ${c.why} → reword it on the branch (git commit --amend for the tip, or a rebase with exec, no -i)`,
+    );
+  if (broken.length > SUBJECT_TRIPS) lines.push(`+${broken.length - SUBJECT_TRIPS}`);
+  return lines;
 }
 
 const sameRun = (a, b) => a?.[0] === b?.[0] && a?.[1] === b?.[1];
@@ -264,6 +278,7 @@ function onReport(ledger, round, event) {
   if (guards.dirty?.length)
     trips.push(`uncommitted files in the worktree: ${guards.dirty.slice(0, 10).join(", ")}`);
   if (guards.commits === 0) trips.push("no commits past base");
+  trips.push(...subjectTrips(guards.subjects));
   // A run past step 1, or one the owner sent back (any run), must add a commit since it began.
   const from = round.stepRun?.[0];
   const begun = from && !verdicts(ledger).length ? runStart(ledger, round) : null;

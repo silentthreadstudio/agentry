@@ -131,6 +131,60 @@ test("uncommitted files or no commits past base → fix (resume) with the reason
   }
 });
 
+const broken = (n) =>
+  Array.from({ length: n }, (_, i) => ({
+    sha: `${(i + 1).toString(16).padStart(2, "0")}${"c".repeat(38)}`,
+    subject: `subject ${i + 1}`,
+    why: "subject is 81 chars (commits.subjectMax 72)",
+  }));
+
+test("a commit that breaks a commits rule → fix (resume) with its reason; the same again → stop; a reworded one goes on", () => {
+  const bad = { ...ok, subjects: broken(1) };
+  const first = go(lane(), report("DONE", bad, { agent: "b" }));
+  assert.equal(first.next, "fix");
+  const round = first.ledger.rounds.at(-1);
+  assert.deepEqual([round.role, round.mode, round.guard], ["build", "resume", true]);
+  assert.equal(
+    round.reason,
+    'commit 01ccccc "subject 1": subject is 81 chars (commits.subjectMax 72) → reword it on the branch (git commit --amend for the tip, or a rebase with exec, no -i)',
+  );
+  assert.deepEqual(first.ledger.rounds[0].guards, [round.reason]);
+  const again = go(first.ledger, report("DONE", bad));
+  assert.equal(again.next, "stop");
+  assert.match(again.reason, /again after a fix for it/);
+  // The fix rewords the subject: the lane goes on to the verifier.
+  assert.equal(go(first.ledger, report("DONE", { ...ok, subjects: [] })).next, "verify");
+  assert.equal(go(lane(), report("DONE", { ...ok, subjects: undefined })).next, "verify");
+});
+
+test("a dirty worktree and a bad subject are named together in one fix round", () => {
+  const res = go(lane(), report("DONE", { dirty: [" M a.txt"], commits: 1, subjects: broken(1) }));
+  assert.equal(res.next, "fix");
+  const trips = res.ledger.rounds[0].guards;
+  assert.equal(trips.length, 2);
+  assert.match(trips[0], /uncommitted files in the worktree/);
+  assert.match(trips[1], /^commit 01ccccc "subject 1": /);
+  assert.equal(res.ledger.rounds.length, 2, "one fix round");
+});
+
+test("30 broken commits give one fix round listing 5 of them, then +25", () => {
+  const res = go(lane(), report("DONE", { ...ok, subjects: broken(30) }));
+  assert.equal(res.next, "fix");
+  const trips = res.ledger.rounds[0].guards;
+  assert.equal(trips.length, 6);
+  assert.deepEqual(
+    trips.slice(0, 5).map((t) => t.slice(0, 18)),
+    ["01", "02", "03", "04", "05"].map((n) => `commit ${n}ccccc "su`),
+  );
+  assert.equal(trips[5], "+25");
+  assert.equal(res.ledger.rounds.length, 2);
+  // exactly 5 broken: no +N line
+  assert.equal(
+    go(lane(), report("DONE", { ...ok, subjects: broken(5) })).ledger.rounds[0].guards.length,
+    5,
+  );
+});
+
 test("NEEDS_CONTEXT → needs-context once (resume), then stop", () => {
   const first = go(lane(), report("NEEDS_CONTEXT", { dirty: [], commits: 0 }, { agent: "b" }));
   assert.equal(first.next, "needs-context");

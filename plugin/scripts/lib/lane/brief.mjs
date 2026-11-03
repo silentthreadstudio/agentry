@@ -21,6 +21,7 @@
 //                   never another project's
 //   stepSlots       the slots a contract with steps fills: the round's run, the owner's answer a
 //                   `continue` round carries, the approvals a verifier is told of (all off without steps)
+//   policySlots     the repo's policy lines (workflow file `briefs`) for a dispatch, as the brief's section
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
 //
 // Reads the board's files and the memory store; writes nothing. Node built-ins only.
@@ -514,6 +515,15 @@ export function renderBrief(step, values) {
   if (!name) throw new Error(`no brief template for step "${step}"`);
   const inner = Object.hasOwn(WRAPS, name) ? body(fill(read(WRAPS[name]), values)) : "";
   return fill(read(name), { ...values, inner });
+}
+
+/** The repo-policy slots for dispatch `step`: the workflow file's `briefs` list for its role (`build` for a
+ *  builder's step, `verify` for a verifier's), each line a bullet, printed as written. No list, no section. */
+export function policySlots(spec, step) {
+  const name = Object.hasOwn(TEMPLATE_OF, step) ? TEMPLATE_OF[step] : null;
+  const role = name === "build" || name === "fix" ? "build" : "verify";
+  const lines = own(own(spec, "briefs"), role) ?? [];
+  return { policy: lines.length > 0, policyLines: bullets(lines) };
 }
 
 const NOT_THIS_ROUND_WIDTH = 100;

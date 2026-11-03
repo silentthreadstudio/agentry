@@ -34,6 +34,9 @@ export const specOf = (c) => ({
 
 const gate = (g) => ({ workflow: { gate: g } });
 const life = (write) => ({ workflow: { lifecycle: { kind: "task", on: {}, write } } });
+const briefs = (b) => ({ workflow: { briefs: b } });
+const commits = (c) => ({ workflow: { commits: c } });
+const lines = (n) => Array.from({ length: n }, (_, i) => `line ${i + 1}`);
 const checks = (c) => ({ workflow: { extensions: { merge: { checks: c } } } });
 
 // BASE with a commits field `commit` carrying `join`.
@@ -103,6 +106,20 @@ export const PROCESS_CASES = [
     },
   },
   { name: "a lifecycle status write", ...life({ status: "status" }) },
+  { name: "build policy lines", ...briefs({ build: ["Use pnpm.", "Run `make lint` | `{{id}}`"] }) },
+  { name: "verify policy lines", ...briefs({ verify: ["Check the changelog."] }) },
+  { name: "both policy lists", ...briefs({ build: ["a"], verify: ["b"] }) },
+  { name: "an empty briefs block", ...briefs({}) },
+  { name: "twenty policy lines", ...briefs({ build: lines(20) }) },
+  { name: "an empty commits block", ...commits({}) },
+  {
+    name: "every commits rule",
+    ...commits({
+      subjectMax: 72,
+      subjectPattern: "^(feat|fix): .+",
+      forbid: ["^Co-Authored-By:", "x"],
+    }),
+  },
   // bad: join
   { name: "an empty join", ...joined(""), bad: [JOIN] },
   { name: "a join with a letter", ...joined("x"), bad: [JOIN] },
@@ -351,6 +368,55 @@ export const PROCESS_CASES = [
     ...life({ handoff: "handoff" }),
     bad: ["lifecycle.write.handoff"],
   },
+  // bad: briefs and commits
+  { name: "briefs as a list", ...briefs(["a"]), bad: ["briefs"] },
+  { name: "a misspelled briefs key", ...briefs({ builds: ["a"] }), bad: ["briefs.builds"] },
+  { name: "an empty policy list", ...briefs({ build: [] }), bad: ["briefs.build"] },
+  { name: "a policy list as a string", ...briefs({ verify: "a" }), bad: ["briefs.verify"] },
+  { name: "twenty-one policy lines", ...briefs({ build: lines(21) }), bad: ["briefs.build"] },
+  { name: "an empty policy line", ...briefs({ build: ["a", ""] }), bad: ["briefs.build[1]"] },
+  {
+    name: "a policy line that is not a string",
+    ...briefs({ build: [3] }),
+    bad: ["briefs.build[0]"],
+  },
+  {
+    name: "a policy line with a line break",
+    ...briefs({ verify: ["a\nb"] }),
+    bad: ["briefs.verify[0]"],
+  },
+  {
+    name: "a policy line with a carriage return",
+    ...briefs({ build: ["a\rb"] }),
+    bad: ["briefs.build[0]"],
+  },
+  { name: "commits as a list", ...commits(["a"]), bad: ["commits"] },
+  { name: "a misspelled commits key", ...commits({ subjectMx: 72 }), bad: ["commits.subjectMx"] },
+  { name: "a zero subjectMax", ...commits({ subjectMax: 0 }), bad: ["commits.subjectMax"] },
+  { name: "a fractional subjectMax", ...commits({ subjectMax: 7.5 }), bad: ["commits.subjectMax"] },
+  {
+    name: "a subjectMax as a string",
+    ...commits({ subjectMax: "72" }),
+    bad: ["commits.subjectMax"],
+  },
+  {
+    name: "an invalid subjectPattern",
+    ...commits({ subjectPattern: "(" }),
+    bad: ["commits.subjectPattern"],
+  },
+  {
+    name: "an empty subjectPattern",
+    ...commits({ subjectPattern: "" }),
+    bad: ["commits.subjectPattern"],
+  },
+  { name: "an empty forbid list", ...commits({ forbid: [] }), bad: ["commits.forbid"] },
+  { name: "an empty forbid entry", ...commits({ forbid: ["a", ""] }), bad: ["commits.forbid[1]"] },
+  {
+    name: "an invalid forbid entry",
+    ...commits({ forbid: ["a", "["] }),
+    bad: ["commits.forbid[1]"],
+  },
+  { name: "forbid as a string", ...commits({ forbid: "a" }), bad: ["commits.forbid"] },
   ...MISPLACED,
 ];
 

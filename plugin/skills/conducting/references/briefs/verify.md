@@ -53,6 +53,12 @@ They override the contract where they conflict.
 {{notes}}
 
 {{/related}}
+{{#policy}}
+## Repo policy (overrides the contract where they differ)
+
+{{policyLines}}
+
+{{/policy}}
 Owned files:
 {{owned}}
 

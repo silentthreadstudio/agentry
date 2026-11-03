@@ -16,6 +16,7 @@ import {
   own,
   posInt,
   record,
+  regex,
   repoPath,
   shape,
   str,
@@ -60,6 +61,21 @@ const gate = shape(
 const skill = like(/^[a-z0-9][a-z0-9-]*$/, "a skill name (lower-case letters, digits and -)");
 // The exec lane's own settings: which items a verifier reads, and which model each dispatch names.
 const VERIFY_ROUTES = ["all", "flagged", "none"];
+// The repo's policy lines for a brief (one line each, at most BRIEF_LINES) and its commit rules.
+const BRIEF_LINES = 20;
+const policyLine = (v, at, bad) => {
+  text(v, at, bad);
+  if (typeof v === "string" && /[\r\n]/.test(v)) bad(at, "should be one line");
+};
+const policyLines = (v, at, bad) => {
+  filled(policyLine)(v, at, bad);
+  if (Array.isArray(v) && v.length > BRIEF_LINES)
+    bad(at, `should have at most ${BRIEF_LINES} lines`);
+};
+const pattern = (v, at, bad) => {
+  text(v, at, bad);
+  if (typeof v === "string" && v) regex(v, at, bad);
+};
 
 /** The workflow file's checker; `workflowSchema.keys` (and each nested shape's `keys`) lists its keys.
  *  None is required. The format reference is bound to it. */
@@ -77,6 +93,8 @@ export const workflowSchema = shape({
     { build: text, verify: shape({ default: text, ui: text, flagged: text }, FULL) },
     FULL,
   ),
+  briefs: shape({ build: policyLines, verify: policyLines }, FULL),
+  commits: shape({ subjectMax: posInt, subjectPattern: pattern, forbid: filled(pattern) }, FULL),
 });
 
 /** Check a parsed workflow file: each problem goes to `bad(path, message)`. */

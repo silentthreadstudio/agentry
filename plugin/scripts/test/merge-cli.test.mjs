@@ -1859,3 +1859,102 @@ test("the gate's output reaches the log while the gate is still running", async 
     endGroup(pgid);
   }
 });
+
+// --- the workflow file's `commits` rules ------------------------------------------------------------
+
+const RULES = { commits: { subjectMax: 72, forbid: ["^Co-Authored-By:"] } };
+const LONG_SUBJECT = `feat: ${"x".repeat(74)}`;
+const ledgerBytes = () =>
+  readFileSync(join(root, ".agentry", "run", "process", "ledger", `${ID}.json`), "utf8");
+const indexState = () => git(root, "ls-files", "-s");
+
+function buildSubjects(...subjects) {
+  const { path } = create(root, { id: ID, base: "main" });
+  const shas = subjects.map((subject, i) => commitFile(path, `src/f${i}.txt`, `${i}\n`, subject));
+  return { path, shas };
+}
+
+test("preflight checks the commits to land against the commits rules: a bad subject is red, a good one ticks", () => {
+  commitSpec({ ...SPEC, ...RULES });
+  const { path, shas } = buildSubjects("feat: fine", LONG_SUBJECT);
+  execLedger({ path, gated: shas[0] });
+  const bad = merge(ID, "--preflight");
+  assert.equal(bad.status, 1, out(bad));
+  assert.match(
+    bad.stdout,
+    new RegExp(
+      `✗ commits +${shas[1].slice(0, 7)} "${LONG_SUBJECT}": subject is 80 chars \\(commits\\.subjectMax 72\\)`,
+    ),
+  );
+  assert.match(bad.stdout, /✓ commits +2 to land/);
+
+  git(path, "reset", "-q", "--hard", "HEAD~1");
+  git(path, "commit", "--allow-empty", "-q", "-m", "feat: also fine");
+  const good = merge(ID, "--preflight");
+  assert.equal(good.status, 0, out(good));
+  assert.match(good.stdout, /✓ commits +2 checked against commits/);
+});
+
+test("a land with a bad subject stops before any pick: main's HEAD, index and the ledger are untouched", () => {
+  commitSpec({ ...SPEC, ...RULES });
+  const { path, shas } = buildSubjects("feat: fine", LONG_SUBJECT);
+  execLedger({ path, gated: shas[0] });
+  const [pre, indexed, ledger] = [head(), indexState(), ledgerBytes()];
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(
+    res.stdout,
+    new RegExp(`✗ commits +${shas[1].slice(0, 7)} "${LONG_SUBJECT}": subject is 80 chars`),
+  );
+  assert.match(res.stdout, /reword them on the branch/);
+  assert.doesNotMatch(res.stdout, /✓ land|picked/);
+  assert.equal(head(), pre);
+  assert.equal(indexState(), indexed);
+  assert.equal(status(), "");
+  assert.equal(ledgerBytes(), ledger);
+  assert.equal(readLedger(root, ID).merge, undefined, "no merge record");
+});
+
+test("a forbidden trailer in a commit is refused at the land; reworded, the land goes through", () => {
+  commitSpec({ ...SPEC, ...RULES });
+  const { path } = buildSubjects("feat: x");
+  git(path, "commit", "--amend", "-q", "-m", "feat: x", "-m", "Why.\n\nCo-Authored-By: Q <q@x.y>");
+  execLedger({ path, gated: git(path, "rev-parse", "HEAD") });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(
+    res.stdout,
+    /✗ commits +[0-9a-f]{7} "feat: x": message matches commits\.forbid\[0\]/,
+  );
+  git(path, "commit", "--amend", "-q", "-m", "feat: x");
+  execLedger({ path, gated: git(path, "rev-parse", "HEAD") });
+  mustLand();
+  assert.equal(readLedger(root, ID).state, "merged");
+});
+
+test("with no commits key the row is · and nothing is checked", () => {
+  const { path, shas } = buildSubjects(LONG_SUBJECT);
+  execLedger({ path, gated: shas[0] });
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 0, out(pf));
+  assert.match(pf.stdout, /· commits +no rules \(commits in the workflow file\)/);
+  const res = mustLand();
+  assert.match(res.stdout, /· commits +no rules/);
+  assert.equal(readLedger(root, ID).state, "merged");
+});
+
+test("a land resumed after its picks does not check the subjects again", () => {
+  const { path, shas } = buildSubjects(LONG_SUBJECT);
+  execLedger({ path, gated: shas[0] });
+  execWrites();
+  const pre = head();
+  landKilledAt(" cherry-pick [0-9a-f]", "after");
+  assert.equal(chainSince(pre).length, 1, "the pick is on main");
+  // The rules arrive now (kept out of git's status so main reads as the land left it).
+  git(root, "update-index", "--skip-worktree", ".agentry/workflow.json");
+  setSpec({ ...SPEC, ...RULES });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.doesNotMatch(res.stdout, /commits/);
+  assert.equal(readLedger(root, ID).state, "merged");
+});

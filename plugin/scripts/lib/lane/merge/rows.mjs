@@ -11,6 +11,7 @@ import { headBoard } from "../carry-io.mjs";
 import { commitOf, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
 import { dirtyEntries } from "../own-memory.mjs";
 import { verdicts } from "../rounds.mjs";
+import { brokenIn, rulesOf } from "../subjects.mjs";
 import { findByBranch } from "../worktree.mjs";
 import { ok, red, save, short, skip, tipOf, wait, warn } from "./lane.mjs";
 
@@ -163,6 +164,19 @@ export function commitsRow({ root, ledger }) {
   if (behind) more.push(`${branch} is not cut from ${mainBranch}'s tip: the picks may conflict`);
   // Not cut from main's tip lands as a rule, but may conflict: a warning, not a green tick.
   return { plan, row: (behind ? warn : ok)("commits", `${plan.picks.length} to land`, more) };
+}
+
+/** The commits row for the workflow file's `commits` rules, over the commits the land would pick: skipped
+ *  with no rules, red naming the first commit that breaks one (the others under it), else a tick. Null when
+ *  the picks can't be planned (`commitsRow` says why). */
+export function subjectsRow({ root, spec, ledger }) {
+  if (!rulesOf(spec)) return skip("commits", "no rules (commits in the workflow file)");
+  const plan = toLand(root, { main: ledger.mainBranch, branch: ledger.branch });
+  if (plan.error) return null;
+  const broken = brokenIn(root, spec, plan.picks);
+  if (broken.length === 0) return ok("commits", `${plan.picks.length} checked against commits`);
+  const line = (c) => `${short(c.sha)} "${c.subject}": ${c.why}`;
+  return red("commits", line(broken[0]), broken.slice(1).map(line));
 }
 
 /** The repo checks: each named skill must exist (exit 2) and have an outcome recorded on the branch's

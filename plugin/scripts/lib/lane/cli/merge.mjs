@@ -48,6 +48,7 @@ import {
   lastWorktreeGate,
   ledgerStep,
   pushRow,
+  subjectsRow,
 } from "../merge/rows.mjs";
 import { mainRoot } from "../worktree.mjs";
 
@@ -143,8 +144,11 @@ function preflight(lane) {
         ["the land puts them back on main first"],
       ),
     );
-  if (FRESH.includes(merge?.step)) rows.push(commitsRow(lane).row);
-  else rows.push(ok("land", `a land is under way (step "${merge.step}"): the land resumes it`));
+  if (FRESH.includes(merge?.step)) {
+    rows.push(commitsRow(lane).row);
+    const subjects = subjectsRow(lane);
+    if (subjects) rows.push(subjects);
+  } else rows.push(ok("land", `a land is under way (step "${merge.step}"): the land resumes it`));
   const gate = gateOf(lane.spec);
   if (!gate) rows.push(red("gate", "the workflow file has no gate: merge cannot prove main"));
   else {
@@ -213,6 +217,16 @@ function land(lane) {
       ...rows,
       red("carry", "--drop-carry: the ledger holds no set-aside board writes, so nothing to drop"),
     ]);
+  // Before any pick (a land resumed after its picks has checked already): a commit that breaks a rule
+  // stops it with main and the ledger as they are, so no next step is saved: the row says what to do.
+  if (FRESH.includes(merged?.step)) {
+    const subjects = subjectsRow(lane);
+    if (subjects) rows.push(subjects);
+    if (subjects?.mark === "red") {
+      subjects.more.push("ask the builder to reword them on the branch, then land again");
+      return done(1, lane, rows);
+    }
+  }
   const steps = [
     recoverStep,
     carryBackStep,

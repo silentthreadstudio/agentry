@@ -51,6 +51,7 @@ import {
   citedDecisions,
   notesSection,
   ownedFiles,
+  policySlots,
   shellQuote as q,
   recalledFacts,
   relatedNotes,
@@ -73,6 +74,7 @@ import { gateLockDir, holdGate } from "../gate-lock.mjs";
 import { changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import { idleOf } from "../idle.mjs";
+import { commitsBetween } from "../land.mjs";
 import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
 import {
@@ -87,6 +89,7 @@ import {
   skipsVerifier,
   verdicts,
 } from "../rounds.mjs";
+import { brokenIn, rulesOf } from "../subjects.mjs";
 import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -640,6 +643,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
     earlier: verdicts(ledger)
       .map((r) => r.reportPath)
       .join(", "),
+    ...policySlots(spec, dispatch.step),
     ...stepSlots({
       steps: ledger.steps,
       stepRun: dispatch.stepRun,
@@ -957,6 +961,9 @@ function report(ctx, id, agent) {
     mainTouched: main.touched,
     dirty,
     commits: count.status === 0 ? Number(count.stdout.trim()) : 0,
+    subjects: rulesOf(ctx.spec)
+      ? brokenIn(root, ctx.spec, commitsBetween(root, ledger.base, ledger.branch) ?? [])
+      : [],
   };
   const flagged = isFlagged(ctx, ledger);
   const res = stepWith(ledger, {

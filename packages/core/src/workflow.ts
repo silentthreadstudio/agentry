@@ -128,6 +128,36 @@ export const Models = z
   .strict();
 export type Models = z.infer<typeof Models>;
 
+/** The repo's policy for the exec briefs: one line each, at most 20 per role. `build` goes in every
+ *  builder brief, `verify` in every verifier brief, printed as written under "Repo policy". */
+const PolicyLine = Text.refine((line) => !/[\r\n]/.test(line), { message: "expected one line" });
+const PolicyLines = z.array(PolicyLine).min(1).max(20);
+export const Briefs = z
+  .object({ build: PolicyLines.optional(), verify: PolicyLines.optional() })
+  .strict();
+export type Briefs = z.infer<typeof Briefs>;
+
+const validRegex = (source: string): boolean => {
+  try {
+    new RegExp(source);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const Pattern = Text.refine(validRegex, { message: "expected a valid regular expression" });
+
+/** The rules a builder's commit subjects hold to: `subjectMax` (code points), `subjectPattern` (no
+ *  flags) on the first line, and `forbid` patterns (flag `m`) on the whole message. */
+export const Commits = z
+  .object({
+    subjectMax: z.number().int().positive().optional(),
+    subjectPattern: Pattern.optional(),
+    forbid: z.array(Pattern).min(1).optional(),
+  })
+  .strict();
+export type Commits = z.infer<typeof Commits>;
+
 /** The workflow file: no `version`, every key optional, no other key. */
 export const Workflow = z
   .object({
@@ -141,6 +171,8 @@ export const Workflow = z
     cleanup: Cleanup.optional(),
     exec: Exec.optional(),
     models: Models.optional(),
+    briefs: Briefs.optional(),
+    commits: Commits.optional(),
   })
   .strict();
 export type Workflow = z.infer<typeof Workflow>;

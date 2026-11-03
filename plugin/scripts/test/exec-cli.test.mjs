@@ -653,6 +653,123 @@ test("uncommitted files in the worktree send the builder back with the reason", 
   assert.match(readFileSync(res.json.brief, "utf8"), /The lane refused your last report/);
 });
 
+const RULES = { commits: { subjectMax: 72, forbid: ["^Co-Authored-By:"] } };
+const REWORD =
+  "→ reword it on the branch (git commit --amend for the tip, or a rebase with exec, no -i)";
+const LONG = `feat: ${"x".repeat(74)}`;
+
+test("a builder commit that breaks a commits rule sends a fix round with the reason; a reworded one goes on", () => {
+  const r = repo({ spec: { ...SPEC, ...RULES } });
+  const out = lane(r, "start", "T1").json;
+  commitFile(out.worktree, "out.txt", "made\n", LONG);
+  writeFileSync(out.reportPath, "DONE\nadded out.txt\nused_memories: none\n");
+  const sha = git(out.worktree, "rev-parse", "--short=7", "HEAD");
+  const res = lane(r, "report", "T1", "--agent", "b1");
+  assert.equal(res.exit, 0);
+  assert.equal(res.json.next, "fix");
+  const reason = `commit ${sha} "${LONG}": subject is 80 chars (commits.subjectMax 72) ${REWORD}`;
+  assert.equal(res.json.why, reason);
+  assert.deepEqual(res.json.guards, [reason]);
+  assert.match(readFileSync(res.json.brief, "utf8"), /The lane refused your last report/);
+  assert.ok(readFileSync(res.json.brief, "utf8").includes(reason));
+  // The builder rewords the tip commit: the lane goes on to the verifier.
+  git(out.worktree, "commit", "--amend", "-q", "-m", "feat: add out.txt");
+  writeFileSync(res.json.reportPath, "DONE\nreworded\nused_memories: none\n");
+  const again = lane(r, "report", "T1", "--agent", "b1");
+  assert.equal(again.exit, 0);
+  assert.equal(again.json.next, "verify");
+  assert.deepEqual(again.json.guards, []);
+});
+
+test("a second report still breaking a commits rule stops the lane (exit 1)", () => {
+  const r = repo({ spec: { ...SPEC, ...RULES } });
+  const out = lane(r, "start", "T1").json;
+  commitFile(out.worktree, "out.txt", "made\n", LONG);
+  writeFileSync(out.reportPath, "DONE\nx\nused_memories: none\n");
+  const first = lane(r, "report", "T1", "--agent", "b1");
+  assert.equal(first.json.next, "fix");
+  writeFileSync(first.json.reportPath, "DONE\nstill\nused_memories: none\n");
+  const second = lane(r, "report", "T1", "--agent", "b1");
+  assert.equal(second.exit, 1);
+  assert.equal(second.json.next, "stop");
+  assert.match(second.json.reason, /again after a fix for it/);
+});
+
+test("a forbid match in a commit's trailer is refused, and with no commits key nothing is checked", () => {
+  const r = repo({ spec: { ...SPEC, ...RULES } });
+  const out = lane(r, "start", "T1").json;
+  git(
+    out.worktree,
+    "commit",
+    "--allow-empty",
+    "-q",
+    "-m",
+    "feat: x",
+    "-m",
+    "a\nb\nCo-Authored-By: Q <q@x.y>",
+  );
+  writeFileSync(out.reportPath, "DONE\nx\nused_memories: none\n");
+  const res = lane(r, "report", "T1", "--agent", "b1");
+  assert.equal(res.json.next, "fix");
+  assert.match(res.json.why, /"feat: x": message matches commits\.forbid\[0\] →/);
+  // The same commits under a workflow file with no `commits`: the lane goes on.
+  const free = repo();
+  const o2 = lane(free, "start", "T1").json;
+  commitFile(o2.worktree, "out.txt", "made\n", LONG);
+  writeFileSync(o2.reportPath, "DONE\nx\nused_memories: none\n");
+  assert.equal(lane(free, "report", "T1", "--agent", "b1").json.next, "verify");
+});
+
+test("a dirty worktree and a bad subject are named in one fix round", () => {
+  const r = repo({ spec: { ...SPEC, ...RULES } });
+  const out = lane(r, "start", "T1").json;
+  commitFile(out.worktree, "out.txt", "made\n", LONG);
+  writeFileSync(join(out.worktree, "left.txt"), "x\n");
+  writeFileSync(out.reportPath, "DONE\nx\nused_memories: none\n");
+  const res = lane(r, "report", "T1", "--agent", "b1");
+  assert.equal(res.json.next, "fix");
+  assert.match(
+    res.json.why,
+    /uncommitted files in the worktree: \?\? left\.txt; commit [0-9a-f]{7} "feat: x+"/,
+  );
+  assert.equal(res.json.guards.length, 2);
+});
+
+test("30 broken commits give one fix round that lists 5 of them, then +25", () => {
+  const r = repo({ spec: { ...SPEC, ...RULES } });
+  const out = lane(r, "start", "T1").json;
+  for (let i = 0; i < 30; i++)
+    git(out.worktree, "commit", "--allow-empty", "-q", "-m", `${LONG}${i}`);
+  writeFileSync(out.reportPath, "DONE\nx\nused_memories: none\n");
+  const res = lane(r, "report", "T1", "--agent", "b1");
+  assert.equal(res.json.next, "fix");
+  assert.equal(res.json.guards.length, 6);
+  assert.deepEqual(
+    res.json.guards.slice(0, 5).map((g) => /^commit [0-9a-f]{7} "feat: x+(\d+)": /.exec(g)?.[1]),
+    ["0", "1", "2", "3", "4"],
+  );
+  assert.equal(res.json.guards[5], "+25");
+  assert.equal(ledgerOf(r.root, "T1").rounds.length, 2, "one fix round");
+});
+
+test("repo policy lines ride in the build brief and the verify brief, each role its own", () => {
+  const briefs = { build: ["Use pnpm; `npm` is {{id}}."], verify: ["Read | the changelog."] };
+  const r = repo({ spec: { ...SPEC, briefs } });
+  const out = lane(r, "start", "T1").json;
+  const head = "## Repo policy (overrides the contract where they differ)";
+  const buildBrief = readFileSync(out.brief, "utf8");
+  assert.ok(buildBrief.includes(`${head}\n\n- Use pnpm; \`npm\` is {{id}}.\n\nOwned files:`));
+  assert.doesNotMatch(buildBrief, /changelog/);
+  build(out);
+  const verify = lane(r, "report", "T1", "--agent", "b1").json;
+  const verifyBrief = readFileSync(verify.brief, "utf8");
+  assert.ok(verifyBrief.includes(`${head}\n\n- Read | the changelog.\n\nOwned files:`));
+  assert.doesNotMatch(verifyBrief, /pnpm/);
+  // Only one role set: the other gets no section.
+  const half = repo({ spec: { ...SPEC, briefs: { verify: ["v"] } } });
+  assert.doesNotMatch(readFileSync(lane(half, "start", "T1").json.brief, "utf8"), /Repo policy/);
+});
+
 test("a verdict given after the branch tip moved is void: recheck, and no verdict is written", () => {
   const r = repo();
   let out = lane(r, "start", "T1").json;

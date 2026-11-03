@@ -44,6 +44,8 @@ No `version`, and every key is optional.
 | `cleanup` | no | `{ "disposable": [globs] }`: ignored files a lane's cleanup discards without asking. |
 | `exec` | no | `{ "verify": "all" \| "flagged" \| "none" }`: which items the exec lane sends to an independent verifier. See "exec and models". |
 | `models` | no | `{ "build": "<model>", "verify": { "default", "ui", "flagged" } }`: the model each exec dispatch names. See "exec and models". |
+| `briefs` | no | `{ "build": ["<line>", …], "verify": ["<line>", …] }`: repo policy lines printed in every builder or verifier brief. See "briefs and commits". |
+| `commits` | no | `{ "subjectMax", "subjectPattern", "forbid": ["<regex>", …] }`: rules a builder's commits must keep. See "briefs and commits". |
 
 ## Kind
 
@@ -345,6 +347,28 @@ In `workflow.json`:
   `verify.flagged` when the item's flag is set, else `verify.ui` when the suggested builder is the designer (an
   owned path is UI-shaped), else `verify.default`. A key left out falls back to `verify.default`, and with
   no name for a dispatch it prints no `model:` line. Nothing here changes which agent runs.
+
+## briefs and commits
+
+In `workflow.json`:
+
+```json
+"briefs": { "build": ["Use pnpm, never npm."], "verify": ["Read CHANGELOG.md for the change."] },
+"commits": { "subjectMax": 72, "subjectPattern": "^(feat|fix|docs)\\(.+\\): ", "forbid": ["^Co-Authored-By:"] }
+```
+
+- `briefs.build` and `briefs.verify` are each a non-empty list of at most 20 one-line strings (a line break is
+  refused at load). Every builder brief (build, fix, continue) prints `build`, every verifier brief (verify,
+  recheck, final) prints `verify`, as a `## Repo policy (overrides the contract where they differ)` section of
+  one bullet per line after the contract. A line is printed as written: a `{{name}}` in it is not a slot. A role
+  with no list gets no section.
+- `commits` keys are all optional. The subject is a commit message's first line, counted in code points.
+  `subjectMax` is a whole number above 0. `subjectPattern` is a regular expression the subject must match (no
+  flags, so case counts). `forbid` is a non-empty list of regular expressions none of which may match the whole
+  message, checked with the `m` flag so `^` and `$` hold at each line (e.g. an attribution trailer). An invalid
+  regular expression or an empty entry is refused at load.
+- `lane exec report` sends the builder back (a fix round, once) for a commit past base that breaks a rule. `lane
+  merge --preflight` shows a `commits` row, and the land refuses before any pick, when a commit it would pick does.
 
 ## guard and cleanup
 
