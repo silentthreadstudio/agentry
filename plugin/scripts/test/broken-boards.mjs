@@ -1,6 +1,6 @@
 // Test support (not a test): the table-board fixture, one valid entry per catalog rule, and the edit
-// to its board under which each rule fires. `outcome` judges a process file the way `board check`
-// does (2 = the file is refused, 1 = findings, 0 = OK), in process, so a fuzz can run thousands.
+// to its board under which each rule fires. `outcome` judges a spec (the process and workflow files
+// merged) the way `board check` does (2 = the file is refused, 1 = findings, 0 = OK), in process, so a fuzz can run thousands.
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,11 +8,15 @@ import { fileURLToPath } from "node:url";
 import { check } from "../lib/process/check.mjs";
 import { findContract } from "../lib/process/contract.mjs";
 import { readProcess } from "../lib/process/read.mjs";
-import { checkOnBoard, validateSpec } from "../lib/process/spec.mjs";
+import { validateSpec } from "../lib/process/spec.mjs";
+import { checkOnBoard } from "../lib/process/spec/rules.mjs";
+import { splitSpec } from "./spec-files.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const BASE = join(HERE, "fixtures", "table-board");
-export const VALID = JSON.parse(readFileSync(join(BASE, "process.json"), "utf8"));
+const json = (name) => JSON.parse(readFileSync(join(BASE, name), "utf8"));
+/** table-board's process and workflow files, merged. */
+export const VALID = { ...json("process.json"), ...json("workflow.json") };
 export const BUILTINS = ["toString", "constructor", "__proto__", "hasOwnProperty"];
 
 // One entry per catalog rule that is valid on table-board, so a mutation is the only thing wrong.
@@ -75,10 +79,10 @@ export function brokenBoard(id) {
   return root;
 }
 
-/** `board check` on `root` with this process file, in process (every commit is taken as in git):
+/** `board check` on `root` with this spec, in process (every commit is taken as in git):
  *  { exit, messages }, the messages being the refusal's problems or the findings. */
 export function outcome(spec, root) {
-  const { problems } = validateSpec(spec);
+  const { problems } = validateSpec(splitSpec(spec));
   if (problems.length) return { exit: 2, messages: problems.map((p) => p.message) };
   const model = readProcess({ root, spec });
   const late = checkOnBoard(spec, model);

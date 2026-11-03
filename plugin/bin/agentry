@@ -20,7 +20,8 @@ groups:
   draft   the owner's pending drafts (agentry board draft)       agentry draft list
 
 agentry <group> --help lists a group's subcommands; agentry <group> <subcommand> --help prints its args,
-flags, exit codes and an example.`;
+flags, exit codes and an example. --process names the process file; the workflow file is its sibling
+workflow.json.`;
 
 const [group, ...rest] = process.argv.slice(2);
 const version = () =>

@@ -12,13 +12,17 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BOARD = join(HERE, "..", "board.mjs");
 
-// A copy of the table board whose process file carries `conductor`, and a prompt with `body` (none
+// A copy of the table board whose workflow file carries `conductor`, and a prompt with `body` (none
 // when null). Returns the CLI runner on it.
 function repo(conductor, body) {
   const root = mkdtempSync(join(tmpdir(), "agentry-conductor-"));
   cpSync(join(HERE, "fixtures", "table-board"), root, { recursive: true });
   const file = join(root, "process.json");
-  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), conductor }));
+  const workflow = join(root, "workflow.json");
+  writeFileSync(
+    workflow,
+    JSON.stringify({ ...JSON.parse(readFileSync(workflow, "utf8")), conductor }),
+  );
   if (body !== null) writeFileSync(join(root, "PROMPT.md"), body);
   const cli = (...args) =>
     spawnSync("node", [BOARD, ...args, "--root", root, "--process", file], {
@@ -37,6 +41,7 @@ for (const sub of ["explain", "check", "status"]) {
       const res = cli(sub);
       assert.equal(res.status, 2);
       assert.match(res.stderr, /conductor\.prompt "NOPE\.md" is not a readable file/);
+      assert.match(res.stderr, /^✗ workflow\.json: cannot use the workflow file → /);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

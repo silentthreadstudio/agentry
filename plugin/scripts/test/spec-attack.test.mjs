@@ -7,12 +7,13 @@
 // Run: node --test plugin/scripts/test/spec-attack.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { CAN, CATALOG, FIELD } from "../lib/process/rules/index.mjs";
 import { BREAK, BUILTINS, ENTRIES, VALID, brokenBoard, outcome } from "./broken-boards.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const BOARD = join(dirname(fileURLToPath(import.meta.url)), "..", "board.mjs");
 const KINDS = Object.keys(VALID.kinds);
@@ -338,9 +339,8 @@ test("a skip or except value that names nothing on the board is a finding naming
 
 test("through the board: a kind the rule cannot check is exit 2, a stray except value exit 1", () => {
   const root = roots["parent-active"];
-  const file = join(root, "attack.json");
   const run = (rules, ...args) => {
-    writeFileSync(file, JSON.stringify({ ...VALID, rules }));
+    const file = writeSpec(root, { ...VALID, rules }, "attack.json");
     return spawnSync("node", [BOARD, "check", "--root", root, "--process", file, ...args], {
       encoding: "utf8",
       env: { ...process.env, NO_COLOR: "1" },

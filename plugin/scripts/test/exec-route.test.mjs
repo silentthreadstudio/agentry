@@ -10,8 +10,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { parseSpec } from "../lib/process/spec.mjs";
+import { validateSpec } from "../lib/process/spec.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
+import { splitSpec, writeSpec } from "./spec-files.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
 const temps = [];
@@ -76,11 +77,12 @@ function repo(extra = {}) {
   const home = temp("route-home-");
   git(root, "init", "-q", "-b", "main");
   mkdirSync(join(root, ".agentry"));
-  writeFileSync(join(root, ".agentry", "process.json"), JSON.stringify(spec, null, 2));
   commitFile(root, ".gitignore", ".agentry/run/\n");
   commitFile(root, "plan/BOARD.md", BOARD_MD);
   commitFile(root, "plan/TASKS.md", TASKS_MD);
-  commitFile(root, ".agentry/process.json", JSON.stringify(spec, null, 2));
+  writeSpec(join(root, ".agentry"), spec);
+  git(root, "add", ".agentry");
+  git(root, "commit", "-q", "-m", "add the process files");
   return { root, home };
 }
 function lane({ root, home }, ...args) {
@@ -223,11 +225,11 @@ test("show prints the route", () => {
   assert.match(lane(r, "show", "T1").json.route, /^flagged: this item is not flagged/);
 });
 
-test("the process file refuses flagged without a flag field on the exec kind, and a bad route", () => {
+test("the workflow file refuses flagged without a flag field on the exec kind, and a bad route", () => {
   const noFlag = structuredClone(SPEC);
   const { flag, ...kept } = noFlag.kinds.task.fields;
   noFlag.kinds.task.fields = kept;
-  const refused = parseSpec(JSON.stringify({ ...noFlag, exec: { verify: "flagged" } }));
+  const refused = validateSpec(splitSpec({ ...noFlag, exec: { verify: "flagged" } }));
   assert.match(
     refused.problems[0].message,
     /exec\.verify is "flagged", but the task kind has no field named "flag"/,
@@ -235,15 +237,12 @@ test("the process file refuses flagged without a flag field on the exec kind, an
   const wrongType = structuredClone(SPEC);
   wrongType.kinds.task.fields.flag.type = "text";
   assert.equal(
-    parseSpec(JSON.stringify({ ...wrongType, exec: { verify: "flagged" } })).problems.length,
+    validateSpec(splitSpec({ ...wrongType, exec: { verify: "flagged" } })).problems.length,
     1,
   );
-  assert.deepEqual(
-    parseSpec(JSON.stringify({ ...SPEC, exec: { verify: "flagged" } })).problems,
-    [],
-  );
-  assert.deepEqual(parseSpec(JSON.stringify({ ...noFlag, exec: { verify: "none" } })).problems, []);
-  const bad = parseSpec(JSON.stringify({ ...SPEC, exec: { verify: "some" } }));
+  assert.deepEqual(validateSpec(splitSpec({ ...SPEC, exec: { verify: "flagged" } })).problems, []);
+  assert.deepEqual(validateSpec(splitSpec({ ...noFlag, exec: { verify: "none" } })).problems, []);
+  const bad = validateSpec(splitSpec({ ...SPEC, exec: { verify: "some" } }));
   assert.match(bad.problems[0].message, /exec\.verify should be one of "all", "flagged", "none"/);
 });
 
@@ -285,8 +284,8 @@ test("the readable view prints a model: line", () => {
 });
 
 test("models keys are checked at load", () => {
-  assert.deepEqual(parseSpec(JSON.stringify({ ...SPEC, models: MODELS })).problems, []);
-  const bad = parseSpec(JSON.stringify({ ...SPEC, models: { verify: { best: "x" } } }));
+  assert.deepEqual(validateSpec(splitSpec({ ...SPEC, models: MODELS })).problems, []);
+  const bad = validateSpec(splitSpec({ ...SPEC, models: { verify: { best: "x" } } }));
   assert.match(bad.problems[0].message, /models\.verify\.best is not a known key/);
 });
 

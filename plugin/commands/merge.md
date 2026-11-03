@@ -9,7 +9,7 @@ Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH,
 
 Run each call from the main checkout, in the foreground, and read its exit code: 0 = done, `next` printed; 1 = a red step stopped it; 2 = usage or refusal. Never pipe it into `grep`/`tail` to decide. Show each step table as printed.
 
-Before the first `--preflight`, main must be clean: `git status` empty, with the setup committed (`.agentry/process.json`, the conductor prompt, `AGENTS.md`, the board rows `/agentry:new` added). Otherwise the `main` row is red and names each file; ask the owner to commit or undo them (never commit for them).
+Before the first `--preflight`, main must be clean: `git status` empty, with the setup committed (`.agentry/process.json`, `.agentry/workflow.json`, the conductor prompt, `AGENTS.md`, the board rows `/agentry:new` added). Otherwise the `main` row is red and names each file; ask the owner to commit or undo them (never commit for them).
 
 1. `agentry lane merge <id> --preflight`. Add `--branch <b>` only for work built outside `/agentry:exec` (it adopts that branch).
 2. For each repo check the table names (`extensions.merge.checks`): run that skill's checks, then `agentry lane merge <id> --check <skill>=pass|fail --note "<one line>"`.

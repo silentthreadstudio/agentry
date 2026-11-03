@@ -2,8 +2,8 @@
 // find-contract — `node find-contract.mjs <id> [--root <dir>] [--process <file>] [--kind <kind>]`
 // prints the item's contract block as one JSON line and exits 0 when found, 1 when not found or
 // ambiguous, 2 on a usage error (plan F13 §8, keeping F2's interface). Root defaults to the git root
-// of the working directory; the process file to `<root>/.agentry/process.json`, used when it exists
-// and is valid. An invalid one is reported on stderr and left out: only the Agentry task files and
+// of the working directory; the process file to `<root>/.agentry/process.json` (read with its sibling
+// workflow file, `workflow.json`), used when it exists and both are valid. An invalid one is reported on stderr and left out: only the Agentry task files and
 // discovered TASKS.md are searched. `--flag=value` reads as `--flag value`; any other option is a
 // usage error.
 import { existsSync } from "node:fs";

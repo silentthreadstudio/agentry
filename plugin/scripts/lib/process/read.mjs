@@ -1,12 +1,13 @@
-// read — process file + board files → the Model (plan F13 §6): items per kind with header-named
+// read — process file (+ its sibling workflow file) + board files → the Model (plan F13 §6): items per kind with header-named
 // fields, the tree, phases (own or derived from children), ranks, each item's own file and sections.
 // The kit's only file reads (git is `git.mjs`). A missing file, heading or column is a `problems`
 // entry (rule "read"), never a throw. Item `file` and `own.path` are relative to the spec's `root`.
 // Every read stays inside the repository once symlinks are resolved (`staysInside`).
 import { globSync, readFileSync, realpathSync } from "node:fs";
-import { basename, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import * as md from "./markdown.mjs";
-import { escapesRoot, own, parseSpec } from "./spec.mjs";
+import { parseSpec } from "./spec.mjs";
+import { escapesRoot, own } from "./spec/shape.mjs";
 
 const STARTED = new Set(["active", "done"]);
 const CLOSED = new Set(["done", "dropped", "parked"]);
@@ -33,47 +34,59 @@ export function readInside(root, path) {
   }
 }
 
-// The process file's own paths that a symlink takes out of the repository: problems, as a path
-// written with `../` out is. Globs are checked file by file as they are read.
-function linkedOut(root, spec, file) {
+// The two files' own paths that a symlink takes out of the repository: problems of the file that holds
+// the key, as a path written with `../` out is. Globs are checked file by file as they are read.
+function linkedOut(root, spec, files) {
   const base = join(root, spec.root);
   const paths = [
-    ["root", root, spec.root],
-    ["status.note", root, spec.status?.note],
-    ["conductor.prompt", root, spec.conductor?.prompt],
+    ["root", root, spec.root, files.board],
+    ["status.note", root, spec.status?.note, files.board],
+    ["conductor.prompt", root, spec.conductor?.prompt, files.workflow],
   ];
   for (const [name, k] of Object.entries(spec.kinds)) {
     const at = `kinds.${name}`;
-    paths.push([`${at}.at.table`, base, k.at.table]);
+    paths.push([`${at}.at.table`, base, k.at.table, files.board]);
     (k.contract?.blocks ?? []).forEach((p, i) =>
-      paths.push([`${at}.contract.blocks[${i}]`, base, p]),
+      paths.push([`${at}.contract.blocks[${i}]`, base, p, files.board]),
     );
     (k.create?.blocks ?? []).forEach((b, i) =>
-      paths.push([`${at}.create.blocks[${i}]`, base, b.file]),
+      paths.push([`${at}.create.blocks[${i}]`, base, b.file, files.board]),
     );
   }
   return paths
     .filter(([, from, path]) => typeof path === "string" && !staysInside(root, join(from, path)))
-    .map(([at, , path]) => ({
+    .map(([at, , path, file]) => ({
       rule: "spec",
       message: `${at} "${path}" leaves the repository through a symlink`,
       file,
     }));
 }
 
-/** Read and validate a process file. A missing or unreadable file is a problem, not a throw. Given
- *  the repository `root`, a path of the file that a symlink takes out of it is a problem too. */
+/** The workflow file that goes with the process file at `path`: its sibling `workflow.json`. */
+export const workflowPathOf = (path) => join(dirname(path), "workflow.json");
+
+/** Read and validate a process file and its workflow file (`workflowPathOf`), merged into one spec. A
+ *  missing or unreadable process file is a problem, not a throw; a missing workflow file is no problem
+ *  (every workflow key absent), an unreadable one is. Given the repository `root`, a path of either
+ *  file that a symlink takes out of it is a problem too. Each problem's `file` is the file it is about. */
 export function loadSpec(path, { root } = {}) {
-  let text;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (e) {
-    const message = `cannot read the process file (${e.code ?? e.message})`;
-    return { spec: null, problems: [{ rule: "spec", message, file: path }] };
-  }
-  const loaded = parseSpec(text, { file: path });
+  const files = { board: path, workflow: workflowPathOf(path) };
+  const read = (file, what) => {
+    try {
+      return { text: readFileSync(file, "utf8") };
+    } catch (e) {
+      if (what === "workflow" && e.code === "ENOENT") return { text: undefined };
+      const message = `cannot read the ${what} file (${e.code ?? e.message})`;
+      return { problem: { rule: "spec", message, file } };
+    }
+  };
+  const board = read(files.board, "process");
+  const workflow = read(files.workflow, "workflow");
+  const unread = [board.problem, workflow.problem].filter(Boolean);
+  if (unread.length) return { spec: null, problems: unread };
+  const loaded = parseSpec({ board: board.text, workflow: workflow.text }, { files });
   if (root === undefined || !loaded.spec || loaded.problems.length) return loaded;
-  return { spec: loaded.spec, problems: linkedOut(root, loaded.spec, path) };
+  return { spec: loaded.spec, problems: linkedOut(root, loaded.spec, files) };
 }
 
 /** An item from one row or file; `get(column)` is the raw value, undefined when there is none. */

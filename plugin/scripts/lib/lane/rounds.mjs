@@ -90,7 +90,7 @@ export const skipsVerifier = (route, flagged = false) =>
   ["flagged", "none"].includes(route?.verify) && !flagged && !route?.flagged;
 
 /** The worktree gates recorded for commit `tip`, counted: `{ green, red, flaky }`. `flaky` is the part of
- *  `red` that failed only in tests the process file lists as flaky (and was re-run). `text` is the one
+ *  `red` that failed only in tests the workflow file lists as flaky (and was re-run). `text` is the one
  *  line the verdict shows ("1 green, 1 red on this tip"), or null when there is no gate on this tip. */
 export function gateTally(gates, tip) {
   const here = (gates ?? []).filter((g) => g.where === "worktree" && g.commit === tip);
@@ -253,7 +253,7 @@ function onVerdict(ledger, round, { verdict, tip, gate = true }) {
     );
   }
   if (round.step === "recheck") return send(ledger, "final", {}, null);
-  if (!gate) return settle(ledger, "close", "no gate in the process file: closes on the verdict");
+  if (!gate) return settle(ledger, "close", "no gate in the workflow file: closes on the verdict");
   if (greenOn(ledger.gates, tip))
     return settle(ledger, "close", "a green worktree gate on this tip");
   return settle(ledger, "gate", "no green worktree gate on this tip yet");

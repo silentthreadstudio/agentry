@@ -1,11 +1,13 @@
-// The shared good/bad table for the harness keys (plan R1b §2.1): process.json `gate`, `extensions`,
-// `conductor` (and the lifecycle `write` keys), config.json `merge`, `lanes`. Each case is run
-// through the plugin's validator (`spec-keys.test.mjs`, `config.test.mjs`) and, side by side with
-// core's zod, in `packages/core/test/keys-parity.test.ts`: both must give the same verdict, naming
-// the same paths. `bad` lists every path a bad case must name (`gate.command[1]`); a good case has
-// none. Synthetic shapes only.
+// The shared good/bad table for the harness keys (plan R1b §2.1): workflow.json `gate`, `extensions`,
+// `conductor` (and the lifecycle `write` keys), the process file's own keys, a key put in the other
+// file, and config.json `merge`, `lanes`. Each case is run through the plugin's validator
+// (`spec-keys.test.mjs`, `config.test.mjs`) and, side by side with core's zod, in
+// `packages/core/test/keys-parity.test.ts`: both must give the same verdict, naming the same paths.
+// `bad` lists every path a bad case must name (`gate.command[1]`); a good case has none. Synthetic
+// shapes only.
+import { BOARD_KEYS, WORKFLOW_KEYS } from "../lib/process/spec.mjs";
 
-/** A minimal valid process file the process cases add their keys to. */
+/** A minimal valid process file the process cases add their board keys to. */
 export const BASE = {
   version: 1,
   name: "Keys",
@@ -22,38 +24,55 @@ export const BASE = {
   rules: [{ rule: "ids-unique" }],
 };
 
-/** The process file of a case: BASE with the case's top-level keys (spread, so a `__proto__` key
- *  parsed from JSON stays a plain own key). */
-export const processOf = (c) => ({
-  ...structuredClone(BASE),
-  ...(c.json ? JSON.parse(c.json) : c.add),
+/** The two files of a case, as `validateSpec` takes them: BASE with the case's `board` keys (spread, so
+ *  a `__proto__` key stays a plain own key), and its `workflow` (undefined: no workflow file). A
+ *  `json` case gives its workflow file as JSON text. */
+export const specOf = (c) => ({
+  board: { ...structuredClone(BASE), ...structuredClone(c.board ?? {}) },
+  workflow: c.json ? JSON.parse(c.json) : c.workflow && structuredClone(c.workflow),
 });
 
-const gate = (g) => ({ gate: g });
-const life = (write) => ({ lifecycle: { kind: "task", on: {}, write } });
-const checks = (c) => ({ extensions: { merge: { checks: c } } });
+const gate = (g) => ({ workflow: { gate: g } });
+const life = (write) => ({ workflow: { lifecycle: { kind: "task", on: {}, write } } });
+const checks = (c) => ({ workflow: { extensions: { merge: { checks: c } } } });
 
 // BASE with a commits field `commit` carrying `join`.
 const joined = (join) => ({
-  kinds: {
-    task: {
-      ...BASE.kinds.task,
-      fields: { ...BASE.kinds.task.fields, commit: { column: "Commit", type: "commits", join } },
+  board: {
+    kinds: {
+      task: {
+        ...BASE.kinds.task,
+        fields: { ...BASE.kinds.task.fields, commit: { column: "Commit", type: "commits", join } },
+      },
     },
   },
 });
 const JOIN = "kinds.task.fields.commit.join";
 
+// A key of one file put in the other: refused by its name, whatever it holds.
+const MISPLACED = [
+  ...WORKFLOW_KEYS.map((key) => ({
+    name: `the workflow key ${key} in the process file`,
+    board: { [key]: {} },
+    bad: [key],
+  })),
+  ...BOARD_KEYS.map((key) => ({
+    name: `the board key ${key} in the workflow file`,
+    workflow: { [key]: {} },
+    bad: [key],
+  })),
+];
+
 export const PROCESS_CASES = [
   // good
-  { name: "a space as a commits join", add: joined(" ") },
-  { name: "a comma and space as a commits join", add: joined(", ") },
-  { name: "a range mark as a commits join", add: joined("…") },
-  { name: "a dotted range mark as a commits join", add: joined("..") },
-  { name: "a gate with only a command", add: gate({ command: ["make", "test"] }) },
+  { name: "a space as a commits join", ...joined(" ") },
+  { name: "a comma and space as a commits join", ...joined(", ") },
+  { name: "a range mark as a commits join", ...joined("…") },
+  { name: "a dotted range mark as a commits join", ...joined("..") },
+  { name: "a gate with only a command", ...gate({ command: ["make", "test"] }) },
   {
     name: "a full gate",
-    add: gate({
+    ...gate({
       command: ["tools/gate.sh"],
       quick: { command: ["tools/gate.sh", "--quick"], only: ["docs/**", "*.md"] },
       after: ["CHANGELOG.md"],
@@ -63,106 +82,110 @@ export const PROCESS_CASES = [
       note: "the repo's own gate",
     }),
   },
-  { name: "an argv item with spaces", add: gate({ command: ["node", "--test", "a b"] }) },
+  { name: "an argv item with spaces", ...gate({ command: ["node", "--test", "a b"] }) },
   {
     name: "paths that normalise inside",
-    add: gate({ command: ["x"], after: ["./docs/a.md", "a/../b.md"] }),
+    ...gate({ command: ["x"], after: ["./docs/a.md", "a/../b.md"] }),
   },
-  { name: "one merge check", add: checks(["repo-merge"]) },
-  { name: "several merge checks", add: checks(["repo-merge", "a1", "0-x"]) },
-  { name: "a conductor prompt", add: { conductor: { prompt: "docs/CONDUCTOR.md" } } },
+  { name: "one merge check", ...checks(["repo-merge"]) },
+  { name: "several merge checks", ...checks(["repo-merge", "a1", "0-x"]) },
+  { name: "a conductor prompt", workflow: { conductor: { prompt: "docs/CONDUCTOR.md" } } },
   {
     name: "a conductor prompt and rules heading",
-    add: { conductor: { prompt: "CONDUCTOR.md", rules: "Standing rules" } },
+    workflow: { conductor: { prompt: "CONDUCTOR.md", rules: "Standing rules" } },
   },
   {
     name: "all three keys",
-    add: { ...gate({ command: ["x"] }), ...checks(["y"]), conductor: { prompt: "z.md" } },
+    workflow: {
+      gate: { command: ["x"] },
+      extensions: { merge: { checks: ["y"] } },
+      conductor: { prompt: "z.md" },
+    },
   },
-  { name: "a lifecycle status write", add: life({ status: "status" }) },
+  { name: "a lifecycle status write", ...life({ status: "status" }) },
   // bad: join
-  { name: "an empty join", add: joined(""), bad: [JOIN] },
-  { name: "a join with a letter", add: joined("x"), bad: [JOIN] },
-  { name: "a join with a digit", add: joined(" 1 "), bad: [JOIN] },
-  { name: "a join with a line break", add: joined(",\n"), bad: [JOIN] },
-  { name: "a join with a carriage return", add: joined(", \r"), bad: [JOIN] },
-  { name: "a join with a tab", add: joined("\t"), bad: [JOIN] },
-  { name: "a join with a next-line character", add: joined("\u0085"), bad: [JOIN] },
-  { name: "a join with a delete character", add: joined("\u007f"), bad: [JOIN] },
-  { name: "a join that is not a string", add: joined(3), bad: [JOIN] },
+  { name: "an empty join", ...joined(""), bad: [JOIN] },
+  { name: "a join with a letter", ...joined("x"), bad: [JOIN] },
+  { name: "a join with a digit", ...joined(" 1 "), bad: [JOIN] },
+  { name: "a join with a line break", ...joined(",\n"), bad: [JOIN] },
+  { name: "a join with a carriage return", ...joined(", \r"), bad: [JOIN] },
+  { name: "a join with a tab", ...joined("\t"), bad: [JOIN] },
+  { name: "a join with a next-line character", ...joined("\u0085"), bad: [JOIN] },
+  { name: "a join with a delete character", ...joined("\u007f"), bad: [JOIN] },
+  { name: "a join that is not a string", ...joined(3), bad: [JOIN] },
   // bad: gate
-  { name: "a gate as a string", add: gate("make test"), bad: ["gate"] },
-  { name: "a gate as a list", add: gate(["make"]), bad: ["gate"] },
-  { name: "a gate with no command", add: gate({}), bad: ["gate.command"] },
-  { name: "a command as a string", add: gate({ command: "make test" }), bad: ["gate.command"] },
-  { name: "an empty command", add: gate({ command: [] }), bad: ["gate.command"] },
-  { name: "a non-string argv item", add: gate({ command: ["make", 1] }), bad: ["gate.command[1]"] },
-  { name: "an empty argv item", add: gate({ command: ["make", ""] }), bad: ["gate.command[1]"] },
-  { name: "a null argv item", add: gate({ command: [null] }), bad: ["gate.command[0]"] },
+  { name: "a gate as a string", ...gate("make test"), bad: ["gate"] },
+  { name: "a gate as a list", ...gate(["make"]), bad: ["gate"] },
+  { name: "a gate with no command", ...gate({}), bad: ["gate.command"] },
+  { name: "a command as a string", ...gate({ command: "make test" }), bad: ["gate.command"] },
+  { name: "an empty command", ...gate({ command: [] }), bad: ["gate.command"] },
+  { name: "a non-string argv item", ...gate({ command: ["make", 1] }), bad: ["gate.command[1]"] },
+  { name: "an empty argv item", ...gate({ command: ["make", ""] }), bad: ["gate.command[1]"] },
+  { name: "a null argv item", ...gate({ command: [null] }), bad: ["gate.command[0]"] },
   {
     name: "a misspelled gate key",
-    add: gate({ command: ["x"], comand: ["y"] }),
+    ...gate({ command: ["x"], comand: ["y"] }),
     bad: ["gate.comand"],
   },
   {
     name: "a quick tier without only",
-    add: gate({ command: ["x"], quick: { command: ["x", "--quick"] } }),
+    ...gate({ command: ["x"], quick: { command: ["x", "--quick"] } }),
     bad: ["gate.quick.only"],
   },
   {
     name: "a quick tier without a command",
-    add: gate({ command: ["x"], quick: { only: ["docs/**"] } }),
+    ...gate({ command: ["x"], quick: { only: ["docs/**"] } }),
     bad: ["gate.quick.command"],
   },
   {
     name: "a quick tier with an empty only",
-    add: gate({ command: ["x"], quick: { command: ["x"], only: [] } }),
+    ...gate({ command: ["x"], quick: { command: ["x"], only: [] } }),
     bad: ["gate.quick.only"],
   },
   {
     name: "an absolute only glob",
-    add: gate({ command: ["x"], quick: { command: ["x"], only: ["/etc/*"] } }),
+    ...gate({ command: ["x"], quick: { command: ["x"], only: ["/etc/*"] } }),
     bad: ["gate.quick.only[0]"],
   },
   {
     name: "an only glob that climbs out",
-    add: gate({ command: ["x"], quick: { command: ["x"], only: ["docs/**", "../x/**"] } }),
+    ...gate({ command: ["x"], quick: { command: ["x"], only: ["docs/**", "../x/**"] } }),
     bad: ["gate.quick.only[1]"],
   },
   {
     name: "an only glob as a string",
-    add: gate({ command: ["x"], quick: { command: ["x"], only: "docs/**" } }),
+    ...gate({ command: ["x"], quick: { command: ["x"], only: "docs/**" } }),
     bad: ["gate.quick.only"],
   },
   {
     name: "a misspelled only",
-    add: gate({ command: ["x"], quick: { command: ["x"], onyl: ["docs/**"] } }),
+    ...gate({ command: ["x"], quick: { command: ["x"], onyl: ["docs/**"] } }),
     bad: ["gate.quick.onyl", "gate.quick.only"],
   },
   {
     name: "a quick tier as a flag",
-    add: gate({ command: ["x"], quick: "--quick" }),
+    ...gate({ command: ["x"], quick: "--quick" }),
     bad: ["gate.quick"],
   },
   {
     name: "a zero concurrency",
-    add: gate({ command: ["x"], concurrency: 0 }),
+    ...gate({ command: ["x"], concurrency: 0 }),
     bad: ["gate.concurrency"],
   },
-  { name: "an empty flaky list", add: gate({ command: ["x"], flaky: [] }), bad: ["gate.flaky"] },
+  { name: "an empty flaky list", ...gate({ command: ["x"], flaky: [] }), bad: ["gate.flaky"] },
   {
     name: "an empty flaky name",
-    add: gate({ command: ["x"], flaky: ["a", ""] }),
+    ...gate({ command: ["x"], flaky: ["a", ""] }),
     bad: ["gate.flaky[1]"],
   },
   {
     name: "an empty flakyLogs list",
-    add: gate({ command: ["x"], flakyLogs: [] }),
+    ...gate({ command: ["x"], flakyLogs: [] }),
     bad: ["gate.flakyLogs"],
   },
   {
     name: "flakyLogs globs that are absolute, climb out or are empty",
-    add: gate({
+    ...gate({
       command: ["x"],
       flakyLogs: ["/var/log/a.log", "a/../b.log", "$TMPDIR/../x", "$TMPDIR/"],
     }),
@@ -170,157 +193,165 @@ export const PROCESS_CASES = [
   },
   {
     name: "flakyLogs globs with a . segment",
-    add: gate({ command: ["x"], flakyLogs: ["./sub/a.log", "sub/./a.log", "$TMPDIR/./a.log"] }),
+    ...gate({ command: ["x"], flakyLogs: ["./sub/a.log", "sub/./a.log", "$TMPDIR/./a.log"] }),
     bad: ["gate.flakyLogs[0]", "gate.flakyLogs[1]", "gate.flakyLogs[2]"],
   },
-  { name: "an empty after", add: gate({ command: ["x"], after: [] }), bad: ["gate.after"] },
+  { name: "an empty after", ...gate({ command: ["x"], after: [] }), bad: ["gate.after"] },
   {
     name: "an after glob that climbs out",
-    add: gate({ command: ["x"], after: ["a/../../x"] }),
+    ...gate({ command: ["x"], after: ["a/../../x"] }),
     bad: ["gate.after[0]"],
   },
   {
     name: "an empty after glob",
-    add: gate({ command: ["x"], after: [""] }),
+    ...gate({ command: ["x"], after: [""] }),
     bad: ["gate.after[0]"],
   },
-  { name: "an empty note", add: gate({ command: ["x"], note: "" }), bad: ["gate.note"] },
-  { name: "a number note", add: gate({ command: ["x"], note: 5 }), bad: ["gate.note"] },
+  { name: "an empty note", ...gate({ command: ["x"], note: "" }), bad: ["gate.note"] },
+  { name: "a number note", ...gate({ command: ["x"], note: 5 }), bad: ["gate.note"] },
   {
     name: "a __proto__ key in the gate",
     json: '{ "gate": { "command": ["x"], "__proto__": { "after": [] } } }',
     bad: ["gate.__proto__"],
   },
-  { name: "a misspelled top-level key", add: { gates: { command: ["x"] } }, bad: ["gates"] },
+  { name: "a misspelled top-level key", board: { gates: { command: ["x"] } }, bad: ["gates"] },
   // bad: extensions
-  { name: "extensions with no merge", add: { extensions: {} }, bad: ["extensions.merge"] },
+  { name: "extensions with no merge", workflow: { extensions: {} }, bad: ["extensions.merge"] },
   {
     name: "a merge extension with no checks",
-    add: { extensions: { merge: {} } },
+    workflow: { extensions: { merge: {} } },
     bad: ["extensions.merge.checks"],
   },
-  { name: "an empty checks list names no repo check", add: checks([]) },
-  { name: "checks as a string", add: checks("repo-merge"), bad: ["extensions.merge.checks"] },
+  { name: "an empty checks list names no repo check", ...checks([]) },
+  { name: "checks as a string", ...checks("repo-merge"), bad: ["extensions.merge.checks"] },
   {
     name: "an upper-case skill name",
-    add: checks(["Repo-Merge"]),
+    ...checks(["Repo-Merge"]),
     bad: ["extensions.merge.checks[0]"],
   },
   {
     name: "a skill name with a leading -",
-    add: checks(["-x"]),
+    ...checks(["-x"]),
     bad: ["extensions.merge.checks[0]"],
   },
-  { name: "an empty skill name", add: checks(["a", ""]), bad: ["extensions.merge.checks[1]"] },
+  { name: "an empty skill name", ...checks(["a", ""]), bad: ["extensions.merge.checks[1]"] },
   {
     name: "a namespaced skill name",
-    add: checks(["repo:merge"]),
+    ...checks(["repo:merge"]),
     bad: ["extensions.merge.checks[0]"],
   },
   {
     name: "a repeated skill name",
-    add: checks(["a", "b", "a"]),
+    ...checks(["a", "b", "a"]),
     bad: ["extensions.merge.checks[2]"],
   },
   {
     name: "a misspelled checks",
-    add: { extensions: { merge: { check: ["a"] } } },
+    workflow: { extensions: { merge: { check: ["a"] } } },
     bad: ["extensions.merge.check", "extensions.merge.checks"],
   },
   {
     name: "a misspelled merge",
-    add: { extensions: { marge: { checks: ["a"] } } },
+    workflow: { extensions: { marge: { checks: ["a"] } } },
     bad: ["extensions.marge", "extensions.merge"],
   },
   // bad: conductor
-  { name: "a conductor with no prompt", add: { conductor: {} }, bad: ["conductor.prompt"] },
-  { name: "an empty prompt path", add: { conductor: { prompt: "" } }, bad: ["conductor.prompt"] },
+  { name: "a conductor with no prompt", workflow: { conductor: {} }, bad: ["conductor.prompt"] },
+  {
+    name: "an empty prompt path",
+    workflow: { conductor: { prompt: "" } },
+    bad: ["conductor.prompt"],
+  },
   {
     name: "an absolute prompt path",
-    add: { conductor: { prompt: "/home/x/CONDUCTOR.md" } },
+    workflow: { conductor: { prompt: "/home/x/CONDUCTOR.md" } },
     bad: ["conductor.prompt"],
   },
   {
     name: "a prompt path out",
-    add: { conductor: { prompt: "../CONDUCTOR.md" } },
+    workflow: { conductor: { prompt: "../CONDUCTOR.md" } },
     bad: ["conductor.prompt"],
   },
   {
     name: "an empty rules heading",
-    add: { conductor: { prompt: "C.md", rules: "" } },
+    workflow: { conductor: { prompt: "C.md", rules: "" } },
     bad: ["conductor.rules"],
   },
   {
     name: "a rules heading as a list",
-    add: { conductor: { prompt: "C.md", rules: ["Rules"] } },
+    workflow: { conductor: { prompt: "C.md", rules: ["Rules"] } },
     bad: ["conductor.rules"],
   },
   {
     name: "a misspelled prompt",
-    add: { conductor: { promt: "C.md" } },
+    workflow: { conductor: { promt: "C.md" } },
     bad: ["conductor.promt", "conductor.prompt"],
   },
   // worktrees.keep and the hand status file
-  { name: "worktrees to keep", add: { worktrees: { keep: ["main-*", "docs"] } } },
-  { name: "an empty keep list", add: { worktrees: { keep: [] } }, bad: ["worktrees.keep"] },
+  { name: "worktrees to keep", workflow: { worktrees: { keep: ["main-*", "docs"] } } },
+  { name: "an empty keep list", workflow: { worktrees: { keep: [] } }, bad: ["worktrees.keep"] },
   {
     name: "a keep entry that is empty",
-    add: { worktrees: { keep: [""] } },
+    workflow: { worktrees: { keep: [""] } },
     bad: ["worktrees.keep[0]"],
   },
-  { name: "worktrees with no keep", add: { worktrees: {} }, bad: ["worktrees.keep"] },
+  { name: "worktrees with no keep", workflow: { worktrees: {} }, bad: ["worktrees.keep"] },
   // guard.allow
-  { name: "guard globs", add: { guard: { allow: ["docs/STATUS.md", "docs/plans/**"] } } },
-  { name: "an empty allow list", add: { guard: { allow: [] } }, bad: ["guard.allow"] },
-  { name: "guard with no allow", add: { guard: {} }, bad: ["guard.allow"] },
+  { name: "guard globs", workflow: { guard: { allow: ["docs/STATUS.md", "docs/plans/**"] } } },
+  { name: "an empty allow list", workflow: { guard: { allow: [] } }, bad: ["guard.allow"] },
+  { name: "guard with no allow", workflow: { guard: {} }, bad: ["guard.allow"] },
   {
     name: "an allow glob out of the repository",
-    add: { guard: { allow: ["../x.md", "/abs.md"] } },
+    workflow: { guard: { allow: ["../x.md", "/abs.md"] } },
     bad: ["guard.allow[0]", "guard.allow[1]"],
   },
   {
     name: "a misspelled allow",
-    add: { guard: { alow: ["docs/**"] } },
+    workflow: { guard: { alow: ["docs/**"] } },
     bad: ["guard.alow", "guard.allow"],
   },
   // cleanup.disposable
-  { name: "disposable globs", add: { cleanup: { disposable: ["**/.godot", "**/*.translation"] } } },
+  {
+    name: "disposable globs",
+    workflow: { cleanup: { disposable: ["**/.godot", "**/*.translation"] } },
+  },
   {
     name: "an empty disposable list",
-    add: { cleanup: { disposable: [] } },
+    workflow: { cleanup: { disposable: [] } },
     bad: ["cleanup.disposable"],
   },
   {
     name: "a disposable entry that is empty",
-    add: { cleanup: { disposable: [""] } },
+    workflow: { cleanup: { disposable: [""] } },
     bad: ["cleanup.disposable[0]"],
   },
   {
     name: "a disposable glob out of the repository",
-    add: { cleanup: { disposable: ["../build"] } },
+    workflow: { cleanup: { disposable: ["../build"] } },
     bad: ["cleanup.disposable[0]"],
   },
   {
     name: "a hand status file and its heading",
-    add: { status: { file: "docs/STATUS.md", next: "Next" } },
+    board: { status: { file: "docs/STATUS.md", next: "Next" } },
   },
   {
     name: "a status file outside the repository",
-    add: { status: { file: "../STATUS.md" } },
+    board: { status: { file: "../STATUS.md" } },
     bad: ["status.file"],
   },
-  { name: "an empty status heading", add: { status: { next: "" } }, bad: ["status.next"] },
+  { name: "an empty status heading", board: { status: { next: "" } }, bad: ["status.next"] },
   // bad: lifecycle writes
   {
     name: "a misspelled lifecycle write",
-    add: life({ verdit: "status" }),
+    ...life({ verdit: "status" }),
     bad: ["lifecycle.write.verdit"],
   },
   {
     name: "a handoff write that is no parent section",
-    add: life({ handoff: "handoff" }),
+    ...life({ handoff: "handoff" }),
     bad: ["lifecycle.write.handoff"],
   },
+  ...MISPLACED,
 ];
 
 export const CONFIG_CASES = [

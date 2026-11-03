@@ -1,14 +1,23 @@
-# The process file — `.agentry/process.json`
+# The process and workflow files — `.agentry/process.json` and `.agentry/workflow.json`
 
 Reference for the `process` skill. The process file describes how one repo writes its board: which kinds of
-item it has, where each lives, what each field means, which rules hold and where the harness may write. The
-checker (`board.mjs`) is the same in every repo; only this file differs. The fresh-repo version is
-`templates/process.json`; read it next to this page.
+item it has, where each lives, what each field means and which rules hold. Its sibling, the workflow file,
+says how the harness works the repo: what it writes as work moves, the gate, the conductor prompt, the
+guard, the cleanup and the exec lane. The checker (`board.mjs`) is the same in every repo; only these files
+differ. The fresh-repo versions are `templates/process.json` and `templates/workflow.json`; read them next to
+this page.
 
-JSON, no comments: a `note` on any kind or rule carries the human explanation. The schema is `ProcessSpec`
-in `@agentry/core` (`packages/core/src/process.ts`); when this page and the schema disagree, the schema wins.
+JSON, no comments: a `note` on any kind or rule carries the human explanation. The schemas are
+`ProcessBoard` (`packages/core/src/process.ts`) and `Workflow` (`packages/core/src/workflow.ts`) in
+`@agentry/core`; when this page and the schemas disagree, the schemas win.
 
-## Top level
+The workflow file is always the sibling `workflow.json` of the process file in use (`--process
+.agentry/run/process/process.json` reads `.agentry/run/process/workflow.json`). It is optional: with none,
+every workflow key is absent. A key put in the other file is refused at load (exit 2), naming the file it
+belongs in: `gate is a workflow key: it belongs in workflow.json`, `kinds is a board key: it belongs in
+process.json`.
+
+## process.json: top level
 
 | Key | Required | What |
 | :--- | :--- | :--- |
@@ -17,9 +26,16 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
 | `root` | yes | Directory of the board, relative to the git root. Every path below is relative to it and must stay inside the repository. |
 | `kinds` | yes | `{ "<kind>": Kind }`. The kind names are the repo's own (`task`, `story`, `ticket`…). |
 | `rules` | yes | The rules turned on, each `{ "rule": "<catalog id>", …params }`. |
+| `status` | no | The derived view: `now` (the kind that is "current", e.g. `sprint`), `note` (the hand-written note, default `.agentry/NOTE.md`), `prime` (inject it at session start), `lines` (how many), `file` and `next` (a hand-kept status file, see the last section). |
+
+## workflow.json: top level
+
+No `version`, and every key is optional.
+
+| Key | Required | What |
+| :--- | :--- | :--- |
 | `lifecycle` | no | What the harness writes as work moves. Absent: the checker never writes on its own. |
 | `drafts` | no | How an answered question becomes a decision draft. |
-| `status` | no | The derived view: `now` (the kind that is "current", e.g. `sprint`), `note` (the hand-written note, default `.agentry/NOTE.md`), `prime` (inject it at session start), `lines` (how many), `file` and `next` (a hand-kept status file, see the last section). |
 | `worktrees` | no | `{ "keep": [names or globs] }`: worktrees kept on purpose. |
 | `gate` | no | The repo's gate: the command `exec` and `merge` run, its quick tier, the files it may leave changed. |
 | `extensions` | no | Repo skills Agentry's commands run as extra checks (`merge.checks`). |
@@ -217,6 +233,8 @@ What a rule needs of a kind before it can check it, as the params table names th
 
 ## lifecycle and drafts
 
+In `workflow.json`:
+
 ```json
 "lifecycle": {
   "kind": "task",
@@ -251,6 +269,8 @@ must give every "done" rule on that kind what it reads: a `done-has-evidence` fi
 the owner's approval.
 
 ## gate, extensions and conductor
+
+In `workflow.json`:
 
 ```json
 "gate": {
@@ -291,6 +311,8 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
 
 ## status file and kept worktrees
 
+`status` is in `process.json`, `worktrees` in `workflow.json`:
+
 ```json
 "status": { "file": "docs/STATUS.md", "next": "Next" },
 "worktrees": { "keep": ["scratch-*", "release"] }
@@ -303,6 +325,8 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
   branch and its directory name. A match is shown as *kept* in `agentry board status`, never as drift.
 
 ## exec and models
+
+In `workflow.json`:
 
 ```json
 "exec": { "verify": "flagged" },
@@ -323,6 +347,8 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
   no name for a dispatch it prints no `model:` line. Nothing here changes which agent runs.
 
 ## guard and cleanup
+
+In `workflow.json`:
 
 ```json
 "guard": { "allow": ["docs/STATUS.md", "docs/plans/**"] },

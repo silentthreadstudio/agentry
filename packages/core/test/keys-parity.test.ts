@@ -1,7 +1,7 @@
 // The harness keys hold one verdict in both validators (plan R1b §2.1): every case of the shared table
 // (`plugin/scripts/test/key-cases.mjs`) goes through core's zod and the plugin's dependency-free
-// validator (`spec.mjs` for process.json, `lib/config.mjs` for config.json), which must accept the
-// same cases and name the same paths.
+// validator (`spec.mjs` for process.json and workflow.json, against `ProcessBoard` plus `Workflow`;
+// `lib/config.mjs` for config.json), which must accept the same cases and name the same paths.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ZodError } from "zod";
@@ -12,10 +12,11 @@ import {
   PROCESS_CASES,
   configOf,
   pathOf,
-  processOf,
+  specOf,
 } from "../../../plugin/scripts/test/key-cases.mjs";
 import { AgentryConfig } from "../src/config.js";
-import { ProcessSpec } from "../src/process.js";
+import { ProcessBoard } from "../src/process.js";
+import { Workflow } from "../src/workflow.js";
 
 interface Case {
   name: string;
@@ -49,11 +50,17 @@ test("the shared table is large enough and has both verdicts (plan R1b §2.1: �
   assert.ok(all.some((c) => c.bad) && all.some((c) => !c.bad));
 });
 
-test("process.json harness keys: zod and spec.mjs give the same verdict on every case", () => {
+test("process.json and workflow.json keys: zod and spec.mjs give the same verdict on every case", () => {
   for (const c of PROCESS_CASES as Case[]) {
-    const value = processOf(c);
-    const plugin = validateSpec(value).problems.map((p: { message: string }) => pathOf(p.message));
-    agree(c, plugin, zodPaths(ProcessSpec.safeParse(value).error));
+    const { board, workflow } = specOf(c);
+    const plugin = validateSpec({ board, workflow }).problems.map((p: { message: string }) =>
+      pathOf(p.message),
+    );
+    const zod = [
+      ...zodPaths(ProcessBoard.safeParse(board).error),
+      ...(workflow === undefined ? [] : zodPaths(Workflow.safeParse(workflow).error)),
+    ];
+    agree(c, plugin, zod);
   }
 });
 

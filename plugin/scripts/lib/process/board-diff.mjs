@@ -39,7 +39,7 @@
 //     else is a `conflict` ({ ...cell, now }). Another row moving or changing does not matter.
 import { posix } from "node:path";
 import * as md from "./markdown.mjs";
-import { own } from "./spec.mjs";
+import { own } from "./spec/shape.mjs";
 import { setCell, setKey } from "./write.mjs";
 
 const LIFECYCLE_WRITES = ["status", "verdict", "commit"];

@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { applyEvent, renderHandoff } from "../lib/process/lifecycle.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 import { WriteError } from "../lib/process/write.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const BOARD = join(dirname(fileURLToPath(import.meta.url)), "..", "board.mjs");
 const temps = [];
@@ -99,7 +100,7 @@ function repo({ spec = SPEC, commits = 2 } = {}) {
   temps.push(root);
   mkdirSync(join(root, "plan", "sprints"), { recursive: true });
   mkdirSync(join(root, ".agentry"));
-  writeFileSync(join(root, ".agentry", "process.json"), JSON.stringify(spec, null, 2));
+  writeSpec(join(root, ".agentry"), spec);
   writeFileSync(join(root, "plan", "BOARD.md"), BOARD_MD);
   writeFileSync(join(root, "plan", "sprints", "S1.md"), SPRINT_MD);
   git(root, "init", "-q", "-b", "main");

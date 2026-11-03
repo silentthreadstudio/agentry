@@ -33,8 +33,8 @@ export const help = {
 const tty = () => Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
 const clock = () => new Date().toTimeString().slice(0, 5);
 
-export function run(argv, { root, processPath, spec, model }) {
-  const refused = refuseConductor(root, spec, processPath);
+export function run(argv, { root, processPath, workflowPath, spec, model }) {
+  const refused = refuseConductor(root, spec, workflowPath);
   if (refused) return refused;
   const report = boardReport({ root, spec, model });
   const exit = report.ok ? 0 : 1;

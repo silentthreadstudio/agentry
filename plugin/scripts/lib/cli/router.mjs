@@ -1,17 +1,17 @@
 // router — the argv → subcommand router shared by `board.mjs` and `lane.mjs`: `<cli> [<sub>] [--root <git
 // root>] [--process <file>] [--help] …`. Routes to `<dir>/<sub>.mjs`, found by name, as `run(argv, ctx) ->
-// { exit, out }` with ctx `{ root, processPath, spec, model }`; a sub that exports `noSpec` runs without a
-// process file. `--root`, `--process` and `--help` are the router's. A sub exports its `help`
+// { exit, out }` with ctx `{ root, processPath, workflowPath, spec, model }`; a sub that exports `noSpec`
+// runs without a process file. The workflow file is always the process file's sibling `workflow.json`. `--root`, `--process` and `--help` are the router's. A sub exports its `help`
 // (`help.mjs`): the options it takes are the keys of `help.flags`, any other option is a usage error, and
 // `--flag=value` reads as `--flag value`. `--help` prints the sub's help (or, with no sub named, every
 // sub's purpose) and exits 0 without reading the process file. Exit 0 = OK, 1 = findings, 2 = usage or
-// process-file error. Node built-ins only.
+// process-file or workflow-file error. Node built-ins only.
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gitRootOf } from "../process/contract.mjs";
-import { loadSpec, readProcess } from "../process/read.mjs";
-import { checkOnBoard } from "../process/spec.mjs";
+import { loadSpec, readProcess, workflowPathOf } from "../process/read.mjs";
+import { checkOnBoard } from "../process/spec/rules.mjs";
 import { flagsOf, renderHelp, renderIndex, say, usageError } from "./help.mjs";
 
 const subsIn = (dir) =>
@@ -81,21 +81,30 @@ export async function route(argv, { dir, defaultSub, name: cli = "cli" }) {
   if (helpAt >= 0) return { exit: 0, out: renderHelp(cli, sub, mod.help) };
   const { argv: args, error } = options(argv, flagsOf(mod.help));
   if (error) return usageError(`${cli} ${sub}`, error);
-  if (mod.noSpec) return mod.run(args, { root, processPath });
+  const workflowPath = workflowPathOf(processPath);
+  if (mod.noSpec) return mod.run(args, { root, processPath, workflowPath });
+  const shown = (path) => (relative(root, path).startsWith("..") ? path : relative(root, path));
+  // One block per file with problems, the process file first: its header, then its own problems.
+  const block = (path, head, some) => [
+    say(shown(path), head, "/agentry:init"),
+    ...some.map((p) => `  ${p.message}`),
+  ];
   const refuse = (problems) => {
-    const shown = relative(root, processPath).startsWith("..")
-      ? processPath
-      : relative(root, processPath);
+    const ofWorkflow = problems.filter((p) => p.file === workflowPath);
+    const ofProcess = problems.filter((p) => p.file !== workflowPath);
     const why = existsSync(processPath) ? "cannot use the process file" : "no process file here";
-    const lines = problems.map((p) => `  ${p.message}`);
-    return { exit: 2, out: [say(shown, why, "/agentry:init"), ...lines].join("\n") };
+    const out = [
+      ...(ofProcess.length || !ofWorkflow.length ? block(processPath, why, ofProcess) : []),
+      ...(ofWorkflow.length ? block(workflowPath, "cannot use the workflow file", ofWorkflow) : []),
+    ];
+    return { exit: 2, out: out.join("\n") };
   };
   const { spec, problems } = loadSpec(processPath, { root });
   if (!spec || problems.length) return refuse(problems);
   const model = readProcess({ root, spec });
   const late = checkOnBoard(spec, model, { file: processPath });
   if (late.length) return refuse(late);
-  return mod.run(args, { root, processPath, spec, model });
+  return mod.run(args, { root, processPath, workflowPath, spec, model });
 }
 
 /** The bin wrapper: route, print to stdout (or stderr on exit 2), set the exit code. */

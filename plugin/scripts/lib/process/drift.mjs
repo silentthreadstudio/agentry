@@ -28,7 +28,7 @@ import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 import { commitsIn, handoffLines, namesCommits } from "./rules/evidence.mjs";
 import { parentOf } from "./rules/structure.mjs";
-import { own } from "./spec.mjs";
+import { own } from "./spec/shape.mjs";
 import { staleStatus } from "./stale-status.mjs";
 
 const MERGED_STATES = ["merged", "closed"];
@@ -480,7 +480,7 @@ function unlistedTrees(root, runRoot, all) {
     .filter((t) => !all.some((l) => l.worktree === t.path || (t.branch && l.branch === t.branch)));
 }
 
-/** The unlisted agent worktrees the process file keeps on purpose (`worktrees.keep`): shown, never drift. */
+/** The unlisted agent worktrees the workflow file keeps on purpose (`worktrees.keep`): shown, never drift. */
 export function keptTrees({ root, runRoot = root, spec }) {
   if (!spec.worktrees?.keep) return [];
   return unlistedTrees(root, runRoot, ledgers.list(runRoot)).filter((t) => isKept(spec, t));
@@ -587,7 +587,7 @@ export function mechanical({ root, runRoot = root, spec, model }) {
  *  (`landing`: commits on main to name, still in effect on main's tip); otherwise nothing is written and
  *  the reason is in `left`. */
 export function accepted({ root, runRoot = root, spec, model, id }) {
-  if (!spec.lifecycle) return { fixes: [], left: [`${id}: the process file has no lifecycle`] };
+  if (!spec.lifecycle) return { fixes: [], left: [`${id}: the workflow file has no lifecycle`] };
   const ledger = ledgers.list(runRoot).find((l) => l.id === id);
   const { item, left: none } = itemFor(spec, model, id);
   const landed = () =>

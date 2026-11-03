@@ -18,7 +18,7 @@ import { ID_TOKEN, blockStarts, markdownFiles, repoMarkdown } from "../contract.
 import * as md from "../markdown.mjs";
 import { staysInside } from "../read.mjs";
 import { fit } from "../render.mjs";
-import { escapesRoot } from "../spec.mjs";
+import { escapesRoot } from "../spec/shape.mjs";
 
 export const noSpec = true;
 export const help = {

@@ -39,7 +39,8 @@ import { boardId } from "../../process/ids.mjs";
 import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
-import { flaggedItem, gateOf, modelFor, own, verifyRoute } from "../../process/spec.mjs";
+import { own } from "../../process/spec/shape.mjs";
+import { flaggedItem, gateOf, modelFor, verifyRoute } from "../../process/spec/workflow.mjs";
 import { WriteError } from "../../process/write.mjs";
 import {
   appendedAfter,
@@ -196,7 +197,7 @@ export function run(argv, ctx) {
 // reachable from its start content, or from the content a recorded merge committed, through recorded
 // lifecycle writes or board writes made since the lane started. Any other edit (another row, free text, a
 // non-board file, a file dirty at start that changed since) is the builder's, unless its path matches the
-// process file's `guard.allow` and no running lane owns it. HEAD may move only by merges other ledgers
+// workflow file's `guard.allow` and no running lane owns it. HEAD may move only by merges other ledgers
 // record, each a run preHead → landed… → board commit that git's first-parent history confirms.
 
 // Agentry's own files: the run state. (The memory records a lane writes are `own-memory.mjs`'s.)
@@ -439,7 +440,7 @@ function writers(root, spec) {
 const contractFile = (root, id) => join(ledgers.runDir(root, id), "contract.md");
 
 function gateLine(root, spec, ledger) {
-  if (!gateOf(spec)) return "none: the process file has no gate, so run the repo's own checks";
+  if (!gateOf(spec)) return "none: the workflow file has no gate, so run the repo's own checks";
   return `cd ${q(ledger.worktree)} && ${laneLine(root, "gate", ledger.id)}`;
 }
 
@@ -918,7 +919,7 @@ function gate(ctx, id) {
   if (ledger.state === "stopped" || ledger.next === "merge")
     refuse(`the lane is ${ledger.state} (next ${ledger.next}): no gate to run`);
   const config = gateOf(spec);
-  if (!config) refuse("the process file has no gate: add one (/agentry:init) to run it here");
+  if (!config) refuse("the workflow file has no gate: add one (/agentry:init) to run it here");
   const tier = pickTier(config, changedSince(ledger.worktree, ledger.base, "HEAD") ?? []);
   const command = tier.tier === "quick" ? config.quick.command : config.command;
   const lockDir = gateLockDir(root);

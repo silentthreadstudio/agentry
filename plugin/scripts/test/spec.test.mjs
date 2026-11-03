@@ -1,4 +1,4 @@
-// Tests for lib/process/spec.mjs — hand validation of the process file (plan F13 §3.1).
+// Tests for lib/process/spec.mjs — hand validation of the process and workflow files (plan F13 §3.1).
 // Run: node --test plugin/scripts/test/spec.test.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -6,11 +6,20 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { CAN, lacks } from "../lib/process/rules/index.mjs";
-import { checkOnBoard, escapesRoot, parseSpec, validateSpec } from "../lib/process/spec.mjs";
+import { parseSpec, validateSpec } from "../lib/process/spec.mjs";
+import { checkOnBoard } from "../lib/process/spec/rules.mjs";
+import { escapesRoot } from "../lib/process/spec/shape.mjs";
 import { SPEC, makeModel, sprint, task } from "./rules-model.mjs";
+import { splitSpec } from "./spec-files.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
-const fixture = (name) => readFileSync(join(FIXTURES, name, "process.json"), "utf8");
+const fixture = (name, file = "process.json") => {
+  try {
+    return readFileSync(join(FIXTURES, name, file), "utf8");
+  } catch {
+    return undefined;
+  }
+};
 
 const MINI = {
   version: 1,
@@ -42,12 +51,14 @@ function spec(path, ...value) {
   else Reflect.deleteProperty(parent, last);
   return copy;
 }
-const messages = (value) => validateSpec(value).problems.map((p) => p.message);
+const messages = (value) => validateSpec(splitSpec(value)).problems.map((p) => p.message);
 const flags = (value, re) => messages(value).some((m) => re.test(m));
 
-test("the synthetic fixtures' process files are valid", () => {
+test("the synthetic fixtures' process and workflow files are valid", () => {
   for (const name of ["table-board", "evidence-board", "frontmatter-board"]) {
-    const { spec: parsed, problems } = parseSpec(fixture(name), { file: `${name}/process.json` });
+    const files = { board: `${name}/process.json`, workflow: `${name}/workflow.json` };
+    const texts = { board: fixture(name), workflow: fixture(name, "workflow.json") };
+    const { spec: parsed, problems } = parseSpec(texts, { files });
     assert.deepEqual(problems, [], name);
     assert.equal(parsed.version, 1);
   }
@@ -58,7 +69,7 @@ test("a minimal spec is valid", () => {
 });
 
 test("invalid JSON is a problem with the file, not a throw", () => {
-  const { spec: parsed, problems } = parseSpec("{ nope", { file: "p.json" });
+  const { spec: parsed, problems } = parseSpec({ board: "{ nope" }, { files: { board: "p.json" } });
   assert.equal(parsed, null);
   assert.equal(problems.length, 1);
   assert.equal(problems[0].rule, "spec");

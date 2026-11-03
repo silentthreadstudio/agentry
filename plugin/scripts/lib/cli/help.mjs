@@ -86,7 +86,7 @@ export function renderIndex(cli, subs) {
     "",
     `${cli} <subcommand> --help prints its args, flags, exit codes and an example.`,
     "--root and --process work with every subcommand: the git root, and the process file",
-    "(default <root>/.agentry/process.json).",
+    "(default <root>/.agentry/process.json); the workflow file is its sibling workflow.json.",
     "",
     version(),
   ].join("\n");

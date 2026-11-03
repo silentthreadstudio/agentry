@@ -11,7 +11,7 @@ Drafts live in
 
 | Kind | What it is | `apply` does |
 | :--- | :--- | :--- |
-| `decision` | A call the owner made between options. | Takes the next free id (`next-id`) and writes the decision through `add`, filling the kind's fields from the process file's `drafts.decision.map`. |
+| `decision` | A call the owner made between options. | Takes the next free id (`next-id`) and writes the decision through `add`, filling the kind's fields from the workflow file's `drafts.decision.map`. |
 | `rule` | A standing rule: "from now on…", "I want…", "should…". | Appends it as a bullet under the `conductor.rules` heading of the conductor prompt (`conductor.prompt`). |
 
 A draft is `{ n, kind, answer, question?, unpicked?, source?, at, state }`. `answer` is the call in the owner's
@@ -55,10 +55,10 @@ and store nothing.
 Run `agentry board draft apply <n>` to show the owner exactly what it would write (it writes nothing). Only after
 the owner's OK for that draft, run `agentry board draft apply <n> --apply` and show its output.
 
-- **decision**: the process file needs `drafts.decision` (`kind`, `map`). Its `map` fills the kind's fields from
+- **decision**: the workflow file needs `drafts.decision` (`kind`, `map`). Its `map` fills the kind's fields from
   `{answer}`, `{question}` and `{unpicked}`; any other placeholder exits 2. The kind's `create.id` must be a pattern
   `next-id` can follow. Then `agentry board check` and report the delta, as `/agentry:new` does.
-- **rule**: needs `conductor.prompt` and `conductor.rules` in the process file, and that heading in the prompt. Without
+- **rule**: needs `conductor.prompt` and `conductor.rules` in the workflow file, and that heading in the prompt. Without
   them `apply` exits 2 and writes nothing; tell the owner to add the heading or run `/agentry:init`.
 
 Exit 2 leaves the draft pending. Never commit; the owner reviews the diff.

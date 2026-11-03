@@ -1,5 +1,5 @@
-// Process — the per-repo process file (`.agentry/process.json`) and the shapes the board checker
-// reports. One concern: the typed contract the dependency-free checker and its hooks agree on.
+// Process — the per-repo process file (`.agentry/process.json`, the board) and the shapes the board
+// checker reports. The workflow file and the merged spec are `workflow.ts`'s. One concern: the typed contract the dependency-free checker and its hooks agree on.
 // Readers and writers live in `plugin/scripts/lib/process/`, not here.
 import { z } from "zod";
 
@@ -139,38 +139,10 @@ export const Rule = z
   .passthrough();
 export type Rule = z.infer<typeof Rule>;
 
-/** What the harness writes as events arrive. Absent = the checker is read-only. */
-const Lifecycle = z
-  .object({
-    kind: z.string(),
-    on: z
-      .object({
-        dispatched: z.string().optional(),
-        built: z.string().optional(),
-        failed: z.string().optional(),
-        merged: z.string().optional(),
-      })
-      .strict(),
-    write: z
-      .object({
-        status: z.string().optional(),
-        verdict: z.string().optional(),
-        commit: z.string().optional(),
-        handoff: z
-          .string()
-          .regex(/^parent\.file:.+$/, { message: 'expected "parent.file:<section>"' })
-          .optional(),
-      })
-      .strict()
-      .optional(),
-    handoff: z.string().optional(),
-  })
-  .strict();
-
-// The harness keys never take an empty string or list, and their paths stay inside the repository
-// (relative to its git root): a typo refuses instead of quietly checking less. Mirrors the plugin's
-// `spec.mjs`; the shared table (`plugin/scripts/test/key-cases.mjs`) holds both to one verdict.
-const Text = z.string().min(1);
+// The values the harness keys and `status` take never an empty string, and their paths stay inside the
+// repository (relative to its git root): a typo refuses instead of quietly checking less. Mirrors the
+// plugin's `spec/shape.mjs`; the shared table (`plugin/scripts/test/key-cases.mjs`) holds both to one verdict.
+export const Text = z.string().min(1);
 /** True when a repo-relative path is absolute or climbs out with `..` (posix `normalize` semantics). */
 const leavesRepo = (path: string): boolean => {
   if (path.startsWith("/")) return true;
@@ -182,66 +154,7 @@ const leavesRepo = (path: string): boolean => {
   }
   return false;
 };
-const RepoPath = Text.refine((p) => !leavesRepo(p), { message: "leaves the repository" });
-/** A log glob from the gate's cwd, or from the temp directory after a literal `$TMPDIR/`. */
-const LogGlob = Text.refine(
-  (p) => {
-    const rest = p.startsWith("$TMPDIR/") ? p.slice("$TMPDIR/".length) : p;
-    return (
-      rest !== "" && !rest.startsWith("/") && !rest.split("/").some((x) => x === ".." || x === ".")
-    );
-  },
-  { message: "expected a glob from the gate's cwd or $TMPDIR/" },
-);
-const Argv = z.array(Text).min(1);
-const Globs = z.array(RepoPath).min(1);
-
-/** The repo's gate: argv run with no shell in the git root of the tree under test. `quick` applies
- *  only when every changed file matches `only`; `after` lists the files it may leave changed;
- *  `concurrency` is how many lane gates run at once; `flaky` names tests a red may fail in and be re-run; `flakyLogs` are extra logs it reads for their names. */
-export const Gate = z
-  .object({
-    command: Argv,
-    quick: z.object({ command: Argv, only: Globs }).strict().optional(),
-    after: Globs.optional(),
-    concurrency: z.number().int().positive().optional(),
-    flaky: z.array(Text).min(1).optional(),
-    flakyLogs: z.array(LogGlob).min(1).optional(),
-    note: Text.optional(),
-  })
-  .strict();
-export type Gate = z.infer<typeof Gate>;
-
-const SkillName = z
-  .string()
-  .regex(/^[a-z0-9][a-z0-9-]*$/, { message: "expected a skill name (lower-case, digits, -)" });
-
-/** The repo skills `/agentry:merge` runs as checks (native names); `[]` names none. */
-export const Extensions = z
-  .object({
-    merge: z
-      .object({
-        checks: z.array(SkillName).superRefine((names, ctx) =>
-          names.forEach((name, i) => {
-            if (names.indexOf(name) < i)
-              ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                path: [i],
-                message: `repeats "${name}"`,
-              });
-          }),
-        ),
-      })
-      .strict(),
-  })
-  .strict();
-export type Extensions = z.infer<typeof Extensions>;
-
-/** The repo's conductor prompt, and the heading standing-rule appends go under. */
-export const Conductor = z.object({ prompt: RepoPath, rules: Text.optional() }).strict();
-export type Conductor = z.infer<typeof Conductor>;
-
-const Drafts = z.record(z.object({ kind: z.string(), map: z.record(z.string()) }).strict());
+export const RepoPath = Text.refine((p) => !leavesRepo(p), { message: "leaves the repository" });
 
 /** The `status` key of the process file: how the derived view is built and primed. */
 export const StatusConfig = z
@@ -257,38 +170,9 @@ export const StatusConfig = z
   .strict();
 export type StatusConfig = z.infer<typeof StatusConfig>;
 
-/** Worktrees that are kept on purpose: names or globs of a branch or directory, shown as kept, never drift. */
-export const Worktrees = z.object({ keep: z.array(Text).min(1) }).strict();
-export type Worktrees = z.infer<typeof Worktrees>;
-
-/** Main-checkout files the main-touched guard lets change while a lane runs (globs), unless a running
- *  lane owns them. */
-export const Guard = z.object({ allow: Globs }).strict();
-export type Guard = z.infer<typeof Guard>;
-
-/** Ignored files `lane merge --cleanup` discards without asking (globs, e.g. build output). */
-export const Cleanup = z.object({ disposable: Globs }).strict();
-export type Cleanup = z.infer<typeof Cleanup>;
-
-/** The exec lane's own settings: `verify` says which items get an independent verifier (`all` by default;
- *  `flagged` only those whose `flag` field is set, which needs a `flag` field on the lifecycle kind). */
-export const Exec = z.object({ verify: z.enum(["all", "flagged", "none"]).optional() }).strict();
-export type Exec = z.infer<typeof Exec>;
-
-/** The model each exec dispatch names, by role: `build`, and `verify` by the item (`ui`: a designer
- *  builds it, `flagged`: its flag is set) with `default` for the rest. Any string; all optional. */
-export const Models = z
-  .object({
-    build: Text.optional(),
-    verify: z
-      .object({ default: Text.optional(), ui: Text.optional(), flagged: Text.optional() })
-      .strict()
-      .optional(),
-  })
-  .strict();
-export type Models = z.infer<typeof Models>;
-
-export const ProcessSpec = z
+/** The process file (`.agentry/process.json`): the board, exactly these six keys. How the harness works
+ *  the repo is the workflow file's (`workflow.ts`). */
+export const ProcessBoard = z
   .object({
     version: z.literal(1),
     name: z.string(),
@@ -297,20 +181,10 @@ export const ProcessSpec = z
       .record(ProcessKind)
       .refine((kinds) => Object.keys(kinds).length > 0, "should name at least one kind"),
     rules: z.array(Rule),
-    lifecycle: Lifecycle.optional(),
-    drafts: Drafts.optional(),
     status: StatusConfig.optional(),
-    worktrees: Worktrees.optional(),
-    gate: Gate.optional(),
-    extensions: Extensions.optional(),
-    conductor: Conductor.optional(),
-    guard: Guard.optional(),
-    cleanup: Cleanup.optional(),
-    exec: Exec.optional(),
-    models: Models.optional(),
   })
   .strict();
-export type ProcessSpec = z.infer<typeof ProcessSpec>;
+export type ProcessBoard = z.infer<typeof ProcessBoard>;
 
 /** One problem a rule (or the loader) found. */
 export const Finding = z.object({

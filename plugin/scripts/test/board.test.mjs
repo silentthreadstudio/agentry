@@ -21,6 +21,7 @@ import { check } from "../lib/process/check.mjs";
 import { explain } from "../lib/process/cli/explain.mjs";
 import { findContract } from "../lib/process/contract.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BOARD = join(HERE, "..", "board.mjs");
@@ -164,7 +165,7 @@ test("a conductor prompt that a symlink takes out of the repository is exit 2", 
   try {
     const file = join(root, "process.json");
     const spec = JSON.parse(readFileSync(file, "utf8"));
-    writeFileSync(file, JSON.stringify({ ...spec, conductor: { prompt: "CONDUCTOR.md" } }));
+    writeSpec(root, { ...spec, conductor: { prompt: "CONDUCTOR.md" } });
     symlinkSync(join(outside, "secret.md"), join(root, "CONDUCTOR.md"));
     const res = cli("check", "--process", file);
     assert.equal(res.status, 2);
@@ -224,7 +225,7 @@ test("usage and process-file errors are exit 2, on stderr", () => {
   const empty = mkdtempSync(join(tmpdir(), "agentry-board-"));
   try {
     const kindless = { version: 1, name: "E", root: ".", kinds: {}, rules: [] };
-    writeFileSync(join(empty, "process.json"), JSON.stringify(kindless));
+    writeSpec(empty, kindless);
     for (const sub of ["check", "status"]) {
       const argv = [BOARD, sub, "--root", empty, "--process", join(empty, "process.json")];
       const res = spawnSync("node", argv, {

@@ -22,7 +22,7 @@
 import { realpathSync } from "node:fs";
 import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
 import { boardId } from "../../process/ids.mjs";
-import { gateOf } from "../../process/spec.mjs";
+import { gateOf } from "../../process/spec/workflow.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import { attributionIn, mergeBaseOf } from "../land.mjs";
@@ -145,7 +145,7 @@ function preflight(lane) {
   if (FRESH.includes(merge?.step)) rows.push(commitsRow(lane).row);
   else rows.push(ok("land", `a land is under way (step "${merge.step}"): the land resumes it`));
   const gate = gateOf(lane.spec);
-  if (!gate) rows.push(red("gate", "the process file has no gate: merge cannot prove main"));
+  if (!gate) rows.push(red("gate", "the workflow file has no gate: merge cannot prove main"));
   else {
     const { root, ledger } = lane;
     const base = mergeBaseOf(root, ledger.mainBranch, ledger.branch);
@@ -195,8 +195,8 @@ function land(lane) {
   }
   lane.gate = gateOf(lane.spec);
   if (!lane.gate) {
-    rows.push(red("gate", "the process file has no gate: merge cannot prove main"));
-    return done(2, lane, rows, "add a gate to the process file (/agentry:init)");
+    rows.push(red("gate", "the workflow file has no gate: merge cannot prove main"));
+    return done(2, lane, rows, "add a gate to the workflow file (/agentry:init)");
   }
   const board = boardRow(lane);
   rows.push(board);

@@ -4,11 +4,11 @@
 // trigger block is `board instructions`' own comparison, the default agent is `board default-agent`'s
 // static verify, the config is `lib/config.mjs`' strict reader.
 //
-// lanes({ root, spec }) -> [{ lane, ok, value, set }]
+// lanes({ root, spec, workflowPath }) -> [{ lane, ok, value, set }]   workflowPath: the workflow file in use
 // renderLanes(rows, width) -> string[]
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { nextStep } from "../cli/invoke.mjs";
 import { checkConfig } from "../config.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
@@ -19,12 +19,14 @@ import { isKept } from "./keep.mjs";
 import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 import { columns } from "./render.mjs";
-import { SPEC_VERSION } from "./spec.mjs";
+import { WORKFLOW_KEYS } from "./spec.mjs";
+import { SPEC_VERSION } from "./spec/board.mjs";
 
 const INIT = "/agentry:init";
 // What `.agentry/` holds, and the command that decides each when it is neither tracked nor ignored.
 const POLICY = [
   [".agentry/process.json", "file"],
+  [".agentry/workflow.json", "file"],
   [".agentry/config.json", "file"],
   [".agentry/NOTE.md", "file"],
   [".agentry/memory", "dir"],
@@ -108,6 +110,22 @@ function push(root) {
 
 const count = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
+/** A path as the output shows it: from `root` when it is inside, else as given. */
+export const shownPath = (root, path) =>
+  relative(root, path).startsWith("..") ? path : relative(root, path);
+
+// The workflow file in use and how many keys it sets; none when there is no such file.
+function workflowFile(root, spec, path) {
+  if (!existsSync(path)) return { lane: "workflow file", ok: false, value: "none", set: INIT };
+  const n = WORKFLOW_KEYS.filter((k) => Object.hasOwn(spec, k)).length;
+  return {
+    lane: "workflow file",
+    ok: true,
+    value: `${shownPath(root, path)} · ${count(n, "key")}`,
+    set: INIT,
+  };
+}
+
 // The newer keys, one row each when set (an unset one is no lane to wire, so no row), each with what it
 // matches here (the count first, so a long glob list cuts the globs, not the count): the kept worktrees, the tracked files a guard glob lets through, the flaky names.
 function keys({ root, spec }) {
@@ -129,7 +147,7 @@ function keys({ root, spec }) {
   return rows.filter(Boolean).map(([lane, value]) => ({ lane, ok: true, value, set: INIT }));
 }
 
-export function lanes({ root, spec }) {
+export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workflow.json") }) {
   const { gate, extensions, conductor } = spec;
   const row = (lane, found, value, set = INIT) => ({
     lane,
@@ -142,6 +160,7 @@ export function lanes({ root, spec }) {
   const checks = extensions?.merge?.checks;
   const quick = gate?.quick;
   return [
+    workflowFile(root, spec, workflowPath),
     row("gate", gate, gate?.command.join(" ")),
     row("gate.quick", quick, quick && `${quick.command.join(" ")} (${quick.only.join(", ")})`),
     row("conductor.prompt", conductor, conductor?.prompt),

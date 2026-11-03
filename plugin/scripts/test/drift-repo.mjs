@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { create } from "../lib/lane/worktree.mjs";
 import { write as writeLedger } from "../lib/process/ledger.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 export const BOARD = join(dirname(fileURLToPath(import.meta.url)), "..", "board.mjs");
 
@@ -104,13 +105,13 @@ export const DECISIONS_MD =
 export const CONDUCTOR_MD =
   "# Conductor\n\n## Standing rules\n\n- Existing rule.\n\n## Modes\n\nNone.\n";
 
-/** A repo on `main` with the board, the process file and a conductor prompt, committed. `spec` replaces the
- *  process file's content. `{ root, cleanup }`; `root` is the real path. */
+/** A repo on `main` with the board, the process and workflow files and a conductor prompt, committed.
+ *  `spec` (merged) replaces the two files' content. `{ root, cleanup }`; `root` is the real path. */
 export function boardRepo({ spec = SPEC } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "agentry-drift-")));
   mkdirSync(join(root, "plan", "sprints"), { recursive: true });
   mkdirSync(join(root, ".agentry"));
-  writeFileSync(join(root, ".agentry", "process.json"), JSON.stringify(spec, null, 2));
+  writeSpec(join(root, ".agentry"), spec);
   writeFileSync(join(root, ".gitignore"), ".agentry/run/\n");
   writeFileSync(join(root, "plan", "BOARD.md"), BOARD_MD);
   writeFileSync(join(root, "plan", "DECISIONS.md"), DECISIONS_MD);

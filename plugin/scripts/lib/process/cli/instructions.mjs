@@ -4,7 +4,7 @@
 // `--apply` it prints what would change (the block's lines as `-`/`+`) and writes nothing; with it, it
 // writes the same. AGENTS.md is created when absent; CLAUDE.md never is, and gets the import only when it
 // exists without one. The block comes from the process skill's `templates/agents-block.md`, with the
-// process file's `conductor.prompt`. Exit 0, or 2 for markers that don't make one block, a file a symlink
+// workflow file's `conductor.prompt`. Exit 0, or 2 for markers that don't make one block, a file a symlink
 // takes out of the repository or points nowhere, or a file that can't be written. Files are written to
 // temporary names first and then renamed in, and a failure puts the first back: never half-done.
 //
@@ -131,7 +131,7 @@ export function run(argv, { root, spec }) {
   );
   if (prompt && !existsSync(join(root, prompt)))
     out.push(`note: the conductor prompt ${prompt} does not exist yet`);
-  if (!prompt) out.push("note: no conductor.prompt in the process file; the block names none");
+  if (!prompt) out.push("note: no conductor.prompt in the workflow file; the block names none");
   const writes = [
     up.action !== "unchanged" && ["AGENTS.md", up.text],
     imp.action === "import" && [claudeName, imp.text],

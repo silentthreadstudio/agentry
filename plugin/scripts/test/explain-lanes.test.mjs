@@ -8,17 +8,22 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { writeSpec } from "./spec-files.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BOARD = join(HERE, "..", "board.mjs");
 
-// A git repo holding the table board, whose process file gets `extra` keys. Returns `board` to run a
-// subcommand on it and `lanes()` for explain's lane rows by name.
-function repo(extra = {}) {
+// A git repo holding the table board, whose process and workflow files get `extra` keys (`only`: just
+// these keys, no fixture lifecycle or drafts). Returns `board` to run a subcommand on it and `lanes()`
+// for explain's lane rows by name.
+function repo(extra = {}, { only = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "agentry-lanes-"));
   cpSync(join(HERE, "fixtures", "table-board"), root, { recursive: true });
-  const file = join(root, "process.json");
-  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...extra }));
+  const json = (name) => JSON.parse(readFileSync(join(root, name), "utf8"));
+  const fixture = only
+    ? json("process.json")
+    : { ...json("process.json"), ...json("workflow.json") };
+  const file = writeSpec(root, { ...fixture, ...extra });
   execFileSync("git", ["-C", root, "init", "-q"]);
   const board = (...args) =>
     spawnSync("node", [BOARD, ...args, "--root", root, "--process", file], {
@@ -206,6 +211,51 @@ test("a long guard.allow list is cut in its globs, never in its count", () => {
       .find((l) => l.includes("guard.allow"));
     assert.ok([...line].length <= 80, line);
     assert.match(line, /^✓ +guard\.allow +1 tracked file: notes\/\*\*, /);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the first lanes row names the workflow file and its keys, or none; --json names both files", () => {
+  const { root, board, lanes } = repo({ gate: { command: ["make", "check"] } });
+  try {
+    const rows = lanes();
+    assert.deepEqual(rows["workflow file"], {
+      lane: "workflow file",
+      ok: true,
+      value: "workflow.json · 3 keys",
+      set: "/agentry:init",
+    });
+    const block = board("explain").stdout.split("\nlanes")[1].split("\n");
+    assert.match(block[1], /^✓ +workflow file +workflow\.json · 3 keys$/);
+    const data = JSON.parse(board("explain", "--json").stdout);
+    assert.deepEqual(data.files, { process: "process.json", workflow: "workflow.json" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+  const bare = repo({}, { only: true });
+  try {
+    const row = bare.lanes()["workflow file"];
+    assert.deepEqual([row.ok, row.value, row.set], [false, "none", "/agentry:init"]);
+    assert.match(bare.board("explain").stdout, /^✗ +workflow file +none\n +set: \/agentry:init$/m);
+    assert.equal(JSON.parse(bare.board("explain", "--json").stdout).files.workflow, null);
+  } finally {
+    rmSync(bare.root, { recursive: true, force: true });
+  }
+});
+
+test("the commit policy has a .agentry/workflow.json row right after .agentry/process.json", () => {
+  const { root, lanes } = repo();
+  try {
+    write(root, ".agentry/workflow.json", "{}");
+    execFileSync("git", ["-C", root, "add", ".agentry/workflow.json"]);
+    const names = Object.keys(lanes());
+    const at = names.indexOf(".agentry/process.json");
+    assert.equal(names[at + 1], ".agentry/workflow.json");
+    assert.deepEqual(
+      [lanes()[".agentry/workflow.json"].ok, lanes()[".agentry/workflow.json"].value],
+      [true, "tracked"],
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

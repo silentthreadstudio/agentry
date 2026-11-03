@@ -5,7 +5,7 @@
 // Run: node --test plugin/scripts/test/spec-fuzz.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -13,8 +13,9 @@ import { fileURLToPath } from "node:url";
 import { check } from "../lib/process/check.mjs";
 import { readProcess } from "../lib/process/read.mjs";
 import { CATALOG, FIELD } from "../lib/process/rules/index.mjs";
-import { validateSpec } from "../lib/process/spec.mjs";
+import { WORKFLOW_KEYS, validateSpec } from "../lib/process/spec.mjs";
 import { BASE, BUILTINS, ENTRIES, VALID, brokenBoard } from "./broken-boards.mjs";
+import { splitSpec, writeSpec } from "./spec-files.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = join(HERE, "..");
@@ -51,7 +52,7 @@ test("a wrong-typed value at any key or list item is a spec problem, never a thr
     n++;
     let problems;
     assert.doesNotThrow(() => {
-      problems = validateSpec(spec).problems;
+      problems = validateSpec(splitSpec(spec)).problems;
     }, name);
     // other values are legitimate for some keys (a string, a flag, a list); null never is
     if (name.endsWith("= null")) assert.ok(problems.length > 0, `${name} should be reported`);
@@ -93,9 +94,12 @@ function withSpec(patch) {
     for (const [k, v] of Object.entries(patch.kinds))
       spec.kinds[k] = plain(v) ? { ...VALID.kinds[k], ...v } : v;
   }
-  writeFileSync(join(root, "process.json"), JSON.stringify(spec));
+  writeSpec(root, spec);
   return root;
 }
+// The file a refusal is under: the workflow file when the patch is all workflow keys.
+const fileOf = (patch) =>
+  Object.keys(patch).every((k) => WORKFLOW_KEYS.includes(k)) ? "workflow" : "process";
 const spawn = (script, args) =>
   spawnSync("node", [join(SCRIPTS, script), ...args], {
     encoding: "utf8",
@@ -110,7 +114,7 @@ for (const patch of DEGENERATE) {
       for (const sub of ["check", "status", "explain"]) {
         const out = spawn("board.mjs", [sub, ...flags]);
         assert.equal(out.status, 2, `${sub}: ${out.stderr}`);
-        assert.match(out.stderr, /^✗ .*cannot use the process file/, sub);
+        assert.match(out.stderr, new RegExp(`^✗ .*cannot use the ${fileOf(patch)} file`), sub);
         assert.doesNotMatch(out.stderr, /\n\s+at /, sub);
       }
       const found = spawn("find-contract.mjs", ["A1", ...flags]);
@@ -130,8 +134,10 @@ const typo = (name) => `${name.slice(0, -1)}${name.endsWith("z") ? "y" : "z"}`;
 function checkWith(fixture, rules, whole) {
   const root = mkdtempSync(join(tmpdir(), "spec-fuzz-"));
   cpSync(join(HERE, "fixtures", fixture), root, { recursive: true });
-  const spec = whole ?? JSON.parse(readFileSync(join(root, "process.json"), "utf8"));
-  writeFileSync(join(root, "process.json"), JSON.stringify({ ...spec, rules }));
+  const read = (name) => JSON.parse(readFileSync(join(root, name), "utf8"));
+  const workflow = existsSync(join(root, "workflow.json")) ? read("workflow.json") : {};
+  const spec = whole ?? { ...read("process.json"), ...workflow };
+  writeSpec(root, { ...spec, rules });
   try {
     return spawn("board.mjs", ["check", "--root", root, "--process", join(root, "process.json")]);
   } finally {
@@ -243,7 +249,7 @@ for (const id of Object.keys(ENTRIES)) {
       const spec = { ...structuredClone(VALID), rules: [entry] };
       let problems;
       assert.doesNotThrow(() => {
-        problems = validateSpec(spec).problems;
+        problems = validateSpec(splitSpec(spec)).problems;
       }, name);
       const named = problems.filter((p) => p.message.startsWith("rules[0]"));
       assert.ok(named.length > 0, `${id} ${name}: ${JSON.stringify(problems)}`);
@@ -276,7 +282,8 @@ for (const [where, set] of NAMED) {
       set(spec, b);
       const out = checkWith("table-board", spec.rules, spec);
       assert.equal(out.status, 2, `${where} = ${b}: ${out.stdout}${out.stderr}`);
-      assert.match(out.stderr, /cannot use the process file → \S+\n {2}\S/, `${where} = ${b}`);
+      const file = where.startsWith("lifecycle.") ? "workflow" : "process";
+      assert.match(out.stderr, new RegExp(`cannot use the ${file} file → \\S+\n {2}\\S`), where);
       assert.doesNotMatch(out.stdout + out.stderr, /\n\s+at |TypeError|\[Function/, b);
     }
   });
@@ -286,7 +293,7 @@ for (const [where, set] of NAMED) {
 function checkBroken(id, rules, kinds = VALID.kinds) {
   const root = brokenBoard(id);
   try {
-    writeFileSync(join(root, "process.json"), JSON.stringify({ ...VALID, kinds, rules }));
+    writeSpec(root, { ...VALID, kinds, rules });
     return spawn("board.mjs", ["check", "--root", root, "--process", join(root, "process.json")]);
   } finally {
     rmSync(root, { recursive: true, force: true });

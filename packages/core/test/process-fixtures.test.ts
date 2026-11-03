@@ -1,18 +1,20 @@
 // The dependency-free board checker (`plugin/scripts/`) and core's schema must not drift: every
-// synthetic fixture's process file and the process skill's template parse as a ProcessSpec, and
-// `board.mjs check|status --json` on each fixture parses as a BoardReport.
+// synthetic fixture's process file parses as a ProcessBoard and its workflow file (when it has one) as a
+// Workflow, so do the process skill's two templates, and `board.mjs check|status --json` on each fixture
+// parses as a BoardReport.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { BoardReport, ProcessSpec } from "../src/process.js";
+import { BoardReport, ProcessBoard } from "../src/process.js";
+import { Workflow } from "../src/workflow.js";
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "plugin");
 const FIXTURES = join(PLUGIN, "scripts", "test", "fixtures");
 const BOARD = join(PLUGIN, "scripts", "board.mjs");
-const TEMPLATE = join(PLUGIN, "skills", "process", "templates", "process.json");
+const TEMPLATES = join(PLUGIN, "skills", "process", "templates");
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"));
 
 const fixtures = readdirSync(FIXTURES, { withFileTypes: true })
@@ -20,18 +22,29 @@ const fixtures = readdirSync(FIXTURES, { withFileTypes: true })
   .map((d) => d.name);
 const valid = fixtures.filter((name) => name !== "broken");
 
-test("every valid fixture's process file and the skill's template parse as a ProcessSpec", () => {
+test("every valid fixture's two files and the skill's two templates parse as ProcessBoard and Workflow", () => {
   assert.ok(valid.length >= 3);
   for (const name of valid) {
-    const parsed = ProcessSpec.safeParse(readJson(join(FIXTURES, name, "process.json")));
-    assert.ok(parsed.success, `${name}: ${parsed.success ? "" : parsed.error.message}`);
+    const board = ProcessBoard.safeParse(readJson(join(FIXTURES, name, "process.json")));
+    assert.ok(board.success, `${name}: ${board.success ? "" : board.error.message}`);
+    const file = join(FIXTURES, name, "workflow.json");
+    if (!existsSync(file)) continue;
+    const workflow = Workflow.safeParse(readJson(file));
+    assert.ok(workflow.success, `${name}: ${workflow.success ? "" : workflow.error.message}`);
   }
-  assert.ok(ProcessSpec.safeParse(readJson(TEMPLATE)).success, "templates/process.json");
+  assert.ok(
+    ProcessBoard.safeParse(readJson(join(TEMPLATES, "process.json"))).success,
+    "process.json",
+  );
+  assert.ok(
+    Workflow.safeParse(readJson(join(TEMPLATES, "workflow.json"))).success,
+    "workflow.json",
+  );
 });
 
 test("the broken fixture is rejected by the schema too", () => {
   assert.equal(
-    ProcessSpec.safeParse(readJson(join(FIXTURES, "broken", "process.json"))).success,
+    ProcessBoard.safeParse(readJson(join(FIXTURES, "broken", "process.json"))).success,
     false,
   );
 });

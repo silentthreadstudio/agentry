@@ -28,7 +28,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rankFacts, readFacts, readMemoryConfig } from "../memory/recall.mjs";
 import { readInside } from "../process/read.mjs";
-import { own } from "../process/spec.mjs";
+import { own } from "../process/spec/shape.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const TEMPLATES = join(

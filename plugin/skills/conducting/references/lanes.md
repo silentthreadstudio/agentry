@@ -8,7 +8,7 @@ a question. `/agentry:go` stays the full pipeline and never routes to a lane on 
 
 - No right-sizing, no spec, plan or split step, no spec or plan gate. The planning already happened.
 - No files under `.agentry/work/` (`spec.md`, `plan.md`, `tasks/*.md`).
-- No board edits by hand and no contract edits. The exec steps write the board through the process file's
+- No board edits by hand and no contract edits. The exec steps write the board through the workflow file's
   `lifecycle`; a repo without one gets no writes.
 - No merge, no push: `/agentry:merge` lands the work.
 
@@ -49,7 +49,7 @@ conductor's call; a red that failed only in listed flaky tests is marked as such
 | build, fix | main's HEAD or files changed (any status) | `stop` |
 | build, fix | `DONE` / `DONE_WITH_CONCERNS`, uncommitted files or no commits past base | `fix` with the reason (resume); the same again → `stop` |
 | build, fix | `DONE` / `DONE_WITH_CONCERNS`, guards hold | `verify` (fresh) when there is no verdict yet; `recheck` (resume the last verifier) after a fix |
-| build, fix | the same, no verdict yet, `exec.verify` is `flagged` or `none`, the item's flag is not set and the process file has a gate | `gate` (built is written), then `close`: no verifier. A flagged item is verified as above; a red gate stops the lane |
+| build, fix | the same, no verdict yet, `exec.verify` is `flagged` or `none`, the item's flag is not set and the workflow file has a gate | `gate` (built is written), then `close`: no verifier. A flagged item is verified as above; a red gate stops the lane |
 | build, fix | `NEEDS_CONTEXT` | `needs-context` once (resume, with the fact), then `stop` |
 | build, fix | `BLOCKED` | `stop` |
 | any | no status line / no `Verdict:` last line | `resend` (resume) once per role in the lane, then `stop` |
@@ -68,7 +68,7 @@ A void verdict doesn't count toward the three verdicts; voids have their own cap
 at the third verdict still goes to `final`, so a lane can hold four verdicts: the cap of three stops FAILs,
 not the fresh final pass. Every budget is the lane's, so no mix of outcomes resets one: one resend per role,
 one `needs-context` round, and a guard fix (resent or not) that trips a guard again stops. Every lane ends in
-`close` or `stop`. With no `gate` in the process file, a `PASS` closes on the verdict and the output says so.
+`close` or `stop`. With no `gate` in the workflow file, a `PASS` closes on the verdict and the output says so.
 
 ### Dispatching
 
@@ -107,7 +107,7 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
   type and mode count with its content (a symlink, a chmod).
   `agentry board add` and `agentry board set --apply` run in the main checkout record what they wrote the same way
   (`.agentry/run/process/board-writes.jsonl`), so a night call written with them stops no lane; a hand edit
-  of the same file still does. Files the process file lists in `guard.allow` (a status file, a docs folder)
+  of the same file still does. Files the workflow file lists in `guard.allow` (a status file, a docs folder)
   may change uncommitted while lanes run, except a file a running lane's contract owns: an edit there still
   stops the lane. So: board edits through `agentry board add` / `agentry board set --apply`, never by hand, and no commits
   on main while a lane builds.
@@ -144,7 +144,7 @@ templates, once:
 - When the ledger holds a worktree gate green on the dispatched tip and tree, the verify, recheck and final briefs
   say `the gate is recorded green on <sha> (<log>): read it; do not re-run it` and the verifier runs only
   its own probes; a moved tip gets the full gate line. `exec gate` run while a verifier is next rewrites that
-  waiting brief. Each dispatch prints `model:` when `models` in the process file names one for its role (builder:
+  waiting brief. Each dispatch prints `model:` when `models` in the workflow file names one for its role (builder:
   `build`; verifier: `verify.flagged`, `verify.ui` when a designer builds, else `verify.default`).
 - The verifier changes and commits nothing, runs the printed gate line (or reads the recorded one), states the bar for any input or
   interaction before testing it, and names each probe so the fix round commits it as a test.

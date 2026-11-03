@@ -23,6 +23,7 @@ import { basename, dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
 const temps = [];
@@ -110,6 +111,12 @@ const DECISIONS_MD = `# Decisions
 
 /** A repo on `main` with the board committed; `home` is an empty HOME for the CLI (no global config or
  *  memory leaks in). */
+// The spec as the process and workflow files in `.agentry/`, committed.
+function commitSpec(root, spec) {
+  writeSpec(join(root, ".agentry"), spec);
+  git(root, "add", ".agentry");
+  git(root, "commit", "-q", "-m", "add the process files");
+}
 function repo({
   spec = SPEC,
   config,
@@ -121,13 +128,12 @@ function repo({
   const home = temp("exec-home-");
   git(root, "init", "-q", "-b", "main");
   mkdirSync(join(root, ".agentry"));
-  writeFileSync(join(root, ".agentry", "process.json"), JSON.stringify(spec, null, 2));
   if (config) writeFileSync(join(root, ".agentry", "config.json"), JSON.stringify(config));
   commitFile(root, ".gitignore", ".agentry/run/\n.agentry/config.json\n");
   commitFile(root, "plan/BOARD.md", BOARD_MD);
   commitFile(root, "plan/TASKS.md", tasks);
   commitFile(root, "plan/DECISIONS.md", decisions);
-  commitFile(root, ".agentry/process.json", JSON.stringify(spec, null, 2));
+  commitSpec(root, spec);
   return { root, home };
 }
 function lane({ root, home }, ...args) {
@@ -623,7 +629,7 @@ test("parallel lanes on a one-file-per-item board don't stop each other", () => 
   commitFile(r.root, "stories/s1.md", "---\nid: S-1\nstate: open\n---\n\n# One\n");
   commitFile(r.root, "stories/s2.md", "---\nid: S-2\nstate: open\n---\n\n# Two\n");
   commitFile(r.root, "TASKS.md", "# Tasks\n\n- **S-1**: owns `a.txt`.\n- **S-2**: owns `b.txt`.\n");
-  commitFile(r.root, ".agentry/process.json", JSON.stringify(STORIES));
+  commitSpec(r.root, STORIES);
   const one = lane(r, "start", "S-1").json;
   const two = lane(r, "start", "S-2").json;
   build(one, "a.txt");
@@ -1091,7 +1097,7 @@ test("a recorded lifecycle write on a file the owner staged does not stop anothe
   commitFile(r.root, "stories/s1.md", "---\nid: S-1\nstate: open\n---\n\n# One\n");
   commitFile(r.root, "stories/s2.md", "---\nid: S-2\nstate: open\n---\n\n# Two\n");
   commitFile(r.root, "TASKS.md", "# Tasks\n\n- **S-1**: owns `a.txt`.\n- **S-2**: owns `b.txt`.\n");
-  commitFile(r.root, ".agentry/process.json", JSON.stringify(STORIES));
+  commitSpec(r.root, STORIES);
   writeFileSync(
     join(r.root, "stories", "s2.md"),
     "---\nid: S-2\nstate: open\n---\n\n# Two, mine\n",

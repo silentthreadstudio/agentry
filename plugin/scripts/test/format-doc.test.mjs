@@ -2,9 +2,10 @@
 // params table lists every param each rule declares, with what is required, the default and the type
 // (the capabilities a kind needs among it), as `rules/*.mjs` declare them, and its capability table
 // words each capability as `rules/capabilities.mjs` does. A param added, dropped, retyped or given
-// another need in code fails here until the page says so too. The same holds for the process file's
-// keys: the top-level table and the harness-key table list exactly the keys `spec.mjs` checks, with
-// which of them are required, and the lifecycle section names every `write` key.
+// another need in code fails here until the page says so too. The same holds for the two files' keys:
+// each file's top-level table lists exactly the keys its schema checks (`spec/board.mjs`,
+// `spec/workflow.mjs`), with which of them are required, the harness-key table every gate, extensions
+// and conductor key, and the lifecycle section every `write` key.
 // Run: node --test plugin/scripts/test/format-doc.test.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -13,7 +14,8 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import * as md from "../lib/process/markdown.mjs";
 import { CAN, CATALOG, FIELD } from "../lib/process/rules/index.mjs";
-import { schema } from "../lib/process/spec.mjs";
+import { boardSchema } from "../lib/process/spec/board.mjs";
+import { workflowSchema } from "../lib/process/spec/workflow.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORMAT = join(HERE, "..", "..", "skills", "process", "references", "format.md");
@@ -91,24 +93,32 @@ const keyRows = (keys, at = "") =>
   });
 const HARNESS = ["gate", "extensions", "conductor"];
 
-test("the top-level table lists every key of the process file, with what is required", () => {
-  assert.deepEqual(
-    rows("Top level").map(([key, required]) => [key, required]),
-    Object.keys(schema.keys).map((k) => [k.replace(/!$/, ""), k.endsWith("!") ? "yes" : "no"]),
-  );
+const topRows = (schema) =>
+  Object.keys(schema.keys).map((k) => [k.replace(/!$/, ""), k.endsWith("!") ? "yes" : "no"]);
+
+test("each file's top-level table lists every key of that file, with what is required", () => {
+  for (const [heading, schema] of [
+    ["process.json: top level", boardSchema],
+    ["workflow.json: top level", workflowSchema],
+  ])
+    assert.deepEqual(
+      rows(heading).map(([key, required]) => [key, required]),
+      topRows(schema),
+      heading,
+    );
 });
 
 test("the harness-key table lists every gate, extensions and conductor key, with what is required", () => {
   assert.deepEqual(
     rows("gate, extensions and conductor").map(([key, required]) => [key, required]),
-    HARNESS.flatMap((top) => keyRows(schema.keys[top].keys, `${top}.`)),
+    HARNESS.flatMap((top) => keyRows(workflowSchema.keys[top].keys, `${top}.`)),
   );
 });
 
 test("the lifecycle section names every write key", () => {
   const sec = md.section(text, "lifecycle and drafts");
   const body = text.split("\n").slice(sec.line, sec.end).join("\n");
-  for (const key of Object.keys(schema.keys.lifecycle.keys.write.keys))
+  for (const key of Object.keys(workflowSchema.keys.lifecycle.keys.write.keys))
     assert.ok(body.includes(`\`${key}\` (`), `the lifecycle section words write.${key}`);
 });
 

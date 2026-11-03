@@ -15,7 +15,7 @@ import { recorded } from "../board-writes.mjs";
 import { findContract } from "../contract.mjs";
 import { nextId } from "../ids.mjs";
 import { contractHome } from "../rules/structure.mjs";
-import { escapesRoot, own } from "../spec.mjs";
+import { escapesRoot, own } from "../spec/shape.mjs";
 import { WriteError, addedLines, appendBlock, applyAll, insertRow } from "../write.mjs";
 
 export const help = {

@@ -11,3 +11,4 @@ export * from "./artifacts.js";
 export * from "./events.js";
 export * from "./config.js";
 export * from "./process.js";
+export * from "./workflow.js";

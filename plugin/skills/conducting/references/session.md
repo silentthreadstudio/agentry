@@ -10,7 +10,7 @@ Reads only. Without `--json` it prints at most 40 lines of 80 columns; with it, 
 
 | Field | Meaning |
 | :--- | :--- |
-| `prompt` | Absolute path of the conductor prompt (`conductor.prompt` in the process file), or null. Read it once per session. |
+| `prompt` | Absolute path of the conductor prompt (`conductor.prompt` in the workflow file), or null. Read it once per session. |
 | `mode` | The `mode` string in `.agentry/config.json`, or null. Read as written; the mode's rules belong to the mode skill, not to this command. |
 | `configError` | Only when the config reader refuses a config file (the text then shows `mode unreadable`): the error naming the file and key. `agentry lane exec` refuses the same file, so fix it first. |
 | `status` | The `agentry board status` view: `now`, `inFlight`, `onYou`, `blocked`, `ahead`, `nudges` (drift, each with the command to run), `drafts` (pending count), `recent`, `note`. |

@@ -7,14 +7,16 @@ version: 0.1.0
 # Process
 
 Agentry fits the process a repo already has; it does not bring its own. The repo's board stays in the
-repo's files, in the repo's format. One file, `.agentry/process.json`, says how that board is written; one
-dependency-free script, `board.mjs`, reads it, checks it and is the only thing that writes board items.
+repo's files, in the repo's format. One file, `.agentry/process.json`, says how that board is written, and
+its sibling `.agentry/workflow.json` (optional) how the harness works the repo (lifecycle, gate, conductor,
+guard, cleanup, exec); one dependency-free script, `board.mjs`, reads it, checks it and is the only thing that writes board items.
 The split is fixed: **judgment in the session, every claim checked by the script.**
 
 ## The CLI
 
 `agentry board <sub> [--root <git root>] [--process <file>] [--json]`.
-The process file defaults to `<git root>/.agentry/process.json`. Exit 0 = OK, 1 = findings, stopped or
+The process file defaults to `<git root>/.agentry/process.json`; the workflow file is always its sibling
+`workflow.json`. Exit 0 = OK, 1 = findings, stopped or
 needs the owner, 2 = refused, usage or bad config (including a missing process file: point to
 `/agentry:init`); `agentry lane` means the same. An error is one line, `✗ <what>: <why> → <next command>`.
 `agentry` is the plugin's `bin/` command, on the Bash tool's PATH while the plugin is enabled. A host without
@@ -47,7 +49,7 @@ script's output as printed; don't re-derive what it already computed.
   visible in their diff. **Judgment** (a decision, scope, priority, opening a sprint, a sign-off) is never
   written without the owner: it is a draft or a report line.
 - Never hand-edit a board row the script can write; never commit or push. The user reviews the diff.
-- Everything Agentry owns lives in `.agentry/`: the process file, `NOTE.md` (the short hand-written note
+- Everything Agentry owns lives in `.agentry/`: the process and workflow files, `NOTE.md` (the short hand-written note
   the status view shows), and `run/process/` (drafts and short-lived state, never committed). Whether the
   rest of `.agentry/` is committed is the user's call, made once in init.
 
@@ -62,12 +64,13 @@ script's output as printed; don't re-derive what it already computed.
 ## Additional resources
 
 ### Reference files
-- **`references/format.md`** — the process file: kinds, locations, field types, phases, own files,
-  contracts, create templates, the rule catalog with its parameters, lifecycle and drafts.
+- **`references/format.md`** — the process and workflow files: kinds, locations, field types, phases, own
+  files, contracts, create templates, the rule catalog with its parameters (process.json); lifecycle and
+  drafts, gate, conductor, guard, cleanup, exec and models (workflow.json).
 - **`references/learn.md`** — init's three states step by step: scaffold, learn (scan → draft → explain →
   rules), show and repair; the setup questions.
 
 ### Templates
 - **`templates/`** — a fresh board: `BOARD.md`, `TASKS.md`, `PROCESS.md`, `DECISIONS.md`,
-  `sprints/S1_first_sprint.md` and the matching `process.json` (epic optional). Generic words, example ids
+  `sprints/S1_first_sprint.md` and the matching `process.json` and `workflow.json` (epic optional). Generic words, example ids
   the user replaces.

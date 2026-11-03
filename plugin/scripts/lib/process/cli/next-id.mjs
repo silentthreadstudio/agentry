@@ -5,7 +5,7 @@
 // run(argv, { spec, model }) -> { exit, out }
 import { refuse, usageError } from "../../cli/help.mjs";
 import { nextId } from "../ids.mjs";
-import { own } from "../spec.mjs";
+import { own } from "../spec/shape.mjs";
 
 export const help = {
   usage: "next-id <kind> [--json]",

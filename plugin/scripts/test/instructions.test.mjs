@@ -24,6 +24,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { run } from "../lib/process/cli/instructions.mjs";
 import { BEGIN, END, addImport, renderBlock, upsertBlock } from "../lib/process/instructions.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BOARD = join(HERE, "..", "board.mjs");
@@ -256,8 +257,9 @@ test("without conductor.prompt the block names no prompt and says so", () => {
 test("`board instructions` routes through the CLI on a real process file", () => {
   const root = scratch();
   cpSync(join(HERE, "fixtures", "table-board", "docs"), join(root, "docs"), { recursive: true });
-  const proc = join(root, "process.json");
-  cpSync(join(HERE, "fixtures", "table-board", "process.json"), proc);
+  const fixture = (name) =>
+    JSON.parse(readFileSync(join(HERE, "fixtures", "table-board", name), "utf8"));
+  const proc = writeSpec(root, { ...fixture("process.json"), ...fixture("workflow.json") });
   const res = spawnSync(
     process.execPath,
     [BOARD, "instructions", "--apply", "--root", root, "--process", proc],

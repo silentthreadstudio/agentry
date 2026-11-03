@@ -23,7 +23,7 @@ Run `agentry board` and `agentry lane`.
 
 ## The repo's conductor prompt
 
-If `.agentry/process.json` names a `conductor.prompt`, read that file before the first work request and follow it; it overrides this procedure where they conflict. Do not re-read AGENTS.md or CLAUDE.md: they are already loaded.
+If `.agentry/workflow.json` names a `conductor.prompt`, read that file before the first work request and follow it; it overrides this procedure where they conflict. Do not re-read AGENTS.md or CLAUDE.md: they are already loaded.
 
 ## When you write code yourself
 - Read the relevant files before you change them, and follow the conventions already in the repo.

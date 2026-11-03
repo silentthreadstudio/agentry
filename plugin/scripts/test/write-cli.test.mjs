@@ -13,6 +13,7 @@ import { run as add } from "../lib/process/cli/add.mjs";
 import { run as set } from "../lib/process/cli/set.mjs";
 import { findContract } from "../lib/process/contract.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const TEMPLATES = join(FIXTURES, "..", "..", "..", "skills", "process", "templates");
@@ -39,6 +40,11 @@ function call(cli, root, argv, extra = {}) {
   });
 }
 const text = (root, rel) => readFileSync(join(root, rel), "utf8");
+// The skill's two templates as one merged spec.
+const template = () => ({
+  ...JSON.parse(text(TEMPLATES, "process.json")),
+  ...JSON.parse(text(TEMPLATES, "workflow.json")),
+});
 const addTask = (root, fields, kind = "task") =>
   call(add, root, [kind, "--fields", JSON.stringify(fields), "--apply"]);
 const findings = (root) => {
@@ -242,7 +248,7 @@ test("add on a board made from the templates: headings given with their # marks"
   const root = mkdtempSync(join(tmpdir(), "agentry-cli-"));
   temps.push(root);
   cpSync(TEMPLATES, join(root, "docs", "work"), { recursive: true });
-  cpSync(join(TEMPLATES, "process.json"), join(root, "process.json"));
+  writeSpec(root, template());
   const task = addTask(root, { id: "T2", sprint: "S1", what: "The second task", deps: "T1" });
   assert.equal(task.exit, 0, task.out);
   const sprint = addTask(root, { id: "S2", name: "Second sprint" }, "sprint");
@@ -258,9 +264,9 @@ test("add takes an `also` literal as the parent: its own row is written, the par
   const root = mkdtempSync(join(tmpdir(), "agentry-cli-"));
   temps.push(root);
   cpSync(TEMPLATES, join(root, "docs", "work"), { recursive: true });
-  const spec = JSON.parse(readFileSync(join(TEMPLATES, "process.json"), "utf8"));
+  const spec = template();
   spec.kinds.task.fields.sprint.also = ["LATER"];
-  writeFileSync(join(root, "process.json"), JSON.stringify(spec));
+  writeSpec(root, spec);
   const tasks = text(root, "docs/work/TASKS.md");
   const result = addTask(root, { id: "T9", sprint: "LATER", what: "Someday", deps: "" });
   assert.equal(result.exit, 0, result.out);
@@ -274,7 +280,7 @@ test("add with an `also` parent skips the parent-file row and writes a block tha
   const root = copy("write");
   const spec = JSON.parse(text(root, "process.json"));
   spec.kinds.task.fields.sprint.also = ["LATER"];
-  writeFileSync(join(root, "process.json"), JSON.stringify(spec));
+  writeSpec(root, spec);
   writeFileSync(join(root, "board/TASKS.md"), `${text(root, "board/TASKS.md")}\n## Sprint LATER\n`);
   const result = addTask(root, { id: "W8", sprint: "LATER", note: "Parked" });
   assert.equal(result.exit, 0, result.out);
@@ -338,7 +344,7 @@ function patterned(pattern) {
   const file = join(root, "process.json");
   const spec = JSON.parse(readFileSync(file, "utf8"));
   spec.kinds.task.create.id = pattern;
-  writeFileSync(file, JSON.stringify(spec));
+  writeSpec(root, spec);
   return root;
 }
 
@@ -371,7 +377,7 @@ function contracted({ blocks = true } = {}) {
   const spec = JSON.parse(readFileSync(file, "utf8"));
   spec.kinds.task.contract = { blocks: ["TASKS.md"], lead: ["bold"] };
   if (!blocks) spec.kinds.task.create.blocks = undefined;
-  writeFileSync(file, JSON.stringify(spec));
+  writeSpec(root, spec);
   return root;
 }
 

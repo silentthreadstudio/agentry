@@ -1,15 +1,16 @@
 // board explain [--json] — how the process file meets the board (plan F13 §2.4), the ground truth
 // `/agentry:init` learns against: per kind, where it was found, its items, table columns no field
 // maps, unknown status values, unresolved refs and read problems; per catalog rule, on or off and its
-// finding count; then the lanes (gate, conductor, trigger block, default agent, push policy, merge
+// finding count; then the lanes (the workflow file, gate, conductor, trigger block, default agent, push policy, merge
 // checks, the `.agentry/` commit policy, the file's version), each set or not with the command that sets it. Writes nothing; exit 0, or 2 for a `conductor.prompt` that is not a file or a
 // `conductor.rules` heading it does not hold.
 //
-// run(argv, { root, spec, model }) -> { exit, out }
+// run(argv, { root, processPath, workflowPath, spec, model }) -> { exit, out }
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { check } from "../check.mjs";
 import { refuseConductor } from "../conductor.mjs";
-import { lanes, renderLanes } from "../lanes.mjs";
+import { lanes, renderLanes, shownPath } from "../lanes.mjs";
 import * as md from "../markdown.mjs";
 import { readInside } from "../read.mjs";
 import { columns } from "../render.mjs";
@@ -38,7 +39,7 @@ function unmapped(root, spec, kind) {
   return (table?.header ?? []).filter((h) => !used.has(h));
 }
 
-export function explain({ root, spec, model }) {
+export function explain({ root, spec, model, processPath, workflowPath }) {
   const report = boardReport({ root, spec, model });
   const basics = check(model, [{ rule: "status-known" }, { rule: "refs-resolve" }], {});
   const kinds = Object.entries(spec.kinds).map(([name, kind]) => {
@@ -73,12 +74,17 @@ export function explain({ root, spec, model }) {
   const off = Object.keys(CATALOG)
     .filter((id) => !spec.rules.some((e) => e.rule === id))
     .map((rule) => ({ rule, on: false }));
+  const workflow = workflowPath ?? join(root, ".agentry", "workflow.json");
   return {
     name: spec.name,
     root: spec.root,
+    files: {
+      process: shownPath(root, processPath ?? join(root, ".agentry", "process.json")),
+      workflow: existsSync(workflow) ? shownPath(root, workflow) : null,
+    },
     kinds,
     rules: [...listed, ...off],
-    lanes: lanes({ root, spec }),
+    lanes: lanes({ root, spec, workflowPath: workflow }),
   };
 }
 
@@ -117,7 +123,7 @@ function render(data) {
 }
 
 export function run(argv, ctx) {
-  const refused = refuseConductor(ctx.root, ctx.spec, ctx.processPath);
+  const refused = refuseConductor(ctx.root, ctx.spec, ctx.workflowPath);
   if (refused) return refused;
   const data = explain(ctx);
   return { exit: 0, out: argv.includes("--json") ? JSON.stringify(data) : render(data) };

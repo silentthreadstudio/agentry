@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BoardReport, Finding, ProcessSpec } from "../src/process.js";
+import { BoardReport, Finding, ProcessBoard } from "../src/process.js";
+import { ProcessSpec, Workflow } from "../src/workflow.js";
 
 // Synthetic boards: invented ids and words, only the two shapes (table / one file per item).
 const tableBoard = {
@@ -147,4 +148,13 @@ test("Finding needs a message; BoardReport carries findings and a default-filled
   });
   assert.equal(report.findings[0]?.line, 9);
   assert.deepEqual(report.status?.blocked, []);
+});
+
+test("the process file holds the board and the workflow file the rest: each refuses the other's keys", () => {
+  const { lifecycle, drafts, ...board } = tableBoard;
+  assert.equal(ProcessBoard.safeParse(board).success, true);
+  assert.equal(Workflow.safeParse({ lifecycle, drafts }).success, true);
+  assert.equal(ProcessBoard.safeParse(tableBoard).success, false);
+  assert.equal(Workflow.safeParse({ version: 1, lifecycle }).success, false);
+  assert.equal(Workflow.safeParse({}).success, true);
 });

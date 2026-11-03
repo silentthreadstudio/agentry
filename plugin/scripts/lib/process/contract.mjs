@@ -16,7 +16,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { trackedFiles } from "./git.mjs";
 import * as md from "./markdown.mjs";
 import { readInside, readProcess } from "./read.mjs";
-import { own } from "./spec.mjs";
+import { own } from "./spec/shape.mjs";
 
 /** A token that reads as an item id: a capital, letters, an optional dash, then a digit (`F1`, `R0-6`,
  *  `T29a`, `AB-01`). Used to tell block starts from emphasis (`**Owns:**`, `**the seam**`). */

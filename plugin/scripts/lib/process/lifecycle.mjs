@@ -1,5 +1,5 @@
 // lifecycle — the one place a harness event becomes board writes (plan R1b §3.1): the status, the
-// verdict, the commit cell and the handoff line, as the process file's `lifecycle` maps them. Every
+// verdict, the commit cell and the handoff line, as the workflow file's `lifecycle` maps them. Every
 // edit of one event goes through one `write.applyAll` (all or nothing, re-read guard); a refusal is a
 // `WriteError` and nothing is written. No `lifecycle` key: nothing is written, every step is skipped
 // "lifecycle off", so a read-only repo stays read-only.
@@ -15,7 +15,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import * as md from "./markdown.mjs";
-import { escapesRoot, fillHandoff, handoffRejection, own } from "./spec.mjs";
+import { handoffRejection } from "./spec/across.mjs";
+import { escapesRoot, own } from "./spec/shape.mjs";
+import { fillHandoff } from "./spec/workflow.mjs";
 import { WriteError, appendLine, applyAll, setCell, setKey } from "./write.mjs";
 
 export const EVENTS = ["dispatched", "built", "failed", "verdict", "merged"];
@@ -40,11 +42,11 @@ const refuse = (message) => {
 };
 const has = (obj, key) => Object.hasOwn(obj, key);
 
-/** The handoff line for one task: the process file's `lifecycle.handoff` with `{id}`, `{sha}` and
+/** The handoff line for one task: the workflow file's `lifecycle.handoff` with `{id}`, `{sha}` and
  *  `{summary}` filled, each on one line. */
 export function renderHandoff(spec, { id, sha, summary }) {
   const template = spec.lifecycle?.handoff;
-  if (typeof template !== "string") refuse("the process file has no lifecycle.handoff template");
+  if (typeof template !== "string") refuse("the workflow file has no lifecycle.handoff template");
   return fillHandoff(template, { id, sha, summary });
 }
 

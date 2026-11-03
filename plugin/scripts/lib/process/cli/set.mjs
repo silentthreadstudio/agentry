@@ -9,7 +9,7 @@ import { join, relative } from "node:path";
 import { PREVIEW, refuse, renamed, usageError } from "../../cli/help.mjs";
 import { recorded } from "../board-writes.mjs";
 import { boardId } from "../ids.mjs";
-import { escapesRoot, own } from "../spec.mjs";
+import { escapesRoot, own } from "../spec/shape.mjs";
 import { WriteError, apply, setCell, setKey } from "../write.mjs";
 
 export const help = {

@@ -164,22 +164,5 @@
     },
     { "rule": "sequential", "label": "C5", "kind": "sprint", "skip": ["PRE", "TRK", "LATER"] }
   ],
-  "lifecycle": {
-    "kind": "task",
-    "on": { "dispatched": "doing", "built": "verify", "failed": "doing", "merged": "done" },
-    "write": {
-      "status": "status",
-      "verdict": "verdict",
-      "commit": "commit",
-      "handoff": "parent.file:handoff"
-    },
-    "handoff": "- **{id}** ({sha}): {summary}"
-  },
-  "drafts": {
-    "decision": {
-      "kind": "decision",
-      "map": { "decision": "{answer}", "why": "{question}", "rejected": "{unpicked}" }
-    }
-  },
   "status": { "now": "sprint", "note": ".agentry/NOTE.md", "prime": true, "lines": 12 }
 }

@@ -11,6 +11,7 @@ import { after, test } from "node:test";
 import { check } from "../lib/process/check.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 import { statusView, workKind } from "../lib/process/status.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const table = (heading, header, rows) => [
   `## ${heading}`,
@@ -169,8 +170,7 @@ function load(board) {
   const root = mkdtempSync(join(tmpdir(), "agentry-rank-"));
   dirs.push(root);
   writeFileSync(join(root, "BOARD.md"), boardText(board));
-  writeFileSync(join(root, "process.json"), JSON.stringify(SPEC));
-  const { spec, problems } = loadSpec(join(root, "process.json"));
+  const { spec, problems } = loadSpec(writeSpec(root, SPEC));
   assert.deepEqual(problems, [], "the synthetic spec is valid");
   return { root, spec };
 }

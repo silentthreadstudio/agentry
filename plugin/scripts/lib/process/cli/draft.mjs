@@ -1,7 +1,7 @@
 // board draft add --fields '{…}' | list | drop <n> | apply <n> — the owner's calls the conductor caught in
 // conversation, held until the owner says OK (plan R1b §5). `add` keeps a draft in `.agentry/run`, `list` shows
 // the pending ones, `drop` forgets one, and `apply` writes it: a decision through `next-id` and `add` with the
-// process file's `drafts.decision.map` (`{answer}`, `{question}`, `{unpicked}`), a rule as a line under
+// workflow file's `drafts.decision.map` (`{answer}`, `{question}`, `{unpicked}`), a rule as a line under
 // `conductor.rules` in the conductor prompt. Only `apply` writes to the repo, and the conductor runs it only
 // after the owner's OK. The drafts live in the main checkout, so `apply` edits the main checkout's board: from
 // inside a linked worktree it refuses rather than write the edit in one checkout and the state in another. A
@@ -18,7 +18,7 @@ import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
 import { git, mainRoot } from "../../lane/worktree.mjs";
 import * as drafts from "../drafts.mjs";
 import { fit } from "../render.mjs";
-import { own } from "../spec.mjs";
+import { own } from "../spec/shape.mjs";
 import { WriteError, appendLine, apply } from "../write.mjs";
 import { run as addItem } from "./add.mjs";
 import { run as nextId } from "./next-id.mjs";
@@ -65,7 +65,7 @@ function fill(template, draft) {
 function applyDecision(draft, { root, spec, model }, write) {
   const def = own(spec.drafts, "decision");
   if (!def)
-    return fail("the process file has no drafts.decision: nothing says how a decision is filled");
+    return fail("the workflow file has no drafts.decision: nothing says how a decision is filled");
   const id = nextId([def.kind], { spec, model });
   if (id.exit !== 0) return id;
   let fields;
@@ -87,7 +87,7 @@ function applyRule(draft, { root, spec }, write) {
   const heading = spec.conductor?.rules;
   const prompt = spec.conductor?.prompt;
   if (!heading || !prompt)
-    return fail("the process file has no conductor.rules heading: nowhere to append a rule");
+    return fail("the workflow file has no conductor.rules heading: nowhere to append a rule");
   const line = `- ${oneLine(draft.answer)}`;
   try {
     apply(join(root, prompt), (text) => appendLine(text, { heading, line }), { preview: !write });

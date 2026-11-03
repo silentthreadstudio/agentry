@@ -15,7 +15,7 @@ export const help = {
   purpose: "Apply one harness event to a board item: the status, verdict, commit and handoff line.",
   args: {
     "<event>": EVENTS.join(", "),
-    "<id>": "the item's id (any case), of the process file's lifecycle.kind",
+    "<id>": "the item's id (any case), of the workflow file's lifecycle.kind",
   },
   flags: {
     "--verdict <v>": "the verdict, for the verdict event (PASS, PASS WITH NOTES, FAIL)",

@@ -22,15 +22,17 @@ If `scan` finds something but the user says it is not their board, treat it as (
 2. Ask where the board goes; default `docs/work/`. Refuse a path outside the repository.
 3. Copy `templates/BOARD.md`, `TASKS.md`, `PROCESS.md`, `DECISIONS.md` and `templates/sprints/` there. Never
    overwrite an existing file: stop and ask.
-4. Write `.agentry/process.json` from `templates/process.json` with `root` set to that path. Without epics,
-   drop `kinds.epic` and the `## Epics` section of `BOARD.md`.
+4. Write `.agentry/process.json` from `templates/process.json` with `root` set to that path, and
+   `.agentry/workflow.json` from `templates/workflow.json`. Without epics, drop `kinds.epic` and the
+   `## Epics` section of `BOARD.md`.
 5. Run `agentry board check`; it must print OK. Tell the user the example rows (`M1`, `S1`, `T1`, `E1`) are theirs to
    replace.
 
 ## (b) Existing process — learn
 
-Work on a draft, never on the real file: `.agentry/run/process/draft.json`, read with
-`agentry board explain --process .agentry/run/process/draft.json --json`.
+Work on a draft, never on the real files: `.agentry/run/process/process.json` (the board keys) and, for any
+workflow key, its sibling `.agentry/run/process/workflow.json`, read with
+`agentry board explain --process .agentry/run/process/process.json --json`.
 
 1. **Kinds from `scan`.** Each board-like table is a candidate kind: its file, its heading (exact text), the
    id column (the first column whose cells look like ids). Name the kind with the repo's own word (the
@@ -66,7 +68,8 @@ Work on a draft, never on the real file: `.agentry/run/process/draft.json`, read
    - neither stated nor holding → **off**.
    When an existing checker names its rules (`R1`, `R2`…), offer them as `label`s.
 9. **Summary, then write.** Show one line per kind (`kind · file › heading · N items`), the rules on, the
-   rules asked about and the answer, then write `.agentry/process.json` and delete the draft.
+   rules asked about and the answer, then write the board keys to `.agentry/process.json` (any workflow key
+   to `.agentry/workflow.json`) and delete the drafts.
 
 `--relearn <kind>` runs steps 1–7 for that kind only, inside the existing file, and leaves every other kind
 and rule as it is.
@@ -74,7 +77,7 @@ and rule as it is.
 ## (c) Set up — show and repair
 
 1. Run `agentry board explain`. Show kinds × location × count, rules on with their finding counts and its `lanes`
-   block: gate, gate.quick, conductor prompt and rules, trigger block, default agent, `merge.push`, merge
+   block: the workflow file (`.agentry/workflow.json` and its key count, or none), gate, gate.quick, conductor prompt and rules, trigger block, default agent, `merge.push`, merge
    checks, the `.agentry/` commit policy per subfolder (tracked, ignored or undecided; `memory/` tracked is
    a privacy choice to point out) and the file's `version`. Each is ✓ or ✗ with the command that sets it; a
    ✗ is a lane not wired yet (exit stays 0), offered in the order of "Wiring the lanes". Read the rest of the
@@ -89,8 +92,9 @@ and rule as it is.
 
 Ask each once, only when it cannot be inferred, in one `AskUserQuestion` where possible:
 
-- **Is `.agentry/` committed?** Infer first: `git check-ignore -q .agentry/process.json` succeeds →
-  ignored; `git ls-files .agentry` lists files → committed. Ask only when neither tells. If the user wants
+- **Is `.agentry/` committed?** One answer for both files, `process.json` and `workflow.json`. Infer first:
+  `git check-ignore -q .agentry/process.json` succeeds → ignored; `git ls-files .agentry` lists files →
+  committed. Ask only when neither tells. If the user wants
   it ignored and it isn't, propose the `.gitignore` line; don't edit `.gitignore` unasked.
 - **Session-start status?** Sets `status.prime`.
 - **Harness writes?** Not asked here: wiring step 10 is the one question about `lifecycle` (status, commit,
@@ -101,10 +105,12 @@ Ask each once, only when it cannot be inferred, in one `AskUserQuestion` where p
 
 Once the process file loads, set up what `/agentry:exec`, `/agentry:merge`, `/agentry:start` and
 `/agentry:close` use, in this order. A step already set up is shown, not asked again (`--relearn` aside).
-Each change to `.agentry/process.json` goes through the draft: copy it to `.agentry/run/process/draft.json`,
-edit the draft, run `agentry board explain --process .agentry/run/process/draft.json` (exit 2 → fix the draft), then
-write the real file and delete the draft. The keys are in `references/format.md` § gate, extensions and
-conductor, and § guard and cleanup.
+Every step below writes to `.agentry/workflow.json`, never to `.agentry/process.json`, and each change goes
+through the drafts: copy both files to `.agentry/run/process/process.json` and
+`.agentry/run/process/workflow.json`, edit the workflow draft, run
+`agentry board explain --process .agentry/run/process/process.json` (exit 2 → fix the draft), then write the
+real file and delete the drafts. The keys are in `references/format.md` § gate, extensions and conductor,
+and § guard and cleanup.
 
 1. **The gate.** Learn it from the repo, in this order: the workflow doc (`PROCESS.md`, `WORKFLOW.md`,
    `CONTRIBUTING.md`) naming the merge gate; a gate script (`tools/ci/gate*`, `scripts/gate*`, a `Makefile`
@@ -169,7 +175,7 @@ conductor, and § guard and cleanup.
    asking and still asks for any other ignored file.
 9. **The permission rule.** If the owner wants fewer prompts, suggest the rule `Bash(agentry:*)` (the plugin's
    `agentry` command), never a rule bound to a path. Suggest it only; settings are the owner's.
-10. **Lifecycle writes.** Only when the process file has no `lifecycle` (the merge's board row and the lifecycle's skips
+10. **Lifecycle writes.** Only when the workflow file has no `lifecycle` (the merge's board row and the lifecycle's skips
     print `lifecycle off`), so the board never shows `doing` or `verify`. Offer it once and say what it
     writes into the board's own files, visible in the owner's diff: the task's status as the lane moves
     (dispatched, built, failed, merged), the verifier's verdict, and the landed commit (with a handoff line

@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { create } from "../lib/lane/worktree.mjs";
 import { read as readLedger, write as writeLedger } from "../lib/process/ledger.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
 const ID = "T1";
@@ -83,7 +84,7 @@ beforeEach(() => {
   writeFileSync(join(root, "NOTES.md"), "notes\n");
   writeFileSync(join(root, "other.txt"), "other\n");
   mkdirSync(join(root, ".agentry"), { recursive: true });
-  writeFileSync(join(root, ".agentry", "process.json"), `${JSON.stringify(SPEC, null, 2)}\n`);
+  writeSpec(join(root, ".agentry"), SPEC);
   git(root, "add", "-A");
   git(root, "commit", "-q", "-m", "init");
 });

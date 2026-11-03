@@ -9,19 +9,23 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { gateOf, validateSpec } from "../lib/process/spec.mjs";
-import { BASE, PROCESS_CASES, pathOf, processOf } from "./key-cases.mjs";
+import { validateSpec } from "../lib/process/spec.mjs";
+import { gateOf } from "../lib/process/spec/workflow.mjs";
+import { BASE, PROCESS_CASES, pathOf, specOf } from "./key-cases.mjs";
+import { splitSpec, writeSpec } from "./spec-files.mjs";
 
 const BOARD = join(dirname(fileURLToPath(import.meta.url)), "..", "board.mjs");
 const temps = [];
 after(() => {
   for (const dir of temps) rmSync(dir, { recursive: true, force: true });
 });
-const messages = (value) => validateSpec(value).problems.map((p) => p.message);
+const messages = (value) => validateSpec(splitSpec(value)).problems.map((p) => p.message);
 
 test("the shared table: every good case loads, every bad case names exactly its paths", () => {
   for (const c of PROCESS_CASES) {
-    const paths = [...new Set(messages(processOf(c)).map(pathOf))].sort();
+    const paths = [
+      ...new Set(validateSpec(specOf(c)).problems.map((p) => pathOf(p.message))),
+    ].sort();
     assert.deepEqual(paths, [...(c.bad ?? [])].sort(), c.name);
   }
 });
@@ -58,7 +62,7 @@ test("board check refuses a bad harness key with exit 2, naming its path", () =>
   temps.push(root);
   const file = join(root, "process.json");
   const runWith = (keys) => {
-    writeFileSync(file, JSON.stringify({ ...BASE, root: ".", ...keys }));
+    writeSpec(root, { ...BASE, root: ".", ...keys });
     writeFileSync(
       join(root, "BOARD.md"),
       "## Tasks\n\n| Task | Status |\n| --- | --- |\n| T1 | todo |\n",
