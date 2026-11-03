@@ -140,6 +140,14 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   worktree's tracked files, and a bracketed aside no longer drops the next owned path. An empty or
   unreadable gate lock file is taken over, a lock refusal names the file, and the land's own gate
   on main waits behind the same lock.
+- **Small fixes from the week** — `board scan` with no directory ends with a line naming the
+  git-ignored folders that hold markdown it did not read. `--help` examples read `agentry board …`
+  when the bin is on PATH. A `cleanup.disposable` glob naming a folder covers the files under it.
+  `exec close` takes the episode's task line from the last build report. `lane session start`
+  counts gate slots that do not fit (`+2 more`) and puts the stale-note step before its id list. A
+  flaky re-run the land refused is recorded on the first gate run and named in the gate row. A
+  `join` holding a line break or another control character is refused when the process file
+  loads. `/agentry:init` offers lifecycle board writes once, saying what they write.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a
