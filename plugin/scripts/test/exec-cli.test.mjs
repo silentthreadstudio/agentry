@@ -353,6 +353,22 @@ test("start names an owns path with a .. segment in its warning and drops it fro
   );
 });
 
+test("start warns when the owns clause names tests but no owned path is a test file", () => {
+  const tasks = [
+    "# Tasks",
+    "",
+    "- **T1** (S1): owns `src/a.ts` and its tests. Accept: x.",
+    "- **T2** (S1): owns `src/b.ts` and its tests in `test/b.test.ts`. Accept: y.",
+    "",
+  ].join("\n");
+  const r = repo({ tasks, config: { lanes: { maxWriters: 3 } } });
+  assert.equal(
+    lane(r, "start", "T1").json.warning,
+    "! owns names tests but no test file: add the test paths (exec owns <id> --set … --apply)",
+  );
+  assert.equal(lane(r, "start", "T2").json.warning, undefined);
+});
+
 test("start's overlap warning ignores a lane that is closed, and one with no shared file", () => {
   const tasks = [
     "# Tasks",

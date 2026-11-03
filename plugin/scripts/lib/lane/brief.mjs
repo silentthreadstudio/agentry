@@ -95,10 +95,10 @@ const OUT_OF_SCOPE =
   /\bstops\b|\bneeds context\b|\bask first\b|after the owner['’]s OK|\bnot owned\b|\bnever\b|\bdon['’]?t touch\b|\bdo not touch\b/i;
 // Where a sentence ends: after a `.`, `!` or `?`, a space and an upper-case letter or a quote, or the end of
 // a line when the next line is not indented, not a list item and not a bold label (those go on, or end the clause on their own).
-const SENTENCE_BREAK = /^(?:[ \t]+["'“‘A-Z]|[ \t]*\n(?=\S)(?![-*+]\s|\*\*))/;
+const SENTENCE_BREAK = /^(?:[ \t]+["'“‘A-Z]|[ \t]*\r?\n(?=\S)(?![-*+]\s|\*\*))/;
 // A list-form clause opens with a line break and a bullet; an owns label in the next sentence carries the
 // clause on, like a step label.
-const LIST_CLAUSE = /^[ \t]*\n\s*[-*+]\s/;
+const LIST_CLAUSE = /^[ \t]*\r?\n\s*[-*+]\s/;
 const OWNS_AGAIN = /^\s*owns\b/i;
 const ABBREVIATION = /\b(?:e\.g|i\.e)\.$/i;
 
@@ -126,6 +126,12 @@ const NEGATION =
   /\b(no|not|never|neither|none|nothing|without|except|excluding|exclude|forbidden|don'?t|doesn'?t|out of scope)\b/i;
 // What may sit between two spans of one list: a comma, "and", "or".
 const LIST_GAP = /^\s*(and|or|&)?\s*$/i;
+// A bare extension span (`.tscn`) right after a path, joined by `+`, `and` or a comma: the path's sibling.
+const SIBLING_GAP = /^\s*(?:\+|,|and|,\s*and)\s*$/i;
+const BARE_EXTENSION = /^\.[A-Za-z0-9]+$/;
+// A test file: under a `test`/`tests` folder, or a name with `test` or `_spec` in it.
+const TEST_FILE = /(?:^|\/)tests?\/|[^/]*(?:test|_spec)[^/]*$/i;
+const TESTS_WORD = /\btests?\b/i;
 
 // Is a tracked file named `name` (as a whole path tail)?
 const hasFile = (tracked, name) =>
@@ -296,6 +302,12 @@ export function outsideOwns(block, dir) {
   return readOwns(block, dir).outside;
 }
 
+/** Does the owns clause name the word "tests" while no owned path is a test file? */
+export function ownsTestsWithoutFile(block, dir) {
+  const { owned, named } = readOwns(block, dir);
+  return named && !owned.some((path) => TEST_FILE.test(path));
+}
+
 function readOwns(block, dir) {
   const text = unfenced(String(block ?? ""));
   let list;
@@ -304,7 +316,7 @@ function readOwns(block, dir) {
     return list;
   };
   const at = BOLD_OWNS.exec(text) ?? OWNS.exec(text);
-  if (!at) return { owned: [], outside: [] };
+  if (!at) return { owned: [], outside: [], named: false };
   let part = text.slice(at.index + at[0].length);
   part = part.slice(0, clauseEnd(part));
   let masked = part.replace(TICKED, (span) => " ".repeat(span.length));
@@ -335,6 +347,7 @@ function readOwns(block, dir) {
   ].sort((x, y) => x - y);
   let tail = false;
   let seen = false;
+  let heads = [];
   for (const m of part.matchAll(TICKED)) {
     const span = m[1].replace(/\s*\n\s*/g, "");
     const between = part.slice(from, m.index);
@@ -342,8 +355,12 @@ function readOwns(block, dir) {
     // ("(no new class)") left out.
     const clause = between.split(/;|\.\s|\n\s*\n|\n\s*[-*]\s/).at(-1);
     from = m.index + m[0].length;
-    if (seen && !LIST_GAP.test(between.replace(/\([^()]*\)/g, " ").replace(/,/g, " "))) tail = true;
+    const bare = heads.length > 0 && BARE_EXTENSION.test(span) && SIBLING_GAP.test(between);
+    if (seen && !bare && !LIST_GAP.test(between.replace(/\([^()]*\)/g, " ").replace(/,/g, " ")))
+      tail = true;
     seen = true;
+    const prior = heads;
+    heads = [];
     // A negation holds to the next comma: a span right after a comma ("not `a`, `b`") shares the
     // previous span's reading, but words after a comma ("`a`, without touching x, `b`") end it.
     const pieces = clause.replace(/\([^()]*\)/g, " ").split(",");
@@ -362,13 +379,23 @@ function readOwns(block, dir) {
       OUT_OF_SCOPE.test(before)
     )
       continue;
+    if (bare) {
+      // Each extension adds a sibling of the path before the first one.
+      heads = prior;
+      for (const path of prior) {
+        const sibling = path.replace(/\.[^./]*$/, span);
+        if (!out.includes(sibling)) out.push(sibling);
+      }
+      continue;
+    }
     for (const one of braced(span)) {
       const path = pathOf(one, tracked);
       const list = path && leaves(path) ? outside : out;
       if (path && !list.includes(path)) list.push(path);
+      if (path && list === out) heads.push(path);
     }
   }
-  return { owned: out, outside };
+  return { owned: out, outside, named: TESTS_WORD.test(masked) };
 }
 
 const trackedFiles = (dir) => {

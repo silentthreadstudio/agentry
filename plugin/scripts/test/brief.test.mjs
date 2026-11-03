@@ -15,6 +15,7 @@ import {
   notesSection,
   outsideOwns,
   ownedFiles,
+  ownsTestsWithoutFile,
   policySlots,
   recalledFacts,
   recheckSlots,
@@ -1046,4 +1047,49 @@ test("ownedFiles ignores backticked paths inside a fenced block, whatever the fe
   ]);
   // An unclosed fence runs to the end.
   assert.deepEqual(ownedFiles("**Owns:** `a.mjs`\n```\n`b.md`"), ["a.mjs"]);
+});
+
+test("ownedFiles owns the sibling of a path named by a bare extension after +, and or a comma", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `dir/x.gd` + `.tscn`."), ["dir/x.gd", "dir/x.tscn"]);
+  assert.deepEqual(ownedFiles("**Owns:** `dir/x.gd` and `.tscn`."), ["dir/x.gd", "dir/x.tscn"]);
+  assert.deepEqual(ownedFiles("**Owns:** `dir/x.gd`, `.tscn`."), ["dir/x.gd", "dir/x.tscn"]);
+});
+
+test("ownedFiles adds one sibling for each bare extension in a row", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `dir/x.gd` + `.tscn` + `.uid`."), [
+    "dir/x.gd",
+    "dir/x.tscn",
+    "dir/x.uid",
+  ]);
+});
+
+test("ownedFiles owns nothing for a bare extension with no path before it", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `.tscn`."), []);
+  assert.deepEqual(ownedFiles("**Owns:** `a.gd` (the script) and `.tscn`."), ["a.gd"]);
+  assert.deepEqual(ownedFiles("**Owns:** `not-a-path` + `.tscn`."), []);
+});
+
+test("ownedFiles owns both paths of `a.gd` + `b.gd` as written", () => {
+  assert.deepEqual(ownedFiles("**Owns:** `a.gd` + `b.gd`."), ["a.gd", "b.gd"]);
+});
+
+test("ownedFiles ends the owns clause at a CRLF line end as at an LF one", () => {
+  const block = (eol) => `**Owns:** \`a.mjs\`.${eol}Reads \`b.md\` for context.`;
+  assert.deepEqual(ownedFiles(block("\r\n")), ownedFiles(block("\n")));
+  assert.deepEqual(ownedFiles(block("\r\n")), ["a.mjs"]);
+});
+
+test("ownsTestsWithoutFile is true when the clause names tests and no owned path is a test file", () => {
+  assert.equal(ownsTestsWithoutFile("**Owns:** `src/a.mjs` and its tests."), true);
+  assert.equal(ownsTestsWithoutFile("**Owns:** `src/a.mjs` and its test."), true);
+});
+
+test("ownsTestsWithoutFile is false when an owned path is a test file, or no tests are named", () => {
+  for (const path of ["test/a.mjs", "src/tests/a.mjs", "src/a.test.mjs", "src/a_spec.rb"])
+    assert.equal(
+      ownsTestsWithoutFile(`**Owns:** \`src/a.mjs\`, \`${path}\` (tests).`),
+      false,
+      path,
+    );
+  assert.equal(ownsTestsWithoutFile("**Owns:** `src/a.mjs`."), false);
 });

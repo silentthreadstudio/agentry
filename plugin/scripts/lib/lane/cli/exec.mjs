@@ -60,6 +60,7 @@ import {
   notesSection,
   outsideOwns,
   ownedFiles,
+  ownsTestsWithoutFile,
   policySlots,
   shellQuote as q,
   recalledFacts,
@@ -1015,7 +1016,10 @@ function start(ctx, id) {
   const outside = outsideOwns(found.block, tree.path).map(
     (path) => `! owns names a path outside the repository: ${path} (dropped)`,
   );
-  const overlap = [...outside, ownsOverlap(root, ledger.owned)].filter(Boolean).join("\n");
+  const noTests = ownsTestsWithoutFile(found.block, tree.path)
+    ? "! owns names tests but no test file: add the test paths (exec owns <id> --set … --apply)"
+    : null;
+  const overlap = [...outside, ownsOverlap(root, ledger.owned), noTests].filter(Boolean).join("\n");
   ledger = dispatchNext(ctx, ledger, begin(ledger.steps).dispatch);
   ledgers.write(root, ledger);
   return view(ctx, ledger, {
