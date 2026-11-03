@@ -1,11 +1,13 @@
 // board explain [--json] — how the process file meets the board (plan F13 §2.4), the ground truth
 // `/agentry:init` learns against: per kind, where it was found, its items, table columns no field
 // maps, unknown status values, unresolved refs and read problems; per catalog rule, on or off and its
-// finding count. Writes nothing; exit 0.
+// finding count. Writes nothing; exit 0, or 2 for a `conductor.prompt` that is not a file or a
+// `conductor.rules` heading it does not hold.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
 import { join } from "node:path";
 import { check } from "../check.mjs";
+import { refuseConductor } from "../conductor.mjs";
 import * as md from "../markdown.mjs";
 import { readInside } from "../read.mjs";
 import { columns } from "../render.mjs";
@@ -97,6 +99,8 @@ function render(data) {
 }
 
 export function run(argv, ctx) {
+  const refused = refuseConductor(ctx.root, ctx.spec, ctx.processPath);
+  if (refused) return refused;
   const data = explain(ctx);
   return { exit: 0, out: argv.includes("--json") ? JSON.stringify(data) : render(data) };
 }

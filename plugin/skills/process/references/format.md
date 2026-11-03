@@ -257,9 +257,14 @@ the owner's approval.
 | `extensions.merge` | yes | What `/agentry:merge` adds. |
 | `extensions.merge.checks` | yes | Repo skills by their own names (lower-case letters, digits, `-`; each once). Merge refuses to land until each has a recorded outcome. |
 | `conductor.prompt` | yes | The repo's conductor prompt, from the git root. |
-| `conductor.rules` | no | The heading in that prompt where a standing rule the owner states is appended. |
+| `conductor.rules` | no | The heading in that prompt where a standing rule the owner states is appended. Matched as the full heading text with its numbering (`## 10. Standing rules` is `"10. Standing rules"`, not `"Standing rules"`); spaces collapse, a leading `#` run also pins the level. |
 
 These keys fail strict: a typo makes a check stricter or is refused, never laxer. An unknown key, a wrong
 type, an empty string or list, a repeated check, or a path that is absolute or climbs out with `..` is refused
 at load (exit 2, naming the path: `gate.command[1]`, `gate.quick.only`). A misspelled `after` glob allows
 less; a misspelled `only` glob makes the quick tier apply less often.
+
+`conductor.prompt` and `conductor.rules` are also read against the repo by `board explain` and `board check`: the
+prompt must be a file inside it and hold the `rules` heading, matched the way `board draft apply` matches it.
+A miss is exit 2 naming the key and what was looked for, with the nearest heading when one is close
+(`"10. Standing rules"` for `"Standing rules"`).
