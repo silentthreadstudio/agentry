@@ -9,6 +9,7 @@
 // before any start check is recorded, the close window is the last session's close.
 //
 // read(runRoot) -> entry[]              a line that is not an entry is skipped; their count is `.skipped`
+//                                       a file it cannot use throws an Error with `.unusable` set
 // record(runRoot, entry)                append one line (a torn last line first gets its line break)
 // checksView(spec, entries, root) -> { start: View, close: View } | null     null: neither phase names a check
 //   View = { named, recorded: [{ skill, result, note?, at }], pending, failed, missing }
@@ -32,12 +33,18 @@ const isEntry = (e) =>
   typeof e.at === "string" &&
   (e.note === undefined || typeof e.note === "string");
 
+// A file the record cannot use (a folder, no permission) as one error the caller says in a line: `unusable`.
+const unusable = (runRoot, err) =>
+  Object.assign(new Error(`cannot use ${fileOf(runRoot)}: ${err.code ?? err.message}`), {
+    unusable: true,
+  });
+
 const textOf = (runRoot) => {
   try {
     return readFileSync(fileOf(runRoot), "utf8");
   } catch (err) {
     if (err.code === "ENOENT") return "";
-    throw err;
+    throw unusable(runRoot, err);
   }
 };
 
@@ -60,10 +67,14 @@ export function read(runRoot) {
 
 /** Append `entry` as one line; the folder is made when absent. */
 export function record(runRoot, entry) {
-  mkdirSync(dirname(fileOf(runRoot)), { recursive: true });
-  const text = textOf(runRoot);
-  const gap = text && !text.endsWith("\n") ? "\n" : "";
-  appendFileSync(fileOf(runRoot), `${gap}${JSON.stringify(entry)}\n`);
+  try {
+    mkdirSync(dirname(fileOf(runRoot)), { recursive: true });
+    const text = textOf(runRoot);
+    const gap = text && !text.endsWith("\n") ? "\n" : "";
+    appendFileSync(fileOf(runRoot), `${gap}${JSON.stringify(entry)}\n`);
+  } catch (err) {
+    throw err.unusable ? err : unusable(runRoot, err);
+  }
 }
 
 // The entries `phase` counts now, in file order: those after the newest entry of the other phase.

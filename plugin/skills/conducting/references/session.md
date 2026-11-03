@@ -38,13 +38,14 @@ ones:
 ```text
 start checks: repo-session, repo-ui (run each, then record it)
   → agentry lane session start --check <skill>=pass|fail --note "<line>"
-start checks: repo-ui has no .claude/skills/repo-ui/SKILL.md → /agentry:init
+start checks: repo-ui has no .claude/skills/repo-ui/SKILL.md
+  → /agentry:init
 last close: 1/2 passed (2026-11-02T18:40Z)
 last close: repo-ui failed · the screenshot gate was red
 ```
 
 `start checks:` lists the checks not yet recorded in this start window; a named skill with no `SKILL.md` adds
-its own line. `last close:` shows how the close window stands (the last session's close, until a start check
+its own line, with the `→ /agentry:init` pointer under it. `last close:` shows how the close window stands (the last session's close, until a start check
 is recorded): passed over named, the time of the newest entry (UTC, to the minute), then each failure with its
 note on one line (at most three, then `last close: +N more failed`); a line is cut to 100 columns.
 

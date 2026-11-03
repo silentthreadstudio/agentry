@@ -467,7 +467,7 @@ test("start says a named skill with no SKILL.md has none", () => {
   assert.match(stdout, /^start checks: repo-session, ghost \(run each, then record it\)$/m);
   assert.match(
     stdout,
-    /^start checks: ghost has no \.claude\/skills\/ghost\/SKILL\.md → \/agentry:init$/m,
+    /^start checks: ghost has no \.claude\/skills\/ghost\/SKILL\.md\n {2}→ \/agentry:init$/m,
   );
   const data = JSON.parse(session(root, "start", "--json").stdout);
   assert.deepEqual(data.checks.start.missing, ["ghost"]);
@@ -610,4 +610,30 @@ test("close carries checks and still writes nothing without --check", () => {
   assert.deepEqual(data.checks.close.pending, ["repo-session", "repo-ui"]);
   assert.deepEqual(data.checks.close.missing, ["repo-ui"]);
   assert.throws(() => read(root, CHECKS_FILE), { code: "ENOENT" });
+});
+
+test("the missing-skill pointer is on its own line, whole, for the doc's example name", () => {
+  const root = checkedRepo({ start: { checks: ["repo-session"] } }, []);
+  const lines = session(root, "start").stdout.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("start checks: repo-session has no "));
+  assert.ok(at >= 0);
+  assert.equal(lines[at], "start checks: repo-session has no .claude/skills/repo-session/SKILL.md");
+  assert.equal(lines[at + 1], "  → /agentry:init");
+});
+
+test("a record the run cannot use exits 2 with one line naming it, for start, close and --check", () => {
+  const root = checkedRepo(BOTH, ["repo-session", "repo-ui"]);
+  mkdirSync(join(root, CHECKS_FILE), { recursive: true });
+  for (const args of [
+    ["start"],
+    ["start", "--json"],
+    ["close"],
+    ["close", "--check", "repo-ui=pass"],
+  ]) {
+    const res = session(root, ...args);
+    assert.equal(res.status, 2, args.join(" "));
+    const lines = res.stderr.trimEnd().split("\n");
+    assert.equal(lines.length, 1, res.stderr);
+    assert.match(lines[0], /^✗ lane session: cannot use .*session-checks\.jsonl: EISDIR/);
+  }
 });

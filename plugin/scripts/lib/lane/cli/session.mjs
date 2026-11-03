@@ -189,8 +189,10 @@ function startChecks({ start: now, close: last }, { add, addList }) {
     addList("start checks: ", now.pending, " (run each, then record it)");
     add(`  → ${nextStep('lane session start --check <skill>=pass|fail --note "<line>"')}`);
   }
-  for (const m of now.missing)
-    add(`start checks: ${m} has no ${SKILL_DIR}/${m}/SKILL.md → /agentry:init`);
+  for (const m of now.missing) {
+    add(`start checks: ${m} has no ${SKILL_DIR}/${m}/SKILL.md`);
+    add("  → /agentry:init");
+  }
   if (!last.recorded.length) return;
   const passed = last.recorded.filter((r) => r.result === "pass").length;
   add(`last close: ${passed}/${last.named.length} passed (${minute(last.recorded.at(-1).at)})`);
@@ -372,6 +374,15 @@ function check(phase, { check: value, note, json }, { root, spec }) {
 }
 
 export function run(argv, ctx) {
+  try {
+    return runSession(argv, ctx);
+  } catch (err) {
+    if (err.unusable) return refuse("lane session", err.message);
+    throw err;
+  }
+}
+
+function runSession(argv, ctx) {
   const opts = parse(argv);
   if (opts.error) return usageError("lane session", opts.error);
   const [sub, ...rest] = opts.words;
