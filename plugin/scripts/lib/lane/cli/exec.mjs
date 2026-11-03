@@ -1023,7 +1023,9 @@ function episodeOf(ledger) {
   const judged = verdicts(ledger);
   const guardTrips = ledger.rounds.flatMap((r) => r.guards ?? []);
   const lastGate = ledger.gates?.at(-1);
-  const what = ledger.rounds.findLast((r) => r.role === "build" && r.summary)?.summary;
+  const what = ledger.rounds.findLast(
+    (r) => r.role === "build" && r.step !== "fix" && r.summary,
+  )?.summary;
   const outcome = [
     ledger.state === "stopped"
       ? `stopped: ${ledger.stopReason ?? "unknown"}`

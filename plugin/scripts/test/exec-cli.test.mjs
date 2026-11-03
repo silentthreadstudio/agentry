@@ -1390,6 +1390,31 @@ test("fix <id> --notes sends the builder back on the named notes, then the usual
   assert.doesNotMatch(recheckBrief, /N1: copy says/);
 });
 
+test("close keeps the build report's task line after a notes-fix round", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  notesReport(out);
+  lane(r, "verdict", "T1", "--agent", "verifier-1");
+  lane(r, "gate", "T1");
+  const fixed = lane(r, "fix", "T1", "--notes", "N2").json;
+  commitFile(fixed.worktree, "notes.txt", "fixed\n", "fix: address notes");
+  writeFileSync(fixed.reportPath, "DONE\nfixed the queue note\nused_memories: none\n");
+  const recheck = lane(r, "report", "T1").json;
+  judge(recheck, "PASS");
+  const rechecked = lane(r, "verdict", "T1");
+  assert.equal(rechecked.exit, 0, rechecked.stderr);
+  judge(rechecked.json, "PASS");
+  const finalVerdict = lane(r, "verdict", "T1");
+  assert.equal(finalVerdict.exit, 0, finalVerdict.stderr);
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 0, gated.stderr);
+  const closed = lane(r, "close", "T1");
+  assert.equal(closed.exit, 0, closed.stderr);
+  assert.equal(closed.json.episode.task, "T1: added out.txt");
+});
+
 test("owns --set --apply during a notes-fix round keeps the brief's notes to fix", () => {
   const r = repo();
   let out = lane(r, "start", "T1").json;
