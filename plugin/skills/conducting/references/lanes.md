@@ -37,7 +37,7 @@ An open debt lane and an open task lane pass each other's board writes.
 | `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
 | `owns <id> [--set a,b] [--apply]` | the owned files every brief names, parsed once at `start` and kept in the ledger; `--set … --apply` replaces them and rewrites the brief still waiting for its agent, keeping any section appended after the brief's last template section such as `## The fact` (without `--apply` it only shows the new list; a held lane has no brief waiting: the round after the resume reads the new list) | none |
 | `hold <id> --for owner [--evidence <path>] [--agent a]` | a builder's round whose reply is saved waits for the owner's review (`--agent` names the builder out on it, so the resume goes back to that agent) (also on a lane with no steps: the owner looks mid-build); the evidence defaults to that round's report; on a held lane it replaces `for` and the evidence and keeps `since` | none |
-| `hold <id> --for later [--note "<why>"]` | parks a lane whose builder was stopped mid-round: no saved reply needed, the worktree kept as it is (uncommitted files allowed) | none |
+| `hold <id> --for later [--note "<why>"]` | parks a lane whose builder was stopped mid-round: no saved reply needed, the worktree kept as it is (uncommitted files allowed); a touched main does not refuse it: the park is recorded and prints `main moved while parked: <reason>; resume re-checks it` | none |
 | `resume <id> --note "<the OK>" [--redo] [--fresh]` | records the owner's answer with its time (`holds[]`), then dispatches `continue` to the held round's builder, or after the last step the verifier (or the gate); `--redo` builds the same run again and holds at its end; `--fresh` sends a fresh builder the same brief | `built` when a verifier (or the gate) is next |
 
 Exit 0: `next` is printed. Exit 1: the lane stopped (or, for `gate`, the gate is red). Exit 2: usage or a
@@ -47,7 +47,8 @@ inside a worktree instead of the main checkout).
 `hold` refuses (exit 2) a lane whose builder's round is not out ("hold is for a builder's round", with its
 state and next), `--for owner` before the reply is saved ("the builder is still out: save its reply to
 <reportPath> first, then hold"), any other `--for` ("--for takes owner or later"), an `--evidence` path with
-no file, and a touched main (it names the report step, which stops the lane). `resume` refuses a lane that is
+no file, and, for `--for owner`, a touched main (it names the report step, which stops the lane); a park
+(`--for later`) goes through on a touched main and says so, since `resume` checks main again. `resume` refuses a lane that is
 not held, a resume with no `--note` ("resume needs --note"), `--redo` after a hold during a round ("--redo
 goes back over a finished run"), a builder it would send at `lanes.maxWriters` (the `start` message), and a
 main changed while the lane was held ("main changed while <id> was held: <reason>: undo that, then

@@ -322,10 +322,58 @@ test("a lane parked mid-round with uncommitted work is no writer", () => {
   const parked = lane(r, "hold", "T1", "--for", "later", "--note", "laptop died");
   assert.equal(parked.exit, 0, parked.stderr);
   assert.match(parked.json.held, new RegExp(`^parked, since ${ISO}: "laptop died"$`));
+  assert.equal(parked.json["main moved while parked"], undefined, "main is as the lane left it");
   const ledger = ledgerOf(r.root, "T1");
   assert.deepEqual([ledger.hold.for, ledger.rounds[0].held], ["later", true]);
   const t4 = lane(r, "start", "T4");
   assert.equal(t4.exit, 0, t4.stderr);
+});
+
+test("a lane tripped by a commit on main parks (exit 0) with the moved-main line, then resume refuses", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  writeFileSync(join(out.worktree, "three.txt"), "half\n");
+  commitFile(r.root, "stray.txt", "x\n", "chore: by hand");
+  const parked = lane(r, "hold", "T3", "--for", "later");
+  assert.equal(parked.exit, 0, parked.stderr);
+  assert.match(parked.json.held, new RegExp(`^parked, since ${ISO}$`));
+  const moved = /^HEAD moved [0-9a-f]{7} → [0-9a-f]{7}; resume re-checks it$/;
+  assert.match(parked.json["main moved while parked"], moved);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.deepEqual(
+    [ledger.state, ledger.hold.for, ledger.rounds[0].held, ledger.rounds[0].report],
+    ["held", "later", true, undefined],
+    "the round out is left unread",
+  );
+  assert.equal(readFileSync(join(out.worktree, "three.txt"), "utf8"), "half\n");
+
+  const shown = text(r, "hold", "T3", "--for", "later").split("\n");
+  assert.match(shown[1], new RegExp(`^held: parked, since ${ISO}$`));
+  assert.ok(
+    shown.some((l) => /^main moved while parked: HEAD moved .*; resume re-checks it$/.test(l)),
+    shown.join("\n"),
+  );
+  const refused = lane(r, "resume", "T3", "--note", "go on");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /main changed while T3 was held: HEAD moved [0-9a-f]{7} → [0-9a-f]{7}: undo that, then resume/,
+  );
+  assert.equal(ledgerOf(r.root, "T3").state, "held");
+});
+
+test("hold --for owner on a tripped lane still refuses and names the report step", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  writeFileSync(out.reportPath, "DONE\nhave a look\n");
+  writeFileSync(join(r.root, "stray.txt"), "x\n");
+  const refused = lane(r, "hold", "T3", "--for", "owner");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /main touched: files changed: \?\? stray\.txt: run .*exec report T3 --root .* \(the report stops the lane\)/,
+  );
+  assert.equal(ledgerOf(r.root, "T3").state, "building");
 });
 
 test("a parked lane resumes its builder with the parked line, or a fresh builder with --fresh", () => {

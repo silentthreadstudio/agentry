@@ -1318,7 +1318,8 @@ const saved = (path) => {
 
 // A builder's round waits: for the owner, who reviews what its saved reply points at (`--evidence`, by
 // default that reply), or for later, a parked lane whose builder was stopped mid-round (no reply needed,
-// the worktree kept as it is). The ledger alone is written: no board cell, nothing on main.
+// the worktree kept as it is). The ledger alone is written: no board cell, nothing on main. A touched main
+// refuses the owner's hold; a park records it anyway and says so (field 57): `resume` checks main again.
 function hold(ctx, id, agent) {
   const { root, holdFor, evidence: given, note } = ctx;
   if (!["owner", "later"].includes(holdFor)) refuse("--for takes owner or later");
@@ -1331,13 +1332,12 @@ function hold(ctx, id, agent) {
     refuse(`the builder is still out: save its reply to ${round.reportPath} first, then hold`);
   const evidence = given === null ? null : resolve(root, given);
   if (evidence !== null && !existsSync(evidence)) refuse(`no file at ${given}`);
-  if (!held) {
-    const touched = mainTouched(ctx, ledger, ledgers.list(root));
-    if (touched)
-      refuse(
-        `main touched: ${touched}: run ${laneLine(root, "report", id)} (the report stops the lane)`,
-      );
-  }
+  const touched =
+    !held || holdFor === "later" ? mainTouched(ctx, ledger, ledgers.list(root)) : null;
+  if (touched && holdFor === "owner")
+    refuse(
+      `main touched: ${touched}: run ${laneLine(root, "report", id)} (the report stops the lane)`,
+    );
   const res = stepWith(ledger, {
     type: "hold",
     for: holdFor,
@@ -1349,7 +1349,10 @@ function hold(ctx, id, agent) {
   ledgers.write(root, res.ledger);
   return view(ctx, res.ledger, {
     step: "hold",
-    extra: { ...(res.reason && { why: res.reason }) },
+    extra: {
+      ...(res.reason && { why: res.reason }),
+      ...(touched && { "main moved while parked": `${touched}; resume re-checks it` }),
+    },
   });
 }
 
