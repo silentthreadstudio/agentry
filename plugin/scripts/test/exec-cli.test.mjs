@@ -124,7 +124,7 @@ function repo({ spec = SPEC, config, prefix = "exec-repo-" } = {}) {
   return { root, home };
 }
 function lane({ root, home }, ...args) {
-  const res = spawnSync("node", [LANE, "exec", ...args, "--root", root], {
+  const res = spawnSync("node", [LANE, "exec", ...args, "--json", "--root", root], {
     encoding: "utf8",
     env: { ...gitEnv, HOME: home },
   });
@@ -190,7 +190,7 @@ test("start cuts agentry/<id> in a worktree, writes `dispatched` and prints the 
   assert.deepEqual(json.board.writes, [{ file: "plan/BOARD.md", what: "status → doing" }]);
   const brief = readFileSync(json.brief, "utf8");
   assert.match(brief, /- \*\*T1\*\* \(S1\): owns `out\.txt`, `src\/ui\/panel\.css`; follows D1\./);
-  assert.match(brief, /- `out\.txt`\n- `src\/ui\/panel\.css`/);
+  assert.match(brief, /- `out\.txt` \(new\)\n- `src\/ui\/panel\.css` \(new\)/);
   assert.match(brief, /- D1: \| 1 \| Plain files \|/);
   assert.doesNotMatch(brief, /Not cited/);
   assert.match(brief, /none \(memory\.prime is "conductor"/);
@@ -649,15 +649,93 @@ test("show prints the pending dispatch for a cold resume", () => {
   assert.deepEqual(shown.json.nested, []);
 });
 
-test("a worktree that appears during the lane and belongs to no lane is reported as nested", () => {
+test("a worktree inside the lane's own worktree is nested; one made elsewhere is not", () => {
   const r = repo();
   const out = lane(r, "start", "T1").json;
   build(out);
-  const nested = join(r.root, ".agentry", "run", "nested-x");
+  const nested = join(out.worktree, "nested-x");
   git(r.root, "worktree", "add", "-q", "-b", "nested-x", nested);
+  const conductors = join(r.root, ".claude", "worktrees", "agent-1");
+  git(r.root, "worktree", "add", "-q", "-b", "agent-1", conductors);
   const res = lane(r, "report", "T1");
   assert.deepEqual(res.json.nested, [nested]);
   assert.deepEqual(ledgerOf(r.root, "T1").nested, [nested]);
+});
+
+test("writers: kept worktrees and the host's agent worktrees without a ledger do not count", () => {
+  const r = repo({
+    spec: { ...SPEC, worktrees: { keep: ["kept-*"] } },
+    config: { lanes: { maxWriters: 2 } },
+  });
+  const kept = join(r.root, "..", `${r.root.split("/").at(-1)}-kept`);
+  git(r.root, "worktree", "add", "-q", "-b", "kept-branch", kept);
+  temps.push(kept);
+  git(r.root, "worktree", "add", "-q", "-b", "agent-1", join(r.root, ".claude", "worktrees", "a1"));
+  assert.equal(lane(r, "start", "T1").exit, 0);
+  assert.equal(lane(r, "start", "T2").exit, 0, "T1 is the only writer");
+});
+
+test("start prints readable text by default and the one JSON object under --json", () => {
+  const r = repo();
+  const res = spawnSync("node", [LANE, "exec", "start", "T1", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home },
+  });
+  assert.equal(res.status, 0);
+  assert.match(res.stdout, /^T1 · start → build \(building\)\n/);
+  assert.match(res.stdout, /^prompt:\n {2}agentry-task: T1 role=build round=1\n/m);
+  assert.match(
+    res.stdout,
+    /^owned files \(parsed from the contract\):\n {2}- out\.txt \(new\)\n {2}- src\/ui\/panel\.css \(new\)\n {2}amend: .*exec owns T1 /m,
+  );
+  assert.throws(() => JSON.parse(res.stdout));
+});
+
+test("owns shows the parsed list, a --set previews until --apply, and the waiting brief is rewritten", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  assert.deepEqual(ledgerOf(r.root, "T1").owned, [
+    { path: "out.txt", new: true },
+    { path: "src/ui/panel.css", new: true },
+  ]);
+  const before = readFileSync(out.brief, "utf8");
+  const preview = lane(r, "owns", "T1", "--set", "a/b.ts,c.ts");
+  assert.equal(preview.exit, 0);
+  assert.equal(preview.json.applied, false);
+  assert.match(preview.json.preview, /^preview: nothing written; add --apply/);
+  assert.equal(readFileSync(out.brief, "utf8"), before, "a preview writes nothing");
+  assert.equal(ledgerOf(r.root, "T1").owned.length, 2);
+
+  const done = lane(r, "owns", "T1", "--set", "a/b.ts, c.ts,plan/TASKS.md", "--apply");
+  assert.equal(done.exit, 0);
+  assert.deepEqual(ledgerOf(r.root, "T1").owned, [
+    { path: "a/b.ts", new: true },
+    { path: "c.ts", new: true },
+    { path: "plan/TASKS.md", new: false },
+  ]);
+  const brief = readFileSync(out.brief, "utf8");
+  assert.match(brief, /- `a\/b\.ts` \(new\)\n- `c\.ts` \(new\)\n- `plan\/TASKS\.md`\n/);
+  assert.doesNotMatch(brief, /panel\.css`\n/);
+  assert.equal(lane(r, "owns", "T1").json.owned.length, 3);
+});
+
+test("a later round's brief reads the amended list, not the contract again", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  assert.equal(lane(r, "owns", "T1", "--set", "out.txt", "--apply").exit, 0);
+  build(out);
+  const verify = lane(r, "report", "T1").json;
+  const brief = readFileSync(verify.brief, "utf8");
+  assert.match(brief, /Owned files:\n- `out\.txt` \(new\)\n/);
+  assert.doesNotMatch(brief, /^- `src\/ui\/panel\.css`/m);
+});
+
+test("owns refuses a blank path, --apply without --set, and --set on another step", () => {
+  const r = repo();
+  lane(r, "start", "T1");
+  assert.match(lane(r, "owns", "T1", "--set", "a.ts,,b.ts").stderr, /no blanks/);
+  assert.match(lane(r, "owns", "T1", "--apply").stderr, /--apply writes the --set list/);
+  assert.match(lane(r, "show", "T1", "--set", "a.ts").stderr, /show takes no --set/);
 });
 
 test("a ledger's boardWrites excuse only the lifecycle's own board file, not another file", () => {
@@ -744,7 +822,7 @@ test("every printed cd prefix and lane line survives a path with quotes, $, back
   judge(shown, "PASS");
   const gated = lane(r, "verdict", "T1").json;
   assert.equal(gated.next, "gate");
-  const ran = sh(gated.run);
+  const ran = sh(`${gated.run} --json`);
   assert.equal(JSON.parse(ran.stdout).step, "gate", ran.stdout + ran.stderr);
 });
 

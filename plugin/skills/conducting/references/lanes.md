@@ -29,15 +29,16 @@ prompt the step printed. It never composes a brief, picks the next round or writ
 | `fix <id> --notes N1,N3` | after `PASS WITH NOTES` (gate or close next): a builder round (resume) on those notes of the verifier's report, then the usual `recheck` | none |
 | `close <id> [--episode e]` | prints the `episode_write` payload; `--episode` stamps the id it returned | none (`done` comes at merge) |
 | `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
+| `owns <id> [--set a,b] [--apply]` | the owned files every brief names, parsed once at `start` and kept in the ledger; `--set … --apply` replaces them and rewrites the brief still waiting for its agent (without `--apply` it only shows the new list) | none |
 
 Exit 0: `next` is printed. Exit 1: the lane stopped (or, for `gate`, the gate is red). Exit 2: usage or a
 refusal, nothing changed (an out-of-order step, a missing report file, a dirty worktree at the gate, a run from
 inside a worktree instead of the main checkout).
 
-The JSON: `id`, `step`, `next`, `state`, `worktree`, `branch`, `reportPath`, `guards`, `nested`; for a dispatch
+Every step prints readable text; `--json` prints one object instead. Its fields (the text has the same names): `id`, `step`, `next`, `state`, `worktree`, `branch`, `reportPath`, `guards`, `nested`; for a dispatch
 `prompt`, `brief`, `role`, `mode` (`fresh` or `resume`), `agent` (the one to resume), `dispatch` (the agent type,
 a suggestion for builders), `after` (the step to run when the agent returns); `run` for `gate` and `close`;
-`reason` on a stop; `why` for the machine's choice; `board` for what the lifecycle wrote or skipped; `gates`
+`reason` on a stop; `why` for the machine's choice; `board` for what the lifecycle wrote or skipped; `owned` (each file, `new` when the worktree has none) and `amend` at `start`; `gates`
 (`gate` and `verdict`) for the runs on this tip: "1 green, 1 red on this tip". A tip with both is the
 conductor's call; a red that failed only in listed flaky tests is marked as such.
 
@@ -112,10 +113,11 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
   looks wrong.
 - **The worktree.** A builder leaves no uncommitted or untracked files and at least one commit past base.
 - **The tip.** A verdict counts only for the tip it was dispatched on: nobody rebases while a verifier reads.
-- **Nested worktrees.** A worktree that appears during the lane and belongs to no ledger is listed in `nested`
-  on every step. Name it to the owner.
+- **Nested worktrees.** A worktree inside the lane's own worktree is listed in `nested` on every step. Name
+  it to the owner. A worktree made elsewhere (the conductor's own) is not the lane's.
 - **Writers.** `start` refuses when the ledgers in `building` / `fixing` plus worktrees no ledger owns reach
-  `lanes.maxWriters` (`.agentry/config.json`, default 3), and names each one.
+  `lanes.maxWriters` (`.agentry/config.json`, default 3), and names each one. Worktrees the repo keeps
+  (`worktrees.keep`) and the host's agent worktrees (`.claude/worktrees/`) without a ledger are not counted.
 
 ### The briefs
 

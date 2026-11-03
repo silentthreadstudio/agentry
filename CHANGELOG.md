@@ -82,6 +82,17 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   lane's process.
 - **`board status`** shows what is on you, blocked and ahead even on a clean board; `start`
   prints the count first and the repo's `.agentry/NOTE.md`.
+- **`lane exec` prints readable text** by default; `--json` prints the one object. `start` lists the
+  owned files it parsed (new ones marked) and how to amend them.
+- **Owned files** are paths only: symbols, string keys and spans after a negation ("no line in
+  `x`") are left out, and `path:lines` reads as the path. They are parsed once at `start` into the
+  ledger, so every later brief uses the same list.
+- **`lane exec owns <id> [--set a,b] [--apply]`** shows or replaces the owned files and rewrites the
+  brief still waiting for its agent.
+- **`lanes.maxWriters`** no longer counts worktrees the repo keeps (`worktrees.keep`) or the host's
+  `.claude/worktrees/` agent worktrees that no lane owns.
+- **`nested`** lists only worktrees inside the lane's own worktree, not every worktree created
+  while it ran.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a

@@ -1,6 +1,6 @@
 // lane exec <step> <id> — the exec lane's stepper (plan R1b §3.2, ADR-R1): each step checks the ledger
-// expects it, does the git and board work, records it and prints the next step as one JSON object
-// `{ id, step, next, prompt?, brief?, reportPath, worktree, branch, guards, nested, … }`.
+// expects it, does the git and board work, records it and prints the next step as readable text, or with
+// `--json` as one object `{ id, step, next, prompt?, brief?, reportPath, worktree, branch, guards, nested, … }`.
 //
 //   start <id>                cut `agentry/<id>` in a worktree, write `dispatched`, brief the builder
 //   report <id> [--agent a]   read the builder's report, run the guards, brief the next round
@@ -10,6 +10,8 @@
 //   close <id> [--episode e]  print the episode payload; `--episode` stamps the id episode_write gave
 //                             (and says whether the memory store holds it)
 //   show <id>                 the ledger and the pending step, for a cold resume
+//   owns <id> [--set a,b]     the owned files the briefs name (parsed once at start); `--set … --apply`
+//                             replaces them, and the brief waiting to be answered is rewritten
 //
 // Board writes go through `applyEvent` only (no `lifecycle` → none). Exit 0 = next printed, 1 = the lane
 // stopped (or the gate is red), 2 = usage or refusal (nothing changed).
@@ -23,14 +25,15 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, posix } from "node:path";
+import { dirname, isAbsolute, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { flagsOf, say, usageError } from "../../cli/help.mjs";
+import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { episodeStored } from "../../memory/episodes.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { boardId } from "../../process/ids.mjs";
+import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { gateOf, own } from "../../process/spec.mjs";
@@ -45,7 +48,9 @@ import {
   relatedNotes,
   renderBrief,
   suggestBuilder,
+  withNew,
 } from "../brief.mjs";
+import { humanView } from "../exec-view.mjs";
 import { holdGate } from "../gate-lock.mjs";
 import { changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
@@ -64,10 +69,10 @@ import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = join(HERE, "..", "..", "..", "lane.mjs");
-const STEPS = ["start", "report", "verdict", "gate", "fix", "close", "show"];
+const STEPS = ["start", "report", "verdict", "gate", "fix", "close", "show", "owns"];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--json]`,
-  purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints JSON.",
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--set <paths>] [--apply] [--json]`,
+  purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
     report: "read the builder's report, run the guards, brief the next round",
@@ -76,6 +81,7 @@ export const help = {
     fix: "after PASS WITH NOTES: a builder round on the named notes, then a recheck",
     close: "print the episode payload (--episode stamps the id episode_write gave)",
     show: "the ledger and the pending step, for a cold resume",
+    owns: "the owned files every brief names, parsed once at start (--set replaces them)",
     "<id>": "the task's id, any case",
   },
   flags: {
@@ -83,13 +89,21 @@ export const help = {
       "report and verdict: the agent that answered, so a later round resumes it",
     "--episode <episode id>": "close: the id episode_write returned",
     "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
-    "--json": "accepted for symmetry: every step prints one JSON object",
+    "--set <paths>": "owns: the comma-separated owned files to use from now on",
+    "--apply": "owns: write the --set list (without it the new list is only shown)",
+    "--json": "print the step's one JSON object instead of the readable text",
   },
   exits: { 0: "next printed", 1: "the lane stopped, or the gate is red", 2: "usage or refusal" },
-  example: "lane exec start T-4",
+  example: "lane exec owns T-4 --set src/a.ts,src/a.test.ts --apply",
 };
 const flags = flagsOf(help);
-const FLAG_OF = { report: "--agent", verdict: "--agent", close: "--episode", fix: "--notes" };
+const STEPS_OF = {
+  "--agent": ["report", "verdict"],
+  "--episode": ["close"],
+  "--notes": ["fix"],
+  "--set": ["owns"],
+  "--apply": ["owns"],
+};
 
 class Refusal extends Error {}
 const refuse = (message) => {
@@ -100,32 +114,45 @@ const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
   `node ${q(LANE)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
-// argv → { step, id, value } or { error }.
+// argv → { step, id, value, set, apply, json } or { error }. `value` is the --agent / --episode / --notes value.
 function parse(argv) {
   const words = [];
-  let value = null;
-  let flag = null;
+  const given = {};
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--json") continue; // every step prints JSON already
-    if (!Object.hasOwn(flags, argv[i])) {
-      words.push(argv[i]);
+    const flag = argv[i];
+    if (!Object.hasOwn(flags, flag)) {
+      words.push(flag);
       continue;
     }
-    if (flag) return { error: `${argv[i]} is given twice` };
-    flag = argv[i];
-    value = argv[++i];
-    if (value === undefined || value.startsWith("--")) return { error: `${flag} needs a value` };
+    if (Object.hasOwn(given, flag)) return { error: `${flag} is given twice` };
+    given[flag] = true;
+    if (flags[flag]) {
+      given[flag] = argv[++i];
+      if (given[flag] === undefined || given[flag].startsWith("--"))
+        return { error: `${flag} needs a value` };
+    }
   }
   const [step, id, ...rest] = words;
   if (!STEPS.includes(step) || !id || rest.length)
     return { error: `needs <${STEPS.join("|")}> <id>` };
-  if (flag && FLAG_OF[step] !== flag) return { error: `${step} takes no ${flag}` };
-  if (step === "fix" && !flag) return { error: "fix needs --notes N1,N3" };
-  return { step, id, value };
+  for (const flag of Object.keys(given))
+    if (flag !== "--json" && !STEPS_OF[flag].includes(step))
+      return { error: `${step} takes no ${flag}` };
+  if (step === "fix" && given["--notes"] === undefined) return { error: "fix needs --notes N1,N3" };
+  if (given["--apply"] && given["--set"] === undefined)
+    return { error: "--apply writes the --set list: give --set <paths>" };
+  return {
+    step,
+    id,
+    value: given["--agent"] ?? given["--episode"] ?? given["--notes"] ?? null,
+    set: given["--set"] ?? null,
+    apply: Boolean(given["--apply"]),
+    json: Boolean(given["--json"]),
+  };
 }
 
 export function run(argv, ctx) {
-  const { step, id: typed, value, error } = parse(argv);
+  const { step, id: typed, value, set, apply, json, error } = parse(argv);
   if (error) return usageError("lane exec", error);
   const id = boardId(ctx.spec, ctx.model, typed, ctx.spec.lifecycle?.kind ?? "task");
   const what = `lane exec ${step} ${id}`;
@@ -139,7 +166,8 @@ export function run(argv, ctx) {
       out: say(what, `runs from the main checkout: pass --root ${main ?? "<the repository>"}`),
     };
   try {
-    return HANDLERS[step]({ ...ctx, root }, id, value);
+    const res = HANDLERS[step]({ ...ctx, root, set, apply }, id, value);
+    return json ? res : { ...res, out: humanView(JSON.parse(res.out)) };
   } catch (e) {
     if (e instanceof Refusal || e instanceof WriteError)
       return { exit: 2, out: say(what, e.message) };
@@ -342,26 +370,36 @@ function mainTouched({ root, spec, model }, ledger, all) {
   return reasons.length ? reasons.join("; ") : null;
 }
 
-// Worktrees that appeared since the lane started and belong to no lane: a nested builder (#7).
-function nestedTrees(root, ledger, all) {
-  const known = new Set([root, ...ledger.worktreesAtStart, ...all.map((l) => l.worktree)]);
+// Is `path` strictly inside the directory `dir`?
+const inside = (dir, path) => {
+  const rel = relative(dir, path);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+};
+
+// The worktrees inside the lane's own worktree (a nested builder, #7): nothing else. A worktree made
+// elsewhere while the lane ran (the conductor's own) is not the lane's.
+function nestedTrees(root, ledger) {
   const seen = worktrees(root)
     .map((t) => t.path)
-    .filter((p) => !known.has(p));
+    .filter((p) => inside(ledger.worktree, p));
   return [...new Set([...(ledger.nested ?? []), ...seen])];
 }
 
 // The lanes that count against `lanes.maxWriters`: open ledgers that build or fix, and worktrees no
-// ledger owns (an agent's own worktree, or one made by hand).
-function writers(root) {
+// ledger owns, except the ones the repo keeps on purpose (`worktrees.keep`) and the host's own agent
+// worktrees (`.claude/worktrees/`), which no lane started.
+function writers(root, spec) {
   const all = ledgers.list(root);
   const owned = new Set(all.map((l) => l.worktree));
+  const agents = join(root, ".claude", "worktrees");
   return [
     ...all
       .filter((l) => l.state === "building" || l.state === "fixing")
       .map((l) => `${l.id} (${l.state}, ledger ${l.worktree})`),
     ...worktrees(root)
-      .filter((t) => t.path !== root && !owned.has(t.path))
+      .filter(
+        (t) => t.path !== root && !owned.has(t.path) && !isKept(spec, t) && !inside(agents, t.path),
+      )
       .map((t) => `${t.path} (${t.branch ?? "detached"}, no ledger)`),
   ];
 }
@@ -394,7 +432,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
   const logDir = join(dir, "logs", `r${n}`);
   mkdirSync(logDir, { recursive: true });
   const block = readFileSync(contractFile(root, ledger.id), "utf8");
-  const owned = ownedFiles(block);
+  const owned = ownedOf(root, ledger);
   const builder = ledger.rounds.filter((r) => r.role === "build").at(-1);
   const tip = headOf(root, ledger.branch);
   const fresh = !dispatch.resend;
@@ -405,11 +443,15 @@ function brief({ root, spec, model }, ledger, dispatch) {
     block: block.trimEnd(),
     related: !!ledger.contract.related?.length,
     notes: notesSection(ledger.contract.related),
-    owned: bullets(owned.map((p) => `\`${p}\``)),
+    owned: bullets(owned.map((o) => `\`${o.path}\`${o.new ? " (new)" : ""}`)),
     decisions: bullets(
       citedDecisions({ root, spec, model, block }).map((d) => `${d.id}: ${d.text}`),
     ),
-    facts: factsLine(root, owned, block),
+    facts: factsLine(
+      root,
+      owned.map((o) => o.path),
+      block,
+    ),
     worktree: ledger.worktree,
     cd: `cd ${q(ledger.worktree)}`,
     branch: ledger.branch,
@@ -465,7 +507,9 @@ function view(root, ledger, { step, guards = [], nested = [], extra = {} }) {
     out.mode = round.mode === "resume" && round.agent ? "resume" : "fresh";
     if (out.mode === "resume") out.agent = round.agent;
     out.dispatch =
-      round.role === "verify" ? { agent: "verifier" } : suggestBuilder(ownedOf(root, ledger));
+      round.role === "verify"
+        ? { agent: "verifier" }
+        : suggestBuilder(ownedOf(root, ledger).map((o) => o.path));
     if (round.step === "needs-context" && !round.resend)
       out.todo = `append the fact under "## The fact" at the end of ${round.brief} before sending it; if the contract, the repo and memory don't hold it, ask the owner first`;
     out.after = `${laneLine(root, waiting, ledger.id)} --agent <the agent's id>`;
@@ -481,7 +525,11 @@ function view(root, ledger, { step, guards = [], nested = [], extra = {} }) {
   };
 }
 
-const ownedOf = (root, ledger) => ownedFiles(readFileSync(contractFile(root, ledger.id), "utf8"));
+// The owned files every brief names: parsed once at start and kept in the ledger (amended by `owns`).
+// A ledger from before that is parsed from its contract file.
+const ownedOf = (root, ledger) =>
+  ledger.owned ??
+  withNew(ledger.worktree, ownedFiles(readFileSync(contractFile(root, ledger.id), "utf8")));
 
 // ---- steps ----------------------------------------------------------------------------------------
 
@@ -522,7 +570,7 @@ function start(ctx, id) {
     );
   const config = readConfig(root);
   if (config.error) refuse(config.error);
-  const open = writers(root);
+  const open = writers(root, spec);
   if (open.length >= config.lanes.maxWriters)
     refuse(
       `${open.length} writer(s) open, lanes.maxWriters is ${config.lanes.maxWriters}; finish or merge one first:\n${open.map((w) => `  ${w}`).join("\n")}`,
@@ -569,6 +617,7 @@ function start(ctx, id) {
     branch: tree.branch,
     mainAtStart: mainSnapshot(root),
     worktreesAtStart: worktrees(root).map((t) => t.path),
+    owned: withNew(tree.path, ownedFiles(found.block)),
     rounds: [],
     gates: [],
     checks: {},
@@ -581,7 +630,43 @@ function start(ctx, id) {
   };
   ledger = dispatchNext(ctx, ledger, begin().dispatch);
   ledgers.write(root, ledger);
-  return view(root, ledger, { step: "start", extra: { board } });
+  return view(root, ledger, {
+    step: "start",
+    extra: {
+      owned: ledger.owned,
+      amend: laneLine(root, "owns", id, " --set <paths> --apply"),
+      board,
+    },
+  });
+}
+
+// The owned files the briefs name. `--set a,b` replaces them (shown until `--apply`); on apply the brief
+// waiting to be answered is rewritten, so the agent reads the amended list.
+function owns(ctx, id) {
+  const { root, set, apply } = ctx;
+  let ledger = mustLedger(root, id);
+  const shown = (extra = {}) => ({
+    exit: 0,
+    out: JSON.stringify(
+      { id, step: "owns", next: ledger.next, state: ledger.state, owned: ledger.owned, ...extra },
+      null,
+      2,
+    ),
+  });
+  if (set === null) {
+    ledger.owned = ownedOf(root, ledger);
+    return shown({ amend: laneLine(root, "owns", id, " --set <paths> --apply") });
+  }
+  const paths = [...new Set(set.split(",").map((p) => p.trim()))];
+  const bad = paths.find((p) => !p || /\s/.test(p));
+  if (bad !== undefined) refuse(`--set takes comma-separated paths, no blanks: "${bad}"`);
+  ledger = { ...ledger, owned: withNew(ledger.worktree, paths) };
+  if (!apply) return shown({ applied: false, preview: PREVIEW });
+  const round = ledger.rounds.at(-1);
+  const waiting = round && expects(ledger);
+  ledgers.write(root, ledger);
+  if (waiting) brief(ctx, { ...ledger, rounds: ledger.rounds.slice(0, -1) }, round);
+  return shown({ applied: true, ...(waiting && { rewrote: round.brief }) });
 }
 
 function readReport(path, who) {
@@ -636,7 +721,7 @@ function report(ctx, id, agent) {
   });
   let next = res.ledger;
   next.usedMemories = [...new Set([...(next.usedMemories ?? []), ...usedMemories(text)])];
-  next.nested = nestedTrees(root, next, all);
+  next.nested = nestedTrees(root, next);
   const built = ["verify", "recheck"].includes(res.dispatch?.step)
     ? boardEvent(ctx, "built", id)
     : null;
@@ -661,7 +746,6 @@ function verdict(ctx, id, agent) {
     );
   const round = ledger.rounds.at(-1);
   const text = readReport(round.reportPath, "verifier");
-  const all = ledgers.list(root);
   const res = stepWith(ledger, {
     type: "verdict",
     verdict: verdictOf(text),
@@ -673,7 +757,7 @@ function verdict(ctx, id, agent) {
   });
   let next = res.ledger;
   next.usedMemories = [...new Set([...(next.usedMemories ?? []), ...usedMemories(text)])];
-  next.nested = nestedTrees(root, next, all);
+  next.nested = nestedTrees(root, next);
   const judged = next.rounds.at(-1);
   const written =
     judged.verdict && !judged.void
@@ -901,11 +985,11 @@ function close(ctx, id, episodeId) {
 function show(ctx, id) {
   const { root } = ctx;
   const ledger = mustLedger(root, id);
-  const all = ledgers.list(root);
   return view(root, ledger, {
     step: "show",
-    nested: nestedTrees(root, ledger, all),
+    nested: nestedTrees(root, ledger),
     extra: {
+      owned: ownedOf(root, ledger),
       rounds: ledger.rounds.map((r) => ({
         n: r.n,
         step: r.step,
@@ -928,4 +1012,4 @@ function show(ctx, id) {
   });
 }
 
-const HANDLERS = { start, report, verdict, gate, fix, close, show };
+const HANDLERS = { start, report, verdict, gate, fix, close, show, owns };
