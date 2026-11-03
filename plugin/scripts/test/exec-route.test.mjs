@@ -882,3 +882,150 @@ test("merge on a flagged lane closed with no verifier names lane exec reverify",
     /a flagged item lands only after a verdict\n(.*\n)*next: (agentry )?lane exec reverify T2$/m,
   );
 });
+
+// ---- every pair the range-diff can show (A48; the failure bar's `<`, `>` and uncomputable cases) ------
+
+const rangeDiffOf = (root, n = 1) =>
+  readFileSync(
+    join(root, ".agentry", "run", "process", "runs", "T1", "logs", `range-diff-${n}.txt`),
+    "utf8",
+  );
+const rebased = (out) =>
+  writeFileSync(out.reportPath, "DONE\nrebased onto main\nused_memories: none\n");
+
+test("a rebase that adds a commit (a > pair) goes to resolve", () => {
+  const r = repo(ALLOW);
+  const started = closedT1(r);
+  commitFile(r.root, "notes/other.md", "other\n", "docs: other");
+  const rebase = lane(r, "rebase", "T1").json;
+  git(started.worktree, "rebase", "-q", "main");
+  commitFile(started.worktree, "extra.txt", "extra\n", "feat: add extra");
+  rebased(rebase);
+  const out = lane(r, "report", "T1").json;
+  assert.match(rangeDiffOf(r.root), /^-:\s+-+ > \d+:/m);
+  assert.equal(out.next, "resolve");
+  assert.equal(ledgerOf(r.root, "T1").rebases[0].changed, true);
+});
+
+test("a rebase that drops a commit main already holds (a < pair) goes to resolve", () => {
+  const r = repo(ALLOW);
+  const started = closedT1(r);
+  // main gets the very patch of the branch's first commit: the rebase drops it as already upstream
+  commitFile(r.root, "notes/shared.md", "branch side\n", "docs: branch side on main");
+  const rebase = lane(r, "rebase", "T1").json;
+  git(started.worktree, "rebase", "-q", "main");
+  rebased(rebase);
+  const out = lane(r, "report", "T1").json;
+  assert.match(rangeDiffOf(r.root), /^\d+:\s+[0-9a-f]+ < -:/m);
+  assert.equal(out.next, "resolve");
+});
+
+test("a range-diff git cannot compute goes to resolve, recorded as changed, its file saying why", () => {
+  const r = repo(ALLOW);
+  const started = closedT1(r);
+  commitFile(r.root, "notes/other.md", "other\n", "docs: other");
+  const rebase = lane(r, "rebase", "T1").json;
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const l = JSON.parse(readFileSync(file, "utf8"));
+  l.rebases[0].fromBase = "0123456789abcdef0123456789abcdef01234567"; // an object git does not have
+  writeFileSync(file, JSON.stringify(l, null, 2));
+  git(started.worktree, "rebase", "-q", "main");
+  rebased(rebase);
+  const out = lane(r, "report", "T1").json;
+  assert.equal(out.next, "resolve");
+  assert.match(rangeDiffOf(r.root), /^git range-diff failed/);
+  assert.equal(ledgerOf(r.root, "T1").rebases[0].changed, true);
+});
+
+// A closed T1 whose rebase resolved a conflict on notes/shared.md: its resolve round out.
+function resolvingT1(r) {
+  closedT1(r);
+  commitFile(r.root, "notes/shared.md", "main side\n", "docs: main side");
+  rebaseBy(lane(r, "rebase", "T1").json);
+  const resolve = lane(r, "report", "T1").json;
+  assert.equal(resolve.next, "resolve");
+  return resolve;
+}
+
+test("a resolve PASS WITH NOTES offers no notes round, writes no board cell, and fix --notes is refused", () => {
+  const r = repo(ALLOW);
+  const resolve = resolvingT1(r);
+  const board = readFileSync(join(r.root, "plan", "BOARD.md"), "utf8");
+  say(
+    resolve,
+    "N1: the merged line order could be nicer\nused_memories: none\nVerdict: PASS WITH NOTES\n",
+  );
+  const v = lane(r, "verdict", "T1");
+  assert.equal(v.exit, 0, v.stderr);
+  assert.equal(v.json.next, "gate");
+  assert.equal(v.json.notes, undefined, "no notes line");
+  assert.equal(readFileSync(join(r.root, "plan", "BOARD.md"), "utf8"), board, "board untouched");
+  const before = ledgerBytes(r.root, "T1");
+  assert.equal(lane(r, "fix", "T1", "--notes", "N1").exit, 2);
+  assert.equal(ledgerBytes(r.root, "T1"), before);
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  assert.equal(ledgerOf(r.root, "T1").closedTip, git(r.root, "rev-parse", "agentry/T1"));
+});
+
+test("exec rebase on a lane a resolve FAIL stopped exits 2 with the ledger byte-identical", () => {
+  const r = repo(ALLOW);
+  const resolve = resolvingT1(r);
+  judge(resolve, "FAIL");
+  assert.equal(lane(r, "verdict", "T1").exit, 1);
+  const before = ledgerBytes(r.root, "T1");
+  const again = lane(r, "rebase", "T1");
+  assert.equal(again.exit, 2);
+  assert.match(again.stderr, /rebase is for a verified lane: T1 is stopped/);
+  assert.equal(ledgerBytes(r.root, "T1"), before);
+});
+
+test("two lanes on one file: the second's land conflicts, rebases past the first's land, resolves and lands", () => {
+  // No guard.allow: main moves only by T2's land, which the rebase report's guard counts as a landed lane.
+  const r = repo();
+  const closed = (id, text) => {
+    const out = lane(r, "start", id).json;
+    commitFile(out.worktree, "out.txt", text, `feat: ${id} out.txt`);
+    writeFileSync(out.reportPath, "DONE\nadded out.txt\nused_memories: none\n");
+    judge(lane(r, "report", id, "--agent", `builder-${id}`).json, "PASS");
+    lane(r, "verdict", id);
+    assert.equal(lane(r, "gate", id).json.next, "close", id);
+    return out;
+  };
+  const one = closed("T1", "T1 side\n");
+  closed("T2", "T2 side\n");
+  const merge = (id) =>
+    spawnSync(
+      "node",
+      [LANE, "merge", id, "--message", `docs(board): land ${id}`, "--root", r.root],
+      {
+        encoding: "utf8",
+        env: { ...gitEnv, HOME: r.home, NO_COLOR: "1" },
+      },
+    );
+  const two = merge("T2");
+  assert.equal(two.status, 0, two.stdout + two.stderr);
+  const first = merge("T1");
+  assert.equal(first.status, 1, first.stdout);
+  assert.match(first.stdout, /next: (agentry )?lane exec rebase T1$/m);
+  const rebase = lane(r, "rebase", "T1");
+  assert.equal(rebase.exit, 0, rebase.stderr);
+  assert.equal(rebase.json.agent, "builder-T1");
+  assert.notEqual(
+    spawnSync("git", ["-C", one.worktree, "rebase", "main"], { env: gitEnv }).status,
+    0,
+  );
+  writeFileSync(join(one.worktree, "out.txt"), "T2 side\nT1 side\n");
+  git(one.worktree, "add", "out.txt");
+  spawnSync("git", ["-C", one.worktree, "rebase", "--continue"], {
+    env: { ...gitEnv, GIT_EDITOR: "true" },
+  });
+  rebased(rebase.json);
+  const resolve = lane(r, "report", "T1");
+  assert.equal(resolve.json?.next, "resolve", `${resolve.stderr}${resolve.json?.reason ?? ""}`);
+  judge(resolve.json, "PASS");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  const again = merge("T1");
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.equal(readFileSync(join(r.root, "out.txt"), "utf8"), "T2 side\nT1 side\n");
+});

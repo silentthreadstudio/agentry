@@ -2397,3 +2397,28 @@ test("a hold's evidence must be a file: a directory or a missing path is refused
   }
   assert.equal(lane(r, "hold", "T1", "--for", "owner", "--evidence", t1.reportPath).exit, 0);
 });
+
+// ---- a recorded green is read only for the tier's current argv (R1d-12 gate notes) ---------------------
+
+test("a green record whose argv is not the tier's current one is not read as the recorded gate", () => {
+  const r = repo({ spec: VERIFY_GATES });
+  build(lane(r, "start", "T1").json);
+  const built = lane(r, "report", "T1").json;
+  assert.equal(lane(r, "gate", "T1").exit, 0);
+  assert.match(readFileSync(built.brief, "utf8"), /recorded green on/);
+  // The owner commits another gate command on main (a committed config change passes the guard).
+  editWorkflow(r.root, (w) => ({
+    ...w,
+    gate: {
+      ...w.gate,
+      tiers: [{ name: "full", command: ["sh", "-c", "test -f out.txt && true"] }],
+    },
+  }));
+  git(r.root, "add", ".agentry/workflow.json");
+  git(r.root, "commit", "-q", "-m", "chore: change the gate command");
+  // Rewriting the waiting brief reads the gate records again.
+  assert.equal(lane(r, "owns", "T1", "--set", "out.txt,src/ui/panel.css", "--apply").exit, 0);
+  const text = readFileSync(built.brief, "utf8");
+  assert.doesNotMatch(text, /recorded green on/);
+  assert.match(text, /Run the gate as the lane records it/);
+});
