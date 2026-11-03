@@ -36,7 +36,7 @@ export function check(lane) {
   const at = value.lastIndexOf("=");
   const [skill, result] = at > 0 ? [value.slice(0, at), value.slice(at + 1)] : [value, ""];
   if (!CHECK_RESULTS.includes(result))
-    return usageError("lane merge", `--check takes <skill>=pass|fail, not "${value}"`);
+    return usageError("lane merge", `--check takes <name>=pass|fail, not "${value}"`);
   const names = spec.extensions?.merge?.checks ?? [];
   // A checklist item is recorded the same way, under its own name (never a merge check's).
   const items = (gateOf(spec)?.checklist ?? []).map((item) => item.name);

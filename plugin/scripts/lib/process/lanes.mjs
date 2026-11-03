@@ -120,10 +120,14 @@ const whenText = (when) =>
   ]
     .filter(Boolean)
     .join(", or ");
-// The gate's rows: its tiers in order, the tier each role runs, and the checklist when it has one.
+// The gate's rows: its tiers in order, the tier each role runs, and its checklist (none when it has none).
 function gateRows(spec) {
   const gate = gateOf(spec);
-  if (!gate) return [["gate.tiers", null]];
+  if (!gate)
+    return [
+      ["gate.tiers", null],
+      ["gate.checklist", null],
+    ];
   const { tiers, roles, checklist } = gate;
   return [
     [
@@ -136,11 +140,12 @@ function gateRows(spec) {
         .map(([role, value]) => `${role} ${value}`)
         .join(" · "),
     ],
-    checklist.length > 0 && [
+    [
       "gate.checklist",
-      `${count(checklist.length, "item")}: ${checklist.map((i) => `${i.name} (${i.when ? whenText(i.when) : "every land"})`).join(", ")}`,
+      checklist.length > 0 &&
+        `${count(checklist.length, "item")}: ${checklist.map((i) => `${i.name} (${i.when ? whenText(i.when) : "every land"})`).join(", ")}`,
     ],
-  ].filter(Boolean);
+  ];
 }
 
 /** A path as the output shows it: from `root` when it is inside, else as given. */

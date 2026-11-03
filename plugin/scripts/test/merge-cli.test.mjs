@@ -1607,6 +1607,9 @@ test("--check naming neither a merge check nor a checklist item exits 2 and writ
     bad.stderr,
     /"other" is not in extensions\.merge\.checks \(repo-merge\) or gate\.checklist \(ui-smoke\)/,
   );
+  const usage = merge(ID, "--check", "ui-smoke");
+  assert.equal(usage.status, 2, out(usage));
+  assert.match(usage.stderr, /--check takes <name>=pass\|fail, not "ui-smoke"/);
   assert.deepEqual(readLedger(root, ID), before);
 });
 

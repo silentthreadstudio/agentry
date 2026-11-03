@@ -364,3 +364,16 @@ test("the gate rows: its tiers in order, the tier each role runs, and the checkl
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("the gate.checklist row is always shown: none when the gate has no checklist, or no gate", () => {
+  for (const keys of [{ gate: { tiers: [{ name: "full", command: ["make", "check"] }] } }, {}]) {
+    const { root, board, lanes } = repo(keys);
+    try {
+      const row = lanes()["gate.checklist"];
+      assert.deepEqual([row.ok, row.value], [false, "none"], JSON.stringify(keys));
+      assert.match(board("explain").stdout.split("\nlanes")[1], /^✗ +gate\.checklist +none$/m);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
