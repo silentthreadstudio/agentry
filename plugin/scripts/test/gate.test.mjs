@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -9,9 +10,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { canSkip, changedSince, pickTier, runGate } from "../lib/lane/gate.mjs";
+import { canSkip, changedSince, flakyReds, pickTier, runGate } from "../lib/lane/gate.mjs";
 import { commitFile, git, tempRepo } from "./git-repo.mjs";
 
 let repo;
@@ -291,4 +292,32 @@ test("canSkip: each failed condition refuses with its own reason", () => {
     assert.equal(res.skip, false);
     assert.match(res.reason, why);
   }
+});
+
+// A gate log on disk, then what `flakyReds` makes of it.
+const logWith = (text) => {
+  mkdirSync(dirname(log), { recursive: true });
+  writeFileSync(log, text);
+  return log;
+};
+
+test("flakyReds names the listed tests when every failure line is one of them", () => {
+  const file = logWith(
+    "ok a\nFAILED test_budget (710 ms > 700)\nFAILED test_path_quarter\n2 failed\n",
+  );
+  assert.deepEqual(flakyReds(file, ["test_budget", "test_path_quarter"]), [
+    "test_budget",
+    "test_path_quarter",
+  ]);
+});
+
+test("flakyReds is null when any failure is unlisted, none is readable, or nothing is listed", () => {
+  const mixed = logWith("FAILED test_budget\nFAILED test_real_bug\n");
+  assert.equal(flakyReds(mixed, ["test_budget"]), null);
+  const silent = logWith("the build exploded\n");
+  assert.equal(flakyReds(silent, ["test_budget"]), null);
+  const listed = logWith("FAILED test_budget\n");
+  assert.equal(flakyReds(listed, []), null);
+  assert.equal(flakyReds(listed, undefined), null);
+  assert.equal(flakyReds(join(logs, "missing.log"), ["test_budget"]), null);
 });

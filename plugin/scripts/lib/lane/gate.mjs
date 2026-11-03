@@ -6,7 +6,7 @@
 // `pickTier` and `canSkip` are pure: which tier a change needs, and whether a merge may skip the main gate.
 // Node built-ins only.
 import { spawnSync } from "node:child_process";
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import { dirtyEntries } from "./own-memory.mjs";
 import { git } from "./worktree.mjs";
@@ -107,6 +107,33 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
     log: logFile,
     seconds,
   };
+}
+
+// A line of a test log that reports a failure: an upper-case FAIL / FAILED / FAILURE / ERROR, `not ok`, or a
+// cross mark. A count line (`3 failed`, `FAILED: 2`, `2 errors`) is a summary, not a failure of any one test.
+const FAILURE_LINE = /\b(?:FAIL(?:ED|URES?)?|ERROR)\b|\bnot ok\b|[✗✖×]/;
+const SUMMARY_LINE =
+  /\d+\s+(?:tests?\s+)?(?:FAILED|failed|failures?|errors?)\b|\b(?:FAILED|FAILURES?|ERRORS?)\s*[:=(]?\s*\d+/;
+
+/** The listed `flaky` tests a gate's log shows failing, or null unless the red is ALL flaky: at least one
+ *  failure line, and every failure line (count lines aside) naming a listed test. Anything else (an unlisted
+ *  failure, no failure line to read, an unreadable log) is null: a real red. */
+export function flakyReds(logFile, flaky) {
+  if (!flaky?.length) return null;
+  let text;
+  try {
+    text = readFileSync(logFile, "utf8");
+  } catch {
+    return null;
+  }
+  const hit = new Set();
+  for (const line of text.split("\n")) {
+    if (!FAILURE_LINE.test(line) || SUMMARY_LINE.test(line)) continue;
+    const names = flaky.filter((name) => line.includes(name));
+    if (names.length === 0) return null;
+    for (const name of names) hit.add(name);
+  }
+  return hit.size > 0 ? [...hit] : null;
 }
 
 // A glob over repo-relative paths, matched per segment: a segment that is exactly `**` crosses directories;
