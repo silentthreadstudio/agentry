@@ -35,6 +35,21 @@ lifecycle dispatched t-1: 0 would be written, 1 skipped
     }
   ],
   "amend": "node '<PLUGIN>/scripts/lane.mjs' exec owns T-1 --root '<ROOT>' --set <paths> --apply",
+  "workflow": {
+    "preset": "standard",
+    "exec": {
+      "verify": "all",
+      "noteRounds": 1,
+      "final": "after-fix",
+      "rebase": "recheck"
+    },
+    "roles": {
+      "build": "pick",
+      "verify": "none",
+      "merge": "pick"
+    },
+    "set": []
+  },
   "route": "all: every item has a verifier",
   "board": {
     "writes": [],
@@ -101,6 +116,22 @@ board:
       "new": true
     }
   ],
+  "workflow": {
+    "preset": "standard",
+    "exec": {
+      "verify": "all",
+      "noteRounds": 1,
+      "final": "after-fix",
+      "rebase": "recheck"
+    },
+    "roles": {
+      "build": "pick",
+      "verify": "none",
+      "merge": "pick"
+    },
+    "set": []
+  },
+  "route fixed at start": "standard · verify all · notes 1 · final after-fix · rebase recheck",
   "route": "all: every item has a verifier",
   "rounds": [
     {

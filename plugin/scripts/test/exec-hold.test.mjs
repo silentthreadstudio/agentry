@@ -413,19 +413,23 @@ test("a hold may name the builder out on the round, and the resume goes back to 
   );
 });
 
-test("an after-step hold parked for later resumes as noted, with no parked line, and goes on", () => {
+test("an after-step hold for the owner cannot be parked: exit 2, the ledger byte-identical (R1d-6 N9)", () => {
   const r = repo();
   const out = lane(r, "start", "T1").json;
   build(out, "one.txt");
   lane(r, "report", "T1", "--agent", "builder-1");
-  assert.equal(lane(r, "hold", "T1", "--for", "later", "--note", "lunch").exit, 0);
-  const resumed = lane(r, "resume", "T1", "--note", "back").json;
-  assert.equal(resumed.approved, undefined);
-  assert.match(resumed.noted, /^step 1 of 2 at .*: "back"$/);
-  const brief = readFileSync(resumed.brief, "utf8");
-  assert.doesNotMatch(brief, /parked with uncommitted work/);
-  assert.match(brief, /Go on to the steps below\./);
-  assert.match(brief, /## This round: step 2 of 2/);
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const before = readFileSync(file, "utf8");
+  const parked = lane(r, "hold", "T1", "--for", "later", "--note", "lunch");
+  assert.equal(parked.exit, 2);
+  assert.match(
+    parked.stderr,
+    /T1 waits for the owner after step 1: resume it with the owner's words \(exec resume T1 --note "…"\), or keep it held/,
+  );
+  assert.equal(readFileSync(file, "utf8"), before, "nothing written");
+  // The owner's own words still resume it.
+  const resumed = lane(r, "resume", "T1", "--note", "OK").json;
+  assert.match(resumed.approved, /^step 1 of 2 at .*: "OK"$/);
 });
 
 test("lane sweep --apply keeps a held lane's worktree", () => {

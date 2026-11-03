@@ -272,7 +272,7 @@ test("an unknown lifecycle.kind fails from across.mjs, in the workflow file", ()
 test('exec.verify "flagged" with no flag field fails from across.mjs, in the workflow file', () => {
   const workflow = { lifecycle: LIFECYCLE, exec: { verify: "flagged" } };
   const message =
-    'exec.verify is "flagged", but the task kind has no field named "flag" of type "flag"';
+    'exec.verify is "flagged" (set), but the task kind has no field named "flag" of type "flag"';
   assert.deepEqual(filed(SPRINTED, workflow), [["workflow.json", message]]);
   assert.deepEqual(alone(checkAcross, SPRINTED, workflow), [message]);
 });
