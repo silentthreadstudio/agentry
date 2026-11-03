@@ -10,6 +10,6 @@ Brief for the product-owner:
 - Write **observable, verifiable** acceptance criteria (`AC1..n`) — checkable by behavior, not vibes. These will trace to tasks and drive assemble.
 - Define needs, not solutions; don't gold-plate.
 
-Output: a **Spec** (doc-01 format) written as a plain file at `.agentry/work/<run>/spec.md`, one frontmatter block (`title`, `status: draft`, `kind`) — the work-folder layout in the `conducting` skill.
+Output: a **Spec** (doc-01 format) written as a plain file at `.agentry/work/<run>/spec.md`, one frontmatter block (`title`, `status: draft`, `kind`, `shape`) — the work-folder layout in the `conducting` skill. When the conductor already wrote `spec.md`, the product-owner keeps its existing frontmatter and the routing line under it.
 
 **Then gate:** present "done = X" (the acceptance criteria) to the user and confirm before any building begins. The spec gate is the conductor's job — workers can't do it.

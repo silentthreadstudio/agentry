@@ -91,3 +91,16 @@ test("no plugin prompt puts the coverage matrix under tasks/", () => {
   for (const prompt of ["commands/split.md", "skills/planning/SKILL.md"])
     assert.ok(readFileSync(join(PLUGIN, prompt), "utf8").includes("<run>/coverage.md"), prompt);
 });
+
+test("every prompt that writes spec.md lists the same frontmatter, and the product-owner keeps the conductor's", () => {
+  const read = (rel: string): string => readFileSync(join(PLUGIN, rel), "utf8");
+  for (const prompt of [
+    "skills/conducting/SKILL.md",
+    "commands/spec.md",
+    "agents/product-owner.md",
+  ])
+    for (const key of ["`title`", "`status: draft`", "`kind", "`shape"])
+      assert.ok(read(prompt).includes(key), `${prompt} names ${key}`);
+
+  assert.match(read("agents/product-owner.md"), /keep its existing frontmatter/);
+});
