@@ -74,8 +74,8 @@ const SHOWCASE: readonly ShowcaseItem[] = [
   {
     title: "You stay in control",
     blurb:
-      "The Workbench surfaces every run live with review gates and steerable tasks — the value bench measures the work you can already watch happen.",
-    kind: "workbench",
+      "Spec, plan and ship each stop at a gate for your approval, in the chat — every fork is surfaced, never silently guessed.",
+    kind: "control",
   },
 ];
 

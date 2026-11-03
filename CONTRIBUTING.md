@@ -12,8 +12,6 @@ it runs. This guide gets you set up and explains what a change is held to. For *
 - **`packages/`** — dev-only TypeScript, a pnpm workspace:
   - `core` — `@agentry/core`, the single source of truth for contract types.
   - `memory` — `@agentry/memory`, the durable memory MCP (builds into `plugin/mem/`).
-  - `flow` — the flow MCP (builds into `plugin/flow/`).
-  - `workbench` — the Workbench server and web app (build into `plugin/workbench/`).
   - `web` — the docs site.
   - `eval` — the self-evaluation harness (routing · decision-quality · memory-moat · reporter).
 - `.claude-plugin/marketplace.json` — the marketplace manifest (stays at the repo root).
@@ -52,7 +50,7 @@ Work on one package with `pnpm --filter @agentry/memory <script>`.
 
 - **Run `node scripts/check-plugin.mjs` (`pnpm check`) before every commit** — it catches namespacing +
   structure drift.
-- **Dist-lockstep** — any change to a bundled package's sources (`memory`, `flow`, `workbench`) ⇒ `pnpm build`
+- **Dist-lockstep** — any change to the bundled package's sources (`memory`) ⇒ `pnpm build`
   and commit the updated `plugin/` bundle (+ its `.srchash`) in the **same** change. The gate verifies it by
   content hash.
 - **Reload-gated** — agent/command/skill/MCP changes register only on a Claude Code reload/restart;

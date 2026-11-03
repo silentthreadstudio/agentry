@@ -124,9 +124,9 @@ const tokenize = (text) =>
 
 // Tokens that carry no signal — they match nearly every fact and would swamp the real terms. Two
 // families: ordinary English glue, and STRUCTURAL PATH SEGMENTS. The second matters more than it looks:
-// a brief naming `packages/workbench/server/src/transport/http.ts` otherwise scores every fact whose
+// a brief naming `packages/gateway/server/src/transport/http.ts` otherwise scores every fact whose
 // provenance contains `packages` and `src` — which is most of them — and the identifying words
-// (`workbench`, `transport`) get outvoted by the scaffolding around them.
+// (`gateway`, `transport`) get outvoted by the scaffolding around them.
 const STOP = new Set(
   (
     "the a an and or of to in for on with is are be this that it its as at by from you your we our " +
@@ -140,10 +140,10 @@ const STOP = new Set(
  * Rank facts against a task description.
  *
  * Relevance is IDF-weighted token overlap, not a raw hit count. Raw counting fails badly here: a brief
- * about "the workbench transport path routing" scores a long, unrelated fact highest simply because it
+ * about "the gateway transport path routing" scores a long, unrelated fact highest simply because it
  * happens to contain `path`, `base` and `route` — common words carry no signal, and long records match
  * more of them. Weighting each token by how RARE it is across the store (`log(N/df)`) makes distinctive
- * terms — `workbench`, `transport`, `chokidar` — decide the ranking, and dividing by the square root of
+ * terms — `gateway`, `transport`, `chokidar` — decide the ranking, and dividing by the square root of
  * the fact's length stops a long record from winning on breadth alone.
  *
  * A hit in `provenance` (a file path the task actually names) counts double: paths are the highest-

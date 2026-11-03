@@ -426,7 +426,7 @@ const SAMPLE_BENCH = {
     { title:"Auditable structure", kind:"structure", blurb:"Every escalated run leaves a spec, a plan, and ADRs you can read — the same trail Axis A judges." },
     { title:"Durable memory", kind:"memory", blurb:"Decisions and repo-facts persist across runs with provenance, so run two is warmer than run one." },
     { title:"Real specialists", kind:"specialists", blurb:"Architect, implementer, verifier, librarian — bounded experts the conductor dispatches." },
-    { title:"You stay in control", kind:"workbench", blurb:"The Workbench surfaces every run live with review gates and steerable tasks." },
+    { title:"You stay in control", kind:"control", blurb:"Spec, plan and ship each stop at a gate for your approval, in the chat." },
   ],
 };
 const SAMPLE_CORRECTIONS = [
@@ -576,7 +576,7 @@ function renderShowcaseAndCaveat(){
     structure: { ico:"▤", c:"var(--amber)", d:"var(--warn-dim)" },
     memory:    { ico:"◈", c:"var(--violet-2)", d:"var(--violet-dim)" },
     specialists:{ ico:"⬡", c:"var(--good)", d:"var(--good-dim)" },
-    workbench: { ico:"◴", c:"var(--cyan)", d:"var(--cyan-dim)" },
+    control:   { ico:"◴", c:"var(--cyan)", d:"var(--cyan-dim)" },
   };
   showWrap.innerHTML = (BENCH.showcase||[]).map(s=>{
     const m = SHOW_META[s.kind] || SHOW_META.structure;

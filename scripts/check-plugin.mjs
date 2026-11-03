@@ -131,17 +131,8 @@ if (existsSync(skillsDir)) {
 //
 // A stamp that carries no dist hash (the pre-verification format — a bare src hash) is NOT green: it has
 // never been dist-verified, so green would be a claim the file cannot support. Warn and ask for a rebuild.
-//
-// `opts` is forwarded verbatim to bundleSrcHash (additive — mem/flow pass none, so their behavior is
-// byte-identical). `label` drives ONLY the summary row (`dist-lockstep (${label})`); warning paths are
-// derived from the real distPath/srchashPath (relative to plugin/), so the workbench bundles — which live
-// under plugin/workbench/{web,server}/ but want the short rows `web` / `server` — read honestly in both.
-// The workbench is one package with two buildable source roots under a single pkgDir (web/src + server/src),
-// so we read `srcSubdir` here too: the src-existence guard and the recompute must look at the SAME root the
-// build hashed, not a non-existent `pkgDir/src`.
-const checkBundle = (pkgDir, distPath, srchashPath, label, opts = {}) => {
-  const { srcSubdir = "src" } = opts;
-  if (!existsSync(join(pkgDir, srcSubdir))) return;
+const checkBundle = (pkgDir, distPath, srchashPath, label) => {
+  if (!existsSync(join(pkgDir, "src"))) return;
   const distRel = relative(PLUGIN, distPath);
   const dir = dirname(distRel);
   if (!existsSync(distPath)) {
@@ -158,12 +149,11 @@ const checkBundle = (pkgDir, distPath, srchashPath, label, opts = {}) => {
     warn(
       `plugin/${dir}/.srchash predates dist verification (src hash only — it says nothing about the committed bundle bytes) — rebuild + commit (dist-lockstep)`,
     );
-  // The dist dir is the stamp's own directory: one file for mem/flow/server, a Vite tree for web.
   else if (stamp.dist !== distHash(dirname(distPath)))
     err(
       `plugin/${dir} bundle does NOT match its .srchash stamp — the stamp was committed without its rebuilt bundle, the bundle was hand-edited, or a file was added/removed under it; rebuild + commit (dist-lockstep)`,
     );
-  else if (stamp.src !== bundleSrcHash(pkgDir, opts))
+  else if (stamp.src !== bundleSrcHash(pkgDir))
     warn(
       `plugin/${dir} is stale (${label} src or a bundled @agentry/* dep changed since last build) — rebuild + commit (dist-lockstep)`,
     );
@@ -175,38 +165,13 @@ checkBundle(
   join(PLUGIN, "mem", ".srchash"),
   "mem",
 );
-checkBundle(
-  join(ROOT, "packages", "flow"),
-  join(PLUGIN, "flow", "index.js"),
-  join(PLUGIN, "flow", ".srchash"),
-  "flow",
-);
-// Workbench — one package (packages/workbench), two committed artifacts. The web bundle is self-contained
-// (Vite inlines its third-party deps into static assets → skipWorkspaceDeps); the server bundle keeps the
-// @agentry/* walk so a transitive @agentry/flow/src change marks it stale. Both anchor at packages/workbench
-// (the home of the package.json whose workspace deps are walked) and select their root via srcSubdir.
-checkBundle(
-  join(ROOT, "packages", "workbench"),
-  join(PLUGIN, "workbench", "web", "index.html"),
-  join(PLUGIN, "workbench", "web", ".srchash"),
-  "web",
-  { srcSubdir: "web/src", skipWorkspaceDeps: true },
-);
-checkBundle(
-  join(ROOT, "packages", "workbench"),
-  join(PLUGIN, "workbench", "server", "index.js"),
-  join(PLUGIN, "workbench", "server", ".srchash"),
-  "server",
-  { srcSubdir: "server/src" },
-);
 
 // 6b. No workspace package may re-invoke a SIBLING package's script of the same name.
 //
-// `packages/workbench` used to orchestrate `pnpm --filter @agentry/workbench-web build && … -server build`.
-// But web and server are workspace packages in their own right, so `pnpm -r build` reached them directly
-// AND through the orchestrator: each artifact built TWICE, concurrently (nothing declares an ordering edge
-// between them), into the same output directory. It was invisible for months because the builds are
-// content-deterministic — two racing writers happened to produce identical bytes.
+// A package that orchestrates `pnpm --filter <sibling> build` while the sibling is a workspace package in
+// its own right gets built TWICE by `pnpm -r build`: directly AND through the orchestrator, concurrently
+// (nothing declares an ordering edge between them), into the same output directory. It once went unseen
+// for months because the builds are content-deterministic — two racing writers produced identical bytes.
 //
 // It stopped being harmless when `.srchash` started carrying a hash of the whole dist DIRECTORY: a
 // `writeStamp` landing mid-build now snapshots a transient tree, and that stamp then hard-fails for
@@ -322,6 +287,24 @@ else {
   if (!text.includes('"draft"')) err("bin/agentry does not route `draft` to `board draft`");
   ok("bin/agentry", "executable, routes board, lane and draft");
 }
+
+// 10. Retired surfaces — the plugin ships one MCP server (mem) and no web UI, so no payload file may name
+// the removed ones: an agent told to call a tool that is not there stalls or improvises.
+const RETIRED = [/workbench/i, /mcp__plugin_agentry_flow/, /channel_reply/];
+const payloadFiles = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? payloadFiles(join(dir, e.name)) : [join(dir, e.name)],
+  );
+let retired = 0;
+for (const file of payloadFiles(PLUGIN)) {
+  const text = readFileSync(file, "utf8");
+  for (const re of RETIRED) {
+    if (!re.test(text)) continue;
+    retired += 1;
+    err(`plugin/${relative(PLUGIN, file)} names a removed surface (${re.source})`);
+  }
+}
+if (retired === 0) ok("no retired surfaces", "no workbench, flow MCP or channel names in plugin/");
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));

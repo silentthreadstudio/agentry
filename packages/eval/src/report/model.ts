@@ -143,7 +143,7 @@ export interface ShowcaseItem {
   /** One-to-two-line plain-English description of the value. */
   blurb: string;
   /** Which value pillar it belongs to — drives the strip's icon/accent. */
-  kind: "structure" | "memory" | "specialists" | "workbench";
+  kind: "structure" | "memory" | "specialists" | "control";
 }
 
 /**
@@ -171,7 +171,7 @@ export interface BenchData {
   fixtures: number;
   /** Repeats per fixture (k) — census rows = fixtures × repeats. */
   repeats: number;
-  /** The descriptive value strip (structure/memory/specialists/workbench) — ALWAYS present, curated, not scored. */
+  /** The descriptive value strip (structure/memory/specialists/control) — ALWAYS present, curated, not scored. */
   showcase: ShowcaseItem[];
 }
 

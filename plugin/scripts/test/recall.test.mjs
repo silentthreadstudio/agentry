@@ -82,13 +82,13 @@ test("rankFacts puts a fact whose provenance names the task's file ahead of a me
 });
 
 test("rankFacts is silent when nothing clears the relevance floor, and respects the limit", () => {
-  fact("a", { body: "Chokidar watcher notes for the workbench transport." });
-  fact("b", { body: "Chokidar watcher debounce for the workbench transport." });
+  fact("a", { body: "Chokidar watcher notes for the gateway transport." });
+  fact("b", { body: "Chokidar watcher debounce for the gateway transport." });
   const facts = readFacts(project);
   assert.deepEqual(rankFacts(facts, "something nobody wrote about", 5), []);
   assert.deepEqual(rankFacts(facts, "", 5), []);
   assert.deepEqual(rankFacts([], "chokidar", 5), []);
-  assert.equal(rankFacts(facts, "chokidar watcher workbench transport", 1).length, 1);
+  assert.equal(rankFacts(facts, "chokidar watcher gateway transport", 1).length, 1);
 });
 
 test("renderFacts names each fact's id, truncates long bodies, and is empty for no facts", () => {

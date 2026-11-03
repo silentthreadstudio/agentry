@@ -12,8 +12,6 @@
       ".agentry/**",
       ".agents/**",
       "plugin/mem/**",
-      "plugin/flow/**",
-      "plugin/workbench/**",
       "packages/eval/fixtures/**",
       ".claude/**",
       "**/.astro/**",

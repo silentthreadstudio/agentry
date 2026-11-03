@@ -189,10 +189,10 @@ test("loadBench: narrows a scored run into the four axes + per-task census + con
   // the showcase strip is ALWAYS present (the value story ships with every run)
   assert.equal(data!.showcase.length, 4);
   assert.deepEqual(data!.showcase.map((s) => s.kind).sort(), [
+    "control",
     "memory",
     "specialists",
     "structure",
-    "workbench",
   ]);
 });
 

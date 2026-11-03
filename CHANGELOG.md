@@ -130,9 +130,13 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a
-  `hooks.json` returns. Known limit: without the hooks, nothing records the session's active run,
-  so review comments on a run reach every session instead of only its own, and the Workbench
-  token chart stays empty.
+  `hooks.json` returns.
+- **The Workbench** (`/agentry:workbench`, its server and web app). Unused in practice: the board
+  in markdown and `/agentry:start` show the same state without a second source of truth.
+- **The flow MCP server** and the channels that rode on it. `/agentry:go`, `spec`, `plan`, `split`
+  and `fix` keep their shapes and write the spec, plan and task files as plain files under
+  `.agentry/work/<run>/`; review and approval happen in the chat. The plugin check fails if
+  `plugin/` names either again.
 
 ## [0.2.0] — 2026-06-21
 

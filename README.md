@@ -33,15 +33,14 @@ compile). From a Claude Code session:
 /plugin install agentry@agentry-dev
 ```
 
-Restart the session — agents, commands, and the bundled MCP servers load at startup. Then:
+Restart the session — agents, commands, and the bundled memory MCP server load at startup. Then:
 
 ```
 /agentry:onboard                                       # warm memory on this repo (read-only)
 /agentry:go "add pagination to the users endpoint"     # the front door routes and conducts it
 ```
 
-That's the whole setup. You can run Agentry entirely from the terminal; the web Workbench and live channels
-below are **optional** add-ons.
+That's the whole setup.
 
 ## How it works — the right-sizing harness
 
@@ -91,36 +90,13 @@ zero-install bundles inside `plugin/`.
 
 | Where | What it is |
 | :--- | :--- |
-| `plugin/` | the **shipped plugin** — `agents/ commands/ skills/` + the committed `mem`, `flow`, and `workbench` bundles |
-| `plugin/.claude-plugin/plugin.json` | the manifest — wires the `mem` and `flow` MCP servers inline (`${CLAUDE_PLUGIN_ROOT}/…/index.js`) |
+| `plugin/` | the **shipped plugin** — `agents/ commands/ skills/` + the committed `mem` bundle |
+| `plugin/.claude-plugin/plugin.json` | the manifest — wires the `mem` MCP server inline (`${CLAUDE_PLUGIN_ROOT}/mem/index.js`) |
 | `.claude-plugin/marketplace.json` | the marketplace manifest (stays at the repo root; `source: "./plugin"`) |
 | `packages/core` | `@agentry/core` — the single typed contract every node shares |
 | `packages/memory` | the memory MCP → builds to `plugin/mem/index.js` |
-| `packages/flow` | the FLOW MCP → builds to `plugin/flow/index.js` |
-| `packages/workbench` · `packages/web` | the Workbench app + site → build to `plugin/workbench/` |
+| `packages/web` | the site |
 | `packages/eval` | the self-evaluation harness |
-
-Two of these bundles are **always on** — the substrate Agentry can't run without. The rest are additive.
-
-## FLOW — the orchestration engine (mandatory)
-
-FLOW is the in-run engine. It records every run's state to plain files under `.agentry/work/<run>/` — and **those
-files are the truth.** Text is the source of record; the engine is stateless over it. Kill the session mid-run and
-restart, and nothing is lost — the files hold the whole run, so it resumes cold.
-
-FLOW gives the conductor:
-
-- **Task lifecycle + status** — each task's state (`todo · in-progress · in-review · done · blocked`) and its lock
-  (`lockedBy`), so two builders never clobber the same file.
-- **An append-only event log** (`events.jsonl`) — routing, gates, node-enter/done, agent states — the run's timeline.
-- **A review sidecar** (`.review/<gate>.json`) — comments anchored to a span of an artifact, with the 3-way anchor
-  that lets the agent relocate them after edits.
-- **A content-hash `version`** stamped on every artifact write — so a save against a stale version is rejected
-  (optimistic concurrency), and any change is a diff.
-
-<p align="center">
-  <img src="assets/flow.png" alt="FLOW — the orchestration engine" width="820">
-</p>
 
 ## Memory — the moat that compounds (mandatory)
 
@@ -131,74 +107,6 @@ Recall is **task-specific** — pulled per task, ranked by relevance × confiden
 dump. Writes pass a write-bar; stale facts decay; a graduation pipeline turns **episodes → facts → skills**. The
 payoff: the second time Agentry meets a decision it settled before, it recalls it, applies it, and routes the task
 lighter — spec-first becomes one-shot. **Run #2 is warmer than run #1.**
-
-## Workbench — the multi-agent workspace (optional)
-
-The Workbench is a local web app for *acting on* the work — a second client beside the chat session, over the
-same `.agentry/` files. **v0.2 turned it from a viewer into a workspace.** It answers one question the terminal
-can't: *what is moving, and what needs me* — across every project, every run, and every agent at once.
-
-- **A board, not a list.** Backlog items and runs sit on ONE lifecycle — `Backlog → Ready → Running → In review
-  → Done`. A run's column is folded from its tasks server-side, so the board can never disagree with disk.
-- **New work is captured, not dispatched.** The Workbench has no model; it queues an item, and the next
-  conducting session claims it. A button that said "Start now" would promise something it cannot do.
-- **The conductor rail.** The conversation is *ambient* — a persistent column beside the work, in three widths
-  (a spine with an unread count · the rail · focus). Not a tab you navigate to.
-- **Presence.** ON SHIFT shows who is working on what, with a live timer, recorded by the conductor
-  through the Flow MCP (`agent_state`) as it dispatches and collects each agent.
-- **Contract-overlap warnings.** Two in-progress tasks that both `own` a file are flagged *before* one clobbers
-  the other.
-- **Read, edit, comment, resolve** — select a span of a spec/plan/task, comment on it, and the agent reads it
-  back next turn. Saves are version-checked; a stale write is rejected, never merged silently.
-
-**One server, many projects** on a fixed port (`:4317`). Running `/agentry:workbench` inside a repo registers
-that repo with the server and switches to it; the project switcher shows every registered root by name *and*
-path. Runs are path-routed (`/work/<run>`) — v0.1's `<run>.localhost` host-routing was reversed in ADR-008
-after browsers case-folded the `Host` header and silently broke every run link. It is **stateless over the
-files** — kill it and the run is untouched; the `.agentry/` tree is the state.
-
-**Optional:** you can conduct an entire run from the terminal and never open it.
-
-<p align="center">
-  <img src="assets/workbench.png" alt="The Workbench — the Agent Center" width="820">
-</p>
-
-## Channels — live human ↔ agent steering (optional)
-
-By default the Workbench loop is **async**: you edit a file, the agent reads it on its next turn. Channels add a
-**live push layer over that file-watch loop** — the human ↔ agent link goes real-time:
-
-- **Live review comments** and threaded replies (`channel_reply`) — pushed into the session, not waited for at the
-  next gate.
-- **A permission relay** — approve or deny a tool-use from the Workbench instead of the terminal; whichever side
-  answers first wins.
-- **Human status changes that steer the agent** — force a task back to `todo` to redo it, or to `done`, and the
-  agent re-reads and adjusts.
-
-Channels are a **research-preview** feature. They require launching Claude Code with the development flag:
-
-```
-claude --dangerously-load-development-channels plugin:agentry@agentry-dev
-```
-
-<p align="center">
-  <img src="assets/channels.png" alt="Channels — live human ↔ agent steering" width="820">
-</p>
-
-## What's mandatory, what's optional
-
-Memory and FLOW are the only hard requirements. Everything above them is additive — turn it off and the run still
-completes, because **the files are always the truth.**
-
-| Layer | Required? | Turn it off and… |
-| :--- | :--- | :--- |
-| **Memory** | **Yes** | — (the always-on store; run #2 is warmer than #1) |
-| **FLOW** | **Yes** | — (the always-on engine; the run's state lives in `.agentry/`) |
-| **Workbench** | No | conduct the whole run from the terminal, exactly as normal |
-| **Channels** | No | everything still works via the async file-watch loop — the agent reads your edits next turn, and tool approvals fall back to the terminal dialog |
-
-In short: the Workbench and channels are *better ways to watch and steer*; they are never the thing that makes a
-run work. The terminal-only path is a first-class path.
 
 ## Does it work? — yes, and we measure it
 
@@ -218,8 +126,8 @@ verification — so the probes share a run instead of each paying for their own.
 ## Repo layout & dev
 
 ```
-plugin/            the shipped plugin (agents · commands · skills · mem · flow · workbench)
-packages/          TypeScript dev sources (core · memory · flow · workbench · web · eval)
+plugin/            the shipped plugin (agents · commands · skills · mem)
+packages/          TypeScript dev sources (core · memory · web · eval)
 ```
 
 Two standing rules if you hack on the bundles: any change to a `packages/*/src` that ships must rebuild and commit
@@ -229,6 +137,6 @@ every commit. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full dev setup 
 ## Maturity & license
 
 **v0.2, pre-1.0.** The shape is settled and the core paths are exercised, but contracts can still change between
-versions and the channels layer rides Claude Code's research preview. Use it, file issues, expect some churn.
+versions. Use it, file issues, expect some churn.
 
 MIT.
