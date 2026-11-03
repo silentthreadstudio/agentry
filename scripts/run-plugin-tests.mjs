@@ -17,8 +17,12 @@ const PATH = (process.env.PATH ?? "")
   .split(delimiter)
   .filter((dir) => dir && !hasAgentry(dir))
   .join(delimiter);
-const res = spawnSync(process.execPath, ["--test", "plugin/**/*.test.mjs", "scripts/*.test.mjs"], {
-  stdio: "inherit",
-  env: { ...process.env, PATH },
-});
+const res = spawnSync(
+  process.execPath,
+  ["--test", "--test-timeout=180000", "plugin/**/*.test.mjs", "scripts/*.test.mjs"],
+  {
+    stdio: "inherit",
+    env: { ...process.env, PATH },
+  },
+);
 process.exit(res.status ?? 1);

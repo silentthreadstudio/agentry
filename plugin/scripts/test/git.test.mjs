@@ -4,15 +4,17 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { after, before, test } from "node:test";
 import {
   branchTips,
@@ -366,4 +368,115 @@ test("worktrees: each path with its head and branch", () => {
 test("defaultBranch: a local main without a remote; null outside a repo", () => {
   assert.equal(defaultBranch(repo), "main");
   assert.equal(defaultBranch(outside), null);
+});
+
+// ---- no git call hangs: no stdin, a timeout, no child left behind ----
+
+// Run `body` with a fake `git` first on PATH: `script` is its /bin/sh body, with $LOG naming a file in `dir`.
+function withFakeGit(script, body) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentry-fakegit-")));
+  writeFileSync(join(dir, "git"), `#!/bin/sh\nLOG="${dir}/log"\n${script}\n`);
+  chmodSync(join(dir, "git"), 0o755);
+  const saved = process.env.PATH;
+  process.env.PATH = `${dir}${delimiter}${saved}`;
+  try {
+    return body(dir);
+  } finally {
+    process.env.PATH = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+// A stdin of `ignore` is /dev/null, a character device; one the parent writes to is a pipe or socket.
+const stdinKind = '[ -c /dev/stdin ] && echo "$1 none" >> "$LOG" || echo "$1 open" >> "$LOG"';
+
+test("git calls get no stdin unless they pass input", () => {
+  withFakeGit(`${stdinKind.replace(/\$1/g, "$3")}; cat > /dev/null`, (dir) => {
+    trackedFiles(dir, "*.md"); // no input
+    knownCommits(dir, ["abcd1234"]); // passes input
+    const seen = readFileSync(join(dir, "log"), "utf8").trim().split("\n");
+    assert.deepEqual(seen, ["ls-files none", "cat-file open"]);
+  });
+});
+
+test("reverseApplies hands git the patch as a file with no stdin", () => {
+  const script = `
+case "$3" in
+  rev-parse) echo "$2"; exit 0 ;;
+  diff) echo patch; exit 0 ;;
+  apply) ${stdinKind.replace(/\$1/g, "apply")}; echo "$@" >> "$LOG"; exit 0 ;;
+esac
+exit 0`;
+  withFakeGit(script, (dir) => {
+    const change = { from: "main", to: "feature", onto: "main" };
+    assert.equal(reverseApplies(dir, change), true);
+    const [kind, args] = readFileSync(join(dir, "log"), "utf8").trim().split("\n");
+    assert.equal(kind, "apply none");
+    assert.match(args, /apply --cached --check -R \S+change\.patch$/);
+  });
+});
+
+test("a 5 MB patch still reverse-applies", () => {
+  const big = join(realpathSync(mkdtempSync(join(tmpdir(), "agentry-big-"))), "r");
+  mkdirSync(big);
+  const g = (...a) => {
+    const res = spawnSync("git", ["-C", big, ...a], { encoding: "utf8", env });
+    assert.equal(res.status, 0, res.stderr);
+  };
+  try {
+    g("init", "-q", "-b", "main");
+    writeFileSync(join(big, "f.txt"), "start\n");
+    g("add", ".");
+    g("commit", "-q", "-m", "a");
+    const from = spawnSync("git", ["-C", big, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).stdout.trim();
+    writeFileSync(join(big, "f.txt"), "line of text to fill a patch\n".repeat(180_000));
+    g("commit", "-q", "-am", "b");
+    assert.ok(readFileSync(join(big, "f.txt")).length > 5_000_000);
+    assert.equal(reverseApplies(big, { from, to: "HEAD", onto: "HEAD" }), true);
+  } finally {
+    rmSync(join(big, ".."), { recursive: true, force: true });
+  }
+});
+
+test("a git call that outlives the timeout is killed, answers null and leaves no child", () => {
+  const script = 'echo $$ > "$LOG"; exec sleep 60';
+  withFakeGit(script, (dir) => {
+    process.env.AGENTRY_GIT_TIMEOUT_MS = "1500";
+    try {
+      const started = Date.now();
+      assert.equal(trackedFiles(dir, "*.md"), null);
+      assert.ok(Date.now() - started < 10_000, "returned long before the sleep ended");
+    } finally {
+      process.env.AGENTRY_GIT_TIMEOUT_MS = ""; // unset: the default applies
+    }
+    const pid = Number(readFileSync(join(dir, "log"), "utf8"));
+    assert.ok(pid > 0);
+    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "the git child is gone");
+  });
+});
+
+test("a git call slower than a moment but inside the timeout still succeeds", () => {
+  withFakeGit("sleep 2; printf 'a.md\\0'", (dir) => {
+    assert.deepEqual(trackedFiles(dir, "*.md"), ["a.md"]);
+  });
+});
+
+test("a timed-out git makes reverseApplies false, as for any git error", () => {
+  withFakeGit('case "$3" in rev-parse) echo "$2" ;; *) sleep 60 ;; esac', (dir) => {
+    process.env.AGENTRY_GIT_TIMEOUT_MS = "1500";
+    try {
+      assert.equal(reverseApplies(dir, { from: "a", to: "b", onto: "c" }), false);
+    } finally {
+      process.env.AGENTRY_GIT_TIMEOUT_MS = ""; // unset: the default applies
+    }
+  });
+});
+
+test("the plugin test runner gives a hung test 180 s, not forever", () => {
+  const runner = readFileSync(
+    new URL("../../../scripts/run-plugin-tests.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(runner, /"--test-timeout=180000"/);
 });

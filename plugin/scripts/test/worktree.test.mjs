@@ -1,13 +1,15 @@
 // Tests for lib/lane/worktree.mjs on throwaway git repositories.
 import assert from "node:assert/strict";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import {
   create,
   findByBranch,
   idProblem,
   ignoredFiles,
+  git as laneGit,
   mainRoot,
   porcelain,
   remove,
@@ -224,4 +226,49 @@ test("remove deletes a fast-forwarded branch", () => {
   commitFile(made.path, "a.txt", "1\n");
   git(repo.dir, "merge", "-q", "--ff-only", "agentry/T-1");
   assert.equal(remove(repo.dir, made).branchDeleted, true);
+});
+
+// ---- the lane's git never hangs: no stdin unless given, a timeout, no child left behind ----
+
+// Run `body` with a fake `git` first on PATH; `script` is its /bin/sh body, with $LOG naming a file in `dir`.
+function withFakeGit(script, body) {
+  const dir = mkdtempSync(join(tmpdir(), "lane-fakegit-"));
+  writeFileSync(join(dir, "git"), `#!/bin/sh\nLOG="${dir}/log"\n${script}\n`);
+  chmodSync(join(dir, "git"), 0o755);
+  const saved = process.env.PATH;
+  process.env.PATH = `${dir}${delimiter}${saved}`;
+  try {
+    return body(dir);
+  } finally {
+    process.env.PATH = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("git gets no stdin unless it is given input", () => {
+  // A stdin of `ignore` is /dev/null, a character device; one the parent writes to is a pipe or socket.
+  const script = '[ -c /dev/stdin ] && echo none >> "$LOG" || echo open >> "$LOG"; cat > /dev/null';
+  withFakeGit(script, (dir) => {
+    assert.equal(laneGit(dir, ["status"]).status, 0);
+    assert.equal(laneGit(dir, ["apply"], "patch").status, 0);
+    assert.equal(readFileSync(join(dir, "log"), "utf8"), "none\nopen\n");
+  });
+});
+
+test("git past its timeout is killed, answers non-zero and leaves no child", () => {
+  withFakeGit('echo $$ > "$LOG"; exec sleep 60', (dir) => {
+    const started = Date.now();
+    const res = laneGit(dir, ["status"], undefined, { timeout: 1500 });
+    assert.notEqual(res.status, 0);
+    assert.ok(Date.now() - started < 10_000);
+    const pid = Number(readFileSync(join(dir, "log"), "utf8"));
+    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+  });
+});
+
+test("git slower than a moment still succeeds under the default timeout", () => {
+  withFakeGit("sleep 2; echo done", (dir) => {
+    const res = laneGit(dir, ["status"]);
+    assert.deepEqual([res.status, res.stdout], [0, "done\n"]);
+  });
 });

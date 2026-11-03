@@ -7,7 +7,7 @@
 // answers false / [] / null. Refs and SHAs are checked before they reach argv, so a board cell can never
 // become a git option. Nothing here changes the repository: `reverseApplies` works on a throwaway index.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,14 +15,21 @@ const SHA = /^[0-9a-f]{4,40}$/i;
 const FULL_SHA = /^[0-9a-f]{40,64}$/;
 const safeRef = (ref) => typeof ref === "string" && ref.length > 0 && !ref.startsWith("-");
 
+// A git call never waits forever: past the timeout it is killed and answers like any git error. Read at
+// each call, so a test can shorten it with AGENTRY_GIT_TIMEOUT_MS.
+const timeoutMs = () => Number(process.env.AGENTRY_GIT_TIMEOUT_MS) || 120_000;
+
+// No stdin at all unless the call passes `input`: a git that waits on a stdin nobody writes would hang.
 function git(root, args, input, env) {
   try {
     return execFileSync("git", ["-C", root, ...args], {
       encoding: "utf8",
       input,
       env,
-      stdio: ["pipe", "pipe", "ignore"],
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
       maxBuffer: 256 * 1024 * 1024,
+      timeout: timeoutMs(),
+      killSignal: "SIGKILL",
     });
   } catch {
     return null;
@@ -499,9 +506,11 @@ export function reverseApplies(root, { from, to, onto }) {
   const dir = mkdtempSync(join(tmpdir(), "agentry-apply-"));
   const env = { ...process.env, GIT_INDEX_FILE: join(dir, "index") };
   try {
+    const file = join(dir, "change.patch");
+    writeFileSync(file, patch);
     return (
       git(top, ["read-tree", onto], undefined, env) !== null &&
-      git(top, ["apply", "--cached", "--check", "-R"], patch, env) !== null
+      git(top, ["apply", "--cached", "--check", "-R", file], undefined, env) !== null
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

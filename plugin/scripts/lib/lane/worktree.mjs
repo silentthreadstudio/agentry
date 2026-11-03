@@ -17,11 +17,15 @@ export const worktreesDir = (root) => join(root, ".agentry", "run", "worktrees")
 /** The branch a task builds on. */
 export const branchOf = (id) => `agentry/${id}`;
 
-/** Run git in `dir`: `{ status, stdout, stderr }`, never throwing. */
-export function git(dir, args, input) {
+/** Run git in `dir`: `{ status, stdout, stderr }`, never throwing. No stdin unless `input` is given; a
+ *  call still running after `timeout` ms (default 120 s) is killed and answers a non-zero status. */
+export function git(dir, args, input, { timeout = 120_000 } = {}) {
   const res = spawnSync("git", ["-C", dir, ...args], {
     encoding: "utf8",
     input,
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    timeout,
+    killSignal: "SIGKILL",
     maxBuffer: 256 * 1024 * 1024,
   });
   return { status: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
