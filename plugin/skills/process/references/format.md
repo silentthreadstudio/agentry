@@ -25,6 +25,7 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
 | `extensions` | no | Repo skills Agentry's commands run as extra checks (`merge.checks`). |
 | `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
 | `guard` | no | `{ "allow": [globs] }`: main-checkout files a running lane's guard lets change. |
+| `cleanup` | no | `{ "disposable": [globs] }`: ignored files a lane's cleanup discards without asking. |
 
 ## Kind
 
@@ -296,10 +297,11 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
 - `worktrees.keep` is a non-empty list of names or globs (`*` and `?`), matched against a worktree's
   branch and its directory name. A match is shown as *kept* in `board status`, never as drift.
 
-## guard
+## guard and cleanup
 
 ```json
-"guard": { "allow": ["docs/STATUS.md", "docs/plans/**"] }
+"guard": { "allow": ["docs/STATUS.md", "docs/plans/**"] },
+"cleanup": { "disposable": ["**/.godot", "**/*.translation", "build"] }
 ```
 
 - `guard.allow` is a non-empty list of globs (from the repository root; `**` crosses directories, as in
@@ -307,3 +309,7 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
   does not stop it, unless a running lane's contract owns that file: an edit there still does. A commit on
   main still does too. `board add` and `board set --apply` need no entry: each write is recorded and let
   through as exactly what it wrote.
+- `cleanup.disposable` is a non-empty list of globs for ignored files `lane merge --cleanup` discards without
+  asking (build output, import caches). A wholly ignored directory is matched as its path (`build`,
+  `**/.godot`; `build/**` also takes `build` itself). Any other ignored file still stops the cleanup and is
+  listed for the owner.

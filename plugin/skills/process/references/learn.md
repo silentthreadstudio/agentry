@@ -104,7 +104,7 @@ Once the process file loads, set up what `/agentry:exec`, `/agentry:merge`, `/ag
 Each change to `.agentry/process.json` goes through the draft: copy it to `.agentry/run/process/draft.json`,
 edit the draft, run `board explain --process .agentry/run/process/draft.json` (exit 2 → fix the draft), then
 write the real file and delete the draft. The keys are in `references/format.md` § gate, extensions and
-conductor, and § guard.
+conductor, and § guard and cleanup.
 
 1. **The gate.** Learn it from the repo, in this order: the workflow doc (`PROCESS.md`, `WORKFLOW.md`,
    `CONTRIBUTING.md`) naming the merge gate; a gate script (`tools/ci/gate*`, `scripts/gate*`, a `Makefile`
@@ -157,6 +157,15 @@ conductor, and § guard.
    `status.file` names, a folder of drafts), offer them as `guard.allow`. Board files need no entry:
    `board add` and `board set --apply` writes are recorded and never stop a lane. Never offer a folder a
    task contract could own (source, tests); an edit in a running lane's owned files stops it anyway.
+8. **Disposable files.** Read the repo's `.gitignore` files and propose `cleanup.disposable` from the lines
+   that are build output or caches the toolchain makes again (an import cache such as `.godot/`, `dist/`,
+   `build/`, `__pycache__/`, compiled files such as `*.translation` or `*.pyc`), as globs from the
+   repository root: a line with no `/` except a trailing one matches at any depth, so `.godot/` becomes
+   `**/.godot` and `*.translation` becomes `**/*.translation`; a line with a `/` before its end is anchored,
+   so `/build/` becomes `build` (in a nested `.gitignore`, put its folder in front). Never propose what a
+   person made or keeps locally (`.env*`, local config, logs, screenshots). Show each glob beside its
+   `.gitignore` line; write only the ones the owner confirms. `lane merge --cleanup` discards those without
+   asking and still asks for any other ignored file.
 
 End with what was written (paths), what was left as it was, and the last `board check` result. Nothing is
 committed: the user reviews the diff.

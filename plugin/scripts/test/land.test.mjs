@@ -284,6 +284,25 @@ test("cleanup keeps a worktree with uncommitted work, and its branch", () => {
   assert.ok(existsSync(path));
 });
 
+test("a dir/** disposable glob takes the wholly ignored directory; a near name still asks", () => {
+  branch({ ".gitignore": "build/\nbuilds/\n" });
+  const path = join(repo.dir, ".agentry", "run", "worktrees", "B");
+  for (const dir of ["build", "builds"]) {
+    mkdirSync(join(path, dir));
+    writeFileSync(join(path, dir, "out.o"), "x");
+  }
+  const res = cleanup(repo.dir, {
+    branch: "b",
+    main: "main",
+    fallbackPath: path,
+    disposable: ["build/**"],
+  });
+  assert.equal(res.ok, false);
+  assert.deepEqual(res.ignored, ["builds/"]);
+  assert.deepEqual(res.disposable, ["build/"]);
+  assert.ok(existsSync(path));
+});
+
 test("cleanup keeps a branch whose commits are not on main", () => {
   branch({ "a.txt": "a\n" });
   const res = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: "/nowhere" });

@@ -1565,6 +1565,33 @@ test("cleanup removes the worktree and branch by branch; ignored files hold it u
   assert.match(again.stdout, /already done/);
 });
 
+test("cleanup discards cleanup.disposable files without asking, and still asks for any other", () => {
+  commitSpec({ ...SPEC, cleanup: { disposable: ["**/.cache", "**/*.bin"] } });
+  const { path } = build({ "src/a.txt": "a\n" });
+  writeFileSync(join(path, ".gitignore"), ".agentry/run/\n.cache/\n*.bin\nshots/\n");
+  git(path, "add", ".gitignore");
+  git(path, "commit", "-q", "-m", "ignore build output");
+  mustLand("--branch", BRANCH);
+  mkdirSync(join(path, ".cache"));
+  writeFileSync(join(path, ".cache", "index"), "x");
+  writeFileSync(join(path, "src", "out.bin"), "x");
+  mkdirSync(join(path, "shots"));
+  writeFileSync(join(path, "shots", "probe.png"), "png");
+
+  const held = merge(ID, "--cleanup");
+  assert.equal(held.status, 2, out(held));
+  assert.match(held.stderr, /holds 1 ignored file\(s\)/);
+  assert.match(held.stderr, /shots\//);
+  assert.doesNotMatch(held.stderr, /\.cache|out\.bin/);
+  assert.ok(existsSync(path));
+
+  rmSync(join(path, "shots"), { recursive: true });
+  const res = merge(ID, "--cleanup");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /discarded 2 disposable file\(s\)/);
+  assert.equal(existsSync(path), false);
+});
+
 test("after cleanup the ledger names no next step, so session close shows none", () => {
   build({ "src/a.txt": "a\n" });
   mustLand("--branch", BRANCH);

@@ -239,6 +239,23 @@ export const PROCESS_CASES = [
     add: { guard: { alow: ["docs/**"] } },
     bad: ["guard.alow", "guard.allow"],
   },
+  // cleanup.disposable
+  { name: "disposable globs", add: { cleanup: { disposable: ["**/.godot", "**/*.translation"] } } },
+  {
+    name: "an empty disposable list",
+    add: { cleanup: { disposable: [] } },
+    bad: ["cleanup.disposable"],
+  },
+  {
+    name: "a disposable entry that is empty",
+    add: { cleanup: { disposable: [""] } },
+    bad: ["cleanup.disposable[0]"],
+  },
+  {
+    name: "a disposable glob out of the repository",
+    add: { cleanup: { disposable: ["../build"] } },
+    bad: ["cleanup.disposable[0]"],
+  },
   {
     name: "a hand status file and its heading",
     add: { status: { file: "docs/STATUS.md", next: "Next" } },

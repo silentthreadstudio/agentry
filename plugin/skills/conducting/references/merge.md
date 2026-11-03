@@ -100,9 +100,11 @@ Push goes to main's upstream and runs the repo's pre-push hooks. With no upstrea
 ## Cleanup
 
 The worktree is found by its branch, whatever its directory is called, and removed with `-f -f`, so a locked
-one comes down too. The branch is deleted only when every commit on it is on main. Cleanup refuses while the
-worktree holds ignored files (screenshots, build output), because removal deletes them. List them, copy what
-the owner wants to keep, and re-run with `--discard-ignored` only on their yes.
+one comes down too. The branch is deleted only when every commit on it is on main. Ignored files that the
+process file's `cleanup.disposable` globs match (build output, import caches) are discarded without asking.
+Cleanup refuses while the worktree holds any other ignored file (screenshots, a local `.env`), because
+removal deletes it. List them, copy what the owner wants to keep, and re-run with `--discard-ignored` only on
+their yes.
 
 ## When it stops
 

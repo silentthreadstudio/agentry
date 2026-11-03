@@ -249,6 +249,10 @@ export type Worktrees = z.infer<typeof Worktrees>;
 export const Guard = z.object({ allow: Globs }).strict();
 export type Guard = z.infer<typeof Guard>;
 
+/** Ignored files `lane merge --cleanup` discards without asking (globs, e.g. build output). */
+export const Cleanup = z.object({ disposable: Globs }).strict();
+export type Cleanup = z.infer<typeof Cleanup>;
+
 export const ProcessSpec = z
   .object({
     version: z.literal(1),
@@ -266,6 +270,7 @@ export const ProcessSpec = z
     extensions: Extensions.optional(),
     conductor: Conductor.optional(),
     guard: Guard.optional(),
+    cleanup: Cleanup.optional(),
   })
   .strict();
 export type ProcessSpec = z.infer<typeof ProcessSpec>;

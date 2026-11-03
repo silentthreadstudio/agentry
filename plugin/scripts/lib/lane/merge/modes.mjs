@@ -108,7 +108,7 @@ export function pushMode(lane) {
 export function cleanupMode(lane) {
   const refused = mergedLedger(lane, "cleanup");
   if (refused) return refused;
-  const { root, id, opts, ledger } = lane;
+  const { root, spec, id, opts, ledger } = lane;
   const merge = ledger.merge;
   if (merge.cleaned?.removed && merge.cleaned.branchDeleted) {
     const gone = `already done: ${merge.cleaned.path} and ${ledger.branch} are gone`;
@@ -121,6 +121,7 @@ export function cleanupMode(lane) {
     main: ledger.mainBranch,
     fallbackPath: ledger.worktree ?? join(worktreesDir(root), id),
     discardIgnored: discard,
+    disposable: spec.cleanup?.disposable ?? [],
   });
   if (res.ignored && !discard)
     return done(
@@ -141,7 +142,10 @@ export function cleanupMode(lane) {
     const why = res.reason ?? "the worktree or the branch is still there";
     return done(1, lane, [red("cleanup", why)]);
   }
-  const more = res.ignored ? [`discarded ${res.ignored.length} ignored file(s)`] : [];
+  const more = [
+    ...(res.disposable ? [`discarded ${res.disposable.length} disposable file(s)`] : []),
+    ...(res.ignored ? [`discarded ${res.ignored.length} ignored file(s)`] : []),
+  ];
   const detail = `removed ${res.path}; deleted ${ledger.branch}`;
   return done(0, lane, [ok("cleanup", detail, more)], null);
 }

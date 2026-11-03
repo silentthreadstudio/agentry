@@ -9,6 +9,7 @@
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { pickTier } from "./gate.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
 import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
 
@@ -338,27 +339,50 @@ export function push(root, { branch }) {
 /**
  * Take down the worktree that has `branch` checked out (found by branch, whatever its directory is
  * called; `fallbackPath` when none has it) with `-f -f`, and delete the branch when everything on it is
- * on `main`. Refused while the worktree holds ignored files (build output, screenshots: they would be
- * lost), unless `discardIgnored`. Returns `{ ok, path, removed, branchDeleted, ignored?, reason? }`.
+ * on `main`. Refused while the worktree holds ignored files (screenshots, a local `.env`: they would be
+ * lost) that no `disposable` glob matches, unless `discardIgnored`. Returns `{ ok, path, removed,
+ * branchDeleted, ignored?, disposable?, reason? }`: `ignored` the others, `disposable` the matched ones.
  */
-export function cleanup(root, { branch, main, fallbackPath, discardIgnored = false }) {
+export function cleanup(
+  root,
+  { branch, main, fallbackPath, discardIgnored = false, disposable = [] },
+) {
   const path = findByBranch(root, branch) ?? fallbackPath;
   if (path === root)
     return { ok: false, path, reason: `${branch} is checked out in the main checkout` };
-  let ignored = [];
+  let found = [];
   try {
-    ignored = ignoredFiles(path);
+    found = ignoredFiles(path);
   } catch {
-    ignored = []; // no work tree there (already gone): nothing to lose
+    found = []; // no work tree there (already gone): nothing to lose
   }
+  const isDisposable = disposableMatcher(disposable);
+  const thrown = found.filter(isDisposable);
+  const ignored = found.filter((entry) => !isDisposable(entry));
+  const kept = {
+    ...(ignored.length > 0 && { ignored }),
+    ...(thrown.length > 0 && { disposable: thrown }),
+  };
   if (ignored.length > 0 && !discardIgnored)
     return {
       ok: false,
       path,
-      ignored,
+      ...kept,
       reason: `${path} holds ${ignored.length} ignored file(s) that removal would delete`,
     };
   const res = remove(root, { path, branch, onto: main });
   const ok = res.removed && (res.branchDeleted || !commitOf(root, `refs/heads/${branch}`));
-  return { ok, path, ...res, ...(ignored.length > 0 && { ignored }) };
+  return { ok, path, ...res, ...kept };
+}
+
+// Is an ignored entry (`dir/` for a wholly ignored directory) one of `globs`? Matched with the gate's own
+// glob test, as its path without the slash; a `dir/**` glob also takes `dir` itself.
+function disposableMatcher(globs) {
+  const forms = globs.flatMap((glob) => {
+    const g = glob.replace(/\/+$/, "");
+    return g.endsWith("/**") ? [g, g.slice(0, -3)] : [g];
+  });
+  if (!forms.length) return () => false;
+  const quick = { command: ["-"], only: forms };
+  return (entry) => pickTier({ quick }, [entry.replace(/\/$/, "")]).tier === "quick";
 }

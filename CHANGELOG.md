@@ -97,6 +97,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `board set --apply` there is recorded and stops no lane (a hand edit of the same file still
   does), and files listed in the new `guard.allow` key may change, except a file a running
   lane's contract owns.
+- **`lane merge --cleanup`** discards ignored files the new `cleanup.disposable` globs match
+  (build output, import caches) without asking; any other ignored file still stops it.
+  `/agentry:init` proposes the globs from `.gitignore`.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a
