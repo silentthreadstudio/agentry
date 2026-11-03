@@ -51,13 +51,18 @@ export function checkCommits(rules, commits) {
 const FAILED = "git show failed";
 
 /** The messages of `shas` in `dir`, as `{ sha, message }` in the order given; `[]` for no `shas`. When
- *  git cannot say, one `{ failed }` entry (the first line of git's error) instead: `checkCommits` turns
- *  it into a broken commit, so a read that failed never passes as "no commit breaks a rule". */
+ *  git cannot say, one `{ sha, failed }` entry instead, naming the first sha whose read fails (each is read
+ *  alone to find it) and the first line of git's error: `checkCommits` turns it into a broken commit, so a
+ *  read that failed never passes as "no commit breaks a rule". */
 export function readCommits(dir, shas) {
   if (shas.length === 0) return [];
-  const res = git(dir, ["show", "-s", "--format=%H%x1f%B%x1e", ...shas, "--"]);
-  if (res.status !== 0)
-    return [{ sha: "", message: "", failed: `${FAILED}: ${firstLine(res.stderr)}` }];
+  const show = (list) => git(dir, ["show", "-s", "--format=%H%x1f%B%x1e", ...list, "--"]);
+  const res = show(shas);
+  if (res.status !== 0) {
+    const alone = shas.map((sha) => ({ sha, res: show([sha]) })).find((x) => x.res.status !== 0);
+    const why = firstLine((alone?.res ?? res).stderr);
+    return [{ sha: alone?.sha ?? "", message: "", failed: `${FAILED}: ${why}` }];
+  }
   const byId = new Map();
   for (const record of res.stdout.split("\x1e")) {
     const [sha, message] = record.replace(/^\n/, "").split("\x1f");
