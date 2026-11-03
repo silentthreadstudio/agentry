@@ -15,6 +15,9 @@
 //   final: PASS* / FAIL                     → gate → close / stop
 //   verify / recheck: FAIL                  → fix (resume the builder); at the 3rd verdict → stop
 //   no `Verdict:` last line                 → resend once, then stop
+//   verified PASS WITH NOTES (gate or close next): { type: "notes" } → fix (resume the builder) on the named
+//                                             notes, then the usual recheck
+//   gate: red only in listed flaky tests    → no decision: the alone re-run's record decides
 //
 // Every budget is the lane's, so no mix of outcomes resets one: one resend per role, one needs-context
 // round, three counted verdicts (a final after a recheck PASS is the one more), three void ones, and a
@@ -78,6 +81,21 @@ export const greenOn = (gates, tip) =>
       g.commit === tip,
   );
 
+/** The worktree gates recorded for commit `tip`, counted: `{ green, red, flaky }`. `flaky` is the part of
+ *  `red` that failed only in tests the process file lists as flaky (and was re-run). `text` is the one
+ *  line the verdict shows ("1 green, 1 red on this tip"), or null when there is no gate on this tip. */
+export function gateTally(gates, tip) {
+  const here = (gates ?? []).filter((g) => g.where === "worktree" && g.commit === tip);
+  const green = here.filter((g) => g.exit === 0).length;
+  const red = here.length - green;
+  const flaky = here.filter((g) => g.exit !== 0 && g.flakyRed?.length).length;
+  const text =
+    here.length === 0
+      ? null
+      : `${green} green, ${red} red on this tip${flaky ? ` (${flaky} red only in flaky tests)` : ""}`;
+  return { green, red, flaky, text };
+}
+
 /** The plan for the first round of a new lane. */
 export const begin = () => ({ next: "build", dispatch: { step: "build", ...STEPS.build } });
 
@@ -140,6 +158,7 @@ export function step(ledger, event) {
   const out = structuredClone(ledger);
   out.gates ??= [];
   if (event.type === "gate") return onGate(out, event.record);
+  if (event.type === "notes") return onNotes(out, event.notes);
   const want = expects(out);
   if (want !== event.type)
     throw new Error(`the lane expects ${want ?? "nothing"}, not a ${event.type}`);
@@ -224,9 +243,28 @@ function onVerdict(ledger, round, { verdict, tip, gate = true }) {
   return settle(ledger, "gate", "no green worktree gate on this tip yet");
 }
 
+// A verified lane (PASS WITH NOTES, gate or close next) sends the builder back to fix the named notes; the
+// round after it is the usual recheck by the verifier.
+function onNotes(ledger, notes) {
+  const verifier = verdicts(ledger).at(-1);
+  if (verifier?.verdict !== "PASS WITH NOTES" || !["gate", "close"].includes(ledger.next))
+    throw new Error(
+      `notes can be fixed only after a PASS WITH NOTES verdict, before the lane closes (state ${ledger.state})`,
+    );
+  const builder = builders(ledger).at(-1);
+  return send(
+    ledger,
+    "fix",
+    { from: verifier.reportPath, agent: builder?.agent, notes },
+    `the verifier's notes ${notes.join(", ")}`,
+  );
+}
+
 function onGate(ledger, record) {
   ledger.gates.push(record);
   if (ledger.next !== "gate") return { ledger, next: ledger.next };
+  // A red that failed only in listed flaky tests is re-run alone; the re-run's record decides.
+  if (record.flakyRed?.length) return { ledger, next: ledger.next };
   const verified = verdicts(ledger).at(-1)?.tip;
   if (record.commit !== verified)
     return stop(ledger, `the branch moved from ${short(verified)} since the verdict`);

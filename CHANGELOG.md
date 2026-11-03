@@ -7,6 +7,15 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **`lane exec fix <id> --notes N1,N3`** — a verified lane (`PASS WITH NOTES`) goes back to its
+  builder on the notes the conductor names, then to the usual recheck. Verifiers now label their
+  notes `N1`, `N2`, and so on.
+- **Gate queue and flaky re-run** — `gate.concurrency` (default 1) makes lanes queue their gates
+  behind a lock in `.agentry/run/`, with stale-process recovery, so timing tests stop failing under
+  load. `gate.flaky` names tests that may fail under load: a red whose log fails only in them is
+  re-run alone once, and both runs are recorded.
+- **`gates` in the exec output** — `gate` and `verdict` print "1 green, 1 red on this tip", so a
+  green run no longer hides a later red on the same commit.
 - **`/agentry:exec <task-id>`** — builds a task whose contract is already written. It finds the
   contract in the repo's task files, briefs the implementer (or the designer for UI work) in a
   worktree, has an independent verifier check the acceptance, allows one fix round, and hands off

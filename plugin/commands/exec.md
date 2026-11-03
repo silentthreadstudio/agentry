@@ -13,6 +13,7 @@ Run the **exec lane** for task `$ARGUMENTS`. The script carries the sequence: ru
    - `stop`: tell the owner `reason`, with every verdict (`lane exec show <id>`). Don't retry by hand.
    - `merge`: the lane is done; hand off (step 4).
 3. When an agent returns, save its full reply to `reportPath` if that file is missing or empty, then run `after` with the agent's id. Back to step 2.
+3b. A verdict of `PASS WITH NOTES` whose notes are worth fixing in this lane: before `close`, run `lane exec fix '<id>' --notes N1,N3` (the labels in the verifier's report) and carry on from step 2.
 4. `close` also works on a merged or stopped lane (to clear a pending episode). After `close`: call `episode_write` with `episode`, then run `afterwards` with the id it returns. Hand off: worktree, branch, verdicts, the gate record, and what's left (`/agentry:merge <id>`).
 
 Show `guards` and `nested` whenever they are not empty. Lost track: `lane exec show <id>`. Not in this lane: right-sizing, spec, plan or split; Flow MCP calls; files under `.agentry/work/`; board edits by hand; merge and push.

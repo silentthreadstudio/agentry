@@ -985,3 +985,152 @@ test("a new symlink, a dangling one, a type change with the same content and a c
     assert.match(res.json.reason, /main touched: files changed/, what);
   }
 });
+
+// A lane built and verified (PASS) up to the gate step; `gate` is the process file's gate.
+function atGate(gate, verdict = "PASS") {
+  const r = repo({ spec: { ...SPEC, gate } });
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  judge(out, verdict);
+  assert.equal(lane(r, "verdict", "T1", "--agent", "verifier-1").json.next, "gate");
+  return r;
+}
+const flakyGate = (marker, line = "FAILED test_budget") => ({
+  command: [
+    "sh",
+    "-c",
+    `test -f out.txt && if [ -f '${marker}' ]; then exit 0; else touch '${marker}'; echo '${line}'; exit 1; fi`,
+  ],
+  flaky: ["test_budget"],
+});
+
+test("the gate runs holding the gate lock and leaves none behind", () => {
+  const r = atGate({ command: ["sh", "-c", "test -f ../../gate-locks/slot-1.lock"] });
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 0, gated.stderr);
+  assert.equal(gated.json.next, "close");
+  assert.equal(existsSync(join(r.root, ".agentry", "run", "gate-locks", "slot-1.lock")), false);
+});
+
+test("a gate lock left by a dead process does not block the gate", () => {
+  const r = atGate(SPEC.gate);
+  const dir = join(r.root, ".agentry", "run", "gate-locks");
+  mkdirSync(dir, { recursive: true });
+  const dead = spawnSync(process.execPath, ["-e", "0"]);
+  writeFileSync(join(dir, "slot-1.lock"), JSON.stringify({ pid: dead.pid ?? 999999, who: "x" }));
+  assert.equal(lane(r, "gate", "T1").exit, 0);
+});
+
+test("a red in listed flaky tests only is re-run alone once; both runs are recorded; green accepts", () => {
+  const marker = join(temp("flaky-"), "ran");
+  const r = atGate(flakyGate(marker));
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 0, gated.stderr);
+  assert.equal(gated.json.next, "close");
+  assert.deepEqual(gated.json.gate.flaky, ["test_budget"]);
+  assert.equal(gated.json.gate.runs, 2);
+  assert.ok(gated.json.gate.log.endsWith("logs/gate-2.log"));
+  assert.equal(gated.json.gates, "1 green, 1 red on this tip (1 red only in flaky tests)");
+  const gates = ledgerOf(r.root, "T1").gates;
+  assert.deepEqual(
+    gates.map((g) => [g.exit, g.flakyRed ?? null, g.rerun ?? false]),
+    [
+      [1, ["test_budget"], false],
+      [0, null, true],
+    ],
+  );
+});
+
+test("a red that also fails an unlisted test is not re-run: the lane stops", () => {
+  const marker = join(temp("flaky-"), "ran");
+  const r = atGate(flakyGate(marker, "FAILED test_real_bug"));
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 1);
+  assert.equal(gated.json.next, "stop");
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 1);
+  assert.equal(gated.json.gates, "0 green, 1 red on this tip");
+});
+
+test("a flaky red that fails again on the alone re-run stops the lane, both runs recorded", () => {
+  const r = atGate({
+    command: ["sh", "-c", "test -f out.txt && echo 'FAILED test_budget' && exit 1"],
+    flaky: ["test_budget"],
+  });
+  const gated = lane(r, "gate", "T1");
+  assert.equal(gated.exit, 1);
+  assert.equal(gated.json.next, "stop");
+  assert.equal(ledgerOf(r.root, "T1").gates.length, 2);
+  assert.equal(gated.json.gates, "0 green, 2 red on this tip (1 red only in flaky tests)");
+});
+
+test("the verdict shows the gate runs already recorded on its tip", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  assert.equal(lane(r, "gate", "T1").exit, 0);
+  judge(out, "PASS");
+  const judged = lane(r, "verdict", "T1");
+  assert.equal(judged.json.next, "close");
+  assert.equal(judged.json.gates, "1 green, 0 red on this tip");
+});
+
+const notesReport = (out, verdict = "PASS WITH NOTES") =>
+  writeFileSync(
+    out.reportPath,
+    `Checked.\n\nNotes:\n- N1. copy says "colour" in one place\n- **N2**: the reset path skips the queue\nN3 - minor naming\nused_memories: none\nVerdict: ${verdict}\n`,
+  );
+
+test("fix <id> --notes sends the builder back on the named notes, then the usual recheck", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  notesReport(out);
+  assert.equal(lane(r, "verdict", "T1", "--agent", "verifier-1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+
+  const fixed = lane(r, "fix", "T1", "--notes", "n2,N3");
+  assert.equal(fixed.exit, 0, fixed.stderr);
+  assert.equal(fixed.json.step, "fix");
+  assert.equal(fixed.json.next, "fix");
+  assert.equal(fixed.json.state, "fixing");
+  assert.deepEqual(fixed.json.notes, ["N2", "N3"]);
+  assert.equal(fixed.json.mode, "resume");
+  assert.equal(fixed.json.agent, "builder-1");
+  const brief = readFileSync(fixed.json.brief, "utf8");
+  assert.match(brief, /## Notes to fix/);
+  assert.match(brief, /- N2: the reset path skips the queue/);
+  assert.match(brief, /- N3: minor naming/);
+  assert.doesNotMatch(brief, /N1: copy says/);
+  assert.doesNotMatch(brief, /Fix every FAIL item/);
+
+  commitFile(fixed.json.worktree, "notes.txt", "fixed\n", "fix: address notes");
+  writeFileSync(fixed.json.reportPath, "DONE\nfixed N2, N3\nused_memories: none\n");
+  const rechecked = lane(r, "report", "T1");
+  assert.equal(rechecked.json.next, "recheck");
+  assert.equal(rechecked.json.agent, "verifier-1");
+});
+
+test("fix is refused without notes, for a note the report lacks, and outside a PASS WITH NOTES lane", () => {
+  const r = repo();
+  assert.match(lane(r, "fix", "T1").stderr, /fix needs --notes N1,N3/);
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  assert.match(lane(r, "fix", "T1", "--notes", "N1").stderr, /notes can be fixed only after/);
+  notesReport(out, "PASS");
+  lane(r, "verdict", "T1");
+  assert.match(lane(r, "fix", "T1", "--notes", "N1").stderr, /notes can be fixed only after/);
+
+  const q = repo();
+  let two = lane(q, "start", "T1").json;
+  build(two);
+  two = lane(q, "report", "T1").json;
+  notesReport(two);
+  lane(q, "verdict", "T1");
+  assert.match(lane(q, "fix", "T1", "--notes", "N9").stderr, /N9 not in the verifier's report/);
+  assert.match(lane(q, "fix", "T1", "--notes", "first").stderr, /note labels, like N1,N3/);
+  assert.equal(ledgerOf(q.root, "T1").rounds.length, 2, "a refusal changes nothing");
+});

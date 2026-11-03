@@ -3,7 +3,15 @@
 // Run: node --test plugin/scripts/test/rounds.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_VERDICTS, addRound, begin, expects, step, verdicts } from "../lib/lane/rounds.mjs";
+import {
+  MAX_VERDICTS,
+  addRound,
+  begin,
+  expects,
+  gateTally,
+  step,
+  verdicts,
+} from "../lib/lane/rounds.mjs";
 
 const TIP = "a".repeat(40);
 const MOVED = "b".repeat(40);
@@ -412,4 +420,64 @@ test("no state loops: 300 adversarial walks of up to 200 events all stop or clos
     longest = Math.max(longest, events);
   }
   assert.ok(longest <= 30, `the longest walk took ${longest} events`);
+});
+
+test("a red record naming flaky tests only records: the re-run's record decides", () => {
+  const atGate = go(go(lane(), report("DONE")).ledger, judge("PASS")).ledger;
+  const flakyRed = { ...green(), exit: 1, flakyRed: ["test_budget"] };
+  const first = step(atGate, { type: "gate", record: flakyRed });
+  assert.equal(first.next, "gate");
+  assert.equal(first.ledger.state, "verifying");
+  assert.equal(step(first.ledger, { type: "gate", record: green() }).next, "close");
+  const again = step(first.ledger, { type: "gate", record: { ...green(), exit: 1 } });
+  assert.equal(again.next, "stop");
+  assert.deepEqual(again.ledger.gates.length, 2);
+});
+
+test("gateTally counts green and red runs on a tip and says so in one line", () => {
+  const red = { ...green(), exit: 1 };
+  const gates = [green(), red, { ...red, flakyRed: ["t"] }, green(MOVED)];
+  assert.deepEqual(gateTally(gates, TIP), {
+    green: 1,
+    red: 2,
+    flaky: 1,
+    text: "1 green, 2 red on this tip (1 red only in flaky tests)",
+  });
+  assert.equal(gateTally([green(), red], TIP).text, "1 green, 1 red on this tip");
+  assert.equal(gateTally([], TIP).text, null);
+  assert.equal(gateTally([green(MOVED)], TIP).text, null);
+});
+
+// A lane verified with PASS WITH NOTES, the gate next.
+function withNotes() {
+  const ledger = go(lane(), report("DONE", ok, { agent: "builder-1" })).ledger;
+  return go(ledger, judge("PASS WITH NOTES", TIP, { agent: "verifier-1" })).ledger;
+}
+
+test("notes after PASS WITH NOTES → fix (resume the builder), then the usual recheck", () => {
+  const verified = withNotes();
+  assert.equal(verified.next, "gate");
+  const res = go(verified, { type: "notes", notes: ["N1", "N3"] });
+  assert.equal(res.next, "fix");
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual(
+    [round.role, round.mode, round.agent, round.notes, round.from],
+    ["build", "resume", "builder-1", ["N1", "N3"], verified.rounds.at(-1).reportPath],
+  );
+  assert.equal(res.ledger.state, "fixing");
+  const rechecked = go(res.ledger, report("DONE"));
+  assert.equal(rechecked.next, "recheck");
+  assert.equal(rechecked.ledger.rounds.at(-1).agent, "verifier-1");
+});
+
+test("notes are refused unless the lane is verified PASS WITH NOTES, before it closes", () => {
+  const refused = /notes can be fixed only after a PASS WITH NOTES verdict/;
+  assert.throws(() => step(lane(), { type: "notes", notes: ["N1"] }), refused);
+  const plain = go(go(lane(), report("DONE")).ledger, judge("PASS")).ledger;
+  assert.throws(() => step(plain, { type: "notes", notes: ["N1"] }), refused);
+  const closed = step(withNotes(), { type: "gate", record: green() }).ledger;
+  assert.equal(closed.next, "close");
+  assert.equal(step(closed, { type: "notes", notes: ["N1"] }).next, "fix");
+  const merged = { ...closed, next: "merge" };
+  assert.throws(() => step(merged, { type: "notes", notes: ["N1"] }), refused);
 });

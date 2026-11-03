@@ -6,6 +6,7 @@
 //   report <id> [--agent a]   read the builder's report, run the guards, brief the next round
 //   verdict <id> [--agent a]  read the verifier's report, write the verdict, brief the next round
 //   gate <id>                 run the repo's gate in the worktree and record it (exit 1 when red)
+//   fix <id> --notes N1,N3    a verified lane (PASS WITH NOTES): a builder round on those notes, then recheck
 //   close <id> [--episode e]  print the episode payload; `--episode` stamps the id episode_write gave
 //                             (and says whether the memory store holds it)
 //   show <id>                 the ledger and the pending step, for a cold resume
@@ -45,24 +46,34 @@ import {
   renderBrief,
   suggestBuilder,
 } from "../brief.mjs";
-import { changedSince, pickTier, runGate } from "../gate.mjs";
+import { holdGate } from "../gate-lock.mjs";
+import { changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
-import { DISPATCHES, addRound, step as advance, begin, expects, verdicts } from "../rounds.mjs";
+import {
+  DISPATCHES,
+  addRound,
+  step as advance,
+  begin,
+  expects,
+  gateTally,
+  verdicts,
+} from "../rounds.mjs";
 import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = join(HERE, "..", "..", "..", "lane.mjs");
-const STEPS = ["start", "report", "verdict", "gate", "close", "show"];
+const STEPS = ["start", "report", "verdict", "gate", "fix", "close", "show"];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints JSON.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
     report: "read the builder's report, run the guards, brief the next round",
     verdict: "read the verifier's report, write the verdict, brief the next round",
     gate: "run the repo's gate in the worktree and record it",
+    fix: "after PASS WITH NOTES: a builder round on the named notes, then a recheck",
     close: "print the episode payload (--episode stamps the id episode_write gave)",
     show: "the ledger and the pending step, for a cold resume",
     "<id>": "the task's id, any case",
@@ -71,13 +82,14 @@ export const help = {
     "--agent <agent id>":
       "report and verdict: the agent that answered, so a later round resumes it",
     "--episode <episode id>": "close: the id episode_write returned",
+    "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
     "--json": "accepted for symmetry: every step prints one JSON object",
   },
   exits: { 0: "next printed", 1: "the lane stopped, or the gate is red", 2: "usage or refusal" },
   example: "lane exec start T-4",
 };
 const flags = flagsOf(help);
-const FLAG_OF = { report: "--agent", verdict: "--agent", close: "--episode" };
+const FLAG_OF = { report: "--agent", verdict: "--agent", close: "--episode", fix: "--notes" };
 
 class Refusal extends Error {}
 const refuse = (message) => {
@@ -108,6 +120,7 @@ function parse(argv) {
   if (!STEPS.includes(step) || !id || rest.length)
     return { error: `needs <${STEPS.join("|")}> <id>` };
   if (flag && FLAG_OF[step] !== flag) return { error: `${step} takes no ${flag}` };
+  if (step === "fix" && !flag) return { error: "fix needs --notes N1,N3" };
   return { step, id, value };
 }
 
@@ -410,7 +423,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
     reason: dispatch.reason ?? "",
     resend: !!dispatch.resend,
     recheck: dispatch.step === "recheck" && fresh,
-    fail: dispatch.step === "fix" && !dispatch.guard && fresh,
+    fail: dispatch.step === "fix" && !dispatch.guard && !dispatch.notes && fresh,
     guard: !!dispatch.guard && fresh,
     needed: dispatch.step === "needs-context" && fresh,
     builderReport: builder?.reportPath ?? "none",
@@ -675,35 +688,60 @@ function verdict(ctx, id, agent) {
     nested: next.nested,
     extra: {
       verdict: judged.void ? "void" : (judged.verdict ?? null),
+      ...(gateTally(next.gates, judged.tip).text && {
+        gates: gateTally(next.gates, judged.tip).text,
+      }),
       ...(res.reason && { why: res.reason }),
       ...(board && { board }),
     },
   });
 }
 
+// Gates queue behind the lock (`gate.concurrency` slots, in the main checkout's run directory); a flaky
+// re-run holds every slot, so it runs alone.
 function gate(ctx, id) {
   const { root, spec } = ctx;
-  const ledger = mustLedger(root, id);
+  let ledger = mustLedger(root, id);
   if (ledger.state === "stopped" || ledger.next === "merge")
     refuse(`the lane is ${ledger.state} (next ${ledger.next}): no gate to run`);
   const config = gateOf(spec);
   if (!config) refuse("the process file has no gate: add one (/agentry:init) to run it here");
   const tier = pickTier(config, changedSince(ledger.worktree, ledger.base, "HEAD") ?? []);
   const command = tier.tier === "quick" ? config.quick.command : config.command;
-  const logFile = join(
-    ledgers.runDir(root, id),
-    "logs",
-    `gate-${(ledger.gates?.length ?? 0) + 1}.log`,
-  );
-  const ran = runGate(ledger.worktree, command, { tier: tier.tier, logFile });
-  if (ran.refused)
+  const lockDir = join(root, ".agentry", "run", "gate-locks");
+  let runs = ledger.gates?.length ?? 0;
+  const once = (exclusive) => {
+    const held = holdGate(lockDir, { slots: config.concurrency, exclusive, who: `lane ${id}` });
+    if (held.busy)
+      refuse(
+        `another gate holds the gate lock (${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"}) and did not end within an hour: run this step again when it has`,
+      );
+    try {
+      const logFile = join(ledgers.runDir(root, id), "logs", `gate-${++runs}.log`);
+      return runGate(ledger.worktree, command, { tier: tier.tier, logFile });
+    } finally {
+      held.release();
+    }
+  };
+  const first = once(false);
+  if (first.refused)
     refuse(
-      `the worktree is not clean, so the gate did not run: ${ran.files.slice(0, 10).join(", ")}`,
+      `the worktree is not clean, so the gate did not run: ${first.files.slice(0, 10).join(", ")}`,
     );
-  const record = { where: "worktree", ...ran, why: tier.reason, at: now() };
-  const res = stepWith(ledger, { type: "gate", record });
-  ledgers.write(root, res.ledger);
-  const shown = view(root, res.ledger, {
+  // A red that failed only in listed flaky tests, on a clean tree, is re-run once, alone.
+  const flaky = first.exit !== 0 && first.cleanAfter ? flakyReds(first.log, config.flaky) : null;
+  const again = flaky ? once(true) : null;
+  const reran = again && !again.refused;
+  const ran = reran ? again : first;
+  const records = [
+    { where: "worktree", ...first, ...(reran && { flakyRed: flaky }), why: tier.reason, at: now() },
+    ...(reran ? [{ where: "worktree", ...again, rerun: true, why: tier.reason, at: now() }] : []),
+  ];
+  let res = { ledger };
+  for (const record of records) res = stepWith(res.ledger, { type: "gate", record });
+  ledger = res.ledger;
+  ledgers.write(root, ledger);
+  const shown = view(root, ledger, {
     step: "gate",
     extra: {
       gate: {
@@ -713,11 +751,67 @@ function gate(ctx, id) {
         commit: short(ran.commit),
         seconds: ran.seconds,
         log: ran.log,
+        ...(reran && { flaky, runs: records.length }),
       },
+      gates: gateTally(ledger.gates, ran.commit).text,
       ...(res.reason && { why: res.reason }),
     },
   });
   return { ...shown, exit: ran.exit === 0 ? shown.exit : 1 };
+}
+
+// The label and text of each `N<number>` note in a verifier's report: a line that opens with its label.
+function notesOf(text) {
+  const notes = new Map();
+  for (const line of text.split("\n")) {
+    const m = /^[\s>#*`_-]*(N\d+)\b[\s.:)\]*`_-]*(.*)$/.exec(line);
+    if (m && !notes.has(m[1])) notes.set(m[1], m[2].trim());
+  }
+  return notes;
+}
+
+// A verified lane (PASS WITH NOTES) goes back to its builder for the notes the conductor names; the rounds
+// after it are the usual recheck. The board is not written: the next verdict is.
+function fix(ctx, id, given) {
+  const { root } = ctx;
+  const ledger = mustLedger(root, id);
+  const labels = [...new Set(given.split(",").map((n) => n.trim().toUpperCase()))];
+  if (!labels.every((n) => /^N\d+$/.test(n)))
+    refuse(`--notes takes the verifier's note labels, like N1,N3 (got ${given})`);
+  const res = stepWith(ledger, { type: "notes", notes: labels });
+  const verifier = verdicts(ledger).at(-1);
+  const report = verifier ? readReport(verifier.reportPath, "verifier") : "";
+  const found = notesOf(report);
+  const missing = labels.filter((n) => !found.has(n));
+  if (missing.length)
+    refuse(
+      `${missing.join(", ")} not in the verifier's report ${verifier?.reportPath ?? "(none)"} (it has ${[...found.keys()].join(", ") || "no N<number> notes"})`,
+    );
+  const next = dispatchNext(ctx, res.ledger, res.dispatch);
+  const round = next.rounds.at(-1);
+  const section = [
+    "## Notes to fix",
+    "",
+    `The verifier passed this with notes (${verifier.reportPath}). Fix exactly these, each with a committed test where it is behavior, and leave the other notes alone:`,
+    "",
+    ...labels.map((n) => `- ${n}: ${found.get(n)}`),
+    "",
+  ].join("\n");
+  const brief = readFileSync(round.brief, "utf8");
+  const at = brief.indexOf("\n## ");
+  writeFileSync(
+    round.brief,
+    at === -1
+      ? `${brief}\n${section}`
+      : `${brief.slice(0, at + 1)}${section}\n${brief.slice(at + 1)}`,
+  );
+  next.nested = nestedTrees(root, next, ledgers.list(root));
+  ledgers.write(root, next);
+  return view(root, next, {
+    step: "fix",
+    nested: next.nested,
+    extra: { notes: labels, ...(res.reason && { why: res.reason }) },
+  });
 }
 
 // The `episode_write` arguments for this lane, from the ledger alone.
@@ -834,4 +928,4 @@ function show(ctx, id) {
   });
 }
 
-const HANDLERS = { start, report, verdict, gate, close, show };
+const HANDLERS = { start, report, verdict, gate, fix, close, show };

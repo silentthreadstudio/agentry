@@ -60,6 +60,7 @@ The builder's report: {{builderReport}}
 
 ## Report
 
-Write your full report to {{reportPath}} and reply with the same text. End it with a `used_memories:` line
+Write your full report to {{reportPath}} and reply with the same text. Start each note below the FAIL bar on its
+own line with a label, `N1`, `N2` and so on, so the conductor can send the builder back on chosen ones. End it with a `used_memories:` line
 (ids, or `none`), then, as the very last line, exactly one of `Verdict: PASS`, `Verdict: PASS WITH NOTES`,
 `Verdict: FAIL`.

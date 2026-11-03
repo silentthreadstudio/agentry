@@ -25,7 +25,8 @@ prompt the step printed. It never composes a brief, picks the next round or writ
 | `start <id>` | finds the contract, refuses at `lanes.maxWriters`, cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder | `dispatched` |
 | `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round | `built` when a verifier is next |
 | `verdict <id> [--agent a]` | reads the verifier's report and its tip, briefs the next round | the verdict (`FAIL` also `failed`) |
-| `gate <id>` | runs the repo's `gate` in the worktree as argv, records `{commit, tree, exit, clean before and after, log}` | none |
+| `gate <id>` | waits for the gate lock, runs the repo's `gate` in the worktree as argv, records `{commit, tree, exit, clean before and after, log}`; a red whose log fails only in `gate.flaky` tests is re-run alone once and both runs are recorded | none |
+| `fix <id> --notes N1,N3` | after `PASS WITH NOTES` (gate or close next): a builder round (resume) on those notes of the verifier's report, then the usual `recheck` | none |
 | `close <id> [--episode e]` | prints the `episode_write` payload; `--episode` stamps the id it returned | none (`done` comes at merge) |
 | `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
 
@@ -36,7 +37,9 @@ inside a worktree instead of the main checkout).
 The JSON: `id`, `step`, `next`, `state`, `worktree`, `branch`, `reportPath`, `guards`, `nested`; for a dispatch
 `prompt`, `brief`, `role`, `mode` (`fresh` or `resume`), `agent` (the one to resume), `dispatch` (the agent type,
 a suggestion for builders), `after` (the step to run when the agent returns); `run` for `gate` and `close`;
-`reason` on a stop; `why` for the machine's choice; `board` for what the lifecycle wrote or skipped.
+`reason` on a stop; `why` for the machine's choice; `board` for what the lifecycle wrote or skipped; `gates`
+(`gate` and `verdict`) for the runs on this tip: "1 green, 1 red on this tip". A tip with both is the
+conductor's call; a red that failed only in listed flaky tests is marked as such.
 
 ### The rounds
 
@@ -55,8 +58,10 @@ a suggestion for builders), `after` (the step to run when the agent returns); `r
 | final | `PASS` / `PASS WITH NOTES` | `gate`, then `close` |
 | final | `FAIL` | `stop` |
 | verify, recheck | `FAIL`, fewer than 3 verdicts | `fix` (resume the builder) |
+| verified `PASS WITH NOTES` | `lane exec fix <id> --notes N1,N3` | `fix` (resume the builder) on those notes, then `recheck` |
 | verify, recheck | `FAIL` at the 3rd verdict | `stop`: report every verdict to the owner |
 | gate | red, or the branch moved since the verdict | `stop` |
+| gate | red only in `gate.flaky` tests | the same gate step runs again alone, once; its record decides |
 
 A void verdict doesn't count toward the three verdicts; voids have their own cap of three. A recheck `PASS`
 at the third verdict still goes to `final`, so a lane can hold four verdicts: the cap of three stops FAILs,
