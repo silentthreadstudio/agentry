@@ -654,12 +654,24 @@ export function renderBrief(step, values) {
 }
 
 /** The repo-policy slots for dispatch `step`: the workflow file's `briefs` list for its role (`build` for a
- *  builder's step, `verify` for a verifier's), each line a bullet, printed as written. No list, no section. */
+ *  builder's step, `verify` for a verifier's), each line a bullet, printed as written. No list, no section.
+ *  With the workflow file's `locks`, the time-limit rule's lock line (`locked`): `lockTake` is the take
+ *  command, the lock named when there is one, else `<name>` and the names. */
 export function policySlots(spec, step) {
   const name = Object.hasOwn(TEMPLATE_OF, step) ? TEMPLATE_OF[step] : null;
   const role = name === "build" || name === "fix" ? "build" : "verify";
   const lines = own(own(spec, "briefs"), role) ?? [];
-  return { policy: lines.length > 0, policyLines: bullets(lines) };
+  const locks = Object.keys(own(spec, "locks") ?? {});
+  const lockTake =
+    locks.length === 1
+      ? `\`agentry lock take ${locks[0]}\``
+      : `\`agentry lock take <name>\` (${locks.join(", ")})`;
+  return {
+    policy: lines.length > 0,
+    policyLines: bullets(lines),
+    locked: locks.length > 0,
+    lockTake: locks.length ? lockTake : "",
+  };
 }
 
 const NOT_THIS_ROUND_WIDTH = 100;

@@ -89,9 +89,13 @@ The builder's report: {{builderReport}}
 - Run checks in the foreground; never pipe one into `grep`, `tail` or `head` to decide; start no
   background waits. Only a check longer than your host's foreground limit runs in the host's background
   mode: wait for its one exit notice and read the same exit code.
-- No command other than the gate may run longer than 10 minutes: give an engine, server, simulator or
-  watcher you start a time limit (run it with `agentry run --limit <dur> -- …`) and treat hitting it as a
-  finding to report, never a wait.
+- No command other than the gate may run longer than 10 minutes: run every engine, server, simulator or
+  watcher with `agentry run --limit <dur> -- …`, and treat hitting the limit as a finding to report, never
+  a wait.
+{{#locked}}
+- Take {{lockTake}} before driving a shared editor through MCP, and drop it after
+  (`agentry lock drop` with the same name).
+{{/locked}}
 
 ## Report
 

@@ -643,6 +643,8 @@ const VALUES = {
   // the repo's policy lines (policySlots)
   policy: false,
   policyLines: "",
+  locked: false,
+  lockTake: "",
   // a contract built in steps (stepSlots): off unless a test turns a section on
   stepped: false,
   thisRun: "",
@@ -698,18 +700,39 @@ test("every template uses only the slots the CLI fills, and renders with none le
     }
   }
   assert.throws(() => renderBrief("merge", VALUES), /no brief template/);
-  // The time-limit rule rides in every builder's and verifier's brief.
+  // The time-limit rule rides in every builder's and verifier's brief, naming agentry run.
   for (const step of ["build", "continue", "verify", "final"])
     assert.match(
       renderBrief(step, VALUES),
-      /No command other than the gate may run longer than 10 minutes: give an engine, server, simulator or\n {2}watcher you start a time limit/,
+      /No command other than the gate may run longer than 10 minutes: run every engine, server, simulator or\n {2}watcher with `agentry run --limit <dur> -- …`/,
       step,
     );
+});
+
+const LOCK_LINE = /^- Take (.*) before driving a shared editor through MCP, and drop it after\n/m;
+
+test("the time-limit rule's lock line is there only when the workflow file names a lock", () => {
+  for (const step of ["build", "fix", "continue", "verify", "recheck", "final"]) {
+    const render = (spec) => renderBrief(step, { ...VALUES, ...policySlots(spec, step) });
+    assert.doesNotMatch(render({}), LOCK_LINE, `${step}: no locks, no line`);
+    assert.equal(
+      LOCK_LINE.exec(render({ locks: { editor: 1 } }))?.[1],
+      "`agentry lock take editor`",
+      step,
+    );
+    assert.equal(
+      LOCK_LINE.exec(render({ locks: { editor: 1, sim: 2 } }))?.[1],
+      "`agentry lock take <name>` (editor, sim)",
+      step,
+    );
+  }
 });
 
 const POLICY_HEAD = "## Repo policy (overrides the contract where they differ)";
 const BUILDER_STEPS = ["build", "fix", "needs-context", "continue"];
 const VERIFIER_STEPS = ["verify", "recheck", "final"];
+// policySlots of a workflow file with no locks: no lock line.
+const NO_LOCK = { locked: false, lockTake: "" };
 
 test("policySlots gives each role its own lines as bullets, and nothing for a role with no list", () => {
   const spec = { briefs: { build: ["Use pnpm.", "No `npm`."], verify: ["Read the changelog."] } };
@@ -717,13 +740,15 @@ test("policySlots gives each role its own lines as bullets, and nothing for a ro
     assert.deepEqual(policySlots(spec, step), {
       policy: true,
       policyLines: "- Use pnpm.\n- No `npm`.",
+      ...NO_LOCK,
     });
   for (const step of VERIFIER_STEPS)
     assert.deepEqual(policySlots(spec, step), {
       policy: true,
       policyLines: "- Read the changelog.",
+      ...NO_LOCK,
     });
-  const none = { policy: false, policyLines: "none" };
+  const none = { policy: false, policyLines: "none", ...NO_LOCK };
   assert.deepEqual(policySlots({}, "build"), none);
   assert.deepEqual(policySlots({ briefs: {} }, "verify"), none);
   assert.deepEqual(policySlots({ briefs: { verify: ["a"] } }, "build"), none);
