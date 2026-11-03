@@ -39,7 +39,7 @@ const onOverview = current === undefined;
     {
       docsGroups.map((group) => (
         <div class="docsidebar__group">
-          <p class="docsidebar__grouptitle label">{group.title}</p>
+          <p class="docsidebar__grouptitle">{group.title}</p>
           <ul class="docsidebar__list" role="list">
             {group.items.map((item) => (
               <li>
@@ -60,14 +60,14 @@ const onOverview = current === undefined;
 </nav>
 
 <style>
-  /* desktop: a calm sticky rail under the site nav */
+  /* desktop: a sticky rail beside the article */
   .docsidebar {
     position: sticky;
-    top: 96px;
+    top: 24px;
     align-self: start;
-    max-height: calc(100vh - 120px);
+    max-height: calc(100vh - 48px);
     overflow-y: auto;
-    padding-right: 8px;
+    padding: 4px 8px 4px 4px;
   }
 
   /* the mobile disclosure toggle is hidden on desktop */
@@ -75,20 +75,27 @@ const onOverview = current === undefined;
     display: none;
   }
 
-  .docsidebar__overview {
-    display: block;
-    padding: 8px 12px;
-    margin-bottom: 18px;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 14.5px;
-    color: var(--muted);
-    transition: color 0.18s ease, background 0.18s ease;
+  .docsidebar__overview,
+  .docsidebar__link {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 12px;
+    border-radius: var(--radius-s);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink-2);
+    text-decoration: none;
   }
 
-  .docsidebar__overview:hover {
+  .docsidebar__overview {
+    margin-bottom: 18px;
+  }
+
+  .docsidebar__overview:hover,
+  .docsidebar__link:hover {
     color: var(--ink);
-    background: var(--violet-dim);
+    background: var(--surface);
   }
 
   .docsidebar__group {
@@ -97,43 +104,27 @@ const onOverview = current === undefined;
 
   .docsidebar__grouptitle {
     padding: 0 12px;
-    margin-bottom: 8px;
-    color: var(--faint);
-    font-size: 11px;
+    margin-bottom: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
 
   .docsidebar__list {
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    /* a hairline guide rail down the group */
-    border-left: 1px solid var(--line);
-    margin-left: 12px;
+    gap: 2px;
   }
 
-  .docsidebar__link {
-    display: block;
-    padding: 7px 12px;
-    margin-left: -1px;
-    border-left: 1px solid transparent;
-    font-size: 14.5px;
-    color: var(--muted);
-    transition: color 0.18s ease, border-color 0.18s ease;
-  }
-
-  .docsidebar__link:hover {
-    color: var(--ink);
-  }
-
-  /* active item: amber spark on the guide rail (brand cue = "you are here") + brighter ink */
+  /* active item: an ink pill with the "one" signal bar, matching the landing's chips */
   .docsidebar__link.is-active,
   .docsidebar__overview.is-active {
     color: var(--ink);
-    font-weight: 600;
-  }
-
-  .docsidebar__link.is-active {
-    border-left-color: var(--amber);
+    background: var(--surface);
+    box-shadow: inset 0 0 0 2px var(--line), inset 6px 0 0 0 var(--one);
+    padding-left: 16px;
   }
 
   /* mobile: collapse to a disclosure under a full-width toggle */
@@ -142,8 +133,8 @@ const onOverview = current === undefined;
       position: static;
       max-height: none;
       overflow: visible;
-      margin-bottom: 8px;
-      padding-right: 0;
+      margin-bottom: 16px;
+      padding: 0;
     }
 
     .docsidebar__toggle {
@@ -153,16 +144,15 @@ const onOverview = current === undefined;
       width: 100%;
       min-height: 48px;
       padding: 0 16px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--panel);
+      border: var(--border);
+      border-radius: var(--radius-m);
+      background: var(--surface);
       color: var(--ink);
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
     }
 
     .docsidebar__chev {
-      color: var(--faint);
       transition: transform 0.2s ease;
     }
 
@@ -172,7 +162,7 @@ const onOverview = current === undefined;
 
     .docsidebar__panel {
       display: none;
-      padding: 16px 4px 4px;
+      padding: 16px 0 4px;
     }
 
     .docsidebar__panel.is-open {

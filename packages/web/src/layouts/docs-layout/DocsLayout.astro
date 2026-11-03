@@ -33,14 +33,14 @@ const { prev, next } = current ? docsNeighbours(current) : { prev: null, next: n
 ---
 
 <Base title={`${title} · Agentry docs`} description={description}>
-  <div class="container docs-shell">
+  <div class="wrap docs-shell">
     <DocsSidebar current={current} />
 
     <article class="docs-main">
       <header class="docs-head">
-        <p class="docs-head__eyebrow label">{eyebrow}</p>
+        <p class="docs-head__eyebrow eyebrow">{eyebrow}</p>
         <h1 class="docs-head__title">{title}</h1>
-        <p class="docs-head__lede muted">{lede}</p>
+        <p class="docs-head__lede">{lede}</p>
       </header>
 
       <slot />
@@ -68,8 +68,7 @@ const { prev, next } = current ? docsNeighbours(current) : { prev: null, next: n
 </Base>
 
 <style>
-  /* two-column docs grid: fixed sidebar rail + fluid content. Generous top padding clears
-     the sticky site nav; not the full 150px .section rhythm. */
+  /* two-column docs grid: the sidebar rail + the article */
   .docs-shell {
     display: grid;
     grid-template-columns: 232px minmax(0, 1fr);
@@ -85,30 +84,35 @@ const { prev, next } = current ? docsNeighbours(current) : { prev: null, next: n
 
   .docs-head {
     margin-bottom: 8px;
+    padding-bottom: 24px;
+    border-bottom: var(--border);
   }
 
   .docs-head__eyebrow {
-    margin-bottom: 18px;
+    margin-bottom: 14px;
+    text-transform: uppercase;
   }
 
   .docs-head__title {
-    font-size: clamp(30px, 4vw, 46px);
+    font-size: clamp(36px, 5vw, 56px);
+    line-height: 0.95;
+    letter-spacing: -0.04em;
     margin-bottom: 20px;
   }
 
   .docs-head__lede {
-    font-size: clamp(16px, 1.4vw, 19px);
-    line-height: 1.65;
+    font-size: clamp(17px, 1.4vw, 19px);
+    line-height: 1.55;
     max-width: 64ch;
-    margin-bottom: 12px;
+    color: var(--ink-2);
   }
 
-  /* single column on narrow viewports: the sidebar (with its disclosure) stacks on top */
+  /* one column on narrow viewports: the sidebar (with its disclosure) stacks on top */
   @media (max-width: 900px) {
     .docs-shell {
       grid-template-columns: 1fr;
       gap: 0;
-      padding-block: 24px 64px;
+      padding-block: 16px 64px;
     }
   }
 </style>
