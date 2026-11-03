@@ -173,7 +173,11 @@ export function statusView({ root, spec, model, runRoot = root }) {
       ...loose.filter((i) => i.phase === "active"),
     ].map((i) => ({ kind: i.kind, id: i.id, status: i.status })),
     blocked,
-    ahead: nowItems.filter((i) => i.phase === "planned").map(progress),
+    // A sprint holding only parked rows has nothing to count here: the parked total already has them.
+    ahead: nowItems
+      .filter((i) => i.phase === "planned")
+      .map(progress)
+      .filter((p) => p.total > 0 || !p.tally.parked),
     parked: items.filter((i) => i.phase === "parked").length,
     nudges: nudges({ root, runRoot, spec, model }),
     drafts: drafts.pending(runRoot).length,

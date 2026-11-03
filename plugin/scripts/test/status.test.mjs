@@ -1,7 +1,7 @@
 // Tests for lib/process/status.mjs (the checked board and its derived view) and lib/process/render.mjs
 // (the terminal text), on the synthetic fixtures. Their invented commits exist in no repository.
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -126,7 +126,7 @@ test("check: line 1 is the verdict with the exit code, then one line per finding
   assert.match(lines.at(-1), /^\d+ rules hold · --why <id>$/);
 });
 
-test("a clean board: check is the verdict alone; status adds only the Now block", () => {
+test("a clean board: check is the verdict alone; status adds Now and On you", () => {
   const { root, spec, model, report, work } = board("table-board");
   assert.equal(renderCheck({ spec, report, work }), "✓ Sample  OK · 8 rules · 8 tasks · exit 0");
   // Without a lifecycle nothing says a task was started by hand, so no drift rows.
@@ -135,9 +135,49 @@ test("a clean board: check is the verdict alone; status adds only the Now block"
   assert.equal(lines[0], "✓ Sample  OK · 8 rules · 8 tasks · exit 0");
   assert.equal(lines[1], "");
   assert.ok(
-    lines.slice(2).every((l) => /^(Now| {11})/.test(l)),
-    "only Now rows follow",
+    lines.some((l) => /^On you {5}/.test(l)),
+    "On you is always shown",
   );
+  assert.ok(
+    lines.slice(2).every((l) => /^(Now|On you|Blocked|Ahead| {11})/.test(l)),
+    "no In flight, no findings",
+  );
+});
+
+test("a clean board shows Blocked and Ahead when they are not empty, a few, then +N more", () => {
+  const { spec, report, work } = board("table-board");
+  const ahead = ["A", "B", "C", "D", "E", "F"].map((id) => ({ id, done: 0, total: 2 }));
+  const view = {
+    now: [],
+    inFlight: [],
+    onYou: [{ kind: "question", id: "Q1", status: "open" }],
+    blocked: [{ id: "T9", by: ["T1"] }],
+    ahead,
+    parked: 2,
+    nudges: [],
+    drafts: 0,
+  };
+  const text = renderStatus({ spec, report, view, work });
+  assert.match(text, /^Blocked {4}1 waiting: 1 behind T1$/m);
+  assert.match(text, /^Ahead {6}A 0\/2 · B 0\/2 · C 0\/2 · D 0\/2 · \+2 more · 2 parked$/m);
+  assert.ok(cols(text) <= WIDTH);
+});
+
+test("ahead leaves out a sprint that holds only parked rows; the parked count has them", () => {
+  const root = copyOf("evidence-board");
+  const file = join(root, "notes", "release", "BOARD.md");
+  const md = readFileSync(file, "utf8").replace(
+    "| K1b | Reports | todo | |",
+    "$&\n| LATER | Later | todo | |",
+  );
+  writeFileSync(file, md);
+  const { spec, model } = board("evidence-board", root);
+  const view = statusView({ root, spec, model });
+  assert.deepEqual(
+    view.ahead.map((a) => a.id),
+    ["K1a", "K1b"],
+  );
+  assert.equal(view.parked, 1);
 });
 
 test("status: the blocks in order, findings, the legend; no line wider than the terminal", () => {

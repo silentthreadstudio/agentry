@@ -145,7 +145,10 @@ function nowLines(items, s) {
 
 const line = (text) => fit(text, WIDTH - LABEL) || "—";
 
-function blockLines(view, s) {
+// The first `n` entries joined by `sep`, then "+N more" for the rest.
+const top = (xs, n) => [...xs.slice(0, n), ...(xs.length > n ? [`+${xs.length - n} more`] : [])];
+
+function blockLines(view, s, clean = false) {
   const verify = new Set(view.onYou.map((x) => x.id));
   const groups = new Map();
   for (const x of view.inFlight) groups.set(x.status, [...(groups.get(x.status) ?? []), x]);
@@ -171,24 +174,28 @@ function blockLines(view, s) {
   });
   const behind = new Map();
   for (const b of view.blocked) behind.set(b.by[0], (behind.get(b.by[0]) ?? 0) + 1);
-  const blocked = [...behind]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id, n]) => `${n} behind ${id}`)
-    .join(", ");
-  const ahead = [
-    ...view.ahead.map((x) => `${x.id} ${x.done}/${x.total}`),
-    ...(view.parked ? [`${view.parked} parked`] : []),
-  ].join(" · ");
-  return [
-    row("In flight", line(flight), s),
-    row("On you", onYou.length ? onYou.join("  ") : "—", s),
-    row(
+  const waiting = [...behind].sort((a, b) => b[1] - a[1]).map(([id, n]) => `${n} behind ${id}`);
+  const blocked = top(waiting, 3).join(", ");
+  const sprints = view.ahead.map((x) => `${x.id} ${x.done}/${x.total}`);
+  const ahead = [...top(sprints, 4), ...(view.parked ? [`${view.parked} parked`] : [])].join(" · ");
+  const rows = {
+    flight: row("In flight", line(flight), s),
+    onYou: row("On you", onYou.length ? onYou.join("  ") : "—", s),
+    blocked: row(
       "Blocked",
       line(view.blocked.length ? `${view.blocked.length} waiting: ${blocked}` : ""),
       s,
     ),
-    row("Ahead", ahead ? s.dim(line(ahead)) : "—", s),
-  ];
+    ahead: row("Ahead", ahead ? s.dim(line(ahead)) : "—", s),
+  };
+  // A clean board shows what waits on the owner always, and what is blocked or ahead only when there is some.
+  if (clean)
+    return [
+      rows.onYou,
+      ...(view.blocked.length ? [rows.blocked] : []),
+      ...(view.ahead.length || view.parked ? [rows.ahead] : []),
+    ];
+  return Object.values(rows);
 }
 
 const SHOWN = 4;
@@ -215,11 +222,18 @@ function driftLines(view, s) {
 }
 
 /** `status`: verdict, where it read from, Now / In flight / On you / Blocked / Ahead, the findings and
- *  the legend. A clean board is the verdict and the Now block only. */
+ *  the legend. A clean board is the verdict, Now, On you, and Blocked and Ahead when there are any. */
 export function renderStatus({ spec, report, view, work, subtitle, tty = false }) {
   const s = style(tty);
   const head = verdict(report, { work, s });
-  if (report.ok) return [head, "", ...nowLines(view.now, s), ...driftLines(view, s)].join("\n");
+  if (report.ok)
+    return [
+      head,
+      "",
+      ...nowLines(view.now, s),
+      ...blockLines(view, s, true),
+      ...driftLines(view, s),
+    ].join("\n");
   const legend = `■ done  ◆ verify  ● doing  □ todo  × cut     ${holding(spec, report.findings)} rules hold · --why <id>`;
   return [
     head,
