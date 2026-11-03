@@ -72,11 +72,60 @@ test("ids match exactly: a prefix id is not found inside a longer one", () => {
   assert.equal(blocksIn(BOLD, "KX-01b")[0].line, 5);
 });
 
-test("a bold start after a sentence opens a block that runs over whole lines", () => {
+test("a bold start after a sentence opens a block at its lead and ends at the next id lead", () => {
   const [hit] = blocksIn(BOLD, "KX-02a");
   assert.equal(hit.line, 6);
-  assert.match(hit.block, /and its rope\./);
-  assert.doesNotMatch(hit.block, /KX-03/);
+  assert.equal(hit.block, "**KX-02a** (S2): owns the bell\n  and its rope.");
+  assert.equal(blocksIn(BOLD, "KX-02b")[0].block, "**KX-02b** (later): the second bell.");
+});
+
+test("a block that starts inside the previous task's paragraph carries none of its text", () => {
+  const text = [
+    "- **KX-50 splits.** **KX-50a** (S1): owns the door,",
+    "  the hinge and the frame · accept: it opens. **KX-50b** (later): the second door",
+    "  · deps KX-50a.",
+    "- **KX-51** (S1): owns the lamp.",
+  ].join("\n");
+  assert.equal(
+    blocksIn(text, "KX-50a")[0].block,
+    "**KX-50a** (S1): owns the door,\n  the hinge and the frame · accept: it opens.",
+  );
+  assert.deepEqual(blocksIn(text, "KX-50b"), [
+    { line: 2, block: "**KX-50b** (later): the second door\n  · deps KX-50a.", title: false },
+  ]);
+});
+
+test("ids are looked up without regard to case", () => {
+  assert.equal(blocksIn(BOLD, "kx-01a")[0].line, 3);
+  assert.deepEqual(blocksIn(BOLD, "kx-01"), [], "still exact apart from case");
+});
+
+const ROWS = [
+  "- **KX-30** (S1): owns the felt.",
+  "",
+  "## Art",
+  "",
+  "| Art | Sprint | What |",
+  "| --- | --- | --- |",
+  "| KX-31 | later | The felt and the chips |",
+  "| **KX-32** | S2 | The wheel |",
+].join("\n");
+
+test("a table row whose first cell is the id is its block, and ends the block above", () => {
+  assert.deepEqual(blocksIn(ROWS, "KX-31", ["bold"]), [
+    { line: 7, block: "| KX-31 | later | The felt and the chips |", title: false },
+  ]);
+  assert.equal(blocksIn(ROWS, "KX-32")[0].line, 8);
+  assert.deepEqual(blocksIn(ROWS, "later"), [], "only the first cell names a row");
+  assert.doesNotMatch(blocksIn(ROWS, "KX-30")[0].block, /KX-31/);
+});
+
+test("a bold block ends where a table starts, even one with no id rows", () => {
+  const text =
+    "**KX-33 · Smoke** · owns the sweep\n\n| Wave | Lane |\n| --- | --- |\n| one | KX-33 |\n";
+  assert.equal(blocksIn(text, "KX-33")[0].block, "**KX-33 · Smoke** · owns the sweep");
+  const heading = "### KX-34 · Door\n| Field | Value |\n| --- | --- |\n| owns | the door |\n";
+  assert.match(blocksIn(heading, "KX-34")[0].block, /owns \| the door/, "a heading block keeps it");
 });
 
 test("a bold block ends at any heading; a heading block at one of its level", () => {
@@ -86,9 +135,9 @@ test("a bold block ends at any heading; a heading block at one of its level", ()
   assert.deepEqual(blocksIn(text, "F7", ["bold"]), [], "lead limits which starts count");
 });
 
-test("the process file's blocks win; later hits are related", () => {
+test("a titled contract beats a bare amendment line in an earlier file; the line is related", () => {
   const root = repo({
-    "board/TASKS.md": "- **KX-05** (S1): the amended contract.\n",
+    "board/TASKS.md": "- **KX-05** deps KX-04 (was KX-03).\n",
     "plans/OLD.md": "**KX-05 · The original** · owns it.\n",
     "TASKS.md": "- **KX-05** a discovered copy\n",
   });
@@ -102,13 +151,52 @@ test("the process file's blocks win; later hits are related", () => {
     {
       status: "found",
       id: "KX-05",
-      file: "board/TASKS.md",
+      file: "plans/OLD.md",
       line: 1,
       source: "process",
       block: undefined,
-      related: [{ file: "plans/OLD.md", line: 1 }],
+      related: [{ file: "board/TASKS.md", line: 1 }],
     },
   );
+});
+
+// An amendment file before the plan file, as a board that amends an older plan lays them out.
+const amended = (amendment, original) =>
+  findContract({
+    root: repo({ "board/TASKS.md": amendment, "plans/OLD.md": original }),
+    spec: {
+      root: "board",
+      kinds: { task: { contract: { blocks: ["TASKS.md", "../plans/OLD.md"] } } },
+    },
+    id: "KX-22",
+  });
+
+test("an amendment that only says `accept as …` loses to the titled contract", () => {
+  const found = amended(
+    "- **KX-22** deps only KX-20 · accept as OLD, plus the bell rings.\n",
+    "**KX-22 · The bell** · owns `bell.mjs` · accept: it rings.\n",
+  );
+  assert.deepEqual([found.status, found.file], ["found", "plans/OLD.md"]);
+});
+
+test("two real contracts are ambiguous, never a silent pick", () => {
+  const found = amended(
+    "- **KX-22** (S1): owns the rope · accept: it pulls.\n",
+    "**KX-22 · The bell** · owns `bell.mjs` · accept: it rings.\n",
+  );
+  assert.deepEqual(found, {
+    status: "ambiguous",
+    id: "KX-22",
+    candidates: [
+      { file: "board/TASKS.md", line: 1 },
+      { file: "plans/OLD.md", line: 1 },
+    ],
+  });
+});
+
+test("a bare block with no real contract anywhere is still found", () => {
+  const found = amended("- **KX-22** (S1) · moments: the bell and the rope.\n", "# Plan\n");
+  assert.deepEqual([found.status, found.file], ["found", "board/TASKS.md"]);
 });
 
 test("without a process file: Agentry task files by frontmatter id, then discovered TASKS.md", () => {
@@ -265,4 +353,90 @@ test("findContract finds a task that sits in a shared block, not only the first"
   const hit = findContract({ root, spec, id: "KX-13" });
   assert.equal(hit.status, "found");
   assert.equal(hit.line, 3);
+});
+
+// A board whose sprint file links each task's contract: `[contract](path#anchor)` in its Tasks table.
+const LINKED = {
+  ".agentry/process.json": JSON.stringify({
+    version: 1,
+    name: "X",
+    root: "w",
+    kinds: {
+      sprint: {
+        label: "Sprint",
+        at: { table: "BOARD.md", heading: "Sprints" },
+        id: { column: "Sprint" },
+        fields: { status: { column: "Status" } },
+        file: {
+          glob: "sprints/{id}_*.md",
+          sections: { tasks: { heading: "Tasks", as: "table", column: "Task" } },
+        },
+      },
+      task: {
+        label: "Task",
+        at: { table: "BOARD.md", heading: "Tasks" },
+        id: { column: "Task" },
+        fields: {
+          sprint: { column: "Sprint", type: "ref", ref: "sprint", role: "parent" },
+          status: { column: "Status" },
+        },
+        contract: { blocks: ["TASKS.md"], lead: ["bold"] },
+      },
+    },
+    rules: [],
+  }),
+  "w/BOARD.md": [
+    "## Sprints",
+    "| Sprint | Status |",
+    "| --- | --- |",
+    "| S1 | doing |",
+    "## Tasks",
+    "| Task | Sprint | Status |",
+    "| --- | --- | --- |",
+    "| KX-41 | S1 | todo |",
+    "| KX-42 | S1 | todo |",
+    "",
+  ].join("\n"),
+  "w/sprints/S1_one.md": [
+    "# S1",
+    "## Tasks",
+    "| Task | What | Contract |",
+    "| --- | --- | --- |",
+    "| KX-41 | Step mode | [contract](../../plans/LOOP.md#step-mode) |",
+    "| KX-42 | Shots | [contract](../TASKS.md) |",
+    "",
+  ].join("\n"),
+  "plans/LOOP.md": "**KX-41 · Step mode** · owns `step.mjs` · accept: it steps.\n",
+  "w/TASKS.md": [
+    "- **KX-42** (S1): owns `shots.mjs` · accept: one per key.",
+    "- **KX-41 · Step mode, first cut** · owns `step0.mjs`.",
+    "",
+  ].join("\n"),
+};
+const BOARD = join(dirname(fileURLToPath(import.meta.url)), "..", "board.mjs");
+const board = (root, ...args) =>
+  spawnSync("node", [BOARD, ...args, "--root", root], { encoding: "utf8" });
+
+test("board contract follows the sprint row's contract link to a file outside the search set", () => {
+  const root = repo(LINKED);
+  const res = board(root, "contract", "KX-41", "--json");
+  assert.equal(res.status, 0, res.stderr);
+  const found = JSON.parse(res.stdout);
+  assert.deepEqual(
+    [found.status, found.file, found.line, found.source, found.related],
+    ["found", "plans/LOOP.md", 1, "process", [{ file: "w/TASKS.md", line: 2 }]],
+    "the link names one of two real contracts",
+  );
+  assert.equal(JSON.parse(board(root, "contract", "KX-42").stdout).file, "w/TASKS.md");
+});
+
+test("board contract takes the id in any case and answers with the board's id", () => {
+  const found = JSON.parse(board(repo(LINKED), "contract", "kx-41").stdout);
+  assert.deepEqual([found.status, found.id], ["found", "KX-41"]);
+});
+
+test("board contract's usage says it takes a task id", () => {
+  const res = board(repo(LINKED), "contract");
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /^usage: contract <task id>/);
 });

@@ -74,7 +74,7 @@ export function boardReport({ root, spec, model }) {
   git.knownCommits(root, shasOf(spec, model)); // one git process for the whole board
   const ctx = {
     hasCommit: (sha) => git.hasCommit(root, sha),
-    contractOf: (kind, id) => findContract({ root, spec, id, kind }),
+    contractOf: (kind, id) => findContract({ root, spec, id, kind, model }),
   };
   const findings = [...model.problems, ...check(model, spec.rules, ctx)];
   const items = Object.fromEntries(
