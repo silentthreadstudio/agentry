@@ -474,6 +474,20 @@ test("a builder that changes the main checkout stops the lane (exit 1) and names
   assert.equal(lane(r, "show", "T1").exit, 1);
 });
 
+test("close takes the episode's task line from the last build report, not a needs-context one", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  writeFileSync(out.reportPath, "NEEDS_CONTEXT\nasked which file\nused_memories: none\n");
+  out = lane(r, "report", "T1").json;
+  assert.equal(out.role, "build");
+  build(out);
+  out = lane(r, "report", "T1").json;
+  judge(out, "PASS");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").exit, 0);
+  assert.equal(lane(r, "close", "T1").json.episode.task, "T1: added out.txt");
+});
+
 // Lane `id` from start to a verified close, its builder adding `file`.
 function verified(r, id, file) {
   let out = lane(r, "start", id).json;
