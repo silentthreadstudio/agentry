@@ -22,6 +22,18 @@ pnpm --filter @agentry/web typecheck  # astro check
 - Internal links and assets go through `withBase()` (`src/lib/base.ts`), so the site also works
   under a sub-path.
 
+## Search readiness
+
+- `src/lib/site.ts` holds the shared facts (description, theme colour, icon version, install lines);
+  `src/lib/jsonld.ts` builds the JSON-LD (home: `SoftwareApplication` + `WebSite`; docs:
+  `BreadcrumbList`). Every page gets a canonical, `og:url` and `og:locale`; the 404 is `noindex`.
+- `robots.txt` and `site.webmanifest` are endpoints in `src/pages/`; `@astrojs/sitemap` writes
+  `sitemap-index.xml`; `integrations/llms.mjs` writes `llms.txt` and `llms-full.txt` from the built
+  docs pages, so they cannot drift.
+- The raster icons in `public/` come from the tape mark: `node scripts/make-icons.mjs` (needs
+  `rsvg-convert`) re-renders them. Bump `ICON_VERSION` in `site.ts` when the mark changes.
+- `vercel.json` sets trailing slashes, clean URLs, cache lengths and a few safe headers.
+
 ## Deploy
 
 Vercel builds the site from the repo at `https://agentry.silentthreadstudio.com`. `site` and `base`

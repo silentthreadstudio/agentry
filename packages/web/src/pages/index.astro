@@ -13,9 +13,16 @@ import Lanes from "../components/Lanes.astro";
 import Memory from "../components/Memory.astro";
 import Scriptable from "../components/Scriptable.astro";
 import Base from "../layouts/Base.astro";
+import { withBase } from "../lib/base.ts";
+import { softwareApplication, webSite } from "../lib/jsonld.ts";
+
+const home = new URL(withBase(""), Astro.site).href;
 ---
 
-<Base title="Agentry · the harness around Claude Code">
+<Base
+  title="Agentry · the harness around Claude Code"
+  jsonLd={[softwareApplication(home), webSite(home)]}
+>
   <Hero />
   <Harness />
   <Lanes />

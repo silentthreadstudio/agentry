@@ -7,6 +7,12 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **Search-ready website** — icons from the tape mark (`favicon.ico`, 192/512 and maskable PNGs, the
+  Apple icon, a web manifest, `theme-color`; icon URLs carry a version), `robots.txt`,
+  `sitemap-index.xml`, `llms.txt` and `llms-full.txt` built from the docs pages, JSON-LD
+  (`SoftwareApplication` and `WebSite` on the home page, `BreadcrumbList` on docs pages), a canonical,
+  `og:url` and `og:locale` on every page except the 404, meta descriptions of at most 160
+  characters, and a `vercel.json` with cache rules and safe headers.
 - **Board and briefs** — `board lifecycle`/`lane merge` write several commits into the Commit cell
   with the separator the board's done rows already use (a field's `join` pins it; `first…last` when
   nothing is learned). An old `--json '{…}'` on `board add`/`board set` exits 2 with a pointer to
