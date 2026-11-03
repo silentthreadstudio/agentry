@@ -8,6 +8,9 @@ date: 2026-06-20
 
 # ADR-001 — a `/docs` area overrides VISION §9 ("no docs site / no multi-page routing")
 
+> **Partly superseded (2026-11-03).** The site redesign removed the diagram panels and three of the
+> concept pages, along with the subsystems they described. The `/docs` area itself stands.
+
 ## Context
 
 The approved Spec adds a five-page docs area under `packages/web/src/pages/docs/` (overview +

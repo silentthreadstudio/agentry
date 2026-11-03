@@ -1,18 +1,12 @@
 ---
-// /docs — the docs overview + the layering story (the highest-content-risk page).
-// Composed through DocsLayout (the grouped sidebar shell): the header scaffold comes from
-// the layout props; the body is the required-vs-optional table + the degradation narrative.
-// Facts from the content map + the canonical mandatory-vs-additive framing (ADR-001 of web).
-//
-// Base-path rule (#1 404 trap): docs→docs links go through withBase("docs/<x>"); the one
-// cross-link to a LANDING section uses withBase("") + "#install".
+// /docs — the docs overview: how Agentry fits together. Facts match the landing page.
 import DocsLayout from "../../layouts/docs-layout/DocsLayout.astro";
 import { withBase } from "../../lib/base.ts";
 ---
 
 <DocsLayout
   title="How Agentry fits together"
-  description="How Agentry fits together: a mandatory substrate (Memory + Flow) with additive layers (Workbench + Channels), and what still works when you turn the layers off."
+  description="How Agentry fits together: one front door that sizes the process to the task, specialist agents that build and check the work, your own board run as verified lanes, a local memory, and one CLI underneath."
   eyebrow="Docs · Overview"
   lede="Agentry is an adaptive agentic layer for Claude Code. It routes a task to the least process that wins, conducts the work with SDLC specialists, and gates the result with you — so the bar is held instead of hoped for."
 >
@@ -27,63 +21,23 @@ import { withBase } from "../../lib/base.ts";
       result with you at the decision points that matter.
     </p>
 
-    <h2 class="prose__h">The substrate and the layers</h2>
-    <p>
-      Four subsystems make this work, and they are not all equal. Two are the
-      <strong>mandatory substrate</strong> — the run does not function without them. Two are
-      <strong>additive layers</strong> — they make the work nicer to watch and steer, but the run is
-      complete without them. The table is the contract:
-    </p>
-
-    <table class="layers" aria-label="Required vs. optional subsystems">
-      <thead>
-        <tr>
-          <th scope="col">Subsystem</th>
-          <th scope="col">Role</th>
-          <th scope="col">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th scope="row"><a href={withBase("docs/memory")}>Memory</a></th>
-          <td>Durable fact/episode store — a local stdio MCP over <code>node:sqlite</code>, with project + global roots. The moat.</td>
-          <td><span class="badge badge--req">Required</span></td>
-        </tr>
-        <tr>
-          <th scope="row"><a href={withBase("docs/flow")}>Flow</a></th>
-          <td>The run-state engine — task lifecycle, append-only events, and review, recorded as plain files that are the source of truth.</td>
-          <td><span class="badge badge--req">Required</span></td>
-        </tr>
-        <tr>
-          <th scope="row"><a href={withBase("docs/workbench")}>Workbench</a></th>
-          <td>A per-project local Agent Center to read, edit, comment, approve, and watch a live graph.</td>
-          <td><span class="badge badge--opt">Optional · additive</span></td>
-        </tr>
-        <tr>
-          <th scope="row"><a href={withBase("docs/channels")}>Channels</a></th>
-          <td>Live human↔agent push — comments, replies, a permission relay, and status steering over the file-watch loop.</td>
-          <td><span class="badge badge--opt">Optional · additive</span></td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h2 class="prose__h">What still works when you turn the layers off</h2>
-    <p>
-      The additive layers degrade gracefully, because the substrate is files, not a live connection:
-    </p>
+    <h2 class="prose__h">What's in the box</h2>
     <ul class="facts">
+      <li><strong>9 agents</strong>, each with one job, called only when the work earns them.</li>
+      <li><strong>15 skills</strong> that carry the craft the agents load: architecting, planning, implementing, testing, reviewing, designing and more.</li>
       <li>
-        <strong>Channels off</strong> → everything still works via the async file-watch loop: the
-        files are truth, the agent reads your edits on its next turn, and approvals fall back to the
-        terminal.
+        <strong>Your board, as lanes.</strong> <code>/agentry:exec</code> runs a task whose contract is
+        already written in its own worktree, with a builder, an independent verifier and your gate;
+        <code>/agentry:merge</code> lands it. <strong>17 board rules</strong> mirror the checks you
+        already run.
       </li>
       <li>
-        <strong>Workbench off</strong> → terminal-only. You drive the same run from the command line;
-        nothing in the substrate depends on the server being up.
+        <strong>A local memory server.</strong> Decisions, gotchas and repo facts recalled when a task
+        needs them. See <a href={withBase("docs/memory")}>Memory</a>.
       </li>
       <li>
-        <strong>Only Memory + Flow are required.</strong> Strip both optional layers and the run is
-        still complete — that is the line between substrate and convenience.
+        <strong>One CLI, <code>agentry</code>.</strong> Every move the slash commands make is a command
+        you can script.
       </li>
     </ul>
 

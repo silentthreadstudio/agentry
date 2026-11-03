@@ -1,15 +1,8 @@
 ---
-// /docs/evals — Self-Eval, the centerpiece Reference page. Explains what the embedded eval
-// dashboard measures, HONESTLY: the four ABSOLUTE value axes (decision quality, code quality +
-// correctness, honesty/overclaim, verification/escaped-defect), the showcase strip, the planted
-// gold↔broken controls + judge discrimination, and the "corrections log IS the product" framing.
-// Every number here is a REAL figure from the latest bench run — do NOT invent or re-round.
-//
-// Caveats (small-N / early-signal / directional-not-powered) are MANDATORY and kept prominent in
-// a .note. The DocShot regions wire the eval screenshots into the clearly-marked placeholders —
-// this file authors the prose + the empty <h2> anchors; the screenshot pipeline owns the images.
-//
-// Base-path rule (#1 404 trap): every internal href + the dashboard link goes through withBase().
+// /docs/evals — Self-Eval. Explains what the bench measures, honestly: the four absolute value
+// axes (decision quality, code quality + correctness, honesty/overclaim, verification), the
+// planted gold↔broken controls + judge discrimination, and the corrections log.
+// Caveats (small-N / early-signal / directional-not-powered) are mandatory and kept in a .note.
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
 ---
 
@@ -22,7 +15,7 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
 >
   <div class="prose">
     <p>
-      The embedded dashboard measures four things about Agentry's actual work — <strong>were its
+      The bench measures four things about Agentry's actual work — <strong>were its
       decisions sound</strong>, is the <strong>code clean and correct</strong>, does it
       <strong>never claim done on bad work</strong>, and does its own <strong>verifier catch its
       bugs before shipping</strong> — plus the <strong>controls</strong> that have to pass before
@@ -41,11 +34,6 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
       </span>
     </div>
 
-    <!-- ============================================================
-         SCREENSHOT REGION · The four-axis scorecard
-         The pipeline inserts the summary scorecard dashboard shot
-         directly under this heading.
-         ============================================================ -->
     <h2 class="prose__h">The four value axes</h2>
     <p>
       Agentry is conducted once per task; the four axis signals are all derived from that single
@@ -73,25 +61,6 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
       </span>
     </div>
 
-    <!-- ============================================================
-         SCREENSHOT REGION · Per-task census (drill-down)
-         The pipeline inserts the per-task census drill-down shot
-         directly under this heading.
-         ============================================================ -->
-    <h2 class="prose__h">The per-task census</h2>
-    <p>
-      Below the scorecard, the technical drill-down shows the readable trace: one row per
-      (task × repeat), each carrying its decision score, code score, oracle verdict, self-reported
-      "done", verify-fire, and escaped-defect. A blank cell is an <strong>honest absent signal</strong>
-      — a one-shot task that wrote no decision trail, or a degenerate run that left no tree — never a
-      silent zero that would drag an axis down unfairly.
-    </p>
-
-    <!-- ============================================================
-         SCREENSHOT REGION · What you also get (showcase)
-         The pipeline inserts the showcase-strip dashboard shot
-         directly under this heading.
-         ============================================================ -->
     <h2 class="prose__h">What you also get — demonstrated, not scored</h2>
     <p>
       The four numbers are not the whole story. The bench also <em>demonstrates</em> — in the real
@@ -101,15 +70,13 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
       <li><strong>Auditable structure</strong> — every escalated run leaves a spec, a plan, and ADRs you can read; the decision trail Axis A judges is the same one you audit.</li>
       <li><strong>Durable memory</strong> — decisions, gotchas, and repo-facts persist across runs with provenance, so run two is warmer than run one. Recall is shown, never scored.</li>
       <li><strong>Real specialists</strong> — architect, implementer, verifier, librarian: bounded experts the conductor dispatches, so the work is built and checked by different agents.</li>
-      <li><strong>You stay in control</strong> — the Workbench surfaces every run live with review gates and steerable tasks; the bench measures work you can already watch happen.</li>
     </ul>
 
     <h2 class="prose__h">Controls — the gates before any score</h2>
     <p>
       A score is meaningless if the instrument can't tell good from bad. Before a single conduct
       spends, <strong>both judges must prove themselves</strong> — and if either gate fails, the
-      batch <strong>aborts and no number is shown</strong> (the dashboard renders the abort verdict
-      instead):
+      batch <strong>aborts and no number is shown</strong>:
     </p>
     <ul class="facts">
       <li><strong>A/A stability</strong> — the same input judged several times must agree (low judge stdev): the judge isn't noisy.</li>
@@ -117,16 +84,11 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
       <li><strong>Capture-before-inject</strong> — every judged input is read from the agent-visible tree <em>before</em> the held-out oracle is injected, so judging is oracle-free by construction.</li>
     </ul>
 
-    <!-- ============================================================
-         SCREENSHOT REGION · Corrections log
-         The pipeline inserts the corrections-log dashboard shot
-         directly under this heading.
-         ============================================================ -->
     <h2 class="prose__h">The corrections log IS the product</h2>
     <p>
       This is the credibility core. <strong>Each entry is a time the meter disagreed with the
       conductor — and the conductor was right.</strong> We fixed the meter, not the conductor. The
-      harness survived its own instrument being wrong, and the log is the audit trail that proves it:
+      harness survived its own instrument being wrong, and the log is the audit trail that proves it.
     </p>
     <p>
       The point isn't that the meter was perfect — it's that when the meter and the conductor
@@ -134,13 +96,5 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
       isn't a self-eval; this log is how we caught it. And when a number does come out weak, we
       iterate on Agentry — not on the meter.
     </p>
-
-    <div class="prose__cta">
-      <p>
-        See the live dashboard for the full four-axis
-        scorecard, the per-task census, the axis distribution, the control results, and every
-        corrections-log entry.
-      </p>
-    </div>
   </div>
 </DocsLayout>

@@ -1,8 +1,5 @@
 ---
-// /docs/memory — Memory, the moat. Composed through DocsLayout: header from props, body =
-// DocDiagram(memory.png) + prose. Facts verbatim from the content map.
-//
-// Base-path rule (#1 404 trap): DocDiagram takes a BARE path, prefixed via withBase().
+// /docs/memory — Memory, the moat. Composed through DocsLayout: header from props, body = prose.
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
 ---
 
@@ -13,7 +10,6 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
   eyebrow="Capabilities · Memory"
   lede="Memory is the durable store that lets a run remember. It graduates a run's lessons into recallable facts, so the next task starts warmer than the last — the compounding advantage Agentry is built around."
 >
-
   <div class="prose">
     <p>
       Memory is a <strong>durable fact/episode store</strong>: it keeps both the semantic facts a
@@ -30,13 +26,6 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
     <p>
       This is <strong>the moat</strong>. Capability you can buy; a store of what <em>your</em> work has
       already taught the system, you can only accumulate — and it compounds with every run.
-    </p>
-
-    <h2 class="prose__h">Browse the store</h2>
-    <p>
-      The Workbench includes a read-only <strong>Memory browser</strong> — search and filter the
-      facts and episodes the store has accumulated, each with its confidence, provenance, and the
-      reason it was kept:
     </p>
   </div>
 </DocsLayout>
