@@ -2,7 +2,16 @@
 // Run: node --test plugin/scripts/test/gate-lock.test.mjs
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -24,7 +33,11 @@ test("one slot: a second taker finds it busy, naming the holder; release frees i
   const first = holdGate(dir, { who: "lane A" });
   assert.ok(first.release);
   const second = holdGate(dir, { who: "lane B", waitSec: 0 });
-  assert.deepEqual(second.busy, { pid: process.pid, who: "lane A" });
+  assert.deepEqual(second.busy, {
+    pid: process.pid,
+    who: "lane A",
+    file: join(dir, "slot-1.lock"),
+  });
   first.release();
   assert.deepEqual(slots(dir), []);
   const third = holdGate(dir, { who: "lane C", waitSec: 0 });
@@ -80,4 +93,32 @@ test("release leaves a slot another process now holds alone", () => {
   writeFileSync(join(dir, "slot-1.lock"), JSON.stringify({ pid: process.ppid, who: "other" }));
   mine.release();
   assert.ok(existsSync(join(dir, "slot-1.lock")));
+});
+
+const plant = (dir, text, ageSec) => {
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "slot-1.lock");
+  writeFileSync(file, text);
+  const at = new Date(Date.now() - ageSec * 1000);
+  utimesSync(file, at, at);
+  return file;
+};
+
+test("an old empty or unreadable lock file is stale and taken over", () => {
+  for (const text of ["", "{not json", '{"who":"no pid"}']) {
+    const dir = lockDir();
+    plant(dir, text, 60);
+    const taken = holdGate(dir, { waitSec: 0 });
+    assert.ok(taken.release, `taken over: ${JSON.stringify(text)}`);
+    taken.release();
+    assert.deepEqual(slots(dir), []);
+  }
+});
+
+test("a young empty lock file may be mid-write: it is left, and a refusal names the file", () => {
+  const dir = lockDir();
+  const file = plant(dir, "", 0);
+  const res = holdGate(dir, { waitSec: 0 });
+  assert.deepEqual(res.busy, { pid: null, who: "", file });
+  assert.ok(existsSync(file));
 });

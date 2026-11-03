@@ -3,11 +3,16 @@
 // `wx` (one creator wins) and holding the pid of the process that took it. A slot whose pid is gone is
 // stale: the next taker removes it and takes the slot, so a killed lane never blocks the queue.
 // `exclusive` takes every slot (in order, so two of them cannot deadlock): a flaky re-run runs alone.
-// Synchronous, like `runGate`. Node built-ins only.
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// A lock file with no readable pid (empty, cut short, unreadable) is stale once it is `GRACE_MS` old: a
+// younger one may be a taker between create and write. Synchronous, like `runGate`. Node built-ins only.
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const POLL_MS = 200;
+const GRACE_MS = 2000;
+
+/** The directory every gate (a lane's, and the land's own on main) queues in. */
+export const gateLockDir = (root) => join(root, ".agentry", "run", "gate-locks");
 
 const slotFile = (dir, n) => join(dir, `slot-${n}.lock`);
 
@@ -30,6 +35,15 @@ const holderOf = (file) => {
   }
 };
 
+// A lock file nobody can be holding: no readable pid, and old enough not to be mid-write.
+function orphaned(file) {
+  try {
+    return !Number.isInteger(holderOf(file)?.pid) && Date.now() - statSync(file).mtimeMs > GRACE_MS;
+  } catch {
+    return false;
+  }
+}
+
 // Take slot `n`: true when this process now holds it. A slot held by a dead pid is taken over.
 function take(dir, n, who) {
   const file = slotFile(dir, n);
@@ -42,9 +56,14 @@ function take(dir, n, who) {
       if (error.code !== "EEXIST") throw error;
     }
     const holder = holderOf(file);
-    // A file with no readable pid is one being written right now: leave it for the next poll.
-    if (!holder || running(holder.pid)) return false;
-    if (holderOf(file)?.pid === holder.pid) rmSync(file, { force: true });
+    // A file with no readable pid may be one being written right now: it goes only once it is old.
+    if (!Number.isInteger(holder?.pid)) {
+      if (!orphaned(file)) return false;
+      rmSync(file, { force: true });
+    } else {
+      if (running(holder.pid)) return false;
+      if (holderOf(file)?.pid === holder.pid) rmSync(file, { force: true });
+    }
   }
   return false;
 }
@@ -54,7 +73,7 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 /**
  * Wait for a gate slot in `dir` (`slots` of them; `exclusive`: all of them) for up to `waitSec`.
  * `{ release }` once held (call it when the gate is done), or `{ busy: { pid, who } }` when the wait ran
- * out, naming the holder of the slot that never came free.
+ * out, naming the holder of the slot that never came free and its lock file.
  */
 export function holdGate(dir, { slots = 1, exclusive = false, who = "", waitSec = 3600 } = {}) {
   mkdirSync(dir, { recursive: true });
@@ -82,9 +101,10 @@ export function holdGate(dir, { slots = 1, exclusive = false, who = "", waitSec 
         }
     }
     if (Date.now() >= deadline) {
-      const blocking = holderOf(slotFile(dir, exclusive ? held.length + 1 : 1));
+      const file = slotFile(dir, exclusive ? held.length + 1 : 1);
+      const blocking = holderOf(file);
       release();
-      return { busy: { pid: blocking?.pid ?? null, who: blocking?.who ?? "" } };
+      return { busy: { pid: blocking?.pid ?? null, who: blocking?.who ?? "", file } };
     }
     sleep(POLL_MS);
   }

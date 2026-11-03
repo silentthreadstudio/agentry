@@ -13,6 +13,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -344,6 +345,20 @@ test("a docs-only change runs the quick tier and says why", () => {
   assert.match(res.stdout, /quick: all 1 changed file\(s\) match the quick tier's "only"/);
   const log = readLedger(root, ID).gates.at(-1).log;
   assert.match(readFileSync(log, "utf8"), /gate tier quick/);
+});
+
+test("the land's gate on main runs behind the gate lock, taking over an old empty lock file", () => {
+  build({ "src/a.txt": "a\n" });
+  const dir = join(root, ".agentry", "run", "gate-locks");
+  mkdirSync(dir, { recursive: true });
+  const stale = join(dir, "slot-1.lock");
+  writeFileSync(stale, "");
+  const old = new Date(Date.now() - 60_000);
+  utimesSync(stale, old, old);
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /full ran on main: exit 0/);
+  assert.equal(existsSync(stale), false, "the lock is released after the gate");
 });
 
 test("a red gate rolls main back to preHead and writes nothing to the board", () => {

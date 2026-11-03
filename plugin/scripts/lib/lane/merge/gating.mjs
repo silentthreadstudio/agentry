@@ -6,6 +6,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { runDir } from "../../process/ledger.mjs";
 import { gateArgv } from "../gate-group.mjs";
+import { gateLockDir, holdGate } from "../gate-lock.mjs";
 import { canSkip, changedSince, pickTier, runGate } from "../gate.mjs";
 import { commitOf, rollback, treeOf } from "../land.mjs";
 import { now, ok, red, save, setMerge, short } from "./lane.mjs";
@@ -48,6 +49,20 @@ export function gateStep(lane, rows) {
     return null;
   }
   const { tier, reason } = pickTier(gate, changedSince(root, merge.preHead, "HEAD") ?? []);
+  // Behind the same lock as the lanes' gates, so load-sensitive tests never run against each other.
+  const held = holdGate(gateLockDir(root), { slots: gate.concurrency, who: `land ${id}` });
+  if (held.busy) {
+    rows.push(
+      red(
+        "gate",
+        `another gate holds the gate lock (${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"}) at ${held.busy.file}`,
+      ),
+    );
+    return {
+      exit: 1,
+      next: "land again when that gate has ended (it resumes), or delete the lock file if nothing holds it",
+    };
+  }
   const dir = runDir(root, id);
   // A number no log holds yet: a killed gate is not in the ledger, and its log is the evidence of it.
   let n = gates.filter((g) => g.where === "main").length + 1;
@@ -60,7 +75,12 @@ export function gateStep(lane, rows) {
   };
   setMerge(lane, { step: "gating", gateRun });
   const cmd = tier === "quick" ? gate.quick.command : gate.command;
-  const res = runGate(root, gateArgv(cmd, gateRun), { tier, logFile });
+  let res;
+  try {
+    res = runGate(root, gateArgv(cmd, gateRun), { tier, logFile });
+  } finally {
+    held.release();
+  }
   rmSync(gateRun.pidFile, { force: true });
   if (res.refused) {
     setMerge(lane, { step: "landed", gateRun: undefined });
