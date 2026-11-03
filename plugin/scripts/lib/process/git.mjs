@@ -90,17 +90,19 @@ export function worktrees(root) {
     });
 }
 
-/** Stable patch ids of the non-merge commits in `range` (e.g. `main..feature`): `{ patchId, sha }`.
- *  The same change cherry-picked onto another branch has the same patch id. */
-export function patchIds(root, range) {
-  if (!safeRef(range)) return [];
+/** Stable patch ids of the non-merge commits `revs` lists (a range like `main..feature`, or a list like
+ *  `[main, feature, "^base"]`): `{ patchId, sha }`. The same change cherry-picked onto another branch has
+ *  the same patch id; a commit that changes nothing has none. */
+export function patchIds(root, revs) {
+  const list = [revs].flat();
+  if (!list.length || !list.every(safeRef)) return [];
   const patches = git(root, [
     "log",
     "-p",
     "--no-color",
     "--no-ext-diff",
     "--no-merges",
-    range,
+    ...list,
     "--",
   ]);
   if (!patches) return [];
@@ -120,6 +122,21 @@ export const commitOf = (root, ref) =>
   (safeRef(ref) && git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])?.trim()) ||
   null;
 
+/** The full SHA of the commit each of `refs` names, in one `cat-file --batch-check`: Map ref → SHA, a ref
+ *  that names no commit left out. */
+export function commitsOf(root, refs) {
+  const asked = [...new Set(refs)].filter((r) => safeRef(r) && !/\s/.test(r));
+  const input = asked.map((ref) => `${ref}^{commit}\n`).join("");
+  const out = asked.length ? git(root, ["cat-file", "--batch-check"], input) : "";
+  const lines = out?.split("\n") ?? [];
+  const found = new Map();
+  for (const [i, ref] of asked.entries()) {
+    const m = /^([0-9a-f]{40,64}) commit /.exec(lines[i] ?? "");
+    if (m) found.set(ref, m[1]);
+  }
+  return found;
+}
+
 /** True when commit `a` is an ancestor of (or is) commit `b`. */
 export const isAncestor = (root, a, b) =>
   safeRef(a) && safeRef(b) && git(root, ["merge-base", "--is-ancestor", a, b]) !== null;
@@ -127,6 +144,62 @@ export const isAncestor = (root, a, b) =>
 /** The best common ancestor of `a` and `b`, or null. */
 export const mergeBase = (root, a, b) =>
   (safeRef(a) && safeRef(b) && git(root, ["merge-base", a, b])?.trim()) || null;
+
+/** A best common ancestor of all of `shas` (`merge-base --octopus`), or null. */
+export const octopusBase = (root, shas) =>
+  (shas.length > 0 &&
+    shas.every(safeRef) &&
+    git(root, ["merge-base", "--octopus", ...shas])?.trim()) ||
+  null;
+
+/** Every local branch's tip, in one `for-each-ref`: Map name → full SHA. With `on` (a commit), only the
+ *  branches whose tip is on its history. */
+export function branchTips(root, { on } = {}) {
+  if (on !== undefined && !safeRef(on)) return new Map();
+  const format = "--format=%(objectname) %(refname)";
+  const out = git(root, ["for-each-ref", ...(on ? [`--merged=${on}`] : []), format, "refs/heads/"]);
+  const tips = new Map();
+  for (const line of (out ?? "").split("\n")) {
+    const at = line.indexOf(" refs/heads/");
+    if (at > 0) tips.set(line.slice(at + " refs/heads/".length), line.slice(0, at));
+  }
+  return tips;
+}
+
+/** The commits reachable from `heads` and not from `not`, children before parents (`--topo-order`), in
+ *  one `rev-list`: a Map sha → [parent…] in that order. Empty when git cannot answer. */
+export function graph(root, heads, not) {
+  const revs = [...heads, ...(not ? [`^${not}`] : [])];
+  if (!heads.length || !revs.every(safeRef)) return new Map();
+  const out = git(root, ["rev-list", "--topo-order", "--parents", ...revs, "--"]);
+  return new Map(
+    (out ?? "")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [sha, ...up] = line.split(" ");
+        return [sha, up];
+      }),
+  );
+}
+
+/** The paths each of `pairs` (`[to, from]`, full SHAs) changes from `from` to `to`: a Set per pair, in
+ *  order, from one `diff-tree --stdin`. null when git cannot answer. */
+export function changedPaths(root, pairs) {
+  if (!pairs.flat().every((c) => FULL_SHA.test(c ?? ""))) return null;
+  if (!pairs.length) return [];
+  const args = ["diff-tree", "--stdin", "--always", "-r", "--raw", "-z", "--no-renames"];
+  const out = git(root, args, pairs.map(([to, from]) => `${to} ${from}\n`).join(""));
+  if (out === null) return null;
+  const found = [];
+  const tokens = out.split("\0");
+  // Each pair: its `to` alone (a header, even with no change), then a raw entry and its path per change.
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].startsWith(":")) found.at(-1)?.add(tokens[++i]);
+    else if (FULL_SHA.test(tokens[i])) found.push(new Set());
+  }
+  return found.length === pairs.length ? found : null;
+}
 
 /** The commits `range` lists (e.g. `base..tip`), oldest first. `firstParent` follows first parents only;
  *  `noMerges` leaves merge commits out. */
@@ -151,40 +224,63 @@ export function reflog(root, branch) {
     });
 }
 
-/** The top of the working tree `root` is in, or null. */
-export const topLevel = (root) => git(root, ["rev-parse", "--show-toplevel"])?.trim() || null;
+const tops = new Map(); // root → its top, once found
+
+/** The top of the working tree `root` is in, or null. Cached per root once found. */
+export function topLevel(root) {
+  if (!tops.has(root)) {
+    const top = git(root, ["rev-parse", "--show-toplevel"])?.trim();
+    if (!top) return null;
+    tops.set(root, top);
+  }
+  return tops.get(root);
+}
+
+// What a commit is never changes: a fact about a full SHA is asked of git once per root, then served from
+// here. `ask(missing)` answers the SHAs not known yet as a Map sha → value.
+const facts = new Map(); // `${what}\0${root}\0${sha}` → value
+function remembered(root, what, shas, ask) {
+  const key = (sha) => `${what}\0${root}\0${sha}`;
+  const found = new Map();
+  const missing = [];
+  for (const sha of new Set(shas.filter((s) => SHA.test(s ?? "")))) {
+    if (facts.has(key(sha))) found.set(sha, facts.get(key(sha)));
+    else missing.push(sha);
+  }
+  for (const [sha, value] of missing.length ? ask(missing) : []) {
+    if (FULL_SHA.test(sha)) facts.set(key(sha), value);
+    found.set(sha, value);
+  }
+  return found;
+}
 
 /** The parents of each of `shas` (full SHAs), as a Map sha → [parent…]: a merge has two or more, a root
- *  commit none. A SHA git does not know is left out. */
-export function parents(root, shas) {
-  const asked = shas.filter((s) => SHA.test(s ?? ""));
-  const out = asked.length
-    ? git(root, ["log", "--no-walk=unsorted", "--format=%H %P", ...asked])
-    : "";
-  return new Map(
-    (out ?? "")
+ *  commit none. A SHA git does not know is left out. Asked in one call, cached per SHA. */
+export const parents = (root, shas) =>
+  remembered(root, "parents", shas, (asked) => {
+    const out = git(root, ["log", "--no-walk=unsorted", "--format=%H %P", ...asked]);
+    return (out ?? "")
       .split("\n")
       .filter(Boolean)
       .map((line) => {
         const [sha, ...up] = line.split(" ").filter(Boolean);
         return [sha, up];
-      }),
-  );
-}
+      });
+  });
 
 /** Who and what each of `shas` (full SHAs) is: author, author date and message, which a cherry-pick
- *  keeps. A Map sha → text; a SHA git does not know is left out. */
-export function identities(root, shas) {
-  const asked = shas.filter((s) => SHA.test(s ?? ""));
-  const format = "--format=%H%x1f%an <%ae> %ad%x1f%B%x1e";
-  const out = asked.length ? git(root, ["show", "-s", "--date=raw", format, ...asked]) : "";
-  const found = new Map();
-  for (const record of (out ?? "").split("\x1e")) {
-    const [sha, who, body] = record.replace(/^\n/, "").split("\x1f");
-    if (sha && who !== undefined) found.set(sha, `${who}\n${(body ?? "").trim()}`);
-  }
-  return found;
-}
+ *  keeps. A Map sha → text; a SHA git does not know is left out. Asked in one call, cached per SHA. */
+export const identities = (root, shas) =>
+  remembered(root, "identity", shas, (asked) => {
+    const format = "--format=%H%x1f%an <%ae> %ad%x1f%B%x1e";
+    const out = git(root, ["show", "-s", "--date=raw", format, ...asked]);
+    const found = [];
+    for (const record of (out ?? "").split("\x1e")) {
+      const [sha, who, body] = record.replace(/^\n/, "").split("\x1f");
+      if (sha && who !== undefined) found.push([sha, `${who}\n${(body ?? "").trim()}`]);
+    }
+    return found;
+  });
 
 // ---- is a change still in effect on a later commit (A23: done = on main now) ----
 //

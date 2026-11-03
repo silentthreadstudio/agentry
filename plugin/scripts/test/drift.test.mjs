@@ -2,7 +2,8 @@
 // cases (a ledgered worktree, no lifecycle, a board in a subfolder).
 // Run: node --test plugin/scripts/test/drift.test.mjs
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { landing, mechanical, nudges } from "../lib/process/drift.mjs";
@@ -195,6 +196,55 @@ test("landing: a branch with no commits of its own, or reset to main, has not la
   assert.equal(at(root, fresh1.branch), null, "reset onto main");
   git(root, "branch", "never-used");
   assert.equal(at(root, "never-used"), null, "created at main, never committed to");
+});
+
+test("a branch with no history in common with main is not landed, and does not hide one that is", () => {
+  const { root } = fresh();
+  const lonely = join(root, "lonely");
+  git(root, "worktree", "add", "-q", "--detach", lonely, "main");
+  git(lonely, "checkout", "-q", "--orphan", "agentry/T2");
+  git(lonely, "rm", "-rqf", ".");
+  commitFile(lonely, "other.txt", "unrelated\n", "feat: an unrelated history");
+  ledger(root, "T2");
+  const { sha } = builtBranch(root, "T1");
+  ledger(root, "T1");
+  pickOntoMain(root, sha);
+  assert.equal(at(root, "agentry/T2"), null);
+  const byHand = nudgesOf(root).filter((n) => n.kind === "merged-by-hand");
+  assert.deepEqual(
+    byHand.map((n) => n.id),
+    ["T1"],
+  );
+});
+
+// The git processes `run` starts (GIT_TRACE2 counts every one, nested ones included).
+function gitCalls(run) {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-trace-"));
+  process.env.GIT_TRACE2_EVENT = join(dir, "trace.json");
+  try {
+    run();
+    const trace = readFileSync(join(dir, "trace.json"), "utf8");
+    return trace.split("\n").filter((l) => l.includes('"event":"start"')).length;
+  } finally {
+    Reflect.deleteProperty(process.env, "GIT_TRACE2_EVENT");
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("nudges ask git once per run, not per ledger: ten more branches, picked or not, cost no more", () => {
+  const { root } = fresh();
+  const add = (from, n) => {
+    for (let i = from; i < from + n; i++) {
+      const { sha } = builtBranch(root, `T${i}`);
+      ledger(root, `T${i}`);
+      if (i % 2) pickOntoMain(root, sha);
+    }
+  };
+  add(10, 2);
+  const before = gitCalls(() => nudgesOf(root));
+  add(20, 10);
+  const after = gitCalls(() => nudgesOf(root));
+  assert.ok(after <= before, `${before} git calls for 2 ledgers, ${after} for 12`);
 });
 
 test("a hand worktree merged --no-ff or fast-forwarded is merged-by-hand, not unlisted", () => {

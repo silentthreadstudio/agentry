@@ -15,11 +15,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import {
+  branchTips,
+  changedPaths,
+  commitsOf,
   defaultBranch,
+  graph,
   hasCommit,
   inEffect,
   knownCommits,
   log,
+  octopusBase,
   patchIds,
   reverseApplies,
   trackedFiles,
@@ -121,6 +126,59 @@ test("patchIds: a cherry-picked commit has its original's patch id", () => {
   assert.equal(onMain.sha, sha.picked);
   assert.equal(onBranch.patchId, onMain.patchId);
   assert.deepEqual(patchIds(outside, "main..feature"), []);
+});
+
+test("commitsOf: many refs in one call, each to its full commit; a missing ref, an option or a tree left out", () => {
+  const tree = run("rev-parse", "HEAD^{tree}");
+  const found = commitsOf(repo, ["main", sha.first.slice(0, 7), "0000000", "--all", tree]);
+  assert.deepEqual(
+    [...found],
+    [
+      ["main", sha.picked],
+      [sha.first.slice(0, 7), sha.first],
+    ],
+  );
+  assert.deepEqual([...commitsOf(outside, ["main"])], []);
+});
+
+test("branchTips: every branch's tip, or only those on a commit's history", () => {
+  assert.deepEqual([...branchTips(repo)].sort(), [
+    ["feature", sha.feature],
+    ["main", sha.picked],
+  ]);
+  assert.deepEqual([...branchTips(repo, { on: sha.picked })], [["main", sha.picked]]);
+  assert.deepEqual([...branchTips(repo, { on: "--all" })], []);
+  assert.deepEqual([...branchTips(outside)], []);
+});
+
+test("graph, octopusBase: the commits since a common base, children first, with their parents", () => {
+  const base = octopusBase(repo, [sha.picked, sha.feature]);
+  assert.equal(base, sha.first);
+  const found = graph(repo, ["main", "feature"], base);
+  assert.deepEqual(
+    [...found].sort(),
+    [
+      [sha.feature, [sha.first]],
+      [sha.picked, [sha.second]],
+      [sha.second, [sha.first]],
+    ].sort(),
+  );
+  const order = [...found.keys()];
+  assert.ok(order.indexOf(sha.picked) < order.indexOf(sha.second), "a child before its parent");
+  assert.equal(octopusBase(outside, [sha.first]), null);
+});
+
+test("changedPaths: each pair's paths from its second commit to its first, in order, empty ones kept", () => {
+  assert.deepEqual(
+    changedPaths(repo, [
+      [sha.feature, sha.first],
+      [sha.second, sha.second],
+      [sha.picked, sha.first],
+    ]),
+    [new Set(["b.txt"]), new Set(), new Set(["b.txt", "c.txt"])],
+  );
+  assert.deepEqual(changedPaths(repo, []), []);
+  assert.equal(changedPaths(repo, [["main", sha.first]]), null, "full SHAs only");
 });
 
 test("reverseApplies: a change is in a tree only while all its lines are; the repo is untouched", () => {
