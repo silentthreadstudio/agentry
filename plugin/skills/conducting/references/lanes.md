@@ -147,7 +147,9 @@ verdict's tip is an ancestor of this one and no merge commit lies between). A re
 from the new merge base, sets `base` to it and writes `logs/range-diff-<n>.txt` (`changed` when a pair is not
 marked `=`, or git cannot compute it); `rebases[]` keeps `{ fromBase, fromTip, toBase, toTip, changed,
 rangeDiff }`, written before the dispatch so a killed `exec rebase` reruns on its entry. A report while a
-rebase is still in progress in the worktree is refused. Every time the lane settles `close` it writes
+rebase is still in progress in the worktree is refused. A verdict that lets the lane go on sets `openNotes` to
+its report's notes; a recheck also keeps the earlier open notes it did not pass, while a verify or final verdict,
+which reads the whole contract, replaces them. Every time the lane settles `close` it writes
 `closedTip`; the land refuses a branch moved past it.
 
 A void verdict doesn't count toward the three verdicts; voids have their own cap of three. A recheck `PASS`
