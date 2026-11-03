@@ -24,10 +24,15 @@ export function uncommittedPatch(root, files) {
 }
 
 /** Apply `patch` to the working tree, all or nothing; `check` only asks git whether it would, and
- *  `reverse` takes it off (a reverse check that passes: the edits are on the tree already). `{ ok }` or
- *  `{ ok: false, reason }`. */
-export function applyPatch(root, patch, { check = false, reverse = false } = {}) {
-  const flags = [...(check ? ["--check"] : []), ...(reverse ? ["--reverse"] : [])];
+ *  `reverse` takes it off (a reverse check that passes: the edits are on the tree already);
+ *  `directory` (relative to `root`, the git root) applies it to the copy of the files under it. `{ ok }`
+ *  or `{ ok: false, reason }`. */
+export function applyPatch(root, patch, { check = false, reverse = false, directory } = {}) {
+  const flags = [
+    ...(check ? ["--check"] : []),
+    ...(reverse ? ["--reverse"] : []),
+    ...(directory ? [`--directory=${directory}`] : []),
+  ];
   const res = git(root, ["apply", "--whitespace=nowarn", ...flags, "-"], patch);
   return res.status === 0
     ? { ok: true }

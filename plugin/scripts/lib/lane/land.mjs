@@ -7,7 +7,7 @@
 // Every git call is an argv array, never a shell line (a zsh variable that did not split once turned a
 // cherry-pick into a silent no-op), and every one reads its own exit code. A git refusal is an answer
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { dirtyEntries } from "./own-memory.mjs";
 import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
@@ -154,14 +154,47 @@ export function landedSince(root, { preHead, planned }) {
   return { landed: chain, rest: planned.slice(chain.length) };
 }
 
-/** The cherry-pick git is in the middle of in `root` (a killed run leaves one): `[{ name, path }]`
- *  for each of `.git/sequencer` and `CHERRY_PICK_HEAD` that exists; empty when none. */
+const gitPath = (root, name) => {
+  const res = git(root, ["rev-parse", "--git-path", name]);
+  return res.status === 0 ? resolve(root, res.stdout.trim()) : null;
+};
+
+/** The cherry-pick or revert git is in the middle of in `root` (a killed run leaves one): `[{ name,
+ *  path }]` for each of `.git/sequencer`, `CHERRY_PICK_HEAD` and `REVERT_HEAD` that exists; empty when
+ *  none. */
 export function pickInProgress(root) {
-  return ["sequencer", "CHERRY_PICK_HEAD"].flatMap((name) => {
-    const res = git(root, ["rev-parse", "--git-path", name]);
-    const path = resolve(root, res.stdout.trim());
-    return res.status === 0 && existsSync(path) ? [{ name, path }] : [];
+  return ["sequencer", "CHERRY_PICK_HEAD", "REVERT_HEAD"].flatMap((name) => {
+    const path = gitPath(root, name);
+    return path && existsSync(path) ? [{ name, path }] : [];
   });
+}
+
+/** What git's sequencer still has to do, as its todo file lists it: `[{ command, word, sha }]` (`sha`
+ *  the full SHA `word` names, or null), or null when there is no todo file. */
+export function sequencerTodo(root) {
+  const path = gitPath(root, "sequencer/todo");
+  if (!path || !existsSync(path)) return null;
+  return lines(readFileSync(path, "utf8"))
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => {
+      const [command, word = ""] = line.split(/\s+/);
+      return { command, word, sha: commitOf(root, word) };
+    });
+}
+
+/** True when a conflict was resolved and staged by hand: nothing is unmerged, yet the index differs
+ *  from HEAD (git stopping on a conflict leaves unmerged entries; a pick that committed leaves none). */
+export function resolvedByHand(root) {
+  const unmerged = git(root, ["ls-files", "-u", "-z"]);
+  if (unmerged.status !== 0 || unmerged.stdout !== "") return false;
+  return git(root, ["diff", "--cached", "--quiet", "HEAD", "--"]).status === 1;
+}
+
+/** The text of `file` (repo-relative) in `rev` (a commit, or "" for the index), or null. */
+export function textAt(root, rev, file) {
+  const res = git(root, ["cat-file", "blob", `${rev}:${file}`]);
+  return res.status === 0 ? res.stdout : null;
 }
 
 /** End the cherry-pick git is in the middle of, with `cherry-pick --abort` until git keeps nothing of

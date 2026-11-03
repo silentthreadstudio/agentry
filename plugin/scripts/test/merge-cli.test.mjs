@@ -889,6 +889,219 @@ test("a cherry-pick that is not this land's stops the land, and says how to clea
   assert.ok(existsSync(join(root, ".git", "CHERRY_PICK_HEAD")), "the owner's pick is left alone");
 });
 
+// --- a rerun acts only on what it can prove is its own --------------------------------------------
+
+const KILL_AT_COMMIT = "^-C [^ ]+ commit --quiet -m";
+const S2_MD = join("plan", "sprints", "S2.md");
+/** A second sprint on the board, committed: a board file the land never writes. */
+function addSprintS2() {
+  writeFileSync(
+    join(root, "plan", "BOARD.md"),
+    board().replace("| S1     | doing  |", "| S1     | doing  |\n| S2     | todo   |"),
+  );
+  writeFileSync(join(root, S2_MD), "# S2\n\n## Handoff\n\n## Notes\n\nNothing yet.\n");
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "-m", "s2");
+}
+
+// R1b-5 round 4 item 1: killed at recording, then a note in a board file the land never writes; the
+// rerun put every dirty board file back to HEAD, and the note was gone.
+test("a rerun after a kill at recording leaves alone a board file the land did not write", () => {
+  addSprintS2();
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  landKilledAt(KILL_AT_COMMIT, "before");
+  writeFileSync(join(root, S2_MD), `${readFileSync(join(root, S2_MD), "utf8")}\nOWNER'S NOTE\n`);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res)); // the note is not the land's to carry: main refuses it
+  assert.match(out(res), /✓ recover +took back the board writes a killed run left uncommitted/);
+  assert.match(out(res), /✗ main +main has 1 uncommitted change\(s\) the land cannot carry/);
+  assert.match(readFileSync(join(root, S2_MD), "utf8"), /OWNER'S NOTE/);
+  assert.equal(status(), "M plan/sprints/S2.md"); // the land's own writes taken back, the note kept
+});
+
+// R1b-5 round 4 item 1: an edit on top of the land's own board writes was restored away with them.
+test("a rerun after a kill at recording stops on a board file it wrote that changed since", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  landKilledAt(KILL_AT_COMMIT, "before");
+  writeFileSync(join(root, "plan", "BOARD.md"), `${board()}\nOWNER'S NOTE\n`);
+  const left = status();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ recover +.*a file it wrote changed since\n +plan\/BOARD\.md: /);
+  assert.match(
+    res.stdout,
+    /next: .*git restore --source=HEAD --staged --worktree -- plan\/BOARD\.md/,
+  );
+  assert.match(board(), /OWNER'S NOTE/);
+  assert.equal(status(), left); // nothing written or taken back
+  assert.equal(readLedger(root, ID).merge.step, "recording");
+});
+
+// R1b-5 round 4 item 2: a board-only commit someone else made on the picks was taken for the land's
+// board commit: the land was "done", T1 never written, exec's carried writes erased.
+test("a board-only commit on the picks that is not the land's stops it; the carry is kept", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  execWrites();
+  landKilledAt(KILL_AT_COMMIT, "before");
+  git(root, "restore", "--source=HEAD", "--staged", "--worktree", "plan");
+  writeFileSync(
+    join(root, "plan", "BOARD.md"),
+    board().replace("| T2   | S1     | todo   |         |", "| T2   | S1     | todo   | FAIL    |"),
+  );
+  git(root, "commit", "-q", "-am", "docs(board): someone else's verdict");
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ recover .*not provably this land's board commit/);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "merging");
+  assert.match(ledger.merge.carry.patch, /^\+\| T2 +\| S1 +\| doing/m);
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| S1 +\| verify +\|/);
+});
+
+// R1b-5 round 4 item 3: a revert in progress was taken for the land's own pick and aborted.
+test("a revert in progress is not the land's pick: left alone, the land stops", () => {
+  const { shas } = build({ "src/a.txt": "a\n" });
+  killedWhilePicking(shas);
+  const r1 = commitFile(root, "r1.txt", "one\n");
+  const r2 = commitFile(root, "r2.txt", "two\n");
+  commitFile(root, "r2.txt", "two changed\n");
+  spawnSync("git", ["-C", root, "revert", "--no-edit", r1, r2], { env: gitEnv }); // stops on r2
+  writeFileSync(join(root, "r2.txt"), "HAND WORK\n");
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ recover +git is in the middle of a revert that is not this land's/);
+  assert.ok(existsSync(join(root, ".git", "REVERT_HEAD")), "the revert is left alone");
+  assert.equal(readFileSync(join(root, "r2.txt"), "utf8"), "HAND WORK\n");
+});
+
+// R1b-5 round 4 item 3: someone's cherry-pick sequence, its first commit resolved and committed by
+// hand (no CHERRY_PICK_HEAD, the sequencer left for the rest), was aborted as the land's own.
+test("a cherry-pick sequence with no planned commit left in it is not the land's: left alone", () => {
+  const { shas } = build({ "src/a.txt": "a\n" });
+  killedWhilePicking(shas);
+  git(root, "checkout", "-q", "-b", "foreign");
+  const x = commitFile(root, "foreign/x.txt", "x\n");
+  const y = commitFile(root, "foreign/y.txt", "y\n");
+  git(root, "checkout", "-q", "main");
+  commitFile(root, "foreign/x.txt", "main x\n");
+  spawnSync("git", ["-C", root, "cherry-pick", x, y], { env: gitEnv }); // stops on x
+  writeFileSync(join(root, "foreign", "x.txt"), "resolved by hand\n");
+  git(root, "add", "foreign/x.txt");
+  git(root, "commit", "-q", "-m", "x, resolved by hand");
+  assert.deepEqual(pickInProgressFiles(), ["sequencer"]);
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 1, out(pf));
+  assert.match(
+    pf.stdout,
+    /✗ recover +git is in the middle of a cherry-pick that is not this land's/,
+  );
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(
+    res.stdout,
+    /✗ recover +git is in the middle of a cherry-pick that is not this land's/,
+  );
+  assert.deepEqual(pickInProgressFiles(), ["sequencer"]); // left alone
+});
+
+// R1b-5 round 4 item 3 (LOW): the land's own planned commit, picked by hand and its conflict resolved
+// and staged, was aborted with the resolution.
+test("a planned pick with a resolution staged by hand is left alone", () => {
+  const { shas } = build({ "src/c.txt": "branch side\n" });
+  commitFile(root, "src/c.txt", "main side\n");
+  killedWhilePicking(shas);
+  spawnSync("git", ["-C", root, "cherry-pick", shas[0]], { env: gitEnv }); // conflict
+  writeFileSync(join(root, "src", "c.txt"), "resolved by hand\n");
+  git(root, "add", "src/c.txt");
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ recover .*a resolution staged by hand/);
+  assert.deepEqual(pickInProgressFiles(), ["CHERRY_PICK_HEAD"]);
+  assert.equal(readFileSync(join(root, "src", "c.txt"), "utf8"), "resolved by hand\n");
+});
+
+// R1b-5 round 4 item 4: a parallel lane's cell write while the gate ran made the rollback refuse, and
+// `next` said to clear it; a plain rerun carries it and lands.
+test("a lane's cell write during the gate: next says to land again, and the rerun lands", () => {
+  // The gate is green; on its first run, T2's lane writes its status cell on main meanwhile.
+  const once = join(home, "write-once");
+  writeFileSync(once, "");
+  const writer = `import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+if (existsSync(${JSON.stringify(once)})) {
+  rmSync(${JSON.stringify(once)});
+  const b = readFileSync("plan/BOARD.md", "utf8");
+  writeFileSync("plan/BOARD.md", b.replace("| T2   | S1     | todo   |", "| T2   | S1     | doing  |"));
+}
+`;
+  commitFile(root, "gate.mjs", writer);
+  const { path } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: null });
+  openLane("T2");
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ rollback main is not clean/);
+  assert.doesNotMatch(res.stdout, /next: .*clear/);
+  assert.match(res.stdout, /next: .*run the same land again/);
+  mustLand();
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T2 +\| S1 +\| doing +\|/);
+});
+
+// R1b-5 round 4 item 5: the land's own board commit with a later commit after it stayed `merging`,
+// named "not this land's".
+test("a land killed after its board commit is recorded merged though a commit came after it", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  landKilledAt(KILL_AT_COMMIT, "after");
+  const committed = head();
+  commitFile(root, "src/next.txt", "n\n", "feat: another lane's pick");
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /✓ recover +a killed run had made the board commit/);
+  assert.match(res.stdout, /feat: another lane's pick: after it, not this land's/);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "merged");
+  assert.equal(ledger.merge.boardCommit, committed);
+});
+
+// R1b-5 round 4 item 5: a hook grew the board commit by a file; killed after it, the rerun named the
+// land's own commit "not this land's" with no way out. The recovery it prints works as written.
+test("a board commit a hook grew stops the rerun with a recovery that works", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  const hook = join(root, ".git", "hooks", "pre-commit");
+  writeFileSync(hook, "#!/bin/sh\necho gen > generated.txt\ngit add generated.txt\n");
+  chmodSync(hook, 0o755);
+  landKilledAt(KILL_AT_COMMIT, "after");
+  const grown = head();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ recover .*not provably this land's board commit: .*generated\.txt/);
+  assert.doesNotMatch(res.stdout, /not this land's$/m);
+  const reset = new RegExp(`git reset --keep ${grown.slice(0, 7)}~1`);
+  assert.match(res.stdout, reset);
+  git(root, "reset", "--keep", `${grown}~1`); // the recovery, as printed
+  mustLand();
+  assert.equal(readLedger(root, ID).state, "merged");
+  assert.equal(status(), "");
+});
+
+// R1b-5 round 4 item 6: at recording, the preflight skipped main's row, so a stray source edit read as
+// "the land clears it" (the land then refused it).
+test("the preflight after a kill at recording still names other changes on main", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  landKilledAt(KILL_AT_COMMIT, "before");
+  writeFileSync(join(root, "gate.mjs"), `${GATE_JS}// stray\n`);
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 1, out(pf));
+  assert.match(pf.stdout, /✓ recover +a killed land was writing the board: the land clears it/);
+  assert.match(pf.stdout, /✗ main +main has 1 uncommitted change\(s\) the land cannot carry/);
+  assert.match(pf.stdout, /gate\.mjs: not a board file/);
+});
+
 test("a stopped exec lane lands only with its branch named, and is then adopted", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
   execLedger({ path, gated: shas[0] });

@@ -20,13 +20,16 @@ const CARRY_RULE =
 
 // Why main's uncommitted edits of `files` cannot wait for the land, one line each; [] when they are
 // exactly lifecycle cells of tasks whose lane is open (exec's writes), read at the model level against
-// HEAD. The cells found are kept in `lane.carryCells` for the table.
-function carryProblems(lane, files) {
+// HEAD; a change in a file of `ignore` is left out. The cells found are kept in `lane.carryCells` for
+// the table.
+function carryProblems(lane, files, ignore) {
   const { root, spec, id } = lane;
   if (!spec.lifecycle) return files.map((file) => `${file}: the lifecycle is off; no write waits`);
   const after = workingBoard(root, spec);
   const before = headBoard(root, spec, after.model);
-  const diff = diffBoard({ spec, before, after, files });
+  const all = diffBoard({ spec, before, after, files });
+  const kept = (change) => !ignore.includes(change.file);
+  const diff = { cells: all.cells.filter(kept), other: all.other.filter(kept) };
   lane.carryCells = diff.cells;
   const open = listLedgers(root).filter((l) => !CLOSED.includes(l.state));
   const sameText = files
@@ -39,8 +42,9 @@ const cellLine = (c) =>
 
 /** Main's checkout: on the main branch and clean. With `carry`, uncommitted edits that are exactly
  *  lifecycle cells of open lanes (exec's writes) are allowed too and listed in `lane.carried`; anything
- *  else refuses, each change named. */
-export function mainRow(lane, { carry = false } = {}) {
+ *  else refuses, each change named. `ignore`: files left out (a killed land's own board writes, which
+ *  the land clears first). */
+export function mainRow(lane, { carry = false, ignore = [] } = {}) {
   const { root, ledger } = lane;
   lane.carried = [];
   const on = currentBranch(root);
@@ -49,8 +53,9 @@ export function mainRow(lane, { carry = false } = {}) {
       "main",
       `the main checkout is on ${on ?? "a detached HEAD"}, not ${ledger.mainBranch}`,
     );
-  const entries = statusEntries(root);
-  if (!entries) return red("main", "git status failed in the main checkout");
+  const all = statusEntries(root);
+  if (!all) return red("main", "git status failed in the main checkout");
+  const entries = all.filter((entry) => !ignore.includes(entry.slice(3)));
   const at = `${ledger.mainBranch} at ${short(commitOf(root, "HEAD"))}`;
   if (entries.length === 0) return ok("main", `${at}, clean`);
   const files = entries.map((entry) => entry.slice(3));
@@ -63,7 +68,7 @@ export function mainRow(lane, { carry = false } = {}) {
       ...(ours ? ["add .agentry/run/ to .gitignore: the lane's own files live there"] : []),
     ]);
   }
-  const problems = carryProblems(lane, files);
+  const problems = carryProblems(lane, files, ignore);
   if (problems.length > 0)
     return red(
       "main",

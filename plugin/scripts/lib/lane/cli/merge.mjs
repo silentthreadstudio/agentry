@@ -23,14 +23,14 @@ import { realpathSync } from "node:fs";
 import { gateOf } from "../../process/spec.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
-import { attributionIn, mergeBaseOf, pickInProgress } from "../land.mjs";
+import { attributionIn, mergeBaseOf } from "../land.mjs";
 import { carryBackStep, giveBack, mainRow, mainStep, takeCarryStep } from "../merge/carry.mjs";
 import { gateStep } from "../merge/gating.mjs";
 import { FRESH, afterLand, checkNext, done, landNext, ok, red, short } from "../merge/lane.mjs";
 import { check, cleanupMode, pushMode } from "../merge/modes.mjs";
 import { landStep } from "../merge/picks.mjs";
 import { commitStep, recordStep } from "../merge/record.mjs";
-import { clearedByTheLand, recoverStep } from "../merge/recover.mjs";
+import { recoverPreview, recoverStep } from "../merge/recover.mjs";
 import {
   boardRow,
   checksState,
@@ -108,13 +108,13 @@ function preflight(lane) {
     rows.push(ok("land", `already merged (board commit ${short(lane.ledger.merge?.boardCommit)})`));
     return done(0, lane, rows, afterLand(lane));
   }
-  const cleared = clearedByTheLand(lane);
-  if (cleared) rows.push(ok("recover", cleared));
-  else if (pickInProgress(lane.root).length > 0)
-    rows.push(red("recover", "git is in the middle of a cherry-pick that is not this land's"));
+  // What a killed land left: the land's own board writes are its to clear, any other change on main
+  // still shows in main's row; git mid-pick in the land's own leaves main's row to the land.
+  const left = recoverPreview(lane);
+  if (left.row) rows.push(left.row);
   const merge = lane.ledger.merge;
   rows.push(boardRow(lane));
-  if (!cleared) rows.push(mainRow(lane, { carry: true }));
+  if (!left.skipMain) rows.push(mainRow(lane, { carry: true, ignore: left.ignore }));
   if (merge?.carry)
     rows.push(
       ok(

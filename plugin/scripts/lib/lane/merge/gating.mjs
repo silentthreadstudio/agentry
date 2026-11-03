@@ -102,7 +102,7 @@ export function rollBack(lane, rows) {
     rows.push(red("rollback", back.reason));
     return {
       exit: 1,
-      next: `${mainBranch} still holds the ${merge.landed.length} landed commit(s) on ${short(merge.preHead)}: clear what the rollback row names, then land again (the gate runs again; a red one retries the rollback)`,
+      next: `${mainBranch} still holds the ${merge.landed.length} landed commit(s) on ${short(merge.preHead)}: run the same land again. It sets aside lifecycle writes of open lanes (one made while the gate ran, too) and gates again: green lands, red retries the rollback. Any other change it names stops it`,
     };
   }
   rows.push(ok("rollback", `${mainBranch} reset to ${short(merge.preHead)}: the picks are off it`));
