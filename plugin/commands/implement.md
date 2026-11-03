@@ -11,6 +11,6 @@ Brief for the implementer:
 - Write tests against the contract/behavior; satisfy the task's Acceptance.
 - Return via the **four-status protocol**: `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `BLOCKED`, plus `used_memories`.
 
-Lifecycle runs through the Flow MCP if present — the conductor assigns the task with `task_assign(run, …)` and moves it through `task_status(run, …)` as the implementer reports (so the run stays resumable and visible in the Workbench); the build itself persists under `.agentry/work/<id>/…`.
+On an escalated run the conductor keeps the task file's `status:` current (`in-progress` on dispatch, `in-review` and then `done` as the implementer reports), so the run stays resumable from `.agentry/work/<run>/`.
 
 For parallel tasks with disjoint contracts, dispatch implementers concurrently (consider `isolation: worktree` so they can't clobber each other). Route the returned status: `DONE` → verify; `NEEDS_CONTEXT`/`BLOCKED` → resolve before retrying.
