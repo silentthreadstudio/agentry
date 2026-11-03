@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { LOW_DISK, plan } from "../lib/lane/sweep.mjs";
 import { boardRepo, builtBranch, handBranch, ledger } from "./drift-repo.mjs";
 import { git, gitEnv } from "./git-repo.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
 const cleanups = [];
@@ -205,11 +206,15 @@ test("a merged worktree holding only node_modules and dist output is swept, and 
   assert.ok(!existsSync(merged.path));
 });
 
-test("cleanup.disposable from the process file adds to the defaults in the sweep", () => {
+test("cleanup.disposable from the workflow file adds to the defaults in the sweep", () => {
   const { root, merged } = fixture();
-  const file = join(root, ".agentry", "process.json");
-  const spec = JSON.parse(readFileSync(file, "utf8"));
-  writeFileSync(file, JSON.stringify({ ...spec, cleanup: { disposable: ["cache/**"] } }));
+  const dir = join(root, ".agentry");
+  const read = (name) => JSON.parse(readFileSync(join(dir, name), "utf8"));
+  const spec = {
+    ...read("process.json"),
+    ...(existsSync(join(dir, "workflow.json")) ? read("workflow.json") : {}),
+  };
+  writeSpec(dir, { ...spec, cleanup: { disposable: ["cache/**"] } });
   appendFileSync(join(root, ".git", "info", "exclude"), "cache/\ndist/\n");
   for (const dir of ["cache", "dist"]) {
     mkdirSync(join(merged.path, dir));
