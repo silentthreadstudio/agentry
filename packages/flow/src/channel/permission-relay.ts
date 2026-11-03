@@ -18,6 +18,7 @@ import { join } from "node:path";
 //   request: <request_id>.json          (flow writes; PermissionRequestFile)
 //   verdict: <request_id>.verdict.json  (Workbench writes; { request_id, behavior })
 import { type FSWatcher, watch } from "chokidar";
+import { bounded } from "./bounded.js";
 import {
   PermissionRequestSchema,
   type PermissionVerdictNotification,
@@ -74,7 +75,7 @@ export class PermissionRelay {
     // present at startup (a verdict written while flow was down should still be honored if pending).
     this.watcher = watch(dir, {
       ignoreInitial: false,
-      persistent: true,
+      persistent: false, // a leaked watcher must never keep the process alive; stdio does that in prod
       depth: 0, // verdict files are direct children of the permissions dir
     });
     const w = this.watcher;
@@ -89,17 +90,20 @@ export class PermissionRelay {
   }
 
   // Resolves once the watcher finished its initial scan, so a verdict written after this is seen as
-  // a live event. Resolves at once when never started.
+  // a live event. Resolves at once when never started, and after a bounded wait if the scan stalls.
   ready(): Promise<void> {
-    return this.readyP ?? Promise.resolve();
+    return this.readyP === undefined
+      ? Promise.resolve()
+      : bounded(this.readyP, "permission relay ready");
   }
 
   // Tear down the watcher (shutdown path). Safe to call when never started.
   async stop(): Promise<void> {
     if (this.watcher === undefined) return;
-    await this.watcher.close();
+    const w = this.watcher;
     this.watcher = undefined;
     this.readyP = undefined;
+    await bounded(w.close(), "permission relay close");
   }
 
   // Test/inspection seam: a snapshot of the ids flow is currently awaiting a verdict on.

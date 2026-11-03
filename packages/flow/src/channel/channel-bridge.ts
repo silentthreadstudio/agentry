@@ -18,6 +18,7 @@ import { basename, dirname, relative, sep } from "node:path";
 import { type FSWatcher, watch } from "chokidar";
 import type { ReviewStore } from "../domain/ports.js";
 import { workRoot } from "../resolution/run-pointer.js";
+import { bounded } from "./bounded.js";
 import { type ChannelNotification, commentIds, diffNewComments } from "./channel-event.js";
 
 // What the bridge needs to emit — a single async fn so the SDK (and its custom-method cast) stays in
@@ -101,8 +102,9 @@ export class ChannelBridge {
   // Tear down the watcher (shutdown path). Safe to call when never started.
   async stop(): Promise<void> {
     if (this.watcher === undefined) return;
-    await this.watcher.close();
+    const w = this.watcher;
     this.watcher = undefined;
+    await bounded(w.close(), "channel bridge close");
   }
 
   // Record every comment id on a sidecar as seen WITHOUT emitting — the startup seed.

@@ -30221,6 +30221,20 @@ function writeSessionPointer(cwd, session_id, run) {
   renameSync(tmp, target);
 }
 
+// src/channel/bounded.ts
+var WATCHER_STEP_MS = 5e3;
+async function bounded(step, what, ms = WATCHER_STEP_MS) {
+  let timer;
+  const timedOut = new Promise((resolve3) => {
+    timer = setTimeout(() => resolve3(true), ms);
+    timer.unref();
+  });
+  const stalled = await Promise.race([step.then(() => false), timedOut]);
+  clearTimeout(timer);
+  if (stalled) process.stderr.write(`[flow] ${what} did not settle within ${ms} ms; continuing
+`);
+}
+
 // src/domain/review.ts
 var ReviewDecision = external_exports.enum(["approve", "changes", "question"]);
 var ReviewAnchor = external_exports.object({
@@ -30347,8 +30361,9 @@ var ChannelBridge = class {
   // Tear down the watcher (shutdown path). Safe to call when never started.
   async stop() {
     if (this.watcher === void 0) return;
-    await this.watcher.close();
+    const w = this.watcher;
     this.watcher = void 0;
+    await bounded(w.close(), "channel bridge close");
   }
   // Record every comment id on a sidecar as seen WITHOUT emitting — the startup seed.
   seedSidecar(run, gate) {
@@ -30450,7 +30465,8 @@ var PermissionRelay = class {
     mkdirSync3(dir, { recursive: true });
     this.watcher = watch(dir, {
       ignoreInitial: false,
-      persistent: true,
+      persistent: false,
+      // a leaked watcher must never keep the process alive; stdio does that in prod
       depth: 0
       // verdict files are direct children of the permissions dir
     });
@@ -30464,16 +30480,17 @@ var PermissionRelay = class {
     this.watcher.on("change", onPath);
   }
   // Resolves once the watcher finished its initial scan, so a verdict written after this is seen as
-  // a live event. Resolves at once when never started.
+  // a live event. Resolves at once when never started, and after a bounded wait if the scan stalls.
   ready() {
-    return this.readyP ?? Promise.resolve();
+    return this.readyP === void 0 ? Promise.resolve() : bounded(this.readyP, "permission relay ready");
   }
   // Tear down the watcher (shutdown path). Safe to call when never started.
   async stop() {
     if (this.watcher === void 0) return;
-    await this.watcher.close();
+    const w = this.watcher;
     this.watcher = void 0;
     this.readyP = void 0;
+    await bounded(w.close(), "permission relay close");
   }
   // Test/inspection seam: a snapshot of the ids flow is currently awaiting a verdict on.
   pendingIds() {
@@ -30560,8 +30577,9 @@ var StatusBridge = class {
   }
   async stop() {
     if (this.watcher === void 0) return;
-    await this.watcher.close();
+    const w = this.watcher;
     this.watcher = void 0;
+    await bounded(w.close(), "status bridge close");
   }
   // Read + parse one signal file, emit the channel note, delete the file. A malformed file is dropped
   // (no throw) so a stray/partial write never wedges the watcher.

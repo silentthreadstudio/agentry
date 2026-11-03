@@ -10,6 +10,7 @@ import { join } from "node:path";
 // channel silently drops the notification (spike-proven), so the bridge needs no enablement branch — and it
 // still deletes the file, so signals never accumulate when channels are off.
 import { type FSWatcher, watch } from "chokidar";
+import { bounded } from "./bounded.js";
 import type { EmitFn } from "./channel-bridge.js";
 import { StatusSignal, statusNotification } from "./status-event.js";
 
@@ -37,8 +38,9 @@ export class StatusBridge {
 
   async stop(): Promise<void> {
     if (this.watcher === undefined) return;
-    await this.watcher.close();
+    const w = this.watcher;
     this.watcher = undefined;
+    await bounded(w.close(), "status bridge close");
   }
 
   // Read + parse one signal file, emit the channel note, delete the file. A malformed file is dropped
