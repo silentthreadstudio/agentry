@@ -37,7 +37,7 @@ const links = [
       data-menu-btn
     >
       <span class="menu-btn__icon" aria-hidden="true"><span></span><span></span><span></span></span>
-      Menu
+      <span class="menu-btn__label">Menu</span>
     </button>
     <ul id="site-links" class="links" data-menu-panel>
       {
@@ -215,6 +215,34 @@ const links = [
 
     :global(.js) .links.is-open {
       display: flex;
+    }
+  }
+
+  /* ---- below 390 px (the full bar needs 388): tighter gaps, icon-only Menu; the label stays
+     for screen readers ---- */
+  @media (max-width: 389px) {
+    .nav {
+      column-gap: 8px;
+    }
+
+    .cta {
+      padding-inline: 16px;
+    }
+
+    :global(.js) .menu-btn {
+      justify-content: center;
+      width: 44px;
+      padding: 0;
+    }
+
+    .menu-btn__label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
     }
   }
 </style>
