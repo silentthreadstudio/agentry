@@ -1,5 +1,5 @@
 // Tests for lib/process/instruction-lint.mjs (the four rules on text) and `board instructions --lint`
-// (cli/instructions-lint.mjs: which files are read, how a finding prints, what never changes).
+// (instructions-lint.mjs: which files are read, how a finding prints, what never changes).
 // Run: node --test plugin/scripts/test/instruction-lint.test.mjs
 import assert from "node:assert/strict";
 import {

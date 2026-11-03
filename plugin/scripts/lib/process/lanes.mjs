@@ -22,7 +22,8 @@ import { readInside } from "./read.mjs";
 import { columns } from "./render.mjs";
 import { WORKFLOW_KEYS } from "./spec.mjs";
 import { SPEC_VERSION } from "./spec/board.mjs";
-import { gateOf, sessionChecks } from "./spec/workflow.mjs";
+import { sessionChecks } from "./spec/extensions.mjs";
+import { gateOf } from "./spec/workflow.mjs";
 
 const INIT = "/agentry:init";
 // What `.agentry/` holds, and the command that decides each when it is neither tracked nor ignored.

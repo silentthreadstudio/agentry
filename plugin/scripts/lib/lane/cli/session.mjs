@@ -26,7 +26,7 @@ import { run as fix } from "../../process/cli/fix.mjs";
 import * as drafts from "../../process/drafts.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { fit } from "../../process/render.mjs";
-import { sessionChecks } from "../../process/spec/workflow.mjs";
+import { sessionChecks } from "../../process/spec/extensions.mjs";
 import { statusView, titleOf, workKind } from "../../process/status.mjs";
 import { runText } from "../../process/steps.mjs";
 import { forThisRepo, primeLimitOf } from "../brief.mjs";

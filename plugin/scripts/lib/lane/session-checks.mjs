@@ -14,7 +14,7 @@
 //   View = { named, recorded: [{ skill, result, note?, at }], pending, failed, missing }
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { sessionChecks } from "../process/spec/workflow.mjs";
+import { sessionChecks } from "../process/spec/extensions.mjs";
 import { skillExists } from "./merge/rows.mjs";
 
 const PHASES = ["start", "close"];
