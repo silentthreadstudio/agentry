@@ -193,7 +193,8 @@ function blockLines(view, s) {
 const SHOWN = 4;
 
 /** Drift and drafts: one row per nudge (`! kind subject → command`), the first few, then "+N more"; the
- *  pending drafts on their own row. Nothing at all when there are none. */
+ *  pending drafts on their own row. A row too wide wraps between words, the rest indented under it, so a
+ *  command is never cut. Nothing at all when there are none. */
 function driftLines(view, s) {
   const nudges = view.nudges ?? [];
   const rows = nudges.slice(0, SHOWN).map((n) => {
@@ -201,9 +202,11 @@ function driftLines(view, s) {
     return `! ${n.kind} ${subject} → ${n.command}`;
   });
   if (nudges.length > SHOWN) rows.push(`+${nudges.length - SHOWN} more: /agentry:board`);
-  const lines = rows.map((text, n) => {
-    const shown = fit(text, WIDTH - LABEL);
-    return row(n ? "" : "Drift", shown.startsWith("!") ? s.cyan("!") + shown.slice(1) : shown, s);
+  const room = WIDTH - LABEL;
+  const lines = rows.flatMap((text, n) => {
+    const [first, ...rest] = wrapText(text, room, room - 2);
+    const glyph = first.startsWith("!") ? s.cyan("!") + first.slice(1) : first;
+    return [row(n ? "" : "Drift", glyph, s), ...rest.map((l) => `${" ".repeat(LABEL + 2)}${l}`)];
   });
   if (view.drafts)
     lines.push(row("Drafts", line(`${view.drafts} pending · /agentry:board draft list`), s));

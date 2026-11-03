@@ -310,3 +310,21 @@ test("with more than four nudges the rest are counted, and no line passes 80 col
   const tty = renderStatus({ spec, report, view, work, tty: true });
   assert.ok(tty.includes(`${ESC}[36m!${ESC}[0m`), "only the glyph is colored");
 });
+
+test("a nudge wider than its row wraps between words: the command is whole", () => {
+  const { spec, report, view, work } = driftView();
+  const branch = "worktree-agent-a1b23d1ce1f7e212b";
+  const command = `/agentry:merge T7 --branch ${branch}, then /agentry:board --fix --accept T7`;
+  const nudges = [{ kind: "merged-by-hand", id: "T7", branch, command }];
+  const text = renderStatus({ spec, report, view: { ...view, nudges }, work });
+  const lines = text.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("Drift      ! merged-by-hand T7 → "));
+  assert.ok(at >= 0, text);
+  assert.match(lines[at + 1], /^ {13}\S/, "the rest indented under the row");
+  const joined = lines
+    .slice(at, at + 3)
+    .join(" ")
+    .replace(/\s+/g, " ");
+  assert.ok(joined.includes(command), text);
+  assert.ok(cols(text) <= WIDTH, text);
+});
