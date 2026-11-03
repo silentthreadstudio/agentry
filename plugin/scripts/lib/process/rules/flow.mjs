@@ -1,7 +1,9 @@
 // Flow rules: what may start, in which order, and what waits on parked work. Pure.
 import {
+  CLOSED,
   EXCEPT,
   STARTED,
+  contractHome,
   finding,
   idsIn,
   kindParam,
@@ -178,4 +180,45 @@ const depsNotForward = {
   },
 };
 
-export const rules = [depsDone, parentActive, sequential, questionBlocks, parked, depsNotForward];
+const readyHasContract = {
+  id: "ready-has-contract",
+  params: {
+    kind: kindParam("parent", "parent-status"),
+    skip: { type: "strings", default: [], names: ["id", "parent"] },
+    except: EXCEPT,
+  },
+  check(model, params, ctx) {
+    if (typeof ctx?.contractOf !== "function") throw new Error("needs the board's contract lookup");
+    const kind = param(params, "kind");
+    const out = [];
+    for (const item of scope(model, params)) {
+      if (CLOSED.has(item.phase) || params.skip.includes(item.id)) continue;
+      if (params.skip.includes(item.parent)) continue;
+      const parent = parentOf(model, item);
+      if (parent?.phase !== "active") continue;
+      const { status } = ctx.contractOf(kind, item.id);
+      if (status === "found") continue;
+      const head = `${item.id} is open in ${parent.kind} ${parent.id}`;
+      out.push(
+        finding(
+          "ready-has-contract",
+          item,
+          status === "ambiguous"
+            ? `${head} but its contract is in more than one place; keep one (board contract ${item.id})`
+            : `${head} with no contract; add ${contractHome(kindSpec(model, kind).contract, item.id)} so board contract ${item.id} finds it`,
+        ),
+      );
+    }
+    return out;
+  },
+};
+
+export const rules = [
+  depsDone,
+  parentActive,
+  sequential,
+  questionBlocks,
+  parked,
+  depsNotForward,
+  readyHasContract,
+];

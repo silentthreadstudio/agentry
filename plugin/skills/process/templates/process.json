@@ -203,7 +203,8 @@
     { "rule": "done-signoff", "kind": "sprint", "field": "signoff" },
     { "rule": "sequential", "kind": "sprint" },
     { "rule": "question-blocks", "kind": "question", "field": "blocks" },
-    { "rule": "deps-not-forward", "kind": "task", "field": "deps" }
+    { "rule": "deps-not-forward", "kind": "task", "field": "deps" },
+    { "rule": "ready-has-contract", "kind": "task" }
   ],
   "lifecycle": {
     "kind": "task",

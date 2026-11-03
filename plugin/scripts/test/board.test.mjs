@@ -19,6 +19,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { check } from "../lib/process/check.mjs";
 import { explain } from "../lib/process/cli/explain.mjs";
+import { findContract } from "../lib/process/contract.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -376,7 +377,12 @@ test("the router hands a subcommand its argv untouched (add takes --json <fields
 test("the process skill's templates make a board every enabled rule passes", () => {
   const { spec, problems } = loadSpec(join(TEMPLATES, "process.json"));
   assert.deepEqual(problems, []);
-  const model = readProcess({ root: TEMPLATES, spec: { ...spec, root: "." } });
+  const here = { ...spec, root: "." };
+  const model = readProcess({ root: TEMPLATES, spec: here });
   assert.deepEqual(model.problems, []);
-  assert.deepEqual(check(model, spec.rules, { hasCommit: () => false }), []);
+  const ctx = {
+    hasCommit: () => false,
+    contractOf: (kind, id) => findContract({ root: TEMPLATES, spec: here, id, kind }),
+  };
+  assert.deepEqual(check(model, spec.rules, ctx), []);
 });

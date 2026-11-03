@@ -114,6 +114,7 @@ file declares for that field, nor an item of the kind the field refs) is a findi
 | `question-blocks` | nothing starts while an open question blocks it |
 | `parked` | the parking parent's children are parked; nothing live depends on a parked item |
 | `deps-not-forward` | no dependency on an item later in the order |
+| `ready-has-contract` | an unfinished item in an active parent has a contract that `board contract <id>` finds (the build step, `/agentry:exec`, needs it) |
 | `done-has-evidence` | a done item names its commit (`commit-or-note`: or a note), and every commit named exists in git |
 | `done-has-handoff` | a done item has a line in its parent's handoff section (`commit`: the SHA that line must name) |
 | `flagged-needs-verdict` | a flagged done item has a passing verdict |
@@ -161,6 +162,9 @@ refuses a file where no kind's is. Likewise `status-known` refuses a file where 
 | `deps-not-forward` | `field` | no | the first field that fits | a list field whose ref includes the rule's kind |
 | `deps-not-forward` | `skip` | no | `[]` | a list of ids of the kind's items or their parents |
 | `deps-not-forward` | `except` | no | — | `{ field or "id": [values] }` |
+| `ready-has-contract` | `kind` | yes | — | a kind with `parent`, `parent-status` |
+| `ready-has-contract` | `skip` | no | `[]` | a list of ids of the kind's items or their parents |
+| `ready-has-contract` | `except` | no | — | `{ field or "id": [values] }` |
 | `done-has-evidence` | `kind` | yes | — | a kind with `done` |
 | `done-has-evidence` | `field` | yes | — | a commits or evidence field |
 | `done-has-evidence` | `evidence` | yes | — | `"commit"` or `"commit-or-note"` |

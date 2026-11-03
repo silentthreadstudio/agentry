@@ -1,7 +1,10 @@
 // Tests for the flow rules: deps-done, parent-active, sequential, question-blocks, parked, deps-not-forward.
 import assert from "node:assert/strict";
+import { appendFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import { rules } from "../lib/process/rules/flow.mjs";
+import { VALID, brokenBoard, outcome } from "./broken-boards.mjs";
 import { makeModel, question, run, sprint, task } from "./rules-model.mjs";
 
 const rule = (id) => rules.find((r) => r.id === id);
@@ -240,5 +243,84 @@ test("the rules that read ids take a value of any shape: one id as a list of one
       const what = `${id} on ${JSON.stringify(id === "question-blocks" ? blocks : deps)}`;
       assert.equal(run(rule(id), model, params).length, n < 2 ? 1 : 0, what);
     }
+  }
+});
+
+// ready-has-contract: the ctx answers `contractOf(kind, id)` the way the board's contract lookup does.
+const contracts = (...found) => ({
+  contractOf: (_kind, id) => ({ status: found.includes(id) ? "found" : "not-found" }),
+});
+const ready = (model, params, ...found) =>
+  run(rule("ready-has-contract"), model, { kind: "task", ...params }, contracts(...found));
+
+test("ready-has-contract flags an unfinished task in an open sprint with no contract, naming it and where to add one", () => {
+  const model = makeModel([sprint("S1", "doing"), task("T1", "S1", "todo")]);
+  const [found] = ready(model, {});
+  assert.equal(found.id, "T1");
+  assert.match(found.message, /T1 .*S1/);
+  assert.match(found.message, /board contract T1/);
+});
+
+test("ready-has-contract passes a task whose contract is found", () => {
+  const model = makeModel([sprint("S1", "doing"), task("T1", "S1", "doing")]);
+  assert.deepEqual(ready(model, {}, "T1"), []);
+});
+
+test("ready-has-contract ignores done and parked tasks, and tasks in a sprint that is not open", () => {
+  const model = makeModel([
+    sprint("S1", "doing"),
+    sprint("S2", "todo"),
+    sprint("S3", "done"),
+    task("T1", "S1", "done"),
+    task("T2", "S1", "later"),
+    task("T3", "S2", "todo"),
+    task("T4", "S3", "todo"),
+  ]);
+  assert.deepEqual(ready(model, {}), []);
+});
+
+test("ready-has-contract honours skip (a task or its sprint) and except", () => {
+  const model = makeModel([
+    sprint("S1", "doing"),
+    sprint("S2", "doing"),
+    task("T1", "S1", "todo"),
+    task("T2", "S2", "todo"),
+    task("T3", "S2", "todo", { risky: true }),
+  ]);
+  assert.deepEqual(
+    ready(model, { skip: ["T1", "S2"] }).map((f) => f.id),
+    [],
+  );
+  assert.deepEqual(
+    ready(model, { except: { risky: [true] } }).map((f) => f.id),
+    ["T1", "T2"],
+  );
+});
+
+test("ready-has-contract reports an ambiguous contract as not usable", () => {
+  const model = makeModel([sprint("S1", "doing"), task("T1", "S1", "todo")]);
+  const ctx = { contractOf: () => ({ status: "ambiguous" }) };
+  const [found] = run(rule("ready-has-contract"), model, { kind: "task" }, ctx);
+  assert.match(found.message, /more than one/);
+});
+
+test("ready-has-contract on a real board: finds the missing contract, clears once it is written", () => {
+  const root = brokenBoard("ready-has-contract");
+  try {
+    const spec = { ...VALID, rules: [{ rule: "ready-has-contract", kind: "task", skip: ["TRK"] }] };
+    const before = outcome(spec, root).messages;
+    assert.equal(before.length, 1, before.join(" | "));
+    assert.match(
+      before[0],
+      /^ready-has-contract: W4 is open in sprint A2 with no contract; add a .*TASKS\.md/,
+    );
+    const tasks = join(root, "docs", "board", "TASKS.md");
+    appendFileSync(
+      tasks,
+      "\n**W4 · Evening events** (A2): owns `src/events.mjs` · accept: events fire.\n",
+    );
+    assert.deepEqual(outcome(spec, root).messages, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

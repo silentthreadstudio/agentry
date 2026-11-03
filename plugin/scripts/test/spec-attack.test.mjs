@@ -288,7 +288,7 @@ test("every need of every rule is what refuses a kind without it, and nothing el
       }
     }
   }
-  assert.equal(n, 20, "needs entries in the catalog");
+  assert.equal(n, 22, "needs entries in the catalog");
 });
 
 test("file-required without a kind is refused where no kind's file is required", () => {

@@ -7,7 +7,9 @@
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written, 2 = usage or refusal
 import { join } from "node:path";
+import { findContract } from "../contract.mjs";
 import { nextId } from "../ids.mjs";
+import { contractHome } from "../rules/structure.mjs";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, appendBlock, applyAll, insertRow } from "../write.mjs";
 
@@ -159,6 +161,11 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   } catch (error) {
     if (error instanceof WriteError) return fail(error.message);
     throw error;
+  }
+  // A kind with a contract setting is built from it (`/agentry:exec`): say when the new item has none.
+  if (kind.contract && findContract({ root, spec, id, kind: kindName }).status !== "found") {
+    const home = contractHome(kind.contract, id);
+    notes.push(`no contract for ${id}: add ${home}; board contract ${id} finds none yet`);
   }
   return { exit: 0, out: [`added ${kindName} ${id}`, ...notes.map((n) => `  ${n}`)].join("\n") };
 }

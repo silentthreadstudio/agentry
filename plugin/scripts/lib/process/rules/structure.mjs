@@ -44,6 +44,14 @@ export function finding(rule, item, message) {
 /** The items with this id, any kind (the board's own words never reach a built-in such as `constructor`). */
 export const withId = (model, id) => (Object.hasOwn(model.index, id) ? model.index[id] : []);
 
+/** Where a kind's contract for `id` goes, as a finding words it: the kind's `contract` setting's first
+ *  file and lead style (`heading` for `### T4 · …`, else `**T4** …`). */
+export function contractHome(contract, id) {
+  const file = contract?.blocks?.[0] ?? "a TASKS.md";
+  const heading = (contract?.lead ?? ["heading"])[0] === "heading";
+  return `a "${heading ? `### ${id} · …` : `**${id}** …`}" block in ${file}`;
+}
+
 export const refKinds = (field) => [field?.ref].flat().filter(Boolean);
 
 /** The ids a field value holds, whatever its shape: a list's strings, one id as a list of one, else

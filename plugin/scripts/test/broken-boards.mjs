@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { check } from "../lib/process/check.mjs";
+import { findContract } from "../lib/process/contract.mjs";
 import { readProcess } from "../lib/process/read.mjs";
 import { checkOnBoard, validateSpec } from "../lib/process/spec.mjs";
 
@@ -27,6 +28,7 @@ export const ENTRIES = {
   "question-blocks": { kind: "question", field: "blocks" },
   parked: { kind: "task", parking: "LATER" },
   "deps-not-forward": { kind: "task", field: "deps", skip: ["LATER"] },
+  "ready-has-contract": { kind: "task", skip: ["LATER"] },
   "done-has-evidence": { kind: "task", field: "commit", evidence: "commit" },
   "done-has-handoff": { kind: "task", section: "handoff", commit: "first" },
   "flagged-needs-verdict": { kind: "task", flag: "risky", verdict: "verdict", pass: ["PASS"] },
@@ -47,6 +49,7 @@ export const BREAK = {
   "question-blocks": [["| W5 | B1 | todo |", "| W5 | B1 | doing |"]],
   parked: [["| W5 | B1 | todo | W4 |", "| W5 | LATER | todo | W4 |"]],
   "deps-not-forward": [["| W2 | A1 | done | W1 |", "| W2 | A1 | done | W1, W5 |"]],
+  "ready-has-contract": [], // W4 is in the open A2 with no contract
   "done-has-evidence": [], // W0 is done without a commit
   "done-has-handoff": [], // W0's sprint PRE has no file
   "flagged-needs-verdict": [["| ⚑ | PASS | a1b2c3d |", "| ⚑ | FAIL | a1b2c3d |"]],
@@ -80,6 +83,10 @@ export function outcome(spec, root) {
   const model = readProcess({ root, spec });
   const late = checkOnBoard(spec, model);
   if (late.length) return { exit: 2, messages: late.map((p) => p.message) };
-  const found = [...model.problems, ...check(model, spec.rules, { hasCommit: () => true })];
+  const ctx = {
+    hasCommit: () => true,
+    contractOf: (kind, id) => findContract({ root, spec, id, kind }),
+  };
+  const found = [...model.problems, ...check(model, spec.rules, ctx)];
   return { exit: found.length ? 1 : 0, messages: found.map((f) => `${f.rule}: ${f.message}`) };
 }

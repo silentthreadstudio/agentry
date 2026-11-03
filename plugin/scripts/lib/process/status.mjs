@@ -9,6 +9,7 @@
 // main checkout, and add nothing to a repo with neither.
 import { join } from "node:path";
 import { check } from "./check.mjs";
+import { findContract } from "./contract.mjs";
 import * as drafts from "./drafts.mjs";
 import { nudges } from "./drift.mjs";
 import * as git from "./git.mjs";
@@ -71,7 +72,10 @@ function shasOf(spec, model) {
 /** Load-time problems plus every enabled rule's findings, and the counts the header shows. */
 export function boardReport({ root, spec, model }) {
   git.knownCommits(root, shasOf(spec, model)); // one git process for the whole board
-  const ctx = { hasCommit: (sha) => git.hasCommit(root, sha) };
+  const ctx = {
+    hasCommit: (sha) => git.hasCommit(root, sha),
+    contractOf: (kind, id) => findContract({ root, spec, id, kind }),
+  };
   const findings = [...model.problems, ...check(model, spec.rules, ctx)];
   const items = Object.fromEntries(
     Object.entries(model.kinds).map(([k, v]) => [k, v.items.length]),

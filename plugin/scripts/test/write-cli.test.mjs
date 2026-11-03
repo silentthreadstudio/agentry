@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { check } from "../lib/process/check.mjs";
 import { run as add } from "../lib/process/cli/add.mjs";
 import { run as set } from "../lib/process/cli/set.mjs";
+import { findContract } from "../lib/process/contract.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -43,9 +44,11 @@ const addTask = (root, fields, kind = "task") =>
 const findings = (root) => {
   const { spec } = loadSpec(join(root, "process.json"));
   const model = readProcess({ root, spec });
-  return check(model, spec.rules, { hasCommit: () => true }).map(
-    (f) => `${f.rule}|${f.id}|${f.message}`,
-  );
+  const ctx = {
+    hasCommit: () => true,
+    contractOf: (kind, id) => findContract({ root, spec, id, kind }),
+  };
+  return check(model, spec.rules, ctx).map((f) => `${f.rule}|${f.id}|${f.message}`);
 };
 
 test("add writes the row after the sprint's last row, the sprint file row and the templated block", () => {
@@ -334,6 +337,33 @@ test("add still requires an id when create.id is ask", () => {
   const result = addTask(root, { sprint: "A1", note: "No id" });
   assert.equal(result.exit, 2);
   assert.match(result.out, /needs an "id"/);
+});
+
+// The write board with a contract declared for tasks (and, optionally, no block written on create).
+function contracted({ blocks = true } = {}) {
+  const root = copy("write");
+  const file = join(root, "process.json");
+  const spec = JSON.parse(readFileSync(file, "utf8"));
+  spec.kinds.task.contract = { blocks: ["TASKS.md"], lead: ["bold"] };
+  if (!blocks) spec.kinds.task.create.blocks = undefined;
+  writeFileSync(file, JSON.stringify(spec));
+  return root;
+}
+
+test("add warns that a new task has no contract exec can find, and says how to add one", () => {
+  const root = contracted({ blocks: false });
+  const result = addTask(root, { id: "W4", sprint: "A1", note: "Fourth" });
+  assert.equal(result.exit, 0, result.out);
+  assert.match(result.out, /no contract for W4/);
+  assert.match(result.out, /\*\*W4\*\*.*TASKS\.md/);
+  assert.match(result.out, /board contract W4/);
+});
+
+test("add says nothing about contracts when the block it writes is one the lookup finds", () => {
+  const root = contracted();
+  const result = addTask(root, { id: "W4", sprint: "A1", note: "Fourth" });
+  assert.equal(result.exit, 0, result.out);
+  assert.doesNotMatch(result.out, /contract/);
 });
 
 test("add refuses a pattern that needs more than a number, writing nothing", () => {

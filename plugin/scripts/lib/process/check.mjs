@@ -1,4 +1,5 @@
-// Model x enabled rules -> Finding[]. Pure; the only outside reach is ctx.hasCommit, used by evidence rules.
+// Model x enabled rules -> Finding[]. Pure; the only outside reach is ctx: hasCommit (evidence rules)
+// and contractOf (ready-has-contract).
 import { ruleOf, withDefaults } from "./rules/index.mjs";
 import { refKinds, withId } from "./rules/structure.mjs";
 
@@ -60,7 +61,7 @@ function strays(model, rule, entry, i) {
   );
 }
 
-// `entries` are the process file's rules ({ rule, label?, kind?, ...params }); `ctx` is { hasCommit(sha) }.
+// `entries` are the process file's rules ({ rule, label?, kind?, ...params }); `ctx` is { hasCommit(sha), contractOf(kind, id) }.
 // A rule that cannot run (unknown id, missing param) becomes a finding, never a throw. The process
 // file's own check (`spec.mjs`) has already refused an entry its rule does not declare.
 export function check(model, entries, ctx) {
