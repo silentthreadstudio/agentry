@@ -203,7 +203,10 @@ the lane during the round, and the resume carries the same round on.
   may change uncommitted while lanes run, except a file a running lane's contract owns: an edit there still
   stops the lane. A commit on main's first-parent line passes too when every path it touches matches
   `guard.allow` and none is owned by a running lane (`building`, `fixing`, `verifying`, `held`); the report's
-  `guards` line says `main moved by allowed commits: <n> (<short shas>)`. A commit touching any other path,
+  `guards` line says `main moved by allowed commits: <n> (<short shas>)`. Agentry's config in use, the process
+  file and its workflow file (`.agentry/process.json`, `.agentry/workflow.json`, or the `--process` file and
+  its sibling), counts as a `guard.allow` path for every check, committed or not, with or without a
+  `guard.allow` key, unless a running lane's contract owns it. A commit touching any other path,
   or an owned allowed path, trips with `HEAD moved …` plus `(<path> is not in guard.allow)` or
   `(<path> is owned by <lane>)`. So: board edits through `agentry board add` / `agentry board set --apply`,
   never by hand, and no other commits on main while a lane builds. A held lane's owned files stay protected for the other

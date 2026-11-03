@@ -2041,6 +2041,129 @@ test("a hand commit on main touching only a guard.allow path passes the report; 
   }
 });
 
+// ---- Agentry's config is always allowed (field 58) ---------------------------------------------------
+
+// The process and workflow files rewritten (the same spec, compact), uncommitted.
+function editConfig(dir) {
+  for (const name of ["process.json", "workflow.json"]) {
+    const file = join(dir, name);
+    writeFileSync(file, JSON.stringify(JSON.parse(readFileSync(file, "utf8"))));
+  }
+}
+function commitConfig(root, dir = ".agentry") {
+  editConfig(join(root, dir));
+  git(root, "add", dir);
+  git(root, "commit", "-q", "-m", "chore: tune the process");
+  return git(root, "rev-parse", "HEAD");
+}
+
+test("a commit on main of both config files passes a building lane and a parked one, with no guard.allow", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  build(out);
+  const t2 = lane(r, "start", "T2").json;
+  writeFileSync(join(t2.worktree, "two.txt"), "half\n");
+  assert.equal(lane(r, "hold", "T2", "--for", "later").exit, 0);
+  const sha = commitConfig(r.root);
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify");
+  assert.deepEqual(res.json.guards, [`main moved by allowed commits: 1 (${sha.slice(0, 7)})`]);
+  const resumed = lane(r, "resume", "T2", "--note", "back");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  assert.equal(resumed.json.next, "continue");
+});
+
+test("uncommitted edits of both config files pass the report", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  editConfig(join(r.root, ".agentry"));
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+  assert.deepEqual(res.json.guards, []);
+});
+
+test("a commit of the workflow file and another path still trips", () => {
+  const r = repo({ spec: { ...SPEC, guard: { allow: ["docs/**"] } } });
+  build(lane(r, "start", "T1").json);
+  editConfig(join(r.root, ".agentry"));
+  writeFileSync(join(r.root, "stray.txt"), "x\n");
+  git(r.root, "add", ".agentry/workflow.json", "stray.txt");
+  git(r.root, "commit", "-q", "-m", "chore: workflow and a stray");
+  git(r.root, "checkout", "-q", "--", ".agentry/process.json");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 1);
+  assert.match(
+    res.json.reason,
+    /main touched: HEAD moved [0-9a-f]{7} → [0-9a-f]{7} \(stray\.txt is not in guard\.allow\)/,
+  );
+});
+
+test("a running lane that owns the workflow file still trips on it, committed or not", () => {
+  const tasks = `${TASKS_MD}- **T3** (S1): owns \`.agentry/workflow.json\`. Accept: it changed.\n`;
+  const board = (root) =>
+    writeFileSync(
+      join(root, "plan", "BOARD.md"),
+      readFileSync(join(root, "plan", "BOARD.md"), "utf8").replace(
+        "| T2   | S1     | todo   |         |        |\n",
+        "| T2   | S1     | todo   |         |        |\n| T3   | S1     | todo   |         |        |\n",
+      ),
+    );
+  const setup = () => {
+    const r = repo({ tasks });
+    board(r.root);
+    git(r.root, "commit", "-qam", "docs: add T3");
+    build(lane(r, "start", "T1").json);
+    assert.equal(lane(r, "start", "T3").exit, 0);
+    return r;
+  };
+  const committed = setup();
+  const pre = git(committed.root, "rev-parse", "HEAD");
+  editConfig(join(committed.root, ".agentry"));
+  git(committed.root, "add", ".agentry/workflow.json");
+  git(committed.root, "commit", "-q", "-m", "chore: workflow");
+  git(committed.root, "checkout", "-q", "--", ".agentry/process.json");
+  let res = lane(committed, "report", "T1");
+  assert.equal(res.exit, 1, JSON.stringify(res.json));
+  assert.ok(
+    res.json.reason.includes(`HEAD moved ${pre.slice(0, 7)}`) &&
+      res.json.reason.includes("(.agentry/workflow.json is owned by T3)"),
+    res.json.reason,
+  );
+
+  const edited = setup();
+  editConfig(join(edited.root, ".agentry"));
+  git(edited.root, "checkout", "-q", "--", ".agentry/process.json");
+  res = lane(edited, "report", "T1");
+  assert.equal(res.exit, 1);
+  assert.match(res.json.reason, /main touched: files changed: {2}M \.agentry\/workflow\.json$/);
+});
+
+test("the config files allowed are the ones in use: --process's and its sibling, not .agentry's", () => {
+  const r = repo();
+  writeSpec(join(r.root, "cfg"), SPEC);
+  git(r.root, "add", "cfg");
+  git(r.root, "commit", "-q", "-m", "chore: process files in cfg");
+  const at = (...args) => lane(r, ...args, "--process", join(r.root, "cfg", "process.json"));
+  build(at("start", "T1").json);
+  const sha = commitConfig(r.root, "cfg");
+  let res = at("report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual(res.json.guards, [`main moved by allowed commits: 1 (${sha.slice(0, 7)})`]);
+
+  const r2 = repo();
+  writeSpec(join(r2.root, "cfg"), SPEC);
+  git(r2.root, "add", "cfg");
+  git(r2.root, "commit", "-q", "-m", "chore: process files in cfg");
+  const at2 = (...args) => lane(r2, ...args, "--process", join(r2.root, "cfg", "process.json"));
+  build(at2("start", "T1").json);
+  commitConfig(r2.root);
+  res = at2("report", "T1");
+  assert.equal(res.exit, 1);
+  assert.match(res.json.reason, /main touched: HEAD moved/);
+});
+
 test("a green then a red gate on one tip says the latest is red, and the waiting verify brief runs the gate", () => {
   const spec = {
     ...SPEC,

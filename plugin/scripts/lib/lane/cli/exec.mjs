@@ -29,7 +29,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
 import { prefix } from "../../cli/invoke.mjs";
@@ -42,6 +42,7 @@ import { kindOf, runId } from "../../process/ids.mjs";
 import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
+import { workflowPathOf } from "../../process/read.mjs";
 import { own } from "../../process/spec/shape.mjs";
 import {
   flaggedItem,
@@ -428,11 +429,10 @@ function landedOnly(root, from, to, others, blocked = () => "") {
 const RUNNING = ["building", "fixing", "verifying", "held"];
 
 // Why a commit on main is not one `guard.allow` lets through (A44), as `landedOnly` asks: every path it
-// touches (against its first parent) must match a `guard.allow` glob and be no running lane's owned file.
-// null when it is; "" when the process file allows nothing, or a running lane's owned files can't be read.
-function allowedCommit(root, spec, all) {
-  const allow = own(spec, "guard")?.allow ?? [];
-  if (!allow.length) return () => "";
+// touches (against its first parent) must be allowed (`allowsPath`) and be no running lane's owned file.
+// null when it is; "" for a path outside it when the process file allows nothing itself, or when a running
+// lane's owned files can't be read.
+function allowedCommit(root, allow, all) {
   let owners;
   return (sha) => {
     const res = git(root, ["diff", "--no-renames", "--name-only", "-z", `${sha}^1`, sha, "--"]);
@@ -448,13 +448,33 @@ function allowedCommit(root, spec, all) {
       return "";
     }
     for (const path of res.stdout.split("\0").filter(Boolean)) {
-      if (!matchesAny(allow, path)) return `${path} is not in guard.allow`;
+      if (!allowsPath(allow, path))
+        return allow.globs.length ? `${path} is not in guard.allow` : "";
       const lane = owners.find((o) => o.owned.some((entry) => ownsPath(entry, path)));
       if (lane) return `${path} is owned by ${lane.id}`;
     }
     return null;
   };
 }
+
+// What the guards let through as `guard.allow` paths: its globs, and Agentry's config in use (field 58),
+// the process file and its workflow file as `loadSpec` resolves them, from the root.
+function allowOf({ root, spec, processPath }) {
+  const file = processPath ?? join(root, ".agentry", "process.json");
+  let dir;
+  try {
+    dir = realpathSync(dirname(file));
+  } catch {
+    dir = null; // no process file's folder: no config file to let through
+  }
+  const config = dir
+    ? [file, workflowPathOf(file)]
+        .map((f) => relative(root, join(dir, basename(f))))
+        .filter((p) => p && !p.startsWith("..") && !isAbsolute(p))
+    : [];
+  return { globs: own(spec, "guard")?.allow ?? [], config };
+}
+const allowsPath = (allow, path) => allow.config.includes(path) || matchesAny(allow.globs, path);
 
 // A glob test with the gate's own matcher, as merge does.
 const matchesAny = (globs, path) => globMatch(globs, path);
@@ -472,11 +492,9 @@ function ownsPath(entry, path) {
   return !e.includes("/") && posix.basename(p) === e;
 }
 
-// The main edits `guard.allow` lets through: a path one of its globs matches and no running lane owns.
+// The main edits `guard.allow` lets through: an allowed path (`allowsPath`) no running lane owns.
 // When a running lane's owned files cannot be read, nothing is let through.
-function allowedEdit(root, spec, all) {
-  const allow = own(spec, "guard")?.allow ?? [];
-  if (!allow.length) return () => false;
+function allowedEdit(root, allow, all) {
   let owned;
   try {
     owned = all
@@ -485,19 +503,21 @@ function allowedEdit(root, spec, all) {
   } catch {
     return () => false;
   }
-  return (path) => matchesAny(allow, path) && !owned.some((entry) => ownsPath(entry, path));
+  return (path) => allowsPath(allow, path) && !owned.some((entry) => ownsPath(entry, path));
 }
 
 // Whether the main checkout still matches the lane's start: `{ touched, allowed }`, `touched` why not
 // (or null), `allowed` the commits on main `guard.allow` let through.
-function mainGuard({ root, spec, model }, ledger, all) {
+function mainGuard(ctx, ledger, all) {
+  const { root, spec, model } = ctx;
+  const allow = allowOf(ctx);
   const was = ledger.mainAtStart;
   const head = headOf(root);
   const others = all.filter((l) => l.id !== ledger.id);
   const reasons = [];
   let allowed = [];
   if (head !== was.head) {
-    const moved = landedOnly(root, was.head, head, others, allowedCommit(root, spec, all));
+    const moved = landedOnly(root, was.head, head, others, allowedCommit(root, allow, all));
     if (moved.ok) allowed = moved.allowed;
     else
       reasons.push(
@@ -505,7 +525,7 @@ function mainGuard({ root, spec, model }, ledger, all) {
       );
   }
   const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id, kindOf(l, spec))));
-  const stray = strayFiles(root, ledger, head, all, boards, allowedEdit(root, spec, all));
+  const stray = strayFiles(root, ledger, head, all, boards, allowedEdit(root, allow, all));
   if (stray.length) reasons.push(`files changed: ${stray.slice(0, 10).join(", ")}`);
   return { touched: reasons.length ? reasons.join("; ") : null, allowed };
 }
