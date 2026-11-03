@@ -6,6 +6,7 @@ import { readConfig } from "../../config.mjs";
 import { defaultBranch, worktrees } from "../../process/git.mjs";
 import { read as readLedger, write as writeLedger } from "../../process/ledger.mjs";
 import { own } from "../../process/spec.mjs";
+import { headBoard } from "../carry-io.mjs";
 import { commitOf, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
 import { dirtyEntries } from "../own-memory.mjs";
 import { findByBranch } from "../worktree.mjs";
@@ -99,14 +100,19 @@ export const skillExists = (root, name) => existsSync(join(root, SKILL_DIR, name
 export const lastWorktreeGate = (ledger) =>
   (ledger.gates ?? []).findLast((g) => g.where === "worktree") ?? null;
 
-export function boardRow({ spec, model, id }) {
+/** The task on the board. After a land killed while it wrote the board, the working copy holds that
+ *  land's writes ("done" already), so the board is read as committed. */
+export function boardRow({ root, spec, model, id, ledger }) {
   const life = spec.lifecycle;
   if (!life) return skip("board", "lifecycle off: the merge writes nothing to the board");
-  const items = (own(model.kinds, life.kind)?.items ?? []).filter((item) => item.id === id);
+  const killed = ledger?.merge?.step === "recording";
+  const board = killed ? headBoard(root, spec, model).model : model;
+  const items = (own(board.kinds, life.kind)?.items ?? []).filter((item) => item.id === id);
   if (items.length !== 1)
     return red("board", `${items.length ? "several" : "no"} ${life.kind} "${id}" on the board`);
   const to = own(life.on, "merged") ?? "-";
-  return ok("board", `${life.kind} ${id} is "${items[0].status ?? ""}"; landing makes it "${to}"`);
+  const is = `${life.kind} ${id} is "${items[0].status ?? ""}"${killed ? " as committed" : ""}`;
+  return ok("board", `${is}; landing makes it "${to}"`);
 }
 
 /** The commits to land, as a row: red when there is nothing to pick or a merge commit is in the way. */

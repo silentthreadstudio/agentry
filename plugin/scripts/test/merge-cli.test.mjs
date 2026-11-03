@@ -999,6 +999,18 @@ test("after a kill at recording, an edit only staged is named as staged and show
   assert.match(git(root, "show", ":plan/sprints/S1.md"), /STAGED NOTE/);
 });
 
+// R1b-5 notes item 6: the preflight's board row read the land's own writes from the working copy and
+// said the task was "done" already.
+test("after a kill at recording the preflight reads the task as committed", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  landKilledAt(KILL_AT_COMMIT, "before");
+  assert.match(board(), /\| T1 +\| S1 +\| done +\|/);
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 0, out(pf));
+  assert.match(pf.stdout, /✓ board +task T1 is "verify" as committed; landing makes it "done"/);
+});
+
 // R1b-5 notes item 3: killed at recording, then the owner commits only an episode: the rerun took that
 // commit for a foreign board commit ("it also changes .agentry/memory/…") and gave no way on.
 test("after a kill at recording, a commit of only a memory record does not stop the rerun", () => {
