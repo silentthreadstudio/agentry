@@ -24,6 +24,7 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
 | `gate` | no | The repo's gate: the command `exec` and `merge` run, its quick tier, the files it may leave changed. |
 | `extensions` | no | Repo skills Agentry's commands run as extra checks (`merge.checks`). |
 | `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
+| `guard` | no | `{ "allow": [globs] }`: main-checkout files a running lane's guard lets change. |
 
 ## Kind
 
@@ -294,3 +295,15 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
   heading is already done on the board, so the file does not drift. Both are optional; the nudge needs both.
 - `worktrees.keep` is a non-empty list of names or globs (`*` and `?`), matched against a worktree's
   branch and its directory name. A match is shown as *kept* in `board status`, never as drift.
+
+## guard
+
+```json
+"guard": { "allow": ["docs/STATUS.md", "docs/plans/**"] }
+```
+
+- `guard.allow` is a non-empty list of globs (from the repository root; `**` crosses directories, as in
+  `gate.after`). While a lane runs, an uncommitted edit in the main checkout to a file one of them matches
+  does not stop it, unless a running lane's contract owns that file: an edit there still does. A commit on
+  main still does too. `board add` and `board set --apply` need no entry: each write is recorded and let
+  through as exactly what it wrote.

@@ -104,7 +104,7 @@ Once the process file loads, set up what `/agentry:exec`, `/agentry:merge`, `/ag
 Each change to `.agentry/process.json` goes through the draft: copy it to `.agentry/run/process/draft.json`,
 edit the draft, run `board explain --process .agentry/run/process/draft.json` (exit 2 → fix the draft), then
 write the real file and delete the draft. The keys are in `references/format.md` § gate, extensions and
-conductor.
+conductor, and § guard.
 
 1. **The gate.** Learn it from the repo, in this order: the workflow doc (`PROCESS.md`, `WORKFLOW.md`,
    `CONTRIBUTING.md`) naming the merge gate; a gate script (`tools/ci/gate*`, `scripts/gate*`, a `Makefile`
@@ -153,6 +153,10 @@ conductor.
    must see, rules only this repo has, extra files to update), with the steps merge now does (cherry-pick,
    gate, board writes, push, cleanup) removed. Show the full proposed text; edit the skill only on the
    owner's OK, never unasked.
+7. **The guard allowlist.** Only when the owner keeps files on main by hand while lanes run (the status file
+   `status.file` names, a folder of drafts), offer them as `guard.allow`. Board files need no entry:
+   `board add` and `board set --apply` writes are recorded and never stop a lane. Never offer a folder a
+   task contract could own (source, tests); an edit in a running lane's owned files stops it anyway.
 
 End with what was written (paths), what was left as it was, and the last `board check` result. Nothing is
 committed: the user reviews the diff.

@@ -1212,3 +1212,112 @@ test("fix is refused without notes, for a note the report lacks, and outside a P
   assert.match(lane(q, "fix", "T1", "--notes", "first").stderr, /note labels, like N1,N3/);
   assert.equal(ledgerOf(q.root, "T1").rounds.length, 2, "a refusal changes nothing");
 });
+
+// ---- board writes and guard.allow -----------------------------------------------------------------
+
+const BOARD = join(dirname(LANE), "board.mjs");
+const boardCli = (root, ...args) =>
+  spawnSync("node", [BOARD, ...args, "--root", root], { encoding: "utf8", env: gitEnv });
+const WITH_CREATE = structuredClone(SPEC);
+WITH_CREATE.kinds.decision.create = {
+  id: "ask",
+  rows: [{ in: "self", at: "end", cells: { "#": "{id}", Decision: "{decision}" } }],
+};
+const decisions = (root) => join(root, "plan", "DECISIONS.md");
+
+test("board add and board set --apply in main while a lane builds do not stop it", () => {
+  const r = repo({ spec: WITH_CREATE });
+  build(lane(r, "start", "T1").json);
+  const fields = '{"id": "3", "decision": "A night call"}';
+  const add = boardCli(r.root, "add", "decision", "--fields", fields, "--apply");
+  assert.equal(add.status, 0, add.stderr);
+  const set = boardCli(r.root, "set", "decision", "D2", "decision=Cited after all", "--apply");
+  assert.equal(set.status, 0, set.stderr);
+  const sprint = boardCli(r.root, "set", "sprint", "S1", "status=done", "--apply");
+  assert.equal(sprint.status, 0, sprint.stderr);
+  const res = lane(r, "report", "T1");
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+});
+
+test("a hand edit after a recorded board write still stops the lane", () => {
+  const r = repo({ spec: WITH_CREATE });
+  build(lane(r, "start", "T1").json);
+  const set = boardCli(r.root, "set", "decision", "D2", "decision=Cited", "--apply");
+  assert.equal(set.status, 0, set.stderr);
+  const file = decisions(r.root);
+  writeFileSync(file, `${readFileSync(file, "utf8")}\nA builder's line.\n`);
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 1);
+  assert.match(res.json.reason, /files changed: {2}M plan\/DECISIONS\.md/);
+});
+
+test("a board preview, or a board write made in the lane's worktree, excuses nothing in main", () => {
+  const r = repo({ spec: WITH_CREATE });
+  const out = lane(r, "start", "T1").json;
+  build(out);
+  const preview = boardCli(r.root, "set", "decision", "D2", "decision=Cited");
+  assert.equal(preview.status, 0, preview.stderr);
+  const inTree = boardCli(out.worktree, "set", "decision", "D2", "decision=Cited", "--apply");
+  assert.equal(inTree.status, 0, inTree.stderr);
+  writeFileSync(decisions(r.root), readFileSync(decisions(out.worktree), "utf8"));
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 1);
+  assert.match(res.json.reason, /files changed: {2}M plan\/DECISIONS\.md/);
+});
+
+test("a board write recorded before the lane started excuses nothing during it", () => {
+  const r = repo({ spec: WITH_CREATE });
+  const file = decisions(r.root);
+  const original = readFileSync(file, "utf8");
+  assert.equal(boardCli(r.root, "set", "decision", "D2", "decision=X", "--apply").status, 0);
+  writeFileSync(file, original); // back as committed: the recorded write's `from`
+  build(lane(r, "start", "T1").json);
+  writeFileSync(file, original.replace("Not cited", "X")); // the same edit, by hand
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 1);
+  assert.match(res.json.reason, /files changed: {2}M plan\/DECISIONS\.md/);
+});
+
+test("guard.allow lets main edits through, except in a running lane's owned files", () => {
+  const spec = { ...SPEC, guard: { allow: ["docs/**", "src/ui/**", "two.txt"] } };
+  const r = repo({ spec });
+  commitFile(r.root, "docs/STATUS.md", "# Status\n");
+  build(lane(r, "start", "T1").json);
+  assert.equal(lane(r, "start", "T2").exit, 0);
+  writeFileSync(join(r.root, "docs", "STATUS.md"), "# Status\n\nNight notes.\n");
+  writeFileSync(join(r.root, "docs", "draft.md"), "a draft\n");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+
+  const breaches = {
+    "this lane's file": (root) => {
+      mkdirSync(join(root, "src", "ui"), { recursive: true });
+      writeFileSync(join(root, "src", "ui", "panel.css"), "x\n");
+    },
+    "another running lane's file": (root) => writeFileSync(join(root, "two.txt"), "x\n"),
+    "a file no glob allows": (root) => writeFileSync(join(root, "stray.txt"), "x\n"),
+  };
+  for (const [what, act] of Object.entries(breaches)) {
+    const r2 = repo({ spec });
+    build(lane(r2, "start", "T1").json);
+    assert.equal(lane(r2, "start", "T2").exit, 0, what);
+    act(r2.root);
+    const stopped = lane(r2, "report", "T1");
+    assert.equal(stopped.exit, 1, what);
+    assert.match(stopped.json.reason, /main touched: files changed/, what);
+  }
+});
+
+test("guard.allow lets nothing through while a running lane's owned files cannot be read", () => {
+  const r = repo({ spec: { ...SPEC, guard: { allow: ["docs/**"] } } });
+  build(lane(r, "start", "T1").json);
+  writeFileSync(
+    ledgerFile(r.root, "ZZ"),
+    JSON.stringify({ v: 1, id: "ZZ", state: "merging", worktree: "/gone" }),
+  );
+  mkdirSync(join(r.root, "docs"));
+  writeFileSync(join(r.root, "docs", "STATUS.md"), "x\n");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 1);
+  assert.match(res.json.reason, /docs\/STATUS\.md/);
+});

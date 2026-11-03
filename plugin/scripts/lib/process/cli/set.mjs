@@ -1,11 +1,13 @@
 // board set <kind> <id> <field>=<value> [--apply] — change one mechanical field of one item: a table cell,
 // or a frontmatter key for a one-file-per-item kind. One cell per write, every other byte kept (plan F13
-// §2.4). Without `--apply` it runs the same edit and refusals and writes nothing (A39).
+// §2.4). Without `--apply` it runs the same edit and refusals and writes nothing (A39). A write is
+// recorded (`board-writes.mjs`) so a running lane's main-touched guard lets it through.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written or previewed, 2 = usage or refusal
 // (nothing written)
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
+import { recorded } from "../board-writes.mjs";
 import { boardId } from "../ids.mjs";
 import { escapesRoot, own } from "../spec.mjs";
 import { WriteError, apply, setCell, setKey } from "../write.mjs";
@@ -68,8 +70,13 @@ export function run(argv, { root, spec, model }) {
           value,
         })
     : (text) => setKey(text, { key: field.column, value });
+  const target = join(root, spec.root, file);
   try {
-    apply(join(root, spec.root, file), edit, { preview: !write });
+    if (write)
+      recorded(root, [relative(root, target)], `board set ${kindName} ${id}`, () =>
+        apply(target, edit),
+      );
+    else apply(target, edit, { preview: true });
   } catch (error) {
     if (error instanceof WriteError) return fail(`${file}: ${error.message}`);
     throw error;

@@ -205,6 +205,7 @@ const processFile = shape({
   gate,
   extensions,
   conductor,
+  guard: shape({ "allow!": globs }, FULL),
 });
 /** The process file's checker; `schema.keys` (and each nested shape's `keys`) lists its keys, a
  *  trailing `!` marking a required one. The format reference is bound to it. */

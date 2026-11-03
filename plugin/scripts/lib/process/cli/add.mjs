@@ -4,12 +4,14 @@
 // printed; only `create.id: "ask"` requires it. A duplicate id is refused. All files are edited as one
 // step, or none. A parent given as one of its field's `also` values (LATER) is no item: the parent-file
 // rows and the blocks that name `{parent.…}` are skipped, and the output says so. Without `--apply` it
-// runs the same edits and refusals, prints the lines each place would get, and writes nothing (A39).
+// runs the same edits and refusals, prints the lines each place would get, and writes nothing (A39). A
+// write is recorded (`board-writes.mjs`) so a running lane's main-touched guard lets it through.
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written or previewed, 2 = usage
 // or refusal
 import { join, relative } from "node:path";
 import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
+import { recorded } from "../board-writes.mjs";
 import { findContract } from "../contract.mjs";
 import { nextId } from "../ids.mjs";
 import { contractHome } from "../rules/structure.mjs";
@@ -174,7 +176,10 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
         `block under "${under}"`,
       );
     }
-    planned = applyAll(edits, { preview: !write });
+    const files = [...new Set(edits.map((e) => relative(root, e.file)))];
+    planned = write
+      ? recorded(root, files, `board add ${kindName} ${id}`, () => applyAll(edits))
+      : applyAll(edits, { preview: true });
   } catch (error) {
     if (error instanceof WriteError) return fail(error.message);
     throw error;

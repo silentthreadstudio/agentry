@@ -225,6 +225,20 @@ export const PROCESS_CASES = [
     bad: ["worktrees.keep[0]"],
   },
   { name: "worktrees with no keep", add: { worktrees: {} }, bad: ["worktrees.keep"] },
+  // guard.allow
+  { name: "guard globs", add: { guard: { allow: ["docs/STATUS.md", "docs/plans/**"] } } },
+  { name: "an empty allow list", add: { guard: { allow: [] } }, bad: ["guard.allow"] },
+  { name: "guard with no allow", add: { guard: {} }, bad: ["guard.allow"] },
+  {
+    name: "an allow glob out of the repository",
+    add: { guard: { allow: ["../x.md", "/abs.md"] } },
+    bad: ["guard.allow[0]", "guard.allow[1]"],
+  },
+  {
+    name: "a misspelled allow",
+    add: { guard: { alow: ["docs/**"] } },
+    bad: ["guard.alow", "guard.allow"],
+  },
   {
     name: "a hand status file and its heading",
     add: { status: { file: "docs/STATUS.md", next: "Next" } },

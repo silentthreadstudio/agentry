@@ -244,6 +244,11 @@ export type StatusConfig = z.infer<typeof StatusConfig>;
 export const Worktrees = z.object({ keep: z.array(Text).min(1) }).strict();
 export type Worktrees = z.infer<typeof Worktrees>;
 
+/** Main-checkout files the main-touched guard lets change while a lane runs (globs), unless a running
+ *  lane owns them. */
+export const Guard = z.object({ allow: Globs }).strict();
+export type Guard = z.infer<typeof Guard>;
+
 export const ProcessSpec = z
   .object({
     version: z.literal(1),
@@ -260,6 +265,7 @@ export const ProcessSpec = z
     gate: Gate.optional(),
     extensions: Extensions.optional(),
     conductor: Conductor.optional(),
+    guard: Guard.optional(),
   })
   .strict();
 export type ProcessSpec = z.infer<typeof ProcessSpec>;

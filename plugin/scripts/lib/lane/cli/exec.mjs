@@ -17,19 +17,13 @@
 // stopped (or the gate is red), 2 = usage or refusal (nothing changed).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import {
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { episodeStored } from "../../memory/episodes.mjs";
+import { contentOf as contentIds, recordedSince } from "../../process/board-writes.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { boardId } from "../../process/ids.mjs";
@@ -179,11 +173,13 @@ export function run(argv, ctx) {
 //
 // The main-touched guard is content-exact. `start` records the content id (git's blob id) of every
 // file that is dirty in main, and each lifecycle write a lane makes records `{ file, from, to }` in its
-// ledger (`boardWrites`). At a report, a main file may differ from the lane's start only when its
-// content is reachable from its start content, or from the content a recorded merge committed, through
-// recorded lifecycle writes. Any other edit (another row, free text, a non-board file, a file dirty at
-// start that changed since) is the builder's. HEAD may move only by merges other ledgers record, each a
-// run preHead → landed… → board commit that git's first-parent history confirms.
+// ledger (`boardWrites`); each `board add` / `board set --apply` in main records the same in a shared log
+// (`board-writes.mjs`). At a report, a main file may differ from the lane's start only when its content is
+// reachable from its start content, or from the content a recorded merge committed, through recorded
+// lifecycle writes or board writes made since the lane started. Any other edit (another row, free text, a
+// non-board file, a file dirty at start that changed since) is the builder's, unless its path matches the
+// process file's `guard.allow` and no running lane owns it. HEAD may move only by merges other ledgers
+// record, each a run preHead → landed… → board commit that git's first-parent history confirms.
 
 // Agentry's own files: the run state. (The memory records a lane writes are `own-memory.mjs`'s.)
 const OWN_DIRS = [".agentry/run/"];
@@ -210,35 +206,14 @@ function dirtyPaths(root) {
   return out;
 }
 
-// What is stored for each path as it is in main's working tree, ABSENT when it is nothing there (or a
-// directory): the blob id, plus a suffix for what the blob id leaves out: ":x" an executable file, ":l" a
-// symlink (the blob is its target). A plain file is its bare blob id.
+// What is stored for each path as it is in main's working tree (`board-writes.mjs`): the ids recorded
+// lifecycle and board writes carry.
 function contentOf(root, paths) {
-  const out = Object.fromEntries(paths.map((p) => [p, ABSENT]));
-  const files = [];
-  for (const p of paths) {
-    let st;
-    try {
-      st = lstatSync(join(root, p));
-    } catch {
-      continue;
-    }
-    if (st.isSymbolicLink()) {
-      const res = git(root, ["hash-object", "--stdin"], readlinkSync(join(root, p)));
-      if (res.status !== 0) refuse(`git hash-object failed in ${root}: ${res.stderr.trim()}`);
-      out[p] = `${res.stdout.trim()}:l`;
-    } else if (st.isFile()) files.push([p, st.mode & 0o111 ? ":x" : ""]);
+  try {
+    return contentIds(root, paths);
+  } catch (e) {
+    return refuse(e.message);
   }
-  if (!files.length) return out;
-  const res = git(root, ["hash-object", "--", ...files.map(([p]) => p)]);
-  if (res.status !== 0) refuse(`git hash-object failed in ${root}: ${res.stderr.trim()}`);
-  res.stdout
-    .split("\n")
-    .filter(Boolean)
-    .forEach((id, i) => {
-      out[files[i][0]] = id + files[i][1];
-    });
-  return out;
 }
 
 // The same, as `commit` holds it, ABSENT when the commit has no such file.
@@ -291,17 +266,23 @@ function reachable(moves, from, to) {
   return false;
 }
 
-// The main files whose content no recorded lifecycle write explains, as `git status` entries.
-function strayFiles(root, ledger, head, all, boards) {
+// The main files whose content no recorded lifecycle or board write explains, and whose path `excused`
+// does not let through, as `git status` entries.
+function strayFiles(root, ledger, head, all, boards, excused) {
   const was = ledger.mainAtStart;
   const started = was.files ?? {};
-  const dirty = dirtyPaths(root);
-  const paths = [...new Set([...dirty.keys(), ...Object.keys(started)])];
+  const dirty = new Map([...dirtyPaths(root)].filter(([p]) => !excused(p)));
+  const paths = [...new Set([...dirty.keys(), ...Object.keys(started)])].filter((p) => !excused(p));
   if (!paths.length) return [];
   const now = contentOf(root, paths);
   const atStart = blobsAt(root, was.head, paths);
   const atHead = head === was.head ? atStart : blobsAt(root, head, paths);
-  const moves = all.flatMap((l) => l.boardWrites ?? []).filter((m) => boards.has(m.file));
+  // A ledger without `startedAt` predates the board-write log: no logged write is trusted for it.
+  const logged = ledger.startedAt ? recordedSince(root, ledger.startedAt) : [];
+  const moves = [
+    ...all.flatMap((l) => l.boardWrites ?? []).filter((m) => boards.has(m.file)),
+    ...logged,
+  ];
   const changed = paths
     .filter((p) => {
       const start = Object.hasOwn(started, p) ? started[p] : atStart[p];
@@ -356,6 +337,39 @@ function landedOnly(root, from, to, others) {
   return true;
 }
 
+// A glob test with the gate's own matcher (a quick tier whose only globs are these), as merge does.
+const matchesAny = (globs, path) =>
+  globs.length > 0 && pickTier({ quick: { command: ["-"], only: globs } }, [path]).tier === "quick";
+
+// Does an entry of a contract's owned files (a path, a directory, a glob, a bare file name, a
+// `path:lines`) cover `path`? Read wide, case ignored: a doubt keeps the guard on.
+function ownsPath(entry, path) {
+  const e = entry
+    .toLowerCase()
+    .replace(/:[\d\s,–-]+$/, "")
+    .replace(/^(?:\.\/)+/, "")
+    .replace(/\/+$/, "");
+  const p = path.toLowerCase();
+  if (p === e || p.startsWith(`${e}/`) || matchesAny([e], p)) return true;
+  return !e.includes("/") && posix.basename(p) === e;
+}
+
+// The main edits `guard.allow` lets through: a path one of its globs matches and no running lane owns.
+// When a running lane's owned files cannot be read, nothing is let through.
+function allowedEdit(root, spec, all) {
+  const allow = own(spec, "guard")?.allow ?? [];
+  if (!allow.length) return () => false;
+  let owned;
+  try {
+    owned = all
+      .filter((l) => l.state !== "merged" && l.state !== "closed")
+      .flatMap((l) => ownedOf(root, l).map((o) => (typeof o === "string" ? o : o.path)));
+  } catch {
+    return () => false;
+  }
+  return (path) => matchesAny(allow, path) && !owned.some((entry) => ownsPath(entry, path));
+}
+
 // Why the main checkout no longer matches the lane's start, or null.
 function mainTouched({ root, spec, model }, ledger, all) {
   const was = ledger.mainAtStart;
@@ -365,7 +379,7 @@ function mainTouched({ root, spec, model }, ledger, all) {
   if (head !== was.head && !landedOnly(root, was.head, head, others))
     reasons.push(`HEAD moved ${short(was.head)} → ${short(head)}`);
   const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id)));
-  const stray = strayFiles(root, ledger, head, all, boards);
+  const stray = strayFiles(root, ledger, head, all, boards, allowedEdit(root, spec, all));
   if (stray.length) reasons.push(`files changed: ${stray.slice(0, 10).join(", ")}`);
   return reasons.length ? reasons.join("; ") : null;
 }

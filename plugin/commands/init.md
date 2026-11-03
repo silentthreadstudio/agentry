@@ -21,6 +21,7 @@ Then wire the lanes, in order, following `learn.md` § Wiring the lanes. A step 
 4. **Default agent.** `board default-agent`; on OK `--apply`, then `--verify`; `--verify live` only with the owner's OK (one small request). Say that teammates without Agentry fall back to plain Claude Code.
 5. **Push policy.** Ask `merge.push` once (`ask` default, `auto`, `never`) unless it is set; write it to `.agentry/config.json`.
 6. **Merge skill.** If the repo has its own merge skill, offer to name it in `extensions.merge.checks` and show its shrunk text (only the repo's own checks); edit the skill only on the owner's OK.
+7. **Guard allowlist.** Only when the owner keeps files on main by hand while lanes run (a status file, a drafts folder), offer them as `guard.allow`; never a folder a task contract could own.
 
 Never guess a mapping `explain` hasn't confirmed. Never commit or push; the board files, instruction files and repo skills stay the user's. End with the paths written and the last `board check` result.
 

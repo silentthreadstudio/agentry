@@ -93,6 +93,10 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `.claude/worktrees/` agent worktrees that no lane owns.
 - **`nested`** lists only worktrees inside the lane's own worktree, not every worktree created
   while it ran.
+- **The main-touched guard** lets the conductor work on main while lanes run: a `board add` or
+  `board set --apply` there is recorded and stops no lane (a hand edit of the same file still
+  does), and files listed in the new `guard.allow` key may change, except a file a running
+  lane's contract owns.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a

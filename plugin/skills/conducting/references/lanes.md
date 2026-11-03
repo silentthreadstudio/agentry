@@ -104,8 +104,13 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
   clean main (one function, `own-memory.mjs`). Anything else under the store is a breach: another file, a
   record staged as new, an edit of a tracked record. So a memory write that rewrites a committed fact
   (reinforce, feedback) stops the lane by design: commit it between lanes, not during one. A path's
-  type and mode count with its content (a symlink, a chmod). So: no board edits (`board set`, by hand) and no
-  other commits on main while a lane builds.
+  type and mode count with its content (a symlink, a chmod).
+  `board add` and `board set --apply` run in the main checkout record what they wrote the same way
+  (`.agentry/run/process/board-writes.jsonl`), so a night call written with them stops no lane; a hand edit
+  of the same file still does. Files the process file lists in `guard.allow` (a status file, a docs folder)
+  may change uncommitted while lanes run, except a file a running lane's contract owns: an edit there still
+  stops the lane. So: board edits through `board add` / `board set --apply`, never by hand, and no commits
+  on main while a lane builds.
 - **Trust boundary.** The guard catches a builder that slips into the main checkout; it is not a sandbox. It
   trusts `.agentry/run/` as Agentry's steps wrote it and checks each ledger's claims against git where git can
   say, so a planted ledger naming a SHA excuses nothing. A builder that forges a whole merge record, or edits
