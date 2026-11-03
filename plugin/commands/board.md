@@ -1,6 +1,6 @@
 ---
 description: Show where this repo's work stands and what's wrong with its board — derived status, drift nudges, then every rule finding. Read-only unless --apply.
-argument-hint: "[status|check] [--why <id>] [fix [--accept <id>] [--apply]] [draft list|add|drop <n>|apply <n> [--apply]] [--json]"
+argument-hint: "[status|check] [--why <id>] [--ready] [fix [--accept <id>] [--apply]] [draft list|add|drop <n>|apply <n> [--apply]] [--json]"
 ---
 
 Show this repo's board. Load the `process` skill; `board` means `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (exit 0 OK, 1 findings, 2 refused, usage or bad config; `board <sub> --help` for any subcommand).
@@ -12,7 +12,7 @@ Pick the calls from `$ARGUMENTS`:
 - `fix --accept <id>` → `board fix --accept <id>`: a task merged by hand (no merge record). Show what it would write, ask the owner whether that task's work really landed on main, and only after they say yes run `board fix --accept <id> --apply`. It still writes nothing unless the commits carrying that work on main are still in effect now. It needs a ledger: for a worktree no ledger knows, adopt it first with `/agentry:merge <id> --branch <branch>` (merge then reports nothing left to land), then accept;
 - `draft …` → `board draft <list|add|drop|apply>` as given. `add` needs its draft as `--fields '{"kind":"decision"|"rule","answer":"…"}'` (optional `question`, `unpicked`, `source`; `references/drafts.md`); without it, it stops at the usage error. `apply <n>` shows what it would write; `apply <n> --apply` writes a decision or a standing rule, so run it only after the owner says OK to that draft (`references/drafts.md`).
 
-`--json` and `--why <id>` pass through unchanged to every call.
+`--json` and `--why <id>` pass through unchanged to every call. `status --ready` lists each sprint's open tasks with whether the contract is found and the dependencies are done: what can be built next.
 
 `board status` adds a **Drift** block when work went around the commands: an agent worktree no ledger knows (`unlisted-worktree`), a task the board shows started with no ledger (`started-by-hand`), commits on main no merge covers (`merged-by-hand`), a verified task waiting for its merge (`verified-not-merged`), and an episode nobody wrote (`episode-pending`). Each row names the command to run; a **Drafts** row counts the owner's calls not yet written down.
 

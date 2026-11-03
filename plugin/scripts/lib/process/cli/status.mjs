@@ -9,15 +9,17 @@ import { usageError } from "../../cli/help.mjs";
 import { mainRoot } from "../../lane/worktree.mjs";
 import { refuseConductor } from "../conductor.mjs";
 import { boardId } from "../ids.mjs";
+import { readyView, renderReady } from "../ready.mjs";
 import { renderStatus, why } from "../render.mjs";
 import { boardReport, statusView, workKind } from "../status.mjs";
 
 export const help = {
-  usage: "status [--json] [--why <id>]",
+  usage: "status [--json] [--why <id>] [--ready]",
   purpose: "The derived view: in flight, on the owner, blocked, ahead, drift, then the findings.",
   args: {},
   flags: {
     "--json": "print the report and the view as one JSON object",
+    "--ready": "open tasks per sprint: contract found, dependencies done (with --json too)",
     "--why <id>":
       "one item of any kind, any case (task, sprint, D7…): each rule failing or holding",
   },
@@ -36,6 +38,12 @@ export function run(argv, { root, processPath, spec, model }) {
   if (refused) return refused;
   const report = boardReport({ root, spec, model });
   const exit = report.ok ? 0 : 1;
+  if (argv.includes("--ready")) {
+    const view = readyView({ root, spec, model });
+    if (argv.includes("--json"))
+      return { exit: 0, out: JSON.stringify({ name: spec.name, ready: view }) };
+    return { exit: 0, out: renderReady({ name: spec.name, view }) };
+  }
   const at = argv.indexOf("--why");
   const id = boardId(spec, model, argv[at + 1]);
   if (at >= 0 && (!id || id.startsWith("--")))
