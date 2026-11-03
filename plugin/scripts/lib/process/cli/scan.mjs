@@ -99,6 +99,26 @@ export function ignoredDirs(root) {
     .sort((a, b) => b.md - a.md || a.dir.localeCompare(b.dir));
 }
 
+// The last line: the biggest ignored folders first, the rest counted, and an arrow to the biggest. The arrow
+// is never cut: folders drop into `+N more` until the whole line fits, and only the first one is fitted.
+function hiddenLine(ignored) {
+  const label = "not scanned (ignored): ";
+  const arrow = nextStep(` → board scan ${ignored[0].dir}/…`);
+  const entry = (x) => `${x.dir} (${x.md} md)`;
+  const list = (k) =>
+    [
+      ...ignored.slice(0, k).map(entry),
+      ...(ignored.length > k ? [`+${ignored.length - k} more`] : []),
+    ].join(", ");
+  for (let k = Math.min(HIDDEN_LISTED, ignored.length); k >= 1; k--) {
+    const line = `${label}${list(k)}${arrow}`;
+    if ([...line].length <= WIDTH) return line;
+  }
+  const tail = ignored.length > 1 ? `, +${ignored.length - 1} more` : "";
+  const room = Math.max(1, WIDTH - [...label].length - [...arrow].length - [...tail].length);
+  return `${label}${fit(entry(ignored[0]), room)}${tail}${arrow}`;
+}
+
 function render(all, dir, ignored) {
   const found = all.filter((x) => !x.skipped);
   const skipped = all.filter((x) => x.skipped);
@@ -123,18 +143,8 @@ function render(all, dir, ignored) {
     ...(x.frontmatter ? [`  front   ${x.frontmatter.join(", ") || "(empty)"}`] : []),
   ]);
   const notes = skipped.flatMap((x) => ["", x.file, `  skipped ${x.skipped}`]);
-  // The biggest folders first, the rest counted; the arrow points at the biggest.
-  const shown = ignored.slice(0, HIDDEN_LISTED).map((x) => `${x.dir} (${x.md} md)`);
-  const more = ignored.length > HIDDEN_LISTED ? [`+${ignored.length - HIDDEN_LISTED} more`] : [];
-  const hidden = ignored.length
-    ? [
-        "",
-        nextStep(
-          `not scanned (ignored): ${[...shown, ...more].join(", ")} → board scan ${ignored[0].dir}/…`,
-        ),
-      ]
-    : [];
-  return [head, ...lines, ...notes, ...hidden].map((l) => fit(l, WIDTH)).join("\n");
+  const hidden = ignored.length ? ["", hiddenLine(ignored)] : [];
+  return [...[head, ...lines, ...notes].map((l) => fit(l, WIDTH)), ...hidden].join("\n");
 }
 
 export function run(argv, { root }) {

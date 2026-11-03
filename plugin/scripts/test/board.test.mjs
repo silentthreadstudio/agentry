@@ -465,3 +465,30 @@ test("scan points at the ignored folder with the most markdown, counts the rest 
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("scan never cuts the arrow off the not-scanned line, however long the folder names are", () => {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-scan-")));
+  try {
+    const table = "| Code |\n| --- |\n| T1 |\n";
+    const long = (c) => `.${c.repeat(40)}`;
+    const files = { [long("b")]: 3, [long("a")]: 2, [`.${"c".repeat(120)}`]: 1 };
+    for (const [dir, n] of Object.entries(files))
+      for (let i = 0; i < n; i++) {
+        mkdirSync(join(tmp, dir), { recursive: true });
+        writeFileSync(join(tmp, dir, `b${i}.md`), table);
+      }
+    writeFileSync(join(tmp, ".gitignore"), `${Object.keys(files).join("/\n")}/\n`);
+    const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+    spawnSync("git", ["-C", tmp, "init", "-q"], { env });
+    const res = spawnSync("node", [BOARD, "scan", "--root", tmp], {
+      encoding: "utf8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    const line = res.stdout.trimEnd().split("\n").at(-1);
+    assert.match(line, /^not scanned \(ignored\): .*board scan \.b{40}\/…$/);
+    assert.ok([...line].length <= 100, line);
+    assert.match(line, /\+\d more/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
