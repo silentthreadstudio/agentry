@@ -168,6 +168,13 @@ conductor, and § guard and cleanup.
    asking and still asks for any other ignored file.
 9. **The permission rule.** If the owner wants fewer prompts, suggest the rule `Bash(agentry:*)` (the plugin's
    `agentry` command), never a rule bound to a path. Suggest it only; settings are the owner's.
+10. **Lifecycle writes.** Only when the process file has no `lifecycle` (`agentry board explain` and the
+    merge print `lifecycle off`), so the board never shows `doing` or `verify`. Offer it once and say what it
+    writes into the board's own files, visible in the owner's diff: the task's status as the lane moves
+    (dispatched, built, failed, merged), the verifier's verdict, and the landed commit (with a handoff line
+    when the task's parent has a file section for it). Draft the block from the task kind's own status words
+    and fields (format.md § lifecycle and drafts), keep only the `write` keys the board has a field for, and
+    write it on the owner's OK. A no is final: do not ask again.
 
 End with what was written (paths), what was left as it was, and the last `agentry board check` result. Nothing is
 committed: the user reviews the diff.

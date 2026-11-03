@@ -111,3 +111,19 @@ test("the lifecycle section names every write key", () => {
   for (const key of Object.keys(schema.keys.lifecycle.keys.write.keys))
     assert.ok(body.includes(`\`${key}\` (`), `the lifecycle section words write.${key}`);
 });
+
+test("the join row states what a separator may not hold, as the validators refuse it", () => {
+  const row = text.split("\n").find((l) => l.startsWith("  | `join`"));
+  assert.ok(row, "format.md has a join row");
+  assert.match(row, /no letters, digits, line breaks or other control characters/);
+});
+
+test("init and the learn reference offer lifecycle writes once, saying what they write", () => {
+  const skills = join(HERE, "..", "..", "skills", "process", "references", "learn.md");
+  for (const file of [join(HERE, "..", "..", "commands", "init.md"), skills]) {
+    const doc = readFileSync(file, "utf8");
+    assert.match(doc, /\*\*Lifecycle writes\.\*\*/, file);
+    assert.match(doc, /lifecycle off/, file);
+    assert.match(doc, /verdict/, file);
+  }
+});

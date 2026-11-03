@@ -26,6 +26,7 @@ Then wire the lanes, in order, following `learn.md` § Wiring the lanes. A step 
 7. **Guard allowlist.** Only when the owner keeps files on main by hand while lanes run (a status file, a drafts folder), offer them as `guard.allow`; never a folder a task contract could own.
 8. **Disposable files.** Propose `cleanup.disposable` globs from the `.gitignore` lines that are build output or caches (never `.env*`, local config, logs, screenshots); write only the ones the owner confirms.
 9. **Permission rule.** If the owner wants fewer prompts, suggest `Bash(agentry:*)` for their settings, never a rule bound to a path; suggest it only, never write settings.
+10. **Lifecycle writes.** Only when the process file has no `lifecycle` (`explain` and the merge print `lifecycle off`): offer once to write the task's status, the verifier's verdict and the landed commit onto the board as work moves, saying what each key writes; draft the block from the task kind's own words and fields (`format.md` § lifecycle and drafts), and write it on the owner's OK. A no is final.
 
 Never guess a mapping `explain` hasn't confirmed. Never commit or push; the board files, instruction files and repo skills stay the user's. End with the paths written and the last `agentry board check` result.
 
