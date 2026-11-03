@@ -13,16 +13,18 @@ The split is fixed: **judgment in the session, every claim checked by the script
 
 ## The CLI
 
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs" <sub> [--root <git root>] [--process <file>] [--json]`.
+`agentry board <sub> [--root <git root>] [--process <file>] [--json]`.
 The process file defaults to `<git root>/.agentry/process.json`. Exit 0 = OK, 1 = findings, stopped or
 needs the owner, 2 = refused, usage or bad config (including a missing process file: point to
-`/agentry:init`); `lane.mjs` means the same. An error is one line, `✗ <what>: <why> → <next command>`.
-`board <sub> --help` (and `lane <sub> --help`) prints the usage, purpose, args, flags, exit codes and an
-example; `board --help` lists every subcommand. Every subcommand takes `--json` (JSON on stdout only;
+`/agentry:init`); `agentry lane` means the same. An error is one line, `✗ <what>: <why> → <next command>`.
+`agentry` is the plugin's `bin/` command, on the Bash tool's PATH while the plugin is enabled. A host without
+it runs `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (and `lane.mjs`) with the same arguments.
+`agentry board <sub> --help` (and `agentry lane <sub> --help`) prints the usage, purpose, args, flags, exit codes and an
+example; `agentry board --help` lists every subcommand. Every subcommand takes `--json` (JSON on stdout only;
 input JSON goes in `--fields`). An id is read in any case and printed in the board's spelling; a kind
 with an `id.prefix` also takes its cited form (`D281` for decision `281`). A command that writes
 previews by default: it runs the same edits and refusals, prints what it would write and writes nothing
-until `--apply` (`lane exec` and `lane merge` steps excepted: writing their lane is their job).
+until `--apply` (`agentry lane exec` and `agentry lane merge` steps excepted: writing their lane is their job).
 
 | Sub | Does | Writes |
 | :--- | :--- | :--- |

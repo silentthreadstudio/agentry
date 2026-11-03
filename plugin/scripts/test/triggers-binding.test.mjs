@@ -71,7 +71,7 @@ test("the block and the agent name the same Agentry commands, apart from the age
 
 test("the draft step names `board draft add`, and the board CLI has it", () => {
   assert.match(draftHelp.usage[0], /^draft add\b/);
-  assert.match(AGENT, /`board draft add`/);
+  assert.match(AGENT, /`agentry board draft add`/);
   assert.match(BLOCK, /`\/agentry:board draft add`/);
   assert.match(read("commands", "board.md"), /draft list\|add/);
 });

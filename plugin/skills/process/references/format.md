@@ -57,7 +57,7 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
   `"as": "table"` with the `column` holding ids). A bold lead names every id that is a token of it:
   `**T4/T5**` names both, `**T4 merged**` names T4.
 - **`contract`** — where a task's contract block lives: `blocks` (files) and `lead` (`heading` for
-  `### T4 · …`, `bold` for `- **T4** …`; a table row `| T4 | … |` always counts). `board contract`
+  `### T4 · …`, `bold` for `- **T4** …`; a table row `| T4 | … |` always counts). `agentry board contract`
   searches the files the task's own rows link as `[contract](path#anchor)` (on the board or in its
   parent's file) first, then `blocks`. A titled or owning block (`**T4 · Door**`, `owns …`) beats an
   `accept`-only line, which beats a bare amendment or deps line; the others come back as `related`.
@@ -123,7 +123,7 @@ file declares for that field, nor an item of the kind the field refs) is a findi
 | `question-blocks` | nothing starts while an open question blocks it |
 | `parked` | the parking parent's children are parked; nothing live depends on a parked item |
 | `deps-not-forward` | no dependency on an item later in the order |
-| `ready-has-contract` | an unfinished item in an active parent has a contract that `board contract <id>` finds (the build step, `/agentry:exec`, needs it) |
+| `ready-has-contract` | an unfinished item in an active parent has a contract that `agentry board contract <id>` finds (the build step, `/agentry:exec`, needs it) |
 | `done-has-evidence` | a done item names its commit (`commit-or-note`: or a note), and every commit named exists in git |
 | `done-has-handoff` | a done item has a line in its parent's handoff section (`commit`: the SHA that line must name) |
 | `flagged-needs-verdict` | a flagged done item has a passing verdict |
@@ -231,7 +231,7 @@ leaves the status where it is; a `FAIL` verdict also applies `failed`; only the 
 first landed commit, or `<first>…<last>`, as short SHAs) and `handoff` (`parent.file:<section>`, a bold-lead
 section of the parent's file, where the `handoff` line is appended). A step with no `on` word or no `write`
 key is skipped and reported, and without `lifecycle` nothing is ever written. Writes are mechanical only
-and land in the user's files, visible in their diff; `board lifecycle <event> <id>` applies one event.
+and land in the user's files, visible in their diff; `agentry board lifecycle <event> <id>` applies one event.
 
 The `handoff` template is one line and fills `{id}`, `{sha}` (the first commit) and `{summary}`. When a
 `done-has-handoff` rule checks the lifecycle's kind, the template is tried at load: filled with a fake SHA,
@@ -279,8 +279,8 @@ type, an empty string or list (`merge.checks` aside: `[]` is no check), a repeat
 at load (exit 2, naming the path: `gate.command[1]`, `gate.quick.only`). A misspelled `after` glob allows
 less; a misspelled `only` glob makes the quick tier apply less often.
 
-`conductor.prompt` and `conductor.rules` are also read against the repo by `board explain` and `board check`: the
-prompt must be a file inside it and hold the `rules` heading, matched the way `board draft apply` matches it.
+`conductor.prompt` and `conductor.rules` are also read against the repo by `agentry board explain` and `agentry board check`: the
+prompt must be a file inside it and hold the `rules` heading, matched the way `agentry board draft apply` matches it.
 A miss is exit 2 naming the key and what was looked for, with the nearest heading when one is close
 (`"10. Standing rules"` for `"Standing rules"`).
 
@@ -292,10 +292,10 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
 ```
 
 - `status.file` and `status.next` (a path from the repository root, and a heading in that file) name a
-  status file kept by hand. `board status` and `session start` nudge once when an id listed under that
+  status file kept by hand. `agentry board status` and `session start` nudge once when an id listed under that
   heading is already done on the board, so the file does not drift. Both are optional; the nudge needs both.
 - `worktrees.keep` is a non-empty list of names or globs (`*` and `?`), matched against a worktree's
-  branch and its directory name. A match is shown as *kept* in `board status`, never as drift.
+  branch and its directory name. A match is shown as *kept* in `agentry board status`, never as drift.
 
 ## guard and cleanup
 
@@ -307,9 +307,9 @@ A miss is exit 2 naming the key and what was looked for, with the nearest headin
 - `guard.allow` is a non-empty list of globs (from the repository root; `**` crosses directories, as in
   `gate.after`). While a lane runs, an uncommitted edit in the main checkout to a file one of them matches
   does not stop it, unless a running lane's contract owns that file: an edit there still does. A commit on
-  main still does too. `board add` and `board set --apply` need no entry: each write is recorded and let
+  main still does too. `agentry board add` and `agentry board set --apply` need no entry: each write is recorded and let
   through as exactly what it wrote.
-- `cleanup.disposable` is a non-empty list of globs for ignored files `lane merge --cleanup` discards without
+- `cleanup.disposable` is a non-empty list of globs for ignored files `agentry lane merge --cleanup` discards without
   asking (build output, import caches). A wholly ignored directory is matched as its path (`build`,
   `**/.godot`; `build/**` also takes `build` itself). Any other ignored file still stops the cleanup and is
   listed for the owner.

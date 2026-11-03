@@ -7,6 +7,11 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **`agentry` command** — the plugin's `bin/agentry` is on the Bash tool's PATH while the plugin is
+  enabled: `agentry board …`, `agentry lane …`, `agentry draft …`, `--version`, `--help`. Next
+  steps the CLIs print name it when it is this plugin's bin, and the docs use it; hosts without it
+  keep `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"`. `/agentry:init` suggests the rule
+  `Bash(agentry:*)`.
 - **`lane exec fix <id> --notes N1,N3`** — a verified lane (`PASS WITH NOTES`) goes back to its
   builder on the notes the conductor names, then to the usual recheck. Verifiers now label their
   notes `N1`, `N2`, and so on.

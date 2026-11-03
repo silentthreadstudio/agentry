@@ -2,6 +2,7 @@
 
 This repo runs its work through Agentry's commands. Without Agentry installed, ignore this section.
 
+- The process commands are `agentry board …` and `agentry lane …` (the plugin puts `agentry` on the PATH).
 - Every session starts with `/agentry:start` and ends with `/agentry:close`.
 - A task with a board id goes through `/agentry:exec <id>`.
 - Landing a task's branch goes through `/agentry:merge <id>`.

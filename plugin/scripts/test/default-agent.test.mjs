@@ -341,7 +341,7 @@ test("the shipped conductor agent: the file static verify expects, no tools/mode
     "/agentry:ask",
     "/agentry:close",
     "/agentry:new decision",
-    "board draft add",
+    "agentry board draft add",
   ])
     assert.ok(text.includes(`\`${name}`), name);
 });

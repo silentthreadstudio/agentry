@@ -16,7 +16,7 @@ a question. `/agentry:go` stays the full pipeline and never routes to a lane on 
 ## exec
 
 The lane's state is a ledger, `.agentry/run/process/ledger/<id>.json` in the main checkout, stepped by
-`lane exec <step> <id>` (`scripts/lane.mjs`). Each step checks that the ledger expects it, does the git and board
+`agentry lane exec <step> <id>` (`scripts/lane.mjs`). Each step checks that the ledger expects it, does the git and board
 work, writes the ledger and prints one JSON object. The conductor runs the step `next` names and dispatches the
 prompt the step printed. It never composes a brief, picks the next round or writes the board itself.
 
@@ -59,7 +59,7 @@ conductor's call; a red that failed only in listed flaky tests is marked as such
 | final | `PASS` / `PASS WITH NOTES` | `gate`, then `close` |
 | final | `FAIL` | `stop` |
 | verify, recheck | `FAIL`, fewer than 3 verdicts | `fix` (resume the builder) |
-| verified `PASS WITH NOTES` | `lane exec fix <id> --notes N1,N3` | `fix` (resume the builder) on those notes, then `recheck` |
+| verified `PASS WITH NOTES` | `agentry lane exec fix <id> --notes N1,N3` | `fix` (resume the builder) on those notes, then `recheck` |
 | verify, recheck | `FAIL` at the 3rd verdict | `stop`: report every verdict to the owner |
 | gate | red, or the branch moved since the verdict | `stop` |
 | gate | red only in `gate.flaky` tests | the same gate step runs again alone, once; its record decides |
@@ -100,16 +100,16 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
   changed or was reverted since. HEAD may move only by other lanes' merges, each the run `preHead` → landed
   commits → board commit its ledger records, matched against main's first-parent history. Agentry's own files
   are not checked: `.agentry/run/`, and new memory records (`.agentry/memory/<facts|episodes>/<slug>-<ULID>.md`,
-  untracked, or in a commit that only adds them), the same definition `lane merge` and the gate use for a
+  untracked, or in a commit that only adds them), the same definition `agentry lane merge` and the gate use for a
   clean main (one function, `own-memory.mjs`). Anything else under the store is a breach: another file, a
   record staged as new, an edit of a tracked record. So a memory write that rewrites a committed fact
   (reinforce, feedback) stops the lane by design: commit it between lanes, not during one. A path's
   type and mode count with its content (a symlink, a chmod).
-  `board add` and `board set --apply` run in the main checkout record what they wrote the same way
+  `agentry board add` and `agentry board set --apply` run in the main checkout record what they wrote the same way
   (`.agentry/run/process/board-writes.jsonl`), so a night call written with them stops no lane; a hand edit
   of the same file still does. Files the process file lists in `guard.allow` (a status file, a docs folder)
   may change uncommitted while lanes run, except a file a running lane's contract owns: an edit there still
-  stops the lane. So: board edits through `board add` / `board set --apply`, never by hand, and no commits
+  stops the lane. So: board edits through `agentry board add` / `agentry board set --apply`, never by hand, and no commits
   on main while a lane builds.
 - **Trust boundary.** The guard catches a builder that slips into the main checkout; it is not a sandbox. It
   trusts `.agentry/run/` as Agentry's steps wrote it and checks each ledger's claims against git where git can
@@ -126,7 +126,7 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
 
 ### The briefs
 
-`lane exec` renders each round's brief from `references/briefs/` into the task's run dir
+`agentry lane exec` renders each round's brief from `references/briefs/` into the task's run dir
 (`.agentry/run/process/runs/<id>/`): `build.md`; `fix.md` (wraps the build brief: the verifier's fix list, a
 refused report, or the supplied fact); `verify.md` (with a recheck section when resuming); `final.md` (wraps the
 verify brief). Each brief carries the contract block verbatim, the owned files, the decisions it cites quoted

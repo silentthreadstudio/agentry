@@ -3,13 +3,13 @@
 Reference for the `process` skill. Init has three states and one rule: the judgment is yours, every claim is
 checked by `board.mjs`. Never write a mapping that `explain` has not confirmed, never commit.
 
-`board` below means `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"`. Exit 0 = OK, 1 = findings,
+Run `agentry board`. Exit 0 = OK, 1 = findings,
 2 = usage or spec error.
 
 ## Pick the state
 
 1. `.agentry/process.json` exists → **(c) set up**.
-2. Else `board scan --json` lists a table whose first column holds ids, or contract blocks (bold-lead or
+2. Else `agentry board scan --json` lists a table whose first column holds ids, or contract blocks (bold-lead or
    heading blocks led by ids), or frontmatter documents with ids → **(b) existing process**.
 3. Else → **(a) new repo**.
 
@@ -24,13 +24,13 @@ If `scan` finds something but the user says it is not their board, treat it as (
    overwrite an existing file: stop and ask.
 4. Write `.agentry/process.json` from `templates/process.json` with `root` set to that path. Without epics,
    drop `kinds.epic` and the `## Epics` section of `BOARD.md`.
-5. Run `board check`; it must print OK. Tell the user the example rows (`M1`, `S1`, `T1`, `E1`) are theirs to
+5. Run `agentry board check`; it must print OK. Tell the user the example rows (`M1`, `S1`, `T1`, `E1`) are theirs to
    replace.
 
 ## (b) Existing process — learn
 
 Work on a draft, never on the real file: `.agentry/run/process/draft.json`, read with
-`board explain --process .agentry/run/process/draft.json --json`.
+`agentry board explain --process .agentry/run/process/draft.json --json`.
 
 1. **Kinds from `scan`.** Each board-like table is a candidate kind: its file, its heading (exact text), the
    id column (the first column whose cells look like ids). Name the kind with the repo's own word (the
@@ -58,7 +58,7 @@ Work on a draft, never on the real file: `.agentry/run/process/draft.json`, read
    id (`LATER`) goes in that field's `also`. Stop after five rounds without progress and show the user what
    still doesn't map.
 8. **Rules.** For each catalog rule whose fields exist (`references/format.md`), add it to the draft and run
-   `board check --process <draft> --json`:
+   `agentry board check --process <draft> --json`:
    - no findings → **on**;
    - the repo's process doc (`PROCESS.md`, `CONTRIBUTING.md`, a board header, an existing checker's comments)
      states it and it has findings → **ask**, showing the findings; a few special rows failing (a pre-board
@@ -73,7 +73,7 @@ and rule as it is.
 
 ## (c) Set up — show and repair
 
-1. Run `board explain`. Show kinds × location × count, rules on with their finding counts and its `lanes`
+1. Run `agentry board explain`. Show kinds × location × count, rules on with their finding counts and its `lanes`
    block: gate, gate.quick, conductor prompt and rules, trigger block, default agent, `merge.push`, merge
    checks, the `.agentry/` commit policy per subfolder (tracked, ignored or undecided; `memory/` tracked is
    a privacy choice to point out) and the file's `version`. Each is ✓ or ✗ with the command that sets it; a
@@ -102,7 +102,7 @@ Ask each once, only when it cannot be inferred, in one `AskUserQuestion` where p
 Once the process file loads, set up what `/agentry:exec`, `/agentry:merge`, `/agentry:start` and
 `/agentry:close` use, in this order. A step already set up is shown, not asked again (`--relearn` aside).
 Each change to `.agentry/process.json` goes through the draft: copy it to `.agentry/run/process/draft.json`,
-edit the draft, run `board explain --process .agentry/run/process/draft.json` (exit 2 → fix the draft), then
+edit the draft, run `agentry board explain --process .agentry/run/process/draft.json` (exit 2 → fix the draft), then
 write the real file and delete the draft. The keys are in `references/format.md` § gate, extensions and
 conductor, and § guard and cleanup.
 
@@ -126,19 +126,19 @@ conductor, and § guard and cleanup.
    the git root) and `conductor.rules`, the heading standing rules are appended under (`Standing rules` for
    the template; for an existing file a heading of that kind, or propose adding one with the owner's OK).
    Without `rules`, a rule draft can't be applied.
-3. **The trigger block.** Run `board instructions` and show its output: the block it would write between
+3. **The trigger block.** Run `agentry board instructions` and show its output: the block it would write between
    `<!-- agentry:begin v1 -->` and `<!-- agentry:end -->` in `AGENTS.md` (created if absent) and the
    `@AGENTS.md` line it would add to an existing `CLAUDE.md` (never created). Every host reads `AGENTS.md`;
    Claude Code reads it beside a `CLAUDE.md` only through that import. Project instructions can also live in
    `.claude/CLAUDE.md`: with no root `CLAUDE.md` the import goes there as `@../AGENTS.md` (relative to that
    file); with both, in the root one only. An import inside a code fence, an HTML comment or a code span
-   doesn't count. On OK, `board instructions --apply`; it writes both files or neither (exit 2 with the
+   doesn't count. On OK, `agentry board instructions --apply`; it writes both files or neither (exit 2 with the
    reason when one can't be written).
    Text outside the markers is never touched, and a re-run changes nothing. If the repo's instruction files
    carry a competing line (every task through `/agentry:go`, a hand checker to keep green), list it and
    propose its replacement; edit it only on the owner's OK.
-4. **The default agent.** Run `board default-agent` and show `current`. Offer to make `agentry:conductor`
-   the project's main-session agent: `board default-agent --apply`, then `--verify` (static). A different
+4. **The default agent.** Run `agentry board default-agent` and show `current`. Offer to make `agentry:conductor`
+   the project's main-session agent: `agentry board default-agent --apply`, then `--verify` (static). A different
    `agent` already set is shown and replaced only on an explicit OK. The live check (`--verify live`) costs
    one small request (about 15k tokens); run it only with the owner's OK. Show `resolved` and `how`; on
    `no`, the cause. Say: it takes effect in the next session; `.claude/settings.local.json` overrides it;
@@ -155,7 +155,7 @@ conductor, and § guard and cleanup.
    owner's OK, never unasked.
 7. **The guard allowlist.** Only when the owner keeps files on main by hand while lanes run (the status file
    `status.file` names, a folder of drafts), offer them as `guard.allow`. Board files need no entry:
-   `board add` and `board set --apply` writes are recorded and never stop a lane. Never offer a folder a
+   `agentry board add` and `agentry board set --apply` writes are recorded and never stop a lane. Never offer a folder a
    task contract could own (source, tests); an edit in a running lane's owned files stops it anyway.
 8. **Disposable files.** Read the repo's `.gitignore` files and propose `cleanup.disposable` from the lines
    that are build output or caches the toolchain makes again (an import cache such as `.godot/`, `dist/`,
@@ -164,8 +164,10 @@ conductor, and § guard and cleanup.
    `**/.godot` and `*.translation` becomes `**/*.translation`; a line with a `/` before its end is anchored,
    so `/build/` becomes `build` (in a nested `.gitignore`, put its folder in front). Never propose what a
    person made or keeps locally (`.env*`, local config, logs, screenshots). Show each glob beside its
-   `.gitignore` line; write only the ones the owner confirms. `lane merge --cleanup` discards those without
+   `.gitignore` line; write only the ones the owner confirms. `agentry lane merge --cleanup` discards those without
    asking and still asks for any other ignored file.
+9. **The permission rule.** If the owner wants fewer prompts, suggest the rule `Bash(agentry:*)` (the plugin's
+   `agentry` command), never a rule bound to a path. Suggest it only; settings are the owner's.
 
-End with what was written (paths), what was left as it was, and the last `board check` result. Nothing is
+End with what was written (paths), what was left as it was, and the last `agentry board check` result. Nothing is
 committed: the user reviews the diff.
