@@ -248,7 +248,7 @@ export function rollback(root, { preHead, landed }) {
  *  records are left out, so main counts as clean with them on it, and the land leaves them as they are. */
 export const statusEntries = dirtyEntries;
 
-/** The entries that are not a plain edit of one of `files` (a rename's source field included). */
+/** The entries that are not a plain edit of one of `files` (a rename is one, by its destination). */
 export function notEdits(entries, files) {
   const wanted = new Set(files);
   return entries.filter(

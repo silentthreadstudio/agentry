@@ -6,7 +6,7 @@
 // may count it as the builder's or the owner's work. Only that shape, only as a new file: an edit of a
 // tracked record, a deletion or any other file under the store is still a change. (A well-formed fact
 // planted by hand looks the same as a conductor's `memory_write`; that stays open.)
-import { git } from "./worktree.mjs";
+import { git, porcelain } from "./worktree.mjs";
 
 const STORE = /^\.agentry\/memory\/(?:facts|episodes)\/[a-z0-9-]+-[0-9A-Z]{26}\.md$/;
 
@@ -17,14 +17,16 @@ export const isMemoryPath = (path) => STORE.test(path);
  *  is not: a land that picks the same path would refuse on it, so it counts as the owner's change. */
 export const isMemoryWrite = (entry) => entry.startsWith("?? ") && isMemoryPath(entry.slice(3));
 
-/** The `git status` entries of `dir` that are not Agentry's own new memory records, as `"XY path"` read
- *  untrimmed (a rename's or copy's source follows as its own field); null when git fails. The one answer to
- *  "is this checkout clean": exec's main guard, the land, the carry, the recovery and the gate use it. */
+/** The `git status` entries of `dir` that are not Agentry's own new memory records, as `"XY path"`, read
+ *  by the one porcelain parser (`worktree.porcelain`: a rename or copy is one entry, its destination);
+ *  null when git fails. The one answer to "is this checkout clean": exec's main guard, the land, the
+ *  carry, the recovery and the gate use it. */
 export function dirtyEntries(dir) {
-  const res = git(dir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  return res.status === 0
-    ? res.stdout.split("\0").filter((entry) => entry && !isMemoryWrite(entry))
-    : null;
+  try {
+    return porcelain(dir).filter((entry) => !isMemoryWrite(entry));
+  } catch {
+    return null;
+  }
 }
 
 /** Does commit `sha` (not a merge) do nothing but add memory records? */
