@@ -610,10 +610,11 @@ const isMerge = (root, sha) => git(root, "rev-list", "--parents", "-n1", sha).sp
 // squash / no-ff, or a hand edit that takes the task's file out or clears run.sh's executable bit. Main
 // moves on first half the time. Lands and reverts come up most, so a walk often ends on the revert of a
 // landed commit.
-function step(root, { pick, branch, fork, step: n }) {
+function step(root, { pick, branch, fork, created, step: n }) {
   if (pick() < 0.5) commitFile(root, `m${n}.txt`, `main ${n}\n`, `chore: main ${n}`);
   const ops = ["land", "land", "land", "pick", "revert", "revert", "revert", "revert"];
   ops.push("revert-m", "reset", "squash", "no-ff", "hand", "chmod");
+  if (created) ops.push("chmod", "chmod", "chmod", "chmod"); // the file the task created, hand-chmodded
   const op = ops[Math.floor(pick() * ops.length)];
   const history = firstParents(root).slice(0, -1); // never the root commit
   const choose = (list) => list[Math.floor(pick() * list.length)];
@@ -686,20 +687,24 @@ test("property: random pick/revert/reset/squash/no-ff/revert -m 1/chmod walks wr
     const pick = random(seed);
     const { root } = fresh();
     const shape = [null, "add", "drop", "mode"][Math.floor(pick() * 4)];
-    if (shape === "mode") commitFile(root, "run.sh", "echo T1\n", "chore: a script");
-    else if (shape) commitFile(root, "rep.txt", REPEATED[shape].before, "chore: a repeated block");
+    // A task that sets a mode sets it on a script already there, or on one it creates (even seeds).
+    const created = shape === "mode" && seed % 2 === 0;
+    if (shape === "mode" && !created) commitFile(root, "run.sh", "echo T1\n", "chore: a script");
+    else if (shape && shape !== "mode")
+      commitFile(root, "rep.txt", REPEATED[shape].before, "chore: a repeated block");
     const fork = git(root, "rev-parse", "HEAD");
     const { path, branch } = builtBranch(root, "T1");
     if (pick() < 0.5) commitFile(path, "T1.txt", "work of T1\nmore of T1\n", "feat: T1 more");
     if (pick() < 0.5) commitFile(path, "T1b.txt", "second\n", "feat: T1 second");
     if (shape === "mode") {
+      if (created) writeFileSync(join(path, "run.sh"), "echo T1\n");
       chmodSync(join(path, "run.sh"), 0o755);
       git(path, "add", "run.sh");
       git(path, "commit", "-q", "-m", "feat: T1 makes run.sh executable");
     } else if (shape) commitFile(path, "rep.txt", REPEATED[shape].after, `feat: T1 ${shape}s X`);
     ledger(root, "T1", { state: "verified" });
     const ops = [];
-    const walk = { pick, branch, fork };
+    const walk = { pick, branch, fork, created };
     for (let n = 0, steps = 1 + Math.floor(pick() * 5); n < steps; n++)
       ops.push(step(root, { ...walk, step: n }));
     const on = onMain(root, walk);

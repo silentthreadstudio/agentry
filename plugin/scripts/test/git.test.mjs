@@ -323,6 +323,33 @@ test("inEffect: a removed block put back elsewhere in the file is not in effect"
   assert.equal(inEffect(repo, { from: braced, to: cut, onto: more }), null);
 });
 
+test("inEffect: a single specific removed line put back is not in effect; a generic one is not a signal", () => {
+  const line = "enableBackdoor(true);";
+  const [base, task, moved] = history("one.js", [
+    `a = 1;\n${line}\nb = 2;\n`,
+    "a = 1;\nb = 2;\n",
+    `a = 1;\nb = 2;\n${line}\n`,
+  ]);
+  assert.deepEqual(inEffect(repo, { from: base, to: task, onto: moved }), {
+    file: "one.js",
+    line: 1,
+    what: "removed",
+  });
+  const [braced, cut, more] = history("one-brace.js", ["a\n}\nb\n", "a\nb\n", "a\nb\n}\n"]);
+  assert.equal(inEffect(repo, { from: braced, to: cut, onto: more }), null);
+});
+
+test("inEffect: the mode a created file landed with must still hold", () => {
+  writeFileSync(join(repo, "new.sh"), "echo new\n");
+  const base = run("rev-parse", "HEAD");
+  const task = chmodCommit("new.sh", true); // created executable
+  const reverted = chmodCommit("new.sh", false);
+  assert.deepEqual(inEffect(repo, { from: base, to: task, onto: reverted }), {
+    file: "new.sh",
+    what: "file",
+  });
+});
+
 test("worktrees: each path with its head and branch", () => {
   const trees = worktrees(repo);
   assert.deepEqual(

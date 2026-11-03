@@ -298,8 +298,8 @@ export const identities = (root, shas) =>
 //     of the removed lines may be back (no more copies of a removed line there than `to` had).
 // Diffs match equal lines arbitrarily (in `x X b` → `x X X b` either X is the new one), so when a hunk's
 // own lines repeat right next to it the window grows to the nearest line not among them, and a line the
-// hunk added may not have fewer copies in that window than `to` had either. A block of removed lines (two
-// or more, not all punctuation) may not have more copies anywhere in `onto`'s file than in `to`'s: put back
+// hunk added may not have fewer copies in that window than `to` had either. A removed block (two or
+// more lines, not all punctuation) or a specific single line may not have more copies anywhere in `onto`'s file than in `to`'s: put back
 // elsewhere, the code it took out is in effect again. A file whose mode and blob are the same in `to` and
 // `onto` holds outright, however it got back (a revert of the revert): byte for byte, every line is where
 // it landed. The mode and the type (file, symlink, submodule) count as much as the lines: a mode the change
@@ -345,7 +345,7 @@ function rawDiff(top, a, b, { numstat = false, paths } = {}) {
 function entryHolds({ prior, was, now }) {
   const [then, there] = [was, now].map((e) => (e ? KIND[e.mode] : null));
   if ((was && now && then !== there) || [then, there].includes("submodule")) return false;
-  const chmod = prior && was && prior.mode !== was.mode;
+  const chmod = was && (!prior || prior.mode !== was.mode); // a created file's mode is one the change set
   return !(chmod && now && now.mode !== was.mode);
 }
 
@@ -413,6 +413,13 @@ function blockCount(lines, block) {
   return n;
 }
 
+// A line that says something on its own: a letter or digit and two words or eight characters, so `}`,
+// `end` and `return;` do not.
+function specific(line) {
+  const bare = line.replace(/\s/g, "");
+  return /[\p{L}\p{N}]/u.test(bare) && (line.trim().split(/\s+/).length >= 2 || bare.length >= 8);
+}
+
 // One hunk against `onto`: null while it holds, else { line, what } (`line` in `to`).
 function hunkHolds({ was, now, kept, hunk }) {
   const added = Array.from({ length: hunk.count }, (_, i) => hunk.start + i);
@@ -420,7 +427,7 @@ function hunkHolds({ was, now, kept, hunk }) {
   if (gone !== undefined) return { line: gone, what: "added" };
   // A removed block (not one generic line like `}`) back anywhere in the file: the code is back.
   const block = hunk.removed;
-  if (block.length > 1 && block.some((l) => /\w/.test(l)))
+  if (block.length > 1 ? block.some((l) => /\w/.test(l)) : block.length && specific(block[0]))
     if (blockCount(now, block) > blockCount(was, block))
       return { line: Math.max(1, hunk.start), what: "removed" };
   const own = new Set([...hunk.removed, ...added.map((n) => was[n - 1])]);
