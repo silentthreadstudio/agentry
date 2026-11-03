@@ -10,6 +10,7 @@ import {
   rollback,
   subjectOf,
 } from "../land.mjs";
+import { isMemoryCommit } from "../own-memory.mjs";
 import { FRESH, now, ok, red, save, setMerge, short, tipOf } from "./lane.mjs";
 import { commitsRow } from "./rows.mjs";
 
@@ -87,9 +88,16 @@ export function landStep(lane, rows) {
   const merge = lane.ledger.merge ?? {};
   if (merge.step === "picking") return resumePicking(lane, rows);
   if (!FRESH.includes(merge.step)) {
+    // Main is preHead plus the picks. Once the gate passed, commits after them that only add Agentry's
+    // memory records (the owner committing an episode) may follow: they are no one's land, nothing is
+    // rolled back over them any more, and the board commit goes on top.
     const chain = commitsBetween(root, merge.preHead, "HEAD", { firstParent: true });
-    if (chain?.join(" ") !== merge.landed.join(" ")) {
-      const extra = (chain ?? []).filter((sha) => !merge.landed.includes(sha));
+    const n = merge.landed.length;
+    const memoryOk = (sha, i) => i >= n && merge.step === "gated" && isMemoryCommit(root, sha);
+    const extra = (chain ?? []).filter(
+      (sha, i) => !merge.landed.includes(sha) && !memoryOk(sha, i),
+    );
+    if (!chain || chain.slice(0, n).join(" ") !== merge.landed.join(" ") || extra.length > 0) {
       rows.push(
         red(
           "land",

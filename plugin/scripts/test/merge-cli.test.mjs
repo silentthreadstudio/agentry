@@ -999,6 +999,30 @@ test("after a kill at recording, an edit only staged is named as staged and show
   assert.match(git(root, "show", ":plan/sprints/S1.md"), /STAGED NOTE/);
 });
 
+// R1b-5 notes item 3: killed at recording, then the owner commits only an episode: the rerun took that
+// commit for a foreign board commit ("it also changes .agentry/memory/…") and gave no way on.
+test("after a kill at recording, a commit of only a memory record does not stop the rerun", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  const pre = head();
+  landKilledAt(KILL_AT_COMMIT, "before");
+  writeEpisode();
+  const episode = ".agentry/memory/episodes/built-01ARZ3NDEKTSV4RRFFQ69G5FAV.md";
+  git(root, "add", episode);
+  git(root, "commit", "-q", "-m", "chore(memory): record the episode", "--", episode);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /✓ recover +took back the board writes a killed run left uncommitted/);
+  const subjects = chainSince(pre).map((sha) => git(root, "log", "-1", "--format=%s", sha));
+  assert.deepEqual(subjects, [
+    "add src/a.txt",
+    "chore(memory): record the episode",
+    "docs(board): land T1",
+  ]);
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| S1 +\| done +\|/);
+  assert.equal(status(), "");
+});
+
 // R1b-5 round 4 item 2: a board-only commit someone else made on the picks was taken for the land's
 // board commit: the land was "done", T1 never written, exec's carried writes erased.
 test("a board-only commit on the picks that is not the land's stops it; the carry is kept", () => {

@@ -20,6 +20,7 @@ import {
   subjectOf,
   textAt,
 } from "../land.mjs";
+import { isMemoryCommit } from "../own-memory.mjs";
 import { rollBack } from "./gating.mjs";
 import { afterLand, now, ok, red, save, setMerge, short } from "./lane.mjs";
 
@@ -70,15 +71,19 @@ function notOurCommit({ root, ledger }, sha) {
 
 // What a run killed at `recording` left on main: `{ moved }` (main is not on the picks), `{ commit,
 // later, why }` (a commit past the picks: this land's board commit when `why` is null), or `{ mine,
-// foreign }` (main at the picks: the board writes left in the record's files).
+// foreign }` (main at the picks: the board writes left in the record's files). A commit that only adds
+// Agentry's memory records (the owner committing an episode) is not past the picks: it is no one's
+// board commit, and the land goes on on top of it.
 function recordingLeft(lane) {
+  const { root } = lane;
   const merge = lane.ledger.merge;
-  const chain = commitsBetween(lane.root, merge.preHead, "HEAD", { firstParent: true }) ?? [];
+  const chain = commitsBetween(root, merge.preHead, "HEAD", { firstParent: true }) ?? [];
   const n = merge.landed.length;
   if (chain.length < n || chain.slice(0, n).join(" ") !== merge.landed.join(" "))
     return { moved: true };
-  if (chain.length > n) {
-    const [commit, ...later] = chain.slice(n);
+  const past = chain.slice(n).filter((sha) => !isMemoryCommit(root, sha));
+  if (past.length > 0) {
+    const [commit, ...later] = past;
     return { commit, later, why: notOurCommit(lane, commit) };
   }
   return writesLeft(lane);
