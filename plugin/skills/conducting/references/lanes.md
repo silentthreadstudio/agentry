@@ -7,7 +7,6 @@ a question. `/agentry:go` stays the full pipeline and never routes to a lane on 
 ## What a lane never does
 
 - No right-sizing, no spec, plan or split step, no spec or plan gate. The planning already happened.
-- No Flow MCP calls (`run_start`, `task_*`, `event_emit`, `artifact_write`, `review_*`, `backlog_*`).
 - No files under `.agentry/work/` (`spec.md`, `plan.md`, `tasks/*.md`).
 - No board edits by hand and no contract edits. The exec steps write the board through the process file's
   `lifecycle`; a repo without one gets no writes.
@@ -169,14 +168,14 @@ Dispatch exactly one specialist, chosen by where the answer lives:
 | The answer is outside the repo: a library's current API, a standard, an external service | researcher |
 | A design question: how something should be structured, which approach fits | architect |
 
-No `isolation: "worktree"`, no run handle.
+No `isolation: "worktree"`.
 
 ```text
 Answer this question; change nothing.
 <the question>
 
 Answer in your reply. No edits, no commits, no files written (no plan, ADR or research doc, nothing under
-.agentry/), no memory writes, no Flow calls.
+.agentry/), no memory writes.
 Cite every claim: path:line for code, a URL for outside sources. Say what you could not verify.
 ```
 

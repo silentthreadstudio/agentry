@@ -46,13 +46,16 @@ Full treatment — contract derivation, overlap detection, finding propagation w
 
 ## Output
 
-A set of Task documents, one per slice, **authored as plain markdown** — `## Goal` · `## Contract` · `## Acceptance` · `## Out of scope` — plus the criterion→task coverage matrix. The **Contract** section carries `owns`/`exposes`/`excludes`/`deps`/`satisfies` — as prose bullets, or a fenced `yaml` block *inside* `## Contract` — so coverage and parallel-safety stay machine-checkable. **Do not hand-write a `---` frontmatter block:** `task_create` is the single frontmatter authority (next paragraph); a leading `---` in the body stacks into a *double frontmatter* that renders as a broken blob in the Workbench. Each task body carries its **must-not-touch** boundary, **pinned** names for any surface a sibling consumes, and the **leave-it-green** verify/build steps (discovered from the repo, never hardcoded) — see the reference. Report any memory that shaped the decomposition in `used_memories`.
+A set of Task documents, one per slice — `tasks/NNN-slug.md` in the run's work folder (`.agentry/work/<run>/`), written as plain markdown files — plus the criterion→task coverage matrix (`tasks/coverage.md`). Each task file opens with **exactly one** frontmatter block, `title` and `status: todo`, then the body: `## Goal` · `## Contract` · `## Acceptance` · `## Out of scope`. The **Contract** section carries `owns`/`exposes`/`excludes`/`deps`/`satisfies` — as prose bullets, or a fenced `yaml` block *inside* `## Contract` — so coverage and parallel-safety stay machine-checkable. **The contract lives in the body, never in frontmatter, and never in a second `---` block:** a stacked frontmatter is a broken file. Each task body carries its **must-not-touch** boundary, **pinned** names for any surface a sibling consumes, and the **leave-it-green** verify/build steps (discovered from the repo, never hardcoded) — see the reference. Report any memory that shaped the decomposition in `used_memories`. (This applies **above the one-shot floor only** — a one-shot writes no task files at all.)
 
-**Emit each slice through FLOW — `task_create(run, title, body)` per task.** When the split runs as part of an escalated run, write each Task contract via the **`flow` MCP** `task_create` call (threading the `run` handle the conductor holds from `run_start`), not a raw hand-written file. You supply the `title` and the **plain-markdown `body`**; Flow stamps the single frontmatter (`title`, `status: todo` from the closed status enum, the content-hash `version`) — correct by construction, so the status vocabulary can't drift. The **contract lives in the body's `## Contract` section, not in frontmatter** — Flow owns the one frontmatter block. (This is the planning half of the FLOW mandate; the conducting skill mandates `task_assign`/`task_status` for the lifecycle. As ever, this applies **above the one-shot floor only** — a one-shot writes no task files at all.)
-
-**Canonical task body** — exactly what you pass as `body` (Flow prepends the frontmatter; the body opens at `## Goal`, never `---`):
+**Canonical task file** — `NNN` zero-padded from `001`, `slug` a few kebab-case words of the title:
 
 ~~~markdown
+---
+title: <task title>
+status: todo
+---
+
 ## Goal
 <one-line outcome>
 

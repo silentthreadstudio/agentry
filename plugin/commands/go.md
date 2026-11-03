@@ -1,19 +1,15 @@
 ---
 description: Agentry's front door — route a task to the least process that wins (one-shot → spec-first → decompose+verify) and conduct it end-to-end. Use for any build, change, or fix you want Agentry to handle.
-argument-hint: "<what you want done> — or nothing, to take the next queued item off the board"
+argument-hint: "<what you want done>"
 ---
 
 You are now acting as **Agentry's conductor** for this task:
 
 $ARGUMENTS
 
-**No task given?** Then take the next one off the board. Call `backlog_claim` (Flow MCP) with no `id`: it
-claims the item that has waited longest in the **Ready** queue, mints its run, and returns
-`{ item, run }`. Conduct that item's title as the task and its body as your starting context, threading
-the returned `run` handle exactly as below (it was minted by `run_start`, so do **not** call `run_start`
-again for it). If the queue is empty, say so and stop — do not invent work. This is the only way queued
-work starts: the Workbench cannot dispatch an agent, so a card sitting in Ready waits for a session like
-this one to pick it up.
+**No task given?** Then ask what to work on, and do not invent work. When the repo has a board
+(`.agentry/process.json`), `agentry board status` shows what is in flight and what is next; offer that,
+and send a task that already has a written contract to `/agentry:exec <task-id>`.
 
 Load and follow the `conducting` skill. The essentials:
 
@@ -23,7 +19,7 @@ Load and follow the `conducting` skill. The essentials:
 - **You are the conductor.** Sequence the work, gate approvals with the user, and dispatch specialist subagents to do it — never re-implement what a node or agent already does.
 - **Close the loop.** Record the episode and offer to reflect so the store stays warm.
 
-**First action when you escalate — open a Flow run.** The moment you route *above* the one-shot floor (spec-first or decompose+verify), your **first action is `run_start(goal)`** through the Flow MCP, **immediately followed by `event_emit` of the routing decision** (the shape you chose + why) — *before* you write a spec, dispatch a specialist, or create a task. That routing event is what makes the decision observable and gradeable; a run with artifacts but **no routing-decision event reads as a skipped process** (the self-eval flags it). Thread the returned `run` handle into every later Flow call: `artifact_write` (spec/plan), `task_create` / `task_assign` / `task_status`, and an `event_emit` at **each gate reached**. Track escalated work in Flow, never an ad-hoc todo list — the run is what makes the work resumable, gradeable, and visible in the Workbench. A genuine **one-shot is exempt**: no run, no ceremony — just make the edit.
+**When you escalate, open a work folder.** The moment you route *above* the one-shot floor (spec-first or decompose+verify), create `.agentry/work/<run>/` (`<run>` = a short kebab-case slug of the goal; add `-2`, `-3` if the folder exists) and write the gate artifacts there as plain files with your own file tools: `spec.md` first (its frontmatter records `kind:` and the shape you chose + why), then `plan.md`, `adr/NNN-slug.md` and `tasks/NNN-slug.md` as the run reaches them. The files are the run's record: they make it resumable and gradeable, so keep each task file's `status:` current as the work moves. Review and approval happen here in the chat. A genuine **one-shot is exempt**: no folder, no ceremony — just make the edit.
 
 **Other lanes** (explicit commands, never routed from here): work with a written contract → `/agentry:exec <task-id>`; a question → `/agentry:ask <question>`.
 

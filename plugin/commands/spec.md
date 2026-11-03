@@ -10,6 +10,6 @@ Brief for the product-owner:
 - Write **observable, verifiable** acceptance criteria (`AC1..n`) — checkable by behavior, not vibes. These will trace to tasks and drive assemble.
 - Define needs, not solutions; don't gold-plate.
 
-Output: a **Spec** (doc-01 format) written via the Flow MCP if present — `artifact_write(run, kind:"spec")` (persists at `.agentry/work/<id>-<slug>/spec.md`).
+Output: a **Spec** (doc-01 format) written as a plain file at `.agentry/work/<run>/spec.md`, one frontmatter block (`title`, `status: draft`, `kind`) — the work-folder layout in the `conducting` skill.
 
 **Then gate:** present "done = X" (the acceptance criteria) to the user and confirm before any building begins. The spec gate is the conductor's job — workers can't do it.

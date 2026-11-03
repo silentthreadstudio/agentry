@@ -101,7 +101,7 @@ UI/product work additionally routes the designer (no dedicated node required —
 | **Plan gate** | decompose+verify, before the build | verifier runs a *plan-lens* (falsifiable acceptance? contracts compose? riskiest first?) → user approves |
 | **Ship gate** | assemble = MEETS | offer {commit+PR / iterate / reflect} |
 
-In the Workbench (V2) these gates move out of chat: the human annotates the artifact and approves; the conductor reads the `.review/` sidecar at the next turn (doc 10). Until then, the **chat turn is the gate**.
+The **chat turn is the gate**: the artifact is a file in the work folder, and the user reviews and approves it in the conversation.
 
 ## What flows where (thread information, don't re-derive)
 

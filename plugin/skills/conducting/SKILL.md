@@ -15,7 +15,7 @@ Run a task as Agentry's conductor: choose the **least process that wins**, dispa
 
 ## Lanes — outside the pipeline
 
-Work with a written contract → `/agentry:exec <task-id>`; landing a finished task → `/agentry:merge <task-id>`; a question → `/agentry:ask <question>`. A session opens with `/agentry:start` and ends with `/agentry:close`. Lanes skip routing, the gates, Flow and `.agentry/work/`, and `/agentry:go` never routes to them. Their rules live in `references/lanes.md`, `references/merge.md` and `references/session.md`.
+Work with a written contract → `/agentry:exec <task-id>`; landing a finished task → `/agentry:merge <task-id>`; a question → `/agentry:ask <question>`. A session opens with `/agentry:start` and ends with `/agentry:close`. Lanes skip routing, the gates and `.agentry/work/`, and `/agentry:go` never routes to them. Their rules live in `references/lanes.md`, `references/merge.md` and `references/session.md`.
 
 ## Interaction mode — interactive (default) vs auto-pilot
 
@@ -52,7 +52,7 @@ Most tasks touch only part of this. A one-liner is `Recall → do it → Learn`.
 
    **Classify the *kind* too — a second, orthogonal axis.** Alongside (never instead of) the complexity shape, name the **kind** of work ∈ `{feature, bug, refactor, perf, dep-upgrade, ci-red}`. On **any escalation above one-shot**, record it as `kind: <kind>` in the `spec.md` frontmatter you already write (a genuine one-shot writes no `spec.md` → its kind lives in the run trace/episode only). **Kind ⊥ complexity — the load-bearing invariant:** classifying kind never forces a complexity shape and vice-versa. A `bug` may route one-shot *or* decompose+verify; a `feature` may be either too. **Kind selects the *discipline*; complexity selects the *process weight*.** In particular `bug / ci-red / perf` select the **debug discipline** (the tightened `implementing` "When fixing" mode: reproduce-first → regression-guard); the other kinds use the default build discipline. The kind→discipline map lives in `references/routing-and-dispatch.md`.
 3. **Dispatch.** Send work to specialists (the ladder below). Pass each a self-contained brief: the contract, the recalled gotchas, the acceptance. Parallelize only where task contracts don't overlap.
-4. **Gate** at the decision points (below). Gating needs the user — that's why you're the main session. **Each gate's artifact (`spec.md`, `plan.md`, task files) is written to `.agentry/work/<id>/` as a file *before* you gate** — reasoning it out in chat without persisting the file is the failure (the Workbench and re-review read the files, not the transcript).
+4. **Gate** at the decision points (below). Gating needs the user — that's why you're the main session. **Each gate's artifact (`spec.md`, `plan.md`, task files) is written to `.agentry/work/<run>/` as a file *before* you gate** — reasoning it out in chat without persisting the file is the failure (resuming and re-review read the files, not the transcript).
 5. **Verify / Assemble.** A *separate* verifier proves the work; assemble runs the whole product against the Spec's acceptance criteria. See the build loop below.
 6. **Learn.** Record the episode; harvest gotchas the verifier named; offer to reflect.
 
@@ -79,53 +79,37 @@ On **spec-first and decompose+verify these gates are mandatory stops, in order �
 
 > **Outward-action authorization (pointer).** For ship steps that leave the machine, the conductor evaluates `authorize(action)` against the `shipping` boundary's `local`/`outward` vocabulary — the three outward actions `{push, pr-open, merge}` default to `gate`, so no outward action is ever the autonomous default. Full semantics live in the `shipping` skill; here, just acknowledge the gate.
 
-> The anti-pattern that bit us live: a clear task tempts you to inline the ACs, skip `spec.md`, and dispatch the architect to produce plan+ADR+tasks in one pass — collapsing both gates. Don't. The artifact + the stops are the point — and the artifact is a **file on disk** in `.agentry/work/<id>/`, not a chat message.
+> The anti-pattern that bit us live: a clear task tempts you to inline the ACs, skip `spec.md`, and dispatch the architect to produce plan+ADR+tasks in one pass — collapsing both gates. Don't. The artifact + the stops are the point — and the artifact is a **file on disk** in `.agentry/work/<run>/`, not a chat message.
 
-> **FLOW on escalated runs (pointer).** Each gate reached and each routing decision is an `event_emit(run, …)`, and each gate artifact (`spec.md`, `plan.md`) is written through `artifact_write(run, …)` — see §FLOW. The artifact is still a **file on disk** in `.agentry/work/<run>/`; `artifact_write` is how you write it (and stamps `version`), not a substitute for it. This applies above the one-shot floor only.
+**Work-folder layout** (the same in every repo): `.agentry/work/<run>/`, where `<run>` is a short kebab-case slug of the goal (add `-2`, `-3` if the folder exists). `spec.md` and `plan.md` are single docs at the **root**; **`adr/NNN-slug.md`** and **`tasks/NNN-slug.md`** (+ `tasks/coverage.md`) are **always folders** — ADRs and tasks are numbered, append-only series, so `adr/` and `tasks/` are folders *even with a single entry*. An ADR at the work-dir root is wrong; it goes in `adr/`.
 
-**Work-folder layout** (the same in every repo): `spec.md` and `plan.md` are single docs at the **root**; **`adr/NNN-slug.md`** and **`tasks/NNN-slug.md`** (+ `tasks/coverage.md`) are **always folders** — ADRs and tasks are numbered, append-only series, so `adr/` and `tasks/` are folders *even with a single entry*. An ADR at the work-dir root is wrong; it goes in `adr/`.
+## The work folder — the run's record (escalated runs only)
 
-## FLOW — the orchestration record (escalated runs only)
+On any run **above the one-shot floor** (spec-first / decompose+verify), the work folder *is* the orchestration record. Write it with your own file tools, as plain markdown; each file opens with **exactly one** `---` frontmatter block:
 
-On any run **above the one-shot floor** (spec-first / decompose+verify), record the orchestration through the **`flow` MCP** (`mcp__…_flow__*`) so the run's state is structured and correct-by-construction, not prose-narrated. The skill *mandates* these calls; they are not optional narration.
-
-- **`run_start` FIRST — hold the returned `run` handle.** Begin the run by calling `run_start(goal)` *before* any other FLOW call or any artifact write. It mints and returns a **`run` handle**; **thread that explicit `run` into every subsequent FLOW call** (`task_*`, `event_emit`, `artifact_write`, `agent_*`, `review_*`, `run_get`/`run_status`). Per **ADR-005 (NO branch)** the stdio FLOW server has **no ambient "current run"** — `run` is a **required argument** on every tool, never resolved server-side; a FLOW call before `run_start` is an error. If you know this session's `session_id`, pass it to `run_start` so it seeds the session→run pointer proactively; if not, omit it. **Known limit:** no hook writes that pointer now and an agent usually cannot learn its `session_id`, so the pointer is rarely seeded — review comments then reach every session rather than one, and the Workbench token chart stays empty.
-- **Write a spec/plan ⇒ `artifact_write`** (threading `run`) — it stamps the `version` content-hash. Do this *as* you write each gate artifact (`spec.md`, `plan.md`).
-- **Each routing decision / gate reached / node enter·done ⇒ `event_emit`** (threading `run`). The **conductor is the primary event emitter** — the `flow` stream is the rich record (shape + kind, gate, node + duration); no hook writes it for you.
-- **CHECKPOINT — proportional (AC7).** This entire FLOW mandate applies **only above the one-shot floor.** A **one-shot run calls NOTHING through FLOW** — no `run_start`, no `task_*`, no `event_emit`, no `artifact_write`. Never impose FLOW ceremony on a one-shot; right-sizing already decided it didn't need orchestration state. (This mirrors §Gating: a genuine one-shot writes nothing to `.agentry/work/`.)
+- **`spec.md` first** — before any dispatch or task file. Frontmatter: `title`, `status: draft` (→ `approved` at the spec gate), `kind: <kind>`, and `shape: spec-first | decompose` with one body line saying why — that line is the routing decision, made observable.
+- **`plan.md`** — frontmatter `title`, `status: draft` (→ `approved` at the plan gate).
+- **`tasks/NNN-slug.md`** — one per task, `NNN` zero-padded from `001`. Frontmatter `title` and `status: todo`; the body opens at `## Goal` (see the `planning` skill), never with a second `---` block.
+- **CHECKPOINT — proportional.** A **one-shot run writes nothing** here — no folder, no spec, no task files. Never impose this record on a one-shot; right-sizing already decided it didn't need one.
 
 ## Build loop (implement ⇄ verify)
 
 After the plan gate, run each task: dispatch the **implementer** → dispatch a **separate verifier** (never the author — that independence is the point).
 
-- **Record the task lifecycle through FLOW (escalated runs).** On **dispatch** of a task, call `task_assign(run, …)` (sets the assignee / `lockedBy`) **and** `task_status(run, in-progress)`; on the worker's **return**, call `task_status(run, in-review)` then `task_status(run, done)` once it passes — every call threading the explicit `run` handle from `run_start`. The status enum is closed and the assignee can't be forgotten because the tool enforces them; this is what makes the task files carry live status, not drifted prose.
+- **Keep each task's `status:` current (escalated runs).** On **dispatch**, set the task file's frontmatter to `status: in-progress` (and `assignee: <agent>`); on the worker's **return**, `in-review`, then `done` once it passes. The values are `todo | in-progress | in-review | done`. A status you don't write is one nobody can see: a resumed session reads the files, not your memory of the run.
 - **Fix loop = fresh implementer + the verifier's fix contract.** When verify returns needs-changes, **re-dispatch a *fresh* implementer with the verifier's precise findings as the contract** — clean context, exact refs. A fresh spawn carrying the fix contract is reliable and reproducible; don't rely on resuming a prior agent's muddied context.
 - **Keep build artifacts in sync, run the project's checks.** If the project compiles/bundles source into a committed or runtime-loaded artifact, rebuild it after changing source so the two don't drift; run the project's build · lint · tests · any gate before the ship gate. **Discover those commands** from the repo (package.json scripts, Makefile, CONTRIBUTING, `CLAUDE.md`, repo-facts) — never assume. A project's specific rules (e.g. a build-output-lockstep) live in *its* `CLAUDE.md`/memory, not in this skill.
 
-## The board — where your work becomes visible
+## Queued and deferred work
 
-Agentry's work lives on a board (the Workbench): `backlog → ready → running → in-review → done`. You do
-not draw it, but **what you write is what it shows**, so two habits are not optional:
-
-- **Queued work is CLAIMED, not invented.** `/agentry:go` with no task calls `backlog_claim`, which takes
-  the longest-waiting **ready** item and mints its run. If the queue is empty, say so — never invent work
-  to fill it. The Workbench cannot dispatch anything itself (it has no model), so a card sitting in Ready
-  is waiting for a session like yours; that pull is the ONLY way queued work starts.
-- **A status you don't write is a status nobody can see.** The board's columns are derived from task
-  status and the run's files, so skipping `task_status` doesn't just lose a record — it makes a human
-  watching the board believe nothing is happening. Same for `task_assign`: the assignee is what puts a
-  name on the card before the agent's first write.
-
+- **Queued work is picked, not invented.** `/agentry:go` with no task asks what to work on. When the repo
+  has a board (`.agentry/process.json`), `agentry board status` shows what is next; a task with a written
+  contract goes to `/agentry:exec <task-id>`. Never invent work to fill an empty queue.
 - **Deferred work is FILED, not just mentioned.** When you decide something is out of scope, or a verifier
-  surfaces a follow-up, or the user says "later" — `backlog_add` it. Saying it in prose loses it the moment
-  the session ends: a commit message is not a queue and memory is not a to-do list. The board is where a
-  human looks to answer *what is next*, so work that only exists in your reply is work nobody will pick up.
-  File it with enough context to be startable cold (`backlog_list` shows what is already there, so you
-  reinforce an existing item rather than filing a near-duplicate; `backlog_update` moves one to `ready`
-  when it is genuinely next). Filing is cheap and reversible — dropping a follow-up is neither.
-
-Presence (who is working, and for how long) is yours to record: call `agent_state(run, …)` when you dispatch
-an agent and again when it returns, so the Workbench shows who is on shift.
+  surfaces a follow-up, or the user says "later" — file it. With a board, offer `/agentry:new` for it;
+  without one, name it in your closing summary, and under a `## Follow-ups` heading in the run's
+  `spec.md` when the run has one. A commit message is not a queue and memory is not a to-do list: work that only exists in your
+  reply is work nobody will pick up. File it with enough context to be startable cold.
 
 ## Memory discipline
 
@@ -151,7 +135,7 @@ Node↔specialist mapping and the signals rubric live in the reference.
 - **Skipping the spec gate** on a vague ask → building the wrong thing.
 - **Parallelizing overlapping contracts** → silent clobbering.
 - **Not threading memory** → every worker re-explores the same subsystem cold.
-- **Gating in chat without the artifact file** → spec/plan must exist in `.agentry/work/<id>/`, not just the transcript.
+- **Gating in chat without the artifact file** → spec/plan must exist in `.agentry/work/<run>/`, not just the transcript.
 - **Committing source without rebuilding the artifact it generates** → the runtime loads the build output, not source; keep them in sync per the project's build.
 
 ## Additional resources
