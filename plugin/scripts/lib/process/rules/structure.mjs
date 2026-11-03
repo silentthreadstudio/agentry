@@ -82,11 +82,16 @@ export const FIELD = {
 
 // The items an id names, in the first of `kinds` (the field's `ref` order) that has it: an id shared by
 // two kinds (a milestone and a sprint both called "M1") reads as the kind the field lists first.
-export function resolve(model, id, kinds) {
-  const hits = withId(model, id);
-  for (const kind of kinds) {
-    const found = hits.filter((item) => item.kind === kind);
-    if (found.length) return found;
+// A `mentions` field's `prefix` is no part of the id when the kind numbers its items plainly (`D2` is
+// decision `2`): the id as written is tried first, then without the prefix.
+export function resolve(model, id, kinds, prefix) {
+  const wanted = prefix && id.startsWith(prefix) ? [id, id.slice(prefix.length)] : [id];
+  for (const name of wanted) {
+    const hits = withId(model, name);
+    for (const kind of kinds) {
+      const found = hits.filter((item) => item.kind === kind);
+      if (found.length) return found;
+    }
   }
   return [];
 }
@@ -159,7 +164,7 @@ const refsResolve = {
         for (const [name, field] of refs) {
           for (const value of idsIn(item.fields[name])) {
             if (field.also?.includes(value)) continue;
-            const hits = resolve(model, value, refKinds(field));
+            const hits = resolve(model, value, refKinds(field), field.prefix);
             if (hits.length === 0) {
               out.push(finding("refs-resolve", item, `${name} '${value}' is not on the board`));
             } else if (hits.length > 1) {

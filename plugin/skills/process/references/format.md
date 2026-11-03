@@ -37,8 +37,9 @@ in `@agentry/core` (`packages/core/src/process.ts`); when this page and the sche
   | Field key | Meaning |
   | :--- | :--- |
   | `column` | The header text, exactly. Column order never matters. |
-  | `type` | `text` (default) · `list` (comma-separated) · `ref` (one id) · `flag` (cell contains `mark`) · `date` (leading `YYYY-MM-DD`) · `commits` (every 7–40 hex token) · `evidence` (commits plus the remaining text as a note) · `link` (the first markdown link's text, not its target; a cell without a link reads whole) |
-  | `ref` | The kind (or list of kinds) a `ref`/`list` value names. A hit in two kinds is a finding. |
+  | `type` | `text` (default) · `list` (comma-separated) · `ref` (one id) · `flag` (cell contains `mark`) · `date` (leading `YYYY-MM-DD`) · `commits` (every 7–40 hex token) · `evidence` (commits plus the remaining text as a note) · `link` (the first markdown link's text, not its target; a cell without a link reads whole) · `mentions` (free text; reads every `<prefix><digits>` token in it, e.g. `D2`, once each) |
+  | `ref` | The kind (or list of kinds) a `ref`/`list`/`mentions` value names. A hit in two kinds is a finding. |
+  | `prefix` | On a `mentions` field (which also needs `ref`): the letters before the number, e.g. `{ "type": "mentions", "ref": "decision", "prefix": "D" }`. A mention `D2` resolves to the item with id `D2`, else the one with id `2` (kinds that number plainly); `refs-resolve` reports one that names none. A prefix inside a word or a longer token (`AD2`, `D2x`, `D2.5`) is no mention. |
   | `role` | `parent` on the child's `ref` field (a task's sprint), `children` on the parent's `list` field (a milestone's sprints). Together they make the tree. |
   | `also` | Literal values allowed besides ids (a parking word such as `LATER`). |
   | `mark`, `match`, `case` | The flag glyph; a regex applied before the type; `upper` to compare case-blind. |
@@ -73,8 +74,9 @@ naming the key), because the rules would otherwise run on links or phases that a
 
 - **Ids** — a table kind names its `id.column`; a files kind takes its id from `frontmatter:<key>` or
   `filename:<pattern with {id}>`; every `match` is a valid regex.
-- **Refs** — `ref` is read only from a `ref` or `list` field, and names at least one declared kind. `case` is
-  read only on a text field (on a ref it would change the id before it is looked up).
+- **Refs** — `ref` is read only from a `ref`, `list` or `mentions` field, and names at least one declared kind. `case` is
+  read only on a text field (on a ref it would change the id before it is looked up). A `mentions` field needs
+  both `ref` and `prefix`; `prefix` is read only on one.
 - **The tree** — a kind has at most one field with role `parent`, of type `ref` (a parent is one id); a field
   with role `children` is a `list`. A role field of another type would link nothing.
 - **Rank** — the one number the order rules (`deps-not-forward`) compare, defined without regard to the
@@ -105,7 +107,7 @@ file declares for that field, nor an item of the kind the field refs) is a findi
 | :--- | :--- |
 | `ids-unique` | no id twice in a kind |
 | `status-known` | every status word is in `values` |
-| `refs-resolve` | every `ref`/`list` value names an item (or an `also` literal) |
+| `refs-resolve` | every `ref`/`list`/`mentions` value names an item (or an `also` literal) |
 | `file-required` | an item with `file.required` has exactly one file (no `kind`: every kind whose file is required) |
 | `members-listed` | the parent's own-file section lists exactly its children |
 | `deps-done` | a started item's dependencies are all done (a sprint or milestone dep by its phase) |

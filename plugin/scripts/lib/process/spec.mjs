@@ -40,7 +40,7 @@ import {
 } from "./rules/index.mjs";
 
 const PHASES = ["planned", "active", "done", "dropped", "parked"];
-const TYPES = ["text", "list", "ref", "flag", "date", "commits", "evidence", "link"];
+const TYPES = ["text", "list", "ref", "flag", "date", "commits", "evidence", "link", "mentions"];
 const quote = (xs) => xs.map((x) => `"${x}"`).join(", ");
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const has = (obj, key) => isObject(obj) && Object.hasOwn(obj, key);
@@ -119,6 +119,7 @@ const field = shape({
   "column!": str,
   type: oneOf(...TYPES),
   ref: strOrList,
+  prefix: str,
   role: oneOf("parent", "children"),
   also: list(str),
   mark: str,
@@ -390,8 +391,19 @@ function checkTree(kinds, name, at, bad) {
     const typed = TYPES.includes(type); // a wrong type is the shape check's to report
     if (Array.isArray(def.ref) && def.ref.length === 0)
       bad(`${here}.ref`, "should name at least one kind");
-    if (has(def, "ref") && typed && !["ref", "list"].includes(type))
-      bad(`${here}.ref`, `is read only from a "ref" or "list" field, and "${f}" is ${type}`);
+    if (has(def, "ref") && typed && !["ref", "list", "mentions"].includes(type))
+      bad(
+        `${here}.ref`,
+        `is read only from a "ref", "list" or "mentions" field, and "${f}" is ${type}`,
+      );
+    if (has(def, "prefix") && typed && type !== "mentions")
+      bad(`${here}.prefix`, `is read only on a "mentions" field, and "${f}" is ${type}`);
+    if (type === "mentions") {
+      if (!has(def, "ref"))
+        bad(here, `is a "mentions" field and needs a "ref" (the kind it cites)`);
+      if (!has(def, "prefix"))
+        bad(here, `is a "mentions" field and needs a "prefix" (such as "D")`);
+    }
     // On a ref it would upper-case the id before the tree links it, so a mixed-case id never links.
     if (has(def, "case") && typed && type !== "text")
       bad(`${here}.case`, `is read only on a text field, and "${f}" is ${type}`);

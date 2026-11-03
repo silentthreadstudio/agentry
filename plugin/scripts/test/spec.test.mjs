@@ -422,7 +422,7 @@ const READER = [
       Reflect.deleteProperty(s.kinds.task.fields.sprint, "type");
     },
     [
-      'kinds.task.fields.sprint.ref is read only from a "ref" or "list" field, and "sprint" is text',
+      'kinds.task.fields.sprint.ref is read only from a "ref", "list" or "mentions" field, and "sprint" is text',
       'kinds.task.fields.sprint has role "parent", which needs type "ref", not "text"',
     ],
   ],
@@ -455,7 +455,9 @@ const READER = [
     (s) => {
       s.kinds.task.fields.risky = { column: "Risk", type: "flag", ref: "task" };
     },
-    ['kinds.task.fields.risky.ref is read only from a "ref" or "list" field, and "risky" is flag'],
+    [
+      'kinds.task.fields.risky.ref is read only from a "ref", "list" or "mentions" field, and "risky" is flag',
+    ],
   ],
   [
     "an upper-cased ref, which would no longer name a mixed-case id",

@@ -192,6 +192,13 @@ const PARSE = {
   // The link text (the target is the kind's own file, found by its glob); a cell without a link reads whole.
   link: (v) => (LINK.exec(v)?.[1] ?? v).trim() || null,
   date: (v) => DATE.exec(v)?.[1] ?? null,
+  // The ids a free text cites by the field's prefix (`N2`), each once; a prefix inside a word or a longer
+  // token (`AN2`, `N2x`, `N2.5`) is no citation.
+  mentions: (v, field) => {
+    const prefix = String(field.prefix ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const cited = new RegExp(`(?<!\\w)${prefix}\\d+(?![\\w.]*\\w)`, "g");
+    return [...new Set(v.match(cited) ?? [])];
+  },
 };
 
 /** `commits`: every `[0-9a-f]{7,40}` token of a cell. */

@@ -10,8 +10,11 @@ export type Phase = z.infer<typeof Phase>;
 export const Field = z
   .object({
     column: z.string(),
-    type: z.enum(["text", "list", "ref", "flag", "date", "commits", "evidence", "link"]).optional(),
+    type: z
+      .enum(["text", "list", "ref", "flag", "date", "commits", "evidence", "link", "mentions"])
+      .optional(),
     ref: z.union([z.string(), z.array(z.string())]).optional(),
+    prefix: z.string().optional(),
     role: z.enum(["parent", "children"]).optional(),
     also: z.array(z.string()).optional(),
     mark: z.string().optional(),

@@ -96,6 +96,17 @@ test("a files location with a bad id source fails at kinds.<kind>.at.id", () => 
   assert.ok(issuePaths(bad).includes("kinds.epic.at.id"));
 });
 
+test("a mentions field keeps its ref and prefix", () => {
+  const board = structuredClone(tableBoard);
+  board.kinds.task.fields.answer = {
+    column: "Answer",
+    type: "mentions",
+    ref: "sprint",
+    prefix: "S",
+  } as never;
+  assert.equal(ProcessSpec.safeParse(board).success, true);
+});
+
 test("an unknown phase fails with the path to the value", () => {
   const bad = structuredClone(tableBoard);
   bad.kinds.sprint.status.values.todo = "someday";
