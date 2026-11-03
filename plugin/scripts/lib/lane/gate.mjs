@@ -10,8 +10,8 @@ import {
   closeSync,
   mkdirSync,
   openSync,
-  readdirSync,
   readFileSync,
+  readdirSync,
   statSync,
   writeSync,
 } from "node:fs";
