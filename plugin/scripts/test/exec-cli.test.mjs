@@ -769,6 +769,26 @@ test("a second close --episode with another id is refused and names the stamped 
   assert.equal(lane(r, "close", "T1", "--episode", "p:FIRST").exit, 0, "the same id is idempotent");
 });
 
+test("close --episode says whether the memory store holds the episode it stamps", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  lane(r, "close", "T1");
+  const unknown = lane(r, "close", "T1", "--episode", "p:01NOSUCH");
+  assert.equal(unknown.exit, 0);
+  assert.equal(unknown.json.stored, false);
+  assert.match(unknown.json.warning, /no episode p:01NOSUCH in the memory store/);
+
+  const s = repo();
+  verified(s, "T1", "out.txt");
+  lane(s, "close", "T1");
+  const episodes = join(s.root, ".agentry", "memory", "episodes");
+  mkdirSync(episodes, { recursive: true });
+  writeFileSync(join(episodes, "t1-added-out-01KNOWN.md"), "---\nid: p:01KNOWN\n---\n\nT1\n");
+  const known = lane(s, "close", "T1", "--episode", "p:01KNOWN");
+  assert.equal(known.json.stored, true);
+  assert.equal(known.json.warning, undefined);
+});
+
 test("a lane whose ledger predates executable ids is not stopped by a pre-modified executable", () => {
   const r = repo();
   commitFile(r.root, "plan/NOTE.txt", "target");

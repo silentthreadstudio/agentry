@@ -7,6 +7,7 @@
 //   verdict <id> [--agent a]  read the verifier's report, write the verdict, brief the next round
 //   gate <id>                 run the repo's gate in the worktree and record it (exit 1 when red)
 //   close <id> [--episode e]  print the episode payload; `--episode` stamps the id episode_write gave
+//                             (and says whether the memory store holds it)
 //   show <id>                 the ledger and the pending step, for a cold resume
 //
 // Board writes go through `applyEvent` only (no `lifecycle` → none). Exit 0 = next printed, 1 = the lane
@@ -25,6 +26,7 @@ import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { flagsOf, say, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
+import { episodeStored } from "../../memory/episodes.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { boardId } from "../../process/ids.mjs";
@@ -756,9 +758,13 @@ function close(ctx, id, episodeId) {
       refuse(`the episode is already stamped as ${existing}; not replacing it with ${episodeId}`);
     ledger = { ...ledger, episode: { ...ledger.episode, writtenId: episodeId } };
     ledgers.write(root, ledger);
+    // The id is stamped as given; whether the memory store holds it is said, so a typo shows.
+    const stored = episodeStored(root, episodeId);
+    const warning = `no episode ${episodeId} in the memory store: check the id episode_write returned`;
+    const shown = { id, step: "close", episode: ledger.episode, stored };
     return {
       exit: 0,
-      out: JSON.stringify({ id, step: "close", episode: ledger.episode }, null, 2),
+      out: JSON.stringify(stored ? shown : { ...shown, warning }, null, 2),
     };
   }
   if (ledger.episode?.writtenId)

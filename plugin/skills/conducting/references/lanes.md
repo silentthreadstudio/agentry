@@ -135,8 +135,9 @@ templates, once:
 ### Close and handoff
 
 After `close`, call `episode_write` with the printed `episode` (add a `lesson` when the run taught one), then
-stamp its id with `close <id> --episode <id>`. A second `close` on a stamped lane says the episode is already
-written: write nothing more, and stamping a different id is refused (the stamped one is named). The lane stays `verified` until `/agentry:merge` lands it. Hand off:
+stamp its id with `close <id> --episode <id>`. The stamp says whether the memory store holds that episode
+(`stored`); on `false` it carries a `warning`: check the id `episode_write` returned and tell the owner. A
+second `close` on a stamped lane says the episode is already written: write nothing more, and stamping a different id is refused (the stamped one is named). The lane stays `verified` until `/agentry:merge` lands it. Hand off:
 
 ```text
 <id>: <last verdict>; gate <green|red> <tier> on <sha>
