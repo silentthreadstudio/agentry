@@ -182,7 +182,7 @@ const globs = filled(repoPath);
 const logGlob = (v, at, bad) => {
   if (typeof v !== "string" || v.length === 0) return text(v, at, bad);
   const rest = v.startsWith("$TMPDIR/") ? v.slice("$TMPDIR/".length) : v;
-  if (rest === "" || rest.startsWith("/") || rest.split("/").includes(".."))
+  if (rest === "" || rest.startsWith("/") || rest.split("/").some((x) => x === ".." || x === "."))
     bad(at, `"${v}" is not a glob from the gate's cwd or $TMPDIR/`);
 };
 const gate = shape(

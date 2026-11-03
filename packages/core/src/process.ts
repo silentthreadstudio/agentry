@@ -185,7 +185,9 @@ const RepoPath = Text.refine((p) => !leavesRepo(p), { message: "leaves the repos
 const LogGlob = Text.refine(
   (p) => {
     const rest = p.startsWith("$TMPDIR/") ? p.slice("$TMPDIR/".length) : p;
-    return rest !== "" && !rest.startsWith("/") && !rest.split("/").includes("..");
+    return (
+      rest !== "" && !rest.startsWith("/") && !rest.split("/").some((x) => x === ".." || x === ".")
+    );
   },
   { message: "expected a glob from the gate's cwd or $TMPDIR/" },
 );

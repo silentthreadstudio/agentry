@@ -161,6 +161,11 @@ export const PROCESS_CASES = [
     }),
     bad: ["gate.flakyLogs[0]", "gate.flakyLogs[1]", "gate.flakyLogs[2]", "gate.flakyLogs[3]"],
   },
+  {
+    name: "flakyLogs globs with a . segment",
+    add: gate({ command: ["x"], flakyLogs: ["./sub/a.log", "sub/./a.log", "$TMPDIR/./a.log"] }),
+    bad: ["gate.flakyLogs[0]", "gate.flakyLogs[1]", "gate.flakyLogs[2]"],
+  },
   { name: "an empty after", add: gate({ command: ["x"], after: [] }), bad: ["gate.after"] },
   {
     name: "an after glob that climbs out",
