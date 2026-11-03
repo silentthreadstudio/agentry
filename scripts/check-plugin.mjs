@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { docFlagProblems } from "./lib/doc-flags.mjs";
 import { bundleSrcHash, distHash, parseStamp } from "./lib/src-hash.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -292,6 +293,12 @@ if (manifestHooks) {
   err('.claude-plugin/plugin.json declares "hooks" — Agentry ships no hooks');
 }
 if (!existsSync(hooksJson) && !manifestHooks) ok("no hooks", "none shipped");
+
+// 8. Doc flags — a command or skill doc that names a board/lane subcommand or flag the script would refuse
+// fails the gate: the agents run what the docs say (A39).
+const docProblems = await docFlagProblems(PLUGIN);
+for (const p of docProblems) err(`doc flags: ${p}`);
+if (!docProblems.length) ok("doc flags", "every board/lane call in the docs is one the CLI takes");
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));
