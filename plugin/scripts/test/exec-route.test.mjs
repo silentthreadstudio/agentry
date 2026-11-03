@@ -879,6 +879,6 @@ test("merge on a flagged lane closed with no verifier names lane exec reverify",
   assert.equal(res.status, 2);
   assert.match(
     res.stdout + res.stderr,
-    /a flagged item lands only after a verdict: (agentry )?lane exec reverify T2/,
+    /a flagged item lands only after a verdict\n(.*\n)*next: (agentry )?lane exec reverify T2$/m,
   );
 });

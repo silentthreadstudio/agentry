@@ -126,7 +126,7 @@ function parse(argv) {
 
 function preflight(lane) {
   const got = ledgerStep(lane, { adopt: true });
-  if (got.exit) return done(got.exit, lane, got.rows);
+  if (got.exit) return done(got.exit, lane, got.rows, got.next);
   const rows = [got];
   if (lane.ledger.state === "merged") {
     rows.push(ok("land", `already merged (board commit ${short(lane.ledger.merge?.boardCommit)})`));
@@ -190,7 +190,7 @@ function land(lane) {
       `the board commit message carries AI attribution ("${credit}"): commits carry the author only`,
     );
   const got = ledgerStep(lane, { adopt: true });
-  if (got.exit) return done(got.exit, lane, got.rows);
+  if (got.exit) return done(got.exit, lane, got.rows, got.next);
   const rows = [got];
   const merged = lane.ledger.merge;
   if (lane.ledger.state === "merged") {

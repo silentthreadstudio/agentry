@@ -20,7 +20,7 @@ import { ok, red, save, short, skip, tipOf, wait, warn } from "./lane.mjs";
 // done, and a stopped one needs the owner.
 const LANDABLE = ["verified", "merging", "merged"];
 
-/** The task's ledger, or one adopted from `--branch`. Returns a row, or { exit, rows } to stop. */
+/** The task's ledger, or one adopted from `--branch`. Returns a row, or { exit, rows, next? } to stop. */
 export function ledgerStep(lane, { adopt }) {
   const { root, id, opts, spec } = lane;
   const branch = opts["--branch"];
@@ -67,9 +67,10 @@ export function ledgerStep(lane, { adopt }) {
         rows: [
           red(
             "ledger",
-            `${id} is flagged on the board, but no verifier read it (exec.verify skipped it): a flagged item lands only after a verdict: lane exec reverify ${id}`,
+            `${id} is flagged on the board, but no verifier read it (exec.verify skipped it): a flagged item lands only after a verdict`,
           ),
         ],
+        next: `lane exec reverify ${id}`,
       };
     // What the lane closed on is what lands: a branch moved since (a rebase, a commit) is checked again first.
     const tip = commitOf(root, `refs/heads/${ledger.branch}`);
