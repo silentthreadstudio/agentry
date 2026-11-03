@@ -12,9 +12,10 @@ import { join } from "node:path";
 import { nextStep } from "../cli/invoke.mjs";
 import { checkConfig } from "../config.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
-import { trackedFiles } from "./git.mjs";
+import { trackedFiles, worktrees } from "./git.mjs";
 import { TEMPLATE, readFile } from "./instruction-files.mjs";
 import { renderBlock, upsertBlock } from "./instructions.mjs";
+import { isKept } from "./keep.mjs";
 import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 import { columns } from "./render.mjs";
@@ -105,6 +106,29 @@ function push(root) {
     : { ok: true, value, set };
 }
 
+const count = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+// The newer keys, one row each when set (an unset one is no lane to wire, so no row), each with what it
+// matches here: the kept worktrees, the tracked files a guard glob lets through, the flaky names.
+function keys({ root, spec }) {
+  const { worktrees: wt, guard, cleanup, gate } = spec;
+  const allowed = guard?.allow.flatMap((glob) => trackedFiles(root, glob) ?? []);
+  const rows = [
+    wt?.keep && [
+      "worktrees.keep",
+      `${wt.keep.join(", ")} (${count(worktrees(root).filter((t) => isKept(spec, t)).length, "worktree")})`,
+    ],
+    guard && [
+      "guard.allow",
+      `${guard.allow.join(", ")} (${count(new Set(allowed).size, "tracked file")})`,
+    ],
+    cleanup && ["cleanup.disposable", cleanup.disposable.join(", ")],
+    gate?.flaky && ["gate.flaky", count(gate.flaky.length, "name")],
+    gate?.concurrency !== undefined && ["gate.concurrency", count(gate.concurrency, "slot")],
+  ];
+  return rows.filter(Boolean).map(([lane, value]) => ({ lane, ok: true, value, set: INIT }));
+}
+
 export function lanes({ root, spec }) {
   const { gate, extensions, conductor } = spec;
   const row = (lane, found, value, set = INIT) => ({
@@ -126,6 +150,7 @@ export function lanes({ root, spec }) {
     { lane: "default agent", ...defaultAgent(root) },
     { lane: "merge.push", ...push(root) },
     row("merge.checks", checks, checks?.join(", ")),
+    ...keys({ root, spec }),
     ...POLICY.map((entry) => policy(root, entry)),
     {
       lane: "process version",

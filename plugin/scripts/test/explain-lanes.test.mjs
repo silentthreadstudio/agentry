@@ -144,3 +144,53 @@ test("the .agentry commit policy is shown per subfolder: tracked, ignored or und
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("each newer key that is set shows a row with what it matches; an unset one shows none", () => {
+  const { root, board, lanes } = repo({
+    worktrees: { keep: ["side-*"] },
+    guard: { allow: ["notes/**"] },
+    cleanup: { disposable: ["build/**"] },
+    gate: { command: ["make", "check"], flaky: ["a", "b", "c"], concurrency: 2 },
+  });
+  try {
+    const tree = `${root}-side`;
+    write(root, "notes/a.md", "a");
+    write(root, "notes/b.md", "b");
+    execFileSync("git", ["-C", root, "add", "-A"]);
+    execFileSync("git", [
+      "-C",
+      root,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "-qm",
+      "x",
+    ]);
+    execFileSync("git", ["-C", root, "worktree", "add", "-q", tree, "-b", "side-one"]);
+    const rows = lanes();
+    assert.equal(rows["worktrees.keep"].value, "side-* (1 worktree)");
+    assert.equal(rows["guard.allow"].value, "notes/** (2 tracked files)");
+    assert.equal(rows["cleanup.disposable"].value, "build/**");
+    assert.equal(rows["gate.flaky"].value, "3 names");
+    assert.equal(rows["gate.concurrency"].value, "2 slots");
+    assert.match(board("explain").stdout, /^✓ +gate\.flaky +3 names$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(`${root}-side`, { recursive: true, force: true });
+  }
+  const bare = repo();
+  try {
+    for (const lane of [
+      "worktrees.keep",
+      "guard.allow",
+      "cleanup.disposable",
+      "gate.flaky",
+      "gate.concurrency",
+    ])
+      assert.equal(bare.lanes()[lane], undefined, lane);
+  } finally {
+    rmSync(bare.root, { recursive: true, force: true });
+  }
+});
