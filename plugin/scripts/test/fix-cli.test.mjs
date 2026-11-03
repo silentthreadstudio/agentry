@@ -383,6 +383,17 @@ test("a mode-only change reverted on main is never written as done", () => {
   assert.match(out.stdout, /T1: merged, but run\.sh is not as it landed/);
 });
 
+test("a removed block retyped elsewhere in the file is never written as done", () => {
+  const { root } = fresh();
+  const body = "function old() {\n  return 1;\n}\n";
+  commitFile(root, "src.js", `a\n${body}b\nc\n`, "chore: src");
+  mergeOntoMain(root, "T1", taskChanging(root, "src.js", "a\nb\nc\n"));
+  commitFile(root, "src.js", `a\nb\nc\n${body}`, "chore: put old() back at the end");
+  const out = board(root, "fix");
+  assert.match(out.stdout, /^fixed 0/);
+  assert.match(out.stdout, /T1: merged, but a line it removed from src\.js is back/);
+});
+
 test("a record not about the ledger's branch is unsure: an unrelated commit, or only part of the branch", () => {
   const unrelated = fresh().root;
   const other = commitFile(unrelated, "other.txt", "o\n", "feat: someone else");

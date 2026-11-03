@@ -248,6 +248,23 @@ test("inEffect: a file turned into a symlink with the same bytes is not as it la
   });
 });
 
+test("inEffect: a removed block put back elsewhere in the file is not in effect", () => {
+  const body = "function f() {\n  return 1;\n}\n";
+  const [base, task, moved] = history("block.js", [
+    `a\n${body}b\nc\n`,
+    "a\nb\nc\n",
+    `a\nb\nc\n${body}`,
+  ]);
+  assert.deepEqual(inEffect(repo, { from: base, to: task, onto: moved }), {
+    file: "block.js",
+    line: 1,
+    what: "removed",
+  });
+  // Punctuation alone says nothing: braces closing elsewhere are not the removed ones back.
+  const [braced, cut, more] = history("braces.js", ["a\n}\n}\nb\n", "a\nb\n", "a\nb\n}\n}\n"]);
+  assert.equal(inEffect(repo, { from: braced, to: cut, onto: more }), null);
+});
+
 test("worktrees: each path with its head and branch", () => {
   const trees = worktrees(repo);
   assert.deepEqual(
