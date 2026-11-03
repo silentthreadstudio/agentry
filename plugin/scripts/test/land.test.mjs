@@ -163,8 +163,21 @@ function strayGate(cmd, nonce) {
   const start = `require("node:child_process").spawn(${JSON.stringify(argv[0])}, ${JSON.stringify(argv.slice(1))}, { detached: true, stdio: "ignore" }).unref()`;
   spawnSync(process.execPath, ["-e", start]);
   const nap = new Int32Array(new SharedArrayBuffer(4));
-  for (let i = 0; i < 250 && !existsSync(pidFile); i++) Atomics.wait(nap, 0, 0, 20);
-  return { pidFile, nonce, pgid: Number(readFileSync(pidFile, "utf8")) };
+  const until = (condition) => {
+    for (let i = 0; i < 250 && !condition(); i++) Atomics.wait(nap, 0, 0, 20);
+  };
+  // The file exists before the wrapper has written its pid into it: wait for the pid, not the file.
+  const pidOf = () => (existsSync(pidFile) ? Number(readFileSync(pidFile, "utf8")) : 0);
+  until(pidOf);
+  const pgid = pidOf();
+  // The pid lands before the wrapper starts the gate. A kill in that gap can miss a gate that forks as
+  // the signal arrives, and under load that left `sleep` running: wait until the gate is in the group.
+  const members = () =>
+    spawnSync("pgrep", ["-g", String(pgid)], { encoding: "utf8" })
+      .stdout.split("\n")
+      .filter(Boolean).length;
+  until(() => members() >= 2);
+  return { pidFile, nonce, pgid };
 }
 
 test("endStrayGate kills the gate group a killed run left, and leaves a reused pid alone", () => {
