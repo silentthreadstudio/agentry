@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
 const temps = [];
@@ -104,7 +105,10 @@ function repo(config) {
   commitFile(root, ".gitignore", ".agentry/run/\n.agentry/config.json\n");
   commitFile(root, "plan/BOARD.md", BOARD_MD);
   commitFile(root, "plan/TASKS.md", TASKS_MD);
-  commitFile(root, ".agentry/process.json", JSON.stringify(SPEC, null, 2));
+  // The board keys in process.json, the workflow keys in its sibling workflow.json.
+  writeSpec(join(root, ".agentry"), SPEC);
+  git(root, "add", ".agentry");
+  git(root, "commit", "-q", "-m", "add the process files");
   return { root, home };
 }
 const spawnLane = ({ root, home }, args) =>
