@@ -675,3 +675,18 @@ test("the lint is reached through --lint only: instructions-lint is no subcomman
   assert.equal(res.status, 2);
   assert.match(res.stderr, /instructions-lint/);
 });
+
+test("--apply removes a leftover temp file of a dead pid, says so, and keeps a live pid's", () => {
+  const root = repo({ "CLAUDE.md": "# C\n" });
+  const dead = spawnSync("node", ["-e", ""]).pid;
+  const gone = join(root, `AGENTS.md.agentry-${dead}.tmp`);
+  const live = join(root, `AGENTS.md.agentry-${process.ppid}.tmp`);
+  writeFileSync(gone, "stale");
+  writeFileSync(live, "someone else's write");
+  const { exit, out } = run(["--apply"], { root, spec: SPEC });
+  assert.equal(exit, 0);
+  assert.match(out, /wrote AGENTS\.md, CLAUDE\.md \(removed a leftover temp file\)/);
+  assert.equal(existsSync(gone), false);
+  assert.equal(existsSync(live), true);
+  assert.doesNotMatch(run(["--apply"], { root, spec: SPEC }).out, /leftover/);
+});

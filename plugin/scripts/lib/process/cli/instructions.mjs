@@ -23,13 +23,14 @@ import {
   existsSync,
   lstatSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
 import {
   AGENTS,
@@ -99,15 +100,41 @@ function parse(argv) {
   return { lint, write, json, target: value };
 }
 
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+};
+
+// The `<name>.agentry-<pid>.tmp` files a killed write left beside `real`, whose pid is gone: removed.
+// Returns how many.
+function sweepLeftovers(real) {
+  const base = `${basename(real)}.agentry-`;
+  let removed = 0;
+  for (const name of readdirSync(dirname(real))) {
+    const pid = name.startsWith(base) && /^(\d+)\.tmp$/.exec(name.slice(base.length))?.[1];
+    if (!pid || alive(Number(pid))) continue;
+    unlinkSync(join(dirname(real), name));
+    removed++;
+  }
+  return removed;
+}
+
 // Every file written to a temporary name beside it, then renamed in; a failure leaves all as they were.
+// Returns how many leftover temporary files of a killed write it removed first.
 function writeAll(root, writes) {
   const staged = [];
+  let leftovers = 0;
   try {
     for (const [name, text] of writes) {
       const file = join(root, name);
       const real = existsSync(file) ? realpathSync(file) : file;
       const was = existsSync(real) ? readFileSync(real) : null;
       if (was) accessSync(real, constants.W_OK);
+      leftovers += sweepLeftovers(real);
       const temp = `${real}.agentry-${process.pid}.tmp`;
       writeFileSync(temp, text);
       if (was) chmodSync(temp, statSync(real).mode);
@@ -129,6 +156,7 @@ function writeAll(root, writes) {
   } finally {
     for (const { temp } of staged) if (existsSync(temp)) unlinkSync(temp);
   }
+  return leftovers;
 }
 
 export function run(argv, { root, spec }) {
@@ -204,12 +232,15 @@ export function run(argv, { root, spec }) {
   if (!writes.length) out.push("nothing to write");
   else if (!write) out.push(PREVIEW);
   else {
+    let leftovers;
     try {
-      writeAll(root, writes);
+      leftovers = writeAll(root, writes);
     } catch (e) {
       return refuse(what, `cannot write (${e.code ?? e.message}); nothing written`);
     }
-    out.push(`wrote ${writes.map(([name]) => name).join(", ")}`);
+    out.push(
+      `wrote ${writes.map(([name]) => name).join(", ")}${leftovers ? " (removed a leftover temp file)" : ""}`,
+    );
   }
   if (json) {
     const files = writes.map(([name]) => name);
