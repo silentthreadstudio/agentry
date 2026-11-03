@@ -170,8 +170,8 @@ test("each newer key that is set shows a row with what it matches; an unset one 
     ]);
     execFileSync("git", ["-C", root, "worktree", "add", "-q", tree, "-b", "side-one"]);
     const rows = lanes();
-    assert.equal(rows["worktrees.keep"].value, "side-* (1 worktree)");
-    assert.equal(rows["guard.allow"].value, "notes/** (2 tracked files)");
+    assert.equal(rows["worktrees.keep"].value, "1 worktree: side-*");
+    assert.equal(rows["guard.allow"].value, "2 tracked files: notes/**");
     assert.equal(rows["cleanup.disposable"].value, "build/**");
     assert.equal(rows["gate.flaky"].value, "3 names");
     assert.equal(rows["gate.concurrency"].value, "2 slots");
@@ -192,5 +192,21 @@ test("each newer key that is set shows a row with what it matches; an unset one 
       assert.equal(bare.lanes()[lane], undefined, lane);
   } finally {
     rmSync(bare.root, { recursive: true, force: true });
+  }
+});
+
+test("a long guard.allow list is cut in its globs, never in its count", () => {
+  const globs = ["notes/**", ...Array.from({ length: 8 }, (_, i) => `some/long/dir-${i}/**`)];
+  const { root, board } = repo({ guard: { allow: globs } });
+  try {
+    write(root, "notes/a.md", "a");
+    execFileSync("git", ["-C", root, "add", "-A"]);
+    const line = board("explain")
+      .stdout.split("\n")
+      .find((l) => l.includes("guard.allow"));
+    assert.ok([...line].length <= 80, line);
+    assert.match(line, /^✓ +guard\.allow +1 tracked file: notes\/\*\*, /);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

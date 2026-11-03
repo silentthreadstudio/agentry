@@ -109,18 +109,18 @@ function push(root) {
 const count = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 // The newer keys, one row each when set (an unset one is no lane to wire, so no row), each with what it
-// matches here: the kept worktrees, the tracked files a guard glob lets through, the flaky names.
+// matches here (the count first, so a long glob list cuts the globs, not the count): the kept worktrees, the tracked files a guard glob lets through, the flaky names.
 function keys({ root, spec }) {
   const { worktrees: wt, guard, cleanup, gate } = spec;
   const allowed = guard?.allow.flatMap((glob) => trackedFiles(root, glob) ?? []);
   const rows = [
     wt?.keep && [
       "worktrees.keep",
-      `${wt.keep.join(", ")} (${count(worktrees(root).filter((t) => isKept(spec, t)).length, "worktree")})`,
+      `${count(worktrees(root).filter((t) => isKept(spec, t)).length, "worktree")}: ${wt.keep.join(", ")}`,
     ],
     guard && [
       "guard.allow",
-      `${guard.allow.join(", ")} (${count(new Set(allowed).size, "tracked file")})`,
+      `${count(new Set(allowed).size, "tracked file")}: ${guard.allow.join(", ")}`,
     ],
     cleanup && ["cleanup.disposable", cleanup.disposable.join(", ")],
     gate?.flaky && ["gate.flaky", count(gate.flaky.length, "name")],
