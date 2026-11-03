@@ -42,7 +42,8 @@ export function checkProbes(spec, bad) {
 }
 
 // Each `exec.kinds` key names a declared kind other than the lifecycle's, outside the tree: no parent field,
-// and no other kind's parent. `exec.kinds` (even empty) needs the lifecycle, whose kind runs first.
+// and no other kind's parent or `children` list. `exec.kinds` (even empty) needs the lifecycle, whose
+// kind runs first.
 function checkExecKinds(spec, kinds, bad) {
   const map = own(own(spec, "exec"), "kinds");
   if (!isObject(map)) return;
@@ -53,6 +54,13 @@ function checkExecKinds(spec, kinds, bad) {
     const parent = has(kinds, name) && parentOf(kinds[name]);
     const children = Object.keys(kinds).filter(
       (k) => k !== name && refsOf(parentOf(kinds[k])?.[1]).includes(name),
+    );
+    const listers = Object.keys(kinds).filter(
+      (k) =>
+        k !== name &&
+        Object.values(fieldsOf(kinds[k])).some(
+          (f) => f?.role === "children" && refsOf(f).includes(name),
+        ),
     );
     if (name === spec.lifecycle.kind) bad(at, "is the lifecycle kind already");
     else if (!has(kinds, name)) bad(at, `names an unknown kind "${name}"`);
@@ -65,6 +73,11 @@ function checkExecKinds(spec, kinds, bad) {
       bad(
         at,
         `the ${name} kind is the parent of ${children.join(" and ")}; a kind exec runs beside the lifecycle stands alone`,
+      );
+    else if (listers.length)
+      bad(
+        at,
+        `the ${name} kind is listed as children of ${listers.join(" and ")}; a kind exec runs beside the lifecycle stands alone`,
       );
   }
 }

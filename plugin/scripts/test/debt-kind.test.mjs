@@ -110,6 +110,18 @@ test("the pinned refusal texts: the lifecycle kind, no lifecycle, a parent field
   ]);
 });
 
+test("an exec kind listed through another kind's children field is refused; its own children list is not the reason", () => {
+  const messages = (name) =>
+    validateSpec(specOf(ACROSS_CASES.find((c) => c.name === name))).problems.map((p) => p.message);
+  assert.deepEqual(messages("an exec kind that another kind lists as children"), [
+    "exec.kinds.debt the debt kind is listed as children of chore; a kind exec runs beside the lifecycle stands alone",
+  ]);
+  // The parent side keeps the rule it had: a children field of its own changes nothing.
+  assert.deepEqual(messages("an exec kind with a children list of its own"), [
+    "exec.kinds.debt the debt kind is the parent of chore; a kind exec runs beside the lifecycle stands alone",
+  ]);
+});
+
 test("the accessors: the runnable kinds, each kind's mapping, a flag read from the kind asked", () => {
   const { spec, model } = load(FIXTURE);
   assert.deepEqual(runKinds(spec), ["task", "debt"]);
