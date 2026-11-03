@@ -430,3 +430,38 @@ test("scan with no dir ends by naming the ignored folders it did not read", () =
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("scan points at the ignored folder with the most markdown, counts the rest and skips tool folders", () => {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-scan-")));
+  try {
+    const table = "| Code |\n| --- |\n| T1 |\n";
+    const files = {
+      ".a": 1,
+      ".c": 1,
+      ".d": 1,
+      ".e": 1,
+      ".zbig": 3,
+      ".claude": 9,
+      venv: 9,
+    };
+    for (const [dir, n] of Object.entries(files))
+      for (let i = 0; i < n; i++) {
+        mkdirSync(join(tmp, dir), { recursive: true });
+        writeFileSync(join(tmp, dir, `b${i}.md`), table);
+      }
+    writeFileSync(join(tmp, ".gitignore"), `${Object.keys(files).join("/\n")}/\n`);
+    const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+    spawnSync("git", ["-C", tmp, "init", "-q"], { env });
+    const res = spawnSync("node", [BOARD, "scan", "--root", tmp], {
+      encoding: "utf8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.match(
+      res.stdout,
+      /\nnot scanned \(ignored\): \.zbig \(3 md\), \.a \(1 md\), \.c \(1 md\), \+2 more → .*board scan \.zbig\/…\n$/,
+    );
+    assert.doesNotMatch(res.stdout, /\.claude|venv/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

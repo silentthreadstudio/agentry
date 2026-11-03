@@ -31,6 +31,7 @@ export const help = {
 };
 const WIDTH = 100;
 const SAMPLE = 4;
+const HIDDEN_LISTED = 3;
 const OUTSIDE = "a symlink out of the repository; not read";
 
 export function scan(root, dir = "") {
@@ -65,9 +66,19 @@ export function scan(root, dir = "") {
 const ids = (xs) =>
   `${xs.length} (${xs.slice(0, SAMPLE).join(", ")}${xs.length > SAMPLE ? ", …" : ""})`;
 
-// The git-ignored directories that hold markdown a whole-repo scan did not read: `{ dir, md }`.
-// Build and dependency folders and Agentry's own run state are not boards, so they are left out.
-const NOT_BOARDS = new Set(["node_modules", "dist", ".git", ".agentry"]);
+// The git-ignored directories that hold markdown a whole-repo scan did not read: `{ dir, md }`, the one
+// with the most markdown first. Build and dependency folders, tool folders and Agentry's own run state are
+// not boards, so they are left out.
+const NOT_BOARDS = new Set([
+  "node_modules",
+  "dist",
+  ".git",
+  ".agentry",
+  ".claude",
+  ".agents",
+  ".venv",
+  "venv",
+]);
 export function ignoredDirs(root) {
   let out;
   try {
@@ -84,7 +95,8 @@ export function ignoredDirs(root) {
     .filter((p) => p.endsWith("/") && !p.split("/").some((seg) => NOT_BOARDS.has(seg)))
     .map((p) => p.slice(0, -1))
     .map((dir) => ({ dir, md: markdownFiles(join(root, dir)).length }))
-    .filter((x) => x.md > 0);
+    .filter((x) => x.md > 0)
+    .sort((a, b) => b.md - a.md || a.dir.localeCompare(b.dir));
 }
 
 function render(all, dir, ignored) {
@@ -111,15 +123,18 @@ function render(all, dir, ignored) {
     ...(x.frontmatter ? [`  front   ${x.frontmatter.join(", ") || "(empty)"}`] : []),
   ]);
   const notes = skipped.flatMap((x) => ["", x.file, `  skipped ${x.skipped}`]);
+  // The biggest folders first, the rest counted; the arrow points at the biggest.
+  const shown = ignored.slice(0, HIDDEN_LISTED).map((x) => `${x.dir} (${x.md} md)`);
+  const more = ignored.length > HIDDEN_LISTED ? [`+${ignored.length - HIDDEN_LISTED} more`] : [];
   const hidden = ignored.length
     ? [
         "",
         nextStep(
-          `not scanned (ignored): ${ignored.map((x) => `${x.dir} (${x.md} md)`).join(", ")} → board scan ${ignored[0].dir}/…`,
+          `not scanned (ignored): ${[...shown, ...more].join(", ")} → board scan ${ignored[0].dir}/…`,
         ),
       ]
     : [];
-  return [...[head, ...lines, ...notes].map((l) => fit(l, WIDTH)), ...hidden].join("\n");
+  return [head, ...lines, ...notes, ...hidden].map((l) => fit(l, WIDTH)).join("\n");
 }
 
 export function run(argv, { root }) {
