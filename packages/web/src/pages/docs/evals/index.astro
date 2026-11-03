@@ -1,5 +1,4 @@
 ---
-import DocShot from "../../../components/doc-shot/DocShot.astro";
 // /docs/evals — Self-Eval, the centerpiece Reference page. Explains what the embedded eval
 // dashboard measures, HONESTLY: the four ABSOLUTE value axes (decision quality, code quality +
 // correctness, honesty/overclaim, verification/escaped-defect), the showcase strip, the planted
@@ -12,7 +11,6 @@ import DocShot from "../../../components/doc-shot/DocShot.astro";
 //
 // Base-path rule (#1 404 trap): every internal href + the dashboard link goes through withBase().
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
-import { withBase } from "../../../lib/base.ts";
 ---
 
 <DocsLayout
@@ -49,11 +47,6 @@ import { withBase } from "../../../lib/base.ts";
          directly under this heading.
          ============================================================ -->
     <h2 class="prose__h">The four value axes</h2>
-    <DocShot
-      src="shots/eval-scorecard.png"
-      alt="The Self-Eval value-bench scorecard: four axis cards — Decision quality, Code quality + correctness, Honesty/overclaim, and Verification — each with its number, a plain-English claim, and the spread (mean ± std, n)."
-      caption="The summary scorecard — four absolute axes, each with its number, a one-line claim, and the spread so the headline is never bare."
-    />
     <p>
       Agentry is conducted once per task; the four axis signals are all derived from that single
       run. Each axis carries its <em>spread</em> (mean ± std and the denominator <code>n</code>) so
@@ -86,11 +79,6 @@ import { withBase } from "../../../lib/base.ts";
          directly under this heading.
          ============================================================ -->
     <h2 class="prose__h">The per-task census</h2>
-    <DocShot
-      src="shots/eval-census.png"
-      alt="The Self-Eval value-bench per-task census: one row per task-and-repeat, with the judged decision and code scores, the oracle pass/fail, whether it self-reported done, whether the verifier fired, and whether a defect escaped."
-      caption="The drill-down census — every task's four signals in the open; a blank cell is an honest absent signal, never a silent zero."
-    />
     <p>
       Below the scorecard, the technical drill-down shows the readable trace: one row per
       (task × repeat), each carrying its decision score, code score, oracle verdict, self-reported
@@ -105,11 +93,6 @@ import { withBase } from "../../../lib/base.ts";
          directly under this heading.
          ============================================================ -->
     <h2 class="prose__h">What you also get — demonstrated, not scored</h2>
-    <DocShot
-      src="shots/eval-showcase.png"
-      alt="The Self-Eval value-bench showcase strip: four cards — auditable structure, durable memory, real specialists, and you stay in control — the qualitative value the bench demonstrates rather than scores."
-      caption="The showcase strip — the qualitative value the bench shows in every run's artifact trail, beyond the four numbers."
-    />
     <p>
       The four numbers are not the whole story. The bench also <em>demonstrates</em> — in the real
       artifact trail of every run — the value that doesn't reduce to a single rate:
@@ -122,11 +105,6 @@ import { withBase } from "../../../lib/base.ts";
     </ul>
 
     <h2 class="prose__h">Controls — the gates before any score</h2>
-    <DocShot
-      src="shots/eval-controls.png"
-      alt="The Self-Eval dashboard Controls view: both the code judge and the decision judge gated on A/A stability and gold-vs-broken discrimination — all marked passed, run before any score is shown."
-      caption="Controls view — both judges proven on A/A stability and gold↔broken discrimination before any conduct spends."
-    />
     <p>
       A score is meaningless if the instrument can't tell good from bad. Before a single conduct
       spends, <strong>both judges must prove themselves</strong> — and if either gate fails, the
@@ -150,11 +128,6 @@ import { withBase } from "../../../lib/base.ts";
       conductor — and the conductor was right.</strong> We fixed the meter, not the conductor. The
       harness survived its own instrument being wrong, and the log is the audit trail that proves it:
     </p>
-    <DocShot
-      src="shots/eval-corrections.png"
-      alt="The Self-Eval dashboard Corrections log: a timeline of entries, each showing what the meter said, what the truth was, and the fix applied to the meter — headed 'the corrections log is the product'."
-      caption="Corrections log — every time the meter was wrong and the conductor was right; each one fixed the meter, not the conductor."
-    />
     <p>
       The point isn't that the meter was perfect — it's that when the meter and the conductor
       disagreed, we audited and fixed the <em>meter</em>. A self-eval you can't catch lying to you
@@ -164,7 +137,7 @@ import { withBase } from "../../../lib/base.ts";
 
     <div class="prose__cta">
       <p>
-        <a href={withBase("dashboard/")}>See the live dashboard</a> for the full four-axis
+        See the live dashboard for the full four-axis
         scorecard, the per-task census, the axis distribution, the control results, and every
         corrections-log entry.
       </p>

@@ -1,6 +1,4 @@
 ---
-import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
-import DocShot from "../../../components/doc-shot/DocShot.astro";
 // /docs/flow — Flow, the run-state engine. Composed through DocsLayout: header from props,
 // body = DocDiagram(flow.png) + prose. Facts verbatim from the content map.
 //
@@ -15,12 +13,6 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
   eyebrow="Capabilities · Flow"
   lede="Flow is the MCP that records what a run is doing. Its state lives on disk as plain files, so a run can be paused, inspected, and resumed without a daemon holding anything in memory."
 >
-  <DocDiagram
-    src="diagrams/flow.png"
-    alt="Diagram of Flow's run state: a run directory under .agentry/work containing task lifecycle, an append-only event log, a review sidecar, and a content-hash version."
-    caption="A run's state on disk — task lifecycle, events, review, and version — all under .agentry/work/<run>/."
-  />
-
   <div class="prose">
     <p>
       Flow records run state to <code>.agentry/work/&lt;run&gt;/</code> as
@@ -47,10 +39,5 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
       Workbench draws a run's Flow state as the task DAG — routing → spec → plan → the bounded tasks
       it was sliced into, with their live status:
     </p>
-    <DocShot
-      src="shots/wb-graph.png"
-      alt="A Flow run rendered as a task graph: routing feeds spec, spec feeds plan, and plan fans out into bounded tasks with typed dependency edges — each node showing its status."
-      caption="A Flow run rendered from its files — the task lifecycle and dependencies as a live graph."
-    />
   </div>
 </DocsLayout>

@@ -1,6 +1,4 @@
 ---
-import DocDiagram from "../../../components/doc-diagram/DocDiagram.astro";
-import DocShot from "../../../components/doc-shot/DocShot.astro";
 // /docs/workbench — the Workbench / Agent Center (an additive layer). Composed through
 // DocsLayout: header from props, body = DocDiagram(workbench.png) + prose. The :4317 /
 // *.localhost strings are exact. (Real screenshots are wired in by T5.)
@@ -16,11 +14,6 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
   eyebrow="Capabilities · Workbench"
   lede="The Workbench is a local web view onto a run — a place to read the work, edit and comment on it, approve steps, and watch the agent graph move in real time. It is additive: nothing about a run depends on it being open."
 >
-  <DocDiagram
-    src="diagrams/workbench.png"
-    alt="Diagram of the Workbench: a per-project local Agent Center served on port 4317 with per-project *.localhost host-routing, showing a live agent graph alongside read, edit, comment, and approve controls."
-    caption="A per-project local Agent Center on :4317 — read, edit, comment, approve, and watch a live graph."
-  />
 
   <div class="prose">
     <p>
@@ -40,29 +33,14 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
       The <strong>Works home</strong> lists every run in the project with its status, shape, and
       progress — the front door to everything the agents are doing:
     </p>
-    <DocShot
-      src="shots/wb-home.png"
-      alt="The Workbench Works home: a grid of run cards each showing title, routed shape, and progress, above KPI tiles for active runs, in-progress tasks, agents live, and throughput."
-      caption="The Works home — every run in the project, with status, shape, and progress."
-    />
     <p>
       Open a run and the <strong>Live graph</strong> renders it as the task DAG — routing → spec →
       plan → the bounded tasks — with typed edges and live execution overlay, so you can watch the
       work move:
     </p>
-    <DocShot
-      src="shots/wb-graph.png"
-      alt="The Workbench Live graph: a run rendered as a directed task graph with auto-layout, typed edges, a legend (derives, blocks, satisfies), and a minimap."
-      caption="The Live graph — the run as a typed task DAG with auto-layout, a legend, and a minimap."
-    />
     <p>
       Click any node and its artifact opens as a <strong>document</strong> you can read, edit, and
       comment on — the spec, the plan, an ADR, a task — with the agent conversation in a side rail:
     </p>
-    <DocShot
-      src="shots/wb-docs.png"
-      alt="The Workbench docs workspace: a run-document navigator (Definition, Decisions, Tasks) beside a rendered Spec document, with a conversation rail for comments and agent replies."
-      caption="The docs workspace — read, edit, and comment on a run's artifacts, with the conversation rail alongside."
-    />
   </div>
 </DocsLayout>
