@@ -28,6 +28,14 @@ nothing next to it.
 
 {{block}}
 
+{{#related}}
+## Later notes on this task
+
+They override the contract where they conflict.
+
+{{notes}}
+
+{{/related}}
 Owned files:
 {{owned}}
 

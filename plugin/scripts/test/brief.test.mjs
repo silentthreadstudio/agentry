@@ -12,8 +12,10 @@ import {
   citedDecisions,
   decisionKind,
   fill,
+  notesSection,
   ownedFiles,
   recalledFacts,
+  relatedNotes,
   renderBrief,
   slotsOf,
   suggestBuilder,
@@ -192,6 +194,8 @@ const VALUES = {
   fail: false,
   guard: false,
   needed: false,
+  related: false,
+  notes: "",
   builderReport: "/m/r1.report.md",
   earlier: "/m/r2.report.md",
 };
@@ -257,4 +261,49 @@ test("a recheck brief names the earlier report; a final brief wraps the verify b
   assert.match(final, /before\nyou open the earlier reports: \/m\/r2\.report\.md/);
   assert.doesNotMatch(final, /## Recheck|^# Verify/m);
   assert.match(final, /try to prove it wrong/);
+});
+
+test("relatedNotes reads each related line verbatim; one that can't be read is left out", () => {
+  const root = temp();
+  writeFileSync(join(root, "NOTES.md"), "intro\n- **Q7** deps Q9 (accept as split)\n");
+  assert.deepEqual(
+    relatedNotes(root, [
+      { file: "NOTES.md", line: 2 },
+      { file: "NOTES.md", line: 9 },
+      { file: "gone.md", line: 1 },
+    ]),
+    [{ at: "NOTES.md:2", text: "- **Q7** deps Q9 (accept as split)" }],
+  );
+  assert.deepEqual(relatedNotes(root, undefined), []);
+});
+
+test("notesSection lists file:line and text, cuts long lines, and says when it caps the list", () => {
+  assert.equal(notesSection([]), "");
+  assert.equal(notesSection([{ at: "N.md:2", text: "- Q7 narrowed" }]), "- N.md:2: - Q7 narrowed");
+  const many = Array.from({ length: 11 }, (_, i) => ({
+    at: `N.md:${i + 1}`,
+    text: "x".repeat(500),
+  }));
+  const lines = notesSection(many).split("\n");
+  assert.equal(lines.length, 9);
+  assert.match(lines[0], /^- N\.md:1: x+… \(cut\)$/);
+  assert.ok(lines[0].length < 450);
+  assert.match(lines[8], /capped at 8: 3 more not shown/);
+});
+
+test("build and verify briefs (and the fix/final that wrap them) carry later notes only when given", () => {
+  const given = {
+    ...VALUES,
+    related: true,
+    notes: "- NOTES.md:2: - **Q7** deps Q9 (accept as split)",
+  };
+  for (const step of ["build", "fix", "verify", "final"]) {
+    const text = renderBrief(step, given);
+    assert.match(
+      text,
+      /## The contract\n\n.*\n\n## Later notes on this task\n\nThey override the contract where they conflict\.\n\n- NOTES\.md:2: - \*\*Q7\*\* deps Q9 \(accept as split\)\n\nOwned files:/s,
+      step,
+    );
+    assert.doesNotMatch(renderBrief(step, VALUES), /Later notes/, `${step} without notes`);
+  }
 });

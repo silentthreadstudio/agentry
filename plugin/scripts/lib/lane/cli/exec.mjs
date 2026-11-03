@@ -33,9 +33,11 @@ import { WriteError } from "../../process/write.mjs";
 import {
   bullets,
   citedDecisions,
+  notesSection,
   ownedFiles,
   shellQuote as q,
   recalledFacts,
+  relatedNotes,
   renderBrief,
   suggestBuilder,
 } from "../brief.mjs";
@@ -359,6 +361,8 @@ function brief({ root, spec, model }, ledger, dispatch) {
     round: n,
     contract: `${ledger.contract.file}:${ledger.contract.line}`,
     block: block.trimEnd(),
+    related: !!ledger.contract.related?.length,
+    notes: notesSection(ledger.contract.related),
     owned: bullets(owned.map((p) => `\`${p}\``)),
     decisions: bullets(
       citedDecisions({ root, spec, model, block }).map((d) => `${d.id}: ${d.text}`),
@@ -511,7 +515,11 @@ function start(ctx, id) {
     v: 1,
     id,
     kind,
-    contract: { file: found.file, line: found.line },
+    contract: {
+      file: found.file,
+      line: found.line,
+      ...(found.related?.length ? { related: relatedNotes(root, found.related) } : {}),
+    },
     origin: "exec",
     mainBranch,
     base,

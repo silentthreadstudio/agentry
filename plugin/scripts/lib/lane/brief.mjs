@@ -4,6 +4,8 @@
 //   ownedFiles      the paths the contract's "owns" names (backticked), in order
 //   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
 //   citedDecisions  every decision of the board's decision kind the block cites by id, its row quoted
+//   relatedNotes    the lines elsewhere that mention the task (amendments), read verbatim with file:line
+//   notesSection    those notes as the brief's "Later notes" lines, capped
 //   recalledFacts   the memory facts ranked for the owned files, only when `memory.prime` is "all": this
 //                   repo's store, the user's own and cross-project (`scope: user|global`) facts,
 //                   never another project's
@@ -89,6 +91,35 @@ export function decisionKind(spec) {
   const named = own(own(spec?.drafts, "decision"), "kind");
   if (typeof named === "string" && own(spec?.kinds, named)) return named;
   return own(spec?.kinds, "decision") ? "decision" : null;
+}
+
+/** The text of each `related` hit (`{ file, line }`, `file` relative to `root`) as `{ at, text }`, `at`
+ *  its `file:line`. A hit whose line can't be read inside the repo is left out. */
+export function relatedNotes(root, related) {
+  const out = [];
+  for (const { file, line } of related ?? []) {
+    const text = readInside(root, join(root, file))?.split(/\r?\n/)[line - 1]?.trim();
+    if (text) out.push({ at: `${file}:${line}`, text });
+  }
+  return out;
+}
+
+export const NOTES_CAP = 8;
+const NOTE_WIDTH = 400;
+
+/** The notes as brief lines (`- file:line: text`), at most `NOTES_CAP`, each line cut at `NOTE_WIDTH`
+ *  characters; a final line says how many were left out. Empty for no notes. */
+export function notesSection(notes) {
+  const lines = (notes ?? []).slice(0, NOTES_CAP).map(({ at, text }) => {
+    const cut = text.length > NOTE_WIDTH ? `${text.slice(0, NOTE_WIDTH - 1)}… (cut)` : text;
+    return `- ${at}: ${cut}`;
+  });
+  const more = (notes?.length ?? 0) - NOTES_CAP;
+  if (more > 0)
+    lines.push(
+      `- (capped at ${NOTES_CAP}: ${more} more not shown; run \`board contract\` for all)`,
+    );
+  return lines.join("\n");
 }
 
 const literal = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

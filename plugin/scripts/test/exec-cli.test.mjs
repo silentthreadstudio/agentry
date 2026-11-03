@@ -204,6 +204,21 @@ test("start cuts agentry/<id> in a worktree, writes `dispatched` and prints the 
   assert.deepEqual(ledger.contract, { file: "plan/TASKS.md", line: 3 });
 });
 
+test("a later note on the task rides in the build and verify briefs, with its file:line", () => {
+  const r = repo();
+  const note = "- **T2** deps T1 (accept as: two.txt holds the word two)";
+  commitFile(r.root, "plan/TASKS.md", `${TASKS_MD}${note}\n`);
+  const { exit, json } = lane(r, "start", "T2");
+  assert.equal(exit, 0);
+  const section = `## Later notes on this task\n\nThey override the contract where they conflict.\n\n- plan/TASKS.md:5: ${note}\n`;
+  assert.ok(readFileSync(json.brief, "utf8").includes(section));
+  assert.deepEqual(ledgerOf(r.root, "T2").contract.related, [
+    { at: "plan/TASKS.md:5", text: note },
+  ]);
+  const one = lane(r, "start", "T1");
+  assert.doesNotMatch(readFileSync(one.json.brief, "utf8"), /Later notes/);
+});
+
 test("the brief carries recalled facts when memory.prime is all, none at off", () => {
   for (const prime of ["all", "off"]) {
     const r = repo({ config: { memory: { prime } } });

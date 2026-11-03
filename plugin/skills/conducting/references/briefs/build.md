@@ -20,6 +20,14 @@ asks. Change nothing else.
 
 {{block}}
 
+{{#related}}
+## Later notes on this task
+
+They override the contract where they conflict.
+
+{{notes}}
+
+{{/related}}
 Owned files:
 {{owned}}
 
