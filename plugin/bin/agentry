@@ -23,11 +23,13 @@ agentry <group> --help lists a group's subcommands; agentry <group> <subcommand>
 flags, exit codes and an example.`;
 
 const [group, ...rest] = process.argv.slice(2);
+const version = () =>
+  JSON.parse(readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8")).version;
+
 if (group === undefined || group === "--help" || group === "-h") {
-  console.log(HELP);
+  console.log(`${HELP}\n\nagentry plugin ${version()}`);
 } else if (group === "--version" || group === "-v") {
-  const manifest = join(PLUGIN, ".claude-plugin", "plugin.json");
-  console.log(JSON.parse(readFileSync(manifest, "utf8")).version);
+  console.log(version());
 } else if (group === "draft" || Object.hasOwn(SCRIPTS, group)) {
   const [script, args] =
     group === "draft" ? ["board.mjs", ["draft", ...rest]] : [SCRIPTS[group], rest];

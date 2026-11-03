@@ -45,6 +45,13 @@ test("--help names the three groups", () => {
     assert.match(run.stdout, new RegExp(`agentry ${group}`));
 });
 
+test("--help ends with the plugin's version, as every group and subcommand help does", () => {
+  const { version } = JSON.parse(
+    readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8"),
+  );
+  assert.equal(agentry("--help").stdout.trimEnd().split("\n").at(-1), `agentry plugin ${version}`);
+});
+
 test("board and lane give the scripts' own output and exit codes", () => {
   for (const [group, file] of [
     ["board", "board.mjs"],
