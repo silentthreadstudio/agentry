@@ -41,7 +41,7 @@ import {
 } from "../brief.mjs";
 import { changedSince, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
-import { isMemoryCommit, isMemoryWrite } from "../own-memory.mjs";
+import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
 import { DISPATCHES, addRound, step as advance, begin, expects, verdicts } from "../rounds.mjs";
 import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
@@ -125,13 +125,11 @@ const headOf = (dir, ref = "HEAD") =>
 // Main's changed paths (Agentry's run files and new memory records left out) → their `git status` entry; a rename or copy
 // lists its source too.
 function dirtyPaths(root) {
-  const res = git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  if (res.status !== 0) refuse(`git status failed in ${root}: ${res.stderr.trim()}`);
-  const parts = res.stdout.split("\0").filter(Boolean);
+  const parts = dirtyEntries(root);
+  if (!parts) refuse(`git status failed in ${root}`);
   const out = new Map();
   for (let i = 0; i < parts.length; i++) {
     const entry = parts[i];
-    if (isMemoryWrite(entry)) continue;
     const paths = [entry.slice(3), ...(/^[RC]/.test(entry) ? [parts[++i]] : [])];
     for (const path of paths)
       if (!OWN_DIRS.some((d) => path.startsWith(d)) && !STAGED.test(out.get(path) ?? ""))
@@ -191,6 +189,7 @@ function mainSnapshot(root) {
     head: headOf(root),
     porcelain: [...new Set(dirty.values())],
     files: contentOf(root, [...dirty.keys()]),
+    modes: true, // `files` ids carry `:x` / `:l`; a ledger without this holds an executable as a bare id
   };
 }
 
@@ -235,6 +234,8 @@ function strayFiles(root, ledger, head, all, boards) {
     .filter((p) => {
       const start = Object.hasOwn(started, p) ? started[p] : atStart[p];
       if (now[p] === start) return false;
+      // A ledger written before ids carried `:x` holds an executable file as its bare blob id.
+      if (!was.modes && Object.hasOwn(started, p) && now[p] === `${start}:x`) return false;
       const from = atHead[p] === atStart[p] ? [start] : [start, atHead[p]];
       return !reachable(
         moves.filter((m) => m.file === p),
@@ -715,6 +716,9 @@ function close(ctx, id, episodeId) {
   let ledger = mustLedger(root, id);
   if (episodeId !== null) {
     if (!ledger.episode?.payload) refuse(`no episode to stamp: run ${laneLine(root, "close", id)}`);
+    const existing = ledger.episode.writtenId;
+    if (existing && existing !== episodeId)
+      refuse(`the episode is already stamped as ${existing}; not replacing it with ${episodeId}`);
     ledger = { ...ledger, episode: { ...ledger.episode, writtenId: episodeId } };
     ledgers.write(root, ledger);
     return {

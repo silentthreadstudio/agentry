@@ -670,6 +670,11 @@ test("only new memory records are Agentry's own: other files and edits of tracke
       mkdirSync(join(root, ".agentry", "memory", "facts"), { recursive: true });
       writeFileSync(join(root, ".agentry", "memory", "facts", "evil.md"), "x\n");
     },
+    "a record staged as new": (root) => {
+      mkdirSync(join(root, ".agentry", "memory", "facts"), { recursive: true });
+      writeFileSync(join(root, ".agentry", "memory", "facts", `staged-${ULID}.md`), "x\n");
+      git(root, "add", ".agentry/memory");
+    },
     "an edit of a tracked record": (root) => writeFileSync(join(root, record), "changed\n"),
     "a tracked record deleted": (root) => rmSync(join(root, record)),
   };
@@ -725,6 +730,34 @@ test("an index-only change in main (git rm --cached) stops the lane", () => {
   const res = lane(r, "report", "T1");
   assert.equal(res.exit, 1, JSON.stringify(res.json));
   assert.match(res.json.reason, /files changed: .*plan\/DECISIONS\.md/);
+});
+
+test("a second close --episode with another id is refused and names the stamped one", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  lane(r, "close", "T1");
+  assert.equal(lane(r, "close", "T1", "--episode", "p:FIRST").exit, 0);
+  const again = lane(r, "close", "T1", "--episode", "p:SECOND");
+  assert.notEqual(again.exit, 0);
+  assert.match(again.stderr + again.stdout, /already stamped as p:FIRST/);
+  assert.equal(ledgerOf(r.root, "T1").episode.writtenId, "p:FIRST");
+  assert.equal(lane(r, "close", "T1", "--episode", "p:FIRST").exit, 0, "the same id is idempotent");
+});
+
+test("a lane whose ledger predates executable ids is not stopped by a pre-modified executable", () => {
+  const r = repo();
+  commitFile(r.root, "plan/NOTE.txt", "target");
+  chmodSync(join(r.root, "plan", "NOTE.txt"), 0o755);
+  build(lane(r, "start", "T1").json);
+  const path = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const legacy = ledgerOf(r.root, "T1");
+  const was = legacy.mainAtStart;
+  assert.match(was.files["plan/NOTE.txt"], /:x$/);
+  was.files["plan/NOTE.txt"] = was.files["plan/NOTE.txt"].replace(/:x$/, "");
+  was.modes = undefined;
+  writeFileSync(path, JSON.stringify(legacy));
+  const res = lane(r, "report", "T1");
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json));
 });
 
 test('close accepts a merged ledger (next done, or "" when adopted) and stamps its episode', () => {

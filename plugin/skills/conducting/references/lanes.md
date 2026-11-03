@@ -94,8 +94,10 @@ one `needs-context` round, and a guard fix (resent or not) that trips a guard ag
   changed or was reverted since. HEAD may move only by other lanes' merges, each the run `preHead` → landed
   commits → board commit its ledger records, matched against main's first-parent history. Agentry's own files
   are not checked: `.agentry/run/`, and new memory records (`.agentry/memory/<facts|episodes>/<slug>-<ULID>.md`,
-  untracked, staged as new, or in a commit that only adds them), the same definition `lane merge` uses for a
-  clean main. Anything else under the store (an edit of a tracked record, another file) is a breach. A path's
+  untracked, or in a commit that only adds them), the same definition `lane merge` and the gate use for a
+  clean main (one function, `own-memory.mjs`). Anything else under the store is a breach: another file, a
+  record staged as new, an edit of a tracked record. So a memory write that rewrites a committed fact
+  (reinforce, feedback) stops the lane by design: commit it between lanes, not during one. A path's
   type and mode count with its content (a symlink, a chmod). So: no board edits (`board set`, by hand) and no
   other commits on main while a lane builds.
 - **Trust boundary.** The guard catches a builder that slips into the main checkout; it is not a sandbox. It
@@ -134,7 +136,7 @@ templates, once:
 
 After `close`, call `episode_write` with the printed `episode` (add a `lesson` when the run taught one), then
 stamp its id with `close <id> --episode <id>`. A second `close` on a stamped lane says the episode is already
-written: write nothing more. The lane stays `verified` until `/agentry:merge` lands it. Hand off:
+written: write nothing more, and stamping a different id is refused (the stamped one is named). The lane stays `verified` until `/agentry:merge` lands it. Hand off:
 
 ```text
 <id>: <last verdict>; gate <green|red> <tier> on <sha>

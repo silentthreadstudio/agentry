@@ -8,7 +8,8 @@
 import { spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
-import { git, porcelain } from "./worktree.mjs";
+import { dirtyEntries } from "./own-memory.mjs";
+import { git } from "./worktree.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 3600;
 const SETTLE_MS = 2000;
@@ -47,7 +48,7 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
     throw new TypeError("runGate: cmd must be a non-empty argv array");
   if (typeof timeoutSec !== "number" || !(timeoutSec > 0))
     throw new TypeError("runGate: timeoutSec must be a positive number");
-  const before = porcelain(dir);
+  const before = dirtyEntries(dir) ?? ["git status failed"];
   if (before.length > 0) return { refused: "dirty", files: before };
 
   const top = git(dir, ["rev-parse", "--show-toplevel"]).stdout.trim() || dir;
@@ -81,7 +82,7 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
   const seconds = Math.round((Date.now() - started) / 100) / 10;
 
   const commandExit = res.status ?? 1;
-  const left = porcelain(dir);
+  const left = dirtyEntries(dir) ?? ["git status failed"];
   const cleanAfter = left.length === 0;
   // A gate that commits leaves a clean tree behind, but not the commit it was asked to prove.
   const headMoved = git(dir, ["rev-parse", "HEAD"]).stdout.trim() !== commit;

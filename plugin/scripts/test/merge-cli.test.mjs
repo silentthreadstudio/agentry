@@ -289,6 +289,34 @@ test("the gate is not skipped when main moved, so main's tree is not the branch 
   assert.match(res.stdout, /not skipped: main's tree differs from the branch tip's tree/);
 });
 
+/** An episode the conductor's memory write left untracked on main (a repo that commits `.agentry/`). */
+const writeEpisode = () => {
+  const dir = join(root, ".agentry", "memory", "episodes");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "built-01ARZ3NDEKTSV4RRFFQ69G5FAV.md"), "an episode\n");
+};
+
+test("main moved before the land and an uncommitted episode is on it: the gate runs on main and the land completes", () => {
+  build({ "src/a.txt": "a\n" });
+  commitFile(root, "other.txt", "main moved\n");
+  writeEpisode();
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /full ran on main: exit 0/);
+  assert.equal(status(), "?? .agentry/memory/episodes/built-01ARZ3NDEKTSV4RRFFQ69G5FAV.md");
+});
+
+test("a recorded worktree gate is not trusted after main moved, and an episode on main does not stop the re-gate", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  commitFile(root, "other.txt", "main moved\n");
+  writeEpisode();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /full ran on main: exit 0/);
+  assert.equal(readLedger(root, ID).state, "merged");
+});
+
 test("a docs-only change runs the quick tier and says why", () => {
   build({ "docs/guide.md": "words\n" });
   const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");

@@ -7,7 +7,8 @@ import { defaultBranch, worktrees } from "../../process/git.mjs";
 import { read as readLedger, write as writeLedger } from "../../process/ledger.mjs";
 import { own } from "../../process/spec.mjs";
 import { commitOf, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
-import { findByBranch, porcelain } from "../worktree.mjs";
+import { dirtyEntries } from "../own-memory.mjs";
+import { findByBranch } from "../worktree.mjs";
 import { ok, red, save, short, skip, tipOf, wait } from "./lane.mjs";
 
 // The ledger states a land may start or resume from; an exec lane still building or verifying is not
@@ -79,7 +80,7 @@ export function ledgerStep(lane, { adopt }) {
     base,
     worktree: findByBranch(root, branch),
     branch,
-    mainAtStart: { head, porcelain: porcelain(root) },
+    mainAtStart: { head, porcelain: dirtyEntries(root) ?? [] },
     worktreesAtStart: worktrees(root).map((tree) => tree.path),
     rounds: [],
     gates: [],

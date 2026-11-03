@@ -9,7 +9,7 @@
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { isMemoryWrite } from "./own-memory.mjs";
+import { dirtyEntries } from "./own-memory.mjs";
 import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
 
 const first = (text) => text.trim().split("\n")[0] ?? "";
@@ -211,15 +211,9 @@ export function rollback(root, { preHead, landed }) {
   return { ok: true };
 }
 
-/** `git status` entries as `"XY path"`, read untrimmed so the first keeps its leading " " column
- *  (`porcelain` trims it); null when git fails. Agentry's own new memory records are left out
- *  (`own-memory.mjs`): main counts as clean with them on it, and the land leaves them as they are. */
-export function statusEntries(dir) {
-  const res = git(dir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  return res.status === 0
-    ? res.stdout.split("\0").filter((entry) => entry && !isMemoryWrite(entry))
-    : null;
-}
+/** `git status` entries as `"XY path"` (`dirtyEntries`, `own-memory.mjs`): Agentry's own new memory
+ *  records are left out, so main counts as clean with them on it, and the land leaves them as they are. */
+export const statusEntries = dirtyEntries;
 
 /** The entries that are not a plain edit of one of `files` (a rename's source field included). */
 export function notEdits(entries, files) {
