@@ -73,7 +73,7 @@ export const workflowPathOf = (path) => join(dirname(path), "workflow.json");
  *  `file` is the file it is about; the one about the process file's own name has none. */
 export function loadSpec(path, { root } = {}) {
   const files = { board: path, workflow: workflowPathOf(path) };
-  if (basename(path) === "workflow.json") {
+  if (basename(path).toLowerCase() === "workflow.json") {
     const message =
       "the process file cannot be named workflow.json (its sibling workflow file would be itself) → use .agentry/process.json";
     return { spec: null, problems: [{ rule: "spec", message }] };

@@ -642,7 +642,7 @@ const oldRecord = (patch, enc) => ({
   at: "2026-11-01T00:00:00.000Z",
 });
 const REFUSAL =
-  /✗ carry +recorded by an older version \(text patch\) → restore it by hand from (\S+merge-(?:allow|writes)-\d+\.patch), then rerun with --drop-carry/;
+  /✗ carry +recorded by an older version \(text patch\) → restore it by hand from (\S+merge-(?:allow|writes)-\d+\.patch)(?: or \S+\.latin1 \([^)]*\))?, then rerun with --drop-carry/;
 const patchFiles = () => readdirSync(runDir(root, ID)).filter((n) => n.endsWith(".patch"));
 const mainState = () => ({
   status: status(),
@@ -666,7 +666,10 @@ for (const [key, enc, patchName] of [
     assert.equal(res.status, 2, out(res));
     const kept = REFUSAL.exec(out(res))?.[1];
     assert.equal(kept, join(runDir(root, ID), patchName), out(res));
-    assert.deepEqual(readFileSync(kept), Buffer.from(patch, "latin1")); // bytes exactly: the é bytes and CRLF kept
+    // the é is two latin1 characters: either UTF-8 text or the raw bytes of a UTF-8 é, so both are kept
+    assert.deepEqual(readFileSync(kept), Buffer.from(patch, "utf8"));
+    assert.deepEqual(readFileSync(`${kept}.latin1`), Buffer.from(patch, "latin1")); // the é bytes and CRLF exactly
+    assert.match(out(res), new RegExp(`${kept.replace(/\W/g, "\\$&")}\\.latin1`)); // the refusal names both
     assert.deepEqual(mainState(), before); // nothing applied, nothing set aside, nothing picked
     const record = readLedger(root, ID).merge[key];
     assert.equal(record.patch, patch); // the record stays in the ledger
@@ -721,7 +724,7 @@ test("an old record also stops commitStep, with nothing put back and the ledger 
     assert.equal(stop.keepCarry, true);
     assert.match(
       rows.at(-1).detail,
-      /^recorded by an older version \(text patch\) → restore it by hand from \S+merge-allow-\d+\.patch, then rerun with --drop-carry$/,
+      /^recorded by an older version \(text patch\) → restore it by hand from \S+merge-allow-\d+\.patch or \S+\.latin1 \([^)]*\), then rerun with --drop-carry$/,
     );
     assert.equal(readLedger(root, ID).state, "verified"); // not merged: the rerun gets here again
     assert.ok(readLedger(root, ID).merge.allow);
@@ -994,11 +997,124 @@ test("a latin1-era record without enc keeps the raw bytes of a UTF-8 é, and git
   seedLedger(path, { allow: oldRecord(raw.toString("latin1")) }); // a latin1 string: one char per byte
   const res = merge(ID, "--message", "docs(board): land T1");
   assert.equal(res.status, 2, out(res));
-  const kept = REFUSAL.exec(out(res))?.[1];
+  const kept = `${REFUSAL.exec(out(res))?.[1]}.latin1`;
   assert.deepEqual(readFileSync(kept), raw);
   const applied = spawnSync("git", ["-C", root, "apply", kept], { encoding: "utf8", env: gitEnv });
   assert.equal(applied.status, 0, applied.stderr);
   assert.deepEqual(readFileSync(join(root, "docs", "status.md")), Buffer.from(typed, "utf8"));
+});
+
+test("--drop-carry on an ambiguous old record keeps both files and names both", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  const patch = oldPatch();
+  seedLedger(path, { allow: oldRecord(patch) });
+  const drop = merge(ID, "--message", "docs(board): land T1", "--drop-carry");
+  assert.equal(drop.status, 0, out(drop));
+  const file = join(runDir(root, ID), "merge-allow-1.patch");
+  assert.deepEqual(readFileSync(file), Buffer.from(patch, "utf8"));
+  assert.deepEqual(readFileSync(`${file}.latin1`), Buffer.from(patch, "latin1"));
+  assert.ok(out(drop).includes(`${file} (UTF-8) and ${file}.latin1 (latin1 bytes)`), out(drop));
+});
+
+test("an old record without a character above U+00FF or in U+0080-U+00FF keeps one file only", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  seedLedger(path, { allow: oldRecord("plain ascii\n") });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  assert.equal(REFUSAL.exec(out(res))?.[0].includes(".latin1"), false);
+  assert.equal(
+    readdirSync(runDir(root, ID)).some((n) => n.endsWith(".latin1")),
+    false,
+  );
+});
+
+test("a patchFile outside the run dir is neither read nor written; a new file is kept instead", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  const patch = oldPatch();
+  const outside = join(runDir(root, ID), "..", "..", "x");
+  writeFileSync(outside, "not a patch\n");
+  seedLedger(path, { allow: { ...oldRecord(patch), patchFile: "../../x" } });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  const kept = REFUSAL.exec(out(res))?.[1];
+  assert.equal(kept, join(runDir(root, ID), "merge-allow-1.patch"), out(res));
+  assert.deepEqual(readFileSync(kept), Buffer.from(patch, "utf8")); // the record's own patch, not the file there
+  assert.equal(readFileSync(outside, "utf8"), "not a patch\n"); // not read, not written
+  assert.equal(existsSync(`${outside}.latin1`), false);
+  assert.equal(readLedger(root, ID).merge.allow.patchFile, kept); // the record is mended
+});
+
+test("a stop for an old record says to restore by hand; one for a both-kinds record says it is a bug", () => {
+  const path = build({ "src/a.txt": "a\n" });
+  seedLedger(path, { allow: oldRecord(oldPatch()) });
+  const old = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(old.status, 2, out(old));
+  assert.match(
+    readLedger(root, ID).next,
+    /^restore the kept patch by hand, then lane merge T1 .*--drop-carry$/,
+  );
+  // an old record beside a both-kinds one: the bug stops first, and says so, not "restore by hand"
+  const file = "plan/DECISIONS.md";
+  const cells = [
+    {
+      kind: "decision",
+      id: "D1",
+      field: "decision",
+      column: "Decision",
+      file,
+      from: "First",
+      to: "Hand",
+    },
+  ];
+  const rows = [
+    {
+      file,
+      heading: "Decisions",
+      header: ["#", "Decision", "Why"],
+      idColumn: "#",
+      key: "D2",
+      prev: "D1",
+      text: "| D2 | A | B |",
+    },
+  ];
+  const bad = {
+    enc: "bytes",
+    files: [file],
+    untracked: [],
+    patch: "x",
+    sha256: createHash("sha256").update("x").digest("hex"),
+    cells,
+    rows,
+    cellsSha256: createHash("sha256")
+      .update(JSON.stringify([cells, rows]))
+      .digest("hex"),
+    at: "2026-11-01T00:00:00.000Z",
+  };
+  seedLedger(path, { allow: oldRecord(oldPatch()), writes: bad });
+  const both = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(both.status, 2, out(both));
+  assert.equal(readLedger(root, ID).next, "this is a bug: report it; nothing was changed");
+});
+
+test("the held line does not say restored by while a both-kinds record stands", () => {
+  const file = "plan/DECISIONS.md";
+  const both = {
+    enc: "bytes",
+    files: [file],
+    patch: "x",
+    cells: [{ file }],
+    rows: [{ file }],
+  };
+  const line = heldRow({
+    id: ID,
+    opts: {},
+    ledger: { merge: { allow: { enc: "bytes", files: ["a.md"] }, writes: both } },
+  }).more[0];
+  assert.doesNotMatch(line, /restored by/);
+  assert.match(
+    line,
+    /2 file\(s\) set aside \(a\.md, plan\/DECISIONS\.md\) → not restored: this is a bug: report it/,
+  );
 });
 
 test("with an old record beside a valid one, the held line names --drop-carry", () => {

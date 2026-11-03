@@ -357,6 +357,15 @@ test("loadSpec refuses a process file named workflow.json, with the file it shou
   );
 });
 
+test("loadSpec refuses a process file named Workflow.json or WORKFLOW.JSON in any case", () => {
+  for (const name of ["Workflow.json", "WORKFLOW.JSON"]) {
+    const { root, put } = sandbox();
+    const { spec, problems } = loadSpec(put(`.agentry/${name}`, BOARD_JSON), { root });
+    assert.equal(spec, null, name);
+    assert.match(problems[0].message, /^the process file cannot be named workflow\.json/, name);
+  }
+});
+
 test("loadSpec refuses a workflow.json or process.json that a symlink takes out of the repository", () => {
   for (const name of ["workflow.json", "process.json"]) {
     const { root, outside, put } = sandbox();

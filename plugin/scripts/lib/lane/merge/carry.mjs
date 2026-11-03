@@ -17,9 +17,8 @@
 // is deleting it), and so is a file only `agentry board add` / `board set --apply` changed, by the
 // content ids they recorded (`merge.writes`, the same record plus the cells for a pick that touches
 // the file). Those two are never committed by the land: they go back to the owner uncommitted.
-import { isUtf8 } from "node:buffer";
 import { existsSync, writeFileSync } from "node:fs";
-import { join, posix } from "node:path";
+import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { boardFiles, cellText, diffBoard, strayChanges } from "../../process/board-diff.mjs";
 import { list as listLedgers, runDir } from "../../process/ledger.mjs";
 import {
@@ -358,7 +357,8 @@ export function giveBack(lane) {
   const carry = giveBackCarry(lane);
   if (!edits || !carry) return edits ?? carry;
   const mark = carry.mark === "red" || edits.mark === "red" ? "red" : carry.mark;
-  return { ...carry, mark, more: [...carry.more, edits.detail, ...edits.more] };
+  const next = [carry, edits].find((r) => r.mark === "red")?.next; // the row that refused says what next
+  return { ...carry, mark, next, more: [...carry.more, edits.detail, ...edits.more] };
 }
 
 function giveBackCarry(lane) {
@@ -602,53 +602,67 @@ const isOld = (held) => held.enc !== "bytes";
 export const hasOldRecord = (merge) =>
   [ALLOW, WRITES].some((kind) => merge?.[kind.key] && isOld(merge[kind.key]));
 const DROP_CARRY = " --drop-carry";
-/** The stop for a put-back row that refused (red: an old record, or a record that is a bug), else null. */
-export function backStop(lane, back) {
+const BUG_NEXT = "this is a bug: report it; nothing was changed";
+/** The stop for a put-back row that refused (red: an old record, or a record that is a bug), else null.
+ *  Its `next` is the refusing row's own; a row that names none gets the general line. */
+export function backStop(_lane, back) {
   if (back?.mark !== "red") return null;
-  const old = hasOldRecord(lane.ledger.merge);
-  const next = old
-    ? `restore the kept patch by hand, then ${landCommand(lane)}${DROP_CARRY}`
-    : "show the owner the carry row: nothing was written or put back";
+  const next = back.next ?? "show the owner the carry row: nothing was written or put back";
   return { exit: 2, keepCarry: true, next };
 }
 
 // The bytes of an old record's patch. Before the byte fix the patch was UTF-8-decoded text; after it, a
-// latin1 string. A string with a character above U+00FF, or whose latin1 bytes are not valid UTF-8, was
-// decoded from UTF-8 text and goes back as UTF-8; any other is the latin1 bytes.
+// latin1 string. A string with a character above U+00FF, or with none in U+0080–U+00FF, can only be the
+// UTF-8 text. One with only U+0080–U+00FF characters could be either, so both are kept: `utf8`, and
+// `latin1` (null when the text is not ambiguous).
 function oldPatchBytes(patch) {
   const text = String(patch ?? "");
-  const latin1 = Buffer.from(text, "latin1");
   const wide = [...text].some((ch) => ch.codePointAt(0) > 0xff);
-  return wide || (/[\u0080-\u00ff]/.test(text) && !isUtf8(latin1))
-    ? Buffer.from(text, "utf8")
-    : latin1;
+  const ambiguous = !wide && /[\u0080-\u00ff]/.test(text);
+  return {
+    utf8: Buffer.from(text, "utf8"),
+    latin1: ambiguous ? Buffer.from(text, "latin1") : null,
+  };
+}
+
+// The file a record names for its kept patch, only when it is inside the lane's run dir (a ledger is
+// data: a path out of it is never read or written).
+function keptFile(dir, name) {
+  if (typeof name !== "string" || name === "") return null;
+  const file = resolve(dir, name);
+  const rel = relative(dir, file);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? file : null;
 }
 
 // An old record's patch kept once in the run dir (`patchFile` in the record: a rerun names the same file),
 // then a red row that stops the land, or on `--drop-carry` an ok row and the record let go.
 function oldRecord(lane, kind, held) {
-  let file = held.patchFile;
+  const dir = runDir(lane.root, lane.id);
+  let file = keptFile(dir, held.patchFile);
   if (!file) {
-    const dir = runDir(lane.root, lane.id);
     let n = 1;
     while (existsSync(join(dir, `${kind.patch}-${n}.patch`))) n++;
     file = join(dir, `${kind.patch}-${n}.patch`);
   }
-  if (!existsSync(file)) writeFileSync(file, oldPatchBytes(held.patch));
+  const bytes = oldPatchBytes(held.patch);
+  if (!existsSync(file)) writeFileSync(file, bytes.utf8);
+  const other = bytes.latin1 && `${file}.latin1`;
+  if (other && !existsSync(other)) writeFileSync(other, bytes.latin1);
+  const kept = other ? `${file} (UTF-8) and ${other} (latin1 bytes)` : file;
   if (lane.opts?.["--drop-carry"]) {
     setMerge(lane, { [kind.key]: undefined });
     return ok(
       "carry",
       `dropped ${kind.edits} recorded by an older version (the owner's --drop-carry)`,
       [
-        `${held.files.join(", ")}: the patch is kept in ${file} (git apply it by hand if it matters)`,
+        `${held.files.join(", ")}: the patch is kept in ${kept} (git apply it by hand if it matters)`,
       ],
     );
   }
   if (held.patchFile !== file) setMerge(lane, { [kind.key]: { ...held, patchFile: file } });
   return red(
     "carry",
-    `recorded by an older version (text patch) → restore it by hand from ${file}, then rerun with --drop-carry`,
+    `recorded by an older version (text patch) → restore it by hand from ${other ? `${file} or ${other} (the text could be either: git apply the one that fits)` : file}, then rerun with --drop-carry`,
   );
 }
 
@@ -662,7 +676,7 @@ export function putBackAllow(lane) {
   for (const kind of kinds) {
     const held = lane.ledger.merge?.[kind.key];
     const both = held && !isOld(held) && bothKinds(held);
-    if (both) return red("carry", bothMessage(both));
+    if (both) return { ...red("carry", bothMessage(both)), next: BUG_NEXT };
   }
   const old = kinds.filter(
     (kind) => lane.ledger.merge?.[kind.key] && isOld(lane.ledger.merge[kind.key]),
@@ -672,7 +686,15 @@ export function putBackAllow(lane) {
   if (rows.length === 0) return null;
   const [first, ...rest] = rows;
   const mark = WORST.find((m) => rows.some((r) => r.mark === m));
-  return { ...first, mark, more: [...first.more, ...rest.flatMap((r) => [r.detail, ...r.more])] };
+  const next = refuse
+    ? `restore the kept patch by hand, then ${landCommand(lane)}${DROP_CARRY}`
+    : undefined;
+  return {
+    ...first,
+    mark,
+    next,
+    more: [...first.more, ...rest.flatMap((r) => [r.detail, ...r.more])],
+  };
 }
 
 const SAFE_WORD = /^[A-Za-z0-9_./:=@%+-]+$/;
@@ -707,7 +729,13 @@ export function heldRow(lane) {
   if (held.length === 0) return null;
   const command = landCommand(lane) + (hasOldRecord(lane.ledger.merge) ? DROP_CARRY : "");
   const shown = held.slice(0, 5).join(", ") + (held.length > 5 ? `, +${held.length - 5}` : "");
+  // A record that is a bug stops every put-back, so no command restores these until it is reported.
+  const stuck = [ALLOW, WRITES].some((kind) => {
+    const record = lane.ledger.merge?.[kind.key];
+    return record && !isOld(record) && bothKinds(record);
+  });
+  const how = stuck ? `not restored: ${BUG_NEXT}` : `restored by ${command}`;
   return warn("allow", "files set aside by this land are still in the ledger", [
-    `allow: ${held.length} file(s) set aside (${shown}) → restored by ${command}`,
+    `allow: ${held.length} file(s) set aside (${shown}) → ${how}`,
   ]);
 }

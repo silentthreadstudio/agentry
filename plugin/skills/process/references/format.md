@@ -365,8 +365,9 @@ In `workflow.json`:
 - `commits` keys are all optional. The subject is a commit message's first line, counted in code points.
   `subjectMax` is a whole number above 0. `subjectPattern` is a regular expression the subject must match (no
   flags, so case counts). `forbid` is a non-empty list of regular expressions none of which may match the whole
-  message, checked with the `m` flag so `^` and `$` hold at each line (e.g. an attribution trailer). An invalid
-  regular expression or an empty entry is refused at load.
+  message, checked with the `m` flag so `^` and `$` hold at each line (e.g. an attribution trailer). `$` does not
+  match before a CR, so a CRLF message needs `\r?$`. An invalid regular expression or an empty entry is refused at
+  load.
 - `lane exec report` sends the builder back (a fix round, once) for a commit past base that breaks a rule. `lane
   merge --preflight` shows a `commits` row, and the land refuses before any pick, when a commit it would pick does.
 

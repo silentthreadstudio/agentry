@@ -14,6 +14,10 @@ import { git } from "./worktree.mjs";
 export const rulesOf = (spec) => own(spec, "commits") ?? null;
 
 // The subject: the message's first line, a trailing carriage return dropped.
+const firstLine = (text) =>
+  String(text ?? "")
+    .split("\n", 1)[0]
+    .trim();
 const subjectOf = (message) => message.split("\n", 1)[0].replace(/\r$/, "");
 
 /** `commits` as `{ sha, message }`: the ones that break `rules` (`{ subjectMax?, subjectPattern?, forbid? }`)
@@ -22,7 +26,11 @@ const subjectOf = (message) => message.split("\n", 1)[0].replace(/\r$/, "");
  *  against the whole message. Pure. */
 export function checkCommits(rules, commits) {
   const out = [];
-  for (const { sha, message } of commits) {
+  for (const { sha, message, failed } of commits) {
+    if (failed !== undefined) {
+      out.push({ sha, subject: "", why: failed });
+      continue;
+    }
     const subject = subjectOf(message);
     const chars = [...subject].length;
     let why = null;
@@ -39,11 +47,17 @@ export function checkCommits(rules, commits) {
   return out;
 }
 
-/** The messages of `shas` in `dir`, as `{ sha, message }` in the order given; `[]` when git cannot say. */
+// The entry that stands for a commit list git could not read: it breaks, so no one goes on past it.
+const FAILED = "git show failed";
+
+/** The messages of `shas` in `dir`, as `{ sha, message }` in the order given; `[]` for no `shas`. When
+ *  git cannot say, one `{ failed }` entry (the first line of git's error) instead: `checkCommits` turns
+ *  it into a broken commit, so a read that failed never passes as "no commit breaks a rule". */
 export function readCommits(dir, shas) {
   if (shas.length === 0) return [];
   const res = git(dir, ["show", "-s", "--format=%H%x1f%B%x1e", ...shas, "--"]);
-  if (res.status !== 0) return [];
+  if (res.status !== 0)
+    return [{ sha: "", message: "", failed: `${FAILED}: ${firstLine(res.stderr)}` }];
   const byId = new Map();
   for (const record of res.stdout.split("\x1e")) {
     const [sha, message] = record.replace(/^\n/, "").split("\x1f");

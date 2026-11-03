@@ -106,3 +106,16 @@ test("readCommits reads each message whole, in the order given; brokenIn applies
   assert.deepEqual(brokenIn(dir, {}, [a, b, c3]), [], "no commits key, no rules");
   assert.equal(rulesOf({}), null);
 });
+
+test("a git show that fails is one broken entry with git's first error line, so nothing passes unread", () => {
+  const { dir } = repo();
+  const a = commitFile(dir, "a.txt", "a", "feat: fine");
+  const bogus = "0".repeat(40);
+  const spec = { commits: { subjectMax: 72 } };
+  const out = brokenIn(dir, spec, [a, bogus]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].subject, "");
+  assert.match(out[0].why, /^git show failed: \S/);
+  assert.ok(!out[0].why.includes("\n"));
+  assert.deepEqual(brokenIn(dir, spec, [a]), [], "a good read still passes");
+});
