@@ -328,3 +328,55 @@ test("mechanical: a ledger with a merge record gives one fix naming what the boa
   );
   assert.deepEqual(plan.left, []);
 });
+
+// SPEC with a debt kind beside the task kind, run by exec; its row is on the board, doing.
+const DEBT_SPEC = {
+  ...SPEC,
+  kinds: {
+    ...SPEC.kinds,
+    debt: {
+      label: "Debt",
+      at: { table: "BOARD.md", heading: "Debt" },
+      id: { column: "Debt" },
+      fields: {
+        status: { column: "Status" },
+        verdict: { column: "Verdict" },
+        commit: { column: "Commit", type: "commits" },
+      },
+      status: { field: "status", values: { todo: "planned", doing: "active", done: "done" } },
+    },
+  },
+  exec: {
+    kinds: {
+      debt: {
+        on: { dispatched: "doing", built: "doing", failed: "doing", merged: "done" },
+        write: { status: "status", verdict: "verdict", commit: "commit" },
+      },
+    },
+  },
+};
+function debtRepo() {
+  const repo = fresh({ spec: DEBT_SPEC });
+  const board = join(repo.root, "plan", "BOARD.md");
+  writeFileSync(
+    board,
+    `${readFileSync(board, "utf8")}\n## Debt\n\n| Debt | Status | Verdict | Commit |\n| ---- | ------ | ------- | ------ |\n| D-1  | doing  |         |        |\n`,
+  );
+  git(repo.root, "commit", "-q", "-am", "debt row");
+  return repo;
+}
+
+test("mechanical: a landed debt row lacking its cells is reported as left, never planned", () => {
+  const { root } = debtRepo();
+  const { sha } = builtBranch(root, "D-1");
+  mergeOntoMain(root, "D-1", [sha]);
+  const file = join(root, ".agentry", "run", "process", "ledger", "D-1.json");
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), kind: "debt" }));
+  const spec = loadSpec(join(root, ".agentry", "process.json"), { root }).spec;
+  const plan = mechanical({ root, spec, model: readProcess({ root, spec }) });
+  assert.deepEqual(plan.fixes, []);
+  assert.deepEqual(plan.left, [
+    "D-1 lacks its status cell; board fix writes the task kind only → agentry board set debt D-1 status=… --apply",
+    "D-1 lacks its commit cell; board fix writes the task kind only → agentry board set debt D-1 commit=… --apply",
+  ]);
+});

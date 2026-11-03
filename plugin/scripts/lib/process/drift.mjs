@@ -549,6 +549,18 @@ function itemFor(spec, model, id, kind = workName(spec)) {
     : { left: `${id}: on main, but ${here.length ? "several" : "no"} board items by that id` };
 }
 
+// A landed item of a runnable kind that is not the lifecycle's, lacking what its merged event writes:
+// `board fix` applies the lifecycle kind only, so each gap is a line naming the command that sets it.
+function unfixable(spec, item, { need }) {
+  const write = lifecycleOf(spec, item.kind)?.write ?? {};
+  return need.map((step) => {
+    const field = step === "handoff" ? null : own(write, step);
+    if (field === null || typeof field !== "string")
+      return `${item.id} lacks its ${step}; board fix writes the ${workName(spec)} kind only`;
+    return `${item.id} lacks its ${field} cell; board fix writes the ${workName(spec)} kind only → agentry board set ${item.kind} ${item.id} ${field}=… --apply`;
+  });
+}
+
 /** What `board fix` may write (`fixes`: `{ id, shas, need }`, each the merged event's missing steps) and
  *  what it only reports (`left`: lines). A task is fixed only when it is provably on main: its ledger's
  *  `lane merge` record still holds there (`recorded`), and the board lacks the status, commit cell or
@@ -578,7 +590,9 @@ export function mechanical({ root, runRoot = root, spec, model }) {
   for (const { ledger, item, left: none } of list) {
     const landed = () => recorded(root, ledger, seen);
     const found = item ? plan({ root, spec, model, item, landed }) : { left: none };
-    if (found.fixes) fixes.push(found.fixes);
+    if (found.fixes && item.kind !== workName(spec))
+      left.push(...unfixable(spec, item, found.fixes));
+    else if (found.fixes) fixes.push(found.fixes);
     if (found.left) left.push(found.left);
   }
   return { fixes, left };
