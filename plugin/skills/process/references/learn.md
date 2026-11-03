@@ -93,8 +93,8 @@ Ask each once, only when it cannot be inferred, in one `AskUserQuestion` where p
   ignored; `git ls-files .agentry` lists files → committed. Ask only when neither tells. If the user wants
   it ignored and it isn't, propose the `.gitignore` line; don't edit `.gitignore` unasked.
 - **Session-start status?** Sets `status.prime`.
-- **Harness writes?** Yes keeps `lifecycle` (status, commit, verdict and handoff written as work moves); no
-  removes it and the checker stays read-only.
+- **Harness writes?** Not asked here: wiring step 10 is the one question about `lifecycle` (status, commit,
+  verdict and handoff written as work moves), so it is never asked twice in a run.
 - **Map the code?** Only when `.agentry/context.md` is missing: offer `/agentry:onboard`.
 
 ## Wiring the lanes (every state)
@@ -163,18 +163,19 @@ conductor, and § guard and cleanup.
    repository root: a line with no `/` except a trailing one matches at any depth, so `.godot/` becomes
    `**/.godot` and `*.translation` becomes `**/*.translation`; a line with a `/` before its end is anchored,
    so `/build/` becomes `build` (in a nested `.gitignore`, put its folder in front). Never propose what a
-   person made or keeps locally (`.env*`, local config, logs, screenshots). Show each glob beside its
+   person made or keeps locally (`.env*`, local config, logs, screenshots). A glob naming a folder also discards every ignored file inside it, an ignored `.env`
+   included (gitignore semantics), so propose a folder only when nothing local lives there. Show each glob beside its
    `.gitignore` line; write only the ones the owner confirms. `agentry lane merge --cleanup` discards those without
    asking and still asks for any other ignored file.
 9. **The permission rule.** If the owner wants fewer prompts, suggest the rule `Bash(agentry:*)` (the plugin's
    `agentry` command), never a rule bound to a path. Suggest it only; settings are the owner's.
-10. **Lifecycle writes.** Only when the process file has no `lifecycle` (`agentry board explain` and the
-    merge print `lifecycle off`), so the board never shows `doing` or `verify`. Offer it once and say what it
+10. **Lifecycle writes.** Only when the process file has no `lifecycle` (the merge's board row and the lifecycle's skips
+    print `lifecycle off`), so the board never shows `doing` or `verify`. Offer it once and say what it
     writes into the board's own files, visible in the owner's diff: the task's status as the lane moves
     (dispatched, built, failed, merged), the verifier's verdict, and the landed commit (with a handoff line
     when the task's parent has a file section for it). Draft the block from the task kind's own status words
     and fields (format.md § lifecycle and drafts), keep only the `write` keys the board has a field for, and
-    write it on the owner's OK. A no is final: do not ask again.
+    write it on the owner's OK. A no is final: do not ask again. A `lifecycle` already set is shown, not asked.
 
 End with what was written (paths), what was left as it was, and the last `agentry board check` result. Nothing is
 committed: the user reviews the diff.

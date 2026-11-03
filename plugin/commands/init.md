@@ -13,7 +13,7 @@ Pick the state, then follow its section of `learn.md`:
 2. **Existing process** — `agentry board scan` finds board-like tables, id-led contract blocks or frontmatter items. Learn: draft the file from `scan` under `.agentry/run/process/`, run `agentry board explain --process <draft>`, fix the draft, repeat until every kind finds items and every column maps. Rules: turn on each one that already holds on the data or that the repo's own process doc states; ask about one that is stated but fails, showing its findings; leave the rest off. Show the summary, then write `.agentry/process.json`.
 3. **New repo** — nothing found. Offer the templates (milestone, sprint, task, question, decision; epic optional), ask where (default `docs/work/`), copy them without overwriting anything, write the process file from the template, run `agentry board check` (must be OK).
 
-Then ask, once each and only what can't be inferred: is `.agentry/` committed (infer from `.gitignore` and `git ls-files .agentry` first)? Session-start status on? Harness writes on? Map the code with `/agentry:onboard` (only if `.agentry/context.md` is missing)?
+Then ask, once each and only what can't be inferred: is `.agentry/` committed (infer from `.gitignore` and `git ls-files .agentry` first)? Session-start status on? Map the code with `/agentry:onboard` (only if `.agentry/context.md` is missing)?
 
 Then wire the lanes, in order, following `learn.md` § Wiring the lanes. A step already set up is shown, not asked again; each process-file change goes through the draft and `agentry board explain`:
 
@@ -24,9 +24,9 @@ Then wire the lanes, in order, following `learn.md` § Wiring the lanes. A step 
 5. **Push policy.** Ask `merge.push` once (`ask` default, `auto`, `never`) unless it is set; write it to `.agentry/config.json`.
 6. **Merge skill.** If the repo has its own merge skill, offer to name it in `extensions.merge.checks` and show its shrunk text (only the repo's own checks); edit the skill only on the owner's OK.
 7. **Guard allowlist.** Only when the owner keeps files on main by hand while lanes run (a status file, a drafts folder), offer them as `guard.allow`; never a folder a task contract could own.
-8. **Disposable files.** Propose `cleanup.disposable` globs from the `.gitignore` lines that are build output or caches (never `.env*`, local config, logs, screenshots); write only the ones the owner confirms.
+8. **Disposable files.** Propose `cleanup.disposable` globs from the `.gitignore` lines that are build output or caches (never `.env*`, local config, logs, screenshots; a folder glob also discards an ignored `.env` inside it, so propose a folder only when nothing local lives there); write only the ones the owner confirms.
 9. **Permission rule.** If the owner wants fewer prompts, suggest `Bash(agentry:*)` for their settings, never a rule bound to a path; suggest it only, never write settings.
-10. **Lifecycle writes.** Only when the process file has no `lifecycle` (`explain` and the merge print `lifecycle off`): offer once to write the task's status, the verifier's verdict and the landed commit onto the board as work moves, saying what each key writes; draft the block from the task kind's own words and fields (`format.md` § lifecycle and drafts), and write it on the owner's OK. A no is final.
+10. **Lifecycle writes.** The one question about harness writes. Only when the process file has no `lifecycle` (the merge's board row and the lifecycle's skips print `lifecycle off`): offer once to write the task's status, the verifier's verdict and the landed commit onto the board as work moves, saying what each key writes; draft the block from the task kind's own words and fields (`format.md` § lifecycle and drafts), and write it on the owner's OK. A no is final; a `lifecycle` already set is shown, not asked.
 
 Never guess a mapping `explain` hasn't confirmed. Never commit or push; the board files, instruction files and repo skills stay the user's. End with the paths written and the last `agentry board check` result.
 
