@@ -1,7 +1,8 @@
 // brief — what an exec round's brief says, rendered from the templates in the conducting skill's
 // `references/briefs/` (ADR-R3): the same brief every time, on disk, quoting the board instead of memory.
 //
-//   ownedFiles      the paths the contract's "owns" names (backticked), in order
+//   ownedFiles      the paths the contract's "owns" names (backticked, negations left out), in order
+//   withNew         those paths, each marked `new` when the tree has no such file
 //   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
 //   citedDecisions  every decision of the board's decision kind the block cites by id, its row quoted
 //   relatedNotes    the lines elsewhere that mention the task (amendments), read verbatim with file:line
@@ -12,7 +13,7 @@
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
 //
 // Reads the board's files and the memory store; writes nothing. Node built-ins only.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rankFacts, readFacts, readMemoryConfig } from "../memory/recall.mjs";
@@ -45,10 +46,35 @@ const TEMPLATE_OF = {
 const OWNS = /\bowns?\b\s*[:*]*/i;
 const NEXT_PART = /\b(exposes|excludes|deps|accept(?:ance)?|out of scope|goal|rules)\b\s*[:*]/i;
 const TICKED = /`([^`\n]+)`/g;
-const PATHISH = /[/.*]/;
 
-/** The paths the block's "owns" part names in backticks, de-duplicated, in order. Empty when the block
- *  has no "owns" part or it names no path. */
+// A code span is an owned path when it is made of path characters and either ends in a known file
+// extension or names a folder or glob (has a `/`) whose last part is not a bare number (`KEY_1/2` is a
+// string key). `Type.method()` and `a.b.c` are symbols: no known extension.
+const PATH_CHARS = /^[\w@.~*+-]+(\/[\w@.~*+-]+)*\/?$/;
+const EXTENSIONS = new Set(
+  (
+    "ts tsx js jsx mjs cjs json jsonc md mdx txt css scss sass less html htm vue svelte astro " +
+    "py rb go rs java kt swift c h cpp hpp cs php lua gd tscn tres res import godot cfg ini toml " +
+    "yaml yml xml svg png jpg jpeg gif webp wav ogg mp3 glsl shader gdshader sql sh csv lock"
+  ).split(" "),
+);
+// What a span may carry after the path: `:12`, `:12-30`, `#L12`.
+const LOCATION = /(?::\d+(?:[-–—]\d+)?|#L\d+(?:-L?\d+)?)+$/;
+// Words before a span that say its file is NOT owned ("no line in", "but not", "never", …).
+const NEGATION =
+  /\b(no|not|never|none|nothing|without|except|excluding|exclude|forbidden|don'?t|doesn'?t|out of scope)\b/i;
+
+function pathOf(span) {
+  const path = span.trim().replace(LOCATION, "");
+  if (!PATH_CHARS.test(path)) return null;
+  if (path.includes("/"))
+    return /^\d+$/.test(path.replace(/\/$/, "").split("/").at(-1)) ? null : path;
+  return path.includes(".") && EXTENSIONS.has(path.split(".").at(-1).toLowerCase()) ? path : null;
+}
+
+/** The paths the block's "owns" part names in backticks, de-duplicated, in order: only spans shaped like
+ *  a path, `path:lines` read as the path, and a span after a negation ("no line in `x`", "but not `y`")
+ *  left out. Empty when the block has no "owns" part or it names no path. */
 export function ownedFiles(block) {
   const text = String(block ?? "");
   const at = OWNS.exec(text);
@@ -57,12 +83,27 @@ export function ownedFiles(block) {
   const end = NEXT_PART.exec(part);
   if (end) part = part.slice(0, end.index);
   const out = [];
-  for (const [, token] of part.matchAll(TICKED)) {
-    const path = token.trim();
-    if (PATHISH.test(path) && !/\s/.test(path) && !out.includes(path)) out.push(path);
+  let from = 0;
+  for (const m of part.matchAll(TICKED)) {
+    // The words between the previous span and this one, in this clause only.
+    const clause = part
+      .slice(from, m.index)
+      .split(/[;\n]|\.\s/)
+      .at(-1);
+    from = m.index + m[0].length;
+    const path = NEGATION.test(clause) ? null : pathOf(m[1]);
+    if (path && !out.includes(path)) out.push(path);
   }
   return out;
 }
+
+/** `paths` as `{ path, new }`: `new` when the path is a plain file that does not exist in `dir` (a glob
+ *  or folder names what is there, so it is never new). */
+export const withNew = (dir, paths) =>
+  paths.map((path) => ({
+    path,
+    new: !/[*?]/.test(path) && !path.endsWith("/") && !existsSync(join(dir, path)),
+  }));
 
 const UI_DIRS = new Set([
   "ui",

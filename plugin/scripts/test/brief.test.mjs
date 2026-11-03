@@ -19,6 +19,7 @@ import {
   renderBrief,
   slotsOf,
   suggestBuilder,
+  withNew,
 } from "../lib/lane/brief.mjs";
 import { readProcess } from "../lib/process/read.mjs";
 
@@ -44,6 +45,36 @@ test("ownedFiles reads the backticked paths of the owns part, up to the next par
   ]);
   assert.deepEqual(ownedFiles("no such part, but `a/b.ts` is named"), []);
   assert.deepEqual(ownedFiles(""), []);
+});
+
+test("ownedFiles keeps paths only: no symbols, string keys or negated spans; path:lines is the path", () => {
+  const block = [
+    "- **T2** (S1): **owns** `row1.tres`, `Desk.shown()`, `run.build.room().y`, `KEY_1/2`,",
+    "  `src/strings/en.tres`, tests `tests/test_a.gd:289–301`, `tests/test_b.gd#L4-9`,",
+    "  `scenes/*.tscn`, `src/ui/`. T9's rule: no line in `shell.gd`; never `src/main.gd`,",
+    "  but `src/ok.gd` is owned. · **excludes** `src/other.gd`",
+  ].join("\n");
+  assert.deepEqual(ownedFiles(block), [
+    "row1.tres",
+    "src/strings/en.tres",
+    "tests/test_a.gd",
+    "tests/test_b.gd",
+    "scenes/*.tscn",
+    "src/ui/",
+    "src/ok.gd",
+  ]);
+});
+
+test("withNew marks a plain file the tree lacks, never an existing file, a glob or a folder", () => {
+  const dir = temp();
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "src", "old.ts"), "");
+  assert.deepEqual(withNew(dir, ["src/old.ts", "src/new.ts", "src/*.ts", "src/"]), [
+    { path: "src/old.ts", new: false },
+    { path: "src/new.ts", new: true },
+    { path: "src/*.ts", new: false },
+    { path: "src/", new: false },
+  ]);
 });
 
 test("suggestBuilder: a UI-shaped owned path suggests the designer, else the implementer", () => {
