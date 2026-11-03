@@ -1,13 +1,15 @@
-// carry-io — the I/O behind the carry of exec's uncommitted board writes (plan R1b-5): the patch that
-// sets them aside and puts them back, its sha256, and the two boards (the working tree's and HEAD's)
-// `board-diff` reads them against. `merge/carry.mjs` decides what may be carried; this only reads and
-// writes. Every git call is an argv array; a refusal is `{ ok: false, reason }`, not a throw.
+// carry-io — the I/O behind the carry of exec's uncommitted board writes (plan R1b-5): the patch and its
+// sha256 the ledger keeps of them, the two boards (the working tree's and HEAD's) `board-diff` reads them
+// against, and the board writes that put their cells back. `merge/carry.mjs` decides what may be
+// carried; this only reads and writes. Every git call is an argv array; a refusal is `{ ok: false,
+// reason }`, not a throw.
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { boardFiles } from "../process/board-diff.mjs";
+import { boardFiles, cellEdits } from "../process/board-diff.mjs";
 import { readProcess } from "../process/read.mjs";
+import { WriteError, applyAll } from "../process/write.mjs";
 import { git } from "./worktree.mjs";
 
 const first = (text) => text.trim().split("\n")[0] ?? "";
@@ -23,20 +25,23 @@ export function uncommittedPatch(root, files) {
   return { patch: res.stdout, sha256: sha256(res.stdout) };
 }
 
-/** Apply `patch` to the working tree, all or nothing; `check` only asks git whether it would, and
- *  `reverse` takes it off (a reverse check that passes: the edits are on the tree already);
- *  `directory` (relative to `root`, the git root) applies it to the copy of the files under it. `{ ok }`
- *  or `{ ok: false, reason }`. */
-export function applyPatch(root, patch, { check = false, reverse = false, directory } = {}) {
-  const flags = [
-    ...(check ? ["--check"] : []),
-    ...(reverse ? ["--reverse"] : []),
-    ...(directory ? [`--directory=${directory}`] : []),
-  ];
-  const res = git(root, ["apply", "--whitespace=nowarn", ...flags, "-"], patch);
-  return res.status === 0
-    ? { ok: true }
-    : { ok: false, reason: first(res.stderr) || "git apply failed" };
+/** Set the carried `cells` on the board under `dir` (main's checkout, or a scratch copy of its board)
+ *  at the model level (`board-diff.cellEdits`): each that reads its `from` is set to its `to` through
+ *  the board writer, all or nothing, and each that reads its `to` already is left. A cell that reads
+ *  anything else is a conflict and nothing is written, unless `leave`: then it is left as it is and the
+ *  rest are set. `{ ok, set, there, conflicts }`, or `{ ok: false, conflicts, reason? }`. */
+export function putCells(dir, spec, cells, { leave = false } = {}) {
+  const plan = cellEdits(spec, workingBoard(dir, spec), cells);
+  const { set, there, conflicts } = plan;
+  if (conflicts.length > 0 && !leave) return { ok: false, set, there, conflicts };
+  try {
+    if (plan.edits.length > 0)
+      applyAll(plan.edits.map(({ file, edit }) => ({ file: join(dir, file), edit })));
+  } catch (error) {
+    if (!(error instanceof WriteError)) throw error;
+    return { ok: false, set, there, conflicts, reason: error.message };
+  }
+  return { ok: true, set, there, conflicts };
 }
 
 /** The working tree's board in the shape `board-diff` reads: `{ model, text(file) }`. */

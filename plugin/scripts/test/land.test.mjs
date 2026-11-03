@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { applyPatch, sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
+import { sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
 import { endStrayGate, gateArgv } from "../lib/lane/gate-group.mjs";
 import {
   attributionIn,
@@ -137,22 +137,13 @@ test("rollback resets with --keep, so a local edit git status cannot see survive
   assert.equal(readFileSync(join(repo.dir, "local.cfg"), "utf8"), "MY LOCAL WORK\n");
 });
 
-test("uncommittedPatch and applyPatch take an edit aside and give it back byte for byte", () => {
+test("uncommittedPatch records an edit against HEAD with its sha256", () => {
   commitFile(repo.dir, "board.md", "one\ntwo\n");
   writeFileSync(join(repo.dir, "board.md"), "one\nTWO\n");
   const carry = uncommittedPatch(repo.dir, ["board.md"]);
   assert.equal(carry.sha256, sha256(carry.patch));
   assert.match(carry.patch, /^\+TWO$/m);
-  assert.deepEqual(applyPatch(repo.dir, carry.patch, { check: true, reverse: true }), { ok: true });
-  git(repo.dir, "checkout", "--", "board.md");
-  assert.equal(applyPatch(repo.dir, carry.patch, { check: true, reverse: true }).ok, false);
-  assert.deepEqual(applyPatch(repo.dir, carry.patch, { check: true }), { ok: true });
-  assert.equal(readFileSync(join(repo.dir, "board.md"), "utf8"), "one\ntwo\n"); // a check writes nothing
-  assert.deepEqual(applyPatch(repo.dir, carry.patch), { ok: true });
   assert.equal(uncommittedPatch(repo.dir, ["board.md"]).sha256, carry.sha256);
-  git(repo.dir, "checkout", "--", "board.md");
-  commitFile(repo.dir, "board.md", "one\nthree\n");
-  assert.equal(applyPatch(repo.dir, carry.patch, { check: true }).ok, false);
 });
 
 // A gate the way a merge runs it, from a parent that then dies (as a killed merge does): the wrapper is

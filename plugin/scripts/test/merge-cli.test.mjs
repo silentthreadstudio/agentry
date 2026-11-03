@@ -478,6 +478,52 @@ test("a red gate gives main back exec's uncommitted board writes as they were", 
   assert.equal(readLedger(root, ID).merge.carry, undefined);
 });
 
+// R1b-5 notes item 1: the carry went back as a text patch with three lines of context, so another lane's
+// exec write on the next row, made while the gate ran on main, broke it ("patch failed") and the plain
+// rerun the table promised stopped on --drop-carry. Parallel lanes in one sprint do exactly that.
+test("another lane's exec write next to the carry during the gate: the carry goes back and the rerun lands", () => {
+  commitFile(
+    root,
+    "plan/BOARD.md",
+    `${BOARD_MD}| T3   | S1     | todo   |         |         |\n`,
+    "add T3",
+  );
+  // The gate stands in for `lane exec start T3` on main while it runs: T3's status cell, once.
+  commitFile(
+    root,
+    "gate.mjs",
+    `import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+const once = \`\${process.env.HOME}/t3-starts\`;
+if (existsSync(once)) {
+  rmSync(once);
+  const board = readFileSync("plan/BOARD.md", "utf8");
+  writeFileSync("plan/BOARD.md", board.replace("| T3   | S1     | todo   |", "| T3   | S1     | doing  |"));
+}
+`,
+  );
+  const { path } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: null });
+  openLane("T3");
+  execWrites();
+  writeFileSync(join(home, "t3-starts"), "");
+  const first = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(first.status, 1, out(first));
+  assert.match(first.stdout, /✗ rollback main is not clean/);
+  assert.match(first.stdout, /✓ carry +exec's board writes are on main again, uncommitted/);
+  assert.match(board(), /\| T2 +\| S1 +\| doing +\|/);
+  assert.match(board(), /\| T3 +\| S1 +\| doing +\|/);
+  assert.equal(readLedger(root, ID).merge.carry, undefined);
+  assert.match(first.stdout, /next: .*run the same land again/);
+
+  const again = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(again.status, 0, out(again));
+  const committed = git(root, "show", "HEAD:plan/BOARD.md");
+  assert.match(committed, /\| T1 +\| S1 +\| done +\|/);
+  assert.match(committed, /\| T2 +\| S1 +\| doing +\|/);
+  assert.match(committed, /\| T3 +\| S1 +\| doing +\|/);
+  assert.equal(status(), "");
+});
+
 // R1b-4 re-verify item 5: on a one-file-per-item board, another lane's lifecycle write in its own item
 // file blocked every land ("main is not clean").
 test("on a one-file-per-item board, an open lane's write in its own file is carried", () => {
@@ -524,20 +570,17 @@ test("--drop-carry with nothing set aside is refused", () => {
   assert.match(out(res), /--drop-carry: the ledger holds no set-aside board writes/);
 });
 
-// R1b-5 fix 5: a carry that no longer applies used to be dropped on the next run, silently.
-test("a carry that no longer applies blocks every rerun until --drop-carry, which keeps its patch", () => {
+// R1b-5 fix 5: a carry that no longer applies used to be dropped on the next run, silently. The carry
+// goes back cell by cell, so only a carried cell that itself changed is in the way (R1b-5 notes item 1).
+test("a carried cell changed under the land blocks every rerun until --drop-carry, which keeps its patch", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
-  const t2 = "| T2   | S1     | todo   |         |         |";
-  commitFile(
-    path,
-    "plan/BOARD.md",
-    BOARD_MD.replace(t2, "| T2   | S1     | todo   | n/a     |         |"),
-  );
+  commitFile(path, "plan/BOARD.md", BOARD_MD.replace(T2_DOING[0], "| T2   | S1     | verify |"));
   execLedger({ path, gated: shas[0] });
   execWrites();
   const first = merge(ID, "--message", "docs(board): land T1");
   assert.equal(first.status, 1, out(first));
   assert.match(first.stdout, /✗ record +exec's board writes do not apply on top of the picks/);
+  assert.match(first.stdout, /T2 status: "todo" → "doing" \(plan\/BOARD\.md\): it reads "verify"/);
   assert.match(first.stdout, /they stay in the ledger \(merge\.carry/);
   assert.ok(readLedger(root, ID).merge.carry);
 

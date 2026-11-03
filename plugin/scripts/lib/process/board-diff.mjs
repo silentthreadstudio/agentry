@@ -25,9 +25,22 @@
 //     One line per change that is NOT a lifecycle cell (a field `lifecycle.write` names for status,
 //     verdict or commit, on `lifecycle.kind`) of an item whose id is in `ids`: every `other`, and every
 //     other cell. [] means the diff is exactly lifecycle cells of those items.
+//
+//   cellText(spec, board, { kind, id, column }) -> string | null
+//     The text of item `id`'s cell under `column`, found by the id wherever its row is now: a table
+//     cell trimmed (`\|` read as `|`), or a frontmatter key's value. null when `id` is not on `board`
+//     once or has no such cell.
+//
+//   cellEdits(spec, board, cells) -> { edits, set, there, conflicts }
+//     cells: [{ kind, id, column, file, from, to }], `from` and `to` as `cellText` reads them.
+//     Setting each cell to `to` on `board`, at the model level: a cell that reads `from` is `set` (its
+//     edit, the board writer's own `setCell` / `setKey`, is in `edits`: [{ file, edit(text) -> text }],
+//     file relative to the git root); one that reads `to` already is `there`; one that reads anything
+//     else is a `conflict` ({ ...cell, now }). Another row moving or changing does not matter.
 import { posix } from "node:path";
 import * as md from "./markdown.mjs";
 import { own } from "./spec.mjs";
+import { setCell, setKey } from "./write.mjs";
 
 const LIFECYCLE_WRITES = ["status", "verdict", "commit"];
 const show = (value) => JSON.stringify(value ?? null);
@@ -199,6 +212,48 @@ export function strayChanges(spec, diff, { ids }) {
     if (c.kind !== life?.kind || !fields.has(c.field))
       out.push(`${where(c)}: ${change} is not a lifecycle cell`);
     else if (!open.has(c.id)) out.push(`${where(c)}: ${change}, but ${c.id} has no open lane`);
+  }
+  return out;
+}
+
+/** The text of one item's cell, found by its id (see the header). */
+export function cellText(spec, board, { kind, id, column }) {
+  const items = (own(board.model.kinds, kind)?.items ?? []).filter((item) => item.id === id);
+  if (items.length !== 1 || !items[0].file) return null;
+  const [item] = items;
+  const text = board.text(at(spec, item.file));
+  if (text === null) return null;
+  if (isTable(spec, kind)) {
+    const row = md
+      .tables(text)
+      .flatMap((t) => t.rows)
+      .find((r) => r.line === item.line);
+    return row && Object.hasOwn(row.cells, column) ? row.cells[column] : null;
+  }
+  const n = own(md.frontmatter(text)?.lines, column);
+  return n ? KEY.exec(md.lines(text)[n - 1])[2].trim() : null;
+}
+
+// The board writer's edit that sets `cell` to its `to` text: the item's table cell, or its key.
+function cellEdit(spec, { kind, id, column, to }) {
+  const def = spec.kinds[kind];
+  if (!isTable(spec, kind)) return (text) => setKey(text, { key: column, value: to });
+  const { heading } = def.at;
+  const { column: idColumn, match: idMatch } = def.id;
+  return (text) => setCell(text, { heading, idColumn, idMatch, id, column, value: to });
+}
+
+/** Setting `cells` on `board` at the model level (see the header). */
+export function cellEdits(spec, board, cells) {
+  const out = { edits: [], set: [], there: [], conflicts: [] };
+  for (const cell of cells) {
+    const now = cellText(spec, board, cell);
+    if (now !== null && now === cell.to) out.there.push(cell);
+    else if (now === null || now !== cell.from) out.conflicts.push({ ...cell, now });
+    else {
+      out.set.push(cell);
+      out.edits.push({ file: cell.file, edit: cellEdit(spec, cell) });
+    }
   }
   return out;
 }

@@ -14,16 +14,16 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join } from "node:path";
 import { boardFiles } from "../../process/board-diff.mjs";
 import { runDir } from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { readProcess } from "../../process/read.mjs";
 import { boardReport } from "../../process/status.mjs";
 import { WriteError } from "../../process/write.mjs";
-import { applyPatch, sha256 } from "../carry-io.mjs";
+import { putCells, sha256 } from "../carry-io.mjs";
 import { boardCommit, restoreFiles, subjectOf, textAt } from "../land.mjs";
-import { dropNext } from "./carry.mjs";
+import { conflictLine, dropNext } from "./carry.mjs";
 import { now, ok, red, save, setMerge, short, skip } from "./lane.mjs";
 
 // A finding is "new" when its rule fails for an item it did not fail for before the board write. The
@@ -38,8 +38,8 @@ const unrecorded = (lane, stop) => {
 };
 
 // The board as the record would leave it, worked out in a scratch copy under the run dir (inside the
-// repo, so the lifecycle's git calls work there; the run dir is ignored): exec's carried writes put
-// back, then the `merged` event. `{ texts: Map(file → text), result }` for each file that changes, or
+// repo, so the lifecycle's git calls work there; the run dir is ignored): exec's carried cells set
+// again, then the `merged` event. `{ texts: Map(file → text), result }` for each file that changes, or
 // `{ stop }` with its row pushed. Main is not touched.
 function planRecord(lane, rows) {
   const { root, spec, id } = lane;
@@ -53,11 +53,12 @@ function planRecord(lane, rows) {
       copyFileSync(join(root, file), join(scratch, file));
     }
     if (merge.carry) {
-      const directory = relative(root, scratch).split(sep).join("/");
-      const back = applyPatch(root, merge.carry.patch, { directory });
+      const back = putCells(scratch, spec, merge.carry.cells);
       if (!back.ok) {
         rows.push(
-          red("record", `exec's board writes do not apply on top of the picks: ${back.reason}`, [
+          red("record", "exec's board writes do not apply on top of the picks", [
+            ...back.conflicts.map(conflictLine),
+            ...(back.reason ? [back.reason] : []),
             `they stay in the ledger (merge.carry: ${carried.join(", ")})`,
           ]),
         );

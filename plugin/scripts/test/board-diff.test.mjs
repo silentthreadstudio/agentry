@@ -8,7 +8,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
-import { boardFiles, diffBoard, strayChanges } from "../lib/process/board-diff.mjs";
+import {
+  boardFiles,
+  cellEdits,
+  cellText,
+  diffBoard,
+  strayChanges,
+} from "../lib/process/board-diff.mjs";
 import { readProcess } from "../lib/process/read.mjs";
 
 const SPEC = {
@@ -251,4 +257,57 @@ test("a changed path that is not a board file is other; so is a board file one v
   assert.ok(
     gone.other.some((o) => o.file === "plan/notes/n1.md" && o.what === "a board file removed"),
   );
+});
+
+// R1b-5 notes item 1: the carry went back as a text patch, which a neighbour row's change broke; it goes
+// back cell by cell now, each found by its id.
+const T2_STATUS = {
+  kind: "task",
+  id: "T2",
+  field: "status",
+  column: "Status",
+  file: "plan/BOARD.md",
+  from: "todo",
+  to: "doing",
+};
+const put = (board) => {
+  const plan = cellEdits(SPEC, board, [T2_STATUS]);
+  const text = plan.edits.reduce((t, e) => e.edit(t), board.text("plan/BOARD.md"));
+  return { plan, text };
+};
+
+test("cellText reads a cell by its item's id, wherever the row is now", () => {
+  const moved = version({
+    "plan/BOARD.md": boardWith(["Prose about the tasks.\n", "Prose.\n\nMore prose.\n"]),
+  });
+  assert.equal(cellText(SPEC, moved, { kind: "task", id: "T2", column: "Status" }), "todo");
+  assert.equal(cellText(SPEC, moved, { kind: "task", id: "T9", column: "Status" }), null);
+  assert.equal(cellText(SPEC, moved, { kind: "note", id: "N1", column: "status" }), "open");
+});
+
+test("cellEdits sets a carried cell that reads its from, next to a row that changed meanwhile", () => {
+  const board = version({
+    "plan/BOARD.md": boardWith(["| T1   | S1     | todo   |", "| T1   | S1     | doing  |"]),
+  });
+  const { plan, text } = put(board);
+  assert.deepEqual([plan.set.length, plan.there.length, plan.conflicts.length], [1, 0, 0]);
+  assert.equal(
+    text,
+    boardWith(
+      ["| T1   | S1     | todo   |", "| T1   | S1     | doing  |"],
+      [T2_TODO, "| T2   | S1     | doing  |         |"],
+    ),
+  );
+});
+
+test("cellEdits leaves a cell already at its to, and names one that reads anything else", () => {
+  const there = put(
+    version({ "plan/BOARD.md": boardWith([T2_TODO, "| T2   | S1     | doing  |"]) }),
+  );
+  assert.deepEqual([there.plan.there.length, there.plan.edits.length], [1, 0]);
+  const changed = put(
+    version({ "plan/BOARD.md": boardWith([T2_TODO, "| T2   | S1     | verify |"]) }),
+  );
+  assert.deepEqual(changed.plan.edits, []);
+  assert.deepEqual(changed.plan.conflicts, [{ ...T2_STATUS, now: "verify" }]);
 });
