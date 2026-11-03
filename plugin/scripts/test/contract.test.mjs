@@ -234,3 +234,35 @@ test("find-contract.mjs: an invalid process file is reported on stderr, then the
   assert.equal(JSON.parse(res.stdout).source, "discovered");
   assert.match(res.stderr, /process\.json: not used \(the process file is missing "root"/);
 });
+
+// One block for several tasks: every `**<id> · …**` lead before the first colon declares an id.
+const SHARED = [
+  "## Sprint S3",
+  "",
+  "**KX-11 · Shots** ⚑, **KX-12 · The shark**, **KX-13 · The bouncer** (S3a), **KX-14 · Week data** (S3d): owns `src/shots.mjs` · accept: **KX-15** is not declared here.",
+  "  more of the shared body.",
+  "",
+  "**KX-16 · Alone** (S3): owns the lamp.",
+].join("\n");
+
+test("a shared block is found under every lead of its first sentence, as the same block", () => {
+  const first = blocksIn(SHARED, "KX-11")[0];
+  for (const id of ["KX-12", "KX-13", "KX-14"]) {
+    const [hit] = blocksIn(SHARED, id);
+    assert.equal(hit.line, 3, id);
+    assert.equal(hit.block, first.block, id);
+  }
+  assert.doesNotMatch(first.block, /KX-16/);
+});
+
+test("a bold id after the first colon is not a lead of the shared block", () => {
+  assert.deepEqual(blocksIn(SHARED, "KX-15"), []);
+});
+
+test("findContract finds a task that sits in a shared block, not only the first", () => {
+  const root = repo({ "TASKS.md": SHARED });
+  const spec = { root: ".", kinds: { task: { contract: { blocks: ["TASKS.md"] } } } };
+  const hit = findContract({ root, spec, id: "KX-13" });
+  assert.equal(hit.status, "found");
+  assert.equal(hit.line, 3);
+});

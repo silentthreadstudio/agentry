@@ -82,15 +82,30 @@ export function blockStarts(text) {
   return out;
 }
 
-/** Every block of `id` in a text: `{ line, block }`. `lead` limits which starts may open it. */
+// The ids a bold-lead line declares: every `**<id> · …**` before its first colon outside the bold
+// text (`**A1 · x** ⚑, **A2 · y** (S3a): owns …` is one block for A1 and A2).
+function leadIdsOf(line) {
+  const ids = [];
+  for (const m of line.matchAll(/\*\*(.+?)\*\*|:/g)) {
+    if (m[0] === ":") break;
+    const id = md.leadIds(m[1])[0];
+    if (ID_TOKEN.test(id ?? "")) ids.push(id);
+  }
+  return ids;
+}
+
+/** Every block of `id` in a text: `{ line, block }`. `lead` limits which starts may open it. A bold
+ *  block at the start of a line is also the block of every other id its first sentence leads with. */
 export function blocksIn(text, id, lead = ["heading", "bold"]) {
   const all = md.lines(text);
   const starts = blockStarts(text);
   // A start inside a line opens a block but does not end the one above: blocks are whole lines.
   const isStart = (s) => !s.inline && (s.id === id || ID_TOKEN.test(s.id ?? ""));
+  const names = (s) =>
+    s.id === id || (s.type === "bold" && !s.inline && leadIdsOf(all[s.line - 1]).includes(id));
   const out = [];
   starts.forEach((s, i) => {
-    if (s.id !== id || !lead.includes(s.type)) return;
+    if (!names(s) || !lead.includes(s.type)) return;
     const end = starts
       .slice(i + 1)
       .find(

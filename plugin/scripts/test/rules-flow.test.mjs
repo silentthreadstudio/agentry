@@ -304,6 +304,21 @@ test("ready-has-contract reports an ambiguous contract as not usable", () => {
   assert.match(found.message, /more than one/);
 });
 
+test("ready-has-contract does not fire on a task that sits in a shared contract block", () => {
+  const root = brokenBoard("ready-has-contract");
+  try {
+    const spec = { ...VALID, rules: [{ rule: "ready-has-contract", kind: "task", skip: ["TRK"] }] };
+    const tasks = join(root, "docs", "board", "TASKS.md");
+    appendFileSync(
+      tasks,
+      "\n**WX · Other** ⚑, **W4 · Evening events** (A2): owns `src/events.mjs` · accept: events fire.\n",
+    );
+    assert.deepEqual(outcome(spec, root).messages, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("ready-has-contract on a real board: finds the missing contract, clears once it is written", () => {
   const root = brokenBoard("ready-has-contract");
   try {
