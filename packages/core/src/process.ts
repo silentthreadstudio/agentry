@@ -201,18 +201,16 @@ export const Extensions = z
   .object({
     merge: z
       .object({
-        checks: z
-          .array(SkillName)
-          .superRefine((names, ctx) =>
-            names.forEach((name, i) => {
-              if (names.indexOf(name) < i)
-                ctx.addIssue({
-                  code: z.ZodIssueCode.custom,
-                  path: [i],
-                  message: `repeats "${name}"`,
-                });
-            }),
-          ),
+        checks: z.array(SkillName).superRefine((names, ctx) =>
+          names.forEach((name, i) => {
+            if (names.indexOf(name) < i)
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: [i],
+                message: `repeats "${name}"`,
+              });
+          }),
+        ),
       })
       .strict(),
   })
