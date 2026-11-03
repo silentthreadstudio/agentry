@@ -1,11 +1,8 @@
 ---
-// /docs/security — the posture, from repo facts. Local-first: Memory is a local stdio MCP over
-// node:sqlite (no network service, no external DB), the Workbench is localhost-only on :4317,
-// Flow state is plain local files. You stay in control of outward/irreversible actions via
-// permission prompts. Channels are a flagged research preview (the flag is a consent gate). No
-// telemetry backend in the static site. MIT, pre-1.0 — honest, no overclaim.
-//
-// Base-path rule (#1 404 trap): every internal href goes through withBase().
+// /docs/security — the posture, from repo facts. Local-first: memory is a local stdio MCP over
+// node:sqlite, the board and Agentry's own state are plain files in your repo, and outward or
+// irreversible actions go through permission prompts. The plugin sends nothing anywhere; this
+// website uses Vercel Analytics, Speed Insights and Google Fonts, and says so. MIT, pre-1.0.
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
 import { withBase } from "../../../lib/base.ts";
 ---
@@ -13,9 +10,9 @@ import { withBase } from "../../../lib/base.ts";
 <DocsLayout
   current="security"
   title="Security — local-first, you in control"
-  description="Agentry's posture: memory, run state, and the Workbench all live on your machine — no network service, no external database, no telemetry backend. Outward and irreversible actions stay gated behind your approval."
+  description="Agentry's posture: memory, your board and Agentry's own state live on your machine, the plugin sends nothing anywhere, and outward or irreversible actions wait for your approval. This website uses Vercel Analytics, Speed Insights and Google Fonts."
   eyebrow="Reference · Security"
-  lede="Agentry is local-first by construction. Your memory and run state are plain local files and a local database; the Workbench is localhost-only. Nothing leaves the machine without an action you can see and stop. It's MIT and pre-1.0 — we'd rather under-claim."
+  lede="Agentry is local-first by construction. Your memory and your board are local files and a local database, and the plugin sends nothing anywhere. It's MIT and pre-1.0 — we'd rather under-claim."
 >
   <div class="prose">
     <h2 class="prose__h">Local-first by construction</h2>
@@ -25,39 +22,23 @@ import { withBase } from "../../../lib/base.ts";
     </p>
     <ul class="facts">
       <li><strong>Memory</strong> is a local stdio MCP backed by <code>node:sqlite</code> — a file on disk. There is <strong>no network service and no external database</strong>; the memory server talks to Claude Code over stdio, not over a socket.</li>
-      <li><strong>The Workbench</strong> is <strong>localhost-only</strong>, bound to <code>127.0.0.1:4317</code>. It isn't exposed to your network; it's a local view of local files.</li>
-      <li><strong>Flow run state</strong> is plain local files under <code>.agentry/work/</code>. The files are the source of truth — there's no remote of record.</li>
+      <li><strong>Your board</strong> stays plain markdown in your repo, and Agentry's own process file and lane state live under <code>.agentry/</code> beside it.</li>
+      <li><strong>The plugin sends nothing anywhere.</strong> It has no telemetry and no analytics.</li>
     </ul>
 
     <h2 class="prose__h">You stay in control of what leaves the machine</h2>
     <p>
       Agentry runs inside Claude Code, so outward and irreversible actions — running a command,
       writing a file, opening a PR — go through <strong>Claude Code's permission prompts</strong>.
-      The agent proposes; you approve. Nothing irreversible happens silently on your behalf.
-    </p>
-    <p>
-      See <a href={withBase("docs/permissions")}>Permissions</a> for how approvals work, including
-      relaying an approval from the Workbench.
+      The agent proposes; you approve. Nothing irreversible happens silently on your behalf. See
+      <a href={withBase("docs/permissions")}>Permissions</a> for how approvals work.
     </p>
 
-    <h2 class="prose__h">Channels are a flagged research preview</h2>
+    <h2 class="prose__h">What this website loads</h2>
     <p>
-      The live <a href={withBase("docs/channels")}>Channels</a> layer is gated behind a deliberate
-      consent flag — it does not load unless you launch with it:
-    </p>
-    <pre class="flag"><code>--dangerously-load-development-channels plugin:agentry@agentry-dev</code></pre>
-    <p>
-      The <code>dangerously-</code> prefix is intentional. The flag is a <strong>consent gate</strong>:
-      live push between a human and the agent is opt-in, and without the flag everything falls back
-      to the async file-watch loop.
-    </p>
-
-    <h2 class="prose__h">No telemetry, no analytics backend</h2>
-    <p>
-      This documentation site is <strong>static</strong> — there's no analytics or telemetry backend
-      behind it collecting what you read or do. The embedded
-      self-eval dashboard is a static, pre-rendered view of a
-      run that already happened; it doesn't phone home.
+      This site, not the plugin, uses <strong>Vercel Analytics</strong> and <strong>Vercel Speed
+      Insights</strong> for cookieless page and performance metrics, and loads its fonts from
+      <strong>Google Fonts</strong>. Nothing else is loaded from a third party.
     </p>
 
     <h2 class="prose__h">Maturity — say it plainly</h2>
