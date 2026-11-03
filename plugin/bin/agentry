@@ -34,7 +34,13 @@ if (group === undefined || group === "--help" || group === "-h") {
   const run = spawnSync(process.execPath, [join(PLUGIN, "scripts", script), ...args], {
     stdio: "inherit",
   });
-  process.exitCode = run.status ?? 2;
+  if (run.error) {
+    console.error(`✗ agentry ${group}: could not start ${script}: ${run.error.message} → node --version (Node 24+)`);
+    process.exitCode = 2;
+  } else if (run.signal) {
+    console.error(`✗ agentry ${group}: ${script} was killed by ${run.signal}`);
+    process.exitCode = 1;
+  } else process.exitCode = run.status;
 } else {
   console.error(`✗ agentry ${group}: unknown group (board, lane, draft) → agentry --help`);
   process.exitCode = 2;
