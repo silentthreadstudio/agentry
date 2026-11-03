@@ -399,3 +399,18 @@ test("add refuses a pattern that needs more than a number, writing nothing", () 
   assert.match(result.out, /needs more than a number/);
   assert.equal(text(root, "board/BOARD.md"), before);
 });
+
+test("an old --json '{…}' on add or set exits 2 with a pointer to the new form, writing nothing", () => {
+  const root = copy("write");
+  const before = text(root, "board/TASKS.md");
+  const added = call(add, root, ["task", "--json", '{"id":"W4","sprint":"A1"}', "--apply"]);
+  assert.equal(added.exit, 2);
+  assert.match(
+    added.out,
+    /^✗ board add: --json is now --fields \(0\.3\) → (agentry )?board add --help$/,
+  );
+  const changed = call(set, root, ["task", "W1", "--json", '{"note":"x"}', "--apply"]);
+  assert.equal(changed.exit, 2);
+  assert.match(changed.out, /^✗ board set: --json '\{…\}' is now <field>=<value> \(0\.3\)/);
+  assert.equal(text(root, "board/TASKS.md"), before);
+});

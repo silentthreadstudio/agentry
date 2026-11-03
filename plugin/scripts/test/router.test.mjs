@@ -108,7 +108,7 @@ test("<sub> --help prints usage, purpose, args, flags, exits and an example, exi
   assert.equal(res.exit, 0);
   assert.match(
     res.out,
-    /^usage: cli echo \[--json\] \[--why <x>\]\nEcho the argv\.\n\nargs:\n {2}none\nflags:\n {2}--json {5}as JSON\n {2}--why <x> {2}a value\nexits:\n {2}0 {2}ok\nexample:\n {2}cli echo --json$/,
+    /^usage: cli echo \[--json\] \[--why <x>\]\nEcho the argv\.\n\nargs:\n {2}none\nflags:\n {2}--json {5}as JSON\n {2}--why <x> {2}a value\nexits:\n {2}0 {2}ok\nexample:\n {2}cli echo --json\n\nagentry plugin \S+$/,
   );
 });
 

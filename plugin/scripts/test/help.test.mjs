@@ -3,7 +3,7 @@
 // it, exit 0, without a process file.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -61,4 +61,17 @@ test("an error is one line: ✗ what: why → next", () => {
     "✗ board set: no task T9 → board status",
   );
   assert.equal(say("board set", "no task T9"), "✗ board set: no task T9");
+});
+
+test("--help, on a sub and on the index, ends with the plugin's version", () => {
+  const { version } = JSON.parse(
+    readFileSync(join(HERE, "..", "..", ".claude-plugin", "plugin.json"), "utf8"),
+  );
+  for (const args of [["merge", "--help"], ["--help"]]) {
+    const res = spawnSync("node", [join(HERE, "..", "lane.mjs"), ...args, "--root", tmpdir()], {
+      encoding: "utf8",
+    });
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(res.stdout.trimEnd().split("\n").at(-1), `agentry plugin ${version}`);
+  }
 });

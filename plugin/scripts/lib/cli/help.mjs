@@ -13,9 +13,29 @@
 // usageError(what, why) -> { exit: 2, out }                   a refusal pointing at `<what> --help`
 // PREVIEW                                                     the line a write prints without --apply
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { nextStep } from "./invoke.mjs";
 
 const PAD = 2;
+const MANIFEST = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+  ".claude-plugin",
+  "plugin.json",
+);
+
+// The plugin's version, the one a session that started before a flag changed can check itself against.
+function version() {
+  try {
+    return `agentry plugin ${JSON.parse(readFileSync(MANIFEST, "utf8")).version}`;
+  } catch {
+    return "agentry plugin (version unknown)";
+  }
+}
 
 /** The options a subcommand takes, from its help: name → whether it takes a value. */
 export function flagsOf(help) {
@@ -50,6 +70,8 @@ export function renderHelp(cli, sub, given) {
     ...table(Object.entries(help.exits ?? {})),
     "example:",
     `  ${help.example ?? ""}`,
+    "",
+    version(),
   ].join("\n");
 }
 
@@ -64,6 +86,8 @@ export function renderIndex(cli, subs) {
     `${cli} <subcommand> --help prints its args, flags, exit codes and an example.`,
     "--root and --process work with every subcommand: the git root, and the process file",
     "(default <root>/.agentry/process.json).",
+    "",
+    version(),
   ].join("\n");
 }
 
@@ -72,4 +96,7 @@ export const PREVIEW = "preview: nothing written; add --apply to write it";
 
 export const say = (what, why, next) => `✗ ${what}: ${why}${next ? ` → ${nextStep(next)}` : ""}`;
 export const refuse = (what, why, next) => ({ exit: 2, out: say(what, why, next) });
+/** An old spelling of a flag: `✗ board add: --json is now --fields (0.3) → board add --help`, exit 2. */
+export const renamed = (what, old, now, since) =>
+  usageError(what, `${old} is now ${now} (${since})`);
 export const usageError = (what, why) => refuse(what, why, `${what} --help`);

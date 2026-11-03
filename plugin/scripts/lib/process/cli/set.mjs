@@ -6,7 +6,7 @@
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written or previewed, 2 = usage or refusal
 // (nothing written)
 import { join, relative } from "node:path";
-import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
+import { PREVIEW, refuse, renamed, usageError } from "../../cli/help.mjs";
 import { recorded } from "../board-writes.mjs";
 import { boardId } from "../ids.mjs";
 import { escapesRoot, own } from "../spec.mjs";
@@ -33,6 +33,8 @@ export function run(argv, { root, spec, model }) {
   const [kindName, typed, assignment] = argv.filter((a) => !a.startsWith("--"));
   const write = argv.includes("--apply");
   const at = assignment?.indexOf("=") ?? -1;
+  if (at < 1 && argv.includes("--json") && argv.some((a) => a.trimStart().startsWith("{")))
+    return renamed("board set", "--json '{…}'", "<field>=<value>", "0.3");
   if (!kindName || !typed || at < 1)
     return usageError("board set", "needs <kind> <id> <field>=<value>");
   const fieldName = assignment.slice(0, at);

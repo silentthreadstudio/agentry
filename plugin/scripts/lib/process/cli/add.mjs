@@ -10,7 +10,7 @@
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written or previewed, 2 = usage
 // or refusal
 import { join, relative } from "node:path";
-import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
+import { PREVIEW, refuse, renamed, usageError } from "../../cli/help.mjs";
 import { recorded } from "../board-writes.mjs";
 import { findContract } from "../contract.mjs";
 import { nextId } from "../ids.mjs";
@@ -46,6 +46,13 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   const write = argv.includes("--apply");
   let planned;
   const json = argv[argv.indexOf("--fields") + 1];
+  // Before 0.3 `--json '{…}'` carried the fields; now it only switches the output.
+  if (
+    argv.indexOf("--fields") < 0 &&
+    argv.includes("--json") &&
+    argv.some((a) => a.trimStart().startsWith("{"))
+  )
+    return renamed("board add", "--json", "--fields", "0.3");
   if (!kindName || argv.indexOf("--fields") < 0 || json === undefined)
     return usageError("board add", "needs <kind> --fields '<fields>'");
   const kind = own(spec.kinds, kindName);
