@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import * as drafts from "../lib/process/drafts.mjs";
-import { boardRepo, builtBranch, handBranch, ledger, read } from "./drift-repo.mjs";
+import { SPEC, boardRepo, builtBranch, handBranch, ledger, read } from "./drift-repo.mjs";
 import { git, gitEnv } from "./git-repo.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
@@ -43,11 +43,42 @@ test("start prints the Now sprint, the nudges, the drafts and the mode in at mos
   assert.ok(lines.length <= 40, `${lines.length} lines`);
   assert.ok(lines.every((l) => [...l].length <= 80));
   assert.match(res.stdout, /session start · mode night/);
-  assert.match(res.stdout, /now: S1 .*— 0\/3 done/);
+  assert.match(res.stdout, /^now: S1 0\/3$/m);
   assert.match(res.stdout, /in flight: T1 \(doing\), T3 \(verify\)/);
   assert.match(res.stdout, /drift: unlisted-worktree .*→ \/agentry:exec/);
   assert.match(res.stdout, /drafts: 1 pending → \/agentry:close/);
   assert.match(res.stdout, /conductor prompt: .*CONDUCTOR\.md/);
+});
+
+test("start puts the count before a long name, prints the note, and lists a question once", () => {
+  const spec = structuredClone(SPEC);
+  spec.kinds.sprint.fields.name = { column: "Name" };
+  spec.kinds.question = {
+    label: "Question",
+    at: { table: "BOARD.md", heading: "Questions" },
+    id: { column: "#" },
+    fields: { question: { column: "Question" }, status: { column: "Status" } },
+    status: { field: "status", values: { open: "active", answered: "done" } },
+  };
+  const repo = boardRepo({ spec });
+  cleanups.push(repo.cleanup);
+  const root = repo.root;
+  const name = "A sprint whose name runs well past the end of an eighty column line";
+  const sprints = "| Sprint | Status |\n| ------ | ------ |\n| S1     | doing  |";
+  const md = read(root, "plan/BOARD.md")
+    .replace(sprints, `| Sprint | Status | Name |\n| - | - | - |\n| S1 | doing | ${name} |`)
+    .concat(
+      "\n## Questions\n\n| # | Question | Status |\n| - | - | - |\n| Q1 | Ship it? | open |\n",
+    );
+  writeFileSync(join(root, "plan", "BOARD.md"), md);
+  writeFileSync(join(root, ".agentry", "NOTE.md"), "# Note\n\nRead it first.\nThen the docs.\n");
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /^now: S1 0\/3 · A sprint whose name .*…$/m);
+  assert.match(res.stdout, /^note: Read it first\.$/m);
+  assert.match(res.stdout, /^ {6}Then the docs\.$/m);
+  assert.match(res.stdout, /^on you: .*Q1 \(open\)/m);
+  assert.doesNotMatch(res.stdout, /open questions:/);
 });
 
 test("start --json carries prompt, mode, status, recall, questions and ledgers", () => {

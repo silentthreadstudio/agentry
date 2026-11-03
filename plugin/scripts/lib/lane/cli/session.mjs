@@ -38,6 +38,7 @@ export const help = {
 const WIDTH = 80;
 const MAX_LINES = 40;
 const MAX_LIST = 4; // lines one list may take
+const NOTE_LINES = 3; // lines of the note that start prints
 
 // The mode in `.agentry/config.json` (null: none set) and, when the reader refuses a config file, its error:
 // `lane exec` refuses the same file, so start says so rather than reading it as no mode.
@@ -133,9 +134,13 @@ function renderStart(s, { name, root }) {
       ? `conductor prompt: ${relative(root, s.prompt)} (read it once)`
       : "conductor prompt: none set",
   );
+  // The count comes before the name, so a long name is what the line loses.
   for (const n of s.status.now)
-    add(`now: ${[n.id, n.name].filter(Boolean).join(" ")} — ${n.done}/${n.total} done`);
+    add(`now: ${n.id} ${n.done}/${n.total}${n.name ? ` · ${n.name}` : ""}`);
   if (!s.status.now.length) add("now: no active sprint");
+  // The note's first lines (headings and blanks skipped), the later ones indented under the label.
+  const note = (s.status.note?.lines ?? []).filter((l) => l.trim() && !l.startsWith("#"));
+  note.slice(0, NOTE_LINES).forEach((l, i) => add(i ? `      ${l.trim()}` : `note: ${l.trim()}`));
   if (s.status.inFlight.length)
     addList(
       "in flight: ",
@@ -145,11 +150,6 @@ function renderStart(s, { name, root }) {
     addList(
       "on you: ",
       s.status.onYou.map((i) => `${i.id} (${i.status})`),
-    );
-  if (s.questions.length)
-    addList(
-      "open questions: ",
-      s.questions.map((q) => q.id),
     );
   for (const n of s.status.nudges.slice(0, 5))
     add(`drift: ${n.kind} ${n.id ?? n.branch ?? ""} → ${n.command}`);
