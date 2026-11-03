@@ -25,8 +25,8 @@ You can expect an acknowledgement within a few days and a coordinated fix before
 
 ## Scope & what to consider
 
-Agentry runs inside Claude Code and ships **markdown** (agents/commands/skills) plus two local **stdio MCP
-servers** (memory at `plugin/mem/index.js`, run state at `plugin/flow/index.js`). Areas worth scrutiny:
+Agentry runs inside Claude Code and ships **markdown** (agents/commands/skills) plus one local **stdio MCP
+server** (memory, at `plugin/mem/index.js`). Areas worth scrutiny:
 
 - the **memory MCP** — it reads/writes files under the resolved memory roots and runs a local `node:sqlite`
   index; path handling and untrusted-input parsing matter,
