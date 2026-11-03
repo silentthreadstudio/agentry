@@ -20,7 +20,9 @@ export const Field = z
     mark: z.string().optional(),
     join: z
       .string()
-      .regex(/^[^0-9A-Za-z]+$/, { message: "a separator with no letters or digits" })
+      .regex(/^[^0-9A-Za-z\p{Cc}]+$/u, {
+        message: "a separator with no letters, digits, line breaks or control characters",
+      })
       .optional(),
     match: z.string().optional(),
     case: z.literal("upper").optional(),

@@ -124,7 +124,10 @@ const field = shape({
   role: oneOf("parent", "children"),
   also: list(str),
   mark: str,
-  join: like(/^[^0-9A-Za-z]+$/, 'a separator with no letters or digits (such as " " or ", ")'),
+  join: like(
+    /^[^0-9A-Za-z\p{Cc}]+$/u,
+    'a separator with no letters, digits, line breaks or control characters (such as " " or ", ")',
+  ),
   match: regex,
   case: oneOf("upper"),
 });

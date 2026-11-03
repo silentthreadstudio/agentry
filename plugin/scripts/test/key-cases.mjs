@@ -82,6 +82,9 @@ export const PROCESS_CASES = [
   { name: "an empty join", add: joined(""), bad: [JOIN] },
   { name: "a join with a letter", add: joined("x"), bad: [JOIN] },
   { name: "a join with a digit", add: joined(" 1 "), bad: [JOIN] },
+  { name: "a join with a line break", add: joined(",\n"), bad: [JOIN] },
+  { name: "a join with a carriage return", add: joined(", \r"), bad: [JOIN] },
+  { name: "a join with a tab", add: joined("\t"), bad: [JOIN] },
   { name: "a join that is not a string", add: joined(3), bad: [JOIN] },
   // bad: gate
   { name: "a gate as a string", add: gate("make test"), bad: ["gate"] },
