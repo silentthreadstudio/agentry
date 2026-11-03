@@ -43,6 +43,14 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   A hand merge is a nudge to `board fix --accept <id>`, which the owner confirms.
 - **`/agentry:go`, `/agentry:ask`** recall memory first; `memory.prime` now sets what `start` and
   `exec` briefs carry.
+- **One convention for `board` and `lane`.** Every subcommand has `--help` (usage, purpose, args,
+  flags, exit codes, an example) and takes `--json`. A command that writes previews by default and
+  writes only with `--apply`: `board fix --dry-run` and `--write` on `instructions` and
+  `default-agent` are gone, and `/agentry:board fix` previews before `fix --apply`. Item fields go
+  in `--fields` (`board add`, `board draft add`). Exit codes mean the same everywhere (0 ok, 1
+  findings or stopped, 2 refused, usage or bad config), errors are one `✗ what: why → next` line,
+  and ids are read in any case and in their cited form (`D7`).
+- **`extensions.merge.checks: []`** is accepted and names no repo check.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a
