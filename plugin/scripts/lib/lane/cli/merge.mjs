@@ -1,7 +1,8 @@
 // lane merge <id> — land one task on main (plan R1b-5, F14): one procedure, stepped by the ledger.
 //
 //   merge <id> [--branch <b>] --preflight                what landing needs (adopts --branch work)
-//   merge <id> --check <skill>=pass|fail [--note <t>]    record a repo check (extensions.merge.checks)
+//   merge <id> --check <name>=pass|fail [--note <t>]     record a merge check (extensions.merge.checks)
+//                                                        or a gate checklist item (gate.checklist)
 //   merge <id> [--branch <b>] --message <m> [--summary <t>] [--drop-carry]
 //                                                        land → gate or skip → record → board commit
 //   merge <id> --push [--approved]                       push per config merge.push (ask|auto|never)
@@ -57,7 +58,7 @@ import { mainRoot } from "../worktree.mjs";
 export const help = {
   usage: [
     "merge <id> [--branch <b>] --preflight [--json]",
-    "merge <id> --check <skill>=pass|fail [--note <t>]",
+    "merge <id> --check <name>=pass|fail [--note <t>]",
     "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
     "merge <id> --push [--approved]",
     "merge <id> --cleanup [--discard-ignored]",
@@ -66,8 +67,8 @@ export const help = {
   args: { "<id>": "the task's id, any case" },
   flags: {
     "--preflight": "what landing needs; changes nothing on main",
-    "--check <skill>=pass|fail":
-      "record one repo check (extensions.merge.checks) on the branch tip",
+    "--check <name>=pass|fail":
+      "record one merge check (extensions.merge.checks) or gate checklist item (gate.checklist) on the branch tip",
     "--note <t>": "with --check: one line on why",
     "--branch <b>": "with --preflight or --message: adopt work built outside lane exec",
     "--message <board commit>": "land: pick, gate or skip, record, board commit with this message",

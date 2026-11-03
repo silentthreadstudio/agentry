@@ -49,7 +49,7 @@ export const strOrList = (v, at, bad) => (Array.isArray(v) ? list(str) : str)(v,
 /** A shape's key names, without the `!` that marks a required one. */
 export const namesOf = (keys) => Object.keys(keys).map((k) => k.replace(/!$/, ""));
 // An object with known keys; a key written `name!` is required. `open` lets unknown keys through;
-// `full` names a missing key by its own path (`gate.quick.only is required`), as the harness keys do.
+// `full` names a missing key by its own path (`gate.tiers is required`), as the harness keys do.
 // The checker carries its `keys`, so the format reference can be bound to them (format-doc test).
 export const shape = (keys, { open = false, full = false } = {}) =>
   Object.assign(

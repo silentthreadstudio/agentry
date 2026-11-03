@@ -327,7 +327,7 @@ test("ranks do not depend on the order the kinds are declared in", () => {
 // ---- loadSpec: the sibling workflow file and the files that leave the repository ----------------
 
 const BOARD_JSON = readFileSync(join(FIXTURES, "table-board", "process.json"), "utf8");
-const GATE = JSON.stringify({ gate: { command: ["npm", "test"] } });
+const GATE = JSON.stringify({ gate: { tiers: [{ name: "full", command: ["npm", "test"] }] } });
 // A scratch repo (root) with an outside directory beside it, and `put(rel, text)` writing into root.
 function sandbox() {
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-load-")));
@@ -391,7 +391,7 @@ test("loadSpec still loads a workflow.json that is a symlink inside the reposito
   symlinkSync(join(root, "shared", "gate.json"), join(root, ".agentry", "workflow.json"));
   const { spec, problems } = loadSpec(path, { root });
   assert.deepEqual(problems, []);
-  assert.deepEqual(spec.gate.command, ["npm", "test"]);
+  assert.deepEqual(spec.gate.tiers[0].command, ["npm", "test"]);
 });
 
 test("loadSpec with a root still treats a missing workflow.json as no problem", () => {
@@ -407,5 +407,5 @@ test("loadSpec reads the workflow.json beside any process file name", () => {
   put("cfg/x/workflow.json", GATE);
   const { spec, problems } = loadSpec(path, { root });
   assert.deepEqual(problems, []);
-  assert.deepEqual(spec.gate.command, ["npm", "test"]);
+  assert.deepEqual(spec.gate.tiers[0].command, ["npm", "test"]);
 });
