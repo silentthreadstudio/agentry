@@ -1710,6 +1710,61 @@ process.exit(1);`;
   assert.match(res.stdout, /resume the builder/);
 });
 
+test("a flaky re-run refused on a dirty main is recorded and named in the gate row", () => {
+  const marker = join(home, "flaky-ran");
+  const script = `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "");
+console.log("FAILED test_budget");
+process.exit(1);`;
+  commitSpec({
+    ...SPEC,
+    gate: { command: ["node", "-e", script], flaky: ["test_budget"], concurrency: 2 },
+  });
+  build({ "src/a.txt": "a\n" });
+  // Slot 2 is held by a process that leaves a stray file in main once the first run is over, then exits:
+  // the re-run, queued behind it, finds main dirty.
+  const stray = join(root, "stray.txt");
+  const holderJs = `const fs = require("node:fs");
+const t = setInterval(() => {
+  if (!fs.existsSync(${JSON.stringify(marker)})) return;
+  clearInterval(t);
+  setTimeout(() => { fs.writeFileSync(${JSON.stringify(stray)}, "x"); process.exit(0); }, 1000);
+}, 20);`;
+  // Started from a launcher that exits, so init reaps it: a holder that is this test's own child would stay a
+  // zombie, and a zombie's pid still looks held while merge blocks this test.
+  const launch = spawnSync(
+    "node",
+    [
+      "-e",
+      `const c = require("node:child_process").spawn("node", ["-e", ${JSON.stringify(holderJs)}], { detached: true, stdio: "ignore" });
+c.unref();
+console.log(c.pid);`,
+    ],
+    { encoding: "utf8" },
+  );
+  const holder = { pid: Number(launch.stdout), kill: () => process.kill(Number(launch.stdout)) };
+  const locks = join(root, ".agentry", "run", "gate-locks");
+  mkdirSync(locks, { recursive: true });
+  writeFileSync(
+    join(locks, "slot-2.lock"),
+    JSON.stringify({ pid: holder.pid, who: "lane T9", at: new Date().toISOString() }),
+  );
+  let res;
+  try {
+    res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  } finally {
+    try {
+      holder.kill();
+    } catch {} // already gone: it leaves before the re-run's turn
+  }
+  assert.equal(res.status, 1, out(res));
+  assert.deepEqual(
+    mainGates().map((g) => [g.exit, g.flakyRed ?? null, g.rerun ?? false]),
+    [[1, ["test_budget"], false]],
+  );
+  assert.match(res.stdout, /exit 1 in [\d.]+ s \(flaky re-run refused: main not clean\)/);
+  assert.match(res.stdout, /the re-run was refused: main is not clean \(\?\? stray\.txt\)/);
+});
+
 test("a land gate red in an unlisted test is not re-run and still says to fix the branch", () => {
   commitSpec({
     ...SPEC,

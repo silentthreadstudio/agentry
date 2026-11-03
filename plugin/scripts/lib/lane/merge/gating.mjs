@@ -118,23 +118,24 @@ export function gateStep(lane, rows) {
         })
       : null;
   const again = flaky ? runOnMain(true) : null;
-  if (again && !again.res.refused) {
-    save(lane, {
-      gates: [
-        ...gates,
-        { where: "main", ...first.res, flakyRed: flaky, at: now() },
-        { where: "main", ...again.res, rerun: true, at: now() },
-      ],
-    });
-  } else {
-    save(lane, { gates: [...gates, { where: "main", ...first.res, at: now() }] });
-  }
   const reran = again && !again.res.refused;
+  // A re-run refused on a dirty main is still a re-run that was tried: `flakyRed` stays on the first run.
+  save(lane, {
+    gates: [
+      ...gates,
+      { where: "main", ...first.res, ...(again && { flakyRed: flaky }), at: now() },
+      ...(reran ? [{ where: "main", ...again.res, rerun: true, at: now() }] : []),
+    ],
+  });
   const res = reran ? again.res : first.res;
   const why = [`${tier}: ${reason}`, `not skipped: ${decision.reason}`, `log ${res.log}`];
   if (reran)
     why.push(
       `first run failed only in flaky tests (${flaky.join(", ")}); re-run alone, log ${first.res.log}`,
+    );
+  if (again?.res.refused)
+    why.push(
+      `first run failed only in flaky tests (${flaky.join(", ")}); the re-run was refused: ${mainBranch} is not clean (${again.res.files.slice(0, 3).join(", ")})`,
     );
   if (res.exit === 0) {
     const detail = `${tier} ran on ${mainBranch}: exit 0 in ${res.seconds} s${reran ? " (re-run alone after a red only in flaky tests)" : ""}`;
@@ -142,7 +143,14 @@ export function gateStep(lane, rows) {
     rows.push(ok("gate", detail, why));
     return null;
   }
-  rows.push(red("gate", `${tier} ran on ${mainBranch}: exit ${res.exit} in ${res.seconds} s`, why));
+  const refusedNote = again?.res.refused ? ` (flaky re-run refused: ${mainBranch} not clean)` : "";
+  rows.push(
+    red(
+      "gate",
+      `${tier} ran on ${mainBranch}: exit ${res.exit} in ${res.seconds} s${refusedNote}`,
+      why,
+    ),
+  );
   // The flaky wording only when the re-run itself is red in listed tests alone: a different failure there is real.
   const again2 = reran
     ? flakyReds(res.log, gate.flaky, { logs: gate.flakyLogs, cwd: root, since: again.startedAt })
