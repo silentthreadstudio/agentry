@@ -18,6 +18,7 @@ import {
   relatedNotes,
   renderBrief,
   slotsOf,
+  stepSlots,
   suggestBuilder,
   withNew,
 } from "../lib/lane/brief.mjs";
@@ -488,6 +489,20 @@ const VALUES = {
   pickedNotes: "",
   builderReport: "/m/r1.report.md",
   earlier: "/m/r2.report.md",
+  // a contract built in steps (stepSlots): off unless a test turns a section on
+  stepped: false,
+  thisRun: "",
+  runSteps: "",
+  runAccept: "",
+  builtBefore: "",
+  notThisRound: "",
+  ownerGate: false,
+  noted: false,
+  answer: "",
+  answerNext: "",
+  parked: false,
+  approved: false,
+  approvals: "",
 };
 
 test("every template uses only the slots the CLI fills, and renders with none left", () => {
@@ -496,14 +511,37 @@ test("every template uses only the slots the CLI fills, and renders with none le
     const extra = slotsOf(readFileSync(join(TEMPLATES, file), "utf8")).filter((s) => !known.has(s));
     assert.deepEqual(extra, [], `${file} uses unknown slots`);
   }
-  for (const step of ["build", "fix", "needs-context", "verify", "recheck", "final"]) {
-    const text = renderBrief(step, {
-      ...VALUES,
-      [step === "needs-context" ? "needed" : "x"]: true,
-    });
-    assert.doesNotMatch(text, /\{\{/, step);
-    assert.match(text, /- \*\*T1\*\*: owns `a\.txt`/, `${step} carries the block`);
-    assert.match(text, /\/m\/r2\.report\.md/, `${step} names the report path`);
+  // The step slots as the CLI fills them for a stepped lane, every section on.
+  const steps = [
+    { n: 1, text: "Build the parser", gate: "owner", accept: ["the parser test passes"] },
+    { n: 2, text: "Wire it in", gate: null, accept: [] },
+  ];
+  const holds = [
+    {
+      for: "later",
+      when: "after",
+      stepRun: [1, 1],
+      resumedAt: "2026-11-03T10:00:00.000Z",
+      note: "OK, go",
+      redo: false,
+    },
+  ];
+  const stepped = stepSlots({ steps, stepRun: [2, 2], holds, step: "continue" });
+  assert.deepEqual(
+    Object.keys(stepped).filter((k) => !Object.hasOwn(VALUES, k)),
+    [],
+    "VALUES lists every step slot",
+  );
+  for (const step of ["build", "fix", "needs-context", "continue", "verify", "recheck", "final"]) {
+    for (const values of [VALUES, { ...VALUES, ...stepped, ownerGate: true, approved: true }]) {
+      const text = renderBrief(step, {
+        ...values,
+        [step === "needs-context" ? "needed" : "x"]: true,
+      });
+      assert.doesNotMatch(text, /\{\{/, step);
+      assert.match(text, /- \*\*T1\*\*: owns `a\.txt`/, `${step} carries the block`);
+      assert.match(text, /\/m\/r2\.report\.md/, `${step} names the report path`);
+    }
   }
   assert.throws(() => renderBrief("merge", VALUES), /no brief template/);
 });

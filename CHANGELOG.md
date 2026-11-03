@@ -7,6 +7,16 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **Steps and the owner's holds in a lane** — a contract may carry a `**Steps:**` part: numbered steps,
+  an owner gate on any step ending `→ owner OK`, and acceptance items tagged `Step N:`. `lane exec` builds
+  the steps in runs (one round up to each owner gate), holds the lane for the owner's review at a gate, and
+  sends one fresh verifier over the whole contract after the last step, with the owner's approvals in its
+  brief. `lane exec hold <id> --for owner` holds a round whose reply is saved; `--for later` parks a lane
+  whose builder was stopped, its worktree kept. `lane exec resume <id> --note "<the OK>"` records the
+  answer and resumes the builder (`--redo` builds the run again, `--fresh` sends a new builder). A held
+  lane is no writer, writes no board cell and is refused by merge and close; `lane session start` lists it
+  first. `exec show` and `lane session start` flag a building lane with no change for 20 minutes as idle.
+  Build and verify briefs cap every command but the gate at 10 minutes.
 - **Search-ready website** — icons from the tape mark (`favicon.ico`, 192/512 and maskable PNGs, the
   Apple icon, a web manifest, `theme-color`; icon URLs carry a version), `robots.txt`,
   `sitemap-index.xml`, `llms.txt` and `llms-full.txt` built from the docs pages, JSON-LD
@@ -98,6 +108,11 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `board contract` finds.
 
 ### Changed
+- **Commits on main during a lane** — a commit touching only `guard.allow` paths that no running lane owns
+  no longer stops the lane; the report says `main moved by allowed commits: <n> (<shas>)`, and a commit
+  that touches anything else names the path that tripped. A red gate after a green one on the same tip now
+  says `the latest is red`, and the waiting verify brief carries the full gate line again. A ledger with no
+  parsed owned list reads its contract against its worktree, as `start` does.
 - **`/agentry:exec`** now drives the build and verify rounds through `lane exec`, records the
   gate, and stops a lane whose builder edited main outside its own board cells.
 - **`board fix`** writes `done` only from a `lane merge` record whose commits are still on main.

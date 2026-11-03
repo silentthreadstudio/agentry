@@ -13,13 +13,30 @@ Reads only. Without `--json` it prints at most 40 lines of 80 columns; with it, 
 | `prompt` | Absolute path of the conductor prompt (`conductor.prompt` in the workflow file), or null. Read it once per session. |
 | `mode` | The `mode` string in `.agentry/config.json`, or null. Read as written; the mode's rules belong to the mode skill, not to this command. |
 | `configError` | Only when the config reader refuses a config file (the text then shows `mode unreadable`): the error naming the file and key. `agentry lane exec` refuses the same file, so fix it first. |
+| `held` | `[{ id, for, when, steps, since, evidence, resume }]` for every held lane, the owner's first, then the parked ones (`for: "later"`): `steps` is `step 1 of 2` (null with no steps), `evidence` is from the root, `resume` the step that answers it. |
+| `idle` | `[{ id, minutes, lastChange, file, park }]` for every lane in `building` or `fixing` with no change in its worktree for 20 minutes (the newest of the branch's last commit and the mtime of every file git does not ignore); `park` is the `hold --for later` step. |
 | `status` | The `agentry board status` view: `now`, `inFlight`, `onYou`, `blocked`, `ahead`, `nudges` (drift, each with the command to run), `drafts` (pending count), `recent`, `note`. |
 | `recall` | Up to `memory.primeLimit` facts of this repo, the user's and the cross-project ones, ranked against the Now sprint and the work in flight. Empty when `memory.prime` is `off`. |
 | `questions` | Open items of the owner-question kinds (the `onYou` rows that are not work items). |
-| `ledgers` | `{ id, state, next }` of every lane ledger not closed. |
+| `ledgers` | `{ id, state, next }` of every lane ledger not closed, the held ones first. |
 
-The recommendation is yours, not the script's: the single next step, from the nudges first (a drift row already
-names its command), then the next ready task, then `/agentry:close` when only drafts remain.
+The text puts the lanes that wait on the owner right after the `conductor prompt:` line, before `now:`:
+
+```text
+held: T1 for the owner, after step 1 of 2, since 09:05
+  evidence: .agentry/run/process/runs/T1/r1-build.report.md
+  → agentry lane exec resume T1 --note "<the OK>"
+parked: T4 since 10:12
+idle: T6 2h13m: last change 11:44 (src/a.ts) → check the builder; agentry lane exec hold T6 --for later to park it
+```
+
+At most three held or parked lanes, then `held: +N more → agentry lane session start --json`; the idle lines
+follow them. Held lanes are left out of `lanes:`.
+
+The recommendation is yours, not the script's: the single next step. A held lane comes first: show the owner
+its evidence and ask for the answer (it goes in `--note` as the owner said it; never resume on their behalf).
+An idle lane next: check on its builder. Then the nudges (a drift row already names its command), then the
+next ready task, then `/agentry:close` when only drafts remain.
 
 ## `agentry lane session close`
 

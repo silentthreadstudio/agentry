@@ -441,9 +441,13 @@ test("gateTally counts green and red runs on a tip and says so in one line", () 
     green: 1,
     red: 2,
     flaky: 1,
-    text: "1 green, 2 red on this tip (1 red only in flaky tests)",
+    text: "1 green, then 2 red on this tip (1 red only in flaky tests): the latest is red",
   });
-  assert.equal(gateTally([green(), red], TIP).text, "1 green, 1 red on this tip");
+  assert.equal(
+    gateTally([green(), red], TIP).text,
+    "1 green, then 1 red on this tip: the latest is red",
+  );
+  assert.equal(gateTally([red, green()], TIP).text, "1 green, 1 red on this tip");
   assert.equal(gateTally([], TIP).text, null);
   assert.equal(gateTally([green(MOVED)], TIP).text, null);
 });
@@ -480,4 +484,224 @@ test("notes are refused unless the lane is verified PASS WITH NOTES, before it c
   assert.equal(step(closed, { type: "notes", notes: ["N1"] }).next, "fix");
   const merged = { ...closed, next: "merge" };
   assert.throws(() => step(merged, { type: "notes", notes: ["N1"] }), refused);
+});
+
+// ---- steps, runs and the owner's holds (fields 47, 48, 54) -------------------------------------------
+
+const AT = "2026-11-03T10:00:00.000Z";
+const LATER = "2026-11-03T11:00:00.000Z";
+const step3 = (n, gate = null) => ({ n, text: `step ${n}`, gate, accept: [] });
+// Steps `1 → owner OK, 2, 3`, or as given.
+const GATED = [step3(1, "owner"), step3(2), step3(3)];
+function stepped(steps = GATED) {
+  const ledger = { v: 1, id: "T1", steps, rounds: [], gates: [], state: "building", next: "build" };
+  return dispatch(ledger, begin(steps).dispatch);
+}
+// `step`, checking the input ledger is left as it was.
+function pure(ledger, event, tip = TIP) {
+  const copy = structuredClone(ledger);
+  const res = go(ledger, event, tip);
+  assert.deepEqual(ledger, copy, "the input ledger is unchanged");
+  return res;
+}
+const done = (tip = TIP, extra = {}) =>
+  report("DONE", ok, { tip, at: AT, agent: "builder-1", ...extra });
+const resume = (extra = {}) => ({
+  type: "resume",
+  note: "OK, go",
+  at: LATER,
+  tip: MOVED,
+  gate: true,
+  ...extra,
+});
+
+test("start, the contract has steps → build (fresh) on the first run: steps 1..g", () => {
+  const ledger = stepped();
+  assert.deepEqual(ledger.rounds[0].stepRun, [1, 1]);
+  assert.deepEqual(stepped([step3(1), step3(2, "owner"), step3(3)]).rounds[0].stepRun, [1, 2]);
+  assert.deepEqual(stepped([step3(1), step3(2)]).rounds[0].stepRun, [1, 2]);
+  assert.equal(lane().rounds[0].stepRun, undefined, "a lane without steps has no runs");
+});
+
+test("a run that ends at an owner gate holds the lane for the owner, the report as evidence", () => {
+  const res = pure(stepped(), done());
+  assert.equal(res.next, "resume");
+  assert.equal(res.ledger.state, "held");
+  assert.equal(res.dispatch, undefined);
+  assert.equal(expects(res.ledger), "resume");
+  assert.deepEqual(res.ledger.hold, {
+    for: "owner",
+    when: "after",
+    stepRun: [1, 1],
+    evidence: "/r",
+    since: AT,
+    round: 1,
+  });
+  assert.equal(res.reason, "the owner reviews step 1 of 3 before the lane goes on");
+});
+
+test("a run that ends at the last step goes on as a build does: verify, or the gate under exec.verify", () => {
+  const plain = [step3(1), step3(2)];
+  assert.equal(pure(stepped(plain), done()).next, "verify");
+  const gated = pure(stepped(plain), done(TIP, { skipVerify: true, gate: true }));
+  assert.equal(gated.next, "gate");
+  assert.equal(gated.ledger.rounds[0].builtTip, TIP);
+});
+
+test("steps with no gate are one run: one build round, then verify", () => {
+  const res = pure(stepped([step3(1), step3(2), step3(3)]), done());
+  assert.deepEqual(
+    res.ledger.rounds.map((r) => [r.step, r.stepRun]),
+    [
+      ["build", [1, 3]],
+      ["verify", undefined],
+    ],
+  );
+});
+
+test("held: resume → continue (resume the builder) on the next run, its answer kept with its time", () => {
+  const held = go(stepped(), done()).ledger;
+  const res = pure(held, resume());
+  assert.equal(res.next, "continue");
+  assert.equal(res.ledger.state, "building");
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual(
+    [round.step, round.role, round.mode, round.agent, round.stepRun],
+    ["continue", "build", "resume", "builder-1", [2, 3]],
+  );
+  assert.equal(res.ledger.hold, undefined);
+  assert.deepEqual(res.ledger.holds, [
+    {
+      for: "owner",
+      when: "after",
+      stepRun: [1, 1],
+      evidence: "/r",
+      since: AT,
+      resumedAt: LATER,
+      note: "OK, go",
+      redo: false,
+    },
+  ]);
+});
+
+test("runs [1,1] then [2,3] for steps 1 → owner OK, 2, 3; after the last step one verifier", () => {
+  let ledger = go(stepped(), done()).ledger;
+  ledger = go(ledger, resume(), TIP).ledger;
+  const res = pure(ledger, done(MOVED));
+  assert.equal(res.next, "verify");
+  assert.deepEqual(
+    res.ledger.rounds.map((r) => [r.step, r.stepRun ?? null]),
+    [
+      ["build", [1, 1]],
+      ["continue", [2, 3]],
+      ["verify", null],
+    ],
+  );
+});
+
+test("run a..g (a > 1): no commits since step a began → fix (resume) with the reason", () => {
+  let ledger = go(stepped(), done()).ledger;
+  ledger = go(ledger, resume(), TIP).ledger; // step 2 dispatched on TIP
+  const res = pure(ledger, done(TIP));
+  assert.equal(res.next, "fix");
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual([round.guard, round.stepRun], [true, [2, 3]]);
+  assert.match(round.reason, /no commits since step 2 began/);
+  const again = go(res.ledger, done(TIP));
+  assert.equal(again.next, "stop");
+});
+
+test("held: resume with redo → continue on the same run, and the lane holds again at its end", () => {
+  const held = go(stepped(), done()).ledger;
+  const res = pure(held, resume({ redo: true }), TIP);
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual([res.next, round.stepRun, round.redo], ["continue", [1, 1], true]);
+  assert.equal(res.ledger.holds[0].redo, true);
+  const again = pure(res.ledger, done(MOVED));
+  assert.equal(again.next, "resume");
+  assert.equal(again.ledger.hold.when, "after");
+});
+
+test("a redo of a run past step 1 needs a commit since the redo began", () => {
+  const CUT = "c".repeat(40);
+  const steps = [step3(1, "owner"), step3(2, "owner"), step3(3)];
+  let ledger = go(stepped(steps), done()).ledger;
+  ledger = go(ledger, resume(), TIP).ledger; // step 2 on TIP
+  ledger = go(ledger, done(MOVED)).ledger; // held after step 2
+  ledger = go(ledger, resume({ redo: true }), MOVED).ledger; // step 2 again, from MOVED
+  assert.match(pure(ledger, done(MOVED)).reason, /no commits since step 2 began/);
+  assert.equal(pure(ledger, done(CUT)).next, "resume");
+});
+
+test("redo is refused on a hold during a round, which a resume carries on", () => {
+  const during = go(stepped(), { type: "hold", for: "owner", evidence: "/e", at: AT }).ledger;
+  assert.throws(() => step(during, resume({ redo: true })), /--redo goes back over a finished run/);
+});
+
+test("held after the last step: resume → verify (fresh), or the gate under exec.verify", () => {
+  const steps = [step3(1), step3(2, "owner")];
+  const held = go(stepped(steps), done()).ledger;
+  assert.equal(held.hold.when, "after");
+  const verify = pure(held, resume());
+  assert.equal(verify.next, "verify");
+  assert.equal(verify.ledger.rounds.at(-1).mode, "fresh");
+  const gated = pure(held, resume({ skipVerify: true }));
+  assert.equal(gated.next, "gate");
+  assert.equal(gated.ledger.rounds.at(-1).builtTip, MOVED);
+});
+
+test("{ type: hold } while a builder's round is out → held during it; the round is left unread", () => {
+  const res = pure(lane(), { type: "hold", for: "owner", evidence: "/e", at: AT });
+  assert.deepEqual([res.next, res.ledger.state], ["resume", "held"]);
+  assert.deepEqual(res.ledger.hold, {
+    for: "owner",
+    when: "during",
+    stepRun: null,
+    evidence: "/e",
+    since: AT,
+    round: 1,
+  });
+  assert.equal(res.ledger.rounds[0].held, true);
+  assert.equal(res.ledger.rounds[0].report, undefined);
+  const parked = step(res.ledger, { type: "hold", for: "later", evidence: null, at: LATER });
+  assert.deepEqual([parked.ledger.hold.for, parked.ledger.hold.since], ["later", AT]);
+  assert.throws(
+    () => step(go(lane(), report("DONE")).ledger, { type: "hold", for: "owner", at: AT }),
+    /hold is for a builder's round: the lane is verifying \(next verify\)/,
+  );
+});
+
+test("a hold during a fix round after a FAIL → continue → recheck", () => {
+  let ledger = go(stepped([step3(1)]), done()).ledger;
+  ledger = go(ledger, judge("FAIL", TIP, { agent: "verifier-1" })).ledger;
+  assert.equal(ledger.next, "fix");
+  ledger = pure(ledger, { type: "hold", for: "owner", evidence: "/e", at: AT }).ledger;
+  assert.equal(ledger.hold.stepRun, null);
+  const res = pure(ledger, resume());
+  assert.equal(res.next, "continue");
+  assert.equal(res.ledger.rounds.at(-1).stepRun, undefined);
+  const rechecked = pure(res.ledger, done(MOVED));
+  assert.equal(rechecked.next, "recheck");
+  assert.equal(rechecked.ledger.rounds.at(-1).agent, "verifier-1");
+});
+
+test("held: report, verdict and notes are refused; a gate is recorded and decides nothing", () => {
+  const held = go(stepped(), done()).ledger;
+  for (const event of [done(), judge("PASS"), { type: "notes", notes: ["N1"] }])
+    assert.throws(() => step(held, event), /the lane is held: it expects a resume/);
+  const gated = step(held, { type: "gate", record: green() });
+  assert.deepEqual(
+    [gated.next, gated.ledger.state, gated.ledger.gates.length],
+    ["resume", "held", 1],
+  );
+  assert.throws(
+    () => step(lane(), resume()),
+    /the lane is not held \(state building, next build\)/,
+  );
+});
+
+test("a round sent back inside a run (a resend) builds the same run", () => {
+  const res = pure(stepped(), report(null, ok, { at: AT }));
+  assert.equal(res.next, "resend");
+  assert.deepEqual(res.ledger.rounds.at(-1).stepRun, [1, 1]);
 });

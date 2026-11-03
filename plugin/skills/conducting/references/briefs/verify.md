@@ -25,6 +25,14 @@ they are. Re-check these, not the rest:
 {{pickedNotes}}
 
 {{/picked}}
+{{#approved}}
+## The owner's approvals
+
+The owner reviewed and approved these; judge the rest against the contract, not the owner's call:
+
+{{approvals}}
+
+{{/approved}}
 ## Where you work
 
 - Worktree: {{worktree}}, branch `{{branch}}` at {{tip}}, cut from {{base}}. Read and run there; prefix
@@ -72,6 +80,9 @@ The builder's report: {{builderReport}}
 - Run checks in the foreground; never pipe one into `grep`, `tail` or `head` to decide; start no
   background waits. Only a check longer than your host's foreground limit runs in the host's background
   mode: wait for its one exit notice and read the same exit code.
+- No command other than the gate may run longer than 10 minutes: give an engine, server, simulator or
+  watcher you start a time limit (the host's command timeout, or the tool's own flag) and treat hitting it
+  as a finding to report, never a wait.
 
 ## Report
 

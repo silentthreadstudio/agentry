@@ -12,6 +12,9 @@
 //   show <id>                 the ledger and the pending step, for a cold resume
 //   owns <id> [--set a,b]     the owned files the briefs name (parsed once at start); `--set … --apply`
 //                             replaces them, and the brief waiting to be answered is rewritten
+//   hold <id> --for owner|later   a builder's round waits for the owner's review (its reply saved), or is
+//                             parked (its builder stopped); the ledger alone is written
+//   resume <id> --note "<the OK>" [--redo] [--fresh]   the owner's answer to a hold, then the next round
 //
 // Board writes go through `applyEvent` only (no `lifecycle` → none). Exit 0 = next printed, 1 = the lane
 // stopped (or the gate is red), 2 = usage or refusal (nothing changed).
@@ -26,7 +29,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, posix, relative } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
 import { prefix } from "../../cli/invoke.mjs";
@@ -52,14 +55,24 @@ import {
   recalledFacts,
   relatedNotes,
   renderBrief,
+  stepSlots,
   suggestBuilder,
   unknownCites,
   withNew,
 } from "../brief.mjs";
-import { humanView, ownedMark, routeText } from "../exec-view.mjs";
+import {
+  answerLabel,
+  answerLine,
+  answerText,
+  heldText,
+  humanView,
+  ownedMark,
+  routeText,
+} from "../exec-view.mjs";
 import { gateLockDir, holdGate } from "../gate-lock.mjs";
 import { changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
+import { idleOf } from "../idle.mjs";
 import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
 import {
@@ -78,9 +91,20 @@ import { create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LANE = join(HERE, "..", "..", "..", "lane.mjs");
-const STEPS = ["start", "report", "verdict", "gate", "fix", "close", "show", "owns"];
+const STEPS = [
+  "start",
+  "report",
+  "verdict",
+  "gate",
+  "fix",
+  "close",
+  "show",
+  "owns",
+  "hold",
+  "resume",
+];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--cite <A40,A41>] [--set <paths>] [--apply] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--cite <A40,A41>] [--set <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -91,6 +115,8 @@ export const help = {
     close: "print the episode payload (--episode stamps the id episode_write gave)",
     show: "the ledger and the pending step, for a cold resume",
     owns: "the owned files every brief names, parsed once at start (--set replaces them)",
+    hold: "a builder's round waits for the owner (--for owner), or is parked (--for later)",
+    resume: "the owner's answer to a hold (--note), then the next round",
     "<id>": "the task's id, any case",
   },
   flags: {
@@ -102,6 +128,12 @@ export const help = {
       "start: decisions to quote in every brief, by id (rows naming the task are quoted anyway)",
     "--set <paths>": "owns: the comma-separated owned files to use from now on",
     "--apply": "owns: write the --set list (without it the new list is only shown)",
+    "--for <owner|later>":
+      "hold: the owner reviews the round (its reply saved), or later: the lane is parked",
+    "--evidence <path>": "hold --for owner: what the owner opens (default: the round's report)",
+    "--note <text>": "resume: the owner's words; hold --for later: why the lane is parked",
+    "--redo": "resume: the owner sent the finished run back: build the same steps again",
+    "--fresh": "resume: a fresh builder with the same brief (the held round's agent is gone)",
     "--json": "print the step's one JSON object instead of the readable text",
   },
   exits: { 0: "next printed", 1: "the lane stopped, or the gate is red", 2: "usage or refusal" },
@@ -115,6 +147,11 @@ const STEPS_OF = {
   "--cite": ["start"],
   "--set": ["owns"],
   "--apply": ["owns"],
+  "--for": ["hold"],
+  "--evidence": ["hold"],
+  "--note": ["hold", "resume"],
+  "--redo": ["resume"],
+  "--fresh": ["resume"],
 };
 
 class Refusal extends Error {}
@@ -126,7 +163,8 @@ const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
-// argv → { step, id, value, set, cite, apply, json } or { error }. `value` is the --agent / --episode / --notes value.
+// argv → { step, id, value, set, cite, apply, json, holdFor, evidence, note, redo, fresh } or { error }.
+// `value` is the --agent / --episode / --notes value.
 function parse(argv) {
   const words = [];
   const given = {};
@@ -161,11 +199,16 @@ function parse(argv) {
     cite: given["--cite"]?.split(",").map((c) => c.trim()) ?? [],
     apply: Boolean(given["--apply"]),
     json: Boolean(given["--json"]),
+    holdFor: given["--for"] ?? null,
+    evidence: given["--evidence"] ?? null,
+    note: given["--note"] ?? null,
+    redo: Boolean(given["--redo"]),
+    fresh: Boolean(given["--fresh"]),
   };
 }
 
 export function run(argv, ctx) {
-  const { step, id: typed, value, set, cite, apply, json, error } = parse(argv);
+  const { step, id: typed, value, json, error, ...given } = parse(argv);
   if (error) return usageError("lane exec", error);
   const id = boardId(ctx.spec, ctx.model, typed, ctx.spec.lifecycle?.kind ?? "task");
   const what = `lane exec ${step} ${id}`;
@@ -179,7 +222,7 @@ export function run(argv, ctx) {
       out: say(what, `runs from the main checkout: pass --root ${main ?? "<the repository>"}`),
     };
   try {
-    const res = HANDLERS[step]({ ...ctx, root, set, cite, apply }, id, value);
+    const res = HANDLERS[step]({ ...ctx, root, ...given }, id, value);
     return json ? res : { ...res, out: humanView(JSON.parse(res.out)) };
   } catch (e) {
     if (e instanceof Refusal || e instanceof WriteError)
@@ -198,7 +241,8 @@ export function run(argv, ctx) {
 // lifecycle writes or board writes made since the lane started. Any other edit (another row, free text, a
 // non-board file, a file dirty at start that changed since) is the builder's, unless its path matches the
 // workflow file's `guard.allow` and no running lane owns it. HEAD may move only by merges other ledgers
-// record, each a run preHead → landed… → board commit that git's first-parent history confirms.
+// record, each a run preHead → landed… → board commit that git's first-parent history confirms, and by
+// commits on main whose every path `guard.allow` lets through and no running lane owns (A44).
 
 // Agentry's own files: the run state. (The memory records a lane writes are `own-memory.mjs`'s.)
 const OWN_DIRS = [".agentry/run/"];
@@ -325,14 +369,18 @@ function strayFiles(root, ledger, head, all, boards, excused) {
   return [...new Set([...changed, ...staged])];
 }
 
-// Are main's first-parent commits from `from` to `to`, end to end, merges other ledgers record? Each
-// must be the run preHead → landed… → board commit its ledger names, in that order, on git's own
-// first-parent line: a ledger is trusted only as far as git confirms it.
-function landedOnly(root, from, to, others) {
+// Are main's first-parent commits from `from` to `to`, end to end, merges other ledgers record or
+// commits `blocked` lets through? A merge must be the run preHead → landed… → board commit its ledger
+// names, in that order, on git's own first-parent line: a ledger is trusted only as far as git confirms
+// it. `blocked(sha)` is null for a commit `guard.allow` lets through, else why not ("" for no reason to
+// name). Returns `{ ok, allowed: [sha], why? }`: the allowed commits, and why the first other one is not.
+function landedOnly(root, from, to, others, blocked = () => "") {
+  const no = (why = "") => ({ ok: false, allowed: [], why });
   const res = git(root, ["rev-list", "--first-parent", "--reverse", `${from}..${to}`, "--"]);
   const chain = res.stdout.split("\n").filter(Boolean);
-  if (res.status !== 0 || !chain.length) return false;
-  if (headOf(root, `${chain[0]}^`) !== from) return false;
+  if (res.status !== 0 || !chain.length) return no();
+  if (headOf(root, `${chain[0]}^`) !== from) return no();
+  const allowed = [];
   const runs = others
     .map((l) => l.merge)
     .filter((m) => typeof m?.preHead === "string" && Array.isArray(m.landed) && m.landed.length)
@@ -347,11 +395,49 @@ function landedOnly(root, from, to, others) {
       continue;
     }
     const run = runs.find((r) => r.preHead === at && r.shas.every((s, k) => chain[i + k] === s));
-    if (!run) return false;
-    i += run.shas.length;
-    at = chain[i - 1];
+    if (run) {
+      i += run.shas.length;
+      at = chain[i - 1];
+      continue;
+    }
+    const why = blocked(chain[i]);
+    if (why !== null) return no(why);
+    allowed.push(chain[i]);
+    at = chain[i++];
   }
-  return true;
+  return { ok: true, allowed };
+}
+
+// The lanes whose owned files no commit on main may touch (A44): every one still running.
+const RUNNING = ["building", "fixing", "verifying", "held"];
+
+// Why a commit on main is not one `guard.allow` lets through (A44), as `landedOnly` asks: every path it
+// touches (against its first parent) must match a `guard.allow` glob and be no running lane's owned file.
+// null when it is; "" when the process file allows nothing, or a running lane's owned files can't be read.
+function allowedCommit(root, spec, all) {
+  const allow = own(spec, "guard")?.allow ?? [];
+  if (!allow.length) return () => "";
+  let owners;
+  return (sha) => {
+    const res = git(root, ["diff", "--no-renames", "--name-only", "-z", `${sha}^1`, sha, "--"]);
+    if (res.status !== 0) return "";
+    try {
+      owners ??= all
+        .filter((l) => RUNNING.includes(l.state))
+        .map((l) => ({
+          id: l.id,
+          owned: ownedOf(root, l).map((o) => (typeof o === "string" ? o : o.path)),
+        }));
+    } catch {
+      return "";
+    }
+    for (const path of res.stdout.split("\0").filter(Boolean)) {
+      if (!matchesAny(allow, path)) return `${path} is not in guard.allow`;
+      const lane = owners.find((o) => o.owned.some((entry) => ownsPath(entry, path)));
+      if (lane) return `${path} is owned by ${lane.id}`;
+    }
+    return null;
+  };
 }
 
 // A glob test with the gate's own matcher (a quick tier whose only globs are these), as merge does.
@@ -387,19 +473,30 @@ function allowedEdit(root, spec, all) {
   return (path) => matchesAny(allow, path) && !owned.some((entry) => ownsPath(entry, path));
 }
 
-// Why the main checkout no longer matches the lane's start, or null.
-function mainTouched({ root, spec, model }, ledger, all) {
+// Whether the main checkout still matches the lane's start: `{ touched, allowed }`, `touched` why not
+// (or null), `allowed` the commits on main `guard.allow` let through.
+function mainGuard({ root, spec, model }, ledger, all) {
   const was = ledger.mainAtStart;
   const head = headOf(root);
   const others = all.filter((l) => l.id !== ledger.id);
   const reasons = [];
-  if (head !== was.head && !landedOnly(root, was.head, head, others))
-    reasons.push(`HEAD moved ${short(was.head)} → ${short(head)}`);
+  let allowed = [];
+  if (head !== was.head) {
+    const moved = landedOnly(root, was.head, head, others, allowedCommit(root, spec, all));
+    if (moved.ok) allowed = moved.allowed;
+    else
+      reasons.push(
+        `HEAD moved ${short(was.head)} → ${short(head)}${moved.why ? ` (${moved.why})` : ""}`,
+      );
+  }
   const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id)));
   const stray = strayFiles(root, ledger, head, all, boards, allowedEdit(root, spec, all));
   if (stray.length) reasons.push(`files changed: ${stray.slice(0, 10).join(", ")}`);
-  return reasons.length ? reasons.join("; ") : null;
+  return { touched: reasons.length ? reasons.join("; ") : null, allowed };
 }
+
+// Why the main checkout no longer matches the lane's start, or null.
+const mainTouched = (ctx, ledger, all) => mainGuard(ctx, ledger, all).touched;
 
 // Is `path` strictly inside the directory `dir`?
 const inside = (dir, path) => {
@@ -435,6 +532,17 @@ function writers(root, spec) {
   ];
 }
 
+// `start` and a `resume` that sends a builder are refused while `lanes.maxWriters` writers are open.
+function refuseAtWriterCap(root, spec) {
+  const config = readConfig(root);
+  if (config.error) refuse(config.error);
+  const open = writers(root, spec);
+  if (open.length >= config.lanes.maxWriters)
+    refuse(
+      `${open.length} writer(s) open, lanes.maxWriters is ${config.lanes.maxWriters}; finish or merge one first:\n${open.map((w) => `  ${w}`).join("\n")}`,
+    );
+}
+
 // ---- briefs ---------------------------------------------------------------------------------------
 
 const contractFile = (root, id) => join(ledgers.runDir(root, id), "contract.md");
@@ -444,13 +552,15 @@ function gateLine(root, spec, ledger) {
   return `cd ${q(ledger.worktree)} && ${laneLine(root, "gate", ledger.id)}`;
 }
 
-// The recorded green gate a verify brief points at instead of re-running: a worktree gate that ran green
-// on a clean tree at this very tip and tree (a moved tip never matches). The slots every brief is given.
+// The recorded green gate a verify brief points at instead of re-running: the latest worktree gate run on
+// this very tip and tree (a moved tip never matches), when it ran green on a clean tree. A red after a
+// green is the latest, so the brief carries the full gate line. The slots every brief is given.
 function recordedGate(root, ledger, tip) {
   const tree = headOf(root, `${tip}^{tree}`);
-  const record = (ledger.gates ?? []).findLast(
-    (g) => greenOn([g], tip) && (g.tree === undefined || g.tree === tree),
+  const latest = (ledger.gates ?? []).findLast(
+    (g) => g.where === "worktree" && g.commit === tip && (g.tree === undefined || g.tree === tree),
   );
+  const record = latest && greenOn([latest], tip) ? latest : null;
   return {
     gateGreen: !!record,
     gateRun: !record,
@@ -530,6 +640,13 @@ function brief({ root, spec, model }, ledger, dispatch) {
     earlier: verdicts(ledger)
       .map((r) => r.reportPath)
       .join(", "),
+    ...stepSlots({
+      steps: ledger.steps,
+      stepRun: dispatch.stepRun,
+      holds: ledger.holds,
+      step: dispatch.step,
+      fresh,
+    }),
   };
   const file = join(dir, `${name}.md`);
   const text = renderBrief(dispatch.step, values);
@@ -542,7 +659,21 @@ const dispatchNext = (ctx, ledger, dispatch) =>
 
 // ---- output ---------------------------------------------------------------------------------------
 
-function view(ctx, ledger, { step, guards = [], nested = [], extra = {} }) {
+// The steps of a contract, one line each: `1. <text> → owner OK`.
+const stepLines = (steps) =>
+  steps.map((s) => `${s.n}. ${s.text}${s.gate === "owner" ? " → owner OK" : ""}`).join("\n");
+const stepCount = (ledger) => ledger.steps?.length ?? 0;
+
+// What a held lane prints right after the header: the hold, and the step that answers it.
+const heldLead = (root, ledger) =>
+  ledger.state === "held" && ledger.hold
+    ? {
+        held: heldText(ledger.hold, stepCount(ledger)),
+        run: laneLine(root, "resume", ledger.id, ' --note "<the OK>"'),
+      }
+    : {};
+
+function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, extra = {} }) {
   const { root, spec, model } = ctx;
   const round = ledger.rounds.at(-1);
   const out = {
@@ -550,6 +681,8 @@ function view(ctx, ledger, { step, guards = [], nested = [], extra = {} }) {
     step,
     next: ledger.next,
     state: ledger.state,
+    ...heldLead(root, ledger),
+    ...lead,
     reportPath: round?.reportPath ?? null,
     worktree: ledger.worktree,
     branch: ledger.branch,
@@ -593,10 +726,13 @@ const isFlagged = ({ spec, model }, ledger) =>
   Boolean(ledger.route?.flagged) || flaggedItem(spec, model, ledger.id);
 
 // The owned files every brief names: parsed once at start and kept in the ledger (amended by `owns`).
-// A ledger from before that is parsed from its contract file.
+// A ledger from before that is parsed from its contract file, against its worktree as `start` does.
 const ownedOf = (root, ledger) =>
   ledger.owned ??
-  withNew(ledger.worktree, ownedFiles(readFileSync(contractFile(root, ledger.id), "utf8")));
+  withNew(
+    ledger.worktree,
+    ownedFiles(readFileSync(contractFile(root, ledger.id), "utf8"), ledger.worktree),
+  );
 
 // ---- steps ----------------------------------------------------------------------------------------
 
@@ -668,19 +804,14 @@ function start(ctx, id) {
     refuse(
       `a lane for ${id} exists (state ${existing.state}, next ${existing.next}): ${laneLine(root, "show", id)}`,
     );
-  const config = readConfig(root);
-  if (config.error) refuse(config.error);
-  const open = writers(root, spec);
-  if (open.length >= config.lanes.maxWriters)
-    refuse(
-      `${open.length} writer(s) open, lanes.maxWriters is ${config.lanes.maxWriters}; finish or merge one first:\n${open.map((w) => `  ${w}`).join("\n")}`,
-    );
+  refuseAtWriterCap(root, spec);
   const kind = spec.lifecycle?.kind ?? "task";
   const found = findContract({ root, spec, id, kind });
   if (found.status !== "found") {
     const where = found.candidates.map((c) => `  ${c.file}:${c.line}`).join("\n");
     refuse(`contract ${id}: ${found.status}${where ? `\n${where}` : ""}`);
   }
+  if (found.stepsProblem) refuse(`contract ${id}: ${found.stepsProblem}`);
   const mainBranch = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).stdout.trim();
   if (!mainBranch) refuse("the main checkout is on a detached HEAD");
   const base = headOf(root);
@@ -718,6 +849,7 @@ function start(ctx, id) {
     mainAtStart: mainSnapshot(root),
     worktreesAtStart: worktrees(root).map((t) => t.path),
     owned: withNew(tree.path, ownedFiles(found.block, tree.path)),
+    ...(found.steps?.length && { steps: found.steps }),
     ...(cite.length && { cite }),
     route: { verify: verifyRoute(spec), flagged: flaggedItem(spec, model, id) },
     rounds: [],
@@ -731,13 +863,14 @@ function start(ctx, id) {
     next: "build",
   };
   const overlap = ownsOverlap(root, ledger.owned);
-  ledger = dispatchNext(ctx, ledger, begin().dispatch);
+  ledger = dispatchNext(ctx, ledger, begin(ledger.steps).dispatch);
   ledgers.write(root, ledger);
   return view(ctx, ledger, {
     step: "start",
     extra: {
       owned: ledger.owned,
       amend: laneLine(root, "owns", id, " --set <paths> --apply"),
+      ...(ledger.steps && { steps: stepLines(ledger.steps) }),
       route: routeText(ledger.route),
       board,
       ...(overlap && { warning: overlap }),
@@ -768,7 +901,8 @@ function owns(ctx, id) {
   ledger = { ...ledger, owned: withNew(ledger.worktree, paths) };
   if (!apply) return shown({ applied: false, preview: PREVIEW });
   const round = ledger.rounds.at(-1);
-  const waiting = round && expects(ledger);
+  // A held lane has no brief waiting: the round after the resume reads the new list.
+  const waiting = round && ledger.state !== "held" && expects(ledger);
   ledgers.write(root, ledger);
   if (waiting) {
     // The brief is rendered again from its template: a section the conductor appended to it (the fact a
@@ -818,8 +952,9 @@ function report(ctx, id, agent) {
     refuse(`the worktree ${ledger.worktree} is not readable: ${e.message}`);
   }
   const count = git(root, ["rev-list", "--count", `${ledger.base}..${ledger.branch}`]);
+  const main = mainGuard(ctx, ledger, all);
   const guards = {
-    mainTouched: mainTouched(ctx, ledger, all),
+    mainTouched: main.touched,
     dirty,
     commits: count.status === 0 ? Number(count.stdout.trim()) : 0,
   };
@@ -834,26 +969,38 @@ function report(ctx, id, agent) {
     skipVerify: skipsVerifier(ledger.route, flagged),
     tip: headOf(root, ledger.branch),
     gate: gateOf(ctx.spec) !== null,
+    at: now(),
   });
   let next = res.ledger;
   if (ledger.route) next.route = { ...ledger.route, flagged };
   next.usedMemories = [...new Set([...(next.usedMemories ?? []), ...usedMemories(text)])];
   next.nested = nestedTrees(root, next);
-  // Built is written when the item goes to a verifier, or straight to the gate when none reads it.
-  const built =
-    ["verify", "recheck"].includes(res.dispatch?.step) || ["gate", "close"].includes(res.next)
-      ? boardEvent(ctx, "built", id)
-      : null;
-  const board = built?.board ?? null;
-  next.boardWrites = [...(next.boardWrites ?? []), ...(built?.moves ?? [])];
+  const board = writeBuilt(ctx, next, res);
   next = dispatchNext(ctx, next, res.dispatch);
   ledgers.write(root, next);
+  const allowed = main.allowed.length
+    ? [
+        `main moved by allowed commits: ${main.allowed.length} (${main.allowed.map(short).join(", ")})`,
+      ]
+    : [];
   return view(ctx, next, {
     step: "report",
-    guards: next.rounds.at(res.dispatch ? -2 : -1).guards ?? [],
+    guards: [...(next.rounds.at(res.dispatch ? -2 : -1).guards ?? []), ...allowed],
     nested: next.nested,
     extra: { ...(res.reason && { why: res.reason }), ...(board && { board }) },
   });
+}
+
+// Built is written once, when the item goes to a verifier, or straight to the gate when none reads it:
+// never at a hold, a resume that carries on building, or a run's end before the last step. Returns
+// what the lifecycle wrote, and records its moves in `ledger`.
+function writeBuilt(ctx, ledger, res) {
+  const next =
+    ["verify", "recheck"].includes(res.dispatch?.step) || ["gate", "close"].includes(res.next);
+  if (!next) return null;
+  const built = boardEvent(ctx, "built", ledger.id);
+  ledger.boardWrites = [...(ledger.boardWrites ?? []), ...built.moves];
+  return built.board;
 }
 
 function verdict(ctx, id, agent) {
@@ -901,7 +1048,8 @@ function verdict(ctx, id, agent) {
 }
 
 // A verifier's brief that is waiting is written again from its template, so a gate that went green on its
-// tip since (#43) is read, not re-run. What the conductor appended after the last section is put back.
+// tip since (#43) is read, not re-run, and one that went red after it is run again. What the conductor
+// appended after the last section is put back.
 function refreshBrief(ctx, ledger) {
   const round = ledger.rounds.at(-1);
   const old = readFileSync(round.brief, "utf8");
@@ -979,8 +1127,8 @@ function gate(ctx, id) {
   for (const record of records) res = stepWith(res.ledger, { type: "gate", record });
   ledger = res.ledger;
   ledgers.write(root, ledger);
-  const refreshed =
-    ran.exit === 0 && expects(ledger) === "verdict" ? refreshBrief(ctx, ledger) : null;
+  // Any run, green or red, changes what the waiting verifier's brief says about the gate.
+  const refreshed = expects(ledger) === "verdict" ? refreshBrief(ctx, ledger) : null;
   const shown = view(ctx, ledger, {
     step: "gate",
     extra: {
@@ -1068,7 +1216,99 @@ function fix(ctx, id, given) {
   });
 }
 
+// Is there a saved reply at `path`?
+const saved = (path) => {
+  try {
+    return readFileSync(path, "utf8").trim() !== "";
+  } catch {
+    return false;
+  }
+};
+
+// A builder's round waits: for the owner, who reviews what its saved reply points at (`--evidence`, by
+// default that reply), or for later, a parked lane whose builder was stopped mid-round (no reply needed,
+// the worktree kept as it is). The ledger alone is written: no board cell, nothing on main.
+function hold(ctx, id) {
+  const { root, holdFor, evidence: given, note } = ctx;
+  if (!["owner", "later"].includes(holdFor)) refuse("--for takes owner or later");
+  const ledger = mustLedger(root, id);
+  const held = ledger.state === "held";
+  if (!held && expects(ledger) !== "report")
+    refuse(`hold is for a builder's round: the lane is ${ledger.state} (next ${ledger.next})`);
+  const round = ledger.rounds.at(-1);
+  if (!held && holdFor === "owner" && !saved(round.reportPath))
+    refuse(`the builder is still out: save its reply to ${round.reportPath} first, then hold`);
+  const evidence = given === null ? null : resolve(root, given);
+  if (evidence !== null && !existsSync(evidence)) refuse(`no file at ${given}`);
+  if (!held) {
+    const touched = mainTouched(ctx, ledger, ledgers.list(root));
+    if (touched)
+      refuse(
+        `main touched: ${touched}: run ${laneLine(root, "report", id)} (the report stops the lane)`,
+      );
+  }
+  const res = stepWith(ledger, {
+    type: "hold",
+    for: holdFor,
+    evidence: evidence ?? (holdFor === "owner" ? round.reportPath : null),
+    at: now(),
+    ...(note && { why: note }),
+  });
+  ledgers.write(root, res.ledger);
+  return view(ctx, res.ledger, {
+    step: "hold",
+    extra: { ...(res.reason && { why: res.reason }) },
+  });
+}
+
+// The owner's answer to a hold: recorded with its time, then the held round's builder carries on (the
+// next run, the same run with --redo, or the same round after a hold during it), or after the last step
+// the verifier (or the gate) is next and built is written. Main must be as the lane left it.
+function resume(ctx, id) {
+  const { root, spec, note, redo, fresh } = ctx;
+  const ledger = mustLedger(root, id);
+  if (ledger.state !== "held")
+    refuse(`the lane is not held (state ${ledger.state}, next ${ledger.next})`);
+  if (!note) refuse(`resume needs --note "<the owner's words>"`);
+  if (redo && ledger.hold?.when !== "after")
+    refuse(
+      "--redo goes back over a finished run; this hold is during one, and resume carries on in it",
+    );
+  const touched = mainTouched(ctx, ledger, ledgers.list(root));
+  if (touched) refuse(`main changed while ${id} was held: ${touched}: undo that, then resume`);
+  const flagged = isFlagged(ctx, ledger);
+  const res = stepWith(ledger, {
+    type: "resume",
+    note,
+    redo,
+    at: now(),
+    skipVerify: skipsVerifier(ledger.route, flagged),
+    tip: headOf(root, ledger.branch),
+    gate: gateOf(spec) !== null,
+  });
+  if (res.dispatch?.role === "build") refuseAtWriterCap(root, spec);
+  let next = res.ledger;
+  if (ledger.route) next.route = { ...ledger.route, flagged };
+  next.nested = nestedTrees(root, next);
+  const board = writeBuilt(ctx, next, res);
+  let dispatch = res.dispatch;
+  if (dispatch && fresh) {
+    const { agent, ...rest } = dispatch;
+    dispatch = { ...rest, mode: "fresh" };
+  }
+  next = dispatchNext(ctx, next, dispatch);
+  ledgers.write(root, next);
+  const answer = next.holds.at(-1);
+  return view(ctx, next, {
+    step: "resume",
+    nested: next.nested,
+    lead: { [answerLabel(answer)]: answerText(answer, stepCount(next)) },
+    extra: { ...(res.reason && { why: res.reason }), ...(board && { board }) },
+  });
+}
+
 // The `episode_write` arguments for this lane, from the ledger alone.
+const ownerHolds = (ledger) => (ledger.holds ?? []).filter((h) => h.for === "owner").length;
 function episodeOf(ledger) {
   const judged = verdicts(ledger);
   const guardTrips = ledger.rounds.flatMap((r) => r.guards ?? []);
@@ -1091,6 +1331,7 @@ function episodeOf(ledger) {
     `worktree gate: ${lastGate ? `${lastGate.exit === 0 ? "green" : "red"} ${lastGate.tier} on ${short(lastGate.commit)}` : "none"}`,
     `nested worktrees: ${ledger.nested?.length ?? 0}`,
     `verify route: ${routeText(ledger.route)}`,
+    ...(ownerHolds(ledger) ? [`owner holds: ${ownerHolds(ledger)}`] : []),
   ].join("; ");
   return {
     task: what ? `${ledger.id}: ${what}` : ledger.id,
@@ -1160,11 +1401,17 @@ function close(ctx, id, episodeId) {
 function show(ctx, id) {
   const { root } = ctx;
   const ledger = mustLedger(root, id);
+  const idle = idleOf(ledger.worktree, ledger, Date.now());
   return view(ctx, ledger, {
     step: "show",
     nested: nestedTrees(root, ledger),
+    lead: idle ? { idle: { ...idle, park: laneLine(root, "hold", id, " --for later") } } : {},
     extra: {
       owned: ownedOf(root, ledger),
+      ...(ledger.steps && { steps: stepLines(ledger.steps) }),
+      ...(ledger.holds?.length && {
+        holds: ledger.holds.map((h) => answerLine(h, stepCount(ledger))).join("\n"),
+      }),
       route: routeText(ledger.route),
       rounds: ledger.rounds.map((r) => ({
         n: r.n,
@@ -1175,6 +1422,8 @@ function show(ctx, id) {
         ...(r.status && { status: r.status }),
         ...(r.verdict && { verdict: r.verdict }),
         ...(r.void && { void: true }),
+        ...(r.held && { held: true }),
+        ...(r.stepRun && { stepRun: r.stepRun }),
         ...(r.guards && { guards: r.guards }),
       })),
       gates: (ledger.gates ?? []).map((g) => ({
@@ -1188,4 +1437,4 @@ function show(ctx, id) {
   });
 }
 
-const HANDLERS = { start, report, verdict, gate, fix, close, show, owns };
+const HANDLERS = { start, report, verdict, gate, fix, close, show, owns, hold, resume };

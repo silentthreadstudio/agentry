@@ -4,6 +4,18 @@ You are the builder for contract {{id}}, continuing on the same branch in the sa
 it before, carry on from where you are. If you are new to it, read the branch first:
 `{{cd}} && git log --oneline {{base}}..HEAD`.
 
+{{#noted}}
+## The owner's answer
+
+{{answer}}
+
+{{answerNext}}
+
+{{/noted}}
+{{#parked}}
+The lane was parked with uncommitted work in the worktree: read git status first and carry on from it.
+
+{{/parked}}
 {{#fail}}
 ## Fix list
 

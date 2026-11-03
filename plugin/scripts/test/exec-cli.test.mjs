@@ -1666,3 +1666,108 @@ test("owns --apply keeps a section appended after the brief's last template sect
   assert.equal(lane(r, "owns", "T1", "--set", "b.ts", "--apply").exit, 0);
   assert.equal(readFileSync(out.brief, "utf8").split("## The fact").length, 2);
 });
+
+// ---- idle lanes, commits guard.allow lets through, a red gate after a green -------------------------
+
+// The lane's branch commit and every file in its worktree, made `minutes` ago.
+function age(worktree, minutes) {
+  const when = new Date(Date.now() - minutes * 60_000);
+  const env = {
+    ...gitEnv,
+    GIT_AUTHOR_DATE: when.toISOString(),
+    GIT_COMMITTER_DATE: when.toISOString(),
+  };
+  writeFileSync(join(worktree, "out.txt"), "made\n");
+  spawnSync("git", ["-C", worktree, "add", "out.txt"], { env });
+  spawnSync("git", ["-C", worktree, "commit", "-qm", "feat: add out.txt"], { env });
+  const files = git(worktree, "ls-files", "-z", "--cached", "--others", "--exclude-standard");
+  for (const file of files.split("\0").filter(Boolean))
+    utimesSync(join(worktree, file), when, when);
+}
+const textOf = (r, ...args) =>
+  spawnSync("node", [LANE, "exec", ...args, "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home },
+  }).stdout;
+
+test("idle.test: a building lane with nothing changed for 25 minutes prints the idle line; 15 minutes and a held lane print none", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  age(out.worktree, 25);
+  const shown = lane(r, "show", "T1").json;
+  assert.ok(shown.idle.minutes >= 25 && shown.idle.minutes < 30, JSON.stringify(shown.idle));
+  assert.match(shown.idle.lastChange, /^\d{4}-\d\d-\d\dT/);
+  const lines = textOf(r, "show", "T1").split("\n");
+  assert.equal(lines[0], "T1 · show → build (building)");
+  assert.match(
+    lines[1],
+    /^idle: T1 2\dm: last change \d\d:\d\d \(.+\) → check the builder; .*exec hold T1 --root .* --for later to park it$/,
+  );
+  const started = spawnSync("node", [LANE, "session", "start", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home },
+  }).stdout;
+  assert.match(started, /^idle: T1 2\dm: last change/m);
+
+  const fresh = repo();
+  age(lane(fresh, "start", "T1").json.worktree, 15);
+  assert.equal(lane(fresh, "show", "T1").json.idle, undefined);
+
+  writeFileSync(out.reportPath, "DONE\nsee it\n");
+  assert.equal(lane(r, "hold", "T1", "--for", "owner").exit, 0);
+  assert.equal(lane(r, "show", "T1").json.idle, undefined);
+});
+
+test("a hand commit on main touching only a guard.allow path passes the report; an owned or other path trips", () => {
+  const spec = { ...SPEC, guard: { allow: ["docs/**", "src/ui/**"] } };
+  const r = repo({ spec });
+  const out = lane(r, "start", "T1").json;
+  const sha = commitFile(r.root, "docs/STATUS.md", "# Status\n", "docs: status");
+  build(out);
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify");
+  assert.deepEqual(res.json.guards, [`main moved by allowed commits: 1 (${sha.slice(0, 7)})`]);
+
+  const trips = {
+    "src/ui/panel.css is owned by T1": "src/ui/panel.css",
+    "stray.txt is not in guard.allow": "stray.txt",
+  };
+  for (const [why, file] of Object.entries(trips)) {
+    const r2 = repo({ spec });
+    const o2 = lane(r2, "start", "T1").json;
+    commitFile(r2.root, "docs/STATUS.md", "# Status\n", "docs: status");
+    commitFile(r2.root, file, "x\n", `chore: ${file}`);
+    build(o2);
+    const stopped = lane(r2, "report", "T1");
+    assert.equal(stopped.exit, 1, why);
+    assert.match(stopped.json.reason, /main touched: HEAD moved [0-9a-f]{7} → [0-9a-f]{7} \(/, why);
+    assert.ok(stopped.json.reason.includes(`(${why})`), stopped.json.reason);
+  }
+});
+
+test("a green then a red gate on one tip says the latest is red, and the waiting verify brief runs the gate", () => {
+  const spec = { ...SPEC, gate: { command: ["sh", "-c", 'test ! -f "$HOME/red"'] } };
+  const r = repo({ spec });
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  assert.equal(out.next, "verify");
+  const green = lane(r, "gate", "T1");
+  assert.equal(green.exit, 0);
+  assert.match(
+    readFileSync(out.brief, "utf8"),
+    /recorded green on [0-9a-f]{7} .*: read it; do not re-run it/,
+  );
+  writeFileSync(join(r.home, "red"), "");
+  const red = lane(r, "gate", "T1");
+  assert.equal(red.exit, 1);
+  assert.equal(red.json.gates, "1 green, then 1 red on this tip: the latest is red");
+  assert.equal(red.json.briefUpdated, out.brief);
+  const brief = readFileSync(out.brief, "utf8");
+  assert.doesNotMatch(brief, /do not re-run it/);
+  assert.match(
+    brief,
+    /Run the gate as the lane records it, in the foreground.*\n?.*exec gate T1 --root/,
+  );
+});

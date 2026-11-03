@@ -104,6 +104,8 @@ test("start --json carries prompt, mode, status, recall, questions and ledgers",
   const data = JSON.parse(session(root, "start", "--json").stdout);
   assert.deepEqual(Object.keys(data).sort(), [
     "gateSlots",
+    "held",
+    "idle",
     "ledgers",
     "mode",
     "prompt",
@@ -303,4 +305,85 @@ test("start counts the gate slots that do not fit on the line, and never cuts on
   const many = session(root, "start").stdout;
   assert.match(many, /^ {2}slot \d+ held by .*, \+\d+ more$/m);
   assert.ok(many.split("\n").every((l) => [...l].length <= 80));
+});
+
+// A held ledger: for the owner after step 1 of 2, or parked (`for: "later"`).
+const SINCE = "2026-11-03T09:05:00.000Z";
+const hhmm = (iso) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+function heldLedger(root, id, hold = {}) {
+  ledger(root, id, {
+    state: "held",
+    next: "resume",
+    steps: [
+      { n: 1, text: "a", gate: "owner", accept: [] },
+      { n: 2, text: "b", gate: null, accept: [] },
+    ],
+    hold: {
+      for: "owner",
+      when: "after",
+      stepRun: [1, 1],
+      evidence: join(root, ".agentry", "run", "process", "runs", id, "r1-build.report.md"),
+      since: SINCE,
+      round: 1,
+      ...hold,
+    },
+  });
+}
+
+test("start prints each held lane after the prompt line and before now:, and leaves it out of lanes:", () => {
+  const root = fresh();
+  heldLedger(root, "H1");
+  heldLedger(root, "P1", { for: "later", when: "during", evidence: null });
+  ledger(root, "B1");
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const lines = res.stdout.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("conductor prompt:"));
+  assert.deepEqual(lines.slice(at + 1, at + 4), [
+    `held: H1 for the owner, after step 1 of 2, since ${hhmm(SINCE)}`,
+    "  evidence: .agentry/run/process/runs/H1/r1-build.report.md",
+    '  → lane exec resume H1 --note "<the OK>"',
+  ]);
+  assert.equal(lines[at + 4], `parked: P1 since ${hhmm(SINCE)}`);
+  assert.match(lines[at + 5], /^now: /);
+  const lanes = lines.find((l) => l.startsWith("lanes: "));
+  assert.equal(lanes, "lanes: B1 building");
+
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  assert.deepEqual(data.held[0], {
+    id: "H1",
+    for: "owner",
+    when: "after",
+    steps: "step 1 of 2",
+    since: SINCE,
+    evidence: ".agentry/run/process/runs/H1/r1-build.report.md",
+    resume: 'lane exec resume H1 --note "<the OK>"',
+  });
+  assert.deepEqual(
+    data.held.map((h) => [h.id, h.for]),
+    [
+      ["H1", "owner"],
+      ["P1", "later"],
+    ],
+  );
+  assert.deepEqual(
+    data.ledgers.map((l) => l.id),
+    ["H1", "P1", "B1"],
+    "held ledgers first",
+  );
+});
+
+test("start shows three held lanes and counts the fourth", () => {
+  const root = fresh();
+  for (const id of ["H1", "H2", "H3", "H4"]) heldLedger(root, id);
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const held = res.stdout.split("\n").filter((l) => l.startsWith("held: "));
+  assert.equal(held.length, 4);
+  assert.equal(held[3], "held: +1 more → lane session start --json");
+  assert.doesNotMatch(res.stdout, /^lanes: /m);
+  assert.equal(JSON.parse(session(root, "start", "--json").stdout).held.length, 4);
 });

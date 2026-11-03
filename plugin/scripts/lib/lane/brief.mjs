@@ -19,6 +19,8 @@
 //   recalledFacts   the memory facts ranked for the owned files, only when `memory.prime` is "all": this
 //                   repo's store, the user's own and cross-project (`scope: user|global`) facts,
 //                   never another project's
+//   stepSlots       the slots a contract with steps fills: the round's run, the owner's answer a
+//                   `continue` round carries, the approvals a verifier is told of (all off without steps)
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
 //
 // Reads the board's files and the memory store; writes nothing. Node built-ins only.
@@ -29,6 +31,8 @@ import { fileURLToPath } from "node:url";
 import { rankFacts, readFacts, readMemoryConfig } from "../memory/recall.mjs";
 import { readInside } from "../process/read.mjs";
 import { own } from "../process/spec/shape.mjs";
+import { runText } from "../process/steps.mjs";
+import { answerLine } from "./exec-view.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const TEMPLATES = join(
@@ -47,6 +51,7 @@ const TEMPLATE_OF = {
   build: "build",
   fix: "fix",
   "needs-context": "fix",
+  continue: "fix",
   verify: "verify",
   recheck: "verify",
   final: "final",
@@ -509,6 +514,49 @@ export function renderBrief(step, values) {
   if (!name) throw new Error(`no brief template for step "${step}"`);
   const inner = Object.hasOwn(WRAPS, name) ? body(fill(read(WRAPS[name]), values)) : "";
   return fill(read(name), { ...values, inner });
+}
+
+const NOT_THIS_ROUND_WIDTH = 100;
+
+/** The slots of a contract built in steps (`process/steps.mjs`) for dispatch `step` on run `stepRun`
+ *  (`[a, g]`), with the owner's answers so far (`holds`, the ledger's). A lane without steps gets every
+ *  section off. `fresh` is false for a resent round, which carries no new section. */
+export function stepSlots({ steps = [], stepRun = null, holds = [], step, fresh = true }) {
+  const total = steps.length;
+  const run = total && stepRun ? steps.slice(stepRun[0] - 1, stepRun[1]) : [];
+  const later = run.length ? steps.slice(stepRun[1]) : [];
+  const accept = run.flatMap((s) => s.accept);
+  const cut = (t) => (t.length > NOT_THIS_ROUND_WIDTH ? `${t.slice(0, NOT_THIS_ROUND_WIDTH)}…` : t);
+  const answer = step === "continue" && fresh ? holds.at(-1) : null;
+  const approvals = holds.filter((h) => h.for === "owner" && h.when === "after" && !h.redo);
+  return {
+    stepped: run.length > 0,
+    thisRun: run.length ? runText(stepRun, total) : "",
+    runSteps: run.map((s) => `${s.n}. ${s.text}`).join("\n"),
+    runAccept: accept.length
+      ? bullets(accept)
+      : "the step's own text above; the whole acceptance is checked after the last step",
+    builtBefore:
+      run.length && stepRun[0] > 1
+        ? `Built before this round (on the branch): ${stepRun[0] === 2 ? "step 1" : `steps 1–${stepRun[0] - 1}`}.`
+        : "",
+    notThisRound: later.length
+      ? later.map((s) => `step ${s.n}: ${cut(s.text)}`).join("; ")
+      : "none: the verifier then reads the whole contract",
+    ownerGate: run.at(-1)?.gate === "owner",
+    noted: !!answer,
+    answer: answer ? `"${answer.note}" (${answer.resumedAt})` : "",
+    answerNext: !answer
+      ? ""
+      : answer.redo
+        ? "Rework the same steps to that answer; the lane holds for the owner again when you report."
+        : answer.when === "after"
+          ? "Go on to the steps below."
+          : "Carry on with the same steps, to that answer.",
+    parked: answer?.for === "later",
+    approved: approvals.length > 0,
+    approvals: approvals.map((h) => `- ${answerLine(h, total)}`).join("\n"),
+  };
 }
 
 /** A list as brief lines (`- item`), or `none`. */
