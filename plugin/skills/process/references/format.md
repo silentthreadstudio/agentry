@@ -401,8 +401,9 @@ In `workflow.json`, beside `exec.verify`:
 
 An entry is the `lifecycle` mapping with no `kind` (the key names it) and no handoff: the item sits outside
 the tree, so a land writes its status and commit cell and skips the handoff. The kinds exec runs are
-`lifecycle.kind` and then each key; `exec.kinds` needs a `lifecycle`, and a key that is the lifecycle's kind,
-an undeclared kind or a kind with a parent field is refused at load, as is any other key in an entry. The
+`lifecycle.kind` and then each key; `exec.kinds` (even empty) needs a `lifecycle`, and a key that is the
+lifecycle's kind, an undeclared kind, a kind with a parent field or another kind's parent is refused at load,
+as is any other key in an entry. The
 checks `lifecycle` gets hold for each entry too, under `exec.kinds.<kind>.on.*` and `.write.*`: each `on` word
 is a status of the kind, only `merged` sets a `done` one, and a `done-has-evidence` rule on the kind reads the
 field `write.commit` names.
@@ -416,7 +417,7 @@ Its items take a light contract in the kind's `contract.blocks`, led by the id:
 ```
 
 `agentry lane exec start DEBT-2` refuses it (exit 2, nothing written) when its Owns line names no path or it
-has no bold `Acceptance` label with text after it. An id is read in any case and must name one item of one
+has no bold `Acceptance` label with text after it (a label inside a code fence does not count). An id is read in any case and must name one item of one
 of these kinds; one that two kinds hold is refused. `agentry board status` shows each kind on its own row
 after On you (`Debt       2 open · DEBT-3 doing · 5 done`), never in Now, In flight, On you, Blocked or Ahead;
 a clean board shows the row only while something is open.

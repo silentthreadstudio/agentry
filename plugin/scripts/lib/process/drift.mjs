@@ -22,6 +22,7 @@
 import { realpathSync } from "node:fs";
 import { basename, join, sep } from "node:path";
 import * as git from "./git.mjs";
+import { kindOf } from "./ids.mjs";
 import { isKept } from "./keep.mjs";
 import * as ledgers from "./ledger.mjs";
 import * as md from "./markdown.mjs";
@@ -29,6 +30,7 @@ import { readInside } from "./read.mjs";
 import { commitsIn, handoffLines, namesCommits } from "./rules/evidence.mjs";
 import { parentOf } from "./rules/structure.mjs";
 import { own } from "./spec/shape.mjs";
+import { lifecycleOf } from "./spec/workflow.mjs";
 import { staleStatus } from "./stale-status.mjs";
 
 const MERGED_STATES = ["merged", "closed"];
@@ -374,7 +376,7 @@ const handedOff = ({ lines, rules }, shasOf) =>
 // hand-written state that stops a write: `status` (a status the lifecycle never sets before a merge) and
 // `cell` (a commit cell that already holds text); `handoff` (see `handoffOf`) when the lifecycle writes one.
 function gaps({ root, spec, model, item }) {
-  const life = spec.lifecycle;
+  const life = lifecycleOf(spec, item.kind) ?? spec.lifecycle; // the item's own kind's mapping
   const write = life.write ?? {};
   const need = [];
   const found = {};
@@ -539,9 +541,9 @@ export function nudges({ root, runRoot = root, spec, model }) {
   return found.filter((n) => !n.id || (!once.has(n.id) && once.add(n.id)));
 }
 
-// The one board item for `id`, or why there is not one.
-function itemFor(spec, model, id) {
-  const here = workItems(spec, model).filter((i) => i.id === id);
+// The one board item for `id` of `kind` (the lifecycle's by default), or why there is not one.
+function itemFor(spec, model, id, kind = workName(spec)) {
+  const here = (own(model.kinds, kind)?.items ?? []).filter((i) => i.id === id);
   return here.length === 1
     ? { item: here[0] }
     : { left: `${id}: on main, but ${here.length ? "several" : "no"} board items by that id` };
@@ -562,7 +564,7 @@ export function mechanical({ root, runRoot = root, spec, model }) {
   const list = ledgers
     .list(runRoot)
     .filter(finished)
-    .map((ledger) => ({ ledger, ...itemFor(spec, model, ledger.id) }));
+    .map((ledger) => ({ ledger, ...itemFor(spec, model, ledger.id, kindOf(ledger, spec)) }));
   // Git is asked once for every record whose board lacks something (`landed` runs for those alone), not
   // once per record, and not at all when the board has every one.
   const proving = list.filter(({ item }) => item && lacking({ root, spec, model, item }));

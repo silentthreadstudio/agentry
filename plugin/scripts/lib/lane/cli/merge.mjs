@@ -21,7 +21,7 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import { realpathSync } from "node:fs";
 import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
-import { runId } from "../../process/ids.mjs";
+import { kindOf, runId } from "../../process/ids.mjs";
 import { read as readLedger } from "../../process/ledger.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
@@ -282,7 +282,7 @@ export function run(argv, { root, spec, model }) {
   try {
     ledger = readLedger(root, parsed.id);
   } catch {} // ledgerStep refuses an unreadable ledger
-  const kind = ledger ? (ledger.kind ?? spec.lifecycle?.kind ?? "task") : resolved.kind;
+  const kind = ledger ? kindOf(ledger, spec) : resolved.kind;
   const { id, opts } = parsed;
   const lane = { root, spec, model, id, kind, opts, ledger: null, files: [] };
   return RUN[parsed.mode](lane);

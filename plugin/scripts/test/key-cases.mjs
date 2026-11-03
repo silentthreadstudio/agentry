@@ -509,6 +509,33 @@ export const ACROSS_CASES = [
     file: "workflow.json",
   },
   {
+    name: "empty exec kinds with no lifecycle",
+    ...execKinds({}, { lifecycle: null }),
+    bad: ["exec.kinds"],
+    file: "workflow.json",
+  },
+  {
+    name: "an exec kind that is another kind's parent",
+    ...execKinds(
+      { debt: { on: ON } },
+      {
+        kinds: {
+          chore: {
+            ...DEBT,
+            at: { table: "BOARD.md", heading: "Chores" },
+            id: { column: "Chore" },
+            fields: {
+              ...DEBT.fields,
+              of: { column: "Of", type: "ref", ref: "debt", role: "parent" },
+            },
+          },
+        },
+      },
+    ),
+    bad: ["exec.kinds.debt"],
+    file: "workflow.json",
+  },
+  {
     name: "an exec kind event naming no status of its kind",
     ...debt({ on: { ...ON, built: "review" } }),
     bad: ["exec.kinds.debt.on.built"],

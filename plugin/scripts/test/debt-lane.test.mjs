@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -293,6 +294,21 @@ test("a debt lane runs from start to merge outside the sprints", () => {
   assert.equal(git(r.root, "status", "--porcelain"), "");
   const checked = boardCli(r, "check");
   assert.equal(checked.status, 0, checked.stdout);
+  // The landed debt item is on the board, done: neither board fix nor the close plan reports it.
+  const fix = JSON.parse(boardCli(r, "fix", "--json").stdout);
+  assert.deepEqual(
+    fix.left.filter((l) => l.startsWith("DEBT-1")),
+    [],
+  );
+  const close = spawnSync("node", [LANE, "session", "close", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home, NO_COLOR: "1" },
+  });
+  assert.equal(close.status, 0, close.stderr);
+  assert.deepEqual(
+    JSON.parse(close.stdout).fixPlan.left.filter((l) => l.startsWith("DEBT-1")),
+    [],
+  );
 });
 
 test("a debt lane and a task lane open at once pass each other's writes and land in either order", () => {
@@ -345,6 +361,8 @@ test("a light contract with no owned path or no Acceptance line refuses start, w
     "no owns": "- **Acceptance:** done",
     "acceptance only in prose": "- **Owns:** `flag.txt`\n- the acceptance is that it works",
     "an empty acceptance": "- **Owns:** `flag.txt`\n- **Acceptance:**",
+    "labels only in a code fence":
+      "Example:\n```\n- **Owns:** `flag.txt`\n- **Acceptance:** done\n```\n- **Owns:** `flag.txt`",
   };
   for (const [name, body] of Object.entries(blocks)) {
     const r = repo({ debts: [] });
@@ -456,4 +474,104 @@ test("a flagged debt item no verifier read does not land", () => {
   const res = merge(r, "DEBT-1", "--preflight");
   assert.equal(res.status, 2, res.stdout);
   assert.match(res.stdout + res.stderr, /DEBT-1 is flagged on the board, but no verifier read it/);
+});
+
+// ---- no lifecycle: every step prints what it printed before kinds -----------------------------------
+
+// Thirteen steps on a repo whose workflow file has no lifecycle, with `plugin`'s scripts: three
+// `board lifecycle` calls, the exec steps start to close, the merge preflight and land, `board fix` and
+// `board status`. Paths, SHAs, times and durations normalised. The golden file is this, run with the
+// plugin as it was before the debt kind (463ab93).
+function noLifecycleRun(plugin) {
+  const env = {
+    ...gitEnv,
+    GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z",
+    GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
+  };
+  const run = (dir, ...args) => spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
+  const commit = (dir, file, text, subject = `add ${file}`) => {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), text);
+    run(dir, "add", file);
+    run(dir, "commit", "-q", "-m", subject);
+  };
+  const lane = join(plugin, "scripts", "lane.mjs");
+  const cli = join(plugin, "scripts", "board.mjs");
+  const root = temp("debt-golden-");
+  const home = temp("debt-golden-home-");
+  run(root, "init", "-q", "-b", "main");
+  commit(root, ".gitignore", ".agentry/run/\n");
+  commit(
+    root,
+    "plan/BOARD.md",
+    "# B\n\n## Tasks\n\n| Task | Status | Commit |\n| --- | --- | --- |\n| T-1 | todo | |\n",
+  );
+  commit(
+    root,
+    "plan/TASKS.md",
+    "# Tasks\n\n### T-1 · One\n- **Owns:** `one.txt`\n- **Acceptance:** one exists\n",
+  );
+  writeSpec(join(root, ".agentry"), {
+    version: 1,
+    name: "Golden",
+    root: "plan",
+    kinds: {
+      task: {
+        label: "Task",
+        at: { table: "BOARD.md", heading: "Tasks" },
+        id: { column: "Task" },
+        fields: { status: { column: "Status" }, commit: { column: "Commit", type: "commits" } },
+        status: { field: "status", values: { todo: "planned", doing: "active", done: "done" } },
+        contract: { blocks: ["TASKS.md"] },
+      },
+    },
+    rules: [{ rule: "ids-unique" }, { rule: "status-known" }],
+    gate: { command: ["node", "-e", "process.exit(0)"] },
+  });
+  run(root, "add", ".agentry");
+  run(root, "commit", "-q", "-m", "process");
+  const out = [];
+  const step = (label, script, ...args) => {
+    const r = spawnSync("node", [script, ...args, "--root", root], {
+      encoding: "utf8",
+      env: { ...env, HOME: home, NO_COLOR: "1" },
+    });
+    out.push(`--- ${label}: exit ${r.status}\n${r.stdout}${r.stderr}`);
+    return r;
+  };
+  step("lifecycle dispatched t-1", cli, "lifecycle", "dispatched", "t-1");
+  step("lifecycle dispatched t-1 --json", cli, "lifecycle", "dispatched", "t-1", "--json");
+  step("lifecycle bad event", cli, "lifecycle", "nope", "t-1");
+  const started = JSON.parse(step("exec start t-1", lane, "exec", "start", "t-1", "--json").stdout);
+  commit(started.worktree, "one.txt", "1\n", "feat: one");
+  writeFileSync(started.reportPath, "DONE\nused_memories: none\n");
+  step("exec report T-1", lane, "exec", "report", "T-1");
+  const shown = JSON.parse(
+    step("exec show T-1 --json", lane, "exec", "show", "T-1", "--json").stdout,
+  );
+  writeFileSync(shown.reportPath, "ok\nused_memories: none\nVerdict: PASS\n");
+  step("exec verdict", lane, "exec", "verdict", "T-1");
+  step("exec gate", lane, "exec", "gate", "T-1");
+  step("exec close", lane, "exec", "close", "T-1");
+  step("merge preflight", lane, "merge", "t-1", "--preflight");
+  step("merge", lane, "merge", "T-1", "--message", "chore(board): land T-1");
+  step("board fix", cli, "fix");
+  step("board status", cli, "status");
+  return out
+    .join("\n")
+    .replaceAll(root, "<ROOT>")
+    .replaceAll(plugin, "<PLUGIN>")
+    .replace(/\b[0-9a-f]{7,40}\b/g, "<SHA>")
+    .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<TIME>")
+    .replace(/\b\d{1,2}:\d\d(:\d\d)?\b/g, "<HM>")
+    .replace(/"seconds": [\d.]+/g, '"seconds": <N>')
+    .replace(/\d+(\.\d+)? ?(ms|s)\b/g, "<DUR>");
+}
+
+test("with no lifecycle, every step prints what it printed before the debt kind (golden)", () => {
+  const golden = readFileSync(
+    join(HERE, "fixtures", "debt-board", "golden-no-lifecycle.txt"),
+    "utf8",
+  );
+  assert.equal(noLifecycleRun(join(HERE, "..", "..")), golden);
 });

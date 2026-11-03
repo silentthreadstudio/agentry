@@ -38,7 +38,7 @@ import { episodeStored } from "../../memory/episodes.mjs";
 import { contentOf as contentIds, recordedSince } from "../../process/board-writes.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
-import { runId } from "../../process/ids.mjs";
+import { kindOf, runId } from "../../process/ids.mjs";
 import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
@@ -237,7 +237,7 @@ export function run(argv, ctx) {
   try {
     lane = ledgers.read(root, id);
   } catch {} // the step itself refuses an unreadable ledger
-  const kind = lane ? kindOf(ctx.spec, lane) : resolved.kind;
+  const kind = lane ? kindOf(lane, ctx.spec) : resolved.kind;
   try {
     const res = HANDLERS[step]({ ...ctx, root, kind, ...given }, id, value);
     return json ? res : { ...res, out: humanView(JSON.parse(res.out)) };
@@ -317,9 +317,6 @@ function mainSnapshot(root) {
     modes: true, // `files` ids carry `:x` / `:l`; a ledger without this holds an executable as a bare id
   };
 }
-
-// A lane's kind, as its ledger records it; a ledger with none is the lifecycle's.
-const kindOf = (spec, ledger) => ledger.kind ?? spec.lifecycle?.kind ?? "task";
 
 // The files a lifecycle event of item `id` of `name` writes (relative to the git root).
 function boardFiles(spec, model, id, name) {
@@ -508,7 +505,7 @@ function mainGuard({ root, spec, model }, ledger, all) {
         `HEAD moved ${short(was.head)} → ${short(head)}${moved.why ? ` (${moved.why})` : ""}`,
       );
   }
-  const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id, kindOf(spec, l))));
+  const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id, kindOf(l, spec))));
   const stray = strayFiles(root, ledger, head, all, boards, allowedEdit(root, spec, all));
   if (stray.length) reasons.push(`files changed: ${stray.slice(0, 10).join(", ")}`);
   return { touched: reasons.length ? reasons.join("; ") : null, allowed };
@@ -743,7 +740,7 @@ function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, extra = 
 
 // Is the item flagged: when the lane started, or on the board now (a flag set since still counts).
 const isFlagged = ({ spec, model }, ledger) =>
-  Boolean(ledger.route?.flagged) || flaggedItem(spec, model, ledger.id, kindOf(spec, ledger));
+  Boolean(ledger.route?.flagged) || flaggedItem(spec, model, ledger.id, kindOf(ledger, spec));
 
 // The owned files every brief names: parsed once at start and kept in the ledger (amended by `owns`).
 // A ledger from before that is parsed from its contract file, against its worktree as `start` does.
@@ -810,10 +807,19 @@ function ownsOverlap(root, owned) {
 }
 
 // A light contract (an `exec.kinds` kind's): an Owns line naming at least one path, and a bold Acceptance
-// label with text after it on its line.
+// label with text after it on its line, both outside a code fence.
 const ACCEPTANCE = /\*\*acceptance:?\*\*:?[ \t]*\S/i;
-const lightContract = (block, root) =>
-  ownedFiles(block, root).length > 0 && block.split("\n").some((l) => ACCEPTANCE.test(l));
+const FENCE = /^\s*(```|~~~)/;
+function lightContract(block, root) {
+  let fenced = false;
+  const lines = block.split("\n").filter((line) => {
+    if (FENCE.test(line)) fenced = !fenced;
+    else if (!fenced) return true;
+    return false;
+  });
+  const prose = lines.join("\n");
+  return ownedFiles(prose, root).length > 0 && lines.some((l) => ACCEPTANCE.test(l));
+}
 
 function start(ctx, id) {
   const { root, spec, model, cite, kind } = ctx;

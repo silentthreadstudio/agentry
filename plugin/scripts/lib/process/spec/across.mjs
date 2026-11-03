@@ -41,25 +41,31 @@ export function checkProbes(spec, bad) {
   checkDone(spec, bad);
 }
 
-// Each `exec.kinds` key names a declared kind other than the lifecycle's, with no parent field: exec runs
-// it beside the lifecycle, outside the tree. It needs the lifecycle, whose kind is the first runnable one.
+// Each `exec.kinds` key names a declared kind other than the lifecycle's, outside the tree: no parent field,
+// and no other kind's parent. `exec.kinds` (even empty) needs the lifecycle, whose kind runs first.
 function checkExecKinds(spec, kinds, bad) {
-  const listed = entries(own(own(spec, "exec"), "kinds"));
-  if (listed.length === 0) return;
+  const map = own(own(spec, "exec"), "kinds");
+  if (!isObject(map)) return;
   if (!isObject(spec.lifecycle))
     return bad("exec.kinds", "needs lifecycle: exec runs these kinds beside the lifecycle's");
-  for (const [name] of listed) {
+  for (const name of Object.keys(map)) {
     const at = `exec.kinds.${name}`;
+    const parent = has(kinds, name) && parentOf(kinds[name]);
+    const children = Object.keys(kinds).filter(
+      (k) => k !== name && refsOf(parentOf(kinds[k])?.[1]).includes(name),
+    );
     if (name === spec.lifecycle.kind) bad(at, "is the lifecycle kind already");
     else if (!has(kinds, name)) bad(at, `names an unknown kind "${name}"`);
-    else {
-      const parent = parentOf(kinds[name]);
-      if (parent)
-        bad(
-          at,
-          `the ${name} kind has a parent field "${parent[0]}"; a kind exec runs beside the lifecycle has none`,
-        );
-    }
+    else if (parent)
+      bad(
+        at,
+        `the ${name} kind has a parent field "${parent[0]}"; a kind exec runs beside the lifecycle has none`,
+      );
+    else if (children.length)
+      bad(
+        at,
+        `the ${name} kind is the parent of ${children.join(" and ")}; a kind exec runs beside the lifecycle stands alone`,
+      );
   }
 }
 

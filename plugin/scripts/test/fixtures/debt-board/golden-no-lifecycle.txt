@@ -1,0 +1,217 @@
+--- lifecycle dispatched t-1: exit 0
+lifecycle dispatched t-1: 0 would be written, 1 skipped
+  skipped status: lifecycle off
+
+--- lifecycle dispatched t-1 --json: exit 0
+{"event":"dispatched","id":"t-1","applied":false,"writes":[],"skipped":[{"what":"status","why":"lifecycle off"}]}
+
+--- lifecycle bad event: exit 2
+✗ board lifecycle nope t-1: unknown event "nope" (dispatched, built, failed, verdict, merged)
+
+--- exec start t-1: exit 0
+{
+  "id": "T-1",
+  "step": "start",
+  "next": "build",
+  "state": "building",
+  "reportPath": "<ROOT>/.agentry/run/process/runs/T-1/r1-build.report.md",
+  "worktree": "<ROOT>/.agentry/run/worktrees/T-1",
+  "branch": "agentry/T-1",
+  "guards": [],
+  "nested": [],
+  "prompt": "agentry-task: T-1 role=build round=1\nRead your brief first: <ROOT>/.agentry/run/process/runs/T-1/r1-build.md. Work only in <ROOT>/.agentry/run/worktrees/T-1; prefix every shell command with `cd '<ROOT>/.agentry/run/worktrees/T-1' &&`.",
+  "brief": "<ROOT>/.agentry/run/process/runs/T-1/r1-build.md",
+  "role": "build",
+  "mode": "fresh",
+  "dispatch": {
+    "agent": "implementer",
+    "why": "no owned path is UI-shaped"
+  },
+  "after": "node '<PLUGIN>/scripts/lane.mjs' exec report T-1 --root '<ROOT>' --agent <the agent's id>",
+  "owned": [
+    {
+      "path": "one.txt",
+      "new": true
+    }
+  ],
+  "amend": "node '<PLUGIN>/scripts/lane.mjs' exec owns T-1 --root '<ROOT>' --set <paths> --apply",
+  "route": "all: every item has a verifier",
+  "board": {
+    "writes": [],
+    "skipped": [
+      {
+        "what": "status",
+        "why": "lifecycle off"
+      }
+    ]
+  }
+}
+
+--- exec report T-1: exit 0
+T-1 · report → verify (verifying)
+reportPath: <ROOT>/.agentry/run/process/runs/T-1/r2-verify.report.md
+worktree: <ROOT>/.agentry/run/worktrees/T-1
+branch: agentry/T-1
+guards: none
+nested: none
+prompt:
+  agentry-task: T-1 role=verify round=2
+  Read your brief first: <ROOT>/.agentry/run/process/runs/T-1/r2-verify.md. Work only in <ROOT>/.agentry/run/worktrees/T-1; prefix every shell command with `cd '<ROOT>/.agentry/run/worktrees/T-1' &&`.
+brief: <ROOT>/.agentry/run/process/runs/T-1/r2-verify.md
+role: verify
+mode: fresh
+dispatch:
+  {
+    "agent": "verifier"
+  }
+after: node '<PLUGIN>/scripts/lane.mjs' exec verdict T-1 --root '<ROOT>' --agent <the agent's id>
+board:
+  {
+    "writes": [],
+    "skipped": [
+      {
+        "what": "status",
+        "why": "lifecycle off"
+      }
+    ]
+  }
+
+--- exec show T-1 --json: exit 0
+{
+  "id": "T-1",
+  "step": "show",
+  "next": "verify",
+  "state": "verifying",
+  "reportPath": "<ROOT>/.agentry/run/process/runs/T-1/r2-verify.report.md",
+  "worktree": "<ROOT>/.agentry/run/worktrees/T-1",
+  "branch": "agentry/T-1",
+  "guards": [],
+  "nested": [],
+  "prompt": "agentry-task: T-1 role=verify round=2\nRead your brief first: <ROOT>/.agentry/run/process/runs/T-1/r2-verify.md. Work only in <ROOT>/.agentry/run/worktrees/T-1; prefix every shell command with `cd '<ROOT>/.agentry/run/worktrees/T-1' &&`.",
+  "brief": "<ROOT>/.agentry/run/process/runs/T-1/r2-verify.md",
+  "role": "verify",
+  "mode": "fresh",
+  "dispatch": {
+    "agent": "verifier"
+  },
+  "after": "node '<PLUGIN>/scripts/lane.mjs' exec verdict T-1 --root '<ROOT>' --agent <the agent's id>",
+  "owned": [
+    {
+      "path": "one.txt",
+      "new": true
+    }
+  ],
+  "route": "all: every item has a verifier",
+  "rounds": [
+    {
+      "n": 1,
+      "step": "build",
+      "mode": "fresh",
+      "status": "DONE"
+    },
+    {
+      "n": 2,
+      "step": "verify",
+      "mode": "fresh"
+    }
+  ],
+  "gates": []
+}
+
+--- exec verdict: exit 0
+T-1 · verdict → gate (verifying)
+reportPath: <ROOT>/.agentry/run/process/runs/T-1/r2-verify.report.md
+worktree: <ROOT>/.agentry/run/worktrees/T-1
+branch: agentry/T-1
+guards: none
+nested: none
+run: node '<PLUGIN>/scripts/lane.mjs' exec gate T-1 --root '<ROOT>'
+verdict: PASS
+why: no green worktree gate on this tip yet
+board:
+  {
+    "writes": [],
+    "skipped": [
+      {
+        "what": "verdict",
+        "why": "lifecycle off"
+      }
+    ]
+  }
+
+--- exec gate: exit 0
+T-1 · gate → close (verified)
+reportPath: <ROOT>/.agentry/run/process/runs/T-1/r2-verify.report.md
+worktree: <ROOT>/.agentry/run/worktrees/T-1
+branch: agentry/T-1
+guards: none
+nested: none
+run: node '<PLUGIN>/scripts/lane.mjs' exec close T-1 --root '<ROOT>'
+gate:
+  {
+    "exit": 0,
+    "tier": "full",
+    "why": "the gate has no quick tier",
+    "commit": "<SHA>",
+    "seconds": <N>,
+    "log": "<ROOT>/.agentry/run/process/runs/T-1/logs/gate-1.log"
+  }
+gates: 1 green, 0 red on this tip
+why: the worktree gate is green
+
+--- exec close: exit 0
+T-1 · close → merge (verified)
+reportPath: <ROOT>/.agentry/run/process/runs/T-1/r2-verify.report.md
+worktree: <ROOT>/.agentry/run/worktrees/T-1
+branch: agentry/T-1
+guards: none
+nested: none
+run: /agentry:merge T-1
+episode:
+  {
+    "task": "T-1: used_memories: none",
+    "shape": "exec",
+    "outcome": "verified (PASS); rounds: build, verify; verdicts: PASS; void verdicts: 0; guard trips: none; worktree gate: green full on <SHA>; nested worktrees: 0; verify route: all: every item has a verifier",
+    "retries": 0,
+    "usedMemories": []
+  }
+afterwards: episode_write with this payload, then node '<PLUGIN>/scripts/lane.mjs' exec close T-1 --root '<ROOT>' --episode <its id>
+
+--- merge preflight: exit 0
+merge T-1 · agentry/T-1 → main
+  ✓ ledger  exec ledger, state verified
+  · board   lifecycle off: the merge writes nothing to the board
+  ✓ main    main at <SHA>, clean
+  ✓ commits 1 to land
+            <SHA> feat: one
+  ✓ gate    full would run (the gate has no quick tier)
+            worktree gate: full exit 0 on <SHA>; the land skips only when canSkip holds
+  · checks  none named (extensions.merge.checks)
+  ✓ push    merge.push is "ask": the owner is asked before the push
+next: lane merge T-1 --message "<board commit message>" [--summary "<handoff text>"]
+
+--- merge: exit 0
+merge T-1 · agentry/T-1 → main
+  ✓ ledger  exec ledger, state verified
+  · board   lifecycle off: the merge writes nothing to the board
+  · checks  none named (extensions.merge.checks)
+  ✓ main    main at <SHA>, clean
+  ✓ land    1 commit(s) picked onto <SHA>
+            <SHA> feat: one
+  ✓ gate    skipped: gate on <SHA>, tree identical
+            green clean gate on this tree; only post-gate files changed
+  · record  lifecycle off: nothing written to the board
+  · commit  nothing written to the board, nothing to commit
+next: ask the owner to push main; on yes: lane merge T-1 --push --approved
+
+--- board fix: exit 1
+would fix 0, 1 left for you
+left for you:
+  episode-pending T-1 → /agentry:close
+
+--- board status: exit 0
+✓ Golden  OK · 2 rules · 1 tasks · exit 0
+
+Now        —
+On you     —
+Drift      ! episode-pending T-1 → /agentry:close

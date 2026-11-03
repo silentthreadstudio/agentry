@@ -10,6 +10,8 @@
 // runId(spec, model, typed) -> { id, kind } | { error }   the item exec and merge run: `boardId` over
 // each kind they run (`runKinds`); the kind that holds it, else the lifecycle's (`task` with none). Two
 // kinds holding it is the error.
+// kindOf(ledger, spec) -> string     a lane's kind: its ledger's `kind`, the lifecycle's for a ledger with
+// none (`task` with no lifecycle).
 import { runKinds } from "./spec/workflow.mjs";
 
 const NUMBER = /\{n(?::0(\d+))?\}/;
@@ -47,6 +49,8 @@ export function runId(spec, model, typed) {
   const kind = spec.lifecycle?.kind ?? "task";
   return { id: boardId(spec, model, typed, kind), kind };
 }
+
+export const kindOf = (ledger, spec) => ledger.kind ?? spec.lifecycle?.kind ?? "task";
 
 export function nextId(name, kind, model) {
   const pattern = kind.create?.id;
