@@ -2,7 +2,7 @@
 // codes; and the next steps the CLIs print name it, but only when `agentry` on PATH is this plugin's bin.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -133,4 +133,22 @@ test("the printed error's next step reads agentry through the real CLI", () => {
   });
   assert.equal(run.status, 2);
   assert.match(run.stderr, /→ agentry board status --help/);
+});
+
+test("with plugin.json unreadable, --version and the --help footer say the version is unknown (R1d-22 N3)", () => {
+  // A plugin root holding a copy of the bin and the real scripts, but no .claude-plugin/plugin.json.
+  const root = mkdtempSync(join(tmpdir(), "agentry-noversion-"));
+  temps.push(root);
+  mkdirSync(join(root, "bin"));
+  writeFileSync(join(root, "bin", "agentry"), readFileSync(BIN));
+  symlinkSync(SCRIPTS, join(root, "scripts"));
+  const run = (arg) =>
+    spawnSync(process.execPath, [join(root, "bin", "agentry"), arg], { encoding: "utf8" });
+  const version = run("--version");
+  assert.equal(version.status, 0, version.stderr);
+  assert.equal(version.stdout, "(version unknown)\n");
+  assert.equal(
+    run("--help").stdout.trimEnd().split("\n").at(-1),
+    "agentry plugin (version unknown)",
+  );
 });

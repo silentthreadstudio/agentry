@@ -30,7 +30,7 @@ const [group, ...rest] = process.argv.slice(2);
 // The running build's version: plugin.json's, and in a git checkout what HEAD is past it (lib/cli/help.mjs).
 const version = async () => {
   const help = await import(pathToFileURL(join(PLUGIN, "scripts", "lib", "cli", "help.mjs")).href);
-  return help.pluginVersion(PLUGIN);
+  return help.pluginVersion(PLUGIN) ?? help.UNKNOWN_VERSION;
 };
 
 if (group === undefined || group === "--help" || group === "-h") {

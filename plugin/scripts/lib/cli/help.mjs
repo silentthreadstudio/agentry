@@ -63,8 +63,11 @@ export function pluginVersion(root = PLUGIN_ROOT) {
   return `${version}${buildOf(root)}`;
 }
 
+/** What a version line says when plugin.json can't be read. */
+export const UNKNOWN_VERSION = "(version unknown)";
+
 // The plugin's version, the one a session that started before a flag changed can check itself against.
-const version = () => `agentry plugin ${pluginVersion() ?? "(version unknown)"}`;
+const version = () => `agentry plugin ${pluginVersion() ?? UNKNOWN_VERSION}`;
 
 /** The options a subcommand takes, from its help: name → whether it takes a value. */
 export function flagsOf(help) {
