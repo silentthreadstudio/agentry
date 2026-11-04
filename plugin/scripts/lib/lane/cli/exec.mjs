@@ -2497,6 +2497,16 @@ function restart(ctx, id) {
     refuse(
       `the worktree ${old.worktree} holds ${left.ignored.length} ignored file(s) a restart would delete (${left.ignored.slice(0, 5).join(", ")}): copy what you need out and remove them, or add them to cleanup.disposable, then restart`,
     );
+  // The new lane's board write, tried before anything is written: a row it cannot write refuses here.
+  applyEvent({
+    root,
+    spec,
+    model: ctx.model,
+    event: "dispatched",
+    id,
+    kind: ctx.kind,
+    preview: true,
+  });
   const diffIn = (runs) => join(runs, "restart", "uncommitted.diff");
   const work = existsSync(old.worktree)
     ? saveWork(old.worktree, diffIn(ledgers.runDir(root, id)))
@@ -2505,13 +2515,10 @@ function restart(ctx, id) {
 
   const n = archiveNumber(root, id);
   const archived = archive(root, id, n);
-  let kept;
-  try {
-    ({ kept } = retire(root, old, n));
-  } catch (e) {
-    throw new Stopped(`${id} is archived as ${id}.${n}, but ${e.message}`);
-  }
   const diff = diffIn(archived.runs);
+  const keptName = left.tip ? branchOf(`${id}.${n}`) : null;
+  let kept = null;
+  let drop = false;
   const again = (path) => {
     const restarted = {
       from: `${id}.${n}`,
@@ -2532,8 +2539,9 @@ function restart(ctx, id) {
       report,
       ...(res.conflict && { conflict: res.conflict }),
     };
-    // All of the old work is in the new branch: the kept one goes; a stop keeps it.
-    if (res.ok && kept) git(root, ["branch", "-D", kept]);
+    // All of the old work is in the new branch: the kept one goes once the new ledger is written; a stop
+    // keeps it.
+    drop = res.ok && Boolean(kept);
     const branch = res.ok ? null : kept;
     return {
       restarted: { ...restarted, branch },
@@ -2546,7 +2554,20 @@ function restart(ctx, id) {
       },
     };
   };
-  return cut({ ...ctx, on: null, cite: old.cite ?? [] }, id, { found, mainBranch, again });
+  // Past the archive nothing is refused: a failure is a stop that says where the old work is.
+  try {
+    ({ kept } = retire(root, old, n));
+    const res = cut({ ...ctx, on: null, cite: old.cite ?? [] }, id, { found, mainBranch, again });
+    if (drop) git(root, ["branch", "-D", kept]);
+    return res;
+  } catch (e) {
+    const held = [keptName, old.branch].find((b) => b && headOf(root, `refs/heads/${b}`));
+    // A new branch left beside the kept one holds only copies of its work.
+    const copy = held && held !== old.branch && headOf(root, `refs/heads/${old.branch}`);
+    throw new Stopped(
+      `${id} is archived (${archived.ledger}, ${archived.runs}), its old work is on ${held ?? "no branch"} and its uncommitted diff at ${diff}, but the restart stopped: ${e.message} → fix that, then start it by hand (${copy ? `git branch -D ${old.branch}, then ` : ""}${laneLine(root, "start", id)}, and git apply --3way the diff in its worktree)`,
+    );
+  }
 }
 
 const HANDLERS = {

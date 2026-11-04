@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -342,3 +343,58 @@ test("with .agentry/ untracked, start and restart warn once the process file cha
   assert.equal(t1.exit, 0, t1.stderr);
   assert.ok(t1.json.warning?.split("\n").includes(line), t1.json.warning);
 });
+
+// ---- a failure after the archive (R1d-23 r2 N1) --------------------------------------------------------
+
+test("a restart whose board row is gone refuses before any write: the lane, its worktree and branch as they were", () => {
+  const r = repo();
+  const old = worked(r);
+  commitFile(r.root, "plan/BOARD.md", BOARD_MD.replace(/^\| T3 .*\n/m, ""), "chore: drop T3 row");
+  const before = {
+    ledger: readFileSync(ledgerFile(r.root, "T3"), "utf8"),
+    tip: tipOf(r.root, "agentry/T3"),
+    status: git(old.worktree, "status", "--porcelain"),
+  };
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /✗ lane exec restart T3: no task "T3" on the board; nothing written/);
+  assert.deepEqual(
+    {
+      ledger: readFileSync(ledgerFile(r.root, "T3"), "utf8"),
+      tip: tipOf(r.root, "agentry/T3"),
+      status: git(old.worktree, "status", "--porcelain"),
+    },
+    before,
+  );
+  assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+  assert.equal(existsSync(join(processDir(r.root), "runs", "T3", "restart")), false);
+  assert.equal(hasRef(r.root, "refs/heads/agentry/T3.1"), false);
+});
+
+test(
+  "a restart that fails after the archive stops (exit 1) naming the archive, the kept branch and the diff",
+  {
+    skip: process.getuid?.() === 0 && "root writes a read-only file",
+  },
+  () => {
+    const r = repo();
+    worked(r);
+    const oldTip = tipOf(r.root, "agentry/T3");
+    const board = join(r.root, "plan", "BOARD.md");
+    chmodSync(board, 0o444); // the dispatched write fails once the carry is done
+    const res = spawnLane(r, ["exec", "restart", "T3", "--carry"]);
+    chmodSync(board, 0o644);
+    const out = res.stdout + res.stderr;
+    assert.equal(res.status, 1, out);
+    const runs = join(processDir(r.root), "runs", "T3.1");
+    const diff = join(runs, "restart", "uncommitted.diff");
+    assert.ok(out.includes(ledgerFile(r.root, "T3.1")), out);
+    assert.ok(
+      out.includes(`its old work is on agentry/T3.1 and its uncommitted diff at ${diff}`),
+      out,
+    );
+    assert.match(out, /but the restart stopped: .*→ fix that, then start it by hand/);
+    assert.equal(tipOf(r.root, "agentry/T3.1"), oldTip, "the kept branch survives");
+    assert.match(readFileSync(diff, "utf8"), /\+\+\+ b\/more\.txt/);
+  },
+);
