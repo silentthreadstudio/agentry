@@ -13,6 +13,7 @@ const On = z
     built: z.string().optional(),
     failed: z.string().optional(),
     merged: z.string().optional(),
+    cut: z.string().optional(),
   })
   .strict();
 const Writes = {

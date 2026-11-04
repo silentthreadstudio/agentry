@@ -30,7 +30,7 @@ import {
   text,
 } from "./shape.mjs";
 
-const on = shape({ dispatched: str, built: str, failed: str, merged: str });
+const on = shape({ dispatched: str, built: str, failed: str, merged: str, cut: str });
 const writes = { status: str, verdict: str, commit: str };
 const lifecycle = shape({
   "kind!": str,

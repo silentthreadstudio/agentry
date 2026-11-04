@@ -6,7 +6,7 @@
 //
 // Events: dispatched · built · failed → the status `on` maps them to. verdict (data.verdict) → the
 // verdict field; FAIL also applies "failed"; a pass leaves the status (only the merge makes a task
-// done, A23). merged (data.shas, first landed first; data.summary) → `on.merged`, the commit cell
+// done, A23). cut → `on.cut`, the status of a lane retired by `exec cut` (field 95). merged (data.shas, first landed first; data.summary) → `on.merged`, the commit cell
 // `<first>` or, for several, the shas joined by the separator the board's done rows use (the field's `join`
 // pins it; `<first>…<last>` when nothing is learned) (short SHAs) and the handoff line in the parent's file, naming the
 // first. A `writes` file is relative to the git root. A step whose edit changes nothing (already set,
@@ -39,7 +39,7 @@ import { fillHandoff, lifecycleOf } from "./spec/workflow.mjs";
 import { boardReport } from "./status.mjs";
 import { WriteError, appendLine, applyAll, setCell, setKey } from "./write.mjs";
 
-export const EVENTS = ["dispatched", "built", "failed", "verdict", "merged"];
+export const EVENTS = ["dispatched", "built", "failed", "verdict", "merged", "cut"];
 export const VERDICTS = ["PASS", "PASS WITH NOTES", "FAIL"];
 // What each event writes, and the data it takes (anything else is refused).
 const STEPS = {
@@ -51,6 +51,7 @@ const STEPS = {
     takes: ["verdict"],
   },
   merged: { steps: () => ["status", "commit", "handoff"], takes: ["shas", "summary"] },
+  cut: { steps: () => ["status"], takes: [] },
 };
 const GUARDED = new Set(["dispatched", "built", "failed"]);
 const SHA = /^[0-9a-f]{7,40}$/;
