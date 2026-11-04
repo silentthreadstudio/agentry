@@ -3,11 +3,14 @@
 //
 //   boardReport({ root, spec, model })          -> BoardReport (core's `--json` shape, without status)
 //   statusView({ root, spec, model })           -> StatusView
+//   noteView({ root, spec, model, runRoot })    -> the view's `note`, or undefined with no note file
 // The "work" kind is the lifecycle's (else the leaf of the parent tree, ties by name); "now" is
 // `status.now` (else that parent's kind). `nudges` are the work done outside Agentry's commands (`drift.mjs`)
 // and `drafts` the count of the owner's calls not yet written down (`drafts.mjs`); both read `runRoot`, the
 // main checkout, and add nothing to a repo with neither. Each kind exec runs beside the lifecycle
-// (`exec.kinds`: debt) is counted on its own in `side`, and nowhere else.
+// (`exec.kinds`: debt) is counted on its own in `side`, and nowhere else. The note's `now` is read from
+// `note-seen.json` (`stale-status.mjs`), which only `lane session start` writes.
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { check } from "./check.mjs";
 import { findContract } from "./contract.mjs";
@@ -17,7 +20,7 @@ import * as git from "./git.mjs";
 import { readInside } from "./read.mjs";
 import { refKinds, resolve } from "./rules/structure.mjs";
 import { own } from "./spec/shape.mjs";
-import { staleNote } from "./stale-status.mjs";
+import { readNoteSeen, staleNote } from "./stale-status.mjs";
 
 const parentField = (kind) =>
   Object.entries(kind?.fields ?? {}).find(([, f]) => f.role === "parent");
@@ -135,20 +138,60 @@ function sideOf(spec, model) {
   });
 }
 
+// The kind `now` lists: `status.now`, else the kind the work kind's parent field refs.
+const nowKind = (spec) =>
+  spec.status?.now ?? refKinds(parentField(spec.kinds[workKind(spec)])?.[1])[0];
+const activeNow = (spec, model) =>
+  (model.kinds[nowKind(spec)]?.items ?? []).filter((i) => i.phase === "active").map((i) => i.id);
+
+const OLD_MS = 12 * 3_600_000; // a note this old or older is `old`
+
+// The note file's text and its mtime (`writtenAt`, ISO): its age is the file's, never a clock in its text.
 function readNote(root, path) {
-  const text = readInside(root, join(root, path));
-  return text === null ? undefined : { path, lines: text.trimEnd().split("\n") };
+  const file = join(root, path);
+  const text = readInside(root, file);
+  if (text === null) return undefined;
+  let writtenAt;
+  try {
+    writtenAt = statSync(file).mtime.toISOString();
+  } catch {
+    return undefined;
+  }
+  return { path, lines: text.trimEnd().split("\n"), writtenAt };
 }
 
-// `{ stale: ids }` when every id the note names is finished, else nothing to add.
-function stale(model, note) {
+const sameIds = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
+
+// Why the note is stale, the sprint first: the Now recorded for its mtime is not the Now active (never on
+// a first read, which has nothing recorded), else every id it names is finished. Nothing when neither.
+function stale(model, note, seen, active) {
+  if (seen && !sameIds(seen.now, active))
+    return { stale: { why: "now-changed", was: seen.now, now: active } };
   const ids = staleNote(model, note.lines);
-  return ids ? { stale: ids } : {};
+  return ids ? { stale: { why: "ids-done", ids } } : {};
+}
+
+/** The note as the status view carries it: `{ path, lines, writtenAt, now, old, stale? }`. `now` is the
+ *  ids of the Now items active when it was written (as recorded for its mtime; the active ones on a first
+ *  read), `old` whether it is 12 h old or more, `stale` `{ why: "now-changed", was, now }` or
+ *  `{ why: "ids-done", ids }`. Reads only. */
+export function noteView({ root, spec, model, runRoot = root }) {
+  const note = readNote(root, spec.status?.note ?? ".agentry/NOTE.md");
+  if (!note) return undefined;
+  const active = activeNow(spec, model);
+  const recorded = readNoteSeen(runRoot);
+  const seen = recorded?.mtime === note.writtenAt ? recorded : null;
+  return {
+    ...note,
+    now: seen ? seen.now : active,
+    old: Date.now() - Date.parse(note.writtenAt) >= OLD_MS,
+    ...stale(model, note, seen, active),
+  };
 }
 
 export function statusView({ root, spec, model, runRoot = root }) {
   const work = workKind(spec);
-  const now = spec.status?.now ?? refKinds(parentField(spec.kinds[work])?.[1])[0];
+  const now = nowKind(spec);
   const verify = spec.lifecycle?.on?.built ?? "verify";
   const items = model.kinds[work]?.items ?? [];
   const nowItems = now ? (model.kinds[now]?.items ?? []) : [];
@@ -193,7 +236,7 @@ export function statusView({ root, spec, model, runRoot = root }) {
     }))
     .filter((b) => b.by.length);
   const branch = git.defaultBranch(root) ?? "HEAD";
-  const note = readNote(root, spec.status?.note ?? ".agentry/NOTE.md");
+  const note = noteView({ root, spec, model, runRoot });
   return {
     now: nowItems.filter((i) => i.phase === "active").map(progress),
     inFlight: items
@@ -215,6 +258,6 @@ export function statusView({ root, spec, model, runRoot = root }) {
     kept: keptTrees({ root, runRoot, spec }).map((t) => ({ path: t.path, branch: t.branch })),
     drafts: drafts.pending(runRoot).length,
     recent: git.log(root, { ref: branch, n: 10, firstParent: true }),
-    ...(note ? { note: { ...note, ...stale(model, note) } } : {}),
+    ...(note ? { note } : {}),
   };
 }

@@ -1,7 +1,15 @@
 // Tests for lib/process/status.mjs (the checked board and its derived view) and lib/process/render.mjs
 // (the terminal text), on the synthetic fixtures. Their invented commits exist in no repository.
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -105,13 +113,77 @@ test("the view reads the note file when there is one", () => {
     writeFileSync(join(root, "NOTE.md"), "Read the gate first.\nThen the docs.\n");
     const { spec, model } = board("evidence-board", root);
     const view = statusView({ root, spec: { ...spec, status: { note: "NOTE.md" } }, model });
-    assert.deepEqual(view.note, {
+    const { writtenAt, ...rest } = view.note;
+    assert.deepEqual(rest, {
       path: "NOTE.md",
       lines: ["Read the gate first.", "Then the docs."],
+      now: ["K0"],
+      old: false,
     });
+    assert.match(writtenAt, /^\d{4}-\d\d-\d\dT/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// A copy of the evidence board (its Now is K0) with NOTE.md written `hours` ago, by its mtime.
+function noted(text, hours = 0) {
+  const { root, spec, model } = board("evidence-board");
+  const when = new Date(Math.floor((Date.now() - hours * 3_600_000) / 1000) * 1000);
+  writeFileSync(join(root, "NOTE.md"), text);
+  utimesSync(join(root, "NOTE.md"), when, when);
+  return { root, spec: { ...spec, status: { note: "NOTE.md" } }, model, when };
+}
+const seen = (root, text) => {
+  mkdirSync(join(root, ".agentry", "run"), { recursive: true });
+  writeFileSync(join(root, ".agentry", "run", "note-seen.json"), text);
+};
+
+test("the note's writtenAt is the file's mtime and now the Now active at a first read", () => {
+  const { when, ...ctx } = noted("Read the gate first.\n", 3);
+  const { note } = statusView(ctx);
+  assert.equal(note.writtenAt, when.toISOString());
+  assert.deepEqual(note.now, ["K0"]);
+});
+
+test("a note 12 h old or more is old, one under is not, whatever clock its text names", () => {
+  assert.equal(statusView(noted("Fresh.\n", 12)).note.old, true);
+  assert.equal(statusView(noted("Fresh.\n", 11.9)).note.old, false);
+  const dated = noted("Written 2020-01-01 09:00, three years back.\n");
+  assert.equal(statusView(dated).note.old, false, "the age is the mtime's, not the text's");
+});
+
+test("a note read under another Now than the one recorded for its mtime is stale by sprint", () => {
+  const { when, ...ctx } = noted("Watch K1a.\n", 30);
+  seen(ctx.root, JSON.stringify({ mtime: when.toISOString(), now: ["K9"] }));
+  const { note } = statusView(ctx);
+  assert.deepEqual(note.now, ["K9"], "now is what was active when it was written");
+  assert.deepEqual(note.stale, { why: "now-changed", was: ["K9"], now: ["K0"] });
+  // Recorded for the same Now: not stale.
+  seen(ctx.root, JSON.stringify({ mtime: when.toISOString(), now: ["K0"] }));
+  assert.equal(statusView(ctx).note.stale, undefined);
+});
+
+test("a first read is never stale by sprint: no record, one for another mtime, or one it cannot read", () => {
+  const ctx = noted("Watch K1a.\n", 30);
+  assert.equal(statusView(ctx).note.stale, undefined);
+  seen(ctx.root, JSON.stringify({ mtime: "2020-01-01T00:00:00.000Z", now: ["K9"] }));
+  assert.equal(statusView(ctx).note.stale, undefined);
+  assert.deepEqual(statusView(ctx).note.now, ["K0"]);
+  for (const bad of ["{", "[]", JSON.stringify({ mtime: 3, now: "K9" })]) {
+    seen(ctx.root, bad);
+    const { note } = statusView(ctx);
+    assert.equal(note.stale, undefined, bad);
+    assert.deepEqual(note.now, ["K0"], bad);
+  }
+});
+
+test("the view writes no note record: only lane session start does", () => {
+  const ctx = noted("Read the gate first.\n");
+  statusView(ctx);
+  assert.throws(() => readFileSync(join(ctx.root, ".agentry", "run", "note-seen.json")), {
+    code: "ENOENT",
+  });
 });
 
 test("check: line 1 is the verdict with the exit code, then one line per finding", () => {

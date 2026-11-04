@@ -6,7 +6,11 @@ only hand-written file is a short judgment note.
 
 ## `agentry lane session start [--json]`
 
-Reads only (without `--check`, below). Without `--json` it prints at most 40 lines of 80 columns; with it, one object:
+Reads (without `--check`, below), and keeps two small records in the main checkout's `.agentry/run/`, each
+written whole (atomically) and the same with `--json` or without: `note-seen.json` (`{ mtime, now: [ids] }`, the Now
+the note was first read under) and `idle-asked.json` (per idle lane, the `lastChange` the owner was asked about and
+when). A missing or unreadable record reads as nothing seen or asked, and is written again. Without `--json` it
+prints at most 40 lines of 80 columns; with it, one object:
 
 | Field | Meaning |
 | :--- | :--- |
@@ -14,8 +18,8 @@ Reads only (without `--check`, below). Without `--json` it prints at most 40 lin
 | `mode` | The `mode` string in `.agentry/config.json`, or null. Read as written; the mode's rules belong to the mode skill, not to this command. |
 | `configError` | Only when the config reader refuses a config file (the text then shows `mode unreadable`): the error naming the file and key. `agentry lane exec` refuses the same file, so fix it first. |
 | `held` | `[{ id, for, when, steps, since, evidence, resume }]` for every held lane, the owner's first, then the parked ones (`for: "later"`): `steps` is `step 1 of 2` (null with no steps), `evidence` is from the root, `resume` the step that answers it. |
-| `idle` | `[{ id, minutes, lastChange, file, park }]` for every lane in `building` or `fixing` with no change in its worktree for 20 minutes (the newest of the round's dispatch, the branch's last commit and the mtime of every file git does not ignore); `park` is the `hold --for later` step. |
-| `status` | The `agentry board status` view: `now`, `inFlight`, `onYou`, `blocked`, `ahead`, `nudges` (drift, each with the command to run), `drafts` (pending count), `recent`, `note`. |
+| `idle` | `[{ id, minutes, lastChange, file, park, asked }]` for every lane in `building` or `fixing` with no change in its worktree for 20 minutes (the newest of the round's dispatch, the branch's last commit and the mtime of every file git does not ignore); `park` is the `hold --for later` step; `asked` when an earlier start asked the owner to park it at this `lastChange` (ISO), null when this start is the first to see it idle there. |
+| `status` | The `agentry board status` view: `now`, `inFlight`, `onYou`, `blocked`, `ahead`, `nudges` (drift, each with the command to run), `drafts` (pending count), `recent`, `note` (see The note). |
 | `recall` | Up to `memory.primeLimit` facts of this repo, the user's and the cross-project ones, ranked against the Now sprint and the work in flight. Empty when `memory.prime` is `off`. |
 | `questions` | Open items of the owner-question kinds (the `onYou` rows that are not work items). |
 | `ledgers` | `{ id, state, next, on, restack }` of every lane ledger not closed, the held ones first: `on` the lane a stacked lane is cut on (null for none), `restack` what is due on it (`parent`, `main`, `orphan` or null). |
@@ -33,7 +37,19 @@ held: T1 for the owner, after step 1 of 2, since 09:05
 parked: T4 since 10:12
 idle: T6 2h13m: last change 11:44 (src/a.ts) → check the builder
   → agentry lane exec hold T6 --for later to park it
+ask the owner once: park T6? yes → agentry lane exec hold <id> --for later (each)
 ```
+
+An idle lane is asked about once per `lastChange`: the first start that sees it idle there prints its two lines,
+then one question line for every lane newly idle. A later start, while nothing changed, prints one quiet line for
+the lanes already asked instead of their blocks:
+
+```text
+idle: T6 (asked 12:05; park: agentry lane exec hold <id> --for later)
+```
+
+A lane whose `lastChange` moved, or that left idle and came back, is asked again. Put the question to the owner
+once; park only on their yes.
 
 With start or close checks named, these lines come right after the `conductor prompt:` line, before the held
 ones:
@@ -102,6 +118,7 @@ Reads only; prints one JSON object.
 | `warnings`, `diskFree` | Free bytes, and a warning when under 10 GB. |
 | `episodesPending` | Ids of ledgers with an episode nobody wrote: `agentry lane exec close <id>` prints it. |
 | `checks` | As on start: `{ start: View, close: View }`; absent when no check is named. The handoff names `close.failed` and `close.pending`. |
+| `note` | The note as `status.note` carries it (see The note); absent with no note file. Close reads it and records nothing. |
 
 The order of the ending is fixed: drafts, `agentry board fix`, sweep, episodes, checks, note, handoff. A draft is applied only on
 the owner's OK. `agentry board fix --apply` writes only the mechanical pieces a board lacks.
@@ -175,3 +192,21 @@ Ask the owner before `--apply`; it exits 1 when it kept a worktree or a slot, or
 `close` leaves a note of at most 10 lines at the board's note file (`status.note`, default `.agentry/NOTE.md`),
 which `agentry board status` and `start` show. It holds judgment, not state: where the owner's thinking was leaning, the
 risk to watch, what to do first next time. Anything the board can derive does not belong in it.
+
+The view carries it as `{ path, lines, writtenAt, now, old, stale? }`: `writtenAt` is the file's mtime (ISO; a
+clock written in the text is never its age), `now` the ids of the Now items active when it was written (the
+first start to read a note at an mtime records the active ones in `note-seen.json`; until then, the active ones),
+`old` whether it is 12 h old or more. `stale` says why it no longer holds, one reason, the sprint first:
+`{ why: "now-changed", was, now }` when the Now recorded for its mtime is not the active one (never on a first
+read, which has nothing recorded), else `{ why: "ids-done", ids }` when every id it names is done.
+
+`start` prints the note's age in its label once it is 12 h old, and one stale line, in the form of its reason:
+
+```text
+note (3d old): Lean towards the file store; the index is derived.
+note: stale, written 3d ago when the Now was S1, now S2 → rewrite or clear .agentry/NOTE.md
+note: stale, every id it names is done → edit .agentry/NOTE.md (T2)
+```
+
+The age reads `40m`, `5h`, `1d`, `3d` (whole units). When the note is stale or old, `/agentry:close` asks the
+owner "rewrite or clear the note?" before writing: a rewrite replaces it, a clear deletes the file.

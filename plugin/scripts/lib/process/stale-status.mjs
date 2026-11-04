@@ -1,10 +1,18 @@
 // stale-status — a status file kept by hand (`status.file`, its `status.next` heading) that still lists a
 // task the board has finished. One nudge for the whole file, naming the ids. Read only; nothing is edited.
 // The session note (`.agentry/NOTE.md`) is stale the same way once every id it names is done or answered.
+// What the Now was when a note was written is kept in `<main root>/.agentry/run/note-seen.json`
+// (`{ mtime, now: [ids] }`), written by `lane session start` the first time it reads a note whose mtime the
+// record does not hold.
 //
 //   staleStatus({ root, spec, model }) -> nudge | null
 //   staleNote(model, lines) -> string[] | null     the ids a note names, when all are finished
-import { join } from "node:path";
+//   readNoteSeen(runRoot) -> { mtime, now } | null  null: no record, or one it cannot read
+//   markNoteSeen(runRoot, note)                     record `{ mtime: note.writtenAt, now: note.now }`
+//                                                   unless the record already holds that mtime
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { atomicWrite } from "../fs/atomic.mjs";
 import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 import { withId } from "./rules/structure.mjs";
@@ -47,4 +55,32 @@ export function staleNote(model, lines) {
   return named.length && named.every((t) => phased(t).every((i) => i.phase === "done"))
     ? named
     : null;
+}
+
+const seenFile = (runRoot) => join(runRoot, ".agentry", "run", "note-seen.json");
+
+/** The Now recorded for a note: `{ mtime (ISO), now: ids }`. A missing, unreadable or malformed record is
+ *  nothing seen (null), so the next start writes it again. */
+export function readNoteSeen(runRoot) {
+  try {
+    const seen = JSON.parse(readFileSync(seenFile(runRoot), "utf8"));
+    const ids = Array.isArray(seen?.now) && seen.now.every((id) => typeof id === "string");
+    return typeof seen?.mtime === "string" && ids ? { mtime: seen.mtime, now: seen.now } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Record the Now of a note read for the first time at its mtime (atomically). A record already holding
+ *  this mtime is kept, so the Now stays the one the note was written under. One it cannot write is left:
+ *  the next start tries again. */
+export function markNoteSeen(runRoot, note) {
+  if (readNoteSeen(runRoot)?.mtime === note.writtenAt) return;
+  const file = seenFile(runRoot);
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    atomicWrite(file, `${JSON.stringify({ mtime: note.writtenAt, now: note.now })}\n`);
+  } catch {
+    // A run folder it cannot write: the note reads as first seen again, never as stale by sprint.
+  }
 }

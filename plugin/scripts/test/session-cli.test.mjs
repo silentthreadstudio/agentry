@@ -4,7 +4,16 @@
 // Run: node --test plugin/scripts/test/session-cli.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -808,4 +817,214 @@ test("start counts the dead writers' temp files it finds before its own reads sw
   const res = session(root, "start");
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /^! stale: 0 lock slot\(s\), 2 temp file\(s\) → .*lane sweep --apply$/m);
+});
+
+// ---- the note's age and Now (#89), idle lanes asked once (#88) -----------------------------------------
+
+const RUN = (root, file) => join(root, ".agentry", "run", file);
+// A time `minutes` back, to the second (as an mtime and a commit date both keep it).
+const ago = (minutes) => new Date(Math.floor((Date.now() - minutes * 60_000) / 1000) * 1000);
+// The note at `.agentry/NOTE.md`, its mtime `minutes` back: that mtime, ISO.
+function note(root, text, minutes = 0) {
+  const file = join(root, ".agentry", "NOTE.md");
+  const when = ago(minutes);
+  writeFileSync(file, text);
+  utimesSync(file, when, when);
+  return when.toISOString();
+}
+const noteLines = (out) => out.split("\n").filter((l) => l.startsWith("note"));
+// The board with S1 done and S2 the active sprint (T2 done too).
+function nextSprint(root) {
+  const md = read(root, "plan/BOARD.md")
+    .replace("| S1     | doing  |", "| S1     | done   |\n| S2     | doing  |")
+    .replace("| T2   | S1     | todo", "| T2   | S1     | done");
+  writeFileSync(join(root, "plan", "BOARD.md"), md);
+}
+
+test("start says a note's age, from its mtime, once it is 12 h old", () => {
+  const root = fresh();
+  for (const [minutes, label] of [
+    [5 * 60, "note: "],
+    [13 * 60, "note (13h old): "],
+    [26 * 60, "note (1d old): "],
+    [3 * 1440 + 60, "note (3d old): "],
+  ]) {
+    note(root, "# Note\n\nRead it first.\nThen the docs.\n", minutes);
+    const res = session(root, "start");
+    assert.equal(res.status, 0, res.stderr);
+    assert.deepEqual(noteLines(res.stdout), [`${label}Read it first.`], label);
+    assert.match(res.stdout, /^ {6}Then the docs\.$/m);
+  }
+  // A clock in the text is not the note's age.
+  note(root, "# Note\n\nWritten 2020-01-01 09:00.\n");
+  assert.deepEqual(noteLines(session(root, "start").stdout), ["note: Written 2020-01-01 09:00."]);
+});
+
+test("the first start to read a note records the Now it was read under, and calls it not stale by sprint", () => {
+  const root = fresh();
+  const mtime = note(root, "# Note\n\nRead it first.\n", 2 * 1440);
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  assert.doesNotMatch(res.stdout, /note: stale/);
+  const record = JSON.parse(readFileSync(RUN(root, "note-seen.json"), "utf8"));
+  assert.deepEqual(record, { mtime, now: ["S1"] });
+  // A later start under the same Now keeps it, and is not stale either.
+  nextSprint(root);
+  note(root, "# Note\n\nRead it first.\n", 1440); // rewritten: read for the first time again
+  assert.doesNotMatch(session(root, "start").stdout, /note: stale/);
+  assert.deepEqual(JSON.parse(readFileSync(RUN(root, "note-seen.json"), "utf8")).now, ["S2"]);
+});
+
+test("a note written under another Now prints one stale line, the sprint reason first; --json says why", () => {
+  const root = fresh();
+  const mtime = note(root, "# Note\n\nWatch T2 land.\n", 2 * 1440);
+  assert.doesNotMatch(session(root, "start").stdout, /note: stale/);
+  nextSprint(root); // the Now moves to S2, and T2, the one id the note names, is done
+  const res = session(root, "start");
+  assert.deepEqual(
+    noteLines(res.stdout).filter((l) => l.startsWith("note: stale")),
+    ["note: stale, written 2d ago when the Now was S1, now S2 → rewrite or clear .agentry/NOTE.md"],
+  );
+  const json = JSON.parse(session(root, "start", "--json").stdout).status.note;
+  assert.deepEqual(json.stale, { why: "now-changed", was: ["S1"], now: ["S2"] });
+  assert.deepEqual(json.now, ["S1"]);
+  assert.equal(json.writtenAt, mtime);
+  // Rewritten, it is read first under S2: only the done id is left to call it stale.
+  note(root, "# Note\n\nWatch T2 land.\n", 60);
+  const again = JSON.parse(session(root, "start", "--json").stdout).status.note;
+  assert.deepEqual(again.stale, { why: "ids-done", ids: ["T2"] });
+});
+
+test("an unreadable note-seen.json never breaks start: it reads as nothing seen and is rewritten", () => {
+  const root = fresh();
+  const mtime = note(root, "# Note\n\nRead it first.\n", 60);
+  mkdirSync(join(root, ".agentry", "run"), { recursive: true });
+  writeFileSync(RUN(root, "note-seen.json"), "{ not json");
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  assert.doesNotMatch(res.stdout, /note: stale/);
+  const record = JSON.parse(readFileSync(RUN(root, "note-seen.json"), "utf8"));
+  assert.deepEqual(record, { mtime, now: ["S1"] });
+});
+
+test("close carries the note, its age and why it is stale, and writes no record", () => {
+  const root = fresh();
+  const mtime = note(root, "# Note\n\nRead it first.\n", 13 * 60);
+  const first = JSON.parse(session(root, "close").stdout).note;
+  assert.equal(first.old, true);
+  assert.equal(first.writtenAt, mtime);
+  assert.equal(first.stale, undefined);
+  assert.equal(existsSync(RUN(root, "note-seen.json")), false, "close records nothing");
+  session(root, "start");
+  nextSprint(root);
+  assert.equal(JSON.parse(session(root, "close").stdout).note.stale.why, "now-changed");
+  rmSync(join(root, ".agentry", "NOTE.md"));
+  assert.equal(JSON.parse(session(root, "close").stdout).note, undefined);
+});
+
+// A building lane whose branch commit, worktree files and dispatch are all `minutes` old.
+function idleLane(root, id, minutes) {
+  const { path } = builtBranch(root, id);
+  const at = ago(minutes).toISOString();
+  ledger(root, id, { worktree: path, rounds: [{ at }] });
+  spawnSync("git", ["-C", path, "commit", "-q", "--amend", "--no-edit"], {
+    env: { ...gitEnv, GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at },
+  });
+  touch(path, minutes);
+  return path;
+}
+// Every file git lists in the worktree, its mtime `minutes` back.
+function touch(path, minutes) {
+  const files = git(path, "ls-files", "--cached", "--others", "--exclude-standard").split("\n");
+  for (const f of files.filter(Boolean)) utimesSync(join(path, f), ago(minutes), ago(minutes));
+}
+const idleRows = (out) =>
+  out.split("\n").filter((l) => /^(idle|ask the owner| {2}→ .*hold)/.test(l));
+const STEP = "(agentry )?lane exec hold";
+
+test("an idle lane is asked once: the block and one question, then one quiet line; --json says when", () => {
+  const root = fresh();
+  idleLane(root, "T1", 60);
+  idleLane(root, "T3", 90);
+  const first = idleRows(session(root, "start").stdout);
+  assert.equal(first.length, 5, first.join("\n"));
+  assert.match(first[0], /^idle: T1 1h00m: last change \d\d:\d\d \(.+\) → check the builder$/);
+  assert.match(first[1], new RegExp(`^  → ${STEP} T1 --for later to park it$`));
+  assert.match(first[2], /^idle: T3 1h30m: /);
+  assert.match(
+    first[4],
+    new RegExp(`^ask the owner once: park T1, T3\\? yes → ${STEP} <id> --for later \\(each\\)$`),
+  );
+  const later = idleRows(session(root, "start").stdout);
+  assert.equal(later.length, 1, later.join("\n"));
+  assert.match(
+    later[0],
+    new RegExp(`^idle: T1, T3 \\(asked \\d\\d:\\d\\d; park: ${STEP} <id> --for later\\)$`),
+  );
+  const record = JSON.parse(readFileSync(RUN(root, "idle-asked.json"), "utf8"));
+  const { idle } = JSON.parse(session(root, "start", "--json").stdout);
+  assert.deepEqual(
+    idle.map((i) => [i.id, i.asked]),
+    [
+      ["T1", record.T1.asked],
+      ["T3", record.T3.asked],
+    ],
+  );
+  assert.equal(record.T1.lastChange, idle[0].lastChange);
+});
+
+test("a lane whose lastChange moved, or that left idle and came back, is asked again", () => {
+  const root = fresh();
+  const path = idleLane(root, "T1", 60);
+  const asks = () =>
+    session(root, "start")
+      .stdout.split("\n")
+      .filter((l) => l.startsWith("ask the owner once"));
+  assert.equal(asks().length, 1);
+  assert.equal(asks().length, 0, "the same lastChange is asked once");
+  touch(path, 40); // something changed 40 minutes ago: a new lastChange
+  assert.equal(asks().length, 1);
+  touch(path, 0); // busy again: not idle
+  assert.equal(idleRows(session(root, "start").stdout).length, 0);
+  touch(path, 40); // idle again at the lastChange it was asked about before
+  assert.equal(asks().length, 1);
+});
+
+test("an unreadable idle-asked.json never breaks start: it reads as nothing asked and is rewritten", () => {
+  const root = fresh();
+  idleLane(root, "T1", 60);
+  mkdirSync(join(root, ".agentry", "run"), { recursive: true });
+  writeFileSync(RUN(root, "idle-asked.json"), "[1, 2");
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /^ask the owner once: park T1\?/m);
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(RUN(root, "idle-asked.json"), "utf8"))), [
+    "T1",
+  ]);
+});
+
+test("start --json writes the records a plain start writes, and no other", () => {
+  const root = fresh();
+  note(root, "# Note\n\nRead it first.\n", 60);
+  idleLane(root, "T1", 60);
+  // The run folder's files outside the lane worktrees, by path.
+  const files = (dir = join(root, ".agentry", "run"), at = "") =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.name === "worktrees"
+        ? []
+        : e.isDirectory()
+          ? files(join(dir, e.name), `${at}${e.name}/`)
+          : [`${at}${e.name}`],
+    );
+  const before = files();
+  const json = JSON.parse(session(root, "start", "--json").stdout);
+  assert.equal(json.idle[0].asked, null, "the first start to see it idle is the one asking");
+  const byJson = files().filter((f) => !before.includes(f));
+  const seenJson = readFileSync(RUN(root, "note-seen.json"), "utf8");
+  for (const f of byJson) rmSync(join(root, ".agentry", "run", f));
+  session(root, "start");
+  const byPlain = files().filter((f) => !before.includes(f));
+  assert.deepEqual(byJson.sort(), byPlain.sort());
+  assert.deepEqual(byJson.sort(), ["idle-asked.json", "note-seen.json"]);
+  assert.equal(readFileSync(RUN(root, "note-seen.json"), "utf8"), seenJson);
 });

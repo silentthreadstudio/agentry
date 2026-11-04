@@ -3,24 +3,29 @@
 //   start   what the conductor needs once, in one object: the conductor prompt's path, the mode, the held
 //           and idle lanes, the derived status (nudges and pending drafts included), recall ranked against the
 //           work in flight, the owner's open questions, the lane ledgers and how many merged today. Printed
-//           as at most 40 lines, or `--json`.
+//           as at most 40 lines, or `--json`. It records two things in the main checkout's `.agentry/run/`,
+//           the same with `--json` or without: the Now a note was first read under (`note-seen.json`,
+//           `stale-status.mjs`) and, per idle lane, the `lastChange` it asked the owner about
+//           (`idle-asked.json`), so the owner is asked once.
 //   close   what the ending walks through: the pending drafts, what `board fix` would write, the ledgers, what
-//           `lane sweep --apply` would clean, the disk, and the episodes nobody wrote. Always JSON.
+//           `lane sweep --apply` would clean, the disk, the episodes nobody wrote and the note. Always JSON.
 //
 //   <start|close> --check <skill>=pass|fail [--note <t>]
 //           records one session check (`extensions.start.checks` / `extensions.close.checks`, A42) in
-//           `session-checks.jsonl` (`../session-checks.mjs`): the only thing here that writes.
+//           `session-checks.jsonl` (`../session-checks.mjs`).
 //
-// Without `--check` it only reads: board fix, the drafts and the sweep each do their own writing, when the
-// command says so. The mode comes from the config reader (`mode` in `.agentry/config.json`) and is never
+// Besides start's two records, without `--check` it only reads: board fix, the drafts and the sweep each do
+// their own writing, when the command says so. The mode comes from the config reader (`mode` in `.agentry/config.json`) and is never
 // interpreted here (A29). With checks named, start and close carry `checks: { start, close }` (a View each).
 // Exit 0, or 2 for a usage error.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { basename, join, relative } from "node:path";
+import { mkdirSync, readFileSync } from "node:fs";
+import { basename, dirname, join, relative } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { nextStep } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
+import { atomicWrite } from "../../fs/atomic.mjs";
 import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
 import { run as fix } from "../../process/cli/fix.mjs";
 import * as drafts from "../../process/drafts.mjs";
@@ -28,7 +33,8 @@ import * as ledgers from "../../process/ledger.mjs";
 import { fit } from "../../process/render.mjs";
 import { sessionChecks } from "../../process/spec/extensions.mjs";
 import { idleMinutes } from "../../process/spec/presets.mjs";
-import { statusView, titleOf, workKind } from "../../process/status.mjs";
+import { markNoteSeen } from "../../process/stale-status.mjs";
+import { noteView, statusView, titleOf, workKind } from "../../process/status.mjs";
 import { runText } from "../../process/steps.mjs";
 import { forThisRepo, primeLimitOf, shellQuote } from "../brief.mjs";
 import { clock, heldText, idleHead } from "../exec-view.mjs";
@@ -46,7 +52,7 @@ export const help = {
     "session <start|close> --check <skill>=pass|fail [--note <t>]",
   ],
   purpose:
-    "What opening or ending a session needs, in one read; or record one of its repo checks (the only write).",
+    "What opening or ending a session needs, in one read (start keeps its note and idle records); or record one of its repo checks.",
   args: {
     start: "prompt, mode, status, recall, open questions, lanes (40 lines, or --json)",
     close: "drafts, the board fix plan, ledgers, the sweep plan, pending episodes (always JSON)",
@@ -151,6 +157,42 @@ const idleOfAll = (all, spec) =>
       : [];
   });
 
+// Each idle lane with `asked`: when start last asked the owner to park it at this `lastChange` (ISO), or
+// null when this start is the first to see it idle there. The record (`idle-asked.json`, atomic) is
+// rewritten to hold just the lanes idle now, so a lane that moved, or left idle and came back, is asked
+// again. A record it cannot read is nothing asked, and is rewritten; one it cannot write is left, and the
+// next start asks again.
+const askedFile = (runRoot) => join(runRoot, ".agentry", "run", "idle-asked.json");
+// The record, `{}` when there is none, null when it cannot be read.
+function readAsked(runRoot) {
+  try {
+    const data = JSON.parse(readFileSync(askedFile(runRoot), "utf8"));
+    return data && typeof data === "object" && !Array.isArray(data) ? data : null;
+  } catch (err) {
+    return err.code === "ENOENT" ? {} : null;
+  }
+}
+function askOnce(runRoot, idle) {
+  const before = readAsked(runRoot);
+  const at = new Date().toISOString();
+  const shown = idle.map((i) => {
+    const was = before && Object.hasOwn(before, i.id) ? before[i.id] : null;
+    const asked = was?.lastChange === i.lastChange && typeof was.asked === "string";
+    return { ...i, asked: asked ? was.asked : null };
+  });
+  const after = Object.fromEntries(
+    shown.map((i) => [i.id, { lastChange: i.lastChange, asked: i.asked ?? at }]),
+  );
+  if (before !== null && JSON.stringify(after) === JSON.stringify(before)) return shown;
+  try {
+    mkdirSync(dirname(askedFile(runRoot)), { recursive: true });
+    atomicWrite(askedFile(runRoot), `${JSON.stringify(after)}\n`);
+  } catch {
+    // Not recorded: the next start asks again.
+  }
+  return shown;
+}
+
 // The `checks` field of start and close: each phase's View, or nothing when neither names a check.
 function checksField(runRoot, { root, spec }) {
   const checks = sessionChecksFile.checksView(spec, sessionChecksFile.read(runRoot), root);
@@ -163,6 +205,7 @@ function start({ root, spec, model }) {
   const stale = staleOf(runRoot);
   const work = workKind(spec);
   const status = statusView({ root, spec, model, runRoot });
+  if (status.note) markNoteSeen(runRoot, status.note);
   const active = (model.kinds[work]?.items ?? []).filter((i) => i.phase === "active");
   const task = [...status.now.map((s) => s.name), ...active.map((i) => titleOf(spec, i))].join(" ");
   const all = ledgers.list(runRoot);
@@ -171,7 +214,7 @@ function start({ root, spec, model }) {
     prompt: spec.conductor?.prompt ? join(root, spec.conductor.prompt) : null,
     ...modeOf(root),
     held: heldOf(runRoot, all),
-    idle: idleOfAll(all, spec),
+    idle: askOnce(runRoot, idleOfAll(all, spec)),
     status,
     recall: recallFor(root, task),
     questions: status.onYou.filter((i) => i.kind !== work),
@@ -197,6 +240,7 @@ function closing({ root, spec, model }) {
   const all = ledgers.list(runRoot);
   const { cleanable, unknown, strays, leftAlone, diskFree, warnings } = plan(runRoot);
   const dry = fix(["--json"], { root, spec, model });
+  const note = noteView({ root, spec, model, runRoot });
   return {
     drafts: drafts.pending(runRoot),
     fixPlan: JSON.parse(dry.out),
@@ -208,6 +252,7 @@ function closing({ root, spec, model }) {
     warnings,
     diskFree,
     episodesPending: pendingEpisodes(all).map((l) => l.id),
+    ...(note && { note }),
     ...checksField(runRoot, { root, spec }),
   };
 }
@@ -215,6 +260,19 @@ function closing({ root, spec, model }) {
 // A note on one line (each line break a space), cut to NOTE_COLUMNS with the rest of its line.
 const oneLine = (text) => text.replace(/\s*[\r\n]+\s*/g, " ").trim();
 const minute = (at) => (Number.isNaN(new Date(at).getTime()) ? at : `${at.slice(0, 16)}Z`);
+
+// An age as `40m`, `5h` or `3d` (whole units, rounded down), from `iso` to now.
+const ageText = (iso) => {
+  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  return minutes < 1440 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 1440)}d`;
+};
+const idsText = (ids) => (ids.length ? ids.join(", ") : "none");
+// The one stale line of a note: the Now it was written under is gone, else every id it names is done.
+const staleText = ({ stale, writtenAt, path }) =>
+  stale.why === "now-changed"
+    ? `note: stale, written ${ageText(writtenAt)} ago when the Now was ${idsText(stale.was)}, now ${idsText(stale.now)} → rewrite or clear ${path}`
+    : `note: stale, every id it names is done → edit ${path} (${stale.ids.join(", ")})`;
 
 // The check lines of start: what to run now, a named skill the repo lacks, and how the last close went.
 function startChecks({ start: now, close: last }, { add, addList }) {
@@ -291,23 +349,44 @@ function renderStart(s, { name, root }) {
   }
   if (s.held.length > MAX_HELD)
     add(`held: +${s.held.length - MAX_HELD} more → ${nextStep("lane session start --json")}`);
-  // The park step on its own line, as the held block's resume, so 80 columns never cut it.
-  for (const i of s.idle) {
+  // The park step on its own line, as the held block's resume, so 80 columns never cut it. A lane newly
+  // idle at its lastChange gets its block and one question for all of them; one already asked, a quiet line.
+  const fresh = s.idle.filter((i) => !i.asked);
+  for (const i of fresh) {
     add(`idle: ${idleHead(i.id, i)}`);
     add(`  → ${i.park} to park it`);
+  }
+  const park = nextStep("lane exec hold <id> --for later");
+  if (fresh.length)
+    add(
+      `ask the owner once: park ${fresh.map((i) => i.id).join(", ")}? yes → ${park} (each)`,
+      Number.POSITIVE_INFINITY,
+    );
+  const asked = s.idle.filter((i) => i.asked);
+  if (asked.length) {
+    const last = asked
+      .map((i) => i.asked)
+      .toSorted()
+      .at(-1);
+    add(
+      `idle: ${asked.map((i) => i.id).join(", ")} (asked ${clock(last)}; park: ${park})`,
+      Number.POSITIVE_INFINITY,
+    );
   }
   // The count comes before the name, so a long name is what the line loses.
   for (const n of s.status.now)
     add(`now: ${n.id} ${n.done}/${n.total}${n.name ? ` · ${n.name}` : ""}`);
   if (!s.status.now.length) add("now: no active sprint");
-  // The note's first lines (headings and blanks skipped), the later ones indented under the label.
-  const note = (s.status.note?.lines ?? []).filter((l) => l.trim() && !l.startsWith("#"));
-  note.slice(0, NOTE_LINES).forEach((l, i) => add(i ? `      ${l.trim()}` : `note: ${l.trim()}`));
-  const stale = s.status.note?.stale;
-  if (stale)
-    add(
-      `note: stale, every id it names is done → edit ${s.status.note.path} (${stale.join(", ")})`,
-    );
+  // The note's first lines (headings and blanks skipped), the later ones indented under the label; a note
+  // 12 h old or more says its age (from the file's mtime) in the label.
+  const { note } = s.status;
+  const label = note?.old ? `note (${ageText(note.writtenAt)} old): ` : "note: ";
+  (note?.lines ?? [])
+    .filter((l) => l.trim() && !l.startsWith("#"))
+    .slice(0, NOTE_LINES)
+    .forEach((l, i) => add(i ? `      ${l.trim()}` : `${label}${l.trim()}`));
+  // The step ends the line: the path is never cut.
+  if (note?.stale) add(staleText(note), Number.POSITIVE_INFINITY);
   if (s.status.inFlight.length)
     addList(
       "in flight: ",
