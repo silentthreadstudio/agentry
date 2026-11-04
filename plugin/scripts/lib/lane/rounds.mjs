@@ -349,6 +349,20 @@ function subjectTrips(broken = []) {
 
 const sameRun = (a, b) => a?.[0] === b?.[0] && a?.[1] === b?.[1];
 
+// A context hold's reason: the report's summary, which its reader cuts at a length cap ("…"), cut back to
+// the last word boundary that leaves no backticked span or parenthesis open.
+function clipped(summary) {
+  if (!summary.endsWith("…")) return summary;
+  const body = summary.slice(0, -1);
+  const count = (text, ch) => text.split(ch).length - 1;
+  for (let at = body.lastIndexOf(" "); at > 0; at = body.lastIndexOf(" ", at - 1)) {
+    const head = body.slice(0, at).trimEnd();
+    if (head && count(head, "`") % 2 === 0 && count(head, "(") <= count(head, ")"))
+      return `${head}…`;
+  }
+  return summary;
+}
+
 // The round the lane's current step began with: the first builder round of the newest run (`steps`) a
 // builder was sent on; round 1 when there are no steps. The needs-context budget counts from it.
 function stepStart(ledger) {
@@ -405,7 +419,7 @@ function onReport(ledger, round, event) {
         when: "during",
         stepRun: round.stepRun ?? null,
         evidence: round.reportPath,
-        reason: event.summary || status,
+        reason: clipped(event.summary || status),
         report: round.reportPath,
         since: event.at,
         round: round.n,
