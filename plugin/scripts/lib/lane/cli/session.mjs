@@ -31,7 +31,7 @@ import { idleMinutes } from "../../process/spec/presets.mjs";
 import { statusView, titleOf, workKind } from "../../process/status.mjs";
 import { runText } from "../../process/steps.mjs";
 import { forThisRepo, primeLimitOf, shellQuote } from "../brief.mjs";
-import { clock, idleHead } from "../exec-view.mjs";
+import { clock, heldText, idleHead } from "../exec-view.mjs";
 import { gateLockDir, heldSlots } from "../gate-lock.mjs";
 import { idleOf } from "../idle.mjs";
 import { SKILL_DIR, skillExists } from "../merge/rows.mjs";
@@ -108,7 +108,8 @@ const pendingEpisodes = (all) =>
 
 // A held lane as start shows it: what it waits for, where in its steps, since when, the evidence (from
 // the root) and the step that answers it: the resume, or for a guard hold (field 75) its reason and the
-// report to run again once main is fixed. The owner's holds come before the parked lanes.
+// report to run again once main is fixed. A context hold carries its reason, and its resume asks for the
+// fact. The owner's holds come before the parked lanes.
 const heldOf = (runRoot, all) =>
   all
     .filter((l) => l.state === "held" && l.hold)
@@ -121,12 +122,17 @@ const heldOf = (runRoot, all) =>
       since: l.hold.since,
       evidence: l.hold.evidence ? relative(runRoot, l.hold.evidence) : null,
       ...(l.hold.why && { why: l.hold.why }),
+      ...(l.hold.for === "context" && { reason: l.hold.reason }),
       ...(l.hold.for === "guard"
         ? {
             reason: l.hold.reason,
             report: nextStep(`lane exec report ${l.id} --root ${shellQuote(runRoot)}`),
           }
-        : { resume: nextStep(`lane exec resume ${l.id} --note "<the OK>"`) }),
+        : {
+            resume: nextStep(
+              `lane exec resume ${l.id} --note "${l.hold.for === "context" ? "<the fact>" : "<the OK>"}"`,
+            ),
+          }),
     }));
 
 // The merged lanes whose merge record is from today, local time (field 60); one with no time is not.
@@ -272,7 +278,9 @@ function renderStart(s, { name, root }) {
       add(`  → ${h.report} (after fixing it)`, Number.POSITIVE_INFINITY); // a step to run: never cut
       continue;
     }
-    if (h.for === "later")
+    // A context hold reads as `exec show` prints it (exec-view's heldText), its reason never cut.
+    if (h.for === "context") add(`held: ${h.id} ${heldText(h, 0)}`, Number.POSITIVE_INFINITY);
+    else if (h.for === "later")
       add(`parked: ${h.id} since ${clock(h.since)}${h.why ? `: "${oneLine(h.why)}"` : ""}`);
     else
       add(

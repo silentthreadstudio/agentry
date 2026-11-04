@@ -517,6 +517,29 @@ test("start prints a guard hold with its reason and the report step, never the r
   );
 });
 
+test("start prints a context hold in exec show's held form, its reason uncut, and the resume asking for the fact", () => {
+  const root = fresh();
+  const reason = `NEEDS_CONTEXT: which key identifies the entity, ${"the id or the slug ".repeat(4)}…`;
+  heldLedger(root, "C1", { for: "context", when: "during", stepRun: null, reason });
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const lines = res.stdout.split("\n");
+  const at = lines.indexOf(
+    `held: C1 for more context: ${reason} · resume with --note "<the fact>"`,
+  );
+  assert.ok(at > 0, res.stdout);
+  assert.deepEqual(lines.slice(at + 1, at + 3), [
+    "  evidence: .agentry/run/process/runs/C1/r1-build.report.md",
+    '  → lane exec resume C1 --note "<the fact>"',
+  ]);
+  assert.doesNotMatch(res.stdout, /C1 for the owner/);
+  const data = JSON.parse(session(root, "start", "--json").stdout).held[0];
+  assert.deepEqual(
+    [data.for, data.reason, data.resume],
+    ["context", reason, 'lane exec resume C1 --note "<the fact>"'],
+  );
+});
+
 test("start shows three held lanes and counts the fourth", () => {
   const root = fresh();
   for (const id of ["H1", "H2", "H3", "H4"]) heldLedger(root, id);
