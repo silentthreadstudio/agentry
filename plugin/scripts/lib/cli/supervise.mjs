@@ -10,14 +10,16 @@
 // be caught: what it leaves, the next taker and `agentry lane sweep` free.
 //
 // The watchdog mode, for a process that cannot handle signals while it waits (a synchronous gate):
-//   node supervise.mjs --parent <pid> --start <start> -- <cmd> [args…]
-// runs the command in a process group of its own, stdio inherited, and ends as the command does: its exit
-// code, or the same signal, once whatever the command left of its group is killed. About once a second it
-// looks at the parent (`--start` its start time, so a reused pid does not pass for it); once the parent is
-// no longer alive, it kills the command's group, waits for it to be gone, and frees each `--free` slot file
-// the dead parent still holds. SIGTERM (a holder's timeout) kills the command's group, then the watchdog
-// ends by SIGKILL. It only ever signals the command's group. `watchdogArgv` builds that argv. Node
-// built-ins only.
+//   node supervise.mjs --parent <pid> --start <start> [--free <file>]… -- <cmd> [args…]
+// runs the command, stdio inherited, and ends as the command does: its exit code, or the same signal. About
+// once a second it looks at the parent (`--start` its start time, so a reused pid does not pass for it);
+// once the parent is no longer alive, the command's group goes and each `--free` slot file the dead parent
+// still holds is freed after it. Started leading its own group (`runGate` starts it detached), it keeps the
+// command in that group: whoever started it kills that group when the watchdog ends, however it ends, and
+// on the parent's death it leaves a reaper (`--reap <pgid>`, outside the group) to free the slots, then
+// kills the group it verified it leads. Not leading one, it gives the command a group of its own and only
+// ever signals that group (SIGTERM, a holder's timeout, kills it, then the watchdog ends by SIGKILL).
+// `watchdogArgv` builds that argv. Node built-ins only.
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -159,20 +161,47 @@ export function watchdogArgv(cmd, { parent = identity(), free = [] } = {}) {
   ];
 }
 
-// The watchdog's options before `--`: `{ parent, free, cmd }`, or null when they don't make one.
+// The watchdog's options: `{ parent, free, reap, cmd }`, or null when they don't make one (a command after
+// `--`, or `--reap <pgid>` and none).
 function watchArgs(argv) {
   const dash = argv.indexOf("--");
-  if (dash < 0) return null;
-  const got = { parent: { pid: Number.NaN, start: null }, free: [], cmd: argv.slice(dash + 1) };
-  for (let i = 0; i < dash; i += 2) {
-    const [name, value] = [argv[i], argv[i + 1]];
+  const opts = dash < 0 ? argv : argv.slice(0, dash);
+  const got = {
+    parent: { pid: Number.NaN, start: null },
+    free: [],
+    reap: null,
+    cmd: dash < 0 ? [] : argv.slice(dash + 1),
+  };
+  for (let i = 0; i < opts.length; i += 2) {
+    const [name, value] = [opts[i], opts[i + 1]];
     if (value === undefined) return null;
     if (name === "--parent") got.parent.pid = Number(value);
     else if (name === "--start") got.parent.start = value;
     else if (name === "--free") got.free.push(value);
+    else if (name === "--reap") got.reap = Number(value);
     else return null;
   }
-  return got.cmd.length && Number.isInteger(got.parent.pid) ? got : null;
+  if (!Number.isInteger(got.parent.pid)) return null;
+  return (got.reap === null ? got.cmd.length > 0 : Number.isInteger(got.reap)) ? got : null;
+}
+
+// Does this process lead its process group? Only a group's leader shares its id: a group with this
+// process's pid as its id can only be the one it leads.
+function leadsGroup() {
+  try {
+    process.kill(-process.pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
+// The reaper a watchdog leaves behind as it takes its own group down: once group `reap` is gone, it frees
+// the dead parent's slots.
+async function reap({ reap: pgid, parent, free }) {
+  for (let waited = 0; waited < 2 * GROUP_GONE_MS && groupRunning(pgid); waited += 20)
+    await sleep(20);
+  for (const file of free) freeDeadHolder(file, parent);
 }
 
 // The watchdog mode (see the head of this file).
@@ -184,32 +213,55 @@ function watch(argv) {
     );
     process.exit(2);
   }
+  if (args.reap !== null) return reap(args);
   const { parent, free, cmd } = args;
-  // The command leads a group of its own: the watchdog kills that group and nothing else.
-  const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", detached: true });
+  // Leading its group (as `runGate` starts it), the watchdog keeps the command in it, so whoever kills
+  // the watchdog's group (`runGate`, whenever the watchdog ends) reaches the command too. Otherwise the
+  // command gets a group of its own, and that group is all the watchdog ever signals.
+  const leader = leadsGroup();
+  const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", detached: !leader });
   const endChild = async () => {
     if (child.pid === undefined) return;
     signalGroup(child.pid, "SIGKILL");
     for (let waited = 0; waited < GROUP_GONE_MS && groupRunning(child.pid); waited += 20)
       await sleep(20);
   };
-  // The holder ran out of time (`runGate`'s timeout sends SIGTERM): the command's group goes, then this
-  // watchdog ends by SIGKILL, as the command did before it ran under one.
+  // The parent is gone. A leader's group goes down with it, so a reaper outside the group frees the slots
+  // once it is gone; otherwise the command's own group goes and the watchdog frees them itself.
+  const orphan = async () => {
+    if (leader) {
+      const frees = free.flatMap((file) => ["--free", file]);
+      const start = parent.start === null ? [] : ["--start", parent.start];
+      const pgid = String(process.pid);
+      spawn(
+        process.execPath,
+        [WATCHDOG, "--reap", pgid, "--parent", String(parent.pid), ...start, ...frees],
+        {
+          detached: true,
+          stdio: "ignore",
+        },
+      ).unref();
+      process.kill(-process.pid, "SIGKILL"); // verified above: the group this watchdog leads
+      return;
+    }
+    await endChild();
+    for (const file of free) freeDeadHolder(file, parent);
+    process.exit(1);
+  };
+  // Not a leader, the holder's timeout (SIGTERM) must reach the command's own group: it goes, then the
+  // watchdog ends by SIGKILL. A leader just dies by it, and its group is killed for it.
   const onTerm = async () => {
     await endChild();
     process.kill(process.pid, "SIGKILL");
   };
-  process.on("SIGTERM", onTerm);
-  // Once the parent is gone, the cleanup below owns the end: the command's own exit must not end this
-  // watchdog before the slots are freed.
+  if (!leader) process.on("SIGTERM", onTerm);
+  // Once the parent is gone, `orphan` owns the end: the command's own exit must not end this watchdog first.
   let orphaned = false;
-  const poll = setInterval(async () => {
+  const poll = setInterval(() => {
     if (alive(parent)) return;
     orphaned = true;
     clearInterval(poll);
-    await endChild();
-    for (const file of free) freeDeadHolder(file, parent);
-    process.exit(1);
+    orphan();
   }, PARENT_POLL_MS);
   child.on("error", (error) => {
     clearInterval(poll);
@@ -219,8 +271,9 @@ function watch(argv) {
   child.on("exit", async (code, signal) => {
     if (orphaned) return;
     clearInterval(poll);
-    await endChild(); // whatever it left of its group goes with it
-    if (!alive(parent)) for (const file of free) freeDeadHolder(file, parent);
+    if (!alive(parent)) return orphan();
+    // Whatever the command left of its group goes with it (a leader's group: by whoever started it).
+    if (!leader) await endChild();
     if (signal === null) process.exit(code ?? 1);
     process.off("SIGTERM", onTerm);
     process.kill(process.pid, signal); // end by the same signal, as the command did

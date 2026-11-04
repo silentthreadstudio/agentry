@@ -76,16 +76,16 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
   let res;
   let timedOut = false;
   try {
-    // The watchdog runs the command in a group of its own and kills that group when the command ends, at
-    // the timeout, and as soon as this process is gone (then it also frees the slots this process holds).
+    // detached: the watchdog leads the group the command runs in, so `endGroup` below takes the command
+    // (and its children) down however the watchdog ended; the watchdog itself ends that group as soon as
+    // this process is gone, and then frees the slots this process holds.
     const [exe, ...args] = watchdogArgv(cmd, { free: slotsHeldHere() });
     res = spawnSync(exe, args, {
       cwd: top,
       stdio: ["ignore", fd, fd],
       detached: true,
       timeout: timeoutSec * 1000,
-      // The watchdog kills the command's group on SIGTERM, then itself by SIGKILL.
-      killSignal: "SIGTERM",
+      killSignal: "SIGKILL",
     });
     timedOut = res.error?.code === "ETIMEDOUT";
     endGroup(res.pid);
