@@ -7,7 +7,14 @@ import { mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { dropLock, heldLocks, lockDir, releaseLock, tryLock } from "../lib/lane/named-lock.mjs";
+import {
+  dropLock,
+  heldLocks,
+  lockDir,
+  releaseLock,
+  setGroup,
+  tryLock,
+} from "../lib/lane/named-lock.mjs";
 import { tempRepo } from "./git-repo.mjs";
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -240,4 +247,39 @@ test("dropLock frees only the takes of that session and who", () => {
   );
   assert.equal(dropLock(dir, "sim", { slots: 2, pid: process.pid, who: "T-1" }), 1);
   assert.deepEqual(readdirSync(lockDir(dir, "sim")), ["slot-2.lock"]);
+});
+
+test("a take with no session pid refreshes its own slot for the same --for; another --for still waits", () => {
+  const dir = repo();
+  assert.equal(lock(dir, ["take", "editor", "--for", "T-1"]).status, 0);
+  const again = lock(dir, ["take", "editor", "--for", "T-1", "--ttl", "1h", "--wait", "1s"]);
+  assert.equal(again.status, 0);
+  assert.equal(again.stderr, "", "no wait for itself");
+  assert.deepEqual(readdirSync(lockDir(dir, "editor")), ["slot-1.lock"]);
+  assert.equal(lock(dir, ["take", "editor", "--for", "T-2", "--wait", "1s"]).status, 75);
+});
+
+test("a slot whose run died stays held while its command's group runs, and is free the moment it is gone", async () => {
+  const dir = repo();
+  const group = spawn(NODE, ["-e", "setInterval(()=>{},1000)"], {
+    stdio: "ignore",
+    detached: true,
+  });
+  cleanups.push(() => {
+    try {
+      process.kill(-group.pid, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  const dead = spawnSync(NODE, ["-e", ""]).pid;
+  const held = tryLock(dir, "editor", { slots: 1, pid: dead, who: "run" });
+  setGroup(dir, "editor", held.slot, group.pid, dead);
+  assert.equal(heldLocks(dir, "editor", 1)[0].orphan, group.pid);
+  assert.ok(tryLock(dir, "editor", { slots: 1, who: "next" }).busy, "the group still runs");
+  const gone = new Promise((resolve) => group.on("exit", resolve));
+  process.kill(-group.pid, "SIGKILL");
+  await gone;
+  assert.deepEqual(heldLocks(dir, "editor", 1), [], "free once the group is gone");
+  assert.equal(tryLock(dir, "editor", { slots: 1, who: "next" }).slot, 1);
 });

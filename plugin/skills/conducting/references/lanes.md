@@ -280,7 +280,8 @@ templates, once:
   runs in the host's background mode, read by the same exit code.
 - Logs and scratch files only under the round's log dir.
 - No command other than the gate runs longer than 10 minutes: an engine, server, simulator or watcher gets a
-  time limit, and hitting it is a finding to report, never a wait (build and verify briefs).
+  time limit (`agentry run --limit <dur> -- …`), and hitting it is a finding to report, never a wait (build and
+  verify briefs).
 - Commits on `agentry/<id>` with no AI attribution; no merge, push or rebase.
 - A contract with steps: the build brief says `## This round: step 1 of 2` (`steps 2–3 of 3`), `Build only
   this part of the contract:` with the run's steps, `It is done when:` with the run's tagged acceptance items,

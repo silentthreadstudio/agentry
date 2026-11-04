@@ -85,6 +85,7 @@ The builder's report: {{builderReport}}
 {{/gateNotYours}}
 {{#gateRun}}
 - Run the gate as the lane records it, in the foreground, and read its exit code: `{{gateLine}}`
+  Run the gate only as `agentry lane exec gate <id>` (it takes the gate slot); never run the gate script yourself.
 {{/gateRun}}
 - For any input, setting or interaction the contract handles, write down the bar first (what must never
   happen, edge cases included), then test against it.
@@ -94,8 +95,8 @@ The builder's report: {{builderReport}}
   background waits. Only a check longer than your host's foreground limit runs in the host's background
   mode: wait for its one exit notice and read the same exit code.
 - No command other than the gate may run longer than 10 minutes: run every engine, server, simulator or
-  watcher with `agentry run --limit <dur> -- …`, and treat hitting the limit as a finding to report, never
-  a wait.
+  watcher with `agentry run --limit <dur> -- …` (with `--lock <name> --wait <dur>` for a shared lock), and
+  treat hitting the limit as a finding to report, never a wait.
 {{#locked}}
 - Take {{lockTake}} before driving a shared editor through MCP, and drop it after
   (`agentry lock drop` with the same name).

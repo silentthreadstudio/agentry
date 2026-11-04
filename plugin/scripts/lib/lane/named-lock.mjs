@@ -4,7 +4,9 @@
 // worktree shares it), created with `wx` (one creator wins), holding `{ pid, who, at, until? }`. A slot is
 // free again once its pid is gone, once its `until` has passed (a take's ttl), or, holding neither a pid
 // nor an until, once it is old enough not to be mid-write. The pid, holder and clock checks are gate-lock's.
-// Synchronous: a waiting caller polls `tryLock` at `POLL_MS`. Node built-ins only.
+// A run also records its command's process group (`pgid`): while any member of that group lives the slot
+// stays held, even after `agentry run` itself died (an orphan). Synchronous: a waiting caller polls
+// `tryLock` at `POLL_MS`. Node built-ins only.
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isObject, own } from "../process/spec/shape.mjs";
@@ -21,6 +23,23 @@ export const locksOf = (spec) => {
   return isObject(locks) ? locks : {};
 };
 
+/** Does any process of group `pgid` still run? EPERM means one does, and is not ours to signal. */
+export function groupRunning(pgid) {
+  if (!Number.isInteger(pgid) || pgid <= 1) return false;
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
+// The group an orphaned slot's command left running: the holder's pid is gone, its group is not.
+const orphanGroup = (holder) =>
+  Number.isInteger(holder?.pid) && !running(holder.pid) && groupRunning(holder.pgid)
+    ? holder.pgid
+    : null;
+
 const slotFile = (root, name, n) => join(lockDir(root, name), `slot-${n}.lock`);
 
 const textOf = (file) => {
@@ -34,7 +53,7 @@ const textOf = (file) => {
 // Can nobody be holding the slot `file` (read as `holder`) any more?
 function free(file, holder, now) {
   if (holder?.until !== undefined && !(Date.parse(holder.until) > now)) return true;
-  if (Number.isInteger(holder?.pid)) return !running(holder.pid);
+  if (Number.isInteger(holder?.pid)) return !running(holder.pid) && orphanGroup(holder) === null;
   if (holder?.until !== undefined) return false;
   try {
     return now - statSync(file).mtimeMs > GRACE_MS;
@@ -67,11 +86,12 @@ const holding = (holder, slot) => ({
   pid: Number.isInteger(holder.pid) ? holder.pid : null,
   who: holder.who ?? "",
   since: clock(holder.at),
+  ...(orphanGroup(holder) !== null && { orphan: holder.pgid }),
   ...(holder.until !== undefined && { until: clock(holder.until) }),
 });
 
-/** The slots of lock `name` (capacity `slots`) held now: `[{ slot, pid, who, since, until? }]`, `since`
- *  and `until` as HH:MM. A slot past the capacity counts for nothing. */
+/** The slots of lock `name` (capacity `slots`) held now: `[{ slot, pid, who, since, until?, orphan? }]`,
+ *  `since` and `until` as HH:MM, `orphan` the group still running after its run died. A slot past the capacity counts for nothing. */
 export function heldLocks(root, name, slots, now = Date.now()) {
   const held = [];
   for (let n = 1; n <= slots; n++) {
@@ -82,9 +102,21 @@ export function heldLocks(root, name, slots, now = Date.now()) {
   return held;
 }
 
-// Is `holder` a take by this same session (`pid`) for this same `who`?
+// Is `holder` a take by this same session (`pid`, null when it has none) for this same `who`?
 const sameTake = (holder, pid, who) =>
-  holder?.until !== undefined && pid !== null && holder.pid === pid && holder.who === who;
+  holder?.until !== undefined && holder.pid === pid && holder.who === who;
+
+/** The slot of lock `name` a take by session `pid` for `who` holds now, or null: a command of that
+ *  session and lane runs inside it. A session with no pid has no take to run inside. */
+export function ownTake(root, name, { slots, pid, who, now = Date.now() }) {
+  if (pid === null) return null;
+  for (let n = 1; n <= slots; n++) {
+    const file = slotFile(root, name, n);
+    const holder = holderOf(file);
+    if (sameTake(holder, pid, who) && !free(file, holder, now)) return n;
+  }
+  return null;
+}
 
 /**
  * One try for a slot of lock `name` (capacity `slots`): `{ slot }` once held, or `{ busy: { who, since } }`
@@ -117,6 +149,14 @@ export function tryLock(
     if (takeSlot(root, name, n, JSON.stringify(entry), now)) return { slot: n };
   const [first] = heldLocks(root, name, slots, now);
   return { busy: { who: first?.who || "unknown", since: first?.since ?? "?" } };
+}
+
+/** Record the process group `pgid` of the command that holds slot `slot` (taken by this process): the
+ *  slot stays held while that group runs, whether or not this process does. */
+export function setGroup(root, name, slot, pgid, pid = process.pid) {
+  const file = slotFile(root, name, slot);
+  const holder = holderOf(file);
+  if (holder?.pid === pid) writeFileSync(file, JSON.stringify({ ...holder, pgid }));
 }
 
 /** Free slot `slot` of lock `name` when process `pid` still holds it (a slot taken over since is left). */

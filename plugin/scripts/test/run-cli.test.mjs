@@ -231,7 +231,11 @@ test("the lock is free again after the command crashes or hits the limit", async
   assert.equal(next.stderr, "", "taken at once");
 });
 
-test("kill -9 of agentry run frees its lock: the next taker finds its pid gone", async (t) => {
+// A holder session for the CLI's env: `CLAUDE_PID` names a live process.
+const asSession = (pid) => ({ ...baseEnv(), CLAUDE_PID: String(pid) });
+const groupAlive = (pgid) => alive(-pgid);
+
+test("kill -9 of agentry run leaves its slot held while the command's group runs, and frees it once the group is gone", async (t) => {
   const dir = repo({ editor: 1 });
   const pidFile = join(dir, "cmd.pid");
   const first = agentry(
@@ -259,11 +263,69 @@ test("kill -9 of agentry run frees its lock: the next taker finds its pid gone",
   });
   first.child.kill("SIGKILL");
   await first;
+  const show = await agentry(["lock", "show"], { cwd: dir });
+  assert.match(show.stdout, new RegExp(`^editor 1/1\\n.*orphan: pgid ${orphan} still running\\n$`));
+  const busy = await agentry(
+    ["run", "--limit", "5s", "--lock", "editor", "--wait", "1s", "--", ...js("")],
+    { cwd: dir },
+  );
+  assert.equal(busy.status, 75, "a live group keeps the slot");
+  process.kill(-orphan, "SIGKILL");
+  await until(() => !groupAlive(orphan));
   const next = await agentry(["run", "--limit", "5s", "--lock", "editor", "--", ...js("")], {
     cwd: dir,
   });
   assert.equal(next.status, 0);
-  assert.equal(next.stderr, "", "the dead holder's slot was taken over at once");
+  assert.equal(next.stderr, "", "the orphan's slot was taken over at once");
+  assert.match((await agentry(["lock", "show"], { cwd: dir })).stdout, /^editor 0\/1: free\n$/);
+});
+
+test("a run inside its own take uses that take: no wait, no second slot, the take stays", async () => {
+  const dir = repo({ editor: 2 });
+  const env = asSession(process.pid);
+  assert.equal((await agentry(["lock", "take", "editor"], { cwd: dir, env })).status, 0);
+  const started = join(dir, "started");
+  const inside = agentry(
+    [
+      "run",
+      "--limit",
+      "20s",
+      "--lock",
+      "editor",
+      "--wait",
+      "1s",
+      "--",
+      ...js(`require('fs').writeFileSync(${JSON.stringify(started)},'');setTimeout(()=>{},1200)`),
+    ],
+    { cwd: dir, env },
+  );
+  await until(() => existsSync(started));
+  assert.deepEqual(slots(dir), ["slot-1.lock"], "one slot while the run is inside the take");
+  assert.match((await agentry(["lock", "show"], { cwd: dir })).stdout, /^editor 1\/2\n/);
+  const run = await inside;
+  assert.equal(run.status, 0);
+  assert.equal(run.stderr, "lock editor: inside your own take\n");
+  assert.deepEqual(slots(dir), ["slot-1.lock"], "the run does not release the take");
+});
+
+test("a run by another session or another lane than the take still waits for it", async () => {
+  const dir = repo({ editor: 1 });
+  assert.equal(
+    (await agentry(["lock", "take", "editor"], { cwd: dir, env: asSession(process.pid) })).status,
+    0,
+  );
+  const other = await agentry(
+    ["run", "--limit", "5s", "--lock", "editor", "--wait", "1s", "--", ...js("")],
+    { cwd: dir, env: asSession(process.ppid) },
+  );
+  assert.equal(other.status, 75, "another session");
+  const wt = join(dir, ".agentry", "run", "worktrees", "T-1");
+  git(dir, "worktree", "add", "-q", "-b", "agentry/T-1", wt);
+  const lane = await agentry(
+    ["run", "--limit", "5s", "--lock", "editor", "--wait", "1s", "--", ...js("")],
+    { cwd: wt, env: asSession(process.pid) },
+  );
+  assert.equal(lane.status, 75, "another lane of the same session");
 });
 
 test("a lane's worktree shares the main checkout's locks, named by its lane", async () => {
@@ -340,4 +402,95 @@ test("--wait without --lock, and a --wait that is not a time, are refused", asyn
     assert.equal(run.status, 2, args.join(" "));
     assert.match(run.stderr, /^✗ agentry run: .*--wait/);
   }
+});
+
+test("--wait defaults to 10m, in both help texts", async () => {
+  const dir = repo();
+  assert.match((await agentry(["run", "--help"], { cwd: dir })).stdout, /--wait.*\(default 10m\)/);
+  assert.match((await agentry(["lock", "--help"], { cwd: dir })).stdout, /--wait.*\(default 10m\)/);
+});
+
+test("the briefs' time-limit rule names --wait, the gate line names the gate slot, and lanes.md names agentry run", () => {
+  const refs = join(PLUGIN, "skills", "conducting", "references");
+  for (const brief of ["build", "verify"]) {
+    const text = readFileSync(join(refs, "briefs", `${brief}.md`), "utf8");
+    assert.match(text, /agentry run --limit <dur> -- …`[^\n]*--wait <dur>/, brief);
+    assert.match(
+      text,
+      /Run the gate only as `agentry lane exec gate <id>` \(it takes the gate slot\); never run the gate script yourself/,
+      brief,
+    );
+  }
+  assert.match(readFileSync(join(refs, "lanes.md"), "utf8"), /`agentry run --limit <dur> -- …`/);
+});
+
+const gateSlots = (dir) => {
+  const at = join(dir, ".agentry", "run", "gate-locks");
+  return existsSync(at) ? readdirSync(at) : [];
+};
+
+test("a run of a gate tier's argv takes the gate slot for its life and says so", async () => {
+  const dir = repo();
+  const seen = join(dir, "seen");
+  const tier = js(
+    `const fs=require('fs');fs.writeFileSync(${JSON.stringify(seen)},fs.readdirSync(${JSON.stringify(join(dir, ".agentry", "run", "gate-locks"))}).join())`,
+  );
+  writeFileSync(
+    join(dir, ".agentry", "workflow.json"),
+    JSON.stringify({ gate: { tiers: [{ name: "full", command: tier }] } }),
+  );
+  const run = await agentry(["run", "--limit", "10s", "--", ...tier], { cwd: dir });
+  assert.equal(run.status, 0);
+  assert.equal(run.stderr, "run: this is the gate (full): taking the gate slot\n");
+  assert.equal(readFileSync(seen, "utf8"), "slot-1.lock", "held while the command ran");
+  assert.deepEqual(gateSlots(dir), [], "released at the end");
+});
+
+test("two runs of the gate argv never overlap under gate.concurrency 1; other argv takes no slot", async () => {
+  const dir = repo();
+  const span = (name) => {
+    const code = `const fs=require('fs'),f=${JSON.stringify(join(dir, name))};
+      fs.writeFileSync(f,Date.now()+' ');setTimeout(()=>fs.appendFileSync(f,String(Date.now())),700)`;
+    return js(code);
+  };
+  const [a, b] = [span("a"), span("b")];
+  writeFileSync(
+    join(dir, ".agentry", "workflow.json"),
+    JSON.stringify({
+      gate: {
+        tiers: [
+          { name: "quick", command: a, when: { any: ["x"] } },
+          { name: "full", command: b },
+        ],
+        concurrency: 1,
+      },
+    }),
+  );
+  const runs = await Promise.all(
+    [a, b].map((argv) => agentry(["run", "--limit", "20s", "--", ...argv], { cwd: dir })),
+  );
+  assert.deepEqual(
+    runs.map((r) => r.status),
+    [0, 0],
+  );
+  const [x, y] = ["a", "b"].map((n) => readFileSync(join(dir, n), "utf8").split(" ").map(Number));
+  assert.ok(x[1] <= y[0] || y[1] <= x[0], `overlap: a ${x}, b ${y}`);
+  assert.match(runs[0].stderr, /^run: this is the gate \(quick\)/);
+  assert.match(runs[1].stderr, /^run: this is the gate \(full\)/);
+  const plain = await agentry(["run", "--limit", "5s", "--", ...js("")], { cwd: dir });
+  assert.equal(plain.stderr, "", "an argv that is no tier's takes no gate slot");
+});
+
+test("the supervisor lives in lib/cli/supervise.mjs: run.mjs keeps the CLI and the locks", async () => {
+  const cli = join(PLUGIN, "scripts", "lib", "cli");
+  const run = await import(join(cli, "run.mjs"));
+  assert.deepEqual(Object.keys(run).sort(), ["BUSY_EXIT", "durationMs", "lockCli", "runCli"]);
+  const { supervise } = await import(join(cli, "supervise.mjs"));
+  const started = [];
+  const code = await supervise(js("process.exit(3)"), 10_000, "10s", {
+    onStart: (pgid) => started.push(pgid),
+  });
+  assert.equal(code, 3);
+  assert.equal(started.length, 1);
+  assert.ok(Number.isInteger(started[0]) && started[0] > 1);
 });
