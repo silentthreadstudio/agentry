@@ -772,3 +772,17 @@ test("start prints one stale row for slots and temp files a killed holder or wri
     temps: 1,
   });
 });
+
+test("start counts the dead writers' temp files it finds before its own reads sweep them", () => {
+  const root = fresh();
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+  const ledgerDir = join(root, ".agentry", "run", "process", "ledger");
+  const gates = join(root, ".agentry", "run", "gate-locks");
+  mkdirSync(ledgerDir, { recursive: true });
+  mkdirSync(gates, { recursive: true });
+  writeFileSync(join(ledgerDir, `T1.json.agentry-${dead}.tmp`), "{half");
+  writeFileSync(join(gates, `slot-1.lock.agentry-${dead}.tmp`), "{half");
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /^! stale: 0 lock slot\(s\), 2 temp file\(s\) → .*lane sweep --apply$/m);
+});

@@ -153,6 +153,8 @@ function checksField(runRoot, { root, spec }) {
 
 function start({ root, spec, model }) {
   const runRoot = mainRoot(root) ?? root;
+  // Counted before anything reads the ledgers or the gate slots: those reads sweep what they find.
+  const stale = staleOf(runRoot);
   const work = workKind(spec);
   const status = statusView({ root, spec, model, runRoot });
   const active = (model.kinds[work]?.items ?? []).filter((i) => i.phase === "active");
@@ -173,7 +175,7 @@ function start({ root, spec, model }) {
     ].map(stackSummary(runRoot, all)),
     mergedToday: mergedToday(all),
     gateSlots: heldSlots(gateLockDir(runRoot)),
-    stale: staleOf(runRoot),
+    stale,
     ...checksField(runRoot, { root, spec }),
   };
 }
