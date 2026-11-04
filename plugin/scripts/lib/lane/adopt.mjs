@@ -10,7 +10,8 @@
 // adoptedWork(adopted) -> the round-1 brief's `## Adopted work` section
 // cleanupSteps(adopted) -> the commands that remove the source once the lane has landed
 // shellWord(text) -> text as one shell word: as it is when plain, else single-quoted
-// isBranch(root, name) -> whether `name` is a branch's own name, not a revision (`b~0`, `b@{0}`)
+// isBranch(root, name) -> whether `name` is a branch's own name, exactly: not a revision (`b~0`, `b@{0}`)
+//                         nor another case of one
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { worktrees } from "../process/git.mjs";
@@ -27,12 +28,15 @@ export const shellWord = (text) =>
   /^[\w./@%+=:,-]+$/.test(String(text)) ? String(text) : shellQuote(text);
 
 /** Whether `name` is the name of a local branch: a valid branch name (`git check-ref-format`, so `b~0`,
- *  `b^{commit}` and `b@{0}` are not) that `refs/heads/` holds. */
+ *  `b^{commit}` and `b@{0}` are not) that the ref list holds as it is spelled. `show-ref --verify` and
+ *  `rev-parse` read a loose ref's file, so on a case-insensitive filesystem they take `agentry/t2` for
+ *  `agentry/T2`; `for-each-ref` lists the ref's own name (and, as a pattern, the branches below it too). */
 export function isBranch(root, name) {
   const ref = `refs/heads/${name}`;
   if (String(name).startsWith("-")) return false;
   if (git(root, ["check-ref-format", ref]).status !== 0) return false;
-  return git(root, ["show-ref", "--verify", "--quiet", ref]).status === 0;
+  const listed = git(root, ["for-each-ref", "--format=%(refname)", ref]);
+  return listed.status === 0 && listed.stdout.split("\n").includes(ref);
 }
 
 // The open lanes of `lanes` (ledgers): not merged or closed.

@@ -519,6 +519,22 @@ test("a revision cannot slip a tracked lane branch past its refusal", () => {
   assertNothingWritten(r, "T1", before);
 });
 
+test("another case of a lane branch's name (agentry/t2 for agentry/T2) is no branch, whatever the filesystem", () => {
+  const r = repo();
+  const t2 = lane(r, "start", "T2").json;
+  commitFile(t2.worktree, "four.txt", "4\n", "feat: two in the T2 lane");
+  const tip = tipOf(r.root, "refs/heads/agentry/T2");
+  const before = board(r.root);
+  // A case-insensitive filesystem reads the loose ref file `agentry/T2` for `agentry/t2`.
+  const res = lane(r, "adopt", "T1", "--branch", "agentry/t2");
+  assert.equal(res.exit, 2, res.stdout);
+  assert.equal(res.stderr.trim().split("\n").length, 1);
+  assert.match(res.stderr, /agentry\/t2 does not exist/);
+  assertNothingWritten(r, "T1", before);
+  assert.equal(tipOf(r.root, "refs/heads/agentry/T2"), tip);
+  assert.equal(ledgerOf(r.root, "T2").state, "building");
+});
+
 test("a throw inside the carry takes the new lane down: no ledger, branch, worktree or board write, the source as it was", () => {
   const r = repo();
   const src = agentTree(r);
@@ -547,3 +563,4 @@ test("a throw inside the carry takes the new lane down: no ledger, branch, workt
   rmSync(join(runs, "adopt"));
   assert.equal(lane(r, "adopt", "T1", "--branch", src.branch).exit, 0);
 });
+

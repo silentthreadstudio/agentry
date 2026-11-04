@@ -15,7 +15,6 @@ import { worktrees } from "../../process/git.mjs";
 import { runId } from "../../process/ids.mjs";
 import { list as listLedgers } from "../../process/ledger.mjs";
 import { isBranch } from "../adopt.mjs";
-import { commitOf } from "../land.mjs";
 import { fileSpike, forgetSpike, readSpikes, spikesFile } from "../spikes.mjs";
 import { mainRoot } from "../worktree.mjs";
 
@@ -141,9 +140,8 @@ export function run(argv, ctx) {
   return shown(root, spikes, json, { filed: entry }, `filed ${entry.branch} ${why}`);
 }
 
-// Each spike with `gone` when its branch is no longer there.
-const withGone = (root, spikes) =>
-  spikes.map((s) => ({ ...s, gone: !commitOf(root, `refs/heads/${s.branch}`) }));
+// Each spike with `gone` when its branch is no longer there (another case of it is not that branch).
+const withGone = (root, spikes) => spikes.map((s) => ({ ...s, gone: !isBranch(root, s.branch) }));
 
 function rows(spikes) {
   if (!spikes.length) return ["  none filed"];
