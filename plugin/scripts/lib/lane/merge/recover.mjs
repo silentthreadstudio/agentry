@@ -484,7 +484,8 @@ function plannedFilesChanged(root, preHead, planned, cannotTell) {
 
 /** `lane merge <id> --resolve landed|rolled-back`: on the owner's call, close a ledger in `merging` a land
  *  cannot finish. `landed`: every recorded pick is on main; the ledger is `merged` with the picks as its
- *  commits and no board commit (the board record is the owner's). `rolled-back`: no pick is on main; the
+ *  commits and no board commit (the board record is the owner's), or the one a land killed at `recording`
+ *  made, when the record proves it. `rolled-back`: no pick is on main; the
  *  ledger's `merge` goes and the lane is `verified` again. Each checks main first and refuses with what it
  *  found; neither touches main or the board, and the ledger is written once. */
 export function resolveMode(lane) {
@@ -538,6 +539,9 @@ export function resolveMode(lane) {
   if (as === "landed") {
     const n = merge.landed.length;
     const resolved = { as, at: now() };
+    // A land killed after its board commit, before the step said so: that commit, proven by the record.
+    const left = merge.step === "recording" ? recordingLeft(lane) : {};
+    const boardCommit = left.commit && !left.why ? left.commit : null;
     const merged = {
       state: "merged",
       merge: {
@@ -545,7 +549,7 @@ export function resolveMode(lane) {
         record: undefined,
         gateRun: undefined,
         step: "committed",
-        boardCommit: null,
+        boardCommit,
         resolved,
         at: now(),
       },
@@ -553,9 +557,11 @@ export function resolveMode(lane) {
     lane.ledger = { ...ledger, ...merged };
     const next = afterLand(lane);
     save(lane, { ...merged, next });
-    const detail = `resolved: ${n} pick(s) on main; ledger merged (the board record is yours: board set … and the handoff line)`;
+    const detail = boardCommit
+      ? `resolved: ${n} pick(s) and the board commit ${short(boardCommit)} on main; ledger merged`
+      : `resolved: ${n} pick(s) on main; ledger merged (the board record is yours: board set … and the handoff line)`;
     const picks = merge.landed.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`);
-    // No board commit, so no restack of the lanes stacked on this one: each is named with its command.
+    // No restack of the lanes stacked on this one here: each is named with its command.
     const kids = childrenOf(listLedgers(root), id).map((child) =>
       warn("stack", `${child} is stacked on ${id}: agentry lane exec restack ${child} --main`),
     );

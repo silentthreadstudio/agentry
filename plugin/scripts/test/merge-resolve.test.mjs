@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { sha256 } from "../lib/lane/carry-io.mjs";
 import { create } from "../lib/lane/worktree.mjs";
 import { read as readLedger, write as writeLedger } from "../lib/process/ledger.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
@@ -452,6 +453,41 @@ test("--resolve rolled-back after a revert of the picks refuses, naming --resolv
     /is on main: not rolled back → if you reverted it, the picks are still on main: --resolve landed, then record the board by hand/,
   );
   assert.equal(ledgerBytes(), before);
+});
+
+// S32: a land killed after its board commit, before the step moved on: that commit is the ledger's.
+test("--resolve landed with the record's board commit already on HEAD records it as boardCommit", () => {
+  stuckLand();
+  const text = readFileSync(join(root, "plan", "BOARD.md"), "utf8").replace(
+    "| verify |",
+    "| done   |",
+  );
+  const board = commitFile(root, "plan/BOARD.md", text, "chore(board): T1 done");
+  const ledger = readLedger(root, ID);
+  const record = { files: ["plan/BOARD.md"], sha256: { "plan/BOARD.md": sha256(text) } };
+  writeLedger(root, { ...ledger, merge: { ...ledger.merge, step: "recording", record } });
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 0, out(res));
+  assert.match(
+    res.stdout,
+    new RegExp(
+      `✓ resolve +resolved: 2 pick\\(s\\) and the board commit ${board.slice(0, 7)} on main`,
+    ),
+  );
+  const after = readLedger(root, ID);
+  assert.deepEqual([after.state, after.merge.boardCommit], ["merged", board]);
+  assert.equal(head(), board);
+});
+
+test("--resolve landed at recording with a commit the record does not prove keeps boardCommit null", () => {
+  stuckLand();
+  commitFile(root, "notes.txt", "owner\n", "docs: owner note");
+  const ledger = readLedger(root, ID);
+  const record = { files: ["plan/BOARD.md"], sha256: { "plan/BOARD.md": "0".repeat(64) } };
+  writeLedger(root, { ...ledger, merge: { ...ledger.merge, step: "recording", record } });
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 0, out(res));
+  assert.equal(readLedger(root, ID).merge.boardCommit, null);
 });
 
 // S33 N9 (verifier R1d-34 r7, Q2): the owner re-picked the land's commit by hand with -x on a drifted main.
