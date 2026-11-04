@@ -442,3 +442,113 @@ test("lane sweep --apply keeps a held lane's worktree", () => {
   assert.ok(existsSync(out.worktree), "the held worktree is kept");
   assert.equal(ledgerOf(r.root, "T1").state, "held");
 });
+
+// --- a verified lane parked for later (field 63) ------------------------------------------------------
+
+// T3 built, verified PASS and gated green: next close.
+function verifiedLane(r, id = "T3") {
+  const out = lane(r, "start", id).json;
+  build(out, "three.txt");
+  const verify = lane(r, "report", id, "--agent", "builder-1").json;
+  writeFileSync(verify.reportPath, "All checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, "verdict", id, "--agent", "verifier-1").json.next, "gate");
+  const gated = lane(r, "gate", id).json;
+  assert.deepEqual([gated.state, gated.next], ["verified", "close"]);
+  return gated;
+}
+const kept = (ledger) => ({
+  rounds: ledger.rounds,
+  gates: ledger.gates,
+  closedTip: ledger.closedTip,
+  gateTip: ledger.gateTip,
+});
+
+test("a verified lane parks for later: held with when verified, nothing in the worktree, board or rounds changes", () => {
+  const r = repo();
+  const { worktree } = verifiedLane(r);
+  const before = ledgerOf(r.root, "T3");
+  const head = git(worktree, "rev-parse", "HEAD");
+  const cells = board(r.root);
+  const parked = lane(r, "hold", "T3", "--for", "later", "--note", "after the release");
+  assert.equal(parked.exit, 0, parked.stderr);
+  assert.deepEqual([parked.json.state, parked.json.next], ["held", "resume"]);
+  assert.match(
+    parked.json.held,
+    new RegExp(`^parked, verified, since ${ISO}: "after the release"$`),
+  );
+  assert.equal(parked.json.prompt, undefined, "no builder is sent");
+  const ledger = ledgerOf(r.root, "T3");
+  assert.deepEqual(
+    [ledger.state, ledger.hold.for, ledger.hold.when, ledger.hold.next, ledger.hold.why],
+    ["held", "later", "verified", "close", "after the release"],
+  );
+  assert.deepEqual(kept(ledger), kept(before), "rounds, gates and tips are as they were");
+  assert.equal(git(worktree, "rev-parse", "HEAD"), head);
+  assert.equal(git(worktree, "status", "--porcelain"), "");
+  assert.equal(board(r.root), cells, "a park writes no board cell");
+});
+
+test("exec show of a parked verified lane prints held: parked, verified, since <ISO>", () => {
+  const r = repo();
+  verifiedLane(r);
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const shown = text(r, "show", "T3").split("\n");
+  assert.equal(shown[0], "T3 · show → resume (held)");
+  assert.match(shown[1], new RegExp(`^held: parked, verified, since ${ISO}$`));
+  assert.match(shown[2], /^run: .*exec resume T3 .*--note "<the OK>"$/);
+});
+
+test("resume makes a parked verified lane verified again with the same next step, no builder, the note kept", () => {
+  const r = repo();
+  verifiedLane(r);
+  const before = ledgerOf(r.root, "T3");
+  const cells = board(r.root);
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const resumed = lane(r, "resume", "T3", "--note", "go ahead");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  assert.deepEqual([resumed.json.state, resumed.json.next], ["verified", "close"]);
+  assert.equal(resumed.json.prompt, undefined, "no builder dispatch");
+  assert.match(resumed.json.noted, new RegExp(`^verified at ${ISO}: "go ahead"$`));
+  assert.match(resumed.json.run, /exec close T3 /);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.equal(ledger.hold, undefined);
+  assert.deepEqual([ledger.holds.at(-1).when, ledger.holds.at(-1).note], ["verified", "go ahead"]);
+  assert.deepEqual(kept(ledger), kept(before), "its gate records and verdicts are kept");
+  assert.equal(board(r.root), cells, "the resume writes no board cell");
+  assert.match(text(r, "show", "T3"), /^holds: noted: verified at .*: "go ahead"$/m);
+  assert.equal(lane(r, "close", "T3").json.next, "merge", "the lane closes as it would have");
+});
+
+test("a verified lane past close (next merge) parks and resumes to merge; merge refuses it while held", () => {
+  const r = repo();
+  verifiedLane(r);
+  assert.equal(lane(r, "close", "T3").json.next, "merge");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  assert.equal(ledgerOf(r.root, "T3").hold.next, "merge");
+  const merge = spawnLane(r, ["merge", "T3", "--message", "feat: land T3"]);
+  assert.equal(merge.status, 2);
+  assert.match(merge.stdout + merge.stderr, /T3's lane is "held": only a verified lane lands/);
+  const resumed = lane(r, "resume", "T3", "--note", "land it");
+  assert.deepEqual([resumed.json.state, resumed.json.next], ["verified", "merge"]);
+});
+
+test("hold --for owner on a verified lane is refused, before and after it is parked", () => {
+  const r = repo();
+  verifiedLane(r);
+  const ledger = readFileSync(
+    join(r.root, ".agentry", "run", "process", "ledger", "T3.json"),
+    "utf8",
+  );
+  const owner = lane(r, "hold", "T3", "--for", "owner");
+  assert.equal(owner.exit, 2);
+  assert.match(owner.stderr, /hold --for owner is for a builder's round/);
+  assert.equal(
+    readFileSync(join(r.root, ".agentry", "run", "process", "ledger", "T3.json"), "utf8"),
+    ledger,
+    "nothing written",
+  );
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const again = lane(r, "hold", "T3", "--for", "owner");
+  assert.equal(again.exit, 2);
+  assert.match(again.stderr, /hold --for owner is for a builder's round/);
+});

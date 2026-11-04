@@ -74,7 +74,6 @@ import {
 } from "../brief.mjs";
 import {
   answerLabel,
-  answerLine,
   answerText,
   heldText,
   humanView,
@@ -788,11 +787,21 @@ const stepLines = (steps) =>
   steps.map((s) => `${s.n}. ${s.text}${s.gate === "owner" ? " → owner OK" : ""}`).join("\n");
 const stepCount = (ledger) => ledger.steps?.length ?? 0;
 
+// A parked verified lane (field 63): held with no builder round, its next step kept in the hold.
+const isVerifiedPark = (ledger) => ledger.state === "held" && ledger.hold?.when === "verified";
+// The held line, and an owner's answer after its label: a parked verified lane's say so.
+const heldLine = (hold, total) =>
+  hold.when === "verified"
+    ? `parked, verified, since ${hold.since}${hold.why ? `: "${hold.why}"` : ""}`
+    : heldText(hold, total);
+const answerOf = (h, total) =>
+  h.when === "verified" ? `verified at ${h.resumedAt}: "${h.note}"` : answerText(h, total);
+
 // What a held lane prints right after the header: the hold, and the step that answers it.
 const heldLead = (root, ledger) =>
   ledger.state === "held" && ledger.hold
     ? {
-        held: heldText(ledger.hold, stepCount(ledger)),
+        held: heldLine(ledger.hold, stepCount(ledger)),
         run: laneLine(root, "resume", ledger.id, ' --note "<the OK>"'),
       }
     : {};
@@ -1604,12 +1613,21 @@ const saved = (path) => {
 // default that reply), or for later, a parked lane whose builder was stopped mid-round (no reply needed,
 // the worktree kept as it is). The ledger alone is written: no board cell, nothing on main. A touched main
 // refuses the owner's hold; a park records it anyway and says so (field 57): `resume` checks main again.
+// A verified lane (next close or merge) parks too, `--for later` only (field 63): no builder is out, so
+// main is not checked, and the resume makes it verified again with the same next step.
 function hold(ctx, id, agent) {
   const { root, holdFor, evidence: given, note } = ctx;
   if (!["owner", "later"].includes(holdFor)) refuse("--for takes owner or later");
   const ledger = mustLedger(root, id);
   const held = ledger.state === "held";
-  if (!held && expects(ledger) !== "report")
+  const verified =
+    isVerifiedPark(ledger) ||
+    (ledger.state === "verified" && ["close", "merge"].includes(ledger.next));
+  if (verified && holdFor === "owner")
+    refuse(
+      `hold --for owner is for a builder's round: ${id} is verified (next ${ledger.hold?.next ?? ledger.next}); park it with --for later`,
+    );
+  if (!held && !verified && expects(ledger) !== "report")
     refuse(`hold is for a builder's round: the lane is ${ledger.state} (next ${ledger.next})`);
   // The owner's review at a run's end is the owner's to answer: a park would let the lane go on without it.
   if (held && holdFor === "later" && ledger.hold?.for === "owner" && ledger.hold.when === "after")
@@ -1627,7 +1645,9 @@ function hold(ctx, id, agent) {
       `no file at ${given ?? opened}: save the builder's reply there first, or pass --evidence`,
     );
   const touched =
-    !held || holdFor === "later" ? mainTouched(ctx, ledger, ledgers.list(root)) : null;
+    !verified && (!held || holdFor === "later")
+      ? mainTouched(ctx, ledger, ledgers.list(root))
+      : null;
   if (touched && holdFor === "owner")
     refuse(
       `main touched: ${touched}: run ${laneLine(root, "report", id)} (the report stops the lane)`,
@@ -1663,7 +1683,8 @@ function resume(ctx, id) {
     refuse(
       "--redo goes back over a finished run; this hold is during one, and resume carries on in it",
     );
-  const touched = mainTouched(ctx, ledger, ledgers.list(root));
+  const parked = isVerifiedPark(ledger);
+  const touched = parked ? null : mainTouched(ctx, ledger, ledgers.list(root));
   if (touched) refuse(`main changed while ${id} was held: ${touched}: undo that, then resume`);
   const flagged = isFlagged(ctx, ledger);
   const res = stepWith(ledger, {
@@ -1680,7 +1701,8 @@ function resume(ctx, id) {
   let next = res.ledger;
   if (ledger.route) next.route = { ...ledger.route, flagged };
   next.nested = nestedTrees(root, next);
-  const board = writeBuilt(ctx, next, res);
+  // A verified lane wrote built long ago: its resume writes no board cell.
+  const board = parked ? null : writeBuilt(ctx, next, res);
   let dispatch = res.dispatch;
   if (dispatch && fresh) {
     const { agent, ...rest } = dispatch;
@@ -1692,7 +1714,7 @@ function resume(ctx, id) {
   return view(ctx, next, {
     step: "resume",
     nested: next.nested,
-    lead: { [answerLabel(answer)]: answerText(answer, stepCount(next)) },
+    lead: { [answerLabel(answer)]: answerOf(answer, stepCount(next)) },
     extra: { ...(res.reason && { why: res.reason }), ...(board && { board }) },
   });
 }
@@ -1814,7 +1836,9 @@ function show(ctx, id) {
       owned: ownedOf(root, ledger),
       ...(ledger.steps && { steps: stepLines(ledger.steps) }),
       ...(ledger.holds?.length && {
-        holds: ledger.holds.map((h) => answerLine(h, stepCount(ledger))).join("\n"),
+        holds: ledger.holds
+          .map((h) => `${answerLabel(h)}: ${answerOf(h, stepCount(ledger))}`)
+          .join("\n"),
       }),
       workflow: resolveWorkflow(spec),
       "route fixed at start": routeFixedText(routeOf(ledger)),

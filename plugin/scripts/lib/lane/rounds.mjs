@@ -47,6 +47,8 @@
 //                                             after a "during" hold or with redo; after the last step → verify
 //                                             (fresh), or the gate under exec.verify
 //   held: report / verdict / notes           → refused: the lane expects a resume; a gate is recorded, decides nothing
+//   verified (next close or merge): { type: "hold", for: "later" } → held (`when: "verified"`, the next step
+//                                             kept); no round changes. Resumed → verified, the same next step
 //
 // Every budget is the lane's, so no mix of outcomes resets one: one resend per role, one needs-context
 // round, three counted verdicts (a final after a recheck PASS is the one more), three void ones, and a
@@ -56,8 +58,9 @@
 // A round in the ledger: { n, step, role, mode, final?, resend?, guard?, agent?, from?, reason?,
 // stepRun?, redo?, brief, reportPath, tip, at } plus, once reported, { report, status | verdict, void?,
 // summary?, guards?, covered?, onlyFixCommits? }, or `held: true` when the lane was held before its report
-// was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }`; each resume appends
-// its answer to `holds[]`: { for, when, stepRun, evidence, since, resumedAt, note, redo, why? }.
+// was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }` (a parked verified
+// lane `{ for: "later", when: "verified", next, evidence, since, why? }`); each resume appends its answer to
+// `holds[]`: { for, when, stepRun, evidence, since, resumedAt, note, redo, why? }.
 //
 // The route is the ledger's snapshot from start, `route: { verify, flagged, preset, noteRounds, final,
 // rebase }`: an edit of the workflow file mid-lane changes no running lane, and a key the ledger lacks reads
@@ -399,12 +402,24 @@ const hold = (ledger, entry, reason) => {
   return settle(ledger, "resume", reason);
 };
 
+// A verified lane the conductor parks (field 63): only for later, as the owner's review is of a builder's round.
+const ownerHoldRefusal = "hold --for owner is for a builder's round";
+const parkedVerified = (ledger) => ledger.state === "held" && ledger.hold?.when === "verified";
+
 // The owner looks at a builder's round that is out (`for: "owner"`), or the conductor parks a lane whose
 // builder was stopped (`for: "later"`): the round is left unread. A held lane takes the new `for` and
-// evidence and keeps its `since`.
+// evidence and keeps its `since`. A verified lane parks with its next step kept, no round touched.
 function onHold(ledger, { for: who, evidence = null, at, why, agent }) {
+  const verifiedNow = ledger.state === "verified" && ["close", "merge"].includes(ledger.next);
+  if ((verifiedNow || parkedVerified(ledger)) && who !== "later")
+    throw new Error(`${ownerHoldRefusal}: the lane is verified`);
+  if (verifiedNow) {
+    const entry = { for: who, when: "verified", next: ledger.next, evidence, since: at };
+    return hold(ledger, { ...entry, ...(why && { why }) }, "parked, verified");
+  }
   // `agent`: the builder out on the round, so the resume can send `continue` to it.
-  if (agent) ledger.rounds[(ledger.hold?.round ?? ledger.rounds.length) - 1].agent = agent;
+  if (agent && !parkedVerified(ledger))
+    ledger.rounds[(ledger.hold?.round ?? ledger.rounds.length) - 1].agent = agent;
   if (ledger.state === "held") {
     // A new hold says its own why: the reason of the old one does not carry over.
     const { why: _old, ...kept } = ledger.hold;
@@ -441,9 +456,15 @@ function onResume(ledger, event) {
     throw new Error(
       "--redo goes back over a finished run; this hold is during one, and resume carries on in it",
     );
-  const { round: n, ...kept } = held;
+  const { round: n, next, ...kept } = held;
   ledger.holds = [...(ledger.holds ?? []), { ...kept, resumedAt: at, note, redo }];
   ledger.hold = undefined;
+  // A parked verified lane is verified again, its next step as it was: no builder is sent.
+  if (held.when === "verified") {
+    ledger.state = "verified";
+    ledger.next = next;
+    return { ledger, next, reason: "the parked lane is verified again" };
+  }
   const round = ledger.rounds[n - 1] ?? last(ledger);
   const carryOn = (stepRun, reason, extra = {}) =>
     send(

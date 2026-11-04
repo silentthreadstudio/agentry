@@ -266,6 +266,17 @@ test("a hand worktree merged --no-ff or fast-forwarded is merged-by-hand, not un
   );
 });
 
+test("a verified lane parked for later is no verified-not-merged (field 63)", () => {
+  const { root } = fresh();
+  builtBranch(root, "T3");
+  ledger(root, "T3", {
+    state: "held",
+    next: "resume",
+    hold: { for: "later", when: "verified", next: "merge", since: "2026-11-03T09:05:00.000Z" },
+  });
+  assert.ok(!nudgesOf(root).some((x) => x.kind === "verified-not-merged"));
+});
+
 test("verified-not-merged clears once the work is on main and the board has caught up", () => {
   const { root } = fresh();
   const { sha } = builtBranch(root, "T3");
