@@ -36,6 +36,7 @@ import { gateLockDir, heldSlots } from "../gate-lock.mjs";
 import { idleOf } from "../idle.mjs";
 import { SKILL_DIR, skillExists } from "../merge/rows.mjs";
 import * as sessionChecksFile from "../session-checks.mjs";
+import { stackOf } from "../stack.mjs";
 import { plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
@@ -67,6 +68,7 @@ const NOTE_LINES = 3; // lines of the note that start prints
 const MAX_HELD = 3; // held and parked lanes start prints, the rest counted
 const NOTE_COLUMNS = 100; // a failed close check's line, note included, as start prints it
 const MAX_FAILED = 3; // failed close checks start names, the rest counted
+const MAX_STACK = 3; // due stacks start names, the rest counted
 
 // The mode in `.agentry/config.json` (null: none set) and, when the reader refuses a config file, its error:
 // `lane exec` refuses the same file, so start says so rather than reading it as no mode.
@@ -87,6 +89,15 @@ function recallFor(root, task) {
 }
 
 const summary = (l) => ({ id: l.id, state: l.state, next: l.next && nextStep(l.next) });
+// Start's summary also says what a stacked lane is on and what is due on it (`stack.mjs`): `on` (null for a
+// lane that is not stacked) and `restack` ("parent", "main", "orphan" or null).
+const stackSummary = (root, all) => (l) => ({
+  ...summary(l),
+  on: l.on ?? null,
+  restack: stackOf(root, l, all).due,
+});
+// The words a due stack's line says about the parent.
+const DUE_WORDS = { parent: "moved", main: "landed" };
 // A ledger whose episode was not written: one with a payload waiting, and any finished lane (merged, closed,
 // stopped) that never wrote one (merged without an exec close, stopped).
 const pendingEpisodes = (all) =>
@@ -159,7 +170,7 @@ function start({ root, spec, model }) {
     ledgers: [
       ...open.filter((l) => l.state === "held"),
       ...open.filter((l) => l.state !== "held"),
-    ].map(summary),
+    ].map(stackSummary(runRoot, all)),
     mergedToday: mergedToday(all),
     gateSlots: heldSlots(gateLockDir(runRoot)),
     ...checksField(runRoot, { root, spec }),
@@ -300,9 +311,21 @@ function renderStart(s, { name, root }) {
   if (lanes.length || s.mergedToday)
     addList(
       "lanes: ",
-      lanes.length ? lanes.map((l) => `${l.id} ${l.state}`) : ["none open"],
+      lanes.length
+        ? lanes.map((l) => `${l.id} ${l.state}${l.on ? ` on ${l.on}` : ""}`)
+        : ["none open"],
       ` · ${s.mergedToday} merged today`,
     );
+  // Each stacked lane with something due, after the lanes it is one of.
+  const due = s.ledgers.filter((l) => l.restack);
+  for (const l of due.slice(0, MAX_STACK)) {
+    // A closed parent is not among the open ledgers start lists.
+    const state = s.ledgers.find((p) => p.id === l.on)?.state ?? "closed or gone";
+    const what = DUE_WORDS[l.restack] ?? `is ${state}`;
+    add(`stack: ${l.id} on ${l.on}: ${l.on} ${what} → ${nextStep(`lane exec restack ${l.id}`)}`);
+  }
+  if (due.length > MAX_STACK)
+    add(`stack: +${due.length - MAX_STACK} more → ${nextStep("lane session start --json")}`);
   if (s.gateSlots.length)
     addList(
       "gate: ",

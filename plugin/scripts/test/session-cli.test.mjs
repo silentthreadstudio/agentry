@@ -115,7 +115,9 @@ test("start --json carries prompt, mode, status, recall, questions and ledgers",
     "status",
   ]);
   assert.equal(data.mode, null);
-  assert.deepEqual(data.ledgers, [{ id: "T1", state: "building", next: "report" }]);
+  assert.deepEqual(data.ledgers, [
+    { id: "T1", state: "building", next: "report", on: null, restack: null },
+  ]);
   assert.equal(data.mergedToday, 0);
 });
 
@@ -142,6 +144,53 @@ test("lanes: lists the open lanes only, then how many merged today; --json keeps
   const quiet = fresh();
   ledger(quiet, "M1", { state: "merged", next: null, merge: { at: new Date().toISOString() } });
   assert.match(session(quiet, "start").stdout, /^lanes: none open · 1 merged today$/m);
+});
+
+test("start shows a stacked lane on its parent and a line per due stack, at most 3, then the count", () => {
+  const root = fresh();
+  const main = git(root, "rev-parse", "main");
+  for (const id of ["P1", "P3"]) git(root, "branch", `agentry/${id}`, "main");
+  ledger(root, "P1", { state: "verified", next: "merge" });
+  ledger(root, "P2", { state: "merged", next: null, merge: { at: "2026-01-01T00:00:00.000Z" } });
+  ledger(root, "P3", { state: "stopped", next: "stop" });
+  ledger(root, "S1", { on: "P1", base: main }); // on P1's tip: nothing due
+  ledger(root, "S2", { on: "P1", base: "0".repeat(40) }); // P1 moved
+  ledger(root, "S3", { on: "P2", base: main }); // P2 landed
+  ledger(root, "S4", { on: "P3", base: main }); // P3 is stopped
+  ledger(root, "S5", { on: "P1", base: "1".repeat(40) }); // P1 moved, past the cap
+  const lines = session(root, "start").stdout.trimEnd().split("\n");
+  const at = lines.findIndex((l) => l.startsWith("lanes: "));
+  const lanes = lines.slice(
+    at,
+    lines.findIndex((l, i) => i > at && !l.startsWith("  ")),
+  );
+  assert.match(lanes.join(" "), /S1 building on P1, S2 building on P1/);
+  assert.doesNotMatch(lanes.join(" "), /P1 verified on/);
+  assert.deepEqual(
+    lines.filter((l) => l.startsWith("stack: ")),
+    [
+      "stack: S2 on P1: P1 moved → lane exec restack S2",
+      "stack: S3 on P2: P2 landed → lane exec restack S3",
+      "stack: S4 on P3: P3 is stopped → lane exec restack S4",
+      "stack: +1 more → lane session start --json",
+    ],
+  );
+  assert.ok(
+    lines.findIndex((l) => l.startsWith("stack: ")) > at,
+    "the stack lines come after lanes:",
+  );
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  const by = Object.fromEntries(data.ledgers.map((l) => [l.id, [l.on, l.restack]]));
+  assert.deepEqual(by, {
+    P1: [null, null],
+    P2: [null, null],
+    P3: [null, null],
+    S1: ["P1", null],
+    S2: ["P1", "parent"],
+    S3: ["P2", "main"],
+    S4: ["P3", "orphan"],
+    S5: ["P1", "parent"],
+  });
 });
 
 test("start ranks this repo's remembered facts against the work in flight", () => {
