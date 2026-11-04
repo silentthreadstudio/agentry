@@ -2195,6 +2195,9 @@ function hold(ctx, id, agent) {
     refuse(
       `${id} waits for the owner ${ledger.hold.when === "verdict" ? "at its notes cap" : `after step ${ledger.hold.stepRun?.[1] ?? "?"}`}: resume it with the owner's words (exec resume ${id} --note "…"), or keep it held`,
     );
+  // A context hold is answered by the fact: another hold would drop its re-dispatch (R1d-38 r2 N2).
+  if (held && ledger.hold?.for === "context")
+    refuse(`${id} is held for more context: resume it with --note "<the fact>"`);
   // A guard hold is answered by fixing main and reporting again, not by the owner's review (R1d-29 N2).
   if (held && holdFor === "owner" && ledger.hold?.for === "guard")
     refuse(`the lane is held for the guard: fix it and run ${laneLine(root, "report", id)}`);

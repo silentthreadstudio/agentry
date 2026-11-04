@@ -785,6 +785,25 @@ test("owns --add on a lane held for the context: appended, a path already owned 
   assert.match(readFileSync(resumed.brief, "utf8"), /- `cfg\/keys\.json` \(new\)/);
 });
 
+test("hold on a lane held for more context is refused, the hold kept, so the resume still sends the fact", () => {
+  // R1d-38 r2 N2: hold --for later re-parked it, and the resume then sent continue.
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3", "--agent", "b1").json;
+  ask(out);
+  assert.equal(lane(r, "report", "T3").json.state, "held");
+  const ledger = join(r.root, ".agentry", "run", "process", "ledger", "T3.json");
+  const before = readFileSync(ledger, "utf8");
+  for (const holdFor of ["later", "owner"]) {
+    const refused = lane(r, "hold", "T3", "--for", holdFor);
+    assert.equal(refused.exit, 2);
+    assert.match(refused.stderr, /T3 is held for more context: resume it with --note "<the fact>"/);
+  }
+  assert.equal(readFileSync(ledger, "utf8"), before);
+  assert.equal(lane(r, "resume", "T3", "--note", "the fact").json.next, "needs-context");
+});
+
 test("owns --add counts a path an owned entry already covers as owned: a directory, ./ and a trailing /", () => {
   // R1d-38 r2 Q5: with lib/ owned, lib/a.txt and ./lib/ were appended; ./three.txt beside three.txt too.
   const r = repo();
