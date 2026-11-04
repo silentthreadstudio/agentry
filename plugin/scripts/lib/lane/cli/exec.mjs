@@ -1453,14 +1453,25 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     carried = null,
     adopted = null,
     calls = [],
+    rebases = null,
+    first = null,
     shown = {},
     warnings = [],
     exit = 0,
-  } = again ? again(tree.path) : {};
+  } = again ? again(tree.path, base) : {};
   let board;
   let moves;
   try {
     ({ board, moves } = boardEvent(ctx, "dispatched", id));
+    // A first round past the build (a verified lane's carry, checked): the item is built already.
+    if (first) {
+      const built = boardEvent(ctx, "built", id);
+      board = {
+        writes: [...board.writes, ...built.board.writes],
+        skipped: [...board.skipped, ...built.board.skipped],
+      };
+      moves = [...moves, ...built.moves];
+    }
   } catch (e) {
     remove(root, { ...tree, force: true });
     throw e;
@@ -1512,6 +1523,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     ...(carried && { carried }),
     ...(adopted && { adopted }),
     ...(calls.length && { calls }),
+    ...(rebases && { rebases }),
     state: "building",
     next: "build",
   };
@@ -1526,7 +1538,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     .filter(Boolean)
     .join("\n");
   const hint = proseModelHint(found.block, ledger.steps);
-  ledger = dispatchNext(ctx, ledger, begin(ledger.steps).dispatch);
+  ledger = dispatchNext(ctx, ledger, first ?? begin(ledger.steps).dispatch);
   ledgers.write(root, ledger);
   const res = view(ctx, ledger, {
     step: adopted ? "adopt" : restarted ? "restart" : "start",
@@ -1687,12 +1699,29 @@ function rebasing(worktree) {
 // `=` (the same patch), `!` (changed), `<` (dropped) or `>` (added).
 const RANGE_PAIR = /^\s*(?:\d+|-+):\s+(?:[0-9a-f]+|-+)\s+([=!<>])\s/;
 
+// A `git range-diff` result `res` kept as lane `id`'s `logs/range-diff-<n>.txt` (or why it failed):
+// `{ file, changed }`, `changed` when a pair is not marked `=`, or git could not compute it.
+function keepRangeDiff(root, id, n, res) {
+  const file = join(ledgers.runDir(root, id), "logs", `range-diff-${n}.txt`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(
+    file,
+    res.status === 0 ? res.stdout : `git range-diff failed: ${res.stderr.trim()}\n`,
+  );
+  const changed =
+    res.status !== 0 ||
+    res.stdout
+      .split("\n")
+      .some((line) => RANGE_PAIR.exec(line)?.[1] && RANGE_PAIR.exec(line)[1] !== "=");
+  return { file, changed };
+}
+
 // The rebase the last `rebases[]` entry started, finished at `tip`: the base becomes the new merge base
 // with main, and the range-diff of old base..old tip against new base..new tip goes to
-// `logs/range-diff-<n>.txt`. `changed` when a pair is not marked `=`, or git cannot compute it. The main
-// guard's start moves to the new base, up to main's HEAD as the entry recorded it, and its snapshot with it
-// (field 93): a path clean on main now is as HEAD holds it, so its start entry goes; a path still dirty
-// keeps its start, so an edit made since still trips. Changes `ledger` in place; returns `changed`.
+// `logs/range-diff-<n>.txt`. The main guard's start moves to the new base, up to main's HEAD as the entry
+// recorded it, and its snapshot with it (field 93): a path clean on main now is as HEAD holds it, so its
+// start entry goes; a path still dirty keeps its start, so an edit made since still trips. Changes
+// `ledger` in place; returns `changed`.
 function finishRebase(root, ledger, tip) {
   const n = ledger.rebases.length;
   const entry = ledger.rebases[n - 1];
@@ -1705,17 +1734,7 @@ function finishRebase(root, ledger, tip) {
         `${base}..${tip}`,
       ])
     : { status: 1, stdout: "", stderr: `no merge base of ${ledger.mainBranch} and ${short(tip)}` };
-  const file = join(ledgers.runDir(root, ledger.id), "logs", `range-diff-${n}.txt`);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(
-    file,
-    res.status === 0 ? res.stdout : `git range-diff failed: ${res.stderr.trim()}\n`,
-  );
-  const changed =
-    res.status !== 0 ||
-    res.stdout
-      .split("\n")
-      .some((line) => RANGE_PAIR.exec(line)?.[1] && RANGE_PAIR.exec(line)[1] !== "=");
+  const { file, changed } = keepRangeDiff(root, ledger.id, n, res);
   Object.assign(entry, { toBase: base ?? entry.fromBase, toTip: tip, changed, rangeDiff: file });
   if (base) ledger.base = base;
   // The main commits the branch now sits on are its own history: the guard counts main's moves from there,
@@ -2788,11 +2807,55 @@ function lastReport(ledger, runs) {
   return candidates.map(moved).find((p) => saved(p)) ?? null;
 }
 
+// Is the old lane's carry its verified work: its last verdict passed with nothing after it but the gate
+// or the close, on the very tip carried, and no uncommitted work beside it (field 94)?
+function carriesVerified(ledger, tip, files) {
+  const settled = ["gate", "close", "merge"].includes(ledger.next) || isVerifiedPark(ledger);
+  const trusted = ledger.next === "gate" ? ledger.gateTip : ledger.closedTip;
+  return (
+    settled &&
+    PASSES.includes(verdicts(ledger).at(-1)?.verdict) &&
+    Boolean(tip) &&
+    trusted === tip &&
+    files.length === 0
+  );
+}
+
+// A verified lane's carry, checked as a rebase's resolution is: the range-diff of the old base..tip
+// against the new `base`..HEAD of `worktree` as the new lane's first `rebases[]` entry, and a fresh
+// verifier (`resolve`) as its first round.
+function carryCheck(root, id, { base: fromBase, tip: fromTip }, base, worktree) {
+  const tip = headOf(worktree);
+  const res = git(root, ["range-diff", "--no-color", `${fromBase}..${fromTip}`, `${base}..${tip}`]);
+  const { file, changed } = keepRangeDiff(root, id, 1, res);
+  return {
+    rebases: [
+      {
+        fromBase,
+        fromTip,
+        mainHead: base,
+        at: now(),
+        toBase: base,
+        toTip: tip,
+        changed,
+        rangeDiff: file,
+      },
+    ],
+    first: {
+      step: "resolve",
+      role: "verify",
+      mode: "fresh",
+      reason: "a verified lane's work carried onto main: a verifier reads the carry",
+    },
+  };
+}
+
 // A lane started again (field 69): not merged and no agent out, its ledger and run files archived as
 // `<id>.<n>` (a hold's `holds[]` with them), its worktree removed (only `cleanup.disposable` ignored files
 // may go), its branch kept as `agentry/<id>.<n>`, and a fresh `agentry/<id>` cut from main with every
 // `start` record. `--carry` picks the old branch's commits and applies its uncommitted diff; the kept
-// branch goes once all of it is carried, and a stop leaves the conflict in the new worktree (exit 1).
+// branch goes once all of it is carried, and a stop leaves the conflict in the new worktree (exit 1). A
+// verified lane carried whole goes to the resolve check, its board verdict kept; any other a build round.
 function restart(ctx, id) {
   const { root, spec, carry: withWork } = ctx;
   refuseMidLand(root);
@@ -2846,8 +2909,7 @@ function restart(ctx, id) {
   const keptName = left.tip ? branchOf(`${id}.${n}`) : null;
   let kept = null;
   let drop = false;
-  const again = (path) => {
-    const warnings = [clearVerdict(ctx, id)].filter(Boolean);
+  const again = (path, base) => {
     const restarted = {
       from: `${id}.${n}`,
       ledger: archived.ledger,
@@ -2857,10 +2919,16 @@ function restart(ctx, id) {
     if (!withWork)
       return {
         restarted: { ...restarted, branch: kept },
-        warnings,
+        warnings: [clearVerdict(ctx, id)].filter(Boolean),
         shown: { restarted: `archived as ${id}.${n}; the old branch is kept as ${kept ?? "none"}` },
       };
     const res = carry(path, { base: old.base, tip: left.tip, diff });
+    const checked =
+      res.ok && carriesVerified(old, left.tip, work.files)
+        ? carryCheck(root, id, { base: old.base, tip: left.tip }, base, path)
+        : null;
+    // The verdict on the board stands for a checked carry, as it does for a rebase.
+    const warnings = checked ? [] : [clearVerdict(ctx, id)].filter(Boolean);
     const report = lastReport(old, archived.runs);
     const carried = {
       commits: left.commits,
@@ -2876,12 +2944,14 @@ function restart(ctx, id) {
     return {
       restarted: { ...restarted, branch },
       carried,
+      ...checked,
       warnings,
       exit: res.ok ? 0 : 1,
       shown: {
         restarted: `archived as ${id}.${n}${branch ? `; the old branch is kept as ${branch}` : ""}`,
         carried: `${carried.commits} commits, ${carried.files} files uncommitted${report ? `; last report ${report}` : ""}`,
         ...(res.conflict && { conflict: `${res.conflict} in ${path}` }),
+        ...(checked && { rangeDiff: checked.rebases[0].rangeDiff }),
       },
     };
   };
@@ -2889,7 +2959,7 @@ function restart(ctx, id) {
   try {
     ({ kept } = retire(root, old, n));
     // The owner's calls are the lane's, not the attempt's: the new ledger keeps them (field 90).
-    const withCalls = (path) => ({ calls: old.calls ?? [], ...again(path) });
+    const withCalls = (path, base) => ({ calls: old.calls ?? [], ...again(path, base) });
     const res = cut({ ...ctx, on: null, cite: old.cite ?? [] }, id, {
       found,
       mainBranch,

@@ -571,3 +571,96 @@ test("an ignored directory holding a file still refuses the restart, naming it",
   assert.match(res.stderr, /holds 1 ignored file\(s\) a restart would delete \(exports\/\)/);
   assert.ok(existsSync(join(out.worktree, "exports", "playtest", "run.log")));
 });
+
+// ---- a verified lane's restart (field 94) ---------------------------------------------------------
+
+const row = (root, id) =>
+  readFileSync(join(root, "plan", "BOARD.md"), "utf8")
+    .split("\n")
+    .find((l) => l.startsWith(`| ${id} `));
+
+// T3 built (three.txt committed) and judged `verdict`; with PASS its gate is run and it is closed.
+function judged(r, verdict = "PASS") {
+  let out = lane(r, "start", "T3").json;
+  commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  writeFileSync(out.reportPath, "DONE\nchanged three.txt\nused_memories: none\n");
+  out = lane(r, "report", "T3").json;
+  writeFileSync(out.reportPath, `Checked.\nused_memories: none\nVerdict: ${verdict}\n`);
+  out = lane(r, "verdict", "T3").json;
+  if (verdict !== "PASS") return out;
+  assert.equal(lane(r, "gate", "T3").exit, 0);
+  assert.equal(lane(r, "close", "T3").exit, 0);
+  assert.equal(ledgerOf(r.root, "T3").state, "verified");
+  return out;
+}
+
+test("restart --carry of a verified lane carried cleanly goes to the resolve check, never a build", () => {
+  const r = repo();
+  judged(r);
+  const oldTip = tipOf(r.root, "agentry/T3");
+  const oldBase = ledgerOf(r.root, "T3").base;
+  commitFile(r.root, "other.txt", "x\n", "chore: main moves");
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual(
+    [res.json.step, res.json.next, res.json.state],
+    ["restart", "resolve", "verifying"],
+  );
+  const ledger = ledgerOf(r.root, "T3");
+  assert.deepEqual(
+    ledger.rounds.map((x) => [x.step, x.role, x.mode]),
+    [["resolve", "verify", "fresh"]],
+  );
+  // The rebase recheck: the range-diff of the old base..tip against the new one, which the brief names.
+  const [entry] = ledger.rebases;
+  const newTip = tipOf(r.root, "agentry/T3");
+  assert.deepEqual(
+    [entry.fromBase, entry.fromTip, entry.toBase, entry.toTip],
+    [oldBase, oldTip, tipOf(r.root, "main"), newTip],
+  );
+  assert.match(readFileSync(entry.rangeDiff, "utf8"), /^1: +[0-9a-f]+ = 1: +[0-9a-f]+ feat: three/);
+  assert.equal(res.json.rangeDiff, entry.rangeDiff);
+  const brief = readFileSync(res.json.brief, "utf8");
+  assert.match(brief, /^# Resolve check T3, round 1/);
+  assert.ok(brief.includes(entry.rangeDiff), brief);
+  // The board: built, its verdict standing for the carried work.
+  assert.match(row(r.root, "T3"), /^\| T3 +\| verify +\| PASS +\|$/);
+  // The check passes: the gate, then the close, as after a rebase.
+  writeFileSync(
+    res.json.reportPath,
+    "The carry is the same patch.\nused_memories: none\nVerdict: PASS\n",
+  );
+  assert.equal(lane(r, "verdict", "T3").json.next, "gate");
+  assert.equal(lane(r, "gate", "T3").exit, 0);
+  assert.equal(ledgerOf(r.root, "T3").state, "verified");
+});
+
+test("restart --carry of a verified lane whose carry conflicts keeps today's build round", () => {
+  const r = repo();
+  judged(r);
+  commitFile(r.root, "three.txt", "a\nmain\nc\n", "fix: three on main");
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 1, res.stderr);
+  assert.deepEqual([res.json.next, res.json.state], ["build", "building"]);
+  assert.equal(ledgerOf(r.root, "T3").rebases, undefined);
+  assert.match(row(r.root, "T3"), /^\| T3 +\| doing +\| +\|$/);
+});
+
+test("restart --carry of a lane whose last verdict is FAIL still builds", () => {
+  const r = repo();
+  assert.equal(judged(r, "FAIL").next, "fix");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual([res.json.next, res.json.state], ["build", "building"]);
+  assert.equal(ledgerOf(r.root, "T3").rebases, undefined);
+});
+
+test("restart --carry of a lane with no verdict still builds", () => {
+  const r = repo();
+  worked(r);
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual([res.json.next, res.json.state], ["build", "building"]);
+  assert.equal(ledgerOf(r.root, "T3").rounds[0].step, "build");
+});
