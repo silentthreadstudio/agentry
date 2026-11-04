@@ -18,7 +18,8 @@ import { isMemoryCommit } from "../own-memory.mjs";
 import { FRESH, now, ok, red, save, setMerge, short, tipOf } from "./lane.mjs";
 import { commitsRow } from "./rows.mjs";
 
-// The board's own files as the lane's guard reads them (exec's `boardPaths`, field 75): each kind's table,
+// Twin of `boardPaths` in lane/cli/exec.mjs, kept in step with it until both move into one shared module.
+// The board's own files as the lane's guard reads them (field 75): each kind's table,
 // contract blocks and create blocks and `status.note` as paths, each kind's `at.files` and `file.glob` (its
 // `{id}` any name) as globs, from the spec's root; one that leaves the repository is never one. A path
 // test: (path) => boolean, for a repo-relative, `/`-separated path.

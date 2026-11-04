@@ -1,5 +1,6 @@
 // merge/record — the land's last two steps (plan R1b-5): `record` writes the lifecycle's `merged` event
-// to the board (exec's carried writes put back first) and stops on a new `board check` finding;
+// to the board (the owner's recorded board writes and exec's carried writes put back first) and stops on
+// a new `board check` finding;
 // `commit` makes the one board commit of exactly those files, through the repo's own hooks.
 //
 // What the record writes is worked out first, in a scratch copy of the board, and its sha256 per file
@@ -23,7 +24,14 @@ import { boardReport } from "../../process/status.mjs";
 import { WriteError } from "../../process/write.mjs";
 import { putCells, sha256 } from "../carry-io.mjs";
 import { boardCommit, commitOf, restoreFiles, subjectOf, textAt } from "../land.mjs";
-import { backStop, conflictLine, dropNext, putBackAllow } from "./carry.mjs";
+import {
+  backStop,
+  carryWritesStep,
+  conflictLine,
+  dropNext,
+  putBackAllow,
+  releaseWrites,
+} from "./carry.mjs";
 import { now, ok, red, save, setMerge, short, skip } from "./lane.mjs";
 
 // A finding is "new" when its rule fails for an item it did not fail for before the board write. The
@@ -38,19 +46,22 @@ const unrecorded = (lane, stop) => {
 };
 
 // The board as the record would leave it, worked out in a scratch copy under the run dir (inside the
-// repo, so the lifecycle's git calls work there; the run dir is ignored): exec's carried cells set
-// again, then the `merged` event. `{ texts: Map(file → text), result }` for each file that changes, or
+// repo, so the lifecycle's git calls work there; the run dir is ignored): main's board as it is (the
+// recorded board writes back on it), exec's carried cells set again, then the `merged` event. `{ texts:
+// Map(file → text), bases: Map(file → main's text as copied), result }` for each file that changes, or
 // `{ stop }` with its row pushed. Main is not touched.
 function planRecord(lane, rows) {
   const { root, spec, id, kind } = lane;
   const merge = lane.ledger.merge;
-  const carried = merge.carry?.files ?? [];
+  const carried = [...(merge.carry?.files ?? []), ...(merge.writes?.files ?? [])];
   const scratch = mkdtempSync(join(runDir(root, id), "record-"));
+  const bases = new Map();
   try {
     const files = [...new Set([...boardFiles(spec, readProcess({ root, spec })), ...carried])];
     for (const file of files.filter((f) => existsSync(join(root, f)))) {
       mkdirSync(dirname(join(scratch, file)), { recursive: true });
       copyFileSync(join(root, file), join(scratch, file));
+      bases.set(file, readFileSync(join(scratch, file), "utf8"));
     }
     if (merge.carry) {
       const back = putCells(scratch, spec, merge.carry.cells);
@@ -59,7 +70,7 @@ function planRecord(lane, rows) {
           red("record", "exec's board writes do not apply on top of the picks", [
             ...back.conflicts.map(conflictLine),
             ...(back.reason ? [back.reason] : []),
-            `they stay in the ledger (merge.carry: ${carried.join(", ")})`,
+            `they stay in the ledger (merge.carry: ${merge.carry.files.join(", ")})`,
           ]),
         );
         return { stop: { exit: 1, next: dropNext(lane) } };
@@ -86,7 +97,7 @@ function planRecord(lane, rows) {
     if (kind !== spec.lifecycle.kind)
       for (const s of result.skipped)
         if (s.what === "handoff") s.why = `no handoff: ${kind} is outside the tree`;
-    return { texts, result };
+    return { texts, bases, result };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -104,13 +115,14 @@ export function recordStep(lane, rows) {
   const before = new Set(
     boardReport({ root, spec, model: readProcess({ root, spec }) }).findings.map(findingKey),
   );
+  const writes = carryWritesStep(lane, rows);
+  if (writes) return writes;
   const plan = planRecord(lane, rows);
   if (plan.stop) return plan.stop;
-  const { texts, result } = plan;
+  const { texts, bases, result } = plan;
   const files = [...texts.keys()];
-  const changed = files.filter(
-    (file) => readFileSync(join(root, file), "utf8") !== textAt(root, "HEAD", file),
-  );
+  const baseOf = (file) => (bases.has(file) ? bases.get(file) : textAt(root, "HEAD", file));
+  const changed = files.filter((file) => readFileSync(join(root, file), "utf8") !== baseOf(file));
   if (changed.length > 0) {
     rows.push(
       red("record", `changed on main while the board write was worked out: ${changed.join(", ")}`),
@@ -123,10 +135,18 @@ export function recordStep(lane, rows) {
   // `on`: the commit the board commit goes on, so a commit the land accepted after its gate (the owner's
   // board fix) is never taken for the land's own board commit.
   const on = commitOf(root, "HEAD");
-  setMerge(lane, { step: "recording", record: { files, sha256: hashes, on } });
+  // `base`: what main held of a file before the write when that is not HEAD's (a recorded board write put
+  // back), so a rerun after a kill knows that text as its own too; the ledger still holds the write.
+  const base = Object.fromEntries(
+    files
+      .filter((file) => baseOf(file) !== null && baseOf(file) !== textAt(root, "HEAD", file))
+      .map((file) => [file, sha256(baseOf(file))]),
+  );
+  setMerge(lane, { step: "recording", record: { files, sha256: hashes, base, on } });
   for (const file of files) writeFileSync(join(root, file), texts.get(file));
   lane.files = files;
-  const carried = lane.ledger.merge.carry?.files ?? [];
+  const merge = lane.ledger.merge;
+  const carried = [...(merge.carry?.files ?? []), ...(merge.writes?.files ?? [])];
   const after = boardReport({ root, spec, model: readProcess({ root, spec }) });
   const fresh = after.findings.filter((f) => !before.has(findingKey(f)));
   if (fresh.length > 0) {
@@ -187,7 +207,9 @@ export function commitStep(lane, rows) {
     return unrecorded(lane, { exit: 1, next });
   }
   // The owner's guard.allow edits go back before the lane is "merged": a run killed in between finds them
-  // in the ledger still. The carried board writes are in this commit now: the ledger lets go of them.
+  // in the ledger still. The carried board writes, the recorded ones too, are in this commit now: the
+  // ledger lets go of them.
+  if (lane.carriedWrites) releaseWrites(lane);
   const back = putBackAllow(lane);
   if (back) rows.push(back);
   // An old record stops here with the board commit made and the ledger still recording: the rerun proves

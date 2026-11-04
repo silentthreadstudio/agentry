@@ -16,7 +16,10 @@
 // untracked file under `guard.allow` is carried the same way (its patch is a new-file patch; set aside
 // is deleting it), and so is a file only `agentry board add` / `board set --apply` changed, by the
 // content ids they recorded (`merge.writes`, the same record plus the cells for a pick that touches
-// the file). Those two are never committed by the land: they go back to the owner uncommitted.
+// the file). A new `guard.allow` file is never committed by the land: it goes back to the owner
+// uncommitted. The recorded board writes are the owner's board record (field 79: a verdict the board
+// check needs): they go back onto main at the start of the record, so the check sees them and the
+// board commit holds them; with the lifecycle off there is no board commit, and they go back uncommitted.
 import { existsSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { boardFiles, cellText, diffBoard, strayChanges } from "../../process/board-diff.mjs";
@@ -296,8 +299,12 @@ export function mainRow(lane, { carry = false, ignore = [] } = {}) {
   const fate = carry ? "set aside for the land, then put back as they were" : "left as they are";
   const allowLine =
     kept.length > 0 ? [`${lane.allowFiles.join(", ")}: uncommitted, in guard.allow; ${fate}`] : [];
+  const writeFate =
+    carry && lane.spec.lifecycle
+      ? "set aside for the land, then carried into the board commit"
+      : fate;
   const writeLine = lane.writes.files.map(
-    (file) => `${file}: written by ${lane.writes.by[file].join("; ")}, uncommitted; ${fate}`,
+    (file) => `${file}: written by ${lane.writes.by[file].join("; ")}, uncommitted; ${writeFate}`,
   );
   const extras = [
     ...(kept.length > 0 ? ["guard.allow edits"] : []),
@@ -462,6 +469,7 @@ const ALLOW = {
   noun: "guard.allow file(s)",
   edits: "guard.allow edits",
   patch: "merge-allow",
+  after: "put back after the land",
   files: (lane) => lane.allowFiles ?? [],
   untracked: (lane) => lane.allowNew ?? [],
   cells: () => undefined,
@@ -472,6 +480,7 @@ const WRITES = {
   noun: "board-write file(s)",
   edits: "board writes",
   patch: "merge-writes",
+  after: "put back for the board commit",
   files: (lane) => lane.writes?.files ?? [],
   untracked: () => [],
   cells: (lane) => lane.writes?.cells,
@@ -515,7 +524,7 @@ function takeAside(lane, rows, kind) {
   }
   rows.push(
     ok(kind.key, `${files.length} ${kind.noun} set aside, recorded in the ledger first`, [
-      `${files.join(", ")}: sha256 ${made.sha256.slice(0, 12)}…, put back after the land`,
+      `${files.join(", ")}: sha256 ${made.sha256.slice(0, 12)}…, ${lane.spec.lifecycle ? kind.after : "put back after the land"}`,
     ]),
   );
   return null;
@@ -535,11 +544,13 @@ function keepPatch(lane, name, patch) {
  *  back (a run killed after it put them back) are left. A file a pick changed is merged back by cell when
  *  the record has its cells. Edits that no longer apply, or whose record fails its sha256, are saved to a
  *  patch file and said (a warning: the land is not undone for them, and nothing is lost). A row, or null
- *  when the ledger holds none. */
-function putBackAside(lane, kind) {
+ *  when the ledger holds none. `hold`: the record is kept (the board commit lets go of it), and edits that
+ *  do not go back are a red row, nothing saved: the stop's own put-back saves them. */
+function putBackAside(lane, kind, { hold = false } = {}) {
   const held = lane.ledger.merge?.[kind.key];
   if (!held) return null;
-  if (isOld(held)) return oldRecord(lane, kind, held);
+  if (isOld(held))
+    return hold ? red(kind.key, `${kind.edits}: ${OLD_LINE}`) : oldRecord(lane, kind, held);
   const files = held.files.join(", ");
   const [cells, added] = [held.cells ?? [], held.rows ?? []];
   const both = bothKinds(held);
@@ -547,7 +558,7 @@ function putBackAside(lane, kind) {
   const apply = (...flags) => applyPatch(lane.root, held.patch, ...flags);
   const intactRecord = sha256(held.patch) === held.sha256;
   const done = (row) => {
-    setMerge(lane, { [kind.key]: undefined }); // only once the edits are on main or in a patch file
+    if (!hold) setMerge(lane, { [kind.key]: undefined }); // only once the edits are on main or in a patch file
     return row;
   };
   if (intactRecord && apply("--reverse", "--check").status === 0)
@@ -574,10 +585,12 @@ function putBackAside(lane, kind) {
       );
     }
   }
-  const file = keepPatch(lane, kind.patch, held.patch);
   const why = intactRecord
     ? "they no longer apply to the landed files"
     : "the ledger's copy fails its sha256 check";
+  if (hold)
+    return red(kind.key, `${kind.edits} cannot go into the board commit (${files}): ${why}`);
+  const file = keepPatch(lane, kind.patch, held.patch);
   return done(
     warn(kind.key, `${kind.edits} were not put back (${files}): ${why}`, [
       `your edits are saved in ${file}: look at them, then git apply it by hand`,
@@ -597,6 +610,7 @@ const bothMessage = (file) => `${file} has both cells and rows; this is a bug, n
 // A record without `enc: "bytes"` was written before the patch was kept as bytes (a text patch): it is
 // never applied, whatever it holds.
 const isOld = (held) => held.enc !== "bytes";
+const OLD_LINE = "recorded by an older version (text patch); land again to restore it";
 /** Does the ledger's `merge` hold a set-aside record written by an older version? `--drop-carry` drops it. */
 export const hasOldRecord = (merge) =>
   [ALLOW, WRITES].some((kind) => merge?.[kind.key] && isOld(merge[kind.key]));
@@ -664,6 +678,28 @@ function oldRecord(lane, kind, held) {
     `recorded by an older version (text patch) → restore it by hand from ${other ? `${file} or ${other} (the text could be either: git apply the one that fits)` : file}, then rerun with --drop-carry`,
   );
 }
+
+/** The record's first step: the recorded board writes (`merge.writes`) back onto main, the ledger keeping
+ *  them, so the board check reads the board with them and the board commit holds them (field 79). A row
+ *  per file; a stop when they do not go back (the stop's put-back then saves them, never lost). */
+export function carryWritesStep(lane, rows) {
+  const held = lane.ledger.merge?.writes;
+  if (!held) return null;
+  const back = putBackAside(lane, WRITES, { hold: true });
+  if (back.mark === "red") {
+    rows.push({ ...back, step: "carry" });
+    return { exit: 1, next: "look at the kept patch the carry row names, then land again" };
+  }
+  lane.carriedWrites = true;
+  for (const file of held.files)
+    rows.push(ok("carry", `${file}: your recorded board write, carried into the board commit`));
+  return null;
+}
+
+/** Let go of the recorded board writes once the board commit holds them. */
+export const releaseWrites = (lane) => {
+  if (lane.ledger.merge?.writes) setMerge(lane, { writes: undefined });
+};
 
 const WORST = ["red", "warn", "ok"];
 /** Put back what the ledger holds of the owner's `guard.allow` files and of board-script writes: one

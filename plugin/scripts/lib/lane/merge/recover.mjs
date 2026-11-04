@@ -25,7 +25,7 @@ import {
   textAt,
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
-import { backStop, putBackAllow } from "./carry.mjs";
+import { backStop, putBackAllow, releaseWrites } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
 import { afterLand, done, landNext, now, ok, red, save, setMerge, short } from "./lane.mjs";
 
@@ -47,8 +47,12 @@ function writesLeft({ root, ledger }) {
   for (const file of record.files) {
     const head = textAt(root, "HEAD", file);
     const copies = { staged: textAt(root, "", file), "working copy": readText(root, file) };
+    // The text the record wrote, or (a recorded board write put back for the record) the text it wrote on.
     const known = (text) =>
-      text !== null && (text === head || sha256(text) === record.sha256[file]);
+      text !== null &&
+      (text === head ||
+        sha256(text) === record.sha256[file] ||
+        sha256(text) === record.base?.[file]);
     const odd = Object.keys(copies).filter((copy) => !known(copies[copy]));
     if (odd.length > 0) foreign.push({ file, where: odd.join(" and ") });
     else if (Object.values(copies).some((text) => text !== head)) mine.push(file);
@@ -165,8 +169,12 @@ function recordedCommit(lane, rows, { commit, later, why }) {
         : `in ${root}: git show --stat ${short(commit)}. If it is this land's board commit (a hook changed it): git reset --keep ${short(commit)}~1, then land again (it writes and commits the board again). If it is not: ${moved}`;
     return { exit: 1, keepCarry: true, next };
   }
-  // The owner's set-aside files go back first: a record from an older version stops here, with the
-  // ledger still recording, so the rerun (and its --drop-carry) gets here again.
+  // The recorded board writes are in that commit when the record wrote on them (its `base` names each
+  // file; a record from before they were carried does not, and they go back uncommitted). The owner's
+  // set-aside files go back first: a record from an older version stops here, with the ledger still
+  // recording, so the rerun (and its --drop-carry) gets here again.
+  const writes = merge.writes?.files ?? [];
+  if (writes.length > 0 && writes.every((file) => merge.record?.base?.[file])) releaseWrites(lane);
   const back = putBackAllow(lane);
   if (back) rows.push(back);
   const stop = backStop(lane, back);

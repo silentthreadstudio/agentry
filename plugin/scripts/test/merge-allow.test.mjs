@@ -1,8 +1,8 @@
 // Tests for `lane merge` and the owner's uncommitted `guard.allow` files: the land sets them aside (recorded in
 // the ledger first), lands, and puts them back; a stop or a rerun after a kill puts them back too; any other
 // dirt still refuses; and a flagged item that no verifier read does not land. A new untracked `guard.allow`
-// file and a file only `board add` / `board set --apply` changed are carried the same way; a stop that keeps
-// them set aside names them.
+// file is carried the same way; a file only `board add` / `board set --apply` changed is set aside too, and
+// carried into the board commit (field 79). A stop that keeps them set aside names them.
 // Run: node --test plugin/scripts/test/merge-allow.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -376,7 +376,8 @@ test("an untracked file outside guard.allow still refuses, and the message says 
   assert.doesNotMatch(out(res), /docs\/new\.md/);
 });
 
-test("a recorded board add is set aside, the land goes on, and the row is back, uncommitted", () => {
+// Field 79: a recorded board write is the owner's board record, so it rides in the board commit.
+test("a recorded board add is set aside for the picks and the gate, then carried into the board commit", () => {
   build({ "src/a.txt": "a\n" });
   const add = addDecision();
   assert.equal(add.status, 0, add.stderr);
@@ -384,16 +385,23 @@ test("a recorded board add is set aside, the land goes on, and the row is back, 
   const res = land();
   assert.equal(res.status, 0, out(res));
   assert.match(res.stdout, /clean but for recorded board writes/);
-  assert.match(res.stdout, /plan\/DECISIONS\.md: written by board add decision/);
+  assert.match(
+    res.stdout,
+    /plan\/DECISIONS\.md: written by board add decision D2, uncommitted; set aside for the land, then carried into the board commit/,
+  );
   assert.match(
     res.stdout,
     /✓ writes +1 board-write file\(s\) set aside, recorded in the ledger first/,
   );
-  assert.match(res.stdout, /✓ writes +board writes are on main again, uncommitted, as they were/);
-  assert.equal(status(), " M plan/DECISIONS.md");
-  assert.equal(at("plan/DECISIONS.md"), DECISIONS_ADDED);
+  assert.match(
+    res.stdout,
+    /✓ carry +plan\/DECISIONS\.md: your recorded board write, carried into the board commit/,
+  );
+  assert.equal(status(), "");
+  assert.equal(git(root, "show", "HEAD:plan/DECISIONS.md"), DECISIONS_ADDED.trimEnd());
   assert.deepEqual(git(root, "show", "--name-only", "--format=", "HEAD").split("\n"), [
     "plan/BOARD.md",
+    "plan/DECISIONS.md",
   ]);
   assert.equal(readLedger(root, ID).merge.writes, undefined);
 });
@@ -426,21 +434,18 @@ test("a picked commit that changes the file of a recorded board add refuses befo
   assert.equal(at("plan/DECISIONS.md"), DECISIONS_ADDED);
 });
 
-test("a recorded board set merges by cell onto a picked change of the same file", () => {
+test("a recorded board set merges by cell onto a picked change of the same file, into the board commit", () => {
   build({ "plan/DECISIONS.md": DECISIONS_MD.replace("Because", "Since") });
   const set = boardCli("set", "decision", "D1", "decision=Cited after all", "--apply");
   assert.equal(set.status, 0, set.stderr);
   const res = land();
   assert.equal(res.status, 0, out(res));
-  assert.match(
-    res.stdout,
-    /✓ writes +board writes are on main again, uncommitted, set cell by cell/,
-  );
+  assert.match(res.stdout, /✓ carry +plan\/DECISIONS\.md: your recorded board write/);
   assert.equal(
-    at("plan/DECISIONS.md"),
-    DECISIONS_MD.replace("Because", "Since").replace("First", "Cited after all"),
+    git(root, "show", "HEAD:plan/DECISIONS.md"),
+    DECISIONS_MD.replace("Because", "Since").replace("First", "Cited after all").trimEnd(),
   );
-  assert.equal(status(), " M plan/DECISIONS.md");
+  assert.equal(status(), "");
 });
 
 // A git on PATH that lets a cherry-pick stop but not be aborted: main is left mid-pick.
@@ -567,17 +572,16 @@ test("a picked commit that deletes the row a board set wrote refuses before any 
   assert.equal(git(root, "rev-parse", "HEAD"), pre);
 });
 
-test("a board add in the board file the land commits is put back next to the rows it was written beside", () => {
+test("a board add in the board file the land commits goes into the board commit beside the landing row", () => {
   build({ "src/a.txt": "a\n" });
   const add = boardCli("add", "task", "--fields", '{"id": "T3"}', "--apply");
   assert.equal(add.status, 0, add.stderr);
   const res = land();
   assert.equal(res.status, 0, out(res));
   assert.doesNotMatch(res.stdout, /! writes/);
-  assert.match(res.stdout, /✓ writes +board writes are on main again, uncommitted, set row by row/);
-  assert.equal(status(), " M plan/BOARD.md");
-  assert.match(at("plan/BOARD.md"), /\| T1 +\| done .*\n\| T3 +\| todo/);
-  assert.doesNotMatch(git(root, "show", "HEAD:plan/BOARD.md"), /T3/);
+  assert.match(res.stdout, /✓ carry +plan\/BOARD\.md: your recorded board write/);
+  assert.equal(status(), "");
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| done .*\n\| T3 +\| todo/);
   assert.equal(readLedger(root, ID).merge.writes, undefined);
 });
 
@@ -1200,14 +1204,14 @@ test("an exec cell and a board add row in one BOARD.md refuse naming both, and s
   assert.equal(ledger.merge?.carry, undefined);
 });
 
-test("the same two writes in two files land, and both are restored", () => {
+test("the same two writes in two files land, both in the board commit", () => {
   build({ "src/a.txt": "a\n" });
   assert.equal(addDecision().status, 0);
   execWrite();
   const res = land();
   assert.equal(res.status, 0, out(res));
-  assert.equal(status(), " M plan/DECISIONS.md");
-  assert.equal(at("plan/DECISIONS.md"), DECISIONS_ADDED);
+  assert.equal(status(), "");
+  assert.equal(git(root, "show", "HEAD:plan/DECISIONS.md"), DECISIONS_ADDED.trimEnd());
   assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| done +\| FAIL/);
   const ledger = readLedger(root, ID);
   assert.equal(ledger.merge.writes, undefined);

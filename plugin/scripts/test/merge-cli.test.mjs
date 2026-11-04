@@ -1402,9 +1402,8 @@ test("a branch with a merge commit is refused before any pick", () => {
 });
 
 // A flagged task must land with a verdict the rule accepts; the fixture's T1 has "PASS" and this rule asks
-// for "SIGNED", so the done task gets a new flagged-needs-verdict finding no load check foresees. The land
-// picks, gates green and stops at its record with main at preHead plus its pick.
-function landStoppedAtRecord() {
+// for "SIGNED", so the done task gets a new flagged-needs-verdict finding no load check foresees.
+function commitFlaggedSpec() {
   const flagged = structuredClone(SPEC);
   flagged.kinds.task.fields.flagged = { column: "Sprint", type: "flag" };
   flagged.rules.push({
@@ -1415,6 +1414,10 @@ function landStoppedAtRecord() {
     pass: ["SIGNED"],
   });
   commitSpec(flagged);
+}
+// With it, the land picks, gates green and stops at its record with main at preHead plus its pick.
+function landStoppedAtRecord() {
+  commitFlaggedSpec();
   build({ "src/a.txt": "a\n" });
   const before = { board: board(), sprint: sprint() };
   const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
@@ -1516,6 +1519,81 @@ test("a land killed at recording on top of the owner's fix commit is finished by
   assert.match(res.stdout, /✓ recover +took back the board writes a killed run left uncommitted/);
   assert.equal(git(root, "rev-parse", "HEAD~1"), fix);
   assert.equal(readLedger(root, ID).state, "merged");
+  assert.equal(status(), "");
+});
+
+/** `board set <args> --apply` on main: a recorded board write, left uncommitted. */
+function boardSet(...args) {
+  const res = spawnSync(
+    "node",
+    [join(dirname(LANE), "board.mjs"), "set", ...args, "--apply", "--root", root],
+    {
+      encoding: "utf8",
+      env: { ...gitEnv, HOME: home, NO_COLOR: "1" },
+    },
+  );
+  assert.equal(res.status, 0, out(res));
+}
+
+// Field 79: the verdict the board check needs, written by `board set`, was set aside and checked without.
+test("a recorded board set the board check needs is carried into the board commit: one land, green", () => {
+  commitFlaggedSpec();
+  build({ "src/a.txt": "a\n" });
+  const pre = head();
+  boardSet("task", "T1", "verdict=SIGNED");
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(
+    res.stdout,
+    /✓ carry +plan\/BOARD\.md: your recorded board write, carried into the board commit/,
+  );
+  assert.match(res.stdout, /✓ record .*board check: no new findings/);
+  assert.equal(chainSince(pre).length, 2); // the pick and the one board commit
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| S1 +\| done +\| SIGNED/);
+  assert.equal(status(), "");
+  assert.equal(readLedger(root, ID).merge.writes, undefined);
+});
+
+test("a recorded board write the board check refuses stops the land and stays uncommitted on main", () => {
+  build({ "src/a.txt": "a\n" });
+  boardSet("task", "T2", "status=done"); // done without its commit or handoff
+  const dirty = board();
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ record +board check: \d+ new finding\(s\)/);
+  assert.match(res.stdout, /done-has-evidence T2/);
+  assert.equal(board(), dirty);
+  assert.equal(status(), "M plan/BOARD.md");
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T2 +\| S1 +\| todo/);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.merge.step, "gated");
+  assert.equal(ledger.merge.writes, undefined); // back on main, so the ledger let go
+});
+
+test("a land killed at recording with a recorded board write on main finishes on the rerun, the write committed", () => {
+  commitFlaggedSpec();
+  build({ "src/a.txt": "a\n" });
+  boardSet("task", "T1", "verdict=SIGNED");
+  landKilledAt(KILL_AT_COMMIT, "before", "--branch", BRANCH);
+  assert.ok(readLedger(root, ID).merge.record.base["plan/BOARD.md"]);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| S1 +\| done +\| SIGNED/);
+  assert.equal(status(), "");
+  assert.equal(readLedger(root, ID).state, "merged");
+});
+
+test("a land killed at recording before its first write, the recorded write back on main, takes it as its own", () => {
+  commitFlaggedSpec();
+  build({ "src/a.txt": "a\n" });
+  boardSet("task", "T1", "verdict=SIGNED");
+  const written = board();
+  landKilledAt(KILL_AT_COMMIT, "before", "--branch", BRANCH);
+  writeFileSync(join(root, "plan", "BOARD.md"), written); // as main was before the record wrote
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /✓ recover +took back the board writes a killed run left uncommitted/);
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| S1 +\| done +\| SIGNED/);
   assert.equal(status(), "");
 });
 
