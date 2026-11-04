@@ -3,7 +3,8 @@
 // a new ledger (the input is never changed) and the next step.
 //
 //   start                                   → build (fresh)
-//   build / fix: DONE or DONE_WITH_CONCERNS → verify (fresh) when no verdict yet, else recheck (resume)
+//   build / fix: DONE or DONE_WITH_CONCERNS → verify (fresh) when no verdict yet, else recheck (resume;
+//                                             fresh when the last verdict is one a restart carried)
 //   build / fix: DONE, and the report says to skip the verifier (exec.verify) and a gate is configured
 //                                           → gate (green on this tip) → close: the gate stands in for the verifier
 //   build / fix: main touched (any status)  → held for the guard: the round is left unread, its report
@@ -27,7 +28,7 @@
 //            fix commits (`onlyFixCommits`) → gate / close; otherwise → final. A note the verdict before left
 //            as built (`verdict --leave`, the ledger's `left[]`) is not sent back, so it never forces a final
 //   final: PASS* / FAIL                     → gate → close / stop
-//   verify / recheck: FAIL                  → fix (resume the builder); at the 3rd verdict → stop
+//   verify / recheck: FAIL                  → fix (resume the builder); at the lane's 3rd verdict → stop
 //   no `Verdict:` last line                 → resend once, then stop
 //   verified PASS WITH NOTES (gate or close next): { type: "notes" }, notes rounds used < the cap
 //                                           → fix (resume the builder) on the named notes, then the usual
@@ -74,7 +75,7 @@
 //
 // Every budget is the lane's, so no mix of outcomes resets one: one resend per role, one needs-context
 // round per step (the owner's resume past a step hold starts the next step), three counted verdicts (a
-// final after a recheck PASS is the one more), three void ones, and a guard fix (resent or not) that trips
+// final after a recheck PASS is the one more; one a restart carried counts the old lane's), three void ones, and a guard fix (resent or not) that trips
 // a guard again stops. So every lane ends. A hold waits for the owner, who ends it with a resume; the
 // owner's answers spend no budget.
 //
@@ -141,6 +142,8 @@ const verifiers = (ledger) => ledger.rounds.filter((r) => r.role === "verify");
 /** The verdicts that count: every verify round that gave one and was not voided. */
 export const verdicts = (ledger) =>
   verifiers(ledger).filter((r) => typeof r.verdict === "string" && !r.void);
+// The lane's own: a verdict a restart carried from the archive spent the old lane's budget, not this one's.
+const ownVerdicts = (ledger) => verdicts(ledger).filter((r) => !r.carried);
 
 /** The lane's route: its ledger snapshot, each key it lacks (an older ledger) the standard preset's. */
 export const routeOf = (ledger) => ({ ...PRESETS.standard.exec, ...ledger?.route });
@@ -497,7 +500,9 @@ function routeBuilt(ledger, round, { skipVerify = false, tip, gate = true, tier 
     return gateOrClose(ledger, tip, { tier }, "no verifier for this item: the gate decides");
   }
   const verifier = verdicts(ledger).at(-1);
-  return send(ledger, "recheck", { from: verifier.reportPath, agent: verifier.agent }, null);
+  // A carried round's verifier belongs to the archived lane: its recheck reads that report afresh.
+  const who = verifier.carried ? { mode: "fresh" } : { agent: verifier.agent };
+  return send(ledger, "recheck", { from: verifier.reportPath, ...who }, null);
 }
 
 const hold = (ledger, entry, reason) => {
@@ -662,7 +667,7 @@ function onVerdict(ledger, round, event) {
   }
   if (verdict === "FAIL") {
     if (round.step === "final") return stop(ledger, "the final verifier's verdict is FAIL");
-    if (verdicts(ledger).length >= MAX_VERDICTS)
+    if (ownVerdicts(ledger).length >= MAX_VERDICTS)
       return stop(ledger, `FAIL at verdict ${MAX_VERDICTS}; every verdict goes to the owner`);
     const builder = builders(ledger).at(-1);
     return send(

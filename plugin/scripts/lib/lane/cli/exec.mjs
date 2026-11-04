@@ -2850,14 +2850,15 @@ function carriesVerified(ledger, tip, files) {
 }
 
 // The old lane's counted verdicts, carried into the new ledger as its first rounds: numbered from 1, marked
-// `carried: "<id>.<n>"` (the archive) and their files read where the archive holds them, so the land's
-// flagged-item check and the episode count the verification the carry stands on.
+// `carried: "<id>.<n>"` (the archive; a round carried before keeps its first one, where its files are) and
+// their files read where the archive holds them, so the land's flagged-item check and the episode count the
+// verification the carry stands on.
 const carriedVerdicts = (ledger, archive, runs) => {
   const moved = archivedPath(ledger.id, runs);
   return verdicts(ledger).map((r, i) => ({
     ...r,
     n: i + 1,
-    carried: archive,
+    carried: r.carried ?? archive,
     ...(r.brief && { brief: moved(r.brief) }),
     ...(r.reportPath && { reportPath: moved(r.reportPath) }),
   }));

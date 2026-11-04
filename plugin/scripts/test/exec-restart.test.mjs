@@ -783,3 +783,114 @@ for (const verify of ["flagged", "all"])
     assert.equal(pre.status, 0, pre.stdout + pre.stderr);
     assert.doesNotMatch(pre.stdout + pre.stderr, /reverify/);
   });
+
+// ---- carried verdicts: the lane's own budget, the first marker, a fresh recheck (field 94) ----------
+
+const NO_FINAL = { ...SPEC, exec: { final: "never" } };
+// The verifier `agent` sent on `out` returns `verdict`.
+const sayVerdict = (r, out, verdict, agent) => {
+  writeFileSync(out.reportPath, `Checked.\nused_memories: none\nVerdict: ${verdict}\n`);
+  return lane(r, "verdict", "T3", "--agent", agent).json;
+};
+
+// T3 built, judged FAIL (by verifier-1), fixed, rechecked PASS, gated and closed: two verdicts of its own.
+function failedThenPassed(r) {
+  let out = lane(r, "start", "T3").json;
+  const wt = out.worktree;
+  commitFile(wt, "three.txt", "a\nlane\nc\n", "feat: three");
+  writeFileSync(out.reportPath, "DONE\nchanged three.txt\nused_memories: none\n");
+  out = lane(r, "report", "T3").json;
+  assert.equal(sayVerdict(r, out, "FAIL", "verifier-1").next, "fix");
+  const fix = ledgerOf(r.root, "T3").rounds.at(-1);
+  commitFile(wt, "three.txt", "a\nlane fixed\nc\n", "fix: three");
+  writeFileSync(fix.reportPath, "DONE\nfixed\nused_memories: none\n");
+  out = lane(r, "report", "T3").json;
+  assert.equal(sayVerdict(r, out, "PASS", "verifier-1").next, "gate");
+  assert.equal(lane(r, "gate", "T3").exit, 0);
+  assert.equal(lane(r, "close", "T3").exit, 0);
+}
+// The verified lane carried by a restart onto a moved main, gated and closed again.
+function carriedOver(r) {
+  commitFile(r.root, "other.txt", `${Date.now()}\n`, "chore: main moves");
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "gate");
+  assert.equal(lane(r, "gate", "T3").exit, 0);
+  assert.equal(lane(r, "close", "T3").exit, 0);
+}
+// The owner sends the closed lane back; its builder commits and reports: the view of the recheck sent.
+function ownerFixed(r, line) {
+  const res = lane(r, "fix", "T3", "--owner", line);
+  assert.equal(res.exit, 0, res.stderr);
+  commitFile(ledgerOf(r.root, "T3").worktree, "more.txt", `${line}\n`, `feat: ${line}`);
+  writeFileSync(res.json.reportPath, `DONE\n${line}\nused_memories: none\n`);
+  return lane(r, "report", "T3").json;
+}
+// After a FAIL: the builder commits a fix and reports.
+function fixed(r, line) {
+  const fix = ledgerOf(r.root, "T3").rounds.at(-1);
+  commitFile(ledgerOf(r.root, "T3").worktree, "more.txt", `${line}\n`, `fix: ${line}`);
+  writeFileSync(fix.reportPath, `DONE\n${line}\nused_memories: none\n`);
+  return lane(r, "report", "T3").json;
+}
+const marks = (root) =>
+  ledgerOf(root, "T3").rounds.map((x) => [x.n, x.step, x.verdict ?? null, x.carried ?? null]);
+
+test("two carried verdicts, then the restarted lane's first FAIL goes to fix, not the three-verdict stop", () => {
+  const r = repo({ spec: NO_FINAL });
+  failedThenPassed(r);
+  carriedOver(r);
+  const out = ownerFixed(r, "one more line");
+  const v = sayVerdict(r, out, "FAIL", "verifier-2");
+  assert.deepEqual([v.next, v.state], ["fix", "fixing"]);
+  assert.deepEqual(marks(r.root), [
+    [1, "verify", "FAIL", "T3.1"],
+    [2, "recheck", "PASS", "T3.1"],
+    [3, "fix", null, null],
+    [4, "recheck", "FAIL", null],
+    [5, "fix", null, null],
+  ]);
+});
+
+test("one carried PASS: two FAILs of the lane's own fix, its third stops at verdict 3", () => {
+  const r = repo({ spec: NO_FINAL });
+  judged(r);
+  carriedOver(r);
+  let out = ownerFixed(r, "one more line");
+  assert.equal(sayVerdict(r, out, "FAIL", "verifier-2").next, "fix");
+  out = fixed(r, "fixed once");
+  assert.equal(sayVerdict(r, out, "FAIL", "verifier-2").next, "fix");
+  out = fixed(r, "fixed twice");
+  const v = sayVerdict(r, out, "FAIL", "verifier-2");
+  assert.deepEqual([v.next, v.state], ["stop", "stopped"]);
+  assert.equal(
+    ledgerOf(r.root, "T3").stopReason,
+    "FAIL at verdict 3; every verdict goes to the owner",
+  );
+});
+
+test("a round carried by two restarts keeps its first marker and its first archive's files", () => {
+  const r = repo({ spec: NO_FINAL });
+  judged(r);
+  carriedOver(r);
+  carriedOver(r);
+  const [round] = ledgerOf(r.root, "T3").rounds;
+  assert.deepEqual([round.step, round.verdict, round.carried], ["verify", "PASS", "T3.1"]);
+  assert.match(round.reportPath, /\/runs\/T3\.1\//);
+  assert.ok(existsSync(round.reportPath));
+});
+
+test("a recheck whose verifier comes from a carried round runs fresh; one of the lane's own resumes", () => {
+  const r = repo({ spec: NO_FINAL });
+  failedThenPassed(r);
+  carriedOver(r);
+  const carried = ledgerOf(r.root, "T3").rounds[1];
+  assert.equal(carried.agent, "verifier-1");
+  let out = ownerFixed(r, "one more line");
+  assert.deepEqual([out.next, out.mode, out.agent], ["recheck", "fresh", undefined]);
+  // The fresh verifier still reads the carried report it rechecks.
+  assert.ok(readFileSync(out.brief, "utf8").includes(carried.reportPath));
+  assert.equal(sayVerdict(r, out, "FAIL", "verifier-2").next, "fix");
+  out = fixed(r, "fixed once");
+  assert.deepEqual([out.next, out.mode, out.agent], ["recheck", "resume", "verifier-2"]);
+});
