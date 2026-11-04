@@ -217,7 +217,7 @@ test("a carried commit that conflicts with main stops: exit 1, main untouched, m
   assert.equal(ledgerOf(r.root, "T3").restarted.branch, "agentry/T3.1");
   assert.match(
     readFileSync(res.json.brief, "utf8"),
-    /The carry stopped: [0-9a-f]{7} feat: three conflicts in three\.txt/,
+    /Resolve this first: [0-9a-f]{7} feat: three conflicts in three\.txt: resolve it, git cherry-pick --continue, then git apply --3way \S+\.diff\.\n/,
   );
 });
 

@@ -800,7 +800,7 @@ export function carriedWork({ commits, files, report, conflict }) {
   const staged = files
     ? " Its uncommitted changes are applied staged (`git apply --3way` stages them): `git diff --cached` shows them."
     : "";
-  const stop = conflict ? ` The carry stopped: ${conflict}, before anything else.` : "";
+  const stop = conflict ? ` Resolve this first: ${conflict}.` : "";
   return [
     "## Carried work",
     "",
