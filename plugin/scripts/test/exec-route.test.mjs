@@ -23,6 +23,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { idleHead } from "../lib/lane/exec-view.mjs";
 import { validateSpec } from "../lib/process/spec.mjs";
+import { modelFor, unusedUiModel } from "../lib/process/spec/models.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
 import { splitSpec, writeSpec } from "./spec-files.mjs";
 
@@ -1247,4 +1248,42 @@ test("fix --owner is refused with no text, with --notes, while a builder is out,
   assert.equal(merged.exit, 2);
   assert.match(merged.stderr, /T1 is merged: the owner's change is a new task/);
   assert.equal(ledgerOf(r.root, "T1").ownerFixes, undefined);
+});
+
+test("a Model bullet inside a code fence is not the contract's model (R1d-22 N4)", () => {
+  const spec = { models: { build: "sonnet", verify: { default: "haiku" } } };
+  const fenced =
+    "- **Owns:** `a.txt`\n\n```md\n- **Model:** opus\n- **Model (verify):** opus\n```\n";
+  assert.deepEqual(modelFor(spec, "build", { contract: fenced }), {
+    model: "sonnet",
+    from: "models.build",
+  });
+  assert.deepEqual(modelFor(spec, "verify", { contract: fenced }), {
+    model: "haiku",
+    from: "models.verify.default",
+  });
+  const after = `${fenced}- **Model:** opus\n`;
+  assert.deepEqual(modelFor(spec, "build", { contract: after }), {
+    model: "opus",
+    from: "contract",
+  });
+});
+
+test("models.verify.ui is unused only when verify.flagged is set too (R1d-22 N1)", () => {
+  // Under a flagged route a flagged UI item takes verify.flagged first, else verify.ui.
+  const ui = { verify: { ui: "ui-m" } };
+  const both = { verify: { ui: "ui-m", flagged: "flag-m" } };
+  assert.deepEqual(modelFor({ models: ui }, "verify", { flagged: true, ui: true }), {
+    model: "ui-m",
+    from: "models.verify.ui",
+  });
+  assert.equal(unusedUiModel(ui, "flagged"), null);
+  assert.match(
+    unusedUiModel(both, "flagged"),
+    /^! models\.verify\.ui is unused: exec\.verify is flagged/,
+  );
+  assert.match(unusedUiModel(both, "none"), /exec\.verify is none/);
+  assert.equal(unusedUiModel(both, "all"), null);
+  const r = repo({ exec: { verify: "flagged" }, models: ui });
+  assert.doesNotMatch(lane(r, "start", "T1").json.route, /unused/);
 });

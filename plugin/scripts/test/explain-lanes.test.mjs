@@ -581,17 +581,23 @@ test("the models row warns of models.verify.ui under a flagged route, wrapped to
   };
   const models = {
     build: { default: "sonnet", paths: [{ when: { any: ["src/**"] }, model: "opus" }] },
-    verify: { ui: "opus" },
+    verify: { ui: "opus", flagged: "opus-max" },
   };
   const warn =
     "! models.verify.ui is unused: exec.verify is flagged and a UI task is verified only when flagged";
   const warned = repo({ ...flagged, exec: { verify: "flagged" }, models });
   const plain = repo({ ...flagged, models });
+  // Without verify.flagged, a flagged UI task takes verify.ui: the key is used (R1d-22 N1).
+  const noFlagged = repo({
+    ...flagged,
+    exec: { verify: "flagged" },
+    models: { verify: { ui: "opus" } },
+  });
   try {
     const row = warned.lanes().models;
     assert.deepEqual(
       [row.ok, row.value, row.warning],
-      [true, "build sonnet (1 path) · verify ui opus", warn],
+      [true, "build sonnet (1 path) · verify ui opus, flagged opus-max", warn],
     );
     const lines = warned.board("explain").stdout.split("\n");
     const at = lines.findIndex((l) => /^✓ +models /.test(l));
@@ -601,8 +607,10 @@ test("the models row warns of models.verify.ui under a flagged route, wrapped to
     ]);
     assert.ok(lines.every((l) => [...l].length <= 80));
     assert.equal(plain.lanes().models.warning, undefined, "exec.verify all: the ui model is used");
+    assert.equal(noFlagged.lanes().models.warning, undefined, "a flagged UI task takes verify.ui");
   } finally {
     rmSync(warned.root, { recursive: true, force: true });
     rmSync(plain.root, { recursive: true, force: true });
+    rmSync(noFlagged.root, { recursive: true, force: true });
   }
 });

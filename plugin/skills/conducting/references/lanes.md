@@ -305,7 +305,7 @@ templates, once:
   file: `model: opus (contract)`, `model: opus (models.build.paths[0]: src/main/**)`, `model: sonnet
   (models.build)`. Under `--json`, `model` is the name alone and `modelFrom` its source. `exec start`'s route
   line ends `· ! models.verify.ui is unused: …` for a UI-shaped item that is not flagged when `exec.verify` is
-  `flagged` or `none`.
+  `flagged` or `none` and `models.verify.flagged` is set (a flagged UI item takes `verify.flagged`).
 - The verifier changes and commits nothing, runs the printed gate line (or reads the recorded one), states the bar for any input or
   interaction before testing it, and names each probe so the fix round commits it as a test.
 

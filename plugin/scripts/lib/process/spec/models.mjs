@@ -38,15 +38,29 @@ function resolve(value, path, owned) {
   return { model: value.default, from: `${path}.default` };
 }
 
+// The contract's lines outside its code fences: a bullet shown in a fence is an example, not the contract's.
+const FENCE = /^\s*(`{3,}|~{3,})/;
+function unfenced(block) {
+  let fenced = false;
+  return String(block ?? "")
+    .split("\n")
+    .filter((line) => {
+      if (FENCE.test(line)) fenced = !fenced;
+      else return !fenced;
+      return false;
+    })
+    .join("\n");
+}
+
 // The contract's own model for `role`: `- **Model:** <model>` for a builder, `**Model (verify):** <model>`
-// for a verifier; its first word, backticks dropped.
+// for a verifier, outside a code fence; its first word, backticks dropped.
 const LABEL = { build: "", verify: String.raw` \(verify\)` };
 function contractModel(block, role) {
   const re = new RegExp(
     String.raw`^[ \t]*(?:[-*+][ \t]+)?\*\*model${LABEL[role]}:?\*\*:?[ \t]*(\S+)`,
     "im",
   );
-  const word = re.exec(String(block ?? ""))?.[1].replace(/`/g, "");
+  const word = re.exec(unfenced(block))?.[1].replace(/`/g, "");
   return word ? { model: word, from: "contract" } : null;
 }
 
@@ -73,9 +87,11 @@ export function modelFor(
 }
 
 /** Under a route that verifies an item only when it is flagged (`exec.verify` "flagged" or "none"), a
- *  UI task unflagged gets no verifier: a `models.verify.ui` set there is never used. The line saying so. */
+ *  UI task unflagged gets no verifier, and a flagged one takes `models.verify.flagged` when it is set: a
+ *  `models.verify.ui` set beside it is never used. The line saying so; null when the ui model can be used. */
 export function unusedUiModel(models, verify) {
-  if (own(own(models, "verify"), "ui") === undefined || !["flagged", "none"].includes(verify))
-    return null;
+  const keys = own(models, "verify");
+  if (own(keys, "ui") === undefined || own(keys, "flagged") === undefined) return null;
+  if (!["flagged", "none"].includes(verify)) return null;
   return `! models.verify.ui is unused: exec.verify is ${verify} and a UI task is verified only when flagged`;
 }
