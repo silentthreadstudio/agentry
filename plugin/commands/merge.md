@@ -18,4 +18,6 @@ Before the first `--preflight`, main must be clean: `git status` empty, with the
 
 A stacked lane (`stack` row red) lands only after its parent: land the parent first, then follow the row's `next` (`agentry lane exec restack <id>`, its gate, the land). A parent's land restacks each child at rest onto main and names the ones it left (an agent out, or a conflict with its `--main` restack line).
 
+A land left in `merging` that cannot go on (`exec start` says main is mid-land) is closed only on the owner's call: `agentry lane merge <id> --resolve landed` when every pick is on main (the ledger is merged; the board record is the owner's), or `--resolve rolled-back` when none is (the lane is verified again). Each checks main first and touches neither main nor the board.
+
 On exit 1 or 2, stop and show why. Do what `next` says, or ask the owner. Never finish a step by hand: no hand cherry-pick, reset, board edit, commit or push.

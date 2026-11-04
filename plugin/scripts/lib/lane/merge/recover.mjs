@@ -3,9 +3,11 @@
 // against main and either finishes what the killed run did or puts main back where the rerun can start.
 // It acts only on what it can prove is its own: board writes and a board commit by the sha256 the record
 // stored before writing (`merge.record`), a cherry-pick by the planned commits git names. Anything else
-// stops the land, left as it is, with the commands that clear it.
+// stops the land, left as it is, with the commands that clear it. A land that cannot go on at all is
+// closed on the owner's call (`--resolve landed|rolled-back`, field 82), checked against main first.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { read as readLedger } from "../../process/ledger.mjs";
 import { sha256 } from "../carry-io.mjs";
 import { endStrayGate } from "../gate-group.mjs";
 import {
@@ -13,6 +15,8 @@ import {
   commitOf,
   commitsBetween,
   filesOf,
+  isAncestor,
+  landedSince,
   pickInProgress,
   resolvedByHand,
   restoreFiles,
@@ -23,7 +27,7 @@ import {
 import { isMemoryCommit } from "../own-memory.mjs";
 import { backStop, putBackAllow } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
-import { afterLand, now, ok, red, save, setMerge, short } from "./lane.mjs";
+import { afterLand, done, landNext, now, ok, red, save, setMerge, short } from "./lane.mjs";
 
 const readText = (root, file) => {
   try {
@@ -328,4 +332,104 @@ export function recoverStep(lane, rows) {
     return rollBack(lane, rows);
   }
   return null;
+}
+
+// --- --resolve: the owner closes a stuck land -------------------------------------------------------
+
+const RESOLUTIONS = ["landed", "rolled-back"];
+// What a land sets aside of main and holds in the ledger: closing the ledger over it would lose it.
+const HELD = ["carry", "allow", "writes"];
+
+// Why `landed` cannot be said of `merge`, or null: every recorded pick is on main.
+function notLanded(root, merge) {
+  const landed = Array.isArray(merge.landed) ? merge.landed : [];
+  if (landed.length === 0) return "the ledger records no landed pick: not landed";
+  const off = landed.find((sha) => !isAncestor(root, sha, "HEAD"));
+  return off ? `${short(off)} is not on main: not landed` : null;
+}
+
+// Why `rolled-back` cannot be said of `merge`, or null: no pick is on main, recorded or (a land killed
+// while picking, before it recorded any) found on main's history since preHead by its identity.
+function notRolledBack(root, merge) {
+  const landed = Array.isArray(merge.landed) ? merge.landed : [];
+  const planned = Array.isArray(merge.planned) ? merge.planned : [];
+  const found =
+    typeof merge.preHead === "string" && planned.length > 0
+      ? (landedSince(root, { preHead: merge.preHead, planned }).landed ?? [])
+      : [];
+  const on = [...landed, ...found].find((sha) => isAncestor(root, sha, "HEAD"));
+  return on ? `${short(on)} is on main: not rolled back` : null;
+}
+
+/** `lane merge <id> --resolve landed|rolled-back`: on the owner's call, close a ledger in `merging` a land
+ *  cannot finish. `landed`: every recorded pick is on main; the ledger is `merged` with the picks as its
+ *  commits and no board commit (the board record is the owner's). `rolled-back`: no pick is on main; the
+ *  ledger's `merge` goes and the lane is `verified` again. Each checks main first and refuses with what it
+ *  found; neither touches main or the board, and the ledger is written once. */
+export function resolveMode(lane) {
+  const { root, id, opts } = lane;
+  const as = opts["--resolve"];
+  if (!RESOLUTIONS.includes(as))
+    return done(2, lane, [red("resolve", `--resolve takes landed or rolled-back, not "${as}"`)]);
+  let ledger;
+  try {
+    ledger = readLedger(root, id);
+  } catch (error) {
+    return done(2, lane, [red("resolve", error.message)]);
+  }
+  if (!ledger) return done(2, lane, [red("resolve", `no ledger for ${id}`)]);
+  lane.ledger = ledger;
+  const no = (why) => done(2, lane, [red("resolve", why)]); // no next: the ledger is not written
+  if (ledger.state !== "merging")
+    return no(`${id}'s lane is "${ledger.state}": --resolve closes only a land in "merging"`);
+  const merge = ledger.merge ?? {};
+  if (pickInProgress(root).length > 0)
+    return no(`git is in the middle of a cherry-pick in ${root}: finish or abort it first`);
+  const held = HELD.filter((key) => merge[key]);
+  if (held.length > 0)
+    return no(
+      `the ledger still holds what the land set aside (merge.${held.join(", merge.")}): land again to put it back first (${landNext(id)})`,
+    );
+  const why = as === "landed" ? notLanded(root, merge) : notRolledBack(root, merge);
+  if (why) return no(why);
+  if (as === "landed") {
+    const n = merge.landed.length;
+    const resolved = { as, at: now() };
+    const merged = {
+      state: "merged",
+      merge: {
+        ...merge,
+        record: undefined,
+        gateRun: undefined,
+        step: "committed",
+        boardCommit: null,
+        resolved,
+        at: now(),
+      },
+    };
+    lane.ledger = { ...ledger, ...merged };
+    const next = afterLand(lane);
+    save(lane, { ...merged, next });
+    const detail = `resolved: ${n} pick(s) on main; ledger merged (the board record is yours: board set … and the handoff line)`;
+    return done(
+      0,
+      lane,
+      [
+        ok(
+          "resolve",
+          detail,
+          merge.landed.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`),
+        ),
+      ],
+      next,
+    );
+  }
+  const next = landNext(id);
+  save(lane, { state: "verified", merge: undefined, next });
+  return done(
+    0,
+    lane,
+    [ok("resolve", "resolved: no pick on main; merge cleared, the lane is verified again")],
+    next,
+  );
 }

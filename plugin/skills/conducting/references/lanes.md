@@ -355,7 +355,8 @@ says `stacked on T1; restacks: N`.
   <id> --branch agentry/<id>` lands the branch as it is (the owner's call), or `exec restart <id> --carry`
   starts it again with its work (when available).
 - **Mid-land.** `start` refuses while a ledger is `merging` with its picks on main: a red gate may still take
-  them off, and a lane cut then would carry them.
+  them off, and a lane cut then would carry them. A land that cannot go on is closed on the owner's call:
+  `agentry lane merge <id> --resolve landed|rolled-back` (every pick on main, or none; it checks first).
 - **The worktree.** A builder leaves no uncommitted or untracked files and at least one commit past base.
 - **The tip.** A verdict counts only for the tip it was dispatched on: nobody rebases while a verifier reads.
   A stacked lane's gate counts only on its parent's tip (or main's once the parent landed): `exec gate` refuses

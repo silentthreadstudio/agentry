@@ -7,6 +7,7 @@
 //                                                        land → gate or skip → record → board commit
 //   merge <id> --push [--approved]                       push per config merge.push (ask|auto|never)
 //   merge <id> --cleanup [--discard-ignored]             the worktree and branch, found by branch
+//   merge <id> --resolve landed|rolled-back              close a stuck land on the owner's call
 //
 // `--branch` adopts work built outside exec: the ledger is created with origin "adopted". Each call
 // prints a step table and the next step. Exit 0 = done, next printed; 1 = a red step stopped it (the
@@ -45,7 +46,7 @@ import { FRESH, afterLand, checkNext, done, landNext, ok, red, short } from "../
 import { check, cleanupMode, pushMode } from "../merge/modes.mjs";
 import { landStep } from "../merge/picks.mjs";
 import { commitStep, recordStep } from "../merge/record.mjs";
-import { recoverPreview, recoverStep } from "../merge/recover.mjs";
+import { recoverPreview, recoverStep, resolveMode } from "../merge/recover.mjs";
 import {
   boardRow,
   checksState,
@@ -67,6 +68,7 @@ export const help = {
     "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
     "merge <id> --push [--approved]",
     "merge <id> --cleanup [--discard-ignored]",
+    "merge <id> --resolve landed|rolled-back",
   ],
   purpose: "Land one task on main, one mode per call; each prints a step table and the next step.",
   args: { "<id>": "the task's id, any case" },
@@ -83,6 +85,8 @@ export const help = {
     "--approved": "with --push: the owner said yes (merge.push ask)",
     "--cleanup": "remove the task's worktree and branch",
     "--discard-ignored": "with --cleanup: also when the worktree holds ignored files",
+    "--resolve <landed|rolled-back>":
+      "close a land stuck in merging (owner's call): its picks all on main, or none; main and the board untouched",
     "--json": "with any mode: print { id, branch, main, rows, next } as one JSON object",
   },
   exits: { 0: "done, next printed", 1: "a red step stopped it", 2: "usage or refusal" },
@@ -96,6 +100,7 @@ const MODES = {
   "--message": ["--branch", "--summary", "--drop-carry"],
   "--push": ["--approved"],
   "--cleanup": ["--discard-ignored"],
+  "--resolve": [],
 };
 // argv → { id, mode, opts } or { error }.
 function parse(argv) {
@@ -305,6 +310,7 @@ const RUN = {
   "--message": land,
   "--push": pushMode,
   "--cleanup": cleanupMode,
+  "--resolve": resolveMode,
 };
 
 export function run(argv, { root, spec, model }) {
