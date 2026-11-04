@@ -28,14 +28,14 @@ An open debt lane and an open task lane pass each other's board writes.
 
 | Step | Does | Board (through `lifecycle`) |
 | :--- | :--- | :--- |
-| `start <id> [--cite A40,A41]` | finds the contract, refuses at `lanes.maxWriters` and a contract whose Steps part has a problem, cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder on the first run of steps (`steps:` lists them); `--cite` adds decisions to every brief by id (a decision whose row names the task is quoted anyway) | `dispatched` |
-| `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round; a run that ends at `→ owner OK` holds the lane instead | `built` when a verifier (or, under `exec.verify`, the gate alone) is next |
+| `start <id> [--cite A40,A41]` | finds the contract, refuses at `lanes.maxWriters` and a contract whose Steps part has a problem, refuses while another lane's land has its picks on main (`main is mid-land (<id>, since HH:MM): its picks may still roll back → start after it lands`, exit 2, nothing written), cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder on the first run of steps (`steps:` lists them); `--cite` adds decisions to every brief by id (a decision whose row names the task is quoted anyway) | `dispatched` |
+| `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round; a run that ends at `→ owner OK` holds the lane instead; a main the guard finds touched holds it for the guard, and on a lane held so it reads the saved report again | `built` when a verifier (or, under `exec.verify`, the gate alone) is next |
 | `verdict <id> [--agent a]` | reads the verifier's report and its tip, briefs the next round | the verdict (`FAIL` also `failed`) |
 | `gate <id>` | picks the tier: the `verify` role's while a verifier is out (`expects` is `verdict`), else the `build` role's (`gate.roles`, on the files the branch changed since its base and the item's flag); under `verify: none` a call while a verifier is out exits 2, runs nothing and records nothing: the verifier reads the recorded gate, and the build tier runs after the verdict. Else waits for the gate lock, runs that tier's argv in the worktree, records `{role, tier, command, commit, tree, exit, clean before and after, log}`; a red whose log (or `gate.flakyLogs` files) fails only in `gate.flaky` tests is re-run alone once and both runs are recorded; a gate that queues writes `waiting for gate slot N (held by <who> since HH:MM)` and `slot acquired` to its log, and its output streams there as it runs | none |
-| `fix <id> --notes N1,N3` | after `PASS WITH NOTES` (gate or close next): a builder round (resume) on those notes of the verifier's report, then the usual `recheck` | none |
+| `fix <id> --notes N1,N3` | after `PASS WITH NOTES` (gate or close next): a builder round (resume) on those notes of the latest verifier's report or of the ledger's `openNotes` (each quoted from the report that raised it), then the usual `recheck` | none |
 | `fix <id> --owner "<the change>"` | the owner sends a `verified` lane (next `close` or `merge`) back: one builder round (the last builder resumed, a fresh one with the brief when none was recorded) whose brief quotes `## The owner's change` with its time, then the lane's own route: under an `exec.verify` route that skipped the verifier, the gate on the new tip, then `close`; otherwise a `recheck` by the last verifier, which judges the change as one more note sent back (`owner: PASS\|FAIL <evidence>`; `owner: PASS` with every other note passed is covered, so under `final: "after-fix"` no final follows). The ledger records `ownerFixes: [{ note, at, round }]` and the episode counts them (`owner fixes: N`). Refused: no `--owner` text, `--owner` with `--notes`, a builder already out, a merged lane, any lane that is not verified | `built` when the round is reported |
 | `close <id> [--episode e]` | prints the `episode_write` payload; `--episode` stamps the id it returned | none (`done` comes at merge) |
-| `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
+| `show <id>` | the ledger and the pending dispatch, for a cold resume; on a stopped lane, `stopped: <reason>` and its `ways on:` | none |
 | `owns <id> [--set a,b] [--apply]` | the owned files every brief names, parsed once at `start` and kept in the ledger; `--set … --apply` replaces them and rewrites the brief still waiting for its agent, keeping any section appended after the brief's last template section such as `## The fact` (without `--apply` it only shows the new list; a held lane has no brief waiting: the round after the resume reads the new list) | none |
 | `hold <id> --for owner [--evidence <path>] [--agent a]` | a builder's round whose reply is saved waits for the owner's review (`--agent` names the builder out on it, so the resume goes back to that agent) (also on a lane with no steps: the owner looks mid-build); the evidence defaults to that round's report; on a held lane it replaces `for` and the evidence and keeps `since` | none |
 | `hold <id> --for later [--note "<why>"]` | parks a lane whose builder was stopped mid-round: no saved reply needed, the worktree kept as it is (uncommitted files allowed); a touched main does not refuse it: the park is recorded and prints `main moved while parked: <reason>; resume re-checks it`. Also parks a `verified` lane (next `close` or `merge`): `hold.when: "verified"`, nothing in the worktree or the rounds changes, `show` prints `held: parked, verified, since <ISO>`, `merge` refuses it while held and drift names no `verified-not-merged`; its `resume` makes it `verified` again with the same next step (no builder, the note in `holds[]`); `--for owner` on it is refused ("hold --for owner is for a builder's round") | none |
@@ -48,7 +48,7 @@ inside a worktree instead of the main checkout).
 `hold` refuses (exit 2) a lane whose builder's round is not out ("hold is for a builder's round", with its
 state and next), `--for owner` before the reply is saved ("the builder is still out: save its reply to
 <reportPath> first, then hold"), any other `--for` ("--for takes owner or later"), an `--evidence` path with
-no file, and, for `--for owner`, a touched main (it names the report step, which stops the lane); a park
+no file, and, for `--for owner`, a touched main (it names the report step, which holds the lane for the guard); a park
 (`--for later`) goes through on a touched main and says so, since `resume` checks main again. `resume` refuses a lane that is
 not held, a resume with no `--note` ("resume needs --note"), `--redo` after a hold during a round ("--redo
 goes back over a finished run"), a builder it would send at `lanes.maxWriters` (the `start` message), and a
@@ -73,7 +73,19 @@ run: agentry lane exec resume <id> --root '<root>' --note "<the OK>"
 ```
 
 The hold reads `during steps 2–3 of 3` for a hold during a round, `mid-build` with no steps, and
-`parked, since <ISO>: "<why>"` for `--for later`. `resume` prints `approved: step 1 of 2 at <ISO>: "<note>"`
+`parked, since <ISO>: "<why>"` for `--for later`. A lane held for the guard prints instead (and `hold`, with
+`for: "guard"`, the saved `report` and the `reason`, also under `--json`):
+
+```text
+held: guard tripped: <reason> → fix it (commit it between lanes, or add the path to guard.allow), then run agentry lane exec report <id> --root '<root>' again
+run: agentry lane exec report <id> --root '<root>'
+```
+
+`show` on a stopped lane prints right after the header `stopped: <reason>`, then one `ways on:` line: the
+merge that lands the branch as it is (`agentry lane merge <id> --branch agentry/<id>`, the owner's call) ·
+`exec restart <id> --carry` (when available).
+
+`resume` prints `approved: step 1 of 2 at <ISO>: "<note>"`
 (`sent back:` with `--redo`, `noted:` after a hold during a round or a parked one). Under `--json` the same names, `held`,
 `steps` and `holds` as strings. `show` on a lane in `building` or `fixing` with no change in its worktree
 for 20 minutes (the newest of the round's dispatch, the branch's last commit and the mtime of every file git
@@ -91,7 +103,7 @@ Under `--json` that is `idle: { minutes, lastChange, file }`.
 | From | Report | Next |
 | :--- | :--- | :--- |
 | start | | `build`: a fresh builder |
-| build, fix | main's HEAD or files changed (any status) | `stop` |
+| build, fix | main's HEAD or files changed (any status) | held for the guard (`next resume`): the round is left unread and its report saved (`<report>.held.md`); nothing in the worktree changes |
 | build, fix | `DONE` / `DONE_WITH_CONCERNS`, uncommitted files or no commits past base | `fix` with the reason (resume); the same again → `stop` |
 | build, fix | `DONE` / `DONE_WITH_CONCERNS`, guards hold | `verify` (fresh) when there is no verdict yet; `recheck` (resume the last verifier) after a fix |
 | build, fix | the same, no verdict yet, `exec.verify` is `flagged` or `none`, the item's flag is not set and the workflow file has a gate | `gate` (built is written), then `close`: no verifier. A flagged item is verified as above; a red gate stops the lane |
@@ -126,6 +138,8 @@ Under `--json` that is `idle: { minutes, lastChange, file }`.
 | build, fix, continue on run a..g (a > 1, or any run the owner sent back with `--redo`) | no commits since step a began (for a redo, since the redo was dispatched) | `fix` (resume) with the reason, as the other worktree guards |
 | a builder's round is out | `agentry lane exec hold <id> --for owner\|later` | held; the round is left unread (`held: true`) |
 | held | `agentry lane exec resume <id> --note "…"` | `continue` (resume the builder) on the next run; on the same run after a hold during a round, or with `--redo`; after the last step `verify` (fresh), or the gate under `exec.verify` |
+| held for the guard | `agentry lane exec report <id>` | the guard runs again: main clean → the saved report goes on exactly as the first report would have; still touched → held again with the new reason, `since` the first trip |
+| held for the guard | `resume`, `hold --for later` | as on any held lane: `continue` to the round's builder; parked |
 | held | a report, verdict or notes fix | refused: the lane expects a resume; a gate run is recorded and decides nothing |
 
 A run is the steps from a to g, g the first step from a with an owner gate, else the last step: the steps
@@ -157,7 +171,7 @@ A void verdict doesn't count toward the three verdicts; voids have their own cap
 at the third verdict still goes to `final`, so a lane can hold four verdicts: the cap of three stops FAILs,
 not the fresh final pass. Every budget is the lane's, so no mix of outcomes resets one: one resend per role,
 one `needs-context` round, and a guard fix (resent or not) that trips a guard again stops. Every lane ends in
-`close` or `stop`. With no `gate` in the workflow file, a `PASS` closes on the verdict and the output says so.
+`close` or `stop`, or waits in a hold (the owner's, a park, or the guard's until main is fixed). With no `gate` in the workflow file, a `PASS` closes on the verdict and the output says so.
 
 ### Steps in a contract
 
@@ -183,7 +197,8 @@ has 2 steps`. `agentry board contract <id>` prints `steps` (and `stepsProblem`) 
 
 The ledger keeps `steps` from `start`; each builder round before the first verdict carries `stepRun: [a, g]`.
 A held lane has `state: "held"`, `next: "resume"` and `hold: { for, when, stepRun, evidence, since, round }`
-(`when` is `after` at a run's end, `during` for a hold the conductor made); each resume appends `{ for, when,
+(`when` is `after` at a run's end, `during` for a hold the conductor made or the guard's; a guard hold is
+`for: "guard"` with its `reason` and the saved `report`); each resume appends `{ for, when,
 stepRun, evidence, since, resumedAt, note, redo }` to `holds[]`.
 
 A run that ends at an owner gate holds the lane by itself, and says why: "the owner reviews step 1 of 2
@@ -218,39 +233,49 @@ the lane during the round, and the resume carries the same round on.
 
 ### Guards
 
-- **Main touched.** Checked at each builder report, content-exact. `start` records main's HEAD and the content
-  (git blob id) of every file dirty there; every lifecycle write a lane makes records the file and its content
+- **Main touched.** Checked at each builder report, content-exact; a trip holds the lane for the guard, its
+  report saved: fix main (commit it between lanes, or add the path to `guard.allow`) and run `report` again.
+  `start` records main's HEAD and the content (git blob id) of every file dirty there; every lifecycle write a lane makes records the file and its content
   before and after (`boardWrites` in its ledger). A main file may differ from the lane's start only when its
   content is reached from its start content, or from what a recorded merge committed, through recorded
   lifecycle writes, by this lane or any other. So parallel lanes never trip each other, and anything else is a
-  breach: another row or cell of the board, free text, a file outside the board, a file dirty at start that
-  changed or was reverted since. HEAD may move only by other lanes' merges, each the run `preHead` → landed
+  breach: another row, cell or free text in a board file a running lane owns, a file outside the board, a file
+  dirty at start that changed or was reverted since (board files no running lane owns are allowed, below). HEAD may move only by other lanes' merges, each the run `preHead` → landed
   commits → board commit its ledger records, matched against main's first-parent history. Agentry's own files
   are not checked: `.agentry/run/`, and new memory records (`.agentry/memory/<facts|episodes>/<slug>-<ULID>.md`,
   untracked, or in a commit that only adds them), the same definition `agentry lane merge` and the gate use for a
   clean main (one function, `own-memory.mjs`). Anything else under the store is a breach: another file, a
   record staged as new, an edit of a tracked record. So a memory write that rewrites a committed fact
-  (reinforce, feedback) stops the lane by design: commit it between lanes, not during one. A path's
+  (reinforce, feedback) trips the guard by design: commit it between lanes, not during one. A path's
   type and mode count with its content (a symlink, a chmod).
   `agentry board add` and `agentry board set --apply` run in the main checkout record what they wrote the same way
-  (`.agentry/run/process/board-writes.jsonl`), so a night call written with them stops no lane; a hand edit
-  of the same file still does. Files the workflow file lists in `guard.allow` (a status file, a docs folder)
+  (`.agentry/run/process/board-writes.jsonl`), so a night call written with them trips no lane; so does a hand
+  edit of a board file no running lane owns (below). Files the workflow file lists in `guard.allow` (a status file, a docs folder)
   may change uncommitted while lanes run, except a file a running lane's contract owns: an edit there still
-  stops the lane. A commit on main's first-parent line passes too when every path it touches matches
+  trips the guard. A commit on main's first-parent line passes too when every path it touches matches
   `guard.allow` and none is owned by a running lane (`building`, `fixing`, `verifying`, `held`); the report's
   `guards` line says `main moved by allowed commits: <n> (<short shas>)`. Agentry's config in use, the process
   file and its workflow file (`.agentry/process.json`, `.agentry/workflow.json`, or the `--process` file and
   its sibling), counts as a `guard.allow` path for every check, committed or not, with or without a
-  `guard.allow` key, unless a running lane's contract owns it. A commit touching any other path,
+  `guard.allow` key, unless a running lane's contract owns it. So does every board location the process file
+  names, resolved as the board reader resolves it: each kind's `at.table` file, each `contract.blocks` file,
+  each `create.blocks[].file`, each item's file (a `files` kind's) and own file (`file.glob`), and
+  `status.note`. A commit touching any other path,
   or an owned allowed path, trips with `HEAD moved …` plus `(<path> is not in guard.allow)` or
-  `(<path> is owned by <lane>)`. So: board edits through `agentry board add` / `agentry board set --apply`,
-  never by hand, and no other commits on main while a lane builds. A held lane's owned files stay protected for the other
+  `(<path> is owned by <lane>)`. So: a board file a running lane owns changes only through `agentry board
+  add` / `agentry board set --apply`, and no commits but board, config and `guard.allow` paths on main while
+  a lane builds. A held lane's owned files stay protected for the other
   lanes; `resume` checks main the same way, so an edit made while a lane was held is undone before it goes on.
 - **Trust boundary.** The guard catches a builder that slips into the main checkout; it is not a sandbox. It
   trusts `.agentry/run/` as Agentry's steps wrote it and checks each ledger's claims against git where git can
   say, so a planted ledger naming a SHA excuses nothing. A builder that forges a whole merge record, or edits
   ledgers on purpose, is beyond a guard on a cooperating agent: read the diff when a trip, or its absence,
   looks wrong.
+- **A stopped lane.** Its ledger stays as it is; `show` names the reason and the ways on: `agentry lane merge
+  <id> --branch agentry/<id>` lands the branch as it is (the owner's call), or `exec restart <id> --carry`
+  starts it again with its work (when available).
+- **Mid-land.** `start` refuses while a ledger is `merging` with its picks on main: a red gate may still take
+  them off, and a lane cut then would carry them.
 - **The worktree.** A builder leaves no uncommitted or untracked files and at least one commit past base.
 - **The tip.** A verdict counts only for the tip it was dispatched on: nobody rebases while a verifier reads.
 - **Nested worktrees.** A worktree inside the lane's own worktree is listed in `nested` on every step. Name
