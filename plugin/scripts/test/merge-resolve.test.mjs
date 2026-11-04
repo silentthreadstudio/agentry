@@ -223,3 +223,16 @@ test("--resolve refuses while the ledger holds files the land set aside, and a v
   assert.match(out(bad), /--resolve takes landed or rolled-back, not "maybe"/);
   assert.equal(ledgerBytes(), before);
 });
+
+test("--resolve landed names each lane stacked on it with its restack command, and restacks none", () => {
+  stuckLand();
+  const ledger = JSON.parse(ledgerBytes());
+  const { merge: _, ...rest } = ledger;
+  const child = { ...rest, id: "T2", branch: "agentry/T2", on: ID, state: "verified" };
+  writeLedger(root, child);
+  const before = readFileSync(join(ledgerDir(), "T2.json"), "utf8");
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /! stack +T2 is stacked on T1: agentry lane exec restack T2 --main/);
+  assert.equal(readFileSync(join(ledgerDir(), "T2.json"), "utf8"), before);
+});

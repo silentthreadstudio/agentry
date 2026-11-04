@@ -7,7 +7,7 @@
 // closed on the owner's call (`--resolve landed|rolled-back`, field 82), checked against main first.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { read as readLedger } from "../../process/ledger.mjs";
+import { list as listLedgers, read as readLedger } from "../../process/ledger.mjs";
 import { sha256 } from "../carry-io.mjs";
 import { endStrayGate } from "../gate-group.mjs";
 import {
@@ -25,9 +25,10 @@ import {
   textAt,
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
+import { childrenOf } from "../stack.mjs";
 import { backStop, putBackAllow, releaseWrites } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
-import { afterLand, done, landNext, now, ok, red, save, setMerge, short } from "./lane.mjs";
+import { afterLand, done, landNext, now, ok, red, save, setMerge, short, warn } from "./lane.mjs";
 
 const readText = (root, file) => {
   try {
@@ -419,18 +420,12 @@ export function resolveMode(lane) {
     const next = afterLand(lane);
     save(lane, { ...merged, next });
     const detail = `resolved: ${n} pick(s) on main; ledger merged (the board record is yours: board set … and the handoff line)`;
-    return done(
-      0,
-      lane,
-      [
-        ok(
-          "resolve",
-          detail,
-          merge.landed.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`),
-        ),
-      ],
-      next,
+    const picks = merge.landed.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`);
+    // No board commit, so no restack of the lanes stacked on this one: each is named with its command.
+    const kids = childrenOf(listLedgers(root), id).map((child) =>
+      warn("stack", `${child} is stacked on ${id}: agentry lane exec restack ${child} --main`),
     );
+    return done(0, lane, [ok("resolve", detail, picks), ...kids], next);
   }
   const next = landNext(id);
   save(lane, { state: "verified", merge: undefined, next });
