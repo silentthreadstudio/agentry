@@ -673,6 +673,22 @@ test('under exec.rebase "gate" a verified lane\'s changed carry goes to the gate
   assert.deepEqual(ledger.rounds, []);
 });
 
+test("a verified lane's restart that stops past the archive clears the old verdict from the board", () => {
+  const r = repo();
+  judged(r);
+  git(r.root, "branch", "agentry/T3.1/x", "main"); // blocks keeping the old branch: a stop past the archive
+  const res = spawnLane(r, ["exec", "restart", "T3", "--carry"]);
+  const out = res.stdout + res.stderr;
+  assert.equal(res.status, 1, out);
+  assert.ok(out.includes("but the restart stopped: "), out);
+  assert.match(
+    row(r.root, "T3"),
+    /\| +\|$/,
+    "the old lane's PASS does not stand beside a stopped restart",
+  );
+  assert.doesNotMatch(out, /board set/);
+});
+
 test("restart --carry of a verified lane whose carry conflicts keeps today's build round", () => {
   const r = repo();
   judged(r);

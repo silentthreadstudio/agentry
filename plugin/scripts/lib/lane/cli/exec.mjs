@@ -2805,7 +2805,12 @@ function clearVerdict({ root, spec, model, kind }, id) {
   const item = own(model.kinds, life.kind)?.items.find((i) => i.id === id);
   const was = item?.fields?.[field];
   if (was === null || was === undefined || String(was).trim() === "") return null;
-  const res = boardSet([life.kind, id, `${field}=`, "--apply", "--json"], { root, spec, model });
+  let res;
+  try {
+    res = boardSet([life.kind, id, `${field}=`, "--apply", "--json"], { root, spec, model });
+  } catch {
+    res = { exit: 1 }; // a board it cannot write (read-only): the line says how to clear it by hand
+  }
   return res.exit === 0
     ? null
     : `! board ${field} ${was} is from the old lane: agentry board set ${life.kind} ${id} ${field}= --apply`;
@@ -2990,6 +2995,9 @@ function restart(ctx, id) {
     // The steps back by hand: the old branch out of the new one's way (a stop before the rename leaves it
     // under its own name), the start, then (for a carry) the old commits and the saved diff.
     const unrenamed = keptName && held === old.branch;
+    // The old lane's verdict on the board does not stand for a restart that stopped: cleared now, or the
+    // step that clears it named.
+    const unclear = clearVerdict(ctx, id);
     const steps = [
       ...(copy ? [`git branch -D ${old.branch}`] : []),
       ...(unrenamed ? [`git branch -m ${old.branch} ${keptName}`] : []),
@@ -2998,6 +3006,7 @@ function restart(ctx, id) {
         ? [`in its worktree git cherry-pick ${short(old.base)}..${keptName}`]
         : []),
       ...(withWork && work.files.length ? [`git apply --3way ${diff}`] : []),
+      ...(unclear ? [unclear.slice(unclear.indexOf("agentry board set"))] : []),
     ];
     throw new Stopped(
       `${id} is archived (${archived.ledger}, ${archived.runs}), its old work is on ${held ?? "no branch"}${work.files.length ? ` and its uncommitted diff at ${diff}` : ""}, but the restart stopped: ${e.message} → fix that, then: ${steps.join("; ")}`,
