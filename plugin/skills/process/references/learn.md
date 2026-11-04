@@ -230,6 +230,15 @@ and § guard and cleanup.
     the same map when the key is missing and print `drafts.decision derived from the <kind> kind`; writing it
     makes it visible and editable. An existing `drafts.decision` is shown, not rewritten. A board with no such
     kind gets no key, and a decision draft's apply says to add one.
+14. **Commit rules.** Only when the workflow file has no `commits`. Run `agentry board commits --learn` (`--json`
+    for the fields): it reads the default branch's last 500 first-parent commits and prints the rules they keep,
+    writing nothing: `subjectPattern` with the Conventional Commits types plus every other leading `type(` /
+    `type:` used `--min` times or more (default 3), each with its count; `subjectMax`; and whether every typed
+    subject has a scope (then the pattern requires one). Propose exactly those, saying where each came from;
+    never write a pattern from the Conventional Commits spec alone, which refuses the types this repo already
+    uses. A repo with no history gets the standard set, and the output says so. Write `commits` through the
+    workflow draft and `agentry board explain` on the owner's OK; add a `forbid` entry only for a rule the repo
+    states (an attribution trailer). An existing `commits` is shown, not rewritten.
 
 End with what was written (paths), what was left as it was, and the last `agentry board check` result. Nothing is
 committed: the user reviews the diff.
