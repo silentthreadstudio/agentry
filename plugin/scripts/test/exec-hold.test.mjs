@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { heldText } from "../lib/lane/exec-view.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
 import { writeSpec } from "./spec-files.mjs";
 
@@ -694,7 +695,7 @@ test("asked again in one step: held for the context, nothing changed; resume sen
   );
   assert.match(
     held.json.held,
-    /^the builder needs more context again → supply it: .*exec resume T3 --root '.*' --note "<the fact>"; or let it touch them: .*exec owns T3 --root '.*' --add cfg\/keys\.json --apply, then resume$/,
+    /^the builder needs more context again → supply it: .*exec resume T3 --root '.*' --note "<the fact>"; or let it touch them: .*exec owns T3 --root '.*' --add cfg\/keys\.json --apply, then resume; or start it again with its work: .*exec restart T3 --root '.*' --carry$/,
   );
   assert.match(
     held.json.asks,
@@ -740,8 +741,14 @@ test("a guard trip on the report that asks again is a guard hold; once main is c
   assert.equal(again.exit, 0, again.stderr);
   assert.equal(ledgerOf(r.root, "T3").hold.for, "context");
   assert.match(again.json.held, /^the builder needs more context again/);
-  // No path outside owns named: no owns hint.
+  // No path outside owns named: no owns hint; a restart is still the other way on.
   assert.doesNotMatch(again.json.held, /let it touch them/);
+  assert.match(again.json.held, /; or start it again with its work: .*exec restart T3 .*--carry$/);
+});
+
+test("heldText names a context hold's reason and the resume that answers it", () => {
+  const hold = { for: "context", when: "during", reason: "which key?", report: "/r", since: "t" };
+  assert.equal(heldText(hold, 0), 'for more context: which key? · resume with --note "<the fact>"');
 });
 
 test("owns --add on a lane held for the context: appended, a path already owned changes nothing and says so", () => {
@@ -750,7 +757,7 @@ test("owns --add on a lane held for the context: appended, a path already owned 
   ask(out);
   out = lane(r, "report", "T3").json;
   ask(out, "needs: cfg/keys.json");
-  assert.match(lane(r, "report", "T3").json.held, /--add cfg\/keys\.json --apply, then resume$/);
+  assert.match(lane(r, "report", "T3").json.held, /--add cfg\/keys\.json --apply, then resume; /);
   const preview = lane(r, "owns", "T3", "--add", "cfg/keys.json");
   assert.deepEqual([preview.exit, preview.json.applied], [0, false]);
   assert.equal(ledgerOf(r.root, "T3").owned.length, 1, "a preview writes nothing");

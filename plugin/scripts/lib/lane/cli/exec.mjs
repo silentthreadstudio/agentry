@@ -1063,7 +1063,7 @@ function heldLead(root, ledger) {
   if (hold.for === "context") {
     const run = laneLine(root, "resume", ledger.id, ' --note "<the fact>"');
     return {
-      held: `the builder needs more context again → supply it: ${run}${ownsHint(root, ledger, hold.report)}`,
+      held: `the builder needs more context again → supply it: ${run}${ownsHint(root, ledger, hold.report)}; or start it again with its work: ${laneLine(root, "restart", ledger.id, " --carry")}`,
       asks: `${hold.reason} (${hold.report}), since ${hold.since}`,
       run,
     };

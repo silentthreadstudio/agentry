@@ -33,7 +33,7 @@ The lane refused your last report ({{from}}): {{reason}}. Fix exactly that, then
 ## Supplied context
 
 You asked for a fact in {{from}}. The conductor added it at the end of this brief, under "The fact". Use it
-and finish the contract; anything else missing is NEEDS_CONTEXT again, and the lane then stops.
+and finish the contract; anything else missing is NEEDS_CONTEXT again, and the lane then holds for the owner.
 
 {{/needed}}
 {{inner}}
