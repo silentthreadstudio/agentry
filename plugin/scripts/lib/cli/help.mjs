@@ -12,30 +12,59 @@
 // refuse(what, why, next?) -> { exit: 2, out }                that line as a refusal
 // usageError(what, why) -> { exit: 2, out }                   a refusal pointing at `<what> --help`
 // PREVIEW                                                     the line a write prints without --apply
+// pluginVersion(root?) -> string | null                         the running build's version (field 61)
 
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nextStep } from "./invoke.mjs";
 
 const PAD = 2;
-const MANIFEST = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "..",
-  ".claude-plugin",
-  "plugin.json",
-);
+const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-// The plugin's version, the one a session that started before a flag changed can check itself against.
-function version() {
+// `git -C root …`'s output, trimmed; throws when git fails or can't start.
+function git(root, args) {
+  const res = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+  if (res.error || res.status !== 0) throw new Error(`git ${args[0]} failed`);
+  return res.stdout.trim();
+}
+
+// What the running build is past its version (field 61): `+<n> (<short HEAD>)`, n the commits on HEAD's
+// first-parent line since the commit that last changed plugin.json, and ` dirty` when the plugin tree has
+// uncommitted changes. "" when the root is no git checkout (a worktree is one), HEAD is that commit, the
+// commit is out of reach (a shallow clone's boundary stands in for it), or git fails.
+function buildOf(root) {
   try {
-    return `agentry plugin ${JSON.parse(readFileSync(MANIFEST, "utf8")).version}`;
+    if (git(root, ["rev-parse", "--is-inside-work-tree"]) !== "true") return "";
+    const bump = git(root, ["log", "-1", "--format=%H", "--", ".claude-plugin/plugin.json"]);
+    if (!bump) return "";
+    const shallow = git(root, ["rev-parse", "--is-shallow-repository"]) === "true";
+    if (shallow && git(root, ["log", "-1", "--format=%P", bump]) === "") return "";
+    if (git(root, ["rev-parse", "HEAD"]) === bump) return "";
+    const n = git(root, ["rev-list", "--count", "--first-parent", `${bump}..HEAD`]);
+    const head = git(root, ["rev-parse", "--short", "HEAD"]);
+    const dirty = git(root, ["status", "--porcelain", "--", "."]) ? " dirty" : "";
+    return `+${n} (${head})${dirty}`;
   } catch {
-    return "agentry plugin (version unknown)";
+    return "";
   }
 }
+
+/** The running build's version: plugin.json's under `root` (the plugin's own by default), with what the
+ *  checkout is past it; null when plugin.json can't be read. */
+export function pluginVersion(root = PLUGIN_ROOT) {
+  let version;
+  try {
+    ({ version } = JSON.parse(readFileSync(join(root, ".claude-plugin", "plugin.json"), "utf8")));
+  } catch {
+    return null;
+  }
+  return `${version}${buildOf(root)}`;
+}
+
+// The plugin's version, the one a session that started before a flag changed can check itself against.
+const version = () => `agentry plugin ${pluginVersion() ?? "(version unknown)"}`;
 
 /** The options a subcommand takes, from its help: name → whether it takes a value. */
 export function flagsOf(help) {

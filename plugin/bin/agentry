@@ -5,7 +5,6 @@
 // and exit codes are theirs. `agentry run …` and `agentry lock …` run in this process (scripts/lib/cli/run.mjs),
 // so the pid a lock records is the one a `kill -9` of `agentry run` takes away. Node built-ins only.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -28,13 +27,16 @@ flags, exit codes and an example. --process names the process file; the workflow
 workflow.json.`;
 
 const [group, ...rest] = process.argv.slice(2);
-const version = () =>
-  JSON.parse(readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8")).version;
+// The running build's version: plugin.json's, and in a git checkout what HEAD is past it (lib/cli/help.mjs).
+const version = async () => {
+  const help = await import(pathToFileURL(join(PLUGIN, "scripts", "lib", "cli", "help.mjs")).href);
+  return help.pluginVersion(PLUGIN);
+};
 
 if (group === undefined || group === "--help" || group === "-h") {
-  console.log(`${HELP}\n\nagentry plugin ${version()}`);
+  console.log(`${HELP}\n\nagentry plugin ${await version()}`);
 } else if (group === "--version" || group === "-v") {
-  console.log(version());
+  console.log(await version());
 } else if (group === "draft" || Object.hasOwn(SCRIPTS, group)) {
   const [script, args] =
     group === "draft" ? ["board.mjs", ["draft", ...rest]] : [SCRIPTS[group], rest];
