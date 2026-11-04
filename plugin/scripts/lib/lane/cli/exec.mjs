@@ -1498,11 +1498,13 @@ function owns(ctx, id) {
   const already = [];
   if (set !== null) ledger = { ...ledger, owned: withNew(ledger.worktree, paths) };
   else {
+    // Past a passing verdict: verified, landing or landed, parked verified, or held at its notes cap.
+    const capped = ledger.hold?.when === "verdict";
     const verified =
-      ["verified", "merging", "merged"].includes(ledger.state) || isVerifiedPark(ledger);
+      ["verified", "merging", "merged"].includes(ledger.state) || isVerifiedPark(ledger) || capped;
     if (verified)
       refuse(
-        `owns --add is for a lane still building: ${id} is ${ledger.state} (next ${ledger.next}); a change now is the owner's (${laneLine(root, "fix", id, ' --owner "<the change>"')})`,
+        `owns --add is for a lane still building: ${id} is ${capped ? "held at its notes cap" : ledger.state} (next ${ledger.next}); a change now is the owner's (${laneLine(root, "fix", id, ' --owner "<the change>"')})`,
       );
     // Each path as `start` reads it (a bare name found in the tree), `./` and a trailing `/` dropped, kept
     // only when no owned entry covers it yet: the guard's own reading (a directory, a glob, a bare name).

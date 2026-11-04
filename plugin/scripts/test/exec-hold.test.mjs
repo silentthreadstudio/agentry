@@ -963,6 +963,20 @@ test("a flagged item at the notes cap with a note open holds for the owner; resu
   assert.equal(lane(r, "gate", "T3").json.next, "close");
 });
 
+test("held at the notes cap: owns --add is refused as on a verified lane", () => {
+  // R1d-38 r2 N4: it was applied on a lane past its passing verdict.
+  const r = flaggedRepo();
+  assert.equal(noted(r).json.state, "held");
+  const before = ledgerOf(r.root, "T3").owned;
+  const refused = lane(r, "owns", "T3", "--add", "x.txt", "--apply");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /owns --add is for a lane still building: T3 is held at its notes cap \(next resume\); a change now is the owner's/,
+  );
+  assert.deepEqual(ledgerOf(r.root, "T3").owned, before);
+});
+
 test("held at the notes cap: fix --owner sends it back to its builder, then the recheck", () => {
   const r = flaggedRepo();
   assert.equal(noted(r).json.state, "held");
