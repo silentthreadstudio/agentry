@@ -7,6 +7,7 @@
 // closed on the owner's call (`--resolve landed|rolled-back`, field 82), checked against main first.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { identities } from "../../process/git.mjs";
 import { list as listLedgers, read as readLedger } from "../../process/ledger.mjs";
 import { sha256 } from "../carry-io.mjs";
 import { endStrayGate } from "../gate-group.mjs";
@@ -384,27 +385,40 @@ function patchIdsOf(root, revs) {
   return { ids };
 }
 
-// Why `rolled-back` cannot be said of `merge`, or null: no recorded pick is on main, and no first-parent
-// commit since preHead, wherever it sits, has the patch of a planned one (a land killed while picking,
-// before it recorded any, with the owner's commits around them). When git cannot tell, that is the answer:
-// never "none".
+// Why `rolled-back` cannot be said of `merge`, or null. A planned commit is on main when any of these
+// holds: it, or a recorded pick, is an ancestor of HEAD (the owner merged the branch); a commit since
+// preHead, any parent and any place, has its identity (author, date and message, which a cherry-pick keeps
+// even when the owner resolved its conflict by hand); a first-parent commit since preHead has its patch.
+// When git cannot tell, that is the answer: never "none".
 function notRolledBack(root, merge) {
+  const onMain = (sha) => `${short(sha)} is on main: not rolled back`;
+  const cannotTell = (why) => `cannot tell whether a pick is on main (${why}): not rolled back`;
   const landed = Array.isArray(merge.landed) ? merge.landed : [];
-  const recorded = landed.find((sha) => isAncestor(root, sha, "HEAD"));
-  if (recorded) return `${short(recorded)} is on main: not rolled back`;
   const planned = Array.isArray(merge.planned) ? merge.planned : [];
+  const ancestor = [...landed, ...planned].find((sha) => isAncestor(root, sha, "HEAD"));
+  if (ancestor) return onMain(ancestor);
   if (planned.length === 0) return null;
   if (typeof merge.preHead !== "string")
     return "the ledger names no preHead: cannot tell what is on main";
+  const since = git(root, ["rev-list", "--reverse", `${merge.preHead}..HEAD`, "--"]);
+  if (since.status !== 0)
+    return cannotTell(since.stderr.trim().split("\n")[0] || "git rev-list failed");
+  const commits = since.stdout.split("\n").filter(Boolean);
+  const ids = identities(root, [...planned, ...commits]);
+  const unread = [...planned, ...commits].find((sha) => !ids.has(sha));
+  if (unread) return cannotTell(`git cannot read ${short(unread)}'s author, date and message`);
+  const wanted = new Set(planned.map((sha) => ids.get(sha)));
+  const same = commits.find((sha) => wanted.has(ids.get(sha)));
+  if (same) return onMain(same);
   const mine = patchIdsOf(root, ["--no-walk=unsorted", ...planned]);
   const main = mine.error
     ? mine
     : patchIdsOf(root, ["--reverse", "--first-parent", `${merge.preHead}..HEAD`]);
   const error = mine.error ?? main.error;
-  if (error) return `cannot tell whether a pick is on main (${error}): not rolled back`;
+  if (error) return cannotTell(error);
   const picks = new Set(mine.ids.map((p) => p.patchId));
   const on = main.ids.find((p) => picks.has(p.patchId));
-  return on ? `${short(on.sha)} is on main: not rolled back` : null;
+  return on ? onMain(on.sha) : null;
 }
 
 /** `lane merge <id> --resolve landed|rolled-back`: on the owner's call, close a ledger in `merging` a land

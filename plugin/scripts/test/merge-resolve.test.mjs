@@ -309,3 +309,110 @@ test("--resolve refuses at recording while the record's board writes sit uncommi
   }
   assert.equal(status(), "M plan/BOARD.md");
 });
+
+// --- verifier r5: a pick on main its patch id does not match (P1, P2, P3; C0 the control) -------------
+
+const F = "1\n2\n3\n4\n5\n6\n7\n8\n";
+/** Commit `src/f.txt` with line `n` replaced by `text` in `dir`: the commit's SHA. */
+const editF = (dir, n, text, subject) =>
+  commitFile(dir, "src/f.txt", F.replace(`${n}\n`, `${text}\n`), subject);
+const patchId = (sha) =>
+  spawnSync("git", ["-C", root, "patch-id", "--stable"], {
+    input: git(root, "show", sha),
+    encoding: "utf8",
+    env: gitEnv,
+  }).stdout.split(" ")[0];
+/** The branch, cut from main with `src/f.txt` on it, and the ledger of a land killed while picking. */
+function laneWithF() {
+  commitFile(root, "src/f.txt", F);
+  return create(root, { id: ID, base: "main" }).path;
+}
+function killedLedger({ preHead, planned, path }) {
+  writeLedger(root, {
+    v: 1,
+    id: ID,
+    kind: "task",
+    contract: { file: "plan/TASKS.md", line: 1 },
+    origin: "exec",
+    mainBranch: "main",
+    base: preHead,
+    worktree: path,
+    branch: `agentry/${ID}`,
+    mainAtStart: { head: preHead, porcelain: [] },
+    worktreesAtStart: [],
+    rounds: [],
+    gates: [],
+    checks: {},
+    usedMemories: [],
+    state: "merging",
+    next: "fix what the finding names, then land again (the picks stay; it resumes)",
+    merge: {
+      preHead,
+      planned,
+      tip: planned.at(-1),
+      stateBefore: "verified",
+      step: "picking",
+      at: "2026-11-01T00:00:00.000Z",
+    },
+  });
+}
+
+test("--resolve rolled-back refuses a pick on main whose context lines, so its patch id, differ", () => {
+  const path = laneWithF();
+  const lane = editF(path, 5, "five", "feat: lane edit");
+  const preHead = editF(root, 2, "two", "chore: owner edit before the land");
+  git(root, "cherry-pick", lane);
+  const pick = head();
+  assert.notEqual(patchId(pick), patchId(lane)); // the fixture: only the identity matches
+  killedLedger({ preHead, planned: [lane], path });
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), new RegExp(`${pick.slice(0, 7)} is on main: not rolled back`));
+  assert.equal(ledgerBytes(), before);
+});
+
+test("--resolve rolled-back refuses a pick the owner resolved by hand and continued", () => {
+  const path = laneWithF();
+  const lane = editF(path, 3, "lane", "feat: lane edit");
+  const preHead = editF(root, 3, "owner", "chore: owner edit before the land");
+  const picked = spawnSync("git", ["-C", root, "cherry-pick", lane], { env: gitEnv });
+  assert.notEqual(picked.status, 0); // the fixture: the pick conflicts
+  writeFileSync(join(root, "src", "f.txt"), F.replace("3\n", "owner+lane\n"));
+  git(root, "add", "src/f.txt");
+  git(root, "-c", "core.editor=true", "cherry-pick", "--continue");
+  const pick = head();
+  assert.notEqual(pick, preHead);
+  killedLedger({ preHead, planned: [lane], path });
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), new RegExp(`${pick.slice(0, 7)} is on main: not rolled back`));
+  assert.equal(ledgerBytes(), before);
+});
+
+test("--resolve rolled-back refuses when the owner merged the branch itself (--no-ff)", () => {
+  const path = laneWithF();
+  const lane = editF(path, 5, "five", "feat: lane edit");
+  const preHead = head();
+  git(root, "merge", "-q", "--no-ff", "-m", "merge lane by hand", `agentry/${ID}`);
+  killedLedger({ preHead, planned: [lane], path });
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), new RegExp(`${lane.slice(0, 7)} is on main: not rolled back`));
+  assert.equal(ledgerBytes(), before);
+});
+
+test("--resolve rolled-back resolves once that pick is reset off main, an owner commit after", () => {
+  const path = laneWithF();
+  const lane = editF(path, 5, "five", "feat: lane edit");
+  const preHead = editF(root, 2, "two", "chore: owner edit before the land");
+  git(root, "cherry-pick", lane);
+  git(root, "reset", "-q", "--keep", preHead);
+  commitFile(root, "notes.txt", "owner\n", "docs: owner note");
+  killedLedger({ preHead, planned: [lane], path });
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 0, out(res));
+  assert.equal(readLedger(root, ID).state, "verified");
+});
