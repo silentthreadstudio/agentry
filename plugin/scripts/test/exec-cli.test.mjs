@@ -1805,7 +1805,7 @@ test("fix stops at the notes-round budget, exit 2, and says what to do next", ()
   assert.equal(over.exit, 2);
   assert.match(
     over.stderr,
-    /3 of 3 notes rounds are used \(exec\.noteRounds is 3; next is (gate|close)\) → .*exec (gate|close) T1/,
+    /3 of 3 notes rounds are used \(exec\.noteRounds is 3; next is (gate|close): .*exec (gate|close) T1 .* goes on with the notes open\) → raise exec\.noteRounds, or send it back on your word: .*exec fix T1 .*--owner "<the change>"/,
   );
   assert.equal(ledgerOf(r.root, "T1").rounds.length, rounds, "a refusal changes nothing");
 });

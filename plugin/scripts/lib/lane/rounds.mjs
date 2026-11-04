@@ -28,10 +28,14 @@
 //   final: PASS* / FAIL                     → gate → close / stop
 //   verify / recheck: FAIL                  → fix (resume the builder); at the 3rd verdict → stop
 //   no `Verdict:` last line                 → resend once, then stop
-//   verified PASS WITH NOTES (gate or close next): { type: "notes" }, notes rounds used < route noteRounds
+//   verified PASS WITH NOTES (gate or close next): { type: "notes" }, notes rounds used < the cap
 //                                           → fix (resume the builder) on the named notes, then the usual
 //                                             recheck; at the budget (0 under lean) refused: the lane goes on to
-//                                             gate / close with its notes kept open
+//                                             gate / close with its notes kept open. The cap is the event's
+//                                             `noteRounds` (the workflow file's, read at the call), else the route's
+//   verify / recheck / final: PASS*, gate or close next, at the notes cap, the item flagged and notes open
+//                                           → held for the owner (`when: "verdict"`): resume → gate / close as
+//                                             the verdict would have; { type: "owner" } → fix on the change
 //   verified (next close or merge): { type: "rebase" } → rebase (resume the last builder)
 //   verified (next close or merge): { type: "owner", note, at } → fix (resume the last builder) on the owner's
 //                                             change, `ownerFixes[]` recording it; its report goes as any fix's:
@@ -78,8 +82,8 @@
 // summary?, guards?, covered?, onlyFixCommits? }, or `held: true` when the lane was held before its report
 // was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }` (a guard hold also
 // `reason` and `report`, the saved report a report reads again; a context hold `reason` and `report`, the
-// read report; a parked verified lane `{ for: "later", when: "verified", next, evidence, since, why? }`);
-// each resume appends its answer to
+// read report; a notes-cap hold `when: "verdict"`, `reason` and `tip`, the verdict's; a parked verified lane
+// `{ for: "later", when: "verified", next, evidence, since, why? }`); each resume appends its answer to
 // `holds[]`: { for, when, stepRun, evidence, since, resumedAt, note, redo, why? }.
 //
 // The route is the ledger's snapshot from start, `route: { verify, flagged, preset, noteRounds, final,
@@ -279,9 +283,10 @@ export function step(ledger, event) {
   if (event.type === "gate") return onGate(out, event.record);
   if (event.type === "restack") return onRestack(out, event);
   const parked = event.type === "report" && out.hold?.for === "guard" ? unpark(out) : null;
-  if (out.state === "held" && !["hold", "resume"].includes(event.type))
+  const ownerAnswers = event.type === "owner" && capHeld(out);
+  if (out.state === "held" && !["hold", "resume"].includes(event.type) && !ownerAnswers)
     throw new Error(`the lane is held: it expects a resume, not a ${event.type}`);
-  if (event.type === "notes") return onNotes(out, event.notes);
+  if (event.type === "notes") return onNotes(out, event);
   if (event.type === "rebase") return onRebase(out);
   if (event.type === "rebased") return afterRebase(verified(out, "rebased"), event);
   if (event.type === "reverify") return onReverify(out);
@@ -482,6 +487,10 @@ const hold = (ledger, entry, reason) => {
   return settle(ledger, "resume", reason);
 };
 
+/** The reason a flagged item's lane holds at the notes cap with notes open (field 84). */
+export const CAP_REASON = "notes cap reached with open notes on a flagged item";
+const capHeld = (ledger) => ledger.state === "held" && ledger.hold?.when === "verdict";
+
 // A verified lane the conductor parks (field 63): only for later, as the owner's review is of a builder's round.
 const ownerHoldRefusal = "hold --for owner is for a builder's round";
 const parkedVerified = (ledger) => ledger.state === "held" && ledger.hold?.when === "verified";
@@ -560,6 +569,14 @@ function onResume(ledger, event) {
         ...extra,
       },
       reason,
+    );
+  // The notes cap held a flagged item for the owner: the OK closes it as is, as the verdict would have.
+  if (held.when === "verdict")
+    return gateOrClose(
+      ledger,
+      held.tip,
+      { gate: event.gate ?? true, tier: event.tier },
+      "the owner's OK: it goes on with its notes open",
     );
   // The owner supplied the fact a builder asked for twice in one step: the same re-dispatch as the first.
   if (held.for === "context")
@@ -643,7 +660,27 @@ function onVerdict(ledger, round, event) {
     const why = finalWhy(routeOf(ledger).final, round);
     if (why) return send(ledger, "final", {}, why);
   }
-  return gateOrClose(ledger, tip, { gate, tier });
+  return capHold(ledger, round, event) ?? gateOrClose(ledger, tip, { gate, tier });
+}
+
+// A flagged item never closes over an open note by the notes cap alone (field 84): a verdict that leaves
+// notes open (`openNotes`, counted by the caller) at the cap holds the lane for the owner, the verdict's
+// tip kept for the gate the resume settles. null when the lane goes on.
+function capHold(ledger, round, { tip, flagged, openNotes = 0, noteRounds, at }) {
+  if (!(flagged ?? routeOf(ledger).flagged) || openNotes === 0) return null;
+  const { used, max } = notesBudget(ledger, noteRounds);
+  if (used < max) return null;
+  const entry = {
+    for: "owner",
+    when: "verdict",
+    stepRun: null,
+    evidence: round.reportPath,
+    reason: CAP_REASON,
+    tip,
+    since: at,
+    round: round.n,
+  };
+  return hold(ledger, entry, CAP_REASON);
 }
 
 // Why a recheck's PASS sends a final verifier (null: it does not): always under `final: "always"`, never
@@ -659,15 +696,16 @@ function finalWhy(final, round) {
   return null;
 }
 
-/** The notes-fix rounds a lane has run and the most it may: the route's `noteRounds` (the preset's). */
-export const notesBudget = (ledger) => ({
+/** The notes-fix rounds a lane has run and the most it may: `live`, the workflow file's `exec.noteRounds`
+ *  as the caller read it now (field 84), else the route's (the preset's). */
+export const notesBudget = (ledger, live) => ({
   used: ledger.rounds.filter((r) => r.notes).length,
-  max: routeOf(ledger).noteRounds,
+  max: live ?? routeOf(ledger).noteRounds,
 });
 
 // A verified lane (PASS WITH NOTES, gate or close next) sends the builder back to fix the named notes; the
 // round after it is the usual recheck by the verifier. A resolve verdict opens no notes round.
-function onNotes(ledger, notes) {
+function onNotes(ledger, { notes, noteRounds }) {
   const verifier = verdicts(ledger).at(-1);
   if (
     verifier?.verdict !== "PASS WITH NOTES" ||
@@ -677,7 +715,7 @@ function onNotes(ledger, notes) {
     throw new Error(
       `notes can be fixed only after a PASS WITH NOTES verdict, before the lane closes (state ${ledger.state})`,
     );
-  const { used, max } = notesBudget(ledger);
+  const { used, max } = notesBudget(ledger, noteRounds);
   if (used >= max)
     throw new Error(`${used} of ${max} notes rounds are used (exec.noteRounds is ${max})`);
   const builder = builders(ledger).at(-1);
@@ -710,8 +748,13 @@ function onRebase(ledger) {
 
 // The owner sends a verified lane back with a change (field 77): one round for its last builder, recorded
 // in `ownerFixes[]` with the round it went out as. The round's report goes on as any fix's (`routeBuilt`).
+// A lane the notes cap holds for the owner goes back the same way, the change its answer in `holds[]`.
 function onOwnerFix(ledger, { note, at }) {
-  if (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next))
+  if (capHeld(ledger)) {
+    const { round: _n, ...kept } = ledger.hold;
+    ledger.holds = [...(ledger.holds ?? []), { ...kept, resumedAt: at, note, redo: false }];
+    ledger.hold = undefined;
+  } else if (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next))
     throw new Error(
       `the owner's fix is for a verified lane (state ${ledger.state}, next ${ledger.next})`,
     );
@@ -767,9 +810,9 @@ export function verifiedTip(ledger) {
 function onRestack(ledger, event) {
   const { from, to, base, onto, parent, resolution, gate = true, at, rangeDiff } = event;
   const held = ledger.state === "held";
-  if (held && (ledger.hold?.for === "guard" || ledger.hold?.when === "verified"))
+  if (held && (ledger.hold?.for === "guard" || ["verified", "verdict"].includes(ledger.hold?.when)))
     throw new Error(
-      `a restack waits for the lane's ${ledger.hold.for === "guard" ? "report after its guard trip" : "resume from its park"}`,
+      `a restack waits for the lane's ${ledger.hold.for === "guard" ? "report after its guard trip" : ledger.hold.when === "verdict" ? "owner's answer at its notes cap" : "resume from its park"}`,
     );
   if (!held && !["gate", "close", "merge"].includes(ledger.next))
     throw new Error(

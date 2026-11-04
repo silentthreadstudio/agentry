@@ -1022,7 +1022,11 @@ const heldLine = (hold, total) =>
     ? `parked, verified, since ${hold.since}${hold.why ? `: "${hold.why}"` : ""}`
     : heldText(hold, total);
 const answerOf = (h, total) =>
-  h.when === "verified" ? `verified at ${h.resumedAt}: "${h.note}"` : answerText(h, total);
+  h.when === "verified"
+    ? `verified at ${h.resumedAt}: "${h.note}"`
+    : h.when === "verdict"
+      ? `at the notes cap at ${h.resumedAt}: "${h.note}"`
+      : answerText(h, total);
 
 // The paths a NEEDS_CONTEXT report names that the lane does not own, in its first 20 lines: those of each
 // `needs: <path>` line and each backticked path (a word with a `/` or a file extension, no spaces).
@@ -1049,7 +1053,7 @@ const ownsHint = (root, ledger, reportPath) => {
 
 // What a held lane prints right after the header: the hold, and the step that answers it. A guard hold
 // is answered by fixing main and reporting again; its `hold` goes with it (the saved report, the reason).
-// A context hold by the owner's fact (or more owned files).
+// A context hold by the owner's fact (or more owned files); a notes-cap hold by the owner's OK or change.
 function heldLead(root, ledger) {
   const { hold } = ledger;
   if (ledger.state !== "held" || !hold) return {};
@@ -1058,6 +1062,13 @@ function heldLead(root, ledger) {
     return {
       held: `the builder needs more context again → supply it: ${run}${ownsHint(root, ledger, hold.report)}`,
       asks: `${hold.reason} (${hold.report}), since ${hold.since}`,
+      run,
+    };
+  }
+  if (hold.when === "verdict") {
+    const run = laneLine(root, "resume", ledger.id, ' --note "<the OK>"');
+    return {
+      held: `for the owner: ${hold.reason}, since ${hold.since} · evidence ${hold.evidence} → close it as is: ${run}, or send it back on your word: ${laneLine(root, "fix", ledger.id, ' --owner "<the change>"')}`,
       run,
     };
   }
@@ -1714,6 +1725,8 @@ function verdict(ctx, id, agent) {
           onlyFixCommits: onlyFixCommits(root, verdicts(ledger).at(-1)?.tip, tip),
         }
       : {};
+  // The notes this verdict would leave open: a flagged item at the notes cap holds on them (field 84).
+  const opened = round.step === "resolve" ? [] : openNotesOf(text, round, ledger.openNotes);
   const res = stepWith(ledger, {
     type: "verdict",
     verdict: verdictOf(text),
@@ -1723,6 +1736,9 @@ function verdict(ctx, id, agent) {
     tip,
     gate: gateOf(spec) !== null,
     tier: buildTier(ctx, ledger),
+    flagged: isFlagged(ctx, ledger),
+    openNotes: opened.length,
+    at: now(),
     ...facts,
   });
   let next = res.ledger;
@@ -1733,7 +1749,8 @@ function verdict(ctx, id, agent) {
   const resolveCheck = judged.step === "resolve";
   // The notes a verdict that lets the lane go on leaves open; a resolve check's are about the resolution.
   const notes = { line: null };
-  if (counted && !resolveCheck && ["gate", "close"].includes(next.next)) {
+  const capped = next.hold?.when === "verdict";
+  if (counted && !resolveCheck && (["gate", "close"].includes(next.next) || capped)) {
     const open = openNotesOf(text, judged, next.openNotes);
     if (open.length) next.openNotes = open;
     else next.openNotes = undefined;
@@ -2066,10 +2083,15 @@ function fix(ctx, id, given) {
   const labels = [...new Set(given.split(",").map((n) => n.trim().toUpperCase()))];
   if (!labels.every((n) => /^N\d+$/.test(n)))
     refuse(`--notes takes the verifier's note labels, like N1,N3 (got ${given})`);
+  const byOwner = laneLine(root, "fix", id, ' --owner "<the change>"');
+  if (ledger.hold?.when === "verdict")
+    refuse(
+      `${id} is held for the owner at its notes cap: ${laneLine(root, "resume", id, ' --note "<the OK>"')} closes it as is, or send it back on your word: ${byOwner}`,
+    );
   const { used, max } = notesBudget(ledger);
   if (used >= max)
     refuse(
-      `${used} of ${max} notes rounds are used (exec.noteRounds is ${max}; next is ${ledger.next}) → ${laneLine(root, ledger.next === "close" ? "close" : "gate", id)}, or send what is left to the owner`,
+      `${used} of ${max} notes rounds are used (exec.noteRounds is ${max}; next is ${ledger.next}: ${laneLine(root, ledger.next === "close" ? "close" : "gate", id)} goes on with the notes open) → raise exec.noteRounds, or send it back on your word: ${byOwner}`,
     );
   const res = stepWith(ledger, { type: "notes", notes: labels });
   const verifier = verdicts(ledger).at(-1);
@@ -2102,7 +2124,9 @@ function ownerFix(ctx, id) {
     refuse(
       `a builder is out on round ${ledger.rounds.at(-1).n} (${ledger.next}): report it first (${laneLine(root, "report", id)})`,
     );
-  if (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next))
+  // A lane the notes cap holds for the owner (field 84) goes back on the owner's word too.
+  const capped = ledger.state === "held" && ledger.hold?.when === "verdict";
+  if (!capped && (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next)))
     refuse(`fix --owner is for a verified lane: ${id} is ${ledger.state} (next ${ledger.next})`);
   refuseAtWriterCap(root, spec);
   const res = stepWith(ledger, { type: "owner", note: owner, at: now() });
@@ -2155,9 +2179,14 @@ function hold(ctx, id, agent) {
   if (!held && !verified && expects(ledger) !== "report")
     refuse(`hold is for a builder's round: the lane is ${ledger.state} (next ${ledger.next})`);
   // The owner's review at a run's end is the owner's to answer: a park would let the lane go on without it.
-  if (held && holdFor === "later" && ledger.hold?.for === "owner" && ledger.hold.when === "after")
+  if (
+    held &&
+    holdFor === "later" &&
+    ledger.hold?.for === "owner" &&
+    ["after", "verdict"].includes(ledger.hold.when)
+  )
     refuse(
-      `${id} waits for the owner after step ${ledger.hold.stepRun?.[1] ?? "?"}: resume it with the owner's words (exec resume ${id} --note "…"), or keep it held`,
+      `${id} waits for the owner ${ledger.hold.when === "verdict" ? "at its notes cap" : `after step ${ledger.hold.stepRun?.[1] ?? "?"}`}: resume it with the owner's words (exec resume ${id} --note "…"), or keep it held`,
     );
   // A guard hold is answered by fixing main and reporting again, not by the owner's review (R1d-29 N2).
   if (held && holdFor === "owner" && ledger.hold?.for === "guard")
@@ -2208,7 +2237,8 @@ function resume(ctx, id) {
     refuse(`the lane is not held (state ${ledger.state}, next ${ledger.next})`);
   if (!note) refuse(`resume needs --note "<the owner's words>"`);
   if (redo && ledger.hold?.when !== "after") refuse(redoRefusal(ledger.hold));
-  const parked = isVerifiedPark(ledger);
+  // A parked verified lane, or one the notes cap holds: no builder is out or sent, and built is written.
+  const parked = isVerifiedPark(ledger) || ledger.hold?.when === "verdict";
   // Main may have moved by commits that touch none of the lane's files (field 68): the guard's own rule.
   const main = parked ? null : mainGuard(ctx, ledger, ledgers.list(root));
   if (main?.touched)
@@ -2235,7 +2265,7 @@ function resume(ctx, id) {
   let next = res.ledger;
   if (ledger.route) next.route = { ...ledger.route, flagged };
   next.nested = nestedTrees(root, next);
-  // A verified lane wrote built long ago: its resume writes no board cell.
+  // A verified lane (or one past its verifier) wrote built long ago: its resume writes no board cell.
   const board = parked ? null : writeBuilt(ctx, next, res);
   let dispatch = res.dispatch;
   if (dispatch && fresh) {

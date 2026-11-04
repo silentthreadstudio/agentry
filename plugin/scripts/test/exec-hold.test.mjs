@@ -822,3 +822,94 @@ test("owns --add in needs-context rewrites the waiting brief, keeping the fact; 
     /owns takes --set or --add, not both/,
   );
 });
+
+// ---- the notes cap on a flagged item (field 84) ----------------------------------------------------------
+
+// A repo whose T3 is flagged, under `exec`.
+function flaggedRepo(exec = { noteRounds: 0, final: "never" }) {
+  const r = repo();
+  const spec = structuredClone(SPEC);
+  spec.kinds.task.fields.flag = { column: "Flag", type: "flag", mark: "x" };
+  spec.exec = exec;
+  const rows = BOARD_MD.replace("| Task | Status | Verdict |", "| Task | Status | Verdict | Flag |")
+    .replace("| ---- | ------ | ------- |", "| ---- | ------ | ------- | ---- |")
+    .replace(
+      /^(\| T\d +\| todo +\| +\|)$/gm,
+      (row) => `${row}${row.startsWith("| T3") ? " x    |" : "      |"}`,
+    );
+  commitFile(r.root, "plan/BOARD.md", rows);
+  writeSpec(join(r.root, ".agentry"), spec);
+  git(r.root, "add", ".agentry");
+  git(r.root, "commit", "-q", "-m", "flag T3");
+  return r;
+}
+// T3 built and judged PASS WITH NOTES with one note: the verdict step's result.
+function noted(r) {
+  const out = lane(r, "start", "T3").json;
+  build(out, "three.txt");
+  const verify = lane(r, "report", "T3", "--agent", "builder-1").json;
+  writeFileSync(
+    verify.reportPath,
+    "N1 rename the helper\nused_memories: none\nVerdict: PASS WITH NOTES\n",
+  );
+  return lane(r, "verdict", "T3", "--agent", "verifier-1");
+}
+
+test("a flagged item at the notes cap with a note open holds for the owner; resume closes it as is", () => {
+  const r = flaggedRepo();
+  const v = noted(r);
+  assert.equal(v.exit, 0, v.stderr);
+  assert.deepEqual([v.json.state, v.json.next], ["held", "resume"]);
+  assert.match(
+    v.json.held,
+    /^for the owner: notes cap reached with open notes on a flagged item, since .* · evidence .*r2-verify\.report\.md → close it as is: .*exec resume T3 .*--note "<the OK>", or send it back on your word: .*exec fix T3 .*--owner "<the change>"$/,
+  );
+  assert.equal(v.json.why, "notes cap reached with open notes on a flagged item");
+  assert.deepEqual(ledgerOf(r.root, "T3").openNotes, ["N1 rename the helper"]);
+  assert.match(board(r.root), /\| T3 +\| verify +\| PASS WITH NOTES/);
+  // Not past it by the cap alone: no notes round, no park, no close.
+  assert.match(
+    lane(r, "fix", "T3", "--notes", "N1").stderr,
+    /T3 is held for the owner at its notes cap/,
+  );
+  assert.match(
+    lane(r, "hold", "T3", "--for", "later").stderr,
+    /T3 waits for the owner at its notes cap/,
+  );
+  assert.match(lane(r, "close", "T3").stderr, /the lane is not done/);
+  const ok = lane(r, "resume", "T3", "--note", "ship it with N1 open");
+  assert.equal(ok.exit, 0, ok.stderr);
+  assert.equal(ok.json.next, "gate");
+  assert.match(ok.json.noted, /^at the notes cap at .*: "ship it with N1 open"$/);
+  assert.equal(lane(r, "gate", "T3").json.next, "close");
+});
+
+test("held at the notes cap: fix --owner sends it back to its builder, then the recheck", () => {
+  const r = flaggedRepo();
+  assert.equal(noted(r).json.state, "held");
+  const sent = lane(r, "fix", "T3", "--owner", "rename it now");
+  assert.equal(sent.exit, 0, sent.stderr);
+  assert.deepEqual(
+    [sent.json.next, sent.json.mode, sent.json.agent],
+    ["fix", "resume", "builder-1"],
+  );
+  assert.equal(ledgerOf(r.root, "T3").hold, undefined);
+  build(sent.json, "renamed.txt");
+  assert.equal(lane(r, "report", "T3").json.next, "recheck");
+});
+
+test("an item not flagged at the cap goes on to the gate; fix --notes names the owner's way past the cap", () => {
+  const r = repo();
+  const spec = { ...SPEC, exec: { noteRounds: 0, final: "never" } };
+  writeSpec(join(r.root, ".agentry"), spec);
+  git(r.root, "add", ".agentry");
+  git(r.root, "commit", "-q", "-m", "no notes rounds");
+  const v = noted(r).json;
+  assert.equal(v.next, "gate");
+  const fix = lane(r, "fix", "T3", "--notes", "N1");
+  assert.equal(fix.exit, 2);
+  assert.match(
+    fix.stderr,
+    /0 of 0 notes rounds are used \(exec\.noteRounds is 0; next is gate: .*exec gate T3 .* goes on with the notes open\) → raise exec\.noteRounds, or send it back on your word: .*exec fix T3 --root '.*' --owner "<the change>"/,
+  );
+});

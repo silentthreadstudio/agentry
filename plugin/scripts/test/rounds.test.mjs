@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  CAP_REASON,
   MAX_VERDICTS,
   addRound,
   begin,
@@ -1423,4 +1424,104 @@ test("a context hold never sends a builder by itself: reports, verdicts and note
   const gated = step(held, { type: "gate", record: green() });
   assert.deepEqual([gated.next, gated.dispatch, gated.ledger.state], ["resume", undefined, "held"]);
   assert.throws(() => step(held, resume({ redo: true })), /--redo goes back over a finished run/);
+});
+
+test("the notes cap is the event's noteRounds when given (read live), else the route's", () => {
+  const atOne = noted({ noteRounds: 1, final: "never" }, 1);
+  assert.throws(() => step(atOne, { type: "notes", notes: ["N1"] }), /1 of 1/);
+  assert.equal(step(atOne, { type: "notes", notes: ["N1"], noteRounds: 2 }).next, "fix");
+  const fresh = noted({ noteRounds: 1, final: "never" });
+  assert.throws(
+    () => step(fresh, { type: "notes", notes: ["N1"], noteRounds: 0 }),
+    /0 of 0 notes rounds are used \(exec\.noteRounds is 0\)/,
+  );
+  assert.deepEqual(notesBudget(atOne, 3), { used: 1, max: 3 });
+});
+
+// A lane on `route` built and out with its verifier.
+const verifying = (route) => go(routed(route), report("DONE", ok, { agent: "builder-1" })).ledger;
+const capped = (extra = {}) => judge("PASS WITH NOTES", TIP, { openNotes: 2, at: AT, ...extra });
+
+test("a flagged item at the notes cap with notes open → held for the owner, not offered close", () => {
+  const ledger = verifying({ flagged: true, noteRounds: 0, final: "never" });
+  const res = pure(ledger, capped());
+  assert.equal(res.next, "resume");
+  assert.equal(res.dispatch, undefined);
+  assert.deepEqual(res.ledger.hold, {
+    for: "owner",
+    when: "verdict",
+    stepRun: null,
+    evidence: ledger.rounds.at(-1).reportPath,
+    reason: CAP_REASON,
+    tip: TIP,
+    since: AT,
+    round: 2,
+  });
+  assert.equal(res.reason, "notes cap reached with open notes on a flagged item");
+  assert.equal(res.ledger.rounds.at(-1).verdict, "PASS WITH NOTES", "the verdict counts");
+  // The flag the caller reads now counts as the route's does.
+  const now = verifying({ noteRounds: 0, final: "never" });
+  assert.equal(step(now, capped({ flagged: true })).ledger.hold.when, "verdict");
+});
+
+test("the cap reached after a notes round holds a flagged item whose recheck leaves notes open", () => {
+  let ledger = verifying({ flagged: true, noteRounds: 1, final: "never" });
+  ledger = go(ledger, capped()).ledger;
+  assert.equal(ledger.next, "gate", "below the cap the lane goes on");
+  ledger = go(ledger, { type: "notes", notes: ["N1"] }).ledger;
+  ledger = go(ledger, report("DONE")).ledger;
+  assert.equal(ledger.next, "recheck");
+  assert.equal(go(ledger, capped({ openNotes: 1 })).ledger.hold.reason, CAP_REASON);
+});
+
+test("the cap holds nothing on an item not flagged, with no notes open, below the cap or raised live", () => {
+  const cases = [
+    [{ noteRounds: 0 }, {}],
+    [{ flagged: true, noteRounds: 0 }, { openNotes: 0 }],
+    [{ flagged: true, noteRounds: 1 }, {}],
+    [{ flagged: true, noteRounds: 0 }, { noteRounds: 1 }],
+  ];
+  for (const [route, extra] of cases) {
+    const res = step(verifying({ ...route, final: "never" }), capped(extra));
+    assert.equal(res.next, "gate", JSON.stringify([route, extra]));
+    assert.equal(res.ledger.hold, undefined);
+  }
+});
+
+test("held at the notes cap: resume (the owner's OK) → gate on the verdict's tip, or close when green", () => {
+  const held = go(verifying({ flagged: true, noteRounds: 0, final: "never" }), capped()).ledger;
+  const res = pure(held, resume({ note: "close it as is" }));
+  assert.deepEqual([res.next, res.ledger.state, res.ledger.gateTip], ["gate", "verifying", TIP]);
+  assert.equal(res.dispatch, undefined);
+  assert.deepEqual(
+    [res.ledger.holds.at(-1).when, res.ledger.holds.at(-1).note],
+    ["verdict", "close it as is"],
+  );
+  assert.equal(step(res.ledger, { type: "gate", record: green() }).next, "close");
+  const green_ = { ...held, gates: [green()] };
+  assert.equal(step(green_, resume()).next, "close");
+  assert.equal(step(held, resume({ gate: false })).next, "close");
+});
+
+test("held at the notes cap: the owner's change → fix (resume the builder), the change its answer", () => {
+  const held = go(verifying({ flagged: true, noteRounds: 0, final: "never" }), capped()).ledger;
+  const res = pure(held, owner("drop N2's helper"));
+  assert.equal(res.next, "fix");
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual(
+    [round.step, round.agent, round.owner.note],
+    ["fix", "builder-1", "drop N2's helper"],
+  );
+  assert.equal(res.ledger.hold, undefined);
+  assert.equal(res.ledger.holds.at(-1).note, "drop N2's helper");
+  assert.equal(res.ledger.ownerFixes.length, 1);
+  assert.equal(go(res.ledger, report("DONE")).next, "recheck");
+});
+
+test("held at the notes cap: notes and a restack are refused; the owner's change elsewhere stays verified-only", () => {
+  const held = go(verifying({ flagged: true, noteRounds: 0, final: "never" }), capped()).ledger;
+  assert.throws(() => step(held, { type: "notes", notes: ["N1"] }), /expects a resume/);
+  assert.throws(() => step(stackedOn(held), restack()), /owner's answer at its notes cap/);
+  const contextHeld = go(go(lane(), asks()).ledger, asks()).ledger;
+  assert.throws(() => step(contextHeld, owner()), /expects a resume/);
 });
