@@ -112,6 +112,7 @@ test("start --json carries prompt, mode, status, recall, questions and ledgers",
     "prompt",
     "questions",
     "recall",
+    "stale",
     "status",
   ]);
   assert.equal(data.mode, null);
@@ -749,4 +750,25 @@ test("a record the run cannot use exits 2 with one line naming it, for start, cl
     assert.equal(lines.length, 1, res.stderr);
     assert.match(lines[0], /^✗ lane session: cannot use .*session-checks\.jsonl: EISDIR/);
   }
+});
+
+test("start prints one stale row for slots and temp files a killed holder or writer left, and none without", () => {
+  const root = fresh();
+  assert.doesNotMatch(session(root, "start").stdout, /^! stale/m);
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+  const at = new Date().toISOString();
+  const editor = join(root, ".agentry", "run", "locks", "editor");
+  mkdirSync(editor, { recursive: true });
+  writeFileSync(join(editor, "slot-1.lock"), JSON.stringify({ pid: dead, who: "run", at }));
+  const gates = join(root, ".agentry", "run", "gate-locks");
+  mkdirSync(gates, { recursive: true });
+  writeFileSync(join(gates, "slot-1.lock"), JSON.stringify({ pid: dead, who: "lane T9", at }));
+  writeFileSync(join(editor, `slot-1.lock.agentry-${dead}.tmp`), "{");
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /^! stale: 2 lock slot\(s\), 1 temp file\(s\) → .*lane sweep --apply$/m);
+  assert.deepEqual(JSON.parse(session(root, "start", "--json").stdout).stale, {
+    slots: 2,
+    temps: 1,
+  });
 });

@@ -37,7 +37,7 @@ import { idleOf } from "../idle.mjs";
 import { SKILL_DIR, skillExists } from "../merge/rows.mjs";
 import * as sessionChecksFile from "../session-checks.mjs";
 import { stackOf } from "../stack.mjs";
-import { plan } from "../sweep.mjs";
+import { leftovers, plan } from "../sweep.mjs";
 import { mainRoot } from "../worktree.mjs";
 
 export const help = {
@@ -173,8 +173,15 @@ function start({ root, spec, model }) {
     ].map(stackSummary(runRoot, all)),
     mergedToday: mergedToday(all),
     gateSlots: heldSlots(gateLockDir(runRoot)),
+    stale: staleOf(runRoot),
     ...checksField(runRoot, { root, spec }),
   };
+}
+
+// What killed holders and writers left, by count: `{ slots, temps }` (`lane sweep --apply` clears them).
+function staleOf(runRoot) {
+  const { slots, temps } = leftovers(runRoot);
+  return { slots: slots.length, temps: temps.length };
 }
 
 function closing({ root, spec, model }) {
@@ -332,6 +339,10 @@ function renderStart(s, { name, root }) {
     addList(
       "gate: ",
       s.gateSlots.map((g) => `slot ${g.slot} held by ${g.who || "unknown"} since ${g.since}`),
+    );
+  if (s.stale.slots || s.stale.temps)
+    add(
+      `! stale: ${s.stale.slots} lock slot(s), ${s.stale.temps} temp file(s) → ${nextStep("lane sweep --apply")}`,
     );
   for (const f of s.recall.slice(0, 3)) add(`recall: ${f.text}`);
   return lines.slice(0, MAX_LINES).join("\n");
