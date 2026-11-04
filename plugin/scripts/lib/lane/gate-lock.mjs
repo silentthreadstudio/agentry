@@ -125,6 +125,9 @@ export function takeOverMutex(mutex) {
     return false; // gone already: another taker took it over
   }
   const stale = staleMutex(grab);
+  // Known, accepted race: a live mutex renamed away here, and a third taker creating a new one before the
+  // link-back below, lets two writers overlap. It takes three contenders within microseconds of a stale
+  // mutex.
   if (!stale)
     try {
       linkSync(grab, mutex);

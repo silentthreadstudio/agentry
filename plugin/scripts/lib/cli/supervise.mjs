@@ -7,10 +7,18 @@
 // process exits (normally or on a thrown error) or gets SIGINT, SIGTERM or SIGHUP. A signal while a command
 // runs is forwarded to its group (SIGKILL follows `GRACE_KILL_MS` later), and the run ends once the command
 // has; a signal with no command running runs what is registered and exits 128 + the signal. SIGKILL can't
-// be caught: what it leaves, the next taker and `agentry lane sweep` free. Node built-ins only.
+// be caught: what it leaves, the next taker and `agentry lane sweep` free.
+//
+// The watchdog mode, for a process that cannot handle signals while it waits (a synchronous gate):
+//   node supervise.mjs --parent <pid> --start <start> -- <cmd> [args…]
+// runs the command in the watchdog's own process group (start the watchdog detached), stdio inherited, and
+// ends as the command does: its exit code, or the same signal. About once a second it looks at the parent
+// (`--start` its start time, so a reused pid does not pass for it); once the parent is no longer alive, it
+// kills the whole group, itself included. `watchdogArgv` builds that argv. Node built-ins only.
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
-import { groupRunning } from "../process/pid.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { alive, groupRunning, identity } from "../process/pid.mjs";
 import { say } from "./help.mjs";
 
 /** The exit of a command stopped at its limit, as `timeout(1)` gives it. */
@@ -124,3 +132,43 @@ export function supervise(cmd, limitMs, limitText, { onStart } = {}) {
     }
   });
 }
+
+const WATCHDOG = fileURLToPath(import.meta.url);
+const PARENT_POLL_MS = 1000;
+
+/** The argv that runs `cmd` under the watchdog, bound to `parent` (this process by default). */
+export function watchdogArgv(cmd, parent = identity()) {
+  const start = parent.start === null ? [] : ["--start", parent.start];
+  return [process.execPath, WATCHDOG, "--parent", String(parent.pid), ...start, "--", ...cmd];
+}
+
+// The watchdog mode (see the head of this file).
+function watch(argv) {
+  const dash = argv.indexOf("--");
+  const opts = argv.slice(0, dash);
+  const cmd = argv.slice(dash + 1);
+  const value = (name) => (opts.includes(name) ? opts[opts.indexOf(name) + 1] : undefined);
+  const parent = { pid: Number(value("--parent")), start: value("--start") ?? null };
+  if (dash < 0 || !cmd.length || !Number.isInteger(parent.pid)) {
+    process.stderr.write("supervise: --parent <pid> [--start <start>] -- <cmd> [args…]\n");
+    process.exit(2);
+  }
+  const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit" });
+  const poll = setInterval(() => {
+    if (!alive(parent)) process.kill(0, "SIGKILL"); // the whole group, this watchdog with it
+  }, PARENT_POLL_MS);
+  child.on("error", (error) => {
+    clearInterval(poll);
+    process.stderr.write(`\n[agentry] could not run ${cmd[0]}: ${error.message}\n`);
+    process.exit(1);
+  });
+  child.on("exit", (code, signal) => {
+    clearInterval(poll);
+    if (signal === null) process.exit(code ?? 1);
+    process.kill(process.pid, signal); // end by the same signal, as the command did
+    process.exit(128 + (constants.signals[signal] ?? 0));
+  });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  watch(process.argv.slice(2));

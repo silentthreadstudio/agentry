@@ -3,6 +3,8 @@
 // `runGate` reads the gate command's OWN exit code: argv, no shell, so nothing can pipe the failure away
 // (#1). It refuses to start on a dirty tree (an untracked file made "tree identical" lie, #2), counts a gate
 // that leaves files behind as red, and writes the command's stdout and stderr to a per-run log file (appended to, as it runs).
+// The command runs under `cli/supervise.mjs`'s watchdog, so it never outlives the process that runs the
+// gate: this one waits synchronously and can't act on a signal, and a SIGKILL ends it outright.
 // `pickTier`, `checklistFor` and `canSkip` are pure: which tier a role runs on a change, which manual
 // checks a land waits on, and whether a merge may skip the main gate. `globMatch` is the one glob test
 // every lane step uses. Node built-ins only.
@@ -18,6 +20,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { watchdogArgv } from "../cli/supervise.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
 import { git } from "./worktree.mjs";
 
@@ -72,8 +75,10 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
   let res;
   let timedOut = false;
   try {
-    // detached: the command leads its own process group, so a timeout can take its children down too.
-    res = spawnSync(cmd[0], cmd.slice(1), {
+    // detached: the watchdog leads the process group the command runs in, so a timeout can take its
+    // children down too; the watchdog kills that group as soon as this process is gone.
+    const [exe, ...args] = watchdogArgv(cmd);
+    res = spawnSync(exe, args, {
       cwd: top,
       stdio: ["ignore", fd, fd],
       detached: true,

@@ -1,6 +1,7 @@
 // Tests for lib/lane/gate.mjs: runGate on throwaway repos, the pure pickTier / checklistFor / canSkip
 // tables, globMatch, and flakyReds on logs written to disk.
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -13,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { heldSlots, staleGateSlots } from "../lib/lane/gate-lock.mjs";
 import {
   canSkip,
   changedSince,
@@ -563,3 +565,44 @@ test("flakyReds: a listed name counts only whole, and a CRLF log reads as LF", (
   const extra = stepLog('{"test":"t","status":"failed"}\r\n');
   assert.deepEqual(flakyReds(logWith(SUMMARY_ONLY.replace("\n", "\r\n")), ["t"], extra), ["t"]);
 });
+
+// The way `lane exec gate` and `lane merge` run a gate: in a synchronous process holding the gate slot.
+// Killed mid-gate (-9, or a signal it has no handler for), it can clean nothing up itself.
+for (const signal of ["SIGKILL", "SIGTERM"])
+  test(`${signal} of the process running a gate takes the gate command down within 3 s, and its slot reads dead`, async () => {
+    const slots = join(logs, "gate-locks");
+    const pidFile = join(logs, "gate.pid");
+    const lib = (path) => JSON.stringify(new URL(path, import.meta.url).href);
+    const cmd = node(
+      `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000)`,
+    );
+    const holder = spawn(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import { holdGate } from ${lib("../lib/lane/gate-lock.mjs")};
+         import { runGate } from ${lib("../lib/lane/gate.mjs")};
+         const held = holdGate(${JSON.stringify(slots)}, { who: "lane T1" });
+         try { runGate(${JSON.stringify(repo.dir)}, ${JSON.stringify(cmd)}, { tier: "full", logFile: ${JSON.stringify(log)} }); }
+         finally { held.release(); }`,
+      ],
+      { stdio: "ignore" },
+    );
+    const gone = new Promise((resolve) => holder.on("exit", resolve));
+    for (let i = 0; i < 200 && !existsSync(pidFile); i++)
+      await new Promise((r) => setTimeout(r, 25));
+    const gate = Number(readFileSync(pidFile, "utf8"));
+    assert.ok(alive(gate), "the gate command runs");
+    holder.kill(signal);
+    await gone;
+    const killed = Date.now();
+    while (alive(gate) && Date.now() - killed < 3000) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(alive(gate), false, "the gate command outlived its holder");
+    assert.deepEqual(heldSlots(slots), [], "the slot reads dead");
+    assert.deepEqual(
+      staleGateSlots(slots).map((s) => s.groups),
+      [[]],
+      "no group left running",
+    );
+  });

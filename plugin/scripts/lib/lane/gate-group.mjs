@@ -1,16 +1,19 @@
 // gate-group — the merge gate's process group across a killed run (plan R1b-5). `lane merge` runs the
-// gate under a wrapper that writes its own pid (the group's id) to a file the ledger names, with a nonce
-// in its argv; a rerun finds the group by that file and stops it, unless the pid now belongs to another
-// process. Node built-ins only.
+// gate under a wrapper that writes the id of the group it runs in to a file the ledger names, with a nonce
+// in its argv; a rerun finds the group by that file and stops it, unless the id now belongs to another
+// process. (`runGate`'s watchdog already ends that group about a second after the merge dies; this is
+// the backstop.) Node built-ins only.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { groupRunning as alive } from "../process/pid.mjs";
 
-// The gate runs under this wrapper: it writes its own pid to `pidFile`, then runs the gate as its
-// child. `runGate` starts it detached, so the wrapper leads the group the gate runs in and its pid is
-// the group's id. A merge killed mid-gate leaves that group running; the next run finds it by the file.
+// The gate runs under this wrapper: it writes the id of its process group to `pidFile` (the group
+// `runGate`'s watchdog leads: its argv holds this wrapper's, nonce included), then runs the gate as its
+// child. A merge killed mid-gate may leave that group running; the next run finds it by the file.
 const WRAP = `const [, pidFile, ...cmd] = process.argv.slice(1);
-require("node:fs").writeFileSync(pidFile, String(process.pid));
+const ps = require("node:child_process").spawnSync("ps", ["-o", "pgid=", "-p", String(process.pid)], { encoding: "utf8" });
+const pgid = Number.parseInt(ps.stdout ?? "", 10);
+require("node:fs").writeFileSync(pidFile, String(Number.isInteger(pgid) ? pgid : process.pid));
 const r = require("node:child_process").spawnSync(cmd[0], cmd.slice(1), { stdio: "inherit" });
 if (r.error) { console.error("[agentry] could not run " + cmd[0] + ": " + r.error.message); process.exit(127); }
 process.exit(r.status ?? 1);`;
