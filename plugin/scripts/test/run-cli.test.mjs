@@ -855,10 +855,10 @@ test("lock drop --orphan frees a slot only a leftover group holds, printing the 
       // gone already
     }
   });
+  await grouped(lockDir(dir, "editor"), orphan);
   const live = await agentry(["lock", "drop", "editor", "--orphan"], { cwd: dir });
   assert.equal(live.status, 1, "the recording run still lives");
   assert.match(live.stdout, /still lives/);
-  await grouped(lockDir(dir, "editor"), orphan);
   first.child.kill("SIGKILL");
   await first;
   const freed = await agentry(["lock", "drop", "editor", "--orphan"], { cwd: dir });
