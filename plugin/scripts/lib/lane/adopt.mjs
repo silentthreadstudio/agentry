@@ -10,11 +10,15 @@
 // adoptedWork(adopted) -> the round-1 brief's `## Adopted work` section
 // cleanupSteps(adopted) -> the commands that remove the source once the lane has landed
 // shellWord(text) -> text as one shell word: as it is when plain, else single-quoted
+// shownName(text) -> text for a one-line message: JSON-escaped when empty or holding a control character
+// resolveBranch(root, name, tips?) -> { branch, tip } | { problem, missing? }   one listed branch, exactly
 // isBranch(root, name) -> whether `name` is a branch's own name, exactly: not a revision (`b~0`, `b@{0}`)
 //                         nor another case of one
+// strayTree(trees, branch, tips) -> the worktree on another spelling of `branch` that no branch is named
+// unnamedHead(tree) -> the refusal for a worktree on a spelling no branch is named
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { worktrees } from "../process/git.mjs";
+import { branchTips, worktrees } from "../process/git.mjs";
 import { shellQuote } from "./brief.mjs";
 import { commitOf, filesOf, subjectOf } from "./land.mjs";
 import { git, porcelain } from "./worktree.mjs";
@@ -27,17 +31,45 @@ const first = (text) => text.trim().split("\n")[0] ?? "";
 export const shellWord = (text) =>
   /^[\w./@%+=:,-]+$/.test(String(text)) ? String(text) : shellQuote(text);
 
-/** Whether `name` is the name of a local branch: a valid branch name (`git check-ref-format`, so `b~0`,
- *  `b^{commit}` and `b@{0}` are not) that the ref list holds as it is spelled. `show-ref --verify` and
- *  `rev-parse` read a loose ref's file, so on a case-insensitive filesystem they take `agentry/t2` for
- *  `agentry/T2`; `for-each-ref` lists the ref's own name (and, as a pattern, the branches below it too). */
-export function isBranch(root, name) {
+/** `text` for a one-line message: as it is, or JSON-escaped when it is empty or holds a control
+ *  character (a newline would split the line). */
+export const shownName = (text) =>
+  String(text) && !/\p{Cc}/u.test(String(text)) ? String(text) : JSON.stringify(String(text));
+
+const folded = (name) => name.toLowerCase();
+
+/** The local branch `name` is, resolved once from the branch list (`tips`: `branchTips`, read here when
+ *  not given): `{ branch, tip }`, the tip from the listed line, never read again by name. `show-ref` and
+ *  `rev-parse` read a loose ref's file, so on a case-insensitive filesystem `agentry/t2` opens the loose
+ *  `agentry/T2`, even when a packed `agentry/t2` is listed too. `{ problem, missing }` when `name` is no
+ *  valid branch name (`git check-ref-format`: `b~0`, `b@{0}` and `b^{commit}` are not) or no listed branch
+ *  has it exactly; `{ problem }` when another listed branch has the same name in another case, whatever
+ *  `core.ignorecase` says: one of the two would be read or deleted for the other. */
+export function resolveBranch(root, name, tips = branchTips(root)) {
+  const missing = { problem: `${shownName(name)} does not exist`, missing: true };
   const ref = `refs/heads/${name}`;
-  if (String(name).startsWith("-")) return false;
-  if (git(root, ["check-ref-format", ref]).status !== 0) return false;
-  const listed = git(root, ["for-each-ref", "--format=%(refname)", ref]);
-  return listed.status === 0 && listed.stdout.split("\n").includes(ref);
+  if (!String(name) || String(name).startsWith("-")) return missing;
+  if (git(root, ["check-ref-format", ref]).status !== 0) return missing;
+  if (!tips.has(name)) return missing;
+  const twin = [...tips.keys()].find((b) => b !== name && folded(b) === folded(name));
+  if (twin) return { problem: `${name} has a case twin ${twin}: rename one first` };
+  return { branch: name, tip: tips.get(name) };
 }
+
+/** Whether `name` is the name of a local branch, exactly as the branch list spells it. */
+export const isBranch = (root, name) => resolveBranch(root, name).missing !== true;
+
+/** The worktree of `trees` whose HEAD is another spelling of `branch` that no branch of `tips` is named
+ *  (`git checkout WORKTREE-AGENT-X` on a case-insensitive filesystem writes that spelling into HEAD). */
+export const strayTree = (trees, branch, tips) =>
+  trees.find(
+    (t) =>
+      t.branch && t.branch !== branch && !tips.has(t.branch) && folded(t.branch) === folded(branch),
+  );
+
+/** The refusal for a worktree on a spelling no branch is named: its work cannot be told apart by name. */
+export const unnamedHead = (tree) =>
+  `${tree.path} is on ${tree.branch}, which no branch is named: check it out by its exact name`;
 
 // The open lanes of `lanes` (ledgers): not merged or closed.
 const isOpen = (l) => l.state !== "merged" && l.state !== "closed";
@@ -70,15 +102,22 @@ function rebasing(dir) {
 }
 
 // The worktree `branch` is checked out in, or the one rebasing it: `{ path, op }`, `op` what it is in
-// the middle of (null: nothing). null when no worktree holds the branch.
-function treeOf(root, branch) {
+// the middle of (null: nothing). null when no worktree holds the branch; `{ problem }` when one is on
+// another spelling of it that no branch of `tips` is named.
+function treeOf(root, branch, tips) {
   const all = worktrees(root);
   const on = all.find((t) => t.branch === branch);
   if (on) return { path: on.path, op: midOp(on.path) };
-  const mid = all.find(
-    (t) => t.branch === null && existsSync(t.path) && rebasing(t.path) === branch,
-  );
-  return mid ? { path: mid.path, op: "rebase" } : null;
+  const stray = strayTree(all, branch, tips);
+  if (stray) return { problem: unnamedHead(stray) };
+  const heads = all
+    .filter((t) => t.branch === null && existsSync(t.path))
+    .map((t) => ({ path: t.path, branch: rebasing(t.path) }))
+    .filter((t) => t.branch);
+  const mid = heads.find((t) => t.branch === branch);
+  if (mid) return { path: mid.path, op: "rebase" };
+  const strayMid = strayTree(heads, branch, tips);
+  return strayMid ? { problem: unnamedHead(strayMid) } : null;
 }
 
 // The commits of `range` oldest first, `merges` only or none of them: `{ shas }` or `{ error }`.
@@ -104,15 +143,19 @@ function revList(root, range, merges) {
  *  a clean worktree. */
 export function source(root, { branch, base, mainBranch, lanes = [] }) {
   // A revision that names a branch's commit (`b~0`) is no branch: its worktree and ledger would not match.
-  const tip = isBranch(root, branch) ? commitOf(root, `refs/heads/${branch}`) : null;
-  if (!tip) return { problem: `${branch} does not exist` };
+  // The tip is the listed one: read by name, a case twin's loose file could answer instead.
+  const tips = branchTips(root);
+  const named = resolveBranch(root, branch, tips);
+  if (named.problem) return { problem: named.problem };
+  const { tip } = named;
   if (branch === mainBranch) return { problem: `${branch} is the main branch: nothing to adopt` };
   const own = lanes.find((l) => l.branch === branch);
   if (own)
     return { problem: `${branch} is ${own.id}'s lane branch: use exec restart ${own.id} --carry` };
   const taken = lanes.find((l) => isOpen(l) && l.adopted?.branch === branch);
   if (taken) return { problem: `${branch} is already adopted by ${taken.id}` };
-  const tree = treeOf(root, branch);
+  const tree = treeOf(root, branch, tips);
+  if (tree?.problem) return { problem: tree.problem };
   if (tree?.op)
     return {
       problem: `the worktree of ${branch} (${tree.path}) is mid-${tree.op}: finish or abort it, then adopt`,
@@ -209,8 +252,10 @@ export function adoptedWork({
   ].join("\n");
 }
 
-/** How to remove the adopted branch and its worktree once the lane has landed (adopt leaves both). */
-export const cleanupSteps = ({ branch, worktree }) => [
+/** How to remove the adopted branch and its worktree once the lane has landed (adopt leaves both). The
+ *  branch goes by `update-ref -d` with the tip adopt read: git refuses it when the ref holds anything else,
+ *  where `git branch -D` could delete a case twin with it. */
+export const cleanupSteps = ({ branch, tip, worktree }) => [
   ...(worktree ? [`git worktree remove ${shellWord(worktree)}`] : []),
-  `git branch -D ${shellWord(branch)}`,
+  `git update-ref -d ${shellWord(`refs/heads/${branch}`)} ${tip}`,
 ];

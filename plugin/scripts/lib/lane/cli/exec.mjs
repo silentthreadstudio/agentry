@@ -63,7 +63,7 @@ import { episodeStored } from "../../memory/episodes.mjs";
 import { contentOf as contentIds, recordedSince } from "../../process/board-writes.mjs";
 import { run as boardSet } from "../../process/cli/set.mjs";
 import { findContract } from "../../process/contract.mjs";
-import { worktrees } from "../../process/git.mjs";
+import { branchTips, worktrees } from "../../process/git.mjs";
 import { kindOf, runId } from "../../process/ids.mjs";
 import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
@@ -2979,21 +2979,24 @@ function adopt(ctx, id) {
   }
 }
 
-// Remove the lane worktree at `path` and its `branch` (force: the lane holds only what was just carried):
-// what is left, one entry each, with the command that removes it. Empty when both went.
+// Remove the lane worktree at `path` and then its `branch` (force: the lane holds only what was just
+// carried): what is left, one entry each, with the command that removes it. Empty when both went. The
+// branch goes by `update-ref -d` at its listed tip, never `branch -D` (that could take a case twin too),
+// and only once the worktree is gone: a branch is not deleted from under its checkout.
 function takeDown(root, { path, branch }) {
   const gone = remove(root, { path, branch: null, force: true });
-  const deleted = git(root, ["branch", "-D", branch]);
-  return [
-    ...(gone.removed
-      ? []
-      : [`the worktree ${path} (${gone.reason}): git worktree remove -f ${shellWord(path)}`]),
-    ...(deleted.status === 0
-      ? []
-      : [
-          `the branch ${branch} (${deleted.stderr.trim().split("\n")[0]}): git branch -D ${shellWord(branch)}`,
-        ]),
-  ];
+  const tip = branchTips(root).get(branch);
+  const drop = tip && `git update-ref -d ${shellWord(`refs/heads/${branch}`)} ${tip}`;
+  if (!gone.removed)
+    return [
+      `the worktree ${path} (${gone.reason}): git worktree remove -f ${shellWord(path)}`,
+      ...(drop ? [`the branch ${branch}: ${drop}`] : []),
+    ];
+  if (!tip) return [];
+  const deleted = git(root, ["update-ref", "-d", `refs/heads/${branch}`, tip]);
+  return deleted.status === 0
+    ? []
+    : [`the branch ${branch} (${deleted.stderr.trim().split("\n")[0]}): ${drop}`];
 }
 
 // Remove the directory `dir` when it is empty; one that holds anything is left.

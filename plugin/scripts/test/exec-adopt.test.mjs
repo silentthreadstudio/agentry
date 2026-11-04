@@ -186,7 +186,9 @@ test("adopt cuts the lane from main, picks the branch's commits and applies its 
   assert.ok(ledger.boardAtStart.paths.includes("plan/BOARD.md"));
   assert.match(
     res.json.cleanup,
-    new RegExp(`git worktree remove ${src.path}; git branch -D ${src.branch}$`),
+    new RegExp(
+      `git worktree remove ${src.path}; git update-ref -d refs/heads/${src.branch} ${src.sha}$`,
+    ),
   );
 });
 
@@ -227,7 +229,11 @@ test("a branch with no worktree is adopted from its commits; the cleanup names t
   assert.equal(adopted.worktree, null);
   assert.equal(adopted.files, 0);
   assert.equal(tipOf(r.root, "feature-x"), sha);
-  assert.equal(res.json.cleanup.endsWith("git branch -D feature-x"), true, res.json.cleanup);
+  assert.equal(
+    res.json.cleanup.endsWith(`git update-ref -d refs/heads/feature-x ${sha}`),
+    true,
+    res.json.cleanup,
+  );
   assert.doesNotMatch(res.json.cleanup, /git worktree remove/);
 });
 
@@ -484,11 +490,13 @@ test("the printed commands shell-quote a path or branch that needs it", () => {
   const branch = "feat;touch-x";
   git(r.root, "worktree", "add", "-q", "-b", branch, path, "main");
   commitFile(path, "three.txt", "a\nsp\nc\n", "feat: sp");
-  commitFile(path, "my notes.md", "n\n", "docs: notes with a space");
+  const tip = commitFile(path, "my notes.md", "n\n", "docs: notes with a space");
   const res = lane(r, "adopt", "T1", "--branch", branch);
   assert.equal(res.exit, 0, res.stderr);
   assert.ok(
-    res.json.cleanup.endsWith(`git worktree remove '${path}'; git branch -D 'feat;touch-x'`),
+    res.json.cleanup.endsWith(
+      `git worktree remove '${path}'; git update-ref -d 'refs/heads/feat;touch-x' ${tip}`,
+    ),
     res.json.cleanup,
   );
   assert.match(res.json.warning, / --add 'my notes\.md' --apply$/m);
@@ -535,6 +543,89 @@ test("another case of a lane branch's name (agentry/t2 for agentry/T2) is no bra
   assert.equal(ledgerOf(r.root, "T2").state, "building");
 });
 
+// Two branches whose names differ only in case, one packed and one loose: on a case-insensitive
+// filesystem `rev-parse refs/heads/<packed>` opens the loose twin's file.
+function caseTwins(r, packed, loose, { lane: laneId } = {}) {
+  git(r.root, "checkout", "-q", "-b", packed);
+  const decoy = commitFile(r.root, "decoy.txt", "decoy\n", `feat: decoy on packed ${packed}`);
+  git(r.root, "checkout", "-q", "main");
+  git(r.root, "pack-refs", "--all");
+  if (laneId) {
+    const started = lane(r, "start", laneId).json;
+    commitFile(started.worktree, "four.txt", "4\n", `feat: in the ${laneId} lane`);
+  } else {
+    git(r.root, "checkout", "-q", "-b", loose);
+    commitFile(r.root, "three.txt", "a\nloose\nc\n", `feat: on loose ${loose}`);
+    git(r.root, "checkout", "-q", "main");
+  }
+  return decoy;
+}
+
+test("a name with a case twin (packed agentry/t2, the T2 lane's loose agentry/T2) is refused: T2's commit is never picked", () => {
+  const r = repo();
+  caseTwins(r, "agentry/t2", "agentry/T2", { lane: "T2" });
+  const t2 = tipOf(r.root, "refs/heads/agentry/T2");
+  const before = board(r.root);
+  const res = lane(r, "adopt", "T1", "--branch", "agentry/t2");
+  assert.equal(res.exit, 2, res.stdout);
+  assert.equal(res.stderr.trim().split("\n").length, 1);
+  assert.match(res.stderr, /agentry\/t2 has a case twin agentry\/T2: rename one first/);
+  assertNothingWritten(r, "T1", before);
+  assert.equal(tipOf(r.root, "refs/heads/agentry/T2"), t2);
+  assert.equal(ledgerOf(r.root, "T2").state, "building");
+});
+
+test("plain case twins (packed feat/x, loose feat/X) are refused by either spelling, nothing written", () => {
+  const r = repo();
+  caseTwins(r, "feat/x", "feat/X");
+  const before = board(r.root);
+  for (const [b, other] of [
+    ["feat/x", "feat/X"],
+    ["feat/X", "feat/x"],
+  ]) {
+    const res = lane(r, "adopt", "T1", "--branch", b);
+    assert.equal(res.exit, 2, res.stdout);
+    assert.ok(res.stderr.includes(`${b} has a case twin ${other}: rename one first`), res.stderr);
+  }
+  assertNothingWritten(r, "T1", before);
+});
+
+test("the branch's worktree on a spelling no branch is named is refused, naming it, nothing written", () => {
+  const r = repo();
+  const src = agentTree(r);
+  // What `git checkout WORKTREE-AGENT-A1` writes on a case-insensitive filesystem, on any filesystem.
+  git(src.path, "symbolic-ref", "HEAD", "refs/heads/WORKTREE-AGENT-A1");
+  const before = board(r.root);
+  const tip = tipOf(r.root, `refs/heads/${src.branch}`);
+  const res = lane(r, "adopt", "T1", "--branch", src.branch);
+  assert.equal(res.exit, 2, res.stdout);
+  assert.ok(
+    res.stderr.includes(
+      `${src.path} is on WORKTREE-AGENT-A1, which no branch is named: check it out by its exact name`,
+    ),
+    res.stderr,
+  );
+  assert.equal(res.stderr.trim().split("\n").length, 1);
+  assertNothingWritten(r, "T1", before);
+  assert.equal(tipOf(r.root, `refs/heads/${src.branch}`), tip);
+  const spelled = lane(r, "adopt", "T1", "--branch", "WORKTREE-AGENT-A1");
+  assert.equal(spelled.exit, 2);
+  assert.match(spelled.stderr, /WORKTREE-AGENT-A1 does not exist/);
+});
+
+test("a --branch holding a control character is refused on one line, JSON-escaped", () => {
+  const r = repo();
+  const src = agentTree(r);
+  const before = board(r.root);
+  for (const b of [`${src.branch}\n`, `${src.branch}\tx`, ""]) {
+    const res = lane(r, "adopt", "T1", "--branch", b);
+    assert.equal(res.exit, 2, JSON.stringify(b));
+    assert.equal(res.stderr.trim().split("\n").length, 1, res.stderr);
+    assert.ok(res.stderr.includes(`${JSON.stringify(b)} does not exist`), res.stderr);
+  }
+  assertNothingWritten(r, "T1", before);
+});
+
 test("a throw inside the carry takes the new lane down: no ledger, branch, worktree or board write, the source as it was", () => {
   const r = repo();
   const src = agentTree(r);
@@ -565,7 +656,7 @@ test("a throw inside the carry takes the new lane down: no ledger, branch, workt
 });
 
 // A preload (`node --import`) that makes one step of the adopt fail: ADOPT_INJECT=copy throws from the
-// copy of the uncommitted diff into the run dir, and with branch-D in it `git branch -D` fails too.
+// copy of the uncommitted diff into the run dir, and with drop-ref in it `git update-ref -d` fails too.
 const INJECT = `import cp from "node:child_process";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -577,11 +668,11 @@ if (mode.includes("copy")) {
     return copy(src, dst, ...rest);
   };
 }
-if (mode.includes("branch-D")) {
+if (mode.includes("drop-ref")) {
   const spawn = cp.spawnSync;
   cp.spawnSync = (cmd, args, ...rest) =>
-    Array.isArray(args) && args.includes("branch") && args.includes("-D")
-      ? { status: 1, stdout: "", stderr: "error: injected branch -D failure\\n" }
+    Array.isArray(args) && args.includes("update-ref") && args.includes("-d")
+      ? { status: 1, stdout: "", stderr: "error: injected update-ref failure\\n" }
       : spawn(cmd, args, ...rest);
 }
 syncBuiltinESMExports();
@@ -618,15 +709,18 @@ test("a throw inside the carry with no run dir before removes the runs/ dir the 
 test("a takedown that cannot delete the lane branch says what is left, never that the lane was taken down", () => {
   const r = repo();
   const src = agentTree(r);
-  const res = injected(r, "copy,branch-D", ["adopt", "T1", "--branch", src.branch]);
+  const res = injected(r, "copy,drop-ref", ["adopt", "T1", "--branch", src.branch]);
   assert.equal(res.status, 1, res.out);
   assert.match(
     res.out,
     /the adopt stopped: injected copy failure; the new lane could not be taken down/,
   );
-  assert.match(
+  const tip = tipOf(r.root, "refs/heads/agentry/T1");
+  assert.ok(
+    res.out.includes(
+      `the branch agentry/T1 (error: injected update-ref failure): git update-ref -d refs/heads/agentry/T1 ${tip}`,
+    ),
     res.out,
-    /the branch agentry\/T1 \(error: injected branch -D failure\): git branch -D agentry\/T1/,
   );
   assert.doesNotMatch(res.out, /was taken down/);
   assert.equal(

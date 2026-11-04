@@ -213,3 +213,39 @@ test("a revision of a filed worktree's branch (b~0, b@{0}) is no branch: refused
   }
   assert.equal(existsSync(file(root)), false);
 });
+
+test("a worktree on a spelling no branch is named is refused by its path or its branch, nothing written", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  // What `git checkout WORKTREE-AGENT-A1` writes on a case-insensitive filesystem, on any filesystem.
+  git(tree.path, "symbolic-ref", "HEAD", "refs/heads/WORKTREE-AGENT-A1");
+  for (const target of [tree.path, tree.branch]) {
+    const res = spike(root, target, "--keep", "why");
+    assert.equal(res.exit, 2, target);
+    assert.ok(
+      res.stderr.includes(
+        `${tree.path} is on WORKTREE-AGENT-A1, which no branch is named: check it out by its exact name`,
+      ),
+      res.stderr,
+    );
+  }
+  assert.equal(existsSync(file(root)), false);
+});
+
+test("a branch with a case twin, or a name holding a control character, is refused on one line", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  git(root, "pack-refs", "--all");
+  git(root, "branch", "WORKTREE-AGENT-A1", "main");
+  const twin = spike(root, tree.branch, "--keep", "why");
+  assert.equal(twin.exit, 2);
+  assert.match(
+    twin.stderr,
+    /worktree-agent-a1 has a case twin WORKTREE-AGENT-A1: rename one first/,
+  );
+  const control = spike(root, `${tree.branch}\n`, "--keep", "why");
+  assert.equal(control.exit, 2);
+  assert.equal(control.stderr.trim().split("\n").length, 1, control.stderr);
+  assert.ok(control.stderr.includes(JSON.stringify(`${tree.branch}\n`)), control.stderr);
+  assert.equal(existsSync(file(root)), false);
+});

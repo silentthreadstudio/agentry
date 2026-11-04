@@ -11,10 +11,10 @@
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
-import { worktrees } from "../../process/git.mjs";
+import { branchTips, worktrees } from "../../process/git.mjs";
 import { runId } from "../../process/ids.mjs";
 import { list as listLedgers } from "../../process/ledger.mjs";
-import { isBranch } from "../adopt.mjs";
+import { isBranch, resolveBranch, shownName, strayTree, unnamedHead } from "../adopt.mjs";
 import { fileSpike, forgetSpike, readSpikes, spikesFile } from "../spikes.mjs";
 import { mainRoot } from "../worktree.mjs";
 
@@ -64,7 +64,7 @@ function parse(argv) {
   if (words.length > 1) return { error: `one branch or path, not ${words.length}` };
   if (picked.length && !words.length) return { error: `${picked[0]} needs <branch|path>` };
   if (!picked.length && words.length)
-    return { error: `${words[0]}: give --for <id>, --keep "<why>" or --forget` };
+    return { error: `${shownName(words[0])}: give --for <id>, --keep "<why>" or --forget` };
   if (given["--keep"] !== undefined && !given["--keep"].trim())
     return { error: "--keep needs the reason" };
   return {
@@ -77,8 +77,7 @@ function parse(argv) {
 }
 
 // The worktree `target` names: the one on that branch, else the one at that path. null when none does.
-function treeNamed(root, target) {
-  const all = worktrees(root);
+function treeNamed(all, target) {
   return (
     all.find((t) => t.branch === target) ?? all.find((t) => real(t.path) === real(target)) ?? null
   );
@@ -95,7 +94,7 @@ export function run(argv, ctx) {
   const { target, forId, keep, forget, json, error } = parse(argv);
   if (error) return usageError("lane spike", error);
   const root = mainRoot(ctx.root) ?? ctx.root;
-  const what = target ? `lane spike ${target}` : "lane spike";
+  const what = target ? `lane spike ${shownName(target)}` : "lane spike";
   const read = readSpikes(root);
   if (read.error) return refuse(what, read.error);
   if (!target) return listed(root, read.spikes, json);
@@ -105,10 +104,17 @@ export function run(argv, ctx) {
     const spikes = forgetSpike(root, known);
     return shown(root, spikes, json, { forgot: known }, `forgot ${known.branch}`);
   }
-  // A name that is no path must be a branch's own name, never a revision such as `b~0`.
-  if (!existsSync(target) && !isBranch(root, target))
-    return refuse(what, "that is no branch and no path", "git worktree list");
-  const tree = treeNamed(root, target);
+  // A name that is no path must be a branch's own name, never a revision such as `b~0`, nor one with a
+  // case twin.
+  const tips = branchTips(root);
+  const named = existsSync(target) ? null : resolveBranch(root, target, tips);
+  if (named?.missing) return refuse(what, "that is no branch and no path", "git worktree list");
+  if (named?.problem) return refuse(what, named.problem);
+  const all = worktrees(root);
+  const tree = treeNamed(all, target);
+  // A worktree on a spelling of its branch that no branch is named is filed by no name that lasts.
+  const stray = tree ? null : named && strayTree(all, target, tips);
+  if (stray) return refuse(what, unnamedHead(stray));
   if (!tree)
     return refuse(what, "no worktree is on that branch or at that path", "git worktree list");
   if (real(tree.path) === real(root)) return refuse(what, "that is the main checkout, not a spike");
@@ -117,6 +123,7 @@ export function run(argv, ctx) {
       what,
       `the worktree at ${tree.path} is on no branch: a spike is filed by its branch`,
     );
+  if (!tips.has(tree.branch)) return refuse(what, unnamedHead(tree));
   const lane = listLedgers(root).find(
     (l) =>
       l.branch === tree.branch ||
