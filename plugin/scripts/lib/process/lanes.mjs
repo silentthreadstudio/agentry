@@ -209,14 +209,21 @@ function execRows(spec) {
   ];
 }
 
+// A model as the row shows it: its name, or one by path as its default and how many paths it has.
+const modelText = (m) =>
+  typeof m === "string" ? m : `${m.default} (${count(m.paths?.length ?? 0, "path")})`;
+
 // `build sonnet · verify haiku, ui sonnet, flagged opus`: the model each exec dispatch names.
 function modelsValue(models) {
   if (!models) return null;
   const verify = ["default", "ui", "flagged"]
     .filter((k) => models.verify?.[k])
-    .map((k) => (k === "default" ? models.verify[k] : `${k} ${models.verify[k]}`));
+    .map((k) => (k === "default" ? "" : `${k} `) + modelText(models.verify[k]));
   return (
-    [models.build && `build ${models.build}`, verify.length && `verify ${verify.join(", ")}`]
+    [
+      models.build && `build ${modelText(models.build)}`,
+      verify.length && `verify ${verify.join(", ")}`,
+    ]
       .filter(Boolean)
       .join(" · ") || null
   );

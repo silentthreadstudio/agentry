@@ -83,7 +83,7 @@ const TASKS_MD = `# Tasks
 - **T2**: owns \`out.txt\`. Accept: out.txt exists.
 `;
 
-function repo(extra = {}) {
+function repo(extra = {}, tasks = TASKS_MD) {
   const spec = { ...SPEC, ...extra };
   const root = temp("route-repo-");
   const home = temp("route-home-");
@@ -91,7 +91,7 @@ function repo(extra = {}) {
   mkdirSync(join(root, ".agentry"));
   commitFile(root, ".gitignore", ".agentry/run/\n");
   commitFile(root, "plan/BOARD.md", BOARD_MD);
-  commitFile(root, "plan/TASKS.md", TASKS_MD);
+  commitFile(root, "plan/TASKS.md", tasks);
   writeSpec(join(root, ".agentry"), spec);
   git(root, "add", ".agentry");
   git(root, "commit", "-q", "-m", "add the process files");
@@ -293,9 +293,84 @@ test("a verify model falls back to default, and no models key prints no model li
   assert.doesNotMatch(lane(bare, "show", "T1", "--text").stdout, /^model:/m);
 });
 
-test("the readable view prints a model: line", () => {
+test("the readable view prints a model: line naming its source", () => {
   const r = repo({ models: MODELS });
-  assert.match(lane(r, "start", "T1", "--text").stdout, /^model: builder-m$/m);
+  const started = lane(r, "start", "T1", "--text").stdout;
+  assert.match(started, /^model: builder-m \(models\.build\)$/m);
+  assert.doesNotMatch(started, /^modelFrom:/m);
+  assert.equal(lane(r, "show", "T1").json.modelFrom, "models.build");
+});
+
+// ---- models by path and by contract (field 73) ---------------------------------------------------
+
+const BY_PATH = {
+  build: {
+    default: "sonnet",
+    paths: [
+      { when: { any: ["docs/**"] }, model: "haiku" },
+      { when: { any: ["src/main/**", "src/ui/**"] }, model: "opus" },
+    ],
+  },
+  verify: {
+    ui: { default: "ui-m", paths: [{ when: { any: ["src/ui/*.css"] }, model: "ui-css" }] },
+    default: "verify-m",
+  },
+};
+
+test("a model by path: the first entry matching an owned file wins and is named, else its default", () => {
+  const r = repo({ models: BY_PATH });
+  // T1 owns src/ui/panel.css: paths[1] matches on its second glob (paths[0] does not).
+  const one = lane(r, "start", "T1");
+  assert.deepEqual(
+    [one.json.model, one.json.modelFrom],
+    ["opus", "models.build.paths[1]: src/ui/**"],
+  );
+  assert.match(
+    lane(r, "show", "T1", "--text").stdout,
+    /^model: opus \(models\.build\.paths\[1\]: src\/ui\/\*\*\)$/m,
+  );
+  build(one.json);
+  const verifier = lane(r, "report", "T1").json;
+  assert.deepEqual(
+    [verifier.model, verifier.modelFrom],
+    ["ui-css", "models.verify.ui.paths[0]: src/ui/*.css"],
+  );
+  // T2 owns only out.txt: no entry matches, so the default.
+  const two = lane(r, "start", "T2");
+  assert.deepEqual([two.json.model, two.json.modelFrom], ["sonnet", "models.build.default"]);
+});
+
+const CONTRACT_MODEL = `# Tasks
+
+### T1 · With its own models
+
+- **Owns:** \`out.txt\`, \`src/ui/panel.css\`
+- **Model:** \`opus\`
+- **Model (verify):** haiku-4 for the hard parts
+- **Acceptance:** out.txt exists.
+
+### T2 · A build model only
+
+- **Owns:** \`out.txt\`
+- **Model:** opus
+- **Acceptance:** out.txt exists.
+`;
+
+test("a contract's Model bullets win over the workflow file's, named as the contract", () => {
+  const r = repo({ models: BY_PATH }, CONTRACT_MODEL);
+  const one = lane(r, "start", "T1");
+  assert.equal(one.exit, 0, one.stderr);
+  assert.deepEqual([one.json.model, one.json.modelFrom], ["opus", "contract"]);
+  assert.match(lane(r, "show", "T1", "--text").stdout, /^model: opus \(contract\)$/m);
+  build(one.json);
+  const verifier = lane(r, "report", "T1").json;
+  assert.deepEqual([verifier.model, verifier.modelFrom], ["haiku-4", "contract"]);
+  // T2 names a build model only: its verifier's comes from the workflow file (flagged, so default).
+  const two = lane(r, "start", "T2");
+  assert.deepEqual([two.json.model, two.json.modelFrom], ["opus", "contract"]);
+  build(two.json);
+  const check = lane(r, "report", "T2").json;
+  assert.deepEqual([check.model, check.modelFrom], ["verify-m", "models.verify.default"]);
 });
 
 test("models keys are checked at load", () => {

@@ -49,9 +49,10 @@ import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { workflowPathOf } from "../../process/read.mjs";
+import { modelFor } from "../../process/spec/models.mjs";
 import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
 import { own } from "../../process/spec/shape.mjs";
-import { flaggedItem, gateOf, lifecycleOf, modelFor } from "../../process/spec/workflow.mjs";
+import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { WriteError } from "../../process/write.mjs";
 import {
   appendedAfter,
@@ -251,12 +252,17 @@ export function run(argv, ctx) {
   const kind = lane ? kindOf(lane, ctx.spec) : resolved.kind;
   try {
     const res = HANDLERS[step]({ ...ctx, root, kind, ...given }, id, value);
-    return json ? res : { ...res, out: humanView(JSON.parse(res.out)) };
+    return json ? res : { ...res, out: humanView(withModelSource(JSON.parse(res.out))) };
   } catch (e) {
     if (e instanceof Refusal || e instanceof WriteError)
       return { exit: 2, out: say(what, e.message) };
     throw e;
   }
+}
+
+// The text's `model:` line names its source: `model: opus (contract)` (field 73).
+function withModelSource({ modelFrom, ...shown }) {
+  return modelFrom ? { ...shown, model: `${shown.model} (${modelFrom})` } : shown;
 }
 
 // ---- git facts ------------------------------------------------------------------------------------
@@ -832,13 +838,17 @@ function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, extra = 
     out.role = round.role;
     out.mode = round.mode === "resume" && round.agent ? "resume" : "fresh";
     if (out.mode === "resume") out.agent = round.agent;
-    const builder = suggestBuilder(ownedOf(root, ledger).map((o) => o.path));
+    const owned = ownedOf(root, ledger).map((o) => o.path);
+    const builder = suggestBuilder(owned);
     out.dispatch = round.role === "verify" ? { agent: "verifier" } : builder;
     const picked = modelFor(spec, round.role, {
       flagged: isFlagged(ctx, ledger),
       ui: builder.agent === "designer",
+      owned,
+      contract: readOr(contractFile(root, ledger.id)),
     });
-    if (picked) out.model = picked;
+    // `model` is the name a dispatch passes on; `modelFrom` where it came from (the text joins them).
+    if (picked) Object.assign(out, { model: picked.model, modelFrom: picked.from });
     if (round.step === "needs-context" && !round.resend)
       out.todo = `append the fact under "## The fact" at the end of ${round.brief} before sending it; if the contract, the repo and memory don't hold it, ask the owner first`;
     out.after = `${laneLine(root, waiting, ledger.id)} --agent <the agent's id>`;

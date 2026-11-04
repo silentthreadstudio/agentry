@@ -246,13 +246,38 @@ export const Exec = z
   .strict();
 export type Exec = z.infer<typeof Exec>;
 
+/** A model by path: the first `paths` entry whose `when.any` glob matches one of the item's owned files
+ *  (the gate tiers' glob matching) names it, else `default`. */
+export const ModelByPath = z
+  .object({
+    default: Text,
+    paths: z
+      .array(z.object({ when: z.object({ any: Globs }).strict(), model: Text }).strict())
+      .min(1),
+  })
+  .strict();
+export type ModelByPath = z.infer<typeof ModelByPath>;
+
+/** A model: its name, or one by path. Checked by its own shape (not a union), so a bad entry reports its
+ *  own path, as the plugin's validator does. */
+const Model = z.custom<string | ModelByPath>().superRefine((value, ctx) => {
+  const res = (typeof value === "string" ? Text : ModelByPath).safeParse(value);
+  for (const issue of res.error?.issues ?? []) {
+    const paths =
+      issue.code === "unrecognized_keys" ? issue.keys.map((k) => [...issue.path, k]) : [issue.path];
+    for (const path of paths)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: issue.message });
+  }
+});
+
 /** The model each exec dispatch names, by role: `build`, and `verify` by the item (`ui`: a designer
- *  builds it, `flagged`: its flag is set) with `default` for the rest. Any string; all optional. */
+ *  builds it, `flagged`: its flag is set) with `default` for the rest. Each a model name or one by path;
+ *  a contract's `**Model:**` / `**Model (verify):**` bullet wins over both. All optional. */
 export const Models = z
   .object({
-    build: Text.optional(),
+    build: Model.optional(),
     verify: z
-      .object({ default: Text.optional(), ui: Text.optional(), flagged: Text.optional() })
+      .object({ default: Model.optional(), ui: Model.optional(), flagged: Model.optional() })
       .strict()
       .optional(),
   })

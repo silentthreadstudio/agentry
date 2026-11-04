@@ -585,6 +585,51 @@ export const PROCESS_CASES = [
     bad: ["locks.Editor"],
   },
   { name: "locks as a list", workflow: { locks: ["editor"] }, bad: ["locks"] },
+  // models: a name, or one by path (field 73)
+  { name: "models by name", workflow: { models: { build: "sonnet", verify: { ui: "opus" } } } },
+  {
+    name: "models by path, for build and a verify key",
+    workflow: {
+      models: {
+        build: { default: "sonnet", paths: [{ when: { any: ["src/main/**"] }, model: "opus" }] },
+        verify: { flagged: { default: "x", paths: [{ when: { any: ["a", "b/*"] }, model: "y" }] } },
+      },
+    },
+  },
+  {
+    name: "a model by path with no default and no paths",
+    workflow: { models: { build: {} } },
+    bad: ["models.build.default", "models.build.paths"],
+  },
+  {
+    name: "a model by path with an empty paths list, and an empty name",
+    workflow: { models: { build: { default: "a", paths: [] }, verify: { default: "" } } },
+    bad: ["models.build.paths", "models.verify.default"],
+  },
+  {
+    name: "a path entry with no any, an unknown key, and an empty model",
+    workflow: {
+      models: {
+        build: { default: "a", paths: [{ when: { only: ["x"] }, model: "", why: 1 }] },
+      },
+    },
+    bad: [
+      "models.build.paths[0].when.any",
+      "models.build.paths[0].when.only",
+      "models.build.paths[0].model",
+      "models.build.paths[0].why",
+    ],
+  },
+  {
+    name: "a path glob out of the repository, and a model that is a number",
+    workflow: {
+      models: {
+        build: { default: "a", paths: [{ when: { any: ["../x"] }, model: "b" }] },
+        verify: { ui: 3 },
+      },
+    },
+    bad: ["models.build.paths[0].when.any[0]", "models.verify.ui"],
+  },
   {
     name: "a hand status file and its heading",
     board: { status: { file: "docs/STATUS.md", next: "Next" } },

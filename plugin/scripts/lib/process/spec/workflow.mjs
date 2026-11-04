@@ -8,6 +8,7 @@
 // `test/key-cases.mjs`).
 import { extensions } from "./extensions.mjs";
 import { locks } from "./locks.mjs";
+import { modelsSchema } from "./models.mjs";
 import { execSchema, flagField, resolveWorkflow } from "./presets.mjs";
 import {
   FULL,
@@ -182,10 +183,7 @@ export const workflowSchema = shape({
   guard: shape({ "allow!": globs }, FULL),
   cleanup: shape({ "disposable!": globs }, FULL),
   exec: execSchema(record(execKindSchema)),
-  models: shape(
-    { build: text, verify: shape({ default: text, ui: text, flagged: text }, FULL) },
-    FULL,
-  ),
+  models: modelsSchema,
   briefs: shape({ build: policyLines, verify: policyLines }, FULL),
   commits: shape({ subjectMax: posInt, subjectPattern: pattern, forbid: filled(pattern) }, FULL),
   locks,
@@ -243,20 +241,6 @@ export function flaggedItem(spec, model, id, kind = lifeKind(spec) ?? "task") {
   if (own(own(own(spec?.kinds, kind), "fields"), field)?.type !== "flag") return false;
   const item = own(model?.kinds, kind)?.items?.find((i) => i.id === id);
   return Boolean(own(item?.fields, field));
-}
-
-/** The model a dispatch names, or null: `role` "build", or "verify" with the item's `flagged` and `ui`
- *  facts (flagged first, then ui, then the verify default). Null when the workflow file names none. */
-export function modelFor(spec, role, { flagged = false, ui = false } = {}) {
-  const models = own(spec, "models");
-  if (role === "build") return own(models, "build") ?? null;
-  const verify = own(models, "verify");
-  return (
-    (flagged && own(verify, "flagged")) ||
-    (ui && own(verify, "ui")) ||
-    own(verify, "default") ||
-    null
-  );
 }
 
 /** The repo's gate with its defaults filled (`roles` from the preset, per role: standard's build pick,
