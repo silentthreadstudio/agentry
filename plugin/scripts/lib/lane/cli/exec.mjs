@@ -80,6 +80,7 @@ import {
 import {
   answerLabel,
   answerText,
+  clock,
   heldText,
   humanView,
   ownedMark,
@@ -282,10 +283,12 @@ function withModelSource({ modelFrom, ...shown }) {
 // (`board-writes.mjs`). At a report, a main file may differ from the lane's start only when its content is
 // reachable from its start content, or from the content a recorded merge committed, through recorded
 // lifecycle writes or board writes made since the lane started. Any other edit (another row, free text, a
-// non-board file, a file dirty at start that changed since) is the builder's, unless its path matches the
-// workflow file's `guard.allow` and no running lane owns it. HEAD may move only by merges other ledgers
-// record, each a run preHead → landed… → board commit that git's first-parent history confirms, and by
-// commits on main whose every path `guard.allow` lets through and no running lane owns (A44).
+// non-board file, a file dirty at start that changed since) is the builder's, unless its path is one
+// `guard.allow` lets through (`allowOf`: its globs, the config files in use, the board's own files) and no
+// running lane owns it. HEAD may move only by merges other ledgers record, each a run preHead → landed… →
+// board commit that git's first-parent history confirms, and by commits on main whose every path
+// `guard.allow` lets through and no running lane owns (A44). A report that finds main touched holds the
+// lane for the guard, its report saved, until a report again finds main clean (field 75).
 
 // Agentry's own files: the run state. (The memory records a lane writes are `own-memory.mjs`'s.)
 const OWN_DIRS = [".agentry/run/"];
@@ -482,9 +485,30 @@ function allowedCommit(root, allow, all) {
   };
 }
 
-// What the guards let through as `guard.allow` paths: its globs, and Agentry's config in use (field 58),
-// the process file and its workflow file as `loadSpec` resolves them, from the root.
-function allowOf({ root, spec, processPath }) {
+// The board's own files (field 75), as the process file names them and `read.mjs` resolves them, from the
+// root: each kind's table, contract blocks and create blocks, each item's file and own file (a `files`
+// kind's, a `file.glob` match), and `status.note`.
+function boardPaths(spec, model) {
+  const named = [];
+  for (const [name, kind] of Object.entries(spec.kinds ?? {})) {
+    named.push(kind.at?.table, ...[kind.contract?.blocks ?? []].flat());
+    named.push(...[kind.create?.blocks ?? []].flat().map((b) => b?.file));
+    for (const item of own(model?.kinds, name)?.items ?? []) named.push(item.file, item.own?.path);
+  }
+  const base = typeof spec.root === "string" ? spec.root : ".";
+  const note = spec.status?.note;
+  return [
+    ...new Set([
+      ...named.filter((p) => typeof p === "string").map((p) => posix.join(base, p)),
+      ...(typeof note === "string" ? [posix.normalize(note)] : []),
+    ]),
+  ];
+}
+
+// What the guards let through as `guard.allow` paths: its globs, Agentry's config in use (field 58),
+// the process file and its workflow file as `loadSpec` resolves them, from the root, and the board's
+// own files (`boardPaths`).
+function allowOf({ root, spec, model, processPath }) {
   const file = processPath ?? join(root, ".agentry", "process.json");
   let dir;
   try {
@@ -497,9 +521,10 @@ function allowOf({ root, spec, processPath }) {
         .map((f) => relative(root, join(dir, basename(f))))
         .filter((p) => p && !p.startsWith("..") && !isAbsolute(p))
     : [];
-  return { globs: own(spec, "guard")?.allow ?? [], config };
+  return { globs: own(spec, "guard")?.allow ?? [], config, board: boardPaths(spec, model) };
 }
-const allowsPath = (allow, path) => allow.config.includes(path) || matchesAny(allow.globs, path);
+const allowsPath = (allow, path) =>
+  allow.config.includes(path) || allow.board.includes(path) || matchesAny(allow.globs, path);
 
 // A glob test with the gate's own matcher, as merge does.
 const matchesAny = (globs, path) => globMatch(globs, path);
@@ -644,6 +669,30 @@ function refuseAtWriterCap(root, spec) {
     );
 }
 
+// Are a land's picks on main: every commit it landed, or while it picks with none recorded yet, a commit
+// past its preHead?
+function picksOnMain(root, merge) {
+  if (typeof merge?.preHead !== "string") return false;
+  const landed = Array.isArray(merge.landed) ? merge.landed : [];
+  if (landed.length) return landed.every((sha) => isAncestor(root, sha, "HEAD"));
+  return (
+    merge.step === "picking" &&
+    headOf(root) !== merge.preHead &&
+    isAncestor(root, merge.preHead, "HEAD")
+  );
+}
+
+// A lane cut while another lands could carry picks a red gate then takes off main (S24): `start` waits.
+function refuseMidLand(root) {
+  const landing = ledgers
+    .list(root)
+    .find((l) => l.state === "merging" && picksOnMain(root, l.merge));
+  if (landing)
+    refuse(
+      `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): its picks may still roll back → start after it lands`,
+    );
+}
+
 // ---- briefs ---------------------------------------------------------------------------------------
 
 const contractFile = (root, id) => join(ledgers.runDir(root, id), "contract.md");
@@ -764,7 +813,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
     resend: !!dispatch.resend,
     recheck: dispatch.step === "recheck" && fresh,
     picked: !!picked,
-    pickedNotes: picked ? noteLines(picked.from, picked.notes) : "",
+    pickedNotes: picked ? noteLines(picked.from, picked.notes, ledger.openNotes) : "",
     fail: dispatch.step === "fix" && !dispatch.guard && !dispatch.notes && !dispatch.owner && fresh,
     guard: !!dispatch.guard && fresh,
     needed: dispatch.step === "needs-context" && fresh,
@@ -795,7 +844,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
         : null;
   const file = join(dir, `${name}.md`);
   let text = renderBrief(dispatch.step, values);
-  if (dispatch.step === "fix" && picked) text = withNotesToFix(text, picked);
+  if (dispatch.step === "fix" && picked) text = withNotesToFix(text, picked, ledger.openNotes);
   if (owner)
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
   writeFileSync(file, text);
@@ -822,14 +871,24 @@ const heldLine = (hold, total) =>
 const answerOf = (h, total) =>
   h.when === "verified" ? `verified at ${h.resumedAt}: "${h.note}"` : answerText(h, total);
 
-// What a held lane prints right after the header: the hold, and the step that answers it.
-const heldLead = (root, ledger) =>
-  ledger.state === "held" && ledger.hold
-    ? {
-        held: heldLine(ledger.hold, stepCount(ledger)),
-        run: laneLine(root, "resume", ledger.id, ' --note "<the OK>"'),
-      }
-    : {};
+// What a held lane prints right after the header: the hold, and the step that answers it. A guard hold
+// is answered by fixing main and reporting again; its `hold` goes with it (the saved report, the reason).
+function heldLead(root, ledger) {
+  const { hold } = ledger;
+  if (ledger.state !== "held" || !hold) return {};
+  if (hold.for === "guard") {
+    const again = laneLine(root, "report", ledger.id);
+    return {
+      held: `guard tripped: ${hold.reason} → fix it (commit it between lanes, or add the path to guard.allow), then run ${again} again`,
+      hold,
+      run: again,
+    };
+  }
+  return {
+    held: heldLine(hold, stepCount(ledger)),
+    run: laneLine(root, "resume", ledger.id, ' --note "<the OK>"'),
+  };
+}
 
 function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, extra = {} }) {
   const { root, spec, model } = ctx;
@@ -990,6 +1049,7 @@ function start(ctx, id) {
     refuse(
       `a lane for ${id} exists (state ${existing.state}, next ${existing.next}): ${laneLine(root, "show", id)}`,
     );
+  refuseMidLand(root);
   refuseAtWriterCap(root, spec);
   const found = findContract({ root, spec, id, kind });
   if (found.status !== "found") {
@@ -1206,15 +1266,23 @@ function finishRebase(root, ledger, tip) {
   return changed;
 }
 
+// Where a builder's report is kept while a guard trip holds the lane: next to it, so the report the
+// builder wrote is never needed again.
+const heldCopy = (reportPath) =>
+  join(dirname(reportPath), `${basename(reportPath, ".md")}.held.md`);
+
 function report(ctx, id, agent) {
   const { root } = ctx;
   const ledger = mustLedger(root, id);
-  if (expects(ledger) !== "report")
+  // A lane a guard trip holds takes a report again: it reads the saved one (field 75).
+  const parked = ledger.state === "held" && ledger.hold?.for === "guard";
+  if (!parked && expects(ledger) !== "report")
     refuse(
       `the lane expects ${expects(ledger) ?? "nothing"} now, not a report (next is ${ledger.next})`,
     );
   const round = ledger.rounds.at(-1);
-  const text = readReport(round.reportPath, "builder");
+  const saved = parked ? ledger.hold.report : heldCopy(round.reportPath);
+  const text = readReport(parked ? saved : round.reportPath, "builder");
   const all = ledgers.list(root);
   const isRebase = round.step === "rebase";
   if (isRebase && rebasing(ledger.worktree))
@@ -1252,9 +1320,11 @@ function report(ctx, id, agent) {
     gate: gateOf(ctx.spec) !== null,
     tier: buildTier(ctx, before),
     ...(isRebase && { changed }),
+    saved,
     at: now(),
   });
   let next = res.ledger;
+  if (next.hold?.for === "guard" && !parked) writeFileSync(saved, text);
   if (ledger.route) next.route = { ...ledger.route, flagged };
   next.usedMemories = [...new Set([...(next.usedMemories ?? []), ...usedMemories(text)])];
   next.nested = nestedTrees(root, next);
@@ -1582,23 +1652,36 @@ function openNotesOf(text, round, earlier = []) {
   return [...own, ...kept];
 }
 
-// `- N1: text` for each label, read from the verifier report at `path` (an unreadable report gives bare labels).
-function noteLines(path, labels) {
+// The notes `found` (label → text) with each of the ledger's open notes (`N1 <text>`, kept from the report
+// that raised it) it lacks.
+function withOpen(found, open = []) {
+  const out = new Map(found);
+  for (const note of open) {
+    const [label, ...text] = note.split(" ");
+    if (!out.has(label)) out.set(label, text.join(" "));
+  }
+  return out;
+}
+
+// `- N1: text` for each label, read from the verifier report at `path`, else from the open notes (an
+// unreadable report gives bare labels).
+function noteLines(path, labels, open) {
   let found = new Map();
   try {
     found = notesOf(readFileSync(path, "utf8"));
   } catch {}
+  found = withOpen(found, open);
   return labels.map((n) => `- ${n}: ${found.get(n) ?? ""}`.trimEnd()).join("\n");
 }
 
 // A notes-fix brief: the notes section goes in before the first of the brief's own sections.
-function withNotesToFix(text, { from, notes }) {
+function withNotesToFix(text, { from, notes }, open) {
   const section = [
     "## Notes to fix",
     "",
     `The verifier passed this with notes (${from}). Fix exactly these, each with a committed test where it is behavior, and leave the other notes alone:`,
     "",
-    noteLines(from, notes),
+    noteLines(from, notes, open),
     "",
   ].join("\n");
   return withSection(text, section);
@@ -1621,11 +1704,11 @@ function fix(ctx, id, given) {
   const res = stepWith(ledger, { type: "notes", notes: labels });
   const verifier = verdicts(ledger).at(-1);
   const report = verifier ? readReport(verifier.reportPath, "verifier") : "";
-  const found = notesOf(report);
+  const found = withOpen(notesOf(report), ledger.openNotes);
   const missing = labels.filter((n) => !found.has(n));
   if (missing.length)
     refuse(
-      `${missing.join(", ")} not in the verifier's report ${verifier?.reportPath ?? "(none)"} (it has ${[...found.keys()].join(", ") || "no N<number> notes"})`,
+      `${missing.join(", ")} not in the verifier's report ${verifier?.reportPath ?? "(none)"} or the open notes (they have ${[...found.keys()].join(", ") || "no N<number> notes"})`,
     );
   const next = dispatchNext(ctx, res.ledger, res.dispatch);
   next.nested = nestedTrees(root, next);
@@ -1722,7 +1805,7 @@ function hold(ctx, id, agent) {
       : null;
   if (touched && holdFor === "owner")
     refuse(
-      `main touched: ${touched}: run ${laneLine(root, "report", id)} (the report stops the lane)`,
+      `main touched: ${touched}: run ${laneLine(root, "report", id)} (the report holds the lane for the guard)`,
     );
   const res = stepWith(ledger, {
     type: "hold",
@@ -1894,6 +1977,12 @@ function routeNow(ctx, ledger) {
   return `${was} (fixed at start; ${file} now says ${now})`;
 }
 
+// A stopped lane's ways on (field 75): land it as it is, or start it again with its work.
+const waysOn = (root, ledger) => ({
+  stopped: ledger.stopReason ?? "unknown",
+  "ways on": `${prefix("lane", `node ${q(LANE)}`)} merge ${ledger.id} --branch ${ledger.branch ?? `agentry/${ledger.id}`} --root ${q(root)} (lands as is, the owner's call) · ${laneLine(root, "restart", ledger.id, " --carry")} (when available)`,
+});
+
 function show(ctx, id) {
   const { root, spec } = ctx;
   const ledger = mustLedger(root, id);
@@ -1901,7 +1990,10 @@ function show(ctx, id) {
   return view(ctx, ledger, {
     step: "show",
     nested: nestedTrees(root, ledger),
-    lead: idle ? { idle: { ...idle, park: laneLine(root, "hold", id, " --for later") } } : {},
+    lead: {
+      ...(idle && { idle: { ...idle, park: laneLine(root, "hold", id, " --for later") } }),
+      ...(ledger.state === "stopped" && waysOn(root, ledger)),
+    },
     extra: {
       owned: ownedOf(root, ledger),
       ...(ledger.steps && { steps: stepLines(ledger.steps) }),

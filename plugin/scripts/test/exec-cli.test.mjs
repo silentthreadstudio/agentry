@@ -179,6 +179,18 @@ const judge = (out, verdict) =>
     out.reportPath,
     `All acceptance items checked.\nused_memories: none\nVerdict: ${verdict}\n`,
   );
+// A report that found main touched: the lane held for the guard (exit 0, field 75); its trip line.
+function tripped(res, what = "") {
+  assert.equal(res.exit, 0, `${what} ${res.stderr}`);
+  const { state, next, hold } = res.json;
+  assert.deepEqual([state, next, hold?.for], ["held", "resume", "guard"], what);
+  return res.json.guards[0];
+}
+// T1 also owns the board's own files: a running lane's owned board file is guarded as any file is.
+const OWNS_BOARD = TASKS_MD.replace(
+  "owns `out.txt`, `src/ui/panel.css`;",
+  "owns `out.txt`, `src/ui/panel.css`, `plan/BOARD.md`, `plan/DECISIONS.md`;",
+);
 
 test("start cuts agentry/<id> in a worktree, writes `dispatched` and prints the two-line prompt", () => {
   const r = repo();
@@ -512,18 +524,31 @@ test("without a lifecycle the lane writes nothing to the board, and says every s
   assert.equal(git(r.root, "status", "--porcelain"), "");
 });
 
-test("a builder that changes the main checkout stops the lane (exit 1) and names the guard", () => {
+test("a builder that changes the main checkout holds the lane for the guard (exit 0) and names it", () => {
   const r = repo();
   const out = lane(r, "start", "T1").json;
   build(out);
+  const tree = status(out.worktree);
   writeFileSync(join(r.root, "stray.txt"), "oops\n");
   const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1);
-  assert.equal(res.json.next, "stop");
-  assert.match(res.json.reason, /main touched: files changed: \?\? stray\.txt/);
-  assert.deepEqual(res.json.guards, [res.json.reason]);
-  assert.deepEqual(row(r.root, "T1"), ["T1", "S1", "doing", "", ""], "no `built` on a stop");
-  assert.equal(lane(r, "show", "T1").exit, 1);
+  assert.match(tripped(res), /^main touched: files changed: \?\? stray\.txt$/);
+  const saved = out.reportPath.replace(/\.md$/, ".held.md");
+  assert.deepEqual(res.json.hold, {
+    for: "guard",
+    when: "during",
+    stepRun: null,
+    evidence: saved,
+    reason: "files changed: ?? stray.txt",
+    report: saved,
+    since: res.json.hold.since,
+    round: 1,
+  });
+  assert.equal(readFileSync(saved, "utf8"), readFileSync(out.reportPath, "utf8"));
+  assert.equal(status(out.worktree), tree, "nothing in the worktree changes");
+  assert.deepEqual(row(r.root, "T1"), ["T1", "S1", "doing", "", ""], "no `built` on a hold");
+  const shown = lane(r, "show", "T1");
+  assert.equal(shown.exit, 0);
+  assert.equal(shown.json.hold.for, "guard");
 });
 
 test("close takes the episode's task line from the last build report, not a needs-context one", () => {
@@ -604,7 +629,7 @@ test("a flaky red with a green re-run after it still lets the land skip the gate
   assert.match(landed.stdout, /skipped: gate on [0-9a-f]{7}, tree identical/);
 });
 
-test("a commit on main stops the lane; another lane's real merge does not", () => {
+test("a commit on main holds the lane; another lane's real merge does not", () => {
   const r = repo();
   const out = lane(r, "start", "T1").json;
   build(out, "t1.txt");
@@ -618,9 +643,7 @@ test("a commit on main stops the lane; another lane's real merge does not", () =
   const r2 = repo();
   build(lane(r2, "start", "T1").json);
   commitFile(r2.root, "plan/NOTES.md", "x\n", "docs: by hand");
-  const stopped = lane(r2, "report", "T1");
-  assert.equal(stopped.exit, 1);
-  assert.match(stopped.json.reason, /main touched: HEAD moved/);
+  assert.match(tripped(lane(r2, "report", "T1")), /main touched: HEAD moved/);
 });
 
 test("a ledger without a real merge's shape cannot excuse a commit on main", () => {
@@ -643,30 +666,27 @@ test("a ledger without a real merge's shape cannot excuse a commit on main", () 
         merge: record(sha, pre),
       }),
     );
-    const res = lane(r, "report", "T1");
-    assert.equal(res.exit, 1);
-    assert.match(res.json.reason, /main touched: HEAD moved/);
+    assert.match(tripped(lane(r, "report", "T1")), /main touched: HEAD moved/);
   }
 });
 
-test("a builder's edit of main's board outside its lifecycle cells stops the lane", () => {
+test("a builder's edit of a board file a running lane owns, outside its lifecycle cells, trips", () => {
   const edits = {
     "another row": (text) => text.replace("| T2   | S1     | todo ", "| T2   | S1     | done "),
     "free text": (text) => `${text}\nA paragraph the builder added.\n`,
   };
   for (const [what, edit] of Object.entries(edits)) {
-    const r = repo();
+    const r = repo({ tasks: OWNS_BOARD });
     build(lane(r, "start", "T1").json);
     const file = join(r.root, "plan", "BOARD.md");
     writeFileSync(file, edit(readFileSync(file, "utf8")));
     const res = lane(r, "report", "T1");
-    assert.equal(res.exit, 1, what);
-    assert.match(res.json.reason, /main touched: files changed: {2}M plan\/BOARD\.md/, what);
+    assert.match(tripped(res, what), /main touched: files changed: {2}M plan\/BOARD\.md/, what);
   }
 });
 
-test("a board edit stays caught after another lane's lifecycle write lands on top of it", () => {
-  const r = repo();
+test("an owned board file's edit stays caught after another lane's lifecycle write lands on top of it", () => {
+  const r = repo({ tasks: OWNS_BOARD });
   build(lane(r, "start", "T1").json);
   const file = join(r.root, "plan", "BOARD.md");
   writeFileSync(
@@ -674,23 +694,20 @@ test("a board edit stays caught after another lane's lifecycle write lands on to
     readFileSync(file, "utf8").replace("| S1     | doing  |", "| S1     | done   |"),
   );
   assert.equal(lane(r, "start", "T2").exit, 0);
-  const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1);
-  assert.match(res.json.reason, /plan\/BOARD\.md/);
+  assert.match(tripped(lane(r, "report", "T1")), /plan\/BOARD\.md/);
 });
 
 test("a file dirty when the lane started may stay as it was, but not change further", () => {
   for (const further of [false, true]) {
     const r = repo();
-    const tasks = join(r.root, "plan", "TASKS.md");
-    writeFileSync(tasks, `${TASKS_MD}\nOwner's draft.\n`);
+    commitFile(r.root, "README.md", "# Readme\n");
+    const readme = join(r.root, "README.md");
+    writeFileSync(readme, "# Readme\n\nOwner's draft.\n");
     build(lane(r, "start", "T1").json);
-    if (further) writeFileSync(tasks, `${TASKS_MD}\nOwner's draft.\nAnd more.\n`);
+    if (further) writeFileSync(readme, "# Readme\n\nOwner's draft.\nAnd more.\n");
     const res = lane(r, "report", "T1");
-    if (further) {
-      assert.equal(res.exit, 1);
-      assert.match(res.json.reason, /files changed: {2}M plan\/TASKS\.md/);
-    } else assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+    if (further) assert.match(tripped(res), /files changed: {2}M README\.md/);
+    else assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
   }
 });
 
@@ -1018,11 +1035,11 @@ test("owns refuses a blank path, --apply without --set, and --set on another ste
 
 test("a ledger's boardWrites excuse only the lifecycle's own board file, not another file", () => {
   const r = repo();
+  commitFile(r.root, "README.md", "# Readme\n");
   build(lane(r, "start", "T1").json);
-  const tasks = join(r.root, "plan", "TASKS.md");
-  const from = git(r.root, "hash-object", "plan/TASKS.md");
-  writeFileSync(tasks, `${TASKS_MD}\nA contract the builder rewrote.\n`);
-  const to = git(r.root, "hash-object", "plan/TASKS.md");
+  const from = git(r.root, "hash-object", "README.md");
+  writeFileSync(join(r.root, "README.md"), "# Readme\n\nA line the builder wrote.\n");
+  const to = git(r.root, "hash-object", "README.md");
   writeFileSync(
     ledgerFile(r.root, "ZZ"),
     JSON.stringify({
@@ -1030,17 +1047,15 @@ test("a ledger's boardWrites excuse only the lifecycle's own board file, not ano
       id: "ZZ",
       state: "building",
       worktree: "/gone",
-      boardWrites: [{ file: "plan/TASKS.md", from, to }],
+      boardWrites: [{ file: "README.md", from, to }],
     }),
   );
-  const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1, JSON.stringify(res.json));
-  assert.match(res.json.reason, /files changed: {2}M plan\/TASKS\.md/);
+  assert.match(tripped(lane(r, "report", "T1")), /files changed: {2}M README\.md/);
 });
 
 const ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 
-test("only new memory records are Agentry's own: other files and edits of tracked ones stop the lane", () => {
+test("only new memory records are Agentry's own: other files and edits of tracked ones trip the guard", () => {
   const record = `.agentry/memory/facts/a-fact-${ULID}.md`;
   const cases = {
     "a script in the store": (root) => {
@@ -1065,8 +1080,7 @@ test("only new memory records are Agentry's own: other files and edits of tracke
     build(lane(r, "start", "T1").json);
     act(r.root);
     const res = lane(r, "report", "T1");
-    assert.equal(res.exit, 1, what);
-    assert.match(res.json.reason, /files changed: .*\.agentry\/memory/, what);
+    assert.match(tripped(res, what), /files changed: .*\.agentry\/memory/, what);
   }
 });
 
@@ -1104,13 +1118,12 @@ test("every printed cd prefix and lane line survives a path with quotes, $, back
   assert.equal(JSON.parse(ran.stdout).step, "gate", ran.stdout + ran.stderr);
 });
 
-test("an index-only change in main (git rm --cached) stops the lane", () => {
+test("an index-only change in main (git rm --cached) trips the guard", () => {
   const r = repo();
+  commitFile(r.root, "README.md", "# Readme\n");
   build(lane(r, "start", "T1").json);
-  git(r.root, "rm", "-q", "--cached", "plan/DECISIONS.md");
-  const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1, JSON.stringify(res.json));
-  assert.match(res.json.reason, /files changed: .*plan\/DECISIONS\.md/);
+  git(r.root, "rm", "-q", "--cached", "README.md");
+  assert.match(tripped(lane(r, "report", "T1")), /files changed: .*README\.md/);
 });
 
 test("a second close --episode with another id is refused and names the stamped one", () => {
@@ -1184,8 +1197,7 @@ test('close accepts a merged ledger (next done, or "" when adopted) and stamps i
 
 test("close accepts a stopped lane", () => {
   const r = repo();
-  build(lane(r, "start", "T1").json);
-  commitFile(r.root, "plan/NOTES.md", "x\n", "docs: by hand");
+  build(lane(r, "start", "T1").json, "out.txt", "BLOCKED");
   assert.equal(lane(r, "report", "T1").exit, 1);
   const closed = lane(r, "close", "T1");
   assert.equal(closed.exit, 0, closed.stderr);
@@ -1321,7 +1333,7 @@ test("a recorded lifecycle write on a file the owner staged does not stop anothe
   assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
 });
 
-test("a new symlink, a dangling one, a type change with the same content and a chmod stop the lane", () => {
+test("a new symlink, a dangling one, a type change with the same content and a chmod trip the guard", () => {
   const cases = {
     "a symlink to a directory": (root) => symlinkSync("plan", join(root, "link")),
     "a dangling symlink": (root) => symlinkSync("nowhere", join(root, "link")),
@@ -1336,9 +1348,7 @@ test("a new symlink, a dangling one, a type change with the same content and a c
     commitFile(r.root, "plan/NOTE.txt", "target");
     build(lane(r, "start", "T1").json);
     act(r.root);
-    const res = lane(r, "report", "T1");
-    assert.equal(res.exit, 1, what);
-    assert.match(res.json.reason, /main touched: files changed/, what);
+    assert.match(tripped(lane(r, "report", "T1"), what), /main touched: files changed/, what);
   }
 });
 
@@ -1831,20 +1841,18 @@ test("board add and board set --apply in main while a lane builds do not stop it
   assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
 });
 
-test("a hand edit after a recorded board write still stops the lane", () => {
-  const r = repo({ spec: WITH_CREATE });
+test("a hand edit of an owned board file after a recorded board write still trips", () => {
+  const r = repo({ spec: WITH_CREATE, tasks: OWNS_BOARD });
   build(lane(r, "start", "T1").json);
   const set = boardCli(r.root, "set", "decision", "D2", "decision=Cited", "--apply");
   assert.equal(set.status, 0, set.stderr);
   const file = decisions(r.root);
   writeFileSync(file, `${readFileSync(file, "utf8")}\nA builder's line.\n`);
-  const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1);
-  assert.match(res.json.reason, /files changed: {2}M plan\/DECISIONS\.md/);
+  assert.match(tripped(lane(r, "report", "T1")), /files changed: {2}M plan\/DECISIONS\.md/);
 });
 
-test("a board preview, or a board write made in the lane's worktree, excuses nothing in main", () => {
-  const r = repo({ spec: WITH_CREATE });
+test("a board preview, or a board write made in the lane's worktree, excuses nothing in an owned board file", () => {
+  const r = repo({ spec: WITH_CREATE, tasks: OWNS_BOARD });
   const out = lane(r, "start", "T1").json;
   build(out);
   const preview = boardCli(r.root, "set", "decision", "D2", "decision=Cited");
@@ -1852,22 +1860,18 @@ test("a board preview, or a board write made in the lane's worktree, excuses not
   const inTree = boardCli(out.worktree, "set", "decision", "D2", "decision=Cited", "--apply");
   assert.equal(inTree.status, 0, inTree.stderr);
   writeFileSync(decisions(r.root), readFileSync(decisions(out.worktree), "utf8"));
-  const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1);
-  assert.match(res.json.reason, /files changed: {2}M plan\/DECISIONS\.md/);
+  assert.match(tripped(lane(r, "report", "T1")), /files changed: {2}M plan\/DECISIONS\.md/);
 });
 
-test("a board write recorded before the lane started excuses nothing during it", () => {
-  const r = repo({ spec: WITH_CREATE });
+test("a board write recorded before the lane started excuses nothing in an owned board file during it", () => {
+  const r = repo({ spec: WITH_CREATE, tasks: OWNS_BOARD });
   const file = decisions(r.root);
   const original = readFileSync(file, "utf8");
   assert.equal(boardCli(r.root, "set", "decision", "D2", "decision=X", "--apply").status, 0);
   writeFileSync(file, original); // back as committed: the recorded write's `from`
   build(lane(r, "start", "T1").json);
   writeFileSync(file, original.replace("Not cited", "X")); // the same edit, by hand
-  const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1);
-  assert.match(res.json.reason, /files changed: {2}M plan\/DECISIONS\.md/);
+  assert.match(tripped(lane(r, "report", "T1")), /files changed: {2}M plan\/DECISIONS\.md/);
 });
 
 test("guard.allow lets main edits through, except in a running lane's owned files", () => {
@@ -1894,9 +1898,7 @@ test("guard.allow lets main edits through, except in a running lane's owned file
     build(lane(r2, "start", "T1").json);
     assert.equal(lane(r2, "start", "T2").exit, 0, what);
     act(r2.root);
-    const stopped = lane(r2, "report", "T1");
-    assert.equal(stopped.exit, 1, what);
-    assert.match(stopped.json.reason, /main touched: files changed/, what);
+    assert.match(tripped(lane(r2, "report", "T1"), what), /main touched: files changed/, what);
   }
 });
 
@@ -1909,9 +1911,7 @@ test("guard.allow lets nothing through while a running lane's owned files cannot
   );
   mkdirSync(join(r.root, "docs"));
   writeFileSync(join(r.root, "docs", "STATUS.md"), "x\n");
-  const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1);
-  assert.match(res.json.reason, /docs\/STATUS\.md/);
+  assert.match(tripped(lane(r, "report", "T1")), /docs\/STATUS\.md/);
 });
 
 test("a staged rename never carries an owned file past guard.allow, and a lone rename does not crash", () => {
@@ -1931,9 +1931,7 @@ test("a staged rename never carries an owned file past guard.allow, and a lone r
     build(lane(r, "start", "T1").json);
     assert.equal(lane(r, "start", "T2").exit, 0, what);
     act(r.root);
-    const stopped = lane(r, "report", "T1");
-    assert.equal(stopped.exit, 1, `${what}: ${stopped.stderr}`);
-    assert.match(stopped.json.reason, /main touched: files changed/, what);
+    assert.match(tripped(lane(r, "report", "T1"), what), /main touched: files changed/, what);
   }
   const r = repo({ spec });
   commitFile(r.root, "docs/A.md", "# A\n");
@@ -2077,10 +2075,9 @@ test("a hand commit on main touching only a guard.allow path passes the report; 
     commitFile(r2.root, "docs/STATUS.md", "# Status\n", "docs: status");
     commitFile(r2.root, file, "x\n", `chore: ${file}`);
     build(o2);
-    const stopped = lane(r2, "report", "T1");
-    assert.equal(stopped.exit, 1, why);
-    assert.match(stopped.json.reason, /main touched: HEAD moved [0-9a-f]{7} → [0-9a-f]{7} \(/, why);
-    assert.ok(stopped.json.reason.includes(`(${why})`), stopped.json.reason);
+    const trip = tripped(lane(r2, "report", "T1"), why);
+    assert.match(trip, /main touched: HEAD moved [0-9a-f]{7} → [0-9a-f]{7} \(/, why);
+    assert.ok(trip.includes(`(${why})`), trip);
   }
 });
 
@@ -2135,10 +2132,8 @@ test("a commit of the workflow file and another path still trips", () => {
   git(r.root, "add", ".agentry/workflow.json", "stray.txt");
   git(r.root, "commit", "-q", "-m", "chore: workflow and a stray");
   git(r.root, "checkout", "-q", "--", ".agentry/process.json");
-  const res = lane(r, "report", "T1");
-  assert.equal(res.exit, 1);
   assert.match(
-    res.json.reason,
+    tripped(lane(r, "report", "T1")),
     /main touched: HEAD moved [0-9a-f]{7} → [0-9a-f]{7} \(stray\.txt is not in guard\.allow\)/,
   );
 });
@@ -2167,20 +2162,20 @@ test("a running lane that owns the workflow file still trips on it, committed or
   git(committed.root, "add", ".agentry/workflow.json");
   git(committed.root, "commit", "-q", "-m", "chore: workflow");
   git(committed.root, "checkout", "-q", "--", ".agentry/process.json");
-  let res = lane(committed, "report", "T1");
-  assert.equal(res.exit, 1, JSON.stringify(res.json));
+  const trip = tripped(lane(committed, "report", "T1"));
   assert.ok(
-    res.json.reason.includes(`HEAD moved ${pre.slice(0, 7)}`) &&
-      res.json.reason.includes("(.agentry/workflow.json is owned by T3)"),
-    res.json.reason,
+    trip.includes(`HEAD moved ${pre.slice(0, 7)}`) &&
+      trip.includes("(.agentry/workflow.json is owned by T3)"),
+    trip,
   );
 
   const edited = setup();
   editConfig(join(edited.root, ".agentry"));
   git(edited.root, "checkout", "-q", "--", ".agentry/process.json");
-  res = lane(edited, "report", "T1");
-  assert.equal(res.exit, 1);
-  assert.match(res.json.reason, /main touched: files changed: {2}M \.agentry\/workflow\.json$/);
+  assert.match(
+    tripped(lane(edited, "report", "T1")),
+    /main touched: files changed: {2}M \.agentry\/workflow\.json$/,
+  );
 });
 
 test("the config files allowed are the ones in use: --process's and its sibling, not .agentry's", () => {
@@ -2191,7 +2186,7 @@ test("the config files allowed are the ones in use: --process's and its sibling,
   const at = (...args) => lane(r, ...args, "--process", join(r.root, "cfg", "process.json"));
   build(at("start", "T1").json);
   const sha = commitConfig(r.root, "cfg");
-  let res = at("report", "T1");
+  const res = at("report", "T1");
   assert.equal(res.exit, 0, res.stderr);
   assert.deepEqual(res.json.guards, [`main moved by allowed commits: 1 (${sha.slice(0, 7)})`]);
 
@@ -2202,9 +2197,7 @@ test("the config files allowed are the ones in use: --process's and its sibling,
   const at2 = (...args) => lane(r2, ...args, "--process", join(r2.root, "cfg", "process.json"));
   build(at2("start", "T1").json);
   commitConfig(r2.root);
-  res = at2("report", "T1");
-  assert.equal(res.exit, 1);
-  assert.match(res.json.reason, /main touched: HEAD moved/);
+  assert.match(tripped(at2("report", "T1")), /main touched: HEAD moved/);
 });
 
 test("a green then a red gate on one tip says the latest is red, and the waiting verify brief runs the gate", () => {
@@ -2257,10 +2250,8 @@ test("an uncommitted config edit that changes the guard or gate key trips; other
     const r = repo();
     build(lane(r, "start", "T1").json);
     editWorkflow(r.root, change);
-    const res = lane(r, "report", "T1");
-    assert.equal(res.exit, 1, key);
     assert.equal(
-      res.json.reason,
+      tripped(lane(r, "report", "T1"), key),
       `main touched: .agentry/workflow.json changes ${key} while lanes run → commit it between lanes`,
       key,
     );
@@ -2437,4 +2428,302 @@ test("a green record whose argv is not the tier's current one is not read as the
   const text = readFileSync(built.brief, "utf8");
   assert.doesNotMatch(text, /recorded green on/);
   assert.match(text, /Run the gate as the lane records it/);
+});
+
+// ---- board files never trip a lane; a guard trip holds it; a stopped lane's ways on (field 75) -------
+
+// The process file naming every kind of board location: a sprint's own file, a create block's file and
+// a status note, beside the tables and the contract blocks.
+const BOARD_FILES = structuredClone(SPEC);
+BOARD_FILES.kinds.sprint.file = { glob: "sprints/{id}_*.md" };
+BOARD_FILES.kinds.decision.create = {
+  id: "ask",
+  blocks: [{ file: "LOG.md", under: "Log", text: "- {id}" }],
+};
+BOARD_FILES.status = { note: "NOTE.md" };
+function boardRepo() {
+  const r = repo({ spec: BOARD_FILES });
+  commitFile(r.root, "plan/sprints/S1_first.md", "# S1\n");
+  commitFile(r.root, "plan/LOG.md", "# Log\n");
+  commitFile(r.root, "NOTE.md", "# Note\n");
+  return r;
+}
+const append = (root, file, line) =>
+  writeFileSync(join(root, file), `${readFileSync(join(root, file), "utf8")}${line}\n`);
+
+test("a hand commit of BOARD.md and a sprint file on main passes the next report with the allowed-commits line", () => {
+  const r = boardRepo();
+  const out = lane(r, "start", "T1").json;
+  build(out);
+  append(r.root, "plan/BOARD.md", "\nA line on the board.");
+  append(r.root, "plan/sprints/S1_first.md", "Handoff written.");
+  git(r.root, "add", "plan/BOARD.md", "plan/sprints/S1_first.md");
+  git(r.root, "commit", "-q", "-m", "docs(board): by hand");
+  const sha = git(r.root, "rev-parse", "HEAD").slice(0, 7);
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+  assert.deepEqual(res.json.guards, [`main moved by allowed commits: 1 (${sha})`]);
+});
+
+test("every board location the process file names may change uncommitted while a lane builds", () => {
+  const r = boardRepo();
+  build(lane(r, "start", "T1").json);
+  for (const file of [
+    "plan/BOARD.md",
+    "plan/DECISIONS.md",
+    "plan/TASKS.md",
+    "plan/sprints/S1_first.md",
+    "plan/LOG.md",
+    "NOTE.md",
+  ])
+    append(r.root, file, "A hand edit.");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+  assert.deepEqual(res.json.guards, []);
+});
+
+test("a files-kind item's file is a board file: a hand edit of another story passes", () => {
+  const r = { root: temp("exec-files-"), home: temp("exec-home-") };
+  git(r.root, "init", "-q", "-b", "main");
+  commitFile(r.root, ".gitignore", ".agentry/run/\n");
+  commitFile(r.root, "stories/s1.md", "---\nid: S-1\nstate: open\n---\n\n# One\n");
+  commitFile(r.root, "stories/s2.md", "---\nid: S-2\nstate: open\n---\n\n# Two\n");
+  commitFile(r.root, "TASKS.md", "# Tasks\n\n- **S-1**: owns `a.txt`.\n- **S-2**: owns `b.txt`.\n");
+  commitSpec(r.root, STORIES);
+  build(lane(r, "start", "S-1").json, "a.txt");
+  append(r.root, "stories/s2.md", "A note by hand.");
+  const res = lane(r, "report", "S-1");
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+});
+
+test("a commit touching a board file and a code file still trips, and holds the lane", () => {
+  const r = boardRepo();
+  build(lane(r, "start", "T1").json);
+  append(r.root, "plan/BOARD.md", "\nA line.");
+  writeFileSync(join(r.root, "code.js"), "x\n");
+  git(r.root, "add", "plan/BOARD.md", "code.js");
+  git(r.root, "commit", "-q", "-m", "chore: board and code");
+  assert.match(
+    tripped(lane(r, "report", "T1")),
+    /^main touched: HEAD moved [0-9a-f]{7} → [0-9a-f]{7}$/,
+  );
+});
+
+test("a board file a running lane owns still trips, committed or not", () => {
+  const committed = repo({ tasks: OWNS_BOARD });
+  build(lane(committed, "start", "T2").json, "two.txt");
+  assert.equal(lane(committed, "start", "T1").exit, 0);
+  commitFile(
+    committed.root,
+    "plan/BOARD.md",
+    `${board(committed.root)}\nBy hand.\n`,
+    "docs: board",
+  );
+  assert.ok(
+    tripped(lane(committed, "report", "T2")).includes("(plan/BOARD.md is owned by T1)"),
+    "the owner is named",
+  );
+  const edited = repo({ tasks: OWNS_BOARD });
+  build(lane(edited, "start", "T2").json, "two.txt");
+  assert.equal(lane(edited, "start", "T1").exit, 0);
+  append(edited.root, "plan/DECISIONS.md", "By hand.");
+  assert.match(tripped(lane(edited, "report", "T2")), /files changed: {2}M plan\/DECISIONS\.md/);
+});
+
+test("a code file committed on main holds the lane with its report saved; once guard.allow names it, a second report goes on to verify", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  build(out);
+  commitFile(r.root, "src/app.js", "x\n", "feat: by hand on main");
+  const held = lane(r, "report", "T1");
+  const trip = tripped(held);
+  assert.match(trip, /^main touched: HEAD moved/);
+  assert.equal(held.json.hold.report, out.reportPath.replace(/\.md$/, ".held.md"));
+  const shown = spawnSync("node", [LANE, "exec", "report", "T1", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home },
+  });
+  assert.equal(shown.status, 0, shown.stderr);
+  const lines = shown.stdout.split("\n");
+  assert.equal(lines[0], "T1 · report → resume (held)");
+  assert.match(
+    lines[1],
+    /^held: guard tripped: HEAD moved [0-9a-f]{7} → [0-9a-f]{7} → fix it \(commit it between lanes, or add the path to guard\.allow\), then run .*exec report T1 --root .* again$/,
+  );
+  assert.ok(
+    lines.some((l) => /^run: .*exec report T1 --root /.test(l)),
+    shown.stdout,
+  );
+  // Still tripped: held again with the new reason, since the first trip.
+  const since = held.json.hold.since;
+  writeFileSync(join(r.root, "stray.txt"), "x\n");
+  const again = lane(r, "report", "T1");
+  assert.match(tripped(again), /HEAD moved .*; files changed: \?\? stray\.txt$/);
+  assert.equal(again.json.hold.since, since);
+  rmSync(join(r.root, "stray.txt"));
+  editWorkflow(r.root, (w) => ({ ...w, guard: { allow: ["src/app.js"] } }));
+  git(r.root, "add", ".agentry/workflow.json");
+  git(r.root, "commit", "-q", "-m", "chore: allow src/app.js");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual([res.json.state, res.json.next], ["verifying", "verify"]);
+  assert.match(res.json.guards[0], /^main moved by allowed commits: 2 /);
+  assert.equal(ledgerOf(r.root, "T1").hold, undefined);
+  assert.deepEqual(
+    row(r.root, "T1"),
+    ["T1", "S1", "verify", "", ""],
+    "built written once it goes on",
+  );
+});
+
+test("the guard hold never discards the report: a report again works with the builder's file gone", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  build(out);
+  writeFileSync(join(r.root, "stray.txt"), "x\n");
+  tripped(lane(r, "report", "T1"));
+  rmSync(join(r.root, "stray.txt"));
+  rmSync(out.reportPath);
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify");
+  assert.equal(ledgerOf(r.root, "T1").rounds[0].status, "DONE");
+});
+
+test("a guard trip on a fix round holds the lane the same way, and the report again goes on to recheck", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  judge(out, "FAIL");
+  const fix = lane(r, "verdict", "T1", "--agent", "verifier-1").json;
+  assert.equal(fix.next, "fix");
+  commitFile(fix.worktree, "fixed.txt", "x\n", "fix: the fail");
+  writeFileSync(fix.reportPath, "DONE\nfixed\nused_memories: none\n");
+  writeFileSync(join(r.root, "stray.txt"), "x\n");
+  const held = lane(r, "report", "T1");
+  tripped(held);
+  assert.equal(held.json.hold.round, 3);
+  rmSync(join(r.root, "stray.txt"));
+  const res = lane(r, "report", "T1");
+  assert.equal(res.json.next, "recheck", res.stderr);
+  assert.equal(res.json.agent, "verifier-1");
+});
+
+test("a lane held for the guard is no writer; hold --for later parks it and resume carries the round on", () => {
+  const r = repo({ config: { lanes: { maxWriters: 1 } } });
+  build(lane(r, "start", "T1").json);
+  writeFileSync(join(r.root, "stray.txt"), "x\n");
+  tripped(lane(r, "report", "T1"));
+  const t2 = lane(r, "start", "T2");
+  assert.equal(t2.exit, 0, t2.stderr);
+  const parked = lane(r, "hold", "T1", "--for", "later", "--note", "later");
+  assert.equal(parked.exit, 0, parked.stderr);
+  assert.equal(ledgerOf(r.root, "T1").hold.for, "later");
+  assert.match(lane(r, "report", "T1").stderr, /the lane expects resume now, not a report/);
+  rmSync(join(r.root, "stray.txt"));
+  const r2 = repo();
+  build(lane(r2, "start", "T1").json);
+  writeFileSync(join(r2.root, "stray.txt"), "x\n");
+  tripped(lane(r2, "report", "T1"));
+  rmSync(join(r2.root, "stray.txt"));
+  const resumed = lane(r2, "resume", "T1", "--note", "main is clean again");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  assert.equal(resumed.json.next, "continue");
+});
+
+test("show on a stopped lane names the reason and its ways on; the ledger is left as it was", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json, "out.txt", "BLOCKED");
+  assert.equal(lane(r, "report", "T1").exit, 1);
+  const file = ledgerFile(r.root, "T1");
+  const before = readFileSync(file, "utf8");
+  const shown = spawnSync("node", [LANE, "exec", "show", "T1", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home },
+  });
+  assert.equal(shown.status, 1);
+  const lines = shown.stdout.split("\n");
+  assert.equal(lines[1], "stopped: the builder reported BLOCKED");
+  assert.match(
+    lines[2],
+    /^ways on: .*merge T1 --branch agentry\/T1 --root .* \(lands as is, the owner's call\) · .*exec restart T1 --root .* --carry \(when available\)$/,
+  );
+  assert.equal(readFileSync(file, "utf8"), before);
+  assert.equal(lane(r, "show", "T1").json.stopped, "the builder reported BLOCKED");
+});
+
+test("an old ledger stopped by a guard trip stays stopped: only show's text is new", () => {
+  const r = repo();
+  build(lane(r, "start", "T1").json);
+  const file = ledgerFile(r.root, "T1");
+  const old = JSON.parse(readFileSync(file, "utf8"));
+  old.rounds[0].guards = ["main touched: HEAD moved"];
+  Object.assign(old, { state: "stopped", next: "stop", stopReason: "main touched: HEAD moved" });
+  writeFileSync(file, JSON.stringify(old, null, 2));
+  const before = readFileSync(file, "utf8");
+  assert.equal(lane(r, "show", "T1").json.stopped, "main touched: HEAD moved");
+  assert.match(lane(r, "report", "T1").stderr, /the lane expects nothing now, not a report/);
+  assert.equal(readFileSync(file, "utf8"), before);
+});
+
+test("fix --notes takes a label the ledger keeps open from an earlier report, quoting it from there", () => {
+  const r = repo({ spec: { ...SPEC, exec: { noteRounds: 2, final: "never" } } });
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  notesReport(out);
+  lane(r, "verdict", "T1", "--agent", "verifier-1");
+  const fixed = lane(r, "fix", "T1", "--notes", "N2").json;
+  commitFile(fixed.worktree, "n2.txt", "x\n", "fix: the queue");
+  writeFileSync(fixed.reportPath, "DONE\nfixed N2\nused_memories: none\n");
+  const recheck = lane(r, "report", "T1").json;
+  writeFileSync(
+    recheck.reportPath,
+    "N2: PASS the queue is kept\nused_memories: none\nVerdict: PASS WITH NOTES\n",
+  );
+  const judged = lane(r, "verdict", "T1");
+  assert.equal(judged.exit, 0, judged.stderr);
+  const open = ledgerOf(r.root, "T1").openNotes;
+  assert.ok(
+    open.some((n) => n.startsWith("N3 ")),
+    JSON.stringify(open),
+  );
+  const again = lane(r, "fix", "T1", "--notes", "N3");
+  assert.equal(again.exit, 0, again.stderr);
+  assert.match(readFileSync(again.json.brief, "utf8"), /- N3: minor naming/);
+});
+
+test("start refuses while a land's picks are on main: exit 2, nothing written; a rolled-back land does not", () => {
+  const r = repo();
+  const pre = git(r.root, "rev-parse", "HEAD");
+  const sha = commitFile(r.root, "landed.txt", "x\n", "feat: a pick");
+  const at = new Date().toISOString();
+  const ledger = (landed) =>
+    JSON.stringify({
+      v: 1,
+      id: "ZZ",
+      state: "merging",
+      worktree: "/gone",
+      owned: [],
+      merge: { preHead: pre, landed, step: "gating", at },
+    });
+  mkdirSync(dirname(ledgerFile(r.root, "ZZ")), { recursive: true });
+  writeFileSync(ledgerFile(r.root, "ZZ"), ledger([sha]));
+  const before = board(r.root);
+  const res = lane(r, "start", "T1");
+  assert.equal(res.exit, 2);
+  const hhmm = /since (\d\d:\d\d)\)/.exec(res.stderr)?.[1];
+  assert.ok(hhmm, res.stderr);
+  assert.match(
+    res.stderr,
+    /✗ lane exec start T1: main is mid-land \(ZZ, since \d\d:\d\d\): its picks may still roll back → start after it lands/,
+  );
+  assert.equal(existsSync(ledgerFile(r.root, "T1")), false);
+  assert.equal(existsSync(join(r.root, ".agentry", "run", "worktrees", "T1")), false);
+  assert.equal(board(r.root), before);
+  writeFileSync(ledgerFile(r.root, "ZZ"), ledger(["f".repeat(40)])); // its picks are off main again
+  assert.equal(lane(r, "start", "T1").exit, 0);
 });

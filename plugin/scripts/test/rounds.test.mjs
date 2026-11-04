@@ -101,14 +101,85 @@ test("a fix with the guards holding → recheck, resuming the same verifier", ()
   assert.deepEqual([round.role, round.mode, round.agent], ["verify", "resume", "verifier-1"]);
 });
 
-test("main touched → stop, whatever the builder reports", () => {
+test("main touched → held for the guard, whatever the builder reports; the round left unread", () => {
   for (const status of ["DONE", "NEEDS_CONTEXT", null]) {
-    const res = go(lane(), report(status, { ...ok, mainTouched: "HEAD moved" }));
-    assert.equal(res.next, "stop");
-    assert.equal(res.ledger.state, "stopped");
-    assert.match(res.reason, /main touched: HEAD moved/);
-    assert.deepEqual(res.ledger.rounds[0].guards, ["main touched: HEAD moved"]);
+    const res = go(lane(), report(status, { ...ok, mainTouched: "HEAD moved" }, { at: "t1" }));
+    assert.deepEqual([res.next, res.ledger.state, res.dispatch], ["resume", "held", undefined]);
+    assert.equal(res.reason, "guard tripped: HEAD moved");
+    assert.deepEqual(res.ledger.hold, {
+      for: "guard",
+      when: "during",
+      stepRun: null,
+      evidence: "/r",
+      reason: "HEAD moved",
+      report: "/r",
+      since: "t1",
+      round: 1,
+    });
+    const round = res.ledger.rounds[0];
+    assert.deepEqual(round.guards, ["main touched: HEAD moved"]);
+    assert.deepEqual([round.report, round.status, round.held], [undefined, undefined, true]);
   }
+});
+
+test("a guard hold keeps the saved report the caller names", () => {
+  const event = report("DONE", { ...ok, mainTouched: "x" }, { saved: "/r.held" });
+  const { hold } = step(lane(), event).ledger;
+  assert.deepEqual([hold.report, hold.evidence], ["/r.held", "/r.held"]);
+});
+
+// A lane held for the guard on round `n` of `ledger`'s builder.
+const guardHeld = (ledger = lane()) =>
+  step(ledger, report("DONE", { ...ok, mainTouched: "HEAD moved" }, { at: "t1", agent: "b1" }))
+    .ledger;
+
+test("held for the guard: a report again with main clean goes on exactly as the first report would have", () => {
+  const first = go(lane(), report("DONE", ok, { agent: "b1" }));
+  const again = go(guardHeld(), report("DONE", ok, { at: "t2" }));
+  assert.deepEqual([again.next, again.ledger.state], [first.next, first.ledger.state]);
+  assert.equal(again.ledger.hold, undefined);
+  const [was, now] = [first.ledger.rounds[0], again.ledger.rounds[0]];
+  assert.deepEqual(
+    [now.status, now.report, now.guards, now.held],
+    ["DONE", "/r", undefined, undefined],
+  );
+  assert.equal(now.agent, was.agent, "the builder's agent is kept for a later resume");
+  assert.deepEqual(again.ledger.rounds[1].step, "verify");
+});
+
+test("held for the guard: a report still tripped stays held, since the first trip, with the new reason", () => {
+  const res = step(
+    guardHeld(),
+    report("DONE", { ...ok, mainTouched: "files changed" }, { at: "t2" }),
+  );
+  assert.deepEqual([res.next, res.ledger.state], ["resume", "held"]);
+  assert.deepEqual([res.ledger.hold.reason, res.ledger.hold.since], ["files changed", "t1"]);
+  assert.deepEqual(res.ledger.rounds[0].guards, ["main touched: files changed"]);
+});
+
+test("held for the guard on a fix round: a report again goes on as the fix's report would", () => {
+  let { ledger } = go(lane(), report("DONE", ok, { agent: "b1" }));
+  ({ ledger } = go(ledger, judge("FAIL")));
+  assert.equal(ledger.next, "fix");
+  const held = step(ledger, report("DONE", { ...ok, mainTouched: "HEAD moved" })).ledger;
+  assert.deepEqual([held.state, held.hold.for, held.hold.round], ["held", "guard", 3]);
+  const res = go(held, report("DONE"));
+  assert.equal(res.next, "recheck");
+});
+
+test("held for the guard: resume carries the round on, a park replaces it, verdicts stay refused", () => {
+  const held = guardHeld();
+  const resumed = step(held, { type: "resume", note: "fixed main", at: "t3" });
+  assert.equal(resumed.next, "continue");
+  assert.equal(resumed.reason, "the round held by the guard carries on");
+  assert.deepEqual(
+    [resumed.dispatch.from, resumed.dispatch.agent, resumed.ledger.holds[0].for],
+    ["/r", "b1", "guard"],
+  );
+  const parked = step(held, { type: "hold", for: "later", at: "t4" }).ledger;
+  assert.deepEqual([parked.hold.for, parked.hold.since], ["later", "t1"]);
+  assert.throws(() => step(parked, report("DONE")), /the lane is held: it expects a resume/);
+  assert.throws(() => step(held, judge("PASS")), /the lane is held: it expects a resume/);
 });
 
 test("uncommitted files or no commits past base → fix (resume) with the reason; again → stop", () => {
@@ -459,7 +530,9 @@ test("no state loops: 300 adversarial walks of up to 200 events all stop or clos
     for (; events < 200; events++) {
       const want = expects(ledger);
       if (want === null || want === "close") break;
-      const outcomes = eventsFor(want, tip, events).map((c) => ({
+      // A lane held for the guard waits for main to be fixed, then takes its report again.
+      const asked = want === "resume" && ledger.hold?.for === "guard" ? "report" : want;
+      const outcomes = eventsFor(asked, tip, events).map((c) => ({
         ...c,
         ledger: go(ledger, c.event, c.tip).ledger,
       }));

@@ -371,7 +371,7 @@ test("hold --for owner on a tripped lane still refuses and names the report step
   assert.equal(refused.exit, 2);
   assert.match(
     refused.stderr,
-    /main touched: files changed: \?\? stray\.txt: run .*exec report T3 --root .* \(the report stops the lane\)/,
+    /main touched: files changed: \?\? stray\.txt: run .*exec report T3 --root .* \(the report holds the lane for the guard\)/,
   );
   assert.equal(ledgerOf(r.root, "T3").state, "building");
 });

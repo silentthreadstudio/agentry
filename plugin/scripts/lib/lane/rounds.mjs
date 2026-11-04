@@ -6,7 +6,9 @@
 //   build / fix: DONE or DONE_WITH_CONCERNS → verify (fresh) when no verdict yet, else recheck (resume)
 //   build / fix: DONE, and the report says to skip the verifier (exec.verify) and a gate is configured
 //                                           → gate (green on this tip) → close: the gate stands in for the verifier
-//   build / fix: main touched (any status)  → stop
+//   build / fix: main touched (any status)  → held for the guard: the round is left unread, its report
+//                                             saved; a report again while held reads it once more: main clean
+//                                             → as the first report would have, still touched → held again
 //   build / fix: uncommitted files, no commits past base, or a commit that breaks the workflow file's
 //                `commits` rules                    → fix (resume) with the reason; twice → stop
 //   build / fix: NEEDS_CONTEXT              → needs-context (resume) once, then stop
@@ -50,7 +52,8 @@
 //   held: { type: "resume", note }           → continue (resume the builder) on the next run; on the same run
 //                                             after a "during" hold or with redo; after the last step → verify
 //                                             (fresh), or the gate under exec.verify
-//   held: report / verdict / notes           → refused: the lane expects a resume; a gate is recorded, decides nothing
+//   held: report / verdict / notes           → refused: the lane expects a resume (a guard hold takes a report,
+//                                             as above); a gate is recorded, decides nothing
 //   verified (next close or merge): { type: "hold", for: "later" } → held (`when: "verified"`, the next step
 //                                             kept); no round changes. Resumed → verified, the same next step
 //
@@ -62,8 +65,9 @@
 // A round in the ledger: { n, step, role, mode, final?, resend?, guard?, agent?, from?, reason?,
 // stepRun?, redo?, owner?, brief, reportPath, tip, at } plus, once reported, { report, status | verdict, void?,
 // summary?, guards?, covered?, onlyFixCommits? }, or `held: true` when the lane was held before its report
-// was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }` (a parked verified
-// lane `{ for: "later", when: "verified", next, evidence, since, why? }`); each resume appends its answer to
+// was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }` (a guard hold also
+// `reason` and `report`, the saved report a report reads again; a parked verified lane `{ for: "later",
+// when: "verified", next, evidence, since, why? }`); each resume appends its answer to
 // `holds[]`: { for, when, stepRun, evidence, since, resumedAt, note, redo, why? }.
 //
 // The route is the ledger's snapshot from start, `route: { verify, flagged, preset, noteRounds, final,
@@ -237,7 +241,8 @@ const resend = (ledger, round, reason) =>
  *
  *   { type: "report", status, report, agent?, summary?, guards: { mainTouched?, dirty?, commits?, subjects?: [{ sha, subject, why, failed? }] },
  *     skipVerify?: true (exec.verify routes this item past the verifier), tip, gate: true | false, tier?,
- *     changed? (a rebase report: the range-diff has a pair not marked `=`), at }
+ *     changed? (a rebase report: the range-diff has a pair not marked `=`), saved? (where the report is
+ *     kept while a guard holds the lane; `report` when not given), at }
  *   { type: "verdict", verdict, report, agent?, summary?, tip, gate: true | false (one configured), tier?,
  *     covered?, onlyFixCommits? (a recheck's facts, computed by the caller and pinned on the round) }
  *   { type: "gate", record }   (recorded at any time; decides only when the gate is the next step)
@@ -254,6 +259,7 @@ export function step(ledger, event) {
   const out = structuredClone(ledger);
   out.gates ??= [];
   if (event.type === "gate") return onGate(out, event.record);
+  const parked = event.type === "report" && out.hold?.for === "guard" ? unpark(out) : null;
   if (out.state === "held" && !["hold", "resume"].includes(event.type))
     throw new Error(`the lane is held: it expects a resume, not a ${event.type}`);
   if (event.type === "notes") return onNotes(out, event.notes);
@@ -270,10 +276,25 @@ export function step(ledger, event) {
   round.report = event.report;
   if (event.agent) round.agent = event.agent;
   if (event.summary) round.summary = event.summary;
-  return inRun(
+  const res = inRun(
     out,
     event.type === "report" ? onReport(out, round, event) : onVerdict(out, round, event),
   );
+  // Tripped again: still held since the first trip, with the new reason.
+  if (parked && out.hold?.for === "guard") out.hold.since = parked.since;
+  return res;
+}
+
+// A lane a guard trip holds reads its report again: its round is out once more, as it was dispatched.
+// Returns the hold it ends.
+function unpark(ledger) {
+  const held = ledger.hold;
+  const round = ledger.rounds[held.round - 1];
+  for (const key of ["report", "status", "summary", "guards", "held"]) delete round[key];
+  ledger.hold = undefined;
+  ledger.next = round.resend ? "resend" : round.step;
+  ledger.state = STATE[round.step];
+  return held;
 }
 
 // Every builder round before the first verdict builds a run of the steps: a round sent back to the
@@ -319,10 +340,24 @@ function runStart(ledger, round) {
 function onReport(ledger, round, event) {
   const { status, guards = {}, tip } = event;
   round.status = status;
-  // A builder that changed the main checkout stops the lane whatever it reports.
+  // A builder report that finds the main checkout changed holds the lane whatever it says: the round is
+  // left unread and its report kept, for a report once main is fixed.
   if (guards.mainTouched) {
     round.guards = [`main touched: ${guards.mainTouched}`];
-    return stop(ledger, round.guards[0]);
+    for (const key of ["report", "status", "summary"]) delete round[key];
+    round.held = true;
+    const saved = event.saved ?? event.report;
+    const entry = {
+      for: "guard",
+      when: "during",
+      stepRun: round.stepRun ?? null,
+      evidence: saved,
+      reason: guards.mainTouched,
+      report: saved,
+      since: event.at,
+      round: round.n,
+    };
+    return hold(ledger, entry, `guard tripped: ${guards.mainTouched}`);
   }
   if (!status) return resend(ledger, round, "the report has no status line");
   if (status === "BLOCKED") return stop(ledger, "the builder reported BLOCKED");
@@ -499,7 +534,11 @@ function onResume(ledger, event) {
   if (held.when !== "after")
     return carryOn(
       held.stepRun,
-      held.for === "later" ? "the parked round carries on" : "the owner answered during the round",
+      held.for === "later"
+        ? "the parked round carries on"
+        : held.for === "guard"
+          ? "the round held by the guard carries on"
+          : "the owner answered during the round",
     );
   if (redo)
     return carryOn(held.stepRun, `the owner sent ${runText(held.stepRun, total)} back`, {
