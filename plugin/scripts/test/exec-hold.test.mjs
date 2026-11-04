@@ -785,6 +785,31 @@ test("owns --add on a lane held for the context: appended, a path already owned 
   assert.match(readFileSync(resumed.brief, "utf8"), /- `cfg\/keys\.json` \(new\)/);
 });
 
+test("owns --add counts a path an owned entry already covers as owned: a directory, ./ and a trailing /", () => {
+  // R1d-38 r2 Q5: with lib/ owned, lib/a.txt and ./lib/ were appended; ./three.txt beside three.txt too.
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3").json;
+  assert.equal(lane(r, "owns", "T3", "--add", "lib/", "--apply").exit, 0);
+  const covered = lane(r, "owns", "T3", "--add", "lib/a.txt,./lib/,./three.txt", "--apply");
+  assert.equal(covered.exit, 0, covered.stderr);
+  assert.deepEqual(
+    [covered.json.applied, covered.json.unchanged],
+    [false, "already owned: lib/a.txt, ./lib/, ./three.txt"],
+  );
+  assert.deepEqual(
+    ledgerOf(r.root, "T3").owned.map((o) => o.path),
+    ["three.txt", "lib"],
+  );
+  // A new path given as ./x/ is stored as x.
+  const added = lane(r, "owns", "T3", "--add", "./cfg/", "--apply");
+  assert.deepEqual(
+    added.json.owned.map((o) => o.path),
+    ["three.txt", "lib", "cfg"],
+  );
+});
+
 test("owns --add in needs-context rewrites the waiting brief, keeping the fact; a verified or merged lane refuses it", () => {
   const r = repo();
   let out = lane(r, "start", "T3").json;

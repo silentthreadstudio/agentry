@@ -1493,15 +1493,18 @@ function owns(ctx, id) {
       refuse(
         `owns --add is for a lane still building: ${id} is ${ledger.state} (next ${ledger.next}); a change now is the owner's (${laneLine(root, "fix", id, ' --owner "<the change>"')})`,
       );
-    // Each path as `start` reads it (a bare name found in the tree), kept only when it is not owned yet.
+    // Each path as `start` reads it (a bare name found in the tree), `./` and a trailing `/` dropped, kept
+    // only when no owned entry covers it yet: the guard's own reading (a directory, a glob, a bare name).
     const owned = [...ownedOf(root, ledger)];
     const before = owned.length;
-    for (const path of paths) {
-      const fresh = withNew(ledger.worktree, [path]).filter(
-        (o) => !owned.some((e) => e.path === o.path),
-      );
+    const covered = (path) => owned.some((e) => ownsPath(e.path, path));
+    for (const given of paths) {
+      const path = given.replace(/^(?:\.\/)+/, "").replace(/\/+$/, "") || given;
+      const fresh = covered(path)
+        ? []
+        : withNew(ledger.worktree, [path]).filter((o) => !covered(o.path));
       if (fresh.length) owned.push(...fresh);
-      else already.push(path);
+      else already.push(given);
     }
     ledger = { ...ledger, owned };
     if (owned.length === before)
