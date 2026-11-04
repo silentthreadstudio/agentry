@@ -9,6 +9,9 @@
 import { extensions } from "./extensions.mjs";
 import { locks } from "./locks.mjs";
 import { modelsSchema } from "./models.mjs";
+
+// The dispatch model lives with the models key now; its old import path still works.
+export { modelFor } from "./models.mjs";
 import { execSchema, flagField, resolveWorkflow } from "./presets.mjs";
 import {
   FULL,
