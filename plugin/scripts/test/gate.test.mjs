@@ -683,25 +683,44 @@ for (const signal of ["SIGPIPE", "SIGUSR1"])
     assert.match(readFileSync(log, "utf8"), new RegExp(`sh was killed by ${signal}`));
   });
 
+// The watchdog of a running gate: the gate command's parent, checked to be supervise.mjs.
+function watchdogOf(pids) {
+  const watchdog = Number(
+    spawnSync("ps", ["-o", "ppid=", "-p", String(pids[0])], { encoding: "utf8" }).stdout.trim(),
+  );
+  assert.match(
+    spawnSync("ps", ["-ww", "-o", "command=", "-p", String(watchdog)], { encoding: "utf8" }).stdout,
+    /supervise\.mjs --parent/,
+  );
+  return watchdog;
+}
+// SIGKILL each pid, whatever the test's outcome: a red run must not leave its gate command running.
+const killAll = (pids) => {
+  for (const pid of pids)
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // gone already
+    }
+};
+
 // The gate's watchdog itself killed (by -9, or by a signal it has no handler for) while the gate runs.
 for (const signal of ["SIGKILL", "SIGHUP", "SIGINT", "SIGTERM"])
   test(`${signal} of the gate's watchdog alone: once lane exec gate returns, no gate process runs and gate-locks is empty`, async () => {
     const { root, run, pids } = await gateRunning(join(logs, "gate.pids"));
-    assert.equal(pids.length, 2, "the gate command and its child run");
-    const watchdog = Number(
-      spawnSync("ps", ["-o", "ppid=", "-p", String(pids[0])], { encoding: "utf8" }).stdout.trim(),
-    );
-    assert.match(
-      spawnSync("ps", ["-ww", "-o", "command=", "-p", String(watchdog)], { encoding: "utf8" })
-        .stdout,
-      /supervise\.mjs --parent/,
-    );
-    const returned = new Promise((resolve) => run.on("exit", resolve));
-    process.kill(watchdog, signal);
-    await returned;
-    const back = Date.now();
-    // Reaped once re-parented: a moment, never a second gate's worth of time.
-    while (pids.some(alive) && Date.now() - back < 500) await new Promise((r) => setTimeout(r, 20));
-    assert.deepEqual(pids.filter(alive), [], "a gate process outlived its gate");
-    assert.deepEqual(readdirSync(join(root, ".agentry", "run", "gate-locks")), []);
+    try {
+      assert.equal(pids.length, 2, "the gate command and its child run");
+      const watchdog = watchdogOf(pids);
+      const returned = new Promise((resolve) => run.on("exit", resolve));
+      process.kill(watchdog, signal);
+      await returned;
+      const back = Date.now();
+      // Reaped once re-parented: a moment, never a second gate's worth of time.
+      while (pids.some(alive) && Date.now() - back < 500)
+        await new Promise((r) => setTimeout(r, 20));
+      assert.deepEqual(pids.filter(alive), [], "a gate process outlived its gate");
+      assert.deepEqual(readdirSync(join(root, ".agentry", "run", "gate-locks")), []);
+    } finally {
+      killAll([...pids, run.pid]); // R1d-37 r7 N19: a red run left its sleep 40 running
+    }
   });
