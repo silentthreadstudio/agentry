@@ -1072,3 +1072,45 @@ test("the quiet line says the day the owner was asked when it was not today", ()
   );
   assert.match(idleRows(session(root, "start").stdout)[0], /^idle: T1 \(asked \d\d:\d\d; park: /);
 });
+
+test("many missing start-check skills are counted, so the question stays in the 40 lines whenever a lane is recorded", () => {
+  const checks = Array.from({ length: 20 }, (_, i) => `m${i + 1}`);
+  const root = checkedRepo({ start: { checks } }, []);
+  idleLane(root, "L1", 60);
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const lines = res.stdout.trimEnd().split("\n");
+  assert.ok(lines.length <= 40, `${lines.length} lines`);
+  assert.equal(lines.filter((l) => / has no \.claude\/skills\//.test(l)).length, 3);
+  assert.ok(lines.includes("start checks: +17 more have no SKILL.md → /agentry:init"));
+  const recorded = Object.keys(JSON.parse(readFileSync(RUN(root, "idle-asked.json"), "utf8")));
+  const question = lines.find((l) => l.startsWith("ask the owner once: park "));
+  assert.deepEqual(recorded, ["L1"]);
+  assert.ok(question, "a lane recorded as asked has its question printed");
+  assert.match(question, /^ask the owner once: park L1\? /);
+});
+
+test("the quiet line's clock is the newest ask by its time; a value that is no time never wins", () => {
+  const root = fresh();
+  idleLane(root, "T1", 60);
+  idleLane(root, "T3", 60);
+  const { idle } = JSON.parse(session(root, "start", "--json").stdout);
+  const lastChange = Object.fromEntries(idle.map((i) => [i.id, i.lastChange]));
+  // Sorted as strings, "zzz" would win and read as "?".
+  const older = new Date();
+  older.setHours(12, 0, 0, 0);
+  writeFileSync(
+    RUN(root, "idle-asked.json"),
+    JSON.stringify({
+      T1: { lastChange: lastChange.T1, asked: "zzz" },
+      T3: { lastChange: lastChange.T3, asked: older.toISOString() },
+    }),
+  );
+  const pad = (n) => String(n).padStart(2, "0");
+  const rows = idleRows(session(root, "start").stdout);
+  assert.equal(rows.length, 1, rows.join("\n"));
+  assert.ok(
+    rows[0].startsWith(`idle: T1, T3 (asked ${pad(older.getHours())}:${pad(older.getMinutes())}; `),
+    rows[0],
+  );
+});

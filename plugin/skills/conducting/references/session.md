@@ -48,9 +48,10 @@ the lanes already asked instead of their blocks:
 idle: T6 (asked 12:05; park: agentry lane exec hold <id> --for later)
 ```
 
-The question comes first, then at most three blocks, then `idle: +N more → agentry lane session start --json`,
-so the 40-line cap never cuts the question it records as asked. The quiet line's clock carries the date
-(`2026-11-03 14:02`) when the owner was asked on another day. A lane whose `lastChange` moved, or that left idle
+The question comes first, then at most three blocks, then `idle: +N more → agentry lane session start --json`.
+A newly idle lane is recorded as asked only when the text keeps the question within its 40 lines (with `--json`
+too); otherwise the next start asks again. The quiet line's clock is the newest ask (a value that is no time
+never wins) and carries the date (`2026-11-03 14:02`) when the owner was asked on another day. A lane whose `lastChange` moved, or that left idle
 and came back, is asked again. Put the question to the owner once; park only on their yes. `--json` records the
 same as the text, so a reader of `--json` asks the owner about every `idle[]` lane with `asked: null`: the next
 text start shows it only as the quiet line.
@@ -68,7 +69,8 @@ last close: repo-ui failed · the screenshot gate was red
 ```
 
 `start checks:` lists the checks not yet recorded in this start window; a named skill with no `SKILL.md` adds
-its own line, with the `→ /agentry:init` pointer under it. `last close:` shows how the close window stands (the last session's close, until a start check
+its own line, with the `→ /agentry:init` pointer under it (at most three, then `start checks: +N more have no
+SKILL.md → /agentry:init`). `last close:` shows how the close window stands (the last session's close, until a start check
 is recorded): passed over named, the time of the newest entry (UTC, to the minute), then each failure with its
 note on one line (at most three, then `last close: +N more failed`); a line is cut to 100 columns.
 

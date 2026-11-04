@@ -6,7 +6,8 @@
 //           as at most 40 lines, or `--json`. It records two things in the main checkout's `.agentry/run/`,
 //           the same with `--json` or without: the Now a note was first read under (`note-seen.json`,
 //           `stale-status.mjs`) and, per idle lane, the `lastChange` it asked the owner about
-//           (`idle-asked.json`), so the owner is asked once.
+//           (`idle-asked.json`, `../session-checks.mjs`), so the owner is asked once. A newly idle lane is
+//           recorded only when the text keeps the question line within its 40 lines.
 //   close   what the ending walks through: the pending drafts, what `board fix` would write, the ledgers, what
 //           `lane sweep --apply` would clean, the disk, the episodes nobody wrote and the note. Always JSON.
 //
@@ -20,12 +21,10 @@
 // Exit 0, or 2 for a usage error.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { mkdirSync, readFileSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { nextStep } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
-import { atomicWrite } from "../../fs/atomic.mjs";
 import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
 import { run as fix } from "../../process/cli/fix.mjs";
 import * as drafts from "../../process/drafts.mjs";
@@ -75,6 +74,8 @@ const MAX_HELD = 3; // held and parked lanes start prints, the rest counted
 const MAX_IDLE = 3; // newly idle lanes start prints a block for, the rest counted
 const NOTE_COLUMNS = 100; // a failed close check's line, note included, as start prints it
 const MAX_FAILED = 3; // failed close checks start names, the rest counted
+const MAX_MISSING = 3; // named start checks with no SKILL.md start names, the rest counted
+const QUESTION = "ask the owner once: park "; // the idle question line's start
 const MAX_STACK = 3; // due stacks start names, the rest counted
 
 // The mode in `.agentry/config.json` (null: none set) and, when the reader refuses a config file, its error:
@@ -158,49 +159,14 @@ const idleOfAll = (all, spec) =>
       : [];
   });
 
-// Each idle lane with `asked`: when start last asked the owner to park it at this `lastChange` (ISO), or
-// null when this start is the first to see it idle there. The record (`idle-asked.json`, atomic) is
-// rewritten to hold just the lanes idle now, so a lane that moved, or left idle and came back, is asked
-// again. A record it cannot read is nothing asked, and is rewritten; one it cannot write is left, and the
-// next start asks again.
-const askedFile = (runRoot) => join(runRoot, ".agentry", "run", "idle-asked.json");
-// The record, `{}` when there is none, null when it cannot be read.
-function readAsked(runRoot) {
-  try {
-    const data = JSON.parse(readFileSync(askedFile(runRoot), "utf8"));
-    return data && typeof data === "object" && !Array.isArray(data) ? data : null;
-  } catch (err) {
-    return err.code === "ENOENT" ? {} : null;
-  }
-}
-function askOnce(runRoot, idle) {
-  const before = readAsked(runRoot);
-  const at = new Date().toISOString();
-  const shown = idle.map((i) => {
-    const was = before && Object.hasOwn(before, i.id) ? before[i.id] : null;
-    const asked = was?.lastChange === i.lastChange && typeof was.asked === "string";
-    return { ...i, asked: asked ? was.asked : null };
-  });
-  const after = Object.fromEntries(
-    shown.map((i) => [i.id, { lastChange: i.lastChange, asked: i.asked ?? at }]),
-  );
-  if (before !== null && JSON.stringify(after) === JSON.stringify(before)) return shown;
-  try {
-    mkdirSync(dirname(askedFile(runRoot)), { recursive: true });
-    atomicWrite(askedFile(runRoot), `${JSON.stringify(after)}\n`);
-  } catch {
-    // Not recorded: the next start asks again.
-  }
-  return shown;
-}
-
 // The `checks` field of start and close: each phase's View, or nothing when neither names a check.
 function checksField(runRoot, { root, spec }) {
   const checks = sessionChecksFile.checksView(spec, sessionChecksFile.read(runRoot), root);
   return checks ? { checks } : {};
 }
 
-function start({ root, spec, model }) {
+// `asked` is the idle-asked record as read before this start (`readIdleAsked`).
+function start({ root, spec, model }, asked) {
   const runRoot = mainRoot(root) ?? root;
   // Counted before anything reads the ledgers or the gate slots: those reads sweep what they find.
   const stale = staleOf(runRoot);
@@ -215,7 +181,7 @@ function start({ root, spec, model }) {
     prompt: spec.conductor?.prompt ? join(root, spec.conductor.prompt) : null,
     ...modeOf(root),
     held: heldOf(runRoot, all),
-    idle: askOnce(runRoot, idleOfAll(all, spec)),
+    idle: sessionChecksFile.withAsked(asked, idleOfAll(all, spec)),
     status,
     recall: recallFor(root, task),
     questions: status.onYou.filter((i) => i.kind !== work),
@@ -291,10 +257,12 @@ function startChecks({ start: now, close: last }, { add, addList }) {
     addList("start checks: ", now.pending, " (run each, then record it)");
     add(`  → ${nextStep('lane session start --check <skill>=pass|fail --note "<line>"')}`);
   }
-  for (const m of now.missing) {
+  for (const m of now.missing.slice(0, MAX_MISSING)) {
     add(`start checks: ${m} has no ${SKILL_DIR}/${m}/SKILL.md`);
     add("  → /agentry:init");
   }
+  if (now.missing.length > MAX_MISSING)
+    add(`start checks: +${now.missing.length - MAX_MISSING} more have no SKILL.md → /agentry:init`);
   if (!last.recorded.length) return;
   const passed = last.recorded.filter((r) => r.result === "pass").length;
   add(`last close: ${passed}/${last.named.length} passed (${minute(last.recorded.at(-1).at)})`);
@@ -360,14 +328,14 @@ function renderStart(s, { name, root }) {
   }
   if (s.held.length > MAX_HELD)
     add(`held: +${s.held.length - MAX_HELD} more → ${nextStep("lane session start --json")}`);
-  // Lanes newly idle at their lastChange: one question for all of them first (they are recorded as asked,
-  // so the 40-line cap must never cut it), then a block each, capped as held is, the park step on its own
+  // Lanes newly idle at their lastChange: one question for all of them first (they are recorded as asked
+  // only when it is within the 40 lines), then a block each, capped as held is, the park step on its own
   // line so 80 columns never cut it. The lanes already asked: one quiet line.
   const fresh = s.idle.filter((i) => !i.asked);
   const park = nextStep("lane exec hold <id> --for later");
   if (fresh.length)
     add(
-      `ask the owner once: park ${fresh.map((i) => i.id).join(", ")}? yes → ${park} (each)`,
+      `${QUESTION}${fresh.map((i) => i.id).join(", ")}? yes → ${park} (each)`,
       Number.POSITIVE_INFINITY,
     );
   for (const i of fresh.slice(0, MAX_IDLE)) {
@@ -378,10 +346,9 @@ function renderStart(s, { name, root }) {
     add(`idle: +${fresh.length - MAX_IDLE} more → ${nextStep("lane session start --json")}`);
   const asked = s.idle.filter((i) => i.asked);
   if (asked.length) {
-    const last = asked
-      .map((i) => i.asked)
-      .toSorted()
-      .at(-1);
+    // The newest ask by its time; a value that is no time never wins (and reads `?` only when alone).
+    const times = asked.map((i) => i.asked).filter((a) => Number.isFinite(Date.parse(a)));
+    const last = times.toSorted((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? asked[0].asked;
     add(
       `idle: ${asked.map((i) => i.id).join(", ")} (asked ${askedAt(last)}; park: ${park})`,
       Number.POSITIVE_INFINITY,
@@ -543,7 +510,14 @@ function runSession(argv, ctx) {
   if (opts.note !== undefined && opts.check === undefined)
     return usageError("lane session", "--note goes with --check");
   if (opts.check !== undefined) return check(sub, opts, ctx);
-  const data = sub === "start" ? start(ctx) : closing(ctx);
-  if (opts.json || sub === "close") return { exit: 0, out: JSON.stringify(data) };
-  return { exit: 0, out: renderStart(data, { name: ctx.spec.name, root: ctx.root }) };
+  if (sub === "close") return { exit: 0, out: JSON.stringify(closing(ctx)) };
+  const runRoot = mainRoot(ctx.root) ?? ctx.root;
+  const before = sessionChecksFile.readIdleAsked(runRoot);
+  const data = start(ctx, before);
+  const text = renderStart(data, { name: ctx.spec.name, root: ctx.root });
+  // The text decides what is recorded, with --json too: a newly idle lane counts as asked only when the
+  // question line is within the 40 lines.
+  const asking = text.split("\n").some((l) => l.startsWith(QUESTION));
+  sessionChecksFile.recordIdleAsked(runRoot, before, data.idle, { asking });
+  return { exit: 0, out: opts.json ? JSON.stringify(data) : text };
 }

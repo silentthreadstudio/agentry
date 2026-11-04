@@ -13,8 +13,22 @@
 // record(runRoot, entry)                append one line (a torn last line first gets its line break)
 // checksView(spec, entries, root) -> { start: View, close: View } | null     null: neither phase names a check
 //   View = { named, recorded: [{ skill, result, note?, at }], pending, failed, missing }
+//
+// Beside it, the idle lanes `lane session start` asked the owner to park (field 88):
+// `<main root>/.agentry/run/idle-asked.json`, `{ <id>: { lastChange, asked: <ISO> } }`, written whole
+// (atomically), never committed. It holds just the lanes idle at the last start, so a lane whose lastChange
+// moved, or that left idle and came back, is asked again. Unlike the checks record it never refuses: one it
+// cannot read is nothing asked (and is rewritten), one it cannot write is left (the next start asks again).
+//
+// readIdleAsked(runRoot) -> record | {} | null                  {}: none yet; null: one it cannot read
+// withAsked(record, idle) -> idle[]                             each with `asked`: the ISO when an earlier
+//                                                               start asked at this lastChange, else null
+// recordIdleAsked(runRoot, record, idle, { asking })            the lanes idle now: those already asked, and
+//                                                               the newly idle ones when `asking` (the
+//                                                               question was shown)
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { atomicWrite } from "../fs/atomic.mjs";
 import { sessionChecks } from "../process/spec/extensions.mjs";
 import { skillExists } from "./merge/rows.mjs";
 
@@ -113,4 +127,43 @@ export function checksView(spec, entries, root) {
     start: viewOf(spec, entries, root, "start"),
     close: viewOf(spec, entries, root, "close"),
   };
+}
+
+const askedFile = (runRoot) => join(runRoot, ".agentry", "run", "idle-asked.json");
+
+/** The idle-asked record: `{}` when there is none, null when it cannot be read. */
+export function readIdleAsked(runRoot) {
+  try {
+    const data = JSON.parse(readFileSync(askedFile(runRoot), "utf8"));
+    return data && typeof data === "object" && !Array.isArray(data) ? data : null;
+  } catch (err) {
+    return err.code === "ENOENT" ? {} : null;
+  }
+}
+
+/** Each idle lane with `asked`: when an earlier start asked the owner to park it at this `lastChange`
+ *  (ISO), or null when none did. */
+export function withAsked(record, idle) {
+  return idle.map((i) => {
+    const was = record && Object.hasOwn(record, i.id) ? record[i.id] : null;
+    const asked = was?.lastChange === i.lastChange && typeof was.asked === "string";
+    return { ...i, asked: asked ? was.asked : null };
+  });
+}
+
+/** Rewrite the record to the lanes idle now: each already asked, and each newly idle one (asked now)
+ *  when `asking`. Left as it is when nothing changed. */
+export function recordIdleAsked(runRoot, record, idle, { asking }) {
+  const at = new Date().toISOString();
+  const kept = idle.filter((i) => i.asked || asking);
+  const after = Object.fromEntries(
+    kept.map((i) => [i.id, { lastChange: i.lastChange, asked: i.asked ?? at }]),
+  );
+  if (record !== null && JSON.stringify(after) === JSON.stringify(record)) return;
+  try {
+    mkdirSync(dirname(askedFile(runRoot)), { recursive: true });
+    atomicWrite(askedFile(runRoot), `${JSON.stringify(after)}\n`);
+  } catch {
+    // Not recorded: the next start asks again.
+  }
 }
