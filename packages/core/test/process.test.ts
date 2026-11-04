@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BoardReport, Finding, ProcessBoard } from "../src/process.js";
+import { BoardReport, Finding, ProcessBoard, StatusView } from "../src/process.js";
 import { ProcessSpec, Workflow } from "../src/workflow.js";
 
 // Synthetic boards: invented ids and words, only the two shapes (table / one file per item).
@@ -157,4 +157,28 @@ test("the process file holds the board and the workflow file the rest: each refu
   assert.equal(ProcessBoard.safeParse(tableBoard).success, false);
   assert.equal(Workflow.safeParse({ version: 1, lifecycle }).success, false);
   assert.equal(Workflow.safeParse({}).success, true);
+});
+
+test("the status note carries its mtime, its Now and its age, and either stale form, and nothing else", () => {
+  const note = StatusView.shape.note.unwrap().strict();
+  const base = {
+    path: ".agentry/NOTE.md",
+    lines: ["Watch T2 land."],
+    writtenAt: "2026-11-02T09:00:00.000Z",
+    now: ["S1"],
+    old: true,
+  };
+  assert.equal(note.safeParse(base).success, true, "a note that is not stale");
+  const sprint = { ...base, stale: { why: "now-changed", was: ["S1"], now: ["S2"] } };
+  assert.equal(note.safeParse(sprint).success, true, "stale by sprint");
+  const done = { ...base, stale: { why: "ids-done", ids: ["T2"] } };
+  assert.equal(note.safeParse(done).success, true, "stale with every id done");
+  assert.equal(StatusView.safeParse({ note: sprint }).success, true, "the view carries it");
+  // The old shapes and a mixed form are refused.
+  assert.equal(note.safeParse({ ...base, stale: ["T2"] }).success, false, "stale as an id list");
+  assert.equal(note.safeParse({ ...base, stale: { why: "ids-done", was: ["S1"] } }).success, false);
+  assert.equal(note.safeParse({ ...base, stale: { why: "later", ids: [] } }).success, false);
+  const { writtenAt: _w, ...noMtime } = base;
+  assert.equal(note.safeParse(noMtime).success, false, "writtenAt is required");
+  assert.equal(note.safeParse({ ...base, age: "3d" }).success, false, "no other key");
 });
