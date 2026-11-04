@@ -29,9 +29,52 @@ import { writeSpec } from "./spec-files.mjs";
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
 const cleanups = [];
 const children = [];
-after(() => {
-  for (const c of children) c.kill("SIGKILL");
+// Pids a test planted other than through `children` (a group a dead run left, its command's group).
+const planted = [];
+// `{ pid, ppid, pgid, zombie }` of every process now.
+const snapshot = () =>
+  spawnSync("ps", ["-axo", "pid=,ppid=,pgid=,stat="], { encoding: "utf8" })
+    .stdout.split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .filter((f) => f.length === 4)
+    .map(([pid, ppid, pgid, stat]) => ({
+      pid: Number(pid),
+      ppid: Number(ppid),
+      pgid: Number(pgid),
+      zombie: stat.startsWith("Z"),
+    }));
+// `tops`, everything below them by parent, and every member of a group one of them leads.
+function treesOf(tops) {
+  const procs = snapshot();
+  const found = new Set(tops);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const p of procs)
+      if (!found.has(p.pid) && (found.has(p.ppid) || (tops.includes(p.pgid) && p.pgid > 1))) {
+        found.add(p.pid);
+        grew = true;
+      }
+  }
+  return found;
+}
+const living = (pids) =>
+  snapshot()
+    .filter((p) => pids.has(p.pid) && !p.zombie)
+    .map((p) => p.pid);
+after(async () => {
+  // Each planted process goes with its whole tree and group, found before any of it is killed (a killed
+  // parent's children are re-parented and could no longer be found by it).
+  const doomed = treesOf([...children.map((c) => c.pid), ...planted].filter(Number.isInteger));
+  for (const pid of doomed)
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // gone already
+    }
   for (const c of cleanups) c();
+  for (const end = Date.now() + 3000; living(doomed).length && Date.now() < end; )
+    await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(living(doomed), [], "a process this file started still runs");
 });
 
 /** A repo with a merged task (T1), a task still building (T2) and a worktree no ledger knows. */
@@ -511,7 +554,9 @@ test("a descendant shell run -i with no terminal is stopped with its stray", asy
   const { root } = fixture();
   const stray = plantShell(
     runFile(root, "runs/T1/inter.sh"),
-    "/bin/bash -i -c 'sleep 300; sleep 300'\n",
+    // Two commands, so bash stays (one would be exec'd); the second is not another sleep, because an
+    // interactive bash ignores SIGTERM and would start it after the first one dies.
+    "/bin/bash -i -c 'sleep 300; exit'\n",
   );
   await settle();
   const shell = childOf(stray.pid);
@@ -688,6 +733,7 @@ function leftoversIn(root) {
     { encoding: "utf8" },
   );
   const group = { pid: Number(spawned.stdout) };
+  planted.push(group.pid);
   const live = spawn("node", ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
   children.push(live);
   cleanups.push(() => {
@@ -823,6 +869,7 @@ test("kill -9 of agentry run leaves its slot and group to the sweep, which stops
   for (let i = 0; i < 100 && !(existsSync(pidFile) && readFileSync(pidFile, "utf8")); i++)
     await new Promise((r) => setTimeout(r, 50));
   const pgid = Number(readFileSync(pidFile, "utf8"));
+  planted.push(pgid);
   cleanups.push(() => {
     try {
       process.kill(-pgid, "SIGKILL");
