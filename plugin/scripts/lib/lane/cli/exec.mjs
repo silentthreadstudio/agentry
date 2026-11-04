@@ -116,6 +116,7 @@ import { idProblem } from "../id.mjs";
 import { idleOf } from "../idle.mjs";
 import { isAncestor, mergeBaseOf } from "../land.mjs";
 import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
+import { callsLine } from "../owner-calls.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
 import { RestackError, gatingNow, markGating, restackLane } from "../restack.mjs";
 import { archive, archiveNumber, carry, leftover, retire, saveWork } from "../restart.mjs";
@@ -134,6 +135,7 @@ import {
   skipsVerifier,
   verdicts,
 } from "../rounds.mjs";
+import { setSpikeCalls } from "../spikes.mjs";
 import { chainOf, childrenOf, gateRefusal, restackLine, stackOf } from "../stack.mjs";
 import { brokenIn, rulesOf } from "../subjects.mjs";
 import { branchOf, create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
@@ -1412,8 +1414,8 @@ function frozenBoard(ctx, hash) {
 // Cut the lane and brief its builder: the worktree on `agentry/<id>` (from the parent's tip when stacked,
 // else main's HEAD), `dispatched`, the ledger with what main and the board look like now. `again(path)`, a
 // restart's or an adopt's, runs in the new worktree before the brief: `{ restarted?, carried?, adopted?,
-// shown, exit }`, the archive or the adopted branch and what it carried for the ledger, its lines for the
-// view and its exit (1 when the carry stopped).
+// calls?, shown, exit }`, the archive or the adopted branch and what it carried for the ledger (an adopt's
+// spike calls too), its lines for the view and its exit (1 when the carry stopped).
 function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   const { root, spec, model, cite, kind } = ctx;
   // A stacked lane is cut from its parent's tip: `base..HEAD` is its own commits only.
@@ -1431,6 +1433,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     restarted = null,
     carried = null,
     adopted = null,
+    calls = [],
     shown = {},
     warnings = [],
     exit = 0,
@@ -1489,6 +1492,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     ...(restarted && { restarted }),
     ...(carried && { carried }),
     ...(adopted && { adopted }),
+    ...(calls.length && { calls }),
     state: "building",
     next: "build",
   };
@@ -2448,6 +2452,7 @@ function episodeOf(ledger) {
     `nested worktrees: ${ledger.nested?.length ?? 0}`,
     `verify route: ${routeText(ledger.route)}`,
     ...(ownerHolds(ledger) ? [`owner holds: ${ownerHolds(ledger)}`] : []),
+    ...(callsLine(ledger) ? [callsLine(ledger)] : []),
     ...(ledger.ownerFixes?.length ? [`owner fixes: ${ledger.ownerFixes.length}`] : []),
     ...(ledger.rebases?.length ? [`rebases: ${ledger.rebases.length}`] : []),
     ...(ledger.on || ledger.restacks?.length
@@ -2889,7 +2894,7 @@ function adopt(ctx, id) {
   refuseMidLand(root);
   const mainBranch = mainBranchOf(root);
   const base = headOf(root);
-  const from = source(root, { branch, base, mainBranch, lanes: ledgers.list(root) });
+  const from = source(root, { id, branch, base, mainBranch, lanes: ledgers.list(root) });
   if (from.problem) refuse(from.problem);
   // `agentry/<id>` and its worktree are what the cut makes: a ledgerless one with this id lands as it is.
   if (branch === branchOf(id))
@@ -2948,6 +2953,7 @@ function adopt(ctx, id) {
       };
       return {
         adopted,
+        calls: from.calls,
         warnings: outsideAdopted(root, id, found, path, from.commits),
         exit: res.ok ? 0 : 1,
         shown: {
@@ -2973,7 +2979,10 @@ function adopt(ctx, id) {
         );
       }
     };
-    return cut({ ...ctx, on: null }, id, { found, parent: null, mainBranch, again });
+    const res = cut({ ...ctx, on: null }, id, { found, parent: null, mainBranch, again });
+    // The spike's calls are the ledger's now (written above): the spike keeps none (field 90).
+    if (from.calls.length) setSpikeCalls(root, branch, []);
+    return res;
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

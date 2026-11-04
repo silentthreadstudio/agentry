@@ -9,7 +9,8 @@
 //           (`idle-asked.json`, `../session-checks.mjs`), so the owner is asked once. A newly idle lane is
 //           recorded only when the text keeps the question line within its 40 lines.
 //   close   what the ending walks through: the pending drafts, what `board fix` would write, the ledgers, what
-//           `lane sweep --apply` would clean, the disk, the episodes nobody wrote and the note. Always JSON.
+//           `lane sweep --apply` would clean, the disk, the episodes nobody wrote, the owner's calls not
+//           written down (`../owner-calls.mjs`) and the note. Always JSON.
 //
 //   <start|close> --check <skill>=pass|fail [--note <t>]
 //           records one session check (`extensions.start.checks` / `extensions.close.checks`, A42) in
@@ -40,6 +41,7 @@ import { clock, heldText, idleHead } from "../exec-view.mjs";
 import { gateLockDir, heldSlots } from "../gate-lock.mjs";
 import { idleOf } from "../idle.mjs";
 import { SKILL_DIR, skillExists } from "../merge/rows.mjs";
+import { callLines, openCalls } from "../owner-calls.mjs";
 import * as sessionChecksFile from "../session-checks.mjs";
 import { stackOf } from "../stack.mjs";
 import { leftovers, plan } from "../sweep.mjs";
@@ -219,9 +221,18 @@ function closing({ root, spec, model }) {
     warnings,
     diskFree,
     episodesPending: pendingEpisodes(all).map((l) => l.id),
+    ...callsField(runRoot),
     ...(note && { note }),
     ...checksField(runRoot, { root, spec }),
   };
+}
+
+// The owner's calls not written down, per lane or spike (field 90): `calls` whole, and `callLines`, the
+// lines to show (one per id, capped), with one naming `spikes.json` when it cannot be read.
+function callsField(runRoot) {
+  const { calls, error } = openCalls(runRoot);
+  const lines = callLines(calls).map((l) => nextStep(l));
+  return { calls, callLines: error ? [...lines, `calls: ${error}`] : lines };
 }
 
 // A note on one line (each line break a space), cut to NOTE_COLUMNS with the rest of its line.

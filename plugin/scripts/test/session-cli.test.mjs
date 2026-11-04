@@ -1114,3 +1114,77 @@ test("the quiet line's clock is the newest ask by its time; a value that is no t
     rows[0],
   );
 });
+
+// --- owner calls (field 90): close lists the ones not written down -------------------------------------
+
+const call = (n, text, recorded = null) => ({ n, at: "2026-11-04T10:00:00.000Z", text, recorded });
+const spikeEntry = (root, branch, id, calls) => ({
+  branch,
+  path: join(root, ".claude", "worktrees", branch),
+  for: id,
+  at: "2026-11-04T09:00:00.000Z",
+  calls,
+});
+const writeSpikes = (root, list) => {
+  mkdirSync(join(root, ".agentry", "run"), { recursive: true });
+  writeFileSync(join(root, ".agentry", "run", "spikes.json"), JSON.stringify(list));
+};
+const noteCli = (root, ...args) =>
+  spawnSync("node", [LANE, "note", ...args, "--root", root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: home },
+  });
+
+test("close lists per lane or spike the calls not written down, with a line each and the JSON whole", () => {
+  const root = fresh();
+  ledger(root, "T1", {
+    calls: [call(1, "keep the flag"), call(2, "done", { at: "x", where: null })],
+  });
+  writeSpikes(root, [spikeEntry(root, "worktree-agent-x", "T2", [call(1, "the spike's call")])]);
+  ledger(root, "T3", { calls: [call(1, "all written", { at: "x", where: "D1" })] });
+  const before = read(root, "plan/BOARD.md");
+  const data = JSON.parse(session(root, "close").stdout);
+  assert.deepEqual(data.calls, [
+    { id: "T1", open: [{ n: 1, text: "keep the flag" }] },
+    { id: "T2", open: [{ n: 1, text: "the spike's call" }] },
+  ]);
+  assert.equal(data.callLines.length, 2);
+  assert.match(
+    data.callLines[0],
+    /^calls: T1 1 not written down → write them to the decisions or sprint file, then (agentry )?lane note T1 --recorded all$/,
+  );
+  assert.match(data.callLines[1], /^calls: T2 1 not written down → /);
+  assert.equal(read(root, "plan/BOARD.md"), before, "close writes nothing");
+});
+
+test("a merged or closed lane's calls show at close until they are marked", () => {
+  const root = fresh();
+  ledger(root, "T1", { state: "merged", next: null, calls: [call(1, "merged lane's call")] });
+  ledger(root, "T3", { state: "closed", next: null, calls: [call(1, "closed lane's call")] });
+  const ids = () => JSON.parse(session(root, "close").stdout).calls.map((c) => c.id);
+  assert.deepEqual(ids(), ["T1", "T3"]);
+  const marked = noteCli(root, "T1", "--recorded", "all", "--where", "plan/DECISIONS.md");
+  assert.equal(marked.status, 0, marked.stderr);
+  assert.deepEqual(ids(), ["T3"]);
+});
+
+test("close names at most 3 ids, then +N more; --json keeps every call and its text whole", () => {
+  const root = fresh();
+  const long = `a call that runs ${"well past any line width ".repeat(10)}to the end`;
+  for (const id of ["L1", "L2", "L3", "L4", "L5"]) ledger(root, id, { calls: [call(1, long)] });
+  const data = JSON.parse(session(root, "close").stdout);
+  assert.equal(data.calls.length, 5);
+  assert.ok(data.calls.every((c) => c.open[0].text === long));
+  assert.deepEqual(
+    data.callLines.map((l) => l.split(" ").slice(0, 2).join(" ")),
+    ["calls: L1", "calls: L2", "calls: L3", "calls: +2"],
+  );
+  assert.equal(data.callLines[3], "calls: +2 more");
+});
+
+test("close with no call open carries an empty calls list and no line", () => {
+  const root = fresh();
+  ledger(root, "T1");
+  const data = JSON.parse(session(root, "close").stdout);
+  assert.deepEqual([data.calls, data.callLines], [[], []]);
+});

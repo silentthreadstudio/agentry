@@ -1,11 +1,12 @@
 // adopt — the git reads of `lane exec adopt` (field 86): what a branch built outside exec holds for a lane
 // to take in (its tip, its commits past main, the worktree it is checked out in and that worktree's
-// uncommitted files), the refusals that leave nothing written, and the words the lane prints and briefs
-// with. The branch and its worktree are only read, never moved: `cli/exec.mjs` cuts the lane, picks the
-// commits with `pickOnto` and carries the uncommitted work with `restart.mjs`'s `saveWork` and `carry`.
+// uncommitted files, and the owner's calls noted on the spike filed for the lane's id on it), the refusals
+// that leave nothing written, and the words the lane prints and briefs with. The branch and its worktree
+// are only read, never moved: `cli/exec.mjs` cuts the lane, picks the commits with `pickOnto`, carries the
+// uncommitted work with `restart.mjs`'s `saveWork` and `carry`, and moves the calls into the ledger.
 //
-// source(root, { branch, base, mainBranch, lanes }) -> { branch, tip, commits, merges, worktree, dirty }
-//                                                    | { problem }
+// source(root, { id, branch, base, mainBranch, lanes })
+//   -> { branch, tip, commits, merges, worktree, dirty, calls } | { problem }
 // pickOnto(worktree, { commits, diff }) -> { ok, conflict? }   cherry-pick the commits, merges left out
 // adoptedWork(adopted) -> the round-1 brief's `## Adopted work` section
 // cleanupSteps(adopted) -> the commands that remove the source once the lane has landed
@@ -21,6 +22,7 @@ import { resolve } from "node:path";
 import { branchTips, worktrees } from "../process/git.mjs";
 import { shellQuote } from "./brief.mjs";
 import { commitOf, filesOf, subjectOf } from "./land.mjs";
+import { spikeCalls } from "./owner-calls.mjs";
 import { git, porcelain } from "./worktree.mjs";
 
 const short = (sha) => String(sha ?? "").slice(0, 7);
@@ -137,11 +139,13 @@ function revList(root, range, merges) {
 /** What `branch` holds for the lane, read only: its tip, its commits past `base` (main's HEAD) oldest
  *  first as `{ sha, subject, files }`, merges left out (`merges`: those, as `{ sha, subject }`, never
  *  picked: a branch that merged main in holds main's commits already), the worktree it is checked out in
- *  (null: none) and that worktree's `git status` entries. `{ problem }`, one line, when there is nothing
- *  a lane may take in: no such branch, the main branch, a branch a ledger of `lanes` tracks (its own
- *  lane's, or one an open lane adopted), a worktree mid-rebase or mid-merge, or no commits past main and
- *  a clean worktree. */
-export function source(root, { branch, base, mainBranch, lanes = [] }) {
+ *  (null: none), that worktree's `git status` entries and the owner's calls of the spike filed for `id`
+ *  on `branch` (`calls`, none when there is no such spike), which the new ledger takes in. `{ problem }`,
+ *  one line, when there is nothing a lane may take in: no such branch, the main branch, a branch a ledger
+ *  of `lanes` tracks (its own lane's, or one an open lane adopted), a worktree mid-rebase or mid-merge,
+ *  no commits past main and a clean worktree, or a `spikes.json` that cannot be read (its calls would be
+ *  lost). */
+export function source(root, { id, branch, base, mainBranch, lanes = [] }) {
   // A revision that names a branch's commit (`b~0`) is no branch: its worktree and ledger would not match.
   // The tip is the listed one: read by name, a case twin's loose file could answer instead.
   const tips = branchTips(root);
@@ -181,7 +185,9 @@ export function source(root, { branch, base, mainBranch, lanes = [] }) {
     return {
       problem: `nothing to adopt: use exec start (${branch} has no commits past main${tree ? " and its worktree is clean" : ""})`,
     };
-  return { branch, tip, commits, merges, worktree: tree?.path ?? null, dirty };
+  const { calls, problem } = spikeCalls(root, { id, branch });
+  if (problem) return { problem };
+  return { branch, tip, commits, merges, worktree: tree?.path ?? null, dirty, calls };
 }
 
 /** Cherry-pick `commits` (oldest first, no merges) onto the lane's worktree. `{ ok: true }`, or on a stop

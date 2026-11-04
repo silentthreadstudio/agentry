@@ -1,13 +1,16 @@
 // spikes — the agent worktrees the owner filed (field 87): `.agentry/run/spikes.json` in the main checkout,
-// a list of `{ branch, path, for?, keep?, at }`, one per branch. `for` names the board item the work is
-// meant for; `keep` is why it is kept on purpose. Local run state, not the board: written whole through
-// `fs/atomic.mjs`, so a killed writer leaves the old list or the new, never a part. `drift.mjs` reads it
-// to show a filed worktree as kept or as work for its item, never as an unlisted one. Node built-ins only.
+// a list of `{ branch, path, for?, keep?, at, calls? }`, one per branch. `for` names the board item the work
+// is meant for; `keep` is why it is kept on purpose; `calls` are the owner's calls noted on it (field 90,
+// `owner-calls.mjs`), kept when the spike is filed again. Local run state, not the board: written whole
+// through `fs/atomic.mjs`, so a killed writer leaves the old list or the new, never a part. `drift.mjs`
+// reads it to show a filed worktree as kept or as work for its item, never as an unlisted one. Node
+// built-ins only.
 //
 // spikesFile(root) -> path
 // readSpikes(root) -> { spikes } | { error }      `[]` when there is no file
 // fileSpike(root, entry) -> spikes                the entry for its branch replaced (or added)
 // forgetSpike(root, entry) -> spikes              the entry for its branch dropped
+// setSpikeCalls(root, branch, calls) -> spikes     the entry's `calls` replaced (dropped when empty)
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { atomicWrite } from "../fs/atomic.mjs";
@@ -43,13 +46,15 @@ function write(root, spikes) {
   return spikes;
 }
 
-/** File `entry` (`{ branch, path, for? | keep?, at }`), in place of any entry for its branch. Throws when
- *  the file is there but unusable (it is never overwritten then). */
+/** File `entry` (`{ branch, path, for? | keep?, at }`), in place of any entry for its branch, whose owner's
+ *  calls it keeps. Throws when the file is there but unusable (it is never overwritten then). */
 export function fileSpike(root, entry) {
   const { spikes, error } = readSpikes(root);
   if (error) throw new Error(error);
   const at = spikes.findIndex((s) => s.branch === entry.branch);
-  return write(root, at < 0 ? [...spikes, entry] : spikes.with(at, entry));
+  if (at < 0) return write(root, [...spikes, entry]);
+  const { calls } = spikes[at];
+  return write(root, spikes.with(at, calls ? { ...entry, calls } : entry));
 }
 
 /** Drop the entry for `entry.branch`. Throws as `fileSpike` does. */
@@ -60,4 +65,15 @@ export function forgetSpike(root, entry) {
     root,
     spikes.filter((s) => s.branch !== entry.branch),
   );
+}
+
+/** Replace the owner's calls of the entry for `branch` (`calls` empty: the field is dropped). Throws as
+ *  `fileSpike` does, and when no entry is filed for `branch`. */
+export function setSpikeCalls(root, branch, calls) {
+  const { spikes, error } = readSpikes(root);
+  if (error) throw new Error(error);
+  const at = spikes.findIndex((s) => s.branch === branch);
+  if (at < 0) throw new Error(`no spike is filed for ${branch} in ${spikesFile(root)}`);
+  const { calls: _, ...entry } = spikes[at];
+  return write(root, spikes.with(at, calls.length ? { ...entry, calls } : entry));
 }
