@@ -17,13 +17,15 @@
 // about to do to the ledger before it does it, and a rerun starts from there (`merge/recover.mjs`).
 // This file parses the call and sequences the steps; each step lives in `../merge/`: the carry of
 // exec's board writes (`carry`), the picks (`picks`), the gate (`gating`), the board write and commit
-// (`record`), the rows the preflight shares (`rows`) and the modes after the land (`modes`).
+// (`record`), the rows the preflight shares (`rows`), the stacked lanes' rows (`stack`) and the modes after
+// the land (`modes`). A stacked lane lands only after its parent, once restacked onto main; a parent's land
+// restacks each child at rest onto main itself, after its board commit (`lane exec restack <child> --main`).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
 import { realpathSync } from "node:fs";
 import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
 import { kindOf, runId } from "../../process/ids.mjs";
-import { read as readLedger } from "../../process/ledger.mjs";
+import { list as listLedgers, read as readLedger } from "../../process/ledger.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
@@ -53,7 +55,10 @@ import {
   pushRow,
   subjectsRow,
 } from "../merge/rows.mjs";
+import { childRows, stackRows } from "../merge/stack.mjs";
+import { childrenOf } from "../stack.mjs";
 import { mainRoot } from "../worktree.mjs";
+import { restackChild } from "./exec.mjs";
 
 export const help = {
   usage: [
@@ -124,14 +129,33 @@ function parse(argv) {
 
 // --- the land and its preflight ------------------------------------------------------------------
 
+// A stack stop changes nothing: its next is printed, not kept in the ledger.
+const stackStop = (exit, lane, rows, next) =>
+  done(exit, { ...lane, ledger: { ...lane.ledger, next } }, rows, next);
+
+// After a land that reached its board commit: each child at rest is restacked onto main, in id order, the
+// way `lane exec restack <child> --main` does; a child with an agent out, or one that conflicts, is left
+// as it was and named.
+function restackChildren(lane) {
+  const { root, spec, model } = lane;
+  const outcomes = {};
+  for (const child of childrenOf(listLedgers(root), lane.id))
+    outcomes[child] = restackChild({ root, spec, model }, child);
+  return childRows(lane, outcomes);
+}
+
 function preflight(lane) {
   const got = ledgerStep(lane, { adopt: true });
   if (got.exit) return done(got.exit, lane, got.rows, got.next);
   const rows = [got];
   if (lane.ledger.state === "merged") {
     rows.push(ok("land", `already merged (board commit ${short(lane.ledger.merge?.boardCommit)})`));
+    rows.push(...childRows(lane));
     return done(0, lane, rows, afterLand(lane));
   }
+  const stack = stackRows(lane);
+  rows.push(...stack.rows, ...childRows(lane));
+  if (stack.stop) return stackStop(1, lane, rows, stack.stop.next);
   // What a killed land left: the land's own board writes are its to clear, any other change on main
   // still shows in main's row; git mid-pick in the land's own leaves main's row to the land.
   const left = recoverPreview(lane);
@@ -199,8 +223,12 @@ function land(lane) {
         `board commit ${short(merged.boardCommit)}`,
       ]),
     );
+    rows.push(...childRows(lane));
     return done(0, lane, rows, afterLand(lane));
   }
+  const stack = stackRows(lane);
+  rows.push(...stack.rows);
+  if (stack.stop) return stackStop(2, lane, rows, stack.stop.next);
   lane.gate = gateOf(lane.spec);
   if (!lane.gate) {
     rows.push(red("gate", "the workflow file has no gate: merge cannot prove main"));
@@ -252,6 +280,7 @@ function land(lane) {
     // A give-back that is itself a conflict has its own next; "land again" would only hit it again.
     return done(stop.exit, lane, rows, back?.mark === "red" ? dropNext(lane) : stop.next);
   }
+  rows.push(...restackChildren(lane));
   return done(0, lane, rows, afterLand(lane));
 }
 
