@@ -2336,3 +2336,95 @@ test("a land resumed after its picks does not check the subjects again", () => {
   assert.doesNotMatch(res.stdout, /commits/);
   assert.equal(readLedger(root, ID).state, "merged");
 });
+
+// --- the type hint (field 91) ------------------------------------------------------------------------
+
+const PATTERN = { commits: { subjectPattern: "^(feat|fix|docs)(\\(.+\\))?: " } };
+const ART_HINT = (n) =>
+  `type "art" is used ${n} times on main: add it to commits.subjectPattern? "^(feat|fix|docs|art)(\\\\(.+\\\\))?: "`;
+
+test("a subject failing subjectPattern on a type main uses says so with the widened pattern, in the preflight and the land", () => {
+  commitSpec({ ...SPEC, ...PATTERN });
+  for (let i = 0; i < 2; i++) commitFile(root, `art${i}.txt`, `${i}\n`, `art: sprite ${i}`);
+  const { path, shas } = buildSubjects("art: new sprite");
+  execLedger({ path, gated: shas[0] });
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 1, out(pf));
+  const line = `✗ commits ${shas[0].slice(0, 7)} "art: new sprite": subject does not match commits.subjectPattern; ${ART_HINT(2)}`;
+  assert.ok(pf.stdout.includes(line), out(pf));
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.ok(res.stdout.includes(line), out(res));
+  // The pattern the hint gives, pasted, lets the land go through.
+  const widened = JSON.parse(ART_HINT(2).split("? ")[1]);
+  commitSpec({ ...SPEC, commits: { subjectPattern: widened } });
+  execLedger({ path, gated: shas[0] });
+  assert.equal(merge(ID, "--preflight").status, 0);
+});
+
+test("the hint never names a type main does not use: the line is as before", () => {
+  commitSpec({ ...SPEC, ...PATTERN });
+  const { path, shas } = buildSubjects("art: new sprite");
+  execLedger({ path, gated: shas[0] });
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 1, out(pf));
+  assert.match(
+    pf.stdout,
+    /✗ commits +[0-9a-f]{7} "art: new sprite": subject does not match commits\.subjectPattern\n/,
+  );
+  assert.doesNotMatch(pf.stdout, /is used|add it to/);
+});
+
+// --- a merge commit that brings in another lane's branch (field 91) ----------------------------------
+
+/** T2's lane in `state`, its branch with one commit; T1's branch merges it. Returns T1's merge sha. */
+function mergeOfT2(state) {
+  openLane("T2", state);
+  const t2 = create(root, { id: "T2", base: "main" });
+  commitFile(t2.path, "src/t2.txt", "t2\n", "feat: t2");
+  const { path } = build({ "src/a.txt": "a\n" });
+  git(path, "merge", "-q", "--no-ff", "-m", "Merge T2", "agentry/T2");
+  execLedger({ path, gated: git(path, "rev-parse", "HEAD") });
+  return git(path, "rev-parse", "HEAD");
+}
+
+test("a merge commit that brings in an open lane's branch names it: land it first, then rebase", () => {
+  const sha = mergeOfT2("verified");
+  const line = `merge ${sha.slice(0, 7)} brings in T2's branch: land T2 first (lane merge T2), then lane exec rebase T1`;
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 1, out(pf));
+  assert.ok(pf.stdout.includes(line), out(pf));
+  assert.doesNotMatch(pf.stdout, /ask the builder to rebase/);
+  const pre = head();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.ok(res.stdout.includes(line), out(res));
+  assert.match(res.stdout, /next: lane merge T2\n?$/);
+  assert.equal(head(), pre);
+});
+
+for (const state of ["merged", "closed"])
+  test(`a merge commit that brings in a ${state} lane's branch keeps today's text`, () => {
+    const sha = mergeOfT2(state);
+    const pf = merge(ID, "--preflight");
+    assert.equal(pf.status, 1, out(pf));
+    assert.match(
+      pf.stdout,
+      /merge commit\(s\), which a cherry-pick cannot land: ask the builder to rebase onto main/,
+    );
+    assert.ok(pf.stdout.includes(sha.slice(0, 7)));
+    assert.doesNotMatch(pf.stdout, /brings in|lane merge T2/);
+  });
+
+test("a merge of main, with another lane open, names no lane", () => {
+  openLane("T2", "verified");
+  commitFile(create(root, { id: "T2", base: "main" }).path, "src/t2.txt", "t2\n", "feat: t2");
+  const { path } = build({ "src/a.txt": "a\n" });
+  commitFile(root, "main.txt", "m\n");
+  git(path, "merge", "-q", "--no-edit", "main");
+  execLedger({ path, gated: git(path, "rev-parse", "HEAD") });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /cannot land: ask the builder to rebase onto main/);
+  assert.doesNotMatch(res.stdout, /brings in|next: lane merge T2/);
+});

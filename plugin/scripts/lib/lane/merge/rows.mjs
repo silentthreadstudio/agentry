@@ -4,15 +4,20 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readConfig } from "../../config.mjs";
 import { defaultBranch, worktrees } from "../../process/git.mjs";
-import { read as readLedger, write as writeLedger } from "../../process/ledger.mjs";
+import {
+  list as listLedgers,
+  read as readLedger,
+  write as writeLedger,
+} from "../../process/ledger.mjs";
 import { own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { headBoard } from "../carry-io.mjs";
 import { changedSince, checklistFor } from "../gate.mjs";
-import { commitOf, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
+import { commitOf, commitsBetween, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
 import { dirtyEntries } from "../own-memory.mjs";
 import { verdicts } from "../rounds.mjs";
-import { brokenIn, rulesOf } from "../subjects.mjs";
+import { chainOf } from "../stack.mjs";
+import { brokenIn, rulesOf, withTypeHints } from "../subjects.mjs";
 import { findByBranch } from "../worktree.mjs";
 import { ok, red, save, short, skip, tipOf, wait, warn } from "./lane.mjs";
 
@@ -160,19 +165,57 @@ export function boardRow({ root, spec, model, id, kind, ledger }) {
   return ok("board", `${is}; landing makes it "${to}"`);
 }
 
-/** The commits to land, as a row: red when there is nothing to pick or a merge commit is in the way. */
+// A lane in one of these has no branch left to land first.
+const ENDED = ["merged", "closed", "stopped"];
+
+/** For each of `merges` (on `ledger`'s branch), the other lane whose branch it brings in: one still to
+ *  land (not merged, closed or stopped, nor stacked on this lane) with a commit of its own past its main
+ *  branch among the commits the merge adds past its first parent. `{ sha, id }`, `id` null for none. */
+function lanesBroughtIn(root, ledger, merges) {
+  const all = listLedgers(root);
+  const others = all.filter(
+    (l) =>
+      l.id !== ledger.id &&
+      l.branch &&
+      !ENDED.includes(l.state) &&
+      !chainOf(all, l.on).includes(ledger.id),
+  );
+  const ranges = new Map();
+  const rangeOf = (l) => {
+    if (!ranges.has(l.id))
+      ranges.set(
+        l.id,
+        commitsBetween(root, l.mainBranch ?? ledger.mainBranch, `refs/heads/${l.branch}`) ?? [],
+      );
+    return ranges.get(l.id);
+  };
+  return merges.map((sha) => {
+    const brought = new Set(commitsBetween(root, `${sha}^1`, sha) ?? []);
+    brought.delete(sha);
+    const by = others.find((l) => rangeOf(l).some((c) => brought.has(c)));
+    return { sha, id: by?.id ?? null };
+  });
+}
+
+/** The commits to land, as a row: red when there is nothing to pick or a merge commit is in the way. A
+ *  merge commit that brings in another lane's branch names that lane, to land first; `next` is then
+ *  its land. */
 export function commitsRow({ root, ledger }) {
   const { mainBranch, branch } = ledger;
   const plan = toLand(root, { main: mainBranch, branch });
   if (plan.error) return { row: red("commits", plan.error) };
-  if (plan.merges.length > 0)
-    return {
-      row: red(
-        "commits",
-        `${branch} has ${plan.merges.length} merge commit(s), which a cherry-pick cannot land: ask the builder to rebase onto ${mainBranch}`,
-        plan.merges.map(short),
-      ),
-    };
+  if (plan.merges.length > 0) {
+    const head = `${branch} has ${plan.merges.length} merge commit(s), which a cherry-pick cannot land`;
+    const rebase = `ask the builder to rebase onto ${mainBranch}`;
+    const named = lanesBroughtIn(root, ledger, plan.merges);
+    const first = named.find((m) => m.id)?.id;
+    if (!first) return { row: red("commits", `${head}: ${rebase}`, plan.merges.map(short)) };
+    const line = ({ sha, id }) =>
+      id
+        ? `merge ${short(sha)} brings in ${id}'s branch: land ${id} first (lane merge ${id}), then lane exec rebase ${ledger.id}`
+        : `${short(sha)}: ${rebase}`;
+    return { row: red("commits", head, named.map(line)), next: `lane merge ${first}` };
+  }
   if (plan.picks.length === 0)
     return {
       row: red(
@@ -200,8 +243,10 @@ export function subjectsRow({ root, spec, ledger }) {
   if (plan.error) return null;
   const broken = brokenIn(root, spec, plan.picks);
   if (broken.length === 0) return ok("commits", `${plan.picks.length} checked against commits`);
-  const line = (c) => `${short(c.sha)} "${c.subject}": ${c.why}`;
-  return red("commits", line(broken[0]), broken.slice(1).map(line));
+  // A subject that fails the pattern on a type main already uses says how to widen the pattern.
+  const hinted = withTypeHints(root, ledger.mainBranch, rulesOf(spec), broken);
+  const line = (c) => `${short(c.sha)} "${c.subject}": ${c.why}${c.hint ? `; ${c.hint}` : ""}`;
+  return red("commits", line(hinted[0]), hinted.slice(1).map(line));
 }
 
 /** The checklist items this land waits on (`gate.checklist`): on the files the branch changes past its

@@ -178,10 +178,11 @@ export function landStep(lane, rows) {
     );
     return null;
   }
-  const { plan, row } = commitsRow(lane);
+  const { plan, row, next } = commitsRow(lane);
   if (row.mark === "red") {
     rows.push({ ...row, step: "land" });
-    return { exit: 1 };
+    // A merge commit that brings in another lane's branch: that lane lands first.
+    return next ? { exit: 1, next } : { exit: 1 };
   }
   // The intent, written before main changes: what is picked onto what. The lane's state before this
   // land is kept too, given back if a red gate takes the picks off main again.
