@@ -942,17 +942,17 @@ const idleRows = (out) =>
   out.split("\n").filter((l) => /^(idle|ask the owner| {2}→ .*hold)/.test(l));
 const STEP = "(agentry )?lane exec hold";
 
-test("an idle lane is asked once: the block and one question, then one quiet line; --json says when", () => {
+test("an idle lane is asked once: one question, then the blocks; then one quiet line; --json says when", () => {
   const root = fresh();
   idleLane(root, "T1", 60);
   idleLane(root, "T3", 90);
   const first = idleRows(session(root, "start").stdout);
   assert.equal(first.length, 5, first.join("\n"));
-  assert.match(first[0], /^idle: T1 1h00m: last change \d\d:\d\d \(.+\) → check the builder$/);
-  assert.match(first[1], new RegExp(`^  → ${STEP} T1 --for later to park it$`));
-  assert.match(first[2], /^idle: T3 1h30m: /);
+  assert.match(first[1], /^idle: T1 1h00m: last change \d\d:\d\d \(.+\) → check the builder$/);
+  assert.match(first[2], new RegExp(`^  → ${STEP} T1 --for later to park it$`));
+  assert.match(first[3], /^idle: T3 1h30m: /);
   assert.match(
-    first[4],
+    first[0],
     new RegExp(`^ask the owner once: park T1, T3\\? yes → ${STEP} <id> --for later \\(each\\)$`),
   );
   const later = idleRows(session(root, "start").stdout);
@@ -1027,4 +1027,48 @@ test("start --json writes the records a plain start writes, and no other", () =>
   assert.deepEqual(byJson.sort(), byPlain.sort());
   assert.deepEqual(byJson.sort(), ["idle-asked.json", "note-seen.json"]);
   assert.equal(readFileSync(RUN(root, "note-seen.json"), "utf8"), seenJson);
+});
+
+test("many newly idle lanes: the question comes first and the blocks are capped, so 40 lines never cut it", () => {
+  const root = fresh();
+  const ids = Array.from({ length: 19 }, (_, i) => `L${i + 1}`);
+  for (const id of ids) idleLane(root, id, 60);
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const lines = res.stdout.trimEnd().split("\n");
+  assert.ok(lines.length <= 40, `${lines.length} lines`);
+  const asked = Object.keys(JSON.parse(readFileSync(RUN(root, "idle-asked.json"), "utf8")));
+  assert.deepEqual(asked.sort(), [...ids].sort(), "every lane is recorded as asked");
+  const question = lines.find((l) => l.startsWith("ask the owner once: park "));
+  assert.ok(question, "the question the record counts as asked is printed");
+  const named = question
+    .replace(/^ask the owner once: park /, "")
+    .split("?")[0]
+    .split(", ");
+  assert.deepEqual(named.sort(), [...ids].sort());
+  assert.equal(lines.filter((l) => / → check the builder$/.test(l)).length, 3);
+  assert.match(res.stdout, /^idle: \+16 more → (agentry )?lane session start --json$/m);
+});
+
+test("the quiet line says the day the owner was asked when it was not today", () => {
+  const root = fresh();
+  idleLane(root, "T1", 3 * 1440);
+  const { idle } = JSON.parse(session(root, "start", "--json").stdout);
+  const yesterday = new Date(Date.now() - 1440 * 60_000);
+  writeFileSync(
+    RUN(root, "idle-asked.json"),
+    JSON.stringify({ T1: { lastChange: idle[0].lastChange, asked: yesterday.toISOString() } }),
+  );
+  const pad = (n) => String(n).padStart(2, "0");
+  const day = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`;
+  const clock = `${pad(yesterday.getHours())}:${pad(yesterday.getMinutes())}`;
+  const rows = idleRows(session(root, "start").stdout);
+  assert.equal(rows.length, 1, rows.join("\n"));
+  assert.ok(rows[0].startsWith(`idle: T1 (asked ${day} ${clock}; park: `), rows[0]);
+  // Asked today: the clock alone.
+  writeFileSync(
+    RUN(root, "idle-asked.json"),
+    JSON.stringify({ T1: { lastChange: idle[0].lastChange, asked: new Date().toISOString() } }),
+  );
+  assert.match(idleRows(session(root, "start").stdout)[0], /^idle: T1 \(asked \d\d:\d\d; park: /);
 });

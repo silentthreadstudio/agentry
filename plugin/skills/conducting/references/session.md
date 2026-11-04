@@ -35,21 +35,25 @@ held: T1 for the owner, after step 1 of 2, since 09:05
   evidence: .agentry/run/process/runs/T1/r1-build.report.md
   → agentry lane exec resume T1 --note "<the OK>"
 parked: T4 since 10:12
+ask the owner once: park T6? yes → agentry lane exec hold <id> --for later (each)
 idle: T6 2h13m: last change 11:44 (src/a.ts) → check the builder
   → agentry lane exec hold T6 --for later to park it
-ask the owner once: park T6? yes → agentry lane exec hold <id> --for later (each)
 ```
 
-An idle lane is asked about once per `lastChange`: the first start that sees it idle there prints its two lines,
-then one question line for every lane newly idle. A later start, while nothing changed, prints one quiet line for
+An idle lane is asked about once per `lastChange`: the first start that sees it idle there prints one question
+line for every lane newly idle, then each one's two lines. A later start, while nothing changed, prints one quiet line for
 the lanes already asked instead of their blocks:
 
 ```text
 idle: T6 (asked 12:05; park: agentry lane exec hold <id> --for later)
 ```
 
-A lane whose `lastChange` moved, or that left idle and came back, is asked again. Put the question to the owner
-once; park only on their yes.
+The question comes first, then at most three blocks, then `idle: +N more → agentry lane session start --json`,
+so the 40-line cap never cuts the question it records as asked. The quiet line's clock carries the date
+(`2026-11-03 14:02`) when the owner was asked on another day. A lane whose `lastChange` moved, or that left idle
+and came back, is asked again. Put the question to the owner once; park only on their yes. `--json` records the
+same as the text, so a reader of `--json` asks the owner about every `idle[]` lane with `asked: null`: the next
+text start shows it only as the quiet line.
 
 With start or close checks named, these lines come right after the `conductor prompt:` line, before the held
 ones:

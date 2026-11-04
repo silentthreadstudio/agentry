@@ -72,6 +72,7 @@ const MAX_LINES = 40;
 const MAX_LIST = 4; // lines one list may take
 const NOTE_LINES = 3; // lines of the note that start prints
 const MAX_HELD = 3; // held and parked lanes start prints, the rest counted
+const MAX_IDLE = 3; // newly idle lanes start prints a block for, the rest counted
 const NOTE_COLUMNS = 100; // a failed close check's line, note included, as start prints it
 const MAX_FAILED = 3; // failed close checks start names, the rest counted
 const MAX_STACK = 3; // due stacks start names, the rest counted
@@ -267,6 +268,16 @@ const ageText = (iso) => {
   if (minutes < 60) return `${minutes}m`;
   return minutes < 1440 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 1440)}d`;
 };
+// When the owner was asked: `HH:MM` today, `YYYY-MM-DD HH:MM` (local) on another day.
+const askedAt = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime()) || d.toDateString() === new Date().toDateString())
+    return clock(iso);
+  const day = [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((n) =>
+    String(n).padStart(2, "0"),
+  );
+  return `${day.join("-")} ${clock(iso)}`;
+};
 const idsText = (ids) => (ids.length ? ids.join(", ") : "none");
 // The one stale line of a note: the Now it was written under is gone, else every id it names is done.
 const staleText = ({ stale, writtenAt, path }) =>
@@ -349,19 +360,22 @@ function renderStart(s, { name, root }) {
   }
   if (s.held.length > MAX_HELD)
     add(`held: +${s.held.length - MAX_HELD} more → ${nextStep("lane session start --json")}`);
-  // The park step on its own line, as the held block's resume, so 80 columns never cut it. A lane newly
-  // idle at its lastChange gets its block and one question for all of them; one already asked, a quiet line.
+  // Lanes newly idle at their lastChange: one question for all of them first (they are recorded as asked,
+  // so the 40-line cap must never cut it), then a block each, capped as held is, the park step on its own
+  // line so 80 columns never cut it. The lanes already asked: one quiet line.
   const fresh = s.idle.filter((i) => !i.asked);
-  for (const i of fresh) {
-    add(`idle: ${idleHead(i.id, i)}`);
-    add(`  → ${i.park} to park it`);
-  }
   const park = nextStep("lane exec hold <id> --for later");
   if (fresh.length)
     add(
       `ask the owner once: park ${fresh.map((i) => i.id).join(", ")}? yes → ${park} (each)`,
       Number.POSITIVE_INFINITY,
     );
+  for (const i of fresh.slice(0, MAX_IDLE)) {
+    add(`idle: ${idleHead(i.id, i)}`);
+    add(`  → ${i.park} to park it`);
+  }
+  if (fresh.length > MAX_IDLE)
+    add(`idle: +${fresh.length - MAX_IDLE} more → ${nextStep("lane session start --json")}`);
   const asked = s.idle.filter((i) => i.asked);
   if (asked.length) {
     const last = asked
@@ -369,7 +383,7 @@ function renderStart(s, { name, root }) {
       .toSorted()
       .at(-1);
     add(
-      `idle: ${asked.map((i) => i.id).join(", ")} (asked ${clock(last)}; park: ${park})`,
+      `idle: ${asked.map((i) => i.id).join(", ")} (asked ${askedAt(last)}; park: ${park})`,
       Number.POSITIVE_INFINITY,
     );
   }
