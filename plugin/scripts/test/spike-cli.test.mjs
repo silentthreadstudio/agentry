@@ -1,0 +1,185 @@
+// Tests for `lane spike` (field 87) on temp git repos: an agent worktree filed by its branch or its path in
+// `.agentry/run/spikes.json` as work for a board item (`--for`) or kept on purpose (`--keep`), dropped with
+// `--forget`, listed with no flag (a gone branch shown as `gone`); the refusals write nothing; the file is
+// written whole, so a torn write never leaves a part of it.
+// Run: node --test plugin/scripts/test/spike-cli.test.mjs
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { boardRepo, handBranch } from "./drift-repo.mjs";
+import { git, gitEnv } from "./git-repo.mjs";
+
+const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
+const cleanups = [];
+after(() => {
+  for (const c of cleanups) c();
+});
+function fresh() {
+  const repo = boardRepo();
+  cleanups.push(repo.cleanup);
+  return repo;
+}
+function spike(root, ...args) {
+  const res = spawnSync("node", [LANE, "spike", ...args, "--root", root], {
+    encoding: "utf8",
+    env: gitEnv,
+  });
+  let json = null;
+  try {
+    json = JSON.parse(res.stdout);
+  } catch {
+    /* text or a refusal */
+  }
+  return { exit: res.status, json, stdout: res.stdout, stderr: res.stderr };
+}
+const file = (root) => join(root, ".agentry", "run", "spikes.json");
+const filed = (root) => JSON.parse(readFileSync(file(root), "utf8"));
+const agent = (root, name = "a1") =>
+  handBranch(root, `.claude/worktrees/agent-${name}`, `worktree-agent-${name}`);
+
+test("--for <id> files the worktree by its branch as work for that board item", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  const res = spike(root, tree.branch, "--for", "T2", "--json");
+  assert.equal(res.exit, 0, res.stderr);
+  const [entry] = filed(root);
+  assert.deepEqual(
+    { branch: entry.branch, path: entry.path, for: entry.for },
+    { branch: tree.branch, path: tree.path, for: "T2" },
+  );
+  assert.match(entry.at, /^\d{4}-\d\d-\d\dT/);
+  assert.equal(entry.keep, undefined);
+  assert.deepEqual(res.json.filed, entry);
+});
+
+test("a worktree is filed by its path too, and filing it again replaces its entry", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  assert.equal(spike(root, tree.path, "--for", "t1").exit, 0);
+  assert.equal(filed(root)[0].for, "T1", "the id is read in any case");
+  assert.equal(spike(root, tree.branch, "--keep", "a probe for later").exit, 0);
+  assert.deepEqual(
+    filed(root).map((s) => [s.branch, s.for, s.keep]),
+    [[tree.branch, undefined, "a probe for later"]],
+  );
+});
+
+test("--keep files it as kept on purpose, with the reason", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  const res = spike(root, tree.branch, "--keep", "the benchmark rig");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.match(res.stdout, /^filed worktree-agent-a1 kept: "the benchmark rig"/);
+  assert.deepEqual(
+    filed(root).map((s) => [s.branch, s.keep]),
+    [[tree.branch, "the benchmark rig"]],
+  );
+});
+
+test("--forget drops the entry, by branch or path, and refuses one that is not filed", () => {
+  const { root } = fresh();
+  const a = agent(root, "a1");
+  const b = agent(root, "b2");
+  spike(root, a.branch, "--for", "T1");
+  spike(root, b.branch, "--for", "T2");
+  assert.equal(spike(root, a.path, "--forget").exit, 0);
+  assert.deepEqual(
+    filed(root).map((s) => s.branch),
+    [b.branch],
+  );
+  const again = spike(root, a.branch, "--forget");
+  assert.equal(again.exit, 2);
+  assert.match(again.stderr, /no spike is filed by that branch or path/);
+});
+
+test("no flag lists the filed spikes, a branch gone since shown as gone", () => {
+  const { root } = fresh();
+  const a = agent(root, "a1");
+  const b = agent(root, "b2");
+  spike(root, a.branch, "--for", "T1");
+  spike(root, b.branch, "--keep", "kept");
+  git(root, "worktree", "remove", "--force", b.path);
+  git(root, "branch", "-D", b.branch);
+  const text = spike(root);
+  assert.equal(text.exit, 0, text.stderr);
+  assert.match(text.stdout, /^ {2}worktree-agent-a1 · for T1 · \S+agent-a1$/m);
+  assert.match(text.stdout, /^ {2}worktree-agent-b2 · kept: "kept" · \S+agent-b2 · gone$/m);
+  const json = spike(root, "--json").json;
+  assert.deepEqual(
+    json.spikes.map((s) => [s.branch, s.gone]),
+    [
+      [a.branch, false],
+      [b.branch, true],
+    ],
+  );
+  assert.match(spike(fresh().root).stdout, /none filed/);
+});
+
+test("refused, nothing written: an unknown branch or path, the main checkout, a lane's branch", () => {
+  const { root } = fresh();
+  git(root, "worktree", "add", "-q", "-b", "agentry/T2", join(root, "lane-t2"), "main");
+  const cases = [
+    ["no-such-branch", /no worktree is on that branch or at that path/],
+    [join(root, "nowhere"), /no worktree is on that branch or at that path/],
+    [root, /that is the main checkout/],
+    ["agentry/T2", /agentry\/T2 is a lane's branch/],
+  ];
+  for (const [target, why] of cases) {
+    const res = spike(root, target, "--for", "T1");
+    assert.equal(res.exit, 2, target);
+    assert.match(res.stderr, why);
+  }
+  assert.equal(existsSync(file(root)), false);
+});
+
+test("refused, nothing written: an id the board does not hold, and --for with --keep", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  const unknown = spike(root, tree.branch, "--for", "T99");
+  assert.equal(unknown.exit, 2);
+  assert.match(unknown.stderr, /--for T99: the board holds no such item/);
+  const both = spike(root, tree.branch, "--for", "T1", "--keep", "why");
+  assert.equal(both.exit, 2);
+  assert.match(both.stderr, /--for and --keep go one at a time/);
+  assert.equal(existsSync(file(root)), false);
+});
+
+test("spikes.json survives a torn write: a writer killed mid-write leaves the old list whole", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  spike(root, tree.branch, "--for", "T1");
+  const before = readFileSync(file(root), "utf8");
+  // What a writer killed between its write and its rename leaves: its temp file, half written.
+  const torn = `${file(root)}.agentry-99999999.tmp`;
+  writeFileSync(torn, before.slice(0, before.length / 2));
+  const listed = spike(root, "--json");
+  assert.equal(listed.exit, 0, listed.stderr);
+  assert.deepEqual(
+    listed.json.spikes.map((s) => s.branch),
+    [tree.branch],
+  );
+  assert.equal(readFileSync(file(root), "utf8"), before);
+  // A write is whole too: this writer's own temp never outlives it.
+  assert.equal(spike(root, tree.branch, "--keep", "later").exit, 0);
+  assert.deepEqual(
+    readdirSync(dirname(file(root))).filter(
+      (n) => n.startsWith("spikes.json.") && n !== basename(torn),
+    ),
+    [],
+  );
+  assert.equal(filed(root)[0].keep, "later");
+});
+
+test("a spikes.json that is not a list of entries is refused, never overwritten", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  spike(root, tree.branch, "--for", "T1");
+  writeFileSync(file(root), '[{"branch": "x"');
+  const res = spike(root, tree.branch, "--keep", "why");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /spikes\.json is not a list of \{ branch, path \} entries/);
+  assert.equal(readFileSync(file(root), "utf8"), '[{"branch": "x"');
+});

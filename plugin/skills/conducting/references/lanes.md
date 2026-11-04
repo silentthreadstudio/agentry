@@ -50,6 +50,18 @@ stopped the rebase and it was aborted). Exit 2: usage or a
 refusal, nothing changed (an out-of-order step, a missing report file, a dirty worktree at the gate, a run from
 inside a worktree instead of the main checkout).
 
+**Work built outside exec.** An agent worktree no ledger knows, not on main, is a drift row with four ways
+on: `unlisted-worktree <branch> →` land: `lane merge <id> --branch <b>` · continue: `lane exec adopt <id> --branch <b>`
+· file: `lane spike <b> --for <id>` or `lane spike <b> --keep "<why>"` · remove: `git worktree remove <path>` (`<id>`
+when the branch or directory name holds a board id, the path relative to the main checkout). `agentry lane spike <branch|path> --for <id>` files
+it as work meant for that item: drift shows one `spike-for <id>` row (`land: … · continue: …`) until a ledger
+for `<id>` adopts or merges that branch. `agentry lane spike <branch|path> --keep "<why>"` keeps it on purpose:
+shown on the Kept row with `worktrees.keep`, never drift. `--forget` drops the entry; with no flag it lists them,
+a branch gone since shown as `gone` (and dropped from drift). The list is `.agentry/run/spikes.json` in the main
+checkout (`{ branch, path, for?, keep?, at }`, written whole): local run state, not the board, so it writes at
+once with no `--apply`. It refuses (exit 2, nothing written) an unknown branch or path, the main checkout, an
+`agentry/` lane branch, an id the board does not hold, and `--for` with `--keep`.
+
 `hold` refuses (exit 2) a lane whose builder's round is not out ("hold is for a builder's round", with its
 state and next), `--for owner` before the reply is saved ("the builder is still out: save its reply to
 <reportPath> first, then hold"), any other `--for` ("--for takes owner or later"), an `--evidence` path with
