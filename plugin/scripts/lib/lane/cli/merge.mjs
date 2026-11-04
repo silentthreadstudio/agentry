@@ -54,6 +54,7 @@ import {
   commitsRow,
   lastWorktreeGate,
   ledgerStep,
+  listedTip,
   pushRow,
   subjectsRow,
 } from "../merge/rows.mjs";
@@ -204,8 +205,10 @@ function preflight(lane) {
   if (!gate) rows.push(red("gate", "the workflow file has no gate: merge cannot prove main"));
   else {
     const { root, ledger } = lane;
-    const base = mergeBaseOf(root, ledger.mainBranch, ledger.branch);
-    const changed = (base && changedSince(root, base, ledger.branch)) || [];
+    // Read at the tip `ledgerStep` listed, as the land plans it: never the branch by name.
+    const tip = listedTip(lane);
+    const base = tip && mergeBaseOf(root, ledger.mainBranch, tip);
+    const changed = (base && changedSince(root, base, tip)) || [];
     const need = pickTier(gate, "merge", { changed, flagged: Boolean(ledger.route?.flagged) });
     const record = lastWorktreeGate(ledger, need.tier) ?? lastWorktreeGate(ledger);
     rows.push(

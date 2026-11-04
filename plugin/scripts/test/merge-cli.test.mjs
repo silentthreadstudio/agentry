@@ -2642,3 +2642,88 @@ test("--cleanup deletes the branch at its listed tip, and keeps one that gained 
   assert.equal(gone.status, 0, out(gone));
   assert.equal(git(root, "branch", "--list", "feat/x"), "");
 });
+
+// ---- every read after ledgerStep is at the tip it listed (S50, R1d-47 r5 N8, N9) ----
+
+/** `lane merge <args>` with a `git` on PATH that, right after ledgerStep's `check-ref-format` of the
+ *  ledger's branch (the branch list is read by then), packs the refs and makes the loose case twin
+ *  `agentry/t1` at `at`: a twin made mid-call, which a read by name opens on a case-insensitive filesystem. */
+function mergeWithTwinAfterLedgerStep(at, ...args) {
+  const dir = join(home, "twin-shim");
+  mkdirSync(dir, { recursive: true });
+  const mark = join(dir, "mark");
+  writeFileSync(mark, "");
+  writeFileSync(
+    join(dir, "git"),
+    `#!/bin/bash
+"${REAL_GIT}" "$@"; st=$?
+if [ -f "${mark}" ] && [[ "$*" =~ $TWIN_ON ]]; then
+  rm -f "${mark}"
+  "${REAL_GIT}" -C "${root}" pack-refs --all
+  "${REAL_GIT}" -C "${root}" update-ref refs/heads/agentry/t1 ${at}
+fi
+exit $st
+`,
+  );
+  chmodSync(join(dir, "git"), 0o755);
+  const env = {
+    ...gitEnv,
+    HOME: home,
+    NO_COLOR: "1",
+    PATH: `${dir}:${process.env.PATH}`,
+    TWIN_ON: `check-ref-format refs/heads/${BRANCH}$`,
+  };
+  const res = spawnSync("node", [LANE, "merge", ...args, "--root", root], {
+    encoding: "utf8",
+    env,
+  });
+  assert.equal(existsSync(mark), false, "the twin was never made");
+  return res;
+}
+/** A commit on main's tip changing only `file`, taken off main again: the twin's decoy. */
+function decoyCommit(file) {
+  commitFile(root, file, "decoy\n", "feat: decoy on the twin");
+  const sha = head();
+  git(root, "reset", "-q", "--hard", "HEAD~1");
+  return sha;
+}
+
+test("the preflight's gate row reads the listed tip: a twin made after ledgerStep never picks the tier", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  const res = mergeWithTwinAfterLedgerStep(decoyCommit("docs/x.md"), ID, "--preflight");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /gate +full would run/);
+  assert.doesNotMatch(res.stdout, /docs would run/);
+});
+
+test("the land checks its picks against main and records merge.tip at the listed tip, never the twin's", () => {
+  commitSpec({ ...SPEC, guard: { allow: ["NOTES.md"] } });
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  // The twin's decoy adds NOTES.md, which is the owner's untracked guard.allow file on main: planned from
+  // the twin, the land would refuse it as a pick that runs into what main carries.
+  const decoy = decoyCommit("NOTES.md");
+  writeFileSync(join(root, "NOTES.md"), "mine\n");
+  const res = mergeWithTwinAfterLedgerStep(decoy, ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.equal(readLedger(root, ID).merge.tip, shas[0]);
+  assert.doesNotMatch(git(root, "log", "--format=%s", "main"), /decoy/);
+  assert.equal(readFileSync(join(root, "NOTES.md"), "utf8"), "mine\n");
+});
+
+test("--check refuses a ledger branch with a case twin, by its listed name: nothing recorded", () => {
+  withChecklist();
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  git(root, "pack-refs", "--all");
+  git(root, "branch", "agentry/t1", "main");
+  const ledger = readLedger(root, ID);
+  const res = merge(ID, "--check", "repo-merge=pass");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /agentry\/T1 has a case twin agentry\/t1: rename one first/);
+  assert.deepEqual(readLedger(root, ID), ledger);
+  git(root, "branch", "-D", "agentry/t1");
+  assert.equal(merge(ID, "--check", "repo-merge=pass").status, 0);
+  assert.equal(readLedger(root, ID).checks["repo-merge"].tip, shas[0]);
+});

@@ -15,8 +15,8 @@ import {
   subjectOf,
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
-import { FRESH, now, ok, red, save, setMerge, short, tipOf } from "./lane.mjs";
-import { commitsRow } from "./rows.mjs";
+import { FRESH, now, ok, red, save, setMerge, short } from "./lane.mjs";
+import { commitsRow, listedTip } from "./rows.mjs";
 
 // Twin of `boardPaths` in lane/cli/exec.mjs, kept in step with it until both move into one shared module.
 // The board's own files as the lane's guard reads them (field 75): each kind's table,
@@ -198,7 +198,8 @@ export function landStep(lane, rows) {
       preHead: commitOf(root, "HEAD"),
       planned: plan.picks,
       landed: [],
-      tip: tipOf(lane),
+      // The tip the plan was made from, as `ledgerStep` listed it: never read by name again.
+      tip: listedTip(lane),
       stateBefore,
       step: "picking",
       at: now(),

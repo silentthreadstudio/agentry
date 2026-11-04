@@ -6,10 +6,11 @@ import { refuse, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { read as readLedger } from "../../process/ledger.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
+import { resolveBranch } from "../adopt.mjs";
 import { cleanup, commitOf, isAncestor, push } from "../land.mjs";
 import { worktreesDir } from "../worktree.mjs";
 import { mainRow } from "./carry.mjs";
-import { afterLand, checkNext, done, landNext, now, ok, red, save, short, tipOf } from "./lane.mjs";
+import { afterLand, checkNext, done, landNext, now, ok, red, save, short } from "./lane.mjs";
 import { SKILL_DIR, checksState, skillExists } from "./rows.mjs";
 
 const CHECK_RESULTS = ["pass", "fail"];
@@ -59,8 +60,13 @@ export function check(lane) {
   if (!ledger) return no(`no ledger for ${id}`, `lane merge ${id} --preflight [--branch <b>]`);
   lane.ledger = ledger;
   if (ledger.state === "merged") return no(`${id} is already landed; a check now changes nothing`);
-  const tip = tipOf(lane);
-  if (!tip) return no(`${ledger.branch} is not a local branch any more`);
+  // The tip as the branch list has it by the ledger's exact name, as the land resolves it: a case twin
+  // is refused, and a read by name (which could open the twin's loose file) never records a check.
+  const named = resolveBranch(root, ledger.branch);
+  if (named.missing) return no(`${ledger.branch} is not a local branch any more`);
+  if (named.problem) return no(named.problem);
+  const { tip } = named;
+  lane.tip = tip;
   const note = opts["--note"];
   const entry = { result, ...(note !== undefined && { note }), tip, at: now() };
   save(lane, { checks: { ...(ledger.checks ?? {}), [skill]: entry } });

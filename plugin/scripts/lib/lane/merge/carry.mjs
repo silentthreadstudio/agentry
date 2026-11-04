@@ -50,6 +50,7 @@ import {
 } from "../land.mjs";
 import { git } from "../worktree.mjs";
 import { landNext, now, ok, red, setMerge, short, warn } from "./lane.mjs";
+import { listedTip } from "./rows.mjs";
 
 // A lane in any other state is open: its task is not on main, so its lifecycle writes may wait there.
 const CLOSED = ["merged", "closed"];
@@ -211,7 +212,9 @@ function addedBy(root, sha) {
 function pickProblems(lane) {
   const { root, spec, ledger, allowNew, writes } = lane;
   if (allowNew.length === 0 && writes.loose.length === 0 && writes.cells.length === 0) return [];
-  const plan = toLand(root, { main: ledger.mainBranch, branch: ledger.branch });
+  // Planned from the listed tip `ledgerStep` resolved, as the picks are: never the branch read by name.
+  const tip = listedTip(lane);
+  const plan = tip ? toLand(root, { main: ledger.mainBranch, branch: tip }) : { error: true };
   if (plan.error) return []; // the commits row says so
   const model = writes.cells.length > 0 ? workingBoard(root, spec).model : null;
   // Does commit `sha` change a cell the owner's board set wrote in `file`, or take its row away?
