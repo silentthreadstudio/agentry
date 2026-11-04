@@ -453,3 +453,97 @@ test("--resolve rolled-back after a revert of the picks refuses, naming --resolv
   );
   assert.equal(ledgerBytes(), before);
 });
+
+// S33 N9 (verifier R1d-34 r7, Q2): the owner re-picked the land's commit by hand with -x on a drifted main.
+test("--resolve rolled-back refuses a pick made by hand with -x, by the planned sha its message names", () => {
+  const path = laneWithF();
+  const lane = editF(path, 5, "five", "feat: lane edit");
+  const preHead = editF(root, 2, "two", "chore: owner edit before the land"); // the patch id differs
+  git(root, "cherry-pick", "-x", lane);
+  git(
+    root,
+    "commit",
+    "-q",
+    "--amend",
+    "-m",
+    `feat: lane edit, by hand\n\n(cherry picked from commit ${lane})`,
+  ); // so does the identity
+  const pick = head();
+  assert.notEqual(patchId(pick), patchId(lane));
+  killedLedger({ preHead, planned: [lane], path });
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), new RegExp(`${pick.slice(0, 7)} is on main: not rolled back`));
+  assert.equal(ledgerBytes(), before);
+});
+
+// S33 N9 (Q3, Q4): no pick found, but main changed the files the picks change: only the owner can tell.
+test("--resolve rolled-back refuses when main changed a planned file with no pick found (a squash)", () => {
+  const path = laneWithF();
+  const first = editF(path, 5, "five", "feat: lane edit");
+  const second = commitFile(
+    path,
+    "src/f.txt",
+    F.replace("5\n", "five\n").replace("7\n", "seven\n"),
+  );
+  const preHead = head();
+  git(root, "merge", "-q", "--squash", `agentry/${ID}`);
+  git(root, "commit", "-q", "-m", "squash the lane's two commits by hand");
+  killedLedger({ preHead, planned: [first, second], path });
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    /src\/f\.txt changed on main since this land began: check by hand, then --resolve/,
+  );
+  assert.equal(ledgerBytes(), before);
+});
+
+test("--resolve rolled-back never warns of changed files when main changed none the picks change", () => {
+  const path = laneWithF();
+  const lane = editF(path, 5, "five", "feat: lane edit");
+  const preHead = head();
+  commitFile(root, "src/other.txt", "owner\n", "feat: owner change elsewhere");
+  killedLedger({ preHead, planned: [lane], path });
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 0, out(res));
+  assert.doesNotMatch(out(res), /changed on main since this land began/);
+  assert.equal(readLedger(root, ID).state, "verified");
+});
+
+// S33 N10 (Q1, Q5): with nothing recorded as landed, `--resolve landed` refuses too: name the reset instead.
+test("--resolve rolled-back with no landed pick names the reset to preHead, never --resolve landed", () => {
+  const { preHead } = killedWhilePicking();
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    new RegExp(
+      `is on main: not rolled back → git reset --keep ${preHead.slice(0, 7)}, then --resolve rolled-back`,
+    ),
+  );
+  assert.doesNotMatch(out(res), /--resolve landed/);
+  assert.equal(ledgerBytes(), before);
+});
+
+// S33 N11 (Q6b): a bare sha in planned read as no pick, and resolved "no pick on main" with it on main.
+test("--resolve refuses a planned or landed that is not a list, before any git call", () => {
+  const { shas } = killedWhilePicking();
+  const ledger = readLedger(root, ID);
+  for (const key of ["planned", "landed"]) {
+    writeLedger(root, { ...ledger, merge: { ...ledger.merge, [key]: shas[0] } });
+    const before = ledgerBytes();
+    for (const as of ["landed", "rolled-back"]) {
+      const res = merge(ID, "--resolve", as);
+      assert.equal(res.status, 2, out(res));
+      assert.match(
+        out(res),
+        new RegExp(`ledger value merge\\.${key} is not a list of commit shas`),
+      );
+      assert.equal(ledgerBytes(), before);
+    }
+  }
+});

@@ -348,7 +348,6 @@ export function recoverStep(lane, rows) {
 
 const RESOLUTIONS = ["landed", "rolled-back"];
 const FULL_SHA = /^[0-9a-f]{40}$/;
-const listOf = (v) => (Array.isArray(v) ? v : v === undefined ? [] : [v]);
 // What a land sets aside of main and holds in the ledger: closing the ledger over it would lose it.
 const HELD = ["carry", "allow", "writes"];
 
@@ -402,15 +401,20 @@ function patchIdsOf(root, revs) {
 // Why `rolled-back` cannot be said of `merge`, or null. A planned commit is on main when any of these
 // holds: it, or a recorded pick, is an ancestor of HEAD (the owner merged the branch); a commit since
 // preHead, any parent and any place, has its identity (author, date and message, which a cherry-pick keeps
-// even when the owner resolved its conflict by hand); a first-parent commit since preHead has its patch.
-// When git cannot tell, that is the answer: never "none".
+// even when the owner resolved its conflict by hand) or names it as `(cherry picked from commit <sha>)`; a
+// first-parent commit since preHead has its patch. When git cannot tell, or main changed a file the picks
+// change, that is the answer: never "none".
 function notRolledBack(root, merge) {
-  // A revert leaves the pick on main: the way on is the other resolution, and the board record by hand.
-  const onMain = (sha) =>
-    `${short(sha)} is on main: not rolled back → if you reverted it, the picks are still on main: --resolve landed, then record the board by hand`;
+  const landed = merge.landed ?? [];
+  const planned = merge.planned ?? [];
+  // A revert leaves the pick on main: with picks recorded the way on is the other resolution, and the board
+  // record by hand; with none recorded `landed` refuses too, so the way on is to take the picks off.
+  const wayOn =
+    landed.length > 0
+      ? "if you reverted it, the picks are still on main: --resolve landed, then record the board by hand"
+      : `git reset --keep ${typeof merge.preHead === "string" ? short(merge.preHead) : "<the commit before the land>"}, then --resolve rolled-back`;
+  const onMain = (sha) => `${short(sha)} is on main: not rolled back → ${wayOn}`;
   const cannotTell = (why) => `cannot tell whether a pick is on main (${why}): not rolled back`;
-  const landed = Array.isArray(merge.landed) ? merge.landed : [];
-  const planned = Array.isArray(merge.planned) ? merge.planned : [];
   const ancestor = [...landed, ...planned].find((sha) => isAncestor(root, sha, "HEAD"));
   if (ancestor) return onMain(ancestor);
   if (planned.length === 0) return null;
@@ -432,6 +436,19 @@ function notRolledBack(root, merge) {
   const wanted = new Set(planned.map((sha) => ids.get(sha)));
   const same = commits.find((sha) => wanted.has(ids.get(sha)));
   if (same) return onMain(same);
+  // A pick made by hand with -x names the planned commit in its message.
+  const picked = git(root, [
+    "rev-list",
+    "-F",
+    ...planned.map((sha) => `--grep=(cherry picked from commit ${sha})`),
+    "--end-of-options",
+    `${merge.preHead}..HEAD`,
+    "--",
+  ]);
+  if (picked.status !== 0)
+    return cannotTell(picked.stderr.trim().split("\n")[0] || "git rev-list failed");
+  const named = picked.stdout.split("\n").find(Boolean);
+  if (named) return onMain(named);
   const mine = patchIdsOf(root, ["--no-walk=unsorted", ...planned]);
   const main = mine.error
     ? mine
@@ -440,7 +457,29 @@ function notRolledBack(root, merge) {
   if (error) return cannotTell(error);
   const picks = new Set(mine.ids.map((p) => p.patchId));
   const on = main.ids.find((p) => picks.has(p.patchId));
-  return on ? onMain(on.sha) : null;
+  if (on) return onMain(on.sha);
+  return plannedFilesChanged(root, merge.preHead, planned, cannotTell);
+}
+
+// No pick found, yet main changed a file the picks change since the land began (a squash, an amended pick):
+// only the owner can tell, so rolled-back refuses with the files. Null when no planned file changed.
+function plannedFilesChanged(root, preHead, planned, cannotTell) {
+  const changed = git(root, ["diff", "--name-only", "-z", "--no-renames", preHead, "HEAD", "--"]);
+  if (changed.status !== 0)
+    return cannotTell(changed.stderr.trim().split("\n")[0] || "git diff failed");
+  const mine = new Set();
+  for (const sha of planned) {
+    const files = filesOf(root, sha);
+    if (!files) return cannotTell(`git cannot list ${short(sha)}'s files`);
+    for (const file of files) mine.add(file);
+  }
+  const both = changed.stdout.split("\0").filter((file) => file && mine.has(file));
+  if (both.length === 0) return null;
+  const shown =
+    both.length > 5
+      ? `${both.slice(0, 5).join(", ")} and ${both.length - 5} more`
+      : both.join(", ");
+  return `${shown} changed on main since this land began: check by hand, then --resolve`;
 }
 
 /** `lane merge <id> --resolve landed|rolled-back`: on the owner's call, close a ledger in `merging` a land
@@ -465,8 +504,16 @@ export function resolveMode(lane) {
   if (ledger.state !== "merging")
     return no(`${id}'s lane is "${ledger.state}": --resolve closes only a land in "merging"`);
   const merge = ledger.merge ?? {};
-  // The ledger's commits go to git as revisions: each must be a full SHA, before any git call.
-  const named = [merge.preHead, ...listOf(merge.planned), ...listOf(merge.landed)];
+  // The ledger's commits go to git as revisions: each must be a full SHA, before any git call, and the
+  // picks a list of them (a bare sha would read as no pick).
+  const notList = ["planned", "landed"].find(
+    (k) => merge[k] !== undefined && !Array.isArray(merge[k]),
+  );
+  if (notList)
+    return no(
+      `ledger value merge.${notList} is not a list of commit shas: not ${as === "landed" ? "landed" : "rolled back"}`,
+    );
+  const named = [merge.preHead, ...(merge.planned ?? []), ...(merge.landed ?? [])];
   const bad = named.find((v) => v !== undefined && !(typeof v === "string" && FULL_SHA.test(v)));
   if (bad !== undefined)
     return no(
