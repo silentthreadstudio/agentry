@@ -508,6 +508,86 @@ test("a FAIL writes the verdict and the failed status, then a fix round resumes 
   assert.match(readFileSync(out.brief, "utf8"), /## Recheck/);
 });
 
+// ---- verdict --leave (S26): notes left as built are never sent back -----------------------------------
+
+// T1 failed with N1 and N2, the verdict read with `leave` args; then the fix and its recheck passing N1 only.
+function failedWith(r, ...leave) {
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  writeFileSync(
+    out.reportPath,
+    "N1 rename the helper\nN2 the old flag stays\nused_memories: none\nVerdict: FAIL\n",
+  );
+  return lane(r, "verdict", "T1", "--agent", "verifier-1", ...leave);
+}
+function recheckN1(r, out) {
+  build(out, "fix.txt");
+  const recheck = lane(r, "report", "T1").json;
+  assert.equal(recheck.next, "recheck");
+  writeFileSync(recheck.reportPath, "N1: PASS renamed\nused_memories: none\nVerdict: PASS\n");
+  return { brief: readFileSync(recheck.brief, "utf8"), verdict: lane(r, "verdict", "T1").json };
+}
+
+test("verdict --leave records the notes left as built; the recheck needs only the others, so no final", () => {
+  const r = repo();
+  const failed = failedWith(r, "--leave", "n2");
+  assert.equal(failed.exit, 0, failed.stderr);
+  const [left] = ledgerOf(r.root, "T1").left;
+  assert.deepEqual([left.label, left.by, left.round], ["N2", "conductor", 2]);
+  assert.match(left.at, /^\d{4}-\d\d-\d\dT/);
+  const { brief, verdict } = recheckN1(r, failed.json);
+  assert.match(brief, /For each note sent back \(N1\), write one line/);
+  assert.equal(verdict.next, "gate", verdict.why);
+  assert.equal(ledgerOf(r.root, "T1").rounds.at(-1).covered, true);
+  // Still there, as left, in show.
+  assert.equal(
+    lane(r, "show", "T1").json.left,
+    `N2: left as built by the conductor at ${left.at} (round 2)`,
+  );
+  assert.match(textOf(r, "show", "T1"), /^left: N2: left as built by the conductor at /m);
+});
+
+test("without --leave the same recheck sends a final: N2 was sent back and not passed", () => {
+  const r = repo();
+  const { verdict } = recheckN1(r, failedWith(r).json);
+  assert.equal(verdict.next, "final");
+  assert.equal(ledgerOf(r.root, "T1").left, undefined);
+});
+
+test("verdict --leave --by owner says whose word it was; a note the report lacks refuses and writes nothing", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  writeFileSync(
+    out.reportPath,
+    "N1 rename it\nN2 stale flag\nused_memories: none\nVerdict: FAIL\n",
+  );
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const before = [readFileSync(file, "utf8"), board(r.root)];
+  const missing = lane(r, "verdict", "T1", "--leave", "N2,N7");
+  assert.equal(missing.exit, 2);
+  assert.match(
+    missing.stderr,
+    /--leave: N7 not in the verifier's report .*r2-verify\.report\.md \(it has N1, N2\)/,
+  );
+  assert.deepEqual([readFileSync(file, "utf8"), board(r.root)], before);
+  for (const [args, said] of [
+    [["--by", "owner"], /--by goes with --leave/],
+    [["--leave", "N2", "--by", "boss"], /--by takes owner or conductor, not "boss"/],
+    [["--leave", "two"], /--leave takes the verifier's note labels/],
+  ]) {
+    const refused = lane(r, "verdict", "T1", ...args);
+    assert.equal(refused.exit, 2, args.join(" "));
+    assert.match(refused.stderr, said);
+  }
+  assert.equal(readFileSync(file, "utf8"), before[0]);
+  const owner = lane(r, "verdict", "T1", "--leave", "N2", "--by", "owner");
+  assert.equal(owner.exit, 0, owner.stderr);
+  assert.equal(ledgerOf(r.root, "T1").left[0].by, "owner");
+});
+
 test("without a lifecycle the lane writes nothing to the board, and says every step was skipped", () => {
   const { lifecycle, ...spec } = SPEC;
   assert.ok(lifecycle);

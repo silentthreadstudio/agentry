@@ -4,7 +4,9 @@
 //
 //   start <id>                cut `agentry/<id>` in a worktree, write `dispatched`, brief the builder
 //   report <id> [--agent a]   read the builder's report, run the guards, brief the next round
-//   verdict <id> [--agent a]  read the verifier's report, write the verdict, brief the next round
+//   verdict <id> [--agent a]  read the verifier's report, write the verdict, brief the next round;
+//     [--leave N2,N9 [--by owner|conductor]]   those notes of the report are left as built (`left[]`), never
+//                             counted as sent back
 //   gate <id>                 run the repo's gate in the worktree and record it (exit 1 when red)
 //   fix <id> --notes N1,N3    a verified lane (PASS WITH NOTES): a builder round on those notes, then recheck
 //                             (at most `exec.noteRounds` of them, read live from the workflow file)
@@ -147,7 +149,7 @@ const STEPS = [
   "restart",
 ];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -172,6 +174,9 @@ export const help = {
   flags: {
     "--agent <agent id>":
       "report and verdict: the agent that answered, so a later round resumes it; hold: the builder out on the round",
+    "--leave <N2,N9>":
+      "verdict: notes of this report left as built on the owner's or conductor's word; never sent back",
+    "--by <owner|conductor>": "verdict --leave: whose word leaves them (default conductor)",
     "--episode <episode id>": "close: the id episode_write returned",
     "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
     "--owner <text>": "fix: the owner's change to a verified lane, for one builder round",
@@ -200,6 +205,8 @@ export const help = {
 const flags = flagsOf(help);
 const STEPS_OF = {
   "--agent": ["report", "verdict", "hold"],
+  "--leave": ["verdict"],
+  "--by": ["verdict"],
   "--episode": ["close"],
   "--notes": ["fix"],
   "--owner": ["fix"],
@@ -228,7 +235,7 @@ const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
-// argv → { step, id, value, set, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain,
+// argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain,
 // carry } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
@@ -256,6 +263,10 @@ function parse(argv) {
       return { error: flag === "--on" ? "--on goes with start only" : `${step} takes no ${flag}` };
   if (step === "fix" && (given["--notes"] === undefined) === (given["--owner"] === undefined))
     return { error: 'fix needs --notes N1,N3 or --owner "<the change>", one of them' };
+  if (given["--by"] !== undefined && given["--leave"] === undefined)
+    return { error: "--by goes with --leave" };
+  if (given["--by"] !== undefined && !["owner", "conductor"].includes(given["--by"]))
+    return { error: `--by takes owner or conductor, not "${given["--by"]}"` };
   if (given["--set"] !== undefined && given["--add"] !== undefined)
     return { error: "owns takes --set or --add, not both" };
   if (given["--apply"] && given["--set"] === undefined && given["--add"] === undefined)
@@ -265,6 +276,8 @@ function parse(argv) {
     id,
     value: given["--agent"] ?? given["--episode"] ?? given["--notes"] ?? null,
     set: given["--set"] ?? null,
+    leave: given["--leave"] ?? null,
+    by: given["--by"] ?? "conductor",
     add: given["--add"] ?? null,
     cite: given["--cite"]?.split(",").map((c) => c.trim()) ?? [],
     apply: Boolean(given["--apply"]),
@@ -1748,6 +1761,23 @@ function writeBuilt(ctx, ledger, res) {
   return built.board;
 }
 
+// The notes `verdict --leave` leaves as built: `[{ label, by, at, round }]`, each a note of this report
+// (refused otherwise, before anything is written); none without --leave.
+function leftNotes({ leave, by }, text, round) {
+  if (leave === null) return [];
+  const labels = [...new Set(leave.split(",").map((n) => n.trim().toUpperCase()))];
+  if (!labels.every((n) => /^N\d+$/.test(n)))
+    refuse(`--leave takes the verifier's note labels, like N2,N9 (got ${leave})`);
+  const found = notesOf(text);
+  const missing = labels.filter((n) => !found.has(n));
+  if (missing.length)
+    refuse(
+      `--leave: ${missing.join(", ")} not in the verifier's report ${round.reportPath} (it has ${[...found.keys()].join(", ") || "no N<number> notes"})`,
+    );
+  const at = now();
+  return labels.map((label) => ({ label, by, at, round: round.n }));
+}
+
 function verdict(ctx, id, agent) {
   const { root, spec } = ctx;
   const ledger = mustLedger(root, id);
@@ -1757,6 +1787,7 @@ function verdict(ctx, id, agent) {
     );
   const round = ledger.rounds.at(-1);
   const text = readReport(round.reportPath, "verifier");
+  const left = leftNotes(ctx, text, round);
   const tip = headOf(root, ledger.branch);
   // A recheck's facts, pinned on its round: every note sent back passed, and the tip moved only by fix
   // commits since the last verdict.
@@ -1785,6 +1816,7 @@ function verdict(ctx, id, agent) {
     ...facts,
   });
   let next = res.ledger;
+  if (left.length) next.left = [...(next.left ?? []), ...left];
   next.usedMemories = [...new Set([...(next.usedMemories ?? []), ...usedMemories(text)])];
   next.nested = nestedTrees(root, next);
   const judged = next.rounds.at(-1);
@@ -1798,7 +1830,10 @@ function verdict(ctx, id, agent) {
     if (open.length) next.openNotes = open;
     else next.openNotes = undefined;
     if (judged.verdict === "PASS WITH NOTES") {
-      const labels = openNotesOf(text, judged).map((n) => n.split(" ", 1)[0]);
+      const kept = new Set(left.map((l) => l.label));
+      const labels = openNotesOf(text, judged)
+        .map((n) => n.split(" ", 1)[0])
+        .filter((label) => !kept.has(label));
       const { used, max } = notesBudget(next, liveNotes(ctx));
       notes.line =
         used < max && labels.length
@@ -2039,10 +2074,18 @@ const readOr = (path) => {
 };
 
 // The labels of the notes sent back since the last counted verdict: the ones a notes round picked, or every
-// `N<k>` of a FAIL report, and `owner` after an owner's fix. None for a PASS with no such round since.
+// `N<k>` of a FAIL report, and `owner` after an owner's fix. None for a PASS with no such round since. A
+// note that verdict left as built (`verdict --leave`) is never one.
 function sentBack(ledger) {
   const verdict = verdicts(ledger).at(-1);
   if (!verdict) return [];
+  const kept = new Set(
+    (ledger.left ?? []).filter((l) => l.round === verdict.n).map((l) => l.label),
+  );
+  return sentBackOf(ledger, verdict).filter((label) => !kept.has(label));
+}
+// Every label sent back since `verdict`, the ones it left included.
+function sentBackOf(ledger, verdict) {
   const since = ledger.rounds.filter((r) => r.role === "build" && r.n > verdict.n);
   const picked = since.findLast((r) => r.notes);
   const notes = picked
@@ -2483,6 +2526,11 @@ function show(ctx, id) {
       "route fixed at start": routeFixedText(routeOf(ledger), liveNotes(ctx)),
       route: routeNow(ctx, ledger),
       ...(ledger.openNotes?.length && { openNotes: ledger.openNotes }),
+      ...(ledger.left?.length && {
+        left: ledger.left
+          .map((l) => `${l.label}: left as built by the ${l.by} at ${l.at} (round ${l.round})`)
+          .join("\n"),
+      }),
       rounds: ledger.rounds.map((r) => ({
         n: r.n,
         step: r.step,

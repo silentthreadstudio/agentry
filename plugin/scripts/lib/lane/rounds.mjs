@@ -24,7 +24,8 @@
 //   recheck: PASS*, route final "always"    → final (fresh, against the full bar)
 //   recheck: PASS*, route final "never"     → gate, or close when green on this tip
 //   recheck: PASS*, final "after-fix", the verdict `covered` every note sent back and the tip moved only by
-//            fix commits (`onlyFixCommits`) → gate / close; otherwise → final
+//            fix commits (`onlyFixCommits`) → gate / close; otherwise → final. A note the verdict before left
+//            as built (`verdict --leave`, the ledger's `left[]`) is not sent back, so it never forces a final
 //   final: PASS* / FAIL                     → gate → close / stop
 //   verify / recheck: FAIL                  → fix (resume the builder); at the 3rd verdict → stop
 //   no `Verdict:` last line                 → resend once, then stop
