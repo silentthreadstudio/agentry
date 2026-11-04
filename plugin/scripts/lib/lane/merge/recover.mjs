@@ -349,6 +349,15 @@ const RESOLUTIONS = ["landed", "rolled-back"];
 // What a land sets aside of main and holds in the ledger: closing the ledger over it would lose it.
 const HELD = ["carry", "allow", "writes"];
 
+// The record's files whose staged or working copy is not HEAD's.
+function recordFilesLeft(root, merge) {
+  const files = Array.isArray(merge.record?.files) ? merge.record.files : [];
+  return files.filter((file) => {
+    const head = textAt(root, "HEAD", file);
+    return readText(root, file) !== head || textAt(root, "", file) !== head;
+  });
+}
+
 // Why `landed` cannot be said of `merge`, or null: every recorded pick is on main.
 function notLanded(root, merge) {
   const landed = Array.isArray(merge.landed) ? merge.landed : [];
@@ -426,6 +435,13 @@ export function resolveMode(lane) {
   if (held.length > 0)
     return no(
       `the ledger still holds what the land set aside (merge.${held.join(", merge.")}): land again to put it back first (${landNext(id)})`,
+    );
+  // A land killed while it wrote the board: its own writes still on main are the land's to finish or take
+  // back, which a closed ledger (no record) could no longer prove.
+  const unrecorded = merge.step === "recording" ? recordFilesLeft(root, merge) : [];
+  if (unrecorded.length > 0)
+    return no(
+      `${unrecorded.join(", ")} hold this land's board writes, uncommitted: rerun lane merge ${id} to finish the record, or put them back first`,
     );
   const why = as === "landed" ? notLanded(root, merge) : notRolledBack(root, merge);
   if (why) return no(why);

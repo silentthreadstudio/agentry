@@ -288,3 +288,24 @@ test("--resolve rolled-back refuses when git cannot tell what is on main, never 
   assert.match(out(res), /cannot tell whether a pick is on main \(.+\): not rolled back/);
   assert.equal(ledgerBytes(), before);
 });
+
+// Verifier r3, N1 (probe E): a land killed while it wrote the board left its writes on main.
+test("--resolve refuses at recording while the record's board writes sit uncommitted on main", () => {
+  stuckLand();
+  const ledger = readLedger(root, ID);
+  const file = join(root, "plan", "BOARD.md");
+  writeFileSync(file, readFileSync(file, "utf8").replace("| verify |", "| done   |"));
+  const record = { files: ["plan/BOARD.md"], sha256: {}, base: {} };
+  writeLedger(root, { ...ledger, merge: { ...ledger.merge, step: "recording", record } });
+  const before = ledgerBytes();
+  for (const as of ["landed", "rolled-back"]) {
+    const res = merge(ID, "--resolve", as);
+    assert.equal(res.status, 2, out(res));
+    assert.match(
+      out(res),
+      /plan\/BOARD\.md hold this land's board writes, uncommitted: rerun lane merge T1 to finish the record, or put them back first/,
+    );
+    assert.equal(ledgerBytes(), before);
+  }
+  assert.equal(status(), "M plan/BOARD.md");
+});
