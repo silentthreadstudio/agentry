@@ -56,9 +56,9 @@ import {
   subjectsRow,
 } from "../merge/rows.mjs";
 import { childRows, stackRows } from "../merge/stack.mjs";
+import { RestackError, restackLane } from "../restack.mjs";
 import { childrenOf } from "../stack.mjs";
 import { mainRoot } from "../worktree.mjs";
-import { restackChild } from "./exec.mjs";
 
 export const help = {
   usage: [
@@ -133,14 +133,29 @@ function parse(argv) {
 const stackStop = (exit, lane, rows, next) =>
   done(exit, { ...lane, ledger: { ...lane.ledger, next } }, rows, next);
 
-// After a land that reached its board commit: each child at rest is restacked onto main, in id order, the
-// way `lane exec restack <child> --main` does; a child with an agent out, or one that conflicts, is left
-// as it was and named.
+// One child's restack onto main, guarded as `lane exec restack <child> --main`: `{ restacked: <commits> }`,
+// `{ conflict: <first path> }` (aborted, nothing changed) or `{ left: <why> }` (refused: an agent out, a
+// gate queued or running, a dirty worktree, a branch moved by hand, which its own restack records).
+function restackChild({ root, spec }, id) {
+  try {
+    const ledger = readLedger(root, id);
+    if (!ledger) return { left: `no ledger for ${id}` };
+    return {
+      restacked: restackLane({ root, spec }, ledger, { toMain: true, byHand: false }).commits,
+    };
+  } catch (e) {
+    if (!(e instanceof RestackError)) return { left: e.message };
+    return e.exit === 1 ? { conflict: e.files[0] ?? null } : { left: e.message };
+  }
+}
+
+// After a land that reached its board commit (and on the rerun of one that did): each child at rest is
+// restacked onto main, in id order; a child with an agent out, or one that conflicts, is left as it was and
+// named.
 function restackChildren(lane) {
-  const { root, spec, model } = lane;
   const outcomes = {};
-  for (const child of childrenOf(listLedgers(root), lane.id))
-    outcomes[child] = restackChild({ root, spec, model }, child);
+  for (const child of childrenOf(listLedgers(lane.root), lane.id))
+    outcomes[child] = restackChild(lane, child);
   return childRows(lane, outcomes);
 }
 
@@ -223,7 +238,7 @@ function land(lane) {
         `board commit ${short(merged.boardCommit)}`,
       ]),
     );
-    rows.push(...childRows(lane));
+    rows.push(...restackChildren(lane));
     return done(0, lane, rows, afterLand(lane));
   }
   const stack = stackRows(lane);

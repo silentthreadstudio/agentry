@@ -5,7 +5,7 @@
 // simulated by committing in the worktree and writing their report files.
 // Run: node --test plugin/scripts/test/exec-stack.test.mjs
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -79,7 +79,7 @@ const TASKS_MD = `# Tasks
 - **T3**: owns \`two.txt\`, \`three.txt\`. Accept: three.txt exists.
 `;
 
-function repo(config) {
+function repo(config, spec = SPEC) {
   const root = temp("exec-stack-repo-");
   const home = temp("exec-stack-home-");
   git(root, "init", "-q", "-b", "main");
@@ -89,7 +89,7 @@ function repo(config) {
   commitFile(root, "plan/BOARD.md", BOARD_MD);
   commitFile(root, "plan/TASKS.md", TASKS_MD);
   commitFile(root, "shared.txt", "a\nb\nc\n");
-  writeSpec(join(root, ".agentry"), SPEC);
+  writeSpec(join(root, ".agentry"), spec);
   git(root, "add", ".agentry");
   git(root, "commit", "-q", "-m", "add the process files");
   return { root, home };
@@ -363,3 +363,126 @@ test("T2's report after T1's land and board commit trips no main-touched guard",
   assert.equal(res.json.next, "verify");
   assert.match(res.json.stack, /; T1 landed → .*exec restack T2 --root /);
 });
+
+// ---- a gate already in flight (R1d-14 r2 F1) -------------------------------------------------------
+
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+// Another lane's process holding gate slot 1 until it is killed.
+function holdSlot(root) {
+  const holder = spawn("sleep", ["60"], { stdio: "ignore" });
+  const locks = join(root, ".agentry", "run", "gate-locks");
+  mkdirSync(locks, { recursive: true });
+  writeFileSync(
+    join(locks, "slot-1.lock"),
+    JSON.stringify({ pid: holder.pid, who: "lane OTHER", at: new Date().toISOString() }),
+  );
+  return holder;
+}
+// `lane exec gate <id>` started in the background; resolves to its exit code. Returns once its log says it
+// waits for the slot.
+function queuedGate({ root, home }, id) {
+  const child = spawn("node", [LANE, "exec", "gate", id, "--json", "--root", root], {
+    env: { ...gitEnv, HOME: home },
+    stdio: "ignore",
+  });
+  const exited = new Promise((done) => child.on("exit", done));
+  const log = join(root, ".agentry", "run", "process", "runs", id, "logs", "gate-1.log");
+  for (
+    let i = 0;
+    i < 200 && !(existsSync(log) && readFileSync(log, "utf8").includes("waiting"));
+    i++
+  )
+    pause(50);
+  assert.match(readFileSync(log, "utf8"), /waiting for gate slot 1/);
+  return exited;
+}
+
+test("a restack is refused while the lane's gate is queued, and the gate's write never undoes a restack", async () => {
+  const r = repo();
+  verified(r, "T1", "one.txt");
+  const t2 = toGate(r);
+  const holder = holdSlot(r.root);
+  const gated = queuedGate(r, "T2");
+  const moved = commitFile(ledgerOf(r.root, "T1").worktree, "one.txt", "moved\n", "fix: move T1");
+  const before = readFileSync(ledgerFile(r.root, "T2"), "utf8");
+  const refused = lane(r, "restack", "T2");
+  assert.equal(refused.exit, 2, refused.out);
+  assert.match(
+    refused.out,
+    /✗ lane exec restack T2: a gate for T2 is queued or running: restack after it$/m,
+  );
+  assert.equal(readFileSync(ledgerFile(r.root, "T2"), "utf8"), before);
+  assert.equal(tipOf(r.root, "agentry/T2"), t2);
+  holder.kill();
+  assert.equal(await gated, 0, "the queued gate runs on the tip it was asked about");
+  // The gate is done: the restack goes ahead, and its record stays.
+  const res = lane(r, "restack", "T2");
+  assert.equal(res.exit, 0, res.out);
+  const ledger = ledgerOf(r.root, "T2");
+  assert.deepEqual(
+    [ledger.restacks?.length, ledger.base, tipOf(r.root, "agentry/T2^")],
+    [1, moved, moved],
+  );
+  assert.ok(!existsSync(join(r.root, ".agentry", "run", "process", "gating", "T2.json")));
+});
+
+// T2 stacked on a verified T1, built and verified PASS: its gate next. Returns T2's tip.
+function toGate(r) {
+  const out = lane(r, "start", "T2", "--on", "T1").json;
+  build(out, "two.txt");
+  judge(lane(r, "report", "T2").json, "PASS");
+  assert.equal(lane(r, "verdict", "T2").json.next, "gate");
+  return tipOf(r.root, "agentry/T2");
+}
+
+test("a gate whose lane moved while it ran writes nothing and exits 1, naming what moved", () => {
+  // The gate runs $HOME/hook.sh when there is one: what another step does to the lane meanwhile.
+  const spec = {
+    ...SPEC,
+    gate: {
+      tiers: [
+        { name: "full", command: ["sh", "-c", 'test ! -f "$HOME/hook.sh" || sh "$HOME/hook.sh"'] },
+      ],
+    },
+  };
+  const r = repo(undefined, spec);
+  verified(r, "T1", "one.txt");
+  const t2 = toGate(r);
+  const file = ledgerFile(r.root, "T2");
+  const fake = "0".repeat(40);
+  writeFileSync(
+    join(r.home, "hook.sh"),
+    `node -e 'const fs=require("fs");const l=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));l.base="${fake}";fs.writeFileSync(process.argv[1],JSON.stringify(l))' '${file}'\n`,
+  );
+  const base = ledgerOf(r.root, "T2").base;
+  const res = lane(r, "gate", "T2");
+  assert.equal(res.exit, 1, res.out);
+  assert.match(
+    res.out,
+    new RegExp(
+      `✗ lane exec gate T2: T2 moved while its gate ran \\(base ${short(base)} → 0000000\\): the gate's record is not written → .*exec gate T2 --root `,
+    ),
+  );
+  const after = ledgerOf(r.root, "T2");
+  assert.deepEqual([after.base, after.gates.length, after.next], [fake, 0, "gate"]);
+  // The branch moved under the gate: named the same way.
+  writeLedgerBack(r.root, "T2", { base });
+  writeFileSync(
+    join(r.home, "hook.sh"),
+    "git commit -q --allow-empty -m 'chore: under the gate'\n",
+  );
+  const tip = lane(r, "gate", "T2");
+  assert.equal(tip.exit, 1, tip.out);
+  assert.match(
+    tip.out,
+    new RegExp(
+      `T2 moved while its gate ran \\(agentry/T2 ${short(t2)} → ${short(tipOf(r.root, "agentry/T2"))}\\)`,
+    ),
+  );
+  assert.equal(ledgerOf(r.root, "T2").gates.length, 0);
+});
+
+function writeLedgerBack(root, id, changes) {
+  const file = ledgerFile(root, id);
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...changes }));
+}

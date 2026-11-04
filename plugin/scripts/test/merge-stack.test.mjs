@@ -4,8 +4,16 @@
 // builders and verifiers are simulated by committing in the worktree and writing their report files.
 // Run: node --test plugin/scripts/test/merge-stack.test.mjs
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -276,3 +284,77 @@ test("a chain T3 --on T2 --on T1: merge T3 names T2", () => {
   assert.equal(land(r, "T1").exit, 0);
   assert.match(lane(r, "show", "T3").json.stack, /^on T2 at \w{7}; T2 moved to \w{7} → /);
 });
+
+test("the rerun of an already-merged land restacks a child that has come to rest since", () => {
+  const r = repo();
+  verified(r, "T1", "one.txt");
+  const out = toVerdict(r, "T2", "two.txt", { on: "T1" });
+  assert.match(
+    land(r, "T1").out,
+    /! stack {3}T2 is stacked on T1: lane exec restack T2 before its gate/,
+  );
+  finishVerdictOnly(r, "T2", out);
+  const again = land(r, "T1");
+  assert.equal(again.exit, 0, again.out);
+  assert.match(again.out, /✓ land {4}already merged: /);
+  assert.match(again.out, /✓ stack {3}restacked: T2 onto main \(1 commits\)/);
+  const ledger = ledgerOf(r.root, "T2");
+  assert.deepEqual([ledger.on, ledger.next], [undefined, "gate"]);
+  assert.equal(git(r.root, "rev-parse", "agentry/T2^"), tipOf(r.root, "main"));
+});
+
+// ---- a child's gate in flight during the parent's land (R1d-14 r2 F1) ------------------------------
+
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+test("a child whose gate is queued when its parent lands is left and named; its ledger still matches its branch", async () => {
+  const r = repo();
+  verified(r, "T1", "one.txt");
+  finishVerdictOnly2(r, "T2", toVerdict(r, "T2", "two.txt", { on: "T1" }));
+  // The order is fixed: another lane holds the gate slot, T2's gate queues behind it, then T1 lands (its
+  // gate skipped: main did not move), then the slot comes free.
+  const holder = spawn("sleep", ["60"], { stdio: "ignore" });
+  const locks = join(r.root, ".agentry", "run", "gate-locks");
+  mkdirSync(locks, { recursive: true });
+  writeFileSync(
+    join(locks, "slot-1.lock"),
+    JSON.stringify({ pid: holder.pid, who: "lane OTHER", at: new Date().toISOString() }),
+  );
+  const child = spawn("node", [LANE, "exec", "gate", "T2", "--json", "--root", r.root], {
+    env: { ...gitEnv, HOME: r.home },
+    stdio: "ignore",
+  });
+  const gated = new Promise((done) => child.on("exit", done));
+  const log = join(r.root, ".agentry", "run", "process", "runs", "T2", "logs", "gate-1.log");
+  for (
+    let i = 0;
+    i < 200 && !(existsSync(log) && readFileSync(log, "utf8").includes("waiting"));
+    i++
+  )
+    pause(50);
+  const res = land(r, "T1");
+  assert.equal(res.exit, 0, res.out);
+  assert.match(res.out, /✓ gate {4}skipped: /);
+  assert.match(
+    res.out,
+    /! stack {3}T2 is stacked on T1: lane exec restack T2 before its gate\n {12}a gate for T2 is queued or running: restack after it/,
+  );
+  holder.kill();
+  assert.equal(await gated, 0);
+  // Nothing was restacked under the gate: the ledger and the branch agree, and T2 restacks now.
+  const ledger = ledgerOf(r.root, "T2");
+  assert.deepEqual(
+    [ledger.on, ledger.restacks, tipOf(r.root, "agentry/T2^")],
+    ["T1", undefined, ledger.base],
+  );
+  const restacked = lane(r, "restack", "T2");
+  assert.equal(restacked.exit, 0, restacked.out);
+  assert.equal(git(r.root, "rev-parse", "agentry/T2^"), tipOf(r.root, "main"));
+  assert.equal(ledgerOf(r.root, "T2").restacks.length, 1);
+});
+
+// A verdict for a lane whose verifier is out, no gate run: its gate next.
+function finishVerdictOnly2(r, id, out) {
+  judge(out);
+  assert.equal(lane(r, "verdict", id).json.next, "gate");
+}

@@ -269,8 +269,9 @@ test("restack onto a moved parent: the branch replays only its own commits onto 
 
 test("restack onto main after the parent landed: its old commits are gone, git cherry lists only the child's", () => {
   const r = stacked();
-  // T1's land: its commit picked onto main, a board commit after it.
-  git(r.root, "cherry-pick", r.t1.closedTip);
+  // T1's land: its commit picked onto main (as a commit of its own: -x, so never the same sha), a board
+  // commit after it.
+  git(r.root, "cherry-pick", "-x", r.t1.closedTip);
   const board = commitFile(r.root, "plan/BOARD.md", `${BOARD_MD}\n`, "docs(board): land T1");
   setLedger(r.root, "T1", { state: "merged", next: null });
   const res = lane(r, "restack", "T2");
@@ -283,7 +284,12 @@ test("restack onto main after the parent landed: its old commits are gone, git c
   );
   const cherry = git(r.root, "cherry", "main", "agentry/T2").split("\n");
   assert.deepEqual(cherry, [`+ ${tipOf(r.root, "agentry/T2")}`]);
-  assert.equal(git(r.root, "merge-base", "--is-ancestor", r.t1.closedTip, "agentry/T2").length, 0);
+  const ancestor = spawnSync(
+    "git",
+    ["-C", r.root, "merge-base", "--is-ancestor", r.t1.closedTip, "agentry/T2"],
+    { env: gitEnv },
+  );
+  assert.equal(ancestor.status, 1, "T1's old commit is not under T2 any more");
   const ledger = ledgerOf(r.root, "T2");
   assert.equal(ledger.on, undefined);
   assert.deepEqual([ledger.base, ledger.restacks.at(-1).onto], [board, "main"]);
@@ -367,6 +373,65 @@ test("a branch rebased by hand (or by a restack killed before its ledger write) 
   assert.match(readFileSync(res.json.brief, "utf8"), new RegExp(entry.rangeDiff));
 });
 
+test("a restack writes its plan before the rebase; a rerun after a kill uses it though the parent moved again", () => {
+  const r = stacked();
+  const t2tip = r.t2.closedTip;
+  const first = commitFile(r.t1.worktree, "one-more.txt", "1\n", "fix: one more");
+  // A pre-rebase hook copies the ledger as it is when git starts the rebase.
+  const seen = join(r.home, "during.json");
+  const hook = join(r.root, ".git", "hooks", "pre-rebase");
+  writeFileSync(hook, `#!/bin/sh\ncp '${ledgerFile(r.root, "T2")}' '${seen}'\n`, { mode: 0o755 });
+  assert.equal(lane(r, "restack", "T2").exit, 0);
+  assert.deepEqual(
+    (({ target, onto, ontoName, base, from }) => ({ target, onto, ontoName, base, from }))(
+      JSON.parse(readFileSync(seen, "utf8")).restacking,
+    ),
+    { target: "parent", onto: first, ontoName: "agentry/T1", base: r.t2.base, from: t2tip },
+  );
+  assert.equal(ledgerOf(r.root, "T2").restacking, undefined, "the plan goes once it is recorded");
+  rmSync(hook);
+
+  // A restack killed after its rebase, before its record: the plan in the ledger, the branch moved.
+  const r2 = stacked();
+  const moved = commitFile(r2.t1.worktree, "one-more.txt", "1\n", "fix: one more");
+  const plan = {
+    target: "parent",
+    onto: moved,
+    ontoName: "agentry/T1",
+    base: r2.t2.base,
+    from: r2.t2.closedTip,
+    why: "T1 is verified",
+    at: "2026-11-03T10:00:00.000Z",
+  };
+  setLedger(r2.root, "T2", { restacking: plan });
+  git(r2.t2.worktree, "rebase", "-q", "--onto", "agentry/T1", r2.t2.base);
+  const killedAt = tipOf(r2.root, "agentry/T2");
+  // The parent moves again before the rerun.
+  const again = commitFile(r2.t1.worktree, "one-more.txt", "2\n", "fix: again");
+  const rerun = lane(r2, "restack", "T2");
+  assert.equal(rerun.exit, 0, rerun.out);
+  assert.match(
+    rerun.json.restacked,
+    /^onto T1 at \w{7} \(was \w{7}\): 1 commit\(s\), resolved by hand; /,
+  );
+  const entry = ledgerOf(r2.root, "T2").restacks.at(-1);
+  assert.deepEqual(
+    [entry.resolution, entry.from, entry.to, entry.base],
+    ["by hand", r2.t2.closedTip, killedAt, { from: r2.t2.base, to: moved }],
+  );
+  assert.equal(ledgerOf(r2.root, "T2").restacking, undefined);
+  // The next restack replays only T2's own commit onto T1's newest tip: no T1 commit is named as T2's.
+  setLedger(r2.root, "T2", {
+    state: "verifying",
+    next: "gate",
+    rounds: ledgerOf(r2.root, "T2").rounds.slice(0, 1),
+  });
+  const next = lane(r2, "restack", "T2");
+  assert.equal(next.exit, 0, next.out);
+  assert.match(next.json.restacked, /: 1 commit\(s\), no conflict;/);
+  assert.equal(tipOf(r2.root, "agentry/T2^"), again);
+});
+
 test("a restack killed mid-rebase is refused on the rerun, its entries led by rebase in progress", () => {
   const r = repo();
   const t1 = laneOf(r, "T1", { files: { "shared.txt": "base\n" } });
@@ -419,7 +484,7 @@ test("refusals: an agent out, the gate running in the lane's worktree, a dirty w
     join(locks, "slot-1.lock"),
     JSON.stringify({ pid: process.pid, who: "lane T2", at: new Date().toISOString() }),
   );
-  check(/✗ lane exec restack T2: the gate is running in T2's worktree$/m);
+  check(/✗ lane exec restack T2: a gate for T2 is queued or running: restack after it$/m);
   rmSync(join(locks, "slot-1.lock"));
   writeFileSync(join(r.t2.worktree, "stray.txt"), "x\n");
   check(

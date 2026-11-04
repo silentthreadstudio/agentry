@@ -92,13 +92,14 @@ import {
   routeFixedText,
   routeText,
 } from "../exec-view.mjs";
-import { gateLockDir, heldSlots, holdGate } from "../gate-lock.mjs";
+import { gateLockDir, holdGate } from "../gate-lock.mjs";
 import { changedSince, flakyReds, globMatch, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import { idleOf } from "../idle.mjs";
-import { currentBranch, isAncestor, mergeBaseOf } from "../land.mjs";
+import { isAncestor, mergeBaseOf } from "../land.mjs";
 import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
+import { RestackError, markGating, restackLane } from "../restack.mjs";
 import {
   DISPATCHES,
   addRound,
@@ -112,18 +113,8 @@ import {
   routeOf,
   skipsVerifier,
   verdicts,
-  verifiedTip,
 } from "../rounds.mjs";
-import {
-  chainOf,
-  childrenOf,
-  gateRefusal,
-  onTarget,
-  rebaseOnto,
-  restackLine,
-  stackOf,
-  unclean,
-} from "../stack.mjs";
+import { chainOf, childrenOf, gateRefusal, stackOf } from "../stack.mjs";
 import { brokenIn, rulesOf } from "../subjects.mjs";
 import { branchOf, create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
 
@@ -208,13 +199,8 @@ const STEPS_OF = {
 };
 
 class Refusal extends Error {}
-// A step that stopped with nothing changed, and says why (exit 1): a restack's rebase that git stopped.
-class Stopped extends Error {
-  constructor(message, files = []) {
-    super(message);
-    this.files = files;
-  }
-}
+// A step that stopped with nothing written, and says why (exit 1): a gate whose lane moved while it ran.
+class Stopped extends Error {}
 const refuse = (message) => {
   throw new Refusal(message);
 };
@@ -300,7 +286,8 @@ export function run(argv, ctx) {
   } catch (e) {
     if (e instanceof Refusal || e instanceof WriteError)
       return { exit: 2, out: say(what, e.message) };
-    if (e instanceof Stopped) return { exit: 1, out: say(what, e.message) };
+    if (e instanceof Stopped || e instanceof RestackError)
+      return { exit: e.exit ?? 1, out: say(what, e.message) };
     throw e;
   }
 }
@@ -1588,8 +1575,31 @@ function refreshBrief(ctx, ledger) {
 }
 
 // Gates queue behind the lock (`gate.concurrency` slots, in the main checkout's run directory); a flaky
-// re-run holds every slot, so it runs alone.
+// re-run holds every slot, so it runs alone. The gate's intent is marked before it reads the ledger and
+// cleared on any exit, so a restack waits for a gate that is only queued (`restack.mjs`).
 function gate(ctx, id) {
+  const clear = markGating(ctx.root, id);
+  try {
+    return gateOnce(ctx, id);
+  } finally {
+    clear();
+  }
+}
+
+// What moved in the lane while its gate ran (`was` the ledger it read, `ran` its run): its base, its restacks
+// or its branch's tip; empty when nothing did.
+function movedUnder(root, was, ran) {
+  const now = mustLedger(root, was.id);
+  const tip = headOf(root, `refs/heads/${was.branch}`);
+  const count = (l) => l.restacks?.length ?? 0;
+  return [
+    now.base !== was.base && `base ${short(was.base)} → ${short(now.base)}`,
+    count(now) !== count(was) && `restacks ${count(was)} → ${count(now)}`,
+    tip !== ran.commit && `${was.branch} ${short(ran.commit)} → ${short(tip)}`,
+  ].filter(Boolean);
+}
+
+function gateOnce(ctx, id) {
   const { root, spec } = ctx;
   let ledger = mustLedger(root, id);
   if (ledger.state === "stopped" || ledger.next === "merge")
@@ -1656,6 +1666,12 @@ function gate(ctx, id) {
   const again = flaky ? once(true) : null;
   const reran = again && !again.refused;
   const ran = reran ? again : first;
+  // The ledger read before the wait must still be the lane's: else writing it back would undo what moved.
+  const moved = movedUnder(root, ledger, ran);
+  if (moved.length)
+    throw new Stopped(
+      `${id} moved while its gate ran (${moved.join("; ")}): the gate's record is not written → ${laneLine(root, "gate", id)}`,
+    );
   const records = [
     {
       where: "worktree",
@@ -2270,140 +2286,29 @@ function reverify(ctx, id) {
   return view(ctx, next, { step: "reverify", nested: next.nested, extra: { why: res.reason } });
 }
 
-// Why a stacked lane cannot be restacked now (null when it can): only with no agent out (its gate, close or
-// merge next, or held), with its gate not running and its worktree clean, on its own branch.
-function restackProblem(root, ledger) {
-  const { id, worktree } = ledger;
-  if (["stopped", "merging", "merged", "closed"].includes(ledger.state))
-    return `${id} is ${ledger.state} (next ${ledger.next}): nothing to restack`;
-  if (ledger.hold?.for === "guard")
-    return `${id} is held by a guard trip: run its report once main is fixed, then restack`;
-  if (ledger.hold?.when === "verified") return `${id} is parked verified: resume it, then restack`;
-  if (ledger.state !== "held" && !["gate", "close", "merge"].includes(ledger.next)) {
-    const round = ledger.rounds.at(-1);
-    return `a ${round?.role ?? "build"} round is out (round ${round?.n ?? 0}, next ${ledger.next}): restack when the lane is at its gate, close or merge, or held`;
-  }
-  if (heldSlots(gateLockDir(root)).some((s) => s.who === `lane ${id}`))
-    return `the gate is running in ${id}'s worktree`;
-  let left;
-  try {
-    left = unclean(worktree);
-  } catch (e) {
-    return `the worktree ${worktree} is not readable: ${e.message}`;
-  }
-  if (left.length)
-    return `the worktree ${worktree} is not clean (${left.slice(0, 5).join(", ")}): commit or remove them, then restack`;
-  if (currentBranch(worktree) !== ledger.branch)
-    return `the worktree ${worktree} is not on ${ledger.branch}: check it out again, then restack`;
-  return null;
-}
-
-// The range-diff of a restack resolved by hand, as a resolve check reads it: the commits the lane's checks
-// stood for against the ones the branch holds now, in `logs/restack-range-diff-<n>.txt`.
-function restackRangeDiff(root, ledger, { from, to, onto }) {
-  const n = (ledger.restacks?.length ?? 0) + 1;
-  const res = git(root, ["range-diff", "--no-color", `${ledger.base}..${from}`, `${onto}..${to}`]);
-  const file = join(ledgers.runDir(root, ledger.id), "logs", `restack-range-diff-${n}.txt`);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(
-    file,
-    res.status === 0 ? res.stdout : `git range-diff failed: ${res.stderr.trim()}\n`,
-  );
-  return file;
-}
-
-// A stacked lane's branch onto its parent's new tip (`due: parent`), or main's (its parent landed, or
-// `--main`: the owner's call, on any state of the parent). Only its branch and ledger are written, the ledger
-// only after git's rebase exited 0; a stop is aborted with both as they were (exit 1). A branch already on
-// the target (moved by hand, or by a restack killed before its ledger write) is recorded as resolved by
-// hand, so the resolution is checked: never a silent pass.
+// A stacked lane's branch onto its parent's new tip, or main's (its parent landed, or `--main`, the owner's
+// call): `restack.mjs` does the guards, the rebase and the record; a hand resolution's check is dispatched here.
 function restack(ctx, id) {
-  const { root, spec, toMain } = ctx;
+  const { root, toMain } = ctx;
   const ledger = mustLedger(root, id);
-  const stack = stackOf(root, ledger, ledgers.list(root));
-  const { on } = stack;
-  if (!on) refuse(`${id} is not stacked on a lane (exec start --on): nothing to restack`);
-  const problem = restackProblem(root, ledger);
-  if (problem) refuse(problem);
-  if (!stack.due && !toMain)
-    return view(ctx, ledger, {
-      step: "restack",
-      extra: { restack: `nothing to do: ${id} is on ${on}'s tip ${short(ledger.base)}` },
-    });
-  if (stack.due === "orphan" && !toMain)
-    refuse(
-      `${on} is ${stack.state}: ${id} lands only after it, or ${restackLine(root, id, " --main")} takes it off`,
-    );
-  const target = toMain || stack.due !== "parent" ? "main" : "parent";
-  const onto = target === "main" ? headOf(root, `refs/heads/${ledger.mainBranch}`) : stack.tip;
-  const ontoName = target === "main" ? ledger.mainBranch : branchOf(on);
-  if (!onto) refuse(`${ontoName} is not a branch here: nothing to restack onto`);
-  const tip = headOf(root, `refs/heads/${ledger.branch}`);
-  const hand = onTarget(root, { onto, base: ledger.base, tip });
-  const again = restackLine(root, id, toMain ? " --main" : "");
-  if (!hand) {
-    const res = rebaseOnto(ledger.worktree, { onto, base: ledger.base, tip });
-    if (!res.ok) {
-      const back = res.restored
-        ? `${ledger.branch} is back at ${short(tip)}`
-        : `but ${ledger.branch} is not back at ${short(tip)} with a clean tree: look at ${ledger.worktree} before anything else`;
-      const files = res.files.length ? ` (${res.files.slice(0, 5).join(", ")})` : "";
-      throw new Stopped(
-        res.stopped
-          ? `${short(res.stopped)} ${res.subject} conflicts on ${ontoName} at ${short(onto)}${files}: aborted, ${back} → resolve it in ${ledger.worktree}: git rebase --onto ${ontoName} ${short(ledger.base)}, then ${again}`
-          : `the rebase onto ${ontoName} at ${short(onto)} failed (${res.reason}): aborted, ${back}`,
-        res.files,
-      );
-    }
-  }
-  const to = headOf(root, `refs/heads/${ledger.branch}`);
-  // By hand, the tip before the move is gone from the branch: the one the lane's checks stood for.
-  const from = hand ? (verifiedTip(ledger) ?? ledger.rounds.at(-1)?.tip ?? tip) : tip;
-  const count = git(root, ["rev-list", "--count", `${onto}..${to}`]);
-  const commits = count.status === 0 ? Number(count.stdout.trim()) : 0;
-  const res = stepWith(ledger, {
-    type: "restack",
-    from,
-    to,
-    base: { from: ledger.base, to: onto },
-    onto: target,
-    parent: on,
-    resolution: hand ? "by hand" : "none",
-    gate: gateOf(spec) !== null,
-    at: now(),
-    ...(hand && { rangeDiff: restackRangeDiff(root, ledger, { from, to, onto }) }),
-  });
-  const next = dispatchNext(ctx, res.ledger, res.dispatch);
-  next.nested = nestedTrees(root, next);
-  ledgers.write(root, next);
-  const where =
-    target === "parent"
-      ? `onto ${on} at ${short(onto)} (was ${short(ledger.base)})`
-      : `onto main at ${short(onto)} without ${on}'s old commits (${stack.state === "merged" ? `${on} landed` : `${on} is ${stack.state}`})`;
-  return view(ctx, next, {
-    step: "restack",
-    nested: next.nested,
-    extra: {
-      restacked: `${where}: ${commits} commit(s), ${hand ? "resolved by hand" : "no conflict"}; tip ${short(from)} → ${short(to)}`,
-      commits,
-      ...(res.reason && { why: res.reason }),
+  const done = restackLane(ctx, ledger, {
+    toMain,
+    dispatch: (next, plan) => {
+      const out = dispatchNext(ctx, next, plan);
+      out.nested = nestedTrees(root, out);
+      return out;
     },
   });
-}
-
-/** A child's restack onto main after its parent landed (`lane merge`), guarded as `restack <id> --main`:
- *  `{ restacked: <commits> }`, `{ conflict: <first path>, why }` (aborted, nothing changed) or
- *  `{ left: <why> }` (refused: an agent out, the gate running, a dirty worktree). */
-export function restackChild(ctx, id) {
-  const root = realpathSync(ctx.root);
-  try {
-    const res = restack({ ...ctx, root, toMain: true }, id);
-    return { restacked: JSON.parse(res.out).commits };
-  } catch (e) {
-    if (e instanceof Stopped) return { conflict: e.files[0] ?? null, why: e.message };
-    if (e instanceof Refusal || e instanceof WriteError) return { left: e.message };
-    throw e;
-  }
+  if (done.nothing) return view(ctx, ledger, { step: "restack", extra: { restack: done.nothing } });
+  return view(ctx, done.ledger, {
+    step: "restack",
+    nested: nestedTrees(root, done.ledger),
+    extra: {
+      restacked: done.restacked,
+      commits: done.commits,
+      ...(done.reason && { why: done.reason }),
+    },
+  });
 }
 
 const HANDLERS = {
