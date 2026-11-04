@@ -672,3 +672,13 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGKILL"])
       "no slot, mutex or temp file left, nothing cleared first",
     );
   });
+
+for (const signal of ["SIGPIPE", "SIGUSR1"])
+  test(`a gate command killed by ${signal} (a signal the watchdog cannot die of) is logged as killed by it, and is red`, () => {
+    const res = runGate(repo.dir, ["sh", "-c", `kill -${signal.slice(3)} $$`], {
+      tier: "full",
+      logFile: log,
+    });
+    assert.notEqual(res.exit, 0);
+    assert.match(readFileSync(log, "utf8"), new RegExp(`sh was killed by ${signal}`));
+  });
