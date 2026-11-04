@@ -65,6 +65,8 @@ export function restackProblem(root, ledger) {
   if (ledger.hold?.for === "guard")
     return `${id} is held by a guard trip: run its report once main is fixed, then restack`;
   if (ledger.hold?.when === "verified") return `${id} is parked verified: resume it, then restack`;
+  if (ledger.hold?.when === "verdict")
+    return `${id} is held at its notes cap: resume or fix --owner, then restack`;
   if (ledger.state !== "held" && !["gate", "close", "merge"].includes(ledger.next)) {
     const round = ledger.rounds.at(-1);
     return `a ${round?.role ?? "build"} round is out (round ${round?.n ?? 0}, next ${ledger.next}): restack when the lane is at its gate, close or merge, or held`;

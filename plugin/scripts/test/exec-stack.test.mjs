@@ -486,3 +486,27 @@ function writeLedgerBack(root, id, changes) {
   const file = ledgerFile(root, id);
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...changes }));
 }
+
+// R1d-38 final N1: the refusal came from the step after the rebase, so the branch had already moved.
+test("restack refuses a lane held at its notes cap before any rebase: the branch tip is unmoved", () => {
+  const r = repo();
+  verified(r, "T1", "one.txt", { close: false });
+  verified(r, "T2", "two.txt", { on: "T1", close: false });
+  commitFile(ledgerOf(r.root, "T1").worktree, "one.txt", "moved\n", "fix: T1 moves");
+  writeLedgerBack(r.root, "T2", {
+    state: "held",
+    next: "resume",
+    hold: {
+      for: "owner",
+      when: "verdict",
+      reason: "notes cap reached with open notes on a flagged item",
+      since: new Date().toISOString(),
+      round: 2,
+    },
+  });
+  const before = state(r.root);
+  const res = lane(r, "restack", "T2", "--main");
+  assert.equal(res.exit, 2, res.out);
+  assert.deepEqual(state(r.root), before, "branch tips, worktrees and ledgers unchanged");
+  assert.match(res.out, /T2 is held at its notes cap: resume or fix --owner, then restack/);
+});
