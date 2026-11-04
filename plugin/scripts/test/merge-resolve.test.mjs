@@ -532,8 +532,33 @@ test("--resolve rolled-back refuses when main changed a planned file with no pic
   assert.equal(res.status, 2, out(res));
   assert.match(
     out(res),
-    /src\/f\.txt changed on main since this land began: check by hand, then --resolve/,
+    /src\/f\.txt changed on main since this land began: check by hand, then --resolve rolled-back --checked$/m,
   );
+  assert.equal(ledgerBytes(), before);
+  // The owner checked it by hand: --checked skips that refusal alone, and says so in the ledger.
+  const checked = merge(ID, "--resolve", "rolled-back", "--checked");
+  assert.equal(checked.status, 0, out(checked));
+  assert.match(
+    checked.stdout,
+    /resolved: no pick on main; .* \(the changed planned files checked by hand\)/,
+  );
+  const ledger = readLedger(root, ID);
+  assert.deepEqual([ledger.state, ledger.merge], ["verified", undefined]);
+  assert.deepEqual([ledger.resolved.as, ledger.resolved.checked], ["rolled-back", true]);
+});
+
+test("--checked never skips the pick checks, and goes with rolled-back only", () => {
+  const { landed } = stuckLand();
+  const before = ledgerBytes();
+  const picked = merge(ID, "--resolve", "rolled-back", "--checked");
+  assert.equal(picked.status, 2, out(picked));
+  assert.match(out(picked), new RegExp(`${landed[0].slice(0, 7)} is on main: not rolled back`));
+  const landedToo = merge(ID, "--resolve", "landed", "--checked");
+  assert.equal(landedToo.status, 2, out(landedToo));
+  assert.match(out(landedToo), /--checked goes with --resolve rolled-back only/);
+  const stray = merge(ID, "--preflight", "--checked");
+  assert.equal(stray.status, 2, out(stray));
+  assert.match(out(stray), /--checked does not go with --preflight/);
   assert.equal(ledgerBytes(), before);
 });
 

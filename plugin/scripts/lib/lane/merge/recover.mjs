@@ -404,7 +404,7 @@ function patchIdsOf(root, revs) {
 // even when the owner resolved its conflict by hand) or names it as `(cherry picked from commit <sha>)`; a
 // first-parent commit since preHead has its patch. When git cannot tell, or main changed a file the picks
 // change, that is the answer: never "none".
-function notRolledBack(root, merge) {
+function notRolledBack(root, merge, checked = false) {
   const landed = merge.landed ?? [];
   const planned = merge.planned ?? [];
   // A revert leaves the pick on main: with picks recorded the way on is the other resolution, and the board
@@ -458,11 +458,12 @@ function notRolledBack(root, merge) {
   const picks = new Set(mine.ids.map((p) => p.patchId));
   const on = main.ids.find((p) => picks.has(p.patchId));
   if (on) return onMain(on.sha);
-  return plannedFilesChanged(root, merge.preHead, planned, cannotTell);
+  return checked ? null : plannedFilesChanged(root, merge.preHead, planned, cannotTell);
 }
 
 // No pick found, yet main changed a file the picks change since the land began (a squash, an amended pick):
-// only the owner can tell, so rolled-back refuses with the files. Null when no planned file changed.
+// only the owner can tell, so rolled-back refuses with the files until they say they checked them
+// (`--checked`). Null when no planned file changed.
 function plannedFilesChanged(root, preHead, planned, cannotTell) {
   const changed = git(root, ["diff", "--name-only", "-z", "--no-renames", preHead, "HEAD", "--"]);
   if (changed.status !== 0)
@@ -479,20 +480,24 @@ function plannedFilesChanged(root, preHead, planned, cannotTell) {
     both.length > 5
       ? `${both.slice(0, 5).join(", ")} and ${both.length - 5} more`
       : both.join(", ");
-  return `${shown} changed on main since this land began: check by hand, then --resolve`;
+  return `${shown} changed on main since this land began: check by hand, then --resolve rolled-back --checked`;
 }
 
 /** `lane merge <id> --resolve landed|rolled-back`: on the owner's call, close a ledger in `merging` a land
  *  cannot finish. `landed`: every recorded pick is on main; the ledger is `merged` with the picks as its
  *  commits and no board commit (the board record is the owner's), or the one a land killed at `recording`
  *  made, when the record proves it. `rolled-back`: no pick is on main; the
- *  ledger's `merge` goes and the lane is `verified` again. Each checks main first and refuses with what it
+ *  ledger's `merge` goes and the lane is `verified` again (`--checked`: the owner checked by hand the planned
+ *  files main changed, so that refusal is skipped and `resolved.checked` recorded). Each checks main first and refuses with what it
  *  found; neither touches main or the board, and the ledger is written once. */
 export function resolveMode(lane) {
   const { root, id, opts } = lane;
   const as = opts["--resolve"];
   if (!RESOLUTIONS.includes(as))
     return done(2, lane, [red("resolve", `--resolve takes landed or rolled-back, not "${as}"`)]);
+  const checked = Boolean(opts["--checked"]);
+  if (checked && as !== "rolled-back")
+    return done(2, lane, [red("resolve", "--checked goes with --resolve rolled-back only")]);
   let ledger;
   try {
     ledger = readLedger(root, id);
@@ -534,7 +539,7 @@ export function resolveMode(lane) {
     return no(
       `${unrecorded.join(", ")} hold this land's board writes, uncommitted: rerun lane merge ${id} to finish the record, or put them back first`,
     );
-  const why = as === "landed" ? notLanded(root, merge) : notRolledBack(root, merge);
+  const why = as === "landed" ? notLanded(root, merge) : notRolledBack(root, merge, checked);
   if (why) return no(why);
   if (as === "landed") {
     const n = merge.landed.length;
@@ -568,11 +573,9 @@ export function resolveMode(lane) {
     return done(0, lane, [ok("resolve", detail, picks), ...kids], next);
   }
   const next = landNext(id);
-  save(lane, { state: "verified", merge: undefined, next });
-  return done(
-    0,
-    lane,
-    [ok("resolve", "resolved: no pick on main; merge cleared, the lane is verified again")],
-    next,
-  );
+  // `merge` goes, so the owner's word that they checked the changed files by hand is kept beside it.
+  const resolved = checked ? { resolved: { as, at: now(), checked: true } } : {};
+  save(lane, { state: "verified", merge: undefined, ...resolved, next });
+  const detail = `resolved: no pick on main; merge cleared, the lane is verified again${checked ? " (the changed planned files checked by hand)" : ""}`;
+  return done(0, lane, [ok("resolve", detail)], next);
 }

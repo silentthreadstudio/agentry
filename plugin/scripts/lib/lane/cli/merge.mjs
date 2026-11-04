@@ -68,7 +68,7 @@ export const help = {
     "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
     "merge <id> --push [--approved]",
     "merge <id> --cleanup [--discard-ignored]",
-    "merge <id> --resolve landed|rolled-back",
+    "merge <id> --resolve landed|rolled-back [--checked]",
   ],
   purpose: "Land one task on main, one mode per call; each prints a step table and the next step.",
   args: { "<id>": "the task's id, any case" },
@@ -87,6 +87,8 @@ export const help = {
     "--discard-ignored": "with --cleanup: also when the worktree holds ignored files",
     "--resolve <landed|rolled-back>":
       "close a land stuck in merging (owner's call): its picks all on main, or none; main and the board untouched",
+    "--checked":
+      "with --resolve rolled-back: you checked by hand the planned files main changed since the land began",
     "--json": "with any mode: print { id, branch, main, rows, next } as one JSON object",
   },
   exits: { 0: "done, next printed", 1: "a red step stopped it", 2: "usage or refusal" },
@@ -100,7 +102,7 @@ const MODES = {
   "--message": ["--branch", "--summary", "--drop-carry"],
   "--push": ["--approved"],
   "--cleanup": ["--discard-ignored"],
-  "--resolve": [],
+  "--resolve": ["--checked"],
 };
 // argv → { id, mode, opts } or { error }.
 function parse(argv) {
