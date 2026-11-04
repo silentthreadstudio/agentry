@@ -1042,6 +1042,45 @@ test("held at the notes cap: owns --add is refused as on a verified lane", () =>
   assert.deepEqual(ledgerOf(r.root, "T3").owned, before);
 });
 
+test("owns --add is refused between a passing verdict and the gate, and after a resumed cap hold", () => {
+  // R1d-38 r4 N7, probe A7: the refusal tested state "verified" only, so next gate let it through.
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  build(out, "three.txt");
+  out = lane(r, "report", "T3").json;
+  writeFileSync(out.reportPath, "All checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.deepEqual(
+    [lane(r, "verdict", "T3").json.state, ledgerOf(r.root, "T3").next],
+    ["verifying", "gate"],
+  );
+  const before = ledgerOf(r.root, "T3").owned;
+  for (const args of [["--apply"], []]) {
+    const refused = lane(r, "owns", "T3", "--add", "x.txt", ...args);
+    assert.equal(refused.exit, 2, refused.stderr);
+    assert.match(
+      refused.stderr,
+      /owns --add is for a lane still building: T3 is past a passing verdict \(PASS\) \(next gate\); a change now is the owner's/,
+    );
+  }
+  assert.deepEqual(ledgerOf(r.root, "T3").owned, before);
+
+  const c = flaggedRepo();
+  assert.equal(noted(c).json.state, "held");
+  assert.equal(lane(c, "resume", "T3", "--note", "ship it").json.next, "gate");
+  const capped = lane(c, "owns", "T3", "--add", "x.txt", "--apply");
+  assert.equal(capped.exit, 2);
+  assert.match(capped.stderr, /T3 is past a passing verdict \(PASS WITH NOTES\) \(next gate\)/);
+});
+
+test("owns --add is taken again once a builder round follows the passing verdict", () => {
+  const r = flaggedRepo({ noteRounds: 1, final: "never" });
+  assert.equal(noted(r).json.next, "gate");
+  assert.equal(lane(r, "fix", "T3", "--notes", "N1").json.next, "fix");
+  const added = lane(r, "owns", "T3", "--add", "x.txt", "--apply");
+  assert.equal(added.exit, 0, added.stderr);
+  assert.equal(added.json.applied, true);
+});
+
 test("held at the notes cap: fix --owner sends it back to its builder, then the recheck", () => {
   const r = flaggedRepo();
   assert.equal(noted(r).json.state, "held");

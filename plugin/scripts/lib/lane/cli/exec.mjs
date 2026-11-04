@@ -111,6 +111,7 @@ import { RestackError, gatingNow, markGating, restackLane } from "../restack.mjs
 import { archive, archiveNumber, carry, leftover, retire, saveWork } from "../restart.mjs";
 import {
   DISPATCHES,
+  PASSES,
   addRound,
   step as advance,
   begin,
@@ -1507,13 +1508,26 @@ function owns(ctx, id) {
   if (set !== null)
     ledger = { ...ledger, owned: withNew(ledger.worktree, [...new Set(paths.map(normalised))]) };
   else {
-    // Past a passing verdict: verified, landing or landed, parked verified, or held at its notes cap.
+    // Past a passing verdict: verified, landing or landed, parked verified, held at its notes cap, or on
+    // to its gate (the last verdict passed and no builder round came after it).
     const capped = ledger.hold?.when === "verdict";
+    const verdict = verdicts(ledger).at(-1);
+    const passed =
+      PASSES.includes(verdict?.verdict) &&
+      !ledger.rounds.some((r) => r.role === "build" && r.n > verdict.n);
     const verified =
-      ["verified", "merging", "merged"].includes(ledger.state) || isVerifiedPark(ledger) || capped;
+      ["verified", "merging", "merged"].includes(ledger.state) ||
+      isVerifiedPark(ledger) ||
+      capped ||
+      passed;
+    const where = capped
+      ? "held at its notes cap"
+      : passed && ledger.state === "verifying"
+        ? `past a passing verdict (${verdict.verdict})`
+        : ledger.state;
     if (verified)
       refuse(
-        `owns --add is for a lane still building: ${id} is ${capped ? "held at its notes cap" : ledger.state} (next ${ledger.next}); a change now is the owner's (${laneLine(root, "fix", id, ' --owner "<the change>"')})`,
+        `owns --add is for a lane still building: ${id} is ${where} (next ${ledger.next}); a change now is the owner's (${laneLine(root, "fix", id, ' --owner "<the change>"')})`,
       );
     // Each path as `start` reads it (a bare name found in the tree), normalised, kept only when no owned
     // entry covers it yet: the guard's own reading (a directory, a glob, a bare name).
