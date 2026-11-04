@@ -3,10 +3,20 @@
 // templates rendering with every slot filled.
 // Run: node --test plugin/scripts/test/brief.test.mjs
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   TEMPLATES,
   citedDecisions,
@@ -28,7 +38,8 @@ import {
   withNew,
 } from "../lib/lane/brief.mjs";
 import { readProcess } from "../lib/process/read.mjs";
-import { commitFile, git, tempRepo } from "./git-repo.mjs";
+import { commitFile, git, gitEnv, tempRepo } from "./git-repo.mjs";
+import { writeSpec } from "./spec-files.mjs";
 
 const temps = [];
 after(() => {
@@ -1202,3 +1213,97 @@ test("policySlots carries the commits rules to a rebase brief only", () => {
   for (const step of [...BUILDER_STEPS, ...VERIFIER_STEPS, "resolve"])
     assert.equal(Object.hasOwn(policySlots(spec, step), "commitRules"), false, step);
 });
+
+// --- the Reword list through the real `lane exec rebase` (the values exec gives renderBrief) -----------
+
+const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
+const EXEC_SPEC = {
+  version: 1,
+  name: "Route",
+  root: "plan",
+  kinds: {
+    task: {
+      label: "Task",
+      at: { table: "BOARD.md", heading: "Tasks" },
+      id: { column: "Task" },
+      fields: { status: { column: "Status" } },
+      status: { field: "status", values: { todo: "planned", doing: "active", done: "done" } },
+      contract: { blocks: ["TASKS.md"] },
+    },
+  },
+  rules: [{ rule: "ids-unique" }],
+  guard: { allow: ["notes/**"] },
+  gate: { tiers: [{ name: "full", command: ["sh", "-c", "test -f out.txt"] }] },
+};
+const EXEC_BOARD = "# R\n\n## Tasks\n\n| Task | Status |\n| ---- | ------ |\n| T1   | todo   |\n";
+const EXEC_TASKS = "# Tasks\n\n- **T1**: owns `out.txt`. Accept: out.txt exists.\n";
+
+/** A repo on `mainName` with a board and a gate, and a HOME for the lane. */
+function execRepo(mainName) {
+  const root = realpathSync(temp());
+  const home = realpathSync(temp());
+  git(root, "init", "-q", "-b", mainName);
+  mkdirSync(join(root, ".agentry"));
+  commitFile(root, ".gitignore", ".agentry/run/\n");
+  commitFile(root, "plan/BOARD.md", EXEC_BOARD);
+  commitFile(root, "plan/TASKS.md", EXEC_TASKS);
+  writeSpec(join(root, ".agentry"), EXEC_SPEC);
+  git(root, "add", ".agentry");
+  git(root, "commit", "-q", "-m", "add the process files");
+  return { root, home };
+}
+const exec = ({ root, home }, ...args) => {
+  const res = spawnSync("node", [LANE, "exec", ...args, "--json", "--root", root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: home },
+  });
+  assert.equal(res.status, 0, `exec ${args.join(" ")}: ${res.stdout}${res.stderr}`);
+  return JSON.parse(res.stdout);
+};
+/** T1's lane built with `subjects` (one commit each), verified and gated green; then the owner adds
+ *  `rules` on main and main moves, and `lane exec rebase T1` writes its brief. Returns it and the commits. */
+function rebaseBrief(mainName, subjects, rules) {
+  const r = execRepo(mainName);
+  const s = exec(r, "start", "T1");
+  const shas = [
+    commitFile(s.worktree, "notes/shared.md", "branch side\n", subjects[0]),
+    commitFile(s.worktree, "out.txt", "made\n", subjects[1]),
+  ];
+  writeFileSync(s.reportPath, "DONE\nadded\nused_memories: none\n");
+  const rep = exec(r, "report", "T1", "--agent", "builder-1");
+  writeFileSync(rep.reportPath, "Checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(exec(r, "verdict", "T1").next, "gate");
+  assert.equal(exec(r, "gate", "T1").next, "close");
+  writeSpec(join(r.root, ".agentry"), { ...EXEC_SPEC, commits: rules });
+  git(r.root, "add", ".agentry");
+  git(r.root, "commit", "-q", "-m", "chore: add commits rules");
+  commitFile(r.root, "notes/shared.md", "main side\n", "chore: main side");
+  return { brief: readFileSync(exec(r, "rebase", "T1").brief, "utf8"), shas };
+}
+
+for (const mainName of ["main", "trunk"]) {
+  test(`[${mainName}] lane exec rebase lists under Reword a commit that breaks the rules, never one that passes`, () => {
+    const { brief, shas } = rebaseBrief(mainName, ["docs: branch side", "feat: add out.txt"], {
+      subjectMax: 72,
+      subjectPattern: "^(feat|fix|chore)(\\([^)]+\\))?: ",
+    });
+    assert.ok(
+      brief.includes(
+        `- reword ${shas[0].slice(0, 7)} "docs: branch side": subject does not match commits.subjectPattern`,
+      ),
+      brief,
+    );
+    assert.ok(!brief.includes(`reword ${shas[1].slice(0, 7)}`), "the passing commit is not listed");
+    assert.match(brief, /no reworded commit, except the ones listed under Reword, no extra commit/);
+    assert.match(brief, new RegExp(`git rebase ${mainName}\` \\(no \`-i\`\\)`));
+  });
+
+  test(`[${mainName}] lane exec rebase with passing commits has no Reword section`, () => {
+    const { brief } = rebaseBrief(mainName, ["docs: branch side", "feat: add out.txt"], {
+      subjectMax: 72,
+      subjectPattern: "^(feat|fix|docs|chore)(\\([^)]+\\))?: ",
+    });
+    assert.doesNotMatch(brief, /Reword|reword \w/);
+    assert.match(brief, /no clean-up, no reworded commit, no extra commit\./);
+  });
+}
