@@ -328,3 +328,64 @@ test("a marker value with a space is a problem naming the step", () => {
     `step 2's marker names model "opus agent: designer": a marker value is one word, and its keys are split by a comma`,
   );
 });
+
+// Round 5's review: code spans as CommonMark reads them, the gate backstop, and list items after the paragraph.
+test("inline and one per line parse alike around escaped, doubled, lone and balanced backticks", () => {
+  const cases = {
+    escaped: ["Print the \\` char → owner OK", "Ship", "Deploy"],
+    doubleSpan: ["Run ``a ` b`` now → owner OK", "Ship", "Deploy"],
+    literal: ["Press the ` key → owner OK", "Ship", "Deploy"],
+    balanced: ["Run `make 2. x` → owner OK", "Ship", "Deploy"],
+  };
+  for (const [name, items] of Object.entries(cases)) {
+    const inline = stepsOf(`- **Steps:** ${items.map((t, i) => `${i + 1}. ${t}`).join(" ")}`);
+    const lines = stepsOf(`- **Steps:**\n${items.map((t, i) => `  ${i + 1}. ${t}`).join("\n")}`);
+    assert.deepEqual(inline, lines, name);
+    assert.equal(inline.steps[0].gate, "owner", name);
+  }
+});
+
+test("a number inside a double-backtick span splits nothing; a span closed earlier lets the next split through", () => {
+  assert.deepEqual(
+    stepsOf("**Steps:** 1. Run ``a ` b 2. c`` now 2. Ship").steps.map((s) => s.text),
+    ["Run ``a ` b 2. c`` now", "Ship"],
+  );
+  assert.deepEqual(
+    stepsOf("**Steps:** 1. Run `make` → owner OK 2. Wire `x 3. y` 3. Ship").steps.map((s) => [
+      s.text,
+      s.gate,
+    ]),
+    [
+      ["Run `make`", "owner"],
+      ["Wire `x 3. y`", null],
+      ["Ship", null],
+    ],
+  );
+});
+
+test("an inline step still holding an owner gate mid-text is a problem naming the step", () => {
+  assert.equal(
+    stepsOf("- **Steps:** 1. Build → owner OK then tidy 2. Ship").problem,
+    "step 1 holds an owner gate mid-text: put each step on its own line",
+  );
+  // One per line keeps today's reading: the gate is the item's end or nothing.
+  assert.equal(stepsOf("- **Steps:**\n  1. Build → owner OK then tidy\n  2. Ship").problem, null);
+});
+
+test("a list item at or left of the label's indent ends the inline paragraph, so a step's marker holds", () => {
+  for (const next of ["- **Note** keep it small", "- Deps: none", "* later", "+ later"])
+    assert.deepEqual(
+      stepsOf(`- **Steps:** 1. a 2. b (model: opus)\n${next}`).steps.at(-1),
+      { n: 2, text: "b", gate: null, accept: [], model: "opus" },
+      next,
+    );
+  assert.equal(
+    stepsOf("**Steps:** 1. a\n2. b").problem,
+    "a numbered line follows the inline steps' paragraph (2. b): keep the steps in one paragraph or put one per line",
+  );
+  // A more indented line still wraps the paragraph, a number at its start included.
+  assert.deepEqual(
+    stepsOf("- **Steps:** 1. a\n  2. b").steps.map((s) => s.text),
+    ["a", "b"],
+  );
+});

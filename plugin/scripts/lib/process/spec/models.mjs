@@ -87,6 +87,8 @@ const NEAR_WORDS = new Set([
   "designer",
 ]);
 const NEAR = 6;
+// A token that reads as a path or a file name: a slash, or a dot between word characters.
+const PATHY = /\/|\w\.\w/;
 
 /** `exec start`'s hint when no step marker and no `**Model…**` bullet names a model but the contract's prose
  *  (outside code fences, code spans and paths) names one of the known model words near "model" or a role
@@ -94,9 +96,12 @@ const NEAR = 6;
 export function proseModelHint(block, steps = []) {
   if (steps.some((s) => s.model) || bulletOf(block, String.raw`model(?: \(verify\))?`)) return null;
   // Prose only: code spans and path-like tokens (`src/opus/model.ts`, `model.ts`) name no model.
+  // Each whitespace-split token is tested on its own, so a long token costs linear time.
   const words = unfenced(block)
     .replace(/`[^`]*`/g, " ")
-    .replace(/\S*(?:\/|\w\.\w)\S*/g, " ")
+    .split(/\s+/)
+    .filter((token) => !PATHY.test(token))
+    .join(" ")
     .toLowerCase()
     .split(/[^a-z]+/)
     .filter(Boolean);

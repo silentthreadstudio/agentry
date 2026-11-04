@@ -95,6 +95,10 @@ test("no prose hint from a model word inside a code span or a path", () => {
     proseModelHint("- **T1**: owns `a.ts`; the builder runs opus.") ?? "",
     /mentions opus/,
   );
+  // One long path token is read once: a 50k-character token takes no visible time.
+  const started = Date.now();
+  assert.equal(proseModelHint(`the builder runs ${"a/".repeat(25000)}opus`), null);
+  assert.ok(Date.now() - started < 1000);
 });
 
 // ---- lane exec start: the printed lines ------------------------------------------------------------
