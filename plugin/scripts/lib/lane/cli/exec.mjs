@@ -75,7 +75,14 @@ import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
 import { escapesRoot, own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { WriteError } from "../../process/write.mjs";
-import { adoptedWork, cleanupSteps, pickOnto, shellWord, source } from "../adopt.mjs";
+import {
+  adoptedWork,
+  cleanupSteps,
+  pickOnto,
+  resolveBranch,
+  shellWord,
+  source,
+} from "../adopt.mjs";
 import {
   appendedAfter,
   bullets,
@@ -2922,6 +2929,11 @@ function restart(ctx, id) {
   const mainBranch = mainBranchOf(root);
   const left = leftover(root, old, spec.cleanup?.disposable ?? []);
   if (left.problem) refuse(left.problem);
+  // The lane branch as the branch list has it, by its exact name: a case twin is refused, and the tip is
+  // never read by name (on a case-insensitive filesystem that can open the twin's loose file).
+  const named = resolveBranch(root, old.branch);
+  if (named.problem && !named.missing) refuse(named.problem);
+  const oldTip = named.tip ?? null;
   if (left.ignored.length)
     refuse(
       `the worktree ${old.worktree} holds ${left.ignored.length} ignored file(s) a restart would delete (${left.ignored.slice(0, 5).join(", ")}): copy what you need out and remove them, or add them to cleanup.disposable, then restart`,
@@ -2945,8 +2957,9 @@ function restart(ctx, id) {
   const n = archiveNumber(root, id);
   const archived = archive(root, id, n);
   const diff = diffIn(archived.runs);
-  const keptName = left.tip ? branchOf(`${id}.${n}`) : null;
+  const keptName = oldTip ? branchOf(`${id}.${n}`) : null;
   let kept = null;
+  let keptTip = null;
   let drop = false;
   const again = (path, base) => {
     const restarted = {
@@ -2961,11 +2974,11 @@ function restart(ctx, id) {
         warnings: [clearVerdict(ctx, id)].filter(Boolean),
         shown: { restarted: `archived as ${id}.${n}; the old branch is kept as ${kept ?? "none"}` },
       };
-    const res = carry(path, { base: old.base, tip: left.tip, diff });
+    const res = carry(path, { base: old.base, tip: oldTip, diff });
     const checked =
-      res.ok && carriesVerified(old, left.tip, work.files)
+      res.ok && carriesVerified(old, oldTip, work.files)
         ? {
-            ...carryCheck(root, id, { base: old.base, tip: left.tip }, base, path),
+            ...carryCheck(root, id, { base: old.base, tip: oldTip }, base, path),
             carriedRounds: carriedVerdicts(old, `${id}.${n}`, archived.runs),
           }
         : null;
@@ -2973,7 +2986,7 @@ function restart(ctx, id) {
     const warnings = checked ? [] : [clearVerdict(ctx, id)].filter(Boolean);
     const report = lastReport(old, archived.runs);
     const carried = {
-      commits: left.commits,
+      commits: oldTip ? left.commits : 0,
       files: work.files.length,
       report,
       ...(work.files.length && { applied: res.applied, diff }),
@@ -2999,7 +3012,7 @@ function restart(ctx, id) {
   };
   // Past the archive nothing is refused: a failure is a stop that says where the old work is.
   try {
-    ({ kept } = retire(root, old, n));
+    ({ kept, tip: keptTip } = retire(root, old, n));
     // The owner's calls are the lane's, not the attempt's: the new ledger keeps them (field 90).
     const withCalls = (path, base) => ({ calls: old.calls ?? [], ...again(path, base) });
     const res = cut({ ...ctx, on: null, cite: old.cite ?? [] }, id, {
@@ -3007,12 +3020,19 @@ function restart(ctx, id) {
       mainBranch,
       again: withCalls,
     });
-    if (drop) git(root, ["branch", "-D", kept]);
+    // At the tip it was kept at, and only while no case twin has appeared: never the twin with it.
+    if (drop && resolveBranch(root, kept).tip === keptTip)
+      git(root, ["update-ref", "-d", `refs/heads/${kept}`, keptTip]);
     return res;
   } catch (e) {
-    const held = [keptName, old.branch].find((b) => b && headOf(root, `refs/heads/${b}`));
+    // Read from the branch list by exact name, as every step back is printed: `update-ref` at the listed
+    // tip, which git refuses when the ref holds anything else (a delete or rename by name could take a
+    // case twin).
+    const tips = branchTips(root);
+    const held = [keptName, old.branch].find((b) => b && tips.has(b));
+    const ref = (b) => shellWord(`refs/heads/${b}`);
     // A new branch left beside the kept one holds only copies of its work.
-    const copy = held && held !== old.branch && headOf(root, `refs/heads/${old.branch}`);
+    const copy = held && held !== old.branch && tips.get(old.branch);
     // The steps back by hand: the old branch out of the new one's way (a stop before the rename leaves it
     // under its own name), the start, then (for a carry) the old commits and the saved diff.
     const unrenamed = keptName && held === old.branch;
@@ -3020,8 +3040,13 @@ function restart(ctx, id) {
     // step that clears it named.
     const unclear = clearVerdict(ctx, id);
     const steps = [
-      ...(copy ? [`git branch -D ${old.branch}`] : []),
-      ...(unrenamed ? [`git branch -m ${old.branch} ${keptName}`] : []),
+      ...(copy ? [`git update-ref -d ${ref(old.branch)} ${copy}`] : []),
+      ...(unrenamed
+        ? [
+            `git update-ref ${ref(keptName)} ${tips.get(held)} ''`,
+            `git update-ref -d ${ref(old.branch)} ${tips.get(held)}`,
+          ]
+        : []),
       laneLine(root, "start", id),
       ...(withWork && held && keptName && left.commits
         ? [`in its worktree git cherry-pick ${short(old.base)}..${keptName}`]

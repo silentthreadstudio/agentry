@@ -269,7 +269,8 @@ test("a restart stopped before the rename names the rename first and keeps the p
   assert.deepEqual(
     steps.map((s) => s.replace(/^.*exec start T3 --root .*$/, "START")),
     [
-      "git branch -m agentry/T3 agentry/T3.1",
+      `git update-ref refs/heads/agentry/T3.1 ${oldTip} ''`,
+      `git update-ref -d refs/heads/agentry/T3 ${oldTip}`,
       "START",
       `in its worktree git cherry-pick ${base}..agentry/T3.1`,
       `git apply --3way ${diff}`,
@@ -277,7 +278,8 @@ test("a restart stopped before the rename names the rename first and keeps the p
     out,
   );
   git(r.root, "branch", "-D", "agentry/T3.1/x"); // "fix that"
-  git(r.root, "branch", "-m", "agentry/T3", "agentry/T3.1");
+  git(r.root, "update-ref", "refs/heads/agentry/T3.1", oldTip, "");
+  git(r.root, "update-ref", "-d", "refs/heads/agentry/T3", oldTip);
   assert.equal(tipOf(r.root, "agentry/T3.1"), oldTip);
   const started = lane(r, "start", "T3");
   assert.equal(started.exit, 0, started.stderr);
@@ -450,6 +452,7 @@ test(
     chmodSync(board, 0o444); // the dispatched write fails once the carry is done
     const res = spawnLane(r, ["exec", "restart", "T3", "--carry"]);
     chmodSync(board, 0o644);
+    const newTip = tipOf(r.root, "agentry/T3");
     const out = res.stdout + res.stderr;
     assert.equal(res.status, 1, out);
     const runs = join(processDir(r.root), "runs", "T3.1");
@@ -467,14 +470,14 @@ test(
     assert.deepEqual(
       steps.map((s) => s.replace(/^.*exec start T3 --root .*$/, "START")),
       [
-        "git branch -D agentry/T3",
+        `git update-ref -d refs/heads/agentry/T3 ${newTip}`,
         "START",
         `in its worktree git cherry-pick ${base}..agentry/T3.1`,
         `git apply --3way ${diff}`,
       ],
       out,
     );
-    git(r.root, "branch", "-D", "agentry/T3");
+    git(r.root, "update-ref", "-d", "refs/heads/agentry/T3", newTip);
     const started = lane(r, "start", "T3");
     assert.equal(started.exit, 0, started.stderr);
     git(started.json.worktree, "cherry-pick", `${base}..agentry/T3.1`);
@@ -893,4 +896,108 @@ test("a recheck whose verifier comes from a carried round runs fresh; one of the
   assert.equal(sayVerdict(r, out, "FAIL", "verifier-2").next, "fix");
   out = fixed(r, "fixed once");
   assert.deepEqual([out.next, out.mode, out.agent], ["recheck", "resume", "verifier-2"]);
+});
+
+// ---- the lane branch by its exact listed name, never by a spelling the list did not give (S50) ----
+
+const branchRefs = (root) =>
+  git(root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/");
+// A loose case twin `name` at main's tip beside the packed refs: what a case twin looks like on APFS.
+function packedTwin(root, name) {
+  git(root, "pack-refs", "--all");
+  git(root, "update-ref", `refs/heads/${name}`, tipOf(root, "main"));
+}
+const REAL_GIT = process.env.PATH.split(":")
+  .map((dir) => join(dir, "git"))
+  .find((file) => existsSync(file));
+/** `lane exec <args>` with a `git` on PATH that, right after the first git call whose argv matches `on`,
+ *  makes the loose case twin `twin` at main's tip beside the packed refs: a twin made mid-call. */
+function laneWithTwinAfter(r, on, twin, ...args) {
+  const dir = temp("restart-shim-");
+  const mark = join(dir, "mark");
+  writeFileSync(mark, "");
+  writeFileSync(
+    join(dir, "git"),
+    `#!/bin/bash
+"${REAL_GIT}" "$@"; st=$?
+if [ -f "${mark}" ] && [[ "$*" =~ $TWIN_ON ]]; then
+  rm -f "${mark}"
+  "${REAL_GIT}" -C "${r.root}" pack-refs --all
+  "${REAL_GIT}" -C "${r.root}" update-ref "refs/heads/${twin}" "$("${REAL_GIT}" -C "${r.root}" rev-parse main)"
+fi
+exit $st
+`,
+  );
+  chmodSync(join(dir, "git"), 0o755);
+  const res = spawnSync("node", [LANE, "exec", ...args, "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home, PATH: `${dir}:${process.env.PATH}`, TWIN_ON: on },
+  });
+  assert.equal(existsSync(mark), false, `no git call matched ${on}`);
+  return { exit: res.status, out: res.stdout + res.stderr };
+}
+
+test("restart and restart --carry refuse a lane branch with a case twin: nothing written, neither ref moved", () => {
+  const r = repo();
+  const old = worked(r);
+  packedTwin(r.root, "agentry/t3");
+  const [refs, ledger, status] = [
+    branchRefs(r.root),
+    readFileSync(ledgerFile(r.root, "T3"), "utf8"),
+    git(old.worktree, "status", "--porcelain"),
+  ];
+  for (const args of [
+    ["restart", "T3"],
+    ["restart", "T3", "--carry"],
+  ]) {
+    const res = lane(r, ...args);
+    assert.equal(res.exit, 2, res.stderr);
+    assert.match(res.stderr, /agentry\/T3 has a case twin agentry\/t3: rename one first/);
+    assert.equal(branchRefs(r.root), refs);
+    assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
+    assert.equal(git(old.worktree, "status", "--porcelain"), status);
+    assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+  }
+});
+
+test("a case twin made once the worktree is gone stops the restart before the rename: the twin is untouched", () => {
+  const r = repo();
+  worked(r);
+  const oldTip = tipOf(r.root, "agentry/T3");
+  const res = laneWithTwinAfter(r, "worktree remove", "agentry/t3", "restart", "T3", "--carry");
+  assert.equal(res.exit, 1, res.out);
+  assert.match(res.out, /agentry\/T3 has a case twin agentry\/t3: rename one first/);
+  assert.doesNotMatch(res.out, /branch -[Dm]/);
+  const refs = branchRefs(r.root);
+  assert.ok(refs.includes(`refs/heads/agentry/T3 ${oldTip}`), refs);
+  assert.ok(refs.includes(`refs/heads/agentry/t3 ${tipOf(r.root, "main")}`), refs);
+  assert.ok(!refs.includes("agentry/T3.1"), refs);
+});
+
+test("a case twin of the kept branch made during the carry is never deleted with it", () => {
+  const r = repo();
+  worked(r);
+  const oldTip = tipOf(r.root, "agentry/T3");
+  const res = laneWithTwinAfter(r, "cherry-pick", "agentry/t3.1", "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.out);
+  const refs = branchRefs(r.root);
+  assert.ok(refs.includes(`refs/heads/agentry/T3.1 ${oldTip}`), refs);
+  assert.ok(refs.includes(`refs/heads/agentry/t3.1 ${tipOf(r.root, "main")}`), refs);
+});
+
+test("a packed lane branch is kept at its listed tip as agentry/T3.1, and a clean --carry drops it", () => {
+  const plain = repo();
+  worked(plain);
+  const oldTip = tipOf(plain.root, "agentry/T3");
+  git(plain.root, "pack-refs", "--all");
+  assert.equal(lane(plain, "restart", "T3").exit, 0);
+  assert.equal(tipOf(plain.root, "agentry/T3.1"), oldTip);
+  assert.equal(tipOf(plain.root, "agentry/T3"), tipOf(plain.root, "main"));
+  const carried = repo();
+  worked(carried);
+  git(carried.root, "pack-refs", "--all");
+  const res = lane(carried, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(hasRef(carried.root, "refs/heads/agentry/T3.1"), false);
+  assert.equal(git(carried.root, "log", "-1", "--format=%s", "agentry/T3"), "feat: three");
 });

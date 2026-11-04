@@ -7,7 +7,7 @@
 // saveWork(worktree, file) -> { files } | { error }      the uncommitted diff (untracked files too) to `file`
 // archiveNumber(root, id) -> n                           the first number no archive or kept branch holds
 // archive(root, id, n) -> { runs, ledger }               the ledger and run dir moved to `<id>.<n>`
-// retire(root, ledger, n) -> { kept: branch | null }     worktree removed, branch renamed `agentry/<id>.<n>`
+// retire(root, ledger, n) -> { kept: branch | null, tip }   worktree removed, branch renamed `agentry/<id>.<n>`
 // carry(worktree, { base, tip, diff }) -> { ok, conflict? }   cherry-pick base..tip (none when the range is
 //                                                         empty), then `git apply --3way`
 import {
@@ -19,6 +19,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { branchTips } from "../process/git.mjs";
+import { resolveBranch, shellWord } from "./adopt.mjs";
 import { applyPatch, asidePatch } from "./carry-io.mjs";
 import { commitOf, currentBranch, disposableMatcher, subjectOf } from "./land.mjs";
 import { branchOf, git, ignoredFiles, porcelain, remove } from "./worktree.mjs";
@@ -121,18 +123,33 @@ export function archive(root, id, n) {
 }
 
 /** Take down the old lane's worktree (its uncommitted work saved, its ignored files checked by `leftover`)
- *  and keep its branch as `agentry/<id>.<n>`: `{ kept }`, the kept branch or null when there was none.
- *  Throws when git refuses. */
+ *  and keep its branch as `agentry/<id>.<n>`: `{ kept, tip }`, the kept branch and its tip, or `{ kept:
+ *  null }` when no listed branch has the lane's exact name. The tip is the listed one (`resolveBranch`),
+ *  and the rename is `update-ref` of the new ref at that tip (refused when it exists) then `update-ref -d`
+ *  of the old one at it, never `branch -m` or a read by name: on a case-insensitive filesystem those can
+ *  open, and move, another branch that differs only in case. Throws when either name has a case twin, or
+ *  when git refuses. */
 export function retire(root, ledger, n) {
   const res = remove(root, { path: ledger.worktree, branch: null, force: true });
   if (!res.removed)
     throw new Error(`the worktree ${ledger.worktree} was not removed: ${res.reason}`);
-  if (!commitOf(root, `refs/heads/${ledger.branch}`)) return { kept: null };
+  const tips = branchTips(root);
+  const named = resolveBranch(root, ledger.branch, tips);
+  if (named.missing) return { kept: null };
+  if (named.problem) throw new Error(named.problem);
+  const { tip } = named;
   const kept = branchOf(`${ledger.id}.${n}`);
-  const moved = git(root, ["branch", "-m", ledger.branch, kept]);
-  if (moved.status !== 0)
-    throw new Error(`git branch -m ${ledger.branch} ${kept}: ${first(moved.stderr)}`);
-  return { kept };
+  const clash = [...tips.keys()].find((b) => b.toLowerCase() === kept.toLowerCase());
+  if (clash) throw new Error(`${clash} would be a case twin of ${kept}: rename it first`);
+  for (const args of [
+    ["update-ref", `refs/heads/${kept}`, tip, ""],
+    ["update-ref", "-d", `refs/heads/${ledger.branch}`, tip],
+  ]) {
+    const moved = git(root, args);
+    if (moved.status !== 0)
+      throw new Error(`git ${args.map(shellWord).join(" ")}: ${first(moved.stderr)}`);
+  }
+  return { kept, tip };
 }
 
 /** Carry the old branch's work into `worktree`: cherry-pick `base..tip` (oldest first; a branch with no
