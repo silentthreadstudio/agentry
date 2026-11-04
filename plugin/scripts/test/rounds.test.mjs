@@ -542,6 +542,56 @@ test("notes are refused unless the lane is verified PASS WITH NOTES, before it c
   assert.throws(() => step(merged, { type: "notes", notes: ["N1"] }), refused);
 });
 
+// ---- the owner sends a verified lane back (field 77) -----------------------------------------------
+
+const owner = (note = "rename it") => ({ type: "owner", note, at: "t1" });
+
+test("owner on a verified lane → fix (resume the last builder) with the change, recorded in ownerFixes", () => {
+  const verified = go(go(lane(), report("DONE", ok, { agent: "builder-1" })).ledger, {
+    ...judge("PASS", TIP, { agent: "verifier-1" }),
+  }).ledger;
+  const closed = step(verified, { type: "gate", record: green() }).ledger;
+  for (const ready of [closed, { ...closed, next: "merge" }]) {
+    const res = go(ready, owner());
+    assert.equal(res.next, "fix");
+    const round = res.ledger.rounds.at(-1);
+    assert.deepEqual(
+      [round.n, round.role, round.mode, round.agent, round.owner],
+      [3, "build", "resume", "builder-1", { note: "rename it", at: "t1" }],
+    );
+    assert.deepEqual(res.ledger.ownerFixes, [{ note: "rename it", at: "t1", round: 3 }]);
+    assert.equal(res.ledger.state, "fixing");
+    // Its report goes as any fix's: the last verifier rechecks it.
+    const rechecked = go(res.ledger, report("DONE"));
+    assert.deepEqual(
+      [rechecked.next, rechecked.ledger.rounds.at(-1).agent],
+      ["recheck", "verifier-1"],
+    );
+  }
+});
+
+test("owner on a lane its route sent past the verifier → after the fix, the gate on the new tip", () => {
+  const gated = go(lane(), report("DONE", ok, { skipVerify: true, gate: true, tip: TIP })).ledger;
+  const closed = step(gated, { type: "gate", record: green() }).ledger;
+  assert.equal(closed.next, "close");
+  const sent = go(closed, owner()).ledger;
+  const res = step(sent, report("DONE", ok, { skipVerify: true, gate: true, tip: MOVED }));
+  assert.deepEqual([res.next, res.ledger.gateTip], ["gate", MOVED]);
+  assert.deepEqual(
+    step(res.ledger, { type: "gate", record: green(MOVED) }).ledger.closedTip,
+    MOVED,
+  );
+});
+
+test("owner is refused unless the lane is verified with close or merge next", () => {
+  const refused = /the owner's fix is for a verified lane/;
+  assert.throws(() => step(lane(), owner()), refused);
+  const gateNext = go(go(lane(), report("DONE")).ledger, judge("PASS")).ledger;
+  assert.equal(gateNext.next, "gate");
+  assert.throws(() => step(gateNext, owner()), refused);
+  assert.throws(() => step({ ...gateNext, state: "merged", next: null }, owner()), refused);
+});
+
 // ---- steps, runs and the owner's holds (fields 47, 48, 54) -------------------------------------------
 
 const AT = "2026-11-03T10:00:00.000Z";

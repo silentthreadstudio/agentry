@@ -8,6 +8,8 @@
 //   gate <id>                 run the repo's gate in the worktree and record it (exit 1 when red)
 //   fix <id> --notes N1,N3    a verified lane (PASS WITH NOTES): a builder round on those notes, then recheck
 //                             (at most `exec.noteRounds` of them)
+//   fix <id> --owner "<text>" a verified lane the owner sends back: a builder round on the change, then the
+//                             lane's route (the gate where the route skipped the verifier, else a recheck)
 //   rebase <id>               a verified lane whose branch no longer lands: its builder rebases it onto main,
 //                             then a verifier reads the resolution (`exec.rebase: "recheck"`) or the gate
 //   reverify <id>             a lane closed with no verifier (the route skipped it): one fresh verifier
@@ -61,6 +63,7 @@ import {
   notesSection,
   outsideOwns,
   ownedFiles,
+  ownerChange,
   ownsTestsWithoutFile,
   policySlots,
   shellQuote as q,
@@ -72,6 +75,7 @@ import {
   suggestBuilder,
   unknownCites,
   withNew,
+  withSection,
 } from "../brief.mjs";
 import {
   answerLabel,
@@ -122,14 +126,14 @@ const STEPS = [
   "reverify",
 ];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--cite <A40,A41>] [--set <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
     report: "read the builder's report, run the guards, brief the next round",
     verdict: "read the verifier's report, write the verdict, brief the next round",
     gate: "run the repo's gate in the worktree and record it",
-    fix: "after PASS WITH NOTES: a builder round on the named notes, then a recheck",
+    fix: "after PASS WITH NOTES: a builder round on the named notes, then a recheck; or the owner's change (--owner)",
     close: "print the episode payload (--episode stamps the id episode_write gave)",
     show: "the ledger and the pending step, for a cold resume",
     owns: "the owned files every brief names, parsed once at start (--set replaces them)",
@@ -145,6 +149,7 @@ export const help = {
       "report and verdict: the agent that answered, so a later round resumes it; hold: the builder out on the round",
     "--episode <episode id>": "close: the id episode_write returned",
     "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
+    "--owner <text>": "fix: the owner's change to a verified lane, for one builder round",
     "--cite <A40,A41>":
       "start: decisions to quote in every brief, by id (rows naming the task are quoted anyway)",
     "--set <paths>": "owns: the comma-separated owned files to use from now on",
@@ -165,6 +170,7 @@ const STEPS_OF = {
   "--agent": ["report", "verdict", "hold"],
   "--episode": ["close"],
   "--notes": ["fix"],
+  "--owner": ["fix"],
   "--cite": ["start"],
   "--set": ["owns"],
   "--apply": ["owns"],
@@ -184,7 +190,7 @@ const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
-// argv → { step, id, value, set, cite, apply, json, holdFor, evidence, note, redo, fresh } or { error }.
+// argv → { step, id, value, set, cite, apply, json, holdFor, evidence, note, owner, redo, fresh } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
   const words = [];
@@ -209,7 +215,8 @@ function parse(argv) {
   for (const flag of Object.keys(given))
     if (flag !== "--json" && !STEPS_OF[flag].includes(step))
       return { error: `${step} takes no ${flag}` };
-  if (step === "fix" && given["--notes"] === undefined) return { error: "fix needs --notes N1,N3" };
+  if (step === "fix" && (given["--notes"] === undefined) === (given["--owner"] === undefined))
+    return { error: 'fix needs --notes N1,N3 or --owner "<the change>", one of them' };
   if (given["--apply"] && given["--set"] === undefined)
     return { error: "--apply writes the --set list: give --set <paths>" };
   return {
@@ -223,6 +230,7 @@ function parse(argv) {
     holdFor: given["--for"] ?? null,
     evidence: given["--evidence"] ?? null,
     note: given["--note"] ?? null,
+    owner: given["--owner"] ?? null,
     redo: Boolean(given["--redo"]),
     fresh: Boolean(given["--fresh"]),
   };
@@ -756,7 +764,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
     recheck: dispatch.step === "recheck" && fresh,
     picked: !!picked,
     pickedNotes: picked ? noteLines(picked.from, picked.notes) : "",
-    fail: dispatch.step === "fix" && !dispatch.guard && !dispatch.notes && fresh,
+    fail: dispatch.step === "fix" && !dispatch.guard && !dispatch.notes && !dispatch.owner && fresh,
     guard: !!dispatch.guard && fresh,
     needed: dispatch.step === "needs-context" && fresh,
     builderReport: builder?.reportPath ?? "none",
@@ -777,9 +785,19 @@ function brief({ root, spec, model }, ledger, dispatch) {
       fresh,
     }),
   };
+  // The owner's change: in its fix round's brief, and the recheck's after it (field 77).
+  const owner =
+    dispatch.step === "fix"
+      ? dispatch.owner
+      : dispatch.step === "recheck" && fresh
+        ? builder?.owner
+        : null;
   const file = join(dir, `${name}.md`);
-  const text = renderBrief(dispatch.step, values);
-  writeFileSync(file, dispatch.step === "fix" && picked ? withNotesToFix(text, picked) : text);
+  let text = renderBrief(dispatch.step, values);
+  if (dispatch.step === "fix" && picked) text = withNotesToFix(text, picked);
+  if (owner)
+    text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
+  writeFileSync(file, text);
   return { brief: file, reportPath: values.reportPath, tip, at: now() };
 }
 
@@ -1572,15 +1590,13 @@ function withNotesToFix(text, { from, notes }) {
     noteLines(from, notes),
     "",
   ].join("\n");
-  const at = text.indexOf("\n## ");
-  return at === -1
-    ? `${text}\n${section}`
-    : `${text.slice(0, at + 1)}${section}\n${text.slice(at + 1)}`;
+  return withSection(text, section);
 }
 
 // A verified lane (PASS WITH NOTES) goes back to its builder for the notes the conductor names; the rounds
 // after it are the usual recheck. The board is not written: the next verdict is.
 function fix(ctx, id, given) {
+  if (ctx.owner !== null) return ownerFix(ctx, id);
   const { root } = ctx;
   const ledger = mustLedger(root, id);
   const labels = [...new Set(given.split(",").map((n) => n.trim().toUpperCase()))];
@@ -1607,6 +1623,32 @@ function fix(ctx, id, given) {
     step: "fix",
     nested: next.nested,
     extra: { notes: labels, ...(res.reason && { why: res.reason }) },
+  });
+}
+
+// The owner sends a verified lane back with a change (field 77): one builder round on it (the lane's last
+// builder resumed, a fresh one with the brief when none can be), then the lane's own route. Recorded in
+// `ownerFixes[]`; the board is not written until the work is built again.
+function ownerFix(ctx, id) {
+  const { root, spec, owner } = ctx;
+  if (!owner.trim()) refuse(`--owner needs the owner's change, in words`);
+  const ledger = mustLedger(root, id);
+  if (ledger.state === "merged") refuse(`${id} is merged: the owner's change is a new task`);
+  if (expects(ledger) === "report")
+    refuse(
+      `a builder is out on round ${ledger.rounds.at(-1).n} (${ledger.next}): report it first (${laneLine(root, "report", id)})`,
+    );
+  if (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next))
+    refuse(`fix --owner is for a verified lane: ${id} is ${ledger.state} (next ${ledger.next})`);
+  refuseAtWriterCap(root, spec);
+  const res = stepWith(ledger, { type: "owner", note: owner, at: now() });
+  const next = dispatchNext(ctx, res.ledger, res.dispatch);
+  next.nested = nestedTrees(root, next);
+  ledgers.write(root, next);
+  return view(ctx, next, {
+    step: "fix",
+    nested: next.nested,
+    extra: { owner: next.ownerFixes.at(-1), why: res.reason },
   });
 }
 
@@ -1763,6 +1805,7 @@ function episodeOf(ledger) {
     `nested worktrees: ${ledger.nested?.length ?? 0}`,
     `verify route: ${routeText(ledger.route)}`,
     ...(ownerHolds(ledger) ? [`owner holds: ${ownerHolds(ledger)}`] : []),
+    ...(ledger.ownerFixes?.length ? [`owner fixes: ${ledger.ownerFixes.length}`] : []),
     ...(ledger.rebases?.length ? [`rebases: ${ledger.rebases.length}`] : []),
     ...(ledger.openNotes?.length ? [`open notes: ${ledger.openNotes.join(" | ")}`] : []),
   ].join("; ");

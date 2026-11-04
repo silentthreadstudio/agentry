@@ -1123,3 +1123,108 @@ test("two lanes on one file: the second's land conflicts, rebases past the first
   assert.equal(again.status, 0, again.stdout + again.stderr);
   assert.equal(readFileSync(join(r.root, "out.txt"), "utf8"), "T2 side\nT1 side\n");
 });
+
+// ---- the owner sends a verified lane back (field 77) -----------------------------------------------
+
+const ISO = "\\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z";
+// The owner's change made in the worktree, and the builder's report on it.
+function ownerBuild(out) {
+  commitFile(out.worktree, "owner.txt", "changed\n", "feat: the owner's change");
+  writeFileSync(out.reportPath, "DONE\nmade the owner's change\nused_memories: none\n");
+}
+
+test("fix --owner on a verified lane: one round for its builder quoting the change, then a recheck by the last verifier", () => {
+  const r = repo();
+  const started = lane(r, "start", "T1");
+  build(started.json);
+  const verify = lane(r, "report", "T1", "--agent", "builder-1").json;
+  judge(verify, "PASS");
+  assert.equal(lane(r, "verdict", "T1", "--agent", "verifier-1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+
+  const sent = lane(r, "fix", "T1", "--owner", "Rename the button\nto Save");
+  assert.equal(sent.exit, 0, sent.stderr);
+  assert.deepEqual(
+    [sent.json.next, sent.json.state, sent.json.mode, sent.json.agent],
+    ["fix", "fixing", "resume", "builder-1"],
+  );
+  const brief = readFileSync(sent.json.brief, "utf8");
+  assert.match(
+    brief,
+    new RegExp(
+      `## The owner's change\\n\\nThe owner sent the verified lane back at ${ISO}:\\n\\n> Rename the button\\n> to Save\\n\\nMake exactly that change`,
+    ),
+  );
+  assert.doesNotMatch(brief, /## Fix list/, "no verifier's FAIL to fix");
+  const fixes = ledgerOf(r.root, "T1").ownerFixes;
+  assert.equal(fixes.length, 1);
+  assert.deepEqual([fixes[0].note, fixes[0].round], ["Rename the button\nto Save", 3]);
+  assert.match(fixes[0].at, new RegExp(`^${ISO}$`));
+  assert.equal(ledgerOf(r.root, "T1").rounds.at(-1).n, 3);
+
+  ownerBuild(sent.json);
+  const recheck = lane(r, "report", "T1", "--agent", "builder-1").json;
+  assert.deepEqual(
+    [recheck.next, recheck.mode, recheck.agent],
+    ["recheck", "resume", "verifier-1"],
+  );
+  assert.match(
+    readFileSync(recheck.brief, "utf8"),
+    /## The owner's change\n[\s\S]*> to Save\n\nThe builder's round you check made that change/,
+  );
+  judge(recheck, "PASS");
+  // Then the lane's own route: under the standard final "after-fix", a recheck that passed no note sent
+  // back is followed by a final verifier, as after any fix.
+  const final = lane(r, "verdict", "T1").json;
+  assert.equal(final.next, "final");
+  judge(final, "PASS");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  assert.match(lane(r, "close", "T1").json.episode.outcome, /; owner fixes: 1/);
+});
+
+test("fix --owner under a route that skipped the verifier: the gate on the new tip, then close; a fresh builder when none can be resumed", () => {
+  const r = repo({ exec: { verify: "flagged" } });
+  const started = lane(r, "start", "T1");
+  build(started.json);
+  assert.equal(lane(r, "report", "T1").json.next, "gate");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  assert.equal(lane(r, "close", "T1").json.next, "merge");
+  const before = ledgerOf(r.root, "T1").closedTip;
+
+  const sent = lane(r, "fix", "T1", "--owner", "one more line");
+  assert.equal(sent.exit, 0, sent.stderr);
+  assert.deepEqual([sent.json.next, sent.json.mode], ["fix", "fresh"]);
+  ownerBuild(sent.json);
+  const built = lane(r, "report", "T1").json;
+  assert.equal(built.next, "gate", "no verifier: the gate checks the new tip");
+  const tip = git(sent.json.worktree, "rev-parse", "HEAD");
+  assert.notEqual(tip, before);
+  assert.equal(ledgerOf(r.root, "T1").gateTip, tip);
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  assert.equal(ledgerOf(r.root, "T1").closedTip, tip);
+});
+
+test("fix --owner is refused with no text, with --notes, while a builder is out, and on a merged lane", () => {
+  const r = repo();
+  const started = lane(r, "start", "T1");
+  const both = lane(r, "fix", "T1", "--owner", "x", "--notes", "N1");
+  assert.equal(both.exit, 2);
+  assert.match(both.stderr, /fix needs --notes N1,N3 or --owner "<the change>", one of them/);
+  const out = lane(r, "fix", "T1", "--owner", "x");
+  assert.equal(out.exit, 2);
+  assert.match(out.stderr, /a builder is out on round 1 \(build\): report it first/);
+  build(started.json);
+  judge(lane(r, "report", "T1").json, "PASS");
+  lane(r, "verdict", "T1");
+  lane(r, "gate", "T1");
+  const blank = lane(r, "fix", "T1", "--owner", "  ");
+  assert.equal(blank.exit, 2);
+  assert.match(blank.stderr, /--owner needs the owner's change/);
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  writeFileSync(file, JSON.stringify({ ...ledgerOf(r.root, "T1"), state: "merged", next: null }));
+  const merged = lane(r, "fix", "T1", "--owner", "x");
+  assert.equal(merged.exit, 2);
+  assert.match(merged.stderr, /T1 is merged: the owner's change is a new task/);
+  assert.equal(ledgerOf(r.root, "T1").ownerFixes, undefined);
+});

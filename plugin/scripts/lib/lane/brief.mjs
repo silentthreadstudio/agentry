@@ -28,6 +28,8 @@
 //   recheckSlots    what a recheck, rebase and resolve brief name: the notes sent back, main's branch and
 //                   the range-diff the resolve check reads
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
+//   withSection     a rendered brief with a section put in before its first `## ` section
+//   ownerChange     the owner's change a verified lane was sent back with, as a builder's or verifier's section
 //
 // Reads the board's files and the memory store; writes nothing. Node built-ins only.
 import { execFileSync } from "node:child_process";
@@ -757,6 +759,37 @@ export function stepSlots({ steps = [], stepRun = null, holds = [], step, fresh 
     approved: approvals.length > 0,
     approvals: approvals.map((h) => `- ${answerLine(h, total)}`).join("\n"),
   };
+}
+
+/** `text` (a rendered brief) with `section` put in before its first `## ` section, or at the end. */
+export function withSection(text, section) {
+  const at = text.indexOf("\n## ");
+  return at === -1
+    ? `${text}\n${section}`
+    : `${text.slice(0, at + 1)}${section}\n${text.slice(at + 1)}`;
+}
+
+/** The `## The owner's change` section (field 77): the owner's words quoted with their time, and for
+ *  `role` "build" what to do with them, for "verify" how to judge the round that made them. */
+export function ownerChange({ note, at }, role) {
+  const quoted = String(note)
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`.trimEnd())
+    .join("\n");
+  const what =
+    role === "build"
+      ? "Make exactly that change, each behavior with a committed test, and leave the rest of the work as it is."
+      : "The builder's round you check made that change: judge it as the owner's call, and the rest against the contract.";
+  return [
+    "## The owner's change",
+    "",
+    `The owner sent the verified lane back at ${at}:`,
+    "",
+    quoted,
+    "",
+    what,
+    "",
+  ].join("\n");
 }
 
 /** A list as brief lines (`- item`), or `none`. */

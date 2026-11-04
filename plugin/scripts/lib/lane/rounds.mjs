@@ -26,6 +26,10 @@
 //                                             recheck; at the budget (0 under lean) refused: the lane goes on to
 //                                             gate / close with its notes kept open
 //   verified (next close or merge): { type: "rebase" } → rebase (resume the last builder)
+//   verified (next close or merge): { type: "owner", note, at } → fix (resume the last builder) on the owner's
+//                                             change, `ownerFixes[]` recording it; its report goes as any fix's:
+//                                             the gate on the new tip under a route that skipped the verifier,
+//                                             else a recheck by the last verifier
 //   verified, the branch already moved: { type: "rebased", tip, changed } → as a rebase report below
 //   rebase: DONE*, guards hold, `changed`, route rebase "recheck" → resolve (a fresh verifier)
 //   rebase: DONE*, guards hold, otherwise   → gate on the new tip, or close when green on it
@@ -56,7 +60,7 @@
 // owner, who ends it with a resume; the owner's answers spend no budget.
 //
 // A round in the ledger: { n, step, role, mode, final?, resend?, guard?, agent?, from?, reason?,
-// stepRun?, redo?, brief, reportPath, tip, at } plus, once reported, { report, status | verdict, void?,
+// stepRun?, redo?, owner?, brief, reportPath, tip, at } plus, once reported, { report, status | verdict, void?,
 // summary?, guards?, covered?, onlyFixCommits? }, or `held: true` when the lane was held before its report
 // was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }` (a parked verified
 // lane `{ for: "later", when: "verified", next, evidence, since, why? }`); each resume appends its answer to
@@ -242,6 +246,7 @@ const resend = (ledger, round, reason) =>
  *   { type: "resume", note, redo?, at, skipVerify?, tip, gate, tier? }
  *   { type: "rebase" } / { type: "rebased", tip, changed, gate, tier? } / { type: "reverify" }
  *                              (a verified lane: rebased by its builder, already rebased, or verified late)
+ *   { type: "owner", note, at } (a verified lane the owner sends back with a change)
  *
  * `tier` is the gate tier the build role runs: a green record of it on the tip closes the lane.
  */
@@ -255,6 +260,7 @@ export function step(ledger, event) {
   if (event.type === "rebase") return onRebase(out);
   if (event.type === "rebased") return afterRebase(verified(out, "rebased"), event);
   if (event.type === "reverify") return onReverify(out);
+  if (event.type === "owner") return onOwnerFix(out, event);
   if (event.type === "hold") return onHold(out, event);
   if (event.type === "resume") return onResume(out, event);
   const want = expects(out);
@@ -605,6 +611,23 @@ function onRebase(ledger) {
     "rebase",
     { from: builder?.reportPath, agent: builder?.agent },
     "rebase the branch onto main",
+  );
+}
+
+// The owner sends a verified lane back with a change (field 77): one round for its last builder, recorded
+// in `ownerFixes[]` with the round it went out as. The round's report goes on as any fix's (`routeBuilt`).
+function onOwnerFix(ledger, { note, at }) {
+  if (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next))
+    throw new Error(
+      `the owner's fix is for a verified lane (state ${ledger.state}, next ${ledger.next})`,
+    );
+  const builder = builders(ledger).at(-1);
+  ledger.ownerFixes = [...(ledger.ownerFixes ?? []), { note, at, round: ledger.rounds.length + 1 }];
+  return send(
+    ledger,
+    "fix",
+    { from: builder?.reportPath, agent: builder?.agent, owner: { note, at } },
+    "the owner's change",
   );
 }
 
