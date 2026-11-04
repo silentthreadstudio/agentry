@@ -2955,7 +2955,7 @@ test("start refuses while a land's picks are on main: exit 2, nothing written; a
   assert.ok(hhmm, res.stderr);
   assert.match(
     res.stderr,
-    /✗ lane exec start T1: main is mid-land \(ZZ, since \d\d:\d\d\): its picks may still roll back → start after it lands/,
+    /✗ lane exec start T1: main is mid-land \(ZZ, since \d\d:\d\d\): its picks may still roll back → start after it lands, or (agentry lane|node .*lane\.mjs'?) merge ZZ --resolve landed\|rolled-back$/m,
   );
   assert.equal(existsSync(ledgerFile(r.root, "T1")), false);
   assert.equal(existsSync(join(r.root, ".agentry", "run", "worktrees", "T1")), false);
