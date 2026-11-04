@@ -69,15 +69,19 @@ like any other), an id the board does not hold, and `--for` with `--keep`.
 **Owner calls.** A call the owner makes on a lane or a spike (keep this, drop that, ship it as is) is recorded
 where it was made, so no call lives only in a chat: `agentry lane note <id> --owner "<call>"` appends
 `{ n, at, text, recorded: null }` to the `calls` of `<id>`'s open ledger, else of the spike filed `--for <id>`
-(in `spikes.json`; filing it again keeps them). One line per call. `agentry lane note <id>` lists them as
+(in `spikes.json`; filing it again for the same item keeps them). One line of plain text per call: a line or
+paragraph break of any kind, or a control character, is refused. `agentry lane note <id>` lists them as
 `n · at · recorded|not written down · text`, and
 `agentry lane note <id> --recorded <n,n|all> --where "<file or section>"` marks them written down
 (`recorded: { at, where }`) once they are in the decisions or sprint file. Refused, nothing written (exit 2):
-an item with no lane and no spike (the refusal names `lane spike <branch> --for <id>` and `lane exec adopt`),
+an item with no lane and no spike (the refusal names `lane spike <branch> --for <id>` and `lane exec adopt`; for a
+merged or closed lane it says the lane's state),
 two spikes filed for it (which one a call is about is not known), an empty or multi-line call, a call number
 no holder has, and a ledger or `spikes.json` that cannot be read (named, never written over).
 `exec adopt <id> --branch <b>` moves the calls of the spike filed for `<id>` on `<b>` into the new ledger,
-numbering kept, and the spike keeps none; `exec close`'s episode says `owner calls: <k> (<j> written down)`;
+numbering kept, and the spike keeps none; `exec restart` keeps them in the new ledger. While a spike holds a call
+not written down, `lane spike <b> --forget` and a re-file `--keep` or for another item refuse, nothing
+written: `<b> has <k> open owner call(s) for <id>: lane note <id> --recorded <n|all> first`. `exec close`'s episode says `owner calls: <k> (<j> written down)`;
 `session close` lists the ones not written down, merged and closed lanes included, until they are marked.
 
 `hold` refuses (exit 2) a lane whose builder's round is not out ("hold is for a builder's round", with its

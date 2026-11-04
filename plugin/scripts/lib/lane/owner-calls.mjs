@@ -13,18 +13,20 @@
 // marked(holders, which, { at, where }) -> { writes: [{ holder, calls }], marked } | { problem }
 // saveCalls(root, holder, calls)                     the holder's file written with `calls`
 // spikeCalls(root, { id, branch }) -> { calls } | { problem }   the calls of the spike filed for `id` on it
-// openCalls(root) -> { calls: [{ id, open: [{ n, text }] }], error? }   every holder's, any lane state
+// openCalls(root) -> { calls: [{ id, open: [{ n, text }] }], errors }   every holder's, any lane state
 // callLines(calls) -> the close lines, one per id (at most MAX_IDS, then `+N more`)
 // callsLine(ledger) -> `owner calls: <k> (<j> written down)`, or null with none
 //
 // Holder: `{ on: "lane", id, file, state, calls }` | `{ on: "spike", branch, calls }`.
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import * as ledgers from "../process/ledger.mjs";
 import { readSpikes, setSpikeCalls, spikesFile } from "./spikes.mjs";
 
 const MAX_IDS = 3;
 
-const ledgerFile = (root, id) => join(root, ".agentry", "run", "process", "ledger", `${id}.json`);
+const ledgerDir = (root) => join(root, ".agentry", "run", "process", "ledger");
+const ledgerFile = (root, id) => join(ledgerDir(root), `${id}.json`);
 const isOpen = (l) => l.state !== "merged" && l.state !== "closed";
 const isCall = (c) =>
   c !== null && typeof c === "object" && Number.isInteger(c.n) && typeof c.text === "string";
@@ -33,10 +35,14 @@ const callsIn = (list) =>
   list === undefined ? [] : Array.isArray(list) && list.every(isCall) ? list : null;
 const notCalls = (file) => `${file} holds calls that are not a list of { n, text }: fix it`;
 
-/** Why `text` cannot be one call: empty, or more than one line. null when it can. */
+/** Why `text` cannot be one call: empty, more than one line (any line or paragraph break, U+2028 and
+ *  U+0085 too), or holding a control character (C0, DEL, C1: an escape would reach the terminal). null
+ *  when it can. */
 export function callProblem(text) {
   if (typeof text !== "string" || !text.trim()) return "the call is empty";
-  if (/[\r\n]/.test(text)) return "the call is more than one line: give one call per note";
+  if (/[\r\n\u0085\u2028\u2029]/u.test(text))
+    return "the call is more than one line: give one call per note";
+  if (/\p{Cc}/u.test(text)) return "the call holds a control character: give it as plain text";
   return null;
 }
 
@@ -78,6 +84,10 @@ export function holdersOf(root, id, { appending = false } = {}) {
   const spikes = spikeHolders(root, id);
   if (spikes.problem) return { problem: spikes.problem };
   const holders = appending ? spikes.holders : [...(lane ? [lane] : []), ...spikes.holders];
+  if (!holders.length && appending && lane)
+    return {
+      problem: `${id}'s lane is ${lane.state}: file a spike --for ${id} to note on it, or exec adopt`,
+    };
   if (!holders.length)
     return {
       problem: `${id} has no lane or spike`,
@@ -158,8 +168,33 @@ export function spikeCalls(root, { id, branch }) {
   return calls ? { calls } : { problem: notCalls(spikesFile(root)) };
 }
 
+// The ledger files that cannot be read at all (torn, unreadable): `<path> unreadable` each. A file that
+// parses is skipped here, whatever it holds: a restart's archive (`<id>.<n>.json`) is one, and its calls
+// went to the new ledger.
+function unreadableLedgers(root, listed) {
+  let names;
+  try {
+    names = readdirSync(ledgerDir(root));
+  } catch {
+    return [];
+  }
+  return names
+    .filter((n) => n.endsWith(".json") && !listed.has(n.slice(0, -".json".length)))
+    .map((n) => join(ledgerDir(root), n))
+    .filter((file) => {
+      try {
+        JSON.parse(readFileSync(file, "utf8"));
+        return false;
+      } catch {
+        return true;
+      }
+    })
+    .map((file) => `${file} unreadable`);
+}
+
 /** The calls not written down of every ledger (merged and closed ones too) and every spike filed for an
- *  item, one entry per id, the ledger's first. `error`: why `spikes.json` was not read. */
+ *  item, one entry per id, the ledger's first. `errors`: each ledger file that cannot be read, and why
+ *  `spikes.json` was not read. */
 export function openCalls(root) {
   const byId = new Map();
   const add = (id, calls) => {
@@ -168,11 +203,13 @@ export function openCalls(root) {
       .map(({ n, text }) => ({ n, text }));
     if (open.length) byId.set(id, [...(byId.get(id) ?? []), ...open]);
   };
-  for (const l of ledgers.list(root)) add(l.id, l.calls);
+  const all = ledgers.list(root);
+  for (const l of all) add(l.id, l.calls);
+  const errors = unreadableLedgers(root, new Set(all.map((l) => l.id)));
   const { spikes, error } = readSpikes(root);
   for (const s of spikes ?? []) if (s.for) add(s.for, s.calls);
   const calls = [...byId].map(([id, open]) => ({ id, open }));
-  return error ? { calls, error } : { calls };
+  return { calls, errors: error ? [...errors, error] : errors };
 }
 
 /** The lines `session close` gives for `calls`: one per id, at most MAX_IDS, then how many more. */

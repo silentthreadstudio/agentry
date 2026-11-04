@@ -124,7 +124,7 @@ Reads only; prints one JSON object.
 | `warnings`, `diskFree` | Free bytes, and a warning when under 10 GB. |
 | `episodesPending` | Ids of ledgers with an episode nobody wrote: `agentry lane exec close <id>` prints it. |
 | `calls` | `[{ id, open: [{ n, text }] }]`: per item, the owner's calls on its lane (any state, merged and closed too) or on the spike filed for it that are not written down yet (`agentry lane note`, see `lanes.md`), each text whole. |
-| `callLines` | The lines to show for them, one per id: `calls: <id> <k> not written down → write them to the decisions or sprint file, then agentry lane note <id> --recorded all`, at most three, then `calls: +N more`; a `spikes.json` that cannot be read adds `calls: <why>`. |
+| `callLines` | The lines to show for them, one per id: `calls: <id> <k> not written down → write them to the decisions or sprint file, then agentry lane note <id> --recorded all`, at most three, then `calls: +N more`; a ledger file that cannot be read adds `calls: <path> unreadable`, and a `spikes.json` that cannot be read `calls: <why>`. |
 | `checks` | As on start: `{ start: View, close: View }`; absent when no check is named. The handoff names `close.failed` and `close.pending`. |
 | `note` | The note as `status.note` carries it (see The note); absent with no note file. Close reads it and records nothing. |
 

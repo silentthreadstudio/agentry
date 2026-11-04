@@ -1188,3 +1188,18 @@ test("close with no call open carries an empty calls list and no line", () => {
   const data = JSON.parse(session(root, "close").stdout);
   assert.deepEqual([data.calls, data.callLines], [[], []]);
 });
+
+test("close names a ledger file it cannot read instead of dropping its calls silently", () => {
+  const root = fresh();
+  ledger(root, "T1", { calls: [call(1, "a call")] });
+  const file = join(root, ".agentry", "run", "process", "ledger", "T1.json");
+  writeFileSync(file, '{"v":1,"id":"T1","calls":[{"n":1');
+  const data = JSON.parse(session(root, "close").stdout);
+  assert.deepEqual(data.calls, []);
+  assert.deepEqual(data.callLines, [`calls: ${file} unreadable`]);
+  assert.equal(
+    readFileSync(file, "utf8"),
+    '{"v":1,"id":"T1","calls":[{"n":1',
+    "never written over",
+  );
+});

@@ -228,11 +228,11 @@ function closing({ root, spec, model }) {
 }
 
 // The owner's calls not written down, per lane or spike (field 90): `calls` whole, and `callLines`, the
-// lines to show (one per id, capped), with one naming `spikes.json` when it cannot be read.
+// lines to show (one per id, capped), then one naming each ledger file or `spikes.json` it cannot read.
 function callsField(runRoot) {
-  const { calls, error } = openCalls(runRoot);
+  const { calls, errors } = openCalls(runRoot);
   const lines = callLines(calls).map((l) => nextStep(l));
-  return { calls, callLines: error ? [...lines, `calls: ${error}`] : lines };
+  return { calls, callLines: [...lines, ...errors.map((e) => `calls: ${e}`)] };
 }
 
 // A note on one line (each line break a space), cut to NOTE_COLUMNS with the rest of its line.

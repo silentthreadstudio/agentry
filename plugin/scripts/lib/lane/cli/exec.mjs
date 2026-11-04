@@ -2858,7 +2858,13 @@ function restart(ctx, id) {
   // Past the archive nothing is refused: a failure is a stop that says where the old work is.
   try {
     ({ kept } = retire(root, old, n));
-    const res = cut({ ...ctx, on: null, cite: old.cite ?? [] }, id, { found, mainBranch, again });
+    // The owner's calls are the lane's, not the attempt's: the new ledger keeps them (field 90).
+    const withCalls = (path) => ({ calls: old.calls ?? [], ...again(path) });
+    const res = cut({ ...ctx, on: null, cite: old.cite ?? [] }, id, {
+      found,
+      mainBranch,
+      again: withCalls,
+    });
     if (drop) git(root, ["branch", "-D", kept]);
     return res;
   } catch (e) {

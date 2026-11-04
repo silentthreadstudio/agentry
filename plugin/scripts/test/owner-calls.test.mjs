@@ -305,3 +305,85 @@ test("exec close's episode names the lane's calls and how many are written down"
   assert.equal(res.exit, 0, res.stderr);
   assert.match(res.json.episode.outcome, /owner calls: 3 \(1 written down\)/);
 });
+
+test("exec restart keeps the lane's calls: lane note and close still show them (r2 P1)", () => {
+  const r = repo();
+  const started = lane(r, "exec", "start", "T1", "--json");
+  assert.equal(started.exit, 0, started.stderr);
+  assert.equal(note(r, "T1", "--owner", "keep the old flag").exit, 0);
+  const before = ledgerOf(r.root, "T1").calls;
+  writeFileSync(started.json.reportPath, "NEEDS_CONTEXT\nwhich?\n");
+  assert.equal(lane(r, "exec", "hold", "T1", "--for", "later", "--note", "start over").exit, 0);
+  const restarted = lane(r, "exec", "restart", "T1", "--json");
+  assert.equal(restarted.exit, 0, restarted.stderr);
+  assert.deepEqual(ledgerOf(r.root, "T1").calls, before);
+  assert.match(note(r, "T1").stdout, /1 · .* · not written down · keep the old flag/);
+  const close = lane(r, "session", "close");
+  assert.deepEqual(
+    close.json.calls.map((c) => c.id),
+    ["T1"],
+  );
+});
+
+test("spike --forget refuses while the spike has calls not written down, writing nothing (r2 P2)", () => {
+  const r = repo();
+  const s = spike(r, "T1");
+  note(r, "T1", "--owner", "the spike's numbers stand");
+  const before = bytes(spikesFile(r.root));
+  const res = lane(r, "spike", s.branch, "--forget");
+  assert.notEqual(res.exit, 0);
+  assert.match(
+    res.stderr,
+    /worktree-agent-a1 has 1 open owner call\(s\) for T1: lane note T1 --recorded 1 first/,
+  );
+  assert.equal(bytes(spikesFile(r.root)), before);
+  note(r, "T1", "--recorded", "all");
+  assert.equal(lane(r, "spike", s.branch, "--forget").exit, 0, "once marked it goes");
+});
+
+test("re-filing a spike --keep or for another id refuses while it has open calls (r2 P3, P4)", () => {
+  const r = repo();
+  const s = spike(r, "T1");
+  note(r, "T1", "--owner", "drop the cache layer");
+  note(r, "T1", "--owner", "and the retry");
+  const before = bytes(spikesFile(r.root));
+  for (const args of [
+    ["--keep", "reference only"],
+    ["--for", "T2"],
+  ]) {
+    const res = lane(r, "spike", s.branch, ...args);
+    assert.notEqual(res.exit, 0, args.join(" "));
+    assert.match(
+      res.stderr,
+      /has 2 open owner call\(s\) for T1: lane note T1 --recorded all first/,
+    );
+    assert.equal(bytes(spikesFile(r.root)), before, args.join(" "));
+  }
+  note(r, "T1", "--recorded", "all");
+  assert.equal(lane(r, "spike", s.branch, "--for", "T2").exit, 0, "once marked it may move");
+});
+
+test("--owner on an id whose lane is merged and has no spike says the lane's state", () => {
+  const r = repo();
+  ledger(r.root, "T1", { state: "merged", next: null });
+  const before = bytes(ledgerFile(r.root, "T1"));
+  const res = note(r, "T1", "--owner", "a late call");
+  assert.equal(res.exit, 2);
+  assert.match(
+    res.stderr,
+    /T1's lane is merged: file a spike --for T1 to note on it, or exec adopt/,
+  );
+  assert.equal(bytes(ledgerFile(r.root, "T1")), before);
+});
+
+test("a call holding a Unicode line break or a control character refuses", () => {
+  const r = repo();
+  ledger(r.root, "T1");
+  const before = bytes(ledgerFile(r.root, "T1"));
+  for (const text of ["a b", "a b", "a\u0085b", "red \u001b[31mX", "tab\there", "a\u009bb"]) {
+    const res = note(r, "T1", "--owner", text);
+    assert.equal(res.exit, 2, JSON.stringify(text));
+    assert.equal(bytes(ledgerFile(r.root, "T1")), before, JSON.stringify(text));
+  }
+  assert.equal(note(r, "T1", "--owner", "plain text, ünïcode and — dashes").exit, 0);
+});
