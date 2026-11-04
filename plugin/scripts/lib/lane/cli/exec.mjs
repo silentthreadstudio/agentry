@@ -2180,6 +2180,13 @@ function fix(ctx, id, given) {
   // A notes round already out: its report comes first, whatever the budget says.
   const out = ledger.rounds.at(-1);
   if (out?.notes && out.report === undefined) refuse("a notes round is out: wait for its report");
+  // A note the last verdict left as built is not one to fix: the recheck would never judge it.
+  const judged = verdicts(ledger).at(-1);
+  const left = (ledger.left ?? []).find((l) => l.round === judged?.n && labels.includes(l.label));
+  if (left)
+    refuse(
+      `${left.label} was left as built (by ${left.by}): leave it, or send it back with fix --owner`,
+    );
   const byOwner = laneLine(root, "fix", id, ' --owner "<the change>"');
   const { used, max } = notesBudget(ledger, liveNotes(ctx));
   // Held at the notes cap: a cap raised since lets one more notes round go; else the owner decides.

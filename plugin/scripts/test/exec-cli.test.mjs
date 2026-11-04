@@ -548,6 +548,30 @@ test("verdict --leave records the notes left as built; the recheck needs only th
   assert.match(textOf(r, "show", "T1"), /^left: N2: left as built by the conductor at /m);
 });
 
+test("fix --notes refuses a note the verdict left as built, and writes nothing", () => {
+  // R1d-39 r4 N2: it was accepted, and the recheck then judged nothing of it.
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  writeFileSync(
+    out.reportPath,
+    "N1 rename it\nN2 stale flag\nused_memories: none\nVerdict: PASS WITH NOTES\n",
+  );
+  const v = lane(r, "verdict", "T1", "--leave", "N2", "--by", "owner").json;
+  assert.match(v.notes, / --notes N1$/, "the notes line offers N1 only");
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const before = readFileSync(file, "utf8");
+  const refused = lane(r, "fix", "T1", "--notes", "N1,N2");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /N2 was left as built \(by owner\): leave it, or send it back with fix --owner$/m,
+  );
+  assert.equal(readFileSync(file, "utf8"), before);
+  assert.equal(lane(r, "fix", "T1", "--notes", "N1").json.next, "fix");
+});
+
 test("without --leave the same recheck sends a final: N2 was sent back and not passed", () => {
   const r = repo();
   const { verdict } = recheckN1(r, failedWith(r).json);
