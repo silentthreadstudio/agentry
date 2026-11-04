@@ -2990,3 +2990,51 @@ test("a lane rebased onto a main commit touching its file is not tripped by that
     "the guard starts at the rebase target",
   );
 });
+
+// The rebase builder's own commit on main (wrong cwd), and its controls (R1d-23 r4 N7).
+function rebaseOntoMain(worktree) {
+  const res = spawnSync("git", ["-C", worktree, "rebase", "main"], { env: gitEnv });
+  if (res.status === 0) return;
+  writeFileSync(join(worktree, "out.txt"), "made\nmain side\n");
+  git(worktree, "add", "out.txt");
+  spawnSync("git", ["-C", worktree, "rebase", "--continue"], {
+    env: { ...gitEnv, GIT_EDITOR: "true" },
+  });
+}
+
+test("a rebase builder's own commit on main, made after the round was sent and rebased onto, still trips", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const rebase = lane(r, "rebase", "T1").json;
+  const asked = git(r.root, "rev-parse", "HEAD");
+  assert.equal(ledgerOf(r.root, "T1").rebases.at(-1).mainHead, asked);
+  const stray = commitFile(r.root, "out.txt", "main side\n", "fix: wrong cwd out.txt");
+  rebaseOntoMain(rebase.worktree);
+  writeFileSync(rebase.reportPath, "DONE\nrebased onto main\nused_memories: none\n");
+  assert.ok(
+    tripped(lane(r, "report", "T1")).endsWith(
+      `(${stray.slice(0, 7)} touches out.txt, this lane's files)`,
+    ),
+  );
+  assert.equal(ledgerOf(r.root, "T1").mainAtStart.head, asked, "the start stops at main as asked");
+});
+
+test("a wrong-cwd commit on main during a rebase round the branch did not rebase onto trips", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  commitFile(r.root, "two.txt", "x\n", "chore: unrelated main move");
+  const rebase = lane(r, "rebase", "T1").json;
+  spawnSync("git", ["-C", rebase.worktree, "rebase", "main"], { env: gitEnv });
+  const stray = commitFile(r.root, "out.txt", "main side\n", "fix: wrong cwd out.txt");
+  writeFileSync(rebase.reportPath, "DONE\nrebased\nused_memories: none\n");
+  assert.ok(tripped(lane(r, "report", "T1")).includes(`${stray.slice(0, 7)} touches out.txt`));
+});
+
+test("a build round's wrong-cwd commit on main trips though the branch was rebased onto it by hand", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  const stray = commitFile(r.root, "out.txt", "made\n", "feat: add out.txt (wrong cwd)");
+  spawnSync("git", ["-C", out.worktree, "rebase", "main"], { env: gitEnv });
+  writeFileSync(out.reportPath, "DONE\nadded out.txt\nused_memories: none\n");
+  assert.ok(tripped(lane(r, "report", "T1")).includes(`${stray.slice(0, 7)} touches out.txt`));
+});
