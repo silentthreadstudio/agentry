@@ -140,10 +140,16 @@ Without `--apply` it only reports. With it:
   left running; stop it by hand. A process a lane still building owns is never signalled, even inside a
   stray's tree, and neither is the sweep's own ancestor chain. Everything that would be signalled is listed
   under its stray in the preview (`with process …`) and, after `--apply`, in `signalled`.
+- frees what a killed writer or holder left (`temps`, `slots`, `writeLocks` in `--json`): a temp file
+  (`<file>.agentry-<pid>.tmp`) whose writer is gone; a lock or gate slot whose holder and riders are gone
+  (a pid that now names another process counts as gone), each pgid its runs left running listed under it
+  and stopped first, as a stray is (the slot is kept, and the exit is 1, while one survives); a slot write
+  mutex whose owner is gone or that is older than any write. A take with no pid within its until is held
+  and never listed. Each is judged again at `--apply`: one that came back to life since the preview stays.
 
 A worktree no ledger knows is listed as unknown and left alone, as is any worktree of a task still in flight.
 Working-directory strays need `lsof`; without it sweep warns and judges by executable and script only.
-Ask the owner before `--apply`; it exits 1 when it kept a worktree or left a process running.
+Ask the owner before `--apply`; it exits 1 when it kept a worktree or a slot, or left a process running.
 
 ## The note
 

@@ -9,6 +9,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -17,7 +18,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { gateLockDir, holdGate } from "../lib/lane/gate-lock.mjs";
+import { lockDir, setGroup, tryLock } from "../lib/lane/named-lock.mjs";
 import { LOW_DISK, plan } from "../lib/lane/sweep.mjs";
+import { identity } from "../lib/process/pid.mjs";
 import { boardRepo, builtBranch, handBranch, ledger } from "./drift-repo.mjs";
 import { git, gitEnv } from "./git-repo.mjs";
 import { writeSpec } from "./spec-files.mjs";
@@ -668,4 +672,169 @@ test("the sweep's whole ancestor chain is spared, not only its parent", async ()
   children.push(child);
   await new Promise((r) => child.once("exit", r));
   assert.ok(existsSync(done), "the caller shell, in a merged worktree, must outlive the sweep");
+});
+
+// The leftovers a killed writer and killed holders leave in `root`, next to what is live and must stay:
+// `{ group, live }` (a detached group a dead run left running; a live session process).
+function leftoversIn(root) {
+  // The group is left behind by a parent that exits at once, so it is reaped when it dies (a child of this
+  // test would stay a zombie while the sweep runs, and a zombie still counts as running).
+  const spawned = spawnSync(
+    "node",
+    [
+      "-e",
+      "const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});console.log(c.pid);c.unref()",
+    ],
+    { encoding: "utf8" },
+  );
+  const group = { pid: Number(spawned.stdout) };
+  const live = spawn("node", ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
+  children.push(live);
+  cleanups.push(() => {
+    try {
+      process.kill(-group.pid, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  const dead = spawnSync("node", ["-e", ""]).pid;
+  const ledgerDir = runFile(root, join("process", "ledger"));
+  mkdirSync(ledgerDir, { recursive: true });
+  writeFileSync(join(ledgerDir, `T1.json.agentry-${dead}.tmp`), "{");
+  writeFileSync(join(ledgerDir, `T2.json.agentry-${live.pid}.tmp`), "{");
+  // editor: a dead run whose command's group still runs; sim: a take of a live session; ttl: a pid-less
+  // take within its until; reused: a slot whose pid now names another process.
+  tryLock(root, "editor", { slots: 1, pid: dead, who: "run" });
+  setGroup(root, "editor", 1, group.pid, dead);
+  tryLock(root, "sim", { slots: 1, pid: live.pid, who: "T-1", ttlMs: 60_000 });
+  tryLock(root, "ttl", { slots: 1, pid: null, who: "T-2", ttlMs: 60_000 });
+  mkdirSync(lockDir(root, "reused"), { recursive: true });
+  const at = new Date().toISOString();
+  writeFileSync(
+    join(lockDir(root, "reused"), "slot-1.lock"),
+    JSON.stringify({ pid: live.pid, start: "wrong", who: "old", at }),
+  );
+  writeFileSync(
+    join(lockDir(root, "ttl"), "slot-1.lock.write"),
+    JSON.stringify({ pid: dead, start: "x", token: 1 }),
+  );
+  mkdirSync(gateLockDir(root), { recursive: true });
+  writeFileSync(
+    join(gateLockDir(root), "slot-1.lock"),
+    JSON.stringify({ ...identity(dead), who: "lane gone", at }),
+  );
+  return { group, live, dead };
+}
+
+test("the sweep lists dead writers' temp files, dead holders' slots with the groups they left, and stale write-locks; the preview changes nothing", () => {
+  const repo = boardRepo();
+  cleanups.push(repo.cleanup);
+  const { root } = repo;
+  const { group, live, dead } = leftoversIn(root);
+  const found = JSON.parse(sweep(root, "--json").stdout);
+  assert.deepEqual(found.temps, [
+    join(runFile(root, join("process", "ledger")), `T1.json.agentry-${dead}.tmp`),
+  ]);
+  assert.deepEqual(
+    found.slots.map((s) => [s.lock, s.slot, s.groups]),
+    [
+      ["gate", 1, []],
+      ["editor", 1, [group.pid]],
+      ["reused", 1, []],
+    ],
+    "a live session's take and a pid-less take within its until are never listed",
+  );
+  assert.deepEqual(found.writeLocks, [join(lockDir(root, "ttl"), "slot-1.lock.write")]);
+  const text = sweep(root).stdout;
+  assert.match(
+    text,
+    /would free lock editor slot 1: its holder is gone\n {4}group \d+ still running: would stop/,
+  );
+  assert.match(text, /would free gate slot 1: its holder is gone/);
+  assert.match(text, /would remove stale write-lock .*slot-1\.lock\.write/);
+  assert.match(text, /would remove temp file .*T1\.json\.agentry-\d+\.tmp: its writer is gone/);
+  assert.ok(alive(group.pid), "nothing was stopped");
+  assert.ok(existsSync(join(lockDir(root, "editor"), "slot-1.lock")));
+  assert.ok(alive(live.pid));
+});
+
+test("--apply stops a dead run's group and frees its slot, removes dead temps and write-locks, and leaves every live one", async () => {
+  const repo = boardRepo();
+  cleanups.push(repo.cleanup);
+  const { root } = repo;
+  const { group, live } = leftoversIn(root);
+  const res = sweep(root, "--apply", "--json");
+  assert.equal(res.status, 0, res.stdout);
+  const { result } = JSON.parse(res.stdout);
+  assert.deepEqual(result.stoppedGroups, [group.pid]);
+  assert.equal(result.freedSlots.length, 3);
+  assert.deepEqual(result.keptSlots, []);
+  assert.equal(result.removedTemps.length, 1);
+  assert.equal(result.removedWriteLocks.length, 1);
+  assert.ok(await waitDead(group.pid), "the group is gone");
+  assert.deepEqual(readdirSync(lockDir(root, "editor")), []);
+  assert.deepEqual(readdirSync(lockDir(root, "reused")), [], "a reused pid read dead");
+  assert.deepEqual(
+    readdirSync(lockDir(root, "sim")),
+    ["slot-1.lock"],
+    "a live holder's slot stays",
+  );
+  assert.deepEqual(
+    readdirSync(lockDir(root, "ttl")),
+    ["slot-1.lock"],
+    "a pid-less take within its until stays",
+  );
+  assert.deepEqual(readdirSync(gateLockDir(root)), []);
+  assert.deepEqual(readdirSync(runFile(root, join("process", "ledger"))), [
+    `T2.json.agentry-${live.pid}.tmp`,
+  ]);
+  assert.match(sweep(root).stdout, /nothing to clean/);
+});
+
+test("kill -9 of agentry run leaves its slot and group to the sweep, which stops the group and frees the slot", async () => {
+  const repo = boardRepo();
+  cleanups.push(repo.cleanup);
+  const { root } = repo;
+  writeFileSync(join(root, ".agentry", "workflow.json"), JSON.stringify({ locks: { editor: 1 } }));
+  const pidFile = join(root, "cmd.pid");
+  const bin = join(dirname(LANE), "..", "bin", "agentry");
+  const run = spawn(
+    "node",
+    [
+      bin,
+      "run",
+      "--limit",
+      "60s",
+      "--lock",
+      "editor",
+      "--",
+      "node",
+      "-e",
+      `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000)`,
+    ],
+    { cwd: root, stdio: "ignore", env: { ...gitEnv, CLAUDE_PID: "" } },
+  );
+  for (let i = 0; i < 100 && !(existsSync(pidFile) && readFileSync(pidFile, "utf8")); i++)
+    await new Promise((r) => setTimeout(r, 50));
+  const pgid = Number(readFileSync(pidFile, "utf8"));
+  cleanups.push(() => {
+    try {
+      process.kill(-pgid, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  run.kill("SIGKILL");
+  await new Promise((resolve) => run.on("exit", resolve));
+  assert.ok(alive(pgid), "the command outlives its run");
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 0, res.stdout);
+  assert.match(
+    res.stdout,
+    new RegExp(`freed lock editor slot 1: its holder is gone\n {4}group ${pgid} stopped`),
+  );
+  assert.ok(await waitDead(pgid));
+  assert.deepEqual(readdirSync(lockDir(root, "editor")), []);
+  const held = holdGate(gateLockDir(root), { waitSec: 0 });
+  held.release();
 });

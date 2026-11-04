@@ -14,17 +14,34 @@
 //              a worktree one sits in is kept (`inUse`)
 //   warnings   disk under 10 GB free; `lsof` missing (a process is then judged by its executable and script
 //              only, so one that merely stands in the run directory is not seen)
+//   temps      temp files of an atomic write (`fs/atomic.mjs`) whose writer is gone, in the directories
+//              Agentry writes whole into (the run state, the lock directories, the root and `.claude/`)
+//   slots      lock and gate slots whose holder and riders are gone (`staleLockSlots`, `staleGateSlots`), each
+//              with the pgids still running that its runs left behind; a take with no pid within its until
+//              is held, and never listed
+//   writeLocks slot write mutexes left behind: their owner is gone, or they are older than any write
 // `apply` then stops the strays (each with its whole descendant tree, and its process group when it leads one;
-// what it signals is listed with the stray, a live lane's process is spared, and it confirms all of it is gone) and
-// removes the cleanable worktrees (through `worktree.remove`, which keeps a dirty one and any branch with
+// what it signals is listed with the stray, a live lane's process is spared, and it confirms all of it is gone),
+// stops each slot's leftover groups the same way and then frees the slot (one whose group survives is kept),
+// removes the temp files and write mutexes that are still dead, and removes the cleanable worktrees (through `worktree.remove`, which keeps a dirty one and any branch with
 // unlanded work; one holding ignored files that are not disposable is kept unless `discardIgnored`). Nothing else is ever touched.
 // Node built-ins only.
 import { spawnSync } from "node:child_process";
-import { realpathSync, statfsSync } from "node:fs";
+import { realpathSync, rmSync, statfsSync } from "node:fs";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
+import { deadTemps } from "../fs/atomic.mjs";
 import { worktrees } from "../process/git.mjs";
 import * as ledgers from "../process/ledger.mjs";
+import {
+  clearGateSlot,
+  gateLockDir,
+  groupRunning,
+  staleGateSlots,
+  staleWriteLocks,
+  takeOverMutex,
+} from "./gate-lock.mjs";
 import { disposableMatcher } from "./land.mjs";
+import { clearLockSlot, deadLockTemps, lockDirs, staleLockSlots } from "./named-lock.mjs";
 import { ignoredFiles, remove, worktreesDir } from "./worktree.mjs";
 
 const GB = 1024 ** 3;
@@ -228,6 +245,30 @@ function findStrays(root, all) {
   return found;
 }
 
+// The directories outside the lock ones that Agentry writes whole into: the run state, and the instruction
+// files' (the root and `.claude/`).
+const tempDirs = (root) => [
+  join(root, ".agentry", "run", "process"),
+  join(root, ".agentry", "run", "process", "ledger"),
+  gateLockDir(root),
+  root,
+  join(root, ".claude"),
+];
+
+/** What killed writers and holders left in the repo whose main checkout is `root`: `{ temps, slots,
+ *  writeLocks }` (see above). `slots` are `{ file, lock, slot, groups }`, `lock` "gate" for a gate slot.
+ *  Only looks. */
+export function leftovers(root) {
+  return {
+    temps: [...tempDirs(root).flatMap((dir) => deadTemps(dir)), ...deadLockTemps(root)],
+    slots: [
+      ...staleGateSlots(gateLockDir(root)).map((s) => ({ ...s, lock: "gate" })),
+      ...staleLockSlots(root),
+    ],
+    writeLocks: [gateLockDir(root), ...lockDirs(root)].flatMap(staleWriteLocks),
+  };
+}
+
 /** What a sweep would do in the repo whose main checkout is `root`. `free` overrides the disk reading;
  *  `disposable` is the process file's `cleanup.disposable`, on top of `DEFAULT_DISPOSABLE`. */
 export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
@@ -268,7 +309,7 @@ export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
     warnings.push(`only ${(free / GB).toFixed(1)} GB free on the disk (below ${LOW_DISK / GB} GB)`);
   if (lsofMissing)
     warnings.push("lsof not found: a process that only stands in the run directory can't be seen");
-  return { cleanable, unknown, strays, leftAlone, diskFree: free, warnings };
+  return { cleanable, unknown, strays, leftAlone, diskFree: free, warnings, ...leftovers(root) };
 }
 
 // The pids among `pids` still running (a zombie is dead).
@@ -332,11 +373,58 @@ function stop(stray, root, all) {
   return { left: stillRunning(members), signalled: [...signalled] };
 }
 
+// Stop the group `pgid` a dead run left running, as a stray is stopped: SIGTERM, then SIGKILL after SETTLE_MS;
+// never a group that holds a terminal or an interactive shell, or this sweep. True when it is gone.
+function stopGroup(pgid) {
+  const mates = processes().filter((p) => p.pgid === pgid);
+  if (pgid === ownGroup() || mates.some(interactive)) return !groupRunning(pgid);
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  for (const signal of ["SIGTERM", "SIGKILL"]) {
+    try {
+      process.kill(-pgid, signal);
+    } catch {
+      return true; // gone already
+    }
+    for (let waited = 0; waited < SETTLE_MS; waited += 100) {
+      if (!groupRunning(pgid)) return true;
+      Atomics.wait(nap, 0, 0, 100);
+    }
+  }
+  return !groupRunning(pgid);
+}
+
+// Do what `found` lists of the leftovers, judged again now: only what is still stale and was listed goes.
+function clearLeftovers(root, found, done) {
+  const now = leftovers(root);
+  const listed = (file, list) => list.some((x) => (x.file ?? x) === file);
+  for (const s of now.slots.filter((s) => listed(s.file, found.slots ?? []))) {
+    const left = s.groups.filter((pgid) => !stopGroup(pgid));
+    done.stoppedGroups.push(...s.groups.filter((pgid) => !left.includes(pgid)));
+    done.survivingGroups.push(...left);
+    const cleared =
+      !left.length && (s.lock === "gate" ? clearGateSlot(s.file) : clearLockSlot(s.file));
+    if (cleared) done.freedSlots.push(s.file);
+    else
+      done.keptSlots.push({
+        file: s.file,
+        reason: left.length ? `group ${left.join(", ")} still running` : "taken again since",
+      });
+  }
+  for (const file of now.writeLocks.filter((f) => listed(f, found.writeLocks ?? [])))
+    if (takeOverMutex(file)) done.removedWriteLocks.push(file);
+  for (const file of now.temps.filter((f) => listed(f, found.temps ?? []))) {
+    rmSync(file, { force: true });
+    done.removedTemps.push(file);
+  }
+}
+
 /** Do what `found` (a `plan`) lists: `{ removed: [{ id, branchDeleted }], kept: [{ id, reason }], killed: [pid],
  *  gone: [pid], survived: [pid], survivors: [pid], signalled: [pid] }`. A worktree `worktree.remove` keeps, or one holding
  *  ignored files while `discardIgnored` is off, is `kept` with its reason; a process already gone is `gone`;
  *  a stray with anything of its tree still running after SIGKILL is `survived` (its pid), the pids still
- *  running are `survivors`, and every pid that got a signal is `signalled`. */
+ *  running are `survivors`, and every pid that got a signal is `signalled`. Of the leftovers: `freedSlots` and
+ *  `keptSlots: [{ file, reason }]`, the slots' groups as `stoppedGroups` and `survivingGroups`, and the
+ *  `removedWriteLocks` and `removedTemps`. */
 export function apply(root, found, { discardIgnored = false } = {}) {
   const done = {
     removed: [],
@@ -346,6 +434,12 @@ export function apply(root, found, { discardIgnored = false } = {}) {
     survived: [],
     survivors: [],
     signalled: [],
+    freedSlots: [],
+    keptSlots: [],
+    stoppedGroups: [],
+    survivingGroups: [],
+    removedWriteLocks: [],
+    removedTemps: [],
   };
   for (const p of found.strays) {
     if (!stillRunning(new Set([p.pid])).length) {
@@ -359,6 +453,7 @@ export function apply(root, found, { discardIgnored = false } = {}) {
       done.survivors.push(...left);
     } else done.killed.push(p.pid);
   }
+  clearLeftovers(root, found, done);
   for (const w of found.cleanable) {
     const why = keepReason(w, discardIgnored);
     if (why) {
