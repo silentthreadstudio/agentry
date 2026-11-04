@@ -405,7 +405,9 @@ function patchIdsOf(root, revs) {
 // even when the owner resolved its conflict by hand); a first-parent commit since preHead has its patch.
 // When git cannot tell, that is the answer: never "none".
 function notRolledBack(root, merge) {
-  const onMain = (sha) => `${short(sha)} is on main: not rolled back`;
+  // A revert leaves the pick on main: the way on is the other resolution, and the board record by hand.
+  const onMain = (sha) =>
+    `${short(sha)} is on main: not rolled back → if you reverted it, the picks are still on main: --resolve landed, then record the board by hand`;
   const cannotTell = (why) => `cannot tell whether a pick is on main (${why}): not rolled back`;
   const landed = Array.isArray(merge.landed) ? merge.landed : [];
   const planned = Array.isArray(merge.planned) ? merge.planned : [];

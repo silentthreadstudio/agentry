@@ -439,3 +439,17 @@ test("--resolve refuses a ledger value that is not a full commit sha before any 
   assert.equal(existsSync(target), false);
   assert.equal(ledgerBytes(), before);
 });
+
+// Verifier r5, N6: the owner took the picks back with git revert; the refusal names the way on.
+test("--resolve rolled-back after a revert of the picks refuses, naming --resolve landed", () => {
+  const { landed } = stuckLand();
+  git(root, "revert", "--no-edit", landed[1], landed[0]);
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    /is on main: not rolled back → if you reverted it, the picks are still on main: --resolve landed, then record the board by hand/,
+  );
+  assert.equal(ledgerBytes(), before);
+});
