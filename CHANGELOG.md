@@ -14,8 +14,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   (the new `lifecycle.on.cut`, `exec.kinds.<kind>.on.cut` for a debt kind) goes in one board commit, so main
   is clean for the next land. The lane is closed, its uncommitted work saved, its worktree removed and its
   branch kept as `agentry/<id>.cut`; the episode is printed for `episode_write`. Without `--keep` nothing of
-  the branch lands. A cut killed partway is rolled back by the next `exec cut <id> --decision <D> --apply`,
-  only over its own commits and writes. An agent out, a decision the board does not hold, a `--keep` path the
+  the branch lands. A cut killed mid-land is rolled back by the next `exec cut <id> --decision <D> --apply`,
+  only over its own commits and writes; one killed after its board commit refuses and is finished by hand.
+  An agent out, a decision the board does not hold, a `--keep` path the
   branch does not change, an unset `on.cut` and a lane mid-land or merged are refused, with nothing written.
 - **`lane exec adopt <id> --branch <b>`** — work built outside exec (an agent's worktree, a hand branch)
   becomes the lane: `start`'s checks and board write, a fresh `agentry/<id>` cut from main, `main..<b>`'s own
