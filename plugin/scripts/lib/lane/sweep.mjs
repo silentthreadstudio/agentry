@@ -21,7 +21,9 @@
 //              is held, and never listed
 //   writeLocks slot write mutexes left behind: their owner is gone, or they are older than any write
 // `apply` then stops the strays (each with its whole descendant tree, and its process group when it leads one;
-// what it signals is listed with the stray, a live lane's process is spared, and it confirms all of it is gone),
+// what it signals is listed with the stray, a live lane's process is spared, every listed stray is frozen
+// before any is killed, and it confirms all of it is gone; strays that appeared while it ran are named for a
+// second pass),
 // stops each slot's leftover groups the same way and then frees the slot (one whose group survives is kept),
 // removes the temp files and write mutexes that are still dead, and removes the cleanable worktrees (through `worktree.remove`, which keeps a dirty one and any branch with
 // unlanded work; one holding ignored files that are not disposable is kept unless `discardIgnored`). Nothing else is ever touched.
@@ -351,26 +353,28 @@ function reach(stray, procs, owned, led = {}) {
   return members;
 }
 
-// Freeze, then kill: SIGSTOP every member `reach` names and every child of a member, looking again until
-// no new member appears (a stopped process cannot fork, so nothing escapes the way a child forked in a
-// SIGTERM handler, its parent gone at once, would), then SIGKILL all of them and confirm they are gone.
-// Returns `{ left, signalled }`: the pids still running afterwards, and every pid that was signalled.
-function stop(stray, root, all) {
+// A signaller that records each pid it reached in `signalled`: false when the pid is gone already.
+const signalTo = (signalled) => (pid, name) => {
+  try {
+    process.kill(pid, name);
+    signalled.add(pid);
+    return true;
+  } catch {
+    return false; // already gone
+  }
+};
+
+// Freeze: SIGSTOP every member `reach` names and every child of a member, looking again until no new member
+// appears (a stopped process cannot fork, so nothing escapes the way a child forked in a SIGTERM handler, its
+// parent gone at once, would). `cwd` is the working directories read once for the whole sweep. Returns
+// `{ members, signalled }`, every pid frozen among the members: `kill` ends them all.
+function freeze(stray, root, all, cwd) {
   const members = new Set([stray.pid]);
   const signalled = new Set();
   const frozen = new Set();
   const led = {};
-  const cwd = cwds().map;
   const owned = (p) => ownedByLive(root, all, p, cwd);
-  const signal = (pid, name) => {
-    try {
-      process.kill(pid, name);
-      signalled.add(pid);
-      return true;
-    } catch {
-      return false; // already gone
-    }
-  };
+  const signal = signalTo(signalled);
   for (let round = 0; round < FREEZE_ROUNDS; round++) {
     const procs = processes();
     for (const pid of reach(stray, procs, owned, led)) members.add(pid);
@@ -386,6 +390,13 @@ function stop(stray, root, all) {
     if (!fresh.length) break;
     for (const pid of fresh) if (signal(pid, "SIGSTOP")) frozen.add(pid);
   }
+  return { members, signalled };
+}
+
+// Kill what `freeze` froze: SIGKILL every member still running, and confirm they are gone. Returns `{ left,
+// signalled }`: the pids still running afterwards, and every pid that was signalled.
+function kill({ members, signalled }) {
+  const signal = signalTo(signalled);
   for (const pid of stillRunning(members)) signal(pid, "SIGKILL");
   const nap = new Int32Array(new SharedArrayBuffer(4));
   for (let waited = 0; waited < SETTLE_MS; waited += 100) {
@@ -449,7 +460,8 @@ function clearLeftovers(root, found, done) {
  *  a stray with anything of its tree still running after SIGKILL is `survived` (its pid), the pids still
  *  running are `survivors`, and every pid that got a signal is `signalled`. Of the leftovers: `freedSlots` and
  *  `keptSlots: [{ file, reason }]`, the slots' groups as `stoppedGroups` and `survivingGroups`, and the
- *  `removedWriteLocks` and `removedTemps`. */
+ *  `removedWriteLocks` and `removedTemps`; `appeared`, the strays found after the kill that the plan did not
+ *  list (the plan's `warnings` then say to run the sweep again). */
 export function apply(root, found, { discardIgnored = false } = {}) {
   const done = {
     removed: [],
@@ -465,18 +477,35 @@ export function apply(root, found, { discardIgnored = false } = {}) {
     survivingGroups: [],
     removedWriteLocks: [],
     removedTemps: [],
+    appeared: [],
   };
-  for (const p of found.strays) {
-    if (!stillRunning(new Set([p.pid])).length) {
-      done.gone.push(p.pid);
-      continue;
-    }
-    const { left, signalled } = stop(p, root, ledgers.list(root));
-    done.signalled.push(...signalled);
+  // Every listed stray is frozen before any is killed: a stray stopped late (another's kill, or the time
+  // the others take) could fork a way out meanwhile, or react to the others' end. Each listed pid is
+  // stopped at once, then each tree in full; strays found after it all are named for a second pass.
+  const live = found.strays.filter((p) => stillRunning(new Set([p.pid])).length);
+  done.gone.push(...found.strays.filter((p) => !live.includes(p)).map((p) => p.pid));
+  const all = ledgers.list(root);
+  const cwd = live.length ? cwds().map : new Map();
+  const first = new Set();
+  const stopFirst = signalTo(first);
+  for (const p of live) stopFirst(p.pid, "SIGSTOP");
+  const frozen = live.map((p) => ({ p, ...freeze(p, root, all, cwd) }));
+  for (const { p, members, signalled } of frozen) {
+    if (first.has(p.pid)) signalled.add(p.pid);
+    const { left, signalled: sent } = kill({ members, signalled });
+    done.signalled.push(...sent);
     if (left.length) {
       done.survived.push(p.pid);
       done.survivors.push(...left);
     } else done.killed.push(p.pid);
+  }
+  if (live.length) {
+    const listed = new Set([...found.strays.map((p) => p.pid), ...done.signalled]);
+    const appeared = findStrays(root, ledgers.list(root)).strays.filter((p) => !listed.has(p.pid));
+    done.appeared = appeared.map((p) => p.pid);
+    // The sweep's CLI prints the plan's warnings after the result: the second pass is said there.
+    if (appeared.length)
+      found.warnings.push(`run lane sweep --apply again: ${appeared.length} appeared while it ran`);
   }
   clearLeftovers(root, found, done);
   for (const w of found.cleanable) {
