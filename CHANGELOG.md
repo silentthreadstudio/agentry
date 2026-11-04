@@ -7,6 +7,16 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **`lane exec cut <id> --decision <D> [--keep <paths>] [--message "<subject>"] [--apply]`** — retires a lane
+  on the owner's call, recorded as a decision the board holds. It previews by default and writes nothing. With
+  `--apply`, the `--keep` files and folders land on main from the lane's tip as one commit, through the land's
+  own steps and the merge role's gate tier (rolled back on red, the lane as it was); the board's `cut` status
+  (the new `lifecycle.on.cut`, `exec.kinds.<kind>.on.cut` for a debt kind) goes in one board commit, so main
+  is clean for the next land. The lane is closed, its uncommitted work saved, its worktree removed and its
+  branch kept as `agentry/<id>.cut`; the episode is printed for `episode_write`. Without `--keep` nothing of
+  the branch lands. A cut killed partway is rolled back by the next `exec cut <id> --decision <D> --apply`,
+  only over its own commits and writes. An agent out, a decision the board does not hold, a `--keep` path the
+  branch does not change, an unset `on.cut` and a lane mid-land or merged are refused, with nothing written.
 - **`lane exec adopt <id> --branch <b>`** — work built outside exec (an agent's worktree, a hand branch)
   becomes the lane: `start`'s checks and board write, a fresh `agentry/<id>` cut from main, `main..<b>`'s own
   commits picked onto it (its merge commits left out and named in the brief) and the uncommitted diff of
@@ -23,7 +33,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   The list is local run state (`.agentry/run/spikes.json`), written at once. Drift now offers an unlisted
   agent worktree its ways on, each with its command: land (`lane merge <id> --branch <b>`), continue (`lane
   exec adopt <id> --branch <b>`), file (`lane spike`) or remove (`git worktree remove`), never
-  `/agentry:exec`. A spike filed for an item is one `spike-for <id>` row until a lane takes its branch, an
+  `/agentry:exec`. One on a branch they all refuse (a case twin, a branch with no commits yet, a spelling no
+  branch is named) is offered only remove, with why; an orphan `agentry/<id>` worktree is offered no continue,
+  since it is the branch that lane would cut. A spike filed for an item is one `spike-for <id>` row until a lane takes its branch, an
   adopted branch is no drift, and an unreadable `spikes.json` is a `spikes-unreadable` row.
 - **`lane note`** — `agentry lane note <id> --owner "<call>"` records a call the owner made on a lane, or on
   the spike filed for the item, one line each; with no flag it lists them, and `--recorded <n,n|all> --where
@@ -82,7 +94,7 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   them off) and names it.
 - **`lane exec restart <id> [--carry]`** — a lane that is not merged and has no agent out is archived as
   `<id>.<n>` (its branch kept as `agentry/<id>.<n>` unless `--carry` took all of it) and started again from
-  main, the old verdict cleared on the board. With `--carry` its commits and uncommitted diff come along, and the new brief names what was
+  main, the old verdict cleared on the board (a verified lane's clean carry keeps it; see Changed). With `--carry` its commits and uncommitted diff come along, and the new brief names what was
   carried and the old report; a conflict is left in the new worktree for the builder (exit 1). Every refusal
   (a builder out, a gate queued, a lane stacked on it, ignored files in the worktree) comes before anything
   is written. A stopped lane's `show` names it and the other way on, `lane merge <id> --branch agentry/<id>`.
