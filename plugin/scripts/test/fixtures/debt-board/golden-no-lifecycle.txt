@@ -131,7 +131,7 @@ board:
     },
     "set": []
   },
-  "route fixed at start": "standard · verify all · notes 1 · final after-fix · rebase recheck",
+  "route fixed at start": "standard · verify all · notes 1 (live) · final after-fix · rebase recheck",
   "route": "all: every item has a verifier",
   "rounds": [
     {
