@@ -347,6 +347,8 @@ export function recoverStep(lane, rows) {
 // --- --resolve: the owner closes a stuck land -------------------------------------------------------
 
 const RESOLUTIONS = ["landed", "rolled-back"];
+const FULL_SHA = /^[0-9a-f]{40}$/;
+const listOf = (v) => (Array.isArray(v) ? v : v === undefined ? [] : [v]);
 // What a land sets aside of main and holds in the ledger: closing the ledger over it would lose it.
 const HELD = ["carry", "allow", "writes"];
 
@@ -370,7 +372,19 @@ function notLanded(root, merge) {
 // The stable patch id of each non-merge commit `revs` (git log arguments) lists: `{ ids: [{ patchId, sha }]
 // }`, or `{ error }` when git cannot say. A commit that changes nothing has none.
 function patchIdsOf(root, revs) {
-  const log = git(root, ["log", "-p", "--no-color", "--no-ext-diff", "--no-merges", ...revs, "--"]);
+  const flags = revs.filter((r) => r.startsWith("--"));
+  const refs = revs.filter((r) => !r.startsWith("--"));
+  const log = git(root, [
+    "log",
+    "-p",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-merges",
+    ...flags,
+    "--end-of-options",
+    ...refs,
+    "--",
+  ]);
   if (log.status !== 0) return { error: log.stderr.trim().split("\n")[0] || "git log failed" };
   if (!log.stdout.trim()) return { ids: [] };
   const res = git(root, ["patch-id", "--stable"], log.stdout);
@@ -400,7 +414,13 @@ function notRolledBack(root, merge) {
   if (planned.length === 0) return null;
   if (typeof merge.preHead !== "string")
     return "the ledger names no preHead: cannot tell what is on main";
-  const since = git(root, ["rev-list", "--reverse", `${merge.preHead}..HEAD`, "--"]);
+  const since = git(root, [
+    "rev-list",
+    "--reverse",
+    "--end-of-options",
+    `${merge.preHead}..HEAD`,
+    "--",
+  ]);
   if (since.status !== 0)
     return cannotTell(since.stderr.trim().split("\n")[0] || "git rev-list failed");
   const commits = since.stdout.split("\n").filter(Boolean);
@@ -443,6 +463,13 @@ export function resolveMode(lane) {
   if (ledger.state !== "merging")
     return no(`${id}'s lane is "${ledger.state}": --resolve closes only a land in "merging"`);
   const merge = ledger.merge ?? {};
+  // The ledger's commits go to git as revisions: each must be a full SHA, before any git call.
+  const named = [merge.preHead, ...listOf(merge.planned), ...listOf(merge.landed)];
+  const bad = named.find((v) => v !== undefined && !(typeof v === "string" && FULL_SHA.test(v)));
+  if (bad !== undefined)
+    return no(
+      `ledger value ${typeof bad === "string" ? bad : JSON.stringify(bad)} is not a commit sha: not ${as === "landed" ? "landed" : "rolled back"}`,
+    );
   if (pickInProgress(root).length > 0)
     return no(`git is in the middle of a cherry-pick in ${root}: finish or abort it first`);
   const held = HELD.filter((key) => merge[key]);

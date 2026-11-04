@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -415,4 +416,26 @@ test("--resolve rolled-back resolves once that pick is reset off main, an owner 
   const res = merge(ID, "--resolve", "rolled-back");
   assert.equal(res.status, 0, out(res));
   assert.equal(readLedger(root, ID).state, "verified");
+});
+
+// Verifier r5, N7: a ledger value went to git log as a revision, so `--output=<file>` wrote a file.
+test("--resolve refuses a ledger value that is not a full commit sha before any git call", () => {
+  const { preHead } = stuckLand();
+  git(root, "reset", "-q", "--keep", preHead);
+  const target = join(home, "written-by-git-log");
+  const ledger = readLedger(root, ID);
+  const { landed: _, ...rest } = ledger.merge;
+  writeLedger(root, {
+    ...ledger,
+    merge: { ...rest, step: "picking", planned: [`--output=${target}`] },
+  });
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    new RegExp(`ledger value --output=${target} is not a commit sha: not rolled back`),
+  );
+  assert.equal(existsSync(target), false);
+  assert.equal(ledgerBytes(), before);
 });
