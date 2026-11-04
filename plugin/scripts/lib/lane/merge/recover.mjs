@@ -74,7 +74,8 @@ function notOurCommit({ root, ledger }, sha) {
 // later, why }` (a commit past the picks: this land's board commit when `why` is null), or `{ mine,
 // foreign }` (main at the picks: the board writes left in the record's files). A commit that only adds
 // Agentry's memory records (the owner committing an episode) is not past the picks: it is no one's
-// board commit, and the land goes on on top of it.
+// board commit, and the land goes on on top of it. Nor is one the land accepted after its gate before it
+// wrote the board (the owner's board fix, field 79): the record names the commit it wrote on (`on`).
 function recordingLeft(lane) {
   const { root } = lane;
   const merge = lane.ledger.merge;
@@ -82,7 +83,10 @@ function recordingLeft(lane) {
   const n = merge.landed.length;
   if (chain.length < n || chain.slice(0, n).join(" ") !== merge.landed.join(" "))
     return { moved: true };
-  const past = chain.slice(n).filter((sha) => !isMemoryCommit(root, sha));
+  const on = merge.record?.on;
+  const from = on ? chain.indexOf(on) + 1 : n;
+  if (from === 0 || from < n) return { moved: true }; // the commit it wrote on is gone, or is a pick
+  const past = chain.slice(from).filter((sha) => !isMemoryCommit(root, sha));
   if (past.length > 0) {
     const [commit, ...later] = past;
     return { commit, later, why: notOurCommit(lane, commit) };

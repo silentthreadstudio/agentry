@@ -1401,9 +1401,10 @@ test("a branch with a merge commit is refused before any pick", () => {
   assert.equal(head(), pre);
 });
 
-test("a board write that adds a finding is restored and stops; a rerun after main moved won't guess", () => {
-  // A flagged task must land with a verdict the rule accepts; the fixture's T1 has "PASS" and this rule
-  // asks for "SIGNED", so the done task gets a new flagged-needs-verdict finding no load check foresees.
+// A flagged task must land with a verdict the rule accepts; the fixture's T1 has "PASS" and this rule asks
+// for "SIGNED", so the done task gets a new flagged-needs-verdict finding no load check foresees. The land
+// picks, gates green and stops at its record with main at preHead plus its pick.
+function landStoppedAtRecord() {
   const flagged = structuredClone(SPEC);
   flagged.kinds.task.fields.flagged = { column: "Sprint", type: "flag" };
   flagged.rules.push({
@@ -1423,16 +1424,99 @@ test("a board write that adds a finding is restored and stops; a rerun after mai
   assert.deepEqual({ board: board(), sprint: sprint() }, before);
   assert.equal(status(), "");
   assert.equal(readLedger(root, ID).merge.step, "gated");
+  return readLedger(root, ID).merge;
+}
+const SIGNED = ["| T1   | S1     | verify | PASS    |", "| T1   | S1     | verify | SIGNED  |"];
+/** The owner's fix for the finding, committed on main: T1's verdict, plus `extra` files ({ file: text }). */
+function commitVerdictFix(extra = {}) {
+  writeFileSync(join(root, "plan", "BOARD.md"), board().replace(...SIGNED));
+  for (const [file, text] of Object.entries(extra)) writeFileSync(join(root, file), text);
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "-m", "docs(board): sign T1");
+}
 
-  // Fixed: the land resumes from the ledger, no second pick, no second gate run.
-  commitSpec(SPEC);
-  const picked = readLedger(root, ID).merge.landed;
+test("a board write that adds a finding is restored and stops; a fix touching a non-board file won't resume", () => {
+  const { landed } = landStoppedAtRecord();
+  commitVerdictFix({ "notes.txt": "why\n" });
   const again = merge(ID, "--message", "docs(board): land T1");
-  assert.equal(again.status, 1, out(again)); // main moved (the spec commit): it does not resume
+  assert.equal(again.status, 1, out(again));
   assert.match(again.stdout, /main has moved since this land picked 1 commit\(s\) onto/);
-  assert.match(again.stdout, /: not this land's/);
+  assert.match(again.stdout, /[0-9a-f]{7} docs\(board\): sign T1: not this land's/);
   assert.match(again.stdout, /next: show the owner git log --first-parent/);
-  assert.deepEqual(readLedger(root, ID).merge.landed, picked);
+  assert.deepEqual(readLedger(root, ID).merge.landed, landed);
+  assert.equal(readLedger(root, ID).state, "merging");
+});
+
+// Field 79: the record stopped on a finding, the owner committed the fix, and the rerun refused past it.
+test("after the gate passed, the owner's board-only fix commit resumes the land; its board commit goes on top", () => {
+  const { landed } = landStoppedAtRecord();
+  const gates = readLedger(root, ID).gates.length;
+  commitVerdictFix();
+  const fix = head();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /1 commit\(s\) already on main: resuming/);
+  assert.match(res.stdout, /docs\(board\): sign T1: after the gate, not a pick/);
+  assert.match(res.stdout, /already passed/);
+  assert.equal(git(root, "rev-parse", "HEAD~1"), fix);
+  assert.equal(git(root, "rev-parse", "HEAD~2"), landed[0]);
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| S1 +\| done +\| SIGNED/);
+  assert.equal(readLedger(root, ID).state, "merged");
+  assert.equal(readLedger(root, ID).gates.length, gates); // no second gate
+  assert.equal(status(), "");
+});
+
+test("after the gate passed, a commit of only Agentry's config resumes the land", () => {
+  landStoppedAtRecord();
+  commitSpec(SPEC); // the rule dropped: .agentry/process.json and workflow.json only
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /spec: after the gate, not a pick; the board commit goes on top/);
+  assert.equal(git(root, "log", "-1", "--format=%s", "HEAD~1"), "spec");
+  assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| S1 +\| done +\|/);
+});
+
+test("a board-only commit after the picks, before the gate passed, still refuses the resume", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path });
+  const preHead = head();
+  git(root, "cherry-pick", shas[0]);
+  const landed = [head()];
+  const ledger = readLedger(root, ID);
+  writeLedger(root, {
+    ...ledger,
+    state: "merging",
+    merge: {
+      preHead,
+      planned: shas,
+      landed,
+      tip: shas[0],
+      stateBefore: "verified",
+      step: "landed",
+      at: "2026-11-01T00:00:00.000Z",
+    },
+  });
+  commitVerdictFix();
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /main has moved since this land picked 1 commit\(s\)/);
+  assert.match(res.stdout, /docs\(board\): sign T1: not this land's/);
+  assert.doesNotMatch(res.stdout, /gate tier/);
+  assert.deepEqual(readLedger(root, ID).merge.landed, landed);
+});
+
+test("a land killed at recording on top of the owner's fix commit is finished by the rerun", () => {
+  landStoppedAtRecord();
+  commitVerdictFix();
+  const fix = head();
+  landKilledAt(KILL_AT_COMMIT, "before");
+  assert.equal(readLedger(root, ID).merge.record.on, fix);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /✓ recover +took back the board writes a killed run left uncommitted/);
+  assert.equal(git(root, "rev-parse", "HEAD~1"), fix);
+  assert.equal(readLedger(root, ID).state, "merged");
+  assert.equal(status(), "");
 });
 
 test("a commit hook that refuses the board commit restores the files; the rerun resumes and commits", () => {

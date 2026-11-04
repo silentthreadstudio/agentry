@@ -22,7 +22,7 @@ import { readProcess } from "../../process/read.mjs";
 import { boardReport } from "../../process/status.mjs";
 import { WriteError } from "../../process/write.mjs";
 import { putCells, sha256 } from "../carry-io.mjs";
-import { boardCommit, restoreFiles, subjectOf, textAt } from "../land.mjs";
+import { boardCommit, commitOf, restoreFiles, subjectOf, textAt } from "../land.mjs";
 import { backStop, conflictLine, dropNext, putBackAllow } from "./carry.mjs";
 import { now, ok, red, save, setMerge, short, skip } from "./lane.mjs";
 
@@ -120,7 +120,10 @@ export function recordStep(lane, rows) {
   // Written before the first board write: what this land writes, by sha256, so a rerun after a kill
   // from here on acts only on what it can prove is its own (merge/recover.mjs).
   const hashes = Object.fromEntries(files.map((file) => [file, sha256(texts.get(file))]));
-  setMerge(lane, { step: "recording", record: { files, sha256: hashes } });
+  // `on`: the commit the board commit goes on, so a commit the land accepted after its gate (the owner's
+  // board fix) is never taken for the land's own board commit.
+  const on = commitOf(root, "HEAD");
+  setMerge(lane, { step: "recording", record: { files, sha256: hashes, on } });
   for (const file of files) writeFileSync(join(root, file), texts.get(file));
   lane.files = files;
   const carried = lane.ledger.merge.carry?.files ?? [];

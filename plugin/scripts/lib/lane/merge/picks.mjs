@@ -2,10 +2,14 @@
 // one argv call that is aborted on any stop. `merge.preHead` and `merge.planned` are written before the
 // pick, and what landed is read from main's first-parent history since preHead, so a rerun after a kill
 // knows which picks main holds.
+import { posix } from "node:path";
+import { escapesRoot } from "../../process/spec/shape.mjs";
+import { globMatch } from "../gate.mjs";
 import {
   cherryPick,
   commitOf,
   commitsBetween,
+  filesOf,
   landedSince,
   rollback,
   subjectOf,
@@ -13,6 +17,43 @@ import {
 import { isMemoryCommit } from "../own-memory.mjs";
 import { FRESH, now, ok, red, save, setMerge, short, tipOf } from "./lane.mjs";
 import { commitsRow } from "./rows.mjs";
+
+// The board's own files as the lane's guard reads them (exec's `boardPaths`, field 75): each kind's table,
+// contract blocks and create blocks and `status.note` as paths, each kind's `at.files` and `file.glob` (its
+// `{id}` any name) as globs, from the spec's root; one that leaves the repository is never one. A path
+// test: (path) => boolean, for a repo-relative, `/`-separated path.
+function boardPathTest(spec) {
+  const base = typeof spec?.root === "string" ? spec.root : ".";
+  if (!spec || escapesRoot(".", base)) return () => false;
+  const inRepo = (from) => (p) => typeof p === "string" && p !== "" && !escapesRoot(from, p);
+  const paths = [];
+  const globs = [];
+  for (const kind of Object.values(spec.kinds ?? {})) {
+    paths.push(kind?.at?.table, ...[kind?.contract?.blocks ?? []].flat());
+    paths.push(...[kind?.create?.blocks ?? []].flat().map((b) => b?.file));
+    globs.push(kind?.at?.files, kind?.file?.glob?.replaceAll?.("{id}", "*"));
+  }
+  const fromBase = (list) =>
+    list.filter(inRepo(base)).map((p) => posix.normalize(posix.join(base, p)));
+  const note = spec.status?.note;
+  const exact = new Set([
+    ...fromBase(paths),
+    ...(inRepo(".")(note) ? [posix.normalize(note)] : []),
+  ]);
+  const wild = fromBase(globs);
+  return (path) => exact.has(path) || (wild.length > 0 && globMatch(wild, path));
+}
+
+// Agentry's own config at the root of `.agentry/` (process.json, workflow.json, config.json).
+const AGENTRY_CONFIG = /^\.agentry\/[^/]+\.json$/;
+
+// Does commit `sha` change only board files and Agentry's config (the owner's board fix after a stop)?
+function boardOnlyCommit(lane, sha) {
+  const files = filesOf(lane.root, sha);
+  if (!files?.length) return false; // a merge commit, or git cannot say
+  const board = boardPathTest(lane.spec);
+  return files.every((file) => board(file) || AGENTRY_CONFIG.test(file));
+}
 
 // The picks main holds since preHead, read from main itself, become `merge.landed`.
 function recordLanded(lane, rows, detail) {
@@ -94,13 +135,15 @@ export function landStep(lane, rows) {
   if (merge.step === "picking") return resumePicking(lane, rows);
   if (!FRESH.includes(merge.step)) {
     // Main is preHead plus the picks. Once the gate passed, commits after them that only add Agentry's
-    // memory records (the owner committing an episode) may follow: they are no one's land, nothing is
-    // rolled back over them any more, and the board commit goes on top.
+    // memory records (the owner committing an episode), or change only board files and Agentry's config
+    // (the owner's fix for a finding the record stopped on, field 79), may follow: they are no one's land,
+    // nothing is rolled back over them any more, and the board commit goes on top.
     const chain = commitsBetween(root, merge.preHead, "HEAD", { firstParent: true });
     const n = merge.landed.length;
-    const memoryOk = (sha, i) => i >= n && merge.step === "gated" && isMemoryCommit(root, sha);
+    const ownersOk = (sha, i) =>
+      i >= n && merge.step === "gated" && (isMemoryCommit(root, sha) || boardOnlyCommit(lane, sha));
     const extra = (chain ?? []).filter(
-      (sha, i) => !merge.landed.includes(sha) && !memoryOk(sha, i),
+      (sha, i) => !merge.landed.includes(sha) && !ownersOk(sha, i),
     );
     if (!chain || chain.slice(0, n).join(" ") !== merge.landed.join(" ") || extra.length > 0) {
       rows.push(
@@ -120,12 +163,17 @@ export function landStep(lane, rows) {
         next: `show the owner git log --first-parent ${short(merge.preHead)}..${mainBranch}`,
       };
     }
+    const owners = (chain ?? [])
+      .slice(n)
+      .map(
+        (sha) =>
+          `${short(sha)} ${subjectOf(root, sha)}: after the gate, not a pick; the board commit goes on top`,
+      );
     rows.push(
-      ok(
-        "land",
-        `${merge.landed.length} commit(s) already on ${mainBranch}: resuming`,
-        merge.landed.map(short),
-      ),
+      ok("land", `${merge.landed.length} commit(s) already on ${mainBranch}: resuming`, [
+        ...merge.landed.map(short),
+        ...owners,
+      ]),
     );
     return null;
   }
