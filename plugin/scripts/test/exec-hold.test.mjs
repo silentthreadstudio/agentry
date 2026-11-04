@@ -864,6 +864,18 @@ test("owns and its hint judge a path normalised: .//etc/passwd leaves the reposi
   );
 });
 
+test("the owns hint drops a word starting with -, so the command it prints runs", () => {
+  // R1d-38 final N2, probe C3: `--apply/y` gave `--add --apply/y,real/path.mjs --apply`.
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3").json;
+  ask(out, "see `--apply/y` and `-x/y.txt`\nneeds: -rf/z.txt, real/path.mjs");
+  const held = lane(r, "report", "T3").json;
+  assert.match(held.held, / --add real\/path\.mjs --apply, then resume; /);
+  assert.doesNotMatch(held.held, /--add -/);
+});
+
 test("owns --add counts a path an owned entry already covers as owned: a directory, ./ and a trailing /", () => {
   // R1d-38 r2 Q5: with lib/ owned, lib/a.txt and ./lib/ were appended; ./three.txt beside three.txt too.
   const r = repo();

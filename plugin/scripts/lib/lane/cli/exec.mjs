@@ -1041,8 +1041,9 @@ const normalised = (path) =>
 // The paths a NEEDS_CONTEXT report names that the lane does not own, in its first 20 lines: those of each
 // `needs: <path>` line and each backticked path (a word with a `/` or a file extension, no spaces). A
 // backticked word with no `/` counts only when it is a file in the worktree (`exec.noteRounds`, `e.g` are
-// not), and a path that leaves the repository never does.
-const PATHISH = /^[\w.@-][\w.@/-]*(?:\/[\w.@-]*|\.[A-Za-z][A-Za-z0-9]*)$/;
+// not), and a path that leaves the repository never does, nor a word starting with `-` (the hint would
+// read as a flag).
+const PATHISH = /^[\w.@][\w.@/-]*(?:\/[\w.@-]*|\.[A-Za-z][A-Za-z0-9]*)$/;
 const trimmed = (w) => w.replace(/^`+|[`.,;:)]+$/g, "");
 function namedOutside(root, ledger, reportPath) {
   const lines = readOr(reportPath).split("\n").slice(0, 20);
