@@ -461,6 +461,7 @@ In `workflow.json`, beside `exec.verify`:
 | `on.built` | no | The builder reported done. |
 | `on.failed` | no | A verifier failed it. |
 | `on.merged` | no | Its commits landed on main; the only event that may set a `done` status. |
+| `on.cut` | no | The lane was retired on a board decision (`lane exec cut`); never a `done` status. |
 | `write` | no | Where each value goes, as in `lifecycle.write`, with no `handoff`. |
 | `write.status` | no | The kind's status field. |
 | `write.verdict` | no | A text field for the verdict. |

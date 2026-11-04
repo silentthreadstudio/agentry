@@ -6,7 +6,7 @@ lifecycle dispatched t-1: 0 would be written, 1 skipped
 {"event":"dispatched","id":"t-1","applied":false,"writes":[],"skipped":[{"what":"status","why":"lifecycle off"}]}
 
 --- lifecycle bad event: exit 2
-✗ board lifecycle nope t-1: unknown event "nope" (dispatched, built, failed, verdict, merged)
+✗ board lifecycle nope t-1: unknown event "nope" (dispatched, built, failed, verdict, merged, cut)
 
 --- exec start t-1: exit 0
 {
