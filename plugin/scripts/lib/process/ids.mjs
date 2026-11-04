@@ -5,11 +5,14 @@
 //
 // nextId(name, kind, model) -> { id } | { error }   error = the kind asks for its ids ("ask"), or the
 // pattern needs more than a number.
-// nextInFamily(model, family) -> { family, id } | { error }   the next free id in a prefix family (field
-// 85), whatever the kind's `create.id`: every id on the board, of any kind, that is the family, an
-// optional separator (`-`, `_`, `.`) and digits, then any suffix, counts (`ART-10a` is 10); the answer is
-// one above the highest, in that id's case, separator and zero-padding, else `<family>-1`. Case-insensitive;
-// a trailing separator is dropped (`ART-` is `ART`). error = a family with no letter.
+// nextInFamily(spec, model, family) -> { family, id } | { error }   the next free id in a prefix family
+// (field 85), whatever the kind's `create.id`: every id on the board, of any kind, that is the family, an
+// optional separator (`-`, `_`, `.`) and digits, then any suffix, counts (`ART-10a` is 10); a bare number
+// of a kind with an `id.prefix` counts in its cited form (decision `52` with prefix `A` is `A52`). A
+// family that ends in a digit needs the separator (`R1` counts `R1-3`, never `R19` or `R1d-43`). The answer
+// is one above the highest, in that id's case, separator and zero-padding, else `<family>-1`.
+// Case-insensitive; the family is trimmed and a trailing separator dropped (`ART-` is `ART`). error = a
+// family with no letter, or with a space inside.
 // boardId(spec, model, typed, kind?) -> string      the board's spelling of `typed` (of `kind` when
 // given); `typed` itself when the board has no item it names, or more than one.
 // runId(spec, model, typed) -> { id, kind } | { error }   the item exec and merge run: `boardId` over
@@ -74,15 +77,24 @@ export function nextId(name, kind, model) {
   return { id: `${before}${next}${after}` };
 }
 
-export function nextInFamily(model, typed) {
-  const family = typed.replace(/[-_.]+$/, "");
-  if (!/\p{L}/u.test(family))
-    return { error: `--family "${typed}" names no prefix (it needs a letter)` };
-  const member = new RegExp(`^(${literal(family)})([-_.]?)(\\d+)`, "i");
+// An id as the board cites it: a bare number of a kind with an `id.prefix` takes the prefix (`A52`), as
+// `boardId` reads the cited form back.
+const citedOf = (spec, kind, id) => {
+  const prefix = spec.kinds[kind]?.id?.prefix;
+  return prefix && /^\d+$/.test(id) ? `${prefix}${id}` : id;
+};
+
+export function nextInFamily(spec, model, typed) {
+  const family = typed.trim().replace(/[-_.]+$/, "");
+  if (!/\p{L}/u.test(family) || /\s/.test(family))
+    return { error: `--family "${typed}" names no prefix (it needs a letter and no space)` };
+  const gap = /\d$/.test(family) ? "([-_.])" : "([-_.]?)";
+  const member = new RegExp(`^(${literal(family)})${gap}(\\d+)`, "i");
   let top = null;
-  for (const { items } of Object.values(model.kinds))
+  for (const [kind, { items }] of Object.entries(model.kinds))
     for (const { id } of items) {
-      const [, prefix, sep, digits] = (typeof id === "string" && member.exec(id)) || [];
+      if (typeof id !== "string") continue;
+      const [, prefix, sep, digits] = member.exec(citedOf(spec, kind, id)) ?? [];
       if (digits && (!top || Number(digits) > top.n))
         top = { prefix, sep, n: Number(digits), width: digits.length };
     }

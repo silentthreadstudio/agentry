@@ -27,6 +27,8 @@ export const help = {
 
 export function run(argv, { spec, model }) {
   const at = argv.indexOf("--family");
+  if (at >= 0 && argv.lastIndexOf("--family") !== at)
+    return usageError("board next-id", "--family is given twice");
   const family = at < 0 ? undefined : argv[at + 1];
   const name = argv.find((a, i) => !a.startsWith("--") && (at < 0 || i !== at + 1));
   const kind = own(spec.kinds, name);
@@ -39,7 +41,7 @@ export function run(argv, { spec, model }) {
   if (at >= 0) {
     if (!family || family.startsWith("--"))
       return usageError("board next-id", "--family needs a value");
-    const next = nextInFamily(model, family);
+    const next = nextInFamily(spec, model, family);
     if (next.error) return usageError("board next-id", next.error);
     return {
       exit: 0,

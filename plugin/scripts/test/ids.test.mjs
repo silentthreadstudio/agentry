@@ -55,47 +55,69 @@ const ids = (kinds) => ({
     Object.entries(kinds).map(([k, list]) => [k, { items: list.map((id) => ({ id })) }]),
   ),
 });
+// No kind on it cites its ids with a prefix.
+const BARE = { kinds: {} };
 const FIELD = ids({ task: ["ART-10", "ART-10a", "ART-10d", "ART-14", "ART-18", "W3"] });
 
 test("a family's next id is one above its highest number, suffixed ids counted", () => {
-  assert.deepEqual(nextInFamily(FIELD, "ART"), { family: "ART", id: "ART-19" });
+  assert.deepEqual(nextInFamily(BARE, FIELD, "ART"), { family: "ART", id: "ART-19" });
 });
 
 test("the next id keeps the highest id's separator and zero-padding", () => {
-  assert.equal(nextInFamily(ids({ q: ["Q-3", "Q_007"] }), "Q").id, "Q_008");
-  assert.equal(nextInFamily(ids({ x: ["X.09"] }), "X").id, "X.10");
-  assert.equal(nextInFamily(ids({ t: ["T9", "T-2"] }), "T").id, "T10");
+  assert.equal(nextInFamily(BARE, ids({ q: ["Q-3", "Q_007"] }), "Q").id, "Q_008");
+  assert.equal(nextInFamily(BARE, ids({ x: ["X.09"] }), "X").id, "X.10");
+  assert.equal(nextInFamily(BARE, ids({ t: ["T9", "T-2"] }), "T").id, "T10");
 });
 
 test("a family with no id on the board starts at <family>-1, as typed", () => {
-  assert.equal(nextInFamily(FIELD, "ZZ").id, "ZZ-1");
-  assert.equal(nextInFamily(FIELD, "zz").id, "zz-1");
+  assert.equal(nextInFamily(BARE, FIELD, "ZZ").id, "ZZ-1");
+  assert.equal(nextInFamily(BARE, FIELD, "zz").id, "zz-1");
 });
 
 test("a family matches in any case and answers in the case of the ids found", () => {
-  assert.equal(nextInFamily(FIELD, "art").id, "ART-19");
-  assert.equal(nextInFamily(ids({ t: ["art-4"] }), "ART").id, "art-5");
+  assert.equal(nextInFamily(BARE, FIELD, "art").id, "ART-19");
+  assert.equal(nextInFamily(BARE, ids({ t: ["art-4"] }), "ART").id, "art-5");
 });
 
 test("a family that ends in a separator is read without it", () => {
-  assert.deepEqual(nextInFamily(FIELD, "ART-"), { family: "ART", id: "ART-19" });
-  assert.equal(nextInFamily(FIELD, "ART_").id, "ART-19");
+  assert.deepEqual(nextInFamily(BARE, FIELD, "ART-"), { family: "ART", id: "ART-19" });
+  assert.equal(nextInFamily(BARE, FIELD, "ART_").id, "ART-19");
 });
 
 test("a family with no letter is refused", () => {
-  assert.ok(nextInFamily(FIELD, "12").error);
-  assert.ok(nextInFamily(FIELD, "-").error);
+  assert.ok(nextInFamily(BARE, FIELD, "12").error);
+  assert.ok(nextInFamily(BARE, FIELD, "-").error);
 });
 
 test("a family never counts a longer prefix", () => {
   const board = ids({ task: ["ART-3", "ARTX-30", "PART-40"] });
-  assert.equal(nextInFamily(board, "ART").id, "ART-4");
-  assert.equal(nextInFamily(ids({ task: ["ARTX-30", "PART-40"] }), "ART").id, "ART-1");
+  assert.equal(nextInFamily(BARE, board, "ART").id, "ART-4");
+  assert.equal(nextInFamily(BARE, ids({ task: ["ARTX-30", "PART-40"] }), "ART").id, "ART-1");
 });
 
 test("an id on any kind counts toward the family", () => {
   const board = ids({ task: ["ART-10"], later: ["ART-25"], note: ["ART-2"] });
-  assert.equal(nextInFamily(board, "ART").id, "ART-26");
+  assert.equal(nextInFamily(BARE, board, "ART").id, "ART-26");
+});
+
+test("a family that ends in a digit needs a separator, so it never reads into a longer id", () => {
+  const board = ids({ sprint: ["R1d", "R19"], task: ["R1-3", "R1.4", "R1d-43", "R10-2"] });
+  assert.equal(nextInFamily(BARE, board, "R1").id, "R1.5");
+  assert.equal(nextInFamily(BARE, ids({ task: ["R19", "R1d-43"] }), "R1").id, "R1-1");
+});
+
+test("a bare number a kind cites with its prefix counts in its cited form", () => {
+  const board = ids({ decision: ["50", "52"], task: ["A-7"] });
+  const cites = { kinds: { decision: { id: { prefix: "A" } } } };
+  assert.equal(nextInFamily(cites, board, "A").id, "A53");
+  assert.equal(nextInFamily(BARE, board, "A").id, "A-8");
+  assert.equal(nextInFamily(spec, model, "n").id, "N3");
+});
+
+test("a family is trimmed, and a space inside it is refused", () => {
+  assert.deepEqual(nextInFamily(BARE, FIELD, " ART "), { family: "ART", id: "ART-19" });
+  assert.ok(nextInFamily(BARE, FIELD, "AR T").error);
+  assert.ok(nextInFamily(BARE, FIELD, "  ").error);
 });
 
 test("next-id --family answers even when create.id is ask or unset, across kinds", () => {
@@ -118,6 +140,22 @@ test("next-id refuses --family with no value or with no letter", () => {
     const out = board("next-id", "task", ...args);
     assert.equal(out.status, 2, args.join(" "));
     assert.match(out.stderr, /^✗ board next-id: --family/, args.join(" "));
+  }
+});
+
+test("next-id --family counts a decision in its cited form", () => {
+  const out = board("next-id", "decision", "--family", "N");
+  assert.deepEqual([out.status, out.stdout], [0, "N3\n"]);
+});
+
+test("next-id refuses a repeated --family", () => {
+  for (const args of [
+    ["task", "--family", "A", "--family", "B"],
+    ["--family", "A", "--family", "B", "task"],
+  ]) {
+    const out = board("next-id", ...args);
+    assert.equal(out.status, 2, args.join(" "));
+    assert.match(out.stderr, /--family is given twice/, args.join(" "));
   }
 });
 
