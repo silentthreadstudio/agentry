@@ -7,6 +7,62 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **`lane exec adopt <id> --branch <b>`** — work built outside exec (an agent's worktree, a hand branch)
+  becomes the lane: `start`'s checks and board write, a fresh `agentry/<id>` cut from main, `main..<b>`'s own
+  commits picked onto it (its merge commits left out and named in the brief) and the uncommitted diff of
+  `<b>`'s worktree applied, as `restart --carry` does. `<b>` and its worktree are only read, and `cleanup:`
+  prints how to remove them once the lane has landed. The first brief lists the adopted commits; commits
+  outside the contract's owns are a warning with the `lane exec owns <id> --add <paths> --apply` line. A
+  conflict leaves the lane building with the conflict in its worktree for the builder; any other error in
+  the carry takes the new lane down again and names what it could not remove. `<b>` must be a branch's own
+  name exactly as git lists it: a revision (`<b>~0`), another case of a name, a branch with a case twin, the
+  main branch and a branch a ledger tracks are refused, with nothing written.
+- **`lane spike` and ways on for unlisted worktrees** — `agentry lane spike <branch|path> --for <id>` files an
+  agent worktree no ledger knows as work meant for that item, `--keep "<why>"` keeps it on purpose (shown as
+  kept, never drift) and `--forget` drops it; with no flag it lists them, a branch gone since marked `gone`.
+  The list is local run state (`.agentry/run/spikes.json`), written at once. Drift now offers an unlisted
+  agent worktree its ways on, each with its command: land (`lane merge <id> --branch <b>`), continue (`lane
+  exec adopt <id> --branch <b>`), file (`lane spike`) or remove (`git worktree remove`), never
+  `/agentry:exec`. A spike filed for an item is one `spike-for <id>` row until a lane takes its branch, an
+  adopted branch is no drift, and an unreadable `spikes.json` is a `spikes-unreadable` row.
+- **`lane note`** — `agentry lane note <id> --owner "<call>"` records a call the owner made on a lane, or on
+  the spike filed for the item, one line each; with no flag it lists them, and `--recorded <n,n|all> --where
+  "<file or section>"` marks them written down. `exec adopt` moves a spike's calls into the lane and
+  `restart` keeps them; a spike holding calls not written down refuses `--forget` and a re-file that changes
+  its item. `exec close`'s episode counts them, and `lane session close` lists the ones not written down
+  (`calls`, `callLines`), merged lanes included, until they are marked; `/agentry:close` writes them where
+  the repo keeps decisions and marks them.
+- **`board next-id <kind> --family <prefix>`** — the next free id among every board id in that prefix family,
+  whatever kind holds it (`ART-19` after `ART-18`, `<prefix>-1` when there is none), so a kind whose ids are
+  chosen by hand no longer takes one another kind already uses. A family ending in a digit needs a separator
+  (`R1` does not read `R19`). The chosen-by-hand refusal names it, and `/agentry:new` proposes it when the
+  owner names a prefix.
+- **`board commits --learn [--min <n>]`** — reads the last 500 first-parent commits of the default branch and
+  prints the `commits` rules they keep: `subjectPattern` with the Conventional Commits types and each other
+  type used at least `--min` times (default 3), `subjectMax`, and whether every subject has a scope. It writes
+  nothing, and with no history it says why and prints the standard set. `/agentry:init` proposes its rules
+  instead of a pattern written from the spec alone.
+- **Commit rules in the land and the rebase** — when a commit's subject fails `commits.subjectPattern` on a
+  type main already uses, the `commits` row of `lane merge` says how often main uses it and prints the
+  pattern widened to take it. `lane exec rebase` lists each commit the land would refuse under `## Reword`
+  in the rebase brief (`reword <sha> "<subject>": <why>`), the one rewording that brief allows. A branch
+  whose merge commit brings in another open lane's branch names that lane: land it first (`next` is its
+  land), then `lane exec rebase`.
+- **Model and agent from the contract and its steps** — a step ending `(model: <m>, agent:
+  <designer|implementer>)` names its run's builder model and agent, ahead of the contract's `- **Model:**`
+  bullet and the new `- **Agent:** <designer|implementer>` bullet, which win over `models.build` and the owned
+  paths. The `model:` and `dispatch:` lines name the source (`opus (step 1)`, `"from": "contract"`); an
+  unmarked dispatch prints as before. Steps of one run that name two models or agents are a steps problem.
+  `exec start` hints when the contract's prose names a model that no bullet or marker sets.
+- **The note's age and idle lanes asked once** — `lane session start` labels the note with its age once it is
+  12 h old (`note (3d old): …`) and calls it stale when the Now it was first read under has moved on (`note:
+  stale, written 3d ago when the Now was S1, now S2 → rewrite or clear .agentry/NOTE.md`); `/agentry:close`
+  then asks the owner to rewrite or clear it. An idle lane is put to the owner once per quiet spell (`ask
+  the owner once: park T6?`), and later starts print one quiet `idle: T6 (asked 12:05; …)` line until its
+  last change moves; a lane counts as asked only when the question fits in the 40 lines. Both records are
+  local (`.agentry/run/note-seen.json`, `idle-asked.json`). In `--json`, the note carries `writtenAt`, `now`,
+  `old` and `stale` as `{ why: "now-changed" | "ids-done", … }` (it was the list of ids), and each `idle[]`
+  lane `asked`.
 - **`agentry run` and named locks** — `agentry run --limit <dur> [--lock <name>] [--wait <dur>] -- <cmd>`
   runs a command (no shell) in its own process group and stops the whole group at the limit (SIGTERM, then
   SIGKILL 5 s later; exit 124), since macOS ships no `timeout`. `locks` in `workflow.json` (`{ "editor": 1 }`)
@@ -214,6 +270,18 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `board contract` finds.
 
 ### Changed
+- **A verified lane's restart** — `lane exec restart <id> --carry` of a lane whose last verdict passed, on the
+  tip it settled on and with no uncommitted work, that carries cleanly goes on as a rebase does instead of
+  briefing a build round for work already done: under `exec.rebase: "recheck"` a changed carry goes to a fresh
+  verifier reading the range-diff, any other carry to the gate on the new tip (or the close). The board's
+  verdict is kept, `built` is written, and the old lane's verdicts open the new ledger, so a flagged item
+  lands with no second verifier; they do not count toward the three-verdict stop. A conflict, a `FAIL`, no
+  verdict or work after the verdict keeps the build round. A restart that stops after the archive clears the
+  old verdict on the board, or names the `board set` call that does.
+- **Inline steps are a steps problem** — `- **Steps:** 1. Build it 2. Ship it` is never parsed: `exec start`
+  refuses it, and the message ends with a one-step-per-line rewrite to check before pasting. `board check`
+  reports any Steps problem as a `ready-has-contract` finding (`contract <id>: …`), so it shows before
+  `start` does.
 - **Land and resume** — a `board set` or `board add --apply` made on main is carried into the board commit
   (it was put back uncommitted after it, so a verdict the board check needed, a flagged task's PASS, stopped
   the land); one the check refuses stops the land and goes back on main as it was. Once the gate has passed, a
@@ -321,6 +389,22 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   loads. `/agentry:init` offers lifecycle board writes once, saying what they write.
 
 ### Fixed
+- **Branch names that differ only in case** — on a case-insensitive filesystem a read by name could open
+  another branch's ref. `lane merge --branch` takes only a branch's own name exactly as git lists it, its tip
+  from that line, and refuses a revision, a case twin, a branch with no commits yet and a worktree on a
+  spelling no branch is named, with nothing written. Every merge call, `--check` included, reads the
+  ledger's branch and tip from the branch list again, so a twin made since is refused, never landed.
+  `lane merge --cleanup` and `lane sweep` delete a branch at its listed tip and keep one with a case twin,
+  and the sweep says why it kept a removed worktree's branch (`kept <b>: it has a case twin <other>`, or
+  `work not on main`). `lane exec restart` moves the branch at its listed tip and refuses, before writing
+  anything, a lane branch or a kept name that clashes with another only in case.
+- **The guard after a rebase** — a rebase that moves a lane's start no longer holds the lane for a board row
+  that was mid-write at its start and committed since; an edit on main that was discarded rather than
+  committed still trips.
+- **`lane exec restart`** no longer counts an ignored empty directory as a file to lose.
+- **Leftover temp files** — a gate's release removes the temp file a writer killed mid-write left beside its
+  slot, and `lane sweep` also frees dead writers' temp files in `.agentry/run/` itself.
+- **Flaky lock and gate tests under load.**
 - **Locks and slots** — a lock or gate slot is freed on every exit of `agentry run` (a normal exit, an error,
   SIGINT, SIGTERM, SIGHUP) and stays held while the command's group has a member; slot files are written whole
   and every rewrite is serialized, so a reader never sees one empty and two riders are never lost. A holder's
