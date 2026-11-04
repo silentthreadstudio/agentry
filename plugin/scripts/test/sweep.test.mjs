@@ -1108,3 +1108,42 @@ test("a 5 ms forker is stopped early in the apply, and one --apply leaves few of
     killAll(pgrepAll("^sleep 302$"));
   }
 });
+
+// ---- why the sweep kept a branch once its worktree went (S50) ----
+
+const branchRefs = (root) =>
+  git(root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/agentry/");
+
+test("a merged lane's branch with a packed case twin is kept and the sweep says why; both refs stay", () => {
+  const { root, merged } = fixture();
+  git(root, "pack-refs", "--all");
+  // A loose twin beside the packed branch, at a commit of its own: what a case twin looks like on APFS.
+  const decoy = git(root, "commit-tree", "-p", "main", "-m", "decoy", `${merged.sha}^{tree}`);
+  git(root, "update-ref", "refs/heads/agentry/t1", decoy);
+  const before = branchRefs(root);
+  const res = sweep(root, "--apply", "--json");
+  const done = JSON.parse(res.stdout);
+  const why = "kept agentry/T1: it has a case twin agentry/t1";
+  assert.deepEqual(done.result.removed, [{ id: "T1", branchDeleted: false, branchKept: why }]);
+  assert.ok(done.warnings.includes(why), res.stdout);
+  assert.ok(!existsSync(merged.path));
+  assert.equal(branchRefs(root), before, "neither spelling was deleted");
+  assert.doesNotMatch(sweep(root, "--apply").stdout, /T1/, "a second sweep has nothing of T1 left");
+});
+
+test("the sweep prints why it kept a closed lane's branch: its work is not on main", () => {
+  const { root } = fixture();
+  const closed = builtBranch(root, "T4");
+  ledger(root, "T4", { state: "closed", worktree: closed.path });
+  const res = sweep(root, "--apply");
+  assert.match(res.stdout, /removed worktree T4\n/);
+  assert.match(res.stdout, /warning: kept agentry\/T4: work not on main\n/);
+  assert.equal(git(root, "rev-parse", "refs/heads/agentry/T4"), closed.sha);
+});
+
+test("a branch the sweep deletes gives no kept reason", () => {
+  const { root } = fixture();
+  const done = JSON.parse(sweep(root, "--apply", "--json").stdout);
+  assert.deepEqual(done.result.removed, [{ id: "T1", branchDeleted: true }]);
+  assert.ok(!done.warnings.some((w) => w.startsWith("kept ")), done.warnings.join("\n"));
+});

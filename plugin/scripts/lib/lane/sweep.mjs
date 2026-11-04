@@ -34,7 +34,7 @@ import { existsSync, realpathSync, rmSync, statfsSync } from "node:fs";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { deadTemps } from "../fs/atomic.mjs";
 import * as drafts from "../process/drafts.mjs";
-import { worktrees } from "../process/git.mjs";
+import { branchTips, worktrees } from "../process/git.mjs";
 import * as ledgers from "../process/ledger.mjs";
 import {
   OLD_TEMP,
@@ -457,8 +457,10 @@ function clearLeftovers(root, found, done) {
     }
 }
 
-/** Do what `found` (a `plan`) lists: `{ removed: [{ id, branchDeleted }], kept: [{ id, reason }], killed: [pid],
- *  gone: [pid], survived: [pid], survivors: [pid], signalled: [pid] }`. A worktree `worktree.remove` keeps, or one holding
+/** Do what `found` (a `plan`) lists: `{ removed: [{ id, branchDeleted, branchKept? }], kept: [{ id, reason }], killed: [pid],
+ *  gone: [pid], survived: [pid], survivors: [pid], signalled: [pid] }`. `branchKept` says why a removed worktree's
+ *  branch stayed (`kept <b>: it has a case twin <other>` / `kept <b>: work not on main`), in the plan's `warnings`
+ *  too. A worktree `worktree.remove` keeps, or one holding
  *  ignored files while `discardIgnored` is off, is `kept` with its reason; a process already gone is `gone`;
  *  a stray with anything of its tree still running after SIGKILL is `survived` (its pid), the pids still
  *  running are `survivors`, and every pid that got a signal is `signalled`. Of the leftovers: `freedSlots` and
@@ -521,10 +523,28 @@ export function apply(root, found, { discardIgnored = false } = {}) {
       continue;
     }
     const res = remove(root, { path: w.path, branch: w.branch });
-    if (res.removed) done.removed.push({ id: w.id, branchDeleted: res.branchDeleted });
-    else done.kept.push({ id: w.id, reason: res.reason });
+    if (!res.removed) {
+      done.kept.push({ id: w.id, reason: res.reason });
+      continue;
+    }
+    const branchKept = res.reason ? keptBranch(root, w.branch) : null;
+    done.removed.push({
+      id: w.id,
+      branchDeleted: res.branchDeleted,
+      ...(branchKept && { branchKept }),
+    });
+    // Said with the plan's warnings too, which the sweep's CLI prints after the result.
+    if (branchKept) found.warnings.push(branchKept);
   }
   return done;
+}
+
+// Why `worktree.remove` kept `branch` once its worktree went: a case twin (deleting by name could take the
+// twin with it), else work that is not on main.
+function keptBranch(root, branch) {
+  const folded = branch.toLowerCase();
+  const twin = [...branchTips(root).keys()].find((b) => b !== branch && b.toLowerCase() === folded);
+  return twin ? `kept ${branch}: it has a case twin ${twin}` : `kept ${branch}: work not on main`;
 }
 
 /** Why a cleanable worktree stays (a shell is in it, or it holds ignored files), or null when it can go. */
