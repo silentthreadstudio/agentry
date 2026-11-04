@@ -1028,20 +1028,29 @@ const answerOf = (h, total) =>
       ? `at the notes cap at ${h.resumedAt}: "${h.note}"`
       : answerText(h, total);
 
+// A path that leaves the repository: a leading `/` or a `..` segment. `owns` never takes one.
+const leaves = (path) => path.startsWith("/") || path.split("/").includes("..");
+
 // The paths a NEEDS_CONTEXT report names that the lane does not own, in its first 20 lines: those of each
-// `needs: <path>` line and each backticked path (a word with a `/` or a file extension, no spaces).
+// `needs: <path>` line and each backticked path (a word with a `/` or a file extension, no spaces). A
+// backticked word with no `/` counts only when it is a file in the worktree (`exec.noteRounds`, `e.g` are
+// not), and a path that leaves the repository never does.
 const PATHISH = /^[\w.@-][\w.@/-]*(?:\/[\w.@-]*|\.[A-Za-z][A-Za-z0-9]*)$/;
+const trimmed = (w) => w.replace(/^`+|[`.,;:)]+$/g, "");
 function namedOutside(root, ledger, reportPath) {
   const lines = readOr(reportPath).split("\n").slice(0, 20);
   const named = lines.flatMap((line) => {
     const needs = /^[\s>*_-]*needs\s*:\s*(.+)$/i.exec(line);
-    const words = needs ? needs[1].split(/[\s,]+/) : [];
-    const ticked = [...line.matchAll(/`([^`\s]+)`/g)].map((m) => m[1]);
-    return [...words, ...ticked].map((w) => w.replace(/^`+|[`.,;:)]+$/g, ""));
+    const words = needs ? needs[1].split(/[\s,]+/).map(trimmed) : [];
+    const ticked = [...line.matchAll(/`([^`\s]+)`/g)]
+      .map((m) => trimmed(m[1]))
+      .filter((w) => w.includes("/") || isFile(join(ledger.worktree, w)));
+    return [...words, ...ticked];
   });
   const owned = ownedOf(root, ledger).map((o) => o.path);
   const mine = (p) => owned.some((o) => ownsPath(o, p) || ownsPath(p, o));
-  return [...new Set(named.filter((p) => PATHISH.test(p) && !/^\.+$/.test(p) && !mine(p)))];
+  const kept = (p) => PATHISH.test(p) && !/^\.+$/.test(p) && !leaves(p) && !mine(p);
+  return [...new Set(named.filter(kept))];
 }
 // The notes-round cap as the workflow file says now (field 84): read at each call, not fixed at start.
 const liveNotes = ({ spec }) => resolveWorkflow(spec).exec.noteRounds;
@@ -1484,6 +1493,8 @@ function owns(ctx, id) {
   const paths = [...new Set((set ?? add).split(",").map((p) => p.trim()))];
   const bad = paths.find((p) => !p || /\s/.test(p));
   if (bad !== undefined) refuse(`${flag} takes comma-separated paths, no blanks: "${bad}"`);
+  const outside = paths.find(leaves);
+  if (outside !== undefined) refuse(`${flag}: ${outside} leaves the repository`);
   const already = [];
   if (set !== null) ledger = { ...ledger, owned: withNew(ledger.worktree, paths) };
   else {

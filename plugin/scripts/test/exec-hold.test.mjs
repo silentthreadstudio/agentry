@@ -804,6 +804,34 @@ test("hold on a lane held for more context is refused, the hold kept, so the res
   assert.equal(lane(r, "resume", "T3", "--note", "the fact").json.next, "needs-context");
 });
 
+test("owns refuses a path that leaves the repository; the hint names only paths, never one outside", () => {
+  // R1d-38 r2 P5 and P7: --add ../outside.txt and /etc/passwd were taken, and the hint offered
+  // exec.noteRounds, e.g and ../up.txt.
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3").json;
+  const filler = Array.from({ length: 25 }, (_, i) => `line ${i}`).join("\n");
+  writeFileSync(
+    out.reportPath,
+    `NEEDS_CONTEXT\nsee \`exec.noteRounds\`, \`e.g.\`, \`npm test\`, \`node:sqlite\`, \`three.txt\`, \`../up.txt\`\nneeds: src/x.mjs, src/y.mjs\n${filler}\n\`late/path.txt\`\nused_memories: none\n`,
+  );
+  const held = lane(r, "report", "T3").json;
+  assert.match(held.held, / --add src\/x\.mjs,src\/y\.mjs --apply, then resume; /);
+  const before = ledgerOf(r.root, "T3").owned;
+  for (const [flag, path] of [
+    ["--add", "../outside.txt"],
+    ["--add", "/etc/passwd"],
+    ["--add", "src/../../x"],
+    ["--set", "three.txt,../up.txt"],
+  ]) {
+    const refused = lane(r, "owns", "T3", flag, path, "--apply");
+    assert.equal(refused.exit, 2, path);
+    assert.match(refused.stderr, /leaves the repository/, path);
+  }
+  assert.deepEqual(ledgerOf(r.root, "T3").owned, before);
+});
+
 test("owns --add counts a path an owned entry already covers as owned: a directory, ./ and a trailing /", () => {
   // R1d-38 r2 Q5: with lib/ owned, lib/a.txt and ./lib/ were appended; ./three.txt beside three.txt too.
   const r = repo();
@@ -832,7 +860,7 @@ test("owns --add counts a path an owned entry already covers as owned: a directo
 test("owns --add in needs-context rewrites the waiting brief, keeping the fact; a verified or merged lane refuses it", () => {
   const r = repo();
   let out = lane(r, "start", "T3").json;
-  ask(out, "I need `four.txt` too");
+  ask(out, "needs: four.txt");
   out = lane(r, "report", "T3").json;
   assert.match(
     out.todo,
