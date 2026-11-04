@@ -238,14 +238,14 @@ function renderStart(s, { name, root }) {
   );
   if (s.checks) startChecks(s.checks, { add, addList });
   // The lanes that wait on the owner, before anything else the session holds.
+  // A parked lane reads like a held one: its why, its evidence when it has one, and the resume (field 62).
   for (const h of s.held.slice(0, MAX_HELD)) {
-    if (h.for === "later") {
-      add(`parked: ${h.id} since ${clock(h.since)}`);
-      continue;
-    }
-    add(
-      `held: ${h.id} for the owner, ${h.steps ? `${h.when} ${h.steps}` : "mid-build"}, since ${clock(h.since)}`,
-    );
+    if (h.for === "later")
+      add(`parked: ${h.id} since ${clock(h.since)}${h.why ? `: "${oneLine(h.why)}"` : ""}`);
+    else
+      add(
+        `held: ${h.id} for the owner, ${h.steps ? `${h.when} ${h.steps}` : "mid-build"}, since ${clock(h.since)}`,
+      );
     if (h.evidence) add(`  evidence: ${h.evidence}`);
     add(`  → ${h.resume}`);
   }

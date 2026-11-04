@@ -374,8 +374,11 @@ test("start prints each held lane after the prompt line and before now:, and lea
     "  evidence: .agentry/run/process/runs/H1/r1-build.report.md",
     '  → lane exec resume H1 --note "<the OK>"',
   ]);
-  assert.equal(lines[at + 4], `parked: P1 since ${hhmm(SINCE)}`);
-  assert.match(lines[at + 5], /^now: /);
+  assert.deepEqual(lines.slice(at + 4, at + 6), [
+    `parked: P1 since ${hhmm(SINCE)}`,
+    '  → lane exec resume P1 --note "<the OK>"',
+  ]);
+  assert.match(lines[at + 6], /^now: /);
   const lanes = lines.find((l) => l.startsWith("lanes: "));
   assert.equal(lanes, "lanes: B1 building · 0 merged today");
 
@@ -400,6 +403,37 @@ test("start prints each held lane after the prompt line and before now:, and lea
     data.ledgers.map((l) => l.id),
     ["H1", "P1", "B1"],
     "held ledgers first",
+  );
+});
+
+test("a parked lane prints its note, its evidence when the hold has one, and the resume (field 62)", () => {
+  const root = fresh();
+  const evidence = join(root, ".agentry", "run", "process", "runs", "P1", "notes.md");
+  heldLedger(root, "P1", { for: "later", when: "during", evidence, why: "waits for\nthe API" });
+  heldLedger(root, "P2", { for: "later", when: "verified", evidence: null });
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const lines = res.stdout.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("parked: P1"));
+  assert.deepEqual(lines.slice(at, at + 5), [
+    `parked: P1 since ${hhmm(SINCE)}: "waits for the API"`,
+    "  evidence: .agentry/run/process/runs/P1/notes.md",
+    '  → lane exec resume P1 --note "<the OK>"',
+    `parked: P2 since ${hhmm(SINCE)}`,
+    '  → lane exec resume P2 --note "<the OK>"',
+  ]);
+});
+
+test("parked and held lanes share the cap of 3: the fourth is counted", () => {
+  const root = fresh();
+  heldLedger(root, "H1");
+  for (const id of ["P1", "P2", "P3"]) heldLedger(root, id, { for: "later", evidence: null });
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const rows = res.stdout.split("\n").filter((l) => /^(held|parked): /.test(l));
+  assert.deepEqual(
+    rows.map((l) => l.split(" ").slice(0, 2).join(" ")),
+    ["held: H1", "parked: P1", "parked: P2", "held: +1"],
   );
 });
 
