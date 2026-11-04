@@ -329,15 +329,17 @@ test("a lane parked mid-round with uncommitted work is no writer", () => {
   assert.equal(t4.exit, 0, t4.stderr);
 });
 
-test("a lane tripped by a commit on main parks (exit 0) with the moved-main line, then resume refuses", () => {
+test("a lane tripped by a commit on main touching its file parks (exit 0) with the moved-main line, then resume refuses naming restart", () => {
   const r = repo();
   const out = lane(r, "start", "T3").json;
   writeFileSync(join(out.worktree, "three.txt"), "half\n");
-  commitFile(r.root, "stray.txt", "x\n", "chore: by hand");
+  const sha = commitFile(r.root, "three.txt", "x\n", "chore: by hand").slice(0, 7);
   const parked = lane(r, "hold", "T3", "--for", "later");
   assert.equal(parked.exit, 0, parked.stderr);
   assert.match(parked.json.held, new RegExp(`^parked, since ${ISO}$`));
-  const moved = /^HEAD moved [0-9a-f]{7} → [0-9a-f]{7}; resume re-checks it$/;
+  const moved = new RegExp(
+    `^HEAD moved [0-9a-f]{7} → ${sha} \\(${sha} touches three\\.txt, this lane's files\\); resume re-checks it$`,
+  );
   assert.match(parked.json["main moved while parked"], moved);
   const ledger = ledgerOf(r.root, "T3");
   assert.deepEqual(
@@ -357,9 +359,62 @@ test("a lane tripped by a commit on main parks (exit 0) with the moved-main line
   assert.equal(refused.exit, 2);
   assert.match(
     refused.stderr,
-    /main changed while T3 was held: HEAD moved [0-9a-f]{7} → [0-9a-f]{7}: undo that, then resume/,
+    new RegExp(
+      `main changed while T3 was held: HEAD moved [0-9a-f]{7} → ${sha} \\(${sha} touches three\\.txt, this lane's files\\) → .*exec restart T3 --root .* --carry`,
+    ),
   );
   assert.equal(ledgerOf(r.root, "T3").state, "held");
+});
+
+// ---- resume past a moved main (field 68): the guard's one overlap rule --------------------------------
+
+test("resume passes a main moved by commits touching none of the lane's files, and says so", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  writeFileSync(join(out.worktree, "three.txt"), "half\n");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  commitFile(r.root, "docs/WORKFLOW.md", "x\n", "docs: by hand");
+  commitFile(r.root, "four.txt", "T4's\n", "feat: another lane's file");
+  const base = ledgerOf(r.root, "T3").base;
+  const resumed = lane(r, "resume", "T3", "--note", "go on");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  assert.equal(resumed.json.next, "continue");
+  assert.equal(
+    resumed.json.moved,
+    `main moved by 2 commits, none touching this lane's files: resuming on base ${base.slice(0, 7)}`,
+  );
+  assert.equal(ledgerOf(r.root, "T3").base, base);
+});
+
+test("resume with no move on main prints no moved line", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  writeFileSync(join(out.worktree, "three.txt"), "half\n");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const resumed = lane(r, "resume", "T3", "--note", "go on");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  assert.equal(resumed.json.moved, undefined);
+});
+
+test("resume refuses a main commit touching a file the worktree changed but does not own, committed or not", () => {
+  for (const committed of [true, false]) {
+    const r = repo();
+    const out = lane(r, "start", "T3").json;
+    if (committed) commitFile(out.worktree, "extra.txt", "lane\n", "feat: extra");
+    else writeFileSync(join(out.worktree, "extra.txt"), "lane\n");
+    assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+    const sha = commitFile(r.root, "extra.txt", "main\n", "chore: extra on main").slice(0, 7);
+    const refused = lane(r, "resume", "T3", "--note", "go on");
+    assert.equal(refused.exit, 2, `committed ${committed}`);
+    assert.match(
+      refused.stderr,
+      new RegExp(
+        `\\(${sha} touches extra\\.txt, this lane's files\\) → .*exec restart T3 --root .* --carry`,
+      ),
+      `committed ${committed}`,
+    );
+    assert.equal(ledgerOf(r.root, "T3").state, "held");
+  }
 });
 
 test("hold --for owner on a tripped lane still refuses and names the report step", () => {

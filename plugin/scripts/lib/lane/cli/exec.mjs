@@ -308,9 +308,10 @@ function withModelSource({ modelFrom, ...shown }) {
 // non-board file, a file dirty at start that changed since) is the builder's, unless its path is one
 // `guard.allow` lets through (`allowOf`: its globs, the config files in use, the board's own files) and no
 // running lane owns it. HEAD may move only by merges other ledgers record, each a run preHead → landed… →
-// board commit that git's first-parent history confirms, and by commits on main whose every path
-// `guard.allow` lets through and no running lane owns (A44). A report that finds main touched holds the
-// lane for the guard, its report saved, until a report again finds main clean (field 75).
+// board commit that git's first-parent history confirms, by commits on main whose every path
+// `guard.allow` lets through and no running lane owns (A44), and by any commit that touches none of this
+// lane's owned files and none of the files its worktree changed (field 81). A report that finds main
+// touched holds the lane for the guard, its report saved, until a report again finds main clean (field 75).
 
 // Agentry's own files: the run state. (The memory records a lane writes are `own-memory.mjs`'s.)
 const OWN_DIRS = [".agentry/run/"];
@@ -439,10 +440,11 @@ function strayFiles(root, ledger, head, all, boards, excused) {
 // Are main's first-parent commits from `from` to `to`, end to end, merges other ledgers record or
 // commits `blocked` lets through? A merge must be the run preHead → landed… → board commit its ledger
 // names, in that order, on git's own first-parent line: a ledger is trusted only as far as git confirms
-// it. `blocked(sha)` is null for a commit `guard.allow` lets through, else why not ("" for no reason to
-// name). Returns `{ ok, allowed: [sha], why? }`: the allowed commits, and why the first other one is not.
+// it. `blocked(sha)` is null for a commit the guard lets through, else why not ("" for no reason to
+// name). Returns `{ ok, allowed: [sha], count, why? }`: the allowed commits, how many commits main moved
+// by, and why the first other one is not.
 function landedOnly(root, from, to, others, blocked = () => "") {
-  const no = (why = "") => ({ ok: false, allowed: [], why });
+  const no = (why = "") => ({ ok: false, allowed: [], count: 0, why });
   const res = git(root, ["rev-list", "--first-parent", "--reverse", `${from}..${to}`, "--"]);
   const chain = res.stdout.split("\n").filter(Boolean);
   if (res.status !== 0 || !chain.length) return no();
@@ -472,38 +474,67 @@ function landedOnly(root, from, to, others, blocked = () => "") {
     allowed.push(chain[i]);
     at = chain[i++];
   }
-  return { ok: true, allowed };
+  return { ok: true, allowed, count: chain.length };
 }
 
 // The lanes whose owned files no commit on main may touch (A44): every one still running.
 const RUNNING = ["building", "fixing", "verifying", "held"];
 
-// Why a commit on main is not one `guard.allow` lets through (A44), as `landedOnly` asks: every path it
-// touches (against its first parent) must be allowed (`allowsPath`) and be no running lane's owned file.
-// null when it is; "" for a path outside it when the process file allows nothing itself, or when a running
-// lane's owned files can't be read.
-function allowedCommit(root, allow, all) {
+// The files a commit on main may not touch while this lane runs (field 81): its owned entries (as
+// `ownsPath` reads them) and every path its worktree changed, committed past base or uncommitted. null
+// when they cannot be read: a doubt keeps the guard on.
+function laneFiles(root, ledger) {
+  try {
+    const owned = ownedOf(root, ledger).map((o) => (typeof o === "string" ? o : o.path));
+    const res = git(root, [
+      "diff",
+      "--no-renames",
+      "--name-only",
+      "-z",
+      ledger.base,
+      `refs/heads/${ledger.branch}`,
+      "--",
+    ]);
+    if (res.status !== 0) return null;
+    const changed = new Set(res.stdout.split("\0").filter(Boolean));
+    for (const entry of porcelain(ledger.worktree)) changed.add(entry.slice(3));
+    return { owned, changed };
+  } catch {
+    return null;
+  }
+}
+
+// Why a commit on main trips this lane's guard, as `landedOnly` asks (null when it passes). It passes when
+// every path it touches (against its first parent) is one `guard.allow` lets through (`allowsPath`) and no
+// running lane owns (A44), or when it touches none of this lane's files (`mine`, from `laneFiles`; field
+// 81), whoever made it. An overlap is named, `<sha> touches <paths>, this lane's files`, and `hit` is
+// called; "" when the commit or the lane's files cannot be read.
+function allowedCommit(root, allow, all, mine, hit = () => {}) {
   let owners;
-  return (sha) => {
-    const res = git(root, ["diff", "--no-renames", "--name-only", "-z", `${sha}^1`, sha, "--"]);
-    if (res.status !== 0) return "";
+  const allowedAll = (paths) => {
     try {
       owners ??= all
         .filter((l) => RUNNING.includes(l.state))
-        .map((l) => ({
-          id: l.id,
-          owned: ownedOf(root, l).map((o) => (typeof o === "string" ? o : o.path)),
-        }));
+        .map((l) => ownedOf(root, l).map((o) => (typeof o === "string" ? o : o.path)));
     } catch {
-      return "";
+      return false;
     }
-    for (const path of res.stdout.split("\0").filter(Boolean)) {
-      if (!allowsPath(allow, path))
-        return allow.globs.length ? `${path} is not in guard.allow` : "";
-      const lane = owners.find((o) => o.owned.some((entry) => ownsPath(entry, path)));
-      if (lane) return `${path} is owned by ${lane.id}`;
-    }
-    return null;
+    return paths.every(
+      (path) =>
+        allowsPath(allow, path) && !owners.some((owned) => owned.some((e) => ownsPath(e, path))),
+    );
+  };
+  return (sha) => {
+    const res = git(root, ["diff", "--no-renames", "--name-only", "-z", `${sha}^1`, sha, "--"]);
+    if (res.status !== 0) return "";
+    const paths = res.stdout.split("\0").filter(Boolean);
+    if (allowedAll(paths)) return null;
+    if (!mine) return "";
+    const hits = paths.filter((p) => mine.changed.has(p) || mine.owned.some((e) => ownsPath(e, p)));
+    if (!hits.length) return null;
+    hit(hits);
+    const more = hits.length > OVERLAP_SHOWN ? ` (+${hits.length - OVERLAP_SHOWN} more)` : "";
+    return `${short(sha)} touches ${hits.slice(0, OVERLAP_SHOWN).join(", ")}${more}, this lane's files`;
   };
 }
 
@@ -558,33 +589,46 @@ function boardOf(root, ledger, processRel, workflowRel) {
   return { paths: strings(saved?.paths), globs: strings(saved?.globs) };
 }
 
-// What the guards let through as `guard.allow` paths for `ledger`'s guard: its globs, Agentry's config in
-// use (field 58), the process file and its workflow file as `loadSpec` resolves them, from the root, and
-// the board's own files (`boardOf`).
-function allowOf({ root, spec, processPath }, ledger) {
+// The process file and its workflow file in use, as `loadSpec` resolves them, from the root: `{ processRel,
+// workflowRel }`, each null when it is not inside the repository (or has no folder).
+function configPaths({ root, processPath }) {
   const file = processPath ?? join(root, ".agentry", "process.json");
   let dir;
   try {
     dir = realpathSync(dirname(file));
   } catch {
-    dir = null; // no process file's folder: no config file to let through
+    return { processRel: null, workflowRel: null }; // no process file's folder: no config file to let through
   }
-  const inRepo = (p) => p && !p.startsWith("..") && !isAbsolute(p);
-  const [processRel, workflowRel] = dir
-    ? [file, workflowPathOf(file)].map((f) =>
-        relative(root, join(dir, basename(f)))
-          .split(sep)
-          .join("/"),
-      )
-    : [];
-  const config = [processRel, workflowRel].filter(inRepo);
-  const board = boardOf(root, ledger, inRepo(processRel) ? processRel : null, workflowRel);
-  return { globs: own(spec, "guard")?.allow ?? [], config, board };
+  const inRepo = (p) => (p && !p.startsWith("..") && !isAbsolute(p) ? p : null);
+  const [processRel, workflowRel] = [file, workflowPathOf(file)].map((f) =>
+    inRepo(
+      relative(root, join(dir, basename(f)))
+        .split(sep)
+        .join("/"),
+    ),
+  );
+  return { processRel, workflowRel };
+}
+
+// Agentry's own files the guard lets through like `guard.allow` paths (field 78): the harness config, and
+// the memory store, committed or uncommitted.
+const CONFIG_FILE = ".agentry/config.json";
+const OWN_GLOBS = [".agentry/memory/**"];
+
+// What the guards let through as `guard.allow` paths for `ledger`'s guard: its globs, Agentry's config in
+// use (field 58: the process file and its workflow file, and `.agentry/config.json`), the memory store and
+// the board's own files (`boardOf`).
+function allowOf(ctx, ledger) {
+  const { processRel, workflowRel } = configPaths(ctx);
+  const config = [processRel, workflowRel, CONFIG_FILE].filter(Boolean);
+  const board = boardOf(ctx.root, ledger, processRel, workflowRel);
+  return { globs: own(ctx.spec, "guard")?.allow ?? [], config, board };
 }
 const allowsPath = (allow, path) =>
   allow.config.includes(path) ||
   allow.board.paths.includes(path) ||
   matchesAny(allow.board.globs, path) ||
+  matchesAny(OWN_GLOBS, path) ||
   matchesAny(allow.globs, path);
 
 // A glob test with the gate's own matcher, as merge does.
@@ -639,11 +683,12 @@ const parsed = (text) => {
   }
 };
 
-// Each config file in use edited in main (uncommitted) so that its `guard` or `gate` key differs from HEAD's,
-// as a reason: `.agentry/workflow.json changes guard while lanes run → commit it between lanes`.
+// Each process or workflow file in use edited in main (uncommitted) so that its `guard` or `gate` key
+// differs from HEAD's, as a reason: `.agentry/workflow.json changes guard while lanes run → commit it
+// between lanes`. `.agentry/config.json` holds neither key.
 function configTrips(root, allow, dirty) {
   const out = [];
-  for (const path of allow.config.filter((p) => dirty.has(p))) {
+  for (const path of allow.config.filter((p) => p !== CONFIG_FILE && dirty.has(p))) {
     let now = null;
     try {
       now = parsed(readFileSync(join(root, path), "utf8"));
@@ -657,8 +702,10 @@ function configTrips(root, allow, dirty) {
   return out;
 }
 
-// Whether the main checkout still matches the lane's start: `{ touched, allowed }`, `touched` why not
-// (or null), `allowed` the commits on main `guard.allow` let through.
+// Whether the main checkout still matches the lane's start: `{ touched, allowed, moved, overlap }`,
+// `touched` why not (or null), `allowed` the commits on main the guard let through, `moved` how many
+// commits main moved by when they all passed, `overlap` whether a commit touched this lane's files. The
+// one rule for HEAD's move (`allowedCommit`), so report, hold and resume never disagree.
 function mainGuard(ctx, ledger, all) {
   const { root, spec, model } = ctx;
   const allow = allowOf(ctx, ledger);
@@ -667,19 +714,24 @@ function mainGuard(ctx, ledger, all) {
   const others = all.filter((l) => l.id !== ledger.id);
   const reasons = [];
   let allowed = [];
+  let moved = 0;
+  let overlap = false;
   if (head !== was.head) {
-    const moved = landedOnly(root, was.head, head, others, allowedCommit(root, allow, all));
-    if (moved.ok) allowed = moved.allowed;
+    const blocked = allowedCommit(root, allow, all, laneFiles(root, ledger), () => {
+      overlap = true;
+    });
+    const res = landedOnly(root, was.head, head, others, blocked);
+    if (res.ok) ({ allowed, count: moved } = res);
     else
       reasons.push(
-        `HEAD moved ${short(was.head)} → ${short(head)}${moved.why ? ` (${moved.why})` : ""}`,
+        `HEAD moved ${short(was.head)} → ${short(head)}${res.why ? ` (${res.why})` : ""}`,
       );
   }
   reasons.push(...configTrips(root, allow, dirtyPaths(root)));
   const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id, kindOf(l, spec))));
   const stray = strayFiles(root, ledger, head, all, boards, allowedEdit(root, allow, all));
   if (stray.length) reasons.push(`files changed: ${stray.slice(0, 10).join(", ")}`);
-  return { touched: reasons.length ? reasons.join("; ") : null, allowed };
+  return { touched: reasons.length ? reasons.join("; ") : null, allowed, moved, overlap };
 }
 
 // Why the main checkout no longer matches the lane's start, or null.
@@ -1432,7 +1484,8 @@ function report(ctx, id, agent) {
   const before = structuredClone(ledger);
   const changed = isRebase ? finishRebase(root, before, tip) : undefined;
   const count = git(root, ["rev-list", "--count", `${before.base}..${ledger.branch}`]);
-  const main = mainGuard(ctx, ledger, all);
+  // From the new base after a rebase: the lane's own changes are the files main may not touch.
+  const main = mainGuard(ctx, before, all);
   const guards = {
     mainTouched: main.touched,
     dirty,
@@ -2003,8 +2056,17 @@ function resume(ctx, id) {
   if (!note) refuse(`resume needs --note "<the owner's words>"`);
   if (redo && ledger.hold?.when !== "after") refuse(redoRefusal(ledger.hold));
   const parked = isVerifiedPark(ledger);
-  const touched = parked ? null : mainTouched(ctx, ledger, ledgers.list(root));
-  if (touched) refuse(`main changed while ${id} was held: ${touched}: undo that, then resume`);
+  // Main may have moved by commits that touch none of the lane's files (field 68): the guard's own rule.
+  const main = parked ? null : mainGuard(ctx, ledger, ledgers.list(root));
+  if (main?.touched)
+    refuse(
+      main.overlap
+        ? `main changed while ${id} was held: ${main.touched} → ${laneLine(root, "restart", id, " --carry")}`
+        : `main changed while ${id} was held: ${main.touched}: undo that, then resume`,
+    );
+  const moved = main?.moved
+    ? `main moved by ${main.moved} commits, none touching this lane's files: resuming on base ${short(ledger.base)}`
+    : null;
   const flagged = isFlagged(ctx, ledger);
   const res = stepWith(ledger, {
     type: "resume",
@@ -2033,7 +2095,7 @@ function resume(ctx, id) {
   return view(ctx, next, {
     step: "resume",
     nested: next.nested,
-    lead: { [answerLabel(answer)]: answerOf(answer, stepCount(next)) },
+    lead: { [answerLabel(answer)]: answerOf(answer, stepCount(next)), ...(moved && { moved }) },
     extra: { ...(res.reason && { why: res.reason }), ...(board && { board }) },
   });
 }
