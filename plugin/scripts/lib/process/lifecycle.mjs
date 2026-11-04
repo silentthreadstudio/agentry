@@ -10,11 +10,12 @@
 // `<first>` or, for several, the shas joined by the separator the board's done rows use (the field's `join`
 // pins it; `<first>…<last>` when nothing is learned) (short SHAs) and the handoff line in the parent's file, naming the
 // first. A `writes` file is relative to the git root. A step whose edit changes nothing (already set,
-// the handoff line already there) is in `skipped`, not `writes`. The three status events a lane writes
-// for itself (dispatched · built · failed, and the status a FAIL verdict applies) are also checked: the board is read as the write would leave
-// it (a scratch copy of its files, `staged`) and a write that adds a finding the board did not have is
-// skipped, with the rule and its message (the verdict write itself always lands). A pass verdict and merged are not: the merge's record step checks
-// the board and stops on a finding by design.
+// the handoff line already there) is in `skipped`, not `writes`. The status writes a lane makes for
+// itself (dispatched, built, failed, and a FAIL verdict's status) are also checked: the board is read as
+// the write would leave it (a scratch copy of its files, `staged`) and a write that adds a finding the
+// board did not have is skipped, with the rule and its message (the verdict write itself always lands).
+// A pass verdict and merged are not: the merge's record step checks the board and stops on a finding
+// by design.
 import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
