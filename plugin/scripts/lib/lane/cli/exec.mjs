@@ -25,6 +25,9 @@
 //   start <id> --on <Y>       stack the lane on Y's lane (A45): cut from agentry/<Y>, `on` and `base` in the ledger
 //   restack <id> [--main]     a stacked lane, no agent out: rebase it onto its parent's new tip, or main
 //                             (its parent landed, or --main); the branch and ledger alone are written
+//   restart <id> [--carry]    a lane not merged, no agent out: archive its ledger and run files as
+//                             `<id>.<n>`, keep its branch as `agentry/<id>.<n>`, start it again from main;
+//                             `--carry` picks its commits and applies its uncommitted diff (stops on a conflict)
 //
 // Board writes go through `applyEvent` only (no `lifecycle` → none). Exit 0 = next printed, 1 = the lane
 // stopped (or the gate is red), 2 = usage or refusal (nothing changed).
@@ -63,6 +66,7 @@ import { WriteError } from "../../process/write.mjs";
 import {
   appendedAfter,
   bullets,
+  carriedWork,
   citedDecisions,
   notesSection,
   outsideOwns,
@@ -81,6 +85,7 @@ import {
   withNew,
   withSection,
 } from "../brief.mjs";
+import { sha256 } from "../carry-io.mjs";
 import {
   answerLabel,
   answerText,
@@ -99,7 +104,8 @@ import { idleOf } from "../idle.mjs";
 import { isAncestor, mergeBaseOf } from "../land.mjs";
 import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
-import { RestackError, markGating, restackLane } from "../restack.mjs";
+import { RestackError, gatingNow, markGating, restackLane } from "../restack.mjs";
+import { archive, archiveNumber, carry, leftover, retire, saveWork } from "../restart.mjs";
 import {
   DISPATCHES,
   addRound,
@@ -114,7 +120,7 @@ import {
   skipsVerifier,
   verdicts,
 } from "../rounds.mjs";
-import { chainOf, childrenOf, gateRefusal, stackOf } from "../stack.mjs";
+import { chainOf, childrenOf, gateRefusal, restackLine, stackOf } from "../stack.mjs";
 import { brokenIn, rulesOf } from "../subjects.mjs";
 import { branchOf, create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
 
@@ -134,9 +140,10 @@ const STEPS = [
   "rebase",
   "reverify",
   "restack",
+  "restart",
 ];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -154,6 +161,8 @@ export const help = {
     reverify: "a lane closed with no verifier (the route skipped it): one fresh verifier",
     restack:
       "a stacked lane at rest: rebase it onto its parent's new tip, or main once the parent landed",
+    restart:
+      "a lane not merged, no agent out: archive it and start it again from main (--carry its work)",
     "<id>": "the task's id, any case",
   },
   flags: {
@@ -175,6 +184,8 @@ export const help = {
     "--on <id>":
       "start: stack the lane on that lane's branch (verified, held or at its gate); it lands after it",
     "--main": "restack: onto main's tip, off the parent (the owner's call)",
+    "--carry":
+      "restart: carry the old branch's commits and its uncommitted diff into the new worktree",
     "--json": "print the step's one JSON object instead of the readable text",
   },
   exits: { 0: "next printed", 1: "the lane stopped, or the gate is red", 2: "usage or refusal" },
@@ -196,6 +207,7 @@ const STEPS_OF = {
   "--fresh": ["resume"],
   "--on": ["start"],
   "--main": ["restack"],
+  "--carry": ["restart"],
 };
 
 class Refusal extends Error {}
@@ -209,8 +221,8 @@ const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
-// argv → { step, id, value, set, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain }
-// or { error }.
+// argv → { step, id, value, set, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain,
+// carry } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
   const words = [];
@@ -255,6 +267,7 @@ function parse(argv) {
     fresh: Boolean(given["--fresh"]),
     on: given["--on"] ?? null,
     toMain: Boolean(given["--main"]),
+    carry: Boolean(given["--carry"]),
   };
 }
 
@@ -754,14 +767,14 @@ function nestedTrees(root, ledger) {
 
 // The lanes that count against `lanes.maxWriters`: open ledgers that build or fix, and worktrees no
 // ledger owns, except the ones the repo keeps on purpose (`worktrees.keep`) and the host's own agent
-// worktrees (`.claude/worktrees/`), which no lane started.
-function writers(root, spec) {
+// worktrees (`.claude/worktrees/`), which no lane started. `except` is a lane a restart replaces.
+function writers(root, spec, except = null) {
   const all = ledgers.list(root);
   const owned = new Set(all.map((l) => l.worktree));
   const agents = join(root, ".claude", "worktrees");
   return [
     ...all
-      .filter((l) => l.state === "building" || l.state === "fixing")
+      .filter((l) => (l.state === "building" || l.state === "fixing") && l.id !== except)
       .map((l) => `${l.id} (${l.state}, ledger ${l.worktree})`),
     ...worktrees(root)
       .filter(
@@ -771,11 +784,12 @@ function writers(root, spec) {
   ];
 }
 
-// `start` and a `resume` that sends a builder are refused while `lanes.maxWriters` writers are open.
-function refuseAtWriterCap(root, spec) {
+// `start`, `restart` (its own lane not counted) and a `resume` that sends a builder are refused while
+// `lanes.maxWriters` writers are open.
+function refuseAtWriterCap(root, spec, except = null) {
   const config = readConfig(root);
   if (config.error) refuse(config.error);
-  const open = writers(root, spec);
+  const open = writers(root, spec, except);
   if (open.length >= config.lanes.maxWriters)
     refuse(
       `${open.length} writer(s) open, lanes.maxWriters is ${config.lanes.maxWriters}; finish or merge one first:\n${open.map((w) => `  ${w}`).join("\n")}`,
@@ -958,6 +972,8 @@ function brief({ root, spec, model }, ledger, dispatch) {
   if (dispatch.step === "fix" && picked) text = withNotesToFix(text, picked, ledger.openNotes);
   if (owner)
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
+  // A restarted lane's first brief says what was carried into the tree (field 69).
+  if (n === 1 && fresh && ledger.carried) text = withSection(text, carriedWork(ledger.carried));
   writeFileSync(file, text);
   return { brief: file, reportPath: values.reportPath, tip, at: now() };
 }
@@ -1223,6 +1239,13 @@ function start(ctx, id) {
   refuseMidLand(root);
   const parent = ctx.on === null ? null : stackParent(ctx, id);
   refuseAtWriterCap(root, spec);
+  const found = contractOf(ctx, id);
+  return cut(ctx, id, { found, parent, mainBranch: mainBranchOf(root) });
+}
+
+// The contract `start` and `restart` build, found and checked: its Steps part sound, a light contract with
+// its Owns and Acceptance lines.
+function contractOf({ root, spec, kind }, id) {
   const found = findContract({ root, spec, id, kind });
   if (found.status !== "found") {
     const where = found.candidates.map((c) => `  ${c.file}:${c.line}`).join("\n");
@@ -1233,10 +1256,49 @@ function start(ctx, id) {
     refuse(
       `contract ${id} is light and needs an Owns line naming files and an Acceptance line: ${found.file}:${found.line}`,
     );
+  return found;
+}
+
+function mainBranchOf(root) {
   const mainBranch = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).stdout.trim();
   if (!mainBranch) refuse("the main checkout is on a detached HEAD");
+  return mainBranch;
+}
+
+// The sha256 of the process file in use as it is now (null when it cannot be read): saved beside
+// `boardAtStart`, so a later start can tell the file changed while lanes run (R1d-29 N6).
+function processHash({ root, processPath }) {
+  try {
+    return sha256(readFileSync(processPath ?? join(root, ".agentry", "process.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+// With the process file untracked, its board paths are frozen into each lane at its start: a start (or
+// restart) after it changed says so, when the oldest running lane took its paths from another copy.
+function frozenBoard(ctx, hash) {
+  const { processRel, workflowRel } = configPaths(ctx);
+  if (!processRel || !hash || committedSpec(ctx.root, processRel, workflowRel).tracked) return null;
+  const running = ledgers
+    .list(ctx.root)
+    .filter((l) => RUNNING.includes(l.state) && typeof l.boardAtStartHash === "string")
+    .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
+  if (!running.length || running[0].boardAtStartHash === hash) return null;
+  const ids = running.filter((l) => l.boardAtStartHash !== hash).map((l) => l.id);
+  return `! ${processRel} changed while ${ids.join(", ")} run: its board paths are frozen into this lane as they are now`;
+}
+
+// Cut the lane and brief its builder: the worktree on `agentry/<id>` (from the parent's tip when stacked,
+// else main's HEAD), `dispatched`, the ledger with what main and the board look like now. `again(path)`, a
+// restart's, runs in the new worktree before the brief: `{ restarted, carried?, shown, exit }`, the archive
+// and what it carried for the ledger, its lines for the view and its exit (1 when the carry stopped).
+function cut(ctx, id, { found, parent, mainBranch, again = null }) {
+  const { root, spec, model, cite, kind } = ctx;
   // A stacked lane is cut from its parent's tip: `base..HEAD` is its own commits only.
   const base = parent ? parent.tip : headOf(root);
+  const hash = processHash(ctx);
+  const frozen = frozenBoard(ctx, hash);
 
   let tree;
   try {
@@ -1244,6 +1306,7 @@ function start(ctx, id) {
   } catch (e) {
     refuse(e.message);
   }
+  const { restarted = null, carried = null, shown = {}, exit = 0 } = again ? again(tree.path) : {};
   let board;
   let moves;
   try {
@@ -1271,8 +1334,10 @@ function start(ctx, id) {
     worktree: tree.path,
     branch: tree.branch,
     mainAtStart: mainSnapshot(root),
-    // What the guard lets through as board files when the process file is not tracked (F2a).
+    // What the guard lets through as board files when the process file is not tracked (F2a), and the
+    // copy of the process file they came from.
     boardAtStart: boardPaths(spec),
+    ...(hash && { boardAtStartHash: hash }),
     worktreesAtStart: worktrees(root).map((t) => t.path),
     owned: withNew(tree.path, ownedFiles(found.block, tree.path)),
     ...(found.steps?.length && { steps: found.steps }),
@@ -1293,6 +1358,8 @@ function start(ctx, id) {
     nested: [],
     boardWrites: moves,
     startedAt: at,
+    ...(restarted && { restarted }),
+    ...(carried && { carried }),
     state: "building",
     next: "build",
   };
@@ -1303,13 +1370,13 @@ function start(ctx, id) {
     ? "! owns names tests but no test file: add the test paths (exec owns <id> --set … --apply)"
     : null;
   const chain = parent ? chainOf(ledgers.list(root), parent.id) : [];
-  const overlap = [...outside, ownsOverlap(root, ledger.owned, chain), noTests]
+  const overlap = [...outside, ownsOverlap(root, ledger.owned, chain), noTests, frozen]
     .filter(Boolean)
     .join("\n");
   ledger = dispatchNext(ctx, ledger, begin(ledger.steps).dispatch);
   ledgers.write(root, ledger);
-  return view(ctx, ledger, {
-    step: "start",
+  const res = view(ctx, ledger, {
+    step: restarted ? "restart" : "start",
     lead: parent
       ? {
           stack: `on ${parent.id} at ${short(base)} (${parent.id} is ${parent.state}); ${parent.id} lands first`,
@@ -1323,8 +1390,10 @@ function start(ctx, id) {
       route: startRoute(ctx, ledger),
       board,
       ...(overlap && { warning: overlap }),
+      ...shown,
     },
   });
+  return exit ? { ...res, exit } : res;
 }
 
 // The owned files the briefs name. `--set a,b` replaces them (shown until `--apply`); on apply the brief
@@ -2214,7 +2283,7 @@ function routeNow(ctx, ledger) {
 // A stopped lane's ways on (field 75): land it as it is, or start it again with its work.
 const waysOn = (root, ledger) => ({
   stopped: ledger.stopReason ?? "unknown",
-  "ways on": `${prefix("lane", `node ${q(LANE)}`)} merge ${ledger.id} --branch ${ledger.branch ?? `agentry/${ledger.id}`} --root ${q(root)} (lands as is, the owner's call) · ${laneLine(root, "restart", ledger.id, " --carry")} (when available)`,
+  "ways on": `${prefix("lane", `node ${q(LANE)}`)} merge ${ledger.id} --branch ${ledger.branch ?? `agentry/${ledger.id}`} --root ${q(root)} (lands as is, the owner's call) · ${laneLine(root, "restart", ledger.id, " --carry")} (starts it again with its work)`,
 });
 
 function show(ctx, id) {
@@ -2373,6 +2442,104 @@ function restack(ctx, id) {
   });
 }
 
+// The old builder's last report, as the archive holds it: the report a guard trip saved, else the newest
+// build round's report (or its held copy) that is there; null when no builder reported.
+function lastReport(ledger, runs) {
+  const from = join(dirname(runs), ledger.id);
+  const moved = (path) => {
+    const rel = relative(from, path ?? "");
+    return rel && !rel.startsWith("..") && !isAbsolute(rel) ? join(runs, rel) : path;
+  };
+  const builds = ledger.rounds.filter((r) => r.role === "build" && r.reportPath).reverse();
+  const candidates = [
+    ledger.hold?.report,
+    ...builds.flatMap((r) => [r.reportPath, heldCopy(r.reportPath)]),
+  ].filter(Boolean);
+  return candidates.map(moved).find((p) => saved(p)) ?? null;
+}
+
+// A lane started again (field 69): not merged and no agent out, its ledger and run files archived as
+// `<id>.<n>` (a hold's `holds[]` with them), its worktree removed (only `cleanup.disposable` ignored files
+// may go), its branch kept as `agentry/<id>.<n>`, and a fresh `agentry/<id>` cut from main with every
+// `start` record. `--carry` picks the old branch's commits and applies its uncommitted diff; the kept
+// branch goes once all of it is carried, and a stop leaves the conflict in the new worktree (exit 1).
+function restart(ctx, id) {
+  const { root, spec, carry: withWork } = ctx;
+  refuseMidLand(root);
+  const old = mustLedger(root, id);
+  if (old.state === "merged") refuse(`${id} is merged: nothing to restart`);
+  if (old.state === "merging")
+    refuse(`${id} is landing (merge step ${old.merge?.step ?? "?"}): finish the land first`);
+  const out = expects(old);
+  if (out === "report") refuse("a builder is out: hold it first");
+  if (out === "verdict") refuse("a verifier is out: record its verdict first");
+  if (gatingNow(root, id)) refuse(`a gate for ${id} is queued or running: restart after it`);
+  const stack = stackOf(root, old, ledgers.list(root));
+  if (stack.on && stack.state !== "merged")
+    refuse(
+      `${id} is stacked on ${stack.on}, which is not merged: a restart cuts from main, so take it off first (${restackLine(root, id, " --main")})`,
+    );
+  refuseAtWriterCap(root, spec, id);
+  const found = contractOf(ctx, id);
+  const mainBranch = mainBranchOf(root);
+  const left = leftover(root, old, spec.cleanup?.disposable ?? []);
+  if (left.problem) refuse(left.problem);
+  if (left.ignored.length)
+    refuse(
+      `the worktree ${old.worktree} holds ${left.ignored.length} ignored file(s) a restart would delete (${left.ignored.slice(0, 5).join(", ")}): copy what you need out and remove them, or add them to cleanup.disposable, then restart`,
+    );
+  const diffIn = (runs) => join(runs, "restart", "uncommitted.diff");
+  const work = existsSync(old.worktree)
+    ? saveWork(old.worktree, diffIn(ledgers.runDir(root, id)))
+    : { files: [] };
+  if (work.error) refuse(`the worktree's uncommitted work could not be saved: ${work.error}`);
+
+  const n = archiveNumber(root, id);
+  const archived = archive(root, id, n);
+  let kept;
+  try {
+    ({ kept } = retire(root, old, n));
+  } catch (e) {
+    throw new Stopped(`${id} is archived as ${id}.${n}, but ${e.message}`);
+  }
+  const diff = diffIn(archived.runs);
+  const again = (path) => {
+    const restarted = {
+      from: `${id}.${n}`,
+      ledger: archived.ledger,
+      runs: archived.runs,
+      at: now(),
+    };
+    if (!withWork)
+      return {
+        restarted: { ...restarted, branch: kept },
+        shown: { restarted: `archived as ${id}.${n}; the old branch is kept as ${kept ?? "none"}` },
+      };
+    const res = carry(path, { base: old.base, tip: left.tip, diff });
+    const report = lastReport(old, archived.runs);
+    const carried = {
+      commits: left.commits,
+      files: work.files.length,
+      report,
+      ...(res.conflict && { conflict: res.conflict }),
+    };
+    // All of the old work is in the new branch: the kept one goes; a stop keeps it.
+    if (res.ok && kept) git(root, ["branch", "-D", kept]);
+    const branch = res.ok ? null : kept;
+    return {
+      restarted: { ...restarted, branch },
+      carried,
+      exit: res.ok ? 0 : 1,
+      shown: {
+        restarted: `archived as ${id}.${n}${branch ? `; the old branch is kept as ${branch}` : ""}`,
+        carried: `${carried.commits} commits, ${carried.files} files uncommitted${report ? `; last report ${report}` : ""}`,
+        ...(res.conflict && { conflict: `${res.conflict} in ${path}` }),
+      },
+    };
+  };
+  return cut({ ...ctx, on: null, cite: old.cite ?? [] }, id, { found, mainBranch, again });
+}
+
 const HANDLERS = {
   start,
   report,
@@ -2387,4 +2554,5 @@ const HANDLERS = {
   rebase,
   reverify,
   restack,
+  restart,
 };

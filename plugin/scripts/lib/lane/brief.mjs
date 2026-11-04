@@ -792,6 +792,20 @@ export function ownerChange({ note, at }, role) {
   ].join("\n");
 }
 
+/** The `## Carried work` section of a restarted lane's first build brief (field 69): what `exec restart
+ *  --carry` put in the tree (`{ commits, files, report, conflict? }`, the ledger's `carried`). A carry that
+ *  stopped names its conflict, to resolve first. */
+export function carriedWork({ commits, files, report, conflict }) {
+  const last = report ? `Its last report is ${report}: read it first.` : "It left no report.";
+  const stop = conflict ? ` The carry stopped: ${conflict}, before anything else.` : "";
+  return [
+    "## Carried work",
+    "",
+    `A previous builder's work is in the tree (${commits} commits, ${files} files uncommitted). ${last}${stop}`,
+    "",
+  ].join("\n");
+}
+
 /** A list as brief lines (`- item`), or `none`. */
 export const bullets = (items) => (items.length ? items.map((i) => `- ${i}`).join("\n") : "none");
 

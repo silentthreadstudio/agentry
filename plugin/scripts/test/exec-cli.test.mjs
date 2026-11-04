@@ -2885,7 +2885,7 @@ test("show on a stopped lane names the reason and its ways on; the ledger is lef
   assert.equal(lines[1], "stopped: the builder reported BLOCKED");
   assert.match(
     lines[2],
-    /^ways on: .*merge T1 --branch agentry\/T1 --root .* \(lands as is, the owner's call\) · .*exec restart T1 --root .* --carry \(when available\)$/,
+    /^ways on: .*merge T1 --branch agentry\/T1 --root .* \(lands as is, the owner's call\) · .*exec restart T1 --root .* --carry \(starts it again with its work\)$/,
   );
   assert.equal(readFileSync(file, "utf8"), before);
   assert.equal(lane(r, "show", "T1").json.stopped, "the builder reported BLOCKED");
