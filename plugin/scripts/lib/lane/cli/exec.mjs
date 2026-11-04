@@ -34,6 +34,9 @@
 //   adopt <id> --branch <b>   work built outside exec becomes the lane: `start`'s checks and records, a lane cut
 //                             from main, `main..<b>` picked onto it and the uncommitted diff of <b>'s worktree
 //                             applied (stops on a conflict); <b> and its worktree are left as they are
+//   cut <id> --decision <D> [--keep <paths>] [--message <m>] [--apply]   retire a lane on a board decision:
+//                             the kept paths land from its tip as one gated commit (`cut.mjs`), `cut` is
+//                             written, the ledger closed, the worktree removed, the branch kept as `<id>.cut`
 //
 // Board writes go through `applyEvent` only (no `lifecycle` → none), and a restart's clear of the old
 // lane's verdict through `board set`, which records it. Exit 0 = next printed, 1 = the lane stopped (or
@@ -106,6 +109,7 @@ import {
   withSection,
 } from "../brief.mjs";
 import { sha256 } from "../carry-io.mjs";
+import { cutLane } from "../cut.mjs";
 import {
   answerLabel,
   answerText,
@@ -165,9 +169,10 @@ const STEPS = [
   "restack",
   "restart",
   "adopt",
+  "cut",
 ];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--branch <b>] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--branch <b>] [--decision <D>] [--keep <paths>] [--message <subject>] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -189,6 +194,7 @@ export const help = {
       "a lane not merged, no agent out: archive it and start it again from main (--carry its work)",
     adopt:
       "work built outside exec becomes the lane: cut from main, the branch's commits and uncommitted diff carried (--branch)",
+    cut: "retire a lane on a board decision: land only the kept paths, write cut, keep its branch as <id>.cut",
     "<id>": "the task's id, any case",
   },
   flags: {
@@ -205,7 +211,8 @@ export const help = {
     "--set <paths>": "owns: the comma-separated owned files to use from now on",
     "--add <paths>":
       "owns: comma-separated files to own as well (a lane held for context, or in needs-context)",
-    "--apply": "owns: write the --set or --add list (without it the new list is only shown)",
+    "--apply":
+      "owns: write the --set or --add list; cut: retire the lane (without it either is only shown)",
     "--for <owner|later>":
       "hold: the owner reviews the round (its reply saved), or later: the lane is parked",
     "--evidence <path>": "hold --for owner: what the owner opens (default: the round's report)",
@@ -219,6 +226,11 @@ export const help = {
       "restart: carry the old branch's commits and its uncommitted diff into the new worktree",
     "--branch <b>":
       "adopt: the branch built outside exec; it and its worktree are left as they are",
+    "--decision <D>": "cut: the board decision the cut follows, by id",
+    "--keep <paths>":
+      "cut: comma-separated files or folders the branch changes, landed on main from its tip",
+    "--message <subject>":
+      "cut --keep: the kept commit's message (default chore(<scope>): keep <n> files from <id>)",
     "--json": "print the step's one JSON object instead of the readable text",
   },
   exits: { 0: "next printed", 1: "the lane stopped, or the gate is red", 2: "usage or refusal" },
@@ -235,7 +247,7 @@ const STEPS_OF = {
   "--cite": ["start"],
   "--set": ["owns"],
   "--add": ["owns"],
-  "--apply": ["owns"],
+  "--apply": ["owns", "cut"],
   "--for": ["hold"],
   "--evidence": ["hold"],
   "--note": ["hold", "resume"],
@@ -245,6 +257,9 @@ const STEPS_OF = {
   "--main": ["restack"],
   "--carry": ["restart"],
   "--branch": ["adopt"],
+  "--decision": ["cut"],
+  "--keep": ["cut"],
+  "--message": ["cut"],
 };
 
 class Refusal extends Error {}
@@ -259,7 +274,7 @@ const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
 // argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain,
-// carry, branch } or { error }.
+// carry, branch, decision, keep, message } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
   const words = [];
@@ -294,7 +309,16 @@ function parse(argv) {
     return { error: `--by takes owner or conductor, not "${given["--by"]}"` };
   if (given["--set"] !== undefined && given["--add"] !== undefined)
     return { error: "owns takes --set or --add, not both" };
-  if (given["--apply"] && given["--set"] === undefined && given["--add"] === undefined)
+  if (step === "cut" && given["--decision"] === undefined)
+    return { error: "cut needs --decision <D>: the board decision it follows" };
+  if (given["--message"] !== undefined && given["--keep"] === undefined)
+    return { error: "--message names the kept commit: it goes with --keep" };
+  if (
+    step === "owns" &&
+    given["--apply"] &&
+    given["--set"] === undefined &&
+    given["--add"] === undefined
+  )
     return { error: "--apply writes the --set list: give --set <paths> (or --add <paths>)" };
   return {
     step,
@@ -317,6 +341,9 @@ function parse(argv) {
     toMain: Boolean(given["--main"]),
     carry: Boolean(given["--carry"]),
     branch: given["--branch"] ?? null,
+    decision: given["--decision"] ?? null,
+    keep: given["--keep"] ?? null,
+    message: given["--message"] ?? null,
   };
 }
 
@@ -3236,4 +3263,13 @@ const HANDLERS = {
   restack,
   restart,
   adopt,
+  cut: (ctx, id) =>
+    cutLane(ctx, id, {
+      ledger: mustLedger(ctx.root, id),
+      refuse,
+      stop: (message) => {
+        throw new Stopped(message);
+      },
+      laneLine,
+    }),
 };
