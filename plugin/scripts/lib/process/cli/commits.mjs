@@ -4,9 +4,10 @@
 // Prints the rules for init to propose through its draft; writes nothing. Needs no process file.
 //
 // run(argv, { root }) -> { exit, out }
-import { usageError } from "../../cli/help.mjs";
+import { refuse, usageError } from "../../cli/help.mjs";
+import { currentBranch } from "../../lane/land.mjs";
 import { HISTORY, historySubjects, learnRules } from "../../lane/subjects.mjs";
-import { defaultBranch } from "../git.mjs";
+import { commitOf, defaultBranch, topLevel } from "../git.mjs";
 
 export const noSpec = true;
 export const help = {
@@ -19,7 +20,7 @@ export const help = {
     "--min <n>": "how many uses a type outside Conventional Commits needs to be added (default 3)",
     "--json": "print { types: [{ type, count, standard }], subjectPattern, subjectMax, scoped }",
   },
-  exits: { 0: "printed", 2: "usage" },
+  exits: { 0: "printed", 2: "usage, or the root is not a git repository" },
   example: "board commits --learn --min 5",
 };
 
@@ -34,19 +35,28 @@ function minOf(argv) {
     : { error: "--min needs a whole number of 1 or more" };
 }
 
+// Why there is no history to learn from: the checked-out branch has no commit yet (a new repo), or no
+// default branch is found.
+function noHistory(root, branch) {
+  const here = branch ?? currentBranch(root);
+  if (here && !commitOf(root, `refs/heads/${here}`)) return `no commits on ${here} yet`;
+  return branch ? `no history on ${branch}` : "no default branch (origin/HEAD, main or master)";
+}
+
 export function run(argv, { root }) {
   if (!argv.includes("--learn")) return usageError("board commits", "needs --learn");
   const { min, error } = minOf(argv);
   if (error) return usageError("board commits", error);
   const stray = argv.find((a, i) => !a.startsWith("--") && argv[i - 1] !== "--min");
   if (stray !== undefined) return usageError("board commits", `unexpected "${stray}"`);
+  if (!topLevel(root)) return refuse("board commits", `${root} is not a git repository`);
   const branch = defaultBranch(root);
   const subjects = historySubjects(root, branch);
   const rules = learnRules(subjects, { min });
   if (argv.includes("--json")) return { exit: 0, out: JSON.stringify(rules) };
   const from =
     subjects.length === 0
-      ? `no history${branch ? ` on ${branch}` : " (no default branch)"}: the standard Conventional Commits set`
+      ? `${noHistory(root, branch)}: the standard Conventional Commits set`
       : `learned from ${subjects.length} first-parent commit(s) of ${branch} (the last ${HISTORY} at most)`;
   const types = rules.types.map(
     ({ type, count, standard }) => `${type} ${count}${standard ? "" : " (not standard)"}`,

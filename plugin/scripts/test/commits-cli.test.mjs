@@ -91,16 +91,19 @@ test("--learn writes nothing: the tree, the index and .agentry are as they were"
   );
 });
 
-test("a repo with no history prints the standard set and says so", () => {
+/** A new directory, removed after the run. */
+function emptyDir() {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "commits-empty-")));
   repos.push({ cleanup: () => rmSync(dir, { recursive: true, force: true }) });
+  return dir;
+}
+
+test("a repo with no history prints the standard set and says so: no commits on its branch yet", () => {
+  const dir = emptyDir();
   git(dir, "init", "-q", "-b", "main");
   const res = learn(dir);
   assert.equal(res.status, 0, res.stderr);
-  assert.match(
-    res.stdout,
-    /no history \(no default branch\): the standard Conventional Commits set/,
-  );
+  assert.match(res.stdout, /no commits on main yet: the standard Conventional Commits set/);
   const got = json(dir);
   assert.deepEqual(
     got.types.map((t) => [t.type, t.count, t.standard]),
@@ -128,4 +131,15 @@ test("usage: --learn is needed, --min takes a whole number of 1 or more, nothing
     assert.match(res.stderr, /^✗ board commits: /);
   }
   assert.equal(run("--learn", "--min", "1").status, 0);
+});
+
+test("outside a git repository --learn refuses with exit 2, printing no rules", () => {
+  const dir = emptyDir();
+  for (const extra of [[], ["--json"]]) {
+    const res = learn(dir, ...extra);
+    assert.equal(res.status, 2, res.stdout);
+    assert.equal(res.stdout, "");
+    assert.match(res.stderr, /^✗ board commits: .* is not a git repository/);
+  }
+  assert.deepEqual(readdirSync(dir), [], "nothing written");
 });
