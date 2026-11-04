@@ -1,5 +1,6 @@
 // Tests for lib/process/ledger.mjs: per-task state under the main root, atomic writes, run dirs.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -126,4 +127,18 @@ test("a ledger written from inside a worktree lands under the main checkout", ()
   } finally {
     repo.cleanup();
   }
+});
+
+test("a writer killed between write and rename leaves a temp file the next read or list removes", () => {
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+  write(root, ledger("T-1"));
+  const dir = dirOf(root);
+  const live = `T-2.json.agentry-${process.ppid}.tmp`;
+  writeFileSync(join(dir, `T-1.json.agentry-${dead}.tmp`), "{half");
+  writeFileSync(join(dir, live), "{");
+  assert.equal(read(root, "T-1").id, "T-1");
+  assert.deepEqual(readdirSync(dir).sort(), ["T-1.json", live], "a live writer's temp stays");
+  writeFileSync(join(dir, `T-1.json.agentry-${dead}.tmp`), "{half");
+  assert.equal(list(root).length, 1);
+  assert.deepEqual(readdirSync(dir).sort(), ["T-1.json", live]);
 });

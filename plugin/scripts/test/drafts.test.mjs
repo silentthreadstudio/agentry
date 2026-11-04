@@ -2,7 +2,8 @@
 // for good, applied only on request, a decision through next-id and add, a rule under conductor.rules.
 // Run: node --test plugin/scripts/test/drafts.test.mjs
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -227,4 +228,17 @@ test("apply from inside a worktree refuses: the edit and the run state stay in o
   assert.equal(drafts.pending(root).length, 1, "still pending in the main checkout");
   assert.equal(board(root, "draft", "apply", "1", "--apply").status, 0, "and applies from there");
   assert.match(read(root, "CONDUCTOR.md"), /- From a worktree\./);
+});
+
+test("a rewrite killed between write and rename leaves a temp file the next read removes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-drafts-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  drafts.add(dir, DECISION);
+  const at = join(dir, ".agentry", "run", "process");
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+  const live = `drafts.jsonl.agentry-${process.ppid}.tmp`;
+  writeFileSync(join(at, `drafts.jsonl.agentry-${dead}.tmp`), "{half");
+  writeFileSync(join(at, live), "{");
+  assert.equal(drafts.pending(dir).length, 1);
+  assert.deepEqual(readdirSync(at).sort(), ["drafts.jsonl", live], "a live writer's temp stays");
 });

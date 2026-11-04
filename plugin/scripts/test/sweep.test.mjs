@@ -700,7 +700,9 @@ function leftoversIn(root) {
   const dead = spawnSync("node", ["-e", ""]).pid;
   const ledgerDir = runFile(root, join("process", "ledger"));
   mkdirSync(ledgerDir, { recursive: true });
-  writeFileSync(join(ledgerDir, `T1.json.agentry-${dead}.tmp`), "{");
+  // The dead writer's temp sits beside the drafts: the ledger's own reads (the sweep lists the ledgers)
+  // would sweep one in the ledger directory before the sweep could list it.
+  writeFileSync(runFile(root, join("process", `drafts.jsonl.agentry-${dead}.tmp`)), "{");
   writeFileSync(join(ledgerDir, `T2.json.agentry-${live.pid}.tmp`), "{");
   // editor: a dead run whose command's group still runs; sim: a take of a live session; ttl: a pid-less
   // take within its until; reused: a slot whose pid now names another process.
@@ -733,7 +735,7 @@ test("the sweep lists dead writers' temp files, dead holders' slots with the gro
   const { group, live, dead } = leftoversIn(root);
   const found = JSON.parse(sweep(root, "--json").stdout);
   assert.deepEqual(found.temps, [
-    join(runFile(root, join("process", "ledger")), `T1.json.agentry-${dead}.tmp`),
+    runFile(root, join("process", `drafts.jsonl.agentry-${dead}.tmp`)),
   ]);
   assert.deepEqual(
     found.slots.map((s) => [s.lock, s.slot, s.groups]),
@@ -752,7 +754,10 @@ test("the sweep lists dead writers' temp files, dead holders' slots with the gro
   );
   assert.match(text, /would free gate slot 1: its holder is gone/);
   assert.match(text, /would remove stale write-lock .*slot-1\.lock\.write/);
-  assert.match(text, /would remove temp file .*T1\.json\.agentry-\d+\.tmp: its writer is gone/);
+  assert.match(
+    text,
+    /would remove temp file .*drafts\.jsonl\.agentry-\d+\.tmp: its writer is gone/,
+  );
   assert.ok(alive(group.pid), "nothing was stopped");
   assert.ok(existsSync(join(lockDir(root, "editor"), "slot-1.lock")));
   assert.ok(alive(live.pid));
@@ -788,6 +793,7 @@ test("--apply stops a dead run's group and frees its slot, removes dead temps an
   assert.deepEqual(readdirSync(runFile(root, join("process", "ledger"))), [
     `T2.json.agentry-${live.pid}.tmp`,
   ]);
+  assert.ok(!readdirSync(runFile(root, "process")).some((f) => f.endsWith(".tmp")));
   assert.match(sweep(root).stdout, /nothing to clean/);
 });
 

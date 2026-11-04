@@ -2,11 +2,12 @@
 // in the R1b plan §3.1), with its run files (briefs, reports, gate logs) in `…/process/runs/<id>/`.
 //
 // Every path hangs off the MAIN checkout's root, never a worktree's, so a step run from inside a worktree
-// reads and writes the same ledger. Writes are atomic (temp file, then rename). Along with `drafts`, this is
+// reads and writes the same ledger. Writes are atomic (temp file, then rename), and every read first sweeps
+// the temp files a killed writer left (`fs/atomic.mjs`). Along with `drafts`, this is
 // the only `.agentry/run` I/O of the process kit. Node built-ins only.
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWrite } from "../fs/atomic.mjs";
+import { atomicWrite, sweepTemps } from "../fs/atomic.mjs";
 import { idProblem } from "../lane/id.mjs";
 
 const VERSION = 1;
@@ -21,6 +22,7 @@ const fileOf = (root, id) => join(ledgerDir(root), `${id}.json`);
 /** The ledger for `id`, or null when there is none. Throws when the file is there but unusable. */
 export function read(root, id) {
   if (!validId(id)) return null;
+  sweepTemps(ledgerDir(root));
   let text;
   try {
     text = readFileSync(fileOf(root, id), "utf8");
@@ -61,6 +63,7 @@ export function write(root, ledger) {
 /** Every readable ledger, by id. A file that does not parse is left out (a nudge reading the board must not
  *  die on one bad ledger); `read` is the call that names the problem. */
 export function list(root) {
+  sweepTemps(ledgerDir(root));
   let names;
   try {
     names = readdirSync(ledgerDir(root));

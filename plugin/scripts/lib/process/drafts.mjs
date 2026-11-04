@@ -8,7 +8,7 @@
 // With `ledger`, this is the process kit's only `.agentry/run` I/O. Node built-ins only.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { atomicWrite } from "../fs/atomic.mjs";
+import { atomicWrite, sweepTemps } from "../fs/atomic.mjs";
 
 export const KINDS = ["decision", "rule"];
 export const STATES = ["pending", "applied", "dropped"];
@@ -39,8 +39,10 @@ export function problem(draft) {
 }
 
 // The file's text ("" when there is none) and its lines, each `{ raw, draft }`: `draft` is null for a line
-// that is not a draft (torn, hand-edited), which is kept as written.
+// that is not a draft (torn, hand-edited), which is kept as written. The temp files a killed rewrite left
+// are swept first.
 function read(root) {
+  sweepTemps(dirname(fileOf(root)));
   let text;
   try {
     text = readFileSync(fileOf(root), "utf8");
