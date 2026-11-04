@@ -156,6 +156,9 @@ export function serialized(file, fn) {
   try {
     return fn();
   } finally {
+    // Known, accepted race (like the takeover's above): this release compares, then deletes its own mutex.
+    // A hold that outlasted GRACE_MS may have been taken over meanwhile, and the delete can then remove the
+    // newcomer's mutex. Holds last a few ms; it needs one past two seconds.
     if (textOf(mutex) === mine) rmSync(mutex, { force: true });
   }
 }
