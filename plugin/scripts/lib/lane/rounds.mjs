@@ -87,8 +87,9 @@
 // `holds[]`: { for, when, stepRun, evidence, since, resumedAt, note, redo, why? }.
 //
 // The route is the ledger's snapshot from start, `route: { verify, flagged, preset, noteRounds, final,
-// rebase }`: an edit of the workflow file mid-lane changes no running lane, and a key the ledger lacks reads
-// as the standard preset's. The machine writes `gateTip` whenever it settles `gate` and `closedTip`
+// rebase }`: an edit of the workflow file mid-lane changes no running lane's verify, final or rebase, and a
+// key the ledger lacks reads as the standard preset's. The notes cap is the caller's live read when an
+// event gives `noteRounds` (field 84); the snapshot's only when none is given. The machine writes `gateTip` whenever it settles `gate` and `closedTip`
 // whenever it settles `close`: the tips the gate and the land check.
 //
 // A stacked lane (`on`, A45) is restacked only with no agent out: each restack appends `restacks[]`:

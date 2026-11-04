@@ -592,32 +592,45 @@ test("final after-fix: a rewritten tip, or one with a merge commit since the ver
   }
 });
 
-test("the route is fixed at start: a mid-lane edit to strict changes no running lane", () => {
-  const r = repo({ exec: { noteRounds: 0, final: "never" } });
+test("a mid-lane edit to strict changes the notes cap at the next call; verify, final and rebase stay fixed", () => {
+  const r = repo({ exec: { noteRounds: 1, final: "never" } });
   const started = lane(r, "start", "T1");
   assert.deepEqual(ledgerOf(r.root, "T1").route, {
     verify: "all",
     flagged: false,
     preset: "standard",
-    noteRounds: 0,
+    noteRounds: 1,
     final: "never",
     rebase: "recheck",
   });
   build(started.json);
-  const spec = { ...SPEC, exec: { preset: "strict" } };
-  writeSpec(join(r.root, ".agentry"), spec); // uncommitted, and no guard or gate key changes
+  // Uncommitted, and no guard or gate key changes: strict, with no notes rounds.
+  writeSpec(join(r.root, ".agentry"), { ...SPEC, exec: { preset: "strict", noteRounds: 0 } });
   const verify = lane(r, "report", "T1").json;
   assert.equal(verify.next, "verify");
   notesWith(verify);
   const v = lane(r, "verdict", "T1").json;
   assert.equal(v.notes, "notes kept open (exec.noteRounds is 0)");
-  assert.equal(lane(r, "fix", "T1", "--notes", "N1").exit, 2);
+  const capped = lane(r, "fix", "T1", "--notes", "N1");
+  assert.equal(capped.exit, 2);
+  assert.match(
+    capped.stderr,
+    /0 of 0 notes rounds are used \(exec\.noteRounds is 0; .*\) → raise exec\.noteRounds, or send it back on your word: .*exec fix T1 .*--owner "<the change>"/,
+  );
   const shown = lane(r, "show", "T1").json;
   assert.equal(
     shown["route fixed at start"],
-    "standard · verify all · notes 0 · final never · rebase recheck",
+    "standard · verify all · notes 0 (live) · final never · rebase recheck",
   );
   assert.equal(shown.workflow.preset, "strict");
+  // Raised: the next call reads it, while final stays the start's "never" (strict says "always").
+  writeSpec(join(r.root, ".agentry"), { ...SPEC, exec: { preset: "strict", noteRounds: 2 } });
+  const fix = lane(r, "fix", "T1", "--notes", "N1").json;
+  assert.equal(fix.next, "fix");
+  fixIt(fix);
+  const recheck = lane(r, "report", "T1").json;
+  say(recheck, "N1: PASS renamed\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate", "no final: the route fixed it at never");
 });
 
 test("exec start and show print the workflow line for a file with one override; --json the object", () => {

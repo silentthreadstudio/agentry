@@ -510,7 +510,7 @@ test("the exec rows show each value as the preset resolves it, and where it come
     const expected = [
       /^✓ +workflow +standard · workflow\.json$/,
       /^✓ +exec\.verify +all · preset$/,
-      /^✓ +exec\.noteRounds +1 · preset$/,
+      /^✓ +exec\.noteRounds +1 \(live\) · preset$/,
       /^✓ +exec\.final +never · set$/,
       /^✓ +exec\.rebase +recheck · preset$/,
       /^✓ +gate\.tiers +full$/,
@@ -556,7 +556,7 @@ test("exec.verify flagged says which field it keys on; a models row names each m
       rows["exec.verify"].value,
       'flagged · keys on the task kind\'s "flag" field · preset',
     );
-    assert.equal(rows["exec.noteRounds"].value, "0 · preset");
+    assert.equal(rows["exec.noteRounds"].value, "0 (live) · preset");
     assert.equal(rows.models.value, "build sonnet · verify haiku, ui sonnet, flagged opus");
     assert.equal(rows.models.ok, true);
   } finally {

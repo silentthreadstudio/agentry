@@ -204,7 +204,8 @@ function execRows(spec) {
   });
   return [
     row("verify", exec.verify === "flagged" ? `flagged · ${keyed}` : exec.verify),
-    row("noteRounds", exec.noteRounds),
+    // Read live by every running lane (field 84); the other exec keys are fixed at each lane's start.
+    row("noteRounds", `${exec.noteRounds} (live)`),
     row("final", exec.final),
     row("rebase", exec.rebase),
   ];

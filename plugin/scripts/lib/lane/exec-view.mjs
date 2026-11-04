@@ -10,7 +10,8 @@
 // idleText(id, idle) -> string         the `idle:` line's text (field 53); idleHead, up to its park step
 // clock(iso) -> "HH:MM"                local time
 // workflowText(resolved) -> string     the `workflow:` line: `standard · verify all · notes 1 · final never (set) · …`
-// routeFixedText(route) -> string      a ledger's route snapshot: `standard · verify all · notes 1 · …`
+// routeFixedText(route, live?) -> string   a ledger's route snapshot: `standard · verify all · notes 1 · …`,
+//                                      the notes cap `notes 2 (live)` when the caller read it live
 // restackText(entry) -> string         one `restacks[]` entry: `onto T1 at def5678 (was abc1234): tip …`
 import { runText } from "../process/steps.mjs";
 
@@ -42,9 +43,10 @@ export function workflowText({ preset, exec, roles, set }) {
   ].join(" · ");
 }
 
-/** A lane's route as fixed at start (the ledger's snapshot, the standard values filled in). */
-export const routeFixedText = (route) =>
-  `${route.preset ?? "standard"} · verify ${route.verify} · notes ${route.noteRounds} · final ${route.final} · rebase ${route.rebase}`;
+/** A lane's route as fixed at start (the ledger's snapshot, the standard values filled in). The notes cap
+ *  is read live (field 84): given `live`, the workflow file's `exec.noteRounds` now, it shows that, marked. */
+export const routeFixedText = (route, live) =>
+  `${route.preset ?? "standard"} · verify ${route.verify} · notes ${live === undefined ? route.noteRounds : `${live} (live)`} · final ${route.final} · rebase ${route.rebase}`;
 
 const short = (sha) => String(sha ?? "").slice(0, 7);
 

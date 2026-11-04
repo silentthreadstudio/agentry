@@ -7,7 +7,7 @@
 //   verdict <id> [--agent a]  read the verifier's report, write the verdict, brief the next round
 //   gate <id>                 run the repo's gate in the worktree and record it (exit 1 when red)
 //   fix <id> --notes N1,N3    a verified lane (PASS WITH NOTES): a builder round on those notes, then recheck
-//                             (at most `exec.noteRounds` of them)
+//                             (at most `exec.noteRounds` of them, read live from the workflow file)
 //   fix <id> --owner "<text>" a verified lane the owner sends back: a builder round on the change, then the
 //                             lane's route (the gate where the route skipped the verifier, else a recheck)
 //   rebase <id>               a verified lane whose branch no longer lands: its builder rebases it onto main,
@@ -1043,6 +1043,9 @@ function namedOutside(root, ledger, reportPath) {
   const mine = (p) => owned.some((o) => ownsPath(o, p) || ownsPath(p, o));
   return [...new Set(named.filter((p) => PATHISH.test(p) && !/^\.+$/.test(p) && !mine(p)))];
 }
+// The notes-round cap as the workflow file says now (field 84): read at each call, not fixed at start.
+const liveNotes = ({ spec }) => resolveWorkflow(spec).exec.noteRounds;
+
 // The way to let the builder touch the paths it asked for, when its report names any outside owns.
 const ownsHint = (root, ledger, reportPath) => {
   const paths = namedOutside(root, ledger, reportPath);
@@ -1738,6 +1741,7 @@ function verdict(ctx, id, agent) {
     tier: buildTier(ctx, ledger),
     flagged: isFlagged(ctx, ledger),
     openNotes: opened.length,
+    noteRounds: liveNotes(ctx),
     at: now(),
     ...facts,
   });
@@ -1756,7 +1760,7 @@ function verdict(ctx, id, agent) {
     else next.openNotes = undefined;
     if (judged.verdict === "PASS WITH NOTES") {
       const labels = openNotesOf(text, judged).map((n) => n.split(" ", 1)[0]);
-      const { used, max } = notesBudget(next);
+      const { used, max } = notesBudget(next, liveNotes(ctx));
       notes.line =
         used < max && labels.length
           ? `${laneLine(root, "fix", id)} --notes ${labels.join(",")}`
@@ -2088,12 +2092,12 @@ function fix(ctx, id, given) {
     refuse(
       `${id} is held for the owner at its notes cap: ${laneLine(root, "resume", id, ' --note "<the OK>"')} closes it as is, or send it back on your word: ${byOwner}`,
     );
-  const { used, max } = notesBudget(ledger);
+  const { used, max } = notesBudget(ledger, liveNotes(ctx));
   if (used >= max)
     refuse(
       `${used} of ${max} notes rounds are used (exec.noteRounds is ${max}; next is ${ledger.next}: ${laneLine(root, ledger.next === "close" ? "close" : "gate", id)} goes on with the notes open) → raise exec.noteRounds, or send it back on your word: ${byOwner}`,
     );
-  const res = stepWith(ledger, { type: "notes", notes: labels });
+  const res = stepWith(ledger, { type: "notes", notes: labels, noteRounds: max });
   const verifier = verdicts(ledger).at(-1);
   const report = verifier ? readReport(verifier.reportPath, "verifier") : "";
   const found = withOpen(notesOf(report), ledger.openNotes);
@@ -2421,7 +2425,7 @@ function show(ctx, id) {
           .join("\n"),
       }),
       workflow: resolveWorkflow(spec),
-      "route fixed at start": routeFixedText(routeOf(ledger)),
+      "route fixed at start": routeFixedText(routeOf(ledger), liveNotes(ctx)),
       route: routeNow(ctx, ledger),
       ...(ledger.openNotes?.length && { openNotes: ledger.openNotes }),
       rounds: ledger.rounds.map((r) => ({

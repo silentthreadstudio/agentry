@@ -161,8 +161,11 @@ resume picks up where the lane was. One fresh verifier reads the whole contract 
 
 The route is fixed at `start`: the ledger keeps `route: { verify, flagged, preset, noteRounds, final, rebase }`
 (the workflow file's `exec` keys as its preset resolves them), so an edit of the workflow file changes no
-running lane, and a ledger without these keys runs on the `standard` values. `exec start` and `show` print
-the `workflow:` line, `show` also `route fixed at start: …`, and `route: all (fixed at start; workflow.json
+running lane's verify, final or rebase, and a ledger without these keys runs on the `standard` values. The
+notes-round cap is the one key read live: `fix --notes` and each verdict read the workflow file's
+`exec.noteRounds` (or its preset's) as it is at the call, so raising it lets a lane at its cap send another
+notes round. `exec start` and `show` print the `workflow:` line, `show` also `route fixed at start: …` (its
+notes part `notes 2 (live)`), `board explain` marks the `exec.noteRounds` row `(live)`, and `route: all (fixed at start; workflow.json
 now says flagged)` when the file says otherwise now. A task flagged after its start is still read by a
 verifier when the lane routes it at its report; one closed with no verifier before the flag was set is
 refused at the land: run `agentry lane exec reverify <id>`. `exec.idleMinutes` is read live from the file.
