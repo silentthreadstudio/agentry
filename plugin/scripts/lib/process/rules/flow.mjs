@@ -196,7 +196,10 @@ const readyHasContract = {
       if (params.skip.includes(item.parent)) continue;
       const parent = parentOf(model, item);
       if (parent?.phase !== "active") continue;
-      const { status } = ctx.contractOf(kind, item.id);
+      const { status, stepsProblem } = ctx.contractOf(kind, item.id);
+      // A Steps part with a problem fails here with `exec start`'s own words, so it never first shows there.
+      if (status === "found" && stepsProblem)
+        out.push(finding("ready-has-contract", item, `contract ${item.id}: ${stepsProblem}`));
       if (status === "found") continue;
       const head = `${item.id} is open in ${parent.kind} ${parent.id}`;
       out.push(

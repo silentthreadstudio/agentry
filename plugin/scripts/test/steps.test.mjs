@@ -6,8 +6,10 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { findContract } from "../lib/process/contract.mjs";
+import { rules } from "../lib/process/rules/flow.mjs";
 import { runOf, runText, stepsOf } from "../lib/process/steps.mjs";
 import { git, tempRepo } from "./git-repo.mjs";
+import { makeModel, run, sprint, task } from "./rules-model.mjs";
 
 const cleanups = [];
 after(() => {
@@ -142,5 +144,96 @@ test("a bold run indented under a step is its text, not a label that ends the pa
   assert.deepEqual(
     stepsOf(heading).steps.map((s) => s.n),
     [1, 2],
+  );
+});
+
+// Field 96a: the steps in one wrapped paragraph after the label.
+const INLINE = `- **T1** · Two parts
+- **Owns:** \`a.txt\`
+- **Steps:** 1. Write the parser → owner OK 2. Wire it into the CLI
+  and print the result -> Owner ok. 3. Ship it
+- **Acceptance:**
+  - Step 1: the parser test passes
+  - step 3: the release note says so
+  - the whole suite is green
+- **Deps:** none`;
+
+test("inline steps after the label parse into the same steps as one per line, gates and all", () => {
+  assert.deepEqual(stepsOf(INLINE), stepsOf(BULLETS));
+});
+
+test("a number inside an inline step's text is not a split: only the next number in order splits", () => {
+  const block = "**Steps:** 1. Wait 2.5 s for v1. x, then 3. retry 2. Check 1. again 3. Ship";
+  assert.deepEqual(
+    stepsOf(block).steps.map((s) => s.text),
+    ["Wait 2.5 s for v1. x, then 3. retry", "Check 1. again", "Ship"],
+  );
+});
+
+test("the inline paragraph ends at its first blank line", () => {
+  const block =
+    "- **Steps:** 1. One 2. Two\n\n  Prose about the steps 3. not a step\n- **Deps:** none";
+  assert.deepEqual(
+    stepsOf(block).steps.map((s) => [s.n, s.text]),
+    [
+      [1, "One"],
+      [2, "Two"],
+    ],
+  );
+});
+
+test("a step's (model, agent) marker is cut from its end, before or after the gate", () => {
+  const block = [
+    "- **Steps:**",
+    "  1. Build the parser (model: opus, agent: implementer) → owner OK",
+    "  2. Draw the panel → owner OK (agent: designer)",
+    "  3. Ship it (Model: `haiku`)",
+    "  4. Tidy (see notes)",
+  ].join("\n");
+  assert.deepEqual(stepsOf(block).steps, [
+    {
+      n: 1,
+      text: "Build the parser",
+      gate: "owner",
+      accept: [],
+      model: "opus",
+      agent: "implementer",
+    },
+    { n: 2, text: "Draw the panel", gate: "owner", accept: [], agent: "designer" },
+    { n: 3, text: "Ship it", gate: null, accept: [], model: "haiku" },
+    { n: 4, text: "Tidy (see notes)", gate: null, accept: [] },
+  ]);
+  assert.deepEqual(stepsOf("**Steps:** 1. A (model: opus) 2. B (agent: designer)").steps, [
+    { n: 1, text: "A", gate: null, accept: [], model: "opus" },
+    { n: 2, text: "B", gate: null, accept: [], agent: "designer" },
+  ]);
+});
+
+test("a step naming an agent other than designer or implementer is a problem", () => {
+  assert.equal(
+    stepsOf("- **Steps:**\n  1. a\n  2. b (agent: verifier)").problem,
+    "step 2 names agent verifier; a step's agent is designer or implementer",
+  );
+});
+
+test("the Ready rule flags a found contract whose Steps part has a problem, in exec start's words", () => {
+  const { dir, cleanup } = tempRepo();
+  cleanups.push(cleanup);
+  writeFileSync(
+    join(dir, "TASKS.md"),
+    "# Tasks\n\n- **T1**: owns `y`.\n  - **Steps:**\n    1. a\n    3. c\n\n- **T2**: owns `z`.\n  - **Steps:** 1. a 2. b\n",
+  );
+  git(dir, "add", "TASKS.md");
+  git(dir, "commit", "-qm", "tasks");
+  const ready = rules.find((r) => r.id === "ready-has-contract");
+  const model = makeModel([
+    sprint("S1", "doing"),
+    task("T1", "S1", "todo"),
+    task("T2", "S1", "todo"),
+  ]);
+  const ctx = { contractOf: (_kind, id) => findContract({ root: dir, id }) };
+  assert.deepEqual(
+    run(ready, model, { kind: "task" }, ctx).map((f) => [f.id, f.message]),
+    [["T1", "contract T1: steps must be numbered 1 to N with no gap (found 1, 3)"]],
   );
 });

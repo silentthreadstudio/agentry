@@ -3,10 +3,13 @@
 //
 // The part opens at a `**Steps:**` / `**Steps**:` label or a `Steps` heading of any level and holds one
 // numbered item per line (`1.` or `1)`); a more indented line joins the item above; it ends at the next
-// bold label or heading. An item ending `→ owner OK` or `-> owner OK` (any case, optional period) has an
-// owner gate. Under the Acceptance label or heading, a list item that starts `Step N:` is step N's.
+// bold label or heading. A label followed on its line by `1. ` holds the steps inline instead, in one
+// paragraph (to the first blank line), split at ` <n>. ` with n running 2, 3, … in order (field 96). An
+// item ending `→ owner OK` or `-> owner OK` (any case, optional period) has an owner gate; one ending
+// `(model: <m>, agent: <a>)` (either key, either order, before or after the gate) names its builder. Under
+// the Acceptance label or heading, a list item that starts `Step N:` is step N's.
 //
-//   stepsOf(block) -> { steps: [{ n, text, gate: "owner" | null, accept: [text] }], problem }
+//   stepsOf(block) -> { steps: [{ n, text, gate: "owner" | null, accept: [text], model?, agent? }], problem }
 //   runOf(steps, from) -> [from, g]   g: the first step from `from` with an owner gate, else the last
 //   runText([a, g], total) -> "step 1 of 2" | "steps 2–3 of 3"
 
@@ -22,23 +25,28 @@ const ACCEPT = named("accept(?:ance)?");
 const NUMBERED = /^(\s*)(\d+)[.)]\s+(.*)$/;
 const LISTED = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
 const GATE = /\s*(?:→|->)\s*owner\s+ok\.?\s*$/i;
+const MARK = /\s*\(\s*((?:model|agent)\s*:[^()]*)\)\s*$/i;
+const AGENTS = ["designer", "implementer"];
 const TAG = /^step\s+(\d+)\s*:\s*/i;
 const FENCE = /^\s*(```|~~~)/;
 
 const indentOf = (line) => /^\s*/.exec(line)[0].length;
 
-// The lines of the first part `name` opens (the label or heading line left out), or null when none does.
-// A bold run more indented than the list item above it is that item's text, not a label.
+// The first part `name` opens: `{ head, body }`, `head` the rest of a label's line ("" after a heading),
+// `body` the lines after it; null when none opens. A bold run more indented than the list item above it
+// is that item's text, not a label.
 function partOf(lines, name) {
   let fenced = false;
   let body = null;
+  let head = "";
   let item = -1; // the indent of the last list item in the part
   for (const line of lines) {
     if (FENCE.test(line)) fenced = !fenced;
     const heading = !fenced && HEADING.exec(line);
-    const opens = !fenced && (name.label.test(line) || (heading && name.heading.test(heading[1])));
+    const opens = !fenced && name.label.exec(line);
     if (body === null) {
-      if (opens) body = [];
+      if (opens) head = line.slice(opens[0].length).trim();
+      if (opens || (heading && name.heading.test(heading[1]))) body = [];
       continue;
     }
     const label = LABEL.test(line) && (item < 0 || indentOf(line) <= item);
@@ -46,7 +54,7 @@ function partOf(lines, name) {
     if (!fenced && LISTED.test(line)) item = indentOf(line);
     body.push(fenced || FENCE.test(line) ? "" : line);
   }
-  return body;
+  return body && { head, body };
 }
 
 // The items `pattern` matches in `lines`, a more indented line joined to the item above:
@@ -62,6 +70,47 @@ function itemsOf(lines, pattern) {
   return items;
 }
 
+// The inline form: `head` (`1. …`) and the body up to its first blank line as one paragraph, split at
+// ` 2. `, then ` 3. `, …, so a number inside a step's text (`2.5 s`, `v1. x`) splits nothing.
+function inlineItems(head, body) {
+  const end = body.findIndex((line) => !line.trim());
+  let rest = [head, ...body.slice(0, end < 0 ? body.length : end)]
+    .map((line) => line.trim())
+    .join(" ")
+    .replace(/^1\.\s+/, "");
+  const items = [];
+  for (let n = 2; ; n++) {
+    const at = new RegExp(`\\s${n}\\.\\s+`).exec(rest);
+    if (!at) break;
+    items.push(rest.slice(0, at.index));
+    rest = rest.slice(at.index + at[0].length);
+  }
+  items.push(rest);
+  return items.map((text, i) => ({ head: String(i + 1), text: text.trim() }));
+}
+
+// A step's text with its owner gate and its `(model: …, agent: …)` marker cut from its end, either first.
+function stepOf(n, raw) {
+  let text = raw;
+  let gate = null;
+  let marks = null;
+  for (let pass = 0; pass < 2; pass++) {
+    if (!gate && GATE.test(text)) {
+      gate = "owner";
+      text = text.replace(GATE, "");
+    }
+    const mark = !marks && MARK.exec(text);
+    if (!mark) continue;
+    marks = mark[1].split(",").map((pair) => pair.split(":").map((w) => w.trim()));
+    text = text.slice(0, mark.index);
+  }
+  const step = { n, text: text.trim(), gate, accept: [] };
+  for (const [key, value] of marks ?? [])
+    if (["model", "agent"].includes(key.toLowerCase()) && value)
+      step[key.toLowerCase()] = value.replace(/`/g, "");
+  return step;
+}
+
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** The block's steps and the one problem with them, or `{ steps: [], problem: null }` when the block
@@ -70,12 +119,10 @@ export function stepsOf(block) {
   const lines = String(block ?? "").split(/\r?\n/);
   const part = partOf(lines, STEPS);
   if (part === null) return { steps: [], problem: null };
-  const steps = itemsOf(part, NUMBERED).map(({ head, text }) => ({
-    n: Number(head),
-    text: text.replace(GATE, "").trim(),
-    gate: GATE.test(text) ? "owner" : null,
-    accept: [],
-  }));
+  const items = /^1\.\s/.test(part.head)
+    ? inlineItems(part.head, part.body)
+    : itemsOf(part.body, NUMBERED);
+  const steps = items.map(({ head, text }) => stepOf(Number(head), text));
   if (!steps.length)
     return { steps, problem: "the Steps part has no numbered items, one per line" };
   if (steps.some((s, i) => s.n !== i + 1))
@@ -83,7 +130,13 @@ export function stepsOf(block) {
       steps,
       problem: `steps must be numbered 1 to N with no gap (found ${steps.map((s) => s.n).join(", ")})`,
     };
-  for (const { text } of itemsOf(partOf(lines, ACCEPT) ?? [], LISTED)) {
+  const odd = steps.find((s) => s.agent && !AGENTS.includes(s.agent));
+  if (odd)
+    return {
+      steps,
+      problem: `step ${odd.n} names agent ${odd.agent}; a step's agent is ${AGENTS.join(" or ")}`,
+    };
+  for (const { text } of itemsOf(partOf(lines, ACCEPT)?.body ?? [], LISTED)) {
     const tag = TAG.exec(text);
     if (!tag) continue;
     const step = steps[Number(tag[1]) - 1];

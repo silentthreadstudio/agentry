@@ -148,7 +148,7 @@ file declares for that field, nor an item of the kind the field refs) is a findi
 | `question-blocks` | nothing starts while an open question blocks it |
 | `parked` | the parking parent's children are parked; nothing live depends on a parked item |
 | `deps-not-forward` | no dependency on an item later in the order |
-| `ready-has-contract` | an unfinished item in an active parent has a contract that `agentry board contract <id>` finds (the build step, `/agentry:exec`, needs it) |
+| `ready-has-contract` | an unfinished item in an active parent has a contract that `agentry board contract <id>` finds (the build step, `/agentry:exec`, needs it), and its Steps part has no problem: one is a finding in `exec start`'s words (`contract T4: steps must be numbered 1 to N with no gap (found 1, 3)`) |
 | `done-has-evidence` | a done item names its commit (`commit-or-note`: or a note), and every commit named exists in git |
 | `done-has-handoff` | a done item has a line in its parent's handoff section (`commit`: the SHA that line must name) |
 | `flagged-needs-verdict` | a flagged done item has a passing verdict |
