@@ -1030,6 +1030,13 @@ const answerOf = (h, total) =>
 
 // A path that leaves the repository: a leading `/` or a `..` segment. `owns` never takes one.
 const leaves = (path) => path.startsWith("/") || path.split("/").includes("..");
+// A path as `owns` reads it: each leading `./` dropped, `//` collapsed, a trailing `/` dropped. `leaves`
+// judges this form, so `.//etc/passwd` is `/etc/passwd`, never `etc/passwd` after the check.
+const normalised = (path) =>
+  path
+    .replace(/^(?:\.\/)+/, "")
+    .replace(/\/{2,}/g, "/")
+    .replace(/(.)\/+$/, "$1") || path;
 
 // The paths a NEEDS_CONTEXT report names that the lane does not own, in its first 20 lines: those of each
 // `needs: <path>` line and each backticked path (a word with a `/` or a file extension, no spaces). A
@@ -1050,7 +1057,7 @@ function namedOutside(root, ledger, reportPath) {
   const owned = ownedOf(root, ledger).map((o) => o.path);
   const mine = (p) => owned.some((o) => ownsPath(o, p) || ownsPath(p, o));
   const kept = (p) => PATHISH.test(p) && !/^\.+$/.test(p) && !leaves(p) && !mine(p);
-  return [...new Set(named.filter(kept))];
+  return [...new Set(named.map(normalised).filter(kept))];
 }
 // The notes-round cap as the workflow file says now (field 84): read at each call, not fixed at start.
 const liveNotes = ({ spec }) => resolveWorkflow(spec).exec.noteRounds;
@@ -1493,10 +1500,11 @@ function owns(ctx, id) {
   const paths = [...new Set((set ?? add).split(",").map((p) => p.trim()))];
   const bad = paths.find((p) => !p || /\s/.test(p));
   if (bad !== undefined) refuse(`${flag} takes comma-separated paths, no blanks: "${bad}"`);
-  const outside = paths.find(leaves);
+  const outside = paths.find((p) => leaves(normalised(p)));
   if (outside !== undefined) refuse(`${flag}: ${outside} leaves the repository`);
   const already = [];
-  if (set !== null) ledger = { ...ledger, owned: withNew(ledger.worktree, paths) };
+  if (set !== null)
+    ledger = { ...ledger, owned: withNew(ledger.worktree, [...new Set(paths.map(normalised))]) };
   else {
     // Past a passing verdict: verified, landing or landed, parked verified, or held at its notes cap.
     const capped = ledger.hold?.when === "verdict";
@@ -1506,13 +1514,13 @@ function owns(ctx, id) {
       refuse(
         `owns --add is for a lane still building: ${id} is ${capped ? "held at its notes cap" : ledger.state} (next ${ledger.next}); a change now is the owner's (${laneLine(root, "fix", id, ' --owner "<the change>"')})`,
       );
-    // Each path as `start` reads it (a bare name found in the tree), `./` and a trailing `/` dropped, kept
-    // only when no owned entry covers it yet: the guard's own reading (a directory, a glob, a bare name).
+    // Each path as `start` reads it (a bare name found in the tree), normalised, kept only when no owned
+    // entry covers it yet: the guard's own reading (a directory, a glob, a bare name).
     const owned = [...ownedOf(root, ledger)];
     const before = owned.length;
     const covered = (path) => owned.some((e) => ownsPath(e.path, path));
     for (const given of paths) {
-      const path = given.replace(/^(?:\.\/)+/, "").replace(/\/+$/, "") || given;
+      const path = normalised(given);
       const fresh = covered(path)
         ? []
         : withNew(ledger.worktree, [path]).filter((o) => !covered(o.path));

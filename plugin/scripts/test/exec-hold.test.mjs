@@ -832,6 +832,38 @@ test("owns refuses a path that leaves the repository; the hint names only paths,
   assert.deepEqual(ledgerOf(r.root, "T3").owned, before);
 });
 
+test("owns and its hint judge a path normalised: .//etc/passwd leaves the repository", () => {
+  // R1d-38 r4 N3, probes A1 and A2: the ./ strip ran after the check, so .//etc/passwd was stored as
+  // /etc/passwd, and the hint offered .//abs.txt.
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3").json;
+  ask(
+    out,
+    "needs: .//abs.txt, /etc/hosts, ../x.txt, a/../../b.txt, ok/new.txt, ./ok//two.txt\nalso `/etc/passwd` and `.//t.txt`",
+  );
+  const held = lane(r, "report", "T3").json;
+  assert.match(held.held, / --add ok\/new\.txt,ok\/two\.txt --apply, then resume; /);
+  const before = ledgerOf(r.root, "T3").owned;
+  for (const [flag, path] of [
+    ["--add", ".//etc/passwd"],
+    ["--add", "././/etc/passwd"],
+    ["--set", "three.txt,.//etc/passwd"],
+  ]) {
+    const refused = lane(r, "owns", "T3", flag, path, "--apply");
+    assert.equal(refused.exit, 2, path);
+    assert.match(refused.stderr, /leaves the repository/, path);
+  }
+  assert.deepEqual(ledgerOf(r.root, "T3").owned, before);
+  const added = lane(r, "owns", "T3", "--add", "./ok//new.txt", "--apply");
+  assert.equal(added.exit, 0, added.stderr);
+  assert.deepEqual(
+    added.json.owned.map((o) => o.path),
+    ["three.txt", "ok/new.txt"],
+  );
+});
+
 test("owns --add counts a path an owned entry already covers as owned: a directory, ./ and a trailing /", () => {
   // R1d-38 r2 Q5: with lib/ owned, lib/a.txt and ./lib/ were appended; ./three.txt beside three.txt too.
   const r = repo();
