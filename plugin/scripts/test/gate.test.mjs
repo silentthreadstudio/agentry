@@ -567,7 +567,8 @@ test("flakyReds: a listed name counts only whole, and a CRLF log reads as LF", (
 });
 
 // A real `lane exec gate` on a scratch board whose gate command backgrounds a child: `{ root, run, pids }`,
-// once the gate runs (`pids` the command and its child, `run` the gate's own process). Its process waits
+// once the gate runs and its slot is settled (`pids` the command and its child, `run` the gate's own
+// process). Its process waits
 // for the gate synchronously, so it can clean nothing up itself on a signal: its watchdog has to.
 async function gateRunning(marker) {
   const { writeSpec } = await import("./spec-files.mjs");
@@ -650,6 +651,19 @@ async function gateRunning(marker) {
   });
   const lines = () => (existsSync(marker) ? readFileSync(marker, "utf8").trim().split("\n") : []);
   for (let i = 0; i < 600 && lines().length < 2; i++) await new Promise((r) => setTimeout(r, 25));
+  // The watchdog records the command's group in the slot (`recordGroup`) only once the command runs, so
+  // under load the command can be up while that write is still in flight (its mutex and temp file beside
+  // the slot). Wait for it to settle: the group recorded, nothing beside the slot.
+  const slots = join(root, ".agentry", "run", "gate-locks");
+  const settled = () => {
+    try {
+      const recorded = JSON.parse(readFileSync(join(slots, "slot-1.lock"), "utf8")).pgid;
+      return Number.isInteger(recorded) && readdirSync(slots).join() === "slot-1.lock";
+    } catch {
+      return false;
+    }
+  };
+  for (let i = 0; i < 200 && !settled(); i++) await new Promise((r) => setTimeout(r, 25));
   return { root, run, pids: lines().map(Number) };
 }
 
