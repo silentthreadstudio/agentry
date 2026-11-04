@@ -31,6 +31,9 @@
 //   restart <id> [--carry]    a lane not merged, no agent out: archive its ledger and run files as
 //                             `<id>.<n>`, keep its branch as `agentry/<id>.<n>`, start it again from main;
 //                             `--carry` picks its commits and applies its uncommitted diff (stops on a conflict)
+//   adopt <id> --branch <b>   work built outside exec becomes the lane: `start`'s checks and records, a lane cut
+//                             from main, `main..<b>` picked onto it and the uncommitted diff of <b>'s worktree
+//                             applied (stops on a conflict); <b> and its worktree are left as they are
 //
 // Board writes go through `applyEvent` only (no `lifecycle` → none), and a restart's clear of the old
 // lane's verdict through `board set`, which records it. Exit 0 = next printed, 1 = the lane stopped (or
@@ -39,14 +42,17 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import {
   appendFileSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
@@ -68,6 +74,7 @@ import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
 import { escapesRoot, own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { WriteError } from "../../process/write.mjs";
+import { adoptedWork, cleanupSteps, source } from "../adopt.mjs";
 import {
   appendedAfter,
   bullets,
@@ -147,9 +154,10 @@ const STEPS = [
   "reverify",
   "restack",
   "restart",
+  "adopt",
 ];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--branch <b>] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -169,6 +177,8 @@ export const help = {
       "a stacked lane at rest: rebase it onto its parent's new tip, or main once the parent landed",
     restart:
       "a lane not merged, no agent out: archive it and start it again from main (--carry its work)",
+    adopt:
+      "work built outside exec becomes the lane: cut from main, the branch's commits and uncommitted diff carried (--branch)",
     "<id>": "the task's id, any case",
   },
   flags: {
@@ -197,6 +207,8 @@ export const help = {
     "--main": "restack: onto main's tip, off the parent (the owner's call)",
     "--carry":
       "restart: carry the old branch's commits and its uncommitted diff into the new worktree",
+    "--branch <b>":
+      "adopt: the branch built outside exec; it and its worktree are left as they are",
     "--json": "print the step's one JSON object instead of the readable text",
   },
   exits: { 0: "next printed", 1: "the lane stopped, or the gate is red", 2: "usage or refusal" },
@@ -222,6 +234,7 @@ const STEPS_OF = {
   "--on": ["start"],
   "--main": ["restack"],
   "--carry": ["restart"],
+  "--branch": ["adopt"],
 };
 
 class Refusal extends Error {}
@@ -236,7 +249,7 @@ const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
 // argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain,
-// carry } or { error }.
+// carry, branch } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
   const words = [];
@@ -263,6 +276,8 @@ function parse(argv) {
       return { error: flag === "--on" ? "--on goes with start only" : `${step} takes no ${flag}` };
   if (step === "fix" && (given["--notes"] === undefined) === (given["--owner"] === undefined))
     return { error: 'fix needs --notes N1,N3 or --owner "<the change>", one of them' };
+  if (step === "adopt" && given["--branch"] === undefined)
+    return { error: "adopt needs --branch <b>: the branch built outside exec" };
   if (given["--by"] !== undefined && given["--leave"] === undefined)
     return { error: "--by goes with --leave" };
   if (given["--by"] !== undefined && !["owner", "conductor"].includes(given["--by"]))
@@ -291,6 +306,7 @@ function parse(argv) {
     on: given["--on"] ?? null,
     toMain: Boolean(given["--main"]),
     carry: Boolean(given["--carry"]),
+    branch: given["--branch"] ?? null,
   };
 }
 
@@ -792,10 +808,15 @@ function nestedTrees(root, ledger) {
 
 // The lanes that count against `lanes.maxWriters`: open ledgers that build or fix, and worktrees no
 // ledger owns, except the ones the repo keeps on purpose (`worktrees.keep`) and the host's own agent
-// worktrees (`.claude/worktrees/`), which no lane started. `except` is a lane a restart replaces.
-function writers(root, spec, except = null) {
+// worktrees (`.claude/worktrees/`), which no lane started. `except` is a lane a restart replaces;
+// `adopting` the worktree an adopt takes in. A worktree a lane adopted is that lane's.
+function writers(root, spec, except = null, adopting = null) {
   const all = ledgers.list(root);
-  const owned = new Set(all.map((l) => l.worktree));
+  const owned = new Set([
+    ...all.map((l) => l.worktree),
+    ...all.map((l) => l.adopted?.worktree).filter(Boolean),
+    ...(adopting ? [adopting] : []),
+  ]);
   const agents = join(root, ".claude", "worktrees");
   return [
     ...all
@@ -809,12 +830,12 @@ function writers(root, spec, except = null) {
   ];
 }
 
-// `start`, `restart` (its own lane not counted) and a `resume` that sends a builder are refused while
-// `lanes.maxWriters` writers are open.
-function refuseAtWriterCap(root, spec, except = null) {
+// `start`, `restart` (its own lane not counted), `adopt` (the worktree it takes in not counted) and a
+// `resume` that sends a builder are refused while `lanes.maxWriters` writers are open.
+function refuseAtWriterCap(root, spec, except = null, adopting = null) {
   const config = readConfig(root);
   if (config.error) refuse(config.error);
-  const open = writers(root, spec, except);
+  const open = writers(root, spec, except, adopting);
   if (open.length >= config.lanes.maxWriters)
     refuse(
       `${open.length} writer(s) open, lanes.maxWriters is ${config.lanes.maxWriters}; finish or merge one first:\n${open.map((w) => `  ${w}`).join("\n")}`,
@@ -999,6 +1020,8 @@ function brief({ root, spec, model }, ledger, dispatch) {
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
   // A restarted lane's first brief says what was carried into the tree (field 69).
   if (n === 1 && fresh && ledger.carried) text = withSection(text, carriedWork(ledger.carried));
+  // An adopted lane's first brief lists the commits it took in (field 86).
+  if (n === 1 && fresh && ledger.adopted) text = withSection(text, adoptedWork(ledger.adopted));
   // The fact the owner supplied at a context hold goes where the conductor puts one: at the end.
   if (dispatch.fact) text = `${text.trimEnd()}\n\n## The fact\n\n${dispatch.fact}\n`;
   writeFileSync(file, text);
@@ -1312,10 +1335,8 @@ function startRoute({ spec }, ledger) {
   return unused ? `${route} · ${unused}` : route;
 }
 
-function start(ctx, id) {
-  const { root, spec, model, cite, kind } = ctx;
-  const unknown = unknownCites({ spec, model, cite });
-  if (unknown.length) refuse(`--cite names no decision on the board: ${unknown.join(", ")}`);
+// `start` and `adopt` cut a new lane: refused while a ledger for `id` is there.
+function refuseLane(root, id) {
   const existing = (() => {
     try {
       return ledgers.read(root, id);
@@ -1327,6 +1348,13 @@ function start(ctx, id) {
     refuse(
       `a lane for ${id} exists (state ${existing.state}, next ${existing.next}): ${laneLine(root, "show", id)}`,
     );
+}
+
+function start(ctx, id) {
+  const { root, spec, model, cite } = ctx;
+  const unknown = unknownCites({ spec, model, cite });
+  if (unknown.length) refuse(`--cite names no decision on the board: ${unknown.join(", ")}`);
+  refuseLane(root, id);
   refuseMidLand(root);
   const parent = ctx.on === null ? null : stackParent(ctx, id);
   refuseAtWriterCap(root, spec);
@@ -1382,8 +1410,9 @@ function frozenBoard(ctx, hash) {
 
 // Cut the lane and brief its builder: the worktree on `agentry/<id>` (from the parent's tip when stacked,
 // else main's HEAD), `dispatched`, the ledger with what main and the board look like now. `again(path)`, a
-// restart's, runs in the new worktree before the brief: `{ restarted, carried?, shown, exit }`, the archive
-// and what it carried for the ledger, its lines for the view and its exit (1 when the carry stopped).
+// restart's or an adopt's, runs in the new worktree before the brief: `{ restarted?, carried?, adopted?,
+// shown, exit }`, the archive or the adopted branch and what it carried for the ledger, its lines for the
+// view and its exit (1 when the carry stopped).
 function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   const { root, spec, model, cite, kind } = ctx;
   // A stacked lane is cut from its parent's tip: `base..HEAD` is its own commits only.
@@ -1400,6 +1429,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   const {
     restarted = null,
     carried = null,
+    adopted = null,
     shown = {},
     warnings = [],
     exit = 0,
@@ -1457,6 +1487,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     startedAt: at,
     ...(restarted && { restarted }),
     ...(carried && { carried }),
+    ...(adopted && { adopted }),
     state: "building",
     next: "build",
   };
@@ -1473,7 +1504,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   ledger = dispatchNext(ctx, ledger, begin(ledger.steps).dispatch);
   ledgers.write(root, ledger);
   const res = view(ctx, ledger, {
-    step: restarted ? "restart" : "start",
+    step: adopted ? "adopt" : restarted ? "restart" : "start",
     lead: parent
       ? {
           stack: `on ${parent.id} at ${short(base)} (${parent.id} is ${parent.state}); ${parent.id} lands first`,
@@ -2846,6 +2877,89 @@ function restart(ctx, id) {
   }
 }
 
+// Work built outside exec taken in as the lane (field 86): `start`'s checks and board write, a fresh
+// `agentry/<id>` cut from main, `main..<b>`'s commits picked onto it and, when <b> is checked out in a
+// worktree, that worktree's uncommitted diff applied (`restart.mjs`'s `saveWork` and `carry`). <b> and its
+// worktree are only read. Every refusal comes before the cut; a carry that stops leaves the conflict in the
+// new worktree, named in the output and the brief, as `restart --carry` does (exit 1).
+function adopt(ctx, id) {
+  const { root, spec, branch } = ctx;
+  refuseLane(root, id);
+  refuseMidLand(root);
+  const mainBranch = mainBranchOf(root);
+  const base = headOf(root);
+  const from = source(root, { branch, base, mainBranch });
+  if (from.problem) refuse(from.problem);
+  refuseAtWriterCap(root, spec, null, from.worktree);
+  const found = contractOf(ctx, id);
+  // The new lane's board write, tried before anything is written: a row it cannot write refuses here.
+  applyEvent({
+    root,
+    spec,
+    model: ctx.model,
+    event: "dispatched",
+    id,
+    kind: ctx.kind,
+    preview: true,
+  });
+  // The uncommitted work is saved outside the repository until the cut, so a refusal leaves no run dir.
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "agentry-adopt-")));
+  try {
+    const saved = join(scratch, "uncommitted.diff");
+    const work = from.dirty.length ? saveWork(from.worktree, saved) : { files: [] };
+    if (work.error) refuse(`the worktree's uncommitted work could not be saved: ${work.error}`);
+    const again = (path) => {
+      const diff = join(ledgers.runDir(root, id), "adopt", "uncommitted.diff");
+      if (work.files.length) {
+        mkdirSync(dirname(diff), { recursive: true });
+        copyFileSync(saved, diff);
+      }
+      const res = carry(path, { base, tip: from.tip, diff });
+      const adopted = {
+        branch,
+        tip: from.tip,
+        commits: from.commits.map(({ sha, subject }) => ({ sha, subject })),
+        worktree: from.worktree,
+        files: work.files.length,
+        ...(work.files.length && { applied: res.applied, diff }),
+        ...(res.conflict && { conflict: res.conflict }),
+        at: now(),
+      };
+      return {
+        adopted,
+        warnings: outsideAdopted(root, id, found, path, from.commits),
+        exit: res.ok ? 0 : 1,
+        shown: {
+          adopted: `${branch} at ${short(from.tip)}: ${adopted.commits.length} commits picked, ${adopted.files} files uncommitted${from.worktree ? ` from ${from.worktree}` : ""}`,
+          ...(res.conflict && { conflict: `${res.conflict} in ${path}` }),
+          cleanup: `${branch} and its worktree are left as they are; once ${id} has landed: ${cleanupSteps(adopted).join("; ")}`,
+        },
+      };
+    };
+    return cut({ ...ctx, on: null }, id, { found, parent: null, mainBranch, again });
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+// The adopted commits that change files outside the contract's owns, as warning lines, the last one the
+// way to own them: never a refusal.
+function outsideAdopted(root, id, found, path, commits) {
+  const owned = withNew(path, ownedFiles(found.block, path)).map((o) => o.path);
+  const out = commits
+    .map((c) => ({ ...c, out: c.files.filter((f) => !owned.some((o) => ownsPath(o, f))) }))
+    .filter((c) => c.out.length);
+  if (!out.length) return [];
+  const paths = [...new Set(out.flatMap((c) => c.out))];
+  return [
+    ...out.map(
+      (c) =>
+        `! adopted ${short(c.sha)} ${c.subject} changes files outside owns: ${c.out.join(", ")}`,
+    ),
+    `! to own them: ${laneLine(root, "owns", id, ` --add ${paths.join(",")} --apply`)}`,
+  ];
+}
+
 const HANDLERS = {
   start,
   report,
@@ -2861,4 +2975,5 @@ const HANDLERS = {
   reverify,
   restack,
   restart,
+  adopt,
 };
