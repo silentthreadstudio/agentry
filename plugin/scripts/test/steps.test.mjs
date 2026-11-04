@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { findContract } from "../lib/process/contract.mjs";
 import { rules } from "../lib/process/rules/flow.mjs";
-import { runOf, runText, stepsOf } from "../lib/process/steps.mjs";
+import { runMark, runOf, runText, stepsOf } from "../lib/process/steps.mjs";
 import { git, tempRepo } from "./git-repo.mjs";
 import { makeModel, run, sprint, task } from "./rules-model.mjs";
 
@@ -236,4 +236,35 @@ test("the Ready rule flags a found contract whose Steps part has a problem, in e
     run(ready, model, { kind: "task" }, ctx).map((f) => [f.id, f.message]),
     [["T1", "contract T1: steps must be numbered 1 to N with no gap (found 1, 3)"]],
   );
+});
+
+test("steps built in one round that name different models or agents are a problem", () => {
+  assert.equal(
+    stepsOf("- **Steps:**\n  1. a (model: opus)\n  2. b\n  3. c (model: sonnet)").problem,
+    "steps 1 and 3 are built in one round but name different models (opus, sonnet): put an owner gate between them or name one model",
+  );
+  assert.equal(
+    stepsOf("**Steps:** 1. a (agent: designer) 2. b (agent: implementer)").problem,
+    "steps 1 and 2 are built in one round but name different agents (designer, implementer): put an owner gate between them or name one agent",
+  );
+  // Separate runs (an owner gate between) and markers that agree are fine.
+  assert.equal(
+    stepsOf("**Steps:** 1. a (model: opus) → owner OK 2. b (model: sonnet)").problem,
+    null,
+  );
+  assert.equal(
+    stepsOf("**Steps:** 1. a (model: opus) 2. b (model: opus, agent: designer)").problem,
+    null,
+  );
+});
+
+test("runMark: the run's first step naming the key, as step N; null without a run or a marked step", () => {
+  const { steps } = stepsOf(
+    "**Steps:** 1. a 2. b (model: opus) 3. c (model: opus) → owner OK 4. d",
+  );
+  assert.deepEqual(runMark(steps, [1, 3], "model"), { value: "opus", from: "step 2" });
+  assert.equal(runMark(steps, [4, 4], "model"), null);
+  assert.equal(runMark(steps, [1, 3], "agent"), null);
+  assert.equal(runMark(steps, null, "model"), null);
+  assert.equal(runMark([], [1, 1], "model"), null);
 });

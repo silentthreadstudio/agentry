@@ -11,7 +11,9 @@
 //                   root is looked up among the tree's tracked files as a suffix (`merge/gating.mjs`, a bare
 //                   name, a glob's folder): one hit is that path, several are all listed `ambiguous`; a new
 //                   file under a first folder found only deeper (`pt/x.py` → `tools/pt/x.py`) goes there
-//   suggestBuilder  designer when an owned path is UI-shaped, else implementer (the conductor decides, #20)
+//   suggestBuilder  the agent the run's step marker names, else the contract's `**Agent:**` bullet (field
+//                   96), else designer when an owned path is UI-shaped, else implementer (the conductor
+//                   decides, #20)
 //   citedDecisions  every decision of the board's decision kind the block cites by id, the rows that name
 //                   the task (decided after the contract was written) and those the owner asked for with
 //                   `--cite`, each row quoted
@@ -41,8 +43,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rankFacts, readFacts, readMemoryConfig } from "../memory/recall.mjs";
 import { readInside } from "../process/read.mjs";
+import { bulletOf } from "../process/spec/models.mjs";
 import { own } from "../process/spec/shape.mjs";
-import { runText } from "../process/steps.mjs";
+import { runMark, runText } from "../process/steps.mjs";
 import { answerLine } from "./exec-view.mjs";
 import { toLand } from "./land.mjs";
 import { checkCommits, readCommits, rulesOf } from "./subjects.mjs";
@@ -496,8 +499,17 @@ const UI_DIRS = new Set([
 const FRONT_DIRS = new Set(["web", "app", "ui"]);
 const UI_EXT = /\.(css|scss|sass|less|vue|svelte|astro|html|tscn)$/i;
 
-/** Which builder the owned paths suggest: `{ agent, why }`. A suggestion: the conductor decides. */
-export function suggestBuilder(owned) {
+const AGENTS = ["designer", "implementer"];
+
+/** Which builder to suggest: the first step of the run (`stepRun` of `steps`) naming an agent, `{ agent,
+ *  why, from: "step N" }`, else the contract's `- **Agent:** <designer|implementer>`, `from: "contract"`,
+ *  else what the owned paths suggest, `{ agent, why }`. A suggestion: the conductor decides. */
+export function suggestBuilder(owned, { contract = "", steps = [], stepRun = null } = {}) {
+  const step = runMark(steps, stepRun, "agent");
+  if (step) return { agent: step.value, why: `${step.from} names it`, from: step.from };
+  const named = bulletOf(contract, "agent")?.toLowerCase();
+  if (AGENTS.includes(named))
+    return { agent: named, why: "the contract names it", from: "contract" };
   const ui = owned.find((path) => {
     const parts = path.toLowerCase().split("/");
     return (

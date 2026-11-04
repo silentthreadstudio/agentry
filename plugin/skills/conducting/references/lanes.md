@@ -239,11 +239,22 @@ A contract may split its work into steps the lane builds in order, with the owne
 
 The part opens at a `**Steps:**` / `**Steps**:` label or a `Steps` heading of any level and holds one numbered
 item per line (`1.` or `1)`); an indented line joins the item above; it ends at the next bold label or heading.
-An item ending `→ owner OK` or `-> owner OK` (any case, optional period) has an owner gate. Under the Acceptance
+A label with `1. ` after it on its own line holds the steps inline instead, as one wrapped paragraph (to the
+first blank line): `- **Steps:** 1. Build the parser → owner OK 2. Wire it 3. Document it`. It splits at
+` 2. `, then ` 3. `, and so on in order, so a number inside a step's text (`2.5 s`, `v1. x`) splits nothing.
+An item ending `→ owner OK` or `-> owner OK` (any case, optional period) has an owner gate. An item ending
+`(model: <m>, agent: <designer|implementer>)` (either key, before or after the gate) names its run's builder
+model and agent: the first step of the run with each wins over the contract's `- **Model:**` / `- **Agent:**`
+bullets, which win over the workflow file's `models.build` and the owned paths; the `model:` and `dispatch:`
+lines name the step (`opus (step 1)`, `"from": "step 1"`). Under the Acceptance
 label or heading, a list item that starts `Step N:` is step N's (the tag cut); every other item is the whole
 contract's. `start` refuses a Steps part with a problem, named exactly: `steps must be numbered 1 to N with no
-gap (found 1, 3)`, `the Steps part has no numbered items, one per line`, `acceptance names step 3; the contract
-has 2 steps`. `agentry board contract <id>` prints `steps` (and `stepsProblem`) with the block.
+gap (found 1, 3)`, `the Steps part has no numbered items, one per line`, `step 2 names agent verifier; a step's
+agent is designer or implementer`, `steps 1 and 3 are built in one round but name different models (opus,
+sonnet): put an owner gate between them or name one model`, `acceptance names step 3; the contract has 2
+steps`. `board check` reports the same problem first, as a `ready-has-contract` finding (`contract <id>: …`),
+for an open item in an active parent. `agentry board contract <id>` prints `steps` (and `stepsProblem`) with
+the block.
 
 The ledger keeps `steps` from `start`; each builder round before the first verdict carries `stepRun: [a, g]`.
 A held lane has `state: "held"`, `next: "resume"` and `hold: { for, when, stepRun, evidence, since, round }`

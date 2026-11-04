@@ -38,6 +38,7 @@ import {
   withNew,
 } from "../lib/lane/brief.mjs";
 import { readProcess } from "../lib/process/read.mjs";
+import { stepsOf } from "../lib/process/steps.mjs";
 import { commitFile, git, gitEnv, tempRepo } from "./git-repo.mjs";
 import { writeSpec } from "./spec-files.mjs";
 
@@ -504,6 +505,43 @@ test("suggestBuilder: .astro, .svelte, .vue and .css files, and globs under a we
   // A plain file under app/ is not enough: only a glob names a whole front end there.
   assert.equal(suggestBuilder(["app/models/user.rb"]).agent, "implementer");
   assert.equal(suggestBuilder(["website/**", "src/**"]).agent, "implementer");
+});
+
+test("suggestBuilder: the run's first step naming an agent wins, then the contract's Agent bullet, then the paths", () => {
+  const { steps } = stepsOf(
+    "- **Steps:**\n  1. Model it\n  2. Draw it (agent: designer) → owner OK\n  3. Wire it (agent: implementer)",
+  );
+  const ui = ["src/ui/panel.css"];
+  assert.deepEqual(suggestBuilder(["src/a.ts"], { steps, stepRun: [1, 2] }), {
+    agent: "designer",
+    why: "step 2 names it",
+    from: "step 2",
+  });
+  assert.equal(suggestBuilder(ui, { steps, stepRun: [3, 3] }).from, "step 3");
+  const contract = "- **T1**: owns `src/ui/panel.css`.\n- **Agent:** Implementer";
+  assert.deepEqual(suggestBuilder(ui, { contract }), {
+    agent: "implementer",
+    why: "the contract names it",
+    from: "contract",
+  });
+  assert.equal(suggestBuilder(ui, { contract, steps, stepRun: [1, 1] }).from, "contract");
+  // An Agent bullet naming neither builder, or one shown in a fence, names nothing.
+  assert.deepEqual(suggestBuilder(ui, { contract: "- **Agent:** verifier" }), suggestBuilder(ui));
+  assert.deepEqual(
+    suggestBuilder(ui, { contract: "```\n- **Agent:** implementer\n```" }),
+    suggestBuilder(ui),
+  );
+});
+
+test("suggestBuilder: with no marker or bullet the suggestion is the paths' one, with no source key", () => {
+  const contract = "- **T1**: owns `src/domain/rules.ts`. Accept: x.";
+  assert.deepEqual(
+    suggestBuilder(["src/domain/rules.ts"], { contract, steps: [], stepRun: null }),
+    {
+      agent: "implementer",
+      why: "no owned path is UI-shaped",
+    },
+  );
 });
 
 const DECISIONS = `# Decisions

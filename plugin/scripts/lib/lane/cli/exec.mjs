@@ -70,7 +70,7 @@ import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { workflowPathOf } from "../../process/read.mjs";
 import { parseSpec } from "../../process/spec.mjs";
-import { modelFor, unusedUiModel } from "../../process/spec/models.mjs";
+import { modelFor, proseModelHint, unusedUiModel } from "../../process/spec/models.mjs";
 import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
 import { escapesRoot, own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
@@ -1178,13 +1178,19 @@ function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, extra = 
     out.mode = round.mode === "resume" && round.agent ? "resume" : "fresh";
     if (out.mode === "resume") out.agent = round.agent;
     const owned = ownedOf(root, ledger).map((o) => o.path);
-    const builder = suggestBuilder(owned);
+    // The run's step markers, then the contract's bullets, name the builder and its model (field 96).
+    const marks = {
+      contract: readOr(contractFile(root, ledger.id)),
+      steps: ledger.steps ?? [],
+      stepRun: round.stepRun ?? null,
+    };
+    const builder = suggestBuilder(owned, marks);
     out.dispatch = round.role === "verify" ? { agent: "verifier" } : builder;
     const picked = modelFor(spec, round.role, {
       flagged: isFlagged(ctx, ledger),
       ui: builder.agent === "designer",
       owned,
-      contract: readOr(contractFile(root, ledger.id)),
+      ...marks,
     });
     // `model` is the name a dispatch passes on; `modelFrom` where it came from (the text joins them).
     if (picked) Object.assign(out, { model: picked.model, modelFrom: picked.from });
@@ -1506,6 +1512,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   const overlap = [...outside, ownsOverlap(root, ledger.owned, chain), noTests, frozen, ...warnings]
     .filter(Boolean)
     .join("\n");
+  const hint = proseModelHint(found.block, ledger.steps);
   ledger = dispatchNext(ctx, ledger, begin(ledger.steps).dispatch);
   ledgers.write(root, ledger);
   const res = view(ctx, ledger, {
@@ -1523,6 +1530,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
       route: startRoute(ctx, ledger),
       board,
       ...(overlap && { warning: overlap }),
+      ...(hint && { hint }),
       ...shown,
     },
   });

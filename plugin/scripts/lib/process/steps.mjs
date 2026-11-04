@@ -6,11 +6,13 @@
 // bold label or heading. A label followed on its line by `1. ` holds the steps inline instead, in one
 // paragraph (to the first blank line), split at ` <n>. ` with n running 2, 3, … in order (field 96). An
 // item ending `→ owner OK` or `-> owner OK` (any case, optional period) has an owner gate; one ending
-// `(model: <m>, agent: <a>)` (either key, either order, before or after the gate) names its builder. Under
-// the Acceptance label or heading, a list item that starts `Step N:` is step N's.
+// `(model: <m>, agent: <a>)` (either key, either order, before or after the gate) names its builder; the
+// steps of one run must not name two models or two agents. Under the Acceptance label or heading, a list
+// item that starts `Step N:` is step N's.
 //
 //   stepsOf(block) -> { steps: [{ n, text, gate: "owner" | null, accept: [text], model?, agent? }], problem }
 //   runOf(steps, from) -> [from, g]   g: the first step from `from` with an owner gate, else the last
+//   runMark(steps, stepRun, key) -> { value, from: "step N" } | null   the run's first step naming `key`
 //   runText([a, g], total) -> "step 1 of 2" | "steps 2–3 of 3"
 
 // A bold run that opens a line (after an optional bullet) is a label; a numbered item is not.
@@ -113,6 +115,22 @@ function stepOf(n, raw) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+// The first run whose steps name two different values for a marker key, as the problem; else null.
+function disagreement(steps) {
+  for (let from = 1; from <= steps.length; ) {
+    const [a, g] = runOf(steps, from);
+    const run = steps.slice(a - 1, g);
+    for (const key of ["model", "agent"]) {
+      const [first, ...rest] = run.filter((s) => s[key]);
+      const other = rest.find((s) => s[key] !== first[key]);
+      if (other)
+        return `steps ${first.n} and ${other.n} are built in one round but name different ${key}s (${first[key]}, ${other[key]}): put an owner gate between them or name one ${key}`;
+    }
+    from = g + 1;
+  }
+  return null;
+}
+
 /** The block's steps and the one problem with them, or `{ steps: [], problem: null }` when the block
  *  has no Steps part. */
 export function stepsOf(block) {
@@ -136,6 +154,8 @@ export function stepsOf(block) {
       steps,
       problem: `step ${odd.n} names agent ${odd.agent}; a step's agent is ${AGENTS.join(" or ")}`,
     };
+  const split = disagreement(steps);
+  if (split) return { steps, problem: split };
   for (const { text } of itemsOf(partOf(lines, ACCEPT)?.body ?? [], LISTED)) {
     const tag = TAG.exec(text);
     if (!tag) continue;
@@ -160,3 +180,11 @@ export const runOf = (steps, from) => [
 /** A run as words: `step 1 of 2`, `steps 2–3 of 3`. */
 export const runText = ([a, g], total) =>
   a === g ? `step ${a} of ${total}` : `steps ${a}–${g} of ${total}`;
+
+/** The marker `key` ("model" or "agent") for the run `stepRun` (`[a, g]`): the first step of the run that
+ *  names one, as `{ value, from: "step N" }`; null without a run or a marked step. */
+export function runMark(steps, stepRun, key) {
+  if (!stepRun || !steps?.length) return null;
+  const step = steps.slice(stepRun[0] - 1, stepRun[1]).find((s) => s[key]);
+  return step ? { value: step[key], from: `step ${step.n}` } : null;
+}

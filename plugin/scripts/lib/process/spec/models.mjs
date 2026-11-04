@@ -1,11 +1,15 @@
 // models — the workflow file's `models` key (mirrors core's `Models`) and the model each exec dispatch
-// names, with where it came from (field 73): a contract bullet, then a path entry, then the key itself. And
-// the model a route never uses (field 70). PURE: never reads, never throws.
+// names, with where it came from (field 73): for a builder the run's step marker (field 96), then a
+// contract bullet, then a path entry, then the key itself. And the model a route never uses (field 70).
+// PURE: never reads, never throws.
 //
 //   modelsSchema                                            the `models` checker (workflowSchema's entry)
-//   modelFor(spec, role, { flagged, ui, owned, contract }) -> { model, from } | null
+//   modelFor(spec, role, { flagged, ui, owned, contract, steps, stepRun }) -> { model, from } | null
+//   bulletOf(block, label) -> string | null                 `- **<label>:** <word>`'s word, outside fences
+//   proseModelHint(block, steps) -> string | null           a model named only in prose, as `exec start`'s line
 //   unusedUiModel(models, verify) -> string | null          the `! models.verify.ui is unused: …` line
 import { globMatch } from "../../lane/gate.mjs";
+import { runMark } from "../steps.mjs";
 import { FULL, filled, isObject, own, repoPath, shape, text } from "./shape.mjs";
 
 // A model: its name, or `{ default, paths }` where the first entry whose `when.any` glob matches an owned
@@ -52,28 +56,65 @@ function unfenced(block) {
     .join("\n");
 }
 
-// The contract's own model for `role`: `- **Model:** <model>` for a builder, `**Model (verify):** <model>`
-// for a verifier, outside a code fence; its first word, backticks dropped.
-const LABEL = { build: "", verify: String.raw` \(verify\)` };
-function contractModel(block, role) {
-  const re = new RegExp(
-    String.raw`^[ \t]*(?:[-*+][ \t]+)?\*\*model${LABEL[role]}:?\*\*:?[ \t]*(\S+)`,
-    "im",
-  );
-  const word = re.exec(unfenced(block))?.[1].replace(/`/g, "");
+/** The first word of the contract's `- **<label>:** <word>` bullet outside a code fence, backticks
+ *  dropped; `label` is a regexp source matched in any case. Null when the contract has none. */
+export function bulletOf(block, label) {
+  const re = new RegExp(String.raw`^[ \t]*(?:[-*+][ \t]+)?\*\*${label}:?\*\*:?[ \t]*(\S+)`, "im");
+  return re.exec(unfenced(block))?.[1].replace(/`/g, "") || null;
+}
+
+// The contract's own model for `role`: for a builder the first step of its run (`stepRun`) naming one,
+// then `- **Model:** <model>`; for a verifier `**Model (verify):** <model>` (a step marker names a builder).
+const LABEL = { build: "model", verify: String.raw`model \(verify\)` };
+function contractModel(block, role, { steps, stepRun } = {}) {
+  const step = role === "build" && runMark(steps, stepRun, "model");
+  if (step) return { model: step.value, from: step.from };
+  const word = bulletOf(block, LABEL[role]);
   return word ? { model: word, from: "contract" } : null;
 }
 
-/** The model a dispatch of `role` ("build" or "verify") names, and where it came from: the contract's
+// A model word the prose names near "model" or a role word: within this many words of it.
+const MODEL_WORDS = new Set(["opus", "sonnet", "haiku", "fable"]);
+const NEAR_WORDS = new Set([
+  "model",
+  "models",
+  "build",
+  "builder",
+  "builds",
+  "verify",
+  "verifier",
+  "implementer",
+  "designer",
+]);
+const NEAR = 6;
+
+/** `exec start`'s hint when no step marker and no `**Model…**` bullet names a model but the contract's prose
+ *  names one of the known model words near "model" or a role word; null otherwise. */
+export function proseModelHint(block, steps = []) {
+  if (steps.some((s) => s.model) || bulletOf(block, String.raw`model(?: \(verify\))?`)) return null;
+  const words = unfenced(block)
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
+  const near = (i) =>
+    words.slice(Math.max(0, i - NEAR), i + NEAR + 1).some((w) => NEAR_WORDS.has(w));
+  const word = words.find((w, i) => MODEL_WORDS.has(w) && near(i));
+  return word
+    ? `the contract mentions ${word} in prose: add - **Model:** ${word} (or a step marker) to make it the dispatch`
+    : null;
+}
+
+/** The model a dispatch of `role` ("build" or "verify") names, and where it came from: for a builder
+ *  the first step of its run (`stepRun` of `steps`) with a model marker (`step N`), then the contract's
  *  bullet, else for a builder `models.build`, for a verifier `models.verify.flagged` when the item is
  *  flagged, `.ui` when a designer builds it, else `.default`; a key by path takes its first entry matching
  *  an owned file, else its default. Null when nothing names one. */
 export function modelFor(
   spec,
   role,
-  { flagged = false, ui = false, owned = [], contract = "" } = {},
+  { flagged = false, ui = false, owned = [], contract = "", steps = [], stepRun = null } = {},
 ) {
-  const named = contractModel(contract, role);
+  const named = contractModel(contract, role, { steps, stepRun });
   if (named) return named;
   const models = own(spec, "models");
   if (role === "build") return resolve(own(models, "build"), "models.build", owned);
