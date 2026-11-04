@@ -192,13 +192,20 @@ test("cut --keep --apply lands the kept files as one gated commit and retires th
     "--apply",
   );
   assert.equal(res.exit, 0, res.out);
-  // One commit on main: the kept files as the tip has them (old.png deleted), nothing else of the branch.
-  assert.equal(git(r.root, "rev-parse", "HEAD^"), preHead);
-  assert.equal(git(r.root, "log", "-1", "--format=%s"), "chore(art): keep 2 files from T1");
+  // One kept commit on main: the kept files as the tip has them (old.png deleted), nothing else of the
+  // branch; then the board commit of the cut word, and main is clean.
+  assert.equal(git(r.root, "rev-parse", "HEAD~2"), preHead);
   assert.equal(
-    git(r.root, "diff", "--name-status", preHead, "HEAD"),
+    git(r.root, "log", "-1", "--format=%s", "HEAD^"),
+    "chore(art): keep 2 files from T1",
+  );
+  assert.equal(
+    git(r.root, "diff", "--name-status", preHead, "HEAD^"),
     "D\tart/old.png\nA\tart/raw/a.png",
   );
+  assert.equal(git(r.root, "log", "-1", "--format=%s"), "chore(board): cut T1 (D7)");
+  assert.equal(git(r.root, "diff", "--name-only", "HEAD^", "HEAD"), "plan/BOARD.md");
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
   assert.equal(readFileSync(join(r.root, "art", "raw", "a.png"), "utf8"), "a\n");
   assert.equal(existsSync(join(r.root, "notes.txt")), false);
   // The ledger: closed, the cut recorded, no land record left for a guard or drift to read.
@@ -210,7 +217,8 @@ test("cut --keep --apply lands the kept files as one gated commit and retires th
     {
       decision: "D7",
       kept: ["art/old.png", "art/raw/a.png"],
-      commit: git(r.root, "rev-parse", "HEAD"),
+      commit: git(r.root, "rev-parse", "HEAD^"),
+      boardCommit: git(r.root, "rev-parse", "HEAD"),
       at: "string",
       uncommitted: join(
         r.root,
@@ -252,7 +260,8 @@ test("cut --keep --message uses the owner's subject", () => {
     "--apply",
   );
   assert.equal(res.exit, 0, res.out);
-  assert.equal(git(r.root, "log", "-1", "--format=%s"), "feat(art): canon raws");
+  assert.equal(git(r.root, "log", "-1", "--format=%s", "HEAD^"), "feat(art): canon raws");
+  assert.equal(git(r.root, "log", "-1", "--format=%s"), "chore(board): cut T1 (D7)");
   assert.deepEqual(ledgerOf(r.root, "T1").cut.kept, [
     "art/old.png",
     "art/raw/a.png",
@@ -260,19 +269,23 @@ test("cut --keep --message uses the owner's subject", () => {
   ]);
 });
 
-test("cut without --keep lands nothing on main, writes cut and retires the lane", () => {
+test("cut without --keep lands none of the branch on main: only the board commit of cut", () => {
   const r = repo();
   const { worktree, tip } = parked(r);
   const head = git(r.root, "rev-parse", "HEAD");
   const res = lane(r, "cut", "T1", "--decision", "D7", "--apply");
   assert.equal(res.exit, 0, res.out);
-  assert.equal(git(r.root, "rev-parse", "HEAD"), head);
-  // Only the board's uncommitted cut word is on main.
-  assert.equal(git(r.root, "status", "--porcelain"), "M plan/BOARD.md");
+  assert.equal(git(r.root, "rev-parse", "HEAD^"), head);
+  assert.equal(git(r.root, "log", "-1", "--format=%s"), "chore(board): cut T1 (D7)");
+  assert.equal(git(r.root, "diff", "--name-only", head, "HEAD"), "plan/BOARD.md");
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
   assert.equal(statusOf(r.root, "T1"), "cut");
   const ledger = ledgerOf(r.root, "T1");
   assert.equal(ledger.state, "closed");
-  assert.deepEqual([ledger.cut.decision, ledger.cut.kept, ledger.cut.commit], ["D7", [], null]);
+  assert.deepEqual(
+    [ledger.cut.decision, ledger.cut.kept, ledger.cut.commit, ledger.cut.boardCommit],
+    ["D7", [], null, git(r.root, "rev-parse", "HEAD")],
+  );
   assert.equal(existsSync(worktree), false);
   assert.equal(git(r.root, "rev-parse", "agentry/T1.cut"), tip);
 });
@@ -331,6 +344,35 @@ test("the other lanes' guards trip on the kept commit only where it touches thei
   assert.equal(t3.exit, 0, t3.out);
   assert.equal(ledgerOf(r.root, "T3").hold, undefined, t3.out);
   assert.equal(ledgerOf(r.root, "T3").state, "verifying");
+});
+
+// T3 builds beside T1; once T1 is cut (its board commit holds T3's carried dispatched write too), main
+// is clean and T3's land preflights and lands as any land does.
+test("after a cut, another lane's lane merge preflights and lands normally", () => {
+  const r = repo();
+  parked(r);
+  const t3 = lane(r, "start", "T3").json;
+  assert.equal(lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply").exit, 0);
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
+  commitFile(t3.worktree, "docs/three.md", "three\n", "docs: three");
+  writeFileSync(t3.reportPath, "DONE\nbuilt it\nused_memories: none\n");
+  const verify = lane(r, "report", "T3");
+  assert.equal(verify.json?.next, "verify", verify.out);
+  writeFileSync(verify.json.reportPath, "All checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, "verdict", "T3").json.next, "gate");
+  assert.equal(lane(r, "gate", "T3").json.next, "close");
+  assert.equal(lane(r, "close", "T3").json.next, "merge");
+  const pre = run(r, LANE, ["merge", "T3", "--preflight"]);
+  assert.equal(pre.exit, 0, pre.out);
+  const land = run(r, LANE, ["merge", "T3", "--message", "chore(board): land T3"]);
+  assert.equal(land.exit, 0, land.out);
+  assert.equal(git(r.root, "log", "-1", "--format=%s"), "chore(board): land T3");
+  assert.equal(readFileSync(join(r.root, "docs", "three.md"), "utf8"), "three\n");
+  assert.deepEqual(
+    ["T1", "T3"].map((id) => statusOf(r.root, id)),
+    ["cut", "done"],
+  );
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
 });
 
 test("session start and the board never show a cut lane as held or idle", () => {

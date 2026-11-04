@@ -6,29 +6,52 @@
 // cherry-pick and what main holds after it (`land.mjs`), the merge role's gate tier on those paths and the
 // rollback on red (`merge/gating.mjs`). Once the commit is gated its land record leaves the ledger, so the
 // other lanes' guards judge it as any commit on main (decision 51: only an overlap with their files trips)
-// and drift never reads it as a land. Then the lifecycle's `cut` word is written (recorded as a board
-// write), the ledger records `cut` and is closed, the worktree is removed (its uncommitted work saved) and
-// the branch is kept as `agentry/<id>.cut`, by ref at its listed tip. `cli/exec.mjs` parses the call.
+// and drift never reads it as a land. Then, as the land's record and commit steps do, exec's carried
+// writes and the owner's recorded board writes go back on the board with the lifecycle's `cut` word, and
+// one board commit holds them (`land.mjs`'s `boardCommit`, `chore(board): cut <id> (<D>)`), so main is
+// clean for the next land; the owner's guard.allow edits go back after it. The ledger records `cut` and is
+// closed, the worktree is removed (its uncommitted work saved) and the branch is kept as
+// `agentry/<id>.cut`, by ref at its listed tip. `cli/exec.mjs` parses the call.
 //
 // cutLane(ctx, id, { ledger, refuse, stop, laneLine }) -> { exit, out }   `out` the step's JSON
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { PREVIEW } from "../cli/help.mjs";
-import { recorded } from "../process/board-writes.mjs";
 import { branchTips } from "../process/git.mjs";
 import * as ledgers from "../process/ledger.mjs";
 import { applyEvent } from "../process/lifecycle.mjs";
+import { readProcess } from "../process/read.mjs";
 import { escapesRoot, own } from "../process/spec/shape.mjs";
 import { gateOf, lifecycleOf } from "../process/spec/workflow.mjs";
+import { WriteError } from "../process/write.mjs";
 import { resolveBranch, shellWord } from "./adopt.mjs";
 import { decisionKind } from "./brief.mjs";
+import { putCells } from "./carry-io.mjs";
 import { changedSince, pickTier } from "./gate.mjs";
-import { attributionIn, cherryPick, commitOf, landedSince, mergeBaseOf } from "./land.mjs";
-import { carryBackStep, giveBack, mainRow, mainStep, takeCarryStep } from "./merge/carry.mjs";
+import {
+  attributionIn,
+  boardCommit,
+  cherryPick,
+  commitOf,
+  landedSince,
+  mergeBaseOf,
+  restoreFiles,
+  textAt,
+} from "./land.mjs";
+import {
+  carryBackStep,
+  carryWritesStep,
+  giveBack,
+  mainRow,
+  mainStep,
+  putBackAllow,
+  releaseWrites,
+  takeCarryStep,
+} from "./merge/carry.mjs";
 import { gateStep, rollBack } from "./merge/gating.mjs";
-import { now, ok, save, setMerge } from "./merge/lane.mjs";
+import { now, ok, save, setMerge, warn } from "./merge/lane.mjs";
 import { gatingNow } from "./restack.mjs";
 import { leftover, saveWork } from "./restart.mjs";
 import { expects } from "./rounds.mjs";
@@ -221,11 +244,15 @@ function planCut(ctx, ledger, refuse) {
       plan.warnings.push(
         `! ${listed(both)}: changed on ${ledger.mainBranch} since the branch forked; the tip's content replaces it`,
       );
+  }
+  // Main takes a commit: the kept one, or the board commit of the cut word.
+  if (ctx.keep !== null || spec.lifecycle) {
     const lane = { root, spec, model, id, kind, opts: {}, ledger };
     const main = mainRow(lane, { carry: true });
     if (main.mark === "red") refuse([main.detail, ...main.more].join("\n  "));
     plan.main = main.detail;
   }
+  plan.boardMessage = `chore(board): cut ${id} (${decision.id})`;
   const event = applyEvent({ root, spec, model, event: "cut", id, kind, preview: true });
   plan.board = event;
   return plan;
@@ -237,24 +264,40 @@ const boardLine = ({ writes, skipped }) =>
     "; ",
   ) || "nothing to write";
 
-/** Land the kept files as one commit through the land's steps: `{ commit, rows, merge }`, `merge` the
- *  ledger's land record as it was before the cut. A stop (main refused, a pick that stopped, a red gate)
- *  leaves main and the lane as they were and throws through `stop` (or `refuse` when nothing changed). */
-function landKept(ctx, ledger, plan, { refuse, stop }) {
-  const { root, spec, model, id, kind } = ctx;
-  const lane = { root, spec, model, id, kind, opts: {}, ledger, gate: gateOf(spec), files: [] };
+// Each file of `files` whose text on main differs from HEAD's.
+const changedOnMain = (root, files) =>
+  files.filter((file) => {
+    let now = null;
+    try {
+      now = readFileSync(join(root, file), "utf8");
+    } catch {} // gone: differs from HEAD when HEAD has it
+    return now !== textAt(root, "HEAD", file);
+  });
+
+/** The cut's land, through the land's steps: main's row and the set-aside of its uncommitted writes; with
+ *  `--keep` the kept commit picked and gated (rolled back on red); with a lifecycle the board's record and
+ *  commit: the carried and recorded writes back on main, the `cut` word, one board commit; then the owner's
+ *  guard.allow edits back. `{ commit, boardCommit, board, rows, merge, ledger }`, `merge` the ledger's land
+ *  record as it was before the cut. A stop before the board commit leaves main and the lane as they were
+ *  and throws through `stop` (or `refuse` when nothing changed). */
+function landCut(ctx, ledger, plan, { refuse, stop }) {
+  const { root, spec, id, kind } = ctx;
+  const keeps = plan.files.length > 0;
+  const lane = { ...ctx, opts: {}, ledger, gate: gateOf(spec), files: [] };
   const rows = [];
   const text = (why) => [why, ...rowLines(rows)].join("\n");
+  const main = ledger.mainBranch;
   if (carryBackStep(lane, rows)) stop(text("the carry an earlier land set aside did not go back"));
-  if (mainStep(lane, rows)) refuse(text(`${ledger.mainBranch} cannot take the kept commit`));
+  if (mainStep(lane, rows)) refuse(text(`${main} cannot take the cut's commits`));
   const was = lane.ledger.merge;
   const stateBefore = lane.ledger.state;
-  let made;
-  try {
-    made = keptCommit(root, { files: plan.files, tip: plan.tip, message: plan.message });
-  } catch (e) {
-    refuse(`the kept commit could not be made: ${e.message}`);
-  }
+  let made = null;
+  if (keeps)
+    try {
+      made = keptCommit(root, { files: plan.files, tip: plan.tip, message: plan.message });
+    } catch (e) {
+      refuse(`the kept commit could not be made: ${e.message}`);
+    }
   // What goes back at a stop: the set-aside files, then the lane's own state and land record.
   const back = () => {
     const given = giveBack(lane);
@@ -265,7 +308,7 @@ function landKept(ctx, ledger, plan, { refuse, stop }) {
   };
   if (takeCarryStep(lane, rows)) {
     back();
-    stop(text(`${ledger.mainBranch}'s uncommitted writes could not be set aside`));
+    stop(text(`${main}'s uncommitted writes could not be set aside`));
   }
   const preHead = commitOf(root, "HEAD");
   save(lane, {
@@ -274,52 +317,104 @@ function landKept(ctx, ledger, plan, { refuse, stop }) {
       ...lane.ledger.merge,
       cut: true,
       preHead,
-      planned: [made],
+      planned: made ? [made] : [],
       landed: [],
       tip: plan.tip,
       stateBefore,
-      step: "picking",
+      step: made ? "picking" : "gated",
       at: now(),
     },
   });
-  const picked = cherryPick(root, { shas: [made], preHead });
-  if (!picked.ok) {
-    if (picked.restored) back();
-    stop(
-      text(
-        `the kept commit did not land: ${picked.reason}${picked.restored ? `; ${ledger.mainBranch} is back at ${short(preHead)}` : `; ${ledger.mainBranch} is NOT back at ${short(preHead)}: look at it by hand`}`,
-      ),
-    );
-  }
-  const got = landedSince(root, lane.ledger.merge);
-  if (got.error || got.rest.length)
-    stop(text(`${ledger.mainBranch} does not hold the kept commit: ${got.error ?? "not picked"}`));
-  setMerge(lane, { step: "landed", landed: got.landed });
-  rows.push(ok("land", `${short(got.landed[0])} picked onto ${short(preHead)}: "${plan.message}"`));
-  if (gateStep(lane, rows)) {
-    if (!["rolled-back", "rollback-refused"].includes(lane.ledger.merge.step)) rollBack(lane, rows);
-    if (lane.ledger.merge.step !== "rolled-back")
+  let commit = null;
+  if (made) {
+    const picked = cherryPick(root, { shas: [made], preHead });
+    if (!picked.ok) {
+      if (picked.restored) back();
       stop(
         text(
-          `the gate stopped the cut, and ${ledger.mainBranch} still holds the kept commit ${short(got.landed[0])} on ${short(preHead)}: take it off by hand (git reset --keep ${short(preHead)}), then lane merge ${id} --resolve rolled-back`,
+          `the kept commit did not land: ${picked.reason}${picked.restored ? `; ${main} is back at ${short(preHead)}` : `; ${main} is NOT back at ${short(preHead)}: look at it by hand`}`,
         ),
       );
-    const whole = back();
-    stop(
-      text(
-        `the gate on the kept commit stopped it: ${ledger.mainBranch} is back at ${short(preHead)}${whole ? `, and ${id} is as it was (${stateBefore})` : ""}`,
-      ),
-    );
+    }
+    const got = landedSince(root, lane.ledger.merge);
+    if (got.error || got.rest.length)
+      stop(text(`${main} does not hold the kept commit: ${got.error ?? "not picked"}`));
+    [commit] = got.landed;
+    setMerge(lane, { step: "landed", landed: got.landed });
+    rows.push(ok("land", `${short(commit)} picked onto ${short(preHead)}: "${plan.message}"`));
+    if (gateStep(lane, rows)) {
+      if (!["rolled-back", "rollback-refused"].includes(lane.ledger.merge.step))
+        rollBack(lane, rows);
+      if (lane.ledger.merge.step !== "rolled-back")
+        stop(
+          text(
+            `the gate stopped the cut, and ${main} still holds the kept commit ${short(commit)} on ${short(preHead)}: take it off by hand (git reset --keep ${short(preHead)}), then lane merge ${id} --resolve rolled-back`,
+          ),
+        );
+      const whole = back();
+      stop(
+        text(
+          `the gate on the kept commit stopped it: ${main} is back at ${short(preHead)}${whole ? `, and ${id} is as it was (${stateBefore})` : ""}`,
+        ),
+      );
+    }
   }
-  const given = giveBack(lane);
-  if (given) rows.push(given);
-  if (given?.mark === "red")
+  if (!spec.lifecycle) {
+    const given = giveBack(lane);
+    if (given) rows.push(given);
+    if (given?.mark === "red")
+      stop(text(`${short(commit)} is on ${main}, but the writes set aside for it did not go back`));
+    return { commit, boardCommit: null, board: plan.board, rows, merge: was, ledger: lane.ledger };
+  }
+  // The record and commit: every board write main carried, the cut word on top, in one commit. A stop
+  // here takes the board files back to HEAD, the kept commit off main, and the set-aside writes back.
+  const carried = lane.ledger.merge.carry;
+  const writes = lane.ledger.merge.writes;
+  const touched = [...new Set([...(carried?.files ?? []), ...(writes?.files ?? [])])];
+  const undo = (why) => {
+    const restored = restoreFiles(root, touched);
+    if (restored.ok && made) rollBack(lane, rows);
+    const whole = restored.ok && lane.ledger.merge.step !== "rollback-refused" && back();
     stop(
       text(
-        `the kept commit ${short(got.landed[0])} is on ${ledger.mainBranch}, but the writes set aside for it did not go back`,
+        `${why}${whole ? `: ${main} is back at ${short(preHead)}, and ${id} is as it was (${stateBefore})` : `; ${main} and the ledger's merge record need a look by hand`}`,
       ),
     );
-  return { commit: got.landed[0], rows, merge: was, ledger: lane.ledger };
+  };
+  if (carryWritesStep(lane, rows))
+    undo("the recorded board writes did not go back for the board commit");
+  if (carried) {
+    const put = putCells(root, spec, carried.cells);
+    if (!put.ok) undo(`exec's board writes do not apply on ${main} (${carried.files.join(", ")})`);
+  }
+  let board;
+  try {
+    const model = readProcess({ root, spec });
+    board = applyEvent({ root, spec, model, event: "cut", id, kind });
+  } catch (e) {
+    if (!(e instanceof WriteError)) throw e;
+    undo(`the board write refused: ${e.message}`);
+  }
+  touched.push(...board.writes.map((w) => w.file).filter((f) => !touched.includes(f)));
+  const files = changedOnMain(root, touched);
+  let boardSha = null;
+  if (files.length) {
+    const res = boardCommit(root, { files, message: plan.boardMessage });
+    if (!res.ok) undo(`the board commit refused: ${first(res.reason)}`);
+    boardSha = res.sha;
+    setMerge(lane, { carry: undefined });
+    releaseWrites(lane);
+    rows.push(
+      ok("commit", `${short(boardSha)} ${plan.boardMessage}`, [`files: ${files.join(", ")}`]),
+    );
+    if (res.left.length)
+      rows.push(warn("commit", `${main} is not clean after it`, res.left.slice(0, SHOWN)));
+  }
+  const allow = putBackAllow(lane);
+  if (allow) rows.push(allow);
+  if (allow?.mark === "red")
+    stop(text(`the cut is on ${main}, but the guard.allow edits set aside for it did not go back`));
+  return { commit, boardCommit: boardSha, board, rows, merge: was, ledger: lane.ledger };
 }
 
 // Keep the branch as `keptName`: a ref made at the listed tip (refused when one is there), then the old
@@ -334,7 +429,7 @@ function keepBranch(root, { branch, tip, keptName }) {
 
 /** `lane exec cut <id> --decision <D> [--keep <paths>] [--message <subject>] [--apply]`. */
 export function cutLane(ctx, id, { ledger, refuse, stop, laneLine }) {
-  const { root, spec, model, kind, apply } = ctx;
+  const { root, spec, apply } = ctx;
   const plan = planCut({ ...ctx, id }, ledger, refuse);
   const keeps = plan.files.length > 0;
   const shown = {
@@ -343,9 +438,9 @@ export function cutLane(ctx, id, { ledger, refuse, stop, laneLine }) {
     ...(keeps && {
       land: `one commit on ${ledger.mainBranch}, ${plan.files.length} file(s) as ${short(plan.tip)} has them: "${plan.message}"`,
       gate: `${plan.tier.tier ?? "none"} (${plan.tier.reason})`,
-      main: plan.main,
     }),
-    board: boardLine(plan.board),
+    ...(plan.main && { main: plan.main }),
+    board: `${boardLine(plan.board)}${plan.board.writes.length ? `; committed on ${ledger.mainBranch} as "${plan.boardMessage}", with the board writes main carries` : ""}`,
     worktree: `${ledger.worktree} removed${plan.dirty.length ? `, its ${plan.dirty.length} uncommitted file(s) saved first` : ""}`,
     branch: plan.tip ? `${ledger.branch} kept as ${plan.keptName}` : "none",
     ...(plan.warnings.length && { warning: plan.warnings.join("\n") }),
@@ -374,10 +469,17 @@ export function cutLane(ctx, id, { ledger, refuse, stop, laneLine }) {
     const saved = saveWork(ledger.worktree, diff);
     if (saved.error) refuse(`the worktree's uncommitted work could not be saved: ${saved.error}`);
   }
-  let landed = { commit: null, rows: [], merge: ledger.merge, ledger };
-  if (keeps) {
+  let landed = {
+    commit: null,
+    boardCommit: null,
+    board: plan.board,
+    rows: [],
+    merge: ledger.merge,
+    ledger,
+  };
+  if (keeps || spec.lifecycle) {
     try {
-      landed = landKept({ ...ctx, id }, ledger, plan, { refuse, stop });
+      landed = landCut({ ...ctx, id }, ledger, plan, { refuse, stop });
     } catch (e) {
       if (plan.dirty.length) rmSync(diff, { force: true });
       throw e;
@@ -393,23 +495,13 @@ export function cutLane(ctx, id, { ledger, refuse, stop, laneLine }) {
       decision: plan.decision,
       kept: plan.files,
       commit: landed.commit,
+      boardCommit: landed.boardCommit,
       at: now(),
       ...(plan.dirty.length && { uncommitted: diff }),
     },
   });
   // Past the ledger the cut stands: what fails now is finished by hand, as the stop says.
   const done = `${id} is cut (its ledger is closed)${landed.commit ? `, ${short(landed.commit)} on ${ledger.mainBranch}` : ""}`;
-  let board;
-  try {
-    const files = plan.board.writes.map((w) => w.file);
-    board = recorded(root, files, `lane exec cut ${id}`, () =>
-      applyEvent({ root, spec, model, event: "cut", id, kind }),
-    );
-  } catch (e) {
-    stop(
-      `${done}, but its board write refused: ${e.message} → set its status by hand, then remove ${ledger.worktree}`,
-    );
-  }
   const gone = remove(root, { path: ledger.worktree, branch: null, force: true });
   if (!gone.removed)
     stop(
@@ -427,8 +519,10 @@ export function cutLane(ctx, id, { ledger, refuse, stop, laneLine }) {
     next: null,
     state: closed.state,
     ...told,
-    board: boardLine(board),
-    ...(landed.commit && { commit: landed.commit, land: rowLines(landed.rows).join("\n") }),
+    board: boardLine(landed.board),
+    ...(landed.commit && { commit: landed.commit }),
+    ...(landed.boardCommit && { boardCommit: landed.boardCommit }),
+    ...(landed.rows.length && { land: rowLines(landed.rows).join("\n") }),
     ...(plan.dirty.length && { uncommitted: diff }),
   });
 }
