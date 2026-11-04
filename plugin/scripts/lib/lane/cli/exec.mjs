@@ -1489,8 +1489,8 @@ const RANGE_PAIR = /^\s*(?:\d+|-+):\s+(?:[0-9a-f]+|-+)\s+([=!<>])\s/;
 
 // The rebase the last `rebases[]` entry started, finished at `tip`: the base becomes the new merge base
 // with main, and the range-diff of old base..old tip against new base..new tip goes to
-// `logs/range-diff-<n>.txt`. `changed` when a pair is not marked `=`, or git cannot compute it. Changes
-// `ledger` in place; returns `changed`.
+// `logs/range-diff-<n>.txt`. `changed` when a pair is not marked `=`, or git cannot compute it. The main
+// guard's start moves to the new base. Changes `ledger` in place; returns `changed`.
 function finishRebase(root, ledger, tip) {
   const n = ledger.rebases.length;
   const entry = ledger.rebases[n - 1];
@@ -1516,6 +1516,9 @@ function finishRebase(root, ledger, tip) {
       .some((line) => RANGE_PAIR.exec(line)?.[1] && RANGE_PAIR.exec(line)[1] !== "=");
   Object.assign(entry, { toBase: base ?? entry.fromBase, toTip: tip, changed, rangeDiff: file });
   if (base) ledger.base = base;
+  // The main commits the branch now sits on are its own history: the guard counts main's moves from there.
+  if (base && ledger.mainAtStart?.head && isAncestor(root, ledger.mainAtStart.head, base))
+    ledger.mainAtStart = { ...ledger.mainAtStart, head: base };
   return changed;
 }
 

@@ -2963,3 +2963,30 @@ test("start refuses while a land's picks are on main: exit 2, nothing written; a
   writeFileSync(ledgerFile(r.root, "ZZ"), ledger(["f".repeat(40)])); // its picks are off main again
   assert.equal(lane(r, "start", "T1").exit, 0);
 });
+
+// ---- a rebased lane's guard starts at the commit it was rebased onto (R1d-23 N7) ---------------------
+
+test("a lane rebased onto a main commit touching its file is not tripped by that commit at the rebase report", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const hand = commitFile(r.root, "out.txt", "main side\n", "fix: out.txt on main");
+  const rebase = lane(r, "rebase", "T1").json;
+  assert.equal(rebase.next, "rebase");
+  const res = spawnSync("git", ["-C", rebase.worktree, "rebase", "main"], { env: gitEnv });
+  assert.notEqual(res.status, 0, "the rebase stops on out.txt");
+  writeFileSync(join(rebase.worktree, "out.txt"), "made\nmain side\n");
+  git(rebase.worktree, "add", "out.txt");
+  spawnSync("git", ["-C", rebase.worktree, "rebase", "--continue"], {
+    env: { ...gitEnv, GIT_EDITOR: "true" },
+  });
+  writeFileSync(rebase.reportPath, "DONE\nrebased onto main\nused_memories: none\n");
+  const reported = lane(r, "report", "T1");
+  assert.equal(reported.exit, 0, reported.stderr);
+  assert.equal(reported.json.hold, undefined, JSON.stringify(reported.json.guards));
+  assert.equal(reported.json.next, "resolve");
+  assert.equal(
+    ledgerOf(r.root, "T1").mainAtStart.head,
+    hand,
+    "the guard starts at the rebase target",
+  );
+});
