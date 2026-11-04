@@ -13,6 +13,7 @@ import {
   notesBudget,
   step,
   verdicts,
+  verifiedTip,
 } from "../lib/lane/rounds.mjs";
 
 const TIP = "a".repeat(40);
@@ -1176,4 +1177,137 @@ test("every lane still ends with the new rows: rebase, resolve and notes walks s
   );
   const ledger = noted({ noteRounds: 3, final: "never" }, 3);
   assert.throws(() => step(ledger, { type: "notes", notes: ["N1"] }), /3 of 3/);
+});
+
+// ---- restack (A45): a stacked lane's branch moved onto its parent's tip or main, no agent out ----------
+
+const PARENT_TIP = "c".repeat(40);
+const OLD_BASE = "d".repeat(40);
+// A restack of TIP onto the parent's new tip, replayed to MOVED.
+const restack = (extra = {}) => ({
+  type: "restack",
+  from: TIP,
+  to: MOVED,
+  base: { from: OLD_BASE, to: PARENT_TIP },
+  onto: "parent",
+  parent: "T0",
+  resolution: "none",
+  gate: true,
+  at: AT,
+  ...extra,
+});
+const stackedOn = (ledger) => ({ ...ledger, on: "T0", base: OLD_BASE });
+
+test("restack, resolution none, after a verdict → gate on the new tip; the entry recorded, base moved", () => {
+  for (const next of ["gate", "close", "merge"]) {
+    const ledger = { ...stackedOn(closedLane()), next, ...(next === "gate" && { gateTip: TIP }) };
+    const rounds = ledger.rounds.length;
+    const res = pure(ledger, restack());
+    assert.deepEqual(
+      [res.next, res.ledger.state, res.ledger.gateTip],
+      ["gate", "verifying", MOVED],
+    );
+    assert.equal(res.ledger.rounds.length, rounds, `${next}: no round added`);
+    assert.equal(res.ledger.base, PARENT_TIP);
+    assert.equal(res.ledger.on, "T0");
+    assert.deepEqual(res.ledger.restacks, [
+      {
+        at: AT,
+        parent: "T0",
+        onto: "parent",
+        from: TIP,
+        to: MOVED,
+        base: { from: OLD_BASE, to: PARENT_TIP },
+        resolution: "none",
+      },
+    ]);
+  }
+});
+
+test("restack, resolution none, with only a builtTip (no verifier on the route) → gate on the new tip", () => {
+  const ledger = stackedOn(closedLane({ verify: "none" }, { verified: false }));
+  assert.equal(verdicts(ledger).length, 0);
+  const res = pure(ledger, restack());
+  assert.deepEqual([res.next, res.ledger.gateTip], ["gate", MOVED]);
+});
+
+test("restack onto main drops on; with no gate in the workflow file it closes on the new tip", () => {
+  const res = pure(stackedOn(closedLane()), restack({ onto: "main", gate: false }));
+  assert.equal(res.ledger.on, undefined);
+  assert.deepEqual([res.next, res.ledger.closedTip], ["close", MOVED]);
+  assert.equal(JSON.parse(JSON.stringify(res.ledger)).on, undefined, "no on in the written ledger");
+});
+
+test("restack, resolution by hand, after a verdict → resolve (a fresh verifier on the restack's ranges)", () => {
+  const ledger = stackedOn(closedLane({ rebase: "gate" }));
+  const res = pure(
+    ledger,
+    restack({ resolution: "by hand", rangeDiff: "/run/logs/rd.txt" }),
+    MOVED,
+  );
+  assert.equal(res.next, "resolve");
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual(
+    [round.role, round.mode, round.step, round.tip],
+    ["verify", "fresh", "resolve", MOVED],
+  );
+  assert.equal(res.ledger.restacks[0].rangeDiff, "/run/logs/rd.txt");
+  // Its PASS settles the gate on the restacked tip, and a green gate there closes the lane.
+  const passed = go(res.ledger, judge("PASS", MOVED));
+  assert.deepEqual([passed.next, passed.ledger.gateTip], ["gate", MOVED]);
+  assert.equal(step(passed.ledger, { type: "gate", record: green(MOVED) }).next, "close");
+});
+
+test("restack while held with no verdict yet: recorded, no change to the lane", () => {
+  const held = { ...stackedOn(go(stepped(), done()).ledger) };
+  assert.equal(held.state, "held");
+  for (const resolution of ["none", "by hand"]) {
+    const res = pure(held, restack({ resolution }));
+    assert.deepEqual([res.next, res.ledger.state], ["resume", "held"], resolution);
+    assert.equal(res.dispatch, undefined);
+    assert.deepEqual([res.ledger.base, res.ledger.restacks.length], [PARENT_TIP, 1]);
+    assert.deepEqual(res.ledger.rounds, held.rounds);
+  }
+});
+
+test("restack with an agent out is refused by the machine", () => {
+  assert.throws(() => step(stackedOn(lane()), restack()), /a restack waits for/);
+  const verifying = go(lane(), report("DONE")).ledger;
+  assert.throws(() => step(stackedOn(verifying), restack()), /a restack waits for/);
+});
+
+test("a gate on the restacked tip closes the lane with no verifier round; a gate on the old tip does not", () => {
+  const ledger = go(stackedOn(closedLane()), restack()).ledger;
+  const rounds = ledger.rounds.length;
+  const closed = step(ledger, { type: "gate", record: green(MOVED) });
+  assert.deepEqual([closed.next, closed.ledger.closedTip], ["close", MOVED]);
+  assert.equal(closed.ledger.rounds.length, rounds, "no verifier round added");
+  // The green gate the lane closed on before the restack, and a new one on the old tip, close nothing.
+  assert.ok(greenOn(ledger.gates, TIP));
+  const old = step(ledger, { type: "gate", record: green(TIP) });
+  assert.equal(old.next, "stop");
+  assert.match(old.reason, /the branch moved from bbbbbbb since the verdict/);
+});
+
+test("a clean restack of a tip the checks do not stand for is gated on the old one: the gate stops it", () => {
+  // The branch moved past the tip the lane closed on before the restack replayed it.
+  const ledger = stackedOn(closedLane());
+  const res = pure(ledger, restack({ from: "e".repeat(40) }));
+  assert.equal(res.ledger.gateTip, TIP);
+  assert.equal(step(res.ledger, { type: "gate", record: green(MOVED) }).next, "stop");
+});
+
+test("verifiedTip: the last verdict's tip, else builtTip, carried only through clean restacks from it", () => {
+  const ledger = closedLane();
+  assert.equal(verifiedTip(ledger), TIP);
+  assert.equal(verifiedTip(closedLane({ verify: "none" }, { verified: false })), TIP);
+  const third = "f".repeat(40);
+  const entry = (from, to, resolution = "none") => ({ from, to, resolution, onto: "parent" });
+  assert.equal(
+    verifiedTip({ ...ledger, restacks: [entry(TIP, MOVED), entry(MOVED, third)] }),
+    third,
+  );
+  assert.equal(verifiedTip({ ...ledger, restacks: [entry(TIP, MOVED, "by hand")] }), TIP);
+  assert.equal(verifiedTip({ ...ledger, restacks: [entry(third, MOVED)] }), TIP);
+  assert.equal(verifiedTip(lane()), undefined);
 });

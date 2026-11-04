@@ -56,6 +56,11 @@
 //                                             as above); a gate is recorded, decides nothing
 //   verified (next close or merge): { type: "hold", for: "later" } → held (`when: "verified"`, the next step
 //                                             kept); no round changes. Resumed → verified, the same next step
+//   restack, resolution none, a verdict or builtTip → gate (verifying): the verdict stands for the same
+//                                             commits; a gate on the old tip no longer counts
+//   restack, resolution by hand, a verdict     → R1d-11's A48 resolution recheck on the restack's ranges
+//   restack, no verdict yet (held)             → no change: the one verifier after the build reads it all
+//   restack, a guard hold or a parked verified lane → refused: its report, or its resume, comes first
 //
 // Every budget is the lane's, so no mix of outcomes resets one: one resend per role, one needs-context
 // round, three counted verdicts (a final after a recheck PASS is the one more), three void ones, and a
@@ -74,6 +79,10 @@
 // rebase }`: an edit of the workflow file mid-lane changes no running lane, and a key the ledger lacks reads
 // as the standard preset's. The machine writes `gateTip` whenever it settles `gate` and `closedTip`
 // whenever it settles `close`: the tips the gate and the land check.
+//
+// A stacked lane (`on`, A45) is restacked only with no agent out: each restack appends `restacks[]`:
+// { at, parent, onto: "parent" | "main", from, to, base: { from, to }, resolution: "none" | "by hand",
+// rangeDiff? } and sets `base` to `base.to`; one onto main drops `on`.
 import { PRESETS } from "../process/spec/presets.mjs";
 import { runOf, runText } from "../process/steps.mjs";
 
@@ -252,6 +261,8 @@ const resend = (ledger, round, reason) =>
  *   { type: "rebase" } / { type: "rebased", tip, changed, gate, tier? } / { type: "reverify" }
  *                              (a verified lane: rebased by its builder, already rebased, or verified late)
  *   { type: "owner", note, at } (a verified lane the owner sends back with a change)
+ *   { type: "restack", from, to, base: { from, to }, onto, parent, resolution, gate, at, rangeDiff? }
+ *                              (a stacked lane's branch moved onto its parent's tip or main, no agent out)
  *
  * `tier` is the gate tier the build role runs: a green record of it on the tip closes the lane.
  */
@@ -259,6 +270,7 @@ export function step(ledger, event) {
   const out = structuredClone(ledger);
   out.gates ??= [];
   if (event.type === "gate") return onGate(out, event.record);
+  if (event.type === "restack") return onRestack(out, event);
   const parked = event.type === "report" && out.hold?.for === "guard" ? unpark(out) : null;
   if (out.state === "held" && !["hold", "resume"].includes(event.type))
     throw new Error(`the lane is held: it expects a resume, not a ${event.type}`);
@@ -697,16 +709,63 @@ function onReverify(ledger) {
   return send(ledger, "verify", {}, "a verifier reads the work the route sent past one");
 }
 
+/** The tip the lane's checks stand for: the last counted verdict's, else the last `builtTip` (a route
+ *  with no verifier, a rebase), carried through each later `restacks[]` entry with resolution "none" whose
+ *  `from` it is (a clean restack replays the same commits). A restack resolved by hand carries nothing. */
+export function verifiedTip(ledger) {
+  let tip = verdicts(ledger).at(-1)?.tip ?? ledger.rounds.findLast((r) => r.builtTip)?.builtTip;
+  for (const r of ledger.restacks ?? [])
+    if (tip !== undefined && r.resolution === "none" && r.from === tip) tip = r.to;
+  return tip;
+}
+
+// A stacked lane's branch moved onto its parent's tip or main, with no agent out (the caller checks the
+// git; the machine records it). Held: recorded, no change; the verifier after the build reads it all.
+// Resolved by hand after a verdict: a fresh verifier reads the resolution; with no verdict (the route skipped
+// the verifier) the gate decides, as it did for the build. Else the gate checks the new tip, which the checks
+// stand for only when the restack replayed the very tip they cover: any other tip stops at the gate.
+function onRestack(ledger, event) {
+  const { from, to, base, onto, parent, resolution, gate = true, at, rangeDiff } = event;
+  const held = ledger.state === "held";
+  if (held && (ledger.hold?.for === "guard" || ledger.hold?.when === "verified"))
+    throw new Error(
+      `a restack waits for the lane's ${ledger.hold.for === "guard" ? "report after its guard trip" : "resume from its park"}`,
+    );
+  if (!held && !["gate", "close", "merge"].includes(ledger.next))
+    throw new Error(
+      `a restack waits for the lane's gate, close or merge, or a hold (state ${ledger.state}, next ${ledger.next})`,
+    );
+  // What the lane trusted before: the tip its gate or close was settled on.
+  const trusted =
+    (ledger.next === "gate" ? ledger.gateTip : ledger.closedTip) ?? verifiedTip(ledger);
+  ledger.restacks = [
+    ...(ledger.restacks ?? []),
+    { at, parent, onto, from, to, base, resolution, ...(rangeDiff && { rangeDiff }) },
+  ];
+  ledger.base = base.to;
+  if (onto === "main") ledger.on = undefined;
+  if (held)
+    return { ledger, next: ledger.next, reason: "held: the verifier after the build reads it all" };
+  if (resolution === "by hand" && verdicts(ledger).length)
+    return send(
+      ledger,
+      "resolve",
+      {},
+      "the restack was resolved by hand: a verifier reads the resolution",
+    );
+  const tip = resolution === "by hand" || from === trusted ? to : trusted;
+  if (!gate)
+    return settle(ledger, "close", "no gate in the workflow file: closes on the restack", tip);
+  return settle(ledger, "gate", "restacked: the gate checks the new tip", tip);
+}
+
 function onGate(ledger, record) {
   ledger.gates.push(record);
   if (ledger.next !== "gate") return { ledger, next: ledger.next };
   // A red that failed only in listed flaky tests is re-run alone; the re-run's record decides.
   if (record.flakyRed?.length) return { ledger, next: ledger.next };
-  // The tip the lane settled the gate on (a ledger from before `gateTip`: its last verdict's or build's).
-  const verified =
-    ledger.gateTip ??
-    verdicts(ledger).at(-1)?.tip ??
-    ledger.rounds.findLast((r) => r.builtTip)?.builtTip;
+  // The tip the lane settled the gate on (a ledger from before `gateTip`: the tip its checks stand for).
+  const verified = ledger.gateTip ?? verifiedTip(ledger);
   if (record.commit !== verified)
     return stop(ledger, `the branch moved from ${short(verified)} since the verdict`);
   if (!greenOn([record], verified))

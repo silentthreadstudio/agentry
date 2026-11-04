@@ -11,6 +11,7 @@
 // clock(iso) -> "HH:MM"                local time
 // workflowText(resolved) -> string     the `workflow:` line: `standard · verify all · notes 1 · final never (set) · …`
 // routeFixedText(route) -> string      a ledger's route snapshot: `standard · verify all · notes 1 · …`
+// restackText(entry) -> string         one `restacks[]` entry: `onto T1 at def5678 (was abc1234): tip …`
 import { runText } from "../process/steps.mjs";
 
 /** The verify route a lane runs, as one line (`route` is the ledger's `{ verify, flagged }`). */
@@ -44,6 +45,13 @@ export function workflowText({ preset, exec, roles, set }) {
 /** A lane's route as fixed at start (the ledger's snapshot, the standard values filled in). */
 export const routeFixedText = (route) =>
   `${route.preset ?? "standard"} · verify ${route.verify} · notes ${route.noteRounds} · final ${route.final} · rebase ${route.rebase}`;
+
+const short = (sha) => String(sha ?? "").slice(0, 7);
+
+/** One restack of a stacked lane (a ledger `restacks[]` entry) as a line: `onto T1 at def5678 (was
+ *  abc1234): tip 1234567 → 89abcde, no conflict · <ISO>`; onto main reads `onto main off T1 at …`. */
+export const restackText = (r) =>
+  `onto ${r.onto === "main" ? `main off ${r.parent}` : r.parent} at ${short(r.base?.to)} (was ${short(r.base?.from)}): tip ${short(r.from)} → ${short(r.to)}, ${r.resolution === "by hand" ? "resolved by hand" : "no conflict"} · ${r.at}`;
 
 /** Where a hold sits, as words: `after step 1 of 2`, `during steps 2–3 of 3`, or `mid-build` (no steps). */
 export const holdWhere = (hold, total) =>

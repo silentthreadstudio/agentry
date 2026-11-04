@@ -45,6 +45,13 @@ The owner reviewed and approved these; judge the rest against the contract, not 
   while you read, and the gate refuses a dirty tree. Probes, scratch files and logs go only under
   {{logDir}}.
 
+{{#stacked}}
+## Stacked
+
+This branch is stacked on {{on}}: it was cut from agentry/{{on}} at {{base}}. Judge (or build) only
+{{base}}..HEAD; {{on}}'s commits are its own lane's. Never rebase: the lane restacks.
+
+{{/stacked}}
 ## The contract
 
 {{block}}

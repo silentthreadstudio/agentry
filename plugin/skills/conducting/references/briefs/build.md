@@ -16,6 +16,13 @@ asks. Change nothing else.
   its files change.
 - Logs and scratch files go only under {{logDir}}.
 
+{{#stacked}}
+## Stacked
+
+This branch is stacked on {{on}}: it was cut from agentry/{{on}} at {{base}}. Judge (or build) only
+{{base}}..HEAD; {{on}}'s commits are its own lane's. Never rebase: the lane restacks.
+
+{{/stacked}}
 ## The contract
 
 {{block}}

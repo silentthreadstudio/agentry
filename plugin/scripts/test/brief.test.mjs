@@ -618,6 +618,9 @@ const VALUES = {
   cd: "cd '/w'",
   branch: "agentry/T1",
   base: "abc1234",
+  // a lane stacked on another (A45): off unless a test turns it on
+  stacked: false,
+  on: "",
   mainRoot: "/m",
   logDir: "/m/logs",
   reportPath: "/m/r2.report.md",
@@ -714,6 +717,22 @@ test("every template uses only the slots the CLI fills, and renders with none le
       /No command other than the gate may run longer than 10 minutes: run every engine, server, simulator or\n {2}watcher with `agentry run --limit <dur> -- …`/,
       step,
     );
+});
+
+test("a stacked lane's build and verify briefs (and the fix and final that wrap them) judge only base..HEAD", () => {
+  const stacked = { ...VALUES, stacked: true, on: "T0" };
+  const said =
+    "This branch is stacked on T0: it was cut from agentry/T0 at abc1234. Judge (or build) only abc1234..HEAD; T0's commits are its own lane's. Never rebase: the lane restacks.";
+  const flat = (text) => text.replace(/\s+/g, " ");
+  for (const step of ["build", "fix", "continue", "verify", "recheck", "final"]) {
+    const text = renderBrief(step, stacked);
+    assert.equal(text.split("## Stacked").length, 2, `${step} has the section once`);
+    assert.ok(flat(text).includes(said), step);
+    assert.ok(text.indexOf("## Stacked") < text.indexOf("## The contract"), step);
+    assert.doesNotMatch(renderBrief(step, VALUES), /## Stacked|stacked on/, `${step} unstacked`);
+  }
+  // The diff line stays base..HEAD, which for a stacked lane is the parent's tip to its own.
+  assert.match(renderBrief("verify", stacked), /git diff --stat abc1234\.\.HEAD/);
 });
 
 const LOCK_LINE = /^- Take (.*) before driving a shared editor through MCP, and drop it after\n/m;
