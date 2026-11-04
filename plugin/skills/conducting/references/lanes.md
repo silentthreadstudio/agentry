@@ -259,10 +259,13 @@ the lane during the round, and the resume carries the same round on.
   file and its workflow file (`.agentry/process.json`, `.agentry/workflow.json`, or the `--process` file and
   its sibling), counts as a `guard.allow` path for every check, committed or not, with or without a
   `guard.allow` key, unless a running lane's contract owns it. So does every board location the process file
-  names as main's HEAD commits it (an uncommitted edit of it widens nothing), from the board root: each kind's
-  `at.table` file, each `contract.blocks` file, each `create.blocks[].file`, any file its `at.files` or
-  `file.glob` matches (`{id}` any name, so an item file made or removed passes), and `status.note`. A path or
-  glob that leaves the board root (`status.note`: the repository) counts for nothing. A commit touching any other path,
+  names as main's HEAD commits it, or, when the process file is not tracked there (`.agentry/` kept out of
+  git), as it loaded at `start` (`boardAtStart` in the ledger; an older ledger has none): an edit made after
+  the lane started widens nothing. From the board root: each kind's `at.table` file, each `contract.blocks`
+  file, each `create.blocks[].file`, any file its `at.files` or `file.glob` matches (`{id}` any name, so an
+  item file made or removed passes), and `status.note`. A path or glob counts when it stays inside the
+  repository, as the process file's own check takes it (`../docs/TASKS.md` from `root: "plan"` does); an
+  item id never names one. A commit touching any other path,
   or an owned allowed path, trips with `HEAD moved …` plus `(<path> is not in guard.allow)` or
   `(<path> is owned by <lane>)`. So: a board file a running lane owns changes only through `agentry board
   add` / `agentry board set --apply`, and no commits but board, config and `guard.allow` paths on main while
