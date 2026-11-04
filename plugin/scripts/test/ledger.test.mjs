@@ -142,3 +142,14 @@ test("a writer killed between write and rename leaves a temp file the next read 
   assert.equal(list(root).length, 1);
   assert.deepEqual(readdirSync(dir).sort(), ["T-1.json", live]);
 });
+
+test("a temp file of the older naming (<id>.json.<pid>.tmp) a killed writer left is swept too", () => {
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+  write(root, ledger("T-1"));
+  const dir = dirOf(root);
+  const live = `T-2.json.${process.ppid}.tmp`;
+  writeFileSync(join(dir, `T-1.json.${dead}.tmp`), "{half");
+  writeFileSync(join(dir, live), "{");
+  assert.equal(list(root).length, 1);
+  assert.deepEqual(readdirSync(dir).sort(), ["T-1.json", live], "a live writer's temp stays");
+});

@@ -17,6 +17,9 @@ const MAX = 2000;
 
 const fileOf = (root) => join(root, ".agentry", "run", "process", "drafts.jsonl");
 
+/** The temp files a rewrite before `fs/atomic.mjs` left (`drafts.jsonl.<pid>.tmp`): swept like its own. */
+export const OLD_TEMP = /^drafts\.jsonl\.(\d+)\.tmp$/;
+
 /** Why `draft` (the JSON the conductor gave) is not a usable draft, or null. Unknown keys are refused. */
 export function problem(draft) {
   if (draft === null || typeof draft !== "object" || Array.isArray(draft))
@@ -42,7 +45,7 @@ export function problem(draft) {
 // that is not a draft (torn, hand-edited), which is kept as written. The temp files a killed rewrite left
 // are swept first.
 function read(root) {
-  sweepTemps(dirname(fileOf(root)));
+  sweepTemps(dirname(fileOf(root)), OLD_TEMP);
   let text;
   try {
     text = readFileSync(fileOf(root), "utf8");

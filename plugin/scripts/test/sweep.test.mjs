@@ -904,3 +904,20 @@ test("the preview lists a dead writer's temp file in the ledger directory and le
   assert.deepEqual(applied.result.removedTemps, [temp]);
   assert.ok(!existsSync(temp));
 });
+
+test("the sweep lists and removes the older temp naming a killed ledger or drafts writer left", () => {
+  const { root } = fixture();
+  const dead = spawnSync("node", ["-e", ""]).pid;
+  const old = [
+    join(runFile(root, join("process", "ledger")), `T2.json.${dead}.tmp`),
+    runFile(root, join("process", `drafts.jsonl.${dead}.tmp`)),
+  ];
+  for (const file of old) writeFileSync(file, "{half");
+  assert.deepEqual(JSON.parse(sweep(root, "--json").stdout).temps.sort(), [...old].sort());
+  assert.ok(
+    old.every((file) => existsSync(file)),
+    "the preview changed nothing",
+  );
+  sweep(root, "--apply");
+  assert.ok(!old.some((file) => existsSync(file)));
+});

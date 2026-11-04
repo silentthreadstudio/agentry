@@ -15,6 +15,10 @@ const validId = (id) => idProblem(id) === null;
 
 const sameWord = (a, b) => a.toLowerCase() === b.toLowerCase();
 
+/** The temp files the writes before `fs/atomic.mjs` left (`<id>.json.<pid>.tmp`, this module's and
+ *  restack's): swept like the atomic helper's own. */
+export const OLD_TEMP = /^.+\.json\.(\d+)\.tmp$/;
+
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const ledgerDir = (root) => join(processDir(root), "ledger");
 const fileOf = (root, id) => join(ledgerDir(root), `${id}.json`);
@@ -23,7 +27,7 @@ const fileOf = (root, id) => join(ledgerDir(root), `${id}.json`);
  *  writers' temp files are swept first, unless `sweep` is false (a preview that must change nothing). */
 export function read(root, id, { sweep = true } = {}) {
   if (!validId(id)) return null;
-  if (sweep) sweepTemps(ledgerDir(root));
+  if (sweep) sweepTemps(ledgerDir(root), OLD_TEMP);
   let text;
   try {
     text = readFileSync(fileOf(root, id), "utf8");
@@ -64,7 +68,7 @@ export function write(root, ledger) {
 /** Every readable ledger, by id. A file that does not parse is left out (a nudge reading the board must not
  *  die on one bad ledger); `read` is the call that names the problem. */
 export function list(root, { sweep = true } = {}) {
-  if (sweep) sweepTemps(ledgerDir(root));
+  if (sweep) sweepTemps(ledgerDir(root), OLD_TEMP);
   let names;
   try {
     names = readdirSync(ledgerDir(root));

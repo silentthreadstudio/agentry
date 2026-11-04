@@ -242,3 +242,14 @@ test("a rewrite killed between write and rename leaves a temp file the next read
   assert.equal(drafts.pending(dir).length, 1);
   assert.deepEqual(readdirSync(at).sort(), ["drafts.jsonl", live], "a live writer's temp stays");
 });
+
+test("a temp file of the older naming (drafts.jsonl.<pid>.tmp) a killed rewrite left is swept too", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-drafts-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  drafts.add(dir, DECISION);
+  const at = join(dir, ".agentry", "run", "process");
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+  writeFileSync(join(at, `drafts.jsonl.${dead}.tmp`), "{half");
+  assert.equal(drafts.list(dir).length, 1);
+  assert.deepEqual(readdirSync(at), ["drafts.jsonl"]);
+});

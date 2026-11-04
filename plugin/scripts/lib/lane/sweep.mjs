@@ -30,6 +30,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync, rmSync, statfsSync } from "node:fs";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { deadTemps } from "../fs/atomic.mjs";
+import * as drafts from "../process/drafts.mjs";
 import { worktrees } from "../process/git.mjs";
 import * as ledgers from "../process/ledger.mjs";
 import {
@@ -245,14 +246,14 @@ function findStrays(root, all) {
   return found;
 }
 
-// The directories outside the lock ones that Agentry writes whole into: the run state, and the instruction
-// files' (the root and `.claude/`).
+// The directories outside the lock ones that Agentry writes whole into, each with the older temp naming
+// once written there (or none): the run state, and the instruction files' (the root and `.claude/`).
 const tempDirs = (root) => [
-  join(root, ".agentry", "run", "process"),
-  join(root, ".agentry", "run", "process", "ledger"),
-  gateLockDir(root),
-  root,
-  join(root, ".claude"),
+  [join(root, ".agentry", "run", "process"), drafts.OLD_TEMP],
+  [join(root, ".agentry", "run", "process", "ledger"), ledgers.OLD_TEMP],
+  [gateLockDir(root)],
+  [root],
+  [join(root, ".claude")],
 ];
 
 /** What killed writers and holders left in the repo whose main checkout is `root`: `{ temps, slots,
@@ -260,7 +261,7 @@ const tempDirs = (root) => [
  *  Only looks. */
 export function leftovers(root) {
   return {
-    temps: [...tempDirs(root).flatMap((dir) => deadTemps(dir)), ...deadLockTemps(root)],
+    temps: [...tempDirs(root).flatMap(([dir, old]) => deadTemps(dir, old)), ...deadLockTemps(root)],
     slots: [
       ...staleGateSlots(gateLockDir(root)).map((s) => ({ ...s, lock: "gate" })),
       ...staleLockSlots(root),
