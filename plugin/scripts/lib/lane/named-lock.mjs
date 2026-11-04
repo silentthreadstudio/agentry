@@ -5,12 +5,20 @@
 // free again once its pid is gone, once its `until` has passed (a take's ttl), or, holding neither a pid
 // nor an until, once it is old enough not to be mid-write. The pid, holder and clock checks are gate-lock's.
 // A run also records its command's process group (`pgid`): while any member of that group lives the slot
-// stays held, even after `agentry run` itself died (an orphan). Synchronous: a waiting caller polls
-// `tryLock` at `POLL_MS`. Node built-ins only.
+// stays held, even after `agentry run` itself died (an orphan). A run riding a take extends its `until`
+// to cover the command and records itself in `riders` (the take's own `until` in `ownUntil`): the extension
+// ends with the last live rider, and a drop while one lives is kept until then. Synchronous: a waiting
+// caller polls `tryLock` at `POLL_MS`. Node built-ins only.
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isObject, own } from "../process/spec/shape.mjs";
-import { GRACE_MS, clock, groupRunning, holderOf, running } from "./gate-lock.mjs";
+import {
+  GRACE_MS,
+  clock,
+  groupRunning,
+  holderOf as parsedHolderOf,
+  running,
+} from "./gate-lock.mjs";
 
 export { POLL_MS } from "./gate-lock.mjs";
 
@@ -28,6 +36,17 @@ const orphanGroup = (holder) =>
   Number.isInteger(holder?.pid) && !running(holder.pid) && groupRunning(holder.pgid)
     ? holder.pgid
     : null;
+
+// The pids of a take's riders that still run.
+const liveRiders = (holder) => (holder?.riders ?? []).filter((pid) => running(pid));
+
+// A slot's holder as it stands now: a take whose riders are all gone is back at its own `until`.
+function holderOf(file) {
+  const holder = parsedHolderOf(file);
+  if (!holder?.riders || liveRiders(holder).length) return holder;
+  const { riders, ownUntil, ...take } = holder;
+  return { ...take, until: ownUntil };
+}
 
 const slotFile = (root, name, n) => join(lockDir(root, name), `slot-${n}.lock`);
 
@@ -129,7 +148,10 @@ export function tryLock(
       const file = slotFile(root, name, n);
       const holder = holderOf(file);
       if (sameTake(holder, pid, who) && !free(file, holder, now)) {
-        writeFileSync(file, JSON.stringify({ ...entry, at: holder.at }));
+        const rides = liveRiders(holder).length
+          ? { riders: holder.riders, ownUntil: entry.until, until: holder.until }
+          : {};
+        writeFileSync(file, JSON.stringify({ ...entry, at: holder.at, ...rides }));
         return { slot: n, again: true };
       }
     }
@@ -147,13 +169,32 @@ export function setGroup(root, name, slot, pgid, pid = process.pid) {
   if (holder?.pid === pid) writeFileSync(file, JSON.stringify({ ...holder, pgid }));
 }
 
-/** Keep the take in slot `slot` of lock `name` until at least `untilMs` (a command riding it must not
- *  outlive it). */
-export function extendTake(root, name, slot, untilMs) {
+/** Keep the take in slot `slot` of lock `name` until at least `untilMs`, for the command of process `pid`
+ *  riding it (a command must not outlive its take); `endRide` takes the extension back. */
+export function extendTake(root, name, slot, untilMs, pid = process.pid) {
   const file = slotFile(root, name, slot);
   const holder = holderOf(file);
-  if (holder?.until !== undefined && Date.parse(holder.until) < untilMs)
-    writeFileSync(file, JSON.stringify({ ...holder, until: new Date(untilMs).toISOString() }));
+  if (holder?.until === undefined) return;
+  const riders = [...new Set([...liveRiders(holder), pid])];
+  const until = new Date(Math.max(untilMs, Date.parse(holder.until))).toISOString();
+  writeFileSync(
+    file,
+    JSON.stringify({ ...holder, riders, ownUntil: holder.ownUntil ?? holder.until, until }),
+  );
+}
+
+/** The ride of process `pid` on the take in slot `slot` ends: with no other rider left, the take is back at
+ *  its own `until` (and gone, when that has passed: a drop that was kept for the ride). */
+export function endRide(root, name, slot, pid = process.pid) {
+  const file = slotFile(root, name, slot);
+  const holder = parsedHolderOf(file);
+  if (!holder?.riders?.includes(pid)) return;
+  const riders = holder.riders.filter((p) => p !== pid && running(p));
+  if (riders.length) return writeFileSync(file, JSON.stringify({ ...holder, riders }));
+  const { riders: _, ownUntil, ...take } = holder;
+  if (Date.parse(ownUntil) > Date.now())
+    writeFileSync(file, JSON.stringify({ ...take, until: ownUntil }));
+  else rmSync(file, { force: true });
 }
 
 /** Free slot `slot` of lock `name` when process `pid` still holds it (a slot taken over since is left),
@@ -164,16 +205,41 @@ export function releaseLock(root, name, slot, pid = process.pid) {
   if (holder?.pid === pid && !groupRunning(holder.pgid)) rmSync(file, { force: true });
 }
 
-/** Drop the takes of lock `name` this session (`pid`) holds for `who`: how many slots it freed. */
+/** Drop the takes of lock `name` this session (`pid`) holds for `who`: `{ dropped }` the slots it freed at
+ *  once, `kept` the pid of a live run riding one of them (that slot goes when the ride ends). */
 export function dropLock(root, name, { slots, pid, who }) {
   let dropped = 0;
+  let kept = null;
   for (let n = 1; n <= slots; n++) {
     const file = slotFile(root, name, n);
     const holder = holderOf(file);
-    if (holder?.until !== undefined && holder.pid === pid && holder.who === who) {
+    if (holder?.until === undefined || holder.pid !== pid || holder.who !== who) continue;
+    const [rider] = liveRiders(holder);
+    if (rider === undefined) {
       rmSync(file, { force: true });
       dropped++;
+    } else {
+      writeFileSync(file, JSON.stringify({ ...holder, ownUntil: new Date().toISOString() }));
+      kept ??= rider;
     }
   }
-  return dropped;
+  return { dropped, kept };
+}
+
+/** Free the slots of lock `name` held only by a leftover group (the recording pid is gone, the group runs):
+ *  `{ freed }` their pgids, `alive` the pid of a recording process that still runs (its slot is left). */
+export function dropOrphans(root, name, slots) {
+  const freed = [];
+  let alive = null;
+  for (let n = 1; n <= slots; n++) {
+    const file = slotFile(root, name, n);
+    const holder = holderOf(file);
+    if (!groupRunning(holder?.pgid)) continue;
+    if (running(holder.pid)) alive ??= holder.pid;
+    else {
+      rmSync(file, { force: true });
+      freed.push(holder.pgid);
+    }
+  }
+  return { freed, alive };
 }

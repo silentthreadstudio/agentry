@@ -6,8 +6,12 @@
 //     code; at the limit the group gets SIGTERM, then SIGKILL 5 s later, and the exit is 124. `--lock` waits
 //     for a slot first (for up to `--wait`, default 10m: then exit 75) and holds it until the command is gone
 //     (and, if `agentry run` dies, until its process group is). A command that is a `gate.tiers` argv takes
-//     the gate slot the same way. Inside your own `lock take` of that lock, it takes no slot of its own.
-//   agentry lock take <name> [--for <lane>] [--ttl <dur>] [--wait <dur>] · lock drop <name> [--for <lane>] · lock show
+//     the gate slot the same way (`--wait` then bounds that wait); with `--lock` too it takes the lock
+//     without waiting once it holds the gate slot, and when the lock is busy lets the gate slot go and
+//     waits for the lock first. Inside your own `lock take` of that lock, it takes no slot of its own, and
+//     its run extends the take until the command is gone.
+//   agentry lock take <name> [--for <lane>] [--ttl <dur>] [--wait <dur>] · lock drop <name> [--for <lane>]
+//   [--orphan] · lock show
 //     a lock held across tool calls, for a session that drives a shared editor through MCP. A take is
 //     the session's (the host's `CLAUDE_PID`, when it gives one) and ends at its ttl (default 30m) or
 //     when that process is gone.
@@ -20,6 +24,8 @@ import { clock, gateLockDir, holdGate, running } from "../lane/gate-lock.mjs";
 import {
   POLL_MS,
   dropLock,
+  dropOrphans,
+  endRide,
   extendTake,
   heldLocks,
   locksOf,
@@ -52,7 +58,7 @@ const RUN_HELP = {
     "--lock <name>":
       "wait for a slot of a lock the workflow file's locks declares, and hold it while the command runs",
     "--wait <dur>":
-      "how long --lock (or the gate slot) waits for a slot before it gives up (default 10m)",
+      "how long --lock (or, for a gate argv, the gate slot) waits for a slot before it gives up (default 10m)",
     "--root <dir>": "the git root (default: the main checkout of the current directory)",
     "--process <file>": "the process file; the workflow file is its sibling workflow.json",
   },
@@ -69,7 +75,7 @@ const RUN_HELP = {
 const LOCK_HELP = {
   usage: [
     "lock take <name> [--for <lane>] [--ttl <dur>] [--wait <dur>]",
-    "lock drop <name> [--for <lane>]",
+    "lock drop <name> [--for <lane>] [--orphan]",
     "lock show",
   ],
   purpose:
@@ -77,6 +83,8 @@ const LOCK_HELP = {
   args: { "<name>": "a lock the workflow file's locks declares" },
   flags: {
     "--for <lane>": "who holds it (default: the lane whose worktree this is)",
+    "--orphan":
+      "drop: free a slot held only by a leftover process group (its run died), after printing the group; refused while that run lives",
     "--ttl <dur>": "when a take ends on its own: <n>s, <n>m or <n>h (default 30m)",
     "--wait <dur>": "how long take waits for a slot before it gives up (default 10m)",
     "--root <dir>": "the git root (default: the main checkout of the current directory)",
@@ -84,7 +92,7 @@ const LOCK_HELP = {
   },
   exits: {
     0: "taken, dropped or shown",
-    1: "drop: not held by you",
+    1: "drop: not held by you (--orphan: no leftover group to free, or its run still lives)",
     2: "usage, or an undeclared lock",
     75: "take: the lock stayed busy for the whole --wait",
   },
@@ -99,6 +107,10 @@ export function durationMs(text) {
 }
 
 const fail = (what, why, next) => ({ exit: 2, err: say(what, why, next) });
+const refuse = (what, why) => {
+  process.stderr.write(`${say(what, why, `${what} --help`)}\n`);
+  return 2;
+};
 
 // The options before `--` (each takes a value), or why one is refused.
 function optionsOf(argv, what, takes) {
@@ -249,47 +261,72 @@ export async function runCli(argv) {
       return lock.exit;
     }
   }
-  const starts = [];
-  // The gate slot comes first, so a named lock is never held while this run queues for the gate.
   const gate = gateTierOf(root, parsed.got["--process"], cmd);
-  if (gate) {
-    process.stderr.write(`run: this is the gate (${gate.tier}): taking the gate slot\n`);
-    const held = holdGate(gateLockDir(root), {
-      slots: gate.slots,
-      who: lane ? `lane ${lane}` : "agentry run",
-      waitSec: waitMs / 1000,
-      onNote: (line) => process.stderr.write(`${line}\n`),
-    });
-    if (held.busy) {
-      process.stderr.write(
-        `${say("run", `the gate slot stayed busy (held by ${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"})`)}\n`,
-      );
-      return BUSY_EXIT;
-    }
-    hold(held.release);
-    starts.push(held.group);
-  }
-  if (lock) {
-    const mine = ownTake(root, lockName, {
-      slots: lock.slots,
-      pid: sessionPid(),
-      who: takerOf(null, lane),
-    });
-    if (mine !== null) {
-      process.stderr.write(`lock ${lockName}: inside your own take\n`);
-      extendTake(root, lockName, mine, Date.now() + limitMs + GRACE_KILL_MS);
-    } else {
-      const who = `${lane ? `${lane}: ` : ""}${basename(cmd[0])}`;
-      const got = await acquire(root, lockName, waitMs, { slots: lock.slots, who });
-      if (got.busy) {
-        releaseAll();
-        process.stderr.write(`${busyLine("run", lockName, got.busy)}\n`);
+  if (parsed.got["--wait"] !== undefined && !lockName && !gate)
+    return refuse(
+      "agentry run",
+      "--wait is for --lock (or a gate argv): there is nothing to wait for",
+    );
+  const starts = [];
+  const deadline = Date.now() + waitMs;
+  const mine = lock
+    ? ownTake(root, lockName, { slots: lock.slots, pid: sessionPid(), who: takerOf(null, lane) })
+    : null;
+  const who = `${lane ? `${lane}: ` : ""}${basename(cmd[0])}`;
+  // The gate slot comes first, so a named lock is never held while this run queues for the gate, and the
+  // gate slot is never held while it waits for a named lock: a busy lock sends the run back to the queue.
+  let slot = null;
+  let said = false;
+  for (;;) {
+    if (gate) {
+      if (!said)
+        process.stderr.write(`run: this is the gate (${gate.tier}): taking the gate slot\n`);
+      said = true;
+      const held = holdGate(gateLockDir(root), {
+        slots: gate.slots,
+        who: lane ? `lane ${lane}` : "agentry run",
+        waitSec: Math.max(0, deadline - Date.now()) / 1000,
+        onNote: (line) => process.stderr.write(`${line}\n`),
+      });
+      if (held.busy) {
+        process.stderr.write(
+          `${say("run", `the gate slot stayed busy (held by ${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"})`)}\n`,
+        );
         return BUSY_EXIT;
       }
-      const { slot } = got;
-      hold(() => releaseLock(root, lockName, slot));
-      starts.push((pgid) => setGroup(root, lockName, slot, pgid));
+      hold(held.release);
+      starts.push(held.group);
     }
+    if (!lock || mine !== null) break;
+    const opts = { slots: lock.slots, who };
+    const got = gate ? tryLock(root, lockName, opts) : await acquire(root, lockName, waitMs, opts);
+    if (!got.busy) {
+      slot = got.slot;
+      break;
+    }
+    let busy = got.busy;
+    if (gate && Date.now() < deadline) {
+      releaseAll();
+      starts.length = 0;
+      process.stderr.write(`lock ${lockName} busy: gate slot released while waiting for it\n`);
+      const free = await acquire(root, lockName, deadline - Date.now(), opts);
+      if (!free.busy) {
+        releaseLock(root, lockName, free.slot);
+        continue;
+      }
+      busy = free.busy;
+    }
+    releaseAll();
+    process.stderr.write(`${busyLine("run", lockName, busy)}\n`);
+    return BUSY_EXIT;
+  }
+  if (mine !== null) {
+    process.stderr.write(`lock ${lockName}: inside your own take\n`);
+    extendTake(root, lockName, mine, Date.now() + limitMs + GRACE_KILL_MS);
+    hold(() => endRide(root, lockName, mine));
+  } else if (slot !== null) {
+    hold(() => releaseLock(root, lockName, slot));
+    starts.push((pgid) => setGroup(root, lockName, slot, pgid));
   }
   try {
     return await supervise(cmd, limitMs, limitText, {
@@ -318,8 +355,6 @@ function runArgs({ got, rest }, cmd) {
       `${what} --help`,
     );
   const lockName = got["--lock"] ?? null;
-  if (got["--wait"] !== undefined && !lockName)
-    return fail(what, "--wait is for --lock: there is no lock to wait for", `${what} --help`);
   const waitMs = waitOf(got, what);
   if (waitMs.err) return waitMs;
   return { limitMs, limitText, lockName, waitMs };
@@ -361,7 +396,12 @@ export async function lockCli(argv) {
       say("agentry lock", `unknown subcommand "${sub}" (take, drop, show)`, "agentry lock --help"),
     );
   const takes = { take: ["--for", "--ttl", "--wait"], drop: ["--for"], show: [] }[sub];
-  const parsed = optionsOf(args, what, [...takes, "--root", "--process"]);
+  const orphan = sub === "drop" && args.includes("--orphan");
+  const parsed = optionsOf(
+    args.filter((arg) => !(orphan && arg === "--orphan")),
+    what,
+    [...takes, "--root", "--process"],
+  );
   if (parsed.err) return out(2, parsed.err);
   const { got, rest } = parsed;
   const { root, lane } = placeOf(got["--root"]);
@@ -377,9 +417,11 @@ export async function lockCli(argv) {
   if (lock.err) return out(2, lock.err);
   const who = takerOf(got["--for"], lane);
   const pid = sessionPid();
+  if (orphan) return out(...orphansDropped(root, name, lock.slots, what));
   if (sub === "drop") {
-    if (dropLock(root, name, { slots: lock.slots, pid, who }))
-      return out(0, `lock ${name} dropped`);
+    const { dropped, kept } = dropLock(root, name, { slots: lock.slots, pid, who });
+    if (kept !== null) return out(0, `lock ${name}: kept while your run (pid ${kept}) rides it`);
+    if (dropped) return out(0, `lock ${name} dropped`);
     return out(1, say(what, `${name} is not held by ${who}`, "agentry lock show"));
   }
   const ttlText = got["--ttl"] ?? TAKE_TTL;
@@ -405,6 +447,22 @@ export async function lockCli(argv) {
     0,
     `lock ${name} taken by ${who} until ${until} → agentry lock drop ${name}${got["--for"] ? ` --for ${who}` : ""}`,
   );
+}
+
+// `lock drop --orphan`: `[exit, line]` after freeing the slots only a leftover group holds.
+function orphansDropped(root, name, slots, what) {
+  const { freed, alive } = dropOrphans(root, name, slots);
+  if (freed.length)
+    return [
+      0,
+      `lock ${name}: freed the slot of pgid ${freed.join(", ")} (still running: kill -- -${freed[0]} stops it)`,
+    ];
+  if (alive !== null)
+    return [
+      1,
+      say(what, `${name}: its run (pid ${alive}) still lives, not an orphan`, "agentry lock show"),
+    ];
+  return [1, say(what, `${name} has no leftover group to free`, "agentry lock show")];
 }
 
 // `lock show`: one line per declared lock, its holders after it.

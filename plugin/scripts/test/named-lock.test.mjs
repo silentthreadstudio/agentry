@@ -3,12 +3,14 @@
 // refusals. Run: node --test plugin/scripts/test/named-lock.test.mjs
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   dropLock,
+  endRide,
+  extendTake,
   heldLocks,
   lockDir,
   releaseLock,
@@ -240,13 +242,44 @@ test("dropLock frees only the takes of that session and who", () => {
   const dir = repo({ sim: 2 });
   tryLock(dir, "sim", { slots: 2, pid: process.pid, who: "T-1", ttlMs: 60_000 });
   tryLock(dir, "sim", { slots: 2, who: "run" });
-  assert.equal(
+  assert.deepEqual(
     dropLock(dir, "sim", { slots: 2, pid: process.pid, who: "run" }),
-    0,
+    { dropped: 0, kept: null },
     "a run is no take",
   );
-  assert.equal(dropLock(dir, "sim", { slots: 2, pid: process.pid, who: "T-1" }), 1);
+  assert.deepEqual(dropLock(dir, "sim", { slots: 2, pid: process.pid, who: "T-1" }), {
+    dropped: 1,
+    kept: null,
+  });
   assert.deepEqual(readdirSync(lockDir(dir, "sim")), ["slot-2.lock"]);
+});
+
+test("a ridden take stays held after a drop until the ride ends, then goes; a ride's end restores the take's own until", () => {
+  const dir = repo({ sim: 1 });
+  const rider = session();
+  const take = { slots: 1, pid: process.pid, who: "T-1" };
+  tryLock(dir, "sim", { ...take, ttlMs: 60_000 });
+  extendTake(dir, "sim", 1, Date.now() + 3_600_000, rider.pid);
+  assert.ok(heldLocks(dir, "sim", 1)[0].until, "extended");
+  endRide(dir, "sim", 1, rider.pid);
+  const own = Date.parse(JSON.parse(readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"))).until);
+  assert.ok(own < Date.now() + 120_000, "back at its own until");
+  extendTake(dir, "sim", 1, Date.now() + 3_600_000, rider.pid);
+  assert.deepEqual(dropLock(dir, "sim", take), { dropped: 0, kept: rider.pid });
+  assert.equal(heldLocks(dir, "sim", 1).length, 1, "kept while the rider runs");
+  endRide(dir, "sim", 1, rider.pid);
+  assert.equal(heldLocks(dir, "sim", 1).length, 0, "gone with the ride");
+});
+
+test("a take whose rider died is back at its own until, so it ends at its ttl", async () => {
+  const dir = repo({ sim: 1 });
+  const rider = session();
+  tryLock(dir, "sim", { slots: 1, pid: process.pid, who: "T-1", ttlMs: 500 });
+  extendTake(dir, "sim", 1, Date.now() + 3_600_000, rider.pid);
+  assert.equal(heldLocks(dir, "sim", 1).length, 1);
+  await rider.end();
+  await new Promise((r) => setTimeout(r, 700));
+  assert.equal(heldLocks(dir, "sim", 1).length, 0);
 });
 
 test("a take with no session pid refreshes its own slot for the same --for; another --for still waits", () => {
