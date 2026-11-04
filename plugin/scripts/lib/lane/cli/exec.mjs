@@ -489,46 +489,58 @@ function allowedCommit(root, allow, all) {
 // The board's own files (field 75), as the process file `spec` names them and `read.mjs` resolves them,
 // from the root: each kind's table, contract blocks and create blocks and `status.note` as `paths`, and
 // each kind's `at.files` and `file.glob` (its `{id}` any name) as `globs`, so an item file made or removed
-// passes too. A path or glob that leaves the board root (`status.note`: the repository) is left out.
+// passes too. A path or glob is kept when it stays inside the repository, the test the spec's own check
+// uses (`escapesRoot(spec.root, p)`); an item id never builds one.
 function boardPaths(spec) {
   const paths = [];
   const globs = [];
   const base = typeof spec?.root === "string" ? spec.root : ".";
   if (!spec || escapesRoot(".", base)) return { paths, globs };
-  const inBoard = (p) => typeof p === "string" && p !== "" && !escapesRoot(".", p);
+  const inRepo = (from) => (p) => typeof p === "string" && p !== "" && !escapesRoot(from, p);
   for (const kind of Object.values(spec.kinds ?? {})) {
     paths.push(kind?.at?.table, ...[kind?.contract?.blocks ?? []].flat());
     paths.push(...[kind?.create?.blocks ?? []].flat().map((b) => b?.file));
     globs.push(kind?.at?.files, kind?.file?.glob?.replaceAll?.("{id}", "*"));
   }
   const fromBase = (list) => [
-    ...new Set(list.filter(inBoard).map((p) => posix.normalize(posix.join(base, p)))),
+    ...new Set(list.filter(inRepo(base)).map((p) => posix.normalize(posix.join(base, p)))),
   ];
   const note = spec.status?.note;
   return {
-    paths: [...fromBase(paths), ...(inBoard(note) ? [posix.normalize(note)] : [])],
+    paths: [...fromBase(paths), ...(inRepo(".")(note) ? [posix.normalize(note)] : [])],
     globs: fromBase(globs),
   };
 }
 
 // The process file and its workflow file as main's HEAD commits them (paths from the root), parsed as
-// `loadSpec` parses them: null when the process file is not there or has a problem. What the board names
-// is read from here, never from the working tree, so an uncommitted edit cannot widen the guard (F1).
+// `loadSpec` parses them: `{ tracked: false }` when HEAD has no process file there, else `{ tracked: true,
+// spec }`, the spec null when it has a problem.
 function committedSpec(root, processRel, workflowRel) {
   const at = (path) => {
     const res = git(root, ["show", `HEAD:${path}`]);
     return res.status === 0 ? res.stdout : undefined;
   };
   const board = at(processRel);
-  if (board === undefined) return null;
+  if (board === undefined) return { tracked: false };
   const { spec, problems } = parseSpec({ board, workflow: at(workflowRel) });
-  return spec && !problems.length ? spec : null;
+  return { tracked: true, spec: spec && !problems.length ? spec : null };
 }
 
-// What the guards let through as `guard.allow` paths: its globs, Agentry's config in use (field 58),
-// the process file and its workflow file as `loadSpec` resolves them, from the root, and the board's
-// own files (`boardPaths`) as the process file at HEAD names them.
-function allowOf({ root, spec, processPath }) {
+// The board paths a lane's guard lets through, never widened by an edit made after it started (F1, F2a):
+// the process file as main's HEAD commits it when it is tracked there, else the paths `start` saved in
+// the ledger (`boardAtStart`) from the spec as it loaded then; an older ledger without them, none.
+function boardOf(root, ledger, processRel, workflowRel) {
+  const committed = processRel ? committedSpec(root, processRel, workflowRel) : { tracked: false };
+  if (committed.tracked) return boardPaths(committed.spec);
+  const saved = ledger?.boardAtStart;
+  const strings = (list) => (Array.isArray(list) ? list.filter((p) => typeof p === "string") : []);
+  return { paths: strings(saved?.paths), globs: strings(saved?.globs) };
+}
+
+// What the guards let through as `guard.allow` paths for `ledger`'s guard: its globs, Agentry's config in
+// use (field 58), the process file and its workflow file as `loadSpec` resolves them, from the root, and
+// the board's own files (`boardOf`).
+function allowOf({ root, spec, processPath }, ledger) {
   const file = processPath ?? join(root, ".agentry", "process.json");
   let dir;
   try {
@@ -545,9 +557,7 @@ function allowOf({ root, spec, processPath }) {
       )
     : [];
   const config = [processRel, workflowRel].filter(inRepo);
-  const board = boardPaths(
-    inRepo(processRel) ? committedSpec(root, processRel, workflowRel) : null,
-  );
+  const board = boardOf(root, ledger, inRepo(processRel) ? processRel : null, workflowRel);
   return { globs: own(spec, "guard")?.allow ?? [], config, board };
 }
 const allowsPath = (allow, path) =>
@@ -630,7 +640,7 @@ function configTrips(root, allow, dirty) {
 // (or null), `allowed` the commits on main `guard.allow` let through.
 function mainGuard(ctx, ledger, all) {
   const { root, spec, model } = ctx;
-  const allow = allowOf(ctx);
+  const allow = allowOf(ctx, ledger);
   const was = ledger.mainAtStart;
   const head = headOf(root);
   const others = all.filter((l) => l.id !== ledger.id);
@@ -1127,6 +1137,8 @@ function start(ctx, id) {
     worktree: tree.path,
     branch: tree.branch,
     mainAtStart: mainSnapshot(root),
+    // What the guard lets through as board files when the process file is not tracked (F2a).
+    boardAtStart: boardPaths(spec),
     worktreesAtStart: worktrees(root).map((t) => t.path),
     owned: withNew(tree.path, ownedFiles(found.block, tree.path)),
     ...(found.steps?.length && { steps: found.steps }),
