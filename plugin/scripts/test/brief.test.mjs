@@ -21,13 +21,14 @@ import {
   recheckSlots,
   relatedNotes,
   renderBrief,
+  rewordSlots,
   slotsOf,
   stepSlots,
   suggestBuilder,
   withNew,
 } from "../lib/lane/brief.mjs";
 import { readProcess } from "../lib/process/read.mjs";
-import { commitFile, git } from "./git-repo.mjs";
+import { commitFile, git, tempRepo } from "./git-repo.mjs";
 
 const temps = [];
 after(() => {
@@ -671,7 +672,8 @@ const VALUES = {
 };
 
 test("every template uses only the slots the CLI fills, and renders with none left", () => {
-  const known = new Set([...Object.keys(VALUES), "inner"]);
+  // The rebase brief's Reword slots are its own (rewordSlots), read from the lane's commits.
+  const known = new Set([...Object.keys(VALUES), ...Object.keys(rewordSlots({})), "inner"]);
   for (const file of readdirSync(TEMPLATES)) {
     const extra = slotsOf(readFileSync(join(TEMPLATES, file), "utf8")).filter((s) => !known.has(s));
     assert.deepEqual(extra, [], `${file} uses unknown slots`);
@@ -1111,4 +1113,87 @@ test("ownsTestsWithoutFile is false when an owned path is a test file, or no tes
       path,
     );
   assert.equal(ownsTestsWithoutFile("**Owns:** `src/a.mjs`."), false);
+});
+
+// --- the rebase brief's Reword list (field 92) -------------------------------------------------------
+
+const RULES = { subjectMax: 20, subjectPattern: "^(feat|fix): " };
+/** A repo with main and a lane branch `agentry/T1` holding `subjects`, one commit each, oldest first. */
+function laneRepo(subjects) {
+  const r = tempRepo();
+  temps.push(r.dir);
+  git(r.dir, "switch", "-q", "-c", "agentry/T1");
+  const shas = subjects.map((subject, i) => commitFile(r.dir, `f${i}.txt`, `${i}\n`, subject));
+  git(r.dir, "switch", "-q", "main");
+  return { dir: r.dir, shas };
+}
+const rebaseOf = (dir, spec) =>
+  renderBrief("rebase", { ...VALUES, mainRoot: dir, ...policySlots(spec, "rebase") });
+
+test("the rebase brief lists each commit that breaks a commits rule under Reword, with its why", () => {
+  const { dir, shas } = laneRepo(["feat: fine", `feat: ${"x".repeat(30)}`, "wip: half"]);
+  const text = rebaseOf(dir, { commits: RULES });
+  const section = text.slice(text.indexOf("## Reword"), text.indexOf("## Report"));
+  assert.ok(
+    section.includes(
+      `- reword ${shas[1].slice(0, 7)} "feat: ${"x".repeat(30)}": subject is 36 chars (commits.subjectMax 20)`,
+    ),
+    section,
+  );
+  assert.ok(
+    section.includes(
+      `- reword ${shas[2].slice(0, 7)} "wip: half": subject does not match commits.subjectPattern`,
+    ),
+  );
+  assert.ok(
+    !section.includes(shas[0].slice(0, 7)),
+    "a commit that keeps every rule is never listed",
+  );
+  assert.match(text, /no reworded commit, except the ones listed under Reword, no extra commit/);
+  assert.equal(text.split("## Reword").length, 2);
+  assert.ok(text.indexOf("owns `a.txt`") < text.indexOf("## Reword"), "after the contract");
+});
+
+test("a rebase brief with no broken commit, or no commits rules, is unchanged", () => {
+  const { dir } = laneRepo(["feat: fine", "fix: also fine"]);
+  const plain = renderBrief("rebase", { ...VALUES, mainRoot: dir });
+  assert.equal(rebaseOf(dir, { commits: RULES }), plain);
+  assert.equal(rebaseOf(dir, {}), plain);
+  assert.doesNotMatch(plain, /Reword|reword \w/);
+  assert.match(plain, /no clean-up, no reworded commit, no extra commit\./);
+});
+
+test("rewordSlots: only the commits the land would pick, a commit already on main left out", () => {
+  const { dir, shas } = laneRepo(["wip: one", "wip: two"]);
+  git(dir, "cherry-pick", shas[0]);
+  const slots = rewordSlots({
+    commitRules: RULES,
+    mainRoot: dir,
+    branch: "agentry/T1",
+    mainBranch: "main",
+  });
+  assert.equal(slots.reword, true);
+  assert.deepEqual(
+    slots.rewordLines.split("\n").map((l) => l.split(" ")[2]),
+    [shas[1].slice(0, 7)],
+  );
+  const none = rewordSlots({
+    commitRules: RULES,
+    mainRoot: dir,
+    branch: "nope",
+    mainBranch: "main",
+  });
+  assert.deepEqual(
+    none,
+    { reword: false, rewordExcept: "", rewordLines: "" },
+    "git cannot say: no list",
+  );
+});
+
+test("policySlots carries the commits rules to a rebase brief only", () => {
+  const spec = { commits: RULES };
+  assert.deepEqual(policySlots(spec, "rebase").commitRules, RULES);
+  assert.equal(policySlots({}, "rebase").commitRules, null);
+  for (const step of [...BUILDER_STEPS, ...VERIFIER_STEPS, "resolve"])
+    assert.equal(Object.hasOwn(policySlots(spec, step), "commitRules"), false, step);
 });

@@ -27,11 +27,14 @@
 //   policySlots     the repo's policy lines (workflow file `briefs`) for a dispatch, as the brief's section
 //   recheckSlots    what a recheck, rebase and resolve brief name: the notes sent back, main's branch and
 //                   the range-diff the resolve check reads
+//   rewordSlots     the rebase brief's Reword list: each commit the land would pick that breaks the
+//                   workflow file's `commits` rules (`policySlots` carries the rules to it)
 //   renderBrief     a template filled; every `{{slot}}` must be given, so a template can't drift silently
 //   withSection     a rendered brief with a section put in before its first `## ` section
 //   ownerChange     the owner's change a verified lane was sent back with, as a builder's or verifier's section
 //
-// Reads the board's files and the memory store; writes nothing. Node built-ins only.
+// Reads the board's files, the memory store and (for a rebase) the lane's commits; writes nothing. Node
+// built-ins only.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -41,6 +44,8 @@ import { readInside } from "../process/read.mjs";
 import { own } from "../process/spec/shape.mjs";
 import { runText } from "../process/steps.mjs";
 import { answerLine } from "./exec-view.mjs";
+import { toLand } from "./land.mjs";
+import { checkCommits, readCommits, rulesOf } from "./subjects.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const TEMPLATES = join(
@@ -683,14 +688,16 @@ export function renderBrief(step, values) {
   const name = Object.hasOwn(TEMPLATE_OF, step) ? TEMPLATE_OF[step] : null;
   if (!name) throw new Error(`no brief template for step "${step}"`);
   const inner = Object.hasOwn(WRAPS, name) ? body(fill(read(WRAPS[name]), values)) : "";
-  return fill(read(name), { ...values, inner });
+  const own = name === "rebase" ? { ...rewordSlots(values), ...values } : values;
+  return fill(read(name), { ...own, inner });
 }
 
 /** The repo-policy slots for dispatch `step`: the workflow file's `briefs` list for its role (`build` for a
  *  builder's step, the rebase included; `verify` for a verifier's, the resolve check included), each line a
  *  bullet, printed as written. No list, no section.
  *  With the workflow file's `locks`, the time-limit rule's lock line (`locked`): `lockTake` is the take
- *  command, the lock named when there is one, else `<name>` and the names. */
+ *  command, the lock named when there is one, else `<name>` and the names.
+ *  For a rebase, `commitRules` too: the workflow file's `commits` (or null), which `rewordSlots` reads. */
 export function policySlots(spec, step) {
   const name = Object.hasOwn(TEMPLATE_OF, step) ? TEMPLATE_OF[step] : null;
   const role = ["build", "fix", "rebase"].includes(name) ? "build" : "verify";
@@ -705,6 +712,28 @@ export function policySlots(spec, step) {
     policyLines: bullets(lines),
     locked: locks.length > 0,
     lockTake: locks.length ? lockTake : "",
+    ...(name === "rebase" && { commitRules: rulesOf(spec) }),
+  };
+}
+
+/** The rebase brief's Reword slots (field 92): the commits the land would pick (`branch` past
+ *  `mainBranch`, in `mainRoot`) that break `commitRules` (the workflow file's `commits`), one
+ *  `- reword <short sha> "<subject>": <why>` line each in `rewordLines`; `reword` turns the section on and
+ *  `rewordExcept` lets rule 3 name it. A commit git cannot read is the land's to report, never listed.
+ *  No rules or no broken commit: every slot off, so the brief reads as without them. */
+export function rewordSlots({ commitRules, mainRoot, branch, mainBranch }) {
+  const plan = commitRules ? toLand(mainRoot, { main: mainBranch, branch }) : null;
+  const commits = plan && !plan.error ? readCommits(mainRoot, plan.picks) : [];
+  const broken = checkCommits(
+    commitRules ?? {},
+    commits.filter((c) => c.failed === undefined),
+  );
+  return {
+    reword: broken.length > 0,
+    rewordExcept: broken.length > 0 ? ", except the ones listed under Reword" : "",
+    rewordLines: broken
+      .map((c) => `- reword ${c.sha.slice(0, 7)} "${c.subject}": ${c.why}`)
+      .join("\n"),
   };
 }
 

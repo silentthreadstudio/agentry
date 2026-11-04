@@ -28,7 +28,7 @@ The lane refused your last report ({{from}}): {{reason}}. Fix exactly that, then
 1. `{{cd}} && git rebase {{mainBranch}}` (no `-i`).
 2. At each conflict keep both sides' intent: what `{{mainBranch}}` changed and what this branch changed. Resolve
    only the conflicted hunks, then `git add` them and `git rebase --continue`.
-3. Change nothing else: no new feature, no clean-up, no reworded commit, no extra commit. A conflict you
+3. Change nothing else: no new feature, no clean-up, no reworded commit{{rewordExcept}}, no extra commit. A conflict you
    cannot settle without a decision is `BLOCKED`, naming the files and both sides.
 4. Finish the rebase: no rebase left in progress, no uncommitted or untracked files. Do not merge or push.
    The gate is the lane's: it runs on the new tip after you report.
@@ -37,6 +37,15 @@ The contract, for what this branch's side means:
 
 {{block}}
 
+{{#reword}}
+## Reword
+
+The land refuses these commits: each breaks the workflow file's `commits` rules. Reword each one as you
+rebase, its message only (its change stays as it is), without an interactive editor, so it keeps every rule.
+
+{{rewordLines}}
+
+{{/reword}}
 {{#policy}}
 ## Repo policy (overrides the contract where they differ)
 
