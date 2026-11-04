@@ -15,15 +15,16 @@
 // once a second it looks at the parent (`--start` its start time, so a reused pid does not pass for it);
 // once the parent is no longer alive, the command's group goes and each `--free` slot file the dead parent
 // still holds is freed after it. Started leading its own group (`runGate` starts it detached), it keeps the
-// command in that group: whoever started it kills that group when the watchdog ends, however it ends, and
-// on the parent's death it leaves a reaper (`--reap <pgid>`, outside the group) to free the slots, then
-// kills the group it verified it leads. Not leading one, it gives the command a group of its own and only
+// command in that group and records that group (`pgid`, `pgStart`: its own) in each `--free` slot, so the
+// slot stays held while the command runs. Whoever started it kills that group when the watchdog ends,
+// however it ends, and on the parent's death it leaves a reaper (`--reap <pgid>`, outside the group) to
+// free the slots, then kills the group it verified it leads. Not leading one, it gives the command a group of its own and only
 // ever signals that group (SIGTERM, a holder's timeout, kills it, then the watchdog ends by SIGKILL).
 // `watchdogArgv` builds that argv. Node built-ins only.
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { freeDeadHolder } from "../lane/gate-lock.mjs";
+import { freeDeadHolder, recordGroup } from "../lane/gate-lock.mjs";
 import { alive, groupRunning, identity } from "../process/pid.mjs";
 import { say } from "./help.mjs";
 
@@ -220,6 +221,10 @@ function watch(argv) {
   // command gets a group of its own, and that group is all the watchdog ever signals.
   const leader = leadsGroup();
   const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", detached: !leader });
+  // A leader's group is the command's: each slot the parent holds records it, so the slot stays held while
+  // the command runs even should the parent and this watchdog both die by SIGKILL (the sweep then stops it).
+  if (leader && child.pid !== undefined)
+    for (const file of free) recordGroup(file, parent, process.pid);
   const endChild = async () => {
     if (child.pid === undefined) return;
     signalGroup(child.pid, "SIGKILL");

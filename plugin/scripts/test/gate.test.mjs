@@ -724,3 +724,44 @@ for (const signal of ["SIGKILL", "SIGHUP", "SIGINT", "SIGTERM"])
       killAll([...pids, run.pid]); // R1d-37 r7 N19: a red run left its sleep 40 running
     }
   });
+
+// R1d-37 r7 N17 (probe p15): the gate process and its watchdog SIGKILLed at once left the gate command
+// running, its slot read free, and the sweep freed it without stopping the command.
+test("SIGKILL of lane exec gate and its watchdog together: the slot holds for the command's group, and the sweep stops it", async () => {
+  const lane = join(dirname(new URL(import.meta.url).pathname), "..", "lane.mjs");
+  const { root, run, pids } = await gateRunning(join(logs, "gate.pids"));
+  try {
+    assert.equal(pids.length, 2, "the gate command and its child run");
+    const watchdog = watchdogOf(pids);
+    const slot = join(root, ".agentry", "run", "gate-locks", "slot-1.lock");
+    const recorded = () => JSON.parse(readFileSync(slot, "utf8")).pgid;
+    for (let i = 0; i < 100 && recorded() !== watchdog; i++)
+      await new Promise((r) => setTimeout(r, 20));
+    assert.equal(recorded(), watchdog, "the slot records the watchdog's group");
+    const returned = new Promise((resolve) => run.on("exit", resolve));
+    process.kill(run.pid, "SIGKILL");
+    process.kill(watchdog, "SIGKILL");
+    await returned;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(pids.filter(alive), pids, "nothing was left to stop the command");
+    const { heldSlots } = await import("../lib/lane/gate-lock.mjs");
+    assert.deepEqual(
+      heldSlots(join(root, ".agentry", "run", "gate-locks")).map((h) => h.slot),
+      [1],
+      "a next gate waits: the slot is held while the group runs",
+    );
+    const swept = spawnSync(process.execPath, [lane, "sweep", "--apply", "--root", root], {
+      encoding: "utf8",
+      env: { ...gitEnv, HOME: logs },
+    });
+    assert.equal(swept.status, 0, swept.stdout + swept.stderr);
+    assert.match(
+      swept.stdout,
+      new RegExp(`freed gate slot 1: its holder is gone\\n {4}group ${watchdog} stopped`),
+    );
+    assert.deepEqual(pids.filter(alive), [], "the sweep stopped the gate command's group");
+    assert.deepEqual(readdirSync(join(root, ".agentry", "run", "gate-locks")), []);
+  } finally {
+    killAll([...pids, run.pid]);
+  }
+});

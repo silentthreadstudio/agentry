@@ -251,17 +251,35 @@ export function heldHere(file, held) {
   else ownSlots.delete(file);
 }
 
+// Does slot record `record` name process `who` (an identity: `pid`, and `start` when known)?
+const sameHolder = (record, who) =>
+  record?.pid === who.pid &&
+  !(
+    typeof record.start === "string" &&
+    typeof who.start === "string" &&
+    record.start !== who.start
+  );
+
+/** Record group `pgid` (by its leader's identity) in slot `file` when process `holder` (an identity) holds
+ *  it, inside its mutex: the slot then stays held while a member of that group runs. A group already
+ *  recorded and still running is kept. True when it was written. */
+export function recordGroup(file, holder, pgid) {
+  const { start } = identity(pgid);
+  return serialized(file, () => {
+    const now = holderOf(file);
+    if (!sameHolder(now, holder) || (now.pgid !== pgid && liveGroup(now) !== null)) return false;
+    atomicWrite(file, JSON.stringify({ ...now, pgid, ...(start !== null && { pgStart: start }) }));
+    return true;
+  });
+}
+
 /** Free slot `file` when process `parent` (an identity) held it and both it and the group it recorded are
  *  gone, inside its mutex: a watchdog's cleanup after its parent died. True when it was removed. */
 export function freeDeadHolder(file, parent) {
   return serialized(file, () => {
     const holder = holderOf(file);
-    if (holder?.pid !== parent.pid) return false;
-    const other =
-      typeof holder.start === "string" &&
-      typeof parent.start === "string" &&
-      holder.start !== parent.start;
-    if (other || holderAlive(holder) || liveGroup(holder) !== null) return false;
+    if (!sameHolder(holder, parent) || holderAlive(holder) || liveGroup(holder) !== null)
+      return false;
     rmSync(file, { force: true });
     return true;
   });
@@ -318,16 +336,7 @@ export function holdGate(
   };
   // Record the process group of the command that runs under the slots held, by its leader's identity.
   const group = (pgid) => {
-    const { start } = identity(pgid);
-    for (const n of held) {
-      const file = slotFile(dir, n);
-      serialized(file, () => {
-        const holder = holderOf(file);
-        if (holder?.pid !== process.pid) return;
-        const group = { pgid, ...(start !== null && { pgStart: start }) };
-        atomicWrite(file, JSON.stringify({ ...holder, ...group }));
-      });
-    }
+    for (const n of held) recordGroup(slotFile(dir, n), recordOf(), pgid);
   };
   const deadline = Date.now() + waitSec * 1000;
   let waited = false;
