@@ -89,10 +89,14 @@ const NEAR_WORDS = new Set([
 const NEAR = 6;
 
 /** `exec start`'s hint when no step marker and no `**Model…**` bullet names a model but the contract's prose
- *  names one of the known model words near "model" or a role word; null otherwise. */
+ *  (outside code fences, code spans and paths) names one of the known model words near "model" or a role
+ *  word; null otherwise. */
 export function proseModelHint(block, steps = []) {
   if (steps.some((s) => s.model) || bulletOf(block, String.raw`model(?: \(verify\))?`)) return null;
+  // Prose only: code spans and path-like tokens (`src/opus/model.ts`, `model.ts`) name no model.
   const words = unfenced(block)
+    .replace(/`[^`]*`/g, " ")
+    .replace(/\S*(?:\/|\w\.\w)\S*/g, " ")
     .toLowerCase()
     .split(/[^a-z]+/)
     .filter(Boolean);

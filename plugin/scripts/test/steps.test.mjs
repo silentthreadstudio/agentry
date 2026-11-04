@@ -268,3 +268,63 @@ test("runMark: the run's first step naming the key, as step N; null without a ru
   assert.equal(runMark(steps, null, "model"), null);
   assert.equal(runMark([], [1, 1], "model"), null);
 });
+
+// Round 3's review: a code span, a paragraph that ends early, bold at a wrap, and marker spelling.
+test("a number inside a code span never splits an inline step, so its owner gate stays", () => {
+  const { steps, problem } = stepsOf(
+    "- **Steps:** 1. Run `make 2. x` → owner OK 2. Wire (agent: designer)",
+  );
+  assert.equal(problem, null);
+  assert.deepEqual(steps, [
+    { n: 1, text: "Run `make 2. x`", gate: "owner", accept: [] },
+    { n: 2, text: "Wire", gate: null, accept: [], agent: "designer" },
+  ]);
+  assert.deepEqual(runOf(steps, 1), [1, 1]);
+});
+
+test("a numbered line left in the Steps part after the inline paragraph is a problem, never dropped", () => {
+  const problem = (left) =>
+    `a numbered line follows the inline steps' paragraph (${left}): keep the steps in one paragraph or put one per line`;
+  assert.equal(
+    stepsOf("**Steps:** 1. One\n\n2. Two\n3. Three\n- **Deps:** none").problem,
+    problem("2. Two"),
+  );
+  assert.equal(
+    stepsOf("- **Steps:** 1. a\n  ```\n  2. code\n  ```\n  3. after").problem,
+    problem("3. after"),
+  );
+});
+
+test("a wrapped inline line that starts with bold text continues the paragraph; a labelled part ends it", () => {
+  assert.deepEqual(
+    stepsOf("- **Steps:** 1. Write the\n  **parser** now 2. Ship\n- **Deps:** none").steps.map(
+      (s) => s.text,
+    ),
+    ["Write the **parser** now", "Ship"],
+  );
+  assert.deepEqual(
+    stepsOf("- **Steps:** 1. One 2. Two\n- **Deps**: 3. not a step").steps.map((s) => s.text),
+    ["One", "Two"],
+  );
+});
+
+test("marker keys and values are read in any case, in lower case", () => {
+  const { steps, problem } = stepsOf(
+    "**Steps:** 1. a (Model: Opus) 2. b (MODEL: opus, Agent: Designer)",
+  );
+  assert.equal(problem, null);
+  assert.deepEqual(
+    steps.map((s) => [s.model, s.agent]),
+    [
+      ["opus", undefined],
+      ["opus", "designer"],
+    ],
+  );
+});
+
+test("a marker value with a space is a problem naming the step", () => {
+  assert.equal(
+    stepsOf("- **Steps:**\n  1. a\n  2. b (model: opus agent: designer)").problem,
+    `step 2's marker names model "opus agent: designer": a marker value is one word, and its keys are split by a comma`,
+  );
+});

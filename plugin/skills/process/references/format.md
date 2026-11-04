@@ -402,8 +402,8 @@ In `workflow.json`:
   names for its run, then the contract's `- **Agent:** <designer|implementer>` bullet, then the owned paths
   (designer when one is UI-shaped). A step or the contract adds `"from": "step 1"` or `"from": "contract"` to
   the line; the owned paths' suggestion is printed as before (`{ "agent", "why" }`).
-- When no step marker and no `**Model…**` bullet names a model but the contract's prose names opus, sonnet,
-  haiku or fable within six words of "model" or a role word (build, builder, verify, verifier, implementer,
+- When no step marker and no `**Model…**` bullet names a model but the contract's prose (not a code span or
+  a path) names opus, sonnet, haiku or fable within six words of "model" or a role word (build, builder, verify, verifier, implementer,
   designer), `exec start` prints `hint: the contract mentions <word> in prose: add - **Model:** <word> (or a
   step marker) to make it the dispatch`. The dispatch is unchanged.
 

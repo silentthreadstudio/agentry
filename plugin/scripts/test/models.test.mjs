@@ -84,6 +84,19 @@ test("no prose hint when a bullet or a step marker names the model, or the word 
   assert.equal(proseModelHint("```\nthe builder runs opus\n```"), null);
 });
 
+test("no prose hint from a model word inside a code span or a path", () => {
+  assert.equal(proseModelHint("- **T1**: owns `src/opus/model.ts`. Accept: it builds."), null);
+  assert.equal(proseModelHint("- **T1**: the builder reads `model=haiku` from the config."), null);
+  assert.equal(
+    proseModelHint("- **T1**: owns src/opus/model.ts and models/sonnet.json for the build."),
+    null,
+  );
+  assert.match(
+    proseModelHint("- **T1**: owns `a.ts`; the builder runs opus.") ?? "",
+    /mentions opus/,
+  );
+});
+
 // ---- lane exec start: the printed lines ------------------------------------------------------------
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
@@ -105,7 +118,10 @@ const EXEC_SPEC = {
       label: "Task",
       at: { table: "BOARD.md", heading: "Tasks" },
       id: { column: "Task" },
-      fields: { status: { column: "Status" } },
+      fields: {
+        status: { column: "Status" },
+        flag: { column: "Flag", type: "flag", mark: "x" },
+      },
       status: { field: "status", values: { todo: "planned", doing: "active", done: "done" } },
       contract: { blocks: ["TASKS.md"] },
     },
@@ -119,7 +135,7 @@ const EXEC_SPEC = {
   models: { build: "haiku" },
 };
 
-function start(tasks, id = "T1") {
+function start(tasks, extra = {}, id = "T1") {
   const root = temp("models-repo-");
   const home = temp("models-home-");
   git(root, "init", "-q", "-b", "main");
@@ -128,10 +144,10 @@ function start(tasks, id = "T1") {
   commitFile(
     root,
     "plan/BOARD.md",
-    `# Models\n\n## Tasks\n\n| Task | Status |\n| ---- | ------ |\n| ${id}   | todo   |\n`,
+    `# Models\n\n## Tasks\n\n| Task | Status | Flag |\n| ---- | ------ | ---- |\n| ${id}   | todo   |      |\n`,
   );
   commitFile(root, "plan/TASKS.md", `# Tasks\n\n${tasks}\n`);
-  writeSpec(join(root, ".agentry"), EXEC_SPEC);
+  writeSpec(join(root, ".agentry"), { ...EXEC_SPEC, ...extra });
   git(root, "add", ".agentry");
   git(root, "commit", "-q", "-m", "add the process files");
   const run = (...args) =>
@@ -183,4 +199,24 @@ test("exec start: a contract with no markers dispatches as before, and prose nam
     prose.json.hint,
     "the contract mentions opus in prose: add - **Model:** opus (or a step marker) to make it the dispatch",
   );
+});
+
+test("exec start: the route's unused-ui warning sees a designer named by a step or the Agent bullet", () => {
+  const route = {
+    exec: { verify: "flagged" },
+    models: { verify: { ui: "ui-m", flagged: "flag-m" } },
+  };
+  const unused = /! models\.verify\.ui is unused/;
+  const stepped = start(
+    "- **T1**: owns `out.txt`. Accept: out.txt exists.\n  - **Steps:** 1. Draw it (agent: designer) 2. Ship it",
+    route,
+  );
+  assert.match(stepped.json.route, unused);
+  const bullet = start(
+    "### T1 · Bullet\n\n- **Owns:** `out.txt`\n- **Agent:** designer\n- **Acceptance:** out.txt exists.",
+    route,
+  );
+  assert.match(bullet.json.route, unused);
+  const plain = start("- **T1**: owns `out.txt`. Accept: out.txt exists.", route);
+  assert.doesNotMatch(plain.json.route, unused);
 });

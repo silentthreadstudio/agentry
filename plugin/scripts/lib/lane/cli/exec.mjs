@@ -1335,11 +1335,20 @@ function lightContract(block, root) {
   return ownedFiles(prose, root).length > 0 && lines.some((l) => ACCEPTANCE.test(l));
 }
 
-// The route `start` prints: with the `models.verify.ui` warning for a UI-shaped item that is not flagged
-// when the route verifies only flagged items (field 70).
-function startRoute({ spec }, ledger) {
+// The route `start` prints: with the `models.verify.ui` warning for an item a designer builds (its first
+// run's step marker, its Agent bullet or a UI-shaped path) that is not flagged when the route verifies only
+// flagged items (field 70).
+function startRoute({ root, spec }, ledger) {
   const route = routeText(ledger.route);
-  const ui = suggestBuilder(ledger.owned.map((o) => o.path)).agent === "designer";
+  const ui =
+    suggestBuilder(
+      ledger.owned.map((o) => o.path),
+      {
+        contract: readOr(contractFile(root, ledger.id)),
+        steps: ledger.steps ?? [],
+        stepRun: ledger.rounds.at(-1)?.stepRun ?? null,
+      },
+    ).agent === "designer";
   const unused = ui && !ledger.route.flagged && unusedUiModel(spec.models, ledger.route.verify);
   return unused ? `${route} · ${unused}` : route;
 }
