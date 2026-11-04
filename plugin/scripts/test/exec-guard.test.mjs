@@ -119,10 +119,11 @@ function commitBoard(root) {
   const text = readFileSync(join(root, BOARD), "utf8");
   commitFile(root, BOARD, `${text}\nOne more line by hand.\n`, "chore: commit the board");
 }
-// The rebase round: the builder rebases onto main and reports.
-function rebased(r) {
+// The rebase round: the builder rebases onto main and reports; `during` runs on main while it is out.
+function rebased(r, during = () => {}) {
   const out = lane(r, "rebase", "T1").json;
   assert.equal(out.next, "rebase");
+  during();
   git(out.worktree, "rebase", "-q", "main");
   done(out, "rebased onto main");
   return lane(r, "report", "T1");
@@ -167,7 +168,12 @@ test("a ledger already rebased with the mid-write board in its snapshot reports 
   let out = lane(r, "start", "T1").json;
   commitBoard(r.root);
   const ledger = ledgerOf(r.root, "T1");
-  ledger.mainAtStart.head = git(r.root, "rev-parse", "HEAD");
+  const head = git(r.root, "rev-parse", "HEAD");
+  const tip = git(r.root, "rev-parse", "agentry/T1");
+  ledger.rebases = [
+    { fromBase: ledger.base, fromTip: tip, mainHead: head, toBase: ledger.base, toTip: tip },
+  ];
+  ledger.mainAtStart.head = head;
   writeLedger(r.root, ledger);
   commitFile(out.worktree, "one.txt", "one\n", "feat: one");
   assert.equal(lane(r, "hold", "T1", "--for", "later").exit, 0);
@@ -189,4 +195,26 @@ test("a path clean on main whose start is not the lane's own board write is stil
   const res = lane(r, "report", "T1");
   assert.equal(res.json.hold?.for, "guard", res.stderr);
   assert.match(res.json.guards[0], /plan\/BOARD\.md \(back to HEAD\)/);
+});
+
+test("with no rebase, the lane's own board row discarded on main still trips back to HEAD", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  git(r.root, "checkout", "--", BOARD);
+  commitFile(out.worktree, "one.txt", "one\n", "feat: one");
+  done(out, "added one.txt");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.json.hold?.for, "guard", res.stderr);
+  assert.match(res.json.guards[0], /plan\/BOARD\.md \(back to HEAD\)/);
+});
+
+test("a path dirty at start and discarded during the rebase round keeps its start and trips", () => {
+  const r = repo();
+  writeFileSync(join(r.root, "notes.txt"), "half\n");
+  verified(r);
+  const res = rebased(r, () => git(r.root, "checkout", "--", "notes.txt"));
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.hold?.for, "guard", JSON.stringify(res.json));
+  assert.match(res.json.guards[0], /notes\.txt \(back to HEAD\)/);
+  assert.ok(Object.hasOwn(ledgerOf(r.root, "T1").mainAtStart.files, "notes.txt"));
 });

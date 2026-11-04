@@ -451,8 +451,9 @@ function reachable(moves, from, to) {
 }
 
 // The main files whose content no recorded lifecycle or board write explains, and whose path `excused`
-// does not let through, as `git status` entries. A path clean on main whose start is one of the lane's own
-// board writes was mid-write at start and is as HEAD holds it now: never "back to HEAD" (field 93).
+// does not let through, as `git status` entries. Once a rebase moved the guard's start, a path clean on main
+// whose start is one of the lane's own board writes was mid-write at start and is as HEAD holds it now:
+// never "back to HEAD" (field 93). Before that, a discard of the board is a trip as any other.
 function strayFiles(root, ledger, head, all, boards, excused) {
   const was = ledger.mainAtStart;
   const started = was.files ?? {};
@@ -468,7 +469,10 @@ function strayFiles(root, ledger, head, all, boards, excused) {
     ...all.flatMap((l) => l.boardWrites ?? []).filter((m) => boards.has(m.file)),
     ...logged,
   ];
-  const ownWrites = new Set((ledger.boardWrites ?? []).map((m) => `${m.file}\0${m.to}`));
+  const moved = (ledger.rebases ?? []).some((r) => !r.carried);
+  const ownWrites = new Set(
+    moved ? (ledger.boardWrites ?? []).map((m) => `${m.file}\0${m.to}`) : [],
+  );
   const changed = paths
     .filter((p) => {
       const start = Object.hasOwn(started, p) ? started[p] : atStart[p];
@@ -1719,9 +1723,10 @@ function keepRangeDiff(root, id, n, res) {
 // The rebase the last `rebases[]` entry started, finished at `tip`: the base becomes the new merge base
 // with main, and the range-diff of old base..old tip against new base..new tip goes to
 // `logs/range-diff-<n>.txt`. The main guard's start moves to the new base, up to main's HEAD as the entry
-// recorded it, and its snapshot with it (field 93): a path clean on main now is as HEAD holds it, so its
-// start entry goes; a path still dirty keeps its start, so an edit made since still trips. Changes
-// `ledger` in place; returns `changed`.
+// recorded it, and its snapshot with it (field 93): a path clean on main now whose content the commits
+// from the old start to the new one changed was committed, so its start entry goes; a path still dirty,
+// or clean with those commits leaving it as it was (its edit discarded), keeps its start, so it still
+// trips. Changes `ledger` in place; returns `changed`.
 function finishRebase(root, ledger, tip) {
   const n = ledger.rebases.length;
   const entry = ledger.rebases[n - 1];
@@ -1744,11 +1749,15 @@ function finishRebase(root, ledger, tip) {
   if (to && ledger.mainAtStart?.head && isAncestor(root, ledger.mainAtStart.head, to)) {
     const was = ledger.mainAtStart;
     const dirty = dirtyPaths(root);
+    const paths = Object.keys(was.files ?? {});
+    const before = blobsAt(root, was.head, paths);
+    const after = blobsAt(root, to, paths);
+    const keep = new Set(paths.filter((p) => dirty.has(p) || before[p] === after[p]));
     ledger.mainAtStart = {
       ...was,
       head: to,
-      files: Object.fromEntries(Object.entries(was.files ?? {}).filter(([p]) => dirty.has(p))),
-      porcelain: (was.porcelain ?? []).filter((e) => dirty.has(e.slice(3))),
+      files: Object.fromEntries(Object.entries(was.files ?? {}).filter(([p]) => keep.has(p))),
+      porcelain: (was.porcelain ?? []).filter((e) => keep.has(e.slice(3))),
     };
   }
   return changed;
