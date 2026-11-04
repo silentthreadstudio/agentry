@@ -797,11 +797,14 @@ export function ownerChange({ note, at }, role) {
  *  stopped names its conflict, to resolve first. */
 export function carriedWork({ commits, files, report, conflict }) {
   const last = report ? `Its last report is ${report}: read it first.` : "It left no report.";
+  const staged = files
+    ? " Its uncommitted changes are applied staged (`git apply --3way` stages them): `git diff --cached` shows them."
+    : "";
   const stop = conflict ? ` The carry stopped: ${conflict}, before anything else.` : "";
   return [
     "## Carried work",
     "",
-    `A previous builder's work is in the tree (${commits} commits, ${files} files uncommitted). ${last}${stop}`,
+    `A previous builder's work is in the tree (${commits} commits, ${files} files uncommitted). ${last}${staged}${stop}`,
     "",
   ].join("\n");
 }

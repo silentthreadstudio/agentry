@@ -170,7 +170,7 @@ test("restart --carry archives the lane, cuts T3 from main and carries its commi
   const brief = readFileSync(res.json.brief, "utf8");
   assert.ok(
     brief.includes(
-      `## Carried work\n\nA previous builder's work is in the tree (1 commits, 1 files uncommitted). Its last report is ${report}: read it first.\n`,
+      `## Carried work\n\nA previous builder's work is in the tree (1 commits, 1 files uncommitted). Its last report is ${report}: read it first. Its uncommitted changes are applied staged (\`git apply --3way\` stages them): \`git diff --cached\` shows them.\n`,
     ),
     brief,
   );
