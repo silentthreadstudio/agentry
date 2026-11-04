@@ -4,7 +4,7 @@
 // this process are forwarded to the group. `agentry run` (run.mjs) wraps it with the locks. Node built-ins only.
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
-import { groupRunning } from "../lane/named-lock.mjs";
+import { groupRunning } from "../lane/gate-lock.mjs";
 import { say } from "./help.mjs";
 
 /** The exit of a command stopped at its limit, as `timeout(1)` gives it. */

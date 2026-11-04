@@ -37,6 +37,17 @@ export function running(pid) {
   }
 }
 
+/** Does any process of group `pgid` still run? A slot's `pgid` is the group of the command that holds it. */
+export function groupRunning(pgid) {
+  if (!Number.isInteger(pgid) || pgid <= 1) return false;
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
 /** The parsed content of a lock file, or null when it is missing or not JSON. */
 export const holderOf = (file) => {
   try {
@@ -72,7 +83,7 @@ function take(dir, n, who) {
       if (!orphaned(file)) return false;
       rmSync(file, { force: true });
     } else {
-      if (running(holder.pid)) return false;
+      if (running(holder.pid) || groupRunning(holder.pgid)) return false;
       if (holderOf(file)?.pid === holder.pid) rmSync(file, { force: true });
     }
   }
@@ -102,7 +113,7 @@ export function heldSlots(dir) {
     .sort((x, y) => x - y)
     .flatMap((slot) => {
       const holder = holderOf(slotFile(dir, slot));
-      return running(holder?.pid)
+      return running(holder?.pid) || groupRunning(holder?.pgid)
         ? [{ slot, pid: holder.pid, who: holder.who ?? "", since: clock(holder.at) }]
         : [];
     });
@@ -112,26 +123,39 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 
 /**
  * Wait for a gate slot in `dir` (`slots` of them; `exclusive`: all of them) for up to `waitSec`.
- * `{ release }` once held (call it when the gate is done; `waited` says the slot was not free at first), or
+ * `{ release, group }` once held (call `group(pgid)` when the command starts, `release` when it is done;
+ * `waited` says the slot was not free at first), or
  * `{ busy: { pid, who } }` when the wait ran out, naming the holder of the slot that never came free and its
  * lock file. With `log` (a file path), a wait is written there at once: `waiting for gate slot N (held by
- * <who> since HH:MM)`, then `slot acquired`; the gate that follows appends to the same file.
+ * <who> since HH:MM)`, then `slot acquired`; the gate that follows appends to the same file. `onNote(line)`
+ * is told the same lines.
  */
 export function holdGate(
   dir,
-  { slots = 1, exclusive = false, who = "", waitSec = 3600, log = null } = {},
+  { slots = 1, exclusive = false, who = "", waitSec = 3600, log = null, onNote = null } = {},
 ) {
   mkdirSync(dir, { recursive: true });
   const held = [];
+  // A slot whose command left a group running stays held (its pid is gone, its group is not).
   const release = () => {
     for (const n of held.splice(0)) {
       const file = slotFile(dir, n);
-      if (holderOf(file)?.pid === process.pid) rmSync(file, { force: true });
+      const holder = holderOf(file);
+      if (holder?.pid === process.pid && !groupRunning(holder.pgid)) rmSync(file, { force: true });
+    }
+  };
+  // Record the process group of the command that runs under the slots held.
+  const group = (pgid) => {
+    for (const n of held) {
+      const file = slotFile(dir, n);
+      const holder = holderOf(file);
+      if (holder?.pid === process.pid) writeFileSync(file, JSON.stringify({ ...holder, pgid }));
     }
   };
   const deadline = Date.now() + waitSec * 1000;
   let waited = false;
   const note = (line) => {
+    onNote?.(line);
     if (!log) return;
     mkdirSync(dirname(log), { recursive: true });
     appendFileSync(log, `[agentry] ${line}\n`);
@@ -139,7 +163,7 @@ export function holdGate(
   const wanted = exclusive ? Array.from({ length: slots }, (_, i) => i + 1) : null;
   const arrived = () => {
     if (waited) note("slot acquired");
-    return { release, waited };
+    return { release, group, waited };
   };
   for (;;) {
     if (exclusive) {

@@ -20,6 +20,7 @@ import { clock, gateLockDir, holdGate, running } from "../lane/gate-lock.mjs";
 import {
   POLL_MS,
   dropLock,
+  extendTake,
   heldLocks,
   locksOf,
   ownTake,
@@ -32,7 +33,7 @@ import { gitRootOf } from "../process/contract.mjs";
 import { workflowPathOf } from "../process/read.mjs";
 import { gateOf, validateWorkflow } from "../process/spec/workflow.mjs";
 import { renderHelp, say } from "./help.mjs";
-import { supervise } from "./supervise.mjs";
+import { GRACE_KILL_MS, supervise } from "./supervise.mjs";
 
 /** The exit when a lock stayed busy for the whole wait (EX_TEMPFAIL). */
 export const BUSY_EXIT = 75;
@@ -233,38 +234,23 @@ export async function runCli(argv) {
   const releaseAll = () => {
     for (const release of releases.splice(0)) release();
   };
-  // Released at the end of the command, or when this process exits early (a signal that was not forwarded).
+  // Released at the end of the command (a slot whose command left a process group running stays held), or
+  // when this process exits early (a signal that was not forwarded).
   const hold = (release) => {
     releases.push(release);
     process.once("exit", releaseAll);
   };
-  let onStart;
+  let lock = null;
   if (lockName) {
     const declared = declaredLocks(root, parsed.got["--process"], "agentry run");
-    const lock = declared.err ? declared : lockNamed(lockName, declared, "agentry run");
+    lock = declared.err ? declared : lockNamed(lockName, declared, "agentry run");
     if (lock.err) {
       process.stderr.write(`${lock.err}\n`);
       return lock.exit;
     }
-    const mine = ownTake(root, lockName, {
-      slots: lock.slots,
-      pid: sessionPid(),
-      who: takerOf(null, lane),
-    });
-    if (mine !== null) {
-      process.stderr.write(`lock ${lockName}: inside your own take\n`);
-    } else {
-      const who = `${lane ? `${lane}: ` : ""}${basename(cmd[0])}`;
-      const got = await acquire(root, lockName, waitMs, { slots: lock.slots, who });
-      if (got.busy) {
-        process.stderr.write(`${busyLine("run", lockName, got.busy)}\n`);
-        return BUSY_EXIT;
-      }
-      const { slot } = got;
-      hold(() => releaseLock(root, lockName, slot));
-      onStart = (pgid) => setGroup(root, lockName, slot, pgid);
-    }
   }
+  const starts = [];
+  // The gate slot comes first, so a named lock is never held while this run queues for the gate.
   const gate = gateTierOf(root, parsed.got["--process"], cmd);
   if (gate) {
     process.stderr.write(`run: this is the gate (${gate.tier}): taking the gate slot\n`);
@@ -272,18 +258,45 @@ export async function runCli(argv) {
       slots: gate.slots,
       who: lane ? `lane ${lane}` : "agentry run",
       waitSec: waitMs / 1000,
+      onNote: (line) => process.stderr.write(`${line}\n`),
     });
     if (held.busy) {
-      releaseAll();
       process.stderr.write(
         `${say("run", `the gate slot stayed busy (held by ${held.busy.who || "unknown"}, pid ${held.busy.pid ?? "?"})`)}\n`,
       );
       return BUSY_EXIT;
     }
     hold(held.release);
+    starts.push(held.group);
+  }
+  if (lock) {
+    const mine = ownTake(root, lockName, {
+      slots: lock.slots,
+      pid: sessionPid(),
+      who: takerOf(null, lane),
+    });
+    if (mine !== null) {
+      process.stderr.write(`lock ${lockName}: inside your own take\n`);
+      extendTake(root, lockName, mine, Date.now() + limitMs + GRACE_KILL_MS);
+    } else {
+      const who = `${lane ? `${lane}: ` : ""}${basename(cmd[0])}`;
+      const got = await acquire(root, lockName, waitMs, { slots: lock.slots, who });
+      if (got.busy) {
+        releaseAll();
+        process.stderr.write(`${busyLine("run", lockName, got.busy)}\n`);
+        return BUSY_EXIT;
+      }
+      const { slot } = got;
+      hold(() => releaseLock(root, lockName, slot));
+      starts.push((pgid) => setGroup(root, lockName, slot, pgid));
+    }
   }
   try {
-    return await supervise(cmd, limitMs, limitText, { onStart });
+    return await supervise(cmd, limitMs, limitText, {
+      onStart: (pgid) => {
+        for (const start of starts) start(pgid);
+      },
+    });
   } finally {
     releaseAll();
   }
@@ -312,7 +325,7 @@ function runArgs({ got, rest }, cmd) {
   return { limitMs, limitText, lockName, waitMs };
 }
 
-// `--wait` in milliseconds (default 30m), or the refusal.
+// `--wait` in milliseconds (default 10m), or the refusal.
 function waitOf(got, what) {
   const text = got["--wait"] ?? WAIT;
   const ms = durationMs(text);

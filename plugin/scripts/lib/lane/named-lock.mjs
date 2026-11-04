@@ -10,7 +10,7 @@
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isObject, own } from "../process/spec/shape.mjs";
-import { GRACE_MS, clock, holderOf, running } from "./gate-lock.mjs";
+import { GRACE_MS, clock, groupRunning, holderOf, running } from "./gate-lock.mjs";
 
 export { POLL_MS } from "./gate-lock.mjs";
 
@@ -22,17 +22,6 @@ export const locksOf = (spec) => {
   const locks = own(spec, "locks");
   return isObject(locks) ? locks : {};
 };
-
-/** Does any process of group `pgid` still run? EPERM means one does, and is not ours to signal. */
-export function groupRunning(pgid) {
-  if (!Number.isInteger(pgid) || pgid <= 1) return false;
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM";
-  }
-}
 
 // The group an orphaned slot's command left running: the holder's pid is gone, its group is not.
 const orphanGroup = (holder) =>
@@ -106,10 +95,9 @@ export function heldLocks(root, name, slots, now = Date.now()) {
 const sameTake = (holder, pid, who) =>
   holder?.until !== undefined && holder.pid === pid && holder.who === who;
 
-/** The slot of lock `name` a take by session `pid` for `who` holds now, or null: a command of that
- *  session and lane runs inside it. A session with no pid has no take to run inside. */
+/** The slot of lock `name` a take by session `pid` (null: none) for `who` holds now, or null: a command
+ *  of that session and lane runs inside it. */
 export function ownTake(root, name, { slots, pid, who, now = Date.now() }) {
-  if (pid === null) return null;
   for (let n = 1; n <= slots; n++) {
     const file = slotFile(root, name, n);
     const holder = holderOf(file);
@@ -159,10 +147,21 @@ export function setGroup(root, name, slot, pgid, pid = process.pid) {
   if (holder?.pid === pid) writeFileSync(file, JSON.stringify({ ...holder, pgid }));
 }
 
-/** Free slot `slot` of lock `name` when process `pid` still holds it (a slot taken over since is left). */
+/** Keep the take in slot `slot` of lock `name` until at least `untilMs` (a command riding it must not
+ *  outlive it). */
+export function extendTake(root, name, slot, untilMs) {
+  const file = slotFile(root, name, slot);
+  const holder = holderOf(file);
+  if (holder?.until !== undefined && Date.parse(holder.until) < untilMs)
+    writeFileSync(file, JSON.stringify({ ...holder, until: new Date(untilMs).toISOString() }));
+}
+
+/** Free slot `slot` of lock `name` when process `pid` still holds it (a slot taken over since is left),
+ *  unless the group of the command it ran still has a member: then the slot stays held as an orphan. */
 export function releaseLock(root, name, slot, pid = process.pid) {
   const file = slotFile(root, name, slot);
-  if (holderOf(file)?.pid === pid) rmSync(file, { force: true });
+  const holder = holderOf(file);
+  if (holder?.pid === pid && !groupRunning(holder.pgid)) rmSync(file, { force: true });
 }
 
 /** Drop the takes of lock `name` this session (`pid`) holds for `who`: how many slots it freed. */
