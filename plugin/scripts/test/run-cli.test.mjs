@@ -924,3 +924,50 @@ test("two rides that start together, one ending first after a kept drop: no seco
     assert.deepEqual(slots(dir), [], `round ${round}: the slot went with the last ride`);
   }
 });
+
+test("kill -9 of a ridden run holds the take past the run's limit while its command lives, and frees it after", async (t) => {
+  const dir = repo({ editor: 1 });
+  const env = asSession(process.pid);
+  assert.equal(
+    (await agentry(["lock", "take", "editor", "--ttl", "2s"], { cwd: dir, env })).status,
+    0,
+  );
+  const pidFile = join(dir, "cmd.pid");
+  const riding = agentry(
+    [
+      "run",
+      "--limit",
+      "3s",
+      "--lock",
+      "editor",
+      "--",
+      ...js(
+        `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000)`,
+      ),
+    ],
+    { cwd: dir, env, quiet: true },
+  );
+  await until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8") !== "");
+  const command = Number(readFileSync(pidFile, "utf8"));
+  t.after(() => {
+    try {
+      process.kill(-command, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  await sleepMs(200);
+  riding.child.kill("SIGKILL");
+  await riding;
+  await sleepMs(8500);
+  assert.ok(alive(command), "the command outlived its run's limit and grace");
+  const other = () =>
+    agentry(["run", "--limit", "5s", "--lock", "editor", "--wait", "1s", "--", ...js("")], {
+      cwd: dir,
+      env: asSession(process.ppid),
+    });
+  assert.equal((await other()).status, 75, "held while the ridden command lives");
+  process.kill(-command, "SIGKILL");
+  await until(() => !alive(command));
+  assert.equal((await other()).status, 0, "free once it is gone");
+});

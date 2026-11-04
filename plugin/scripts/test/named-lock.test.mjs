@@ -9,6 +9,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   dropLock,
+  dropOrphans,
   endRide,
   heldLocks,
   lockDir,
@@ -415,4 +416,34 @@ test("a slot file another process keeps rewriting never reads empty or cut short
   }
   await writer;
   assert.equal(torn, 0, `${torn} reads saw a slot file mid-write`);
+});
+
+test("dropOrphans frees a take whose riders are all gone but leave a group running, naming the pgid; a live rider is refused", async () => {
+  const dir = repo({ sim: 1 });
+  const group = spawn(NODE, ["-e", "setInterval(()=>{},1000)"], {
+    stdio: "ignore",
+    detached: true,
+  });
+  cleanups.push(() => {
+    try {
+      process.kill(-group.pid, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  const rider = session();
+  tryLock(dir, "sim", { slots: 1, pid: process.pid, who: "T-1", ttlMs: 60_000 });
+  rideTake(dir, "sim", {
+    slots: 1,
+    session: process.pid,
+    who: "T-1",
+    untilMs: Date.now() + 60_000,
+    pid: rider.pid,
+  });
+  setGroup(dir, "sim", 1, group.pid, rider.pid);
+  assert.deepEqual(dropOrphans(dir, "sim", 1), { freed: [], alive: rider.pid }, "its run lives");
+  assert.equal(heldLocks(dir, "sim", 1).length, 1);
+  await rider.end();
+  assert.deepEqual(dropOrphans(dir, "sim", 1), { freed: [group.pid], alive: null });
+  assert.deepEqual(heldLocks(dir, "sim", 1), []);
 });

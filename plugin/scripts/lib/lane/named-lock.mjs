@@ -8,9 +8,10 @@
 // A run also records its command's process group (`pgid`): while any member of that group lives the slot
 // stays held, even after `agentry run` itself died (an orphan). A run riding a take extends its `until`
 // to cover the command and records itself in `riders` as `{ pid, pgid }` (the take's own `until` in
-// `ownUntil`): a rider lives while its run or its command's group does, the extension ends with the last
-// live rider, and a drop while one lives is kept until then. Synchronous: a waiting
-// caller polls `tryLock` at `POLL_MS`. Node built-ins only.
+// `ownUntil`): a rider lives while its run or its command's group does, and while one lives the take is
+// held, past any `until` (an orphaned ride, like an orphaned run). The extension ends with the last live
+// rider, and a drop while one lives is kept until then. Synchronous: a waiting caller polls `tryLock` at
+// `POLL_MS`. Node built-ins only.
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isObject, own } from "../process/spec/shape.mjs";
@@ -107,8 +108,10 @@ function serialized(file, fn) {
   }
 }
 
-// Can nobody be holding the slot `file` (read as `holder`) any more?
+// Can nobody be holding the slot `file` (read as `holder`) any more? A take with a live rider is held,
+// past its `until` too, the way a run's own slot is held while its group lives.
 function free(file, holder, now) {
+  if (liveRiders(holder).length) return false;
   if (holder?.until !== undefined && !(Date.parse(holder.until) > now)) return true;
   if (Number.isInteger(holder?.pid)) return !running(holder.pid) && orphanGroup(holder) === null;
   if (holder?.until !== undefined) return false;
@@ -280,7 +283,8 @@ export function dropLock(root, name, { slots, pid, who }) {
 }
 
 /** Free the slots of lock `name` held only by a leftover group (the recording pid is gone, the group runs):
- *  `{ freed }` their pgids, `alive` the pid of a recording process that still runs (its slot is left). */
+ *  a run's slot, or a take whose riders' runs are all gone, one of them leaving its group running.
+ *  `{ freed }` their pgids, `alive` the pid of a recording run that still runs (its slot is left). */
 export function dropOrphans(root, name, slots) {
   const freed = [];
   let alive = null;
@@ -288,11 +292,13 @@ export function dropOrphans(root, name, slots) {
     const file = slotFile(root, name, n);
     serialized(file, () => {
       const holder = holderOf(file);
-      if (!groupRunning(holder?.pgid)) return;
-      if (running(holder.pid)) alive ??= holder.pid;
+      const groups = (holder?.riders ?? [holder]).map((h) => h?.pgid).filter(groupRunning);
+      if (!groups.length) return;
+      const live = (holder.riders ?? [holder]).find((h) => running(h.pid));
+      if (live) alive ??= live.pid;
       else {
         rmSync(file, { force: true });
-        freed.push(holder.pgid);
+        freed.push(...groups);
       }
     });
   }
