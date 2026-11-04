@@ -1,7 +1,8 @@
 # Resolve check {{id}}, round {{round}}
 
 You are a fresh verifier for contract {{id}} ({{contract}}). The lane was verified, then its branch was rebased
-onto `{{mainBranch}}` to clear a conflict. Judge only that resolution: the rest was verified before.
+onto `{{mainBranch}}`, or carried onto a fresh branch from it by a restart. Judge only that resolution: the rest
+was verified before.
 
 {{#resend}}
 ## Sent back

@@ -1030,7 +1030,9 @@ function brief({ root, spec, model }, ledger, dispatch) {
   if (owner)
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
   // A restarted lane's first brief says what was carried into the tree (field 69).
-  if (n === 1 && fresh && ledger.carried) text = withSection(text, carriedWork(ledger.carried));
+  // A resolve check of a verified carry judges the range-diff, not the old builder's report.
+  if (n === 1 && fresh && ledger.carried && dispatch.step !== "resolve")
+    text = withSection(text, carriedWork(ledger.carried));
   // An adopted lane's first brief lists the commits it took in (field 86).
   if (n === 1 && fresh && ledger.adopted) text = withSection(text, adoptedWork(ledger.adopted));
   // The fact the owner supplied at a context hold goes where the conductor puts one: at the end.
@@ -1458,7 +1460,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     adopted = null,
     calls = [],
     rebases = null,
-    first = null,
+    rebased = null,
     shown = {},
     warnings = [],
     exit = 0,
@@ -1467,8 +1469,8 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   let moves;
   try {
     ({ board, moves } = boardEvent(ctx, "dispatched", id));
-    // A first round past the build (a verified lane's carry, checked): the item is built already.
-    if (first) {
+    // A verified lane's carry goes on past the build: the item is built already.
+    if (rebased) {
       const built = boardEvent(ctx, "built", id);
       board = {
         writes: [...board.writes, ...built.board.writes],
@@ -1542,7 +1544,15 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     .filter(Boolean)
     .join("\n");
   const hint = proseModelHint(found.block, ledger.steps);
-  ledger = dispatchNext(ctx, ledger, first ?? begin(ledger.steps).dispatch);
+  // A verified lane's carry (field 94) goes on as a rebase's does: a changed carry under `rebase: "recheck"`
+  // to a fresh verifier (`resolve`), any other to the gate, or the close when one is green on the tip.
+  const moved = rebased
+    ? advance(
+        { ...ledger, state: "verified" },
+        { type: "rebased", ...rebased, gate: gateOf(spec) !== null, tier: buildTier(ctx, ledger) },
+      )
+    : { ledger, dispatch: begin(ledger.steps).dispatch };
+  ledger = dispatchNext(ctx, moved.ledger, moved.dispatch);
   ledgers.write(root, ledger);
   const res = view(ctx, ledger, {
     step: adopted ? "adopt" : restarted ? "restart" : "start",
@@ -1560,6 +1570,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
       board,
       ...(overlap && { warning: overlap }),
       ...(hint && { hint }),
+      ...(moved.reason && { why: moved.reason }),
       ...shown,
     },
   });
@@ -2830,9 +2841,9 @@ function carriesVerified(ledger, tip, files) {
   );
 }
 
-// A verified lane's carry, checked as a rebase's resolution is: the range-diff of the old base..tip
-// against the new `base`..HEAD of `worktree` as the new lane's first `rebases[]` entry, and a fresh
-// verifier (`resolve`) as its first round.
+// A verified lane's carry, taken as a rebase: the range-diff of the old base..tip against the new
+// `base`..HEAD of `worktree` as the new lane's first `rebases[]` entry, and the `rebased` facts (`tip`,
+// `changed`) its next step is picked from.
 function carryCheck(root, id, { base: fromBase, tip: fromTip }, base, worktree) {
   const tip = headOf(worktree);
   const res = git(root, ["range-diff", "--no-color", `${fromBase}..${fromTip}`, `${base}..${tip}`]);
@@ -2848,14 +2859,10 @@ function carryCheck(root, id, { base: fromBase, tip: fromTip }, base, worktree) 
         toTip: tip,
         changed,
         rangeDiff: file,
+        carried: true, // a restart's carry: main's start was never moved by it
       },
     ],
-    first: {
-      step: "resolve",
-      role: "verify",
-      mode: "fresh",
-      reason: "a verified lane's work carried onto main: a verifier reads the carry",
-    },
+    rebased: { tip, changed },
   };
 }
 

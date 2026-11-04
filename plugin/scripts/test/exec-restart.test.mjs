@@ -594,12 +594,13 @@ function judged(r, verdict = "PASS") {
   return out;
 }
 
-test("restart --carry of a verified lane carried cleanly goes to the resolve check, never a build", () => {
+test("restart --carry of a verified lane whose carry changed goes to the resolve check, never a build", () => {
   const r = repo();
   judged(r);
   const oldTip = tipOf(r.root, "agentry/T3");
   const oldBase = ledgerOf(r.root, "T3").base;
-  commitFile(r.root, "other.txt", "x\n", "chore: main moves");
+  // main edits three.txt elsewhere: the carry applies cleanly, its patch's context changed.
+  commitFile(r.root, "three.txt", "top\na\nb\nc\n", "fix: main edits three.txt elsewhere");
   const res = lane(r, "restart", "T3", "--carry");
   assert.equal(res.exit, 0, res.stderr);
   assert.deepEqual(
@@ -615,24 +616,61 @@ test("restart --carry of a verified lane carried cleanly goes to the resolve che
   const [entry] = ledger.rebases;
   const newTip = tipOf(r.root, "agentry/T3");
   assert.deepEqual(
-    [entry.fromBase, entry.fromTip, entry.toBase, entry.toTip],
-    [oldBase, oldTip, tipOf(r.root, "main"), newTip],
+    [entry.fromBase, entry.fromTip, entry.toBase, entry.toTip, entry.changed],
+    [oldBase, oldTip, tipOf(r.root, "main"), newTip, true],
   );
-  assert.match(readFileSync(entry.rangeDiff, "utf8"), /^1: +[0-9a-f]+ = 1: +[0-9a-f]+ feat: three/);
+  assert.match(readFileSync(entry.rangeDiff, "utf8"), /^1: +[0-9a-f]+ ! 1: +[0-9a-f]+ feat: three/);
   assert.equal(res.json.rangeDiff, entry.rangeDiff);
+  // The brief says the branch was carried by a restart, and points at the range-diff, not the old report.
   const brief = readFileSync(res.json.brief, "utf8");
   assert.match(brief, /^# Resolve check T3, round 1/);
+  assert.match(
+    brief,
+    /rebased\s+onto `main`, or carried onto a fresh branch from it by a restart\./,
+  );
   assert.ok(brief.includes(entry.rangeDiff), brief);
+  assert.doesNotMatch(brief, /## Carried work/);
   // The board: built, its verdict standing for the carried work.
   assert.match(row(r.root, "T3"), /^\| T3 +\| verify +\| PASS +\|$/);
   // The check passes: the gate, then the close, as after a rebase.
   writeFileSync(
     res.json.reportPath,
-    "The carry is the same patch.\nused_memories: none\nVerdict: PASS\n",
+    "The carry keeps both sides.\nused_memories: none\nVerdict: PASS\n",
   );
   assert.equal(lane(r, "verdict", "T3").json.next, "gate");
   assert.equal(lane(r, "gate", "T3").exit, 0);
   assert.equal(ledgerOf(r.root, "T3").state, "verified");
+});
+
+test("restart --carry of a verified lane whose carry is the same patch goes to the gate, no round", () => {
+  const r = repo();
+  judged(r);
+  commitFile(r.root, "other.txt", "x\n", "chore: main moves");
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual([res.json.next, res.json.state], ["gate", "verifying"]);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.deepEqual(ledger.rounds, []);
+  assert.equal(ledger.rebases[0].changed, false);
+  assert.equal(ledger.gateTip, tipOf(r.root, "agentry/T3"));
+  assert.match(row(r.root, "T3"), /^\| T3 +\| verify +\| PASS +\|$/);
+  assert.equal(lane(r, "gate", "T3").exit, 0);
+  assert.deepEqual(
+    [ledgerOf(r.root, "T3").state, ledgerOf(r.root, "T3").next],
+    ["verified", "close"],
+  );
+});
+
+test('under exec.rebase "gate" a verified lane\'s changed carry goes to the gate too', () => {
+  const r = repo({ spec: { ...SPEC, exec: { rebase: "gate" } } });
+  judged(r);
+  commitFile(r.root, "three.txt", "top\na\nb\nc\n", "fix: main edits three.txt elsewhere");
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual([res.json.next, res.json.state], ["gate", "verifying"]);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.deepEqual([ledger.route.rebase, ledger.rebases[0].changed], ["gate", true]);
+  assert.deepEqual(ledger.rounds, []);
 });
 
 test("restart --carry of a verified lane whose carry conflicts keeps today's build round", () => {
