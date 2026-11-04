@@ -456,10 +456,9 @@ function strayFiles(root, ledger, head, all, boards, excused) {
 // commits `blocked` lets through? A merge must be the run preHead → landed… → board commit its ledger
 // names, in that order, on git's own first-parent line: a ledger is trusted only as far as git confirms
 // it. `blocked(sha)` is null for a commit the guard lets through, else why not ("" for no reason to
-// name). Returns `{ ok, allowed: [sha], count, why? }`: the allowed commits, how many commits main moved
-// by, and why the first other one is not.
+// name). Returns `{ ok, allowed: [sha], why? }`: the allowed commits, and why the first other one is not.
 function landedOnly(root, from, to, others, blocked = () => "") {
-  const no = (why = "") => ({ ok: false, allowed: [], count: 0, why });
+  const no = (why = "") => ({ ok: false, allowed: [], why });
   const res = git(root, ["rev-list", "--first-parent", "--reverse", `${from}..${to}`, "--"]);
   const chain = res.stdout.split("\n").filter(Boolean);
   if (res.status !== 0 || !chain.length) return no();
@@ -489,7 +488,7 @@ function landedOnly(root, from, to, others, blocked = () => "") {
     allowed.push(chain[i]);
     at = chain[i++];
   }
-  return { ok: true, allowed, count: chain.length };
+  return { ok: true, allowed };
 }
 
 // The lanes whose owned files no commit on main may touch (A44): every one still running.
@@ -718,8 +717,8 @@ function configTrips(root, allow, dirty) {
 }
 
 // Whether the main checkout still matches the lane's start: `{ touched, allowed, moved, overlap }`,
-// `touched` why not (or null), `allowed` the commits on main the guard let through, `moved` how many
-// commits main moved by when they all passed, `overlap` whether a commit touched this lane's files. The
+// `touched` why not (or null), `allowed` the commits on main the guard let through, `moved` how many of
+// them the rule judged when all passed (other lanes' landed picks and memory commits not counted), `overlap` whether a commit touched this lane's files. The
 // one rule for HEAD's move (`allowedCommit`), so report, hold and resume never disagree.
 function mainGuard(ctx, ledger, all) {
   const { root, spec, model } = ctx;
@@ -736,8 +735,10 @@ function mainGuard(ctx, ledger, all) {
       overlap = true;
     });
     const res = landedOnly(root, was.head, head, others, blocked);
-    if (res.ok) ({ allowed, count: moved } = res);
-    else
+    if (res.ok) {
+      allowed = res.allowed;
+      moved = res.allowed.length; // the commits the rule judged, not other lanes' landed picks
+    } else
       reasons.push(
         `HEAD moved ${short(was.head)} → ${short(head)}${res.why ? ` (${res.why})` : ""}`,
       );

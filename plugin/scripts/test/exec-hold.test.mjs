@@ -386,6 +386,26 @@ test("resume passes a main moved by commits touching none of the lane's files, a
   assert.equal(ledgerOf(r.root, "T3").base, base);
 });
 
+test("the moved line counts only the commits the overlap rule judged, not another lane's landed picks", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  writeFileSync(join(out.worktree, "three.txt"), "half\n");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  let t4 = lane(r, "start", "T4").json;
+  build(t4, "four.txt");
+  t4 = lane(r, "report", "T4").json;
+  writeFileSync(t4.reportPath, "Checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, "verdict", "T4").json.next, "gate");
+  assert.equal(lane(r, "gate", "T4").exit, 0);
+  assert.equal(lane(r, "close", "T4").exit, 0);
+  const landed = spawnLane(r, ["merge", "T4", "--message", "chore(board): land T4"]);
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  commitFile(r.root, "docs/NOTES.md", "x\n", "docs: by hand");
+  const resumed = lane(r, "resume", "T3", "--note", "go on");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  assert.match(resumed.json.moved, /^main moved by 1 commits, none touching this lane's files: /);
+});
+
 test("resume with no move on main prints no moved line", () => {
   const r = repo();
   const out = lane(r, "start", "T3").json;
