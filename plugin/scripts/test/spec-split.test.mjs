@@ -24,7 +24,8 @@ import { loadSpec } from "../lib/process/read.mjs";
 import * as composed from "../lib/process/spec.mjs";
 import { BOARD_KEYS, WORKFLOW_KEYS, validateSpec } from "../lib/process/spec.mjs";
 import { checkAcross, checkDone, checkHandoff } from "../lib/process/spec/across.mjs";
-import { gateOf, modelFor, verifyRoute } from "../lib/process/spec/workflow.mjs";
+import { modelFor } from "../lib/process/spec/models.mjs";
+import { gateOf, verifyRoute } from "../lib/process/spec/workflow.mjs";
 import { BASE } from "./key-cases.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
