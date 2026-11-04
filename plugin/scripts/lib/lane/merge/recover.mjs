@@ -488,7 +488,7 @@ function plannedFilesChanged(root, preHead, planned, cannotTell) {
  *  commits and no board commit (the board record is the owner's), or the one a land killed at `recording`
  *  made, when the record proves it. `rolled-back`: no pick is on main; the
  *  ledger's `merge` goes and the lane is `verified` again (`--checked`: the owner checked by hand the planned
- *  files main changed, so that refusal is skipped and `resolved.checked` recorded). Each checks main first and refuses with what it
+ *  files main changed, so that refusal is skipped and `{ as, at, checked }` appended to `resolutions[]`). Each checks main first and refuses with what it
  *  found; neither touches main or the board, and the ledger is written once. */
 export function resolveMode(lane) {
   const { root, id, opts } = lane;
@@ -573,9 +573,12 @@ export function resolveMode(lane) {
     return done(0, lane, [ok("resolve", detail, picks), ...kids], next);
   }
   const next = landNext(id);
-  // `merge` goes, so the owner's word that they checked the changed files by hand is kept beside it.
-  const resolved = checked ? { resolved: { as, at: now(), checked: true } } : {};
-  save(lane, { state: "verified", merge: undefined, ...resolved, next });
+  // `merge` goes, so the owner's word that they checked the changed files by hand goes into the ledger's
+  // history of resolutions, as a hold's answer goes into `holds[]`: a record of then, not a state of now.
+  const resolutions = checked
+    ? { resolutions: [...(ledger.resolutions ?? []), { as, at: now(), checked: true }] }
+    : {};
+  save(lane, { state: "verified", merge: undefined, ...resolutions, next });
   const detail = `resolved: no pick on main; merge cleared, the lane is verified again${checked ? " (the changed planned files checked by hand)" : ""}`;
   return done(0, lane, [ok("resolve", detail)], next);
 }

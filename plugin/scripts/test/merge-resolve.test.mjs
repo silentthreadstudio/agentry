@@ -543,8 +543,18 @@ test("--resolve rolled-back refuses when main changed a planned file with no pic
     /resolved: no pick on main; .* \(the changed planned files checked by hand\)/,
   );
   const ledger = readLedger(root, ID);
-  assert.deepEqual([ledger.state, ledger.merge], ["verified", undefined]);
-  assert.deepEqual([ledger.resolved.as, ledger.resolved.checked], ["rolled-back", true]);
+  assert.deepEqual(
+    [ledger.state, ledger.merge, ledger.resolved],
+    ["verified", undefined, undefined],
+  );
+  assert.equal(ledger.resolutions.length, 1);
+  const [{ at, ...entry }] = ledger.resolutions;
+  assert.deepEqual(entry, { as: "rolled-back", checked: true });
+  assert.match(at, /^\d{4}-\d\d-\d\dT/);
+  // A later checked resolve appends; it never replaces the earlier record (R1d-39 r4 N3).
+  writeLedger(root, { ...ledger, state: "merging", merge: JSON.parse(before).merge });
+  assert.equal(merge(ID, "--resolve", "rolled-back", "--checked").status, 0);
+  assert.equal(readLedger(root, ID).resolutions.length, 2);
 });
 
 test("--checked never skips the pick checks, and goes with rolled-back only", () => {
