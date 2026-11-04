@@ -2104,16 +2104,17 @@ function fix(ctx, id, given) {
   if (!labels.every((n) => /^N\d+$/.test(n)))
     refuse(`--notes takes the verifier's note labels, like N1,N3 (got ${given})`);
   const byOwner = laneLine(root, "fix", id, ' --owner "<the change>"');
-  if (ledger.hold?.when === "verdict")
-    refuse(
-      `${id} is held for the owner at its notes cap: ${laneLine(root, "resume", id, ' --note "<the OK>"')} closes it as is, or send it back on your word: ${byOwner}`,
-    );
   const { used, max } = notesBudget(ledger, liveNotes(ctx));
+  // Held at the notes cap: a cap raised since lets one more notes round go; else the owner decides.
+  if (ledger.hold?.when === "verdict" && used >= max)
+    refuse(
+      `${used} of ${max} notes rounds are used (exec.noteRounds is ${max}) and this flagged item holds for you at the cap: resume to close as is (${laneLine(root, "resume", id, ' --note "<the OK>"')}), or fix --owner (${byOwner})`,
+    );
   if (used >= max)
     refuse(
       `${used} of ${max} notes rounds are used (exec.noteRounds is ${max}; next is ${ledger.next}: ${laneLine(root, ledger.next === "close" ? "close" : "gate", id)} goes on with the notes open) → raise exec.noteRounds, or send it back on your word: ${byOwner}`,
     );
-  const res = stepWith(ledger, { type: "notes", notes: labels, noteRounds: max });
+  const res = stepWith(ledger, { type: "notes", notes: labels, noteRounds: max, at: now() });
   const verifier = verdicts(ledger).at(-1);
   const report = verifier ? readReport(verifier.reportPath, "verifier") : "";
   const found = withOpen(notesOf(report), ledger.openNotes);

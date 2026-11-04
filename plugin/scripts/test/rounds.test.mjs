@@ -1518,9 +1518,16 @@ test("held at the notes cap: the owner's change → fix (resume the builder), th
   assert.equal(go(res.ledger, report("DONE")).next, "recheck");
 });
 
-test("held at the notes cap: notes and a restack are refused; the owner's change elsewhere stays verified-only", () => {
+test("held at the notes cap: notes go only once the cap is raised; a restack is refused", () => {
   const held = go(verifying({ flagged: true, noteRounds: 0, final: "never" }), capped()).ledger;
-  assert.throws(() => step(held, { type: "notes", notes: ["N1"] }), /expects a resume/);
+  assert.throws(() => step(held, { type: "notes", notes: ["N1"] }), /0 of 0 notes rounds/);
+  const raised = pure(held, { type: "notes", notes: ["N1"], noteRounds: 1, at: LATER });
+  assert.equal(raised.next, "fix");
+  assert.equal(raised.ledger.hold, undefined);
+  assert.deepEqual(
+    [raised.ledger.holds.at(-1).when, raised.ledger.holds.at(-1).resumedAt],
+    ["verdict", LATER],
+  );
   assert.throws(() => step(stackedOn(held), restack()), /owner's answer at its notes cap/);
   const contextHeld = go(go(lane(), asks()).ledger, asks()).ledger;
   assert.throws(() => step(contextHeld, owner()), /expects a resume/);

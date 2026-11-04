@@ -284,7 +284,7 @@ export function step(ledger, event) {
   if (event.type === "gate") return onGate(out, event.record);
   if (event.type === "restack") return onRestack(out, event);
   const parked = event.type === "report" && out.hold?.for === "guard" ? unpark(out) : null;
-  const ownerAnswers = event.type === "owner" && capHeld(out);
+  const ownerAnswers = ["owner", "notes"].includes(event.type) && capHeld(out);
   if (out.state === "held" && !["hold", "resume"].includes(event.type) && !ownerAnswers)
     throw new Error(`the lane is held: it expects a resume, not a ${event.type}`);
   if (event.type === "notes") return onNotes(out, event);
@@ -706,12 +706,15 @@ export const notesBudget = (ledger, live) => ({
 
 // A verified lane (PASS WITH NOTES, gate or close next) sends the builder back to fix the named notes; the
 // round after it is the usual recheck by the verifier. A resolve verdict opens no notes round.
-function onNotes(ledger, { notes, noteRounds }) {
+// A lane the notes cap holds takes one too once the cap is raised (field 84): the round ends the hold.
+function onNotes(ledger, { notes, noteRounds, at }) {
   const verifier = verdicts(ledger).at(-1);
+  const capped = capHeld(ledger);
   if (
-    verifier?.verdict !== "PASS WITH NOTES" ||
-    verifier.step === "resolve" ||
-    !["gate", "close"].includes(ledger.next)
+    !capped &&
+    (verifier?.verdict !== "PASS WITH NOTES" ||
+      verifier.step === "resolve" ||
+      !["gate", "close"].includes(ledger.next))
   )
     throw new Error(
       `notes can be fixed only after a PASS WITH NOTES verdict, before the lane closes (state ${ledger.state})`,
@@ -719,6 +722,12 @@ function onNotes(ledger, { notes, noteRounds }) {
   const { used, max } = notesBudget(ledger, noteRounds);
   if (used >= max)
     throw new Error(`${used} of ${max} notes rounds are used (exec.noteRounds is ${max})`);
+  if (capped) {
+    const { round: _n, ...kept } = ledger.hold;
+    const note = `a notes round on ${notes.join(", ")}: exec.noteRounds is ${max} now`;
+    ledger.holds = [...(ledger.holds ?? []), { ...kept, resumedAt: at, note, redo: false }];
+    ledger.hold = undefined;
+  }
   const builder = builders(ledger).at(-1);
   return send(
     ledger,

@@ -949,7 +949,7 @@ test("a flagged item at the notes cap with a note open holds for the owner; resu
   // Not past it by the cap alone: no notes round, no park, no close.
   assert.match(
     lane(r, "fix", "T3", "--notes", "N1").stderr,
-    /T3 is held for the owner at its notes cap/,
+    /0 of 0 notes rounds are used \(exec\.noteRounds is 0\) and this flagged item holds for you at the cap: resume to close as is \(.*exec resume T3 .*\), or fix --owner \(.*exec fix T3 .*--owner "<the change>"\)/,
   );
   assert.match(
     lane(r, "hold", "T3", "--for", "later").stderr,
@@ -961,6 +961,27 @@ test("a flagged item at the notes cap with a note open holds for the owner; resu
   assert.equal(ok.json.next, "gate");
   assert.match(ok.json.noted, /^at the notes cap at .*: "ship it with N1 open"$/);
   assert.equal(lane(r, "gate", "T3").json.next, "close");
+});
+
+test("held at the notes cap: a cap raised since lets fix --notes send one more notes round", () => {
+  // R1d-38 r2 N5: the raised cap was not read while the item held.
+  const r = flaggedRepo();
+  assert.equal(noted(r).json.state, "held");
+  const spec = structuredClone(SPEC);
+  spec.kinds.task.fields.flag = { column: "Flag", type: "flag", mark: "x" };
+  spec.exec = { noteRounds: 1, final: "never" };
+  writeSpec(join(r.root, ".agentry"), spec); // uncommitted: no guard or gate key changes
+  const sent = lane(r, "fix", "T3", "--notes", "N1");
+  assert.equal(sent.exit, 0, sent.stderr);
+  assert.deepEqual(
+    [sent.json.next, sent.json.mode, sent.json.agent],
+    ["fix", "resume", "builder-1"],
+  );
+  const ledger = ledgerOf(r.root, "T3");
+  assert.equal(ledger.hold, undefined);
+  assert.match(ledger.holds.at(-1).note, /^a notes round on N1: exec\.noteRounds is 1 now$/);
+  build(sent.json, "renamed.txt");
+  assert.equal(lane(r, "report", "T3").json.next, "recheck");
 });
 
 test("held at the notes cap: owns --add is refused as on a verified lane", () => {
