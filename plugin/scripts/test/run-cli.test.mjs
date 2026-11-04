@@ -3,7 +3,7 @@
 // against the workflow file's `locks` (waits, never overlaps, freed on any exit and after `kill -9`).
 // Run: node --test plugin/scripts/test/run-cli.test.mjs
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { constants } from "node:os";
 import { dirname, join } from "node:path";
@@ -656,6 +656,35 @@ for (const kind of ["lock", "gate"])
     assert.equal(next.status, 0);
     const said = kind === "gate" ? "run: this is the gate (full): taking the gate slot\n" : "";
     assert.equal(next.stderr, said, "the slot was taken at once");
+    assert.deepEqual(rawFiles(dir), [], "no slot, mutex or temp file, nothing cleared first");
+  });
+
+// What a writer killed inside the slot write leaves, planted: its slot, its write mutex and its temp file, all
+// naming a pid that is gone. The next run takes the slot at once and leaves none of them behind.
+for (const kind of ["lock", "gate"])
+  test(`a ${kind} run after a writer died mid-write takes the slot at once and leaves no slot, mutex or temp file`, async () => {
+    const dir = repo({ editor: 1 });
+    const cmd = js("");
+    if (kind === "gate")
+      writeFileSync(
+        join(dir, ".agentry", "workflow.json"),
+        JSON.stringify({ locks: { editor: 1 }, gate: { tiers: [{ name: "full", command: cmd }] } }),
+      );
+    const dead = spawnSync(NODE, ["-e", ""]).pid;
+    assert.equal(alive(dead), false, "the writer is gone");
+    const at = kind === "gate" ? gateLockDir(dir) : lockDir(dir, "editor");
+    mkdirSync(at, { recursive: true });
+    const record = JSON.stringify({ pid: dead, who: "node", at: new Date().toISOString() });
+    writeFileSync(join(at, "slot-1.lock"), record);
+    writeFileSync(join(at, "slot-1.lock.write"), JSON.stringify({ pid: dead, token: 0.5 }));
+    writeFileSync(join(at, `slot-1.lock.agentry-${dead}.tmp`), record);
+    const run = await agentry(
+      ["run", "--limit", "5s", ...(kind === "lock" ? ["--lock", "editor"] : []), "--", ...cmd],
+      { cwd: dir },
+    );
+    assert.equal(run.status, 0);
+    const said = kind === "gate" ? "run: this is the gate (full): taking the gate slot\n" : "";
+    assert.equal(run.stderr, said, "the slot was taken at once");
     assert.deepEqual(rawFiles(dir), [], "no slot, mutex or temp file, nothing cleared first");
   });
 
