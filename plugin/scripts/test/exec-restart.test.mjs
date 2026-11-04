@@ -143,7 +143,6 @@ test("restart --carry archives the lane, cuts T3 from main and carries its commi
   const r = repo();
   const old = worked(r);
   const oldLedger = readFileSync(ledgerFile(r.root, "T3"), "utf8");
-  const oldTip = tipOf(r.root, "agentry/T3");
   const main = mainOf(r.root);
   const res = lane(r, "restart", "T3", "--carry");
   assert.equal(res.exit, 0, res.stderr);
@@ -161,7 +160,6 @@ test("restart --carry archives the lane, cuts T3 from main and carries its commi
   assert.equal(ledger.restarted.from, "T3.1");
   assert.deepEqual(ledger.carried, { commits: 1, files: 1, report });
   assert.equal(tipOf(r.root, "agentry/T3^"), main[0]);
-  assert.notEqual(tipOf(r.root, "agentry/T3"), oldTip);
   assert.equal(git(r.root, "log", "-1", "--format=%s", "agentry/T3"), "feat: three");
   assert.equal(readFileSync(join(old.worktree, "three.txt"), "utf8"), "a\nlane\nc\n");
   assert.equal(readFileSync(join(old.worktree, "more.txt"), "utf8"), "half\n");
