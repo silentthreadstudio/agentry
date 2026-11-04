@@ -322,7 +322,9 @@ function renderStart(s, { name, root }) {
     // A closed parent is not among the open ledgers start lists.
     const state = s.ledgers.find((p) => p.id === l.on)?.state ?? "closed or gone";
     const what = DUE_WORDS[l.restack] ?? `is ${state}`;
-    add(`stack: ${l.id} on ${l.on}: ${l.on} ${what} → ${nextStep(`lane exec restack ${l.id}`)}`);
+    // An orphan comes off its parent only with --main: the line names the step that runs.
+    const step = `lane exec restack ${l.id}${l.restack === "orphan" ? " --main" : ""}`;
+    add(`stack: ${l.id} on ${l.on}: ${l.on} ${what} → ${nextStep(step)}`);
   }
   if (due.length > MAX_STACK)
     add(`stack: +${due.length - MAX_STACK} more → ${nextStep("lane session start --json")}`);

@@ -171,7 +171,7 @@ test("start shows a stacked lane on its parent and a line per due stack, at most
     [
       "stack: S2 on P1: P1 moved → lane exec restack S2",
       "stack: S3 on P2: P2 landed → lane exec restack S3",
-      "stack: S4 on P3: P3 is stopped → lane exec restack S4",
+      "stack: S4 on P3: P3 is stopped → lane exec restack S4 --main",
       "stack: +1 more → lane session start --json",
     ],
   );
