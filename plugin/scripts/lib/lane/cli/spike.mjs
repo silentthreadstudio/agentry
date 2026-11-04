@@ -116,7 +116,8 @@ export function run(argv, ctx) {
   if (forget) {
     const known = read.spikes.find((s) => s.branch === target || real(s.path) === real(target));
     if (!known) return refuse(what, "no spike is filed by that branch or path", "lane spike");
-    const spikes = forgetSpike(root, known);
+    const spikes = written(() => forgetSpike(root, known));
+    if (spikes.error) return refuse(what, spikes.error);
     return shown(root, spikes, json, { forgot: known }, `forgot ${known.branch}`);
   }
   // A name that is no path must be a branch's own name, never a revision such as `b~0`, nor one with a
@@ -168,9 +169,20 @@ export function run(argv, ctx) {
     ...(id ? { for: id } : { keep }),
     at: new Date().toISOString(),
   };
-  const spikes = fileSpike(root, entry);
+  const spikes = written(() => fileSpike(root, entry));
+  if (spikes.error) return refuse(what, spikes.error);
   const why = id ? `for ${id}` : `kept: ${quoted(keep)}`;
   return shown(root, spikes, json, { filed: entry }, `filed ${entry.branch} ${why}`);
+}
+
+// The list a spikes.json write leaves, or `{ error }`, one line, when the write throws: a file that cannot
+// be written, or one the write refuses (`spikes.mjs`: an unusable file, a spike with open owner calls).
+function written(write) {
+  try {
+    return write();
+  } catch (e) {
+    return { error: String(e?.message ?? e).split("\n")[0] };
+  }
 }
 
 // Each spike with `gone` when its branch is no longer there (another case of it is not that branch).

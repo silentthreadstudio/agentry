@@ -5,7 +5,14 @@
 // Run: node --test plugin/scripts/test/spike-cli.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -311,4 +318,29 @@ test("a spike filed with a multi-line reason or id before this check is listed o
   assert.match(text.stdout, /^ {2}worktree-agent-a1 · kept: "why\\nnot" · \S+agent-a1$/m);
   assert.match(text.stdout, /^ {2}worktree-agent-b2 · for "T\\n1" · \S+agent-b2$/m);
   assert.equal(text.stdout.trim().split("\n").length, 3, text.stdout);
+});
+
+test("a spikes.json write that throws is a one-line refusal at exit 2, never a stack trace", () => {
+  const { root } = fresh();
+  const a = agent(root, "a1");
+  const b = agent(root, "b2");
+  assert.equal(spike(root, a.branch, "--for", "T1").exit, 0);
+  const before = readFileSync(file(root), "utf8");
+  // The file reads, but the write's temp file cannot be made beside it: fileSpike and forgetSpike throw.
+  chmodSync(dirname(file(root)), 0o555);
+  try {
+    for (const args of [
+      [b.branch, "--keep", "why"],
+      [a.branch, "--forget"],
+    ]) {
+      const res = spike(root, ...args);
+      assert.equal(res.exit, 2, res.stderr);
+      assert.equal(res.stderr.trim().split("\n").length, 1, res.stderr);
+      assert.match(res.stderr, /^✗ lane spike /);
+      assert.doesNotMatch(res.stderr, /\bat \S+\.mjs:\d+/);
+    }
+  } finally {
+    chmodSync(dirname(file(root)), 0o755);
+  }
+  assert.equal(readFileSync(file(root), "utf8"), before);
 });
