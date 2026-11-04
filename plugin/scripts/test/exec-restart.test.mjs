@@ -230,6 +230,26 @@ test("a carried commit that conflicts with main stops: exit 1, main untouched, m
   assert.equal(ledgerOf(r.root, "T3").carried.applied, false);
 });
 
+test("restart --carry of a lane with no commits, only uncommitted files, applies the diff: exit 0, staged", () => {
+  // R1d-23 r6 N11: the builder committed nothing; an empty pick range is no conflict.
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  writeFileSync(join(out.worktree, "three.txt"), "a\nhalf done\nc\n");
+  writeFileSync(join(out.worktree, "more.txt"), "half\n");
+  writeFileSync(out.reportPath, "NEEDS_CONTEXT\nq\n");
+  assert.equal(lane(r, "hold", "T3", "--for", "later", "--note", "x").exit, 0);
+  const main = mainOf(r.root);
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.conflict, undefined);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.deepEqual([ledger.carried.commits, ledger.carried.files], [0, 2]);
+  assert.equal(ledger.carried.applied, true);
+  assert.equal(git(ledger.worktree, "status", "--porcelain"), "A  more.txt\nM  three.txt");
+  assert.deepEqual(mainOf(r.root), main);
+  assert.equal(hasRef(r.root, "agentry/T3.1"), false, "all of it carried: the kept branch goes");
+});
+
 test("an uncommitted edit that conflicts with main stops after the picks, markers only in that file", () => {
   const r = repo();
   const out = lane(r, "start", "T3").json;

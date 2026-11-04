@@ -8,7 +8,8 @@
 // archiveNumber(root, id) -> n                           the first number no archive or kept branch holds
 // archive(root, id, n) -> { runs, ledger }               the ledger and run dir moved to `<id>.<n>`
 // retire(root, ledger, n) -> { kept: branch | null }     worktree removed, branch renamed `agentry/<id>.<n>`
-// carry(worktree, { base, tip, diff }) -> { ok, conflict? }   cherry-pick base..tip, then `git apply --3way`
+// carry(worktree, { base, tip, diff }) -> { ok, conflict? }   cherry-pick base..tip (none when the range is
+//                                                         empty), then `git apply --3way`
 import {
   existsSync,
   mkdirSync,
@@ -122,13 +123,15 @@ export function retire(root, ledger, n) {
   return { kept };
 }
 
-/** Carry the old branch's work into `worktree`: cherry-pick `base..tip` (oldest first), then apply the
- *  saved uncommitted diff with `git apply --3way`. `{ ok: true, applied }`, or on the first stop `{ ok:
+/** Carry the old branch's work into `worktree`: cherry-pick `base..tip` (oldest first; a branch with no
+ *  commits past its base has nothing to pick), then apply the saved uncommitted diff with `git apply --3way`. `{ ok: true, applied }`, or on the first stop `{ ok:
  *  false, applied, conflict }`, the stop named (`<sha> <subject> conflicts in <files>` or `the uncommitted
  *  diff conflicts in <files>`) with the conflict left in the worktree for the builder. `applied`: the diff
  *  is in the tree (staged, its own conflicts marked); a pick that stopped leaves it still to apply. */
 export function carry(worktree, { base, tip, diff }) {
-  if (tip) {
+  // git refuses an empty range ("empty commit set passed"): only uncommitted work goes straight to the diff.
+  const count = tip ? git(worktree, ["rev-list", "--count", `${base}..${tip}`]) : null;
+  if (tip && !(count.status === 0 && count.stdout.trim() === "0")) {
     const picked = git(worktree, [
       "cherry-pick",
       "--allow-empty",
