@@ -450,6 +450,12 @@ function onHold(ledger, { for: who, evidence = null, at, why, agent }) {
   return hold(ledger, entry, who === "later" ? "parked" : "the owner looks before the round ends");
 }
 
+/** Why `resume --redo` is refused on `hold` (any hold but one after a run): what the resume does instead. */
+export const redoRefusal = (hold) =>
+  hold?.when === "verified"
+    ? "--redo goes back over a finished run; this lane was parked verified, and resume makes it verified again"
+    : "--redo goes back over a finished run; this hold is during one, and resume carries on in it";
+
 // The owner's answer ends a hold: recorded in `holds[]`, then the held round's builder carries on with
 // the next run (or, `redo`, the same run again; after a "during" hold, the same round's work), or after
 // the last step the built work goes on as a report would send it.
@@ -458,10 +464,7 @@ function onResume(ledger, event) {
   const held = ledger.hold;
   if (ledger.state !== "held" || !held)
     throw new Error(`the lane is not held (state ${ledger.state}, next ${ledger.next})`);
-  if (redo && held.when !== "after")
-    throw new Error(
-      "--redo goes back over a finished run; this hold is during one, and resume carries on in it",
-    );
+  if (redo && held.when !== "after") throw new Error(redoRefusal(held));
   const { round: n, next, ...kept } = held;
   ledger.holds = [...(ledger.holds ?? []), { ...kept, resumedAt: at, note, redo }];
   ledger.hold = undefined;

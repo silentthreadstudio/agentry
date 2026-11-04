@@ -102,6 +102,7 @@ import {
   gateTally,
   greenOn,
   notesBudget,
+  redoRefusal,
   routeOf,
   skipsVerifier,
   verdicts,
@@ -1750,10 +1751,7 @@ function resume(ctx, id) {
   if (ledger.state !== "held")
     refuse(`the lane is not held (state ${ledger.state}, next ${ledger.next})`);
   if (!note) refuse(`resume needs --note "<the owner's words>"`);
-  if (redo && ledger.hold?.when !== "after")
-    refuse(
-      "--redo goes back over a finished run; this hold is during one, and resume carries on in it",
-    );
+  if (redo && ledger.hold?.when !== "after") refuse(redoRefusal(ledger.hold));
   const parked = isVerifiedPark(ledger);
   const touched = parked ? null : mainTouched(ctx, ledger, ledgers.list(root));
   if (touched) refuse(`main changed while ${id} was held: ${touched}: undo that, then resume`);

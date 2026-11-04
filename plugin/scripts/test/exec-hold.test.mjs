@@ -552,3 +552,17 @@ test("hold --for owner on a verified lane is refused, before and after it is par
   assert.equal(again.exit, 2);
   assert.match(again.stderr, /hold --for owner is for a builder's round/);
 });
+
+test("resume --redo on a parked verified lane is refused, saying it is verified, not mid-run (R1d-22 N5)", () => {
+  const r = repo();
+  verifiedLane(r);
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const redo = lane(r, "resume", "T3", "--note", "again", "--redo");
+  assert.equal(redo.exit, 2);
+  assert.match(
+    redo.stderr,
+    /--redo goes back over a finished run; this lane was parked verified, and resume makes it verified again/,
+  );
+  assert.doesNotMatch(redo.stderr, /during one/);
+  assert.equal(ledgerOf(r.root, "T3").state, "held");
+});
