@@ -90,7 +90,7 @@ const TASKS_MD = `# Tasks
 `;
 
 // A repo on main with the board committed; `.agentry/` committed too unless `untracked`.
-function repo({ spec = SPEC, untracked = false } = {}) {
+function repo({ spec = SPEC, untracked = false, board = BOARD_MD } = {}) {
   const root = temp("restart-repo-");
   const home = temp("restart-home-");
   git(root, "init", "-q", "-b", "main");
@@ -99,7 +99,7 @@ function repo({ spec = SPEC, untracked = false } = {}) {
     ".gitignore",
     `${untracked ? ".agentry/" : ".agentry/run/"}\n*.secret\nexports/\n`,
   );
-  commitFile(root, "plan/BOARD.md", BOARD_MD);
+  commitFile(root, "plan/BOARD.md", board);
   commitFile(root, "plan/TASKS.md", TASKS_MD);
   commitFile(root, "three.txt", "a\nb\nc\n");
   writeSpec(join(root, ".agentry"), spec);
@@ -608,10 +608,19 @@ test("restart --carry of a verified lane whose carry changed goes to the resolve
     ["restart", "resolve", "verifying"],
   );
   const ledger = ledgerOf(r.root, "T3");
+  // The old lane's verdict comes first, carried from the archive; the resolve check after it.
   assert.deepEqual(
-    ledger.rounds.map((x) => [x.step, x.role, x.mode]),
-    [["resolve", "verify", "fresh"]],
+    ledger.rounds.map((x) => [x.n, x.step, x.role, x.mode, x.verdict, x.carried]),
+    [
+      [1, "verify", "verify", "fresh", "PASS", "T3.1"],
+      [2, "resolve", "verify", "fresh", undefined, undefined],
+    ],
   );
+  assert.ok(
+    existsSync(ledger.rounds[0].reportPath),
+    "the carried verdict's report, in the archive",
+  );
+  assert.match(ledger.rounds[0].reportPath, /\/runs\/T3\.1\//);
   // The rebase recheck: the range-diff of the old base..tip against the new one, which the brief names.
   const [entry] = ledger.rebases;
   const newTip = tipOf(r.root, "agentry/T3");
@@ -623,7 +632,7 @@ test("restart --carry of a verified lane whose carry changed goes to the resolve
   assert.equal(res.json.rangeDiff, entry.rangeDiff);
   // The brief says the branch was carried by a restart, and points at the range-diff, not the old report.
   const brief = readFileSync(res.json.brief, "utf8");
-  assert.match(brief, /^# Resolve check T3, round 1/);
+  assert.match(brief, /^# Resolve check T3, round 2/); // round 1 is the carried verdict
   assert.match(
     brief,
     /rebased\s+onto `main`, or carried onto a fresh branch from it by a restart\./,
@@ -650,7 +659,10 @@ test("restart --carry of a verified lane whose carry is the same patch goes to t
   assert.equal(res.exit, 0, res.stderr);
   assert.deepEqual([res.json.next, res.json.state], ["gate", "verifying"]);
   const ledger = ledgerOf(r.root, "T3");
-  assert.deepEqual(ledger.rounds, []);
+  assert.deepEqual(
+    ledger.rounds.map((x) => [x.step, x.verdict, x.carried]),
+    [["verify", "PASS", "T3.1"]],
+  );
   assert.equal(ledger.rebases[0].changed, false);
   assert.equal(ledger.gateTip, tipOf(r.root, "agentry/T3"));
   assert.match(row(r.root, "T3"), /^\| T3 +\| verify +\| PASS +\|$/);
@@ -670,7 +682,10 @@ test('under exec.rebase "gate" a verified lane\'s changed carry goes to the gate
   assert.deepEqual([res.json.next, res.json.state], ["gate", "verifying"]);
   const ledger = ledgerOf(r.root, "T3");
   assert.deepEqual([ledger.route.rebase, ledger.rebases[0].changed], ["gate", true]);
-  assert.deepEqual(ledger.rounds, []);
+  assert.deepEqual(
+    ledger.rounds.map((x) => [x.step, x.verdict, x.carried]),
+    [["verify", "PASS", "T3.1"]],
+  );
 });
 
 test("a verified lane's restart that stops past the archive clears the old verdict from the board", () => {
@@ -708,6 +723,11 @@ test("restart --carry of a lane whose last verdict is FAIL still builds", () => 
   assert.equal(res.exit, 0, res.stderr);
   assert.deepEqual([res.json.next, res.json.state], ["build", "building"]);
   assert.equal(ledgerOf(r.root, "T3").rebases, undefined);
+  // A lane not verified carries no verdict: its FAIL stays in the archive.
+  assert.deepEqual(
+    ledgerOf(r.root, "T3").rounds.map((x) => [x.step, x.verdict, x.carried]),
+    [["build", undefined, undefined]],
+  );
 });
 
 test("restart --carry of a lane with no verdict still builds", () => {
@@ -718,3 +738,48 @@ test("restart --carry of a lane with no verdict still builds", () => {
   assert.deepEqual([res.json.next, res.json.state], ["build", "building"]);
   assert.equal(ledgerOf(r.root, "T3").rounds[0].step, "build");
 });
+
+// ---- a flagged item's verified carry lands on the verdicts it carries (field 94) --------------------
+
+const FLAG_SPEC = {
+  ...SPEC,
+  kinds: {
+    task: {
+      ...SPEC.kinds.task,
+      fields: { ...SPEC.kinds.task.fields, flag: { column: "Flag", type: "flag", mark: "x" } },
+    },
+  },
+};
+const FLAG_BOARD = `# Restart
+
+## Tasks
+
+| Task | Status | Verdict | Flag |
+| ---- | ------ | ------- | ---- |
+| T1   | todo   |         |      |
+| T2   | todo   |         |      |
+| T3   | todo   |         | x    |
+`;
+const merge = (r, ...args) =>
+  spawnSync("node", [LANE, "merge", ...args, "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home, NO_COLOR: "1" },
+  });
+
+for (const verify of ["flagged", "all"])
+  test(`exec.verify ${verify}: a flagged item's unchanged verified carry gates, closes and preflights clean`, () => {
+    const r = repo({ spec: { ...FLAG_SPEC, exec: { verify } }, board: FLAG_BOARD });
+    judged(r);
+    commitFile(r.root, "other.txt", "x\n", "chore: main moves");
+    const res = lane(r, "restart", "T3", "--carry");
+    assert.equal(res.exit, 0, res.stderr);
+    assert.equal(res.json.next, "gate");
+    assert.equal(lane(r, "gate", "T3").exit, 0);
+    const closed = lane(r, "close", "T3");
+    assert.equal(closed.exit, 0, closed.stderr);
+    assert.doesNotMatch(closed.json.episode.outcome, /no verifier read it/);
+    assert.match(closed.json.episode.outcome, /^verified \(PASS\)/);
+    const pre = merge(r, "T3", "--preflight");
+    assert.equal(pre.status, 0, pre.stdout + pre.stderr);
+    assert.doesNotMatch(pre.stdout + pre.stderr, /reverify/);
+  });

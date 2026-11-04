@@ -1461,6 +1461,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     calls = [],
     rebases = null,
     rebased = null,
+    carriedRounds = [],
     shown = {},
     warnings = [],
     exit = 0,
@@ -1518,7 +1519,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
       final: workflow.exec.final,
       rebase: workflow.exec.rebase,
     },
-    rounds: [],
+    rounds: carriedRounds,
     gates: [],
     checks: {},
     usedMemories: [],
@@ -2818,12 +2819,14 @@ function clearVerdict({ root, spec, model, kind }, id) {
 
 // The old builder's last report, as the archive holds it: the report a guard trip saved, else the newest
 // build round's report (or its held copy) that is there; null when no builder reported.
+// A path under lane `id`'s run dir as the archive `runs` holds it now; any other path as it is.
+const archivedPath = (id, runs) => (path) => {
+  const rel = relative(join(dirname(runs), id), path ?? "");
+  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? join(runs, rel) : path;
+};
+
 function lastReport(ledger, runs) {
-  const from = join(dirname(runs), ledger.id);
-  const moved = (path) => {
-    const rel = relative(from, path ?? "");
-    return rel && !rel.startsWith("..") && !isAbsolute(rel) ? join(runs, rel) : path;
-  };
+  const moved = archivedPath(ledger.id, runs);
   const builds = ledger.rounds.filter((r) => r.role === "build" && r.reportPath).reverse();
   const candidates = [
     ledger.hold?.report,
@@ -2845,6 +2848,20 @@ function carriesVerified(ledger, tip, files) {
     files.length === 0
   );
 }
+
+// The old lane's counted verdicts, carried into the new ledger as its first rounds: numbered from 1, marked
+// `carried: "<id>.<n>"` (the archive) and their files read where the archive holds them, so the land's
+// flagged-item check and the episode count the verification the carry stands on.
+const carriedVerdicts = (ledger, archive, runs) => {
+  const moved = archivedPath(ledger.id, runs);
+  return verdicts(ledger).map((r, i) => ({
+    ...r,
+    n: i + 1,
+    carried: archive,
+    ...(r.brief && { brief: moved(r.brief) }),
+    ...(r.reportPath && { reportPath: moved(r.reportPath) }),
+  }));
+};
 
 // A verified lane's carry, taken as a rebase: the range-diff of the old base..tip against the new
 // `base`..HEAD of `worktree` as the new lane's first `rebases[]` entry, and the `rebased` facts (`tip`,
@@ -2946,7 +2963,10 @@ function restart(ctx, id) {
     const res = carry(path, { base: old.base, tip: left.tip, diff });
     const checked =
       res.ok && carriesVerified(old, left.tip, work.files)
-        ? carryCheck(root, id, { base: old.base, tip: left.tip }, base, path)
+        ? {
+            ...carryCheck(root, id, { base: old.base, tip: left.tip }, base, path),
+            carriedRounds: carriedVerdicts(old, `${id}.${n}`, archived.runs),
+          }
         : null;
     // The verdict on the board stands for a checked carry, as it does for a rebase.
     const warnings = checked ? [] : [clearVerdict(ctx, id)].filter(Boolean);
