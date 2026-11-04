@@ -259,7 +259,30 @@ export const StatusView = z.object({
     )
     .default([]),
   recent: z.array(z.object({ sha: z.string(), subject: z.string() })).default([]),
-  note: z.object({ path: z.string(), lines: z.array(z.string()) }).optional(),
+  /** The hand-written note, absent with no note file. */
+  note: z
+    .object({
+      path: z.string(),
+      lines: z.array(z.string()),
+      /** The note file's mtime (ISO): its age, never a clock written in its text. */
+      writtenAt: z.string(),
+      /** Ids of the Now items active when it was written (recorded at the first start to read this mtime). */
+      now: z.array(z.string()),
+      /** 12 h old or more. */
+      old: z.boolean(),
+      /** Why it no longer holds, one reason, the sprint first. */
+      stale: z
+        .discriminatedUnion("why", [
+          z.object({
+            why: z.literal("now-changed"),
+            was: z.array(z.string()),
+            now: z.array(z.string()),
+          }),
+          z.object({ why: z.literal("ids-done"), ids: z.array(z.string()) }),
+        ])
+        .optional(),
+    })
+    .optional(),
 });
 export type StatusView = z.infer<typeof StatusView>;
 
