@@ -588,12 +588,36 @@ test("a preview reports the same skip and writes nothing", () => {
   assert.deepEqual(files(root), before);
 });
 
-test("verdict and merged are not guarded: they write even when the board gains a finding", () => {
-  const { root, shas } = guarded();
-  const fail = event(root, "verdict", "T2", { verdict: "FAIL" });
+test("a FAIL verdict under a todo sprint writes the verdict and skips the status, naming the rule", () => {
+  const { root } = guarded();
+  const result = event(root, "verdict", "T2", { verdict: "FAIL" });
+  assert.deepEqual(result.writes, [{ file: "plan/BOARD.md", what: "verdict → FAIL" }]);
+  assert.equal(result.skipped.length, 1);
+  assert.equal(result.skipped[0].what, "status");
+  assert.match(result.skipped[0].why, /^parent-active: .*sprint S1.*; the row stays todo$/);
+  assert.equal(row(root, "T2")[3], "todo");
+  assert.equal(row(root, "T2")[4], "FAIL");
+  assert.equal(read(root, "plan/sprints/S1.md"), SPRINT_MD);
+  assert.equal(board(root, "check").status, 0);
+});
+
+test("a FAIL verdict under a doing sprint writes the verdict and the status", () => {
+  const { root } = guarded("doing");
+  const result = event(root, "verdict", "T2", { verdict: "FAIL" });
   assert.deepEqual(
-    fail.writes.map((w) => w.what),
+    result.writes.map((w) => w.what),
     ["verdict → FAIL", "status → doing"],
+  );
+  assert.deepEqual(result.skipped, []);
+  assert.equal(row(root, "T2")[3], "doing");
+});
+
+test("a pass verdict and merged are not guarded: they write even when the board gains a finding", () => {
+  const { root, shas } = guarded();
+  const pass = event(root, "verdict", "T2", { verdict: "PASS" });
+  assert.deepEqual(
+    pass.writes.map((w) => w.what),
+    ["verdict → PASS"],
   );
   const merged = event(root, "merged", "T1", { shas, summary: "done" });
   assert.ok(merged.writes.some((w) => w.what === "status → done"));

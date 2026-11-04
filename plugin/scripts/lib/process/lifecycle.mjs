@@ -11,9 +11,9 @@
 // pins it; `<first>…<last>` when nothing is learned) (short SHAs) and the handoff line in the parent's file, naming the
 // first. A `writes` file is relative to the git root. A step whose edit changes nothing (already set,
 // the handoff line already there) is in `skipped`, not `writes`. The three status events a lane writes
-// for itself (dispatched · built · failed) are also checked: the board is read as the write would leave
+// for itself (dispatched · built · failed, and the status a FAIL verdict applies) are also checked: the board is read as the write would leave
 // it (a scratch copy of its files, `staged`) and a write that adds a finding the board did not have is
-// skipped, with the rule and its message. verdict and merged are not: the merge's record step checks
+// skipped, with the rule and its message (the verdict write itself always lands). A pass verdict and merged are not: the merge's record step checks
 // the board and stops on a finding by design.
 import { execFileSync } from "node:child_process";
 import {
@@ -233,6 +233,7 @@ export function applyEvent({
     const entry = { step, file: posix.join(spec.root, file), what, changed: false };
     planned.push(entry);
     edits.push({
+      step,
       file: join(root, spec.root, file),
       edit: (text) => {
         const out = edit(text);
@@ -296,14 +297,18 @@ export function applyEvent({
     }
     setField(step, target, value);
   }
-  if (edits.length && GUARDED.has(event)) {
+  // The status step of dispatched, built, failed and a FAIL verdict is checked; the verdict write itself is not.
+  if (edits.length && (GUARDED.has(event) || (event === "verdict" && data.verdict === "FAIL"))) {
     const staged = applyAll(edits, { preview: true }).filter((f) => f.after !== f.before);
     const gained = staged.length ? gainedBy({ root, spec, model, staged }) : [];
     if (gained.length) {
       const why = `${gained.map((f) => `${f.rule}: ${f.message}`).join("; ")}; the row stays ${item.status}`;
-      for (const { step } of planned) skipped.push({ what: step, why });
-      edits.length = 0;
-      planned.length = 0;
+      for (let i = planned.length - 1; i >= 0; i--) {
+        if (planned[i].step !== "status") continue;
+        skipped.push({ what: "status", why });
+        planned.splice(i, 1);
+        edits.splice(i, 1);
+      }
     }
   }
   if (edits.length) applyAll(edits, { preview });
