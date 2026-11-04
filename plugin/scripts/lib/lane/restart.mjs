@@ -28,10 +28,21 @@ const first = (text) => text.trim().split("\n")[0] ?? "";
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const unmerged = (dir) =>
   git(dir, ["diff", "--name-only", "--diff-filter=U", "-z"]).stdout.split("\0").filter(Boolean);
+// Does `dir` hold a file at any depth (a link counts as one)? Unreadable answers yes: it stays counted.
+function holdsFile(dir) {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).some(
+      (e) => !e.isDirectory() || holdsFile(join(dir, e.name)),
+    );
+  } catch {
+    return true;
+  }
+}
 
 /** What the old lane leaves behind, read only: its branch tip (null when the branch is gone), the commits
  *  past its base, and the ignored files in its worktree that `cleanup.disposable` (and the defaults) do not
- *  cover, which a removal would delete. `{ problem }` when its worktree is mid-rebase or off its branch. */
+ *  cover, which a removal would delete. An empty directory (or one holding only empty ones) is no file: it
+ *  never counts, and the removal takes it. `{ problem }` when its worktree is mid-rebase or off its branch. */
 export function leftover(root, ledger, disposable = []) {
   const tip = commitOf(root, `refs/heads/${ledger.branch}`);
   const count = tip ? git(root, ["rev-list", "--count", `${ledger.base}..${tip}`]) : null;
@@ -46,7 +57,8 @@ export function leftover(root, ledger, disposable = []) {
     found = ignoredFiles(ledger.worktree);
   } catch {} // no work tree git can read: nothing to lose
   const kept = disposableMatcher(disposable);
-  return { ignored: found.filter((entry) => !kept(entry)), tip, commits };
+  const lost = (entry) => !entry.endsWith("/") || holdsFile(join(ledger.worktree, entry));
+  return { ignored: found.filter((entry) => lost(entry) && !kept(entry)), tip, commits };
 }
 
 /** The worktree's uncommitted work against its HEAD (staged, unstaged and untracked) as one binary patch,

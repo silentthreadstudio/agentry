@@ -94,7 +94,11 @@ function repo({ spec = SPEC, untracked = false } = {}) {
   const root = temp("restart-repo-");
   const home = temp("restart-home-");
   git(root, "init", "-q", "-b", "main");
-  commitFile(root, ".gitignore", untracked ? ".agentry/\n*.secret\n" : ".agentry/run/\n*.secret\n");
+  commitFile(
+    root,
+    ".gitignore",
+    `${untracked ? ".agentry/" : ".agentry/run/"}\n*.secret\nexports/\n`,
+  );
   commitFile(root, "plan/BOARD.md", BOARD_MD);
   commitFile(root, "plan/TASKS.md", TASKS_MD);
   commitFile(root, "three.txt", "a\nb\nc\n");
@@ -540,4 +544,30 @@ test("a restart of a lane with an open stacked child is refused, nothing changed
   );
   assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), before);
   assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+});
+
+// ---- empty ignored directories (field 94) ----------------------------------------------------------
+
+test("an ignored directory holding only an empty one is no reason to refuse: the restart takes it down", () => {
+  const r = repo();
+  const out = worked(r);
+  mkdirSync(join(out.worktree, "exports", "playtest"), { recursive: true });
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(
+    existsSync(join(out.worktree, "exports")),
+    false,
+    "the removal takes the empty dirs",
+  );
+});
+
+test("an ignored directory holding a file still refuses the restart, naming it", () => {
+  const r = repo();
+  const out = worked(r);
+  mkdirSync(join(out.worktree, "exports", "playtest"), { recursive: true });
+  writeFileSync(join(out.worktree, "exports", "playtest", "run.log"), "x\n");
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /holds 1 ignored file\(s\) a restart would delete \(exports\/\)/);
+  assert.ok(existsSync(join(out.worktree, "exports", "playtest", "run.log")));
 });
