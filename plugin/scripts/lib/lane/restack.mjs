@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import * as ledgers from "../process/ledger.mjs";
 import { gateOf } from "../process/spec/workflow.mjs";
 import { gateLockDir, heldSlots, holderOf, running } from "./gate-lock.mjs";
-import { commitOf, currentBranch, isAncestor } from "./land.mjs";
+import { commitOf, currentBranch } from "./land.mjs";
 import { step as advance, verifiedTip } from "./rounds.mjs";
 import { onTarget, rebaseOnto, restackLine, stackOf, unclean } from "./stack.mjs";
 import { branchOf, git } from "./worktree.mjs";
@@ -148,9 +148,13 @@ export function restackLane(
   const tip = commitOf(root, `refs/heads/${ledger.branch}`);
   const again = restackLine(root, id, toMain ? " --main" : "");
   const plan = ledger.restacking;
-  // A killed restack whose rebase finished: the branch moved onto the target it planned.
+  // A killed restack whose rebase finished: the branch moved onto the target it planned, its old base gone
+  // from it (`onTarget`), so a stale plan plus a hand commit is never read as one (R1d-14 N1).
   const killed =
-    plan && plan.from !== tip && plan.base === ledger.base && isAncestor(root, plan.onto, tip)
+    plan &&
+    plan.from !== tip &&
+    plan.base === ledger.base &&
+    onTarget(root, { onto: plan.onto, base: plan.base, tip })
       ? plan
       : null;
   let move = killed;

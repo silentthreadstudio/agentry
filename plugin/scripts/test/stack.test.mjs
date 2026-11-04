@@ -533,3 +533,38 @@ test("a hostile git config: a dirty worktree still refused, nothing squashed, no
   ]);
   assert.deepEqual([tipOf(r.root, "inside"), tipOf(r.root, "agentry/T1")], [inside, t1tip]);
 });
+
+// ---- R1d-14 final N1, N2 and resolve N1, N2 ---------------------------------------------------------
+
+test("a stale restack plan plus a hand commit is never read as a finished restack: its old base is still there", () => {
+  const r = stacked();
+  // A restack killed before its rebase: the plan onto main, the branch where it was.
+  const plan = {
+    target: "main",
+    onto: tipOf(r.root, "main"),
+    ontoName: "main",
+    base: r.t2.base,
+    from: r.t2.closedTip,
+    why: "T1 is verified",
+    at: "2026-11-03T10:00:00.000Z",
+  };
+  setLedger(r.root, "T2", { restacking: plan });
+  commitFile(r.t2.worktree, "two-more.txt", "2\n", "fix: by hand");
+  const res = lane(r, "restack", "T2");
+  assert.equal(res.exit, 0, res.out);
+  assert.match(res.json.restack, /^nothing to do: T2 is on T1's tip \w{7}$/);
+  const ledger = ledgerOf(r.root, "T2");
+  assert.deepEqual([ledger.restacks, ledger.base], [undefined, r.t2.base]);
+});
+
+test("exec rebase on a lane stacked on an unmerged parent is refused, nothing changed", () => {
+  const r = stacked();
+  const before = snapshot(r, "T2");
+  const res = lane(r, "rebase", "T2");
+  assert.equal(res.exit, 2);
+  assert.match(
+    res.out,
+    /✗ lane exec rebase T2: T2 is stacked on T1: restack it \(.*exec restack T2 --root .*\), never rebase it onto main/,
+  );
+  assert.deepEqual(snapshot(r, "T2"), before);
+});

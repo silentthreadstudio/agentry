@@ -2354,6 +2354,12 @@ function rebase(ctx, id) {
     ledger.merge?.stateBefore === "verified";
   if (ledger.state !== "verified" && !conflicted)
     refuse(`rebase is for a verified lane: ${id} is ${ledger.state} (next ${ledger.next})`);
+  // A stacked lane moves with its parent until the parent lands (R1d-14 N2).
+  const stack = stackOf(root, ledger, ledgers.list(root));
+  if (stack.on && stack.state !== "merged")
+    refuse(
+      `${id} is stacked on ${stack.on}: restack it (${restackLine(root, id)}), never rebase it onto main`,
+    );
   const tip = headOf(root, ledger.branch);
   const main = headOf(root, ledger.mainBranch);
   const moved =
