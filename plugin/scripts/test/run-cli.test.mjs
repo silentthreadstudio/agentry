@@ -1144,3 +1144,21 @@ test("a live run that took its lock under one time zone holds it against a show,
   assert.equal((await holder).status, 0);
   assert.deepEqual(rawFiles(dir), [], "the first run freed its slot itself");
 });
+
+test("a watchdog that cannot run ps leaves a live parent's command running to its end", async () => {
+  const { identity } = await import("../lib/process/pid.mjs");
+  const { watchdogArgv } = await import("../lib/cli/supervise.mjs");
+  const [exe, ...args] = watchdogArgv(js("setTimeout(()=>console.log('done'),2500)"), identity());
+  const watched = spawn(exe, args, {
+    detached: true,
+    env: { ...process.env, PATH: "/nonexistent" },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let out = "";
+  watched.stdout.on("data", (d) => {
+    out += d;
+  });
+  const code = await new Promise((resolve) => watched.on("close", resolve));
+  assert.equal(code, 0);
+  assert.equal(out.trim(), "done", "never killed for want of a start reading");
+});

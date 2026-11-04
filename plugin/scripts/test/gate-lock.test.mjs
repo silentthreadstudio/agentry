@@ -334,3 +334,37 @@ test("a live holder that took its slot under one time zone is never taken over b
     await gone;
   }
 });
+
+test("a taker that cannot run ps never takes a live holder's slot", async () => {
+  const dir = lockDir();
+  mkdirSync(dir, { recursive: true });
+  const url = JSON.stringify(new URL("../lib/lane/gate-lock.mjs", import.meta.url).href);
+  const holder = spawn(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { holdGate } from ${url};
+       holdGate(${JSON.stringify(dir)}, { who: "holder" }); console.log("held"); setInterval(() => {}, 1000);`,
+    ],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  const gone = new Promise((resolve) => holder.on("exit", resolve));
+  await new Promise((resolve) => holder.stdout.once("data", resolve));
+  try {
+    const taker = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import { holdGate } from ${url};
+         console.log(holdGate(${JSON.stringify(dir)}, { who: "taker", waitSec: 0 }).busy ? "busy" : "took");`,
+      ],
+      { env: { ...process.env, PATH: "/nonexistent" }, encoding: "utf8" },
+    );
+    assert.equal(taker.stdout.trim(), "busy", taker.stderr);
+  } finally {
+    holder.kill("SIGKILL");
+    await gone;
+  }
+});

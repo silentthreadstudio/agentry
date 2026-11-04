@@ -94,3 +94,21 @@ test("an identity recorded under one time zone reads alive under another", () =>
     "not a group leader: no group",
   );
 });
+
+test("a start that cannot be read (no ps on PATH) while the pid runs reads alive; a gone pid still reads dead", () => {
+  const { pid } = sleeper();
+  const recorded = JSON.stringify(identity(pid));
+  const url = JSON.stringify(new URL("../lib/process/pid.mjs", import.meta.url).href);
+  const blind = spawnSync(
+    NODE,
+    [
+      "--input-type=module",
+      "-e",
+      `import * as pid from ${url};
+       console.log(pid.alive(${recorded}), pid.alive({ pid: ${pid}, start: "never read" }), pid.alive({ pid: ${deadPid()}, start: "x" }));`,
+    ],
+    { encoding: "utf8", env: { ...process.env, PATH: "/nonexistent" } },
+  );
+  assert.equal(blind.status, 0, blind.stderr);
+  assert.equal(blind.stdout.trim(), "true true false", "no reading is no proof of another process");
+});

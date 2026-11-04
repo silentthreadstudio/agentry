@@ -3,7 +3,8 @@
 // while that pid runs AND started then. A record with no `start` (written before there was one, or when the
 // start could not be read) is read by its pid alone, as before. A process group is named by its leader:
 // `groupAlive(pgid, start)` holds while a member runs and the leader is either that same process or gone (a
-// live group's id is never given out again, but a leader's pid is once the whole group is gone).
+// live group's id is never given out again, but a leader's pid is once the whole group is gone). Both err
+// toward alive: a start that cannot be read while the pid runs is no proof of another process.
 // Node built-ins only.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -61,11 +62,14 @@ export function identity(pid = process.pid) {
   return { pid, start: Number.isInteger(pid) && pid > 0 ? startOf(pid) : null };
 }
 
-/** Is the process `id` names still that process: its pid runs, and with a `start`, it started then. */
+/** Is the process `id` names still that process: its pid runs, and with a `start`, it started then. A
+ *  start that cannot be read now (no `ps`, a failed spawn) while the pid runs reads alive: only a start that
+ *  was read and differs means another process, so a live holder is never freed for want of a reading. */
 export function alive(id) {
   if (!running(id?.pid)) return false;
   if (typeof id.start !== "string") return true;
-  return startOf(id.pid) === id.start;
+  const now = startOf(id.pid);
+  return now === null || now === id.start;
 }
 
 /** Does the group `pgid` whose leader started at `start` still run? Its leader's pid run by another
@@ -73,5 +77,6 @@ export function alive(id) {
 export function groupAlive(pgid, start) {
   if (!groupRunning(pgid)) return false;
   if (typeof start !== "string" || !running(pgid)) return true;
-  return startOf(pgid) === start;
+  const now = startOf(pgid);
+  return now === null || now === start;
 }
