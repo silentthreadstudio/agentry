@@ -49,6 +49,23 @@ test("an agent worktree no ledger knows is unlisted-worktree: land, continue, fi
   assert.ok(!nudgesOf(root).some((n) => n.path && n.command.includes("/agentry:exec")));
 });
 
+test("a worktree on a spelling no branch is named is offered only remove, saying why", () => {
+  const { root } = fresh();
+  const tree = handBranch(root, ".claude/worktrees/agent-a1", "worktree-agent-a1");
+  // What `git checkout WORKTREE-AGENT-A1` writes on a case-insensitive filesystem, on any filesystem.
+  git(tree.path, "symbolic-ref", "HEAD", "refs/heads/WORKTREE-AGENT-A1");
+  const found = nudgesOf(root).filter((n) => n.path);
+  assert.deepEqual(
+    found.map((n) => [n.kind, n.command]),
+    [
+      [
+        "unlisted-worktree",
+        "remove: git worktree remove .claude/worktrees/agent-a1 (it is on WORKTREE-AGENT-A1, which no branch is named: check it out by its exact name to land, continue or file it)",
+      ],
+    ],
+  );
+});
+
 test("a worktree whose branch names a board task carries that id in its command", () => {
   const { root } = fresh();
   handBranch(root, ".claude/worktrees/fix-t2", "fix/T2");

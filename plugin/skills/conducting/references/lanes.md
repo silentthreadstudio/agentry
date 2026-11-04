@@ -55,7 +55,7 @@ on: `unlisted-worktree <branch> →` land: `lane merge <id> --branch <b>` · con
 · file: `lane spike <b> --for <id>` or `lane spike <b> --keep "<why>"` · remove: `git worktree remove <path>` (`<id>`
 when the branch or directory name holds a board id, the path relative to the main checkout, a path or branch
 that needs it shell-quoted). An orphan `agentry/<id>` worktree (no ledger) is the branch a lane for `<id>` would
-cut, so its row offers land, file and remove, never continue. `agentry lane spike <branch|path> --for <id>` files
+cut, so its row offers land, file and remove, never continue. A worktree whose HEAD is a spelling no branch is named (another case of its branch) offers only remove, saying why: land, adopt and spike refuse that spelling until it is checked out by its exact name. `agentry lane spike <branch|path> --for <id>` files
 it as work meant for that item: drift shows one `spike-for <id>` row (`land: … · continue: …`) until a ledger
 for `<id>` adopts or merges that branch. `agentry lane spike <branch|path> --keep "<why>"` keeps it on purpose:
 shown on the Kept row with `worktrees.keep`, never drift. `--forget` drops the entry; with no flag it lists them,

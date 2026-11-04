@@ -490,9 +490,13 @@ function landOrContinue(id, b) {
     ? land
     : `${land} · continue: lane exec adopt ${i} --branch ${br}`;
 }
-// An unlisted worktree not on main: those, file it (`lane spike`), or remove it (field 87).
-function unlisted(tree, runRoot, id) {
+// An unlisted worktree not on main: those, file it (`lane spike`), or remove it (field 87). One whose HEAD
+// is a spelling no branch is named (`git checkout WORKTREE-AGENT-X`) only removes: land, adopt and spike
+// all refuse that spelling, so the row says how to make them take it.
+function unlisted(tree, runRoot, id, tips) {
   const path = w(shownPath(runRoot, tree.path));
+  if (tree.branch && !tips.has(tree.branch))
+    return `remove: git worktree remove ${path} (it is on ${tree.branch}, which no branch is named: check it out by its exact name to land, continue or file it)`;
   return `${landOrContinue(id, tree.branch)} · file: lane spike ${tree.branch ? w(tree.branch) : path} --for ${id ?? "<id>"}|--keep "<why>" · remove: git worktree remove ${path}`;
 }
 
@@ -515,9 +519,8 @@ function unlistedTrees(root, runRoot, all) {
 
 // The spikes `lane spike` filed whose branch is still there (a gone one is left out): `{ spikes, error? }`,
 // none and the reason when the file cannot be read.
-function liveSpikes(runRoot) {
+function liveSpikes(runRoot, tips = git.branchTips(runRoot)) {
   const { spikes = [], error } = readSpikes(runRoot);
-  const tips = git.branchTips(runRoot);
   return { spikes: spikes.filter((s) => tips.has(s.branch)), error };
 }
 const spikeOf = (spikes, tree) =>
@@ -540,7 +543,8 @@ export function nudges({ root, runRoot = root, spec, model }) {
   const byId = new Map(all.map((l) => [l.id, l]));
   const onto = git.defaultBranch(root);
   const found = [];
-  const { spikes, error: unreadable } = liveSpikes(runRoot);
+  const tips = git.branchTips(runRoot);
+  const { spikes, error: unreadable } = liveSpikes(runRoot, tips);
   // An unreadable spikes.json is said, not read as empty: its kept worktrees show as unlisted meanwhile.
   if (unreadable) {
     const file = shownPath(runRoot, spikesFile(runRoot));
@@ -553,8 +557,9 @@ export function nudges({ root, runRoot = root, spec, model }) {
   const trees = unlistedTrees(root, runRoot, all).filter((t) => !isKept(spec, t));
   const loose = trees.filter((t) => !spikeOf(spikes, t));
   // Every branch whose landing is asked, surveyed in one go: git is asked per run, not per branch.
+  const named = (t) => !t.branch || tips.has(t.branch);
   const asked = [
-    ...loose.map((t) => t.branch),
+    ...loose.filter(named).map((t) => t.branch),
     ...all.filter((l) => !l.merge).map((l) => l.branch),
   ];
   const seen = survey(root, onto, asked.filter(Boolean));
@@ -562,9 +567,14 @@ export function nudges({ root, runRoot = root, spec, model }) {
   for (const tree of loose) {
     const id = taskIdOf(tree, items);
     const base = { ...(id ? { id } : {}), path: tree.path, branch: tree.branch ?? undefined };
-    if (tree.branch && landing(root, { branch: tree.branch, onto }, seen))
+    if (tree.branch && named(tree) && landing(root, { branch: tree.branch, onto }, seen))
       found.push({ kind: "merged-by-hand", ...base, command: adopt(id, tree.branch) });
-    else found.push({ kind: "unlisted-worktree", ...base, command: unlisted(tree, runRoot, id) });
+    else
+      found.push({
+        kind: "unlisted-worktree",
+        ...base,
+        command: unlisted(tree, runRoot, id, tips),
+      });
   }
   // A spike filed for an item: one row until a ledger for that item adopts or merges its branch.
   for (const s of spikes.filter((s) => typeof s.for === "string")) {
