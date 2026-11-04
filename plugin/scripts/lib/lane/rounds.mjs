@@ -11,7 +11,12 @@
 //                                             → as the first report would have, still touched → held again
 //   build / fix: uncommitted files, no commits past base, or a commit that breaks the workflow file's
 //                `commits` rules                    → fix (resume) with the reason; twice → stop
-//   build / fix: NEEDS_CONTEXT              → needs-context (resume) once, then stop
+//   build / fix: NEEDS_CONTEXT              → needs-context (resume) once per step (the run of `steps` the
+//                                             builder is on; a lane with no steps is one step), then held
+//                                             for the context (`hold.for: "context"`): the report read, its
+//                                             first line the hold's reason
+//   held for the context: { type: "resume", note } → needs-context (resume the builder) with the note as
+//                                             `fact`; a hold never sends a builder by itself
 //   build / fix: BLOCKED                    → stop; no status line → resend once, then stop
 //   verify / recheck / final: tip moved     → recheck: the verdict is void (no rebase while one reads);
 //                                             the 3rd void verdict → stop
@@ -63,16 +68,18 @@
 //   restack, a guard hold or a parked verified lane → refused: its report, or its resume, comes first
 //
 // Every budget is the lane's, so no mix of outcomes resets one: one resend per role, one needs-context
-// round, three counted verdicts (a final after a recheck PASS is the one more), three void ones, and a
-// guard fix (resent or not) that trips a guard again stops. So every lane ends. A hold waits for the
-// owner, who ends it with a resume; the owner's answers spend no budget.
+// round per step (the owner's resume past a step hold starts the next step), three counted verdicts (a
+// final after a recheck PASS is the one more), three void ones, and a guard fix (resent or not) that trips
+// a guard again stops. So every lane ends. A hold waits for the owner, who ends it with a resume; the
+// owner's answers spend no budget.
 //
 // A round in the ledger: { n, step, role, mode, final?, resend?, guard?, agent?, from?, reason?,
 // stepRun?, redo?, owner?, brief, reportPath, tip, at } plus, once reported, { report, status | verdict, void?,
 // summary?, guards?, covered?, onlyFixCommits? }, or `held: true` when the lane was held before its report
 // was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }` (a guard hold also
-// `reason` and `report`, the saved report a report reads again; a parked verified lane `{ for: "later",
-// when: "verified", next, evidence, since, why? }`); each resume appends its answer to
+// `reason` and `report`, the saved report a report reads again; a context hold `reason` and `report`, the
+// read report; a parked verified lane `{ for: "later", when: "verified", next, evidence, since, why? }`);
+// each resume appends its answer to
 // `holds[]`: { for, when, stepRun, evidence, since, resumedAt, note, redo, why? }.
 //
 // The route is the ledger's snapshot from start, `route: { verify, flagged, preset, noteRounds, final,
@@ -336,6 +343,13 @@ function subjectTrips(broken = []) {
 
 const sameRun = (a, b) => a?.[0] === b?.[0] && a?.[1] === b?.[1];
 
+// The round the lane's current step began with: the first builder round of the newest run (`steps`) a
+// builder was sent on; round 1 when there are no steps. The needs-context budget counts from it.
+function stepStart(ledger) {
+  const run = builders(ledger).findLast((r) => r.stepRun)?.stepRun;
+  return run ? builders(ledger).find((r) => sameRun(r.stepRun, run)).n : 1;
+}
+
 // The round the run `round` builds began with: the first builder round of that run since the owner's
 // last answer that sent it back (a redo), else since the run was first dispatched.
 function runStart(ledger, round) {
@@ -377,8 +391,21 @@ function onReport(ledger, round, event) {
   if (status === "NEEDS_CONTEXT" && rebasing)
     return stop(ledger, "NEEDS_CONTEXT on the rebase: the conflict goes to the owner");
   if (status === "NEEDS_CONTEXT") {
-    if (builders(ledger).some((r) => r.step === "needs-context"))
-      return stop(ledger, "NEEDS_CONTEXT again after the one re-dispatch with a supplied fact");
+    // Asked again in this step: the owner supplies the fact (the worktree is left as it is).
+    const from = stepStart(ledger);
+    if (builders(ledger).some((r) => r.step === "needs-context" && r.n >= from)) {
+      const entry = {
+        for: "context",
+        when: "during",
+        stepRun: round.stepRun ?? null,
+        evidence: round.reportPath,
+        reason: event.summary || status,
+        report: round.reportPath,
+        since: event.at,
+        round: round.n,
+      };
+      return hold(ledger, entry, "NEEDS_CONTEXT again in this step: the owner supplies the fact");
+    }
     return send(
       ledger,
       "needs-context",
@@ -533,6 +560,19 @@ function onResume(ledger, event) {
         ...extra,
       },
       reason,
+    );
+  // The owner supplied the fact a builder asked for twice in one step: the same re-dispatch as the first.
+  if (held.for === "context")
+    return send(
+      ledger,
+      "needs-context",
+      {
+        from: held.report,
+        agent: round.agent,
+        ...(held.stepRun && { stepRun: held.stepRun }),
+        fact: note,
+      },
+      "the owner supplied the fact",
     );
   const total = ledger.steps?.length ?? 0;
   // A rebase held during its round carries on as the rebase, so its report is read as one.

@@ -641,3 +641,184 @@ test("resume --redo on a parked verified lane is refused, saying it is verified,
   assert.doesNotMatch(redo.stderr, /during one/);
   assert.equal(ledgerOf(r.root, "T3").state, "held");
 });
+
+// ---- the needs-context budget per step and the context hold (field 83) ---------------------------------
+
+// The builder asks for a fact: no commit, the report saved.
+const ask = (out, line = "which file holds the key?") =>
+  writeFileSync(out.reportPath, `NEEDS_CONTEXT\n${line}\nused_memories: none\n`);
+
+test("a two-step lane asking once in each step reaches verified, each ask re-dispatched with its todo", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  ask(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  assert.deepEqual([out.next, out.mode, out.agent], ["needs-context", "resume", "builder-1"]);
+  assert.match(out.todo, /^append the fact under "## The fact" at the end of /);
+  build(out, "one.txt");
+  out = lane(r, "report", "T1").json;
+  assert.equal(out.state, "held");
+  out = lane(r, "resume", "T1", "--note", "OK, go").json;
+  assert.equal(out.next, "continue");
+  ask(out, "and where does two.txt go?");
+  out = lane(r, "report", "T1").json;
+  assert.equal(out.next, "needs-context", "step 2 has a budget of its own");
+  assert.equal(ledgerOf(r.root, "T1").hold, undefined);
+  build(out, "two.txt");
+  out = lane(r, "report", "T1").json;
+  assert.equal(out.next, "verify");
+  writeFileSync(out.reportPath, "All checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  const gated = lane(r, "gate", "T1").json;
+  assert.deepEqual([gated.state, gated.next], ["verified", "close"]);
+  assert.deepEqual(
+    ledgerOf(r.root, "T1").rounds.map((x) => x.step),
+    ["build", "needs-context", "continue", "needs-context", "verify"],
+  );
+});
+
+test("asked again in one step: held for the context, nothing changed; resume sends the fact to the builder", () => {
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3", "--agent", "builder-1").json;
+  writeFileSync(join(out.worktree, "half.txt"), "half\n");
+  ask(out, "still no key: see `cfg/keys.json` and `three.txt` first");
+  const status = git(out.worktree, "status", "--porcelain");
+  const cells = board(r.root);
+  const held = lane(r, "report", "T3");
+  assert.equal(held.exit, 0, held.stderr);
+  assert.deepEqual(
+    [held.json.state, held.json.next, held.json.prompt],
+    ["held", "resume", undefined],
+  );
+  assert.match(
+    held.json.held,
+    /^the builder needs more context again → supply it: .*exec resume T3 --root '.*' --note "<the fact>"; or let it touch them: .*exec owns T3 --root '.*' --add cfg\/keys\.json --apply, then resume$/,
+  );
+  assert.match(
+    held.json.asks,
+    /^still no key: see `cfg\/keys\.json` and `three\.txt` first \(.*r2-needs-context\.report\.md\), since /,
+  );
+  assert.match(held.json.run, /exec resume T3 .*--note "<the fact>"$/);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.deepEqual(
+    [ledger.hold.for, ledger.hold.report, ledger.rounds.at(-1).status],
+    ["context", ledger.rounds[1].reportPath, "NEEDS_CONTEXT"],
+  );
+  assert.equal(git(out.worktree, "status", "--porcelain"), status, "the worktree is as it was");
+  assert.equal(board(r.root), cells);
+  // The text view says it too; show prints the same lines.
+  assert.match(text(r, "show", "T3"), /^held: the builder needs more context again → supply it: /m);
+
+  const resumed = lane(r, "resume", "T3", "--note", "the key is `id` in three.txt");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  out = resumed.json;
+  assert.deepEqual([out.next, out.mode, out.agent], ["needs-context", "resume", "builder-1"]);
+  assert.equal(out.todo, undefined, "the fact is in the brief already");
+  const brief = readFileSync(out.brief, "utf8");
+  assert.match(
+    brief,
+    /## Supplied context\n\nYou asked for a fact in .*r2-needs-context\.report\.md/,
+  );
+  assert.ok(brief.endsWith("\n## The fact\n\nthe key is `id` in three.txt\n"), brief);
+  assert.equal(ledgerOf(r.root, "T3").holds.at(-1).for, "context");
+});
+
+test("a guard trip on the report that asks again is a guard hold; once main is clean it holds for the context", () => {
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3").json;
+  ask(out);
+  writeFileSync(join(r.root, "stray.txt"), "oops\n");
+  const tripped = lane(r, "report", "T3");
+  assert.equal(tripped.exit, 0, tripped.stderr);
+  assert.equal(ledgerOf(r.root, "T3").hold.for, "guard");
+  rmSync(join(r.root, "stray.txt"));
+  const again = lane(r, "report", "T3");
+  assert.equal(again.exit, 0, again.stderr);
+  assert.equal(ledgerOf(r.root, "T3").hold.for, "context");
+  assert.match(again.json.held, /^the builder needs more context again/);
+  // No path outside owns named: no owns hint.
+  assert.doesNotMatch(again.json.held, /let it touch them/);
+});
+
+test("owns --add on a lane held for the context: appended, a path already owned changes nothing and says so", () => {
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3").json;
+  ask(out, "needs: cfg/keys.json");
+  assert.match(lane(r, "report", "T3").json.held, /--add cfg\/keys\.json --apply, then resume$/);
+  const preview = lane(r, "owns", "T3", "--add", "cfg/keys.json");
+  assert.deepEqual([preview.exit, preview.json.applied], [0, false]);
+  assert.equal(ledgerOf(r.root, "T3").owned.length, 1, "a preview writes nothing");
+  const added = lane(r, "owns", "T3", "--add", "cfg/keys.json,three.txt", "--apply");
+  assert.equal(added.exit, 0, added.stderr);
+  assert.deepEqual(
+    added.json.owned.map((o) => o.path),
+    ["three.txt", "cfg/keys.json"],
+  );
+  assert.equal(added.json["already owned"], "three.txt");
+  assert.equal(added.json.rewrote, undefined, "a held lane has no brief waiting");
+  const bytes = readFileSync(
+    join(r.root, ".agentry", "run", "process", "ledger", "T3.json"),
+    "utf8",
+  );
+  const same = lane(r, "owns", "T3", "--add", "cfg/keys.json", "--apply");
+  assert.deepEqual([same.exit, same.json.applied], [0, false]);
+  assert.equal(same.json.unchanged, "already owned: cfg/keys.json");
+  assert.equal(
+    readFileSync(join(r.root, ".agentry", "run", "process", "ledger", "T3.json"), "utf8"),
+    bytes,
+    "nothing is written",
+  );
+  const resumed = lane(r, "resume", "T3", "--note", "touch it").json;
+  assert.match(readFileSync(resumed.brief, "utf8"), /- `cfg\/keys\.json` \(new\)/);
+});
+
+test("owns --add in needs-context rewrites the waiting brief, keeping the fact; a verified or merged lane refuses it", () => {
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out, "I need `four.txt` too");
+  out = lane(r, "report", "T3").json;
+  assert.match(
+    out.todo,
+    /; or let it touch them: .*exec owns T3 .*--add four\.txt --apply, then resume$/,
+  );
+  writeFileSync(
+    out.brief,
+    `${readFileSync(out.brief, "utf8")}\n## The fact\n\nfour.txt is yours\n`,
+  );
+  const added = lane(r, "owns", "T3", "--add", "four.txt", "--apply");
+  assert.equal(added.exit, 0, added.stderr);
+  assert.equal(added.json.rewrote, out.brief);
+  const brief = readFileSync(out.brief, "utf8");
+  assert.match(brief, /- `four\.txt` \(new\)/);
+  assert.ok(brief.trimEnd().endsWith("## The fact\n\nfour.txt is yours"), brief);
+
+  const v = repo();
+  verifiedLane(v);
+  const before = readFileSync(
+    join(v.root, ".agentry", "run", "process", "ledger", "T3.json"),
+    "utf8",
+  );
+  const refused = lane(v, "owns", "T3", "--add", "x.txt", "--apply");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /owns --add is for a lane still building: T3 is verified \(next close\)/,
+  );
+  const merged = ledgerOf(v.root, "T3");
+  writeFileSync(
+    join(v.root, ".agentry", "run", "process", "ledger", "T3.json"),
+    JSON.stringify({ ...merged, state: "merged", next: null }),
+  );
+  assert.match(lane(v, "owns", "T3", "--add", "x.txt").stderr, /T3 is merged/);
+  assert.ok(before.length > 0);
+  assert.match(
+    lane(v, "owns", "T3", "--add", "a", "--set", "b").stderr,
+    /owns takes --set or --add, not both/,
+  );
+});

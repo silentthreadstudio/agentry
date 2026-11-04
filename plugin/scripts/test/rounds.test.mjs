@@ -259,13 +259,44 @@ test("30 broken commits give one fix round listing 5 of them, then +25", () => {
   );
 });
 
-test("NEEDS_CONTEXT → needs-context once (resume), then stop", () => {
+test("NEEDS_CONTEXT → needs-context once (resume), exactly as before the context hold", () => {
   const first = go(lane(), report("NEEDS_CONTEXT", { dirty: [], commits: 0 }, { agent: "b" }));
   assert.equal(first.next, "needs-context");
-  assert.deepEqual([first.ledger.rounds[1].role, first.ledger.rounds[1].mode], ["build", "resume"]);
-  const second = go(first.ledger, report("NEEDS_CONTEXT", { dirty: [], commits: 0 }));
-  assert.equal(second.next, "stop");
-  assert.match(second.reason, /NEEDS_CONTEXT again/);
+  assert.equal(first.reason, "the builder needs a fact");
+  const round = first.ledger.rounds[1];
+  assert.deepEqual(
+    [round.step, round.role, round.mode, round.agent, round.from, round.fact],
+    ["needs-context", "build", "resume", "b", first.ledger.rounds[0].reportPath, undefined],
+  );
+  assert.equal(first.ledger.hold, undefined);
+});
+
+test("NEEDS_CONTEXT again in a lane with no steps → held for the context, the report read, nothing sent", () => {
+  const first = go(lane(), report("NEEDS_CONTEXT", { dirty: [], commits: 0 }, { agent: "b" }));
+  const asked = first.ledger.rounds.at(-1);
+  const second = pure(
+    first.ledger,
+    report("NEEDS_CONTEXT", ok, { summary: "which key holds the id?", at: AT }),
+  );
+  assert.equal(second.next, "resume");
+  assert.equal(second.dispatch, undefined, "a context hold sends no builder");
+  assert.equal(second.ledger.state, "held");
+  assert.equal(expects(second.ledger), "resume");
+  assert.deepEqual(second.ledger.hold, {
+    for: "context",
+    when: "during",
+    stepRun: null,
+    evidence: asked.reportPath,
+    reason: "which key holds the id?",
+    report: asked.reportPath,
+    since: AT,
+    round: asked.n,
+  });
+  assert.equal(second.ledger.rounds.at(-1).status, "NEEDS_CONTEXT", "the round is read");
+  assert.match(second.reason, /NEEDS_CONTEXT again in this step/);
+  // No status summary: the reason is the status itself.
+  const bare = go(first.ledger, report("NEEDS_CONTEXT", ok, { at: AT })).ledger;
+  assert.equal(bare.hold.reason, "NEEDS_CONTEXT");
 });
 
 test("after the supplied fact, DONE goes on to verify", () => {
@@ -531,6 +562,8 @@ test("no state loops: 300 adversarial walks of up to 200 events all stop or clos
     for (; events < 200; events++) {
       const want = expects(ledger);
       if (want === null || want === "close") break;
+      // A lane held for the context waits for the owner's fact: an owner's answer spends no budget.
+      if (want === "resume" && ledger.hold?.for === "context") break;
       // A lane held for the guard waits for main to be fixed, then takes its report again.
       const asked = want === "resume" && ledger.hold?.for === "guard" ? "report" : want;
       const outcomes = eventsFor(asked, tip, events).map((c) => ({
@@ -544,7 +577,7 @@ test("no state loops: 300 adversarial walks of up to 200 events all stop or clos
       ledger = chosen.ledger;
     }
     assert.ok(
-      ["stop", "close"].includes(ledger.next),
+      ["stop", "close"].includes(ledger.next) || ledger.hold?.for === "context",
       `seed ${seed}: still at ${ledger.next} after ${events} events`,
     );
     longest = Math.max(longest, events);
@@ -1310,4 +1343,84 @@ test("verifiedTip: the last verdict's tip, else builtTip, carried only through c
   assert.equal(verifiedTip({ ...ledger, restacks: [entry(TIP, MOVED, "by hand")] }), TIP);
   assert.equal(verifiedTip({ ...ledger, restacks: [entry(third, MOVED)] }), TIP);
   assert.equal(verifiedTip(lane()), undefined);
+});
+
+// ---- the needs-context budget per step, the context hold, the notes cap (fields 83, 84) ------------------
+
+// Steps `1 → owner OK, 2`: field 83's shape.
+const TWO = [step3(1, "owner"), step3(2)];
+const asks = (extra = {}) =>
+  report("NEEDS_CONTEXT", { dirty: [], commits: 0 }, { agent: "builder-1", at: AT, ...extra });
+
+test("a two-step lane asking once per step reaches verified: each step has its own needs-context round", () => {
+  let ledger = go(stepped(TWO), asks()).ledger;
+  assert.equal(ledger.next, "needs-context");
+  ledger = go(ledger, done()).ledger;
+  assert.deepEqual([ledger.hold.for, ledger.hold.when], ["owner", "after"]);
+  ledger = go(ledger, resume()).ledger;
+  assert.deepEqual(ledger.rounds.at(-1).stepRun, [2, 2]);
+  // Step 2's first ask: a fresh budget, so a re-dispatch, not a hold.
+  const second = go(ledger, asks());
+  assert.equal(second.next, "needs-context");
+  assert.deepEqual(second.ledger.rounds.at(-1).stepRun, [2, 2]);
+  ledger = go(second.ledger, done(MOVED), MOVED).ledger;
+  assert.equal(ledger.next, "verify");
+  ledger = go(ledger, judge("PASS", MOVED)).ledger;
+  ledger = go(ledger, { type: "gate", record: green(MOVED) }).ledger;
+  assert.deepEqual([ledger.state, ledger.next], ["verified", "close"]);
+  assert.deepEqual(
+    ledger.rounds.map((r) => r.step),
+    ["build", "needs-context", "continue", "needs-context", "verify"],
+  );
+});
+
+test("NEEDS_CONTEXT twice in one step of a lane with steps → held for the context on that run", () => {
+  const first = go(stepped(TWO), asks()).ledger;
+  const res = pure(first, asks({ summary: "where is the key?" }));
+  assert.equal(res.dispatch, undefined);
+  assert.deepEqual(
+    [res.ledger.hold.for, res.ledger.hold.stepRun, res.ledger.hold.reason],
+    ["context", [1, 1], "where is the key?"],
+  );
+});
+
+test("held for the context: resume → needs-context (resume) with the note as the fact, the budget as before", () => {
+  const first = go(stepped(TWO), asks()).ledger;
+  const held = go(first, asks({ agent: "builder-2" })).ledger;
+  const res = pure(held, resume({ note: "the key is `id`" }));
+  assert.equal(res.next, "needs-context");
+  assert.equal(res.reason, "the owner supplied the fact");
+  const round = res.ledger.rounds.at(-1);
+  assert.deepEqual(
+    [round.step, round.role, round.mode, round.agent, round.from, round.fact, round.stepRun],
+    ["needs-context", "build", "resume", "builder-2", held.hold.report, "the key is `id`", [1, 1]],
+  );
+  assert.equal(res.ledger.hold, undefined);
+  assert.deepEqual(
+    [res.ledger.holds.at(-1).for, res.ledger.holds.at(-1).note],
+    ["context", "the key is `id`"],
+  );
+  // The supplied fact answers it: the run goes on as any report would send it.
+  assert.equal(go(res.ledger, done()).ledger.hold.when, "after");
+  // Asked a third time in the step: held for the context again, never stopped.
+  assert.equal(go(res.ledger, asks()).ledger.hold.for, "context");
+});
+
+test("a guard trip on the second ask is a guard hold; a report again with main clean holds for the context", () => {
+  const first = go(lane(), asks()).ledger;
+  const tripped = go(first, asks({ guards: { mainTouched: "HEAD moved" } })).ledger;
+  // `asks` sets guards in its third argument; the extra above overrides them.
+  assert.equal(tripped.hold.for, "guard");
+  const again = go(tripped, asks({ at: LATER })).ledger;
+  assert.deepEqual([again.hold.for, again.hold.since], ["context", LATER]);
+});
+
+test("a context hold never sends a builder by itself: reports, verdicts and notes refused, a gate decides nothing", () => {
+  const held = go(go(lane(), asks()).ledger, asks()).ledger;
+  assert.throws(() => step(held, asks()), /the lane is held: it expects a resume/);
+  assert.throws(() => step(held, judge("PASS")), /expects a resume/);
+  assert.throws(() => step(held, { type: "notes", notes: ["N1"] }), /expects a resume/);
+  const gated = step(held, { type: "gate", record: green() });
+  assert.deepEqual([gated.next, gated.dispatch, gated.ledger.state], ["resume", undefined, "held"]);
+  assert.throws(() => step(held, resume({ redo: true })), /--redo goes back over a finished run/);
 });

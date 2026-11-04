@@ -18,7 +18,8 @@
 //   show <id>                 the ledger and the pending step, for a cold resume (the route fixed at start, the
 //                             workflow as the file says now, the notes kept open)
 //   owns <id> [--set a,b]     the owned files the briefs name (parsed once at start); `--set … --apply`
-//                             replaces them, and the brief waiting to be answered is rewritten
+//                             replaces them, `--add … --apply` appends to them (not on a verified or merged
+//                             lane), and the brief waiting to be answered is rewritten
 //   hold <id> --for owner|later [--agent a]   a builder's round waits for the owner's review (its reply
 //                             saved), or is parked (its builder stopped); the ledger alone is written
 //   resume <id> --note "<the OK>" [--redo] [--fresh]   the owner's answer to a hold, then the next round
@@ -145,7 +146,7 @@ const STEPS = [
   "restart",
 ];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -176,7 +177,9 @@ export const help = {
     "--cite <A40,A41>":
       "start: decisions to quote in every brief, by id (rows naming the task are quoted anyway)",
     "--set <paths>": "owns: the comma-separated owned files to use from now on",
-    "--apply": "owns: write the --set list (without it the new list is only shown)",
+    "--add <paths>":
+      "owns: comma-separated files to own as well (a lane held for context, or in needs-context)",
+    "--apply": "owns: write the --set or --add list (without it the new list is only shown)",
     "--for <owner|later>":
       "hold: the owner reviews the round (its reply saved), or later: the lane is parked",
     "--evidence <path>": "hold --for owner: what the owner opens (default: the round's report)",
@@ -201,6 +204,7 @@ const STEPS_OF = {
   "--owner": ["fix"],
   "--cite": ["start"],
   "--set": ["owns"],
+  "--add": ["owns"],
   "--apply": ["owns"],
   "--for": ["hold"],
   "--evidence": ["hold"],
@@ -223,7 +227,7 @@ const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
-// argv → { step, id, value, set, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain,
+// argv → { step, id, value, set, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain,
 // carry } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
@@ -251,13 +255,16 @@ function parse(argv) {
       return { error: flag === "--on" ? "--on goes with start only" : `${step} takes no ${flag}` };
   if (step === "fix" && (given["--notes"] === undefined) === (given["--owner"] === undefined))
     return { error: 'fix needs --notes N1,N3 or --owner "<the change>", one of them' };
-  if (given["--apply"] && given["--set"] === undefined)
-    return { error: "--apply writes the --set list: give --set <paths>" };
+  if (given["--set"] !== undefined && given["--add"] !== undefined)
+    return { error: "owns takes --set or --add, not both" };
+  if (given["--apply"] && given["--set"] === undefined && given["--add"] === undefined)
+    return { error: "--apply writes the --set list: give --set <paths> (or --add <paths>)" };
   return {
     step,
     id,
     value: given["--agent"] ?? given["--episode"] ?? given["--notes"] ?? null,
     set: given["--set"] ?? null,
+    add: given["--add"] ?? null,
     cite: given["--cite"]?.split(",").map((c) => c.trim()) ?? [],
     apply: Boolean(given["--apply"]),
     json: Boolean(given["--json"]),
@@ -978,6 +985,8 @@ function brief({ root, spec, model }, ledger, dispatch) {
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
   // A restarted lane's first brief says what was carried into the tree (field 69).
   if (n === 1 && fresh && ledger.carried) text = withSection(text, carriedWork(ledger.carried));
+  // The fact the owner supplied at a context hold goes where the conductor puts one: at the end.
+  if (dispatch.fact) text = `${text.trimEnd()}\n\n## The fact\n\n${dispatch.fact}\n`;
   writeFileSync(file, text);
   return { brief: file, reportPath: values.reportPath, tip, at: now() };
 }
@@ -1015,11 +1024,43 @@ const heldLine = (hold, total) =>
 const answerOf = (h, total) =>
   h.when === "verified" ? `verified at ${h.resumedAt}: "${h.note}"` : answerText(h, total);
 
+// The paths a NEEDS_CONTEXT report names that the lane does not own, in its first 20 lines: those of each
+// `needs: <path>` line and each backticked path (a word with a `/` or a file extension, no spaces).
+const PATHISH = /^[\w.@-][\w.@/-]*(?:\/[\w.@-]*|\.[A-Za-z][A-Za-z0-9]*)$/;
+function namedOutside(root, ledger, reportPath) {
+  const lines = readOr(reportPath).split("\n").slice(0, 20);
+  const named = lines.flatMap((line) => {
+    const needs = /^[\s>*_-]*needs\s*:\s*(.+)$/i.exec(line);
+    const words = needs ? needs[1].split(/[\s,]+/) : [];
+    const ticked = [...line.matchAll(/`([^`\s]+)`/g)].map((m) => m[1]);
+    return [...words, ...ticked].map((w) => w.replace(/^`+|[`.,;:)]+$/g, ""));
+  });
+  const owned = ownedOf(root, ledger).map((o) => o.path);
+  const mine = (p) => owned.some((o) => ownsPath(o, p) || ownsPath(p, o));
+  return [...new Set(named.filter((p) => PATHISH.test(p) && !/^\.+$/.test(p) && !mine(p)))];
+}
+// The way to let the builder touch the paths it asked for, when its report names any outside owns.
+const ownsHint = (root, ledger, reportPath) => {
+  const paths = namedOutside(root, ledger, reportPath);
+  return paths.length
+    ? `; or let it touch them: ${laneLine(root, "owns", ledger.id, ` --add ${paths.join(",")} --apply`)}, then resume`
+    : "";
+};
+
 // What a held lane prints right after the header: the hold, and the step that answers it. A guard hold
 // is answered by fixing main and reporting again; its `hold` goes with it (the saved report, the reason).
+// A context hold by the owner's fact (or more owned files).
 function heldLead(root, ledger) {
   const { hold } = ledger;
   if (ledger.state !== "held" || !hold) return {};
+  if (hold.for === "context") {
+    const run = laneLine(root, "resume", ledger.id, ' --note "<the fact>"');
+    return {
+      held: `the builder needs more context again → supply it: ${run}${ownsHint(root, ledger, hold.report)}`,
+      asks: `${hold.reason} (${hold.report}), since ${hold.since}`,
+      run,
+    };
+  }
   if (hold.for === "guard") {
     const again = laneLine(root, "report", ledger.id);
     return {
@@ -1076,8 +1117,9 @@ function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, extra = 
     });
     // `model` is the name a dispatch passes on; `modelFrom` where it came from (the text joins them).
     if (picked) Object.assign(out, { model: picked.model, modelFrom: picked.from });
-    if (round.step === "needs-context" && !round.resend)
-      out.todo = `append the fact under "## The fact" at the end of ${round.brief} before sending it; if the contract, the repo and memory don't hold it, ask the owner first`;
+    // The owner's fact from a context hold is in the brief already.
+    if (round.step === "needs-context" && !round.resend && !round.fact)
+      out.todo = `append the fact under "## The fact" at the end of ${round.brief} before sending it; if the contract, the repo and memory don't hold it, ask the owner first${ownsHint(root, ledger, round.from)}`;
     out.after = `${laneLine(root, waiting, ledger.id)} --agent <the agent's id>`;
   } else if (ledger.next === "gate" || ledger.next === "close") {
     out.run = laneLine(root, ledger.next, ledger.id);
@@ -1406,10 +1448,11 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   return exit ? { ...res, exit } : res;
 }
 
-// The owned files the briefs name. `--set a,b` replaces them (shown until `--apply`); on apply the brief
-// waiting to be answered is rewritten, so the agent reads the amended list.
+// The owned files the briefs name. `--set a,b` replaces them and `--add a,b` appends the ones not owned yet
+// (shown until `--apply`); on apply the brief waiting to be answered is rewritten, so the agent reads the
+// amended list. `--add` is for a lane still building: a builder that asked for a file it does not own.
 function owns(ctx, id) {
-  const { root, set, apply } = ctx;
+  const { root, set, add, apply } = ctx;
   let ledger = mustLedger(root, id);
   const shown = (extra = {}) => ({
     exit: 0,
@@ -1419,15 +1462,39 @@ function owns(ctx, id) {
       2,
     ),
   });
-  if (set === null) {
+  if (set === null && add === null) {
     ledger.owned = ownedOf(root, ledger);
     return shown({ amend: laneLine(root, "owns", id, " --set <paths> --apply") });
   }
-  const paths = [...new Set(set.split(",").map((p) => p.trim()))];
+  const flag = set === null ? "--add" : "--set";
+  const paths = [...new Set((set ?? add).split(",").map((p) => p.trim()))];
   const bad = paths.find((p) => !p || /\s/.test(p));
-  if (bad !== undefined) refuse(`--set takes comma-separated paths, no blanks: "${bad}"`);
-  ledger = { ...ledger, owned: withNew(ledger.worktree, paths) };
-  if (!apply) return shown({ applied: false, preview: PREVIEW });
+  if (bad !== undefined) refuse(`${flag} takes comma-separated paths, no blanks: "${bad}"`);
+  const already = [];
+  if (set !== null) ledger = { ...ledger, owned: withNew(ledger.worktree, paths) };
+  else {
+    const verified =
+      ["verified", "merging", "merged"].includes(ledger.state) || isVerifiedPark(ledger);
+    if (verified)
+      refuse(
+        `owns --add is for a lane still building: ${id} is ${ledger.state} (next ${ledger.next}); a change now is the owner's (${laneLine(root, "fix", id, ' --owner "<the change>"')})`,
+      );
+    // Each path as `start` reads it (a bare name found in the tree), kept only when it is not owned yet.
+    const owned = [...ownedOf(root, ledger)];
+    const before = owned.length;
+    for (const path of paths) {
+      const fresh = withNew(ledger.worktree, [path]).filter(
+        (o) => !owned.some((e) => e.path === o.path),
+      );
+      if (fresh.length) owned.push(...fresh);
+      else already.push(path);
+    }
+    ledger = { ...ledger, owned };
+    if (owned.length === before)
+      return shown({ applied: false, unchanged: `already owned: ${already.join(", ")}` });
+  }
+  const said = already.length ? { "already owned": already.join(", ") } : {};
+  if (!apply) return shown({ applied: false, ...said, preview: PREVIEW });
   const round = ledger.rounds.at(-1);
   // A held lane has no brief waiting: the round after the resume reads the new list.
   const waiting = round && ledger.state !== "held" && expects(ledger);
@@ -1440,7 +1507,7 @@ function owns(ctx, id) {
     const kept = appendedAfter(old, readFileSync(round.brief, "utf8"));
     if (kept) appendFileSync(round.brief, kept);
   }
-  return shown({ applied: true, ...(waiting && { rewrote: round.brief }) });
+  return shown({ applied: true, ...said, ...(waiting && { rewrote: round.brief }) });
 }
 
 function readReport(path, who) {
