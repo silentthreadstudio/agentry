@@ -4,6 +4,7 @@
 // process. Node built-ins only.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { groupRunning as alive } from "../process/pid.mjs";
 
 // The gate runs under this wrapper: it writes its own pid to `pidFile`, then runs the gate as its
 // child. `runGate` starts it detached, so the wrapper leads the group the gate runs in and its pid is
@@ -19,15 +20,6 @@ process.exit(r.status ?? 1);`;
 export function gateArgv(cmd, { pidFile, nonce }) {
   return [process.execPath, "-e", WRAP, nonce, pidFile, ...cmd];
 }
-
-const alive = (pgid) => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM"; // there, but not ours to signal
-  }
-};
 
 // The whole argv of process `pid` as `{ text }` ("" when it has gone), or `{ error }`. The nonce sits
 // past the wrapper's long script, so nothing may cut it short: /proc where there is one (Linux), else

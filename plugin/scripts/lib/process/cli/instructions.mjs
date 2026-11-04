@@ -23,15 +23,15 @@ import {
   existsSync,
   lstatSync,
   readFileSync,
-  readdirSync,
   realpathSync,
   renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
+import { sweepTemps, tempOf } from "../../fs/atomic.mjs";
 import {
   AGENTS,
   LOCAL,
@@ -100,31 +100,8 @@ function parse(argv) {
   return { lint, write, json, target: value };
 }
 
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-};
-
-// The `<name>.agentry-<pid>.tmp` files a killed write left beside `real`, whose pid is gone: removed.
-// Returns how many.
-function sweepLeftovers(real) {
-  const base = `${basename(real)}.agentry-`;
-  let removed = 0;
-  for (const name of readdirSync(dirname(real))) {
-    const pid = name.startsWith(base) && /^(\d+)\.tmp$/.exec(name.slice(base.length))?.[1];
-    if (!pid || alive(Number(pid))) continue;
-    unlinkSync(join(dirname(real), name));
-    removed++;
-  }
-  return removed;
-}
-
-// Every file written to a temporary name beside it, then renamed in; a failure leaves all as they were.
-// Returns how many leftover temporary files of a killed write it removed first.
+// Every file written to a temporary name beside it (`fs/atomic.mjs`'s), then renamed in; a failure leaves
+// all as they were. Returns how many leftover temporary files of a killed write it removed first.
 function writeAll(root, writes) {
   const staged = [];
   let leftovers = 0;
@@ -134,8 +111,8 @@ function writeAll(root, writes) {
       const real = existsSync(file) ? realpathSync(file) : file;
       const was = existsSync(real) ? readFileSync(real) : null;
       if (was) accessSync(real, constants.W_OK);
-      leftovers += sweepLeftovers(real);
-      const temp = `${real}.agentry-${process.pid}.tmp`;
+      leftovers += sweepTemps(dirname(real)).length;
+      const temp = tempOf(real);
       writeFileSync(temp, text);
       if (was) chmodSync(temp, statSync(real).mode);
       staged.push({ real, temp, was });

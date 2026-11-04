@@ -4,8 +4,9 @@
 // Every path hangs off the MAIN checkout's root, never a worktree's, so a step run from inside a worktree
 // reads and writes the same ledger. Writes are atomic (temp file, then rename). Along with `drafts`, this is
 // the only `.agentry/run` I/O of the process kit. Node built-ins only.
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWrite } from "../fs/atomic.mjs";
 import { idProblem } from "../lane/id.mjs";
 
 const VERSION = 1;
@@ -53,9 +54,7 @@ export function write(root, ledger) {
     .map((n) => n.slice(0, -".json".length))
     .find((n) => n !== ledger.id && sameWord(n, ledger.id));
   if (twin) throw new Error(`ledger id "${ledger.id}" differs only by case from "${twin}"`);
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`);
-  renameSync(tmp, file);
+  atomicWrite(file, `${JSON.stringify(out, null, 2)}\n`);
   return out;
 }
 

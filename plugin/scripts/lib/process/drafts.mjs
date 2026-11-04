@@ -6,8 +6,9 @@
 // (`unreadable`). Nothing here writes a decision or a rule; `cli/draft.mjs` does that, on the owner's OK.
 //
 // With `ledger`, this is the process kit's only `.agentry/run` I/O. Node built-ins only.
-import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { atomicWrite } from "../fs/atomic.mjs";
 
 export const KINDS = ["decision", "rule"];
 export const STATES = ["pending", "applied", "dropped"];
@@ -98,8 +99,6 @@ export function mark(root, n, state, patch = {}) {
   Object.assign(found.draft, patch);
   found.draft.state = state;
   found.raw = JSON.stringify(found.draft);
-  const tmp = `${fileOf(root)}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${lines.map((l) => l.raw).join("\n")}\n`);
-  renameSync(tmp, fileOf(root));
+  atomicWrite(fileOf(root), `${lines.map((l) => l.raw).join("\n")}\n`);
   return found.draft;
 }

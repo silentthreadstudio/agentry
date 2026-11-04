@@ -8,8 +8,9 @@
 // markGating(root, id) -> clear()                  `exec gate`'s intent, written before it waits for the lock
 // gatingNow(root, id) -> boolean                   a gate of the lane is queued or running
 // RestackError { message, exit: 2 (refused, nothing changed) | 1 (git stopped: aborted), files }
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { atomicWrite } from "../fs/atomic.mjs";
 import * as ledgers from "../process/ledger.mjs";
 import { gateOf } from "../process/spec/workflow.mjs";
 import { gateLockDir, heldSlots, holderOf, running } from "./gate-lock.mjs";
@@ -99,11 +100,7 @@ function rangeDiff(root, ledger, { base, from, onto, to }) {
 
 // The ledger file's bytes put back as they were (atomically), after a rebase that stopped.
 const ledgerFile = (root, id) => join(root, ".agentry", "run", "process", "ledger", `${id}.json`);
-function restoreBytes(file, text) {
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, text);
-  renameSync(tmp, file);
-}
+const restoreBytes = (file, text) => atomicWrite(file, text);
 
 // Rebase the lane's branch as `move` plans, the plan in the ledger first so a rerun after a kill knows
 // what the rebase was (`restacking`). A stop is aborted, and the ledger's bytes are put back.
