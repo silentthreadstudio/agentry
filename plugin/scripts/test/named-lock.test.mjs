@@ -267,7 +267,7 @@ test("a ridden take stays held after a drop until the ride ends, then goes; a ri
   const own = Date.parse(JSON.parse(readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"))).until);
   assert.ok(own < Date.now() + 120_000, "back at its own until");
   rideTake(dir, "sim", { ...ride, pid: rider.pid });
-  assert.deepEqual(dropLock(dir, "sim", take), { dropped: 0, kept: rider.pid });
+  assert.deepEqual(dropLock(dir, "sim", take), { dropped: 0, kept: { pid: rider.pid } });
   assert.equal(heldLocks(dir, "sim", 1).length, 1, "kept while the rider runs");
   endRide(dir, "sim", 1, rider.pid);
   assert.equal(heldLocks(dir, "sim", 1).length, 0, "gone with the ride");

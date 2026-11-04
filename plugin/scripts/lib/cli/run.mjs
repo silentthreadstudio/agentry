@@ -423,7 +423,10 @@ export async function lockCli(argv) {
   if (orphan) return out(...orphansDropped(root, name, lock.slots, what));
   if (sub === "drop") {
     const { dropped, kept } = dropLock(root, name, { slots: lock.slots, pid, who });
-    if (kept !== null) return out(0, `lock ${name}: kept while your run (pid ${kept}) rides it`);
+    if (kept !== null) {
+      const by = kept.pid !== undefined ? `pid ${kept.pid}` : `pgid ${kept.pgid}`;
+      return out(0, `lock ${name}: kept while your run (${by}) rides it`);
+    }
     if (dropped) return out(0, `lock ${name} dropped`);
     return out(1, say(what, `${name} is not held by ${who}`, "agentry lock show"));
   }

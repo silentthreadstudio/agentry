@@ -260,7 +260,8 @@ export function releaseLock(root, name, slot, pid = process.pid) {
 }
 
 /** Drop the takes of lock `name` this session (`pid`) holds for `who`: `{ dropped }` the slots it freed at
- *  once, `kept` the pid of a live run riding one of them (that slot goes when the ride ends). */
+ *  once, `kept` a live ride of one of them (that slot goes when the ride ends): `{ pid }` of its run, or
+ *  `{ pgid }` of its command's group once only that is left. */
 export function dropLock(root, name, { slots, pid, who }) {
   let dropped = 0;
   let kept = null;
@@ -275,7 +276,7 @@ export function dropLock(root, name, { slots, pid, who }) {
         dropped++;
       } else {
         writeSlot(file, { ...holder, ownUntil: new Date().toISOString() });
-        kept ??= rider.pid;
+        kept ??= running(rider.pid) ? { pid: rider.pid } : { pgid: rider.pgid };
       }
     });
   }

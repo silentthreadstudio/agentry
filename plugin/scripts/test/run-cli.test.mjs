@@ -855,7 +855,7 @@ test("a gate argv whose own take ended while it queued for the gate does not rid
 });
 
 // A ride of session `env`'s take whose command writes `<name>.pid` (its pid) and then lives `ms`, or until
-// it is killed when `ms` is null.
+// it is killed when `ms` is null. Quiet: a command that outlives its run must not hold the run's pipes.
 function rideNamed(dir, env, name, ms) {
   const pidFile = join(dir, `${name}.pid`);
   const live = ms === null ? "setInterval(()=>{},1000)" : `setTimeout(()=>{},${ms})`;
@@ -869,7 +869,7 @@ function rideNamed(dir, env, name, ms) {
       "--",
       ...js(`require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));${live}`),
     ],
-    { cwd: dir, env },
+    { cwd: dir, env, quiet: true },
   );
   const command = () => Number(readFileSync(pidFile, "utf8"));
   const started = () => until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8") !== "");
@@ -970,4 +970,26 @@ test("kill -9 of a ridden run holds the take past the run's limit while its comm
   process.kill(-command, "SIGKILL");
   await until(() => !alive(command));
   assert.equal((await other()).status, 0, "free once it is gone");
+});
+
+test("lock drop on a take whose ridden run was killed names the group it kept the slot for", async (t) => {
+  const dir = repo({ editor: 1 });
+  const env = asSession(process.pid);
+  assert.equal((await agentry(["lock", "take", "editor"], { cwd: dir, env })).status, 0);
+  const riding = rideNamed(dir, env, "cmd", null);
+  await riding.started();
+  const command = riding.command();
+  t.after(() => {
+    try {
+      process.kill(-command, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  await sleepMs(200);
+  riding.run.child.kill("SIGKILL");
+  await riding.run;
+  const drop = await agentry(["lock", "drop", "editor"], { cwd: dir, env });
+  assert.equal(drop.status, 0);
+  assert.equal(drop.stdout, `lock editor: kept while your run (pgid ${command}) rides it\n`);
 });
