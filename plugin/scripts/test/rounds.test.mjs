@@ -1386,8 +1386,18 @@ test("a context hold's reason cut at the summary's cap ends at a word, outside b
     reasonOf(`${long.slice(0, 119)}…`),
     "see `exec.noteRounds`, `three.txt` (the owned one) and…",
   );
-  assert.equal(reasonOf("see (the open paren that never cl…"), "see…");
+  const paren = `see (the open paren that never closes ${"and on ".repeat(20)}`.slice(0, 119);
+  assert.equal(reasonOf(`${paren}…`), "see…");
   assert.equal(reasonOf("short and whole"), "short and whole");
+});
+
+test("a context hold's reason keeps a report's own ellipsis: only the reader's cut is cut back", () => {
+  // R1d-38 r4 N8: `is it \`a\` or \`b\`…` lost its last word.
+  const first = go(lane(), asks()).ledger;
+  const reasonOf = (summary) => go(first, asks({ summary })).ledger.hold.reason;
+  assert.equal(reasonOf("is it `a` or `b`…"), "is it `a` or `b`…");
+  const long = `${"word ".repeat(30)}`.slice(0, 118);
+  assert.equal(reasonOf(`${long}…`), `${long}…`, "one short of the cut length is the report's own");
 });
 
 test("NEEDS_CONTEXT twice in one step of a lane with steps → held for the context on that run", () => {
