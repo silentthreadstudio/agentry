@@ -59,7 +59,8 @@ lanes: T1 verified, T2 verifying on T1 · 0 merged today
 stack: T2 on T1: T1 moved → agentry lane exec restack T2
 ```
 
-The parent `moved`, `landed`, or `is stopped` (closed or gone). Restack it when the lane is at rest.
+The parent `moved`, `landed`, or `is stopped` (closed or gone); for a parent that ended, the line names
+`restack <X> --main`, the step that takes the lane off it. Restack it when the lane is at rest.
 
 The recommendation is yours, not the script's: the single next step. A held lane comes first: show the owner
 its evidence and ask for the answer (it goes in `--note` as the owner said it; never resume on their behalf).

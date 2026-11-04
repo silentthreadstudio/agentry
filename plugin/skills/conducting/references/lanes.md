@@ -243,7 +243,9 @@ a due stack (exit 2): `T1 moved since T2 was cut on it (abc1234 → def5678): a 
 **Restack.** `agentry lane exec restack T2 [--main]` writes T2's branch and ledger only (no board, no main).
 It runs with no agent out (the lane at `gate`, `close` or `merge` next, or held): otherwise `a <role> round is
 out (round <n>, next <next>): restack when the lane is at its gate, close or merge, or held`. It is refused too
-while the gate lock names `lane T2` (`the gate is running in T2's worktree`) and on a dirty worktree (`the
+while a gate of T2 is queued or running (`a gate for T2 is queued or running: restack after it`: `exec gate`
+marks its intent in `.agentry/run/process/gating/T2.json` before it reads the ledger and clears it on any exit)
+and on a dirty worktree (`the
 worktree <path> is not clean (<entries, max 5>): commit or remove them, then restack`; a rebase still in
 progress, a killed restack, leads the entries as `rebase in progress`). The target is T1's tip when T1 moved,
 main's tip when T1 landed, or main's with `--main` on any state of T1 (a stopped T1 needs it). With nothing
@@ -253,9 +255,11 @@ off: `git -c rebase.autoStash=false -c rebase.autoSquash=false -c rebase.updateR
 <base>`. A stop is aborted (`rebase --abort`) with the branch, worktree, index and ledger as they were, exit 1:
 `✗ lane exec restack T2: <short> <subject> conflicts on <onto name> at <short> (<files, max 5>): aborted,
 agentry/T2 is back at <short> → resolve it in <worktree>: git rebase --onto <onto> <base>, then <restack
-line>`. The ledger is written only after the rebase exits 0. A branch already on the target (rebased by hand,
-or by a restack killed after its rebase) is recorded `by hand`: the resolution recheck runs, never a silent
-pass. Printed on success: `restacked: onto T1 at <short> (was <short>): <n> commit(s), <no conflict | resolved
+line>`. Before the rebase the ledger holds the plan, `restacking: { target, onto, ontoName, base, from }`; the
+record is written only after the rebase exits 0, and a stop puts the ledger's bytes back. A branch already on the
+target (rebased by hand) is recorded `by hand`, and so is one a restack killed after its rebase moved: the rerun
+reads the plan, so a parent that moved again since is no trap. Either way the resolution recheck runs, never a
+silent pass. Printed on success: `restacked: onto T1 at <short> (was <short>): <n> commit(s), <no conflict | resolved
 by hand>; tip <short> → <short>` (onto main: `restacked: onto main at <short> without T1's old commits (T1
 landed): …`). Each restack appends `restacks[]: { at, parent, onto: "parent" | "main", from, to, base:
 { from, to }, resolution: "none" | "by hand" }` (and `rangeDiff`, `logs/restack-range-diff-<n>.txt`, for one
@@ -271,8 +275,11 @@ commits are its own lane's, and never rebase: the lane restacks.
 
 **Land in order.** `/agentry:merge T2` refuses until T1 has landed and T2 is restacked onto main (see
 `merge.md`, the `stack` row). T1's land restacks each child at rest onto main itself, after its board commit,
-in id order (`restacked: T2 onto main (<n> commits)`), and leaves a child with an agent out or a conflict as it
-was, naming it. A chain lands one lane at a time: T1's land makes T2 due main and T3 (on T2) due its parent.
+in id order (`restacked: T2 onto main (<n> commits)`), and leaves a child with an agent out, a gate queued or
+running, or a conflict as it was, naming it; the rerun of a land that already finished restacks the children
+at rest by the same rule. A gate whose lane moved while it ran (its base, its restacks or its branch tip)
+writes nothing and exits 1: `T2 moved while its gate ran (<what moved>): the gate's record is not written →
+<gate line>`. A chain lands one lane at a time: T1's land makes T2 due main and T3 (on T2) due its parent.
 `show T2` adds `stack:` and `restacks:` (one line each); `show T1` adds `stacked on it: <ids>`. The episode
 says `stacked on T1; restacks: N`.
 
