@@ -6,7 +6,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { landing, mechanical, nudges } from "../lib/process/drift.mjs";
+import { fileSpike } from "../lib/lane/spikes.mjs";
+import { keptTrees, landing, mechanical, nudges } from "../lib/process/drift.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 import {
   SPEC,
@@ -35,13 +36,17 @@ function nudgesOf(root, spec) {
 }
 const kinds = (list) => list.map((n) => n.kind).sort();
 
-test("an agent worktree no ledger knows is unlisted-worktree and names /agentry:exec", () => {
+test("an agent worktree no ledger knows is unlisted-worktree: land, continue, file or remove it, never /agentry:exec", () => {
   const { root } = fresh();
   handBranch(root, ".claude/worktrees/agent-a1", "worktree-agent-a1");
   const found = nudgesOf(root).filter((n) => n.kind === "unlisted-worktree");
   assert.equal(found.length, 1);
-  assert.equal(found[0].command, "/agentry:exec <id>");
+  assert.equal(
+    found[0].command,
+    'land: lane merge <id> --branch worktree-agent-a1 · continue: lane exec adopt <id> --branch worktree-agent-a1 · file: lane spike worktree-agent-a1 --for <id>|--keep "<why>" · remove: git worktree remove .claude/worktrees/agent-a1',
+  );
   assert.equal(found[0].branch, "worktree-agent-a1");
+  assert.ok(!nudgesOf(root).some((n) => n.path && n.command.includes("/agentry:exec")));
 });
 
 test("a worktree whose branch names a board task carries that id in its command", () => {
@@ -49,7 +54,82 @@ test("a worktree whose branch names a board task carries that id in its command"
   builtBranch(root, "T2");
   const [n] = nudgesOf(root).filter((x) => x.kind === "unlisted-worktree");
   assert.equal(n.id, "T2");
-  assert.equal(n.command, "/agentry:exec T2");
+  assert.equal(
+    n.command,
+    'land: lane merge T2 --branch agentry/T2 · continue: lane exec adopt T2 --branch agentry/T2 · file: lane spike agentry/T2 --for T2|--keep "<why>" · remove: git worktree remove .agentry/run/worktrees/T2',
+  );
+});
+
+test("a branch a lane adopted (exec adopt) is no longer unlisted-worktree", () => {
+  const { root } = fresh();
+  const tree = handBranch(root, ".claude/worktrees/agent-d4", "worktree-agent-d4");
+  assert.ok(nudgesOf(root).some((n) => n.kind === "unlisted-worktree"));
+  ledger(root, "T2", {
+    adopted: { branch: tree.branch, tip: tree.sha, commits: [], worktree: tree.path },
+  });
+  assert.ok(!nudgesOf(root).some((n) => n.kind === "unlisted-worktree"));
+});
+
+// ---- spikes: worktrees `lane spike` filed (field 87) ----
+
+const spiked = (root, tree, extra) =>
+  fileSpike(root, { branch: tree.branch, path: tree.path, ...extra, at: "2026-01-01T00:00:00Z" });
+const keptOf = (root) => {
+  const { spec } = loadSpec(join(root, ".agentry", "process.json"), { root });
+  return keptTrees({ root, spec }).map((t) => t.branch);
+};
+
+test("a spike filed --keep is shown with the kept worktrees, never as drift", () => {
+  const { root } = fresh();
+  const tree = handBranch(root, ".claude/worktrees/agent-k1", "worktree-agent-k1");
+  spiked(root, tree, { keep: "the benchmark rig" });
+  assert.ok(!nudgesOf(root).some((n) => n.branch === tree.branch));
+  assert.deepEqual(keptOf(root), [tree.branch]);
+});
+
+test("a spike filed --for shows one spike-for row until a ledger for the item adopts or merges its branch", () => {
+  for (const took of ["adopted", "merged"]) {
+    const { root } = fresh();
+    const tree = handBranch(root, ".claude/worktrees/agent-f1", "worktree-agent-f1");
+    spiked(root, tree, { for: "T2" });
+    const rows = nudgesOf(root).filter((n) => n.branch === tree.branch);
+    assert.deepEqual(
+      rows.map((n) => [n.kind, n.id, n.command]),
+      [
+        [
+          "spike-for",
+          "T2",
+          "land: lane merge T2 --branch worktree-agent-f1 · continue: lane exec adopt T2 --branch worktree-agent-f1",
+        ],
+      ],
+    );
+    assert.deepEqual(keptOf(root), []);
+    // Another item's ledger on that branch does not take it.
+    ledger(root, "T1", {
+      adopted: { branch: tree.branch, tip: tree.sha, commits: [], worktree: null },
+    });
+    assert.ok(nudgesOf(root).some((n) => n.kind === "spike-for"));
+    if (took === "adopted")
+      ledger(root, "T2", {
+        adopted: { branch: tree.branch, tip: tree.sha, commits: [], worktree: tree.path },
+      });
+    else ledger(root, "T2", { branch: tree.branch, origin: "adopted", state: "merging" });
+    assert.ok(!nudgesOf(root).some((n) => n.branch === tree.branch), took);
+  }
+});
+
+test("a spike whose branch is gone is dropped from the view: no row, not kept", () => {
+  const { root } = fresh();
+  const a = handBranch(root, ".claude/worktrees/agent-g1", "worktree-agent-g1");
+  const b = handBranch(root, ".claude/worktrees/agent-g2", "worktree-agent-g2");
+  spiked(root, a, { for: "T2" });
+  spiked(root, b, { keep: "kept" });
+  for (const t of [a, b]) {
+    git(root, "worktree", "remove", "--force", t.path);
+    git(root, "branch", "-D", t.branch);
+  }
+  assert.ok(!nudgesOf(root).some((n) => n.kind === "spike-for" || n.path));
+  assert.deepEqual(keptOf(root), []);
 });
 
 test("a worktree a ledger owns, and one that is not an agent's, give no nudge", () => {

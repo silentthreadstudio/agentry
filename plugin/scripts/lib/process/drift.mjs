@@ -6,7 +6,8 @@
 // with args { root, runRoot, spec, model }: `root` is the checkout the board is read from (it may sit in a
 // subfolder), `runRoot` the main checkout, where the ledgers live.
 //
-// A nudge kind: `unlisted-worktree` (an agent worktree no ledger knows), `started-by-hand` (a task the board
+// A nudge kind: `unlisted-worktree` (an agent worktree no ledger knows or `lane spike` filed), `spike-for` (a
+// worktree filed `--for` an item, until a ledger for it adopts or merges its branch), `started-by-hand` (a task the board
 // has started and no ledger tracks), `merged-by-hand` (a branch whose work is on main with no merge record),
 // `verified-not-merged` (verified, its work not on main yet), `episode-pending` (an episode payload nobody
 // wrote) and `stale-status` (a hand status file still listing a finished task; one for the file). A task gets one nudge at most, in that order of precedence: merged-by-hand, verified-not-merged,
@@ -20,7 +21,8 @@
 // and the commits on main that carry it must still be in effect the same way. Read-only; git goes
 // through git.mjs, asked once per run for all the ledgers (`survey`, `records`), never once per ledger.
 import { realpathSync } from "node:fs";
-import { basename, join, sep } from "node:path";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
+import { readSpikes } from "../lane/spikes.mjs";
 import * as git from "./git.mjs";
 import { kindOf } from "./ids.mjs";
 import { isKept } from "./keep.mjs";
@@ -471,6 +473,23 @@ const accept = (id) => `/agentry:board fix --accept ${id ?? "<id>"}`;
 // Work merged by hand from a worktree no ledger knows: `--branch` adopts it (a ledger; merge then finds
 // nothing left to land), and only then can the owner accept it.
 const adopt = (id, branch) => `${merge(id)} --branch ${branch}, then ${accept(id)}`;
+// Work in a worktree no ledger knows, for item `id`: land it as it is, or continue it in a lane (field 86).
+const landOrContinue = (id = "<id>", b = "<b>") =>
+  `land: lane merge ${id} --branch ${b} · continue: lane exec adopt ${id} --branch ${b}`;
+// An unlisted worktree not on main: those two, file it (`lane spike`), or remove it (field 87). Its path
+// as the main checkout `runRoot` reaches it, where the commands run.
+function unlisted(tree, runRoot, id = "<id>") {
+  const rel = relative(runRoot, tree.path);
+  const path = rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : tree.path;
+  return `${landOrContinue(id, tree.branch ?? "<b>")} · file: lane spike ${tree.branch ?? path} --for ${id}|--keep "<why>" · remove: git worktree remove ${path}`;
+}
+
+// A ledger that took in `tree`'s branch or worktree: its own, or one it adopted (`lane exec adopt`).
+const knows = (l, tree) =>
+  l.worktree === tree.path ||
+  (tree.branch && l.branch === tree.branch) ||
+  (l.adopted &&
+    (l.adopted.worktree === tree.path || (tree.branch && l.adopted.branch === tree.branch)));
 
 // The agent worktrees no ledger knows. The checkout the board is in comes from its repository root: a board
 // kept in a subfolder sees the worktrees too.
@@ -479,13 +498,27 @@ function unlistedTrees(root, runRoot, all) {
   return git
     .worktrees(root)
     .filter((t) => isAgentTree(t, { top, runRoot }))
-    .filter((t) => !all.some((l) => l.worktree === t.path || (t.branch && l.branch === t.branch)));
+    .filter((t) => !all.some((l) => knows(l, t)));
 }
 
-/** The unlisted agent worktrees the workflow file keeps on purpose (`worktrees.keep`): shown, never drift. */
+// The spikes `lane spike` filed whose branch is still there (a gone one is left out), or none when the
+// file cannot be read.
+function liveSpikes(runRoot) {
+  const { spikes = [] } = readSpikes(runRoot);
+  const tips = git.branchTips(runRoot);
+  return spikes.filter((s) => tips.has(s.branch));
+}
+const spikeOf = (spikes, tree) =>
+  tree.branch ? spikes.find((s) => s.branch === tree.branch) : undefined;
+
+/** The unlisted agent worktrees kept on purpose: the workflow file's `worktrees.keep`, and those filed
+ *  `lane spike --keep`. Shown, never drift. */
 export function keptTrees({ root, runRoot = root, spec }) {
-  if (!spec.worktrees?.keep) return [];
-  return unlistedTrees(root, runRoot, ledgers.list(runRoot)).filter((t) => isKept(spec, t));
+  const spikes = liveSpikes(runRoot).filter((s) => typeof s.keep === "string");
+  if (!spec.worktrees?.keep && !spikes.length) return [];
+  return unlistedTrees(root, runRoot, ledgers.list(runRoot)).filter(
+    (t) => isKept(spec, t) || spikeOf(spikes, t),
+  );
 }
 
 export function nudges({ root, runRoot = root, spec, model }) {
@@ -495,20 +528,36 @@ export function nudges({ root, runRoot = root, spec, model }) {
   const byId = new Map(all.map((l) => [l.id, l]));
   const onto = git.defaultBranch(root);
   const found = [];
-  const unlisted = unlistedTrees(root, runRoot, all).filter((t) => !isKept(spec, t));
+  const spikes = liveSpikes(runRoot);
+  const trees = unlistedTrees(root, runRoot, all).filter((t) => !isKept(spec, t));
+  const loose = trees.filter((t) => !spikeOf(spikes, t));
   // Every branch whose landing is asked, surveyed in one go: git is asked per run, not per branch.
   const asked = [
-    ...unlisted.map((t) => t.branch),
+    ...loose.map((t) => t.branch),
     ...all.filter((l) => !l.merge).map((l) => l.branch),
   ];
   const seen = survey(root, onto, asked.filter(Boolean));
 
-  for (const tree of unlisted) {
+  for (const tree of loose) {
     const id = taskIdOf(tree, items);
     const base = { ...(id ? { id } : {}), path: tree.path, branch: tree.branch ?? undefined };
     if (tree.branch && landing(root, { branch: tree.branch, onto }, seen))
       found.push({ kind: "merged-by-hand", ...base, command: adopt(id, tree.branch) });
-    else found.push({ kind: "unlisted-worktree", ...base, command: exec(id) });
+    else found.push({ kind: "unlisted-worktree", ...base, command: unlisted(tree, runRoot, id) });
+  }
+  // A spike filed for an item: one row until a ledger for that item adopts or merges its branch.
+  for (const s of spikes.filter((s) => typeof s.for === "string")) {
+    const taken = all.some(
+      (l) => l.id === s.for && (l.branch === s.branch || l.adopted?.branch === s.branch),
+    );
+    if (!taken)
+      found.push({
+        kind: "spike-for",
+        id: s.for,
+        path: s.path,
+        branch: s.branch,
+        command: landOrContinue(s.for, s.branch),
+      });
   }
 
   for (const l of all) {
