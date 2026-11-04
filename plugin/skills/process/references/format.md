@@ -374,11 +374,23 @@ In `workflow.json`:
   not land. `"flagged"` needs a field named `flag` of type `flag` on every kind exec runs (the lifecycle kind,
   `task` with no lifecycle, and each `exec.kinds` key); without it the file is refused at load. With no `gate`, a verifier is still sent: nothing else
   would check the work. `agentry lane exec start` and `show` print the route, and the episode records it.
-- `models` is free text: any string, every key optional, nothing checked against a list of models. Each
-  `lane exec` dispatch prints a `model:` line from it: the builder rounds use `build`; a verifier round uses
+- `models` names are free text: any string, every key optional, nothing checked against a list of models.
+  Each key (`build`, `verify.default`, `verify.ui`, `verify.flagged`) is a name or a model by path:
+
+  ```json
+  "build": { "default": "sonnet", "paths": [{ "when": { "any": ["src/main/**"] }, "model": "opus" }] }
+  ```
+
+  Both keys are required and `paths` is not empty; the first entry whose `when.any` glob (the gate tiers'
+  glob matching) matches one of the item's owned files names the model, else `default`.
+- Each `lane exec` dispatch prints a `model:` line: the builder rounds use `build`; a verifier round uses
   `verify.flagged` when the item's flag is set, else `verify.ui` when the suggested builder is the designer (an
   owned path is UI-shaped), else `verify.default`. A key left out falls back to `verify.default`, and with
-  no name for a dispatch it prints no `model:` line. Nothing here changes which agent runs.
+  no name for a dispatch it prints no `model:` line. A contract bullet `- **Model:** <model>` names the builder
+  rounds' model and `- **Model (verify):** <model>` the verifier rounds' (its first word, backticks dropped),
+  winning over the workflow file's. The line names the source: `opus (contract)`,
+  `opus (models.build.paths[0]: src/main/**)`, `sonnet (models.build)`, `sonnet (models.build.default)`.
+  Nothing here changes which agent runs.
 
 ## briefs and commits
 

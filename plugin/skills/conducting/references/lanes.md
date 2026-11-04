@@ -33,6 +33,7 @@ An open debt lane and an open task lane pass each other's board writes.
 | `verdict <id> [--agent a]` | reads the verifier's report and its tip, briefs the next round | the verdict (`FAIL` also `failed`) |
 | `gate <id>` | picks the tier: the `verify` role's while a verifier is out (`expects` is `verdict`), else the `build` role's (`gate.roles`, on the files the branch changed since its base and the item's flag); under `verify: none` a call while a verifier is out exits 2, runs nothing and records nothing: the verifier reads the recorded gate, and the build tier runs after the verdict. Else waits for the gate lock, runs that tier's argv in the worktree, records `{role, tier, command, commit, tree, exit, clean before and after, log}`; a red whose log (or `gate.flakyLogs` files) fails only in `gate.flaky` tests is re-run alone once and both runs are recorded; a gate that queues writes `waiting for gate slot N (held by <who> since HH:MM)` and `slot acquired` to its log, and its output streams there as it runs | none |
 | `fix <id> --notes N1,N3` | after `PASS WITH NOTES` (gate or close next): a builder round (resume) on those notes of the verifier's report, then the usual `recheck` | none |
+| `fix <id> --owner "<the change>"` | the owner sends a `verified` lane (next `close` or `merge`) back: one builder round (the last builder resumed, a fresh one with the brief when none was recorded) whose brief quotes `## The owner's change` with its time, then the lane's own route: under an `exec.verify` route that skipped the verifier, the gate on the new tip, then `close`; otherwise a `recheck` by the last verifier, which judges the change as one more note sent back (`owner: PASS\|FAIL <evidence>`; `owner: PASS` with every other note passed is covered, so under `final: "after-fix"` no final follows). The ledger records `ownerFixes: [{ note, at, round }]` and the episode counts them (`owner fixes: N`). Refused: no `--owner` text, `--owner` with `--notes`, a builder already out, a merged lane, any lane that is not verified | `built` when the round is reported |
 | `close <id> [--episode e]` | prints the `episode_write` payload; `--episode` stamps the id it returned | none (`done` comes at merge) |
 | `show <id>` | the ledger and the pending dispatch, for a cold resume | none |
 | `owns <id> [--set a,b] [--apply]` | the owned files every brief names, parsed once at `start` and kept in the ledger; `--set … --apply` replaces them and rewrites the brief still waiting for its agent, keeping any section appended after the brief's last template section such as `## The fact` (without `--apply` it only shows the new list; a held lane has no brief waiting: the round after the resume reads the new list) | none |
@@ -297,8 +298,14 @@ templates, once:
   `gate.roles.verify: none` they say `The gate is not yours: the lane records the <build> tier and the land
   runs the merge tier. Run only your own probes.`; otherwise (a moved tip, a red run after the green, a
   verify role that runs a tier) the full gate line. `exec gate` run while a
-  verifier is next rewrites that waiting brief, whatever the gate's exit. Each dispatch prints `model:` when `models` in the workflow file names one for its role (builder:
-  `build`; verifier: `verify.flagged`, `verify.ui` when a designer builds, else `verify.default`).
+  verifier is next rewrites that waiting brief, whatever the gate's exit. Each dispatch prints `model:` when the contract or `models` in the workflow file names one for its role,
+  with its source: a contract bullet `- **Model:** <model>` (builder rounds) or `- **Model (verify):** <model>`
+  (verifier rounds) first, then `models` (builder: `build`; verifier: `verify.flagged`, `verify.ui` when a
+  designer builds, else `verify.default`), a key by path taking its first `paths` entry that matches an owned
+  file: `model: opus (contract)`, `model: opus (models.build.paths[0]: src/main/**)`, `model: sonnet
+  (models.build)`. Under `--json`, `model` is the name alone and `modelFrom` its source. `exec start`'s route
+  line ends `· ! models.verify.ui is unused: …` for a UI-shaped item that is not flagged when `exec.verify` is
+  `flagged` or `none`.
 - The verifier changes and commits nothing, runs the printed gate line (or reads the recorded one), states the bar for any input or
   interaction before testing it, and names each probe so the fix round commits it as a test.
 
