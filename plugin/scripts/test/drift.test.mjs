@@ -66,6 +66,56 @@ test("a worktree on a spelling no branch is named is offered only remove, saying
   );
 });
 
+test("a worktree on a branch with a case twin is offered only remove: rename one first", () => {
+  const { root } = fresh();
+  handBranch(root, ".claude/worktrees/agent-a1", "worktree-agent-a1");
+  git(root, "pack-refs", "--all");
+  git(root, "branch", "WORKTREE-AGENT-A1", "main");
+  const found = nudgesOf(root).filter((n) => n.path);
+  assert.deepEqual(
+    found.map((n) => [n.kind, n.command]),
+    [
+      [
+        "unlisted-worktree",
+        "remove: git worktree remove .claude/worktrees/agent-a1 (worktree-agent-a1 has a case twin WORKTREE-AGENT-A1: rename one first to land, continue or file it)",
+      ],
+    ],
+  );
+});
+
+test("a twin's worktree whose work is on main by hand is still remove-only, never a --branch that refuses", () => {
+  const { root } = fresh();
+  const tree = handBranch(root, ".claude/worktrees/agent-a1", "worktree-agent-a1");
+  git(root, "merge", "-q", "--ff-only", tree.branch);
+  git(root, "pack-refs", "--all");
+  git(root, "branch", "WORKTREE-AGENT-A1", "main");
+  const found = nudgesOf(root).filter((n) => n.path);
+  assert.deepEqual(
+    found.map((n) => n.kind),
+    ["unlisted-worktree"],
+  );
+  assert.match(found[0].command, /^remove: .*rename one first/);
+  assert.doesNotMatch(found[0].command, /--branch/);
+});
+
+test("a worktree on a branch with no commits yet says so, offered only remove", () => {
+  const { root } = fresh();
+  const path = join(root, ".claude", "worktrees", "agent-z");
+  mkdirSync(join(root, ".claude", "worktrees"), { recursive: true });
+  git(root, "worktree", "add", "-q", "--detach", path, "main");
+  git(path, "symbolic-ref", "HEAD", "refs/heads/worktree-agent-z");
+  const found = nudgesOf(root).filter((n) => n.path);
+  assert.deepEqual(
+    found.map((n) => [n.kind, n.command]),
+    [
+      [
+        "unlisted-worktree",
+        "remove: git worktree remove .claude/worktrees/agent-z (worktree-agent-z has no commits yet: commit on it to land, continue or file it)",
+      ],
+    ],
+  );
+});
+
 test("a worktree whose branch names a board task carries that id in its command", () => {
   const { root } = fresh();
   handBranch(root, ".claude/worktrees/fix-t2", "fix/T2");

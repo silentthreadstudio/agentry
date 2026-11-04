@@ -490,13 +490,25 @@ function landOrContinue(id, b) {
     ? land
     : `${land} · continue: lane exec adopt ${i} --branch ${br}`;
 }
-// An unlisted worktree not on main: those, file it (`lane spike`), or remove it (field 87). One whose HEAD
-// is a spelling no branch is named (`git checkout WORKTREE-AGENT-X`) only removes: land, adopt and spike
-// all refuse that spelling, so the row says how to make them take it.
+// Why land, adopt and spike all refuse the branch `b` a worktree is on (`tips`: the branch list), or null:
+// it has no commits yet (no branch has its name in any case), its HEAD is a spelling no branch is named
+// (`git checkout WORKTREE-AGENT-X`), or another branch has its name in another case.
+function refusedBranch(b, tips) {
+  if (!b) return null;
+  const twin = [...tips.keys()].find((t) => t !== b && t.toLowerCase() === b.toLowerCase());
+  const then = "to land, continue or file it";
+  if (!tips.has(b))
+    return twin
+      ? `it is on ${b}, which no branch is named: check it out by its exact name ${then}`
+      : `${b} has no commits yet: commit on it ${then}`;
+  return twin ? `${b} has a case twin ${twin}: rename one first ${then}` : null;
+}
+// An unlisted worktree not on main: those, file it (`lane spike`), or remove it (field 87). One on a
+// branch they all refuse (`refusedBranch`) only removes, and the row says how to make them take it.
 function unlisted(tree, runRoot, id, tips) {
   const path = w(shownPath(runRoot, tree.path));
-  if (tree.branch && !tips.has(tree.branch))
-    return `remove: git worktree remove ${path} (it is on ${tree.branch}, which no branch is named: check it out by its exact name to land, continue or file it)`;
+  const refused = refusedBranch(tree.branch, tips);
+  if (refused) return `remove: git worktree remove ${path} (${refused})`;
   return `${landOrContinue(id, tree.branch)} · file: lane spike ${tree.branch ? w(tree.branch) : path} --for ${id ?? "<id>"}|--keep "<why>" · remove: git worktree remove ${path}`;
 }
 
@@ -557,7 +569,8 @@ export function nudges({ root, runRoot = root, spec, model }) {
   const trees = unlistedTrees(root, runRoot, all).filter((t) => !isKept(spec, t));
   const loose = trees.filter((t) => !spikeOf(spikes, t));
   // Every branch whose landing is asked, surveyed in one go: git is asked per run, not per branch.
-  const named = (t) => !t.branch || tips.has(t.branch);
+  // A branch land would refuse is never surveyed, nor offered as merged by hand.
+  const named = (t) => !refusedBranch(t.branch, tips);
   const asked = [
     ...loose.filter(named).map((t) => t.branch),
     ...all.filter((l) => !l.merge).map((l) => l.branch),
