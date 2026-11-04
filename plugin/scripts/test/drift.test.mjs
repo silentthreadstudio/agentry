@@ -2,7 +2,7 @@
 // cases (a ledgered worktree, no lifecycle, a board in a subfolder).
 // Run: node --test plugin/scripts/test/drift.test.mjs
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -51,12 +51,54 @@ test("an agent worktree no ledger knows is unlisted-worktree: land, continue, fi
 
 test("a worktree whose branch names a board task carries that id in its command", () => {
   const { root } = fresh();
+  handBranch(root, ".claude/worktrees/fix-t2", "fix/T2");
+  const [n] = nudgesOf(root).filter((x) => x.kind === "unlisted-worktree");
+  assert.equal(n.id, "T2");
+  assert.equal(
+    n.command,
+    'land: lane merge T2 --branch fix/T2 · continue: lane exec adopt T2 --branch fix/T2 · file: lane spike fix/T2 --for T2|--keep "<why>" · remove: git worktree remove .claude/worktrees/fix-t2',
+  );
+});
+
+test("an orphan agentry/<id> worktree (no ledger) is offered only the ways on that work: land, file, remove", () => {
+  const { root } = fresh();
   builtBranch(root, "T2");
   const [n] = nudgesOf(root).filter((x) => x.kind === "unlisted-worktree");
   assert.equal(n.id, "T2");
   assert.equal(
     n.command,
-    'land: lane merge T2 --branch agentry/T2 · continue: lane exec adopt T2 --branch agentry/T2 · file: lane spike agentry/T2 --for T2|--keep "<why>" · remove: git worktree remove .agentry/run/worktrees/T2',
+    'land: lane merge T2 --branch agentry/T2 · file: lane spike agentry/T2 --for T2|--keep "<why>" · remove: git worktree remove .agentry/run/worktrees/T2',
+  );
+  // Filed for its own id, its spike-for row lands it, never adopts it onto its own branch name.
+  fileSpike(root, {
+    branch: "agentry/T2",
+    path: join(root, ".agentry", "run", "worktrees", "T2"),
+    for: "T2",
+    at: "2026-01-01T00:00:00Z",
+  });
+  const [row] = nudgesOf(root).filter((x) => x.kind === "spike-for");
+  assert.equal(row.command, "land: lane merge T2 --branch agentry/T2");
+});
+
+test("a branch or path that needs it is shell-quoted in the row; the placeholders are not", () => {
+  const { root } = fresh();
+  handBranch(root, ".claude/worktrees/my tree", "feat;touch-x");
+  const [n] = nudgesOf(root).filter((x) => x.kind === "unlisted-worktree");
+  assert.equal(
+    n.command,
+    `land: lane merge <id> --branch 'feat;touch-x' · continue: lane exec adopt <id> --branch 'feat;touch-x' · file: lane spike 'feat;touch-x' --for <id>|--keep "<why>" · remove: git worktree remove '.claude/worktrees/my tree'`,
+  );
+});
+
+test("an unreadable spikes.json is one nudge naming the file, not read as empty", () => {
+  const { root } = fresh();
+  handBranch(root, ".claude/worktrees/agent-k1", "worktree-agent-k1");
+  mkdirSync(join(root, ".agentry", "run"), { recursive: true });
+  writeFileSync(join(root, ".agentry", "run", "spikes.json"), '[{"branch": "x"');
+  const rows = nudgesOf(root).filter((x) => x.kind === "spikes-unreadable");
+  assert.deepEqual(
+    rows.map((x) => [x.path, x.command]),
+    [[".agentry/run/spikes.json", "lane spike says why · fix or remove .agentry/run/spikes.json"]],
   );
 });
 
