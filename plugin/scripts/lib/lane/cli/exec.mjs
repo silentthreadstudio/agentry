@@ -2611,12 +2611,15 @@ function restart(ctx, id) {
     const held = [keptName, old.branch].find((b) => b && headOf(root, `refs/heads/${b}`));
     // A new branch left beside the kept one holds only copies of its work.
     const copy = held && held !== old.branch && headOf(root, `refs/heads/${old.branch}`);
-    // The steps back by hand: the start, then (for a carry) the old commits and the saved diff.
+    // The steps back by hand: the old branch out of the new one's way (a stop before the rename leaves it
+    // under its own name), the start, then (for a carry) the old commits and the saved diff.
+    const unrenamed = keptName && held === old.branch;
     const steps = [
       ...(copy ? [`git branch -D ${old.branch}`] : []),
+      ...(unrenamed ? [`git branch -m ${old.branch} ${keptName}`] : []),
       laneLine(root, "start", id),
-      ...(withWork && held === keptName && left.commits
-        ? [`in its worktree git cherry-pick ${short(old.base)}..${held}`]
+      ...(withWork && held && keptName && left.commits
+        ? [`in its worktree git cherry-pick ${short(old.base)}..${keptName}`]
         : []),
       ...(withWork && work.files.length ? [`git apply --3way ${diff}`] : []),
     ];

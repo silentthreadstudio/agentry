@@ -250,6 +250,40 @@ test("restart --carry of a lane with no commits, only uncommitted files, applies
   assert.equal(hasRef(r.root, "agentry/T3.1"), false, "all of it carried: the kept branch goes");
 });
 
+test("a restart stopped before the rename names the rename first and keeps the pick; the steps bring the work back", () => {
+  // R1d-23 r6 N12: a ref under agentry/T3.1/ blocks the rename, so the old work is still on agentry/T3.
+  const r = repo();
+  worked(r);
+  const oldTip = tipOf(r.root, "agentry/T3");
+  git(r.root, "branch", "agentry/T3.1/x", "main");
+  const res = spawnLane(r, ["exec", "restart", "T3", "--carry"]);
+  const out = res.stdout + res.stderr;
+  assert.equal(res.status, 1, out);
+  assert.ok(out.includes("its old work is on agentry/T3 "), out);
+  const base = ledgerOf(r.root, "T3.1").base.slice(0, 7);
+  const diff = join(processDir(r.root), "runs", "T3.1", "restart", "uncommitted.diff");
+  const steps = out.split("→ fix that, then: ")[1]?.trim().split("; ") ?? [];
+  assert.deepEqual(
+    steps.map((s) => s.replace(/^.*exec start T3 --root .*$/, "START")),
+    [
+      "git branch -m agentry/T3 agentry/T3.1",
+      "START",
+      `in its worktree git cherry-pick ${base}..agentry/T3.1`,
+      `git apply --3way ${diff}`,
+    ],
+    out,
+  );
+  git(r.root, "branch", "-D", "agentry/T3.1/x"); // "fix that"
+  git(r.root, "branch", "-m", "agentry/T3", "agentry/T3.1");
+  assert.equal(tipOf(r.root, "agentry/T3.1"), oldTip);
+  const started = lane(r, "start", "T3");
+  assert.equal(started.exit, 0, started.stderr);
+  git(started.json.worktree, "cherry-pick", `${base}..agentry/T3.1`);
+  git(started.json.worktree, "apply", "--3way", diff);
+  assert.equal(readFileSync(join(started.json.worktree, "three.txt"), "utf8"), "a\nlane\nc\n");
+  assert.equal(readFileSync(join(started.json.worktree, "more.txt"), "utf8"), "half\n");
+});
+
 test("an uncommitted edit that conflicts with main stops after the picks, markers only in that file", () => {
   const r = repo();
   const out = lane(r, "start", "T3").json;
