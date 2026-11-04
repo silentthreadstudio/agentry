@@ -48,7 +48,8 @@ inside a worktree instead of the main checkout).
 `hold` refuses (exit 2) a lane whose builder's round is not out ("hold is for a builder's round", with its
 state and next), `--for owner` before the reply is saved ("the builder is still out: save its reply to
 <reportPath> first, then hold"), any other `--for` ("--for takes owner or later"), an `--evidence` path with
-no file, and, for `--for owner`, a touched main (it names the report step, which holds the lane for the guard); a park
+no file, and, for `--for owner`, a touched main (it names the report step, which holds the lane for the guard) or a lane
+held for the guard ("the lane is held for the guard: fix it and run <the report step>"); a park
 (`--for later`) goes through on a touched main and says so, since `resume` checks main again. `resume` refuses a lane that is
 not held, a resume with no `--note` ("resume needs --note"), `--redo` after a hold during a round ("--redo
 goes back over a finished run"), a builder it would send at `lanes.maxWriters` (the `start` message), and a
@@ -258,9 +259,10 @@ the lane during the round, and the resume carries the same round on.
   file and its workflow file (`.agentry/process.json`, `.agentry/workflow.json`, or the `--process` file and
   its sibling), counts as a `guard.allow` path for every check, committed or not, with or without a
   `guard.allow` key, unless a running lane's contract owns it. So does every board location the process file
-  names, resolved as the board reader resolves it: each kind's `at.table` file, each `contract.blocks` file,
-  each `create.blocks[].file`, each item's file (a `files` kind's) and own file (`file.glob`), and
-  `status.note`. A commit touching any other path,
+  names as main's HEAD commits it (an uncommitted edit of it widens nothing), from the board root: each kind's
+  `at.table` file, each `contract.blocks` file, each `create.blocks[].file`, any file its `at.files` or
+  `file.glob` matches (`{id}` any name, so an item file made or removed passes), and `status.note`. A path or
+  glob that leaves the board root (`status.note`: the repository) counts for nothing. A commit touching any other path,
   or an owned allowed path, trips with `HEAD moved …` plus `(<path> is not in guard.allow)` or
   `(<path> is owned by <lane>)`. So: a board file a running lane owns changes only through `agentry board
   add` / `agentry board set --apply`, and no commits but board, config and `guard.allow` paths on main while
