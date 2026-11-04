@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { step } from "../lib/lane/rounds.mjs";
 import { childrenOf, stackOf, unclean } from "../lib/lane/stack.mjs";
 import { create } from "../lib/lane/worktree.mjs";
 import { list, runDir, write as writeLedger } from "../lib/process/ledger.mjs";
@@ -567,4 +568,52 @@ test("exec rebase on a lane stacked on an unmerged parent is refused, nothing ch
     /✗ lane exec rebase T2: T2 is stacked on T1: restack it \(.*exec restack T2 --root .*\), never rebase it onto main/,
   );
   assert.deepEqual(snapshot(r, "T2"), before);
+});
+
+// The two holds a restack waits for: a guard trip (its report first) and a parked verified lane (its resume).
+const HOLDS = {
+  "is held by a guard trip: run its report once main is fixed, then restack": {
+    state: "held",
+    next: "resume",
+    hold: { for: "guard", when: "during", since: "t", reason: "HEAD moved", report: "/r.held.md" },
+  },
+  "is parked verified: resume it, then restack": {
+    state: "held",
+    next: "resume",
+    hold: { for: "later", when: "verified", since: "t", next: "merge" },
+  },
+};
+
+test("restack refuses a guard-held and a parked verified lane: exit 2 with the line, nothing changed", () => {
+  for (const [line, held] of Object.entries(HOLDS)) {
+    const r = stacked();
+    commitFile(r.t1.worktree, "one-more.txt", "1\n", "fix: one more");
+    setLedger(r.root, "T2", held);
+    const before = snapshot(r, "T2");
+    const res = lane(r, "restack", "T2");
+    assert.equal(res.exit, 2, res.out);
+    assert.ok(res.out.includes(`✗ lane exec restack T2: T2 ${line}`), res.out);
+    assert.deepEqual(snapshot(r, "T2"), before, line);
+  }
+});
+
+test("the round machine refuses a restack event on either hold", () => {
+  const event = {
+    type: "restack",
+    from: "a",
+    to: "b",
+    base: { from: "c", to: "d" },
+    onto: "parent",
+    parent: "T1",
+    resolution: "none",
+    at: "t",
+  };
+  const r = stacked();
+  const why = {
+    guard: /a restack waits for the lane's report after its guard trip/,
+    verified: /a restack waits for the lane's resume from its park/,
+  };
+  const [guard, verified] = Object.values(HOLDS);
+  assert.throws(() => step({ ...ledgerOf(r.root, "T2"), ...guard }, event), why.guard);
+  assert.throws(() => step({ ...ledgerOf(r.root, "T2"), ...verified }, event), why.verified);
 });

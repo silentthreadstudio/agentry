@@ -358,3 +358,42 @@ function finishVerdictOnly2(r, id, out) {
   judge(out);
   assert.equal(lane(r, "verdict", id).json.next, "gate");
 }
+
+// ---- a held child (R1d-14 resolve N1, N2) ------------------------------------------------------------
+
+test("T1's land leaves a child held by a guard trip or parked verified as it was, naming why", () => {
+  const cases = {
+    guard: [
+      (r) => {
+        const out = lane(r, "start", "T2", "--on", "T1").json;
+        build(out, "two.txt");
+        writeFileSync(join(r.root, "stray.txt"), "x\n");
+        assert.equal(lane(r, "report", "T2").json.hold?.for, "guard");
+        rmSync(join(r.root, "stray.txt"));
+      },
+      "T2 is held by a guard trip: run its report once main is fixed, then restack",
+    ],
+    verified: [
+      (r) => {
+        verified(r, "T2", "two.txt", { on: "T1" });
+        assert.equal(lane(r, "hold", "T2", "--for", "later").exit, 0);
+      },
+      "T2 is parked verified: resume it, then restack",
+    ],
+  };
+  for (const [what, [hold, line]] of Object.entries(cases)) {
+    const r = repo();
+    verified(r, "T1", "one.txt");
+    hold(r);
+    const t2 = { tip: tipOf(r.root, "agentry/T2"), ledger: ledgerText(r.root, "T2") };
+    const res = land(r, "T1");
+    assert.equal(res.exit, 0, res.out);
+    assert.ok(res.out.includes(line), `${what}: ${res.out}`);
+    assert.match(res.out, /! stack {3}T2 /, what);
+    assert.deepEqual(
+      [tipOf(r.root, "agentry/T2"), ledgerText(r.root, "T2")],
+      [t2.tip, t2.ledger],
+      what,
+    );
+  }
+});
