@@ -127,8 +127,9 @@ test("refused, nothing written: an unknown branch or path, the main checkout, a 
     adopted: { branch: adopted.branch, tip: adopted.sha, commits: [], worktree: adopted.path },
   });
   const cases = [
-    ["no-such-branch", /no worktree is on that branch or at that path/],
-    [join(root, "nowhere"), /no worktree is on that branch or at that path/],
+    ["no-such-branch", /that is no branch and no path/],
+    [join(root, "nowhere"), /that is no branch and no path/],
+    ["main~0", /that is no branch and no path/],
     [root, /that is the main checkout/],
     ["agentry/T2", /agentry\/T2 is T2's lane: its ledger tracks it/],
     [adopted.branch, /worktree-agent-c3 is T3's lane: its ledger tracks it/],
@@ -200,4 +201,15 @@ test("a spikes.json that is not a list of entries is refused, never overwritten"
   assert.equal(res.exit, 2);
   assert.match(res.stderr, /spikes\.json is not a list of \{ branch, path \} entries/);
   assert.equal(readFileSync(file(root), "utf8"), '[{"branch": "x"');
+});
+
+test("a revision of a filed worktree's branch (b~0, b@{0}) is no branch: refused, nothing written", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  for (const rev of [`${tree.branch}~0`, `${tree.branch}@{0}`, `${tree.branch}^{commit}`]) {
+    const res = spike(root, rev, "--for", "T1");
+    assert.equal(res.exit, 2, rev);
+    assert.match(res.stderr, /that is no branch and no path/);
+  }
+  assert.equal(existsSync(file(root)), false);
 });

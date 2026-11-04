@@ -10,6 +10,7 @@
 // adoptedWork(adopted) -> the round-1 brief's `## Adopted work` section
 // cleanupSteps(adopted) -> the commands that remove the source once the lane has landed
 // shellWord(text) -> text as one shell word: as it is when plain, else single-quoted
+// isBranch(root, name) -> whether `name` is a branch's own name, not a revision (`b~0`, `b@{0}`)
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { worktrees } from "../process/git.mjs";
@@ -24,6 +25,15 @@ const first = (text) => text.trim().split("\n")[0] ?? "";
  *  characters, else single-quoted (`brief.mjs`'s `shellQuote`). */
 export const shellWord = (text) =>
   /^[\w./@%+=:,-]+$/.test(String(text)) ? String(text) : shellQuote(text);
+
+/** Whether `name` is the name of a local branch: a valid branch name (`git check-ref-format`, so `b~0`,
+ *  `b^{commit}` and `b@{0}` are not) that `refs/heads/` holds. */
+export function isBranch(root, name) {
+  const ref = `refs/heads/${name}`;
+  if (String(name).startsWith("-")) return false;
+  if (git(root, ["check-ref-format", ref]).status !== 0) return false;
+  return git(root, ["show-ref", "--verify", "--quiet", ref]).status === 0;
+}
 
 // The open lanes of `lanes` (ledgers): not merged or closed.
 const isOpen = (l) => l.state !== "merged" && l.state !== "closed";
@@ -89,7 +99,8 @@ function revList(root, range, merges) {
  *  lane's, or one an open lane adopted), a worktree mid-rebase or mid-merge, or no commits past main and
  *  a clean worktree. */
 export function source(root, { branch, base, mainBranch, lanes = [] }) {
-  const tip = branch.startsWith("-") ? null : commitOf(root, `refs/heads/${branch}`);
+  // A revision that names a branch's commit (`b~0`) is no branch: its worktree and ledger would not match.
+  const tip = isBranch(root, branch) ? commitOf(root, `refs/heads/${branch}`) : null;
   if (!tip) return { problem: `${branch} does not exist` };
   if (branch === mainBranch) return { problem: `${branch} is the main branch: nothing to adopt` };
   const own = lanes.find((l) => l.branch === branch);

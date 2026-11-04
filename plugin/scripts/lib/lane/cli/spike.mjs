@@ -8,12 +8,13 @@
 // Exit 0 = filed, forgotten or listed; 2 = usage or refusal (nothing written).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { runId } from "../../process/ids.mjs";
 import { list as listLedgers } from "../../process/ledger.mjs";
+import { isBranch } from "../adopt.mjs";
 import { commitOf } from "../land.mjs";
 import { fileSpike, forgetSpike, readSpikes, spikesFile } from "../spikes.mjs";
 import { mainRoot } from "../worktree.mjs";
@@ -105,6 +106,9 @@ export function run(argv, ctx) {
     const spikes = forgetSpike(root, known);
     return shown(root, spikes, json, { forgot: known }, `forgot ${known.branch}`);
   }
+  // A name that is no path must be a branch's own name, never a revision such as `b~0`.
+  if (!existsSync(target) && !isBranch(root, target))
+    return refuse(what, "that is no branch and no path", "git worktree list");
   const tree = treeNamed(root, target);
   if (!tree)
     return refuse(what, "no worktree is on that branch or at that path", "git worktree list");

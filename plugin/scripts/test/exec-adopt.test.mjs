@@ -493,3 +493,28 @@ test("the printed commands shell-quote a path or branch that needs it", () => {
   );
   assert.match(res.json.warning, / --add 'my notes\.md' --apply$/m);
 });
+
+test("a revision of a branch (b~0, b@{0}, b^{commit}) is no branch: refused as not existing, nothing written", () => {
+  const r = repo();
+  const src = agentTree(r);
+  const before = board(r.root);
+  for (const rev of [`${src.branch}~0`, `${src.branch}@{0}`, `${src.branch}^{commit}`]) {
+    const res = lane(r, "adopt", "T1", "--branch", rev);
+    assert.equal(res.exit, 2, rev);
+    assert.ok(res.stderr.includes(`${rev} does not exist`), res.stderr);
+  }
+  assertNothingWritten(r, "T1", before);
+});
+
+test("a revision cannot slip a tracked lane branch past its refusal", () => {
+  const r = repo();
+  const t2 = lane(r, "start", "T2").json;
+  commitFile(t2.worktree, "four.txt", "4\n", "feat: two in the T2 lane");
+  const before = board(r.root);
+  const plain = lane(r, "adopt", "T1", "--branch", "agentry/T2");
+  assert.match(plain.stderr, /agentry\/T2 is T2's lane branch/);
+  const slipped = lane(r, "adopt", "T1", "--branch", "agentry/T2~0");
+  assert.equal(slipped.exit, 2);
+  assert.match(slipped.stderr, /agentry\/T2~0 does not exist/);
+  assertNothingWritten(r, "T1", before);
+});
