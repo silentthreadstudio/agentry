@@ -853,3 +853,74 @@ test("a gate argv whose own take ended while it queued for the gate does not rid
   assert.equal(holder.who, "other");
   assert.equal(holder.riders, undefined, "no rider written into another session's take");
 });
+
+// A ride of session `env`'s take whose command writes `<name>.pid` (its pid) and then lives `ms`, or until
+// it is killed when `ms` is null.
+function rideNamed(dir, env, name, ms) {
+  const pidFile = join(dir, `${name}.pid`);
+  const live = ms === null ? "setInterval(()=>{},1000)" : `setTimeout(()=>{},${ms})`;
+  const run = agentry(
+    [
+      "run",
+      "--limit",
+      "20s",
+      "--lock",
+      "editor",
+      "--",
+      ...js(`require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));${live}`),
+    ],
+    { cwd: dir, env },
+  );
+  const command = () => Number(readFileSync(pidFile, "utf8"));
+  const started = () => until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8") !== "");
+  return { run, command, started };
+}
+const ROUNDS = 5;
+
+test("two rides of one take that start together are both recorded as riders", async () => {
+  const dir = repo({ editor: 1 });
+  const env = asSession(process.pid);
+  for (let round = 1; round <= ROUNDS; round++) {
+    assert.equal((await agentry(["lock", "take", "editor"], { cwd: dir, env })).status, 0);
+    const one = rideNamed(dir, env, `a${round}`, 1200);
+    const two = rideNamed(dir, env, `b${round}`, 1200);
+    await Promise.all([one.started(), two.started()]);
+    const riders = JSON.parse(readFileSync(lockFile(dir), "utf8")).riders.map((r) => r.pid);
+    assert.deepEqual(
+      riders.sort(),
+      [one.run.child.pid, two.run.child.pid].sort(),
+      `round ${round}: both runs ride`,
+    );
+    await Promise.all([one.run, two.run]);
+    assert.equal((await agentry(["lock", "drop", "editor"], { cwd: dir, env })).status, 0);
+  }
+});
+
+test("two rides that start together, one ending first after a kept drop: no second session starts beside the other", async (t) => {
+  const dir = repo({ editor: 1 });
+  const env = asSession(process.pid);
+  for (let round = 1; round <= ROUNDS; round++) {
+    assert.equal((await agentry(["lock", "take", "editor"], { cwd: dir, env })).status, 0);
+    const short = rideNamed(dir, env, `s${round}`, 300);
+    const long = rideNamed(dir, env, `l${round}`, null);
+    await Promise.all([short.started(), long.started()]);
+    t.after(() => {
+      try {
+        process.kill(-long.command(), "SIGKILL");
+      } catch {
+        // gone already
+      }
+    });
+    assert.equal((await agentry(["lock", "drop", "editor"], { cwd: dir, env })).status, 0);
+    await short.run;
+    const other = await agentry(
+      ["run", "--limit", "5s", "--lock", "editor", "--wait", "1s", "--", ...js("")],
+      { cwd: dir, env: asSession(process.ppid) },
+    );
+    assert.ok(alive(long.command()), "the long ride still runs");
+    assert.equal(other.status, 75, `round ${round}: kept out while the long ride runs`);
+    long.run.child.kill("SIGTERM");
+    await long.run;
+    assert.deepEqual(slots(dir), [], `round ${round}: the slot went with the last ride`);
+  }
+});
