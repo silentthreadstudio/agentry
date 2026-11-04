@@ -746,6 +746,36 @@ test("a guard trip on the report that asks again is a guard hold; once main is c
   assert.match(again.json.held, /; or start it again with its work: .*exec restart T3 .*--carry$/);
 });
 
+test("exec gate on a held lane refuses, records nothing and runs nothing: a context hold and a step hold", () => {
+  // R1d-38 final N3, probe C1: the gate ran and was recorded while the lane stayed held.
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  ask(out);
+  out = lane(r, "report", "T3").json;
+  ask(out);
+  assert.equal(lane(r, "report", "T3").json.state, "held");
+  build(lane(r, "start", "T1").json, "one.txt");
+  assert.equal(lane(r, "report", "T1").json.state, "held");
+  for (const [id, why] of [
+    ["T3", "context"],
+    ["T1", "owner"],
+  ]) {
+    const before = readFileSync(
+      join(r.root, ".agentry", "run", "process", "ledger", `${id}.json`),
+      "utf8",
+    );
+    const refused = lane(r, "gate", id);
+    assert.equal(refused.exit, 2, refused.stderr);
+    assert.match(refused.stderr, new RegExp(`${id} is held \\(${why}\\): resume it first`));
+    assert.equal(
+      readFileSync(join(r.root, ".agentry", "run", "process", "ledger", `${id}.json`), "utf8"),
+      before,
+    );
+    const logs = join(r.root, ".agentry", "run", "process", "runs", id, "logs");
+    assert.equal(existsSync(join(logs, "gate-1.log")), false, "no gate ran");
+  }
+});
+
 test("heldText names a context hold's reason and the resume that answers it", () => {
   const hold = { for: "context", when: "during", reason: "which key?", report: "/r", since: "t" };
   assert.equal(heldText(hold, 0), 'for more context: which key? · resume with --note "<the fact>"');
