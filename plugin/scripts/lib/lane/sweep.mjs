@@ -482,13 +482,16 @@ export function apply(root, found, { discardIgnored = false } = {}) {
   // Every listed stray is frozen before any is killed: a stray stopped late (another's kill, or the time
   // the others take) could fork a way out meanwhile, or react to the others' end. Each listed pid is
   // stopped at once, then each tree in full; strays found after it all are named for a second pass.
-  const live = found.strays.filter((p) => stillRunning(new Set([p.pid])).length);
-  done.gone.push(...found.strays.filter((p) => !live.includes(p)).map((p) => p.pid));
-  const all = ledgers.list(root);
-  const cwd = live.length ? cwds().map : new Map();
+  // One `ps` for all of them, and the first stops before anything slow (the ledgers, lsof): a fast forker
+  // forks out for as long as that takes.
+  const running = new Set(stillRunning(new Set(found.strays.map((p) => p.pid))));
+  const live = found.strays.filter((p) => running.has(p.pid));
+  done.gone.push(...found.strays.filter((p) => !running.has(p.pid)).map((p) => p.pid));
   const first = new Set();
   const stopFirst = signalTo(first);
   for (const p of live) stopFirst(p.pid, "SIGSTOP");
+  const all = ledgers.list(root);
+  const cwd = live.length ? cwds().map : new Map();
   const frozen = live.map((p) => ({ p, ...freeze(p, root, all, cwd) }));
   for (const { p, members, signalled } of frozen) {
     if (first.has(p.pid)) signalled.add(p.pid);

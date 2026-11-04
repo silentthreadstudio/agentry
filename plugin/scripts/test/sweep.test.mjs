@@ -1045,3 +1045,47 @@ test("one --apply on a fast forker names what it forked meanwhile, and a second 
     killAll(pgrepAll("^sleep 302$"));
   }
 });
+
+// R1d-39 r4 N1, probe p16c: with one `ps` per stray, and the ledgers and lsof read before the first stop,
+// a 5 ms forker was first stopped 4.6 s into the apply and forked 434 strays out (the base: 0.5 s, 33).
+test("a 5 ms forker is stopped early in the apply, and one --apply leaves few of its strays", async () => {
+  const { root } = fixture();
+  const cwd = runFile(root, "scratch");
+  mkdirSync(cwd, { recursive: true });
+  try {
+    const forker = spawn(
+      "sh",
+      ["-c", "i=0; while [ $i -lt 4000 ]; do (sleep 302 &); i=$((i+1)); sleep 0.005; done"],
+      { cwd, stdio: "ignore" },
+    );
+    children.push(forker);
+    await new Promise((r) => setTimeout(r, 400));
+    const started = Date.now();
+    const run = spawn("node", [LANE, "sweep", "--apply", "--root", root], {
+      env: { ...gitEnv, NO_COLOR: "1" },
+      stdio: "ignore",
+    });
+    const exited = new Promise((r) => run.on("exit", r));
+    let finished = false;
+    exited.then(() => {
+      finished = true;
+    });
+    let stoppedAt = null;
+    while (!finished && stoppedAt === null) {
+      const stat = spawnSync("ps", ["-o", "stat=", "-p", String(forker.pid)], {
+        encoding: "utf8",
+      }).stdout.trim();
+      if (stat === "" || stat.startsWith("T")) stoppedAt = Date.now() - started;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    await exited;
+    assert.ok(
+      stoppedAt !== null && stoppedAt < 1500,
+      `the forker was first stopped at ${stoppedAt} ms`,
+    );
+    const left = pgrepAll("^sleep 302$").length;
+    assert.ok(left < 60, `${left} strays left after one --apply`);
+  } finally {
+    killAll(pgrepAll("^sleep 302$"));
+  }
+});
