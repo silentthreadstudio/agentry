@@ -402,9 +402,40 @@ test(
       out.includes(`its old work is on agentry/T3.1 and its uncommitted diff at ${diff}`),
       out,
     );
-    assert.match(out, /but the restart stopped: .*→ fix that, then start it by hand/);
     assert.equal(tipOf(r.root, "agentry/T3.1"), oldTip, "the kept branch survives");
     assert.match(readFileSync(diff, "utf8"), /\+\+\+ b\/more\.txt/);
+    // The steps back, followed as printed, bring the commit and the uncommitted file back (r4 N9).
+    const base = ledgerOf(r.root, "T3.1").base.slice(0, 7);
+    const steps = out.split("→ fix that, then: ")[1]?.trim().split("; ") ?? [];
+    assert.deepEqual(
+      steps.map((s) => s.replace(/^.*exec start T3 --root .*$/, "START")),
+      [
+        "git branch -D agentry/T3",
+        "START",
+        `in its worktree git cherry-pick ${base}..agentry/T3.1`,
+        `git apply --3way ${diff}`,
+      ],
+      out,
+    );
+    git(r.root, "branch", "-D", "agentry/T3");
+    const started = lane(r, "start", "T3");
+    assert.equal(started.exit, 0, started.stderr);
+    git(started.json.worktree, "cherry-pick", `${base}..agentry/T3.1`);
+    git(started.json.worktree, "apply", "--3way", diff);
+    assert.equal(readFileSync(join(started.json.worktree, "three.txt"), "utf8"), "a\nlane\nc\n");
+    assert.equal(readFileSync(join(started.json.worktree, "more.txt"), "utf8"), "half\n");
+
+    // A restart without --carry that stops names only the start (and the delete of a left branch).
+    const clean = repo();
+    worked(clean);
+    const cleanBoard = join(clean.root, "plan", "BOARD.md");
+    chmodSync(cleanBoard, 0o444);
+    const plain = spawnLane(clean, ["exec", "restart", "T3"]);
+    chmodSync(cleanBoard, 0o644);
+    const said = plain.stdout + plain.stderr;
+    assert.equal(plain.status, 1, said);
+    assert.match(said, /→ fix that, then: .*exec start T3 --root \S+\s*$/, said);
+    assert.doesNotMatch(said, /cherry-pick|git apply/);
   },
 );
 

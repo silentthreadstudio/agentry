@@ -2610,8 +2610,17 @@ function restart(ctx, id) {
     const held = [keptName, old.branch].find((b) => b && headOf(root, `refs/heads/${b}`));
     // A new branch left beside the kept one holds only copies of its work.
     const copy = held && held !== old.branch && headOf(root, `refs/heads/${old.branch}`);
+    // The steps back by hand: the start, then (for a carry) the old commits and the saved diff.
+    const steps = [
+      ...(copy ? [`git branch -D ${old.branch}`] : []),
+      laneLine(root, "start", id),
+      ...(withWork && held === keptName && left.commits
+        ? [`in its worktree git cherry-pick ${short(old.base)}..${held}`]
+        : []),
+      ...(withWork && work.files.length ? [`git apply --3way ${diff}`] : []),
+    ];
     throw new Stopped(
-      `${id} is archived (${archived.ledger}, ${archived.runs}), its old work is on ${held ?? "no branch"} and its uncommitted diff at ${diff}, but the restart stopped: ${e.message} → fix that, then start it by hand (${copy ? `git branch -D ${old.branch}, then ` : ""}${laneLine(root, "start", id)}, and git apply --3way the diff in its worktree)`,
+      `${id} is archived (${archived.ledger}, ${archived.runs}), its old work is on ${held ?? "no branch"}${work.files.length ? ` and its uncommitted diff at ${diff}` : ""}, but the restart stopped: ${e.message} → fix that, then: ${steps.join("; ")}`,
     );
   }
 }
