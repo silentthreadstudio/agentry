@@ -40,8 +40,9 @@ An open debt lane and an open task lane pass each other's board writes.
 | `owns <id> [--set a,b] [--apply]` | the owned files every brief names, parsed once at `start` and kept in the ledger; `--set … --apply` replaces them and rewrites the brief still waiting for its agent, keeping any section appended after the brief's last template section such as `## The fact` (without `--apply` it only shows the new list; a held lane has no brief waiting: the round after the resume reads the new list) | none |
 | `hold <id> --for owner [--evidence <path>] [--agent a]` | a builder's round whose reply is saved waits for the owner's review (`--agent` names the builder out on it, so the resume goes back to that agent) (also on a lane with no steps: the owner looks mid-build); the evidence defaults to that round's report; on a held lane it replaces `for` and the evidence and keeps `since` | none |
 | `hold <id> --for later [--note "<why>"]` | parks a lane whose builder was stopped mid-round: no saved reply needed, the worktree kept as it is (uncommitted files allowed); a touched main does not refuse it: the park is recorded and prints `main moved while parked: <reason>; resume re-checks it`. Also parks a `verified` lane (next `close` or `merge`): `hold.when: "verified"`, nothing in the worktree or the rounds changes, `show` prints `held: parked, verified, since <ISO>`, `merge` refuses it while held and drift names no `verified-not-merged`; its `resume` makes it `verified` again with the same next step (no builder, the note in `holds[]`); `--for owner` on it is refused ("hold --for owner is for a builder's round") | none |
-| `resume <id> --note "<the OK>" [--redo] [--fresh]` | records the owner's answer with its time (`holds[]`), then dispatches `continue` to the held round's builder, or after the last step the verifier (or the gate); `--redo` builds the same run again and holds at its end; `--fresh` sends a fresh builder the same brief | `built` when a verifier (or the gate) is next |
-| `restack <id> [--main]` | a stacked lane with no agent out (its gate, close or merge next, or held): rebases `agentry/<id>` onto its parent's new tip, or main's once the parent landed (`--main`: onto main whatever the parent's state, the owner's call); writes the branch and the ledger only (see [Stacks](#stacks)) | none |
+| `resume <id> --note "<the OK>" [--redo] [--fresh]` | records the owner's answer with its time (`holds[]`), then dispatches `continue` to the held round's builder, or after the last step the verifier (or the gate); `--redo` builds the same run again and holds at its end; `--fresh` sends a fresh builder the same brief. Main is checked by the guard's own rule (see [Guards](#guards)): a main moved only by commits that touch none of the lane's owned files and none of the files its worktree changed (committed past base or uncommitted) passes, printing `moved: main moved by <n> commits, none touching this lane's files: resuming on base <short>`; a commit touching them refuses it (`main changed while <id> was held: HEAD moved a → b (<sha> touches <paths>, this lane's files) → agentry lane exec restart <id> --carry`); with no move on main nothing more is printed | `built` when a verifier (or the gate) is next |
+| `restack <id> [--main]` | a stacked lane with no agent out (its gate, close or merge next, or held): rebases `agentry/<id>` onto its parent's new tip, or main's once the parent landed (`--main`: onto main whatever the parent's state, the owner's call); writes the branch and the ledger only (see [Stacks](#stacks)). Refused (exit 2, nothing changed) on a lane held by a guard trip (`<id> is held by a guard trip: run its report once main is fixed, then restack`) and on a parked verified lane (`<id> is parked verified: resume it, then restack`); a parent's land leaves such a child as it is and names it with the same line | none |
+| `restart <id> [--carry]` | a lane that is not merged, with no agent out (`a builder is out: hold it first`; a verifier out, a gate of it queued or running, a land of it and a lane stacked on an unmerged parent are refused too), started again: refuses while another lane's land has its picks on main (`start`'s check, before any write), at `lanes.maxWriters` (the lane itself not counted) and when its worktree holds ignored files outside `cleanup.disposable` (and the defaults), naming them. Saves the worktree's uncommitted diff (untracked files too) to `runs/<id>.<n>/restart/uncommitted.diff`, archives the ledger and run dir as `ledger/<id>.<n>.json` and `runs/<id>.<n>/` (`n` one past the highest archive or kept branch, so an older one is never overwritten; a hold's `holds[]` stays in it), removes the worktree, keeps the branch as `agentry/<id>.<n>` and cuts a fresh `agentry/<id>` from main with every `start` record (`boardAtStart` from the spec loaded now, `mainAtStart`, `dispatched`); prints `restarted: archived as <id>.<n>…`. Without `--carry` the new lane starts clean and the old branch stays. With `--carry` it cherry-picks the old branch's commits (base..tip), then applies the saved diff (`git apply --3way`), and the first build brief gets `## Carried work`: `A previous builder's work is in the tree (<n> commits, <m> files uncommitted). Its last report is <path>: read it first.` (the report in the archive); once all of it is carried the old branch goes. A conflict stops the carry (exit 1): main untouched, the conflict left in the new worktree for the builder (`conflict: <sha> <subject> conflicts in <files>: resolve it, git cherry-pick --continue, then git apply --3way <diff> in <worktree>`, or `the uncommitted diff conflicts in <files>`), named in the brief too, the old branch kept as `agentry/<id>.<n>`. The ledger records `restarted: { from, ledger, runs, branch, at }` and `carried: { commits, files, report, conflict? }` | `dispatched` |
 
 Exit 0: `next` is printed. Exit 1: the lane stopped (or, for `gate`, the gate is red; for `restack`, git
 stopped the rebase and it was aborted). Exit 2: usage or a
@@ -57,7 +58,7 @@ held for the guard ("the lane is held for the guard: fix it and run <the report 
 not held, a resume with no `--note` ("resume needs --note"), `--redo` after a hold during a round ("--redo
 goes back over a finished run"), a builder it would send at `lanes.maxWriters` (the `start` message), and a
 main changed while the lane was held ("main changed while <id> was held: <reason>: undo that, then
-resume").
+resume", or, for a commit touching the lane's files, "… → agentry lane exec restart <id> --carry").
 
 Every step prints readable text; `--json` prints one object instead. Its fields (the text has the same names): `id`, `step`, `next`, `state`, `worktree`, `branch`, `reportPath`, `guards`, `nested`; for a dispatch
 `prompt`, `brief`, `role`, `mode` (`fresh` or `resume`), `agent` (the one to resume), `dispatch` (the agent type,
@@ -89,7 +90,7 @@ run: agentry lane exec report <id> --root '<root>'
 
 `show` on a stopped lane prints right after the header `stopped: <reason>`, then one `ways on:` line: the
 merge that lands the branch as it is (`agentry lane merge <id> --branch agentry/<id>`, the owner's call) ·
-`exec restart <id> --carry` (when available).
+`exec restart <id> --carry` (starts it again with its work).
 
 `resume` prints `approved: step 1 of 2 at <ISO>: "<note>"`
 (`sent back:` with `--redo`, `noted:` after a hold during a round or a parked one). Under `--json` the same names, `held`,
@@ -242,7 +243,9 @@ a due stack (exit 2): `T1 moved since T2 was cut on it (abc1234 → def5678): a 
 
 **Restack.** `agentry lane exec restack T2 [--main]` writes T2's branch and ledger only (no board, no main).
 It runs with no agent out (the lane at `gate`, `close` or `merge` next, or held): otherwise `a <role> round is
-out (round <n>, next <next>): restack when the lane is at its gate, close or merge, or held`. It is refused too
+out (round <n>, next <next>): restack when the lane is at its gate, close or merge, or held`. Two holds come
+first: `T2 is held by a guard trip: run its report once main is fixed, then restack` and `T2 is parked
+verified: resume it, then restack` (the round machine refuses a restack on either too). It is refused too
 while a gate of T2 is queued or running (`a gate for T2 is queued or running: restack after it`: `exec gate`
 marks its intent in `.agentry/run/process/gating/T2.json` before it reads the ledger and clears it on any exit)
 and on a dirty worktree (`the
@@ -271,7 +274,8 @@ through each clean restack from it), and a gate on the old tip no longer counts.
 gets the resolution recheck (A48) on the restack's ranges; the resolve brief names the parent's branch. A held
 lane with no verdict yet records it and goes on: the one verifier after the build reads it all. The verify
 and build briefs of a stacked lane carry a `Stacked` section: judge (or build) only `base..HEAD`, the parent's
-commits are its own lane's, and never rebase: the lane restacks.
+commits are its own lane's, and never rebase: the lane restacks. `exec rebase T2` while T1 is not merged is
+refused (`T2 is stacked on T1: restack it (agentry lane exec restack T2), never rebase it onto main`).
 
 **Land in order.** `/agentry:merge T2` refuses until T1 has landed and T2 is restacked onto main (see
 `merge.md`, the `stack` row). T1's land restacks each child at rest onto main itself, after its board commit,
@@ -316,36 +320,43 @@ says `stacked on T1; restacks: N`.
   content is reached from its start content, or from what a recorded merge committed, through recorded
   lifecycle writes, by this lane or any other. So parallel lanes never trip each other, and anything else is a
   breach: another row, cell or free text in a board file a running lane owns, a file outside the board, a file
-  dirty at start that changed or was reverted since (board files no running lane owns are allowed, below). HEAD may move only by other lanes' merges, each the run `preHead` → landed
-  commits → board commit its ledger records, matched against main's first-parent history. Agentry's own files
+  dirty at start that changed or was reverted since (board files no running lane owns are allowed, below). HEAD may move by other lanes' merges, each the run `preHead` → landed
+  commits → board commit its ledger records, matched against main's first-parent history, and by any commit
+  that touches none of this lane's owned files and none of the files its worktree changed (committed past base
+  or uncommitted), whoever made it (field 81). The commit list is the lane's start..HEAD, judged against its
+  owned files at that moment, so removing a one-off `guard.allow` entry never re-trips a lane; a commit
+  touching a file only another running lane owns trips that lane, not this one. An overlapping commit trips
+  with the overlap named: `HEAD moved a → b (<sha> touches <paths>, this lane's files)` (at most 5 paths,
+  `(+<n> more)`). `report`, `hold` and `resume` run this one rule, so they never disagree. Agentry's own files
   are not checked: `.agentry/run/`, and new memory records (`.agentry/memory/<facts|episodes>/<slug>-<ULID>.md`,
-  untracked, or in a commit that only adds them), the same definition `agentry lane merge` and the gate use for a
-  clean main (one function, `own-memory.mjs`). Anything else under the store is a breach: another file, a
-  record staged as new, an edit of a tracked record. So a memory write that rewrites a committed fact
-  (reinforce, feedback) trips the guard by design: commit it between lanes, not during one. A path's
-  type and mode count with its content (a symlink, a chmod).
+  untracked, or in a commit that only adds them). Anything else under `.agentry/memory/` is let through as a
+  `guard.allow` glob, committed or uncommitted (field 78), unless a running lane's contract owns it; `agentry
+  lane merge` and the gate keep the stricter definition for a clean main (one function, `own-memory.mjs`). A
+  path's type and mode count with its content (a symlink, a chmod).
   `agentry board add` and `agentry board set --apply` run in the main checkout record what they wrote the same way
   (`.agentry/run/process/board-writes.jsonl`), so a night call written with them trips no lane; so does a hand
   edit of a board file no running lane owns (below). Files the workflow file lists in `guard.allow` (a status file, a docs folder)
   may change uncommitted while lanes run, except a file a running lane's contract owns: an edit there still
   trips the guard. A commit on main's first-parent line passes too when every path it touches matches
   `guard.allow` and none is owned by a running lane (`building`, `fixing`, `verifying`, `held`); the report's
-  `guards` line says `main moved by allowed commits: <n> (<short shas>)`. Agentry's config in use, the process
-  file and its workflow file (`.agentry/process.json`, `.agentry/workflow.json`, or the `--process` file and
-  its sibling), counts as a `guard.allow` path for every check, committed or not, with or without a
-  `guard.allow` key, unless a running lane's contract owns it. So does every board location the process file
+  `guards` line says `main moved by allowed commits: <n> (<short shas>)` (every commit the guard let through).
+  Agentry's config in use, the process file and its workflow file (`.agentry/process.json`,
+  `.agentry/workflow.json`, or the `--process` file and its sibling), and `.agentry/config.json`, counts as a
+  `guard.allow` path for every check, committed or not, with or without a `guard.allow` key, unless a running
+  lane's contract owns it (the uncommitted `guard`/`gate` key check is for the process and workflow files only:
+  `config.json` holds neither). So does every board location the process file
   names as main's HEAD commits it, or, when the process file is not tracked there (`.agentry/` kept out of
   git), as it loaded at `start` (`boardAtStart` in the ledger; an older ledger has none): an edit made after
   the lane started widens nothing. From the board root: each kind's `at.table` file, each `contract.blocks`
   file, each `create.blocks[].file`, any file its `at.files` or `file.glob` matches (`{id}` any name, so an
   item file made or removed passes), and `status.note`. A path or glob counts when it stays inside the
   repository, as the process file's own check takes it (`../docs/TASKS.md` from `root: "plan"` does); an
-  item id never names one. A commit touching any other path,
-  or an owned allowed path, trips with `HEAD moved …` plus `(<path> is not in guard.allow)` or
-  `(<path> is owned by <lane>)`. So: a board file a running lane owns changes only through `agentry board
-  add` / `agentry board set --apply`, and no commits but board, config and `guard.allow` paths on main while
-  a lane builds. A held lane's owned files stay protected for the other
-  lanes; `resume` checks main the same way, so an edit made while a lane was held is undone before it goes on.
+  item id never names one. A commit that is none of these trips only a lane whose files it touches (the
+  overlap rule above). So: a board file a running lane owns changes only through `agentry board add` /
+  `agentry board set --apply`, and no commit on main touches a running lane's files. A held lane's owned
+  files stay protected for the other lanes; `resume` checks main the same way: an uncommitted edit made while
+  a lane was held is undone before it goes on, and a commit touching its files sends it to `exec restart <id>
+  --carry`.
 - **Trust boundary.** The guard catches a builder that slips into the main checkout; it is not a sandbox. It
   trusts `.agentry/run/` as Agentry's steps wrote it and checks each ledger's claims against git where git can
   say, so a planted ledger naming a SHA excuses nothing. A builder that forges a whole merge record, or edits
@@ -353,7 +364,7 @@ says `stacked on T1; restacks: N`.
   looks wrong.
 - **A stopped lane.** Its ledger stays as it is; `show` names the reason and the ways on: `agentry lane merge
   <id> --branch agentry/<id>` lands the branch as it is (the owner's call), or `exec restart <id> --carry`
-  starts it again with its work (when available).
+  starts it again with its work.
 - **Mid-land.** `start` refuses while a ledger is `merging` with its picks on main: a red gate may still take
   them off, and a lane cut then would carry them. A land that cannot go on is closed on the owner's call:
   `agentry lane merge <id> --resolve landed|rolled-back` (every pick on main, or none; it checks first).
