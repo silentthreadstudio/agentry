@@ -1379,7 +1379,9 @@ test("a context hold's reason cut at the summary's cap ends at a word, outside b
   // R1d-38 r2 N6: the cut fell inside a backticked path.
   const first = go(lane(), asks()).ledger;
   const reasonOf = (summary) => go(first, asks({ summary })).ledger.hold.reason;
-  const long = `see \`exec.noteRounds\`, \`three.txt\` (the owned one) and \`a/very/long/path/that/goes/on/and/on/and/on.txt`;
+  // 129 characters: the cut at 119 falls inside the last backticked path.
+  const long =
+    "see `exec.noteRounds`, `three.txt` (the owned one) and `a/very/long/path/that/goes/on/and/on/and/on/and/on/and/on/and/on.txt` too";
   assert.equal(
     reasonOf(`${long.slice(0, 119)}…`),
     "see `exec.noteRounds`, `three.txt` (the owned one) and…",
