@@ -5,6 +5,11 @@
 //
 // nextId(name, kind, model) -> { id } | { error }   error = the kind asks for its ids ("ask"), or the
 // pattern needs more than a number.
+// nextInFamily(model, family) -> { family, id } | { error }   the next free id in a prefix family (field
+// 85), whatever the kind's `create.id`: every id on the board, of any kind, that is the family, an
+// optional separator (`-`, `_`, `.`) and digits, then any suffix, counts (`ART-10a` is 10); the answer is
+// one above the highest, in that id's case, separator and zero-padding, else `<family>-1`. Case-insensitive;
+// a trailing separator is dropped (`ART-` is `ART`). error = a family with no letter.
 // boardId(spec, model, typed, kind?) -> string      the board's spelling of `typed` (of `kind` when
 // given); `typed` itself when the board has no item it names, or more than one.
 // runId(spec, model, typed) -> { id, kind } | { error }   the item exec and merge run: `boardId` over
@@ -67,4 +72,20 @@ export function nextId(name, kind, model) {
     .map(Number);
   const next = String(Math.max(0, ...used) + 1).padStart(Number(width ?? 0), "0");
   return { id: `${before}${next}${after}` };
+}
+
+export function nextInFamily(model, typed) {
+  const family = typed.replace(/[-_.]+$/, "");
+  if (!/\p{L}/u.test(family))
+    return { error: `--family "${typed}" names no prefix (it needs a letter)` };
+  const member = new RegExp(`^(${literal(family)})([-_.]?)(\\d+)`, "i");
+  let top = null;
+  for (const { items } of Object.values(model.kinds))
+    for (const { id } of items) {
+      const [, prefix, sep, digits] = (typeof id === "string" && member.exec(id)) || [];
+      if (digits && (!top || Number(digits) > top.n))
+        top = { prefix, sep, n: Number(digits), width: digits.length };
+    }
+  if (!top) return { family, id: `${family}-1` };
+  return { family, id: `${top.prefix}${top.sep}${String(top.n + 1).padStart(top.width, "0")}` };
 }

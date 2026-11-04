@@ -85,7 +85,9 @@ No `version`, and every key is optional.
   `accept`-only line, which beats a bare amendment or deps line; the others come back as `related`.
   Two titled or owning blocks are `ambiguous` unless the task's link names one.
 - **`create`** — how `/agentry:new` adds one: `ask` (the fields to ask, nothing else), `id` (a pattern such
-  as `T{n}` or `Q-{n:02}`, `{n}` for plain numbers, or `ask`), `rows` and `blocks`:
+  as `T{n}` or `Q-{n:02}`, `{n}` for plain numbers, or `ask`; with `ask` or none,
+  `board next-id <kind> --family <prefix>` proposes one above the highest board id of any kind in that
+  prefix family), `rows` and `blocks`:
   - row: `{ "in": "self" | "parent.file:<section>", "at": "end" | "after-last:<field>", "cells": { "<header>": "<template>" } }`
   - block: `{ "file": "TASKS.md", "under": "<heading template>" | "ask", "text": "<template>" }`
   - templates fill `{id}`, `{<field>}`, `{parent.<field>}` and `{today}`. A kind without `create` cannot be
