@@ -49,7 +49,7 @@ import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { workflowPathOf } from "../../process/read.mjs";
-import { modelFor } from "../../process/spec/models.mjs";
+import { modelFor, unusedUiModel } from "../../process/spec/models.mjs";
 import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
 import { own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
@@ -947,6 +947,15 @@ function lightContract(block, root) {
   return ownedFiles(prose, root).length > 0 && lines.some((l) => ACCEPTANCE.test(l));
 }
 
+// The route `start` prints: with the `models.verify.ui` warning for a UI-shaped item that is not flagged
+// when the route verifies only flagged items (field 70).
+function startRoute({ spec }, ledger) {
+  const route = routeText(ledger.route);
+  const ui = suggestBuilder(ledger.owned.map((o) => o.path)).agent === "designer";
+  const unused = ui && !ledger.route.flagged && unusedUiModel(spec.models, ledger.route.verify);
+  return unused ? `${route} · ${unused}` : route;
+}
+
 function start(ctx, id) {
   const { root, spec, model, cite, kind } = ctx;
   const unknown = unknownCites({ spec, model, cite });
@@ -1048,7 +1057,7 @@ function start(ctx, id) {
       amend: laneLine(root, "owns", id, " --set <paths> --apply"),
       ...(ledger.steps && { steps: stepLines(ledger.steps) }),
       workflow,
-      route: routeText(ledger.route),
+      route: startRoute(ctx, ledger),
       board,
       ...(overlap && { warning: overlap }),
     },

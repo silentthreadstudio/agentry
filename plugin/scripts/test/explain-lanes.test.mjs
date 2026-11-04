@@ -563,3 +563,46 @@ test("exec.verify flagged says which field it keys on; a models row names each m
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("the models row warns of models.verify.ui under a flagged route, wrapped to 80 columns (field 70)", () => {
+  const root0 = mkdtempSync(join(tmpdir(), "agentry-lanes-"));
+  cpSync(join(HERE, "fixtures", "table-board"), root0, { recursive: true });
+  const base = JSON.parse(readFileSync(join(root0, "process.json"), "utf8"));
+  rmSync(root0, { recursive: true, force: true });
+  const flagged = {
+    ...base,
+    kinds: {
+      ...base.kinds,
+      task: {
+        ...base.kinds.task,
+        fields: { ...base.kinds.task.fields, flag: { column: "Flag", type: "flag" } },
+      },
+    },
+  };
+  const models = {
+    build: { default: "sonnet", paths: [{ when: { any: ["src/**"] }, model: "opus" }] },
+    verify: { ui: "opus" },
+  };
+  const warn =
+    "! models.verify.ui is unused: exec.verify is flagged and a UI task is verified only when flagged";
+  const warned = repo({ ...flagged, exec: { verify: "flagged" }, models });
+  const plain = repo({ ...flagged, models });
+  try {
+    const row = warned.lanes().models;
+    assert.deepEqual(
+      [row.ok, row.value, row.warning],
+      [true, "build sonnet (1 path) · verify ui opus", warn],
+    );
+    const lines = warned.board("explain").stdout.split("\n");
+    const at = lines.findIndex((l) => /^✓ +models /.test(l));
+    assert.deepEqual(lines.slice(at + 1, at + 3), [
+      "    ! models.verify.ui is unused: exec.verify is flagged and a UI task is",
+      "      verified only when flagged",
+    ]);
+    assert.ok(lines.every((l) => [...l].length <= 80));
+    assert.equal(plain.lanes().models.warning, undefined, "exec.verify all: the ui model is used");
+  } finally {
+    rmSync(warned.root, { recursive: true, force: true });
+    rmSync(plain.root, { recursive: true, force: true });
+  }
+});

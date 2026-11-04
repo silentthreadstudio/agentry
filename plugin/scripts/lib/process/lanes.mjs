@@ -24,6 +24,7 @@ import { columns } from "./render.mjs";
 import { WORKFLOW_KEYS } from "./spec.mjs";
 import { SPEC_VERSION } from "./spec/board.mjs";
 import { sessionChecks } from "./spec/extensions.mjs";
+import { unusedUiModel } from "./spec/models.mjs";
 import { flagField, resolveWorkflow } from "./spec/presets.mjs";
 import { gateOf, runKinds } from "./spec/workflow.mjs";
 
@@ -278,6 +279,20 @@ function keys({ root, spec }) {
   return rows.filter(Boolean).map(([lane, value, ok = true]) => ({ lane, ok, value, set: INIT }));
 }
 
+// The models row, with the warning for a verify model the route never uses (field 70).
+function modelsRow(spec) {
+  const value = modelsValue(spec.models);
+  const unused = unusedUiModel(spec.models, resolveWorkflow(spec).exec.verify);
+  return {
+    lane: "models",
+    ok: Boolean(value),
+    value: value ?? "none",
+    set: INIT,
+    ...(!value && { optional: true }),
+    ...(unused && { warning: unused }),
+  };
+}
+
 export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workflow.json") }) {
   const { extensions, conductor } = spec;
   const row = (lane, found, value, set = INIT) => ({
@@ -298,7 +313,7 @@ export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workf
     workflowFile(root, spec, workflowPath),
     ...execRows(spec),
     ...gateRows(spec).map(([lane, value]) => optional(lane, value, value)),
-    optional("models", modelsValue(spec.models), modelsValue(spec.models)),
+    modelsRow(spec),
     optional("conductor.prompt", conductor, conductor?.prompt),
     optional("conductor.rules", rules, `${conductor?.rules} (line ${rules?.line})`),
     { lane: "trigger block", ...triggerBlock(root, spec) },
@@ -316,8 +331,20 @@ export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workf
   ];
 }
 
+// `text` in whole words on lines of at most `width` columns, the first after `lead`, the rest indented.
+function wrapped(text, lead, width) {
+  const lines = [lead];
+  for (const word of text.split(" ")) {
+    const line = lines.at(-1);
+    if (line.trim() && line.length + 1 + word.length > width)
+      lines.push(`${" ".repeat(lead.length + 2)}${word}`);
+    else lines[lines.length - 1] = line.trim() ? `${line} ${word}` : `${line}${word}`;
+  }
+  return lines;
+}
+
 /** The rows as lines of at most `width` columns: `✓ lane  value`, `· lane  none` for an absent optional key,
- *  and under a `✗` row an indented `set:` line with its command. */
+ *  under a `✗` row an indented `set:` line with its command, and under a row with a warning its `!` line. */
 export function renderLanes(rows, width) {
   const mark = (r) => (r.ok ? "✓" : r.optional ? "·" : "✗");
   const lines = columns(
@@ -327,5 +354,6 @@ export function renderLanes(rows, width) {
   return rows.flatMap((r, i) => [
     lines[i],
     ...(r.ok || r.optional ? [] : [`    set: ${nextStep(r.set)}`.slice(0, width)]),
+    ...(r.warning ? wrapped(r.warning, "    ", width) : []),
   ]);
 }

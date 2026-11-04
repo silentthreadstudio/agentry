@@ -1,8 +1,10 @@
 // models — the workflow file's `models` key (mirrors core's `Models`) and the model each exec dispatch
-// names, with where it came from (field 73): a contract bullet, then a path entry, then the key itself. PURE: never reads, never throws.
+// names, with where it came from (field 73): a contract bullet, then a path entry, then the key itself. And
+// the model a route never uses (field 70). PURE: never reads, never throws.
 //
 //   modelsSchema                                            the `models` checker (workflowSchema's entry)
 //   modelFor(spec, role, { flagged, ui, owned, contract }) -> { model, from } | null
+//   unusedUiModel(models, verify) -> string | null          the `! models.verify.ui is unused: …` line
 import { globMatch } from "../../lane/gate.mjs";
 import { FULL, filled, isObject, own, repoPath, shape, text } from "./shape.mjs";
 
@@ -68,4 +70,12 @@ export function modelFor(
     if (found) return found;
   }
   return null;
+}
+
+/** Under a route that verifies an item only when it is flagged (`exec.verify` "flagged" or "none"), a
+ *  UI task unflagged gets no verifier: a `models.verify.ui` set there is never used. The line saying so. */
+export function unusedUiModel(models, verify) {
+  if (own(own(models, "verify"), "ui") === undefined || !["flagged", "none"].includes(verify))
+    return null;
+  return `! models.verify.ui is unused: exec.verify is ${verify} and a UI task is verified only when flagged`;
 }

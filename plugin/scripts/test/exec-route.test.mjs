@@ -373,6 +373,25 @@ test("a contract's Model bullets win over the workflow file's, named as the cont
   assert.deepEqual([check.model, check.modelFrom], ["verify-m", "models.verify.default"]);
 });
 
+// ---- a verify model the route never uses (field 70) ------------------------------------------------
+
+const UNUSED =
+  "! models.verify.ui is unused: exec.verify is flagged and a UI task is verified only when flagged";
+
+test("start's route line warns of models.verify.ui for a UI-shaped item that is not flagged", () => {
+  const r = repo({ exec: { verify: "flagged" }, models: MODELS });
+  const one = lane(r, "start", "T1");
+  assert.equal(
+    one.json.route,
+    `flagged: this item is not flagged, so no verifier; built goes straight to the gate · ${UNUSED}`,
+  );
+  // T2 is flagged (a verifier reads it), and plain: no warning.
+  assert.doesNotMatch(lane(r, "start", "T2").json.route, /unused/);
+  // Every item verified: the ui model is used.
+  const all = repo({ models: MODELS });
+  assert.doesNotMatch(lane(all, "start", "T1").json.route, /unused/);
+});
+
 test("models keys are checked at load", () => {
   assert.deepEqual(validateSpec(splitSpec({ ...SPEC, models: MODELS })).problems, []);
   const bad = validateSpec(splitSpec({ ...SPEC, models: { verify: { best: "x" } } }));
