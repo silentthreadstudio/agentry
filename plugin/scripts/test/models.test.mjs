@@ -37,7 +37,7 @@ test("a run with no marked step takes the contract's bullet, then models.build",
     model: "sonnet",
     from: "contract",
   });
-  const bare = "- **T1**: owns `out.txt`.\n- **Steps:** 1. Parse it 2. Ship it";
+  const bare = "- **T1**: owns `out.txt`.\n- **Steps:**\n  1. Parse it\n  2. Ship it";
   assert.deepEqual(
     modelFor(SPEC, "build", { contract: bare, steps: stepsOf(bare).steps, stepRun: [1, 2] }),
     { model: "haiku", from: "models.build" },
@@ -75,7 +75,7 @@ test("the prose hint: a model word near 'model' or a role word, with no marker o
 test("no prose hint when a bullet or a step marker names the model, or the word is far from any role word", () => {
   assert.equal(proseModelHint("- **T1**: the builder runs opus.\n- **Model:** opus"), null);
   assert.equal(proseModelHint("- **T1**: verify on opus.\n- **Model (verify):** opus"), null);
-  const marked = "- **T1**: the builder runs opus.\n- **Steps:** 1. a (model: opus) 2. b";
+  const marked = "- **T1**: the builder runs opus.\n- **Steps:**\n  1. a (model: opus)\n  2. b";
   assert.equal(proseModelHint(marked, stepsOf(marked).steps), null);
   assert.equal(
     proseModelHint("- **T1**: a fable, one two three four five six seven, then the build."),
@@ -166,7 +166,7 @@ function start(tasks, extra = {}, id = "T1") {
 
 test("exec start: a step's markers name the model and the agent, each as `step N`", () => {
   const { json, text } = start(
-    "- **T1**: owns `out.txt`. Accept: out.txt exists.\n  - **Steps:** 1. Draw it (model: opus, agent: designer) → owner OK 2. Ship it",
+    "- **T1**: owns `out.txt`. Accept: out.txt exists.\n  - **Steps:**\n    1. Draw it (model: opus, agent: designer) → owner OK\n    2. Ship it",
   );
   assert.deepEqual([json.model, json.modelFrom], ["opus", "step 1"]);
   assert.deepEqual(json.dispatch, { agent: "designer", why: "step 1 names it", from: "step 1" });
@@ -212,7 +212,7 @@ test("exec start: the route's unused-ui warning sees a designer named by a step 
   };
   const unused = /! models\.verify\.ui is unused/;
   const stepped = start(
-    "- **T1**: owns `out.txt`. Accept: out.txt exists.\n  - **Steps:** 1. Draw it (agent: designer) 2. Ship it",
+    "- **T1**: owns `out.txt`. Accept: out.txt exists.\n  - **Steps:**\n    1. Draw it (agent: designer)\n    2. Ship it",
     route,
   );
   assert.match(stepped.json.route, unused);

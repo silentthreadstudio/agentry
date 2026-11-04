@@ -147,38 +147,58 @@ test("a bold run indented under a step is its text, not a label that ends the pa
   );
 });
 
-// Field 96a: the steps in one wrapped paragraph after the label.
+// Field 96a: steps listed inline after the label are flagged with a rewrite, never parsed.
 const INLINE = `- **T1** · Two parts
 - **Owns:** \`a.txt\`
 - **Steps:** 1. Write the parser → owner OK 2. Wire it into the CLI
-  and print the result -> Owner ok. 3. Ship it
+  and print the result -> Owner ok. 3. Ship it (model: opus)
 - **Acceptance:**
   - Step 1: the parser test passes
-  - step 3: the release note says so
-  - the whole suite is green
 - **Deps:** none`;
+const flagged = (...lines) =>
+  [
+    "the Steps part lists its steps inline: put each step on its own line",
+    ...lines.map((l) => `  ${l}`),
+  ].join("\n");
 
-test("inline steps after the label parse into the same steps as one per line, gates and all", () => {
-  assert.deepEqual(stepsOf(INLINE), stepsOf(BULLETS));
+test("inline steps are a problem with no steps, its rewrite one step per line, gates and markers as written", () => {
+  assert.deepEqual(stepsOf(INLINE), {
+    steps: [],
+    problem: flagged(
+      "1. Write the parser → owner OK",
+      "2. Wire it into the CLI and print the result -> Owner ok.",
+      "3. Ship it (model: opus)",
+    ),
+  });
 });
 
-test("a number inside an inline step's text is not a split: only the next number in order splits", () => {
-  const block = "**Steps:** 1. Wait 2.5 s for v1. x, then 3. retry 2. Check 1. again 3. Ship";
-  assert.deepEqual(
-    stepsOf(block).steps.map((s) => s.text),
-    ["Wait 2.5 s for v1. x, then 3. retry", "Check 1. again", "Ship"],
+test("the rewrite cuts only at the next number in order and never inside a code span", () => {
+  assert.equal(
+    stepsOf("**Steps:** 1. Wait 2.5 s, then 3. retry 2. Run `make 3. x` (agent: designer) 3. Ship")
+      .problem,
+    flagged("1. Wait 2.5 s, then 3. retry", "2. Run `make 3. x` (agent: designer)", "3. Ship"),
   );
+  assert.equal(stepsOf("**Steps:** 1. Only one").problem, flagged("1. Only one"));
 });
 
-test("the inline paragraph ends at its first blank line", () => {
-  const block =
-    "- **Steps:** 1. One 2. Two\n\n  Prose about the steps 3. not a step\n- **Deps:** none";
+test("the rewrite takes the label's paragraph: a blank line or a list item at the label's indent ends it", () => {
+  assert.equal(stepsOf("- **Steps:** 1. a 2. b\n- Deps: none").problem, flagged("1. a", "2. b"));
+  assert.equal(stepsOf("- **Steps:** 1. a\n\n  2. b").problem, flagged("1. a"));
+});
+
+test("only `1. ` on the label's own line is the inline form: a heading or a later line parses as today", () => {
+  assert.deepEqual(stepsOf("## Steps\n1. a 2. b").steps, [
+    { n: 1, text: "a 2. b", gate: null, accept: [] },
+  ]);
+  assert.equal(stepsOf("**Steps:** in order\n1. a\n2. b").problem, null);
+});
+
+test("a number inside a one-per-line step's text never splits it", () => {
   assert.deepEqual(
-    stepsOf(block).steps.map((s) => [s.n, s.text]),
-    [
-      [1, "One"],
-      [2, "Two"],
-    ],
+    stepsOf(
+      "- **Steps:**\n  1. Wait 2.5 s for v1. x, then 2. retry\n  2. Run `make 3. x`",
+    ).steps.map((s) => s.text),
+    ["Wait 2.5 s for v1. x, then 2. retry", "Run `make 3. x`"],
   );
 });
 
@@ -203,10 +223,6 @@ test("a step's (model, agent) marker is cut from its end, before or after the ga
     { n: 3, text: "Ship it", gate: null, accept: [], model: "haiku" },
     { n: 4, text: "Tidy (see notes)", gate: null, accept: [] },
   ]);
-  assert.deepEqual(stepsOf("**Steps:** 1. A (model: opus) 2. B (agent: designer)").steps, [
-    { n: 1, text: "A", gate: null, accept: [], model: "opus" },
-    { n: 2, text: "B", gate: null, accept: [], agent: "designer" },
-  ]);
 });
 
 test("a step naming an agent other than designer or implementer is a problem", () => {
@@ -221,7 +237,7 @@ test("the Ready rule flags a found contract whose Steps part has a problem, in e
   cleanups.push(cleanup);
   writeFileSync(
     join(dir, "TASKS.md"),
-    "# Tasks\n\n- **T1**: owns `y`.\n  - **Steps:**\n    1. a\n    3. c\n\n- **T2**: owns `z`.\n  - **Steps:** 1. a 2. b\n",
+    "# Tasks\n\n- **T1**: owns `y`.\n  - **Steps:**\n    1. a\n    3. c\n\n- **T2**: owns `z`.\n  - **Steps:** 1. a → owner OK 2. b\n\n- **T3**: owns `w`.\n  - **Steps:**\n    1. a\n",
   );
   git(dir, "add", "TASKS.md");
   git(dir, "commit", "-qm", "tasks");
@@ -230,37 +246,36 @@ test("the Ready rule flags a found contract whose Steps part has a problem, in e
     sprint("S1", "doing"),
     task("T1", "S1", "todo"),
     task("T2", "S1", "todo"),
+    task("T3", "S1", "todo"),
   ]);
   const ctx = { contractOf: (_kind, id) => findContract({ root: dir, id }) };
   assert.deepEqual(
     run(ready, model, { kind: "task" }, ctx).map((f) => [f.id, f.message]),
-    [["T1", "contract T1: steps must be numbered 1 to N with no gap (found 1, 3)"]],
+    [
+      ["T1", "contract T1: steps must be numbered 1 to N with no gap (found 1, 3)"],
+      ["T2", `contract T2: ${flagged("1. a → owner OK", "2. b")}`],
+    ],
   );
 });
 
 test("steps built in one round that name different models or agents are a problem", () => {
+  const steps = (...items) => `- **Steps:**\n${items.map((t, i) => `  ${i + 1}. ${t}`).join("\n")}`;
   assert.equal(
-    stepsOf("- **Steps:**\n  1. a (model: opus)\n  2. b\n  3. c (model: sonnet)").problem,
+    stepsOf(steps("a (model: opus)", "b", "c (model: sonnet)")).problem,
     "steps 1 and 3 are built in one round but name different models (opus, sonnet): put an owner gate between them or name one model",
   );
   assert.equal(
-    stepsOf("**Steps:** 1. a (agent: designer) 2. b (agent: implementer)").problem,
+    stepsOf(steps("a (agent: designer)", "b (agent: implementer)")).problem,
     "steps 1 and 2 are built in one round but name different agents (designer, implementer): put an owner gate between them or name one agent",
   );
   // Separate runs (an owner gate between) and markers that agree are fine.
-  assert.equal(
-    stepsOf("**Steps:** 1. a (model: opus) → owner OK 2. b (model: sonnet)").problem,
-    null,
-  );
-  assert.equal(
-    stepsOf("**Steps:** 1. a (model: opus) 2. b (model: opus, agent: designer)").problem,
-    null,
-  );
+  assert.equal(stepsOf(steps("a (model: opus) → owner OK", "b (model: sonnet)")).problem, null);
+  assert.equal(stepsOf(steps("a (model: opus)", "b (model: opus, agent: designer)")).problem, null);
 });
 
 test("runMark: the run's first step naming the key, as step N; null without a run or a marked step", () => {
   const { steps } = stepsOf(
-    "**Steps:** 1. a 2. b (model: opus) 3. c (model: opus) → owner OK 4. d",
+    "- **Steps:**\n  1. a\n  2. b (model: opus)\n  3. c (model: opus) → owner OK\n  4. d",
   );
   assert.deepEqual(runMark(steps, [1, 3], "model"), { value: "opus", from: "step 2" });
   assert.equal(runMark(steps, [4, 4], "model"), null);
@@ -269,48 +284,9 @@ test("runMark: the run's first step naming the key, as step N; null without a ru
   assert.equal(runMark([], [1, 1], "model"), null);
 });
 
-// Round 3's review: a code span, a paragraph that ends early, bold at a wrap, and marker spelling.
-test("a number inside a code span never splits an inline step, so its owner gate stays", () => {
-  const { steps, problem } = stepsOf(
-    "- **Steps:** 1. Run `make 2. x` → owner OK 2. Wire (agent: designer)",
-  );
-  assert.equal(problem, null);
-  assert.deepEqual(steps, [
-    { n: 1, text: "Run `make 2. x`", gate: "owner", accept: [] },
-    { n: 2, text: "Wire", gate: null, accept: [], agent: "designer" },
-  ]);
-  assert.deepEqual(runOf(steps, 1), [1, 1]);
-});
-
-test("a numbered line left in the Steps part after the inline paragraph is a problem, never dropped", () => {
-  const problem = (left) =>
-    `a numbered line follows the inline steps' paragraph (${left}): keep the steps in one paragraph or put one per line`;
-  assert.equal(
-    stepsOf("**Steps:** 1. One\n\n2. Two\n3. Three\n- **Deps:** none").problem,
-    problem("2. Two"),
-  );
-  assert.equal(
-    stepsOf("- **Steps:** 1. a\n  ```\n  2. code\n  ```\n  3. after").problem,
-    problem("3. after"),
-  );
-});
-
-test("a wrapped inline line that starts with bold text continues the paragraph; a labelled part ends it", () => {
-  assert.deepEqual(
-    stepsOf("- **Steps:** 1. Write the\n  **parser** now 2. Ship\n- **Deps:** none").steps.map(
-      (s) => s.text,
-    ),
-    ["Write the **parser** now", "Ship"],
-  );
-  assert.deepEqual(
-    stepsOf("- **Steps:** 1. One 2. Two\n- **Deps**: 3. not a step").steps.map((s) => s.text),
-    ["One", "Two"],
-  );
-});
-
 test("marker keys and values are read in any case, in lower case", () => {
   const { steps, problem } = stepsOf(
-    "**Steps:** 1. a (Model: Opus) 2. b (MODEL: opus, Agent: Designer)",
+    "- **Steps:**\n  1. a (Model: Opus)\n  2. b (MODEL: opus, Agent: Designer)",
   );
   assert.equal(problem, null);
   assert.deepEqual(
@@ -326,66 +302,5 @@ test("a marker value with a space is a problem naming the step", () => {
   assert.equal(
     stepsOf("- **Steps:**\n  1. a\n  2. b (model: opus agent: designer)").problem,
     `step 2's marker names model "opus agent: designer": a marker value is one word, and its keys are split by a comma`,
-  );
-});
-
-// Round 5's review: code spans as CommonMark reads them, the gate backstop, and list items after the paragraph.
-test("inline and one per line parse alike around escaped, doubled, lone and balanced backticks", () => {
-  const cases = {
-    escaped: ["Print the \\` char → owner OK", "Ship", "Deploy"],
-    doubleSpan: ["Run ``a ` b`` now → owner OK", "Ship", "Deploy"],
-    literal: ["Press the ` key → owner OK", "Ship", "Deploy"],
-    balanced: ["Run `make 2. x` → owner OK", "Ship", "Deploy"],
-  };
-  for (const [name, items] of Object.entries(cases)) {
-    const inline = stepsOf(`- **Steps:** ${items.map((t, i) => `${i + 1}. ${t}`).join(" ")}`);
-    const lines = stepsOf(`- **Steps:**\n${items.map((t, i) => `  ${i + 1}. ${t}`).join("\n")}`);
-    assert.deepEqual(inline, lines, name);
-    assert.equal(inline.steps[0].gate, "owner", name);
-  }
-});
-
-test("a number inside a double-backtick span splits nothing; a span closed earlier lets the next split through", () => {
-  assert.deepEqual(
-    stepsOf("**Steps:** 1. Run ``a ` b 2. c`` now 2. Ship").steps.map((s) => s.text),
-    ["Run ``a ` b 2. c`` now", "Ship"],
-  );
-  assert.deepEqual(
-    stepsOf("**Steps:** 1. Run `make` → owner OK 2. Wire `x 3. y` 3. Ship").steps.map((s) => [
-      s.text,
-      s.gate,
-    ]),
-    [
-      ["Run `make`", "owner"],
-      ["Wire `x 3. y`", null],
-      ["Ship", null],
-    ],
-  );
-});
-
-test("an inline step still holding an owner gate mid-text is a problem naming the step", () => {
-  assert.equal(
-    stepsOf("- **Steps:** 1. Build → owner OK then tidy 2. Ship").problem,
-    "step 1 holds an owner gate mid-text: put each step on its own line",
-  );
-  // One per line keeps today's reading: the gate is the item's end or nothing.
-  assert.equal(stepsOf("- **Steps:**\n  1. Build → owner OK then tidy\n  2. Ship").problem, null);
-});
-
-test("a list item at or left of the label's indent ends the inline paragraph, so a step's marker holds", () => {
-  for (const next of ["- **Note** keep it small", "- Deps: none", "* later", "+ later"])
-    assert.deepEqual(
-      stepsOf(`- **Steps:** 1. a 2. b (model: opus)\n${next}`).steps.at(-1),
-      { n: 2, text: "b", gate: null, accept: [], model: "opus" },
-      next,
-    );
-  assert.equal(
-    stepsOf("**Steps:** 1. a\n2. b").problem,
-    "a numbered line follows the inline steps' paragraph (2. b): keep the steps in one paragraph or put one per line",
-  );
-  // A more indented line still wraps the paragraph, a number at its start included.
-  assert.deepEqual(
-    stepsOf("- **Steps:** 1. a\n  2. b").steps.map((s) => s.text),
-    ["a", "b"],
   );
 });
