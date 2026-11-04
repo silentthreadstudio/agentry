@@ -1,7 +1,7 @@
 // run — the `agentry run` and `agentry lock` groups: one portable time limit, and the workflow file's
 // named locks (`locks`, `lane/named-lock.mjs`).
 //
-//   agentry run --limit <dur> [--lock <name> [--wait <dur>]] -- <cmd> [args…]
+//   agentry run --limit <dur> [--lock <name>] [--wait <dur>] -- <cmd> [args…]
 //     runs argv (no shell) in its own process group (supervise.mjs) with stdio inherited and exits with its
 //     code; at the limit the group gets SIGTERM, then SIGKILL 5 s later, and the exit is 124. `--lock` waits
 //     for a slot first (for up to `--wait`, default 10m: then exit 75) and holds it until the command is gone
@@ -26,11 +26,10 @@ import {
   dropLock,
   dropOrphans,
   endRide,
-  extendTake,
   heldLocks,
   locksOf,
-  ownTake,
   releaseLock,
+  rideTake,
   setGroup,
   tryLock,
 } from "../lane/named-lock.mjs";
@@ -49,7 +48,7 @@ const UNITS = { s: 1000, m: 60_000, h: 3_600_000 };
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
 const RUN_HELP = {
-  usage: "run --limit <dur> [--lock <name> [--wait <dur>]] -- <cmd> [args…]",
+  usage: "run --limit <dur> [--lock <name>] [--wait <dur>] -- <cmd> [args…]",
   purpose:
     "Run a command (no shell) in its own process group and stop the whole group at the limit: SIGTERM, then SIGKILL 5 s later.",
   args: { "<cmd> [args…]": "the command, after --" },
@@ -248,10 +247,8 @@ export async function runCli(argv) {
   };
   // Released at the end of the command (a slot whose command left a process group running stays held), or
   // when this process exits early (a signal that was not forwarded).
-  const hold = (release) => {
-    releases.push(release);
-    process.once("exit", releaseAll);
-  };
+  process.once("exit", releaseAll);
+  const hold = (release) => releases.push(release);
   let lock = null;
   if (lockName) {
     const declared = declaredLocks(root, parsed.got["--process"], "agentry run");
@@ -269,13 +266,11 @@ export async function runCli(argv) {
     );
   const starts = [];
   const deadline = Date.now() + waitMs;
-  const mine = lock
-    ? ownTake(root, lockName, { slots: lock.slots, pid: sessionPid(), who: takerOf(null, lane) })
-    : null;
   const who = `${lane ? `${lane}: ` : ""}${basename(cmd[0])}`;
   // The gate slot comes first, so a named lock is never held while this run queues for the gate, and the
   // gate slot is never held while it waits for a named lock: a busy lock sends the run back to the queue.
   let slot = null;
+  let mine = null;
   let said = false;
   for (;;) {
     if (gate) {
@@ -297,7 +292,15 @@ export async function runCli(argv) {
       hold(held.release);
       starts.push(held.group);
     }
-    if (!lock || mine !== null) break;
+    if (!lock) break;
+    // Inside this session's own take (looked up after every wait: it may have ended meanwhile), ride it.
+    mine = rideTake(root, lockName, {
+      slots: lock.slots,
+      session: sessionPid(),
+      who: takerOf(null, lane),
+      untilMs: Date.now() + limitMs + GRACE_KILL_MS,
+    });
+    if (mine !== null) break;
     const opts = { slots: lock.slots, who };
     const got = gate ? tryLock(root, lockName, opts) : await acquire(root, lockName, waitMs, opts);
     if (!got.busy) {
@@ -322,8 +325,8 @@ export async function runCli(argv) {
   }
   if (mine !== null) {
     process.stderr.write(`lock ${lockName}: inside your own take\n`);
-    extendTake(root, lockName, mine, Date.now() + limitMs + GRACE_KILL_MS);
     hold(() => endRide(root, lockName, mine));
+    starts.push((pgid) => setGroup(root, lockName, mine, pgid));
   } else if (slot !== null) {
     hold(() => releaseLock(root, lockName, slot));
     starts.push((pgid) => setGroup(root, lockName, slot, pgid));

@@ -774,3 +774,82 @@ test("lock drop --orphan frees a slot only a leftover group holds, printing the 
   assert.deepEqual(slots(dir), []);
   assert.equal((await agentry(["lock", "drop", "editor", "--orphan"], { cwd: dir })).status, 1);
 });
+
+test("kill -9 of a ridden run keeps the take while its command's group runs, so no second session starts beside it", async (t) => {
+  const dir = repo({ editor: 1 });
+  const env = asSession(process.pid);
+  assert.equal(
+    (await agentry(["lock", "take", "editor", "--ttl", "2s"], { cwd: dir, env })).status,
+    0,
+  );
+  const pidFile = join(dir, "cmd.pid");
+  const riding = agentry(
+    [
+      "run",
+      "--limit",
+      "60s",
+      "--lock",
+      "editor",
+      "--",
+      ...js(
+        `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000)`,
+      ),
+    ],
+    { cwd: dir, env, quiet: true },
+  );
+  await until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8") !== "");
+  const command = Number(readFileSync(pidFile, "utf8"));
+  t.after(() => {
+    try {
+      process.kill(-command, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  await sleepMs(200);
+  riding.child.kill("SIGKILL");
+  await riding;
+  await sleepMs(2200);
+  assert.ok(alive(command), "the command outlived its run");
+  const other = () =>
+    agentry(["run", "--limit", "5s", "--lock", "editor", "--wait", "1s", "--", ...js("")], {
+      cwd: dir,
+      env: asSession(process.ppid),
+    });
+  assert.equal((await other()).status, 75, "the take holds while the ridden command runs");
+  process.kill(-command, "SIGKILL");
+  await until(() => !alive(command));
+  assert.equal((await other()).status, 0, "the take is back at its own until, long passed");
+});
+
+test("a gate argv whose own take ended while it queued for the gate does not ride another session's take", async () => {
+  const dir = repo({ editor: 1 });
+  const tier = js("0");
+  writeFileSync(
+    join(dir, ".agentry", "workflow.json"),
+    JSON.stringify({ locks: { editor: 1 }, gate: { tiers: [{ name: "full", command: tier }] } }),
+  );
+  const env = asSession(process.pid);
+  const gate = holdGate(gateLockDir(dir), { who: "someone" });
+  assert.equal(
+    (await agentry(["lock", "take", "editor", "--ttl", "1s"], { cwd: dir, env })).status,
+    0,
+  );
+  const run = agentry(
+    ["run", "--limit", "10s", "--lock", "editor", "--wait", "4s", "--", ...tier],
+    { cwd: dir, env },
+  );
+  await sleepMs(1300);
+  const other = await agentry(["lock", "take", "editor", "--for", "other", "--ttl", "1m"], {
+    cwd: dir,
+    env: asSession(process.ppid),
+  });
+  assert.equal(other.status, 0, other.stderr);
+  gate.release();
+  const result = await run;
+  assert.doesNotMatch(result.stderr, /inside your own take/);
+  assert.equal(result.status, 75, "it waits for the other session's take instead");
+  const holder = JSON.parse(readFileSync(lockFile(dir), "utf8"));
+  assert.equal(holder.who, "other");
+  assert.equal(holder.riders, undefined, "no rider written into another session's take");
+});

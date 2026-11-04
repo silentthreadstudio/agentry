@@ -10,10 +10,10 @@ import { fileURLToPath } from "node:url";
 import {
   dropLock,
   endRide,
-  extendTake,
   heldLocks,
   lockDir,
   releaseLock,
+  rideTake,
   setGroup,
   tryLock,
 } from "../lib/lane/named-lock.mjs";
@@ -258,13 +258,14 @@ test("a ridden take stays held after a drop until the ride ends, then goes; a ri
   const dir = repo({ sim: 1 });
   const rider = session();
   const take = { slots: 1, pid: process.pid, who: "T-1" };
+  const ride = { slots: 1, session: process.pid, who: "T-1", untilMs: Date.now() + 3_600_000 };
   tryLock(dir, "sim", { ...take, ttlMs: 60_000 });
-  extendTake(dir, "sim", 1, Date.now() + 3_600_000, rider.pid);
+  assert.equal(rideTake(dir, "sim", { ...ride, pid: rider.pid }), 1);
   assert.ok(heldLocks(dir, "sim", 1)[0].until, "extended");
   endRide(dir, "sim", 1, rider.pid);
   const own = Date.parse(JSON.parse(readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"))).until);
   assert.ok(own < Date.now() + 120_000, "back at its own until");
-  extendTake(dir, "sim", 1, Date.now() + 3_600_000, rider.pid);
+  rideTake(dir, "sim", { ...ride, pid: rider.pid });
   assert.deepEqual(dropLock(dir, "sim", take), { dropped: 0, kept: rider.pid });
   assert.equal(heldLocks(dir, "sim", 1).length, 1, "kept while the rider runs");
   endRide(dir, "sim", 1, rider.pid);
@@ -275,7 +276,13 @@ test("a take whose rider died is back at its own until, so it ends at its ttl", 
   const dir = repo({ sim: 1 });
   const rider = session();
   tryLock(dir, "sim", { slots: 1, pid: process.pid, who: "T-1", ttlMs: 500 });
-  extendTake(dir, "sim", 1, Date.now() + 3_600_000, rider.pid);
+  rideTake(dir, "sim", {
+    slots: 1,
+    session: process.pid,
+    who: "T-1",
+    untilMs: Date.now() + 3_600_000,
+    pid: rider.pid,
+  });
   assert.equal(heldLocks(dir, "sim", 1).length, 1);
   await rider.end();
   await new Promise((r) => setTimeout(r, 700));
@@ -315,4 +322,59 @@ test("a slot whose run died stays held while its command's group runs, and is fr
   await gone;
   assert.deepEqual(heldLocks(dir, "editor", 1), [], "free once the group is gone");
   assert.equal(tryLock(dir, "editor", { slots: 1, who: "next" }).slot, 1);
+});
+
+test("rideTake rides only this session's own take for that who: another session's take is left as it is", () => {
+  const dir = repo({ sim: 1 });
+  tryLock(dir, "sim", { slots: 1, pid: null, who: "OTHER", ttlMs: 60_000 });
+  const before = readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"), "utf8");
+  const ride = { slots: 1, who: "T-1", untilMs: Date.now() + 3_600_000 };
+  assert.equal(rideTake(dir, "sim", { ...ride, session: process.pid }), null, "not this session's");
+  assert.equal(rideTake(dir, "sim", { ...ride, session: null }), null, "not this who's");
+  assert.equal(readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"), "utf8"), before);
+});
+
+for (const how of ["is killed", "ends"])
+  test(`a rider whose run ${how} lives on while its command's group runs; the take is back at its own until after`, async () => {
+    const dir = repo({ sim: 1 });
+    const group = spawn(NODE, ["-e", "setInterval(()=>{},1000)"], {
+      stdio: "ignore",
+      detached: true,
+    });
+    const gone = new Promise((resolve) => group.on("exit", resolve));
+    cleanups.push(() => {
+      try {
+        process.kill(-group.pid, "SIGKILL");
+      } catch {
+        // gone already
+      }
+    });
+    const rider = session();
+    tryLock(dir, "sim", { slots: 1, pid: process.pid, who: "T-1", ttlMs: 300 });
+    const ride = { slots: 1, session: process.pid, who: "T-1", untilMs: Date.now() + 3_600_000 };
+    rideTake(dir, "sim", { ...ride, pid: rider.pid });
+    setGroup(dir, "sim", 1, group.pid, rider.pid);
+    if (how === "ends") endRide(dir, "sim", 1, rider.pid);
+    await rider.end();
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(heldLocks(dir, "sim", 1).length, 1, "held past its ttl while the group runs");
+    process.kill(-group.pid, "SIGKILL");
+    await gone;
+    assert.deepEqual(heldLocks(dir, "sim", 1), [], "back at its own until, passed");
+  });
+
+test("a take again with a longer ttl while it is ridden lasts to the longer of the two", () => {
+  const dir = repo({ sim: 1 });
+  const rider = session();
+  const take = { slots: 1, pid: process.pid, who: "T-1" };
+  tryLock(dir, "sim", { ...take, ttlMs: 60_000 });
+  rideTake(dir, "sim", {
+    ...take,
+    session: process.pid,
+    untilMs: Date.now() + 120_000,
+    pid: rider.pid,
+  });
+  tryLock(dir, "sim", { ...take, ttlMs: 7_200_000 });
+  const { until } = JSON.parse(readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"), "utf8"));
+  assert.ok(Date.parse(until) > Date.now() + 3_600_000, `until ${until}`);
 });

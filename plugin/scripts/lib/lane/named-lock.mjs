@@ -6,8 +6,9 @@
 // nor an until, once it is old enough not to be mid-write. The pid, holder and clock checks are gate-lock's.
 // A run also records its command's process group (`pgid`): while any member of that group lives the slot
 // stays held, even after `agentry run` itself died (an orphan). A run riding a take extends its `until`
-// to cover the command and records itself in `riders` (the take's own `until` in `ownUntil`): the extension
-// ends with the last live rider, and a drop while one lives is kept until then. Synchronous: a waiting
+// to cover the command and records itself in `riders` as `{ pid, pgid }` (the take's own `until` in
+// `ownUntil`): a rider lives while its run or its command's group does, the extension ends with the last
+// live rider, and a drop while one lives is kept until then. Synchronous: a waiting
 // caller polls `tryLock` at `POLL_MS`. Node built-ins only.
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -37,8 +38,9 @@ const orphanGroup = (holder) =>
     ? holder.pgid
     : null;
 
-// The pids of a take's riders that still run.
-const liveRiders = (holder) => (holder?.riders ?? []).filter((pid) => running(pid));
+// A take's riders that still run: the run itself, or its command's group after the run died.
+const liveRiders = (holder) =>
+  (holder?.riders ?? []).filter((rider) => running(rider.pid) || groupRunning(rider.pgid));
 
 // A slot's holder as it stands now: a take whose riders are all gone is back at its own `until`.
 function holderOf(file) {
@@ -114,17 +116,6 @@ export function heldLocks(root, name, slots, now = Date.now()) {
 const sameTake = (holder, pid, who) =>
   holder?.until !== undefined && holder.pid === pid && holder.who === who;
 
-/** The slot of lock `name` a take by session `pid` (null: none) for `who` holds now, or null: a command
- *  of that session and lane runs inside it. */
-export function ownTake(root, name, { slots, pid, who, now = Date.now() }) {
-  for (let n = 1; n <= slots; n++) {
-    const file = slotFile(root, name, n);
-    const holder = holderOf(file);
-    if (sameTake(holder, pid, who) && !free(file, holder, now)) return n;
-  }
-  return null;
-}
-
 /**
  * One try for a slot of lock `name` (capacity `slots`): `{ slot }` once held, or `{ busy: { who, since } }`
  * naming a holder. `pid` is the holder's process (a run's own; a take's session, or null: then only the
@@ -148,8 +139,9 @@ export function tryLock(
       const file = slotFile(root, name, n);
       const holder = holderOf(file);
       if (sameTake(holder, pid, who) && !free(file, holder, now)) {
+        const later = new Date(Math.max(Date.parse(holder.until), now + ttlMs)).toISOString();
         const rides = liveRiders(holder).length
-          ? { riders: holder.riders, ownUntil: entry.until, until: holder.until }
+          ? { riders: holder.riders, ownUntil: entry.until, until: later }
           : {};
         writeFileSync(file, JSON.stringify({ ...entry, at: holder.at, ...rides }));
         return { slot: n, again: true };
@@ -161,35 +153,50 @@ export function tryLock(
   return { busy: { who: first?.who || "unknown", since: first?.since ?? "?" } };
 }
 
-/** Record the process group `pgid` of the command that holds slot `slot` (taken by this process): the
- *  slot stays held while that group runs, whether or not this process does. */
+/** Record the process group `pgid` of the command that holds slot `slot` (taken or ridden by this
+ *  process): the slot stays held while that group runs, whether or not this process does. */
 export function setGroup(root, name, slot, pgid, pid = process.pid) {
   const file = slotFile(root, name, slot);
   const holder = holderOf(file);
-  if (holder?.pid === pid) writeFileSync(file, JSON.stringify({ ...holder, pgid }));
+  if (holder?.pid === pid) return writeFileSync(file, JSON.stringify({ ...holder, pgid }));
+  if (!holder?.riders?.some((rider) => rider.pid === pid)) return;
+  const riders = holder.riders.map((rider) => (rider.pid === pid ? { ...rider, pgid } : rider));
+  writeFileSync(file, JSON.stringify({ ...holder, riders }));
 }
 
-/** Keep the take in slot `slot` of lock `name` until at least `untilMs`, for the command of process `pid`
- *  riding it (a command must not outlive its take); `endRide` takes the extension back. */
-export function extendTake(root, name, slot, untilMs, pid = process.pid) {
-  const file = slotFile(root, name, slot);
-  const holder = holderOf(file);
-  if (holder?.until === undefined) return;
-  const riders = [...new Set([...liveRiders(holder), pid])];
-  const until = new Date(Math.max(untilMs, Date.parse(holder.until))).toISOString();
-  writeFileSync(
-    file,
-    JSON.stringify({ ...holder, riders, ownUntil: holder.ownUntil ?? holder.until, until }),
-  );
+/** Ride the take of lock `name` that session `session` (null: none) holds now for `who`, if there is one:
+ *  keep it until at least `untilMs` for the command of process `pid` (a command must not outlive its take)
+ *  and return its slot, or null when there is no such take (any other holder is left as it is). `endRide`
+ *  takes the extension back. */
+export function rideTake(
+  root,
+  name,
+  { slots, session, who, untilMs, pid = process.pid, now = Date.now() },
+) {
+  for (let n = 1; n <= slots; n++) {
+    const file = slotFile(root, name, n);
+    const holder = holderOf(file);
+    if (!sameTake(holder, session, who) || free(file, holder, now)) continue;
+    const riders = [...liveRiders(holder).filter((rider) => rider.pid !== pid), { pid }];
+    const until = new Date(Math.max(untilMs, Date.parse(holder.until))).toISOString();
+    writeFileSync(
+      file,
+      JSON.stringify({ ...holder, riders, ownUntil: holder.ownUntil ?? holder.until, until }),
+    );
+    return n;
+  }
+  return null;
 }
 
 /** The ride of process `pid` on the take in slot `slot` ends: with no other rider left, the take is back at
- *  its own `until` (and gone, when that has passed: a drop that was kept for the ride). */
+ *  its own `until` (and gone, when that has passed: a drop that was kept for the ride). A ride whose
+ *  command left its group running goes on until that group is gone. */
 export function endRide(root, name, slot, pid = process.pid) {
   const file = slotFile(root, name, slot);
   const holder = parsedHolderOf(file);
-  if (!holder?.riders?.includes(pid)) return;
-  const riders = holder.riders.filter((p) => p !== pid && running(p));
+  const mine = holder?.riders?.find((rider) => rider.pid === pid);
+  if (!mine || groupRunning(mine.pgid)) return;
+  const riders = liveRiders({ riders: holder.riders.filter((rider) => rider !== mine) });
   if (riders.length) return writeFileSync(file, JSON.stringify({ ...holder, riders }));
   const { riders: _, ownUntil, ...take } = holder;
   if (Date.parse(ownUntil) > Date.now())
@@ -220,7 +227,7 @@ export function dropLock(root, name, { slots, pid, who }) {
       dropped++;
     } else {
       writeFileSync(file, JSON.stringify({ ...holder, ownUntil: new Date().toISOString() }));
-      kept ??= rider;
+      kept ??= rider.pid;
     }
   }
   return { dropped, kept };
