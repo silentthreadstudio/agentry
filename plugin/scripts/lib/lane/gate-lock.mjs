@@ -231,6 +231,35 @@ export function clearGateSlot(file) {
   });
 }
 
+// The slot files this process holds: its gate slots, and the lock slots of its runs (named-lock). A
+// synchronous gate hands them to its watchdog (`runGate`), which frees them if this process dies mid-gate.
+const ownSlots = new Set();
+
+/** The slot files this process holds now. */
+export const slotsHeldHere = () => [...ownSlots];
+
+/** Note that this process now holds slot `file` (`held`), or no longer does. */
+export function heldHere(file, held) {
+  if (held) ownSlots.add(file);
+  else ownSlots.delete(file);
+}
+
+/** Free slot `file` when process `parent` (an identity) held it and both it and the group it recorded are
+ *  gone, inside its mutex: a watchdog's cleanup after its parent died. True when it was removed. */
+export function freeDeadHolder(file, parent) {
+  return serialized(file, () => {
+    const holder = holderOf(file);
+    if (holder?.pid !== parent.pid) return false;
+    const other =
+      typeof holder.start === "string" &&
+      typeof parent.start === "string" &&
+      holder.start !== parent.start;
+    if (other || holderAlive(holder) || liveGroup(holder) !== null) return false;
+    rmSync(file, { force: true });
+    return true;
+  });
+}
+
 /** An ISO time as local HH:MM (`?` when it is not a time). */
 export const clock = (iso) => {
   const d = new Date(iso);
@@ -277,6 +306,7 @@ export function holdGate(
         if (holder?.pid === process.pid && liveGroup(holder) === null)
           rmSync(file, { force: true });
       });
+      heldHere(file, false);
     }
   };
   // Record the process group of the command that runs under the slots held, by its leader's identity.
@@ -310,12 +340,14 @@ export function holdGate(
       for (const n of wanted.slice(held.length)) {
         if (!take(dir, n, who)) break;
         held.push(n);
+        heldHere(slotFile(dir, n), true);
       }
       if (held.length === slots) return arrived();
     } else {
       for (let n = 1; n <= slots; n++)
         if (take(dir, n, who)) {
           held.push(n);
+          heldHere(slotFile(dir, n), true);
           return arrived();
         }
     }

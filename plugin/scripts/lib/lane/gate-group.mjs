@@ -7,9 +7,9 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { groupRunning as alive } from "../process/pid.mjs";
 
-// The gate runs under this wrapper: it writes the id of its process group to `pidFile` (the group
-// `runGate`'s watchdog leads: its argv holds this wrapper's, nonce included), then runs the gate as its
-// child. A merge killed mid-gate may leave that group running; the next run finds it by the file.
+// The gate runs under this wrapper: it writes the id of its process group to `pidFile` (`runGate`'s
+// watchdog starts it leading a group of its own, so that is its pid), then runs the gate as its child. A
+// merge killed mid-gate may leave that group running; the next run finds it by the file.
 const WRAP = `const [, pidFile, ...cmd] = process.argv.slice(1);
 const ps = require("node:child_process").spawnSync("ps", ["-o", "pgid=", "-p", String(process.pid)], { encoding: "utf8" });
 const pgid = Number.parseInt(ps.stdout ?? "", 10);

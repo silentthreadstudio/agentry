@@ -24,6 +24,7 @@ import { isObject, own } from "../process/spec/shape.mjs";
 import {
   GRACE_MS,
   clock,
+  heldHere,
   holderAlive,
   liveGroup,
   holderOf as parsedHolderOf,
@@ -106,6 +107,7 @@ function takeSlot(dir, n, entry, now) {
   return serialized(file, () => {
     if (textOf(file) !== null && !free(file, holderOf(file), now)) return false;
     writeSlot(file, entry);
+    if (entry.pid === process.pid && entry.until === undefined) heldHere(file, true);
     return true;
   });
 }
@@ -254,6 +256,7 @@ export function releaseLock(root, name, slot, pid = process.pid) {
     const holder = holderOf(file);
     if (holder?.pid === pid && liveGroup(holder) === null) rmSync(file, { force: true });
   });
+  if (pid === process.pid) heldHere(file, false);
 }
 
 /** Drop the takes of lock `name` this session (`pid`) holds for `who`: `{ dropped }` the slots it freed at

@@ -11,13 +11,17 @@
 //
 // The watchdog mode, for a process that cannot handle signals while it waits (a synchronous gate):
 //   node supervise.mjs --parent <pid> --start <start> -- <cmd> [args…]
-// runs the command in the watchdog's own process group (start the watchdog detached), stdio inherited, and
-// ends as the command does: its exit code, or the same signal. About once a second it looks at the parent
-// (`--start` its start time, so a reused pid does not pass for it); once the parent is no longer alive, it
-// kills the whole group, itself included. `watchdogArgv` builds that argv. Node built-ins only.
+// runs the command in a process group of its own, stdio inherited, and ends as the command does: its exit
+// code, or the same signal, once whatever the command left of its group is killed. About once a second it
+// looks at the parent (`--start` its start time, so a reused pid does not pass for it); once the parent is
+// no longer alive, it kills the command's group, waits for it to be gone, and frees each `--free` slot file
+// the dead parent still holds. SIGTERM (a holder's timeout) kills the command's group, then the watchdog
+// ends by SIGKILL. It only ever signals the command's group. `watchdogArgv` builds that argv. Node
+// built-ins only.
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { freeDeadHolder } from "../lane/gate-lock.mjs";
 import { alive, groupRunning, identity } from "../process/pid.mjs";
 import { say } from "./help.mjs";
 
@@ -135,37 +139,93 @@ export function supervise(cmd, limitMs, limitText, { onStart } = {}) {
 
 const WATCHDOG = fileURLToPath(import.meta.url);
 const PARENT_POLL_MS = 1000;
+// How long a killed command group gets to be gone before the watchdog goes on regardless.
+const GROUP_GONE_MS = 5000;
 
-/** The argv that runs `cmd` under the watchdog, bound to `parent` (this process by default). */
-export function watchdogArgv(cmd, parent = identity()) {
+/** The argv that runs `cmd` under the watchdog, bound to `parent` (this process by default), with `free`
+ *  the slot files to free should the parent die mid-command. */
+export function watchdogArgv(cmd, { parent = identity(), free = [] } = {}) {
   const start = parent.start === null ? [] : ["--start", parent.start];
-  return [process.execPath, WATCHDOG, "--parent", String(parent.pid), ...start, "--", ...cmd];
+  const frees = free.flatMap((file) => ["--free", file]);
+  return [
+    process.execPath,
+    WATCHDOG,
+    "--parent",
+    String(parent.pid),
+    ...start,
+    ...frees,
+    "--",
+    ...cmd,
+  ];
+}
+
+// The watchdog's options before `--`: `{ parent, free, cmd }`, or null when they don't make one.
+function watchArgs(argv) {
+  const dash = argv.indexOf("--");
+  if (dash < 0) return null;
+  const got = { parent: { pid: Number.NaN, start: null }, free: [], cmd: argv.slice(dash + 1) };
+  for (let i = 0; i < dash; i += 2) {
+    const [name, value] = [argv[i], argv[i + 1]];
+    if (value === undefined) return null;
+    if (name === "--parent") got.parent.pid = Number(value);
+    else if (name === "--start") got.parent.start = value;
+    else if (name === "--free") got.free.push(value);
+    else return null;
+  }
+  return got.cmd.length && Number.isInteger(got.parent.pid) ? got : null;
 }
 
 // The watchdog mode (see the head of this file).
 function watch(argv) {
-  const dash = argv.indexOf("--");
-  const opts = argv.slice(0, dash);
-  const cmd = argv.slice(dash + 1);
-  const value = (name) => (opts.includes(name) ? opts[opts.indexOf(name) + 1] : undefined);
-  const parent = { pid: Number(value("--parent")), start: value("--start") ?? null };
-  if (dash < 0 || !cmd.length || !Number.isInteger(parent.pid)) {
-    process.stderr.write("supervise: --parent <pid> [--start <start>] -- <cmd> [args…]\n");
+  const args = watchArgs(argv);
+  if (!args) {
+    process.stderr.write(
+      "supervise: --parent <pid> [--start <start>] [--free <file>]… -- <cmd> [args…]\n",
+    );
     process.exit(2);
   }
-  const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit" });
-  const poll = setInterval(() => {
-    if (!alive(parent)) process.kill(0, "SIGKILL"); // the whole group, this watchdog with it
+  const { parent, free, cmd } = args;
+  // The command leads a group of its own: the watchdog kills that group and nothing else.
+  const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", detached: true });
+  const endChild = async () => {
+    if (child.pid === undefined) return;
+    signalGroup(child.pid, "SIGKILL");
+    for (let waited = 0; waited < GROUP_GONE_MS && groupRunning(child.pid); waited += 20)
+      await sleep(20);
+  };
+  // The holder ran out of time (`runGate`'s timeout sends SIGTERM): the command's group goes, then this
+  // watchdog ends by SIGKILL, as the command did before it ran under one.
+  const onTerm = async () => {
+    await endChild();
+    process.kill(process.pid, "SIGKILL");
+  };
+  process.on("SIGTERM", onTerm);
+  // Once the parent is gone, the cleanup below owns the end: the command's own exit must not end this
+  // watchdog before the slots are freed.
+  let orphaned = false;
+  const poll = setInterval(async () => {
+    if (alive(parent)) return;
+    orphaned = true;
+    clearInterval(poll);
+    await endChild();
+    for (const file of free) freeDeadHolder(file, parent);
+    process.exit(1);
   }, PARENT_POLL_MS);
   child.on("error", (error) => {
     clearInterval(poll);
     process.stderr.write(`\n[agentry] could not run ${cmd[0]}: ${error.message}\n`);
     process.exit(1);
   });
-  child.on("exit", (code, signal) => {
+  child.on("exit", async (code, signal) => {
+    if (orphaned) return;
     clearInterval(poll);
+    await endChild(); // whatever it left of its group goes with it
+    if (!alive(parent)) for (const file of free) freeDeadHolder(file, parent);
     if (signal === null) process.exit(code ?? 1);
+    process.off("SIGTERM", onTerm);
     process.kill(process.pid, signal); // end by the same signal, as the command did
+    // A signal Node ignores or handles here (SIGPIPE, SIGUSR1) did not end the watchdog: say it instead.
+    process.stderr.write(`\n[agentry] ${cmd[0]} was killed by ${signal}\n`);
     process.exit(128 + (constants.signals[signal] ?? 0));
   });
 }

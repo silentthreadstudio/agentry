@@ -1,12 +1,13 @@
 // Tests for lib/lane/gate.mjs: runGate on throwaway repos, the pure pickTier / checklistFor / canSkip
 // tables, globMatch, and flakyReds on logs written to disk.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -14,7 +15,6 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { heldSlots, staleGateSlots } from "../lib/lane/gate-lock.mjs";
 import {
   canSkip,
   changedSince,
@@ -24,7 +24,7 @@ import {
   pickTier,
   runGate,
 } from "../lib/lane/gate.mjs";
-import { commitFile, git, tempRepo } from "./git-repo.mjs";
+import { commitFile, git, gitEnv, tempRepo } from "./git-repo.mjs";
 
 let repo;
 let logs;
@@ -566,43 +566,109 @@ test("flakyReds: a listed name counts only whole, and a CRLF log reads as LF", (
   assert.deepEqual(flakyReds(logWith(SUMMARY_ONLY.replace("\n", "\r\n")), ["t"], extra), ["t"]);
 });
 
-// The way `lane exec gate` and `lane merge` run a gate: in a synchronous process holding the gate slot.
-// Killed mid-gate (-9, or a signal it has no handler for), it can clean nothing up itself.
-for (const signal of ["SIGKILL", "SIGTERM"])
-  test(`${signal} of the process running a gate takes the gate command down within 3 s, and its slot reads dead`, async () => {
-    const slots = join(logs, "gate-locks");
-    const pidFile = join(logs, "gate.pid");
-    const lib = (path) => JSON.stringify(new URL(path, import.meta.url).href);
-    const cmd = node(
-      `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000)`,
-    );
-    const holder = spawn(
-      process.execPath,
-      [
-        "--input-type=module",
-        "-e",
-        `import { holdGate } from ${lib("../lib/lane/gate-lock.mjs")};
-         import { runGate } from ${lib("../lib/lane/gate.mjs")};
-         const held = holdGate(${JSON.stringify(slots)}, { who: "lane T1" });
-         try { runGate(${JSON.stringify(repo.dir)}, ${JSON.stringify(cmd)}, { tier: "full", logFile: ${JSON.stringify(log)} }); }
-         finally { held.release(); }`,
+// A real `lane exec gate` on a scratch board whose gate command backgrounds a child: `{ root, run, pids }`,
+// once the gate runs (`pids` the command and its child, `run` the gate's own process). Its process waits
+// for the gate synchronously, so it can clean nothing up itself on a signal: its watchdog has to.
+async function gateRunning(marker) {
+  const { writeSpec } = await import("./spec-files.mjs");
+  const lane = join(dirname(new URL(import.meta.url).pathname), "..", "lane.mjs");
+  const root = repo.dir;
+  const env = { ...gitEnv, HOME: logs };
+  const spec = {
+    version: 1,
+    name: "Exec",
+    root: "plan",
+    kinds: {
+      sprint: {
+        label: "Sprint",
+        at: { table: "BOARD.md", heading: "Sprints" },
+        id: { column: "Sprint" },
+        fields: { status: { column: "Status" } },
+        status: { field: "status", values: { todo: "planned", doing: "active", done: "done" } },
+      },
+      task: {
+        label: "Task",
+        at: { table: "BOARD.md", heading: "Tasks" },
+        id: { column: "Task" },
+        fields: {
+          sprint: { column: "Sprint", type: "ref", ref: "sprint", role: "parent" },
+          status: { column: "Status" },
+          verdict: { column: "Verdict" },
+          commit: { column: "Commit", type: "commits" },
+        },
+        status: {
+          field: "status",
+          values: { todo: "planned", doing: "active", verify: "active", done: "done" },
+        },
+        contract: { blocks: ["TASKS.md"] },
+      },
+    },
+    rules: [{ rule: "ids-unique" }, { rule: "status-known" }],
+    lifecycle: {
+      kind: "task",
+      on: { dispatched: "doing", built: "verify", failed: "doing", merged: "done" },
+      write: { status: "status", verdict: "verdict", commit: "commit" },
+    },
+    gate: {
+      roles: { verify: "pick" },
+      tiers: [
+        {
+          name: "full",
+          command: ["sh", "-c", `echo $$ > ${marker}; sleep 40 & echo $! >> ${marker}; wait`],
+        },
       ],
-      { stdio: "ignore" },
+    },
+  };
+  commitFile(root, ".gitignore", ".agentry/run/\n");
+  commitFile(
+    root,
+    "plan/BOARD.md",
+    "# Exec\n\n## Sprints\n\n| Sprint | Status |\n| ------ | ------ |\n| S1     | doing  |\n\n## Tasks\n\n| Task | Sprint | Status | Verdict | Commit |\n| ---- | ------ | ------ | ------- | ------ |\n| T1   | S1     | todo   |         |        |\n",
+  );
+  commitFile(
+    root,
+    "plan/TASKS.md",
+    "# Tasks\n\n- **T1** (S1): owns `out.txt`. Accept: out.txt exists.\n",
+  );
+  writeSpec(join(root, ".agentry"), spec);
+  git(root, "add", ".agentry");
+  git(root, "commit", "-q", "-m", "process");
+  const exec = (...args) =>
+    JSON.parse(
+      spawnSync(process.execPath, [lane, "exec", ...args, "--json", "--root", root], {
+        encoding: "utf8",
+        env,
+      }).stdout,
     );
-    const gone = new Promise((resolve) => holder.on("exit", resolve));
-    for (let i = 0; i < 200 && !existsSync(pidFile); i++)
-      await new Promise((r) => setTimeout(r, 25));
-    const gate = Number(readFileSync(pidFile, "utf8"));
-    assert.ok(alive(gate), "the gate command runs");
-    holder.kill(signal);
+  const started = exec("start", "T1");
+  commitFile(started.worktree, "out.txt", "made\n", "feat: add out.txt");
+  writeFileSync(started.reportPath, "DONE\nadded\nused_memories: none\n");
+  exec("report", "T1");
+  const run = spawn(process.execPath, [lane, "exec", "gate", "T1", "--json", "--root", root], {
+    env,
+    stdio: "ignore",
+  });
+  const lines = () => (existsSync(marker) ? readFileSync(marker, "utf8").trim().split("\n") : []);
+  for (let i = 0; i < 600 && lines().length < 2; i++) await new Promise((r) => setTimeout(r, 25));
+  return { root, run, pids: lines().map(Number) };
+}
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGKILL"])
+  test(`${signal} of lane exec gate mid-gate takes the gate command down and leaves gate-locks empty within 3 s`, async () => {
+    const { root, run, pids } = await gateRunning(join(logs, "gate.pids"));
+    assert.equal(pids.length, 2, "the gate command and its child run");
+    const slots = join(root, ".agentry", "run", "gate-locks");
+    assert.deepEqual(readdirSync(slots), ["slot-1.lock"]);
+    const gone = new Promise((resolve) => run.on("exit", resolve));
+    run.kill(signal);
     await gone;
     const killed = Date.now();
-    while (alive(gate) && Date.now() - killed < 3000) await new Promise((r) => setTimeout(r, 50));
-    assert.equal(alive(gate), false, "the gate command outlived its holder");
-    assert.deepEqual(heldSlots(slots), [], "the slot reads dead");
+    const clean = () => !pids.some(alive) && readdirSync(slots).length === 0;
+    while (!clean() && Date.now() - killed < 3000) await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(pids.filter(alive), [], "no gate process outlived its holder");
     assert.deepEqual(
-      staleGateSlots(slots).map((s) => s.groups),
-      [[]],
-      "no group left running",
+      readdirSync(slots),
+      [],
+      "no slot, mutex or temp file left, nothing cleared first",
     );
   });

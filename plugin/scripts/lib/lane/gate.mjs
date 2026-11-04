@@ -21,6 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { watchdogArgv } from "../cli/supervise.mjs";
+import { slotsHeldHere } from "./gate-lock.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
 import { git } from "./worktree.mjs";
 
@@ -75,15 +76,16 @@ export function runGate(dir, cmd, { tier, logFile, timeoutSec = DEFAULT_TIMEOUT_
   let res;
   let timedOut = false;
   try {
-    // detached: the watchdog leads the process group the command runs in, so a timeout can take its
-    // children down too; the watchdog kills that group as soon as this process is gone.
-    const [exe, ...args] = watchdogArgv(cmd);
+    // The watchdog runs the command in a group of its own and kills that group when the command ends, at
+    // the timeout, and as soon as this process is gone (then it also frees the slots this process holds).
+    const [exe, ...args] = watchdogArgv(cmd, { free: slotsHeldHere() });
     res = spawnSync(exe, args, {
       cwd: top,
       stdio: ["ignore", fd, fd],
       detached: true,
       timeout: timeoutSec * 1000,
-      killSignal: "SIGKILL",
+      // The watchdog kills the command's group on SIGTERM, then itself by SIGKILL.
+      killSignal: "SIGTERM",
     });
     timedOut = res.error?.code === "ETIMEDOUT";
     endGroup(res.pid);
