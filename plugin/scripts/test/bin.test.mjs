@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { pluginVersion } from "../lib/cli/help.mjs";
 import { nextStep, prefix, viaAgentry } from "../lib/cli/invoke.mjs";
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -34,7 +35,8 @@ test("--version prints the plugin's version", () => {
     readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8"),
   );
   const run = agentry("--version");
-  assert.equal(run.stdout.trim(), version);
+  assert.equal(run.stdout.trim(), pluginVersion());
+  assert.ok(run.stdout.startsWith(version));
   assert.equal(run.status, 0);
 });
 
@@ -49,7 +51,9 @@ test("--help ends with the plugin's version, as every group and subcommand help 
   const { version } = JSON.parse(
     readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8"),
   );
-  assert.equal(agentry("--help").stdout.trimEnd().split("\n").at(-1), `agentry plugin ${version}`);
+  const last = agentry("--help").stdout.trimEnd().split("\n").at(-1);
+  assert.equal(last, `agentry plugin ${pluginVersion()}`);
+  assert.ok(last.startsWith(`agentry plugin ${version}`));
 });
 
 test("board and lane give the scripts' own output and exit codes", () => {
