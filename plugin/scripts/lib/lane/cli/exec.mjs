@@ -2126,6 +2126,9 @@ function fix(ctx, id, given) {
   const labels = [...new Set(given.split(",").map((n) => n.trim().toUpperCase()))];
   if (!labels.every((n) => /^N\d+$/.test(n)))
     refuse(`--notes takes the verifier's note labels, like N1,N3 (got ${given})`);
+  // A notes round already out: its report comes first, whatever the budget says.
+  const out = ledger.rounds.at(-1);
+  if (out?.notes && out.report === undefined) refuse("a notes round is out: wait for its report");
   const byOwner = laneLine(root, "fix", id, ' --owner "<the change>"');
   const { used, max } = notesBudget(ledger, liveNotes(ctx));
   // Held at the notes cap: a cap raised since lets one more notes round go; else the owner decides.

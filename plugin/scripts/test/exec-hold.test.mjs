@@ -1028,6 +1028,20 @@ test("held at the notes cap: a cap raised since lets fix --notes send one more n
   assert.equal(lane(r, "report", "T3").json.next, "recheck");
 });
 
+test("a second fix --notes while the notes round is out says to wait for its report, at the cap or under it", () => {
+  // R1d-38 r4 N9, probe A5: at the cap it said the gate goes on with the notes open, a builder still out.
+  for (const noteRounds of [1, 2]) {
+    const r = flaggedRepo({ noteRounds, final: "never" });
+    assert.equal(noted(r).json.next, "gate");
+    assert.equal(lane(r, "fix", "T3", "--notes", "N1").json.next, "fix");
+    const before = ledgerOf(r.root, "T3");
+    const again = lane(r, "fix", "T3", "--notes", "N1");
+    assert.equal(again.exit, 2, again.stderr);
+    assert.match(again.stderr, /✗ lane exec fix T3: a notes round is out: wait for its report$/m);
+    assert.deepEqual(ledgerOf(r.root, "T3"), before, `noteRounds ${noteRounds}`);
+  }
+});
+
 test("held at the notes cap: owns --add is refused as on a verified lane", () => {
   // R1d-38 r2 N4: it was applied on a lane past its passing verdict.
   const r = flaggedRepo();
