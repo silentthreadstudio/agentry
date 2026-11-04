@@ -560,7 +560,16 @@ test("what is not mechanical is listed with its command, and the exit is 1", () 
   const out = board(root, "fix", "--apply");
   assert.equal(out.status, 1);
   assert.match(out.stdout, /left for you:/);
-  assert.match(out.stdout, /unlisted-worktree agent-z9 → \/agentry:exec <id>/);
+  // The row wraps between words: read it as one line.
+  const flat = out.stdout.replaceAll(/\s+/g, " ");
+  assert.ok(
+    flat.includes(
+      "unlisted-worktree agent-z9 → land: lane merge <id> --branch worktree-agent-z9 · continue: lane exec adopt <id> --branch worktree-agent-z9",
+    ),
+    out.stdout,
+  );
+  assert.ok(flat.includes("remove: git worktree remove .claude/worktrees/agent-z9"), out.stdout);
+  assert.doesNotMatch(out.stdout, /unlisted-worktree[^\n]*\/agentry:exec/);
   assert.match(out.stdout, /started-by-hand T1 → \/agentry:exec T1/);
   assert.equal(out.stdout.split("\n").filter((l) => /^ {2}\w/.test(l)).length, 2);
 });

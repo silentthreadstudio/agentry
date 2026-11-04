@@ -54,7 +54,7 @@ test("start prints the Now sprint, the nudges, the drafts and the mode in at mos
   assert.match(res.stdout, /session start · mode night/);
   assert.match(res.stdout, /^now: S1 0\/3$/m);
   assert.match(res.stdout, /in flight: T1 \(doing\), T3 \(verify\)/);
-  assert.match(res.stdout, /drift: unlisted-worktree .*→ \/agentry:exec/);
+  assert.match(res.stdout, /drift: unlisted-worktree .*→ land: lane merge <id> --branch /);
   assert.match(res.stdout, /drafts: 1 pending → \/agentry:close/);
   assert.match(res.stdout, /conductor prompt: .*CONDUCTOR\.md/);
 });

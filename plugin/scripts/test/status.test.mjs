@@ -415,7 +415,13 @@ test("the view carries nudges and the pending draft count, and status shows both
   );
   assert.equal(view.drafts, 1);
   const text = renderStatus({ spec, report, view, work });
-  assert.match(text, /^Drift {6}! unlisted-worktree agent-q1 → \/agentry:exec <id>$/m);
+  assert.match(
+    text,
+    /^Drift {6}! unlisted-worktree agent-q1 → land: lane merge <id> --branch\n {13}worktree-agent-q1 · continue: lane exec adopt <id> --branch\n/m,
+  );
+  assert.match(text, /^ {13}<id>\|--keep "<why>" · remove: git worktree remove$/m);
+  assert.match(text, /^ {13}\.claude\/worktrees\/agent-q1$/m);
+  assert.doesNotMatch(text, /unlisted-worktree[^\n]*\/agentry:exec/);
   assert.match(text, /^ {11}! started-by-hand T1 → \/agentry:exec T1$/m);
   assert.match(text, /^Drafts {5}1 pending · \/agentry:board draft list$/m);
 });
@@ -483,7 +489,10 @@ test("with more than four nudges the rest are counted, and no line passes 80 col
   assert.ok(view.nudges.length > 4);
   const text = renderStatus({ spec, report, view, work });
   assert.match(text, new RegExp(`^ {11}\\+${view.nudges.length - 4} more: /agentry:board$`, "m"));
-  assert.ok(cols(text) <= WIDTH, text);
+  // A line passes 80 columns only when what is on it is one word too wide to wrap (a worktree's path).
+  for (const line of text.split("\n"))
+    assert.ok([...line].length <= WIDTH || /^ *\S+$/.test(line), line);
+  assert.ok(text.replaceAll(/\s+/g, " ").includes("remove: git worktree remove .claude/"), text);
   const tty = renderStatus({ spec, report, view, work, tty: true });
   assert.ok(tty.includes(`${ESC}[36m!${ESC}[0m`), "only the glyph is colored");
 });
