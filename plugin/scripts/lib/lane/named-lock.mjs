@@ -1,7 +1,8 @@
 // named-lock — the workflow file's `locks` (`{ "editor": 1 }`): a lock with that many slots, held by
 // `agentry run --lock <name>` for a command's life, or by `agentry lock take <name>` for an MCP-driven
 // session. A slot is a file `slot-<n>.lock` under `.agentry/run/locks/<name>/` of the main checkout (every
-// worktree shares it), created with `wx` (one creator wins), holding `{ pid, who, at, until? }`. A slot is
+// worktree shares it), holding `{ pid, who, at, until? }`, always written whole: created by linking a temp
+// file into place (one creator wins), rewritten by renaming one over it, so no reader sees it half-written. A slot is
 // free again once its pid is gone, once its `until` has passed (a take's ttl), or, holding neither a pid
 // nor an until, once it is old enough not to be mid-write. The pid, holder and clock checks are gate-lock's.
 // A run also records its command's process group (`pgid`): while any member of that group lives the slot
@@ -10,7 +11,15 @@
 // `ownUntil`): a rider lives while its run or its command's group does, the extension ends with the last
 // live rider, and a drop while one lives is kept until then. Synchronous: a waiting
 // caller polls `tryLock` at `POLL_MS`. Node built-ins only.
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { isObject, own } from "../process/spec/shape.mjs";
 import {
@@ -60,6 +69,28 @@ const textOf = (file) => {
   }
 };
 
+// Write slot `file` whole (a temp file renamed over it), so a reader never sees it empty or cut short.
+function writeSlot(file, holder) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(holder));
+  renameSync(tmp, file);
+}
+
+// Create slot `file` holding `entry` (JSON text), whole: true when this call created it.
+function createSlot(file, entry) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, entry);
+  try {
+    linkSync(tmp, file);
+    return true;
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    return false;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
 // Can nobody be holding the slot `file` (read as `holder`) any more?
 function free(file, holder, now) {
   if (holder?.until !== undefined && !(Date.parse(holder.until) > now)) return true;
@@ -77,12 +108,7 @@ function free(file, holder, now) {
 function takeSlot(root, name, n, entry, now) {
   const file = slotFile(root, name, n);
   for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      writeFileSync(file, entry, { flag: "wx" });
-      return true;
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-    }
+    if (createSlot(file, entry)) return true;
     const seen = textOf(file);
     if (seen === null) continue;
     if (!free(file, holderOf(file), now)) return false;
@@ -143,7 +169,7 @@ export function tryLock(
         const rides = liveRiders(holder).length
           ? { riders: holder.riders, ownUntil: entry.until, until: later }
           : {};
-        writeFileSync(file, JSON.stringify({ ...entry, at: holder.at, ...rides }));
+        writeSlot(file, { ...entry, at: holder.at, ...rides });
         return { slot: n, again: true };
       }
     }
@@ -158,10 +184,10 @@ export function tryLock(
 export function setGroup(root, name, slot, pgid, pid = process.pid) {
   const file = slotFile(root, name, slot);
   const holder = holderOf(file);
-  if (holder?.pid === pid) return writeFileSync(file, JSON.stringify({ ...holder, pgid }));
+  if (holder?.pid === pid) return writeSlot(file, { ...holder, pgid });
   if (!holder?.riders?.some((rider) => rider.pid === pid)) return;
   const riders = holder.riders.map((rider) => (rider.pid === pid ? { ...rider, pgid } : rider));
-  writeFileSync(file, JSON.stringify({ ...holder, riders }));
+  writeSlot(file, { ...holder, riders });
 }
 
 /** Ride the take of lock `name` that session `session` (null: none) holds now for `who`, if there is one:
@@ -179,10 +205,7 @@ export function rideTake(
     if (!sameTake(holder, session, who) || free(file, holder, now)) continue;
     const riders = [...liveRiders(holder).filter((rider) => rider.pid !== pid), { pid }];
     const until = new Date(Math.max(untilMs, Date.parse(holder.until))).toISOString();
-    writeFileSync(
-      file,
-      JSON.stringify({ ...holder, riders, ownUntil: holder.ownUntil ?? holder.until, until }),
-    );
+    writeSlot(file, { ...holder, riders, ownUntil: holder.ownUntil ?? holder.until, until });
     return n;
   }
   return null;
@@ -197,10 +220,9 @@ export function endRide(root, name, slot, pid = process.pid) {
   const mine = holder?.riders?.find((rider) => rider.pid === pid);
   if (!mine || groupRunning(mine.pgid)) return;
   const riders = liveRiders({ riders: holder.riders.filter((rider) => rider !== mine) });
-  if (riders.length) return writeFileSync(file, JSON.stringify({ ...holder, riders }));
+  if (riders.length) return writeSlot(file, { ...holder, riders });
   const { riders: _, ownUntil, ...take } = holder;
-  if (Date.parse(ownUntil) > Date.now())
-    writeFileSync(file, JSON.stringify({ ...take, until: ownUntil }));
+  if (Date.parse(ownUntil) > Date.now()) writeSlot(file, { ...take, until: ownUntil });
   else rmSync(file, { force: true });
 }
 
@@ -226,7 +248,7 @@ export function dropLock(root, name, { slots, pid, who }) {
       rmSync(file, { force: true });
       dropped++;
     } else {
-      writeFileSync(file, JSON.stringify({ ...holder, ownUntil: new Date().toISOString() }));
+      writeSlot(file, { ...holder, ownUntil: new Date().toISOString() });
       kept ??= rider.pid;
     }
   }

@@ -378,3 +378,41 @@ test("a take again with a longer ttl while it is ridden lasts to the longer of t
   const { until } = JSON.parse(readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"), "utf8"));
   assert.ok(Date.parse(until) > Date.now() + 3_600_000, `until ${until}`);
 });
+
+// `code` run as an ES module in a child that imports named-lock.mjs as `lock`: a promise of its exit.
+function withLock(code) {
+  const url = JSON.stringify(new URL("../lib/lane/named-lock.mjs", import.meta.url).href);
+  const child = spawn(
+    NODE,
+    ["--input-type=module", "-e", `import * as lock from ${url};\n${code}`],
+    {
+      stdio: "inherit",
+    },
+  );
+  cleanups.push(() => child.kill("SIGKILL"));
+  return new Promise((resolve) => child.on("exit", resolve));
+}
+
+test("a slot file another process keeps rewriting never reads empty or cut short", async () => {
+  const dir = repo({ sim: 1 });
+  const take = { slots: 1, pid: process.pid, who: "T-1", ttlMs: 60_000 };
+  tryLock(dir, "sim", take);
+  const file = join(lockDir(dir, "sim"), "slot-1.lock");
+  const first = readFileSync(file, "utf8");
+  const writer = withLock(
+    `const end = Date.now() + 3000;
+     while (Date.now() < end) lock.tryLock(${JSON.stringify(dir)}, "sim", ${JSON.stringify(take)});`,
+  );
+  const started = Date.now();
+  while (readFileSync(file, "utf8") === first && Date.now() - started < 5000);
+  let torn = 0;
+  for (const end = Date.now() + 1000; Date.now() < end; ) {
+    try {
+      JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      torn++;
+    }
+  }
+  await writer;
+  assert.equal(torn, 0, `${torn} reads saw a slot file mid-write`);
+});
