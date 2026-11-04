@@ -776,6 +776,22 @@ test("exec gate on a held lane refuses, records nothing and runs nothing: a cont
   }
 });
 
+test("exec gate on a lane the guard holds refuses, naming the report, and runs nothing", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  build(out, "three.txt");
+  writeFileSync(join(r.root, "stray.txt"), "oops\n");
+  assert.equal(lane(r, "report", "T3").json.hold.for, "guard");
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T3.json");
+  const before = readFileSync(file, "utf8");
+  const refused = lane(r, "gate", "T3");
+  assert.equal(refused.exit, 2, refused.stderr);
+  assert.match(refused.stderr, /T3 is held by a guard trip: run its report once main is fixed$/m);
+  assert.equal(readFileSync(file, "utf8"), before);
+  const logs = join(r.root, ".agentry", "run", "process", "runs", "T3", "logs");
+  assert.equal(existsSync(join(logs, "gate-1.log")), false, "no gate ran");
+});
+
 test("heldText names a context hold's reason and the resume that answers it", () => {
   const hold = { for: "context", when: "during", reason: "which key?", report: "/r", since: "t" };
   assert.equal(heldText(hold, 0), 'for more context: which key? · resume with --note "<the fact>"');

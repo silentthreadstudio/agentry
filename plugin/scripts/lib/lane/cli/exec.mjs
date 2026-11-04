@@ -1905,8 +1905,14 @@ function gateOnce(ctx, id) {
   let ledger = mustLedger(root, id);
   if (ledger.state === "stopped" || ledger.next === "merge")
     refuse(`the lane is ${ledger.state} (next ${ledger.next}): no gate to run`);
-  // A held lane waits for its answer: a gate run now would be recorded and decide nothing.
-  if (ledger.state === "held") refuse(`${id} is held (${ledger.hold?.for}): resume it first`);
+  // A held lane waits for its answer: a gate run now would be recorded and decide nothing. A guard hold is
+  // answered by its report, any other by the resume.
+  if (ledger.state === "held")
+    refuse(
+      ledger.hold?.for === "guard"
+        ? `${id} is held by a guard trip: run its report once main is fixed`
+        : `${id} is held (${ledger.hold?.for}): resume it first`,
+    );
   const config = gateOf(spec);
   if (!config) refuse("the workflow file has no gate: add one (/agentry:init) to run it here");
   // A stacked lane whose parent moved, landed or ended is restacked first: a gate on this tip would not count.
