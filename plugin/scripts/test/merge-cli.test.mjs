@@ -2624,3 +2624,21 @@ test("--branch refuses a branch whose worktree is mid-rebase on a spelling no br
     `${path} is on FEATURE/Y, which no branch is named: check it out by its exact name`,
   );
 });
+
+test("--cleanup deletes the branch at its listed tip, and keeps one that gained a case twin", () => {
+  git(root, "checkout", "-q", "-b", "feat/x");
+  commitFile(root, "src/a.txt", "a\n", "feat: a");
+  git(root, "checkout", "-q", "main");
+  mustLand("--branch", "feat/x");
+  git(root, "pack-refs", "--all");
+  git(root, "branch", "feat/X", "main");
+  const before = refs();
+  const kept = merge(ID, "--cleanup");
+  assert.equal(kept.status, 1, out(kept));
+  assert.match(out(kept), /feat\/x has a case twin feat\/X: rename one first/);
+  assert.equal(refs(), before, "neither spelling was deleted");
+  git(root, "branch", "-D", "feat/X");
+  const gone = merge(ID, "--cleanup");
+  assert.equal(gone.status, 0, out(gone));
+  assert.equal(git(root, "branch", "--list", "feat/x"), "");
+});

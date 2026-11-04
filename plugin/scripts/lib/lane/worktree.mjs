@@ -1,14 +1,15 @@
 // worktree — the lane's git I/O for isolation (ADR-R2): Agentry creates the worktree and branch itself, on
 // every host. `mainRoot` resolves any directory (a worktree included) to the main checkout; `create` adds
 // `agentry/<id>` under `<mainRoot>/.agentry/run/worktrees/<id>`; `remove` takes it down again, force-
-// removing a locked worktree and deleting the branch only when nothing on it is missing from main.
+// removing a locked worktree and deleting the branch (at its listed tip) only when nothing on it is
+// missing from main.
 //
 // Unlike `process/git.mjs` (read-only, never throws), these calls change the repository, so a git failure
 // throws an Error carrying git's own stderr. Node built-ins only.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { defaultBranch, worktrees } from "../process/git.mjs";
+import { branchTips, defaultBranch, worktrees } from "../process/git.mjs";
 import { idProblem } from "./id.mjs";
 
 /** Where the lane's worktrees live, under the main checkout. */
@@ -130,7 +131,9 @@ function uncommitted(dir) {
 }
 
 /** Remove the worktree at `path` and, when all the work on `branch` is on `onto` (default: the repo's
- *  default branch), delete the branch. A worktree with uncommitted changes is kept unless `force`; a locked
+ *  default branch), delete the branch: by `update-ref -d` at the tip the branch list gives for its exact
+ *  name, never `branch -D` or a read by name, which on a case-insensitive filesystem can open, and
+ *  delete, another branch that differs only in case. A branch with such a twin is kept, saying so. A worktree with uncommitted changes is kept unless `force`; a locked
  *  one is taken down, and a locked one whose directory is gone is unlocked and pruned. A branch with
  *  unlanded work is kept. `reason` says why anything was kept. Never throws on a git failure: `removed`
  *  says it. */
@@ -151,14 +154,16 @@ export function remove(root, { path, branch, onto = defaultBranch(root), force =
   }
   out.removed = !existsSync(path) && !worktrees(root).some((tree) => tree.path === path);
   if (!out.removed) return { ...out, reason: `${path} is still a registered worktree` };
-  if (
-    !branch ||
-    git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status !== 0
-  )
-    return out;
+  const tips = branch ? branchTips(root) : new Map();
+  const tip = tips.get(branch);
+  if (!tip) return out;
+  const twin = [...tips.keys()].find(
+    (b) => b !== branch && b.toLowerCase() === branch.toLowerCase(),
+  );
+  if (twin) return { ...out, reason: `${branch} has a case twin ${twin}: rename one first` };
   if (!onto) return { ...out, reason: "no main branch to compare against" };
-  if (!onMain(root, onto, branch))
+  if (!onMain(root, onto, tip))
     return { ...out, reason: `${branch} has commits that are not on ${onto}` };
-  out.branchDeleted = git(root, ["branch", "-D", branch]).status === 0;
+  out.branchDeleted = git(root, ["update-ref", "-d", `refs/heads/${branch}`, tip]).status === 0;
   return out;
 }
