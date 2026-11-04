@@ -2557,3 +2557,70 @@ test("--branch by its exact name adopts at the listed tip, and no output names g
   assert.equal(git(root, "branch", "--list", "feature/x"), "");
   for (const text of outputs) assert.doesNotMatch(text, /branch -D/);
 });
+
+// ---- every call re-resolves the ledger's branch from the branch list (R1d-47 r3 N1–N4) ----
+
+/** A hand branch `feat/x` adopted at preflight, then packed, then a loose twin `feat/X` with its own commit. */
+function twinAfterAdopt() {
+  git(root, "checkout", "-q", "-b", "feat/x");
+  commitFile(root, "one.txt", "lower\n", "feat: lower x (the adopted one)");
+  git(root, "checkout", "-q", "main");
+  assert.equal(merge(ID, "--branch", "feat/x", "--preflight").status, 0);
+  git(root, "pack-refs", "--all");
+  git(root, "checkout", "-q", "-b", "feat/X");
+  commitFile(root, "two.txt", "upper\n", "feat: upper X (the twin)");
+  git(root, "checkout", "-q", "main");
+}
+/** A land that must be refused naming `why`, with main, the refs and the ledger as they were. */
+function refusedLand(why, ...args) {
+  const [before, pre, ledger] = [refs(), head(), readLedger(root, ID)];
+  const res = merge(ID, ...args, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  assert.ok(out(res).includes(why), out(res));
+  assert.deepEqual([refs(), head()], [before, pre]);
+  assert.deepEqual(readLedger(root, ID), ledger);
+}
+
+test("a case twin made after the adopt is refused on the land with --branch: its commit never lands", () => {
+  twinAfterAdopt();
+  refusedLand("feat/x has a case twin feat/X: rename one first", "--branch", "feat/x");
+  assert.doesNotMatch(git(root, "log", "--format=%s", "main"), /upper X/);
+});
+
+test("a case twin made after the adopt is refused on a land with no --branch too", () => {
+  twinAfterAdopt();
+  refusedLand("feat/x has a case twin feat/X: rename one first");
+  assert.doesNotMatch(git(root, "log", "--format=%s", "main"), /upper X/);
+});
+
+test("a verified exec lane whose branch gained a loose case twin is refused: the twin's decoy never lands", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  git(root, "pack-refs", "--all");
+  git(root, "branch", "agentry/t1", "main");
+  const decoy = join(root, ".agentry", "run", "decoy");
+  git(root, "worktree", "add", "-q", decoy, "agentry/t1");
+  commitFile(decoy, "decoy.txt", "decoy\n", "feat: decoy on twin agentry/t1");
+  git(root, "worktree", "remove", "--force", decoy);
+  for (const args of [["--branch", BRANCH], []])
+    refusedLand("agentry/T1 has a case twin agentry/t1: rename one first", ...args);
+  assert.doesNotMatch(git(root, "log", "--format=%s", "main"), /decoy/);
+});
+
+test("--branch refuses a branch whose worktree is mid-rebase on a spelling no branch is named", () => {
+  const path = handTree("agent-y", "feature/y");
+  commitFile(root, "src/a.txt", "main\n", "feat: a on main");
+  // A rebase that stops on a conflict, its HEAD detached; its head-name is what `git checkout FEATURE/Y`
+  // then `git rebase main` writes on a case-insensitive filesystem.
+  const rebase = spawnSync("git", ["-C", path, "rebase", "main"], {
+    encoding: "utf8",
+    env: gitEnv,
+  });
+  assert.notEqual(rebase.status, 0, "the rebase stops on its conflict");
+  const headName = join(git(path, "rev-parse", "--absolute-git-dir"), "rebase-merge", "head-name");
+  writeFileSync(headName, "refs/heads/FEATURE/Y\n");
+  refusedBranch(
+    "feature/y",
+    `${path} is on FEATURE/Y, which no branch is named: check it out by its exact name`,
+  );
+});

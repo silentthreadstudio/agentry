@@ -1,7 +1,7 @@
 // merge/rows — the rows the preflight and the land both read before main changes: the ledger (adopting
 // a `--branch`), the board, the commits to land, the repo checks and the push policy.
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { readConfig } from "../../config.mjs";
 import { branchTips, defaultBranch, worktrees } from "../../process/git.mjs";
 import {
@@ -19,16 +19,31 @@ import { dirtyEntries } from "../own-memory.mjs";
 import { verdicts } from "../rounds.mjs";
 import { chainOf } from "../stack.mjs";
 import { brokenIn, rulesOf, withTypeHints } from "../subjects.mjs";
-import { findByBranch } from "../worktree.mjs";
-import { ok, red, save, short, skip, tipOf, wait, warn } from "./lane.mjs";
+import { findByBranch, git } from "../worktree.mjs";
+import { ok, red, save, short, skip, wait, warn } from "./lane.mjs";
 
 // The ledger states a land may start or resume from; an exec lane still building or verifying is not
 // done, and a stopped one needs the owner.
 const LANDABLE = ["verified", "merging", "merged"];
 
-/** `--branch` as a branch to adopt, worded as `exec adopt` words it: `{ branch, tip }`, the tip from the
+// The branch a rebase in the worktree at `dir` works on (its HEAD is detached meanwhile), or null: read
+// as `exec adopt` reads it.
+function rebasing(dir) {
+  for (const name of ["rebase-merge/head-name", "rebase-apply/head-name"]) {
+    const res = git(dir, ["rev-parse", "--git-path", name]);
+    const file = res.status === 0 ? resolve(dir, res.stdout.trim()) : null;
+    if (file && existsSync(file))
+      return readFileSync(file, "utf8")
+        .trim()
+        .replace(/^refs\/heads\//, "");
+  }
+  return null;
+}
+
+/** `--branch` as a branch to land, worded as `exec adopt` words it: `{ branch, tip }`, the tip from the
  *  branch list (`resolveBranch`), or `{ problem }`: no branch by that exact name (a worktree on it with no
- *  commits yet says so), a case twin, or the branch's worktree on a spelling no branch is named. */
+ *  commits yet says so), a case twin, or the branch's worktree on a spelling no branch is named, checked
+ *  out or mid-rebase. */
 function adoptable(root, branch) {
   const tips = branchTips(root);
   const all = worktrees(root);
@@ -39,8 +54,20 @@ function adoptable(root, branch) {
   if (named.missing && checkedOut && inNoCase)
     return { problem: `${shownName(branch)} has no commits yet` };
   if (named.problem) return named;
-  const stray = checkedOut ? null : strayTree(all, branch, tips);
+  if (checkedOut) return named;
+  const heads = all
+    .filter((t) => t.branch === null && existsSync(t.path))
+    .map((t) => ({ path: t.path, branch: rebasing(t.path) }))
+    .filter((t) => t.branch && t.branch !== branch);
+  const stray = strayTree(all, branch, tips) ?? strayTree(heads, branch, tips);
   return stray ? { problem: unnamedHead(stray) } : named;
+}
+
+/** The tip of the ledger's branch from the branch list, resolved once per call and never read by name:
+ *  null when no listed branch has its exact name, or another has it in another case (`resolveBranch`). */
+export function listedTip(lane) {
+  if (lane.tip === undefined) lane.tip = resolveBranch(lane.root, lane.ledger.branch).tip ?? null;
+  return lane.tip;
 }
 
 /** The task's ledger, or one adopted from `--branch`. Returns a row, or { exit, rows, next? } to stop. */
@@ -55,15 +82,27 @@ export function ledgerStep(lane, { adopt }) {
   }
   if (ledger) {
     lane.ledger = ledger;
-    if (branch !== undefined && branch !== ledger.branch)
+    // What a call lands is the branch as listed now: a case twin made since an earlier call is refused,
+    // and the tip comes from the list, never by name (that could open the twin's loose file). A merged
+    // lane lands nothing again, and its branch may be gone.
+    if (ledger.state !== "merged") {
+      const named = branch === undefined ? null : adoptable(root, branch);
+      if (named?.problem) return { exit: 2, rows: [red("ledger", named.problem)] };
+      if (branch !== undefined && branch !== ledger.branch)
+        return {
+          exit: 2,
+          rows: [red("ledger", `${id}'s ledger is on ${ledger.branch}, not ${shownName(branch)}`)],
+        };
+      const own = named ?? resolveBranch(root, ledger.branch);
+      if (own.problem && !own.missing) return { exit: 2, rows: [red("ledger", own.problem)] };
+      lane.tip = own.tip ?? null;
+    } else if (branch !== undefined && branch !== ledger.branch)
       return {
         exit: 2,
         rows: [red("ledger", `${id}'s ledger is on ${ledger.branch}, not ${shownName(branch)}`)],
       };
     // A stopped exec lane lands only when the owner names its branch: it is adopted from then on.
     if (ledger.state === "stopped" && branch !== undefined && adopt) {
-      const named = adoptable(root, branch);
-      if (named.problem) return { exit: 2, rows: [red("ledger", named.problem)] };
       save(lane, { origin: "adopted", adoptedFrom: "stopped", state: "merging" });
       return ok("ledger", `adopted the stopped exec lane on ${branch} (origin now "adopted")`);
     }
@@ -98,7 +137,7 @@ export function ledgerStep(lane, { adopt }) {
         next: `lane exec reverify ${id}`,
       };
     // What the lane closed on is what lands: a branch moved since (a rebase, a commit) is checked again first.
-    const tip = commitOf(root, `refs/heads/${ledger.branch}`);
+    const tip = lane.tip;
     if (
       ledger.origin === "exec" &&
       ledger.state !== "merged" &&
@@ -133,6 +172,7 @@ export function ledgerStep(lane, { adopt }) {
   // clean up, a branch other than the one named.
   const named = adoptable(root, branch);
   if (named.problem) return { exit: 2, rows: [red("ledger", named.problem)] };
+  lane.tip = named.tip;
   if (branch === mainBranch)
     return { exit: 2, rows: [red("ledger", `${branch} is the main branch itself`)] };
   const head = commitOf(root, "HEAD");
@@ -227,9 +267,12 @@ function lanesBroughtIn(root, ledger, merges) {
 /** The commits to land, as a row: red when there is nothing to pick or a merge commit is in the way. A
  *  merge commit that brings in another lane's branch names that lane, to land first; `next` is then
  *  its land. */
-export function commitsRow({ root, ledger }) {
+export function commitsRow(lane) {
+  const { root, ledger } = lane;
   const { mainBranch, branch } = ledger;
-  const plan = toLand(root, { main: mainBranch, branch });
+  const tip = listedTip(lane);
+  if (!tip) return { row: red("commits", `${branch} does not exist: nothing to land`) };
+  const plan = toLand(root, { main: mainBranch, branch: tip });
   if (plan.error) return { row: red("commits", plan.error) };
   if (plan.merges.length > 0) {
     const head = `${branch} has ${plan.merges.length} merge commit(s), which a cherry-pick cannot land`;
@@ -255,7 +298,7 @@ export function commitsRow({ root, ledger }) {
   const more = plan.picks.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`);
   if (plan.onMain.length > 0)
     more.push(`${plan.onMain.length} commit(s) already on ${mainBranch} (same patch), not picked`);
-  const behind = !isAncestor(root, mainBranch, branch);
+  const behind = !isAncestor(root, mainBranch, tip);
   if (behind) more.push(`${branch} is not cut from ${mainBranch}'s tip: the picks may conflict`);
   // Not cut from main's tip lands as a rule, but may conflict: a warning, not a green tick.
   return { plan, row: (behind ? warn : ok)("commits", `${plan.picks.length} to land`, more) };
@@ -264,9 +307,11 @@ export function commitsRow({ root, ledger }) {
 /** The commits row for the workflow file's `commits` rules, over the commits the land would pick: skipped
  *  with no rules, red naming the first commit that breaks one (the others under it), else a tick. Null when
  *  the picks can't be planned (`commitsRow` says why). */
-export function subjectsRow({ root, spec, ledger }) {
+export function subjectsRow(lane) {
+  const { root, spec, ledger } = lane;
   if (!rulesOf(spec)) return skip("commits", "no rules (commits in the workflow file)");
-  const plan = toLand(root, { main: ledger.mainBranch, branch: ledger.branch });
+  const tip = listedTip(lane);
+  const plan = tip ? toLand(root, { main: ledger.mainBranch, branch: tip }) : { error: true };
   if (plan.error) return null;
   const broken = brokenIn(root, spec, plan.picks);
   if (broken.length === 0) return ok("commits", `${plan.picks.length} checked against commits`);
@@ -278,11 +323,13 @@ export function subjectsRow({ root, spec, ledger }) {
 
 /** The checklist items this land waits on (`gate.checklist`): on the files the branch changes past its
  *  merge base with main (what the picks bring) and the lane's flag. */
-function checklistItems({ root, spec, ledger }) {
+function checklistItems(lane) {
+  const { root, spec, ledger } = lane;
   const gate = gateOf(spec);
   if (!gate?.checklist.length) return [];
-  const base = ledger.branch && mergeBaseOf(root, ledger.mainBranch, ledger.branch);
-  const changed = base ? changedSince(root, base, ledger.branch) : null;
+  const tip = listedTip(lane);
+  const base = tip && mergeBaseOf(root, ledger.mainBranch, tip);
+  const changed = base ? changedSince(root, base, tip) : null;
   // A diff git cannot give (no merge base) fails safe, as the land's tier does: every item applies.
   if (!changed) return gate.checklist.map(({ name, text }) => ({ name, text }));
   return checklistFor(gate, { changed, flagged: Boolean(ledger.route?.flagged) });
@@ -314,7 +361,7 @@ export function checksState(lane) {
         missing.map((name) => `${name}: no ${SKILL_DIR}/${name}/SKILL.md`),
       ),
     };
-  const tip = tipOf(lane);
+  const tip = listedTip(lane);
   const pending = [];
   const failed = [];
   const more = [];
