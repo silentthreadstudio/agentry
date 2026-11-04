@@ -22,11 +22,11 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `restack --main` step. `rolled-back` needs no pick on main (found by sha, by author, date and message, or by
   patch; a reverted pick still counts as on main): the lane is verified again. Both refuse while git is
   mid-pick, while the ledger still holds what the land set aside, or when git cannot tell, and touch neither
-  main nor the board. `lane exec start` refuses while a land's picks are on main (a red gate may still take them off) and names
-  it.
+  main nor the board. `lane exec start` refuses while a land's picks are on main (a red gate may still take
+  them off) and names it.
 - **`lane exec restart <id> [--carry]`** — a lane that is not merged and has no agent out is archived as
-  `<id>.<n>` (its branch kept as `agentry/<id>.<n>`) and started again from main, the old verdict cleared on
-  the board. With `--carry` its commits and uncommitted diff come along, and the new brief names what was
+  `<id>.<n>` (its branch kept as `agentry/<id>.<n>` unless `--carry` took all of it) and started again from
+  main, the old verdict cleared on the board. With `--carry` its commits and uncommitted diff come along, and the new brief names what was
   carried and the old report; a conflict is left in the new worktree for the builder (exit 1). Every refusal
   (a builder out, a gate queued, a lane stacked on it, ignored files in the worktree) comes before anything
   is written. A stopped lane's `show` names it and the other way on, `lane merge <id> --branch agentry/<id>`.
@@ -94,8 +94,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `always`), `exec.rebase` (`gate`, `recheck`) and the `gate.roles` defaults; a key in the file wins, the
   roles per role. `board explain` shows each resolved value with its source (`preset` or `set`), an
   `exec.verify` and a `models` row, and `·` for an absent optional key; `exec start` and `show` print the
-  `workflow:` line. The ledger fixes the route at start, so an edit mid-lane changes no running lane, except `noteRounds`,
-  which each step reads live from the workflow file.
+  `workflow:` line. The ledger fixes the route at start, so an edit mid-lane changes no running lane, except
+  `noteRounds`, which each step reads live from the workflow file.
   Under `final: after-fix` a recheck that passes every note sent back (`N1: PASS …` lines) on a tip moved
   only by fix commits closes with no final verifier. Notes past the budget are kept as `openNotes` in the
   ledger, `show` and the episode.
@@ -131,9 +131,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   [{ "when": { "any": [<globs>] }, "model": … }] }`, the first entry matching an owned file winning, and a
   contract line `- **Model:** <model>` (`- **Model (verify):** <model>` for the verifier) beats both; the
   `model:` line names where it came from, e.g. `opus (models.build.paths[0]: src/main/**)`. `board explain`
-  and `exec start` warn `! models.verify.ui is unused` when the route never sends a UI task to a verifier. A verify, recheck or final brief on a tip
-  whose gate is already recorded green says to read that gate, not to re-run it (`exec gate` rewrites the
-  waiting verify brief). `lane merge` no longer stops on the owner's uncommitted `guard.allow` files: it
+  and `exec start` warn `! models.verify.ui is unused` when the route never sends a UI task to a verifier. A
+  verify, recheck or final brief on a tip whose gate is already recorded green says to read that gate, not
+  to re-run it (`exec gate` rewrites the waiting verify brief). `lane merge` no longer stops on the owner's uncommitted `guard.allow` files: it
   sets them aside, recorded in the ledger first, lands, and puts them back; a stop or a rerun after a kill
   puts them back too, and an edit that no longer applies is saved to a patch file.
 - **Board and briefs** — `board lifecycle`/`lane merge` write several commits into the Commit cell
@@ -256,8 +256,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   its builder starts its guard at the commit it sits on, so main's commits under the branch are not judged
   again. The process file, its workflow file and `.agentry/config.json` in use count as `guard.allow` paths
   unless a running lane owns them, as does every board location the process file names. A red gate after a
-  green one on the same tip now says `the latest is red`, and the waiting verify brief carries the full gate line again. A ledger with no
-  parsed owned list reads its contract against its worktree, as `start` does.
+  green one on the same tip now says `the latest is red`, and the waiting verify brief carries the full gate
+  line again. A ledger with no parsed owned list reads its contract against its worktree, as `start` does.
 - **`/agentry:exec`** now drives the build and verify rounds through `lane exec`, records the
   gate, and stops a lane whose builder edited main outside its own board cells.
 - **`board fix`** writes `done` only from a `lane merge` record whose commits are still on main.
