@@ -19,10 +19,11 @@ const processDir = (root) => join(root, ".agentry", "run", "process");
 const ledgerDir = (root) => join(processDir(root), "ledger");
 const fileOf = (root, id) => join(ledgerDir(root), `${id}.json`);
 
-/** The ledger for `id`, or null when there is none. Throws when the file is there but unusable. */
-export function read(root, id) {
+/** The ledger for `id`, or null when there is none. Throws when the file is there but unusable. The dead
+ *  writers' temp files are swept first, unless `sweep` is false (a preview that must change nothing). */
+export function read(root, id, { sweep = true } = {}) {
   if (!validId(id)) return null;
-  sweepTemps(ledgerDir(root));
+  if (sweep) sweepTemps(ledgerDir(root));
   let text;
   try {
     text = readFileSync(fileOf(root, id), "utf8");
@@ -62,8 +63,8 @@ export function write(root, ledger) {
 
 /** Every readable ledger, by id. A file that does not parse is left out (a nudge reading the board must not
  *  die on one bad ledger); `read` is the call that names the problem. */
-export function list(root) {
-  sweepTemps(ledgerDir(root));
+export function list(root, { sweep = true } = {}) {
+  if (sweep) sweepTemps(ledgerDir(root));
   let names;
   try {
     names = readdirSync(ledgerDir(root));
@@ -74,7 +75,7 @@ export function list(root) {
   const out = [];
   for (const name of names.filter((n) => n.endsWith(".json")).sort()) {
     try {
-      const ledger = read(root, name.slice(0, -".json".length));
+      const ledger = read(root, name.slice(0, -".json".length), { sweep: false });
       if (ledger) out.push(ledger);
     } catch {
       /* unusable ledger: skipped here, reported by `read` */

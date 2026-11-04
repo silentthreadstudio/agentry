@@ -891,3 +891,16 @@ test("kill -9 of agentry run leaves its slot and group to the sweep, which stops
   const held = holdGate(gateLockDir(root), { waitSec: 0 });
   held.release();
 });
+
+test("the preview lists a dead writer's temp file in the ledger directory and leaves it; --apply removes it", () => {
+  const { root } = fixture();
+  const dead = spawnSync("node", ["-e", ""]).pid;
+  const temp = join(runFile(root, join("process", "ledger")), `T1.json.agentry-${dead}.tmp`);
+  writeFileSync(temp, "{half");
+  const preview = JSON.parse(sweep(root, "--json").stdout);
+  assert.deepEqual(preview.temps, [temp]);
+  assert.ok(existsSync(temp), "the preview changed nothing");
+  const applied = JSON.parse(sweep(root, "--apply", "--json").stdout);
+  assert.deepEqual(applied.result.removedTemps, [temp]);
+  assert.ok(!existsSync(temp));
+});

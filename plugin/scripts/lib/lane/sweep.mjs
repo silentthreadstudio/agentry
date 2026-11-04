@@ -27,7 +27,7 @@
 // unlanded work; one holding ignored files that are not disposable is kept unless `discardIgnored`). Nothing else is ever touched.
 // Node built-ins only.
 import { spawnSync } from "node:child_process";
-import { realpathSync, rmSync, statfsSync } from "node:fs";
+import { existsSync, realpathSync, rmSync, statfsSync } from "node:fs";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { deadTemps } from "../fs/atomic.mjs";
 import { worktrees } from "../process/git.mjs";
@@ -273,7 +273,9 @@ export function leftovers(root) {
  *  `disposable` is the process file's `cleanup.disposable`, on top of `DEFAULT_DISPOSABLE`. */
 export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
   const isDisposable = disposableMatcher(disposable);
-  const all = ledgers.list(root);
+  // Listed before anything reads the ledgers, and read without sweeping: the preview changes nothing.
+  const left = leftovers(root);
+  const all = ledgers.list(root, { sweep: false });
   const cleanable = [];
   const unknown = [];
   for (const tree of worktrees(root)) {
@@ -309,7 +311,7 @@ export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
     warnings.push(`only ${(free / GB).toFixed(1)} GB free on the disk (below ${LOW_DISK / GB} GB)`);
   if (lsofMissing)
     warnings.push("lsof not found: a process that only stands in the run directory can't be seen");
-  return { cleanable, unknown, strays, leftAlone, diskFree: free, warnings, ...leftovers(root) };
+  return { cleanable, unknown, strays, leftAlone, diskFree: free, warnings, ...left };
 }
 
 // The pids among `pids` still running (a zombie is dead).
@@ -412,10 +414,13 @@ function clearLeftovers(root, found, done) {
   }
   for (const file of now.writeLocks.filter((f) => listed(f, found.writeLocks ?? [])))
     if (takeOverMutex(file)) done.removedWriteLocks.push(file);
-  for (const file of now.temps.filter((f) => listed(f, found.temps ?? []))) {
-    rmSync(file, { force: true });
-    done.removedTemps.push(file);
-  }
+  // A listed temp file a read has swept since (the ledgers' own reads do) is gone too; one whose pid runs
+  // again is left.
+  for (const file of found.temps ?? [])
+    if (now.temps.includes(file) || !existsSync(file)) {
+      rmSync(file, { force: true });
+      done.removedTemps.push(file);
+    }
 }
 
 /** Do what `found` (a `plan`) lists: `{ removed: [{ id, branchDeleted }], kept: [{ id, reason }], killed: [pid],
