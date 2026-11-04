@@ -2397,13 +2397,19 @@ function close(ctx, id, episodeId) {
       out: JSON.stringify(stored ? shown : { ...shown, warning }, null, 2),
     };
   }
-  if (ledger.episode?.writtenId)
+  if (ledger.episode?.writtenId) {
+    // Closed again after a rebase or an owner's fix: the episode stands, and the land is next again.
+    if (ledger.state === "verified" && ledger.next === "close") {
+      ledger = { ...ledger, next: "merge" };
+      ledgers.write(root, ledger);
+    }
     return {
       exit: 0,
       out: JSON.stringify(
         {
           id,
           step: "close",
+          next: ledger.next,
           episode: ledger.episode,
           already: `the episode is written (${ledger.episode.writtenId}): write nothing more`,
         },
@@ -2411,6 +2417,7 @@ function close(ctx, id, episodeId) {
         2,
       ),
     };
+  }
   const closable =
     ledger.next === "close" ||
     ledger.state === "stopped" ||

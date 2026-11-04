@@ -1155,6 +1155,33 @@ test("a second close --episode with another id is refused and names the stamped 
   assert.equal(lane(r, "close", "T1", "--episode", "p:FIRST").exit, 0, "the same id is idempotent");
 });
 
+test("close after a rebase on a lane whose episode is stamped moves next to merge and says close → merge", () => {
+  // S27: it printed "close → nothing" while show still said next close.
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  assert.equal(lane(r, "close", "T1", "--episode", "p:FIRST").exit, 0);
+  commitFile(r.root, "two.txt", "x\n", "chore: main moves");
+  let out = lane(r, "rebase", "T1").json;
+  git(out.worktree, "rebase", "-q", "main");
+  writeFileSync(out.reportPath, "DONE\nrebased onto main\nused_memories: none\n");
+  out = lane(r, "report", "T1").json;
+  if (out.next === "resolve") {
+    judge(out, "PASS");
+    out = lane(r, "verdict", "T1").json;
+  }
+  if (out.next === "gate") out = lane(r, "gate", "T1").json;
+  assert.deepEqual([out.state, out.next], ["verified", "close"]);
+  const closed = spawnSync("node", [LANE, "exec", "close", "T1", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home },
+  });
+  assert.equal(closed.status, 0, closed.stderr);
+  assert.match(closed.stdout, /^T1 · close → merge/);
+  assert.equal(ledgerOf(r.root, "T1").next, "merge");
+  assert.equal(ledgerOf(r.root, "T1").episode.writtenId, "p:FIRST");
+  assert.match(lane(r, "show", "T1").json.next, /^merge/);
+});
+
 test("close --episode says whether the memory store holds the episode it stamps", () => {
   const r = repo();
   verified(r, "T1", "out.txt");
