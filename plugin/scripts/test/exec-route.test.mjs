@@ -1168,19 +1168,39 @@ test("fix --owner on a verified lane: one round for its builder quoting the chan
     [recheck.next, recheck.mode, recheck.agent],
     ["recheck", "resume", "verifier-1"],
   );
+  const recheckBrief = readFileSync(recheck.brief, "utf8");
   assert.match(
-    readFileSync(recheck.brief, "utf8"),
+    recheckBrief,
     /## The owner's change\n[\s\S]*> to Save\n\nThe builder's round you check made that change/,
   );
-  judge(recheck, "PASS");
-  // Then the lane's own route: under the standard final "after-fix", a recheck that passed no note sent
-  // back is followed by a final verifier, as after any fix.
-  const final = lane(r, "verdict", "T1").json;
-  assert.equal(final.next, "final");
-  judge(final, "PASS");
+  assert.match(recheckBrief, /`owner: PASS <evidence>` or `owner: FAIL <evidence>`/);
+  assert.match(recheckBrief, /For each note sent back \(owner\)/);
+  // owner: PASS covers the one note sent back, so under final "after-fix" no final follows.
+  writeFileSync(
+    recheck.reportPath,
+    "Rechecked.\nowner: PASS the button reads Save\nused_memories: none\nVerdict: PASS\n",
+  );
   assert.equal(lane(r, "verdict", "T1").json.next, "gate");
+  assert.equal(ledgerOf(r.root, "T1").rounds.at(-1).covered, true);
   assert.equal(lane(r, "gate", "T1").json.next, "close");
   assert.match(lane(r, "close", "T1").json.episode.outcome, /; owner fixes: 1/);
+});
+
+test("a recheck after an owner fix with no owner: PASS line, or an owner: FAIL one, is not covered: a final follows", () => {
+  for (const line of ["", "owner: FAIL still reads Submit\n"]) {
+    const r = repo();
+    const started = lane(r, "start", "T1");
+    build(started.json);
+    judge(lane(r, "report", "T1").json, "PASS");
+    lane(r, "verdict", "T1");
+    lane(r, "gate", "T1");
+    const sent = lane(r, "fix", "T1", "--owner", "rename it").json;
+    ownerBuild(sent);
+    const recheck = lane(r, "report", "T1").json;
+    writeFileSync(recheck.reportPath, `Rechecked.\n${line}used_memories: none\nVerdict: PASS\n`);
+    assert.equal(lane(r, "verdict", "T1").json.next, "final", JSON.stringify(line));
+    assert.equal(ledgerOf(r.root, "T1").rounds.at(-2).covered, false, "the recheck round");
+  }
 });
 
 test("fix --owner under a route that skipped the verifier: the gate on the new tip, then close; a fresh builder when none can be resumed", () => {

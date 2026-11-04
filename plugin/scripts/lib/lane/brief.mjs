@@ -779,7 +779,7 @@ export function ownerChange({ note, at }, role) {
   const what =
     role === "build"
       ? "Make exactly that change, each behavior with a committed test, and leave the rest of the work as it is."
-      : "The builder's round you check made that change: judge it as the owner's call, and the rest against the contract.";
+      : "The builder's round you check made that change: judge it as the owner's call, and the rest against the contract. Write one line for it in your report, outside any code block: `owner: PASS <evidence>` or `owner: FAIL <evidence>`.";
   return [
     "## The owner's change",
     "",

@@ -1490,7 +1490,8 @@ function notesOf(text) {
 
 // A recheck's line for a note: `N1: PASS <evidence>` / `N1: FAIL …` at the start of a line (after an optional
 // `- ` or `* `), any case. Prose ("N1 passes") is not one.
-const RECHECK_LINE = /^[ \t]*(?:[-*][ \t]+)?(N\d+):[ \t]*(PASS|FAIL)\b/i;
+// A note's label, or `owner` for the owner's change (field 77).
+const RECHECK_LINE = /^[ \t]*(?:[-*][ \t]+)?(N\d+|owner):[ \t]*(PASS|FAIL)\b/i;
 const FENCE_LINE = /^\s*(```|~~~)/;
 // The lines of `text` outside a fenced block.
 function prose(text) {
@@ -1520,7 +1521,10 @@ function recheckLines(text) {
 // sent back is not covered.
 const coveredBy = (text, labels) => {
   const judged = recheckLines(text);
-  return labels.length > 0 && labels.every((l) => judged.get(l)?.pass && !judged.get(l)?.fail);
+  return (
+    labels.length > 0 &&
+    labels.every((l) => judged.get(l.toUpperCase())?.pass && !judged.get(l.toUpperCase())?.fail)
+  );
 };
 
 const readOr = (path) => {
@@ -1532,13 +1536,19 @@ const readOr = (path) => {
 };
 
 // The labels of the notes sent back since the last counted verdict: the ones a notes round picked, or every
-// `N<k>` of a FAIL report. None for a PASS with no notes round since.
+// `N<k>` of a FAIL report, and `owner` after an owner's fix. None for a PASS with no such round since.
 function sentBack(ledger) {
   const verdict = verdicts(ledger).at(-1);
   if (!verdict) return [];
-  const picked = ledger.rounds.findLast((r) => r.role === "build" && r.n > verdict.n && r.notes);
-  if (picked) return picked.notes;
-  return verdict.verdict === "FAIL" ? [...notesOf(readOr(verdict.reportPath)).keys()] : [];
+  const since = ledger.rounds.filter((r) => r.role === "build" && r.n > verdict.n);
+  const picked = since.findLast((r) => r.notes);
+  const notes = picked
+    ? picked.notes
+    : verdict.verdict === "FAIL"
+      ? [...notesOf(readOr(verdict.reportPath)).keys()]
+      : [];
+  // The owner's change is one more note sent back: the recheck judges it as `owner: PASS|FAIL`.
+  return since.some((r) => r.owner) ? [...notes, "owner"] : notes;
 }
 
 // Did the branch move from the last verdict's tip to `tip` by fix commits alone: that tip is an ancestor
