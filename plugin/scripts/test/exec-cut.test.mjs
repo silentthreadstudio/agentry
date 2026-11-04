@@ -7,7 +7,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -146,7 +148,13 @@ const snapshot = (r, id = "T1") => ({
   trees: git(r.root, "worktree", "list", "--porcelain"),
   ledger: readFileSync(ledgerFile(r.root, id), "utf8"),
   board: boardText(r.root),
+  packed: existsSync(join(r.root, ".git", "packed-refs"))
+    ? readFileSync(join(r.root, ".git", "packed-refs"), "utf8")
+    : "",
+  cutDir: existsSync(join(runsDir(r.root), id, "cut")),
 });
+const runsDir = (root) => join(root, ".agentry", "run", "process", "runs");
+const { lifecycle: _life, ...NO_LIFECYCLE } = SPEC;
 
 // T1 started; its builder commits two raws, a deleted old file, a note and (for `boom`) boom.txt, leaves
 // an uncommitted file, then the lane is parked: no agent out.
@@ -390,7 +398,13 @@ test("session start and the board never show a cut lane as held or idle", () => 
   assert.deepEqual(s.held, []);
   assert.deepEqual(s.idle, []);
   assert.deepEqual(s.ledgers, []);
-  assert.equal(s.status.nudges.filter((n) => n.id === "T1").length, 0, start.out);
+  // Its episode waits to be written, as any finished lane's does; once stamped nothing names it.
+  assert.deepEqual(
+    s.status.nudges.filter((n) => n.id === "T1").map((n) => n.kind),
+    ["episode-pending"],
+    start.out,
+  );
+  assert.equal(lane(r, "close", "T1", "--episode", "ep-cut-1").exit, 0);
   const text = run(r, LANE, ["session", "start"]).out;
   assert.doesNotMatch(text, /T1/);
   const board = run(r, BOARD, ["status", "--json"]);
@@ -463,5 +477,235 @@ test("cut refuses with the key to add when lifecycle.on.cut is unset, nothing wr
   const res = lane(r, "cut", "T1", "--decision", "D7", "--apply");
   assert.equal(res.exit, 2);
   assert.match(res.out, /the workflow file has no lifecycle\.on\.cut: add it/);
+  assert.deepEqual(snapshot(r), before);
+});
+
+test("cut refuses while another lane is mid-land, nothing written", () => {
+  const r = repo();
+  parked(r);
+  lane(r, "start", "T3");
+  const l3 = ledgerOf(r.root, "T3");
+  writeFileSync(
+    ledgerFile(r.root, "T3"),
+    `${JSON.stringify({ ...l3, state: "merging", merge: { step: "gating" } }, null, 2)}\n`,
+  );
+  const before = snapshot(r);
+  for (const args of [["--apply"], ["--keep", "art/raw", "--apply"], []]) {
+    const res = lane(r, "cut", "T1", "--decision", "D7", ...args);
+    assert.equal(res.exit, 2, res.out);
+    assert.match(res.out, /main is mid-land \(T3\)/);
+  }
+  assert.deepEqual(snapshot(r), before);
+});
+
+test("with the lifecycle off, a cut without --keep makes no commit and still retires the lane", () => {
+  const r = repo({ spec: NO_LIFECYCLE });
+  const { tip, worktree } = parked(r);
+  const head = git(r.root, "rev-parse", "HEAD");
+  const board = boardText(r.root);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--apply");
+  assert.equal(res.exit, 0, res.out);
+  assert.equal(git(r.root, "rev-parse", "HEAD"), head);
+  assert.equal(boardText(r.root), board);
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
+  const l = ledgerOf(r.root, "T1");
+  assert.deepEqual([l.state, l.cut.commit, l.cut.boardCommit], ["closed", null, null]);
+  assert.equal(existsSync(worktree), false);
+  assert.equal(git(r.root, "rev-parse", "agentry/T1.cut"), tip);
+});
+
+test("with the lifecycle off, a cut --keep lands only the kept commit, no board commit", () => {
+  const r = repo({ spec: NO_LIFECYCLE });
+  parked(r);
+  const head = git(r.root, "rev-parse", "HEAD");
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(res.exit, 0, res.out);
+  assert.equal(git(r.root, "rev-parse", "HEAD^"), head);
+  assert.equal(git(r.root, "log", "-1", "--format=%s"), "chore(art): keep 2 files from T1");
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
+  assert.equal(ledgerOf(r.root, "T1").cut.boardCommit, null);
+});
+
+test("a case twin of the lane branch (packed agentry/t1 beside agentry/T1) refuses, nothing written", () => {
+  const r = repo();
+  git(r.root, "checkout", "-q", "-b", "agentry/t1");
+  commitFile(r.root, "decoy.txt", "decoy\n", "feat: decoy");
+  git(r.root, "checkout", "-q", "main");
+  git(r.root, "pack-refs", "--all");
+  parked(r);
+  const before = snapshot(r);
+  for (const args of [[], ["--apply"], ["--keep", "art/raw", "--apply"]]) {
+    const res = lane(r, "cut", "T1", "--decision", "D7", ...args);
+    assert.equal(res.exit, 2, res.out);
+    assert.match(res.out, /case twin/);
+  }
+  assert.deepEqual(snapshot(r), before);
+});
+
+test("a case twin of the kept name (a packed agentry/T1.CUT) refuses, nothing written", () => {
+  const r = repo();
+  const { tip } = parked(r);
+  git(r.root, "pack-refs", "--all");
+  const packed = join(r.root, ".git", "packed-refs");
+  writeFileSync(packed, `${readFileSync(packed, "utf8")}${tip} refs/heads/agentry/T1.CUT\n`);
+  const before = snapshot(r);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--apply");
+  assert.equal(res.exit, 2, res.out);
+  assert.match(res.out, /agentry\/T1\.cut exists/);
+  assert.deepEqual(snapshot(r), before);
+});
+
+test("the lane's owner calls survive the cut and stay open in session close until recorded", () => {
+  const r = repo();
+  parked(r);
+  assert.equal(run(r, LANE, ["note", "T1", "--owner", "keep the raws, drop the rest"]).exit, 0);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(res.exit, 0, res.out);
+  assert.equal(ledgerOf(r.root, "T1").calls?.length, 1);
+  const open = JSON.parse(run(r, LANE, ["session", "close"]).out).calls;
+  assert.ok(
+    open.some((c) => c.id === "T1" && /keep the raws/.test(c.open[0].text)),
+    JSON.stringify(open),
+  );
+  const mark = run(r, LANE, ["note", "T1", "--recorded", "all", "--where", "DECISIONS.md D7"]);
+  assert.equal(mark.exit, 0, mark.out);
+  const after = JSON.parse(run(r, LANE, ["session", "close"]).out).calls;
+  assert.ok(!after.some((c) => c.id === "T1"), JSON.stringify(after));
+});
+
+test("the lane's owner calls survive a red-gate rollback too", () => {
+  const r = repo();
+  parked(r, { boom: true });
+  run(r, LANE, ["note", "T1", "--owner", "keep boom"]);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "boom.txt", "--apply");
+  assert.equal(res.exit, 1, res.out);
+  assert.equal(ledgerOf(r.root, "T1").calls?.length, 1);
+});
+
+test("a red gate with another lane's carried write leaves main, the board and both ledgers as they were", () => {
+  const r = repo();
+  const { worktree, tip } = parked(r, { boom: true });
+  lane(r, "start", "T3");
+  const before = snapshot(r);
+  const t3 = readFileSync(ledgerFile(r.root, "T3"), "utf8");
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "boom.txt", "--apply");
+  assert.equal(res.exit, 1, res.out);
+  assert.equal(git(r.root, "rev-parse", "HEAD"), before.head);
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), before.status);
+  assert.equal(boardText(r.root), before.board);
+  assert.equal(statusOf(r.root, "T3"), "doing");
+  assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), t3);
+  assert.equal(ledgerOf(r.root, "T1").state, "held");
+  assert.equal(git(r.root, "rev-parse", "agentry/T1"), tip);
+  assert.ok(existsSync(join(worktree, "scratch.txt")));
+  assert.equal(existsSync(join(runsDir(r.root), "T1", "cut", "uncommitted.diff")), false);
+  const again = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(again.exit, 0, again.out);
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
+});
+
+test("a commit-msg hook refusing the board commit takes the kept commit off main, the lane as it was", () => {
+  const r = repo();
+  const { tip, worktree } = parked(r);
+  const hooks = join(r.root, ".git", "hooks");
+  mkdirSync(hooks, { recursive: true });
+  writeFileSync(
+    join(hooks, "commit-msg"),
+    '#!/bin/sh\ngrep -q "chore(board): cut" "$1" && { echo "no board cuts" >&2; exit 1; }\nexit 0\n',
+  );
+  chmodSync(join(hooks, "commit-msg"), 0o755);
+  const before = snapshot(r);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(res.exit, 1, res.out);
+  assert.match(res.out, /board commit refused/);
+  assert.equal(git(r.root, "rev-parse", "HEAD"), before.head);
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), before.status);
+  assert.equal(boardText(r.root), before.board);
+  const l = ledgerOf(r.root, "T1");
+  assert.deepEqual([l.state, l.merge, l.cut], ["held", undefined, undefined]);
+  assert.equal(git(r.root, "rev-parse", "agentry/T1"), tip);
+  assert.ok(existsSync(worktree));
+  assert.equal(existsSync(join(runsDir(r.root), "T1", "cut", "uncommitted.diff")), false);
+});
+
+test("a cut's episode is in its closed ledger, stamped by exec close, and then not pending", () => {
+  const r = repo();
+  parked(r);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(res.exit, 0, res.out);
+  assert.match(
+    res.json.episode.outcome,
+    /^cut on D7: kept 2 file\(s\) \(art\/raw\/a\.png, art\/raw\/b\.png\) in [0-9a-f]{7}/,
+  );
+  assert.match(
+    res.json.afterwards,
+    /^episode_write with this payload, then .*exec close T1 .*--episode <its id>$/,
+  );
+  assert.deepEqual(ledgerOf(r.root, "T1").episode.payload, res.json.episode);
+  assert.ok(JSON.parse(run(r, LANE, ["session", "close"]).out).episodesPending.includes("T1"));
+  const stamp = lane(r, "close", "T1", "--episode", "ep-cut-1");
+  assert.equal(stamp.exit, 0, stamp.out);
+  assert.equal(ledgerOf(r.root, "T1").episode.writtenId, "ep-cut-1");
+  assert.ok(!JSON.parse(run(r, LANE, ["session", "close"]).out).episodesPending.includes("T1"));
+});
+
+// The gate kills the cut that runs it (the host's limit hitting a long gate): the cut is left mid-land.
+// A rerun rolls its own stuck state back, and the one after cuts.
+test("a cut killed mid-gate is rolled back by the next exec cut --apply, and the one after cuts", () => {
+  const dir = temp("cut-killer-");
+  const killer = join(dir, "killer.sh");
+  writeFileSync(
+    killer,
+    `#!/bin/sh
+test -e boom.txt || exit 0
+for p in $(ps -axo pid=,command= | grep "exec cut T1" | grep -F -- "$PWD" | grep -v grep | awk '{print $1}'); do kill -9 "$p"; done
+sleep 1
+exit 1
+`,
+  );
+  const r = repo({
+    spec: { ...SPEC, gate: { tiers: [{ name: "full", command: ["sh", killer] }] } },
+  });
+  const { tip } = parked(r, { boom: true });
+  const preHead = git(r.root, "rev-parse", "HEAD");
+  lane(r, "cut", "T1", "--decision", "D7", "--keep", "boom.txt", "--apply");
+  const stuck = ledgerOf(r.root, "T1");
+  assert.deepEqual([stuck.state, stuck.merge?.cut], ["merging", true], "the kill left it mid-land");
+  // A preview names the cut itself as the way out, never lane merge --resolve.
+  const preview = lane(r, "cut", "T1", "--decision", "D7", "--keep", "boom.txt");
+  assert.equal(preview.exit, 2, preview.out);
+  assert.match(preview.out, /exec cut T1 --decision <D> --apply rolls it back/);
+  assert.doesNotMatch(preview.out, /--resolve/);
+  const back = lane(r, "cut", "T1", "--decision", "D7", "--keep", "boom.txt", "--apply");
+  assert.equal(back.exit, 1, back.out);
+  assert.match(back.out, /rolled back the stuck cut: .*T1 is held again → run exec cut again/);
+  assert.doesNotMatch(back.out, /--resolve/);
+  assert.equal(git(r.root, "rev-parse", "HEAD"), preHead);
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "M plan/BOARD.md");
+  assert.equal(statusOf(r.root, "T1"), "doing", "the lane's carried dispatched write is back");
+  const l = ledgerOf(r.root, "T1");
+  assert.deepEqual([l.state, l.merge, l.next], ["held", undefined, stuck.next]);
+  assert.equal(git(r.root, "rev-parse", "agentry/T1"), tip);
+  const cut = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(cut.exit, 0, cut.out);
+  assert.equal(ledgerOf(r.root, "T1").state, "closed");
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
+});
+
+test("a stuck cut is not rolled back over a commit on main that is not its own", () => {
+  const r = repo();
+  parked(r);
+  const l = ledgerOf(r.root, "T1");
+  const preHead = git(r.root, "rev-parse", "HEAD");
+  const other = commitFile(r.root, "docs/other.md", "x\n", "docs: someone else");
+  writeFileSync(
+    ledgerFile(r.root, "T1"),
+    `${JSON.stringify({ ...l, state: "merging", merge: { cut: true, preHead, planned: [], landed: [], stateBefore: "held", step: "gated" } }, null, 2)}\n`,
+  );
+  const before = snapshot(r);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--apply");
+  assert.equal(res.exit, 2, res.out);
+  assert.match(res.out, new RegExp(`${other.slice(0, 7)} docs: someone else`));
+  assert.doesNotMatch(res.out, /--resolve/);
   assert.deepEqual(snapshot(r), before);
 });

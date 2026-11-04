@@ -2540,14 +2540,17 @@ function episodeOf(ledger) {
   const what = ledger.rounds.findLast(
     (r) => r.role === "build" && r.step !== "fix" && r.summary,
   )?.summary;
+  const kept = ledger.cut?.kept ?? [];
   const outcome = [
-    ledger.state === "stopped"
-      ? `stopped: ${ledger.stopReason ?? "unknown"}`
-      : ledger.origin === "adopted"
-        ? "adopted: not built or verified by a lane"
-        : judged.length === 0
-          ? "gated: no verifier read it (exec.verify)"
-          : `verified (${judged.at(-1)?.verdict})`,
+    ledger.cut
+      ? `cut on ${ledger.cut.decision}: kept ${kept.length ? `${kept.length} file(s) (${kept.slice(0, 5).join(", ")}${kept.length > 5 ? ", …" : ""})${ledger.cut.commit ? ` in ${short(ledger.cut.commit)}` : ""}` : "nothing"}`
+      : ledger.state === "stopped"
+        ? `stopped: ${ledger.stopReason ?? "unknown"}`
+        : ledger.origin === "adopted"
+          ? "adopted: not built or verified by a lane"
+          : judged.length === 0
+            ? "gated: no verifier read it (exec.verify)"
+            : `verified (${judged.at(-1)?.verdict})`,
     `rounds: ${ledger.rounds.map((r) => `${r.step}${r.resend ? " (resent)" : ""}`).join(", ")}`,
     `verdicts: ${judged.map((r) => r.verdict).join(", ") || "none"}`,
     `void verdicts: ${ledger.rounds.filter((r) => r.void).length}`,
@@ -2619,6 +2622,7 @@ function close(ctx, id, episodeId) {
     ledger.next === "close" ||
     ledger.state === "stopped" ||
     ledger.state === "merged" ||
+    ledger.cut ||
     ledger.episode;
   if (!closable) refuse(`the lane is not done (state ${ledger.state}, next ${ledger.next})`);
   const payload = episodeOf(ledger);
@@ -3271,5 +3275,6 @@ const HANDLERS = {
         throw new Stopped(message);
       },
       laneLine,
+      episodeOf,
     }),
 };
