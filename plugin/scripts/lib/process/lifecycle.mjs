@@ -24,10 +24,11 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, posix } from "node:path";
+import { dirname, isAbsolute, join, posix, relative } from "node:path";
 import { boardFiles } from "./board-diff.mjs";
 import * as md from "./markdown.mjs";
 import { readProcess } from "./read.mjs";
@@ -148,17 +149,35 @@ function shortOf(root, sha) {
 const findingKey = (f) =>
   JSON.stringify([f.rule ?? null, f.kind ?? null, f.id ?? null, f.id ? null : f.message]);
 
+// Is `path` outside the directory `home` (both real paths)?
+const leaves = (home, path) => {
+  const rel = relative(home, path);
+  return rel === ".." || rel.startsWith("../") || isAbsolute(rel);
+};
+
 // The findings the board gains when `staged` ([{ file, after }], absolute paths) is written over it:
 // the board's files are copied to a scratch directory, the staged texts put over them, and both
 // boards are checked by the board's own rules. Nothing under `root` is touched.
 function gainedBy({ root, spec, model, staged }) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentry-staged-")));
+  let dir;
+  try {
+    dir = realpathSync(mkdtempSync(join(tmpdir(), "agentry-staged-")));
+  } catch (e) {
+    return refuse(
+      `cannot check the board before writing: no scratch directory (${e.code ?? e.message})`,
+    );
+  }
+  const home = realpathSync(root);
   try {
     for (const file of boardFiles(spec, model)) {
       const from = join(root, file);
       if (!existsSync(from)) continue;
       mkdirSync(dirname(join(dir, file)), { recursive: true });
-      copyFileSync(from, join(dir, file));
+      // A file linked out of the repository stays a link out, so the scratch board reads it as the
+      // real one does (not read) and its contents never count.
+      const real = realpathSync(from);
+      if (leaves(home, real)) symlinkSync(real, join(dir, file));
+      else copyFileSync(from, join(dir, file));
     }
     for (const { file, after } of staged) {
       const to = join(dir, posix.relative(root, file));

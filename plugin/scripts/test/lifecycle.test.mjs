@@ -5,7 +5,7 @@
 // Run: node --test plugin/scripts/test/lifecycle.test.mjs
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -598,4 +598,47 @@ test("verdict and merged are not guarded: they write even when the board gains a
   const merged = event(root, "merged", "T1", { shas, summary: "done" });
   assert.ok(merged.writes.some((w) => w.what === "status → done"));
   assert.equal(row(root, "T1")[3], "done");
+});
+
+test("a skipped status write lands no part of itself: every file is byte for byte as it was", () => {
+  const { root } = guarded();
+  const before = files(root);
+  const result = event(root, "built", "T2");
+  assert.deepEqual(result.writes, []);
+  assert.deepEqual(files(root), before);
+  assert.equal(row(root, "T2")[3], "todo");
+});
+
+test("with no scratch directory the guarded write is refused with a WriteError, nothing written", () => {
+  const { root } = guarded("doing");
+  const before = files(root);
+  const saved = process.env.TMPDIR;
+  process.env.TMPDIR = join(root, "no-such-dir");
+  try {
+    assert.throws(() => event(root, "dispatched", "T2"), WriteError);
+  } finally {
+    if (saved === undefined) Reflect.deleteProperty(process.env, "TMPDIR");
+    else process.env.TMPDIR = saved;
+  }
+  assert.deepEqual(files(root), before);
+});
+
+test("a board file linked out of the repository is not copied into the check", () => {
+  const spec = {
+    ...GUARDED_SPEC,
+    kinds: {
+      ...GUARDED_SPEC.kinds,
+      sprint: { ...GUARDED_SPEC.kinds.sprint, at: { table: "SPRINTS.md", heading: "Sprints" } },
+    },
+  };
+  const sprints = "## Sprints\n\n| Sprint | Status |\n| ------ | ------ |\n| S1     | todo   |\n";
+  const tasks = BOARD_MD.replace(/## Sprints[\s\S]*?(?=## Tasks)/, "");
+  const { root } = repo({ spec, board: tasks });
+  const outside = mkdtempSync(join(tmpdir(), "agentry-life-out-"));
+  temps.push(outside);
+  writeFileSync(join(outside, "SPRINTS.md"), sprints);
+  symlinkSync(join(outside, "SPRINTS.md"), join(root, "plan", "SPRINTS.md"));
+  const result = event(root, "dispatched", "T2");
+  assert.deepEqual(result.skipped, []);
+  assert.equal(row(root, "T2")[3], "doing");
 });
