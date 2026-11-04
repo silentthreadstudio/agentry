@@ -1162,3 +1162,37 @@ test("a watchdog that cannot run ps leaves a live parent's command running to it
   assert.equal(code, 0);
   assert.equal(out.trim(), "done", "never killed for want of a start reading");
 });
+
+test("a watchdog whose parent dies kills only its command's group, never the group it was started in", async (t) => {
+  const { identity } = await import("../lib/process/pid.mjs");
+  const { watchdogArgv } = await import("../lib/cli/supervise.mjs");
+  const dir = repo();
+  const [cmdPid, survived] = [join(dir, "cmd.pid"), join(dir, "survived")];
+  const parent = spawn(NODE, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
+  const parentGone = new Promise((resolve) => parent.on("exit", resolve));
+  const quote = (word) => `'${word.replaceAll("'", "'\\''")}'`;
+  const command = js(
+    `require('fs').writeFileSync(${JSON.stringify(cmdPid)},String(process.pid));setInterval(()=>{},1000)`,
+  );
+  const argv = watchdogArgv(command, { parent: identity(parent.pid) });
+  // The caller is a shell leading its own group; the watchdog runs in that group, not detached.
+  const caller = spawn("sh", ["-c", `${argv.map(quote).join(" ")}; echo > ${quote(survived)}`], {
+    detached: true,
+    stdio: "ignore",
+  });
+  const callerDone = new Promise((resolve) => caller.on("exit", (code, signal) => resolve(signal)));
+  await until(() => existsSync(cmdPid) && readFileSync(cmdPid, "utf8") !== "");
+  const cmd = Number(readFileSync(cmdPid, "utf8"));
+  t.after(() => {
+    try {
+      process.kill(-cmd, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  parent.kill("SIGKILL");
+  await parentGone;
+  assert.equal(await callerDone, null, "the caller's group was not signalled");
+  assert.ok(existsSync(survived), "the caller went on after the watchdog");
+  assert.equal(alive(cmd), false, "the command's group is gone");
+});
