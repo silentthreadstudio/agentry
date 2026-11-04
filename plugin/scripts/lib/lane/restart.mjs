@@ -123,9 +123,10 @@ export function retire(root, ledger, n) {
 }
 
 /** Carry the old branch's work into `worktree`: cherry-pick `base..tip` (oldest first), then apply the
- *  saved uncommitted diff with `git apply --3way`. `{ ok: true }`, or on the first stop `{ ok: false,
- *  conflict }`, the stop named (`<sha> <subject> conflicts in <files>` or `the uncommitted diff conflicts
- *  in <files>`) with the conflict left in the worktree for the builder. */
+ *  saved uncommitted diff with `git apply --3way`. `{ ok: true, applied }`, or on the first stop `{ ok:
+ *  false, applied, conflict }`, the stop named (`<sha> <subject> conflicts in <files>` or `the uncommitted
+ *  diff conflicts in <files>`) with the conflict left in the worktree for the builder. `applied`: the diff
+ *  is in the tree (staged, its own conflicts marked); a pick that stopped leaves it still to apply. */
 export function carry(worktree, { base, tip, diff }) {
   if (tip) {
     const picked = git(worktree, [
@@ -142,6 +143,7 @@ export function carry(worktree, { base, tip, diff }) {
         : "the cherry-pick";
       return {
         ok: false,
+        applied: false,
         conflict: files.length
           ? `${what} conflicts in ${files.join(", ")}: resolve it, git cherry-pick --continue, then git apply --3way ${diff}`
           : `${what} stopped: ${first(picked.stderr || picked.stdout)}`,
@@ -149,12 +151,13 @@ export function carry(worktree, { base, tip, diff }) {
     }
   }
   const patch = existsSync(diff) ? readFileSync(diff, "latin1") : "";
-  if (!patch) return { ok: true };
+  if (!patch) return { ok: true, applied: false };
   const applied = applyPatch(worktree, patch, "--3way");
-  if (applied.status === 0) return { ok: true };
+  if (applied.status === 0) return { ok: true, applied: true };
   const files = unmerged(worktree);
   return {
     ok: false,
+    applied: files.length > 0,
     conflict: files.length
       ? `the uncommitted diff conflicts in ${files.join(", ")}: resolve the markers`
       : `the uncommitted diff did not apply (${first(applied.stderr)}): it is at ${diff}`,

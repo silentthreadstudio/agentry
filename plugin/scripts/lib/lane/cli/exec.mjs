@@ -2581,6 +2581,7 @@ function restart(ctx, id) {
       commits: left.commits,
       files: work.files.length,
       report,
+      ...(work.files.length && { applied: res.applied, diff }),
       ...(res.conflict && { conflict: res.conflict }),
     };
     // All of the old work is in the new branch: the kept one goes once the new ledger is written; a stop

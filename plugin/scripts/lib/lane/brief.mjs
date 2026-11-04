@@ -793,13 +793,17 @@ export function ownerChange({ note, at }, role) {
 }
 
 /** The `## Carried work` section of a restarted lane's first build brief (field 69): what `exec restart
- *  --carry` put in the tree (`{ commits, files, report, conflict? }`, the ledger's `carried`). A carry that
+ *  --carry` put in the tree (`{ commits, files, report, applied?, diff?, conflict? }`, the ledger's
+ *  `carried`; `applied` whether the uncommitted diff is in the tree yet). A carry that
  *  stopped names its conflict, to resolve first. */
-export function carriedWork({ commits, files, report, conflict }) {
+export function carriedWork({ commits, files, report, conflict, applied = true, diff }) {
   const last = report ? `Its last report is ${report}: read it first.` : "It left no report.";
-  const staged = files
-    ? " Its uncommitted changes are applied staged (`git apply --3way` stages them): `git diff --cached` shows them."
-    : "";
+  // Applied only when the carry got that far: a pick that stopped leaves the diff still to apply.
+  const staged = !files
+    ? ""
+    : applied
+      ? " Its uncommitted changes are applied staged (`git apply --3way` stages them): `git diff --cached` shows them."
+      : ` Its uncommitted changes are not in the tree yet: once the pick is done, apply them with \`git apply --3way ${diff}\`.`;
   const stop = conflict ? ` Resolve this first: ${conflict}.` : "";
   return [
     "## Carried work",

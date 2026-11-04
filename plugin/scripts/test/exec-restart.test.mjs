@@ -159,7 +159,8 @@ test("restart --carry archives the lane, cuts T3 from main and carries its commi
   const ledger = ledgerOf(r.root, "T3");
   assert.equal(ledger.base, main[0]);
   assert.equal(ledger.restarted.from, "T3.1");
-  assert.deepEqual(ledger.carried, { commits: 1, files: 1, report });
+  const diff = join(processDir(r.root), "runs", "T3.1", "restart", "uncommitted.diff");
+  assert.deepEqual(ledger.carried, { commits: 1, files: 1, report, applied: true, diff });
   assert.equal(tipOf(r.root, "agentry/T3^"), main[0]);
   assert.equal(git(r.root, "log", "-1", "--format=%s", "agentry/T3"), "feat: three");
   assert.equal(readFileSync(join(old.worktree, "three.txt"), "utf8"), "a\nlane\nc\n");
@@ -215,10 +216,18 @@ test("a carried commit that conflicts with main stops: exit 1, main untouched, m
   assert.equal(existsSync(join(tree, "more.txt")), false, "the diff waits for the pick");
   assert.equal(tipOf(r.root, "agentry/T3.1"), oldTip, "the old branch is kept");
   assert.equal(ledgerOf(r.root, "T3").restarted.branch, "agentry/T3.1");
+  const brief = readFileSync(res.json.brief, "utf8");
   assert.match(
-    readFileSync(res.json.brief, "utf8"),
+    brief,
     /Resolve this first: [0-9a-f]{7} feat: three conflicts in three\.txt: resolve it, git cherry-pick --continue, then git apply --3way \S+\.diff\.\n/,
   );
+  // The pick stopped before the diff: it is still to apply, never "applied staged" (r4 N4, probe P3).
+  assert.doesNotMatch(brief, /applied staged/);
+  assert.match(
+    brief,
+    /Its uncommitted changes are not in the tree yet: once the pick is done, apply them with `git apply --3way \S+\/restart\/uncommitted\.diff`\./,
+  );
+  assert.equal(ledgerOf(r.root, "T3").carried.applied, false);
 });
 
 test("an uncommitted edit that conflicts with main stops after the picks, markers only in that file", () => {
