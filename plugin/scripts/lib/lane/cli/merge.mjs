@@ -9,8 +9,9 @@
 //   merge <id> --cleanup [--discard-ignored]             the worktree and branch, found by branch
 //   merge <id> --resolve landed|rolled-back              close a stuck land on the owner's call
 //
-// `--branch` adopts work built outside exec: the ledger is created with origin "adopted". Each call
-// prints a step table and the next step. Exit 0 = done, next printed; 1 = a red step stopped it (the
+// `--branch` adopts work built outside exec: the ledger is created with origin "adopted". `<b>` is a
+// branch's exact listed name (`adopt.mjs`'s `resolveBranch`), refused as `exec adopt` refuses it.
+// Each call prints a step table and the next step. Exit 0 = done, next printed; 1 = a red step stopped it (the
 // row says why); 2 = usage or refusal. A call stops at its first red row and is idempotent from the
 // ledger: re-running the land after a stop resumes from what the ledger says already happened.
 //
@@ -77,7 +78,8 @@ export const help = {
     "--check <name>=pass|fail":
       "record one merge check (extensions.merge.checks) or gate checklist item (gate.checklist) on the branch tip",
     "--note <t>": "with --check: one line on why",
-    "--branch <b>": "with --preflight or --message: adopt work built outside lane exec",
+    "--branch <b>":
+      "with --preflight or --message: adopt work built outside lane exec, on the branch named exactly <b>",
     "--message <board commit>": "land: pick, gate or skip, record, board commit with this message",
     "--summary <t>": "with --message: the handoff text (default: the first commit's subject)",
     "--drop-carry": "with --message: land without exec's set-aside board writes (owner's call)",

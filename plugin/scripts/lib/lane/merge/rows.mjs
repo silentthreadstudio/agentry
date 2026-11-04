@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readConfig } from "../../config.mjs";
-import { defaultBranch, worktrees } from "../../process/git.mjs";
+import { branchTips, defaultBranch, worktrees } from "../../process/git.mjs";
 import {
   list as listLedgers,
   read as readLedger,
@@ -11,6 +11,7 @@ import {
 } from "../../process/ledger.mjs";
 import { own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
+import { resolveBranch, shownName, strayTree, unnamedHead } from "../adopt.mjs";
 import { headBoard } from "../carry-io.mjs";
 import { changedSince, checklistFor } from "../gate.mjs";
 import { commitOf, commitsBetween, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
@@ -24,6 +25,23 @@ import { ok, red, save, short, skip, tipOf, wait, warn } from "./lane.mjs";
 // The ledger states a land may start or resume from; an exec lane still building or verifying is not
 // done, and a stopped one needs the owner.
 const LANDABLE = ["verified", "merging", "merged"];
+
+/** `--branch` as a branch to adopt, worded as `exec adopt` words it: `{ branch, tip }`, the tip from the
+ *  branch list (`resolveBranch`), or `{ problem }`: no branch by that exact name (a worktree on it with no
+ *  commits yet says so), a case twin, or the branch's worktree on a spelling no branch is named. */
+function adoptable(root, branch) {
+  const tips = branchTips(root);
+  const all = worktrees(root);
+  const named = resolveBranch(root, branch, tips);
+  const checkedOut = all.some((t) => t.branch === branch);
+  const folded = String(branch).toLowerCase();
+  const inNoCase = ![...tips.keys()].some((b) => b.toLowerCase() === folded);
+  if (named.missing && checkedOut && inNoCase)
+    return { problem: `${shownName(branch)} has no commits yet` };
+  if (named.problem) return named;
+  const stray = checkedOut ? null : strayTree(all, branch, tips);
+  return stray ? { problem: unnamedHead(stray) } : named;
+}
 
 /** The task's ledger, or one adopted from `--branch`. Returns a row, or { exit, rows, next? } to stop. */
 export function ledgerStep(lane, { adopt }) {
@@ -40,10 +58,12 @@ export function ledgerStep(lane, { adopt }) {
     if (branch !== undefined && branch !== ledger.branch)
       return {
         exit: 2,
-        rows: [red("ledger", `${id}'s ledger is on ${ledger.branch}, not ${branch}`)],
+        rows: [red("ledger", `${id}'s ledger is on ${ledger.branch}, not ${shownName(branch)}`)],
       };
     // A stopped exec lane lands only when the owner names its branch: it is adopted from then on.
     if (ledger.state === "stopped" && branch !== undefined && adopt) {
+      const named = adoptable(root, branch);
+      if (named.problem) return { exit: 2, rows: [red("ledger", named.problem)] };
       save(lane, { origin: "adopted", adoptedFrom: "stopped", state: "merging" });
       return ok("ledger", `adopted the stopped exec lane on ${branch} (origin now "adopted")`);
     }
@@ -109,12 +129,14 @@ export function ledgerStep(lane, { adopt }) {
   const mainBranch = defaultBranch(root);
   if (!mainBranch)
     return { exit: 2, rows: [red("ledger", "no main branch (origin/HEAD, main or master) here")] };
-  if (branch.startsWith("-") || !commitOf(root, `refs/heads/${branch}`))
-    return { exit: 2, rows: [red("ledger", `"${branch}" is not a local branch`)] };
+  // An exact listed name only: a revision, `refs/…`, another case or a case twin would land, and later
+  // clean up, a branch other than the one named.
+  const named = adoptable(root, branch);
+  if (named.problem) return { exit: 2, rows: [red("ledger", named.problem)] };
   if (branch === mainBranch)
     return { exit: 2, rows: [red("ledger", `${branch} is the main branch itself`)] };
   const head = commitOf(root, "HEAD");
-  const base = mergeBaseOf(root, mainBranch, branch);
+  const base = mergeBaseOf(root, mainBranch, named.tip);
   lane.ledger = writeLedger(root, {
     v: 1,
     id,

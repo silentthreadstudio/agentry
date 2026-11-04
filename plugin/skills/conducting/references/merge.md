@@ -12,7 +12,7 @@ leaves the task in verify.
 
 | Call | Does |
 | :--- | :--- |
-| `agentry lane merge <id> [--branch <b>] --preflight` | Reads what landing needs and changes nothing on main. With `--branch`, adopts work built outside exec. |
+| `agentry lane merge <id> [--branch <b>] --preflight` | Reads what landing needs and changes nothing on main. With `--branch`, adopts work built outside exec. `<b>` is a branch's exact listed name, its tip read from the branch list. As `exec adopt` does, it refuses (exit 2, no ledger written, no ref moved) a revision (`<b>~0`), `refs/…`, another case of a name (`<b> does not exist`), a branch with a case twin (`<b> has a case twin <other>: rename one first`), a branch with no commits yet, and a branch whose worktree is on a spelling no branch is named. |
 | `agentry lane merge <id> --check <name>=pass\|fail [--note <t>]` | Records one repo check's (a skill in `extensions.merge.checks`) or one `gate.checklist` item's outcome on the branch's current tip. A name that is neither is refused (exit 2), listing both. |
 | `agentry lane merge <id> [--branch <b>] --message <m> [--summary <t>] [--drop-carry]` | The land: pick → gate or skip → record → board commit. `--drop-carry` lands without exec's writes the ledger holds, on the owner's call only. |
 | `agentry lane merge <id> --resolve landed\|rolled-back` | Closes a land stuck in `merging` on the owner's call, after checking main: `landed` when every recorded pick is on main, `rolled-back` when none is. See [A stuck land](#a-stuck-land). |

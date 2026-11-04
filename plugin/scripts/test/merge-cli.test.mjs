@@ -2444,3 +2444,116 @@ test("a lane whose main branch reads as a git option is never passed to git, nor
   assert.doesNotMatch(pf.stdout, /brings in/);
   assert.deepEqual(readdirSync(`${trap}..refs/heads`), [], "git wrote no file");
 });
+
+// ---- --branch: a branch's exact listed name, resolved as exec adopt resolves it (S40) ----
+
+const refs = () => git(root, "for-each-ref", "--format=%(refname) %(objectname)");
+/** A refused `--branch`: exit 2 naming `why`, no ledger written, no ref moved, main as it was. */
+function refusedBranch(b, why, mode = ["--preflight"]) {
+  const [before, pre] = [refs(), head()];
+  const res = merge(ID, "--branch", b, ...mode);
+  assert.equal(res.status, 2, `${JSON.stringify(b)}: ${out(res)}`);
+  assert.ok(out(res).includes(why), `${JSON.stringify(b)}: ${out(res)}`);
+  assert.equal(readLedger(root, ID), null, JSON.stringify(b));
+  assert.equal(refs(), before, JSON.stringify(b));
+  assert.equal(head(), pre);
+  return res;
+}
+/** A hand worktree under `.claude/worktrees/<dir>` on a new branch `branch` with one commit. */
+function handTree(dir, branch) {
+  writeFileSync(join(root, ".git", "info", "exclude"), ".claude/\n");
+  const path = join(root, ".claude", "worktrees", dir);
+  mkdirSync(dirname(path), { recursive: true });
+  git(root, "worktree", "add", "-q", "-b", branch, path, "main");
+  commitFile(path, "src/a.txt", "a\n");
+  return path;
+}
+
+test("--branch refuses a revision, refs/…, another case or a control character: nothing written, no ref moved", () => {
+  build({ "src/a.txt": "a\n" });
+  for (const b of [
+    `${BRANCH}~0`,
+    `${BRANCH}@{0}`,
+    `${BRANCH}^{commit}`,
+    `refs/heads/${BRANCH}`,
+    "AGENTRY/T1",
+    "agentry/t1",
+    `${BRANCH}\n`,
+    "",
+  ])
+    refusedBranch(b, `${b && !/\p{Cc}/u.test(b) ? b : JSON.stringify(b)} does not exist`);
+  refusedBranch(`${BRANCH}~0`, `${BRANCH}~0 does not exist`, ["--message", "docs(board): land T1"]);
+});
+
+test("--branch refuses case twins (packed feat/x, loose feat/X) by either spelling, nothing written", () => {
+  git(root, "checkout", "-q", "-b", "feat/x");
+  commitFile(root, "decoy.txt", "decoy\n", "feat: decoy on packed feat/x");
+  git(root, "checkout", "-q", "main");
+  git(root, "pack-refs", "--all");
+  git(root, "checkout", "-q", "-b", "feat/X");
+  commitFile(root, "src/a.txt", "a\n", "feat: on loose feat/X");
+  git(root, "checkout", "-q", "main");
+  for (const [b, other] of [
+    ["feat/x", "feat/X"],
+    ["feat/X", "feat/x"],
+  ]) {
+    refusedBranch(b, `${b} has a case twin ${other}: rename one first`);
+    refusedBranch(b, `${b} has a case twin ${other}: rename one first`, [
+      "--message",
+      "docs(board): land T1",
+    ]);
+  }
+});
+
+test("a stopped exec lane whose branch has a case twin is refused, its ledger as it was", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  writeLedger(root, { ...readLedger(root, ID), state: "stopped" });
+  git(root, "pack-refs", "--all");
+  git(root, "branch", "agentry/t1", "main");
+  const [before, pre, ledger] = [refs(), head(), readLedger(root, ID)];
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /agentry\/T1 has a case twin agentry\/t1: rename one first/);
+  assert.deepEqual(
+    [readLedger(root, ID).state, readLedger(root, ID).origin],
+    [ledger.state, ledger.origin],
+  );
+  assert.deepEqual([refs(), head()], [before, pre]);
+});
+
+test("--branch refuses a branch whose worktree is on a spelling no branch is named, by either spelling", () => {
+  const path = handTree("agent-x", "feature/x");
+  // What `git checkout FEATURE/X` writes on a case-insensitive filesystem, on any filesystem.
+  git(path, "symbolic-ref", "HEAD", "refs/heads/FEATURE/X");
+  refusedBranch(
+    "feature/x",
+    `${path} is on FEATURE/X, which no branch is named: check it out by its exact name`,
+  );
+  refusedBranch("FEATURE/X", "FEATURE/X does not exist");
+});
+
+test("--branch on a worktree's branch with no commits yet says so, nothing written", () => {
+  writeFileSync(join(root, ".git", "info", "exclude"), ".claude/\n");
+  const path = join(root, ".claude", "worktrees", "agent-z");
+  mkdirSync(dirname(path), { recursive: true });
+  git(root, "worktree", "add", "-q", "--detach", path, "main");
+  git(path, "symbolic-ref", "HEAD", "refs/heads/worktree-agent-z");
+  const res = refusedBranch("worktree-agent-z", "worktree-agent-z has no commits yet");
+  assert.doesNotMatch(out(res), /check it out by its exact name/);
+});
+
+test("--branch by its exact name adopts at the listed tip, and no output names git branch -D", () => {
+  const path = handTree("agent-1", "feature/x");
+  const tip = git(root, "rev-parse", "refs/heads/feature/x");
+  const pf = merge(ID, "--branch", "feature/x", "--preflight");
+  assert.equal(pf.status, 0, out(pf));
+  const ledger = readLedger(root, ID);
+  assert.deepEqual(
+    [ledger.branch, ledger.worktree, ledger.base],
+    ["feature/x", path, git(root, "merge-base", "main", tip)],
+  );
+  const outputs = [pf, mustLand(), merge(ID, "--cleanup")].map(out);
+  assert.equal(git(root, "branch", "--list", "feature/x"), "");
+  for (const text of outputs) assert.doesNotMatch(text, /branch -D/);
+});
