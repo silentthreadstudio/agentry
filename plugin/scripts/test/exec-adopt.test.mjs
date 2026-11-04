@@ -564,3 +564,75 @@ test("a throw inside the carry takes the new lane down: no ledger, branch, workt
   assert.equal(lane(r, "adopt", "T1", "--branch", src.branch).exit, 0);
 });
 
+// A preload (`node --import`) that makes one step of the adopt fail: ADOPT_INJECT=copy throws from the
+// copy of the uncommitted diff into the run dir, and with branch-D in it `git branch -D` fails too.
+const INJECT = `import cp from "node:child_process";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const mode = process.env.ADOPT_INJECT ?? "";
+if (mode.includes("copy")) {
+  const copy = fs.copyFileSync;
+  fs.copyFileSync = (src, dst, ...rest) => {
+    if (String(dst).endsWith("adopt/uncommitted.diff")) throw new Error("injected copy failure");
+    return copy(src, dst, ...rest);
+  };
+}
+if (mode.includes("branch-D")) {
+  const spawn = cp.spawnSync;
+  cp.spawnSync = (cmd, args, ...rest) =>
+    Array.isArray(args) && args.includes("branch") && args.includes("-D")
+      ? { status: 1, stdout: "", stderr: "error: injected branch -D failure\\n" }
+      : spawn(cmd, args, ...rest);
+}
+syncBuiltinESMExports();
+`;
+function injected(r, mode, args) {
+  const file = join(temp("adopt-inject-"), "inject.mjs");
+  writeFileSync(file, INJECT);
+  const res = spawnSync("node", ["--import", file, LANE, "exec", ...args, "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home, ADOPT_INJECT: mode },
+  });
+  return { status: res.status, out: `${res.stdout}${res.stderr}` };
+}
+
+test("a throw inside the carry with no run dir before removes the runs/ dir the adopt made", () => {
+  const r = repo();
+  const src = agentTree(r);
+  const runs = join(processDir(r.root), "runs");
+  assert.equal(existsSync(runs), false, "no runs/ before");
+  const before = board(r.root);
+  const source = sourceOf(r.root, src.branch, src.path);
+  const res = injected(r, "copy", ["adopt", "T1", "--branch", src.branch]);
+  assert.equal(res.status, 1, res.out);
+  assert.match(
+    res.out,
+    /the adopt stopped: injected copy failure; the new lane was taken down, nothing is kept/,
+  );
+  assertNothingWritten(r, "T1", before);
+  assert.equal(existsSync(runs), false, "the runs/ the adopt made is gone");
+  assert.deepEqual(sourceOf(r.root, src.branch, src.path), source);
+  assert.equal(lane(r, "adopt", "T1", "--branch", src.branch).exit, 0);
+});
+
+test("a takedown that cannot delete the lane branch says what is left, never that the lane was taken down", () => {
+  const r = repo();
+  const src = agentTree(r);
+  const res = injected(r, "copy,branch-D", ["adopt", "T1", "--branch", src.branch]);
+  assert.equal(res.status, 1, res.out);
+  assert.match(
+    res.out,
+    /the adopt stopped: injected copy failure; the new lane could not be taken down/,
+  );
+  assert.match(
+    res.out,
+    /the branch agentry\/T1 \(error: injected branch -D failure\): git branch -D agentry\/T1/,
+  );
+  assert.doesNotMatch(res.out, /was taken down/);
+  assert.equal(
+    existsSync(join(r.root, ".agentry", "run", "worktrees", "T1")),
+    false,
+    "the worktree went",
+  );
+  assert.equal(hasRef(r.root, "refs/heads/agentry/T1"), true, "the branch is left, as said");
+});

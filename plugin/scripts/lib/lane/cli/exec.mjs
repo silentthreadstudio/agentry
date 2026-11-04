@@ -49,6 +49,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  rmdirSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -2913,9 +2914,11 @@ function adopt(ctx, id) {
     const saved = join(scratch, "uncommitted.diff");
     const work = from.dirty.length ? saveWork(from.worktree, saved) : { files: [] };
     if (work.error) refuse(`the worktree's uncommitted work could not be saved: ${work.error}`);
-    // What the carry writes in the run dir, so a failure removes that and nothing that was there before.
+    // What the carry writes in the run dir, so a failure removes that and nothing that was there before:
+    // `runs/<id>`, and `runs/` itself when the adopt made it and no other lane has put a run dir in it.
     const runsAt = join(root, ".agentry", "run", "process", "runs", id);
     const made = existsSync(runsAt) ? [] : [runsAt];
+    const runsMade = !existsSync(dirname(runsAt));
     const carryIn = (path) => {
       const diff = join(ledgers.runDir(root, id), "adopt", "uncommitted.diff");
       if (work.files.length) {
@@ -2960,17 +2963,45 @@ function adopt(ctx, id) {
       try {
         return carryIn(path);
       } catch (e) {
-        remove(root, { path, branch: null, force: true });
-        git(root, ["branch", "-D", branchOf(id)]);
+        const left = takeDown(root, { path, branch: branchOf(id) });
         for (const p of made.reverse()) rmSync(p, { recursive: true, force: true });
+        if (runsMade) rmEmpty(dirname(runsAt));
         throw new Stopped(
-          `the adopt stopped: ${e.message}; the new lane was taken down, nothing is kept and ${branch} is as it was`,
+          left.length
+            ? `the adopt stopped: ${e.message}; the new lane could not be taken down, left: ${left.join("; ")}; ${branch} is as it was`
+            : `the adopt stopped: ${e.message}; the new lane was taken down, nothing is kept and ${branch} is as it was`,
         );
       }
     };
     return cut({ ...ctx, on: null }, id, { found, parent: null, mainBranch, again });
   } finally {
     rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+// Remove the lane worktree at `path` and its `branch` (force: the lane holds only what was just carried):
+// what is left, one entry each, with the command that removes it. Empty when both went.
+function takeDown(root, { path, branch }) {
+  const gone = remove(root, { path, branch: null, force: true });
+  const deleted = git(root, ["branch", "-D", branch]);
+  return [
+    ...(gone.removed
+      ? []
+      : [`the worktree ${path} (${gone.reason}): git worktree remove -f ${shellWord(path)}`]),
+    ...(deleted.status === 0
+      ? []
+      : [
+          `the branch ${branch} (${deleted.stderr.trim().split("\n")[0]}): git branch -D ${shellWord(branch)}`,
+        ]),
+  ];
+}
+
+// Remove the directory `dir` when it is empty; one that holds anything is left.
+function rmEmpty(dir) {
+  try {
+    rmdirSync(dir);
+  } catch {
+    /* not empty, or gone already */
   }
 }
 
