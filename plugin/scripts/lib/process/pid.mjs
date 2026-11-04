@@ -31,7 +31,9 @@ export function groupRunning(pgid) {
 }
 
 // The start time of `pid` as a string, or null when it is gone or cannot be read. Field 22 of
-// /proc/<pid>/stat counts after the command name, which may itself hold spaces and parentheses.
+// /proc/<pid>/stat counts after the command name, which may itself hold spaces and parentheses. `ps
+// -o lstart` prints local time in the locale's words: TZ and LC_ALL are pinned, so every process (whatever
+// its own TZ) reads the same text for the same process.
 function startOf(pid) {
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
@@ -42,7 +44,7 @@ function startOf(pid) {
   }
   const ps = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], {
     encoding: "utf8",
-    env: { ...process.env, LC_ALL: "C" },
+    env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
   });
   const text = ps.status === 0 ? ps.stdout.trim().replace(/\s+/g, " ") : "";
   return text || null;

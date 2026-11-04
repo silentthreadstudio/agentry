@@ -19,6 +19,12 @@ const BIN = join(PLUGIN, "bin", "agentry");
 const NODE = process.execPath;
 const cleanups = [];
 const repos = [];
+// Every file under a repo's lock and gate-lock directories, as it is: nothing is cleared first, so a run
+// that died holding a slot shows here.
+const rawFiles = (dir) =>
+  [gateLockDir(dir), ...lockDirs(dir)].flatMap((at) =>
+    existsSync(at) ? readdirSync(at).map((name) => join(at, name)) : [],
+  );
 // The files left under a repo's lock and gate-lock directories once what is dead there is cleared: a
 // process, a held slot or a temp file a test leaked.
 function leftIn(dir) {
@@ -1104,4 +1110,37 @@ test("a thrown error while the command starts kills its group and rejects", asyn
     /cannot record the group/,
   );
   assert.equal(groupAlive(pgid), false, "the group is gone");
+});
+
+test("a live run that took its lock under one time zone holds it against a show, a run and a sweep under another", async () => {
+  const dir = repo({ editor: 1 });
+  const tz = (zone) => ({ ...baseEnv(), TZ: zone });
+  const started = join(dir, "started");
+  const holder = agentry(
+    [
+      "run",
+      "--limit",
+      "30s",
+      "--lock",
+      "editor",
+      "--",
+      ...js(`require('fs').writeFileSync(${JSON.stringify(started)},'');setTimeout(()=>{},4000)`),
+    ],
+    { cwd: dir, env: tz("UTC") },
+  );
+  await until(() => existsSync(started));
+  const tokyo = tz("Asia/Tokyo");
+  assert.match(
+    (await agentry(["lock", "show"], { cwd: dir, env: tokyo })).stdout,
+    /^editor 1\/1\n/,
+  );
+  const second = await agentry(
+    ["run", "--limit", "5s", "--lock", "editor", "--wait", "1s", "--", ...js("")],
+    { cwd: dir, env: tokyo },
+  );
+  assert.equal(second.status, 75, "busy: the first run still holds it");
+  const sweep = await agentry(["lane", "sweep", "--json", "--root", dir], { cwd: dir, env: tokyo });
+  assert.deepEqual(JSON.parse(sweep.stdout).slots, [], "never listed as stale");
+  assert.equal((await holder).status, 0);
+  assert.deepEqual(rawFiles(dir), [], "the first run freed its slot itself");
 });

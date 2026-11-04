@@ -64,3 +64,33 @@ test("a group is alive while it runs under the leader it was recorded with, and 
   await leader.end();
   assert.equal(groupAlive(leader.pid, start), false);
 });
+
+// `code` run as an ES module with pid.mjs imported as `pid`, under time zone `tz`: its stdout.
+function underTz(tz, code) {
+  const url = JSON.stringify(new URL("../lib/process/pid.mjs", import.meta.url).href);
+  const res = spawnSync(
+    NODE,
+    ["--input-type=module", "-e", `import * as pid from ${url};\n${code}`],
+    {
+      encoding: "utf8",
+      env: { ...process.env, TZ: tz },
+    },
+  );
+  assert.equal(res.status, 0, res.stderr);
+  return res.stdout.trim();
+}
+
+test("an identity recorded under one time zone reads alive under another", () => {
+  const { pid } = sleeper();
+  const recorded = underTz("UTC", `console.log(JSON.stringify(pid.identity(${pid})))`);
+  for (const tz of ["Asia/Tokyo", "America/Los_Angeles"])
+    assert.equal(underTz(tz, `console.log(pid.alive(${recorded}))`), "true", `checked under ${tz}`);
+  assert.equal(
+    underTz(
+      "Asia/Tokyo",
+      `console.log(pid.groupAlive(${pid}, ${JSON.stringify(JSON.parse(recorded).start)}))`,
+    ),
+    "false",
+    "not a group leader: no group",
+  );
+});

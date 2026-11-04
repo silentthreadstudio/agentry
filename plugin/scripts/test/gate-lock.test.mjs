@@ -297,3 +297,40 @@ test("staleGateSlots lists a slot whose holder is gone with the group it left ru
   assert.equal(clearGateSlot(file), true);
   assert.deepEqual(slots(dir), []);
 });
+
+test("a live holder that took its slot under one time zone is never taken over by a taker under another", async () => {
+  const dir = lockDir();
+  mkdirSync(dir, { recursive: true });
+  const url = JSON.stringify(new URL("../lib/lane/gate-lock.mjs", import.meta.url).href);
+  const holder = spawn(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { holdGate } from ${url};
+       holdGate(${JSON.stringify(dir)}, { who: "holder" }); console.log("held"); setInterval(() => {}, 1000);`,
+    ],
+    { env: { ...process.env, TZ: "UTC" }, stdio: ["ignore", "pipe", "inherit"] },
+  );
+  const gone = new Promise((resolve) => holder.on("exit", resolve));
+  await new Promise((resolve) => holder.stdout.once("data", resolve));
+  try {
+    for (const tz of ["UTC", "Asia/Tokyo"]) {
+      const taker = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import { heldSlots, holdGate } from ${url};
+           const h = holdGate(${JSON.stringify(dir)}, { who: "taker", waitSec: 0 });
+           console.log(heldSlots(${JSON.stringify(dir)}).length, h.busy ? "busy" : "took");`,
+        ],
+        { env: { ...process.env, TZ: tz }, encoding: "utf8" },
+      );
+      assert.equal(taker.stdout.trim(), "1 busy", `taker under ${tz}: ${taker.stderr}`);
+    }
+  } finally {
+    holder.kill("SIGKILL");
+    await gone;
+  }
+});
