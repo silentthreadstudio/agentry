@@ -23,6 +23,7 @@ import { identity } from "../process/pid.mjs";
 import { isObject, own } from "../process/spec/shape.mjs";
 import {
   GRACE_MS,
+  OLD_TEMP,
   clock,
   heldHere,
   holderAlive,
@@ -42,9 +43,6 @@ export const locksOf = (spec) => {
   const locks = own(spec, "locks");
   return isObject(locks) ? locks : {};
 };
-
-// The temp files an older version left (`slot-<n>.lock.<pid>.tmp`): swept like the atomic helper's own.
-const OLD_TEMP = /^slot-\d+\.lock\.(\d+)\.tmp$/;
 
 // Lock `name`'s directory, its dead writers' temp files swept first: every reader comes through here.
 function openDir(root, name) {

@@ -37,6 +37,10 @@ export const gateLockDir = (root) => join(root, ".agentry", "run", "gate-locks")
 
 const slotFile = (dir, n) => join(dir, `slot-${n}.lock`);
 
+/** The temp files a slot write before `fs/atomic.mjs` left (`slot-<n>.lock.<pid>.tmp`, in a gate or lock
+ *  directory): swept like the atomic helper's own. */
+export const OLD_TEMP = /^slot-\d+\.lock\.(\d+)\.tmp$/;
+
 /** The parsed content of a lock file, or null when it is missing or not JSON. */
 export const holderOf = (file) => {
   try {
@@ -273,7 +277,7 @@ export const clock = (iso) => {
 
 /** The slots in `dir` a running process holds now: `[{ slot, pid, who, since }]` (`since` is HH:MM). */
 export function heldSlots(dir) {
-  sweepTemps(dir);
+  sweepTemps(dir, OLD_TEMP);
   return slotNumbers(dir).flatMap((slot) => {
     const holder = holderOf(slotFile(dir, slot));
     return holderAlive(holder) || liveGroup(holder) !== null
@@ -298,7 +302,7 @@ export function holdGate(
   { slots = 1, exclusive = false, who = "", waitSec = 3600, log = null, onNote = null } = {},
 ) {
   mkdirSync(dir, { recursive: true });
-  sweepTemps(dir);
+  sweepTemps(dir, OLD_TEMP);
   const held = [];
   // A slot whose command left a group running stays held (its pid is gone, its group is not).
   const release = () => {

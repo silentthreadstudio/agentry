@@ -368,3 +368,15 @@ test("a taker that cannot run ps never takes a live holder's slot", async () => 
     await gone;
   }
 });
+
+test("a gate slot temp file of the older naming (slot-<n>.lock.<pid>.tmp) a killed writer left is swept by the next read", () => {
+  const dir = lockDir();
+  mkdirSync(dir, { recursive: true });
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+  const live = `slot-1.lock.${process.ppid}.tmp`;
+  writeFileSync(join(dir, `slot-1.lock.${dead}.tmp`), "{half");
+  writeFileSync(join(dir, live), "{");
+  assert.deepEqual(heldSlots(dir), []);
+  assert.deepEqual(slots(dir), [live], "a live writer's temp stays");
+  rmSync(join(dir, live));
+});

@@ -921,3 +921,15 @@ test("the sweep lists and removes the older temp naming a killed ledger or draft
   sweep(root, "--apply");
   assert.ok(!old.some((file) => existsSync(file)));
 });
+
+test("the sweep lists and removes a gate slot temp file of the older naming a killed writer left", () => {
+  const { root } = fixture();
+  const dead = spawnSync("node", ["-e", ""]).pid;
+  mkdirSync(gateLockDir(root), { recursive: true });
+  const old = join(gateLockDir(root), `slot-1.lock.${dead}.tmp`);
+  writeFileSync(old, "{half");
+  assert.deepEqual(JSON.parse(sweep(root, "--json").stdout).temps, [old]);
+  assert.ok(existsSync(old), "the preview changed nothing");
+  sweep(root, "--apply");
+  assert.ok(!existsSync(old));
+});

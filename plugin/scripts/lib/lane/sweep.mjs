@@ -34,6 +34,7 @@ import * as drafts from "../process/drafts.mjs";
 import { worktrees } from "../process/git.mjs";
 import * as ledgers from "../process/ledger.mjs";
 import {
+  OLD_TEMP,
   clearGateSlot,
   gateLockDir,
   groupRunning,
@@ -251,7 +252,7 @@ function findStrays(root, all) {
 const tempDirs = (root) => [
   [join(root, ".agentry", "run", "process"), drafts.OLD_TEMP],
   [join(root, ".agentry", "run", "process", "ledger"), ledgers.OLD_TEMP],
-  [gateLockDir(root)],
+  [gateLockDir(root), OLD_TEMP],
   [root],
   [join(root, ".claude")],
 ];
