@@ -907,7 +907,9 @@ function refuseMidLand(root) {
     .find((l) => l.state === "merging" && picksOnMain(root, l.merge));
   if (landing)
     refuse(
-      `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): its picks may still roll back → start after it lands, or ${prefix("lane", `node ${q(LANE)}`)} merge ${landing.id} --resolve landed|rolled-back`,
+      landing.merge.cut
+        ? `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): a cut of it stopped there → ${prefix("lane", `node ${q(LANE)}`)} exec cut ${landing.id} --decision <D> --apply rolls it back`
+        : `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): its picks may still roll back → start after it lands, or ${prefix("lane", `node ${q(LANE)}`)} merge ${landing.id} --resolve landed|rolled-back`,
     );
 }
 

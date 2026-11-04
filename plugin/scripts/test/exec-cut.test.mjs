@@ -709,3 +709,320 @@ test("a stuck cut is not rolled back over a commit on main that is not its own",
   assert.doesNotMatch(res.out, /--resolve/);
   assert.deepEqual(snapshot(r), before);
 });
+
+// ---- kills at every point of a cut, and the rerun that rolls it back --------------------------------
+//
+// A `node --import` preload SIGKILLs the cut right before or after the n-th spawnSync whose command line
+// matches a pattern (CUT_KILL="before|<regex>|<n>" or "after|…"), so each kill point is exact.
+const KILL_AT = `import cp from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+const spec = process.env.CUT_KILL;
+if (spec) {
+  const [when, pattern, nth = "1"] = spec.split("|");
+  const re = new RegExp(pattern);
+  let seen = 0;
+  const orig = cp.spawnSync;
+  const die = () => {
+    process.kill(process.pid, "SIGKILL");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10_000);
+  };
+  cp.spawnSync = function (cmd, args, opts) {
+    const line = [cmd, ...(Array.isArray(args) ? args : [])].join(" ");
+    const hit = re.test(line) && ++seen === Number(nth);
+    if (hit && when === "before") die();
+    const res = orig.apply(this, arguments);
+    if (hit && when === "after") die();
+    return res;
+  };
+  syncBuiltinESMExports();
+}
+`;
+let killAt = null;
+const killAtFile = () => {
+  if (!killAt) {
+    killAt = join(temp("cut-kill-at-"), "kill-at.mjs");
+    writeFileSync(killAt, KILL_AT);
+  }
+  return killAt;
+};
+function runKilled(r, args, kill) {
+  const res = spawnSync("node", ["--import", killAtFile(), LANE, ...args, "--root", r.root], {
+    encoding: "utf8",
+    env: { ...env(r), ...(kill && { CUT_KILL: kill }) },
+  });
+  return { exit: res.status, signal: res.signal, out: res.stdout + res.stderr };
+}
+const CUT_ARGS = [
+  "exec",
+  "cut",
+  "T1",
+  "--decision",
+  "D7",
+  "--keep",
+  "art/raw",
+  "--apply",
+  "--json",
+];
+const cutT1 = (r, kill = null) => runKilled(r, CUT_ARGS, kill);
+// The lane and main as a rollback must leave them.
+const laneState = (r) => {
+  const l = ledgerOf(r.root, "T1");
+  return {
+    head: git(r.root, "rev-parse", "HEAD"),
+    status: git(r.root, "status", "--porcelain", "--untracked-files=all"),
+    board: boardText(r.root),
+    state: l.state,
+    next: l.next,
+    merge: l.merge ?? null,
+    cut: l.cut ?? null,
+    branch: git(r.root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/agentry/"),
+  };
+};
+// T1 parked and T3 building beside it (its dispatched write carried by T1's cut).
+function setup({ gate } = {}) {
+  const spec = gate ? { ...SPEC, gate: { tiers: [{ name: "full", command: gate }] } } : SPEC;
+  const r = repo({ spec });
+  const p = parked(r);
+  assert.equal(lane(r, "start", "T3").exit, 0);
+  return { r, ...p, before: laneState(r) };
+}
+// The rerun after a kill: a rollback to the lane exactly as it was, a refusal, or a cut done outright.
+function rerunMeetsBar(r, before, worktree, label) {
+  const again = cutT1(r);
+  const l = ledgerOf(r.root, "T1");
+  assert.notEqual(l.state, "verified", `${label}: ${again.out}`);
+  assert.doesNotMatch(again.out, /--resolve/, label);
+  if (again.exit === 1 && /rolled back the stuck cut/.test(again.out)) {
+    assert.deepEqual(laneState(r), before, `${label}: not the lane as it was: ${again.out}`);
+    assert.ok(existsSync(join(worktree, "scratch.txt")), `${label}: worktree work gone`);
+    return { again, kind: "rolled-back" };
+  }
+  return { again, kind: again.exit === 2 ? "refused" : `exit ${again.exit}` };
+}
+function finishes(r, label) {
+  const res = cutT1(r);
+  assert.equal(res.exit, 0, `${label}: the cut after the rollback: ${res.out}`);
+  assert.equal(ledgerOf(r.root, "T1").state, "closed");
+  assert.deepEqual(
+    ["T1", "T3"].map((id) => statusOf(r.root, id)),
+    ["cut", "doing"],
+    label,
+  );
+  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "", label);
+}
+
+const KILL_POINTS = [
+  [
+    "K1 mid set-aside of the carry",
+    "before|restore --source=HEAD --staged --worktree -- plan/BOARD.md|1",
+  ],
+  ["K2 before the kept pick", "before| cherry-pick |1"],
+  ["K3 after the kept pick, before the ledger records it", "after| cherry-pick |1"],
+  ["K4 before the gate starts", "before|supervise.mjs|1"],
+  ["K5a board written, before git add", "before|add -- plan/BOARD.md|1"],
+  ["K5b board staged, before the board commit", "before|commit --quiet -m chore\\(board\\)|1"],
+  [
+    "K6 after the board commit, before the ledger marks it",
+    "after|commit --quiet -m chore\\(board\\)|1",
+  ],
+];
+for (const [label, kill] of KILL_POINTS)
+  test(`a cut killed at ${label}: the rerun rolls back or cuts, then a cut finishes`, () => {
+    const { r, before, worktree } = setup();
+    assert.equal(cutT1(r, kill).signal, "SIGKILL", label);
+    const { again, kind } = rerunMeetsBar(r, before, worktree, label);
+    if (kind === "rolled-back") finishes(r, label);
+    else {
+      assert.equal(again.exit, 0, `${label}: neither rolled back nor cut: ${again.out}`);
+      assert.equal(ledgerOf(r.root, "T1").state, "closed");
+      assert.equal(statusOf(r.root, "T3"), "doing", `${label}: T3's carried write lost`);
+    }
+  });
+
+test("a cut killed mid-gate, its gate running on: the rerun stops the gate and rolls back", () => {
+  const killer = join(temp("cut-gate-killer-"), "gate-killer.sh");
+  writeFileSync(
+    killer,
+    `#!/bin/sh
+test -e "$HOME/killed-once" && exit 0
+touch "$HOME/killed-once"
+for p in $(ps -axo pid=,command= | grep "exec cut T1 --decision D7 --keep art/raw --apply --json --root $PWD" | grep -v grep | awk '{print $1}'); do kill -9 "$p"; done
+sleep 6
+touch "$HOME/gate-finished"
+exit 0
+`,
+  );
+  const { r, before, worktree } = setup({ gate: ["sh", killer] });
+  assert.equal(cutT1(r).signal, "SIGKILL");
+  assert.equal(ledgerOf(r.root, "T1").merge?.step, "gating");
+  const { again, kind } = rerunMeetsBar(r, before, worktree, "mid-gate");
+  assert.equal(kind, "rolled-back", again.out);
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 7000);
+  assert.ok(!existsSync(join(r.home, "gate-finished")), "the stray gate ran on to the end");
+  finishes(r, "mid-gate");
+});
+
+test("a cut killed after its board commit was marked refuses to roll back, nothing reset", () => {
+  const { r } = setup();
+  assert.equal(cutT1(r, "after|commit --quiet -m chore\\(board\\)|1").signal, "SIGKILL");
+  const l = ledgerOf(r.root, "T1");
+  const head = git(r.root, "rev-parse", "HEAD");
+  const { carry: _c, writes: _w, ...merge } = l.merge;
+  writeFileSync(
+    ledgerFile(r.root, "T1"),
+    `${JSON.stringify({ ...l, merge: { ...merge, cutBoard: head } }, null, 2)}\n`,
+  );
+  const again = cutT1(r);
+  assert.equal(again.exit, 2, again.out);
+  assert.match(again.out, /board commit .* holds the writes it set aside/);
+  assert.equal(git(r.root, "rev-parse", "HEAD"), head);
+});
+
+test("a cut killed before its branch is kept leaves the branch at its tip; the rerun refuses", () => {
+  const { r, tip } = setup();
+  assert.equal(cutT1(r, "before|update-ref refs/heads/agentry/T1.cut|1").signal, "SIGKILL");
+  assert.equal(cutT1(r).exit, 2);
+  assert.equal(git(r.root, "rev-parse", "refs/heads/agentry/T1"), tip);
+});
+
+for (const [label, kill] of [
+  ["before the pick", "before| cherry-pick |1"],
+  ["after the pick", "after| cherry-pick |1"],
+  ["after the board commit", "after|commit --quiet -m chore\\(board\\)|1"],
+])
+  test(`a stuck cut (killed ${label}) is never rolled back over someone else's commit`, () => {
+    const { r } = setup();
+    assert.equal(cutT1(r, kill).signal, "SIGKILL");
+    commitFile(r.root, "docs/other.md", "someone else\n", "docs: someone else's commit");
+    const head = git(r.root, "rev-parse", "HEAD");
+    const status = git(r.root, "status", "--porcelain", "--untracked-files=all");
+    const again = cutT1(r);
+    assert.equal(again.exit, 2, again.out);
+    assert.match(again.out, /not the stuck cut's: [0-9a-f]{7} docs: someone else's commit/);
+    assert.equal(git(r.root, "rev-parse", "HEAD"), head);
+    assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), status);
+    assert.equal(ledgerOf(r.root, "T1").state, "merging");
+  });
+
+test("a foreign commit with the board commit's subject is not the cut's: the rerun refuses, it stays", () => {
+  const { r } = setup();
+  assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
+  const foreign = commitFile(
+    r.root,
+    "docs/other.md",
+    "someone else\n",
+    "chore(board): cut T1 (D7)",
+  );
+  const again = cutT1(r);
+  assert.equal(again.exit, 2, again.out);
+  assert.match(again.out, /not the stuck cut's/);
+  assert.equal(git(r.root, "rev-parse", "HEAD"), foreign);
+  assert.ok(existsSync(join(r.root, "docs", "other.md")));
+});
+
+// Board writes others make while a cut is stuck: the rollback refuses rather than wipe them.
+const STRANGE =
+  /plan\/BOARD\.md has writes made after the cut stopped: commit or set them aside, then run exec cut again/;
+test("an owner's hand edit of the board after a kill: the rerun refuses and the edit stays", () => {
+  const { r } = setup();
+  assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
+  writeFileSync(join(r.root, "plan", "BOARD.md"), `${boardText(r.root)}\nowner note by hand\n`);
+  const again = cutT1(r);
+  assert.equal(again.exit, 2, again.out);
+  assert.match(again.out, STRANGE);
+  assert.ok(boardText(r.root).includes("owner note by hand"));
+  assert.equal(ledgerOf(r.root, "T1").state, "merging");
+});
+
+test("the owner's board set while a cut is stuck: the rerun refuses and the write stays", () => {
+  const { r } = setup();
+  assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
+  const set = run(r, BOARD, ["set", "task", "T2", "status=done", "--apply"]);
+  assert.equal(set.exit, 0, set.out);
+  const again = cutT1(r);
+  assert.equal(again.exit, 2, again.out);
+  assert.match(again.out, STRANGE);
+  assert.equal(statusOf(r.root, "T2"), "done");
+});
+
+test("another lane's exec write while a cut is stuck (T3 reports built): the rerun refuses, it stays", () => {
+  const { r } = setup();
+  const t3 = ledgerOf(r.root, "T3");
+  commitFile(t3.worktree, "docs/three.md", "three\n", "docs: three");
+  assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
+  writeFileSync(
+    join(runsDir(r.root), "T3", "r1-build.report.md"),
+    "DONE\nbuilt it\nused_memories: none\n",
+  );
+  const rep = lane(r, "report", "T3");
+  assert.equal(rep.exit, 0, rep.out);
+  const written = statusOf(r.root, "T3");
+  assert.equal(written, "verify");
+  const again = cutT1(r);
+  assert.equal(again.exit, 2, again.out);
+  assert.match(again.out, STRANGE);
+  assert.equal(statusOf(r.root, "T3"), written);
+});
+
+test("a rollback killed after its reset is finished by the next rerun", () => {
+  const { r, before, worktree } = setup();
+  assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
+  assert.equal(cutT1(r, "after|reset --keep|1").signal, "SIGKILL");
+  const { again, kind } = rerunMeetsBar(r, before, worktree, "R1");
+  assert.equal(kind, "rolled-back", again.out);
+  finishes(r, "R1");
+});
+
+test("a rollback killed before its reset (board files back to HEAD) is finished by the next rerun", () => {
+  const { r, before, worktree } = setup();
+  assert.equal(cutT1(r, "before|add -- plan/BOARD.md|1").signal, "SIGKILL");
+  assert.equal(cutT1(r, "before|reset --keep|1").signal, "SIGKILL");
+  const { again, kind } = rerunMeetsBar(r, before, worktree, "R2");
+  assert.equal(kind, "rolled-back", again.out);
+  finishes(r, "R2");
+});
+
+test("while a cut is stuck, another cut, a start and the preview name the cut as the way out", () => {
+  const { r } = setup();
+  assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
+  const t3 = lane(r, "cut", "T3", "--decision", "D7", "--apply");
+  assert.equal(t3.exit, 2);
+  assert.match(t3.out, /exec cut T1 --decision <D> --apply rolls back its stuck cut/);
+  const start = lane(r, "start", "T2");
+  assert.equal(start.exit, 2);
+  assert.match(start.out, /exec cut T1 --decision <D> --apply rolls it back/);
+  const preview = lane(r, "cut", "T1", "--decision", "D7");
+  assert.equal(preview.exit, 2);
+  for (const res of [t3, start, preview]) assert.doesNotMatch(res.out, /--resolve/);
+});
+
+test("exec close refuses held, building, stuck and rolled-back lanes; a cut lane stamps its episode", () => {
+  const { r } = setup();
+  for (const id of ["T1", "T3"]) assert.equal(lane(r, "close", id).exit, 2, id);
+  assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
+  assert.equal(lane(r, "close", "T1").exit, 2, "a stuck cut closed");
+  assert.equal(cutT1(r).exit, 1);
+  assert.equal(lane(r, "close", "T1").exit, 2, "a rolled-back lane closed");
+  assert.equal(ledgerOf(r.root, "T1").episode, undefined);
+  finishes(r, "close");
+  assert.equal(lane(r, "close", "T1", "--episode", "ep-1").exit, 0);
+  assert.equal(statusOf(r.root, "T1"), "cut");
+  assert.ok(!JSON.parse(run(r, LANE, ["session", "close"]).out).episodesPending.includes("T1"));
+});
+
+// A red gate that leaves an untracked file on main: the land's rollback refuses over it.
+const DIRTY_RED_GATE = ["sh", "-c", "touch coverage.out; exit 1"];
+test("a red gate whose rollback refuses names the cut as the way out, never lane merge --resolve", () => {
+  const { r, before, worktree } = setup({ gate: DIRTY_RED_GATE });
+  const res = cutT1(r);
+  assert.equal(res.exit, 1, res.out);
+  assert.equal(ledgerOf(r.root, "T1").merge.step, "rollback-refused");
+  assert.doesNotMatch(res.out, /--resolve/);
+  assert.match(res.out, /then exec cut T1 --decision <D> --apply rolls it back/);
+  const again = cutT1(r);
+  assert.equal(again.exit, 2);
+  assert.match(again.out, /coverage\.out/);
+  rmSync(join(r.root, "coverage.out"));
+  const { again: third, kind } = rerunMeetsBar(r, before, worktree, "red gate");
+  assert.equal(kind, "rolled-back", third.out);
+});
