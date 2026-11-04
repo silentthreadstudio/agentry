@@ -92,6 +92,9 @@ export function usedMemories(text) {
   return found;
 }
 
+/** How much of a summary longer than one line's 120 characters is kept, before the "…" (`summaryOf`). */
+export const SUMMARY_CUT = 119;
+
 /** One line (≤ 120 chars) saying what the report is about: the text after the status token when it has
  *  some, else the first line that is not the marker, a bare status, a verdict or a heading. */
 export function summaryOf(text) {
@@ -103,7 +106,7 @@ export function summaryOf(text) {
       .replace(/^[\s:.—–-]+/, "")
       .trim();
     if (!body || (/^#/.test(line) && !/\w+\s+\w+/.test(body))) continue;
-    return body.length > 120 ? `${body.slice(0, 119)}…` : body;
+    return body.length > SUMMARY_CUT + 1 ? `${body.slice(0, SUMMARY_CUT)}…` : body;
   }
   return "";
 }

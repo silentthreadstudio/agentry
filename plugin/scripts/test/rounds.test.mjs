@@ -3,6 +3,7 @@
 // Run: node --test plugin/scripts/test/rounds.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { SUMMARY_CUT, summaryOf } from "../lib/lane/report.mjs";
 import {
   CAP_REASON,
   MAX_VERDICTS,
@@ -1389,6 +1390,16 @@ test("a context hold's reason cut at the summary's cap ends at a word, outside b
   const paren = `see (the open paren that never closes ${"and on ".repeat(20)}`.slice(0, 119);
   assert.equal(reasonOf(`${paren}…`), "see…");
   assert.equal(reasonOf("short and whole"), "short and whole");
+});
+
+test("a context hold's reason cuts back exactly what summaryOf cut: the two share one length", () => {
+  // R1d-39 r4 N4: rounds kept its own copy of the reader's cut length.
+  const first = go(lane(), asks()).ledger;
+  const summary = summaryOf(`NEEDS_CONTEXT ${"which key holds it ".repeat(10)}`);
+  assert.equal(summary.length, SUMMARY_CUT + 1);
+  const reason = go(first, asks({ summary })).ledger.hold.reason;
+  assert.ok(reason.length < summary.length && reason.endsWith("…"), reason);
+  assert.ok(!reason.endsWith(" …"), "cut at a word");
 });
 
 test("a context hold's reason keeps a report's own ellipsis: only the reader's cut is cut back", () => {

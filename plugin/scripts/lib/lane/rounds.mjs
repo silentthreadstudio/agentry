@@ -98,6 +98,7 @@
 // rangeDiff? } and sets `base` to `base.to`; one onto main drops `on`.
 import { PRESETS } from "../process/spec/presets.mjs";
 import { runOf, runText } from "../process/steps.mjs";
+import { SUMMARY_CUT } from "./report.mjs";
 
 export const MAX_VERDICTS = 3;
 export const MAX_VOIDS = 3;
@@ -352,11 +353,10 @@ const sameRun = (a, b) => a?.[0] === b?.[0] && a?.[1] === b?.[1];
 
 // A context hold's reason: the report's summary, which its reader cuts at a length cap ("…"), cut back to
 // the last word boundary that leaves no backticked span or parenthesis open. Only the reader's cut is: a
-// body of its cut length (`summaryOf` keeps 119 characters); a report's own "…" stays as written.
-const READER_CUT = 119;
+// body of its cut length (`summaryOf`'s `SUMMARY_CUT`); a report's own "…" stays as written.
 function clipped(summary) {
   const body = summary.slice(0, -1);
-  if (!summary.endsWith("…") || body.length !== READER_CUT) return summary;
+  if (!summary.endsWith("…") || body.length !== SUMMARY_CUT) return summary;
   const count = (text, ch) => text.split(ch).length - 1;
   for (let at = body.lastIndexOf(" "); at > 0; at = body.lastIndexOf(" ", at - 1)) {
     const head = body.slice(0, at).trimEnd();
