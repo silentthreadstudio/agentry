@@ -2512,6 +2512,12 @@ function restart(ctx, id) {
     refuse(
       `${id} is stacked on ${stack.on}, which is not merged: a restart cuts from main, so take it off first (${restackLine(root, id, " --main")})`,
     );
+  // A child built on this lane's work would restack onto a branch that no longer holds it.
+  const children = childrenOf(ledgers.list(root), id);
+  if (children.length)
+    refuse(
+      `${children.join(", ")} ${children.length > 1 ? "are" : "is"} stacked on ${id}: restack or close ${children.length > 1 ? "them" : "it"} first`,
+    );
   refuseAtWriterCap(root, spec, id);
   const found = contractOf(ctx, id);
   const mainBranch = mainBranchOf(root);

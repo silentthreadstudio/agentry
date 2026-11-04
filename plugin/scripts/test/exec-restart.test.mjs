@@ -425,3 +425,26 @@ test("restarting a verified lane clears its board verdict: the new lane has none
   assert.equal(parked.exit, 0, parked.stderr);
   assert.equal(parked.json["main moved while parked"], undefined);
 });
+
+// ---- a lane others are stacked on (R1d-23 r2 N3) --------------------------------------------------------
+
+test("a restart of a lane with an open stacked child is refused, nothing changed", () => {
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  writeFileSync(out.reportPath, "DONE\nchanged three.txt\nused_memories: none\n");
+  out = lane(r, "report", "T3").json;
+  writeFileSync(out.reportPath, "Checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, "verdict", "T3").json.next, "gate");
+  const child = lane(r, "start", "T2", "--on", "T3");
+  assert.equal(child.exit, 0, child.stderr);
+  const before = readFileSync(ledgerFile(r.root, "T3"), "utf8");
+  const res = lane(r, "restart", "T3");
+  assert.equal(res.exit, 2);
+  assert.match(
+    res.stderr,
+    /✗ lane exec restart T3: T2 is stacked on T3: restack or close it first/,
+  );
+  assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), before);
+  assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+});
