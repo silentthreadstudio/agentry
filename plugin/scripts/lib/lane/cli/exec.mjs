@@ -718,8 +718,9 @@ function configTrips(root, allow, dirty) {
 
 // Whether the main checkout still matches the lane's start: `{ touched, allowed, moved, overlap }`,
 // `touched` why not (or null), `allowed` the commits on main the guard let through, `moved` how many of
-// them the rule judged when all passed (other lanes' landed picks and memory commits not counted), `overlap` whether a commit touched this lane's files. The
-// one rule for HEAD's move (`allowedCommit`), so report, hold and resume never disagree.
+// them the rule judged when all passed (other lanes' landed picks and record-shaped memory commits not
+// counted), `overlap` whether a commit touched this lane's files. The one rule for HEAD's move
+// (`allowedCommit`), so report, hold and resume never disagree.
 function mainGuard(ctx, ledger, all) {
   const { root, spec, model } = ctx;
   const allow = allowOf(ctx, ledger);
