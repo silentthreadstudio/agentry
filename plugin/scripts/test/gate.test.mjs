@@ -567,10 +567,10 @@ test("flakyReds: a listed name counts only whole, and a CRLF log reads as LF", (
 });
 
 // A real `lane exec gate` on a scratch board whose gate command backgrounds a child: `{ root, run, pids }`,
-// once the gate runs and its slot is settled (`pids` the command and its child, `run` the gate's own
-// process). Its process waits
-// for the gate synchronously, so it can clean nothing up itself on a signal: its watchdog has to.
-async function gateRunning(marker) {
+// once the gate runs and (unless `settle` is false) its slot is settled (`pids` the command and its child,
+// `run` the gate's own process). Its process waits for the gate synchronously, so it can clean nothing up
+// itself on a signal: its watchdog has to.
+async function gateRunning(marker, { settle = true } = {}) {
   const { writeSpec } = await import("./spec-files.mjs");
   const lane = join(dirname(new URL(import.meta.url).pathname), "..", "lane.mjs");
   const root = repo.dir;
@@ -650,7 +650,10 @@ async function gateRunning(marker) {
     stdio: "ignore",
   });
   const lines = () => (existsSync(marker) ? readFileSync(marker, "utf8").trim().split("\n") : []);
-  for (let i = 0; i < 600 && lines().length < 2; i++) await new Promise((r) => setTimeout(r, 25));
+  // A fine poll: unsettled, the caller wants the moment the command is up.
+  const up = Date.now() + 15000;
+  while (lines().length < 2 && Date.now() < up) await new Promise((r) => setTimeout(r, 2));
+  if (!settle) return { root, run, pids: lines().map(Number) };
   // The watchdog records the command's group in the slot (`recordGroup`) only once the command runs, so
   // under load the command can be up while that write is still in flight (its mutex and temp file beside
   // the slot). Wait for it to settle: the group recorded, nothing beside the slot.
@@ -685,6 +688,28 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGKILL"])
       [],
       "no slot, mutex or temp file left, nothing cleared first",
     );
+  });
+
+// The same signals the moment the gate command is up, with no settle: under load they often land while the
+// watchdog's `recordGroup` write is still in flight (its mutex and temp file beside the slot). Wherever one
+// lands, nothing may be left once the gate process is gone.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGKILL"])
+  test(`${signal} of lane exec gate as its watchdog records the group: gate-locks is empty within 3 s`, async () => {
+    const { root, run, pids } = await gateRunning(join(logs, "gate.pids"), { settle: false });
+    try {
+      assert.equal(pids.length, 2, "the gate command and its child run");
+      const slots = join(root, ".agentry", "run", "gate-locks");
+      const gone = new Promise((resolve) => run.on("exit", resolve));
+      run.kill(signal);
+      await gone;
+      const killed = Date.now();
+      const clean = () => !pids.some(alive) && readdirSync(slots).length === 0;
+      while (!clean() && Date.now() - killed < 3000) await new Promise((r) => setTimeout(r, 50));
+      assert.deepEqual(pids.filter(alive), [], "no gate process outlived its holder");
+      assert.deepEqual(readdirSync(slots), [], "no slot, mutex or temp file left");
+    } finally {
+      killAll([...pids, run.pid]);
+    }
   });
 
 for (const signal of ["SIGPIPE", "SIGUSR1"])
