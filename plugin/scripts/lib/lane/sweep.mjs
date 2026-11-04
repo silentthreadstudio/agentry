@@ -49,6 +49,8 @@ import { ignoredFiles, remove, worktreesDir } from "./worktree.mjs";
 const GB = 1024 ** 3;
 export const LOW_DISK = 10 * GB;
 const SETTLE_MS = 2000;
+// How many times a freeze looks again for members a stopped tree still names.
+const FREEZE_ROUNDS = 20;
 // A ledger in one of these states has nothing running: its leftovers are strays.
 const FINISHED = ["merged", "closed", "stopped"];
 // Shells that are interactive when run with `-i`.
@@ -349,50 +351,66 @@ function reach(stray, procs, owned, led = {}) {
   return members;
 }
 
-// SIGTERM, then SIGKILL after SETTLE_MS, to what `reach` names, re-judged on each round: the set grows with
-// children that appear and keeps the pids of ones whose parent died first (they are re-parented).
+// Freeze, then kill: SIGSTOP every member `reach` names and every child of a member, looking again until
+// no new member appears (a stopped process cannot fork, so nothing escapes the way a child forked in a
+// SIGTERM handler, its parent gone at once, would), then SIGKILL all of them and confirm they are gone.
 // Returns `{ left, signalled }`: the pids still running afterwards, and every pid that was signalled.
 function stop(stray, root, all) {
   const members = new Set([stray.pid]);
   const signalled = new Set();
+  const frozen = new Set();
   const led = {};
+  const cwd = cwds().map;
+  const owned = (p) => ownedByLive(root, all, p, cwd);
+  const signal = (pid, name) => {
+    try {
+      process.kill(pid, name);
+      signalled.add(pid);
+      return true;
+    } catch {
+      return false; // already gone
+    }
+  };
+  for (let round = 0; round < FREEZE_ROUNDS; round++) {
+    const procs = processes();
+    for (const pid of reach(stray, procs, owned, led)) members.add(pid);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const p of procs)
+        if (members.has(p.ppid) && !members.has(p.pid) && !onTerminal(p) && !owned(p)) {
+          members.add(p.pid);
+          grew = true;
+        }
+    }
+    const fresh = stillRunning(members).filter((pid) => !frozen.has(pid));
+    if (!fresh.length) break;
+    for (const pid of fresh) if (signal(pid, "SIGSTOP")) frozen.add(pid);
+  }
+  for (const pid of stillRunning(members)) signal(pid, "SIGKILL");
   const nap = new Int32Array(new SharedArrayBuffer(4));
-  for (const signal of ["SIGTERM", "SIGKILL"]) {
-    const cwd = cwds().map;
-    const owned = (p) => ownedByLive(root, all, p, cwd);
-    for (const pid of reach(stray, processes(), owned, led)) members.add(pid);
-    for (const pid of stillRunning(members)) {
-      try {
-        process.kill(pid, signal);
-        signalled.add(pid);
-      } catch {
-        // already gone
-      }
-    }
-    for (let waited = 0; waited < SETTLE_MS; waited += 100) {
-      if (!stillRunning(members).length) return { left: [], signalled: [...signalled] };
-      Atomics.wait(nap, 0, 0, 100);
-    }
+  for (let waited = 0; waited < SETTLE_MS; waited += 100) {
+    if (!stillRunning(members).length) return { left: [], signalled: [...signalled] };
+    Atomics.wait(nap, 0, 0, 100);
   }
   return { left: stillRunning(members), signalled: [...signalled] };
 }
 
-// Stop the group `pgid` a dead run left running, as a stray is stopped: SIGTERM, then SIGKILL after SETTLE_MS;
-// never a group that holds a terminal or an interactive shell, or this sweep. True when it is gone.
+// Stop the group `pgid` a dead run left running, as a stray is stopped: frozen (SIGSTOP), so no member forks
+// a way out, then SIGKILL; never a group that holds a terminal or an interactive shell, or this sweep. True
+// when it is gone.
 function stopGroup(pgid) {
   const mates = processes().filter((p) => p.pgid === pgid);
   if (pgid === ownGroup() || mates.some(interactive)) return !groupRunning(pgid);
   const nap = new Int32Array(new SharedArrayBuffer(4));
-  for (const signal of ["SIGTERM", "SIGKILL"]) {
+  for (const signal of ["SIGSTOP", "SIGKILL"])
     try {
       process.kill(-pgid, signal);
     } catch {
       return true; // gone already
     }
-    for (let waited = 0; waited < SETTLE_MS; waited += 100) {
-      if (!groupRunning(pgid)) return true;
-      Atomics.wait(nap, 0, 0, 100);
-    }
+  for (let waited = 0; waited < SETTLE_MS; waited += 100) {
+    if (!groupRunning(pgid)) return true;
+    Atomics.wait(nap, 0, 0, 100);
   }
   return !groupRunning(pgid);
 }

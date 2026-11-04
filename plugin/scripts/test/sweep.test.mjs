@@ -933,3 +933,23 @@ test("the sweep lists and removes a gate slot temp file of the older naming a ki
   sweep(root, "--apply");
   assert.ok(!existsSync(old));
 });
+
+test("one --apply leaves nothing of a stray that forks a child on SIGTERM whose parent leaves at once", async () => {
+  const { root } = fixture();
+  const cwd = runFile(root, "scratch");
+  mkdirSync(cwd, { recursive: true });
+  const late = join(cwd, "late.pid");
+  const src = `process.on("SIGTERM", () => { require("child_process").spawn("sh", ["-c", "sleep 301 & echo $! > ${late}"], { stdio: "ignore" }); }); setInterval(() => {}, 1000);`;
+  const stray = spawn("node", ["-e", src], { cwd, stdio: "ignore" });
+  children.push(stray);
+  await settle();
+  const res = JSON.parse(sweep(root, "--apply", "--json").stdout);
+  assert.ok(res.result.killed.includes(stray.pid), "the stray was stopped");
+  assert.deepEqual(res.result.survivors, []);
+  const forked = existsSync(late) ? Number(readFileSync(late, "utf8")) : null;
+  if (forked) planted.push(forked);
+  assert.ok(await waitDead(stray.pid));
+  assert.equal(forked === null || !alive(forked), true, `its child ${forked} outlived the sweep`);
+  const left = spawnSync("pgrep", ["-f", "sleep 301"], { encoding: "utf8" }).stdout.trim();
+  assert.equal(left, "", "no sleep 301 runs");
+});

@@ -125,9 +125,9 @@ Without `--apply` it only reports. With it:
   is on main). One holding ignored files (`.env`, build output) is kept and named unless `--discard-ignored`;
 - stops each stray: a process whose executable, script (for an interpreter such as `node` or `sh`) or
   working directory is under `<root>/.agentry/run/`, that no lane still building owns. A command line that
-  only mentions such a path (`tail -f …/gate.log`) is not one. The stray and its whole descendant tree get
-  SIGTERM, then SIGKILL after two seconds, and sweep confirms they are gone. Any pid still running is listed
-  and the exit is 1;
+  only mentions such a path (`tail -f …/gate.log`) is not one. The stray and its whole descendant tree are
+  frozen first (SIGSTOP, looking again for children until none is new, so no member can fork its way out),
+  then get SIGKILL, and sweep confirms they are gone. Any pid still running is listed and the exit is 1;
 - never signals an interactive shell: a process on a controlling terminal, a login shell (`-zsh`), or a
   shell run with `-i` (only an option before the script or `-c` counts). A terminal above a stray never
   spares it, and a `-i` shell with no terminal that a stray started is part of the stray. The owner's
