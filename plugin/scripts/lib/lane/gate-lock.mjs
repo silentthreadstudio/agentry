@@ -1,21 +1,32 @@
 // gate-lock — lanes queue their gates (`gate.concurrency`, default 1) so load-sensitive tests never run
-// against each other. A slot is a file `slot-<n>.lock` in a directory under `.agentry/run/`, created with
-// `wx` (one creator wins) and holding the pid of the process that took it. A slot whose pid is gone is
-// stale: the next taker removes it and takes the slot, so a killed lane never blocks the queue.
-// `exclusive` takes every slot (in order, so two of them cannot deadlock): a flaky re-run runs alone.
-// A lock file with no readable pid (empty, cut short, unreadable) is stale once it is `GRACE_MS` old: a
-// younger one may be a taker between create and write. Synchronous, like `runGate`. Node built-ins only.
-// The pid, holder and clock primitives are shared with `named-lock.mjs` (the workflow file's `locks`).
+// against each other. A slot is a file `slot-<n>.lock` in a directory under `.agentry/run/`, holding the
+// identity (`pid`, `start`: `process/pid.mjs`) of the process that took it and, once its command starts, that
+// command's group (`pgid`, `pgStart`). A slot is created whole (a temp file linked in: one creator wins) and
+// rewritten whole (a temp file renamed over it), always inside its write mutex `slot-<n>.lock.write`
+// (`serialized`, shared with named-lock), so no reader sees one empty or cut short. A slot whose holder is
+// gone (its pid ended, or now names another process) and whose group is gone is stale: the next taker takes
+// it over, so a killed lane never blocks the queue. `exclusive` takes every slot (in order, so two of them
+// cannot deadlock): a flaky re-run runs alone. A lock file with no readable pid (empty, cut short, written by
+// an older version) is stale once it is `GRACE_MS` old. `staleGateSlots` lists for the sweep the slots whose
+// holder is gone, `clearGateSlot` removes one; every reader sweeps the dead writers' temp files first.
+// Synchronous, like `runGate`. Node built-ins only. The holder and clock primitives are shared with
+// `named-lock.mjs` (the workflow file's `locks`).
 import {
   appendFileSync,
+  linkSync,
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { atomicWrite, sweepTemps, tempOf } from "../fs/atomic.mjs";
+import { alive, groupAlive, identity } from "../process/pid.mjs";
+
+export { groupRunning, running } from "../process/pid.mjs";
 
 /** How often a waiting taker looks again, and how old a lock file with no readable pid must be to be stale. */
 export const POLL_MS = 200;
@@ -26,28 +37,6 @@ export const gateLockDir = (root) => join(root, ".agentry", "run", "gate-locks")
 
 const slotFile = (dir, n) => join(dir, `slot-${n}.lock`);
 
-/** Is `pid` a running process? EPERM means it is, and is not ours to signal. */
-export function running(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM";
-  }
-}
-
-/** Does any process of group `pgid` still run? A slot's `pgid` is the group of the command that holds it. */
-export function groupRunning(pgid) {
-  if (!Number.isInteger(pgid) || pgid <= 1) return false;
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM";
-  }
-}
-
 /** The parsed content of a lock file, or null when it is missing or not JSON. */
 export const holderOf = (file) => {
   try {
@@ -56,6 +45,19 @@ export const holderOf = (file) => {
     return null;
   }
 };
+
+/** Does the holder a record names (`pid`, `start`) still run as that same process? */
+export const holderAlive = (record) => alive({ pid: record?.pid, start: record?.start });
+
+/** The group a record names (`pgid`, `pgStart`), when a member of it still runs: its pgid, else null. */
+export const liveGroup = (record) =>
+  groupAlive(record?.pgid, record?.pgStart) ? record.pgid : null;
+
+/** A record of this process (or `pid`): `{ pid, start }`, `start` left out when it cannot be read. */
+export function recordOf(pid = process.pid) {
+  const { start } = identity(pid);
+  return start === null ? { pid } : { pid, start };
+}
 
 // A lock file nobody can be holding: no readable pid, and old enough not to be mid-write.
 function orphaned(file) {
@@ -66,28 +68,164 @@ function orphaned(file) {
   }
 }
 
-// Take slot `n`: true when this process now holds it. A slot held by a dead pid is taken over.
-function take(dir, n, who) {
-  const file = slotFile(dir, n);
-  const mine = JSON.stringify({ pid: process.pid, who, at: new Date().toISOString() });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      writeFileSync(file, mine, { flag: "wx" });
-      return true;
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-    }
-    const holder = holderOf(file);
-    // A file with no readable pid may be one being written right now: it goes only once it is old.
-    if (!Number.isInteger(holder?.pid)) {
-      if (!orphaned(file)) return false;
-      rmSync(file, { force: true });
-    } else {
-      if (running(holder.pid) || groupRunning(holder.pgid)) return false;
-      if (holderOf(file)?.pid === holder.pid) rmSync(file, { force: true });
-    }
+const textOf = (file) => {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return null;
   }
-  return false;
+};
+
+/** Create `file` holding `text`, whole, only when it is not there: true when this call made it. The text
+ *  goes to a temp file first, then is linked in (as exclusive as `wx`), so no reader ever sees it empty. */
+export function createWhole(file, text) {
+  const tmp = tempOf(file);
+  try {
+    writeFileSync(tmp, text);
+    linkSync(tmp, file);
+    return true;
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** Is the write mutex `file` left behind: its owner is no longer alive, or it is older than any write
+ *  (`GRACE_MS`)? It holds `{ pid, start, token }`; one in the older `<pid> <token>` form is read by its pid. */
+export function staleMutex(file) {
+  const text = textOf(file);
+  if (text === null) return false;
+  let owner;
+  try {
+    owner = JSON.parse(text);
+  } catch {
+    owner = null;
+  }
+  if (owner === null || typeof owner !== "object") owner = { pid: Number.parseInt(text, 10) };
+  if (Number.isInteger(owner.pid) && !holderAlive(owner)) return true;
+  try {
+    return Date.now() - statSync(file).mtimeMs > GRACE_MS;
+  } catch {
+    return false;
+  }
+}
+
+/** Take a stale write mutex out of the way by rename, never by compare-then-delete: it is renamed to this
+ *  process's temp name, and what was renamed is judged again. Still stale: removed. A live one that took the
+ *  stale one's place meanwhile: linked back (unless a newer one is there already). True when one was removed. */
+export function takeOverMutex(mutex) {
+  const grab = tempOf(mutex);
+  try {
+    renameSync(mutex, grab);
+  } catch {
+    return false; // gone already: another taker took it over
+  }
+  const stale = staleMutex(grab);
+  if (!stale)
+    try {
+      linkSync(grab, mutex);
+    } catch {
+      // a newer mutex is there: it stands
+    }
+  rmSync(grab, { force: true });
+  return stale;
+}
+
+/** Run `fn` as the only writer of slot `file`: every read-modify-write of a slot runs inside its write mutex
+ *  `<file>.write` (created whole, holding this process's identity and a token), so no rewrite loses another's.
+ *  A mutex left behind is taken over (`takeOverMutex`). */
+export function serialized(file, fn) {
+  const mutex = `${file}.write`;
+  const mine = JSON.stringify({ ...recordOf(), token: Math.random() });
+  for (;;) {
+    try {
+      if (createWhole(mutex, mine)) break;
+    } catch (error) {
+      if (error.code === "ENOENT") return fn(); // its directory is gone: nothing to serialize against
+      throw error;
+    }
+    if (!(staleMutex(mutex) && takeOverMutex(mutex))) nap(2);
+  }
+  try {
+    return fn();
+  } finally {
+    if (textOf(mutex) === mine) rmSync(mutex, { force: true });
+  }
+}
+
+/** The write mutexes in `dir` left behind (`staleMutex`), for the sweep; `takeOverMutex` removes one. */
+export function staleWriteLocks(dir) {
+  let files;
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return files
+    .filter((f) => /^slot-\d+\.lock\.write$/.test(f))
+    .map((f) => join(dir, f))
+    .filter(staleMutex);
+}
+
+// Is gate slot `file` (read as `holder`) held by nobody: its holder and its command's group are gone, or it
+// has no readable pid and is old?
+const staleGate = (file, holder) =>
+  Number.isInteger(holder?.pid)
+    ? !holderAlive(holder) && liveGroup(holder) === null
+    : orphaned(file);
+
+// Take slot `n`: true when this process now holds it. A slot held by nobody is taken over, inside its mutex.
+function take(dir, n, label) {
+  const file = slotFile(dir, n);
+  const mine = JSON.stringify({ ...recordOf(), who: label, at: new Date().toISOString() });
+  return serialized(file, () => {
+    if (createWhole(file, mine)) return true;
+    if (!staleGate(file, holderOf(file))) return false;
+    atomicWrite(file, mine);
+    return true;
+  });
+}
+
+// The gate slot files in `dir`, by number.
+function slotNumbers(dir) {
+  let files;
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return files
+    .map((f) => /^slot-(\d+)\.lock$/.exec(f)?.[1])
+    .filter(Boolean)
+    .map(Number)
+    .sort((x, y) => x - y);
+}
+
+/** The gate slots in `dir` nobody holds any more: `[{ file, slot, groups }]`, `groups` the pgid still
+ *  running of a slot whose holder died while its command lives on (the sweep stops it). */
+export function staleGateSlots(dir) {
+  return slotNumbers(dir).flatMap((slot) => {
+    const file = slotFile(dir, slot);
+    const holder = holderOf(file);
+    const dead = Number.isInteger(holder?.pid) ? !holderAlive(holder) : orphaned(file);
+    if (!dead) return [];
+    const group = liveGroup(holder);
+    return [{ file, slot, groups: group === null ? [] : [group] }];
+  });
+}
+
+/** Remove the gate slot `file` when nobody holds it any more (its holder and its group are gone), inside its
+ *  mutex: true when it was removed. */
+export function clearGateSlot(file) {
+  return serialized(file, () => {
+    if (textOf(file) === null || !staleGate(file, holderOf(file))) return false;
+    rmSync(file, { force: true });
+    return true;
+  });
 }
 
 /** An ISO time as local HH:MM (`?` when it is not a time). */
@@ -100,23 +238,13 @@ export const clock = (iso) => {
 
 /** The slots in `dir` a running process holds now: `[{ slot, pid, who, since }]` (`since` is HH:MM). */
 export function heldSlots(dir) {
-  let files;
-  try {
-    files = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  return files
-    .map((f) => /^slot-(\d+)\.lock$/.exec(f)?.[1])
-    .filter(Boolean)
-    .map(Number)
-    .sort((x, y) => x - y)
-    .flatMap((slot) => {
-      const holder = holderOf(slotFile(dir, slot));
-      return running(holder?.pid) || groupRunning(holder?.pgid)
-        ? [{ slot, pid: holder.pid, who: holder.who ?? "", since: clock(holder.at) }]
-        : [];
-    });
+  sweepTemps(dir);
+  return slotNumbers(dir).flatMap((slot) => {
+    const holder = holderOf(slotFile(dir, slot));
+    return holderAlive(holder) || liveGroup(holder) !== null
+      ? [{ slot, pid: holder.pid, who: holder.who ?? "", since: clock(holder.at) }]
+      : [];
+  });
 }
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -135,21 +263,30 @@ export function holdGate(
   { slots = 1, exclusive = false, who = "", waitSec = 3600, log = null, onNote = null } = {},
 ) {
   mkdirSync(dir, { recursive: true });
+  sweepTemps(dir);
   const held = [];
   // A slot whose command left a group running stays held (its pid is gone, its group is not).
   const release = () => {
     for (const n of held.splice(0)) {
       const file = slotFile(dir, n);
-      const holder = holderOf(file);
-      if (holder?.pid === process.pid && !groupRunning(holder.pgid)) rmSync(file, { force: true });
+      serialized(file, () => {
+        const holder = holderOf(file);
+        if (holder?.pid === process.pid && liveGroup(holder) === null)
+          rmSync(file, { force: true });
+      });
     }
   };
-  // Record the process group of the command that runs under the slots held.
+  // Record the process group of the command that runs under the slots held, by its leader's identity.
   const group = (pgid) => {
+    const { start } = identity(pgid);
     for (const n of held) {
       const file = slotFile(dir, n);
-      const holder = holderOf(file);
-      if (holder?.pid === process.pid) writeFileSync(file, JSON.stringify({ ...holder, pgid }));
+      serialized(file, () => {
+        const holder = holderOf(file);
+        if (holder?.pid !== process.pid) return;
+        const group = { pgid, ...(start !== null && { pgStart: start }) };
+        atomicWrite(file, JSON.stringify({ ...holder, ...group }));
+      });
     }
   };
   const deadline = Date.now() + waitSec * 1000;

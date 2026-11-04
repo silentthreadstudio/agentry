@@ -5,24 +5,53 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { constants } from "node:os";
 import { dirname, join } from "node:path";
-import { after, test } from "node:test";
+import { after, beforeEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { gateLockDir, holdGate } from "../lib/lane/gate-lock.mjs";
+import { sweepTemps } from "../lib/fs/atomic.mjs";
+import { clearGateSlot, gateLockDir, holdGate, staleGateSlots } from "../lib/lane/gate-lock.mjs";
+import { clearLockSlot, lockDirs, staleLockSlots } from "../lib/lane/named-lock.mjs";
 import { git, tempRepo } from "./git-repo.mjs";
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BIN = join(PLUGIN, "bin", "agentry");
 const NODE = process.execPath;
 const cleanups = [];
-after(() => {
+const repos = [];
+// The files left under a repo's lock and gate-lock directories once what is dead there is cleared: a
+// process, a held slot or a temp file a test leaked.
+function leftIn(dir) {
+  for (const s of staleLockSlots(dir)) clearLockSlot(s.file);
+  for (const s of staleGateSlots(gateLockDir(dir))) clearGateSlot(s.file);
+  return [gateLockDir(dir), ...lockDirs(dir)].flatMap((at) => {
+    sweepTemps(at);
+    return existsSync(at) ? readdirSync(at).map((name) => join(at, name)) : [];
+  });
+}
+after(async () => {
+  let left = [];
+  for (
+    const end = Date.now() + 3000;
+    Date.now() < end;
+    await new Promise((r) => setTimeout(r, 100))
+  ) {
+    left = repos.flatMap(({ dir, name }) => leftIn(dir).map((file) => `${name}: ${file}`));
+    if (!left.length) break;
+  }
   for (const done of cleanups) done();
+  assert.deepEqual(left, [], "a test left a slot, a mutex or a temp file behind");
+});
+let testName = "";
+beforeEach((t) => {
+  testName = t.name;
 });
 
 // A repo whose workflow file declares `locks` (none: no workflow file).
 function repo(locks) {
   const { dir, cleanup } = tempRepo();
   cleanups.push(cleanup);
+  repos.push({ dir, name: testName });
   mkdirSync(join(dir, ".agentry"), { recursive: true });
   if (locks) writeFileSync(join(dir, ".agentry", "workflow.json"), JSON.stringify({ locks }));
   return dir;
@@ -75,10 +104,10 @@ const until = async (check, ms = 10_000) => {
     await new Promise((r) => setTimeout(r, 25));
   }
 };
-const slots = (dir, name = "editor") => {
-  const at = join(dir, ".agentry", "run", "locks", name);
-  return existsSync(at) ? readdirSync(at) : [];
-};
+// The slot files of lock `name` (a write mutex held for a moment is not a slot).
+const slotNames = (at) =>
+  existsSync(at) ? readdirSync(at).filter((f) => /^slot-\d+\.lock$/.test(f)) : [];
+const slots = (dir, name = "editor") => slotNames(join(dir, ".agentry", "run", "locks", name));
 
 test("exits with the command's code, its stdin, stdout and stderr its own", async () => {
   const dir = repo();
@@ -307,6 +336,7 @@ test("a run inside its own take uses that take: no wait, no second slot, the tak
   assert.equal(run.status, 0);
   assert.equal(run.stderr, "lock editor: inside your own take\n");
   assert.deepEqual(slots(dir), ["slot-1.lock"], "the run does not release the take");
+  assert.equal((await agentry(["lock", "drop", "editor"], { cwd: dir, env })).status, 0);
 });
 
 test("a run by another session or another lane than the take still waits for it", async () => {
@@ -327,6 +357,8 @@ test("a run by another session or another lane than the take still waits for it"
     { cwd: wt, env: asSession(process.pid) },
   );
   assert.equal(lane.status, 75, "another lane of the same session");
+  const env = asSession(process.pid);
+  assert.equal((await agentry(["lock", "drop", "editor"], { cwd: dir, env })).status, 0);
 });
 
 test("a lane's worktree shares the main checkout's locks, named by its lane", async () => {
@@ -425,10 +457,7 @@ test("the briefs' time-limit rule names --wait, the gate line names the gate slo
   assert.match(readFileSync(join(refs, "lanes.md"), "utf8"), /`agentry run --limit <dur> -- …`/);
 });
 
-const gateSlots = (dir) => {
-  const at = join(dir, ".agentry", "run", "gate-locks");
-  return existsSync(at) ? readdirSync(at) : [];
-};
+const gateSlots = (dir) => slotNames(join(dir, ".agentry", "run", "gate-locks"));
 
 test("a run of a gate tier's argv takes the gate slot for its life and says so", async () => {
   const dir = repo();
@@ -502,7 +531,7 @@ test("the supervisor lives in lib/cli/supervise.mjs: run.mjs keeps the CLI and t
   assert.ok(Number.isInteger(started[0]) && started[0] > 1);
 });
 
-test("a command that exits but leaves a member of its group running keeps its slot as an orphan", async (t) => {
+test("a command that exits normally takes what it left of its group with it, and frees its slot", async () => {
   const dir = repo({ editor: 1 });
   const pidFile = join(dir, "left.pid");
   const run = await agentry(
@@ -521,28 +550,9 @@ test("a command that exits but leaves a member of its group running keeps its sl
   );
   assert.equal(run.status, 0);
   const left = Number(readFileSync(pidFile, "utf8"));
-  t.after(() => {
-    try {
-      process.kill(left, "SIGKILL");
-    } catch {
-      // gone already
-    }
-  });
-  const show = await agentry(["lock", "show"], { cwd: dir });
-  const pgid = Number(/orphan: pgid (\d+) still running/.exec(show.stdout)?.[1]);
-  assert.ok(pgid > 1, show.stdout);
-  const busy = await agentry(
-    ["run", "--limit", "5s", "--lock", "editor", "--wait", "1s", "--", ...js("")],
-    { cwd: dir },
-  );
-  assert.equal(busy.status, 75, "the leftover keeps the slot");
-  process.kill(left, "SIGKILL");
-  await until(() => !groupAlive(pgid));
-  const next = await agentry(["run", "--limit", "5s", "--lock", "editor", "--", ...js("")], {
-    cwd: dir,
-  });
-  assert.equal(next.status, 0);
-  assert.equal(next.stderr, "", "taken at once once the group is gone");
+  assert.equal(alive(left), false, "the background member is gone");
+  assert.deepEqual(slots(dir), []);
+  assert.deepEqual(leftIn(dir), [], "no slot, mutex or temp file");
 });
 
 test("kill -9 of a gate run leaves the gate slot held while the gate's group runs", async (t) => {
@@ -612,6 +622,7 @@ test("a take and a run with no session pid and the same lane are one identity", 
   );
   assert.equal(run.status, 0);
   assert.equal(run.stderr, "lock editor: inside your own take\n");
+  assert.equal((await agentry(["lock", "drop", "editor"], { cwd: dir })).status, 0);
 });
 
 test("a gate run takes the gate slot before its --lock, so the lock is not held while it queues", async () => {
@@ -733,6 +744,11 @@ test("a gate argv with --lock never holds the gate slot while the lock is busy, 
   const result = await run;
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stderr, /gate slot released while waiting/);
+  assert.doesNotMatch(
+    result.stderr,
+    /lock editor acquired/,
+    "the lock is let go at once, not acquired",
+  );
   assert.deepEqual(gateSlots(dir), []);
   assert.deepEqual(slots(dir), []);
 });
@@ -852,6 +868,8 @@ test("a gate argv whose own take ended while it queued for the gate does not rid
   const holder = JSON.parse(readFileSync(lockFile(dir), "utf8"));
   assert.equal(holder.who, "other");
   assert.equal(holder.riders, undefined, "no rider written into another session's take");
+  const drop = ["lock", "drop", "editor", "--for", "other"];
+  assert.equal((await agentry(drop, { cwd: dir, env: asSession(process.ppid) })).status, 0);
 });
 
 // A ride of session `env`'s take whose command writes `<name>.pid` (its pid) and then lives `ms`, or until
@@ -992,4 +1010,98 @@ test("lock drop on a take whose ridden run was killed names the group it kept th
   const drop = await agentry(["lock", "drop", "editor"], { cwd: dir, env });
   assert.equal(drop.status, 0);
   assert.equal(drop.stdout, `lock editor: kept while your run (pgid ${command}) rides it\n`);
+});
+
+// A command whose background member ignores every signal: only the group's SIGKILL ends it.
+const stubborn = (pidFile) => [
+  "sh",
+  "-c",
+  `${NODE} -e "for (const s of ['SIGINT','SIGTERM','SIGHUP']) process.on(s,()=>{});setInterval(()=>{},1000)" & echo $! > ${pidFile}; wait`,
+];
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
+  test(`${signal} to agentry run while its command runs ends the whole group and frees the lock and the gate slot`, async () => {
+    const dir = repo({ editor: 1 });
+    const pidFile = join(dir, "bg.pid");
+    const cmd = stubborn(pidFile);
+    writeFileSync(
+      join(dir, ".agentry", "workflow.json"),
+      JSON.stringify({ locks: { editor: 1 }, gate: { tiers: [{ name: "full", command: cmd }] } }),
+    );
+    const run = agentry(["run", "--limit", "60s", "--lock", "editor", "--", ...cmd], {
+      cwd: dir,
+      quiet: true,
+    });
+    await until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "");
+    const member = Number(readFileSync(pidFile, "utf8"));
+    assert.deepEqual([gateSlots(dir), slots(dir)], [["slot-1.lock"], ["slot-1.lock"]]);
+    run.child.kill(signal);
+    const { status } = await run;
+    assert.ok(status > 128, `the command's own end by a signal (${status})`);
+    await until(() => !alive(member), 2000);
+    assert.deepEqual(leftIn(dir), [], "no slot, mutex or temp file");
+  });
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
+  test(`${signal} to agentry run while it waits for the gate slot ends it at once, holding nothing`, async () => {
+    const dir = repo({ editor: 1 });
+    const tier = js("0");
+    writeFileSync(
+      join(dir, ".agentry", "workflow.json"),
+      JSON.stringify({ locks: { editor: 1 }, gate: { tiers: [{ name: "full", command: tier }] } }),
+    );
+    const gate = holdGate(gateLockDir(dir), { who: "someone" });
+    const run = agentry(
+      ["run", "--limit", "60s", "--lock", "editor", "--wait", "1m", "--", ...tier],
+      {
+        cwd: dir,
+      },
+    );
+    await sleepMs(700);
+    run.child.kill(signal);
+    const result = await run;
+    assert.equal(result.status, 128 + constants.signals[signal]);
+    assert.ok(result.ms < 3000, `ended after ${result.ms} ms`);
+    assert.match(result.stderr, /waiting for gate slot 1 \(held by someone since/);
+    assert.deepEqual(slots(dir), [], "no lock taken");
+    gate.release();
+    assert.deepEqual(leftIn(dir), []);
+  });
+
+test("a thrown error in agentry run's process still frees what it registered to free", async () => {
+  const dir = repo({ editor: 1 });
+  const lib = (path) => JSON.stringify(new URL(path, import.meta.url).href);
+  const child = spawn(
+    NODE,
+    [
+      "--input-type=module",
+      "-e",
+      `import { onEnd } from ${lib("../lib/cli/supervise.mjs")};
+       import { releaseLock, tryLock } from ${lib("../lib/lane/named-lock.mjs")};
+       const { slot } = tryLock(${JSON.stringify(dir)}, "editor", { slots: 1, who: "run" });
+       onEnd(() => releaseLock(${JSON.stringify(dir)}, "editor", slot));
+       throw new Error("boom");`,
+    ],
+    { stdio: "ignore" },
+  );
+  const code = await new Promise((resolve) => child.on("exit", resolve));
+  assert.equal(code, 1);
+  assert.deepEqual(leftIn(dir), [], "its slot was freed on the way out");
+});
+
+test("a thrown error while the command starts kills its group and rejects", async () => {
+  const dir = repo();
+  const pidFile = join(dir, "bg.pid");
+  const { supervise } = await import("../lib/cli/supervise.mjs");
+  let pgid = null;
+  await assert.rejects(
+    supervise(["sh", "-c", `sleep 30 & echo $! > ${pidFile}; wait`], 60_000, "60s", {
+      onStart: (started) => {
+        pgid = started;
+        throw new Error("cannot record the group");
+      },
+    }),
+    /cannot record the group/,
+  );
+  assert.equal(groupAlive(pgid), false, "the group is gone");
 });

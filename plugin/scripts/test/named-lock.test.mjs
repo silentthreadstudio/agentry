@@ -3,34 +3,78 @@
 // refusals. Run: node --test plugin/scripts/test/named-lock.test.mjs
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { after, test } from "node:test";
-import { fileURLToPath } from "node:url";
 import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { after, beforeEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { sweepTemps } from "../lib/fs/atomic.mjs";
+import { takeOverMutex } from "../lib/lane/gate-lock.mjs";
+import {
+  clearLockSlot,
   dropLock,
   dropOrphans,
   endRide,
   heldLocks,
   lockDir,
+  lockDirs,
   releaseLock,
   rideTake,
   setGroup,
+  staleLockSlots,
   tryLock,
 } from "../lib/lane/named-lock.mjs";
+import { identity } from "../lib/process/pid.mjs";
 import { tempRepo } from "./git-repo.mjs";
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BIN = join(PLUGIN, "bin", "agentry");
 const NODE = process.execPath;
 const cleanups = [];
-after(() => {
-  for (const done of cleanups) done();
+const repos = [];
+// The files left under a repo's `.agentry/run/locks` once what is dead there is cleared: a live process or a
+// held slot a test leaked.
+function leftIn(dir) {
+  for (const s of staleLockSlots(dir)) clearLockSlot(s.file);
+  return lockDirs(dir).flatMap((at) => {
+    sweepTemps(at, /^slot-\d+\.lock\.(\d+)\.tmp$/);
+    return readdirSync(at).map((name) => join(at, name));
+  });
+}
+after(async () => {
+  const repoCleanups = cleanups.splice(0, cleanups.length);
+  // The sessions and groups first (and reaped: a zombie still reads as running), so what they held reads
+  // dead; then every repo's locks must be clean.
+  await Promise.all(repoCleanups.filter((c) => !c.repo).map((done) => done()));
+  let left = [];
+  for (
+    const end = Date.now() + 3000;
+    Date.now() < end;
+    await new Promise((r) => setTimeout(r, 100))
+  ) {
+    left = repos.flatMap(({ dir, name }) => leftIn(dir).map((file) => `${name}: ${file}`));
+    if (!left.length) break;
+  }
+  for (const done of repoCleanups.filter((c) => c.repo)) done();
+  assert.deepEqual(left, [], "a test left a slot, a mutex or a temp file behind");
+});
+
+let testName = "";
+beforeEach((t) => {
+  testName = t.name;
 });
 
 function repo(locks = { editor: 1 }) {
   const { dir, cleanup } = tempRepo();
-  cleanups.push(cleanup);
+  cleanups.push(Object.assign(cleanup, { repo: true }));
+  repos.push({ dir, name: testName });
   mkdirSync(join(dir, ".agentry"), { recursive: true });
   writeFileSync(join(dir, ".agentry", "workflow.json"), JSON.stringify({ locks }));
   return dir;
@@ -63,7 +107,10 @@ function later(dir, args, session) {
 function session() {
   const child = spawn(NODE, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
   const gone = new Promise((resolve) => child.on("exit", resolve));
-  cleanups.push(() => child.kill("SIGKILL"));
+  cleanups.push(() => {
+    child.kill("SIGKILL");
+    return gone;
+  });
   return {
     pid: child.pid,
     end: () => {
@@ -140,6 +187,7 @@ test("a take ends when its session's pid is gone, long before its ttl", async ()
     /^waiting for lock editor \(held by T-1 since .*\)\nlock editor acquired\n$/,
   );
   assert.match(lock(dir, ["show"]).stdout, /slot 1: T-2 since/);
+  assert.equal(lock(dir, ["drop", "editor", "--for", "T-2"]).status, 0);
 });
 
 test("a take gives up after --wait: exit 75 naming the holder, and takes nothing", () => {
@@ -225,6 +273,7 @@ test("capacity 2: two holders at once, the third is told who holds it; release f
     ["C"],
     "a slot past the capacity counts for nothing",
   );
+  for (const n of [1, 2]) releaseLock(dir, "sim", n);
 });
 
 test("an old unreadable slot file is taken over; a young one may be mid-write and is left", () => {
@@ -237,6 +286,7 @@ test("an old unreadable slot file is taken over; a young one may be mid-write an
   const old = new Date(Date.now() - 60_000);
   utimesSync(file, old, old);
   assert.equal(tryLock(dir, "editor", { slots: 1 }).slot, 1, "old: taken over");
+  releaseLock(dir, "editor", 1);
 });
 
 test("dropLock frees only the takes of that session and who", () => {
@@ -253,6 +303,7 @@ test("dropLock frees only the takes of that session and who", () => {
     kept: null,
   });
   assert.deepEqual(readdirSync(lockDir(dir, "sim")), ["slot-2.lock"]);
+  releaseLock(dir, "sim", 2);
 });
 
 test("a ridden take stays held after a drop until the ride ends, then goes; a ride's end restores the take's own until", () => {
@@ -298,6 +349,7 @@ test("a take with no session pid refreshes its own slot for the same --for; anot
   assert.equal(again.stderr, "", "no wait for itself");
   assert.deepEqual(readdirSync(lockDir(dir, "editor")), ["slot-1.lock"]);
   assert.equal(lock(dir, ["take", "editor", "--for", "T-2", "--wait", "1s"]).status, 75);
+  assert.equal(lock(dir, ["drop", "editor", "--for", "T-1"]).status, 0);
 });
 
 test("a slot whose run died stays held while its command's group runs, and is free the moment it is gone", async () => {
@@ -323,6 +375,7 @@ test("a slot whose run died stays held while its command's group runs, and is fr
   await gone;
   assert.deepEqual(heldLocks(dir, "editor", 1), [], "free once the group is gone");
   assert.equal(tryLock(dir, "editor", { slots: 1, who: "next" }).slot, 1);
+  releaseLock(dir, "editor", 1);
 });
 
 test("rideTake rides only this session's own take for that who: another session's take is left as it is", () => {
@@ -333,6 +386,7 @@ test("rideTake rides only this session's own take for that who: another session'
   assert.equal(rideTake(dir, "sim", { ...ride, session: process.pid }), null, "not this session's");
   assert.equal(rideTake(dir, "sim", { ...ride, session: null }), null, "not this who's");
   assert.equal(readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"), "utf8"), before);
+  assert.equal(dropLock(dir, "sim", { slots: 1, pid: null, who: "OTHER" }).dropped, 1);
 });
 
 for (const how of ["is killed", "ends"])
@@ -378,6 +432,8 @@ test("a take again with a longer ttl while it is ridden lasts to the longer of t
   tryLock(dir, "sim", { ...take, ttlMs: 7_200_000 });
   const { until } = JSON.parse(readFileSync(join(lockDir(dir, "sim"), "slot-1.lock"), "utf8"));
   assert.ok(Date.parse(until) > Date.now() + 3_600_000, `until ${until}`);
+  endRide(dir, "sim", 1, rider.pid);
+  assert.equal(dropLock(dir, "sim", take).dropped, 1);
 });
 
 // `code` run as an ES module in a child that imports named-lock.mjs as `lock`: a promise of its exit.
@@ -416,6 +472,7 @@ test("a slot file another process keeps rewriting never reads empty or cut short
   }
   await writer;
   assert.equal(torn, 0, `${torn} reads saw a slot file mid-write`);
+  assert.equal(dropLock(dir, "sim", take).dropped, 1);
 });
 
 test("dropOrphans frees a take whose riders are all gone but leave a group running, naming the pgid; a live rider is refused", async () => {
@@ -446,4 +503,256 @@ test("dropOrphans frees a take whose riders are all gone but leave a group runni
   await rider.end();
   assert.deepEqual(dropOrphans(dir, "sim", 1), { freed: [group.pid], alive: null });
   assert.deepEqual(heldLocks(dir, "sim", 1), []);
+});
+
+// A lock dir's files, sorted.
+const files = (dir, name = "editor") =>
+  existsSync(lockDir(dir, name)) ? readdirSync(lockDir(dir, name)).sort() : [];
+const deadPid = () => spawnSync(NODE, ["-e", ""]).pid;
+const slotPath = (dir, name = "editor", n = 1) => join(lockDir(dir, name), `slot-${n}.lock`);
+
+test("a slot whose pid now names another process (a wrong start) is free; its own start holds it", () => {
+  const dir = repo();
+  const host = session();
+  mkdirSync(lockDir(dir, "editor"), { recursive: true });
+  const at = new Date().toISOString();
+  writeFileSync(slotPath(dir), JSON.stringify({ ...identity(host.pid), who: "live", at }));
+  assert.ok(tryLock(dir, "editor", { slots: 1, who: "next" }).busy, "the holder's own pid: held");
+  assert.deepEqual(staleLockSlots(dir), [], "never listed for the sweep");
+  writeFileSync(
+    slotPath(dir),
+    JSON.stringify({ pid: host.pid, start: "wrong", who: "reused", at }),
+  );
+  assert.deepEqual(heldLocks(dir, "editor", 1), [], "a reused pid reads dead");
+  assert.equal(tryLock(dir, "editor", { slots: 1, who: "next" }).slot, 1);
+  releaseLock(dir, "editor", 1);
+});
+
+test("a ride whose run's pid was reused reads gone: the take is back at its own until", async () => {
+  const dir = repo({ sim: 1 });
+  const host = session();
+  const now = Date.now();
+  mkdirSync(lockDir(dir, "sim"), { recursive: true });
+  const take = {
+    pid: null,
+    who: "T-1",
+    at: new Date(now).toISOString(),
+    ownUntil: new Date(now - 1000).toISOString(),
+    until: new Date(now + 3_600_000).toISOString(),
+  };
+  const rider = { pid: host.pid, start: "wrong" };
+  writeFileSync(slotPath(dir, "sim"), JSON.stringify({ ...take, riders: [rider] }));
+  assert.deepEqual(heldLocks(dir, "sim", 1), [], "its own until has passed");
+  writeFileSync(slotPath(dir, "sim"), JSON.stringify({ ...take, riders: [identity(host.pid)] }));
+  assert.equal(heldLocks(dir, "sim", 1).length, 1, "a live rider holds it");
+  await host.end();
+  assert.deepEqual(heldLocks(dir, "sim", 1), [], "and its end ends it");
+});
+
+test("every reader sweeps the temp files of a dead writer (both namings) first; a live writer's stays", () => {
+  const dir = repo();
+  mkdirSync(lockDir(dir, "editor"), { recursive: true });
+  const dead = deadPid();
+  const left = [`slot-1.lock.agentry-${dead}.tmp`, `slot-1.lock.${dead}.tmp`];
+  const live = `slot-1.lock.agentry-${process.ppid}.tmp`;
+  for (const name of [...left, live]) writeFileSync(join(lockDir(dir, "editor"), name), "{");
+  assert.deepEqual(heldLocks(dir, "editor", 1), []);
+  assert.deepEqual(files(dir), [live]);
+  writeFileSync(join(lockDir(dir, "editor"), left[0]), "{");
+  assert.equal(tryLock(dir, "editor", { slots: 1, who: "run" }).slot, 1);
+  assert.deepEqual(files(dir), ["slot-1.lock", live]);
+  releaseLock(dir, "editor", 1);
+  rmSync(join(lockDir(dir, "editor"), live));
+});
+
+// A write mutex left at slot 1 holding `text`, `ageMs` old.
+function mutex(dir, text, ageMs = 0) {
+  mkdirSync(lockDir(dir, "editor"), { recursive: true });
+  const file = `${slotPath(dir)}.write`;
+  writeFileSync(file, text);
+  const at = new Date(Date.now() - ageMs);
+  utimesSync(file, at, at);
+  return file;
+}
+
+test("a write-lock whose owner is gone, or whose pid names another process, is taken over at once", () => {
+  for (const owner of [
+    { pid: deadPid(), token: 1 },
+    { pid: process.ppid, start: "wrong" },
+  ]) {
+    const dir = repo();
+    mutex(dir, JSON.stringify(owner));
+    const started = Date.now();
+    assert.equal(tryLock(dir, "editor", { slots: 1, who: "run" }).slot, 1);
+    assert.ok(Date.now() - started < 1000, `took ${Date.now() - started} ms`);
+    releaseLock(dir, "editor", 1);
+    assert.deepEqual(files(dir), [], "no mutex left, no grabbed copy");
+  }
+  const dir = repo();
+  mutex(dir, `${deadPid()} 0.1`);
+  assert.equal(tryLock(dir, "editor", { slots: 1, who: "run" }).slot, 1, "the older form too");
+  releaseLock(dir, "editor", 1);
+});
+
+test("a fresh write-lock of a live owner is waited on, and taken over once it is older than any write", () => {
+  const dir = repo();
+  mutex(dir, JSON.stringify({ ...identity(process.ppid), token: 2 }));
+  const started = Date.now();
+  assert.equal(tryLock(dir, "editor", { slots: 1, who: "run" }).slot, 1);
+  const waited = Date.now() - started;
+  assert.ok(waited >= 1500 && waited < 5000, `waited ${waited} ms`);
+  releaseLock(dir, "editor", 1);
+  assert.deepEqual(files(dir), []);
+});
+
+test("a stale write-lock is taken over by rename, then verify: a live one found in its place is put back", () => {
+  const dir = repo();
+  const live = JSON.stringify({ ...identity(), token: 3 });
+  const file = mutex(dir, live);
+  assert.equal(takeOverMutex(file), false, "what was renamed is live: not removed");
+  assert.equal(readFileSync(file, "utf8"), live, "put back as it was");
+  assert.deepEqual(files(dir), ["slot-1.lock.write"], "no grabbed copy left");
+  writeFileSync(file, JSON.stringify({ pid: deadPid() }));
+  assert.equal(takeOverMutex(file), true);
+  assert.deepEqual(files(dir), []);
+  assert.equal(takeOverMutex(file), false, "gone already: another taker took it over");
+});
+
+test("stampede: of 8 sessions taking at once exactly one wins, and 6 rides of one take started together are all recorded", async () => {
+  const dir = repo();
+  const hosts = Array.from({ length: 8 }, () => session());
+  const takes = await Promise.all(
+    hosts.map((h) => later(dir, ["lock", "take", "editor", "--ttl", "1m", "--wait", "1s"], h.pid)),
+  );
+  assert.equal(takes.filter((t) => t.status === 0).length, 1, takes.map((t) => t.status).join());
+  assert.ok(takes.every((t) => [0, 75].includes(t.status)));
+  const winner = hosts[takes.findIndex((t) => t.status === 0)];
+  assert.equal(lock(dir, ["drop", "editor"], winner.pid).status, 0);
+  assert.equal(lock(dir, ["take", "editor", "--ttl", "5m"], hosts[0].pid).status, 0);
+  const marks = join(dir, "marks");
+  mkdirSync(marks);
+  const rides = Array.from({ length: 6 }, (_, k) =>
+    later(
+      dir,
+      [
+        "run",
+        "--limit",
+        "20s",
+        "--lock",
+        "editor",
+        "--wait",
+        "2s",
+        "--",
+        NODE,
+        "-e",
+        `require('fs').writeFileSync(${JSON.stringify(join(marks, String(k)))},String(process.ppid));setTimeout(()=>{},2500)`,
+      ],
+      hosts[0].pid,
+    ),
+  );
+  const start = Date.now();
+  while (readdirSync(marks).length < 6 && Date.now() - start < 10_000)
+    await new Promise((r) => setTimeout(r, 50));
+  const runs = readdirSync(marks).map((k) => Number(readFileSync(join(marks, k), "utf8")));
+  const riders = JSON.parse(readFileSync(slotPath(dir), "utf8")).riders.map((r) => r.pid);
+  assert.deepEqual(riders.sort(), runs.sort(), "every ride is recorded");
+  const ended = await Promise.all(rides);
+  assert.deepEqual(
+    ended.map((r) => r.status),
+    [0, 0, 0, 0, 0, 0],
+  );
+  assert.equal(lock(dir, ["drop", "editor"], hosts[0].pid).status, 0);
+  assert.deepEqual(files(dir), [], "nothing left after the rides and the drop");
+});
+
+test("kill -9 of a slot rewriter mid-write: the next take answers within its wait, and the next read leaves only the slot", async () => {
+  const dir = repo();
+  const host = session();
+  const url = JSON.stringify(new URL("../lib/lane/named-lock.mjs", import.meta.url).href);
+  const take = { slots: 1, pid: host.pid, who: "hammer", ttlMs: 60_000 };
+  for (let round = 0; round < 5; round++) {
+    const hammer = spawn(
+      NODE,
+      [
+        "--input-type=module",
+        "-e",
+        `import { tryLock } from ${url};
+        for (;;) tryLock(${JSON.stringify(dir)}, "editor", ${JSON.stringify(take)});`,
+      ],
+      { stdio: "ignore" },
+    );
+    const gone = new Promise((resolve) => hammer.on("exit", resolve));
+    await new Promise((r) => setTimeout(r, 200 + round * 70));
+    hammer.kill("SIGKILL");
+    await gone;
+    const started = Date.now();
+    const other = lock(dir, ["take", "editor", "--ttl", "1m", "--wait", "1s"]);
+    assert.equal(other.status, 75, "the hammer's take is live: busy");
+    assert.ok(Date.now() - started < 4000, `answered after ${Date.now() - started} ms`);
+    heldLocks(dir, "editor", 1);
+    assert.deepEqual(files(dir), ["slot-1.lock"], "no temp file or mutex left after a read");
+  }
+  await host.end();
+});
+
+test("lock show marks a drop kept for a ride and an orphaned ride; --orphan with --for is refused", async () => {
+  const dir = repo({ sim: 1 });
+  const rider = session();
+  const group = spawn(NODE, ["-e", "setInterval(()=>{},1000)"], {
+    stdio: "ignore",
+    detached: true,
+  });
+  cleanups.push(() => {
+    try {
+      process.kill(-group.pid, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  });
+  tryLock(dir, "sim", { slots: 1, pid: null, who: "T-1", ttlMs: 60_000 });
+  rideTake(dir, "sim", {
+    slots: 1,
+    session: null,
+    who: "T-1",
+    untilMs: Date.now() + 60_000,
+    pid: rider.pid,
+  });
+  setGroup(dir, "sim", 1, group.pid, rider.pid);
+  assert.deepEqual(dropLock(dir, "sim", { slots: 1, pid: null, who: "T-1" }), {
+    dropped: 0,
+    kept: { pid: rider.pid },
+  });
+  assert.match(lock(dir, ["show"]).stdout, /slot 1: T-1 since .*, dropped: kept while ridden\n$/);
+  await rider.end();
+  assert.match(
+    lock(dir, ["show"]).stdout,
+    new RegExp(`, dropped: kept while ridden, orphaned ride: pgid ${group.pid} still running\n$`),
+  );
+  const refused = lock(dir, ["drop", "sim", "--orphan", "--for", "T-1"]);
+  assert.equal(refused.status, 2);
+  assert.match(refused.stderr, /--orphan takes no --for/);
+  assert.equal(heldLocks(dir, "sim", 1).length, 1, "a refusal frees nothing");
+  assert.equal(lock(dir, ["drop", "sim", "--orphan"]).status, 0);
+  assert.deepEqual(files(dir, "sim"), []);
+});
+
+test("the sweep's listing: a dead holder is listed with its group, a pid-less take within its until never is", async () => {
+  const dir = repo({ editor: 1, sim: 1 });
+  const group = spawn(NODE, ["-e", "setInterval(()=>{},1000)"], {
+    stdio: "ignore",
+    detached: true,
+  });
+  const dead = deadPid();
+  tryLock(dir, "editor", { slots: 1, pid: dead, who: "run" });
+  setGroup(dir, "editor", 1, group.pid, dead);
+  tryLock(dir, "sim", { slots: 1, pid: null, who: "T-1", ttlMs: 60_000 });
+  const file = slotPath(dir);
+  assert.deepEqual(staleLockSlots(dir), [{ file, lock: "editor", slot: 1, groups: [group.pid] }]);
+  assert.equal(clearLockSlot(file), false, "kept while its group runs");
+  process.kill(-group.pid, "SIGKILL");
+  await new Promise((resolve) => group.on("exit", resolve));
+  assert.equal(clearLockSlot(file), true);
+  assert.deepEqual(staleLockSlots(dir), [], "the pid-less take is still within its until");
+  assert.equal(clearLockSlot(slotPath(dir, "sim")), false);
+  assert.equal(dropLock(dir, "sim", { slots: 1, pid: null, who: "T-1" }).dropped, 1);
 });

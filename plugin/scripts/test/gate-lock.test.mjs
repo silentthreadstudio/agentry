@@ -16,7 +16,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { heldSlots, holdGate } from "../lib/lane/gate-lock.mjs";
+import { clearGateSlot, heldSlots, holdGate, staleGateSlots } from "../lib/lane/gate-lock.mjs";
+import { identity } from "../lib/process/pid.mjs";
 
 const temps = [];
 after(() => {
@@ -208,4 +209,91 @@ test("heldSlots lists the slots running processes hold, not a dead one's", () =>
   } finally {
     holder.kill("SIGKILL");
   }
+});
+
+test("a gate slot another process keeps taking, grouping and releasing never reads empty or cut short", async () => {
+  const dir = lockDir();
+  mkdirSync(dir, { recursive: true });
+  const url = JSON.stringify(new URL("../lib/lane/gate-lock.mjs", import.meta.url).href);
+  const writer = spawn(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { holdGate } from ${url};
+       const end = Date.now() + 2500;
+       while (Date.now() < end) { const h = holdGate(${JSON.stringify(dir)}, { who: "hammer", waitSec: 1 }); h.group?.(process.pid); h.release?.(); }`,
+    ],
+    { stdio: "inherit" },
+  );
+  const done = new Promise((resolve) => writer.on("exit", resolve));
+  const file = join(dir, "slot-1.lock");
+  let reads = 0;
+  let torn = 0;
+  for (const end = Date.now() + 2000; Date.now() < end; ) {
+    let text;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      continue; // between a release and the next take
+    }
+    reads++;
+    try {
+      if (!Number.isInteger(JSON.parse(text).pid)) torn++;
+    } catch {
+      torn++;
+    }
+  }
+  assert.equal(await done, 0);
+  assert.ok(reads > 0, "the slot was seen held");
+  assert.equal(torn, 0, `${torn} of ${reads} reads saw a gate slot empty or mid-write`);
+  assert.deepEqual(slots(dir), [], "nothing left: no slot, mutex or temp file");
+});
+
+test("a gate slot whose pid now names another process (a wrong start) is taken over; the right start holds", () => {
+  const dir = lockDir();
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "slot-1.lock");
+  const holder = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
+  try {
+    writeFileSync(file, JSON.stringify({ ...identity(holder.pid), who: "lane live", at: "t" }));
+    assert.ok(holdGate(dir, { waitSec: 0 }).busy, "its own pid and start: held");
+    assert.deepEqual(staleGateSlots(dir), [], "never listed as stale");
+    writeFileSync(
+      file,
+      JSON.stringify({ pid: holder.pid, start: "wrong", who: "lane gone", at: "t" }),
+    );
+    const taken = holdGate(dir, { waitSec: 0 });
+    assert.ok(taken.release, "a reused pid reads dead");
+    taken.release();
+    assert.deepEqual(slots(dir), []);
+  } finally {
+    holder.kill("SIGKILL");
+  }
+});
+
+test("staleGateSlots lists a slot whose holder is gone with the group it left running; clearGateSlot waits for the group", async () => {
+  const dir = lockDir();
+  mkdirSync(dir, { recursive: true });
+  const group = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+    stdio: "ignore",
+    detached: true,
+  });
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
+  const file = join(dir, "slot-1.lock");
+  const { start } = identity(group.pid);
+  writeFileSync(
+    file,
+    JSON.stringify({ pid: dead, who: "lane gone", pgid: group.pid, pgStart: start }),
+  );
+  try {
+    assert.deepEqual(staleGateSlots(dir), [{ file, slot: 1, groups: [group.pid] }]);
+    assert.equal(clearGateSlot(file), false, "its group still runs: the slot stays");
+  } finally {
+    group.kill("SIGKILL");
+  }
+  await new Promise((resolve) => group.on("exit", resolve));
+  assert.deepEqual(staleGateSlots(dir), [{ file, slot: 1, groups: [] }]);
+  assert.equal(clearGateSlot(file), true);
+  assert.deepEqual(slots(dir), []);
 });
