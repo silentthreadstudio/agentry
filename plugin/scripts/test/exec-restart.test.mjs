@@ -398,3 +398,30 @@ test(
     assert.match(readFileSync(diff, "utf8"), /\+\+\+ b\/more\.txt/);
   },
 );
+
+// ---- the old lane's verdict on the board (R1d-23 r2 N2) ------------------------------------------------
+
+test("restarting a verified lane clears its board verdict: the new lane has none yet", () => {
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  writeFileSync(out.reportPath, "DONE\nchanged three.txt\nused_memories: none\n");
+  out = lane(r, "report", "T3").json;
+  writeFileSync(out.reportPath, "Checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, "verdict", "T3").json.next, "gate");
+  const row = () =>
+    readFileSync(join(r.root, "plan", "BOARD.md"), "utf8")
+      .split("\n")
+      .find((l) => l.startsWith("| T3 "));
+  assert.match(row(), /\| PASS +\|$/);
+  const t2 = lane(r, "start", "T2").json;
+  writeFileSync(join(t2.worktree, "four.txt"), "half\n");
+  const res = lane(r, "restart", "T3");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.match(row(), /^\| T3 +\| doing +\| +\|$/);
+  assert.equal(res.json.warning, undefined);
+  // The clear is recorded: another running lane's guard lets it through.
+  const parked = lane(r, "hold", "T2", "--for", "later");
+  assert.equal(parked.exit, 0, parked.stderr);
+  assert.equal(parked.json["main moved while parked"], undefined);
+});

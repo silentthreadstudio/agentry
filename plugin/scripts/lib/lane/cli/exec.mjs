@@ -29,8 +29,9 @@
 //                             `<id>.<n>`, keep its branch as `agentry/<id>.<n>`, start it again from main;
 //                             `--carry` picks its commits and applies its uncommitted diff (stops on a conflict)
 //
-// Board writes go through `applyEvent` only (no `lifecycle` → none). Exit 0 = next printed, 1 = the lane
-// stopped (or the gate is red), 2 = usage or refusal (nothing changed).
+// Board writes go through `applyEvent` only (no `lifecycle` → none), and a restart's clear of the old
+// lane's verdict through `board set`, which records it. Exit 0 = next printed, 1 = the lane stopped (or
+// the gate is red), 2 = usage or refusal (nothing changed).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
 import {
@@ -50,6 +51,7 @@ import { prefix } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { episodeStored } from "../../memory/episodes.mjs";
 import { contentOf as contentIds, recordedSince } from "../../process/board-writes.mjs";
+import { run as boardSet } from "../../process/cli/set.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { kindOf, runId } from "../../process/ids.mjs";
@@ -1306,7 +1308,13 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   } catch (e) {
     refuse(e.message);
   }
-  const { restarted = null, carried = null, shown = {}, exit = 0 } = again ? again(tree.path) : {};
+  const {
+    restarted = null,
+    carried = null,
+    shown = {},
+    warnings = [],
+    exit = 0,
+  } = again ? again(tree.path) : {};
   let board;
   let moves;
   try {
@@ -1370,7 +1378,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     ? "! owns names tests but no test file: add the test paths (exec owns <id> --set … --apply)"
     : null;
   const chain = parent ? chainOf(ledgers.list(root), parent.id) : [];
-  const overlap = [...outside, ownsOverlap(root, ledger.owned, chain), noTests, frozen]
+  const overlap = [...outside, ownsOverlap(root, ledger.owned, chain), noTests, frozen, ...warnings]
     .filter(Boolean)
     .join("\n");
   ledger = dispatchNext(ctx, ledger, begin(ledger.steps).dispatch);
@@ -2451,6 +2459,22 @@ function restack(ctx, id) {
   });
 }
 
+// The board's verdict cell (`lifecycle.write.verdict`) is the old lane's: a restarted lane has none yet, so it
+// is cleared through `board set` (recorded, so no running lane's guard trips on it). null when there was
+// none or it was cleared, else the line saying how to clear it by hand.
+function clearVerdict({ root, spec, model, kind }, id) {
+  const life = lifecycleOf(spec, kind);
+  const field = own(life?.write, "verdict");
+  if (typeof field !== "string") return null;
+  const item = own(model.kinds, life.kind)?.items.find((i) => i.id === id);
+  const was = item?.fields?.[field];
+  if (was === null || was === undefined || String(was).trim() === "") return null;
+  const res = boardSet([life.kind, id, `${field}=`, "--apply", "--json"], { root, spec, model });
+  return res.exit === 0
+    ? null
+    : `! board ${field} ${was} is from the old lane: agentry board set ${life.kind} ${id} ${field}= --apply`;
+}
+
 // The old builder's last report, as the archive holds it: the report a guard trip saved, else the newest
 // build round's report (or its held copy) that is there; null when no builder reported.
 function lastReport(ledger, runs) {
@@ -2520,6 +2544,7 @@ function restart(ctx, id) {
   let kept = null;
   let drop = false;
   const again = (path) => {
+    const warnings = [clearVerdict(ctx, id)].filter(Boolean);
     const restarted = {
       from: `${id}.${n}`,
       ledger: archived.ledger,
@@ -2529,6 +2554,7 @@ function restart(ctx, id) {
     if (!withWork)
       return {
         restarted: { ...restarted, branch: kept },
+        warnings,
         shown: { restarted: `archived as ${id}.${n}; the old branch is kept as ${kept ?? "none"}` },
       };
     const res = carry(path, { base: old.base, tip: left.tip, diff });
@@ -2546,6 +2572,7 @@ function restart(ctx, id) {
     return {
       restarted: { ...restarted, branch },
       carried,
+      warnings,
       exit: res.ok ? 0 : 1,
       shown: {
         restarted: `archived as ${id}.${n}${branch ? `; the old branch is kept as ${branch}` : ""}`,
