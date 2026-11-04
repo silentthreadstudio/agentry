@@ -1150,6 +1150,11 @@ test("the rebase brief lists each commit that breaks a commits rule under Reword
     "a commit that keeps every rule is never listed",
   );
   assert.match(text, /no reworded commit, except the ones listed under Reword, no extra commit/);
+  assert.match(
+    section,
+    /`git commit --amend` for the\ntip, or a rebase with `exec` for one before it, no `-i`/,
+    "the section says how to reword",
+  );
   assert.equal(text.split("## Reword").length, 2);
   assert.ok(text.indexOf("owns `a.txt`") < text.indexOf("## Reword"), "after the contract");
 });

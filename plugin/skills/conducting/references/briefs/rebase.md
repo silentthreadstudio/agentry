@@ -41,7 +41,8 @@ The contract, for what this branch's side means:
 ## Reword
 
 The land refuses these commits: each breaks the workflow file's `commits` rules. Reword each one as you
-rebase, its message only (its change stays as it is), without an interactive editor, so it keeps every rule.
+rebase, its message only (its change stays as it is), so it keeps every rule: `git commit --amend` for the
+tip, or a rebase with `exec` for one before it, no `-i`.
 
 {{rewordLines}}
 
