@@ -7,6 +7,59 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **`agentry run` and named locks** — `agentry run --limit <dur> [--lock <name>] [--wait <dur>] -- <cmd>`
+  runs a command (no shell) in its own process group and stops the whole group at the limit (SIGTERM, then
+  SIGKILL 5 s later; exit 124), since macOS ships no `timeout`. `locks` in `workflow.json` (`{ "editor": 1 }`)
+  declares locks shared by every worktree: `--lock` waits for a slot and holds it while the command's group
+  lives (exit 75 when it stays busy for `--wait`, 10 minutes by default). `agentry lock take <name>` /
+  `drop <name>` hold one across tool calls, for a shared editor driven through MCP, until `--ttl` (30 minutes)
+  or the session ends; `lock show` lists the holders and `lock drop --orphan` frees a slot only a leftover
+  process group holds. A command that is a `gate.tiers` argv takes the gate slot the same way. Build and verify
+  briefs name `agentry run --limit` in their time-limit rule, and the lock to take when `locks` is declared.
+- **`lane merge <id> --resolve landed|rolled-back`** — closes a land left in `merging` that cannot go on, on
+  the owner's call, after checking main. `landed` needs every recorded pick on main: the ledger is merged and
+  the board's done row and handoff line are the owner's; any lane stacked on it is named with its
+  `restack --main` step. `rolled-back` needs no pick on main (found by sha, by author, date and message, or by
+  patch; a reverted pick still counts as on main): the lane is verified again. Both refuse while git is
+  mid-pick, while the ledger still holds what the land set aside, or when git cannot tell, and touch neither
+  main nor the board. `lane exec start` refuses while a land's picks are on main (a red gate may still take them off) and names
+  it.
+- **`lane exec restart <id> [--carry]`** — a lane that is not merged and has no agent out is archived as
+  `<id>.<n>` (its branch kept as `agentry/<id>.<n>`) and started again from main, the old verdict cleared on
+  the board. With `--carry` its commits and uncommitted diff come along, and the new brief names what was
+  carried and the old report; a conflict is left in the new worktree for the builder (exit 1). Every refusal
+  (a builder out, a gate queued, a lane stacked on it, ignored files in the worktree) comes before anything
+  is written. A stopped lane's `show` names it and the other way on, `lane merge <id> --branch agentry/<id>`.
+- **Parking a verified lane and sending it back** — `lane exec hold <id> --for later` also parks a lane that
+  is verified (merge refuses it while held; `resume` makes it verified again), and `lane exec fix <id> --owner
+  "<the change>"` sends a verified lane back for one builder round on the owner's words, then to the usual
+  recheck, which judges the change as one more note. The episode counts the owner's fixes. `lane session start`
+  prints a parked lane's note, its evidence and the step that resumes it; a park on a lane whose main was
+  touched is recorded and says `main moved while parked`.
+- **Holds instead of stops** — a builder report that finds main touched holds the lane for the guard (its
+  report saved) instead of stopping it: fix main, then `lane exec report <id>` again goes on as the first
+  would have, and `lane session start` shows the hold with its reason and that step. A second `NEEDS_CONTEXT`
+  in the same step holds the lane for the owner's fact: `lane exec resume <id> --note "<the fact>"`, or
+  `lane exec owns <id> --add <paths> --apply` for the files the report names outside the contract (the held
+  line prints it), or `restart --carry`. A flagged item whose verdict leaves notes open at the notes cap holds
+  for the owner: `resume` closes it as is, `fix --owner` sends it back. The cap is read live from the
+  workflow file, so a raised `exec.noteRounds` lets one more notes round go.
+- **Decision drafts take a why** — a draft may carry a `why`, and `board draft apply <n> --answer "…" --why
+  "…"` writes the owner's correction and keeps it on the draft's line with the text it replaced. The
+  `drafts.decision.map` placeholders are `{answer}`, `{why}` (the draft's question when it has no why),
+  `{question}` and `{unpicked}`; with no `drafts.decision` in the workflow file, `apply` fills the decision
+  kind's own `decision`, `why` and `rejected` fields and says so.
+- **`lane sweep` frees what killed processes left** — temp files whose writer is gone
+  (`<file>.agentry-<pid>.tmp`, and the older temp names in the ledger, drafts and gate-locks folders), gate and
+  lock slots whose holder and riders are gone (each group a run left running is stopped first), and write locks
+  whose owner is gone; `--json` lists them as `temps`, `slots` and `writeLocks`. The preview lists them and
+  removes nothing, and each is judged again at `--apply`. `lane session start` counts them in a
+  `! stale: <n> lock slot(s), <n> temp file(s) → agentry lane sweep --apply` row, and its `lanes:` line lists
+  open lanes only, then `· <n> merged today`.
+- **The running build in `--version`** — `agentry --version` and the footer of every `--help` print what the
+  checkout is past its version bump and the short HEAD, `0.3.0-dev.7+141 (22abc92)`, with ` dirty` when the
+  plugin tree has uncommitted changes, so a session started before a change can tell; `(version unknown)` when
+  `plugin.json` cannot be read.
 - **Stacked lanes** — `lane exec start <id> --on <parent>` cuts a lane from another lane that is verified,
   held or at its gate (a chain too), so serial work no longer waits for a land; its `base` is the parent's
   tip, so the briefs, the commit count and the gate tier read only its own commits. Each step prints
@@ -41,7 +94,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `always`), `exec.rebase` (`gate`, `recheck`) and the `gate.roles` defaults; a key in the file wins, the
   roles per role. `board explain` shows each resolved value with its source (`preset` or `set`), an
   `exec.verify` and a `models` row, and `·` for an absent optional key; `exec start` and `show` print the
-  `workflow:` line. The ledger fixes the route at start, so an edit mid-lane changes no running lane.
+  `workflow:` line. The ledger fixes the route at start, so an edit mid-lane changes no running lane, except `noteRounds`,
+  which each step reads live from the workflow file.
   Under `final: after-fix` a recheck that passes every note sent back (`N1: PASS …` lines) on a tip moved
   only by fix commits closes with no final verifier. Notes past the budget are kept as `openNotes` in the
   ledger, `show` and the episode.
@@ -73,7 +127,11 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   keeps its independent verifier and a flagged item with no verdict does not land. `flagged` needs a
   `flag` field on the lifecycle kind and is refused at load without it. The route shows in `exec start`
   and `show`, and the episode records it. `models` names the model each dispatch prints (`model:`):
-  `build`, and `verify.default`, `verify.ui`, `verify.flagged`. A verify, recheck or final brief on a tip
+  `build`, and `verify.default`, `verify.ui`, `verify.flagged`. Each is a name or `{ "default": …, "paths":
+  [{ "when": { "any": [<globs>] }, "model": … }] }`, the first entry matching an owned file winning, and a
+  contract line `- **Model:** <model>` (`- **Model (verify):** <model>` for the verifier) beats both; the
+  `model:` line names where it came from, e.g. `opus (models.build.paths[0]: src/main/**)`. `board explain`
+  and `exec start` warn `! models.verify.ui is unused` when the route never sends a UI task to a verifier. A verify, recheck or final brief on a tip
   whose gate is already recorded green says to read that gate, not to re-run it (`exec gate` rewrites the
   waiting verify brief). `lane merge` no longer stops on the owner's uncommitted `guard.allow` files: it
   sets them aside, recorded in the ledger first, lands, and puts them back; a stop or a rerun after a kill
@@ -92,7 +150,10 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   not paths unless a tracked file matches, and `Makefile`, `Dockerfile`, `LICENSE` and tracked
   extensionless files are. `.astro` files and globs under `web`, `app` or `ui` suggest the designer.
   `exec start` warns, without refusing, when its owned files overlap a running lane's:
-  `! owns overlap with R1c-4: plugin/commands/go.md`.
+  `! owns overlap with T-4: plugin/commands/go.md`. A path that leaves the repository is dropped with
+  `! owns names a path outside the repository`, a bare extension after `+`, `,` or `and` (`` `src/a.ts` +
+  `.test.ts` ``) owns the sibling file, a path the clause says is out of scope (stops, needs context, never,
+  ask first) is not owned, and `! owns names tests but no test file` says when no owned path is one.
 - **`agentry` command** — the plugin's `bin/agentry` is on the Bash tool's PATH while the plugin is
   enabled: `agentry board …`, `agentry lane …`, `agentry draft …`, `--version`, `--help`. Next
   steps the CLIs print name it when it is this plugin's bin, and the docs use it; hosts without it
@@ -153,6 +214,19 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `board contract` finds.
 
 ### Changed
+- **Land and resume** — a `board set` or `board add --apply` made on main is carried into the board commit
+  (it was put back uncommitted after it, so a verdict the board check needed, a flagged task's PASS, stopped
+  the land); one the check refuses stops the land and goes back on main as it was. Once the gate has passed, a
+  rerun accepts the owner's commit of a board fix (board files and `.agentry/*.json` only) and puts the board
+  commit on top; any other commit after the picks still stops it.
+- **`lane exec fix <id> --notes`** takes the notes a lane kept open as well as the latest verifier's.
+- **Lifecycle writes check the board** — a lane's `dispatched`, `built` or `failed` status write that would
+  add a finding the board did not have is skipped, with the rule and its message.
+- **Gate commands die with their holder** — `lane exec gate` and `lane merge` run the gate under a watchdog
+  that stops its process group within about a second once the process holding the slot is gone (a `kill -9`
+  included) and frees the slot, so a second gate never starts beside a leftover. Agentry's git calls are
+  bounded too (120 s, or `AGENTRY_GIT_TIMEOUT_MS`), so a stuck one cannot hold the gate, and a timed-out git's
+  helpers go with it.
 - **The standard preset is the default** — with no `exec` keys a lane now runs one notes-fix round (was
   three) and skips the final verifier after a recheck that covered every note on a fix-only tip. Set
   `exec.preset: "strict"` (or `noteRounds`, `final`) for the old budget and an always-fresh final.
@@ -175,10 +249,14 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   read from `FAILED <name>`, a `<path>::<test>` token and JSON test events, and a listed name counts only
   whole. `board explain` shows `gate.tiers`, `gate.roles` and `gate.checklist`; `/agentry:init`
   proposes tiers.
-- **Commits on main during a lane** — a commit touching only `guard.allow` paths that no running lane owns
-  no longer stops the lane; the report says `main moved by allowed commits: <n> (<shas>)`, and a commit
-  that touches anything else names the path that tripped. A red gate after a green one on the same tip now
-  says `the latest is red`, and the waiting verify brief carries the full gate line again. A ledger with no
+- **Commits on main during a lane** — a commit that touches none of the lane's owned files and none of the
+  files its worktree changed no longer stops the lane, whoever made it, and neither does one touching only
+  `guard.allow` paths that no running lane owns (the report says `main moved by allowed commits: <n>
+  (<shas>)`); a commit that overlaps names it: `<sha> touches <paths>, this lane's files`. A lane rebased by
+  its builder starts its guard at the commit it sits on, so main's commits under the branch are not judged
+  again. The process file, its workflow file and `.agentry/config.json` in use count as `guard.allow` paths
+  unless a running lane owns them, as does every board location the process file names. A red gate after a
+  green one on the same tip now says `the latest is red`, and the waiting verify brief carries the full gate line again. A ledger with no
   parsed owned list reads its contract against its worktree, as `start` does.
 - **`/agentry:exec`** now drives the build and verify rounds through `lane exec`, records the
   gate, and stops a lane whose builder edited main outside its own board cells.
@@ -213,8 +291,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **Owned files** are paths only: symbols, string keys and spans after a negation ("no line in
   `x`") are left out, and `path:lines` reads as the path. They are parsed once at `start` into the
   ledger, so every later brief uses the same list.
-- **`lane exec owns <id> [--set a,b] [--apply]`** shows or replaces the owned files and rewrites the
-  brief still waiting for its agent.
+- **`lane exec owns <id> [--set a,b | --add a,b] [--apply]`** shows or replaces the owned files, or adds
+  to them (`--add`, for a builder that asked for a file it does not own), and rewrites the brief still
+  waiting for its agent.
 - **`lanes.maxWriters`** no longer counts worktrees the repo keeps (`worktrees.keep`) or the host's
   `.claude/worktrees/` agent worktrees that no lane owns.
 - **`nested`** lists only worktrees inside the lane's own worktree, not every worktree created
@@ -228,7 +307,7 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `/agentry:init` proposes the globs from `.gitignore`.
 - **`lane exec` briefs and gate lock** — a notes-fix brief keeps its "Notes to fix" after
   `owns --apply`, and the recheck brief names the notes the builder was sent back on. Notes rounds
-  stop after three notes rounds. A bare file name in a contract's owns is looked up among the
+  stop at the `exec.noteRounds` budget. A bare file name in a contract's owns is looked up among the
   worktree's tracked files, and a bracketed aside no longer drops the next owned path. An empty or
   unreadable gate lock file is taken over, a lock refusal names the file, and the land's own gate
   on main waits behind the same lock.
@@ -240,6 +319,23 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   flaky re-run the land refused is recorded on the first gate run and named in the gate row. A
   `join` holding a line break or another control character is refused when the process file
   loads. `/agentry:init` offers lifecycle board writes once, saying what they write.
+
+### Fixed
+- **Locks and slots** — a lock or gate slot is freed on every exit of `agentry run` (a normal exit, an error,
+  SIGINT, SIGTERM, SIGHUP) and stays held while the command's group has a member; slot files are written whole
+  and every rewrite is serialized, so a reader never sees one empty and two riders are never lost. A holder's
+  start time is read in UTC, so another time zone never frees a live holder, and a holder whose start cannot
+  be read counts as alive.
+- **`lane sweep`** freezes a stray and everything it started (SIGSTOP, looking again for new children) before
+  it kills them, so a process that forks in its handler leaves nothing behind. Its preview no longer sweeps the
+  temp files it reports.
+- **Stacked lanes** — a restack and a queued gate no longer undo each other (the gate marks its intent before
+  it reads the ledger and a restack refuses while the mark is live); a killed restack is read from its plan
+  only when the old base is gone from the branch; `exec rebase` refuses a lane stacked on an unmerged parent
+  and points at `restack`.
+- **`board`** — `board add` refuses a field value holding a line break; `board fix` lists a landed item of a
+  kind it does not write with the `board set` that records it; a process file whose `exec.kinds` names a kind
+  another kind lists as its children is refused at load.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a

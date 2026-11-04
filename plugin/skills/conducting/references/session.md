@@ -19,6 +19,9 @@ Reads only (without `--check`, below). Without `--json` it prints at most 40 lin
 | `recall` | Up to `memory.primeLimit` facts of this repo, the user's and the cross-project ones, ranked against the Now sprint and the work in flight. Empty when `memory.prime` is `off`. |
 | `questions` | Open items of the owner-question kinds (the `onYou` rows that are not work items). |
 | `ledgers` | `{ id, state, next, on, restack }` of every lane ledger not closed, the held ones first: `on` the lane a stacked lane is cut on (null for none), `restack` what is due on it (`parent`, `main`, `orphan` or null). |
+| `mergedToday` | How many lanes' merge record is from today (local time); a merged lane with no time is not counted. |
+| `gateSlots` | `{ slot, pid, who, since }` for each gate slot a live gate holds now. |
+| `stale` | `{ slots, temps }`: how many lock slots and temp files a killed holder or writer left. Counted before `start`'s own reads, which sweep what they find. |
 | `checks` | Only when the workflow file names `extensions.start.checks` or `extensions.close.checks`: `{ start: View, close: View }` (see Session checks). Without it the text and the object are as before. |
 
 The text puts the lanes that wait on the owner right after the `conductor prompt:` line, before `now:`:
@@ -58,6 +61,22 @@ start --json`:
 lanes: T1 verified, T2 verifying on T1 · 0 merged today
 stack: T2 on T1: T1 moved → agentry lane exec restack T2
 ```
+
+`lanes:` lists the open lanes, then `· <n> merged today` (lanes whose merge record is from today, local time).
+With no lane open it reads `lanes: none open · <n> merged today`, and the line is left out when nothing is open
+and nothing merged today.
+
+After the stack lines come the gate slots in use and the leftovers of killed processes:
+
+```text
+gate: slot 1 held by R1-3 since 14:02
+! stale: 1 lock slot(s), 2 temp file(s) → agentry lane sweep --apply
+```
+
+`gate:` shows each gate slot a live gate holds (`unknown` when the holder named no one); a gate waiting for a slot holds none yet. The `! stale:` row appears only when `start`
+finds a lock or gate slot whose holder is gone, or a temp file whose writer is gone (`<file>.agentry-<pid>.tmp`
+and the older temp names): the counts are what `agentry lane sweep --apply` frees. The text carries nothing
+else about them; `sweep` without `--apply` lists each.
 
 The parent `moved`, `landed`, or `is stopped` (closed or gone); for a parent that ended, the line names
 `restack <X> --main`, the step that takes the lane off it. Restack it when the lane is at rest.

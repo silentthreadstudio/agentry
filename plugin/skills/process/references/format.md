@@ -46,7 +46,7 @@ No `version`, and every key is optional.
 | `models` | no | `{ "build": <model>, "verify": { "default", "ui", "flagged" } }`: the model each exec dispatch names. Each `<model>` is a name (`"sonnet"`) or `{ "default": "<model>", "paths": [{ "when": { "any": [<globs>] }, "model": "<model>" }] }` (both keys required, `paths` non-empty): the first entry whose `any` glob matches one of the item's owned files names it (the gate tiers' glob matching), else `default`. A contract bullet `- **Model:** <model>` (builder rounds) or `- **Model (verify):** <model>` (verifier rounds) wins over both. Each dispatch's `model:` line names its source: `opus (contract)`, `opus (models.build.paths[0]: src/main/**)`, `sonnet (models.build)`, `sonnet (models.build.default)`. `board explain` warns `! models.verify.ui is unused` when `exec.verify` is `flagged` or `none` and `verify.flagged` is set (an unflagged UI task gets no verifier, a flagged one takes `verify.flagged`), and so does `exec start`'s route line for an unflagged UI task. See "exec and models". |
 | `briefs` | no | `{ "build": ["<line>", …], "verify": ["<line>", …] }`: repo policy lines printed in every builder or verifier brief. See "briefs and commits". |
 | `commits` | no | `{ "subjectMax", "subjectPattern", "forbid": ["<regex>", …] }`: rules a builder's commits must keep. See "briefs and commits". |
-| `locks` | no | `{ "<name>": <slots> }` (slots at least 1, e.g. `{ "editor": 1 }`): named locks shared by every worktree. `agentry run --limit <dur> --lock <name> -- <cmd>` waits for a slot (up to `--wait`, default 30m, then exit 75) and holds it while the command runs; `agentry lock take <name>` / `drop <name>` hold one across tool calls (a shared editor driven through MCP), until its ttl (default 30m) or its session ends; `agentry lock show` lists the holders. |
+| `locks` | no | `{ "<name>": <slots> }` (slots at least 1, e.g. `{ "editor": 1 }`): named locks shared by every worktree. `agentry run --limit <dur> --lock <name> -- <cmd>` waits for a slot (up to `--wait`, default 10m, then exit 75) and holds it while the command runs; `agentry lock take <name>` / `drop <name>` hold one across tool calls (a shared editor driven through MCP), until its ttl (default 30m) or its session ends; `agentry lock show` lists the holders. |
 
 ## Kind
 
@@ -268,8 +268,10 @@ must give every "done" rule on that kind what it reads: a `done-has-evidence` fi
 `done-signoff` date can't be written by the lifecycle, so that rule is refused on the lifecycle's kind.
 
 `drafts.decision.map` fills a decision draft from an answered question: `{answer}` (the picked option),
-`{question}`, `{unpicked}` (the options not picked). A draft is never written to the decisions file without
-the owner's approval.
+`{why}` (the reason given; the draft's `question` when it has no why), `{question}`, `{unpicked}` (the options
+not picked, joined with commas). Any other placeholder is refused. With no `drafts.decision`, `board draft apply`
+derives a map from the decision kind's own `decision`, `why` and `rejected` fields. A draft is never written to
+the decisions file without the owner's approval.
 
 ## gate, extensions and conductor
 
