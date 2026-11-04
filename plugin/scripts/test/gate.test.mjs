@@ -764,6 +764,31 @@ for (const signal of ["SIGKILL", "SIGHUP", "SIGINT", "SIGTERM"])
     }
   });
 
+// The watchdog killed the moment the gate command is up, with no settle: often while its `recordGroup`
+// write is still in flight, leaving its mutex and temp file behind. The gate's release takes the dead
+// mutex over and sweeps the dead temp, so nothing is left once lane exec gate returns.
+for (const signal of ["SIGKILL", "SIGTERM"])
+  test(`${signal} of the gate's watchdog as it records the group: once lane exec gate returns, gate-locks is empty`, async () => {
+    const { root, run, pids } = await gateRunning(join(logs, "gate.pids"), { settle: false });
+    try {
+      assert.equal(pids.length, 2, "the gate command and its child run");
+      // One ps, not watchdogOf's two: the kill should land as soon as it can.
+      const ps = spawnSync("ps", ["-o", "ppid=", "-p", String(pids[0])], { encoding: "utf8" });
+      const watchdog = Number(ps.stdout.trim());
+      assert.ok(watchdog > 1, "the gate command still has its watchdog");
+      const returned = new Promise((resolve) => run.on("exit", resolve));
+      process.kill(watchdog, signal);
+      await returned;
+      const back = Date.now();
+      while (pids.some(alive) && Date.now() - back < 500)
+        await new Promise((r) => setTimeout(r, 20));
+      assert.deepEqual(pids.filter(alive), [], "a gate process outlived its gate");
+      assert.deepEqual(readdirSync(join(root, ".agentry", "run", "gate-locks")), []);
+    } finally {
+      killAll([...pids, run.pid]);
+    }
+  });
+
 // R1d-37 r7 N17 (probe p15): the gate process and its watchdog SIGKILLed at once left the gate command
 // running, its slot read free, and the sweep freed it without stopping the command.
 test("SIGKILL of lane exec gate and its watchdog together: the slot holds for the command's group, and the sweep stops it", async () => {

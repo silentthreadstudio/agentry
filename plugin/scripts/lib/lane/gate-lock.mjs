@@ -8,7 +8,8 @@
 // it over, so a killed lane never blocks the queue. `exclusive` takes every slot (in order, so two of them
 // cannot deadlock): a flaky re-run runs alone. A lock file with no readable pid (empty, cut short, written by
 // an older version) is stale once it is `GRACE_MS` old. `staleGateSlots` lists for the sweep the slots whose
-// holder is gone, `clearGateSlot` removes one; every reader sweeps the dead writers' temp files first.
+// holder is gone, `clearGateSlot` removes one; every reader sweeps the dead writers' temp files first, and a
+// release after.
 // Synchronous, like `runGate`. Node built-ins only. The holder and clock primitives are shared with
 // `named-lock.mjs` (the workflow file's `locks`).
 import {
@@ -333,6 +334,9 @@ export function holdGate(
       });
       heldHere(file, false);
     }
+    // A writer that died mid-write on a held slot (its watchdog, killed in `recordGroup`) left a temp file
+    // whose mutex was taken over above: it goes too, so a gate leaves nothing behind once it returns.
+    sweepTemps(dir, OLD_TEMP);
   };
   // Record the process group of the command that runs under the slots held, by its leader's identity.
   const group = (pgid) => {
