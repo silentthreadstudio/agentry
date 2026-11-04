@@ -168,15 +168,20 @@ export function boardRow({ root, spec, model, id, kind, ledger }) {
 // A lane in one of these has no branch left to land first.
 const ENDED = ["merged", "closed", "stopped"];
 
+// A ledger's ref goes to git only when it cannot be read as an option.
+const safeRef = (ref) => typeof ref === "string" && ref !== "" && !ref.startsWith("-");
+
 /** For each of `merges` (on `ledger`'s branch), the other lane whose branch it brings in: one still to
  *  land (not merged, closed or stopped, nor stacked on this lane) with a commit of its own past its main
- *  branch among the commits the merge adds past its first parent. `{ sha, id }`, `id` null for none. */
+ *  branch among the commits the merge adds past its first parent. `{ sha, id }`, `id` null for none. A
+ *  lane whose branch or main branch could be read as a git option is never asked about. */
 function lanesBroughtIn(root, ledger, merges) {
   const all = listLedgers(root);
   const others = all.filter(
     (l) =>
       l.id !== ledger.id &&
-      l.branch &&
+      safeRef(l.branch) &&
+      safeRef(l.mainBranch ?? ledger.mainBranch) &&
       !ENDED.includes(l.state) &&
       !chainOf(all, l.on).includes(ledger.id),
   );

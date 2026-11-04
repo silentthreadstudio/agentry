@@ -11,6 +11,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   utimesSync,
@@ -2427,4 +2428,19 @@ test("a merge of main, with another lane open, names no lane", () => {
   assert.equal(res.status, 1, out(res));
   assert.match(res.stdout, /cannot land: ask the builder to rebase onto main/);
   assert.doesNotMatch(res.stdout, /brings in|next: lane merge T2/);
+});
+
+test("a lane whose main branch reads as a git option is never passed to git, nor named", () => {
+  const sha = mergeOfT2("verified");
+  // `--output=<trap>` would have git rev-list write `<trap>..refs/heads/t2`: its folder is made ready.
+  const trap = join(root, ".agentry", "run", "trap");
+  mkdirSync(`${trap}..refs/heads`, { recursive: true });
+  git(root, "branch", "t2", "agentry/T2");
+  writeLedger(root, { ...readLedger(root, "T2"), branch: "t2", mainBranch: `--output=${trap}` });
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 1, out(pf));
+  assert.match(pf.stdout, /cannot land: ask the builder to rebase onto main/);
+  assert.ok(pf.stdout.includes(sha.slice(0, 7)));
+  assert.doesNotMatch(pf.stdout, /brings in/);
+  assert.deepEqual(readdirSync(`${trap}..refs/heads`), [], "git wrote no file");
 });
