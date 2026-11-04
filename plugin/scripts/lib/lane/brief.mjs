@@ -798,12 +798,16 @@ export function ownerChange({ note, at }, role) {
  *  stopped names its conflict, to resolve first. */
 export function carriedWork({ commits, files, report, conflict, applied = true, diff }) {
   const last = report ? `Its last report is ${report}: read it first.` : "It left no report.";
-  // Applied only when the carry got that far: a pick that stopped leaves the diff still to apply.
+  // Applied only when the carry got that far: a pick that stopped leaves the diff still to apply. The step
+  // is named once: in the stop when it names it, else here.
+  const named = Boolean(diff) && String(conflict ?? "").includes(`git apply --3way ${diff}`);
   const staged = !files
     ? ""
     : applied
       ? " Its uncommitted changes are applied staged (`git apply --3way` stages them): `git diff --cached` shows them."
-      : ` Its uncommitted changes are not in the tree yet: once the pick is done, apply them with \`git apply --3way ${diff}\`.`;
+      : named
+        ? " Its uncommitted changes are not in the tree yet."
+        : ` Its uncommitted changes are not in the tree yet: once the pick is done, apply them with \`git apply --3way ${diff}\`.`;
   const stop = conflict ? ` Resolve this first: ${conflict}.` : "";
   return [
     "## Carried work",

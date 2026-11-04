@@ -221,12 +221,11 @@ test("a carried commit that conflicts with main stops: exit 1, main untouched, m
     brief,
     /Resolve this first: [0-9a-f]{7} feat: three conflicts in three\.txt: resolve it, git cherry-pick --continue, then git apply --3way \S+\.diff\.\n/,
   );
-  // The pick stopped before the diff: it is still to apply, never "applied staged" (r4 N4, probe P3).
+  // The pick stopped before the diff: it is still to apply, never "applied staged" (r4 N4, probe P3), and
+  // the step that applies it is named once, in the stop (R1d-23 r6 N13).
   assert.doesNotMatch(brief, /applied staged/);
-  assert.match(
-    brief,
-    /Its uncommitted changes are not in the tree yet: once the pick is done, apply them with `git apply --3way \S+\/restart\/uncommitted\.diff`\./,
-  );
+  assert.match(brief, /Its uncommitted changes are not in the tree yet\. Resolve this first: /);
+  assert.equal(brief.match(/git apply --3way/g).length, 1, brief);
   assert.equal(ledgerOf(r.root, "T3").carried.applied, false);
 });
 
