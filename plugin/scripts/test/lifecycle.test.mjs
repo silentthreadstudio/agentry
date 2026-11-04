@@ -95,13 +95,13 @@ const git = (root, ...args) =>
   }).trim();
 
 /** A temp git repo with the board, the process file and `n` commits; `{ root, shas }`. */
-function repo({ spec = SPEC, commits = 2 } = {}) {
+function repo({ spec = SPEC, commits = 2, board = BOARD_MD } = {}) {
   const root = mkdtempSync(join(tmpdir(), "agentry-life-"));
   temps.push(root);
   mkdirSync(join(root, "plan", "sprints"), { recursive: true });
   mkdirSync(join(root, ".agentry"));
   writeSpec(join(root, ".agentry"), spec);
-  writeFileSync(join(root, "plan", "BOARD.md"), BOARD_MD);
+  writeFileSync(join(root, "plan", "BOARD.md"), board);
   writeFileSync(join(root, "plan", "sprints", "S1.md"), SPRINT_MD);
   git(root, "init", "-q", "-b", "main");
   const shas = [];
@@ -520,4 +520,82 @@ test("a three-commit land with a learned range mark still writes first…last", 
   event(root, "merged", "T1", { shas, summary: "done" });
   const [a, , c] = shas.map((s) => s.slice(0, 7));
   assert.equal(commitCell(root), `${a}…${c}`);
+});
+
+// A lane's own status write never breaks the board: dispatched, built and failed are checked on the
+// board as the write would leave it.
+const GUARDED_SPEC = {
+  ...SPEC,
+  rules: [...SPEC.rules, { rule: "parent-active", kind: "task" }],
+};
+const row = (root, id) =>
+  cells(
+    read(root, "plan/BOARD.md")
+      .split("\n")
+      .find((l) => l.startsWith(`| ${id} `)),
+  );
+const todoBoard = (sprint, t1 = "todo", t2 = "todo") =>
+  BOARD_MD.replace("| S1     | doing  |", `| S1     | ${sprint} |`)
+    .replace("| T1   | S1     | verify |", `| T1   | S1     | ${t1} |`)
+    .replace("| T2   | S1     | todo   |", `| T2   | S1     | ${t2} |`);
+const guarded = (sprint = "todo", t1 = "todo", t2 = "todo") =>
+  repo({ spec: GUARDED_SPEC, board: todoBoard(sprint, t1, t2) });
+
+test("dispatched, built and failed skip a status write that would add a finding, naming the rule", () => {
+  for (const name of ["dispatched", "built", "failed"]) {
+    const { root } = guarded();
+    const before = files(root);
+    const result = event(root, name, "T2");
+    assert.deepEqual(result.writes, []);
+    assert.equal(result.skipped.length, 1);
+    assert.equal(result.skipped[0].what, "status");
+    assert.match(result.skipped[0].why, /^parent-active: .*sprint S1.*; the row stays todo$/);
+    assert.deepEqual(files(root), before);
+  }
+});
+
+test("a status write that adds no finding is written, rules on", () => {
+  const { root } = guarded("doing");
+  const result = event(root, "dispatched", "T2");
+  assert.deepEqual(result.writes, [{ file: "plan/BOARD.md", what: "status → doing" }]);
+  assert.deepEqual(result.skipped, []);
+  assert.equal(row(root, "T2")[3], "doing");
+});
+
+test("a finding the board already had never skips the write", () => {
+  // T1 is already verify under a todo sprint: parent-active already flags it, so the write adds none new.
+  const { root } = guarded("todo", "verify");
+  const result = event(root, "failed", "T1");
+  assert.deepEqual(result.writes, [{ file: "plan/BOARD.md", what: "status → doing" }]);
+  assert.equal(row(root, "T1")[3], "doing");
+});
+
+test("a preview reports the same skip and writes nothing", () => {
+  const { root } = guarded();
+  const { spec } = loadSpec(join(root, ".agentry", "process.json"));
+  const run = (preview) =>
+    applyEvent({
+      root,
+      spec,
+      model: readProcess({ root, spec }),
+      event: "dispatched",
+      id: "T2",
+      preview,
+    });
+  const before = files(root);
+  assert.deepEqual(run(true), run(false));
+  assert.equal(run(true).skipped[0].what, "status");
+  assert.deepEqual(files(root), before);
+});
+
+test("verdict and merged are not guarded: they write even when the board gains a finding", () => {
+  const { root, shas } = guarded();
+  const fail = event(root, "verdict", "T2", { verdict: "FAIL" });
+  assert.deepEqual(
+    fail.writes.map((w) => w.what),
+    ["verdict → FAIL", "status → doing"],
+  );
+  const merged = event(root, "merged", "T1", { shas, summary: "done" });
+  assert.ok(merged.writes.some((w) => w.what === "status → done"));
+  assert.equal(row(root, "T1")[3], "done");
 });

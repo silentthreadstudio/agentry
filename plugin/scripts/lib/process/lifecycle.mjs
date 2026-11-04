@@ -10,14 +10,31 @@
 // `<first>` or, for several, the shas joined by the separator the board's done rows use (the field's `join`
 // pins it; `<first>…<last>` when nothing is learned) (short SHAs) and the handoff line in the parent's file, naming the
 // first. A `writes` file is relative to the git root. A step whose edit changes nothing (already set,
-// the handoff line already there) is in `skipped`, not `writes`.
+// the handoff line already there) is in `skipped`, not `writes`. The three status events a lane writes
+// for itself (dispatched · built · failed) are also checked: the board is read as the write would leave
+// it (a scratch copy of its files, `staged`) and a write that adds a finding the board did not have is
+// skipped, with the rule and its message. verdict and merged are not: the merge's record step checks
+// the board and stops on a finding by design.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join, posix } from "node:path";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, posix } from "node:path";
+import { boardFiles } from "./board-diff.mjs";
 import * as md from "./markdown.mjs";
+import { readProcess } from "./read.mjs";
 import { handoffRejection } from "./spec/across.mjs";
 import { escapesRoot, own } from "./spec/shape.mjs";
 import { fillHandoff, lifecycleOf } from "./spec/workflow.mjs";
+import { boardReport } from "./status.mjs";
 import { WriteError, appendLine, applyAll, setCell, setKey } from "./write.mjs";
 
 export const EVENTS = ["dispatched", "built", "failed", "verdict", "merged"];
@@ -33,6 +50,7 @@ const STEPS = {
   },
   merged: { steps: () => ["status", "commit", "handoff"], takes: ["shas", "summary"] },
 };
+const GUARDED = new Set(["dispatched", "built", "failed"]);
 const SHA = /^[0-9a-f]{7,40}$/;
 const RANGE = ["…", "..", "..."];
 const TOKEN = /[0-9a-f]{7,40}/g;
@@ -123,6 +141,36 @@ function shortOf(root, sha) {
     if (ask(root, ["rev-parse", `--disambiguate=${full.slice(0, n)}`]) === full)
       return full.slice(0, n);
   return full;
+}
+
+// A finding's identity for "the board already had it": its rule, kind and item, else its message (the
+// merge's record step keys them the same way).
+const findingKey = (f) =>
+  JSON.stringify([f.rule ?? null, f.kind ?? null, f.id ?? null, f.id ? null : f.message]);
+
+// The findings the board gains when `staged` ([{ file, after }], absolute paths) is written over it:
+// the board's files are copied to a scratch directory, the staged texts put over them, and both
+// boards are checked by the board's own rules. Nothing under `root` is touched.
+function gainedBy({ root, spec, model, staged }) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentry-staged-")));
+  try {
+    for (const file of boardFiles(spec, model)) {
+      const from = join(root, file);
+      if (!existsSync(from)) continue;
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      copyFileSync(from, join(dir, file));
+    }
+    for (const { file, after } of staged) {
+      const to = join(dir, posix.relative(root, file));
+      mkdirSync(dirname(to), { recursive: true });
+      writeFileSync(to, after);
+    }
+    const had = new Set(boardReport({ root, spec, model }).findings.map(findingKey));
+    const next = boardReport({ root, spec, model: readProcess({ root: dir, spec }) });
+    return next.findings.filter((f) => !had.has(findingKey(f)));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -228,6 +276,16 @@ export function applyEvent({
       continue;
     }
     setField(step, target, value);
+  }
+  if (edits.length && GUARDED.has(event)) {
+    const staged = applyAll(edits, { preview: true }).filter((f) => f.after !== f.before);
+    const gained = staged.length ? gainedBy({ root, spec, model, staged }) : [];
+    if (gained.length) {
+      const why = `${gained.map((f) => `${f.rule}: ${f.message}`).join("; ")}; the row stays ${item.status}`;
+      for (const { step } of planned) skipped.push({ what: step, why });
+      edits.length = 0;
+      planned.length = 0;
+    }
   }
   if (edits.length) applyAll(edits, { preview });
   const writes = [];
