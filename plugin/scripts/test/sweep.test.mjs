@@ -905,6 +905,25 @@ test("the preview lists a dead writer's temp file in the ledger directory and le
   assert.ok(!existsSync(temp));
 });
 
+test("the sweep lists and removes a dead writer's temp of start's records in the run directory itself", () => {
+  const { root } = fixture();
+  const dead = spawnSync("node", ["-e", ""]).pid;
+  const temps = ["idle-asked.json", "note-seen.json"].map((f) =>
+    runFile(root, `${f}.agentry-${dead}.tmp`),
+  );
+  for (const file of temps) writeFileSync(file, "{half");
+  const live = runFile(root, `note-seen.json.agentry-${process.pid}.tmp`);
+  writeFileSync(live, "{half");
+  assert.deepEqual(JSON.parse(sweep(root, "--json").stdout).temps.sort(), [...temps].sort());
+  assert.ok(
+    temps.every((file) => existsSync(file)),
+    "the preview changed nothing",
+  );
+  sweep(root, "--apply");
+  assert.ok(!temps.some((file) => existsSync(file)));
+  assert.ok(existsSync(live), "a live writer's temp is never touched");
+});
+
 test("the sweep lists and removes the older temp naming a killed ledger or drafts writer left", () => {
   const { root } = fixture();
   const dead = spawnSync("node", ["-e", ""]).pid;

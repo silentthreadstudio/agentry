@@ -15,7 +15,8 @@
 //   warnings   disk under 10 GB free; `lsof` missing (a process is then judged by its executable and script
 //              only, so one that merely stands in the run directory is not seen)
 //   temps      temp files of an atomic write (`fs/atomic.mjs`) whose writer is gone, in the directories
-//              Agentry writes whole into (the run state, the lock directories, the root and `.claude/`)
+//              Agentry writes whole into (the run state, the run directory itself for start's note and idle
+//              records, the lock directories, the root and `.claude/`)
 //   slots      lock and gate slots whose holder and riders are gone (`staleLockSlots`, `staleGateSlots`), each
 //              with the pgids still running that its runs left behind; a take with no pid within its until
 //              is held, and never listed
@@ -252,8 +253,10 @@ function findStrays(root, all) {
 }
 
 // The directories outside the lock ones that Agentry writes whole into, each with the older temp naming
-// once written there (or none): the run state, and the instruction files' (the root and `.claude/`).
+// once written there (or none): the run state (start's records sit in the run directory itself), and the
+// instruction files' (the root and `.claude/`).
 const tempDirs = (root) => [
+  [join(root, ".agentry", "run")],
   [join(root, ".agentry", "run", "process"), drafts.OLD_TEMP],
   [join(root, ".agentry", "run", "process", "ledger"), ledgers.OLD_TEMP],
   [gateLockDir(root), OLD_TEMP],
