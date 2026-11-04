@@ -37,7 +37,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
 import { prefix } from "../../cli/invoke.mjs";
@@ -51,9 +51,10 @@ import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { workflowPathOf } from "../../process/read.mjs";
+import { parseSpec } from "../../process/spec.mjs";
 import { modelFor, unusedUiModel } from "../../process/spec/models.mjs";
 import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
-import { own } from "../../process/spec/shape.mjs";
+import { escapesRoot, own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { WriteError } from "../../process/write.mjs";
 import {
@@ -485,30 +486,49 @@ function allowedCommit(root, allow, all) {
   };
 }
 
-// The board's own files (field 75), as the process file names them and `read.mjs` resolves them, from the
-// root: each kind's table, contract blocks and create blocks, each item's file and own file (a `files`
-// kind's, a `file.glob` match), and `status.note`.
-function boardPaths(spec, model) {
-  const named = [];
-  for (const [name, kind] of Object.entries(spec.kinds ?? {})) {
-    named.push(kind.at?.table, ...[kind.contract?.blocks ?? []].flat());
-    named.push(...[kind.create?.blocks ?? []].flat().map((b) => b?.file));
-    for (const item of own(model?.kinds, name)?.items ?? []) named.push(item.file, item.own?.path);
+// The board's own files (field 75), as the process file `spec` names them and `read.mjs` resolves them,
+// from the root: each kind's table, contract blocks and create blocks and `status.note` as `paths`, and
+// each kind's `at.files` and `file.glob` (its `{id}` any name) as `globs`, so an item file made or removed
+// passes too. A path or glob that leaves the board root (`status.note`: the repository) is left out.
+function boardPaths(spec) {
+  const paths = [];
+  const globs = [];
+  const base = typeof spec?.root === "string" ? spec.root : ".";
+  if (!spec || escapesRoot(".", base)) return { paths, globs };
+  const inBoard = (p) => typeof p === "string" && p !== "" && !escapesRoot(".", p);
+  for (const kind of Object.values(spec.kinds ?? {})) {
+    paths.push(kind?.at?.table, ...[kind?.contract?.blocks ?? []].flat());
+    paths.push(...[kind?.create?.blocks ?? []].flat().map((b) => b?.file));
+    globs.push(kind?.at?.files, kind?.file?.glob?.replaceAll?.("{id}", "*"));
   }
-  const base = typeof spec.root === "string" ? spec.root : ".";
-  const note = spec.status?.note;
-  return [
-    ...new Set([
-      ...named.filter((p) => typeof p === "string").map((p) => posix.join(base, p)),
-      ...(typeof note === "string" ? [posix.normalize(note)] : []),
-    ]),
+  const fromBase = (list) => [
+    ...new Set(list.filter(inBoard).map((p) => posix.normalize(posix.join(base, p)))),
   ];
+  const note = spec.status?.note;
+  return {
+    paths: [...fromBase(paths), ...(inBoard(note) ? [posix.normalize(note)] : [])],
+    globs: fromBase(globs),
+  };
+}
+
+// The process file and its workflow file as main's HEAD commits them (paths from the root), parsed as
+// `loadSpec` parses them: null when the process file is not there or has a problem. What the board names
+// is read from here, never from the working tree, so an uncommitted edit cannot widen the guard (F1).
+function committedSpec(root, processRel, workflowRel) {
+  const at = (path) => {
+    const res = git(root, ["show", `HEAD:${path}`]);
+    return res.status === 0 ? res.stdout : undefined;
+  };
+  const board = at(processRel);
+  if (board === undefined) return null;
+  const { spec, problems } = parseSpec({ board, workflow: at(workflowRel) });
+  return spec && !problems.length ? spec : null;
 }
 
 // What the guards let through as `guard.allow` paths: its globs, Agentry's config in use (field 58),
 // the process file and its workflow file as `loadSpec` resolves them, from the root, and the board's
-// own files (`boardPaths`).
-function allowOf({ root, spec, model, processPath }) {
+// own files (`boardPaths`) as the process file at HEAD names them.
+function allowOf({ root, spec, processPath }) {
   const file = processPath ?? join(root, ".agentry", "process.json");
   let dir;
   try {
@@ -516,15 +536,25 @@ function allowOf({ root, spec, model, processPath }) {
   } catch {
     dir = null; // no process file's folder: no config file to let through
   }
-  const config = dir
-    ? [file, workflowPathOf(file)]
-        .map((f) => relative(root, join(dir, basename(f))))
-        .filter((p) => p && !p.startsWith("..") && !isAbsolute(p))
+  const inRepo = (p) => p && !p.startsWith("..") && !isAbsolute(p);
+  const [processRel, workflowRel] = dir
+    ? [file, workflowPathOf(file)].map((f) =>
+        relative(root, join(dir, basename(f)))
+          .split(sep)
+          .join("/"),
+      )
     : [];
-  return { globs: own(spec, "guard")?.allow ?? [], config, board: boardPaths(spec, model) };
+  const config = [processRel, workflowRel].filter(inRepo);
+  const board = boardPaths(
+    inRepo(processRel) ? committedSpec(root, processRel, workflowRel) : null,
+  );
+  return { globs: own(spec, "guard")?.allow ?? [], config, board };
 }
 const allowsPath = (allow, path) =>
-  allow.config.includes(path) || allow.board.includes(path) || matchesAny(allow.globs, path);
+  allow.config.includes(path) ||
+  allow.board.paths.includes(path) ||
+  matchesAny(allow.board.globs, path) ||
+  matchesAny(allow.globs, path);
 
 // A glob test with the gate's own matcher, as merge does.
 const matchesAny = (globs, path) => globMatch(globs, path);
@@ -1789,6 +1819,9 @@ function hold(ctx, id, agent) {
     refuse(
       `${id} waits for the owner after step ${ledger.hold.stepRun?.[1] ?? "?"}: resume it with the owner's words (exec resume ${id} --note "…"), or keep it held`,
     );
+  // A guard hold is answered by fixing main and reporting again, not by the owner's review (R1d-29 N2).
+  if (held && holdFor === "owner" && ledger.hold?.for === "guard")
+    refuse(`the lane is held for the guard: fix it and run ${laneLine(root, "report", id)}`);
   const round = ledger.rounds.at(-1);
   if (!held && holdFor === "owner" && !saved(round.reportPath))
     refuse(`the builder is still out: save its reply to ${round.reportPath} first, then hold`);

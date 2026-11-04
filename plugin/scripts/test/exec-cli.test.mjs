@@ -2498,6 +2498,100 @@ test("a files-kind item's file is a board file: a hand edit of another story pas
   assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
 });
 
+// The process file in `.agentry/` with `change` made to its parsed value, left uncommitted.
+function editProcess(root, change) {
+  const file = join(root, ".agentry", "process.json");
+  writeFileSync(
+    file,
+    `${JSON.stringify(change(JSON.parse(readFileSync(file, "utf8"))), null, 2)}\n`,
+  );
+}
+
+// R1d-29 F1 (the verifier's P1): an uncommitted process file edit naming a code file as a board location
+// never lets a main edit of that file through: the board is read as main's HEAD commits it.
+for (const [how, change] of Object.entries({
+  "status.note": (p) => ({ ...p, status: { note: "src/app.js" } }),
+  "a new kind's table": (p) => ({
+    ...p,
+    kinds: {
+      ...p.kinds,
+      x: { label: "X", at: { table: "../src/app.js", heading: "X" }, id: { column: "X" } },
+    },
+  }),
+  "contract.blocks": (p) => ({
+    ...p,
+    kinds: {
+      ...p.kinds,
+      task: { ...p.kinds.task, contract: { blocks: ["TASKS.md", "../src/app.js"] } },
+    },
+  }),
+}))
+  test(`an uncommitted process file naming src/app.js through ${how} lets no main edit of it through`, () => {
+    const r = boardRepo();
+    commitFile(r.root, "src/app.js", "safe\n");
+    build(lane(r, "start", "T1").json);
+    editProcess(r.root, change);
+    writeFileSync(join(r.root, "src", "app.js"), "EVIL\n");
+    assert.match(tripped(lane(r, "report", "T1"), how), /files changed: {2}M src\/app\.js/, how);
+  });
+
+test("a sprint's own file made or removed by a hand commit passes: the kinds' globs are board paths (N1)", () => {
+  const r = boardRepo();
+  build(lane(r, "start", "T1").json);
+  git(r.root, "rm", "-q", "plan/sprints/S1_first.md");
+  git(r.root, "commit", "-q", "-m", "docs: archive the sprint");
+  commitFile(r.root, "plan/sprints/S9_next.md", "# S9\n", "docs: a sprint with no row yet");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
+  assert.match(res.json.guards[0], /^main moved by allowed commits: 2 /);
+});
+
+test("a committed board path or glob that leaves the board root lets nothing through (N3)", () => {
+  for (const [how, [file, change]] of Object.entries({
+    "a table": [
+      "src/app.js",
+      (spec) => {
+        spec.kinds.decision.at.table = "../src/app.js";
+      },
+    ],
+    "an own-file glob": [
+      "src/S1.js",
+      (spec) => {
+        spec.kinds.sprint.file = { glob: "../src/{id}.js" };
+      },
+    ],
+  })) {
+    const spec = structuredClone(BOARD_FILES);
+    change(spec);
+    const r = repo({ spec });
+    commitFile(r.root, file, "safe\n");
+    build(lane(r, "start", "T1").json);
+    writeFileSync(join(r.root, file), "EVIL\n");
+    assert.equal(
+      tripped(lane(r, "report", "T1"), how),
+      `main touched: files changed:  M ${file}`,
+      how,
+    );
+  }
+});
+
+test("hold --for owner on a lane held for the guard is refused, the ledger as it was (N2)", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  build(out);
+  writeFileSync(join(r.root, "stray.txt"), "x\n");
+  tripped(lane(r, "report", "T1"));
+  const before = readFileSync(ledgerFile(r.root, "T1"), "utf8");
+  const owner = lane(r, "hold", "T1", "--for", "owner", "--evidence", out.reportPath);
+  assert.equal(owner.exit, 2);
+  assert.match(
+    owner.stderr,
+    /the lane is held for the guard: fix it and run .*exec report T1 --root /,
+  );
+  assert.equal(readFileSync(ledgerFile(r.root, "T1"), "utf8"), before);
+});
+
 test("a commit touching a board file and a code file still trips, and holds the lane", () => {
   const r = boardRepo();
   build(lane(r, "start", "T1").json);
