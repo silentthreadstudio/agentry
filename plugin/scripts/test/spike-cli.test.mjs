@@ -5,10 +5,11 @@
 // Run: node --test plugin/scripts/test/spike-cli.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { fileSpike } from "../lib/lane/spikes.mjs";
 import { boardRepo, handBranch, ledger } from "./drift-repo.mjs";
 import { git, gitEnv } from "./git-repo.mjs";
 
@@ -248,4 +249,66 @@ test("a branch with a case twin, or a name holding a control character, is refus
   assert.equal(control.stderr.trim().split("\n").length, 1, control.stderr);
   assert.ok(control.stderr.includes(JSON.stringify(`${tree.branch}\n`)), control.stderr);
   assert.equal(existsSync(file(root)), false);
+});
+
+test("by its path, a worktree's branch with a case twin is refused as by its name, nothing written", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  git(root, "pack-refs", "--all");
+  git(root, "branch", "WORKTREE-AGENT-A1", "main");
+  for (const target of [tree.path, tree.branch]) {
+    const res = spike(root, target, "--keep", "why");
+    assert.equal(res.exit, 2, target);
+    assert.match(
+      res.stderr,
+      /worktree-agent-a1 has a case twin WORKTREE-AGENT-A1: rename one first/,
+    );
+  }
+  assert.equal(existsSync(file(root)), false);
+});
+
+test("a worktree on a branch with no commits yet says so, by its path or its branch, nothing written", () => {
+  const { root } = fresh();
+  const path = join(root, ".claude", "worktrees", "agent-z");
+  mkdirSync(dirname(path), { recursive: true });
+  git(root, "worktree", "add", "-q", "--detach", path, "main");
+  git(path, "symbolic-ref", "HEAD", "refs/heads/worktree-agent-z");
+  for (const target of [path, "worktree-agent-z"]) {
+    const res = spike(root, target, "--keep", "why");
+    assert.equal(res.exit, 2, target);
+    assert.match(res.stderr, /worktree-agent-z has no commits yet/);
+    assert.doesNotMatch(res.stderr, /check it out by its exact name|no branch and no path/);
+  }
+  assert.equal(existsSync(file(root)), false);
+});
+
+test("--for is echoed on one line, a --keep reason with a control character is refused, nothing written", () => {
+  const { root } = fresh();
+  const tree = agent(root);
+  const unknown = spike(root, tree.branch, "--for", "T\n9");
+  assert.equal(unknown.exit, 2);
+  assert.equal(unknown.stderr.trim().split("\n").length, 1, unknown.stderr);
+  assert.ok(
+    unknown.stderr.includes(`--for ${JSON.stringify("T\n9")}: the board holds no such item`),
+  );
+  for (const why of ["why\nnot", "a\tb", "x\u001b[2J"]) {
+    const res = spike(root, tree.branch, "--keep", why);
+    assert.equal(res.exit, 2, JSON.stringify(why));
+    assert.equal(res.stderr.trim().split("\n").length, 1, res.stderr);
+    assert.match(res.stderr, /--keep takes a one-line reason/);
+  }
+  assert.equal(existsSync(file(root)), false);
+});
+
+test("a spike filed with a multi-line reason or id before this check is listed on one line", () => {
+  const { root } = fresh();
+  const a = agent(root, "a1");
+  const b = agent(root, "b2");
+  fileSpike(root, { branch: a.branch, path: a.path, keep: "why\nnot", at: "2026-01-01T00:00:00Z" });
+  fileSpike(root, { branch: b.branch, path: b.path, for: "T\n1", at: "2026-01-01T00:00:00Z" });
+  const text = spike(root);
+  assert.equal(text.exit, 0, text.stderr);
+  assert.match(text.stdout, /^ {2}worktree-agent-a1 · kept: "why\\nnot" · \S+agent-a1$/m);
+  assert.match(text.stdout, /^ {2}worktree-agent-b2 · for "T\\n1" · \S+agent-b2$/m);
+  assert.equal(text.stdout.trim().split("\n").length, 3, text.stdout);
 });
