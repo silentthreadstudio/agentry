@@ -10,8 +10,14 @@ import { dirname, join } from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { sweepTemps } from "../lib/fs/atomic.mjs";
-import { clearGateSlot, gateLockDir, holdGate, staleGateSlots } from "../lib/lane/gate-lock.mjs";
-import { clearLockSlot, lockDirs, staleLockSlots } from "../lib/lane/named-lock.mjs";
+import {
+  clearGateSlot,
+  gateLockDir,
+  holdGate,
+  holderOf,
+  staleGateSlots,
+} from "../lib/lane/gate-lock.mjs";
+import { clearLockSlot, lockDir, lockDirs, staleLockSlots } from "../lib/lane/named-lock.mjs";
 import { git, tempRepo } from "./git-repo.mjs";
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -103,17 +109,27 @@ const alive = (pid) => {
     return error.code === "EPERM";
   }
 };
-const until = async (check, ms = 10_000) => {
+const until = async (check, ms = 10_000, every = 25) => {
   const end = Date.now() + ms;
   while (!check()) {
     if (Date.now() > end) throw new Error("timed out waiting");
-    await new Promise((r) => setTimeout(r, 25));
+    await new Promise((r) => setTimeout(r, every));
   }
 };
 // The slot files of lock `name` (a write mutex held for a moment is not a slot).
 const slotNames = (at) =>
   existsSync(at) ? readdirSync(at).filter((f) => /^slot-\d+\.lock$/.test(f)) : [];
 const slots = (dir, name = "editor") => slotNames(join(dir, ".agentry", "run", "locks", name));
+// `agentry run` starts its command first and records the command's group in its slot after (`pgid`: the
+// holder's own, or a rider's), so a command that is up may not be recorded yet, and a kill -9 of the run in
+// that moment leaves a slot that names no group. Wait (up to 5 s) until slot 1 in `at` records group `pgid`
+// and is all there is there: the write is done, its mutex and temp file gone.
+const grouped = (at, pgid) =>
+  until(() => {
+    const holder = holderOf(join(at, "slot-1.lock"));
+    const recorded = holder?.pgid === pgid || holder?.riders?.some((r) => r.pgid === pgid) === true;
+    return recorded && existsSync(at) && readdirSync(at).join() === "slot-1.lock";
+  }, 5000);
 
 test("exits with the command's code, its stdin, stdout and stderr its own", async () => {
   const dir = repo();
@@ -297,6 +313,7 @@ test("kill -9 of agentry run leaves its slot held while the command's group runs
       // gone already
     }
   });
+  await grouped(lockDir(dir, "editor"), orphan);
   first.child.kill("SIGKILL");
   await first;
   const show = await agentry(["lock", "show"], { cwd: dir });
@@ -468,8 +485,14 @@ const gateSlots = (dir) => slotNames(join(dir, ".agentry", "run", "gate-locks"))
 test("a run of a gate tier's argv takes the gate slot for its life and says so", async () => {
   const dir = repo();
   const seen = join(dir, "seen");
+  // The command looks once its run has recorded its group (up to 5 s): the slot names it, nothing else is
+  // there. What it saw last is what it writes.
   const tier = js(
-    `const fs=require('fs');fs.writeFileSync(${JSON.stringify(seen)},fs.readdirSync(${JSON.stringify(join(dir, ".agentry", "run", "gate-locks"))}).join())`,
+    `const fs=require('fs'),at=${JSON.stringify(gateLockDir(dir))},end=Date.now()+5000;let saw;
+    for(;;){const ls=fs.readdirSync(at).join();let pgid=null;try{pgid=JSON.parse(fs.readFileSync(at+'/slot-1.lock','utf8')).pgid}catch{}
+      saw=ls+(pgid===process.pid?' group':' no group');if(saw==='slot-1.lock group'||Date.now()>end)break;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}
+    fs.writeFileSync(${JSON.stringify(seen)},saw)`,
   );
   writeFileSync(
     join(dir, ".agentry", "workflow.json"),
@@ -478,7 +501,7 @@ test("a run of a gate tier's argv takes the gate slot for its life and says so",
   const run = await agentry(["run", "--limit", "10s", "--", ...tier], { cwd: dir });
   assert.equal(run.status, 0);
   assert.equal(run.stderr, "run: this is the gate (full): taking the gate slot\n");
-  assert.equal(readFileSync(seen, "utf8"), "slot-1.lock", "held while the command ran");
+  assert.equal(readFileSync(seen, "utf8"), "slot-1.lock group", "held for its group while it ran");
   assert.deepEqual(gateSlots(dir), [], "released at the end");
 });
 
@@ -581,13 +604,60 @@ test("kill -9 of a gate run leaves the gate slot held while the gate's group run
       // gone already
     }
   });
+  await grouped(gateLockDir(dir), orphan);
   first.child.kill("SIGKILL");
   await first;
-  assert.ok(holdGate(gateLockDir(dir), { waitSec: 0 }).busy, "the gate's group still runs");
+  const probe = holdGate(gateLockDir(dir), { waitSec: 0 });
+  if (!probe.busy) probe.release(); // a failure here must not leave the probe's own slot behind
+  assert.ok(probe.busy, "the gate's group still runs");
   process.kill(-orphan, "SIGKILL");
   await until(() => !groupAlive(orphan));
   holdGate(gateLockDir(dir), { waitSec: 0 }).release();
 });
+
+// The same kill -9 the moment the command is up, with no wait for its group to be recorded: it may land while
+// `agentry run` still writes the slot. Wherever it lands, once the command's group is gone the next run takes
+// the slot at once, and leaves no slot, mutex or temp file behind. The command runs on only the first time.
+for (const kind of ["lock", "gate"])
+  test(`kill -9 of a ${kind} run as it records its command's group: once the group is gone, the next run takes the slot at once and nothing is left`, async (t) => {
+    const dir = repo({ editor: 1 });
+    const pidFile = join(dir, "cmd.pid");
+    const cmd = js(
+      `const fs=require('fs'),f=${JSON.stringify(pidFile)};if(fs.existsSync(f))process.exit(0);fs.writeFileSync(f,String(process.pid));setInterval(()=>{},1000)`,
+    );
+    if (kind === "gate")
+      writeFileSync(
+        join(dir, ".agentry", "workflow.json"),
+        JSON.stringify({ locks: { editor: 1 }, gate: { tiers: [{ name: "full", command: cmd }] } }),
+      );
+    const run = (limit) => [
+      "run",
+      "--limit",
+      limit,
+      ...(kind === "lock" ? ["--lock", "editor"] : []),
+      "--",
+      ...cmd,
+    ];
+    const first = agentry(run("60s"), { cwd: dir, quiet: true });
+    await until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8") !== "", 10_000, 2);
+    const orphan = Number(readFileSync(pidFile, "utf8"));
+    t.after(() => {
+      try {
+        process.kill(-orphan, "SIGKILL");
+      } catch {
+        // gone already
+      }
+    });
+    first.child.kill("SIGKILL");
+    await first;
+    process.kill(-orphan, "SIGKILL");
+    await until(() => !groupAlive(orphan));
+    const next = await agentry(run("5s"), { cwd: dir });
+    assert.equal(next.status, 0);
+    const said = kind === "gate" ? "run: this is the gate (full): taking the gate slot\n" : "";
+    assert.equal(next.stderr, said, "the slot was taken at once");
+    assert.deepEqual(rawFiles(dir), [], "no slot, mutex or temp file, nothing cleared first");
+  });
 
 test("a run riding a take keeps the take until the run's limit, so no one runs beside it", async () => {
   const dir = repo({ editor: 1 });
@@ -788,6 +858,7 @@ test("lock drop --orphan frees a slot only a leftover group holds, printing the 
   const live = await agentry(["lock", "drop", "editor", "--orphan"], { cwd: dir });
   assert.equal(live.status, 1, "the recording run still lives");
   assert.match(live.stdout, /still lives/);
+  await grouped(lockDir(dir, "editor"), orphan);
   first.child.kill("SIGKILL");
   await first;
   const freed = await agentry(["lock", "drop", "editor", "--orphan"], { cwd: dir });
@@ -828,7 +899,7 @@ test("kill -9 of a ridden run keeps the take while its command's group runs, so 
       // gone already
     }
   });
-  await sleepMs(200);
+  await grouped(lockDir(dir, "editor"), command);
   riding.child.kill("SIGKILL");
   await riding;
   await sleepMs(2200);
@@ -980,7 +1051,7 @@ test("kill -9 of a ridden run holds the take past the run's limit while its comm
       // gone already
     }
   });
-  await sleepMs(200);
+  await grouped(lockDir(dir, "editor"), command);
   riding.child.kill("SIGKILL");
   await riding;
   await sleepMs(8500);
@@ -1010,7 +1081,7 @@ test("lock drop on a take whose ridden run was killed names the group it kept th
       // gone already
     }
   });
-  await sleepMs(200);
+  await grouped(lockDir(dir, "editor"), command);
   riding.run.child.kill("SIGKILL");
   await riding.run;
   const drop = await agentry(["lock", "drop", "editor"], { cwd: dir, env });
