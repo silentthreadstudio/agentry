@@ -879,7 +879,7 @@ function heldLead(root, ledger) {
   if (hold.for === "guard") {
     const again = laneLine(root, "report", ledger.id);
     return {
-      held: `guard tripped: ${hold.reason} → fix it (commit it between lanes, or add the path to guard.allow), then run ${again} again`,
+      held: `${heldText(hold)} → fix it (commit it between lanes, or add the path to guard.allow), then run ${again} again`,
       hold,
       run: again,
     };

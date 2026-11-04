@@ -30,7 +30,7 @@ import { sessionChecks } from "../../process/spec/extensions.mjs";
 import { idleMinutes } from "../../process/spec/presets.mjs";
 import { statusView, titleOf, workKind } from "../../process/status.mjs";
 import { runText } from "../../process/steps.mjs";
-import { forThisRepo, primeLimitOf } from "../brief.mjs";
+import { forThisRepo, primeLimitOf, shellQuote } from "../brief.mjs";
 import { clock, idleHead } from "../exec-view.mjs";
 import { gateLockDir, heldSlots } from "../gate-lock.mjs";
 import { idleOf } from "../idle.mjs";
@@ -96,7 +96,8 @@ const pendingEpisodes = (all) =>
   );
 
 // A held lane as start shows it: what it waits for, where in its steps, since when, the evidence (from
-// the root) and the step that answers it. The owner's holds come before the parked lanes.
+// the root) and the step that answers it: the resume, or for a guard hold (field 75) its reason and the
+// report to run again once main is fixed. The owner's holds come before the parked lanes.
 const heldOf = (runRoot, all) =>
   all
     .filter((l) => l.state === "held" && l.hold)
@@ -109,7 +110,12 @@ const heldOf = (runRoot, all) =>
       since: l.hold.since,
       evidence: l.hold.evidence ? relative(runRoot, l.hold.evidence) : null,
       ...(l.hold.why && { why: l.hold.why }),
-      resume: nextStep(`lane exec resume ${l.id} --note "<the OK>"`),
+      ...(l.hold.for === "guard"
+        ? {
+            reason: l.hold.reason,
+            report: nextStep(`lane exec report ${l.id} --root ${shellQuote(runRoot)}`),
+          }
+        : { resume: nextStep(`lane exec resume ${l.id} --note "<the OK>"`) }),
     }));
 
 // The merged lanes whose merge record is from today, local time (field 60); one with no time is not.
@@ -240,6 +246,12 @@ function renderStart(s, { name, root }) {
   // The lanes that wait on the owner, before anything else the session holds.
   // A parked lane reads like a held one: its why, its evidence when it has one, and the resume (field 62).
   for (const h of s.held.slice(0, MAX_HELD)) {
+    if (h.for === "guard") {
+      add(`held: ${h.id} guard tripped, since ${clock(h.since)}`);
+      add(`  reason: ${h.reason}`);
+      add(`  → ${h.report} (after fixing it)`, Number.POSITIVE_INFINITY); // a step to run: never cut
+      continue;
+    }
     if (h.for === "later")
       add(`parked: ${h.id} since ${clock(h.since)}${h.why ? `: "${oneLine(h.why)}"` : ""}`);
     else

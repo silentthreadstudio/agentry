@@ -49,12 +49,14 @@ export const routeFixedText = (route) =>
 export const holdWhere = (hold, total) =>
   hold.stepRun && total ? `${hold.when} ${runText(hold.stepRun, total)}` : "mid-build";
 
-/** The `held:` line: `for the owner, after step 1 of 2, since <ISO> · evidence <path>`, or for a parked
- *  lane `parked, since <ISO>: "<why>"`. */
+/** The `held:` line: `for the owner, after step 1 of 2, since <ISO> · evidence <path>`, for a parked
+ *  lane `parked, since <ISO>: "<why>"`, and for a lane the guard holds `guard tripped: <reason>`. */
 export const heldText = (hold, total) =>
-  hold.for === "later"
-    ? `parked, since ${hold.since}${hold.why ? `: "${hold.why}"` : ""}`
-    : `for the owner, ${holdWhere(hold, total)}, since ${hold.since} · evidence ${hold.evidence}`;
+  hold.for === "guard"
+    ? `guard tripped: ${hold.reason}`
+    : hold.for === "later"
+      ? `parked, since ${hold.since}${hold.why ? `: "${hold.why}"` : ""}`
+      : `for the owner, ${holdWhere(hold, total)}, since ${hold.since} · evidence ${hold.evidence}`;
 
 /** How one owner's answer (a ledger `holds[]` entry) reads: `approved` after a run, `sent back` to redo
  *  it, `noted` after a hold during a round or a parked one. */

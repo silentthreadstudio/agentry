@@ -437,6 +437,36 @@ test("parked and held lanes share the cap of 3: the fourth is counted", () => {
   );
 });
 
+test("start prints a guard hold with its reason and the report step, never the resume line (field 75)", () => {
+  const root = fresh();
+  heldLedger(root, "G1", {
+    for: "guard",
+    when: "during",
+    stepRun: null,
+    reason: "HEAD moved 1234567 → 89abcde",
+    report: join(root, ".agentry", "run", "process", "runs", "G1", "r1-build.report.held.md"),
+  });
+  for (const id of ["H1", "H2", "H3"]) heldLedger(root, id);
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  const lines = res.stdout.split("\n");
+  const at = lines.indexOf(`held: G1 guard tripped, since ${hhmm(SINCE)}`);
+  assert.ok(at > 0, res.stdout);
+  assert.deepEqual(lines.slice(at + 1, at + 3), [
+    "  reason: HEAD moved 1234567 → 89abcde",
+    `  → lane exec report G1 --root '${root}' (after fixing it)`,
+  ]);
+  assert.doesNotMatch(res.stdout, /exec resume G1/);
+  const held = lines.filter((l) => l.startsWith("held: "));
+  assert.equal(held.length, 4, "the guard hold shares the cap of three");
+  assert.equal(held.at(-1), "held: +1 more → lane session start --json");
+  const data = JSON.parse(session(root, "start", "--json").stdout).held.find((h) => h.id === "G1");
+  assert.deepEqual(
+    [data.for, data.reason, data.resume],
+    ["guard", "HEAD moved 1234567 → 89abcde", undefined],
+  );
+});
+
 test("start shows three held lanes and counts the fourth", () => {
   const root = fresh();
   for (const id of ["H1", "H2", "H3", "H4"]) heldLedger(root, id);
