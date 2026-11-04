@@ -2913,11 +2913,16 @@ function adopt(ctx, id) {
     const saved = join(scratch, "uncommitted.diff");
     const work = from.dirty.length ? saveWork(from.worktree, saved) : { files: [] };
     if (work.error) refuse(`the worktree's uncommitted work could not be saved: ${work.error}`);
-    const again = (path) => {
+    // What the carry writes in the run dir, so a failure removes that and nothing that was there before.
+    const runsAt = join(root, ".agentry", "run", "process", "runs", id);
+    const made = existsSync(runsAt) ? [] : [runsAt];
+    const carryIn = (path) => {
       const diff = join(ledgers.runDir(root, id), "adopt", "uncommitted.diff");
       if (work.files.length) {
-        mkdirSync(dirname(diff), { recursive: true });
+        const dir = mkdirSync(dirname(diff), { recursive: true });
+        if (dir) made.push(dir);
         copyFileSync(saved, diff);
+        made.push(diff);
       }
       // The commits are picked as a list, merges left out (`pickOnto`); `carry` then applies the diff.
       const picked = pickOnto(path, {
@@ -2948,6 +2953,20 @@ function adopt(ctx, id) {
           cleanup: `${branch} and its worktree are left as they are; once ${id} has landed: ${cleanupSteps(adopted).join("; ")}`,
         },
       };
+    };
+    // A throw inside the carry (not a conflict: those are a stop with the ledger written) takes the new
+    // lane down again, its worktree, branch and run files, so no lane is left without a ledger.
+    const again = (path) => {
+      try {
+        return carryIn(path);
+      } catch (e) {
+        remove(root, { path, branch: null, force: true });
+        git(root, ["branch", "-D", branchOf(id)]);
+        for (const p of made.reverse()) rmSync(p, { recursive: true, force: true });
+        throw new Stopped(
+          `the adopt stopped: ${e.message}; the new lane was taken down, nothing is kept and ${branch} is as it was`,
+        );
+      }
     };
     return cut({ ...ctx, on: null }, id, { found, parent: null, mainBranch, again });
   } finally {

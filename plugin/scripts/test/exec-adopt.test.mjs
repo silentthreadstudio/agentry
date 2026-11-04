@@ -107,7 +107,7 @@ function lane(r, ...args) {
   } catch {
     /* a refusal on stderr */
   }
-  return { exit: res.status, json, stderr: res.stderr };
+  return { exit: res.status, json, stdout: res.stdout, stderr: res.stderr };
 }
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const ledgerFile = (root, id) => join(processDir(root), "ledger", `${id}.json`);
@@ -517,4 +517,33 @@ test("a revision cannot slip a tracked lane branch past its refusal", () => {
   assert.equal(slipped.exit, 2);
   assert.match(slipped.stderr, /agentry\/T2~0 does not exist/);
   assertNothingWritten(r, "T1", before);
+});
+
+test("a throw inside the carry takes the new lane down: no ledger, branch, worktree or board write, the source as it was", () => {
+  const r = repo();
+  const src = agentTree(r);
+  // The injected throw: a file where the adopt's run dir needs its `adopt/` directory.
+  const runs = join(processDir(r.root), "runs", "T1");
+  mkdirSync(runs, { recursive: true });
+  writeFileSync(join(runs, "adopt"), "in the way\n");
+  const before = board(r.root);
+  const source = sourceOf(r.root, src.branch, src.path);
+  const res = lane(r, "adopt", "T1", "--branch", src.branch);
+  assert.equal(res.exit, 1, res.stderr);
+  assert.match(res.stdout, /the adopt stopped: .*the new lane was taken down, nothing is kept/);
+  assert.equal(existsSync(ledgerFile(r.root, "T1")), false, "no ledger");
+  assert.equal(hasRef(r.root, "refs/heads/agentry/T1"), false, "no lane branch");
+  assert.equal(
+    existsSync(join(r.root, ".agentry", "run", "worktrees", "T1")),
+    false,
+    "no worktree",
+  );
+  assert.ok(!git(r.root, "worktree", "list").includes("worktrees/T1"), "no registered worktree");
+  assert.equal(board(r.root), before, "no board write");
+  assert.deepEqual(sourceOf(r.root, src.branch, src.path), source);
+  // The run dir was there before: only what the adopt put in it goes.
+  assert.equal(existsSync(runs), true);
+  // A second adopt once the obstacle is gone goes through.
+  rmSync(join(runs, "adopt"));
+  assert.equal(lane(r, "adopt", "T1", "--branch", src.branch).exit, 0);
 });
