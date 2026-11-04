@@ -236,3 +236,55 @@ test("--resolve landed names each lane stacked on it with its restack command, a
   assert.match(res.stdout, /! stack +T2 is stacked on T1: agentry lane exec restack T2 --main/);
   assert.equal(readFileSync(join(ledgerDir(), "T2.json"), "utf8"), before);
 });
+
+/** stuckLand, then the ledger as a land killed while picking: both picks on main, none recorded. */
+function killedWhilePicking() {
+  const s = stuckLand();
+  const ledger = readLedger(root, ID);
+  const { landed: _, gate: __, ...merge } = ledger.merge;
+  writeLedger(root, { ...ledger, merge: { ...merge, step: "picking" } });
+  return s;
+}
+
+// Verifier r3, probes A, B, B2: picks found by position hid them behind any owner commit since preHead.
+test("--resolve rolled-back refuses while a land killed picking left its picks on main, an owner commit on top", () => {
+  const { landed } = killedWhilePicking();
+  commitFile(root, "notes.txt", "owner\n", "docs: owner note");
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), new RegExp(`${landed[0].slice(0, 7)} is on main: not rolled back`));
+  assert.equal(ledgerBytes(), before);
+});
+
+test("--resolve rolled-back refuses with one pick on main and an owner commit after it", () => {
+  const { landed } = killedWhilePicking();
+  git(root, "reset", "-q", "--keep", "HEAD~1"); // main: preHead and the first pick only
+  commitFile(root, "notes.txt", "owner\n", "docs: owner note");
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), new RegExp(`${landed[0].slice(0, 7)} is on main: not rolled back`));
+  assert.equal(ledgerBytes(), before);
+});
+
+test("--resolve rolled-back refuses with both picks of a land killed picking on main and nothing on top", () => {
+  killedWhilePicking();
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /is on main: not rolled back/);
+  assert.equal(ledgerBytes(), before);
+});
+
+test("--resolve rolled-back refuses when git cannot tell what is on main, never reading it as none", () => {
+  const { preHead } = killedWhilePicking();
+  git(root, "reset", "-q", "--keep", preHead);
+  const ledger = readLedger(root, ID);
+  writeLedger(root, { ...ledger, merge: { ...ledger.merge, planned: ["0".repeat(40)] } });
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "rolled-back");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /cannot tell whether a pick is on main \(.+\): not rolled back/);
+  assert.equal(ledgerBytes(), before);
+});

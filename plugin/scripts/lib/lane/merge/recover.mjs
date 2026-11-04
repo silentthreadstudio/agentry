@@ -16,7 +16,6 @@ import {
   commitsBetween,
   filesOf,
   isAncestor,
-  landedSince,
   pickInProgress,
   resolvedByHand,
   restoreFiles,
@@ -26,6 +25,7 @@ import {
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
 import { childrenOf } from "../stack.mjs";
+import { git } from "../worktree.mjs";
 import { backStop, putBackAllow, releaseWrites } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
 import { afterLand, done, landNext, now, ok, red, save, setMerge, short, warn } from "./lane.mjs";
@@ -357,17 +357,45 @@ function notLanded(root, merge) {
   return off ? `${short(off)} is not on main: not landed` : null;
 }
 
-// Why `rolled-back` cannot be said of `merge`, or null: no pick is on main, recorded or (a land killed
-// while picking, before it recorded any) found on main's history since preHead by its identity.
+// The stable patch id of each non-merge commit `revs` (git log arguments) lists: `{ ids: [{ patchId, sha }]
+// }`, or `{ error }` when git cannot say. A commit that changes nothing has none.
+function patchIdsOf(root, revs) {
+  const log = git(root, ["log", "-p", "--no-color", "--no-ext-diff", "--no-merges", ...revs, "--"]);
+  if (log.status !== 0) return { error: log.stderr.trim().split("\n")[0] || "git log failed" };
+  if (!log.stdout.trim()) return { ids: [] };
+  const res = git(root, ["patch-id", "--stable"], log.stdout);
+  if (res.status !== 0) return { error: res.stderr.trim().split("\n")[0] || "git patch-id failed" };
+  const ids = res.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [patchId, sha] = line.split(" ");
+      return { patchId, sha };
+    });
+  return { ids };
+}
+
+// Why `rolled-back` cannot be said of `merge`, or null: no recorded pick is on main, and no first-parent
+// commit since preHead, wherever it sits, has the patch of a planned one (a land killed while picking,
+// before it recorded any, with the owner's commits around them). When git cannot tell, that is the answer:
+// never "none".
 function notRolledBack(root, merge) {
   const landed = Array.isArray(merge.landed) ? merge.landed : [];
+  const recorded = landed.find((sha) => isAncestor(root, sha, "HEAD"));
+  if (recorded) return `${short(recorded)} is on main: not rolled back`;
   const planned = Array.isArray(merge.planned) ? merge.planned : [];
-  const found =
-    typeof merge.preHead === "string" && planned.length > 0
-      ? (landedSince(root, { preHead: merge.preHead, planned }).landed ?? [])
-      : [];
-  const on = [...landed, ...found].find((sha) => isAncestor(root, sha, "HEAD"));
-  return on ? `${short(on)} is on main: not rolled back` : null;
+  if (planned.length === 0) return null;
+  if (typeof merge.preHead !== "string")
+    return "the ledger names no preHead: cannot tell what is on main";
+  const mine = patchIdsOf(root, ["--no-walk=unsorted", ...planned]);
+  const main = mine.error
+    ? mine
+    : patchIdsOf(root, ["--reverse", "--first-parent", `${merge.preHead}..HEAD`]);
+  const error = mine.error ?? main.error;
+  if (error) return `cannot tell whether a pick is on main (${error}): not rolled back`;
+  const picks = new Set(mine.ids.map((p) => p.patchId));
+  const on = main.ids.find((p) => picks.has(p.patchId));
+  return on ? `${short(on.sha)} is on main: not rolled back` : null;
 }
 
 /** `lane merge <id> --resolve landed|rolled-back`: on the owner's call, close a ledger in `merging` a land
