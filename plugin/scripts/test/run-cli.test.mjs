@@ -558,7 +558,7 @@ test("a command that exits normally takes what it left of its group with it, and
   const left = Number(readFileSync(pidFile, "utf8"));
   assert.equal(alive(left), false, "the background member is gone");
   assert.deepEqual(slots(dir), []);
-  assert.deepEqual(leftIn(dir), [], "no slot, mutex or temp file");
+  assert.deepEqual(rawFiles(dir), [], "no slot, mutex or temp file, nothing cleared first");
 });
 
 test("kill -9 of a gate run leaves the gate slot held while the gate's group runs", async (t) => {
@@ -1045,7 +1045,7 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
     const { status } = await run;
     assert.ok(status > 128, `the command's own end by a signal (${status})`);
     await until(() => !alive(member), 2000);
-    assert.deepEqual(leftIn(dir), [], "no slot, mutex or temp file");
+    assert.deepEqual(rawFiles(dir), [], "no slot, mutex or temp file, nothing cleared first");
   });
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
@@ -1071,7 +1071,7 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
     assert.match(result.stderr, /waiting for gate slot 1 \(held by someone since/);
     assert.deepEqual(slots(dir), [], "no lock taken");
     gate.release();
-    assert.deepEqual(leftIn(dir), []);
+    assert.deepEqual(rawFiles(dir), []);
   });
 
 test("a thrown error in agentry run's process still frees what it registered to free", async () => {
@@ -1092,7 +1092,7 @@ test("a thrown error in agentry run's process still frees what it registered to 
   );
   const code = await new Promise((resolve) => child.on("exit", resolve));
   assert.equal(code, 1);
-  assert.deepEqual(leftIn(dir), [], "its slot was freed on the way out");
+  assert.deepEqual(rawFiles(dir), [], "its slot was freed on the way out");
 });
 
 test("a thrown error while the command starts kills its group and rejects", async () => {
