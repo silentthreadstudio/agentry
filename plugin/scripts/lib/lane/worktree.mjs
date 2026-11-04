@@ -26,8 +26,14 @@ export function git(dir, args, input, { timeout = 120_000 } = {}) {
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     timeout,
     killSignal: "SIGKILL",
+    detached: true, // its own process group, so a timeout can take down what git started
     maxBuffer: 256 * 1024 * 1024,
   });
+  if (res.error?.code === "ETIMEDOUT" && res.pid) {
+    try {
+      process.kill(-res.pid, "SIGKILL");
+    } catch {} // the group is already gone
+  }
   return { status: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
 }
 

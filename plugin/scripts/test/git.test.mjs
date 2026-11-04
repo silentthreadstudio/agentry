@@ -372,6 +372,19 @@ test("defaultBranch: a local main without a remote; null outside a repo", () => 
 
 // ---- no git call hangs: no stdin, a timeout, no child left behind ----
 
+// Is process `pid` gone? A killed orphan is reaped by init a moment later, so look for up to 3 s.
+function goneWithin3s(pid) {
+  for (const end = Date.now() + 3000; Date.now() < end; ) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    spawnSync("sleep", ["0.1"]);
+  }
+  return false;
+}
+
 // Run `body` with a fake `git` first on PATH: `script` is its /bin/sh body, with $LOG naming a file in `dir`.
 function withFakeGit(script, body) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentry-fakegit-")));
@@ -440,7 +453,7 @@ test("a 5 MB patch still reverse-applies", () => {
 });
 
 test("a git call that outlives the timeout is killed, answers null and leaves no child", () => {
-  const script = 'echo $$ > "$LOG"; exec sleep 60';
+  const script = 'echo $$ > "$LOG"; sleep 60 & echo $! > "$LOG.child"; wait';
   withFakeGit(script, (dir) => {
     process.env.AGENTRY_GIT_TIMEOUT_MS = "1500";
     try {
@@ -450,9 +463,11 @@ test("a git call that outlives the timeout is killed, answers null and leaves no
     } finally {
       process.env.AGENTRY_GIT_TIMEOUT_MS = ""; // unset: the default applies
     }
-    const pid = Number(readFileSync(join(dir, "log"), "utf8"));
-    assert.ok(pid > 0);
-    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "the git child is gone");
+    for (const file of ["log", "log.child"]) {
+      const pid = Number(readFileSync(join(dir, file), "utf8"));
+      assert.ok(pid > 0);
+      assert.ok(goneWithin3s(pid), `${file}: process ${pid} is gone`);
+    }
   });
 });
 
@@ -479,4 +494,17 @@ test("the plugin test runner gives a hung test 180 s, not forever", () => {
     "utf8",
   );
   assert.match(runner, /"--test-timeout=180000"/);
+});
+
+test("a zero, negative or junk AGENTRY_GIT_TIMEOUT_MS falls back to the default, not to failure", () => {
+  withFakeGit("printf 'a.md\\0'", (dir) => {
+    try {
+      for (const bad of ["-5", "0", "abc"]) {
+        process.env.AGENTRY_GIT_TIMEOUT_MS = bad;
+        assert.deepEqual(trackedFiles(dir, "*.md"), ["a.md"], `"${bad}"`);
+      }
+    } finally {
+      process.env.AGENTRY_GIT_TIMEOUT_MS = ""; // unset: the default applies
+    }
+  });
 });

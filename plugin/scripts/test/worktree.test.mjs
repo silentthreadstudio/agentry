@@ -1,5 +1,6 @@
 // Tests for lib/lane/worktree.mjs on throwaway git repositories.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -230,6 +231,19 @@ test("remove deletes a fast-forwarded branch", () => {
 
 // ---- the lane's git never hangs: no stdin unless given, a timeout, no child left behind ----
 
+// Is process `pid` gone? A killed orphan is reaped by init a moment later, so look for up to 3 s.
+function goneWithin3s(pid) {
+  for (const end = Date.now() + 3000; Date.now() < end; ) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    spawnSync("sleep", ["0.1"]);
+  }
+  return false;
+}
+
 // Run `body` with a fake `git` first on PATH; `script` is its /bin/sh body, with $LOG naming a file in `dir`.
 function withFakeGit(script, body) {
   const dir = mkdtempSync(join(tmpdir(), "lane-fakegit-"));
@@ -256,13 +270,15 @@ test("git gets no stdin unless it is given input", () => {
 });
 
 test("git past its timeout is killed, answers non-zero and leaves no child", () => {
-  withFakeGit('echo $$ > "$LOG"; exec sleep 60', (dir) => {
+  withFakeGit('echo $$ > "$LOG"; sleep 60 & echo $! > "$LOG.child"; wait', (dir) => {
     const started = Date.now();
     const res = laneGit(dir, ["status"], undefined, { timeout: 1500 });
     assert.notEqual(res.status, 0);
     assert.ok(Date.now() - started < 10_000);
-    const pid = Number(readFileSync(join(dir, "log"), "utf8"));
-    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+    for (const file of ["log", "log.child"]) {
+      const pid = Number(readFileSync(join(dir, file), "utf8"));
+      assert.ok(goneWithin3s(pid), `${file}: process ${pid} is gone`);
+    }
   });
 });
 

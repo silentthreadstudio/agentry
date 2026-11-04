@@ -6,7 +6,7 @@
 // Every function takes the git root first and never throws: outside a repo, or on any git error, it
 // answers false / [] / null. Refs and SHAs are checked before they reach argv, so a board cell can never
 // become a git option. Nothing here changes the repository: `reverseApplies` works on a throwaway index.
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,25 +15,33 @@ const SHA = /^[0-9a-f]{4,40}$/i;
 const FULL_SHA = /^[0-9a-f]{40,64}$/;
 const safeRef = (ref) => typeof ref === "string" && ref.length > 0 && !ref.startsWith("-");
 
-// A git call never waits forever: past the timeout it is killed and answers like any git error. Read at
-// each call, so a test can shorten it with AGENTRY_GIT_TIMEOUT_MS.
-const timeoutMs = () => Number(process.env.AGENTRY_GIT_TIMEOUT_MS) || 120_000;
+// A git call never waits forever: past the timeout it is killed, with every process it started, and
+// answers like any git error. The default is 120 s; AGENTRY_GIT_TIMEOUT_MS shortens it for a test. Read at
+// each call; anything but a positive number is the default.
+const timeoutMs = () => {
+  const ms = Number(process.env.AGENTRY_GIT_TIMEOUT_MS);
+  return ms > 0 ? Math.min(ms, 2 ** 31 - 1) : 120_000;
+};
 
 // No stdin at all unless the call passes `input`: a git that waits on a stdin nobody writes would hang.
+// The child leads its own process group, so a timeout takes its children down with it.
 function git(root, args, input, env) {
-  try {
-    return execFileSync("git", ["-C", root, ...args], {
-      encoding: "utf8",
-      input,
-      env,
-      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
-      maxBuffer: 256 * 1024 * 1024,
-      timeout: timeoutMs(),
-      killSignal: "SIGKILL",
-    });
-  } catch {
-    return null;
+  const res = spawnSync("git", ["-C", root, ...args], {
+    encoding: "utf8",
+    input,
+    env,
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
+    maxBuffer: 256 * 1024 * 1024,
+    timeout: timeoutMs(),
+    killSignal: "SIGKILL",
+    detached: true,
+  });
+  if (res.error?.code === "ETIMEDOUT" && res.pid) {
+    try {
+      process.kill(-res.pid, "SIGKILL");
+    } catch {} // the group is already gone
   }
+  return res.error || res.status !== 0 ? null : res.stdout;
 }
 
 const known = new Map(); // `${root}\0${sha}` → boolean
