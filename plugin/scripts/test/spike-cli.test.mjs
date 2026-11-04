@@ -9,7 +9,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { boardRepo, handBranch } from "./drift-repo.mjs";
+import { boardRepo, handBranch, ledger } from "./drift-repo.mjs";
 import { git, gitEnv } from "./git-repo.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "lane.mjs");
@@ -118,14 +118,20 @@ test("no flag lists the filed spikes, a branch gone since shown as gone", () => 
   assert.match(spike(fresh().root).stdout, /none filed/);
 });
 
-test("refused, nothing written: an unknown branch or path, the main checkout, a lane's branch", () => {
+test("refused, nothing written: an unknown branch or path, the main checkout, a branch a ledger tracks", () => {
   const { root } = fresh();
   git(root, "worktree", "add", "-q", "-b", "agentry/T2", join(root, "lane-t2"), "main");
+  ledger(root, "T2");
+  const adopted = agent(root, "c3");
+  ledger(root, "T3", {
+    adopted: { branch: adopted.branch, tip: adopted.sha, commits: [], worktree: adopted.path },
+  });
   const cases = [
     ["no-such-branch", /no worktree is on that branch or at that path/],
     [join(root, "nowhere"), /no worktree is on that branch or at that path/],
     [root, /that is the main checkout/],
-    ["agentry/T2", /agentry\/T2 is a lane's branch/],
+    ["agentry/T2", /agentry\/T2 is T2's lane: its ledger tracks it/],
+    [adopted.branch, /worktree-agent-c3 is T3's lane: its ledger tracks it/],
   ];
   for (const [target, why] of cases) {
     const res = spike(root, target, "--for", "T1");
@@ -133,6 +139,18 @@ test("refused, nothing written: an unknown branch or path, the main checkout, a 
     assert.match(res.stderr, why);
   }
   assert.equal(existsSync(file(root)), false);
+});
+
+test("a ledgerless agentry/ worktree is filed like any other", () => {
+  const { root } = fresh();
+  const path = join(root, ".agentry", "run", "worktrees", "T2");
+  git(root, "worktree", "add", "-q", "-b", "agentry/T2", path, "main");
+  const res = spike(root, "agentry/T2", "--for", "T2");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual(
+    filed(root).map((s) => [s.branch, s.for]),
+    [["agentry/T2", "T2"]],
+  );
 });
 
 test("refused, nothing written: an id the board does not hold, and --for with --keep", () => {

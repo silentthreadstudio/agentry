@@ -7,11 +7,13 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -85,6 +87,7 @@ function repo({ config } = {}) {
   commitFile(root, "plan/BOARD.md", BOARD_MD);
   commitFile(root, "plan/TASKS.md", TASKS_MD);
   commitFile(root, "three.txt", "a\nb\nc\n");
+  commitFile(root, "gone.txt", "to delete\n");
   writeSpec(join(root, ".agentry"), SPEC);
   git(root, "add", ".agentry");
   git(root, "commit", "-q", "-m", "add the process files");
@@ -272,14 +275,53 @@ test("refused: nothing past main and a clean worktree (or none) is nothing to ad
   assert.equal(readFileSync(join(dirty.json.worktree, "more.txt"), "utf8"), "more\n");
 });
 
-test("refused: a lane's own agentry/ branch points at restart --carry, nothing written", () => {
+test("refused: a branch a ledger tracks points at restart --carry, nothing written", () => {
   const r = repo();
-  git(r.root, "branch", "agentry/T9", "main");
+  const t2 = lane(r, "start", "T2").json;
+  commitFile(t2.worktree, "four.txt", "4\n", "feat: four");
   const before = board(r.root);
-  const res = lane(r, "adopt", "T1", "--branch", "agentry/T9");
+  const res = lane(r, "adopt", "T1", "--branch", "agentry/T2");
   assert.equal(res.exit, 2);
-  assert.match(res.stderr, /agentry\/T9 is a lane's branch: use exec restart --carry/);
+  assert.match(res.stderr, /agentry\/T2 is T2's lane branch: use exec restart T2 --carry/);
   assertNothingWritten(r, "T1", before);
+});
+
+test("a ledgerless agentry/ branch is adopted for another id; for its own id it is refused, naming the land", () => {
+  const r = repo();
+  const path = join(r.root, ".agentry", "run", "worktrees", "T9");
+  git(r.root, "worktree", "add", "-q", "-b", "agentry/T9", path, "main");
+  const sha = commitFile(path, "three.txt", "a\nnine\nc\n", "feat: nine");
+  const res = lane(r, "adopt", "T1", "--branch", "agentry/T9");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(ledgerOf(r.root, "T1").adopted.branch, "agentry/T9");
+  assert.equal(tipOf(r.root, "agentry/T9"), sha);
+  // `agentry/T2` with no ledger is the branch a lane for T2 would cut.
+  const own = join(r.root, ".agentry", "run", "worktrees", "T2");
+  git(r.root, "worktree", "add", "-q", "-b", "agentry/T2", own, "main");
+  const four = commitFile(own, "four.txt", "4\n", "feat: four");
+  const before = board(r.root);
+  const same = lane(r, "adopt", "T2", "--branch", "agentry/T2");
+  assert.equal(same.exit, 2);
+  assert.match(
+    same.stderr,
+    /agentry\/T2 is the branch a lane for T2 cuts: land it as it is with lane merge T2 --branch agentry\/T2/,
+  );
+  // The source is the lane branch's name here: it stays as it was, and nothing else is written.
+  assert.equal(tipOf(r.root, "agentry/T2"), four);
+  assert.equal(existsSync(ledgerFile(r.root, "T2")), false);
+  assert.equal(existsSync(join(processDir(r.root), "runs", "T2")), false);
+  assert.equal(board(r.root), before);
+});
+
+test("refused: a branch an open lane already adopted names that lane, nothing written", () => {
+  const r = repo();
+  const src = agentTree(r);
+  assert.equal(lane(r, "adopt", "T1", "--branch", src.branch).exit, 0);
+  const before = board(r.root);
+  const again = lane(r, "adopt", "T2", "--branch", src.branch);
+  assert.equal(again.exit, 2);
+  assert.match(again.stderr, /worktree-agent-a1 is already adopted by T1/);
+  assertNothingWritten(r, "T2", before);
 });
 
 test("refused: the branch's worktree mid-rebase or mid-merge, nothing written", () => {
@@ -354,4 +396,100 @@ test("the adopted worktree is not counted against lanes.maxWriters, at the adopt
   const next = lane(r, "start", "T2");
   assert.equal(next.exit, 0, next.stderr);
   assert.ok(readdirSync(join(processDir(r.root), "ledger")).includes("T2.json"));
+});
+
+test("a mixed dirty source (staged, unstaged, deleted, binary, untracked) is left as it was and carried whole", () => {
+  const r = repo();
+  const src = agentTree(r, { dirty: false });
+  writeFileSync(join(src.path, "three.txt"), "a\nagent\nc\nstaged\n");
+  git(src.path, "add", "three.txt");
+  writeFileSync(join(src.path, "three.txt"), "a\nagent\nc\nstaged\nunstaged\n");
+  unlinkSync(join(src.path, "gone.txt"));
+  writeFileSync(join(src.path, "more.txt"), "more\n");
+  git(src.path, "add", "more.txt");
+  mkdirSync(join(src.path, "dir", "deep"), { recursive: true });
+  writeFileSync(join(src.path, "dir", "deep", "x.txt"), "x\n");
+  writeFileSync(join(src.path, "bin.dat"), Buffer.from([0, 1, 2, 255, 0, 10]));
+  const snapshot = () => [
+    tipOf(r.root, `refs/heads/${src.branch}`),
+    git(src.path, "ls-files", "-s"),
+    git(src.path, "status", "--porcelain=v2", "--untracked-files=all"),
+    git(src.path, "diff", "--cached", "--binary"),
+    git(src.path, "diff", "--binary"),
+  ];
+  const before = snapshot();
+  const res = lane(r, "adopt", "T1", "--branch", src.branch);
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual(snapshot(), before, "the source is byte for byte as it was");
+  const tree = res.json.worktree;
+  assert.equal(readFileSync(join(tree, "three.txt"), "utf8"), "a\nagent\nc\nstaged\nunstaged\n");
+  assert.equal(existsSync(join(tree, "gone.txt")), false, "the deletion is carried");
+  assert.equal(readFileSync(join(tree, "dir", "deep", "x.txt"), "utf8"), "x\n");
+  assert.deepEqual([...readFileSync(join(tree, "bin.dat"))], [0, 1, 2, 255, 0, 10]);
+  assert.equal(ledgerOf(r.root, "T1").adopted.files, 5);
+});
+
+test("a branch that merged main in is adopted without its merge: its own commits picked, the merge named", () => {
+  const r = repo();
+  const src = agentTree(r, { dirty: false });
+  commitFile(r.root, "five.txt", "5\n", "feat: five on main");
+  git(src.path, "merge", "-q", "--no-edit", "main");
+  commitFile(src.path, "more.txt", "m\n", "feat: more after the merge");
+  const res = lane(r, "adopt", "T1", "--branch", src.branch);
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(
+    git(r.root, "log", "--format=%s", "main..agentry/T1"),
+    "feat: more after the merge\nfeat: three by the agent",
+  );
+  const { adopted } = ledgerOf(r.root, "T1");
+  assert.deepEqual(
+    adopted.commits.map((c) => c.subject),
+    ["feat: three by the agent", "feat: more after the merge"],
+  );
+  assert.equal(adopted.merges.length, 1);
+  assert.match(res.json.adopted, /2 commits picked \(1 merge commits left out\)/);
+  assert.match(
+    readFileSync(res.json.brief, "utf8"),
+    /Its 1 merge commit\(s\) \([0-9a-f]{7} Merge branch 'main'[^)]*\) were not picked/,
+  );
+});
+
+test("a merge whose resolution the picks then miss stops as a carry conflict naming the next step", () => {
+  const r = repo();
+  const src = agentTree(r);
+  commitFile(r.root, "three.txt", "a\nmain\nc\n", "fix: three on main");
+  // The branch merges main in and resolves the conflict by hand, then edits the resolved line again.
+  const merged = spawnSync("git", ["-C", src.path, "merge", "-q", "--no-edit", "main"], {
+    env: gitEnv,
+  });
+  assert.notEqual(merged.status, 0);
+  writeFileSync(join(src.path, "three.txt"), "a\nboth\nc\n");
+  git(src.path, "commit", "-q", "-am", "merge main");
+  commitFile(src.path, "three.txt", "a\nboth again\nc\n", "feat: three once more");
+  writeFileSync(join(src.path, "more.txt"), "more\n");
+  const res = lane(r, "adopt", "T1", "--branch", src.branch);
+  assert.equal(res.exit, 1, res.stderr);
+  assert.match(
+    res.json.conflict,
+    /^[0-9a-f]{7} feat: three by the agent conflicts in three\.txt: resolve it, git cherry-pick --continue, then git apply --3way \S+uncommitted\.diff in /,
+  );
+  const ledger = ledgerOf(r.root, "T1");
+  assert.deepEqual([ledger.state, ledger.next], ["building", "build"]);
+  assert.equal(ledger.adopted.applied, false);
+});
+
+test("the printed commands shell-quote a path or branch that needs it", () => {
+  const r = repo();
+  const path = join(temp("adopt-space-"), "my tree");
+  const branch = "feat;touch-x";
+  git(r.root, "worktree", "add", "-q", "-b", branch, path, "main");
+  commitFile(path, "three.txt", "a\nsp\nc\n", "feat: sp");
+  commitFile(path, "my notes.md", "n\n", "docs: notes with a space");
+  const res = lane(r, "adopt", "T1", "--branch", branch);
+  assert.equal(res.exit, 0, res.stderr);
+  assert.ok(
+    res.json.cleanup.endsWith(`git worktree remove '${path}'; git branch -D 'feat;touch-x'`),
+    res.json.cleanup,
+  );
+  assert.match(res.json.warning, / --add 'my notes\.md' --apply$/m);
 });

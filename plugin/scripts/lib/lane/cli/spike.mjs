@@ -3,7 +3,8 @@
 // work meant for that board item, `--keep "<why>"` keeps it on purpose, `--forget` drops the entry. With no
 // flag it lists the filed spikes, a branch gone since shown as `gone`. A local run-state write, not a board
 // write: the registration flags write at once, no `--apply`. Refuses an unknown branch or path, the main
-// checkout, a lane's own `agentry/` branch, an id the board does not hold, and `--for` with `--keep`.
+// checkout, a branch a ledger tracks (a lane's own, or one an open lane adopted), an id the board does not
+// hold, and `--for` with `--keep`. A ledgerless `agentry/` worktree is filed like any other.
 // Exit 0 = filed, forgotten or listed; 2 = usage or refusal (nothing written).
 //
 // run(argv, { root, spec, model }) -> { exit, out }
@@ -12,6 +13,7 @@ import { resolve } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { runId } from "../../process/ids.mjs";
+import { list as listLedgers } from "../../process/ledger.mjs";
 import { commitOf } from "../land.mjs";
 import { fileSpike, forgetSpike, readSpikes, spikesFile } from "../spikes.mjs";
 import { mainRoot } from "../worktree.mjs";
@@ -112,8 +114,12 @@ export function run(argv, ctx) {
       what,
       `the worktree at ${tree.path} is on no branch: a spike is filed by its branch`,
     );
-  if (tree.branch.startsWith("agentry/"))
-    return refuse(what, `${tree.branch} is a lane's branch: its ledger tracks it`);
+  const lane = listLedgers(root).find(
+    (l) =>
+      l.branch === tree.branch ||
+      (l.state !== "merged" && l.state !== "closed" && l.adopted?.branch === tree.branch),
+  );
+  if (lane) return refuse(what, `${tree.branch} is ${lane.id}'s lane: its ledger tracks it`);
   let id = null;
   if (forId !== null) {
     id = itemId(ctx, forId);

@@ -74,7 +74,7 @@ import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
 import { escapesRoot, own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { WriteError } from "../../process/write.mjs";
-import { adoptedWork, cleanupSteps, source } from "../adopt.mjs";
+import { adoptedWork, cleanupSteps, pickOnto, shellWord, source } from "../adopt.mjs";
 import {
   appendedAfter,
   bullets,
@@ -2888,8 +2888,13 @@ function adopt(ctx, id) {
   refuseMidLand(root);
   const mainBranch = mainBranchOf(root);
   const base = headOf(root);
-  const from = source(root, { branch, base, mainBranch });
+  const from = source(root, { branch, base, mainBranch, lanes: ledgers.list(root) });
   if (from.problem) refuse(from.problem);
+  // `agentry/<id>` and its worktree are what the cut makes: a ledgerless one with this id lands as it is.
+  if (branch === branchOf(id))
+    refuse(
+      `${branch} is the branch a lane for ${id} cuts: land it as it is with lane merge ${id} --branch ${shellWord(branch)}, or adopt it for another id`,
+    );
   refuseAtWriterCap(root, spec, null, from.worktree);
   const found = contractOf(ctx, id);
   // The new lane's board write, tried before anything is written: a row it cannot write refuses here.
@@ -2914,11 +2919,19 @@ function adopt(ctx, id) {
         mkdirSync(dirname(diff), { recursive: true });
         copyFileSync(saved, diff);
       }
-      const res = carry(path, { base, tip: from.tip, diff });
+      // The commits are picked as a list, merges left out (`pickOnto`); `carry` then applies the diff.
+      const picked = pickOnto(path, {
+        commits: from.commits,
+        diff: work.files.length ? diff : null,
+      });
+      const res = picked.ok
+        ? carry(path, { base, tip: null, diff })
+        : { ok: false, applied: false, conflict: picked.conflict };
       const adopted = {
         branch,
         tip: from.tip,
         commits: from.commits.map(({ sha, subject }) => ({ sha, subject })),
+        ...(from.merges.length && { merges: from.merges }),
         worktree: from.worktree,
         files: work.files.length,
         ...(work.files.length && { applied: res.applied, diff }),
@@ -2930,7 +2943,7 @@ function adopt(ctx, id) {
         warnings: outsideAdopted(root, id, found, path, from.commits),
         exit: res.ok ? 0 : 1,
         shown: {
-          adopted: `${branch} at ${short(from.tip)}: ${adopted.commits.length} commits picked, ${adopted.files} files uncommitted${from.worktree ? ` from ${from.worktree}` : ""}`,
+          adopted: `${branch} at ${short(from.tip)}: ${adopted.commits.length} commits picked${from.merges.length ? ` (${from.merges.length} merge commits left out)` : ""}, ${adopted.files} files uncommitted${from.worktree ? ` from ${from.worktree}` : ""}`,
           ...(res.conflict && { conflict: `${res.conflict} in ${path}` }),
           cleanup: `${branch} and its worktree are left as they are; once ${id} has landed: ${cleanupSteps(adopted).join("; ")}`,
         },
@@ -2956,7 +2969,7 @@ function outsideAdopted(root, id, found, path, commits) {
       (c) =>
         `! adopted ${short(c.sha)} ${c.subject} changes files outside owns: ${c.out.join(", ")}`,
     ),
-    `! to own them: ${laneLine(root, "owns", id, ` --add ${paths.join(",")} --apply`)}`,
+    `! to own them: ${laneLine(root, "owns", id, ` --add ${shellWord(paths.join(","))} --apply`)}`,
   ];
 }
 
