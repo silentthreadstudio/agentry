@@ -2927,13 +2927,23 @@ function restart(ctx, id) {
   refuseAtWriterCap(root, spec, id);
   const found = contractOf(ctx, id);
   const mainBranch = mainBranchOf(root);
+  // The lane branch as the branch list has it, by its exact name: a case twin is refused, and the tip is
+  // never read by name (on a case-insensitive filesystem that can open the twin's loose file). A branch
+  // listed only in another case is refused too: the cut would make the twin pair beside it.
+  const tips = branchTips(root);
+  const named = resolveBranch(root, old.branch, tips);
+  if (named.problem && !named.missing) refuse(named.problem);
+  const caseOf = (name) => [...tips.keys()].find((b) => b.toLowerCase() === name.toLowerCase());
+  const other = named.missing && caseOf(old.branch);
+  if (other) refuse(`${old.branch} is listed only as ${other}: rename it to its exact name first`);
+  const oldTip = named.tip ?? null;
+  // The kept name, checked before anything is written: one another branch has in another case refuses.
+  const n = archiveNumber(root, id);
+  const keptName = oldTip ? branchOf(`${id}.${n}`) : null;
+  const clash = keptName && caseOf(keptName);
+  if (clash) refuse(`${clash} would be a case twin of ${keptName}: rename it first`);
   const left = leftover(root, old, spec.cleanup?.disposable ?? []);
   if (left.problem) refuse(left.problem);
-  // The lane branch as the branch list has it, by its exact name: a case twin is refused, and the tip is
-  // never read by name (on a case-insensitive filesystem that can open the twin's loose file).
-  const named = resolveBranch(root, old.branch);
-  if (named.problem && !named.missing) refuse(named.problem);
-  const oldTip = named.tip ?? null;
   if (left.ignored.length)
     refuse(
       `the worktree ${old.worktree} holds ${left.ignored.length} ignored file(s) a restart would delete (${left.ignored.slice(0, 5).join(", ")}): copy what you need out and remove them, or add them to cleanup.disposable, then restart`,
@@ -2954,10 +2964,8 @@ function restart(ctx, id) {
     : { files: [] };
   if (work.error) refuse(`the worktree's uncommitted work could not be saved: ${work.error}`);
 
-  const n = archiveNumber(root, id);
   const archived = archive(root, id, n);
   const diff = diffIn(archived.runs);
-  const keptName = oldTip ? branchOf(`${id}.${n}`) : null;
   let kept = null;
   let keptTip = null;
   let drop = false;
@@ -3028,11 +3036,11 @@ function restart(ctx, id) {
     // Read from the branch list by exact name, as every step back is printed: `update-ref` at the listed
     // tip, which git refuses when the ref holds anything else (a delete or rename by name could take a
     // case twin).
-    const tips = branchTips(root);
-    const held = [keptName, old.branch].find((b) => b && tips.has(b));
+    const listed = branchTips(root);
+    const held = [keptName, old.branch].find((b) => b && listed.has(b));
     const ref = (b) => shellWord(`refs/heads/${b}`);
     // A new branch left beside the kept one holds only copies of its work.
-    const copy = held && held !== old.branch && tips.get(old.branch);
+    const copy = held && held !== old.branch && listed.get(old.branch);
     // The steps back by hand: the old branch out of the new one's way (a stop before the rename leaves it
     // under its own name), the start, then (for a carry) the old commits and the saved diff.
     const unrenamed = keptName && held === old.branch;
@@ -3043,8 +3051,8 @@ function restart(ctx, id) {
       ...(copy ? [`git update-ref -d ${ref(old.branch)} ${copy}`] : []),
       ...(unrenamed
         ? [
-            `git update-ref ${ref(keptName)} ${tips.get(held)} ''`,
-            `git update-ref -d ${ref(old.branch)} ${tips.get(held)}`,
+            `git update-ref ${ref(keptName)} ${listed.get(held)} ''`,
+            `git update-ref -d ${ref(old.branch)} ${listed.get(held)}`,
           ]
         : []),
       laneLine(root, "start", id),

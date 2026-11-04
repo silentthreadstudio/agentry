@@ -127,8 +127,9 @@ export function archive(root, id, n) {
  *  null }` when no listed branch has the lane's exact name. The tip is the listed one (`resolveBranch`),
  *  and the rename is `update-ref` of the new ref at that tip (refused when it exists) then `update-ref -d`
  *  of the old one at it, never `branch -m` or a read by name: on a case-insensitive filesystem those can
- *  open, and move, another branch that differs only in case. Throws when either name has a case twin, or
- *  when git refuses. */
+ *  open, and move, another branch that differs only in case. Throws when either name has a case twin
+ *  (looked for again between the two steps: a twin at the same sha would pass the delete's old-value
+ *  check and go with it), or when git refuses. */
 export function retire(root, ledger, n) {
   const res = remove(root, { path: ledger.worktree, branch: null, force: true });
   if (!res.removed)
@@ -141,14 +142,16 @@ export function retire(root, ledger, n) {
   const kept = branchOf(`${ledger.id}.${n}`);
   const clash = [...tips.keys()].find((b) => b.toLowerCase() === kept.toLowerCase());
   if (clash) throw new Error(`${clash} would be a case twin of ${kept}: rename it first`);
-  for (const args of [
-    ["update-ref", `refs/heads/${kept}`, tip, ""],
-    ["update-ref", "-d", `refs/heads/${ledger.branch}`, tip],
-  ]) {
+  const run = (args) => {
     const moved = git(root, args);
     if (moved.status !== 0)
       throw new Error(`git ${args.map(shellWord).join(" ")}: ${first(moved.stderr)}`);
-  }
+  };
+  run(["update-ref", `refs/heads/${kept}`, tip, ""]);
+  const still = resolveBranch(root, ledger.branch);
+  if (still.problem && !still.missing) throw new Error(still.problem);
+  if (still.tip !== tip) throw new Error(`${ledger.branch} moved off ${tip} during the restart`);
+  run(["update-ref", "-d", `refs/heads/${ledger.branch}`, tip]);
   return { kept, tip };
 }
 

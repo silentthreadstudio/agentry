@@ -911,8 +911,9 @@ const REAL_GIT = process.env.PATH.split(":")
   .map((dir) => join(dir, "git"))
   .find((file) => existsSync(file));
 /** `lane exec <args>` with a `git` on PATH that, right after the first git call whose argv matches `on`,
- *  makes the loose case twin `twin` at main's tip beside the packed refs: a twin made mid-call. */
-function laneWithTwinAfter(r, on, twin, ...args) {
+ *  makes the loose case twin `twin` at `at` (default main's tip) beside the packed refs: a twin made
+ *  mid-call. */
+function laneWithTwinAfter(r, { on, twin, at = tipOf(r.root, "main") }, ...args) {
   const dir = temp("restart-shim-");
   const mark = join(dir, "mark");
   writeFileSync(mark, "");
@@ -923,7 +924,7 @@ function laneWithTwinAfter(r, on, twin, ...args) {
 if [ -f "${mark}" ] && [[ "$*" =~ $TWIN_ON ]]; then
   rm -f "${mark}"
   "${REAL_GIT}" -C "${r.root}" pack-refs --all
-  "${REAL_GIT}" -C "${r.root}" update-ref "refs/heads/${twin}" "$("${REAL_GIT}" -C "${r.root}" rev-parse main)"
+  "${REAL_GIT}" -C "${r.root}" update-ref "refs/heads/${twin}" ${at}
 fi
 exit $st
 `,
@@ -964,7 +965,13 @@ test("a case twin made once the worktree is gone stops the restart before the re
   const r = repo();
   worked(r);
   const oldTip = tipOf(r.root, "agentry/T3");
-  const res = laneWithTwinAfter(r, "worktree remove", "agentry/t3", "restart", "T3", "--carry");
+  const res = laneWithTwinAfter(
+    r,
+    { on: "worktree remove", twin: "agentry/t3" },
+    "restart",
+    "T3",
+    "--carry",
+  );
   assert.equal(res.exit, 1, res.out);
   assert.match(res.out, /agentry\/T3 has a case twin agentry\/t3: rename one first/);
   assert.doesNotMatch(res.out, /branch -[Dm]/);
@@ -978,7 +985,13 @@ test("a case twin of the kept branch made during the carry is never deleted with
   const r = repo();
   worked(r);
   const oldTip = tipOf(r.root, "agentry/T3");
-  const res = laneWithTwinAfter(r, "cherry-pick", "agentry/t3.1", "restart", "T3", "--carry");
+  const res = laneWithTwinAfter(
+    r,
+    { on: "cherry-pick", twin: "agentry/t3.1" },
+    "restart",
+    "T3",
+    "--carry",
+  );
   assert.equal(res.exit, 0, res.out);
   const refs = branchRefs(r.root);
   assert.ok(refs.includes(`refs/heads/agentry/T3.1 ${oldTip}`), refs);
@@ -1000,4 +1013,76 @@ test("a packed lane branch is kept at its listed tip as agentry/T3.1, and a clea
   assert.equal(res.exit, 0, res.stderr);
   assert.equal(hasRef(carried.root, "refs/heads/agentry/T3.1"), false);
   assert.equal(git(carried.root, "log", "-1", "--format=%s", "agentry/T3"), "feat: three");
+});
+
+test("a twin at the lane's own sha made between the rename's two steps stops it: neither name is deleted", () => {
+  for (const args of [
+    ["restart", "T3"],
+    ["restart", "T3", "--carry"],
+  ]) {
+    const r = repo();
+    worked(r);
+    const oldTip = tipOf(r.root, "agentry/T3");
+    const on = " update-ref refs/heads/agentry/T3\\.1 ";
+    const res = laneWithTwinAfter(r, { on, twin: "agentry/t3", at: oldTip }, ...args);
+    assert.equal(res.exit, 1, res.out);
+    assert.match(res.out, /agentry\/T3 has a case twin agentry\/t3: rename one first/);
+    const refs = branchRefs(r.root);
+    for (const b of ["agentry/T3", "agentry/t3", "agentry/T3.1"])
+      assert.ok(refs.includes(`refs/heads/${b} ${oldTip}`), `${b}: ${refs}`);
+    assert.doesNotMatch(res.out, /branch -[Dm]/);
+  }
+});
+
+test("a kept name another branch has in another case refuses the restart before anything is written", () => {
+  const r = repo();
+  const old = worked(r);
+  git(r.root, "branch", "agentry/t3.1", "main");
+  const [refs, ledger, status] = [
+    branchRefs(r.root),
+    readFileSync(ledgerFile(r.root, "T3"), "utf8"),
+    git(old.worktree, "status", "--porcelain"),
+  ];
+  for (const args of [
+    ["restart", "T3"],
+    ["restart", "T3", "--carry"],
+  ]) {
+    const res = lane(r, ...args);
+    assert.equal(res.exit, 2, res.stderr);
+    assert.match(
+      res.stderr,
+      /agentry\/t3\.1 would be a case twin of agentry\/T3\.1: rename it first/,
+    );
+    assert.equal(branchRefs(r.root), refs);
+    assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
+    assert.equal(git(old.worktree, "status", "--porcelain"), status);
+    assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+    assert.equal(existsSync(join(processDir(r.root), "runs", "T3", "restart")), false);
+  }
+});
+
+test("a lane branch listed only in another case refuses the restart: no twin pair is cut beside it", () => {
+  const r = repo();
+  const old = worked(r);
+  const oldTip = tipOf(r.root, "agentry/T3");
+  git(r.root, "worktree", "remove", "--force", old.worktree);
+  // Only `agentry/t3` is listed; the ledger still says `agentry/T3`.
+  git(r.root, "pack-refs", "--all");
+  git(r.root, "update-ref", "-d", "refs/heads/agentry/T3", oldTip);
+  git(r.root, "update-ref", "refs/heads/agentry/t3", oldTip);
+  const [refs, ledger] = [branchRefs(r.root), readFileSync(ledgerFile(r.root, "T3"), "utf8")];
+  for (const args of [
+    ["restart", "T3"],
+    ["restart", "T3", "--carry"],
+  ]) {
+    const res = lane(r, ...args);
+    assert.equal(res.exit, 2, res.stderr);
+    assert.match(
+      res.stderr,
+      /agentry\/T3 is listed only as agentry\/t3: rename it to its exact name first/,
+    );
+    assert.equal(branchRefs(r.root), refs);
+    assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
+    assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+  }
 });
