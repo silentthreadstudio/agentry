@@ -29,6 +29,7 @@ An open debt lane and an open task lane pass each other's board writes.
 | Step | Does | Board (through `lifecycle`) |
 | :--- | :--- | :--- |
 | `start <id> [--cite A40,A41]` | finds the contract, refuses at `lanes.maxWriters` and a contract whose Steps part has a problem, refuses while another lane's land has its picks on main (`main is mid-land (<id>, since HH:MM): its picks may still roll back → start after it lands`, exit 2, nothing written), cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder on the first run of steps (`steps:` lists them); `--cite` adds decisions to every brief by id (a decision whose row names the task is quoted anyway) | `dispatched` |
+| `start <id> --on <Y>` | stacks the lane on Y's (see [Stacks](#stacks)), with every `start` check and record (a land mid-pick, `lanes.maxWriters`, the contract, `boardAtStart`): Y resolves like `<id>`, and is `verified` (any next), `held` or at its gate (`next: gate`); cuts `agentry/<id>` from `agentry/<Y>`'s tip, writes `on: "<Y>"` and `base` (Y's tip) to the ledger and prints `stack: on <Y> at <short> (<Y> is <state>); <Y> lands first` | `dispatched` |
 | `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round; a run that ends at `→ owner OK` holds the lane instead; a main the guard finds touched holds it for the guard, and on a lane held so it reads the saved report again | `built` when a verifier (or, under `exec.verify`, the gate alone) is next |
 | `verdict <id> [--agent a]` | reads the verifier's report and its tip, briefs the next round | the verdict (`FAIL` also `failed`) |
 | `gate <id>` | picks the tier: the `verify` role's while a verifier is out (`expects` is `verdict`), else the `build` role's (`gate.roles`, on the files the branch changed since its base and the item's flag); under `verify: none` a call while a verifier is out exits 2, runs nothing and records nothing: the verifier reads the recorded gate, and the build tier runs after the verdict. Else waits for the gate lock, runs that tier's argv in the worktree, records `{role, tier, command, commit, tree, exit, clean before and after, log}`; a red whose log (or `gate.flakyLogs` files) fails only in `gate.flaky` tests is re-run alone once and both runs are recorded; a gate that queues writes `waiting for gate slot N (held by <who> since HH:MM)` and `slot acquired` to its log, and its output streams there as it runs | none |
@@ -40,8 +41,10 @@ An open debt lane and an open task lane pass each other's board writes.
 | `hold <id> --for owner [--evidence <path>] [--agent a]` | a builder's round whose reply is saved waits for the owner's review (`--agent` names the builder out on it, so the resume goes back to that agent) (also on a lane with no steps: the owner looks mid-build); the evidence defaults to that round's report; on a held lane it replaces `for` and the evidence and keeps `since` | none |
 | `hold <id> --for later [--note "<why>"]` | parks a lane whose builder was stopped mid-round: no saved reply needed, the worktree kept as it is (uncommitted files allowed); a touched main does not refuse it: the park is recorded and prints `main moved while parked: <reason>; resume re-checks it`. Also parks a `verified` lane (next `close` or `merge`): `hold.when: "verified"`, nothing in the worktree or the rounds changes, `show` prints `held: parked, verified, since <ISO>`, `merge` refuses it while held and drift names no `verified-not-merged`; its `resume` makes it `verified` again with the same next step (no builder, the note in `holds[]`); `--for owner` on it is refused ("hold --for owner is for a builder's round") | none |
 | `resume <id> --note "<the OK>" [--redo] [--fresh]` | records the owner's answer with its time (`holds[]`), then dispatches `continue` to the held round's builder, or after the last step the verifier (or the gate); `--redo` builds the same run again and holds at its end; `--fresh` sends a fresh builder the same brief | `built` when a verifier (or the gate) is next |
+| `restack <id> [--main]` | a stacked lane with no agent out (its gate, close or merge next, or held): rebases `agentry/<id>` onto its parent's new tip, or main's once the parent landed (`--main`: onto main whatever the parent's state, the owner's call); writes the branch and the ledger only (see [Stacks](#stacks)) | none |
 
-Exit 0: `next` is printed. Exit 1: the lane stopped (or, for `gate`, the gate is red). Exit 2: usage or a
+Exit 0: `next` is printed. Exit 1: the lane stopped (or, for `gate`, the gate is red; for `restack`, git
+stopped the rebase and it was aborted). Exit 2: usage or a
 refusal, nothing changed (an out-of-order step, a missing report file, a dirty worktree at the gate, a run from
 inside a worktree instead of the main checkout).
 
@@ -63,7 +66,9 @@ a suggestion for builders), `after` (the step to run when the agent returns); `r
 (`gate` and `verdict`) for the runs on this tip: "1 green, 1 red on this tip", and "1 green, then 1 red on
 this tip: the latest is red" when a red came after the green. A tip with both is the conductor's call; a red
 that failed only in listed flaky tests is marked as such. `steps` (`start`, `show`): one line per step,
-`1. <text> → owner OK`; `holds` (`show`): one line per answer.
+`1. <text> → owner OK`; `holds` (`show`): one line per answer. A stacked lane adds `stack` on every step,
+`restacked` (and `commits`) on `restack`, `restacks` on `show`; a lane others are stacked on shows `stacked on
+it`.
 
 A held lane prints these two lines after the header (`<id> · <step> → resume (held)`) on `report`, `hold`
 and `show`:
@@ -142,6 +147,9 @@ Under `--json` that is `idle: { minutes, lastChange, file }`.
 | held for the guard | `agentry lane exec report <id>` | the guard runs again: main clean → the saved report goes on exactly as the first report would have; still touched → held again with the new reason, `since` the first trip |
 | held for the guard | `resume`, `hold --for later` | as on any held lane: `continue` to the round's builder; parked |
 | held | a report, verdict or notes fix | refused: the lane expects a resume; a gate run is recorded and decides nothing |
+| a stacked lane at its gate, close or merge | `agentry lane exec restack <id>`, resolution `none`, after a verdict (or a `builtTip`) | `gate` (verifying) on the new tip: the verdict stands for the same commits; a gate on the old tip no longer counts |
+| a stacked lane at its gate, close or merge | `agentry lane exec restack <id>`, resolution `by hand`, after a verdict | `resolve`: the resolution recheck, a fresh verifier on the restack's range-diff |
+| a stacked lane held, no verdict yet | `agentry lane exec restack <id>` | no change: recorded; the one verifier after the build reads it all |
 
 A run is the steps from a to g, g the first step from a with an owner gate, else the last step: the steps
 with no gate between them are built in one round. A lane without steps is one run of the whole contract and
@@ -207,6 +215,66 @@ before the lane goes on". Show the owner the `held:` line and the evidence, and 
 owner's own words as `--note` once they answer. "Change it first" is `--redo`. Never resume on the owner's
 behalf. The owner can also look in while a builder works: once its reply is saved, `hold --for owner` holds
 the lane during the round, and the resume carries the same round on.
+
+### Stacks
+
+A lane can start on another lane that is done building but not landed yet (A45), so serial work does not
+wait for a land: `agentry lane exec start T2 --on T1`. T1 may be `verified` (any next), `held`, or at its gate
+(`next: gate`), and may itself be stacked (a chain). T2 is cut from `agentry/T1`'s tip; its ledger has
+`on: "T1"` and `base` = that tip, so every `base..HEAD` reader (the commit count, the gate tier, the briefs)
+measures T2's own commits only. `mainAtStart`, the writers count and `guard.allow` are as for any lane: T2
+counts as a writer while it builds or fixes, a verified or held T1 does not. The owns-overlap warning skips
+the parent chain: a file shared with it prints once, `stack: shares with T1: <paths, max 5, then +N>`, instead
+of `! owns overlap`. A ledger without `on` behaves as before.
+
+`start --on` refuses (exit 2, nothing changed): `--on names the task itself`; `no lane for <Y>: start it
+first (<start line>)`; `<Y> is merged: start <X> without --on (main holds it)`; `<Y> is building: stack on it
+once it is verified, held or at its gate`; `<Y> is <state> (next <next>): stack on a lane that is verified,
+held or at its gate`; and `--on goes with start only` on any other step.
+
+**What is due.** Every exec step on T2 prints `stack:` right after the header (a held lane's `held:` first):
+`stack: on T1 at abc1234` while T1's branch is still at T2's base; `…; T1 moved to def5678 → agentry lane exec
+restack T2 --root '<root>'` once it moved (a notes fix on T1); `…; T1 landed → …restack T2…` once T1 is merged;
+`…; T1 is stopped: T2 lands only after it, or …restack T2 --main takes it off` when T1 is stopped, closed or
+gone. Report, verdict, fix, hold and resume go on (a verdict stays bound to its tip). Only `exec gate` refuses
+a due stack (exit 2): `T1 moved since T2 was cut on it (abc1234 → def5678): a gate here would not count →
+<restack line>` (`T1 landed since …`, `T1 is stopped since …`).
+
+**Restack.** `agentry lane exec restack T2 [--main]` writes T2's branch and ledger only (no board, no main).
+It runs with no agent out (the lane at `gate`, `close` or `merge` next, or held): otherwise `a <role> round is
+out (round <n>, next <next>): restack when the lane is at its gate, close or merge, or held`. It is refused too
+while the gate lock names `lane T2` (`the gate is running in T2's worktree`) and on a dirty worktree (`the
+worktree <path> is not clean (<entries, max 5>): commit or remove them, then restack`; a rebase still in
+progress, a killed restack, leads the entries as `rebase in progress`). The target is T1's tip when T1 moved,
+main's tip when T1 landed, or main's with `--main` on any state of T1 (a stopped T1 needs it). With nothing
+due it exits 0 with `restack: nothing to do: T2 is on T1's tip <short>` and writes nothing. Git runs as one
+argv in the worktree, with the repo's rebase config that could stash, squash or move another branch switched
+off: `git -c rebase.autoStash=false -c rebase.autoSquash=false -c rebase.updateRefs=false rebase --onto <onto>
+<base>`. A stop is aborted (`rebase --abort`) with the branch, worktree, index and ledger as they were, exit 1:
+`✗ lane exec restack T2: <short> <subject> conflicts on <onto name> at <short> (<files, max 5>): aborted,
+agentry/T2 is back at <short> → resolve it in <worktree>: git rebase --onto <onto> <base>, then <restack
+line>`. The ledger is written only after the rebase exits 0. A branch already on the target (rebased by hand,
+or by a restack killed after its rebase) is recorded `by hand`: the resolution recheck runs, never a silent
+pass. Printed on success: `restacked: onto T1 at <short> (was <short>): <n> commit(s), <no conflict | resolved
+by hand>; tip <short> → <short>` (onto main: `restacked: onto main at <short> without T1's old commits (T1
+landed): …`). Each restack appends `restacks[]: { at, parent, onto: "parent" | "main", from, to, base:
+{ from, to }, resolution: "none" | "by hand" }` (and `rangeDiff`, `logs/restack-range-diff-<n>.txt`, for one
+by hand) and sets `base` to `base.to`; one onto main removes `on`.
+
+**Rounds.** A clean restack gets the gate only, the trust a land's cherry-pick onto a moved main gets: the
+verdict stands for the same commits (`verifiedTip`, the last counted verdict's tip or `builtTip`, carries
+through each clean restack from it), and a gate on the old tip no longer counts. One by hand after a verdict
+gets the resolution recheck (A48) on the restack's ranges; the resolve brief names the parent's branch. A held
+lane with no verdict yet records it and goes on: the one verifier after the build reads it all. The verify
+and build briefs of a stacked lane carry a `Stacked` section: judge (or build) only `base..HEAD`, the parent's
+commits are its own lane's, and never rebase: the lane restacks.
+
+**Land in order.** `/agentry:merge T2` refuses until T1 has landed and T2 is restacked onto main (see
+`merge.md`, the `stack` row). T1's land restacks each child at rest onto main itself, after its board commit,
+in id order (`restacked: T2 onto main (<n> commits)`), and leaves a child with an agent out or a conflict as it
+was, naming it. A chain lands one lane at a time: T1's land makes T2 due main and T3 (on T2) due its parent.
+`show T2` adds `stack:` and `restacks:` (one line each); `show T1` adds `stacked on it: <ids>`. The episode
+says `stacked on T1; restacks: N`.
 
 ### Dispatching
 
@@ -283,13 +351,16 @@ the lane during the round, and the resume carries the same round on.
   them off, and a lane cut then would carry them.
 - **The worktree.** A builder leaves no uncommitted or untracked files and at least one commit past base.
 - **The tip.** A verdict counts only for the tip it was dispatched on: nobody rebases while a verifier reads.
+  A stacked lane's gate counts only on its parent's tip (or main's once the parent landed): `exec gate` refuses
+  a due stack, and `restack` runs only with no agent out.
 - **Nested worktrees.** A worktree inside the lane's own worktree is listed in `nested` on every step. Name
   it to the owner. A worktree made elsewhere (the conductor's own) is not the lane's.
 - **Writers.** `start` refuses when the ledgers in `building` / `fixing` plus worktrees no ledger owns reach
   `lanes.maxWriters` (`.agentry/config.json`, default 3), and names each one. Worktrees the repo keeps
   (`worktrees.keep`) and the host's agent worktrees (`.claude/worktrees/`) without a ledger are not counted.
   A held or parked lane is not a writer (its worktree is owned by its ledger), so another lane may start while
-  it waits; a `resume` that sends a builder is refused with the same message while the cap is reached.
+  it waits; a `resume` that sends a builder is refused with the same message while the cap is reached. A
+  stacked lane counts as any other: a writer while it builds or fixes; the verified or held lane under it is not.
 - **A held lane.** Hold, resume and a run's end write nothing on main and no board cell: `built` is written
   once, when the verifier (or the gate) is next. `/agentry:merge` refuses a held lane, `close` refuses it,
   and `agentry lane sweep` keeps its worktree.

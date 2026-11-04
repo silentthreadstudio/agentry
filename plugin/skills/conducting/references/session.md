@@ -18,7 +18,7 @@ Reads only (without `--check`, below). Without `--json` it prints at most 40 lin
 | `status` | The `agentry board status` view: `now`, `inFlight`, `onYou`, `blocked`, `ahead`, `nudges` (drift, each with the command to run), `drafts` (pending count), `recent`, `note`. |
 | `recall` | Up to `memory.primeLimit` facts of this repo, the user's and the cross-project ones, ranked against the Now sprint and the work in flight. Empty when `memory.prime` is `off`. |
 | `questions` | Open items of the owner-question kinds (the `onYou` rows that are not work items). |
-| `ledgers` | `{ id, state, next }` of every lane ledger not closed, the held ones first. |
+| `ledgers` | `{ id, state, next, on, restack }` of every lane ledger not closed, the held ones first: `on` the lane a stacked lane is cut on (null for none), `restack` what is due on it (`parent`, `main`, `orphan` or null). |
 | `checks` | Only when the workflow file names `extensions.start.checks` or `extensions.close.checks`: `{ start: View, close: View }` (see Session checks). Without it the text and the object are as before. |
 
 The text puts the lanes that wait on the owner right after the `conductor prompt:` line, before `now:`:
@@ -50,7 +50,16 @@ is recorded): passed over named, the time of the newest entry (UTC, to the minut
 note on one line (at most three, then `last close: +N more failed`); a line is cut to 100 columns.
 
 At most three held or parked lanes, then `held: +N more → agentry lane session start --json`; the idle lines
-follow them. Held lanes are left out of `lanes:`.
+follow them. Held lanes are left out of `lanes:`. A stacked lane reads `<id> <state> on <Y>` in `lanes:`, and
+each one with something due adds a line after it, at most three, then `stack: +N more → agentry lane session
+start --json`:
+
+```text
+lanes: T1 verified, T2 verifying on T1 · 0 merged today
+stack: T2 on T1: T1 moved → agentry lane exec restack T2
+```
+
+The parent `moved`, `landed`, or `is stopped` (closed or gone). Restack it when the lane is at rest.
 
 The recommendation is yours, not the script's: the single next step. A held lane comes first: show the owner
 its evidence and ask for the answer (it goes in `--note` as the owner said it; never resume on their behalf).

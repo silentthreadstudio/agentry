@@ -16,4 +16,6 @@ Before the first `--preflight`, main must be clean: `git status` empty, with the
 3. `agentry lane merge <id> --message "<board commit message>" [--summary "<handoff text>"]`: the repo's commit conventions, no AI attribution. If the call dies (a host's time limit), run the same land again: it clears what it can prove it left and resumes; if it stops instead, follow `next`. The owner's uncommitted `guard.allow` files are set aside for the land and put back after it; a flagged item no verifier read does not land. Add `--drop-carry` only on the owner's call, when the table says exec's writes no longer apply.
 4. Follow `next`. `ask` → ask the owner, and add `--approved` only on their yes. `never` → no push. Then `--cleanup` (it discards `cleanup.disposable` files on its own). If it refuses on other ignored files, show them and ask; `--discard-ignored` only on a yes.
 
+A stacked lane (`stack` row red) lands only after its parent: land the parent first, then follow the row's `next` (`agentry lane exec restack <id>`, its gate, the land). A parent's land restacks each child at rest onto main and names the ones it left (an agent out, or a conflict with its `--main` restack line).
+
 On exit 1 or 2, stop and show why. Do what `next` says, or ask the owner. Never finish a step by hand: no hand cherry-pick, reset, board edit, commit or push.

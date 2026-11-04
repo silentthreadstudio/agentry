@@ -7,6 +7,16 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **Stacked lanes** — `lane exec start <id> --on <parent>` cuts a lane from another lane that is verified,
+  held or at its gate (a chain too), so serial work no longer waits for a land; its `base` is the parent's
+  tip, so the briefs, the commit count and the gate tier read only its own commits. Each step prints
+  `stack:` with what is due when the parent moves, lands or stops, and `exec gate` refuses until
+  `lane exec restack <id> [--main]` rebases the branch onto the parent's new tip or main: only with no agent
+  out, never on a dirty worktree or under the lane's gate, with the repo's rebase stash, squash and
+  ref-update config off; a conflict is aborted with the branch and ledger as they were. A clean restack gets
+  the gate on the new tip; one resolved by hand gets the resolution recheck. `lane merge` lands a stacked
+  lane only after its parent and its restack onto main; the parent's land restacks each child at rest
+  itself and names the ones it left. `exec show`, `lane session start` and the episode name the stack.
 - **Session checks from the repo's own session skill** — `extensions` takes `start` and `close` beside
   `merge`, each `{ "checks": [<skill>, …] }` (one skill may be named in both; `extensions: {}` is refused).
   `/agentry:start` and `/agentry:close` run each named skill (its `## Start` / `## Close` section, or the
