@@ -36,6 +36,7 @@ test("privateRefs names each form of citation in a line, block or trailing comme
     ["// the pinned F13 design\n", "F13"],
     ["// decision 51 allows it\n", "decision 51"],
     ["// (plan R1b-5)\n", "plan R1b"],
+    ["// keep in step with the design docs (.docs/internal)\n", ".docs/"],
   ]) {
     const [problem, ...rest] = privateRefs(tree({ "plugin/scripts/a.mjs": text }));
     assert.deepEqual(rest, [], text);
@@ -58,6 +59,17 @@ test("privateRefs reads typescript, astro and yaml comments under packages too",
     }),
   );
   assert.equal(found.length, 3);
+});
+
+test("privateRefs reads scripts/ comments but not its own file or test", () => {
+  const found = privateRefs(
+    tree({
+      "scripts/a.mjs": "// (field 7)\n",
+      "scripts/lib/private-refs.mjs": "// (field 7)\n",
+      "scripts/private-refs.test.mjs": "// (field 7)\n",
+    }),
+  );
+  assert.deepEqual(found, ["scripts/a.mjs:1: comment cites a private reference (field 7)"]);
 });
 
 test("privateRefs leaves strings, usage examples and plain ids alone", () => {

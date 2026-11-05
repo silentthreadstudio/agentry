@@ -3,7 +3,7 @@
 // points at something a reader cannot open. Say the reason in a clause, or drop the citation.
 //
 // privateRefs(rootDir) -> string[]   "<file>:<line>: comment cites a private reference (<match>)" each,
-// over the comments of every code file under `plugin/` and `packages/`. Strings are never read: a printed
+// over the comments of every code file under `plugin/`, `packages/` and `scripts/`. Strings are never read: a printed
 // message or a test name that holds an id is the program's own text, not a comment.
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -25,6 +25,7 @@ export const PRIVATE_REF = new RegExp(
     String.raw`\b[Dd]ecisions? \d+\b(?![\w-])`, // decision 51
     String.raw`\bplan (?:R1\w*|F\d+)`, // plan R1b, plan F13
     String.raw`\bR1[a-z] plan\b`,
+    String.raw`\.docs/`, // the private design folder
     String.raw`\bautopilot-design\b`,
     String.raw`\breshape plan\b`,
     String.raw`\b(?:Plan|Spec) v2\b`,
@@ -35,6 +36,8 @@ const CODE = /\.(?:mjs|js|ts|astro|css|html)$/;
 const YAML = /\.ya?ml$/;
 const SKIP_DIR = new Set(["node_modules", "dist", ".astro", ".git"]);
 // The memory server bundle is built output: its comments are its dependencies', not this repo's.
+// This check's own file and test name the patterns they look for.
+const SELF = /^scripts\/(?:lib\/private-refs\.mjs|private-refs\.test\.mjs)$/;
 const BUILT = /(?:^|\/)mem\/index\.js$/;
 
 const walk = (dir) =>
@@ -91,7 +94,7 @@ function yamlComments(text) {
 
 export function privateRefs(rootDir) {
   const problems = [];
-  for (const top of ["plugin", "packages"]) {
+  for (const top of ["plugin", "packages", "scripts"]) {
     let files;
     try {
       files = walk(join(rootDir, top));
@@ -100,7 +103,7 @@ export function privateRefs(rootDir) {
     }
     for (const file of files) {
       const rel = relative(rootDir, file);
-      if (BUILT.test(rel) || !(CODE.test(file) || YAML.test(file))) continue;
+      if (SELF.test(rel) || BUILT.test(rel) || !(CODE.test(file) || YAML.test(file))) continue;
       const text = readFileSync(file, "utf8");
       for (const [line, comment] of CODE.test(file) ? codeComments(text) : yamlComments(text)) {
         const hit = PRIVATE_REF.exec(comment);
