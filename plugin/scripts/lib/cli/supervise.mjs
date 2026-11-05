@@ -2,6 +2,10 @@
 // group gets SIGTERM at the limit and SIGKILL `GRACE_KILL_MS` later (grandchildren too), and the exit is
 // the command's own, 124 at the limit, 127 when it could not start. However the command ends, what is left
 // of its group is killed before the promise settles. `agentry run` (run.mjs) wraps it with the locks.
+// The command starts held: `/bin/sh` waits on fd 3 until `onStart` has recorded the group in the slots,
+// then `exec`s the argv as given (no shell parsing; same pid, so the same group). Should this process die
+// before that (even by SIGKILL), fd 3 closes, the shell ends and the command never runs: no slot ever reads
+// free while its command runs. A command the shell cannot find exits 127 (126: not executable), as sh says.
 //
 // One handler set for the whole process, installed once (`onEnd`): what is registered runs once when the
 // process exits (normally or on a thrown error) or gets SIGINT, SIGTERM or SIGHUP. A signal while a command
@@ -15,10 +19,10 @@
 // once a second it looks at the parent (`--start` its start time, so a reused pid does not pass for it);
 // once the parent is no longer alive, the command's group goes and each `--free` slot file the dead parent
 // still holds is freed after it. Started leading its own group (`runGate` starts it detached), it keeps the
-// command in that group and records that group (`pgid`, `pgStart`: its own) in each `--free` slot, so the
-// slot stays held while the command runs. Whoever started it kills that group when the watchdog ends,
-// however it ends, and on the parent's death it leaves a reaper (`--reap <pgid>`, outside the group) to
-// free the slots, then kills the group it verified it leads. Not leading one, it gives the command a group of its own and only
+// command in that group and records that group (`pgid`, `pgStart`: its own) in each `--free` slot before the
+// command starts, so the slot is held whenever the command runs. Whoever started it kills that group when
+// the watchdog ends, however it ends, and on the parent's death it leaves a reaper (`--reap <pgid>`,
+// outside the group) to free the slots, then kills the group it verified it leads. Not leading one, it gives the command a group of its own and only
 // ever signals that group (SIGTERM, a holder's timeout, kills it, then the watchdog ends by SIGKILL).
 // `watchdogArgv` builds that argv. Node built-ins only.
 import { spawn } from "node:child_process";
@@ -36,6 +40,8 @@ export const GRACE_KILL_MS = 5000;
 const SETTLE_MS = 2000;
 
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+// The held start (see above): a closed fd 3 with no go line (this process died first) ends it unrun.
+const HELD = ["-c", 'read -r go <&3 || exit 1; exec 3<&-; exec "$@"', "sh"];
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const signalGroup = (pgid, signal) => {
@@ -85,13 +91,18 @@ async function endGroup(pgid) {
 
 /**
  * Run `cmd` (argv, no shell) in its own group under `limitMs`: a promise of the exit code `agentry run`
- * ends with. `onStart(pgid)` is called once the command has started, with its process group; if it throws,
- * the group is killed and the promise rejects with that error.
+ * ends with. `onStart(pgid)` is called with its process group before the command runs (it is let go once
+ * that returns); if it throws, the group is killed unrun and the promise rejects with that error.
  */
 export function supervise(cmd, limitMs, limitText, { onStart } = {}) {
   install();
   return new Promise((done, fail) => {
-    const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", detached: true });
+    const child = spawn("/bin/sh", [...HELD, ...cmd], {
+      stdio: ["inherit", "inherit", "inherit", "pipe"],
+      detached: true,
+    });
+    const go = child.stdio[3];
+    go.on("error", () => {}); // the shell is gone already (killed): its exit says the rest
     let timedOut = false;
     let killTimer = null;
     let failed = null;
@@ -133,9 +144,11 @@ export function supervise(cmd, limitMs, limitText, { onStart } = {}) {
     stopping = stop;
     try {
       onStart?.(child.pid);
+      go.end("go\n");
     } catch (error) {
       failed = error;
       signalGroup(child.pid, "SIGKILL");
+      go.destroy();
     }
   });
 }
@@ -220,11 +233,11 @@ function watch(argv) {
   // the watchdog's group (`runGate`, whenever the watchdog ends) reaches the command too. Otherwise the
   // command gets a group of its own, and that group is all the watchdog ever signals.
   const leader = leadsGroup();
+  // A leader's group is the command's: each slot the parent holds records it before the command starts, so
+  // the slot is held whenever the command runs, even should the parent and this watchdog both die by SIGKILL
+  // (the sweep then stops it).
+  if (leader) for (const file of free) recordGroup(file, parent, process.pid);
   const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", detached: !leader });
-  // A leader's group is the command's: each slot the parent holds records it, so the slot stays held while
-  // the command runs even should the parent and this watchdog both die by SIGKILL (the sweep then stops it).
-  if (leader && child.pid !== undefined)
-    for (const file of free) recordGroup(file, parent, process.pid);
   const endChild = async () => {
     if (child.pid === undefined) return;
     signalGroup(child.pid, "SIGKILL");
