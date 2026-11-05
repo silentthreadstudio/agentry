@@ -6,7 +6,7 @@
 // as it is on disk, so it reaches an untracked board or one under a dot-directory. Needs no process
 // file. A file a symlink takes out of the repository is listed as skipped, never read. Writes
 // nothing. With no `<dir>`, a last line names the git-ignored directories it did not read, by name
-// and in name order, without walking them (`not scanned (ignored): .docs → agentry board scan .docs/…`).
+// and in name order, without walking them (`not scanned (ignored): .docs → agentry board scan <dir>/…`).
 // Exit 0, or 2 for a `<dir>` outside the repository (as written or through a symlink).
 //
 // run(argv, { root }) -> { exit, out }
@@ -93,12 +93,12 @@ export function ignoredDirs(root) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-// The last line: the first ignored folders by name, the rest counted, and an arrow to the first. The arrow
+// The last line: the first ignored folders by name, the rest counted, and an arrow naming the command. The arrow
 // is never cut: folders drop into `+N more` until the whole line fits; when even one folder and the arrow
 // pass the width, the arrow and command go on the next line, indented two spaces.
 function hiddenLine(ignored) {
   const label = "not scanned (ignored): ";
-  const arrow = nextStep(` → board scan ${ignored[0]}/…`);
+  const arrow = nextStep(" → board scan <dir>/…"); // no folder is singled out: none was read
   const list = (k) =>
     [...ignored.slice(0, k), ...(ignored.length > k ? [`+${ignored.length - k} more`] : [])].join(
       ", ",

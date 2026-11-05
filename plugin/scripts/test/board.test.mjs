@@ -466,7 +466,7 @@ test("scan with no dir ends by naming the ignored folders it did not read", () =
     const all = cli();
     assert.match(
       all.stdout,
-      /\nnot scanned \(ignored\): \.notes, scratch → .*board scan \.notes\/…\n$/,
+      /\nnot scanned \(ignored\): \.notes, scratch → .*board scan <dir>\/…\n$/,
     );
     assert.doesNotMatch(all.stdout, /node_modules|\.agentry/);
     assert.doesNotMatch(cli(".notes").stdout, /not scanned/);
@@ -503,7 +503,7 @@ test("scan points at the first ignored folder by name, counts the rest and skips
     });
     assert.match(
       res.stdout,
-      /\nnot scanned \(ignored\): \.a, \.c, \.d, \+2 more → .*board scan \.a\/…\n$/,
+      /\nnot scanned \(ignored\): \.a, \.c, \.d, \+2 more → .*board scan <dir>\/…\n$/,
     );
     assert.doesNotMatch(res.stdout, /\.claude|venv/);
   } finally {
@@ -515,7 +515,7 @@ test("scan moves the arrow and command to an indented next line when the not-sca
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-scan-")));
   try {
     const table = "| Code |\n| --- |\n| T1 |\n";
-    const long = (c) => `.${c.repeat(40)}`;
+    const long = (c) => `.${c.repeat(60)}`;
     const files = { [long("b")]: 3, [long("a")]: 2, [`.${"c".repeat(120)}`]: 1 };
     for (const [dir, n] of Object.entries(files))
       for (let i = 0; i < n; i++) {
@@ -532,7 +532,7 @@ test("scan moves the arrow and command to an indented next line when the not-sca
     const [line, next] = res.stdout.trimEnd().split("\n").slice(-2);
     assert.match(line, /^not scanned \(ignored\): .*\+\d more$/);
     assert.ok([...line].length <= 100, line);
-    assert.match(next, /^ {2}→ .*board scan \.a{40}\/…$/);
+    assert.match(next, /^ {2}→ .*board scan <dir>\/…$/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -554,7 +554,7 @@ test("scan keeps the arrow whole under a 140-column folder, the folder cut on th
     const [line, next] = res.stdout.trimEnd().split("\n").slice(-2);
     assert.match(line, /^not scanned \(ignored\): .*…$/);
     assert.ok([...line].length <= 100, line);
-    assert.match(next, new RegExp(`^ {2}→ .*board scan ${dir}/…$`));
+    assert.match(next, /^ {2}→ .*board scan <dir>\/…$/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
