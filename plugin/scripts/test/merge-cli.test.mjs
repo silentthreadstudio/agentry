@@ -2961,6 +2961,7 @@ test("a stacked parent closed found-on-main counts as merged for its child, whic
     worktree: kid.path,
     on: ID,
     base: shas[0],
+    closedTip: own,
   });
   const [, a, k] = combine(shas[0], own);
   const parent = merge(ID, "--resolve", "landed");
@@ -3014,4 +3015,100 @@ test("a stuck land's --resolve landed is unchanged: its picks, no how, and --che
   assert.deepEqual(ledger.merge.planned, shas);
   assert.equal(ledger.merge.how, undefined);
   assert.equal(ledger.merge.resolved.as, "landed");
+});
+
+// Verifier r2, N1 (P1, P1b): "on main" is the main branch, never what the main checkout has out.
+for (const [what, away] of [
+  ["a combined branch", () => git(root, "checkout", "-q", "-b", "combined")],
+  ["a detached HEAD", () => git(root, "checkout", "-q", "--detach")],
+])
+  test(`a main checkout on ${what} holding the lane's patches refuses: main never moved`, () => {
+    const { path, shas } = build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
+    execLedger({ path, gated: shas[1] });
+    away();
+    git(root, "cherry-pick", ...shas);
+    const before = ledgerBytes();
+    const res = merge(ID, "--resolve", "landed");
+    assert.equal(res.status, 2, out(res));
+    const on = what === "a combined branch" ? "combined" : "a detached HEAD";
+    assert.match(out(res), new RegExp(`✗ resolve +the main checkout is on ${on}, not main`));
+    assert.equal(ledgerBytes(), before);
+  });
+
+// Verifier r2, N2 (P4b, P4c): a branch moved back past a verified commit main lacks never closes.
+for (const stopped of [false, true])
+  test(`a ${stopped ? "stopped" : "verified"} lane whose branch moved back from its verified tip refuses, naming both`, () => {
+    const { path, shas } = build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
+    execLedger({ path, gated: shas[1], record: stopped ? { exit: 1 } : {} });
+    writeLedger(root, {
+      ...readLedger(root, ID),
+      rounds: [{ n: 1, role: "verify", step: "verify", verdict: "PASS", tip: shas[1] }],
+      ...(stopped && { state: "stopped", next: "stop" }),
+    });
+    combine(shas[0]); // only A reached main
+    git(path, "reset", "-q", "--hard", shas[0]); // B, verified, is off the branch too
+    const before = ledgerBytes();
+    const res = merge(ID, "--resolve", "landed");
+    assert.equal(res.status, 2, out(res));
+    assert.match(
+      out(res),
+      new RegExp(
+        `✗ resolve +${BRANCH} is at ${shas[0].slice(0, 7)}, not at ${shas[1].slice(0, 7)}, the tip it was verified on: not landed`,
+      ),
+    );
+    assert.equal(ledgerBytes(), before);
+  });
+
+// Verifier r2, N5 (P3, P3b): no patch proves a merge commit, so one in the lane counts as missing.
+test("a lane holding a merge of a side branch main lacks refuses, naming the merge", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  const z = commitFile(root, "src/z.txt", "z\n", "add z on side");
+  git(root, "reset", "-q", "--hard", "HEAD~1"); // z lives only on side
+  git(root, "branch", "side", z);
+  git(path, "merge", "-q", "--no-ff", "-m", "merge side", "side");
+  const b = commitFile(path, "src/b.txt", "b\n");
+  execLedger({ path, gated: b });
+  combine(shas[0], b);
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /1 of T1's 3 commit\(s\) have no matching patch on main/);
+  assert.match(out(res), /[0-9a-f]{7} merge side/);
+  assert.equal(ledgerBytes(), before);
+});
+
+test("a lane that merged main into itself refuses, naming the merge, though its own patches are on main", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  commitFile(root, "src/m.txt", "m\n", "main moves");
+  git(path, "merge", "-q", "--no-ff", "-m", "merge main into lane", "main");
+  const b = commitFile(path, "src/b.txt", "b\n");
+  execLedger({ path, gated: b });
+  combine(shas[0], b);
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 2, out(res));
+  assert.match(out(res), /1 of T1's 3 commit\(s\) have no matching patch on main/);
+  assert.match(out(res), /[0-9a-f]{7} merge main into lane/);
+  assert.equal(ledgerBytes(), before);
+});
+
+// Verifier r2, N6 (P7): work left in the worktree is named at the close, before the cleanup refuses it.
+test("a close over a worktree with uncommitted work names the files and says the cleanup will refuse", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  combine(shas[0]);
+  writeFileSync(join(path, "src", "a.txt"), "a, edited after verify\n");
+  writeFileSync(join(path, "src", "new.txt"), "new, untracked\n");
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 0, out(res));
+  assert.match(
+    res.stdout,
+    /! worktree .* holds 2 uncommitted or untracked file\(s\): --cleanup refuses until they are committed or removed/,
+  );
+  assert.match(res.stdout, / M src\/a\.txt/);
+  assert.match(res.stdout, /\?\? src\/new\.txt/);
+  assert.equal(readLedger(root, ID).state, "merged");
+  const clean = merge(ID, "--cleanup");
+  assert.notEqual(clean.status, 0, out(clean));
+  assert.equal(readFileSync(join(path, "src", "new.txt"), "utf8"), "new, untracked\n");
 });

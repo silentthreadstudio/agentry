@@ -6,9 +6,9 @@
 // stops the land, left as it is, with the commands that clear it. A land that cannot go on at all is
 // closed on the owner's call (`--resolve landed|rolled-back`, field 82), checked against main first; so is
 // a verified lane whose work reached main another way (`--resolve landed`, by `git cherry`).
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { identities } from "../../process/git.mjs";
+import { currentBranch, identities } from "../../process/git.mjs";
 import { list as listLedgers, read as readLedger } from "../../process/ledger.mjs";
 import { resolveBranch } from "../adopt.mjs";
 import { sha256 } from "../carry-io.mjs";
@@ -29,7 +29,7 @@ import {
 import { isMemoryCommit } from "../own-memory.mjs";
 import { PASSES, greenOn, verdicts } from "../rounds.mjs";
 import { childrenOf } from "../stack.mjs";
-import { git } from "../worktree.mjs";
+import { findByBranch, git, porcelain } from "../worktree.mjs";
 import { backStop, putBackAllow, releaseWrites } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
 import {
@@ -512,6 +512,26 @@ function closable(ledger) {
   return pass && Boolean(gate) && !greenOn([gate], gate.commit);
 }
 
+// The tip the lane's work was verified on: where it closed (`closedTip`), else the tip of its last passing
+// verdict, else the commit of its last worktree gate; null when the ledger names none.
+const settledTip = (ledger) =>
+  ledger.closedTip ??
+  verdicts(ledger).findLast((r) => PASSES.includes(r.verdict))?.tip ??
+  lastWorktreeGate(ledger)?.commit ??
+  null;
+
+// The `git status` entries of the lane's worktree (uncommitted and untracked files): none when it is gone
+// or git cannot read it, which the cleanup then answers for itself.
+function worktreeLeft(root, ledger) {
+  const path = findByBranch(root, ledger.branch) ?? ledger.worktree;
+  if (!path || !existsSync(path)) return { path, entries: [] };
+  try {
+    return { path, entries: porcelain(path) };
+  } catch {
+    return { path, entries: [] };
+  }
+}
+
 const firstLine = (res, what) => res.stderr.trim().split("\n")[0] || `${what} failed`;
 const lines = (text) => text.split("\n").filter(Boolean);
 
@@ -568,12 +588,20 @@ function foundOnMain(lane, checked) {
   const named = resolveBranch(root, ledger.branch);
   if (named.problem) return no(`${named.problem}: cannot tell what ${id}'s lane holds`);
   const { tip } = named;
-  if (ledger.state === "verified" && ledger.closedTip && tip !== ledger.closedTip)
+  // What was verified is what closes: a branch moved since (on, or back past a verified commit) is not it.
+  const verified = settledTip(ledger);
+  if (!verified) return no(`${id}'s ledger names no verified tip: cannot tell what was verified`);
+  if (tip !== verified)
     return no(
-      `${ledger.branch} moved since the lane closed on ${short(ledger.closedTip)}: lane exec rebase ${id}`,
+      `${ledger.branch} is at ${short(tip)}, not at ${short(verified)}, the tip it was verified on: not landed`,
     );
-  const head = commitOf(root, "HEAD");
-  if (!head) return no("git cannot read main's HEAD: not landed");
+  // Main is the main branch, never whatever the main checkout has out (a combined branch, a detached
+  // HEAD): and the push and cleanup that follow run there, so it must be on it, as for a land.
+  const on = currentBranch(root);
+  if (on !== ledger.mainBranch)
+    return no(`the main checkout is on ${on ?? "a detached HEAD"}, not ${ledger.mainBranch}`);
+  const head = commitOf(root, `refs/heads/${ledger.mainBranch}`);
+  if (!head) return no(`git cannot read ${ledger.mainBranch}: not landed`);
   const found = laneOnMain(root, { base: ledger.base, tip, head });
   if (found.error)
     return no(`cannot tell whether ${id}'s commits are on main (${found.error}): not landed`);
@@ -625,7 +653,18 @@ function foundOnMain(lane, checked) {
     warn("stack", `${child} is stacked on ${id}: agentry lane exec restack ${child} --main`),
   );
   const more = [...listed(landed), ...listed(missing).map((line) => `${line} (checked by hand)`)];
-  return done(0, lane, [ok("resolve", detail, more), ...kids], next);
+  // Work left in the worktree is no part of what closed: named now, as the cleanup will refuse over it.
+  const left = worktreeLeft(root, ledger);
+  const dirty = left.entries.length
+    ? [
+        warn(
+          "worktree",
+          `${left.path} holds ${left.entries.length} uncommitted or untracked file(s): --cleanup refuses until they are committed or removed`,
+          left.entries.slice(0, 10),
+        ),
+      ]
+    : [];
+  return done(0, lane, [ok("resolve", detail, more), ...dirty, ...kids], next);
 }
 
 /** `lane merge <id> --resolve landed|rolled-back`: on the owner's call, close a ledger in `merging` a land
