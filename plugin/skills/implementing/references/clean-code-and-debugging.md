@@ -58,7 +58,7 @@ Most failed fixes are guesses dressed as fixes. The discipline that beats guessi
 ### 6. Close the loop — remember the gotcha
 On a *successful* debug run, surface the bug's **root cause** as a gotcha for the conductor to harvest — so the same failure can't quietly return next time it's worked.
 - Surface the **cause, not the symptom**, with provenance: what was actually wrong, the **subsystem** it lives in, and the **run/episode** it came from. That provenance is what makes it recallable for the touched subsystem later.
-- The conductor harvests it through the **existing `memory_write`** tool (it applies the write-bar + dedup-reinforce). **You surface; the conductor writes** — do not call memory yourself, and do not invent a new memory tool or schema. This is the seam, and it keeps the bug→gotcha→recall path one-directional.
+- The conductor harvests it through the **existing `agentry mem write`** (it applies the write-bar + dedup-reinforce). **You surface; the conductor writes** — do not call memory yourself, and do not invent a new memory tool or schema. This is the seam, and it keeps the bug→gotcha→recall path one-directional.
 
 ### The escalation valve
 Two failed fix attempts means the approach is wrong, not that the next guess will land. Stop: re-reproduce, re-read the evidence from scratch, or surface that you need context (an unfamiliar API, a file outside your boundary, an ambiguous contract). Undisciplined re-rolls burn the retry budget and add noise the verifier has to untangle.

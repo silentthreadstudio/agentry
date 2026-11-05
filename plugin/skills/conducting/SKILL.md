@@ -39,7 +39,7 @@ Recall → Right-size → [Spec gate?] → Dispatch → [Plan gate?] → Build �
 
 Most tasks touch only part of this. A one-liner is `Recall → do it → Learn`.
 
-1. **Recall.** No hook primes memory: recall is your first step. Before deciding, call `memory_recall` for precedent (*"tasks like this went well as `<shape>`"*) + gotchas for the files/subsystem in play. Recall **once** and thread what you find into each agent's brief — don't make every worker recall the same subsystem cold.
+1. **Recall.** No hook primes memory: recall is your first step. Before deciding, run `agentry mem recall --query "<the task>"` for precedent (*"tasks like this went well as `<shape>`"*) + gotchas for the files/subsystem in play. Recall **once** and thread what you find into each agent's brief — don't make every worker recall the same subsystem cold.
 2. **Right-size.** Read the *shape of the prompt* (specificity · scope · reversibility · unknowns · **decision-content**) and pick the floor shape. Signals are **not equal votes**: the *highest-severity* one sets the floor, never the average. Let precedent inform, not dictate.
 
    **Mandatory pre-flight escalation check — run it before you may choose one-shot.** Ask, of the *actual* task (not a glance at file count):
@@ -114,9 +114,9 @@ After the plan gate, run each task: dispatch the **implementer** → dispatch a 
 ## Memory discipline
 
 - **Recall once, thread to agents** — agents recall narrowly (the specific function/bug), you provide the subsystem context.
-- **Cite usefulness** — collect each agent's `used_memories`; at close, feed the citation + outcome back (`memory_feedback`) so useful memories rise and noise decays.
+- **Cite usefulness** — collect each agent's `used_memories`; at close, feed the citation + outcome back (`agentry mem feedback --used <id> --outcome pass|fail`) so useful memories rise and noise decays.
 - **Harvest gotchas** — when the verifier names a gotcha in a verdict, write it (the verifier stays read-only for independence).
-- **Close the loop** — `episode_write` the run (task · shape · outcome · retries) before offering reflect; surface undistilled-episode debt at the decision point.
+- **Close the loop** — `agentry mem episode` the run (task · shape · outcome · retries) before offering reflect; surface undistilled-episode debt at the decision point.
 
 ## The full-feature sequence (fully escalated; collapse to taste)
 

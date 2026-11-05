@@ -89,7 +89,7 @@ Parallel-safety: dispatch two implementers concurrently **iff** their task `cont
 | `/agentry:verify` | verifier | Verdict (per-AC PASS/FAIL + cited evidence) |
 | `/agentry:assemble` | verifier | whole-product check vs Spec ACs |
 | `/agentry:reflect` | librarian | reflect/distill + proposed facts/skills |
-| `/agentry:remember` | (direct `memory_write`) | a captured fact |
+| `/agentry:remember` | (direct `agentry mem write`) | a captured fact |
 
 UI/product work additionally routes the designer (no dedicated node required — dispatch it for UI cards and for the see-it review of rendered output).
 
@@ -108,4 +108,4 @@ The **chat turn is the gate**: the artifact is a file in the work folder, and th
 - Recall subsystem memory **once**; thread it into every agent brief. Agents recall *narrowly*.
 - Thread `research.md`'s implications into the spec + the architect's brief.
 - When a verifier finding touches a **shared contract seam**, pause not-yet-started tasks on that seam and thread the finding into their briefs (cross-task propagation).
-- Collect `used_memories` from each agent → `memory_feedback` at close.
+- Collect `used_memories` from each agent → `agentry mem feedback` at close.

@@ -24,7 +24,7 @@ Write a **semantic** memory only if it is **durable, reusable, non-derivable, an
 
 ### distill — episodes → facts (the differentiator)
 
-**Pre-flight (mandatory stop):** when undistilled-episode debt crosses the threshold (`memory_stats`), distill is **mandatory, not optional** — you do not get to defer it as low-value housekeeping. Undistilled episodes hold lessons that are aging out of reach; past the threshold, running distill is a required stop before the run closes, the same way a gate is a required stop. Skipping it because nothing "feels" worth keeping is the under-capture failure — let the write-bar decide per cluster, not a blanket skip.
+**Pre-flight (mandatory stop):** when undistilled-episode debt crosses the threshold (`agentry mem stats`), distill is **mandatory, not optional** — you do not get to defer it as low-value housekeeping. Undistilled episodes hold lessons that are aging out of reach; past the threshold, running distill is a required stop before the run closes, the same way a gate is a required stop. Skipping it because nothing "feels" worth keeping is the under-capture failure — let the write-bar decide per cluster, not a blanket skip.
 
 1. **Cluster** recent undistilled episodes by topic.
 2. For each recurring lesson, apply the **write-bar**. Below the bar → drop it.
@@ -80,8 +80,8 @@ Recall returns **few** (≈3–7), **ranked** by `relevance × confidence × use
 
 ## Capability-first tools
 
-The job is durable memory; prefer the memory MCP tools if present, discovered on demand:
-`episode_write` (capture) · `memory_write` (applies write-bar + dedup-reinforce) · `memory_recall` (few/ranked/scoped/never-superseded) · `memory_search` (broad FTS) · `memory_update` (supersede/patch/confidence) · `memory_distill` (list undistilled drafts / stamp distilled) · `memory_consolidate` (cluster + propose) · `memory_stats` (health / undistilled debt). If the memory MCP is absent, say so and degrade gracefully — never fake a write.
+The job is durable memory, through the `agentry mem <verb>` CLI in Bash (`agentry mem <verb> --help` for its flags, `--json` to parse the output):
+`episode` (capture) · `write` (applies write-bar + dedup-reinforce) · `recall` (few/ranked/scoped/never-superseded) · `search` (broad full-text) · `update` (supersede/patch/confidence) · `distill --mode list|stamp` (list undistilled drafts / stamp distilled) · `consolidate` (cluster + propose) · `stats` (health / undistilled debt). If `agentry` is not on the PATH, say so and degrade gracefully — never fake a write.
 
 ## Additional resources
 

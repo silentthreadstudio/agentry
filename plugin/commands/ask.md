@@ -7,7 +7,7 @@ Answer this question through the **ask lane**:
 
 $ARGUMENTS
 
-First call `memory_recall` for the question's subject and pass what it returns to the specialist as part of the brief. Then dispatch exactly **one** specialist, chosen by where the answer lives (brief template in the `conducting` skill's `references/lanes.md`):
+First run `agentry mem recall --query "<the question's subject>"` and pass what it returns to the specialist as part of the brief. Then dispatch exactly **one** specialist, chosen by where the answer lives (brief template in the `conducting` skill's `references/lanes.md`):
 - **explorer** (default) — how this repo works, where something lives, why it behaves as it does.
 - **researcher** — the answer is outside the repo: a library's current API, a standard, an external service.
 - **architect** — a design question: how something should be structured, which approach fits.
