@@ -18,8 +18,13 @@ The lane's state is a ledger, `.agentry/run/process/ledger/<id>.json` in the mai
 `agentry lane exec <step> <id>` (`scripts/lane.mjs`). Each step checks that the ledger expects it, does the git and board
 work, writes the ledger and prints one JSON object. The conductor runs the step `next` names and dispatches the
 prompt the step printed. It never composes a brief, picks the next round or writes the board itself.
-The code: `scripts/lib/lane/cli/exec.mjs` parses the call and runs `lib/lane/exec/steps/<step>.mjs`; what the
-steps share is in `lib/lane/exec/` (`guard/` the main guard, `admission`, `open-lane`, `briefs`, `notes`, `view`).
+The code, under `scripts/lib/lane/`: `cli/exec.mjs` parses the call and runs `exec/steps/<step>.mjs`'s
+`run(ctx, id)`. The steps share `exec/guard/` (the main guard: `snapshot`, which also holds `heldMain`, `stray`,
+`allow`, `main-guard`), `exec/admission`, `exec/open-lane`, `exec/briefs`, `exec/notes`, `exec/view`, and five
+modules that keep any step from importing another: `exec/lane` (the refusals, `laneLine`, `mustLedger`, owned
+files, report reads, `isFile`, `saved`), `exec/board` (`boardEvent`, `writeBuilt`), `exec/rebasing` (`rebasing`,
+`keepRangeDiff`, `finishRebase`), `exec/episode` (`episodeOf`) and `exec/carried` (what a restart carries).
+`board-paths.mjs` and `fmt.mjs` hold what exec shares with the rest of the lane library.
 
 The id is any item of a kind exec runs: the lifecycle's kind (tasks), or a kind in the workflow file's
 `exec.kinds` (debt). Every step reads it in any case (`debt-2` is `DEBT-2`), and an id two kinds hold is
