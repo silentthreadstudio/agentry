@@ -1,0 +1,437 @@
+[
+  {
+    "name": "minimal; decay defaults to 0",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b"
+    },
+    "ok": true,
+    "output": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "decay": 0,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b"
+    },
+    "keys": [
+      "id",
+      "type",
+      "scope",
+      "text",
+      "confidence",
+      "usefulness",
+      "decay",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ]
+  },
+  {
+    "name": "full",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b",
+      "why": "w",
+      "tags": ["a", "b"],
+      "subject": "s",
+      "decay": 2,
+      "archivedAt": "z",
+      "supersedes": "g:0",
+      "provenance": ["p:1"],
+      "repoId": "r"
+    },
+    "ok": true,
+    "output": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "why": "w",
+      "tags": ["a", "b"],
+      "subject": "s",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "decay": 2,
+      "status": "active",
+      "archivedAt": "z",
+      "supersedes": "g:0",
+      "provenance": ["p:1"],
+      "repoId": "r",
+      "createdAt": "a",
+      "updatedAt": "b"
+    },
+    "keys": [
+      "id",
+      "type",
+      "scope",
+      "text",
+      "why",
+      "tags",
+      "subject",
+      "confidence",
+      "usefulness",
+      "decay",
+      "status",
+      "archivedAt",
+      "supersedes",
+      "provenance",
+      "repoId",
+      "createdAt",
+      "updatedAt"
+    ]
+  },
+  {
+    "name": "unknown keys are dropped",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b",
+      "extra": 1,
+      "nested": {
+        "a": 1
+      }
+    },
+    "ok": true,
+    "output": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "decay": 0,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b"
+    },
+    "keys": [
+      "id",
+      "type",
+      "scope",
+      "text",
+      "confidence",
+      "usefulness",
+      "decay",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ]
+  },
+  {
+    "name": "nothing at all",
+    "schema": "Fact",
+    "input": {},
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"id\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"expected\": \"'gotcha' | 'decision' | 'preference' | 'repo-fact' | 'learning' | 'gap' | 'limitation'\",\n    \"received\": \"undefined\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"type\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"expected\": \"'user' | 'global' | 'repo'\",\n    \"received\": \"undefined\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"scope\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"text\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"confidence\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"usefulness\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"expected\": \"'active' | 'superseded' | 'archived'\",\n    \"received\": \"undefined\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"status\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"createdAt\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"updatedAt\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+  },
+  {
+    "name": "wrong types",
+    "schema": "Fact",
+    "input": {
+      "id": 1,
+      "type": "gotcha",
+      "scope": "global",
+      "text": true,
+      "confidence": "0.5",
+      "usefulness": [],
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b",
+      "why": null,
+      "tags": "a"
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"number\",\n    \"path\": [\n      \"id\"\n    ],\n    \"message\": \"Expected string, received number\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"boolean\",\n    \"path\": [\n      \"text\"\n    ],\n    \"message\": \"Expected string, received boolean\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"null\",\n    \"path\": [\n      \"why\"\n    ],\n    \"message\": \"Expected string, received null\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"array\",\n    \"received\": \"string\",\n    \"path\": [\n      \"tags\"\n    ],\n    \"message\": \"Expected array, received string\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"confidence\"\n    ],\n    \"message\": \"Expected number, received string\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"array\",\n    \"path\": [\n      \"usefulness\"\n    ],\n    \"message\": \"Expected number, received array\"\n  }\n]"
+  },
+  {
+    "name": "bad enum values",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "idea",
+      "scope": "world",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "status": "gone",
+      "createdAt": "a",
+      "updatedAt": "b"
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"received\": \"idea\",\n    \"code\": \"invalid_enum_value\",\n    \"options\": [\n      \"gotcha\",\n      \"decision\",\n      \"preference\",\n      \"repo-fact\",\n      \"learning\",\n      \"gap\",\n      \"limitation\"\n    ],\n    \"path\": [\n      \"type\"\n    ],\n    \"message\": \"Invalid enum value. Expected 'gotcha' | 'decision' | 'preference' | 'repo-fact' | 'learning' | 'gap' | 'limitation', received 'idea'\"\n  },\n  {\n    \"received\": \"world\",\n    \"code\": \"invalid_enum_value\",\n    \"options\": [\n      \"user\",\n      \"global\",\n      \"repo\"\n    ],\n    \"path\": [\n      \"scope\"\n    ],\n    \"message\": \"Invalid enum value. Expected 'user' | 'global' | 'repo', received 'world'\"\n  },\n  {\n    \"received\": \"gone\",\n    \"code\": \"invalid_enum_value\",\n    \"options\": [\n      \"active\",\n      \"superseded\",\n      \"archived\"\n    ],\n    \"path\": [\n      \"status\"\n    ],\n    \"message\": \"Invalid enum value. Expected 'active' | 'superseded' | 'archived', received 'gone'\"\n  }\n]"
+  },
+  {
+    "name": "enum fields of the wrong type",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": 3,
+      "scope": null,
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "status": ["active"],
+      "createdAt": "a",
+      "updatedAt": "b"
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"expected\": \"'gotcha' | 'decision' | 'preference' | 'repo-fact' | 'learning' | 'gap' | 'limitation'\",\n    \"received\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"type\"\n    ],\n    \"message\": \"Expected 'gotcha' | 'decision' | 'preference' | 'repo-fact' | 'learning' | 'gap' | 'limitation', received number\"\n  },\n  {\n    \"expected\": \"'user' | 'global' | 'repo'\",\n    \"received\": \"null\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"scope\"\n    ],\n    \"message\": \"Expected 'user' | 'global' | 'repo', received null\"\n  },\n  {\n    \"expected\": \"'active' | 'superseded' | 'archived'\",\n    \"received\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"status\"\n    ],\n    \"message\": \"Expected 'active' | 'superseded' | 'archived', received array\"\n  }\n]"
+  },
+  {
+    "name": "numbers out of range",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 1.5,
+      "usefulness": -1,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b",
+      "decay": -2
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 1,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 1\",\n    \"path\": [\n      \"confidence\"\n    ]\n  },\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be greater than or equal to 0\",\n    \"path\": [\n      \"usefulness\"\n    ]\n  },\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be greater than or equal to 0\",\n    \"path\": [\n      \"decay\"\n    ]\n  }\n]"
+  },
+  {
+    "name": "confidence below zero",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": -0.1,
+      "usefulness": 1,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b"
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be greater than or equal to 0\",\n    \"path\": [\n      \"confidence\"\n    ]\n  }\n]"
+  },
+  {
+    "name": "a tag that is not a string",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b",
+      "tags": ["a", 2, null]
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"number\",\n    \"path\": [\n      \"tags\",\n      1\n    ],\n    \"message\": \"Expected string, received number\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"null\",\n    \"path\": [\n      \"tags\",\n      2\n    ],\n    \"message\": \"Expected string, received null\"\n  }\n]"
+  },
+  {
+    "name": "a provenance that is not a list",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b",
+      "provenance": {
+        "a": 1
+      }
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"array\",\n    \"received\": \"object\",\n    \"path\": [\n      \"provenance\"\n    ],\n    \"message\": \"Expected array, received object\"\n  }\n]"
+  },
+  {
+    "name": "null where optional",
+    "schema": "Fact",
+    "input": {
+      "id": "g:01X",
+      "type": "gotcha",
+      "scope": "global",
+      "text": "t",
+      "confidence": 0.5,
+      "usefulness": 1,
+      "status": "active",
+      "createdAt": "a",
+      "updatedAt": "b",
+      "subject": null,
+      "archivedAt": null,
+      "supersedes": null,
+      "repoId": null
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"null\",\n    \"path\": [\n      \"subject\"\n    ],\n    \"message\": \"Expected string, received null\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"null\",\n    \"path\": [\n      \"archivedAt\"\n    ],\n    \"message\": \"Expected string, received null\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"null\",\n    \"path\": [\n      \"supersedes\"\n    ],\n    \"message\": \"Expected string, received null\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"null\",\n    \"path\": [\n      \"repoId\"\n    ],\n    \"message\": \"Expected string, received null\"\n  }\n]"
+  },
+  {
+    "name": "minimal",
+    "schema": "Episode",
+    "input": {
+      "id": "p:01X",
+      "task": "t",
+      "shape": "one-shot",
+      "outcome": "pass",
+      "distilled": false,
+      "createdAt": "a"
+    },
+    "ok": true,
+    "output": {
+      "id": "p:01X",
+      "task": "t",
+      "shape": "one-shot",
+      "outcome": "pass",
+      "distilled": false,
+      "createdAt": "a"
+    },
+    "keys": ["id", "task", "shape", "outcome", "distilled", "createdAt"]
+  },
+  {
+    "name": "full",
+    "schema": "Episode",
+    "input": {
+      "id": "p:01X",
+      "task": "t",
+      "shape": "one-shot",
+      "outcome": "pass",
+      "distilled": false,
+      "createdAt": "a",
+      "retries": 2,
+      "lesson": "l",
+      "usedMemories": ["g:1"],
+      "recallMisses": ["g:2"],
+      "repoId": "r"
+    },
+    "ok": true,
+    "output": {
+      "id": "p:01X",
+      "task": "t",
+      "shape": "one-shot",
+      "outcome": "pass",
+      "retries": 2,
+      "lesson": "l",
+      "usedMemories": ["g:1"],
+      "recallMisses": ["g:2"],
+      "distilled": false,
+      "repoId": "r",
+      "createdAt": "a"
+    },
+    "keys": [
+      "id",
+      "task",
+      "shape",
+      "outcome",
+      "retries",
+      "lesson",
+      "usedMemories",
+      "recallMisses",
+      "distilled",
+      "repoId",
+      "createdAt"
+    ]
+  },
+  {
+    "name": "any shape is accepted",
+    "schema": "Episode",
+    "input": {
+      "id": "p:01X",
+      "task": "t",
+      "shape": "something-new",
+      "outcome": "pass",
+      "distilled": false,
+      "createdAt": "a"
+    },
+    "ok": true,
+    "output": {
+      "id": "p:01X",
+      "task": "t",
+      "shape": "something-new",
+      "outcome": "pass",
+      "distilled": false,
+      "createdAt": "a"
+    },
+    "keys": ["id", "task", "shape", "outcome", "distilled", "createdAt"]
+  },
+  {
+    "name": "negative and fractional retries are accepted",
+    "schema": "Episode",
+    "input": {
+      "id": "p:01X",
+      "task": "t",
+      "shape": "one-shot",
+      "outcome": "pass",
+      "distilled": false,
+      "createdAt": "a",
+      "retries": -1.5
+    },
+    "ok": true,
+    "output": {
+      "id": "p:01X",
+      "task": "t",
+      "shape": "one-shot",
+      "outcome": "pass",
+      "retries": -1.5,
+      "distilled": false,
+      "createdAt": "a"
+    },
+    "keys": ["id", "task", "shape", "outcome", "retries", "distilled", "createdAt"]
+  },
+  {
+    "name": "nothing at all",
+    "schema": "Episode",
+    "input": {},
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"id\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"task\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"shape\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"outcome\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"boolean\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"distilled\"\n    ],\n    \"message\": \"Required\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"createdAt\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+  },
+  {
+    "name": "wrong types",
+    "schema": "Episode",
+    "input": {
+      "id": "p:01X",
+      "task": 1,
+      "shape": "one-shot",
+      "outcome": "pass",
+      "distilled": "yes",
+      "createdAt": null,
+      "retries": "1",
+      "usedMemories": [1]
+    },
+    "ok": false,
+    "message": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"number\",\n    \"path\": [\n      \"task\"\n    ],\n    \"message\": \"Expected string, received number\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"retries\"\n    ],\n    \"message\": \"Expected number, received string\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"number\",\n    \"path\": [\n      \"usedMemories\",\n      0\n    ],\n    \"message\": \"Expected string, received number\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"boolean\",\n    \"received\": \"string\",\n    \"path\": [\n      \"distilled\"\n    ],\n    \"message\": \"Expected boolean, received string\"\n  },\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"null\",\n    \"path\": [\n      \"createdAt\"\n    ],\n    \"message\": \"Expected string, received null\"\n  }\n]"
+  }
+]
