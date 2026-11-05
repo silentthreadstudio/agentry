@@ -162,16 +162,12 @@ export const commitOf = (root, ref) =>
   null;
 
 /** The shortest prefix of commit `sha`, from 7 characters, that names that commit and no other object of
- *  any type (a tag or a blob sharing the prefix would make the board's checker fail on it). null when `sha`
- *  is not a commit: `cat-file -t` does not peel a tag to the commit it points at. */
+ *  any type (a tag or a blob sharing the prefix would make the board's checker fail on it), in one
+ *  `rev-parse --short=7` (pinned, so `core.abbrev` cannot change it). null when `sha` is not a commit:
+ *  `cat-file -t` does not peel a tag to the commit it points at. */
 export function shortestUnique(root, sha) {
   if (!safeRef(sha) || git(root, ["cat-file", "-t", sha])?.trim() !== "commit") return null;
-  const full = git(root, ["rev-parse", "--verify", sha])?.trim();
-  if (!full) return null;
-  for (let n = 7; n < full.length; n++)
-    if (git(root, ["rev-parse", `--disambiguate=${full.slice(0, n)}`])?.trim() === full)
-      return full.slice(0, n);
-  return full;
+  return git(root, ["rev-parse", "--short=7", "--verify", `${sha}^{commit}`])?.trim() || null;
 }
 
 /** The full SHA of the commit each of `refs` names, in one `cat-file --batch-check`: Map ref → SHA, a ref

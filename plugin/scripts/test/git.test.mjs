@@ -29,6 +29,7 @@ import {
   octopusBase,
   patchIds,
   reverseApplies,
+  shortestUnique,
   trackedFiles,
   worktrees,
 } from "../lib/process/git.mjs";
@@ -549,4 +550,21 @@ test("a zero, negative or junk AGENTRY_GIT_TIMEOUT_MS falls back to the default,
       process.env.AGENTRY_GIT_TIMEOUT_MS = ""; // unset: the default applies
     }
   });
+});
+
+test("shortestUnique: 7 characters, longer when another object shares the prefix; null for a non-commit", () => {
+  const dir = join(repo, "..", "short");
+  mkdirSync(dir);
+  const at = (...args) => spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
+  at("init", "-q", "-b", "main");
+  at("commit", "-q", "--allow-empty", "-m", "feat: one");
+  const full = at("rev-parse", "HEAD").stdout.trim();
+  assert.equal(shortestUnique(dir, full), full.slice(0, 7));
+  assert.equal(shortestUnique(dir, full.slice(0, 12)), full.slice(0, 7));
+  // A loose object whose name shares the 7-character prefix makes it ambiguous.
+  const folder = join(dir, ".git", "objects", full.slice(0, 2));
+  writeFileSync(join(folder, `${full.slice(2, 7)}${"f".repeat(full.length - 7)}`), "");
+  assert.equal(shortestUnique(dir, full), full.slice(0, 8));
+  assert.equal(shortestUnique(dir, "--all"), null);
+  assert.equal(shortestUnique(dir, at("rev-parse", "HEAD^{tree}").stdout.trim()), null);
 });
