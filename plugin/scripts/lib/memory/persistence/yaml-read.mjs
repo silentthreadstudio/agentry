@@ -1,10 +1,15 @@
-// yaml-read — the YAML the store's frontmatter is read in: one block mapping of plain keys whose values
-// are scalars (plain, 'single' or "double" quoted, one line or folded over several; `|` and `>` block
-// scalars with their chomping and indent indicators) or lists of scalars (block `- item` lines, or a flow
-// `[a, b]`), with `#` comments. That is every file the store has written (the `yaml` package wrote them)
-// and what a hand edit of one is likely to hold. Plain scalars resolve as in the YAML 1.2 core schema
-// (null, true/false, integers, floats, `.inf`, `.nan`); everything else is a string. Anything outside the
-// subset (a nested mapping, an anchor, a tag, a flow mapping) is refused with its line, never guessed at.
+// yaml-read — the YAML the store's frontmatter is read in: one block mapping whose values are scalars (plain,
+// 'single' or "double" quoted, one line or folded over several; `|` and `>` block scalars with their chomping
+// and indent indicators) or lists of scalars (block `- item` lines, or a flow `[a, b]`), with `#` comments.
+// Keys are plain (spaces allowed) or quoted. That is every file the store has written (the `yaml` package
+// wrote them) and what a hand edit of one is likely to hold, including a nested block mapping or a flow
+// mapping under a key of the schema's no concern: it is read past, and a key the schema does know that
+// holds one fails the record check as an object, as before. Plain scalars resolve as in the YAML 1.2 core
+// schema (null, true/false, integers, floats, `.inf`, `.nan`); everything else is a string.
+//
+// Refused, with the line, never guessed at: anchors, aliases and tags, a fully indented frontmatter, a `...`
+// line, a byte-order mark, and flow lists nested in flow lists. These are loud (a readError names the file
+// and line) and no store file or realistic hand edit holds them.
 // A document that is not a mapping at all reads as an empty one, so the record check says what is missing.
 //
 // parseMap(text) -> object        throws Error("line N: …") when the text is not YAML of that subset
@@ -87,18 +92,30 @@ class Reader {
     let at = this.meaningful(0);
     while (at !== -1) {
       const line = this.lines[at];
-      const m = /^([A-Za-z0-9_][A-Za-z0-9_.-]*)[ \t]*:(?:[ \t]+([^\n]*))?$/.exec(line);
+      const m = this.keyLine(at, line);
       if (!m) {
         // a document that is not a mapping (a bare scalar, say) has no fields
         if (Object.keys(out).length === 0 && !/:(?:[ \t]|$)/.test(line)) return out;
         this.fail(at, line.startsWith(" ") ? "unexpected indentation" : "not a `key: value` line");
       }
-      if (m[1] in out) this.fail(at, `the key "${m[1]}" is repeated`);
-      const { value, next } = this.entry(at, m[2] ?? "");
-      out[m[1]] = value;
+      if (m.key in out) this.fail(at, `the key "${m.key}" is repeated`);
+      const { value, next } = this.entry(at, m.rest);
+      out[m.key] = value;
       at = this.meaningful(next);
     }
     return out;
+  }
+
+  // `key: rest` on a line, the key plain (spaces allowed) or quoted; null when the line is no such thing.
+  keyLine(at, line) {
+    const quoted = /^(["'])/.exec(line);
+    if (quoted) {
+      const { value, tail } = this.quoted(at, line, quoted[1]);
+      const m = /^[ \t]*:(?:[ \t]+([^\n]*))?$/.exec(tail);
+      return m ? { key: value, rest: m[1] ?? "" } : null;
+    }
+    const m = /^([^\s#&*!|>%@`[\]{},?-][^\n]*?)[ \t]*:(?:[ \t]+([^\n]*))?$/.exec(line);
+    return m ? { key: m[1], rest: m[2] ?? "" } : null;
   }
 
   // The value of the key on line `at`, whose text after the colon is `rest`.
@@ -107,6 +124,13 @@ class Reader {
     const nextAt = this.meaningful(at + 1);
     if (nextAt !== -1 && isItem(this.lines[nextAt])) return this.list(nextAt);
     if (nextAt === -1 || indentOf(this.lines[nextAt]) === 0) return { value: null, next: at + 1 };
+    if (this.keyLine(nextAt, ltrim(this.lines[nextAt]))) {
+      // a nested block mapping: read past it; a field the schema knows then fails as an object, as it did
+      let j = nextAt;
+      while (j < this.lines.length && (skippable(this.lines[j]) || indentOf(this.lines[j]) > 0))
+        j++;
+      return { value: {}, next: j };
+    }
     return this.value(nextAt, ltrim(this.lines[nextAt]), 0);
   }
 
@@ -143,7 +167,7 @@ class Reader {
       return { value, next };
     }
     if (c === "[") return this.flow(at, rest);
-    if (c === "{") this.fail(at, "a flow mapping is outside the frontmatter subset");
+    if (c === "{") return this.flowMap(at, rest);
     if (c === "&" || c === "*" || c === "!")
       this.fail(at, "anchors, aliases and tags are outside the frontmatter subset");
     if (c === "@" || c === "`") this.fail(at, `a plain value cannot start with "${c}"`);
@@ -275,6 +299,29 @@ class Reader {
     return { value: body.length ? `${text}\n` : "", next: i };
   }
 
+  // A flow mapping, read past (its content is never used): `{}` stands for it, over as many lines as it takes.
+  flowMap(at, rest) {
+    let depth = 0;
+    let quote = null;
+    for (let i = at, text = rest; ; ) {
+      for (let k = 0; k < text.length; k++) {
+        const ch = text[k];
+        if (quote) {
+          if (ch === "\\" && quote === '"') k++;
+          else if (ch === quote) quote = null;
+        } else if (ch === '"' || ch === "'") quote = ch;
+        else if (ch === "{" || ch === "[") depth++;
+        else if (ch === "}" || ch === "]") {
+          depth--;
+          if (depth === 0) return { value: {}, next: i + 1 };
+        }
+      }
+      i++;
+      if (i >= this.lines.length) this.fail(at, "a flow mapping is never closed");
+      text = this.lines[i];
+    }
+  }
+
   // A flow list `[a, 'b', "c"]` opening on line `at`, which may run over several lines.
   flow(at, rest) {
     let text = rest;
@@ -342,5 +389,8 @@ function foldLines(body) {
 }
 
 export function parseMap(text) {
-  return new Reader(text.replace(/\r\n?/g, "\n").split("\n")).map();
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  // a final newline ends the last line; it does not start another
+  if (lines.at(-1) === "") lines.pop();
+  return new Reader(lines).map();
 }

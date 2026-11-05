@@ -116,6 +116,60 @@ test("block scalars: literal, folded, chomping and the indent indicator", () => 
   assert.equal(read("v: |2-\n   lead\n  next"), " lead\nnext");
 });
 
+test("a |+ scalar on the last key keeps exactly its trailing newlines (the file's final newline ends the line)", () => {
+  // each text and value is what the yaml package wrote and read for it
+  const cases = [
+    ["id: g:01J\ntext: |+\n  trail nl\n\n", { id: "g:01J", text: "trail nl\n\n" }],
+    [
+      "id: g:01J\nprovenance:\n  - |+\n    trail nl\n\n",
+      { id: "g:01J", provenance: ["trail nl\n\n"] },
+    ],
+    ["id: g:01J\ntext: |+\n  \n", { id: "g:01J", text: "\n" }],
+    ["id: g:01J\nprovenance:\n  - |+\n    \n", { id: "g:01J", provenance: ["\n"] }],
+    ["id: g:01J\ntext: |+\n  \n\n", { id: "g:01J", text: "\n\n" }],
+    ["id: g:01J\nprovenance:\n  - |+\n    \n\n", { id: "g:01J", provenance: ["\n\n"] }],
+    ["why: |+\n  a\n\n\nx: 1\n", { why: "a\n\n\n", x: 1 }],
+  ];
+  for (const [text, want] of cases)
+    assert.deepEqual({ ...parseMap(text) }, want, JSON.stringify(text));
+});
+
+test("an unknown key may hold a nested mapping or a flow mapping, or be quoted or hold a space; known keys read", () => {
+  const got = parseMap(
+    [
+      "id: g:01",
+      "meta:",
+      "  source: hand",
+      "  deeper:",
+      "    a: 1",
+      "# between",
+      "my note: added by hand",
+      "extra: {a: 1, b: [2, 3],",
+      "  c: 'x}'}",
+      '"type": gotcha',
+      "'scope': repo",
+      "why: kept",
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    { ...got },
+    {
+      id: "g:01",
+      meta: {},
+      "my note": "added by hand",
+      extra: {},
+      type: "gotcha",
+      scope: "repo",
+      why: "kept",
+    },
+  );
+});
+
+test("a known key that holds a mapping reads as an object, so the record check refuses it", () => {
+  assert.deepEqual({ ...parseMap("why:\n  a: 1\n") }, { why: {} });
+});
+
 test("double-quoted escapes, a folded line, and an escaped line break", () => {
   const got = parseMap(
     'a: "tab\\t é \\x41 \\U0001F600 \\\\ \\/ \\_ \\N"\nb: "one\n  two\n\n  three"\nc: "a\\\n   b"\nd: "x \\ \n  y"\n',
@@ -134,10 +188,8 @@ test("a document that is not a mapping reads as one with no fields", () => {
 
 test("what is outside the subset is refused with its line, never guessed at", () => {
   const refusals = [
-    ["a: 1\nb: {x: 1}\n", /line 2: .*flow mapping/],
     ["a: &x 1\n", /line 1: .*anchors/],
     ["a: !!str 1\n", /line 1: .*tags/],
-    ["a:\n  b: 1\n", /line 2: .*nested mapping/],
     ["a: [x, {y: 1}]\n", /line 1: .*flow list item/],
     ["a: b: c\n", /line 1: .*nested mapping/],
     ["this: is: not: valid\n", /line 1: .*nested mapping/],
@@ -145,6 +197,9 @@ test("what is outside the subset is refused with its line, never guessed at", ()
     ['a: "never closed\n', /line 1: .*never closed/],
     ["a: 'x' y\n", /line 1: .*after a quoted/],
     ["a: 1\n  indented: 2\n", /line 2: .*nested mapping/],
+    ["  why: x\n", /line 1: .*indentation/],
+    ["why: x\n...\n", /line 2:/],
+    ["tags: [[a]]\n", /line 1: .*flow list item/],
     ["a: @b\n", /line 1: .*cannot start/],
     ['a: "bad \\q escape"\n', /line 1: .*escape/],
   ];
