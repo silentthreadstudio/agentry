@@ -13,6 +13,7 @@ import { boardFiles, cellEdits } from "../process/board-diff.mjs";
 import { contentOf } from "../process/board-writes.mjs";
 import * as md from "../process/markdown.mjs";
 import { readProcess } from "../process/read.mjs";
+import { escapesRoot } from "../process/spec/shape.mjs";
 import { WriteError, applyAll } from "../process/write.mjs";
 import { first } from "./fmt.mjs";
 import { git } from "./worktree.mjs";
@@ -155,12 +156,20 @@ export function recordedFor(root, files) {
   return out;
 }
 
+// A file a ledger record names (a carried cell's or row's): repo-relative and inside the repository. A
+// ledger is data, and its sha256 sits in the same file, so a path out of it is never read or written.
+const leavesRepo = (file) => typeof file !== "string" || file === "" || escapesRoot(".", file);
+const leftRepo = (file) => `${file} leaves the repository: a ledger path is never read or written`;
+
 /** Set the carried `cells` on the board under `dir` (main's checkout, or a scratch copy of its board)
  *  at the model level (`board-diff.cellEdits`): each that reads its `from` is set to its `to` through
  *  the board writer, all or nothing, and each that reads its `to` already is left. A cell that reads
  *  anything else is a conflict and nothing is written, unless `leave`: then it is left as it is and the
- *  rest are set. `{ ok, set, there, conflicts }`, or `{ ok: false, conflicts, reason? }`. */
+ *  rest are set. `{ ok, set, there, conflicts }`, or `{ ok: false, conflicts, reason? }`; a cell whose
+ *  file leaves the repository refuses them all, nothing read or written. */
 export function putCells(dir, spec, cells, { leave = false } = {}) {
+  const out = cells.find((cell) => leavesRepo(cell.file));
+  if (out) return { ok: false, set: [], there: [], conflicts: [], reason: leftRepo(out.file) };
   const plan = cellEdits(spec, workingBoard(dir, spec), cells);
   const { set, there, conflicts } = plan;
   if (conflicts.length > 0 && !leave) return { ok: false, set, there, conflicts };
@@ -264,10 +273,11 @@ function insertAdded(text, row) {
 
 /** Put the added `rows` (`addedRows`, each with its `file`) back on the files under `root`, all or
  *  nothing: `{ ok, write() }` when every one has its place, else `{ ok: false, reason }`. Nothing is
- *  written until `write()`. */
+ *  written until `write()`. A row whose file leaves the repository refuses them all, nothing read. */
 export function planRows(root, rows) {
   const texts = new Map();
   for (const row of rows) {
+    if (leavesRepo(row.file)) return { ok: false, reason: leftRepo(row.file) };
     let text = texts.get(row.file);
     if (text === undefined) {
       try {

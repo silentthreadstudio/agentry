@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
+import { addedRows, planRows, putCells, sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
 import { endStrayGate, gateArgv } from "../lib/lane/gate-group.mjs";
 import {
   DEFAULT_DISPOSABLE,
@@ -147,6 +147,32 @@ test("uncommittedPatch records an edit against HEAD with its sha256", () => {
   assert.equal(carry.sha256, sha256(carry.patch));
   assert.match(carry.patch, /^\+TWO$/m);
   assert.equal(uncommittedPatch(repo.dir, ["board.md"]).sha256, carry.sha256);
+});
+
+// A ledger is data: a carried row or cell naming a path out of the repository is refused before
+// anything is read or written, however well-formed the rest of the record is.
+test("planRows and putCells refuse a ledger path that leaves the repository", () => {
+  const table = "## Tasks\n\n| id | what |\n|---|---|\n| T-1 | one |\n";
+  const outside = join(repo.dir, "board.md");
+  writeFileSync(outside, table);
+  const root = join(repo.dir, "inner");
+  mkdirSync(root);
+  const [row] = addedRows(table, `${table}| T-2 | two |\n`, () => "id");
+  for (const file of ["../board.md", "inner/../../board.md", outside]) {
+    const plan = planRows(root, [{ ...row, file }]);
+    assert.equal(plan.ok, false, file);
+    assert.match(plan.reason, /leaves the repository/);
+    const put = putCells(root, {}, [{ file, from: "one", to: "ONE" }]);
+    assert.equal(put.ok, false, file);
+    assert.match(put.reason, /leaves the repository/);
+  }
+  assert.equal(readFileSync(outside, "utf8"), table);
+  // The same row inside the repository still goes back.
+  writeFileSync(join(root, "board.md"), table);
+  const plan = planRows(root, [{ ...row, file: "board.md" }]);
+  assert.equal(plan.ok, true);
+  plan.write();
+  assert.match(readFileSync(join(root, "board.md"), "utf8"), /\| T-2 \| two \|/);
 });
 
 // R1b-5 notes item 4: the clean check split git's output on its own, so a rename's source came out as
