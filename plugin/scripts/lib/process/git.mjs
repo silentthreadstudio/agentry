@@ -6,6 +6,8 @@
 // Every function takes the git root first and never throws: outside a repo, or on any git error, it
 // answers false / [] / null. Refs and SHAs are checked before they reach argv, so a board cell can never
 // become a git option. Nothing here changes the repository: `reverseApplies` works on a throwaway index.
+// `runGit` is the same timed runner for a caller that needs git's status and stderr: it answers
+// `{ status, stdout, stderr }` and passes its argv as given, so its callers build that argv themselves.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,12 +27,14 @@ const timeoutMs = () => {
 
 // No stdin at all unless the call passes `input`: a git that waits on a stdin nobody writes would hang.
 // The child leads its own process group, so a timeout takes its children down with it.
-function git(root, args, input, env) {
+/** Run git in `root`: `{ status, stdout, stderr }`, never throwing. A call that cannot run, or is killed
+ *  at the timeout, answers a non-zero status. */
+export function runGit(root, args, input, env) {
   const res = spawnSync("git", ["-C", root, ...args], {
     encoding: "utf8",
     input,
     env,
-    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     maxBuffer: 256 * 1024 * 1024,
     timeout: timeoutMs(),
     killSignal: "SIGKILL",
@@ -41,7 +45,14 @@ function git(root, args, input, env) {
       process.kill(-res.pid, "SIGKILL");
     } catch {} // the group is already gone
   }
-  return res.error || res.status !== 0 ? null : res.stdout;
+  const status = res.error ? res.status || 1 : (res.status ?? 1);
+  return { status, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+}
+
+// git's stdout, or null on any failure.
+function git(root, args, input, env) {
+  const res = runGit(root, args, input, env);
+  return res.status === 0 ? res.stdout : null;
 }
 
 const known = new Map(); // `${root}\0${sha}` → boolean

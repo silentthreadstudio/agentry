@@ -16,9 +16,8 @@
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
-import { git } from "../../lane/worktree.mjs";
 import * as drafts from "../drafts.mjs";
-import { mainRoot } from "../git.mjs";
+import { mainRoot, topLevel } from "../git.mjs";
 import { fit } from "../render.mjs";
 import { has, own } from "../spec/shape.mjs";
 import { WriteError, appendLine, apply } from "../write.mjs";
@@ -130,8 +129,7 @@ function applyRule(draft, { root, spec }, write) {
 
 // The checkout `root` is in, when it is not the main one `runRoot` (a linked worktree); else null.
 function linkedTree(root, runRoot) {
-  const res = git(root, ["rev-parse", "--show-toplevel"]);
-  const top = res.status === 0 ? res.stdout.trim() : null;
+  const top = topLevel(root);
   const real = (p) => {
     try {
       return realpathSync(p);

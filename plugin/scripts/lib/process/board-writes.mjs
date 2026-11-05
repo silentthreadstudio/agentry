@@ -6,7 +6,7 @@
 // lane's worktree never reaches the main checkout's guard. Node built-ins and git.
 import { appendFileSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { git } from "../lane/worktree.mjs";
+import { runGit as git } from "./git.mjs";
 
 const ABSENT = "-";
 const fileOf = (root) => join(root, ".agentry", "run", "process", "board-writes.jsonl");
