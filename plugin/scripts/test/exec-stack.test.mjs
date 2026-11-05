@@ -116,7 +116,15 @@ const short = (sha) => sha.slice(0, 7);
 
 // A builder's work: commit `file` (with `body`) in the worktree, write the report.
 function build(out, file, body = "made\n") {
-  commitFile(out.worktree, file, body, `feat: ${file}`);
+  // Dated in the past: landed in the same second, with the same parent, author and message, the pick
+  // would be the very same commit and main's copy of it no new commit.
+  gitEnv.GIT_COMMITTER_DATE = "2020-01-01T00:00:00Z";
+  try {
+    commitFile(out.worktree, file, body, `feat: ${file}`);
+  } finally {
+    // biome-ignore lint/performance/noDelete: an env var set to undefined is the string "undefined"
+    delete gitEnv.GIT_COMMITTER_DATE;
+  }
   writeFileSync(out.reportPath, `DONE\nadded ${file}\nused_memories: none\n`);
 }
 const judge = (out, verdict, notes = "") =>
