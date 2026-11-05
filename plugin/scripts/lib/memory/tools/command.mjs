@@ -1,6 +1,6 @@
 // command — the one way a verb runs, so the 12 of them stay thin: parse the options (a bad one is a usage
-// error, exit 2), open the store from the environment (the same roots the MCP server resolved:
-// AGENTRY_GLOBAL_DIR, CLAUDE_PROJECT_DIR / AGENTRY_PROJECT_DIR) and load it, run the verb's handler, and
+// error, exit 2), open the store (the roots the MCP server resolved: AGENTRY_GLOBAL_DIR, CLAUDE_PROJECT_DIR /
+// AGENTRY_PROJECT_DIR; with no project dir in the env, the main checkout of the cwd's git repo) and load it, run the verb's handler, and
 // print what it returned. A handler returns `ok(data)` or `refused(error)` (tools/result.mjs): data is
 // printed (exit 0), a refusal's reason is printed (exit 1). An unexpected throw is the generic `internal`
 // refusal: nothing about the host leaks into it.
@@ -18,9 +18,9 @@ import { refusal, text } from "./render.mjs";
 
 export const EXITS = { 0: "done", 1: "refused (the reason is printed)", 2: "usage" };
 
-/** The memory service over the store the environment names, loaded. */
-function open(env = process.env) {
-  const roots = resolveRoots(env);
+/** The memory service over the store the environment (or the cwd's repo) names, loaded. */
+function open(env = process.env, cwd = process.cwd()) {
+  const roots = resolveRoots(env, cwd);
   const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
   service.load();
   return service;

@@ -46,15 +46,19 @@ const store = ({ project = false } = {}) => ({
   project: project ? fresh() : null,
 });
 
-/** Run `mem <argv>` against `s` through the router, with the roots' environment set around the call. */
+/** Run `mem <argv>` against `s` through the router, with the roots' environment set around the call. It
+ *  runs in the temp dir, outside any git repo, so the cwd names no project root of its own. */
 async function mem(s, ...argv) {
   const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+  const cwd = process.cwd();
   for (const k of ENV_KEYS) delete process.env[k];
   process.env.AGENTRY_GLOBAL_DIR = s.global;
   if (s.project) process.env.CLAUDE_PROJECT_DIR = s.project;
+  process.chdir(tmpdir());
   try {
     return await route(argv, { dir: DIR, name: "mem" });
   } finally {
+    process.chdir(cwd);
     for (const k of ENV_KEYS)
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
@@ -677,15 +681,83 @@ test("a missing, unknown or malformed option is a usage error, exit 2, and nothi
 // ── the real processes ─────────────────────────────────────────────────────────────────────────────────
 
 const PLUGIN = join(SCRIPTS, "..");
+// Spawned in `cwd` (default the store's global dir, outside any git repo) with `projectEnv` as its env.
 function spawn(bin, s, ...args) {
+  const { cwd = s.global, projectEnv = {} } = typeof args[0] === "object" ? args.shift() : {};
   const env = { ...process.env, AGENTRY_GLOBAL_DIR: s.global };
   for (const k of ["CLAUDE_PROJECT_DIR", "AGENTRY_PROJECT_DIR"]) delete env[k];
+  Object.assign(env, projectEnv);
   const file = bin === "bin" ? join(PLUGIN, "bin", "agentry") : join(SCRIPTS, "mem.mjs");
   return spawnSync(process.execPath, [file, ...(bin === "bin" ? ["mem"] : []), ...args], {
+    cwd,
     encoding: "utf8",
     env,
   });
 }
+
+// ── which project store a call opens (decision 57) ─────────────────────────────────────────────────────
+
+const sh = (cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
+
+/** A git repo with one commit and a linked worktree beside it: { main, worktree }. */
+function repoWithWorktree() {
+  const main = fresh();
+  for (const args of [
+    ["init", "-q", "-b", "main"],
+    ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"],
+    ["worktree", "add", "-q", "-b", "lane", join(main, "wt")],
+  ])
+    assert.equal(sh(main, ...args).status, 0, args.join(" "));
+  return { main, worktree: join(main, "wt") };
+}
+
+/** The `--scope repo` fact a spawned `mem write` made, and the store dir it landed in. */
+function writeRepoFact(s, opts) {
+  const write = ["write", "--type", "gotcha", "--scope", "repo", "--text", "where am I", "--json"];
+  const r = spawn("script", s, opts, ...write);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  return JSON.parse(r.stdout).id;
+}
+const factsIn = (dir) => {
+  const facts = join(dir, ".agentry", "memory", "facts");
+  return existsSync(facts) ? readdirSync(facts).length : 0;
+};
+
+test("from a lane worktree, a repo fact goes to the main checkout's store", () => {
+  const s = store();
+  const { main, worktree } = repoWithWorktree();
+  assert.match(writeRepoFact(s, { cwd: worktree }), /^p:/);
+  assert.equal(factsIn(main), 1);
+  assert.equal(factsIn(worktree), 0, "never a store inside the worktree");
+});
+
+test("from the main checkout, the repo fact lands there and a worktree call reads it back", () => {
+  const s = store();
+  const { main, worktree } = repoWithWorktree();
+  assert.match(writeRepoFact(s, { cwd: main }), /^p:/);
+  assert.equal(factsIn(main), 1);
+  const stats = JSON.parse(spawn("script", s, { cwd: worktree }, "stats", "--json").stdout);
+  assert.equal(stats.facts, 1);
+});
+
+test("a project dir in the env wins over the cwd's repo", () => {
+  const s = store();
+  const { main, worktree } = repoWithWorktree();
+  const elsewhere = fresh();
+  for (const key of ["CLAUDE_PROJECT_DIR", "AGENTRY_PROJECT_DIR"]) {
+    assert.match(writeRepoFact(s, { cwd: worktree, projectEnv: { [key]: elsewhere } }), /^p:/);
+  }
+  assert.equal(factsIn(elsewhere), 1, "the same text twice is one fact");
+  assert.equal(factsIn(main), 0);
+});
+
+test("outside any git repo there is no project root: a repo fact goes to the global store", () => {
+  const s = store();
+  const outside = fresh();
+  assert.match(writeRepoFact(s, { cwd: outside }), /^g:/);
+  assert.equal(factsIn(s.global), 1);
+  assert.equal(factsIn(outside), 0);
+});
 
 test("agentry mem is scripts/mem.mjs: the same output and exit codes, through the bin", () => {
   const s = store();
