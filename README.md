@@ -108,6 +108,17 @@ agentry run --limit 10m -- <cmd>
 Board writes preview until `--apply`, most commands take `--json`, and every group and subcommand has a
 `--help` with its flags, exit codes and an example.
 
+## Configure it
+
+Three files under `.agentry/` say how Agentry works your repo: `process.json` (your board's kinds, columns
+and rules), `workflow.json` (the gate, how much checking a lane gets, what it writes, commit rules) and
+`config.json` (push policy, builders at once, memory priming). `/agentry:init` writes them from what your
+repo already has, and `agentry board explain` shows every value in effect.
+
+- Every key, its default and its effect: [Workflows](https://agentry.silentthreadstudio.com/docs/workflows/).
+- Copy-ready setups that pass the loader: [`examples/workflows/`](./examples/workflows/): a solo developer,
+  a careful team, a board learned by init, debt only.
+
 ## Memory
 
 Memory is the `agentry mem` CLI over plain Markdown files. Nothing runs in the background.
@@ -181,6 +192,7 @@ The site has the long form: [agentry.silentthreadstudio.com](https://agentry.sil
   [Install](https://agentry.silentthreadstudio.com/docs/install/) ·
   [When to use it](https://agentry.silentthreadstudio.com/docs/when/)
 - [Lanes](https://agentry.silentthreadstudio.com/docs/lanes/) ·
+  [Workflows](https://agentry.silentthreadstudio.com/docs/workflows/) ·
   [Memory](https://agentry.silentthreadstudio.com/docs/memory/) ·
   [Permissions](https://agentry.silentthreadstudio.com/docs/permissions/)
 - [Security](https://agentry.silentthreadstudio.com/docs/security/) ·
