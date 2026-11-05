@@ -3,11 +3,11 @@ import DocsSidebar from "../../components/docs-sidebar/DocsSidebar.astro";
 import { withBase } from "../../lib/base.ts";
 import { DOCS_OVERVIEW, type DocsKey, docsNeighbours, docsSequence } from "../../lib/docs-nav.ts";
 import { breadcrumbs } from "../../lib/jsonld.ts";
-// DocsLayout.astro — the shared shell for every /docs page (ADR-001). Wraps Base (head +
+// DocsLayout.astro — the shared shell for every /docs page. Wraps Base (head +
 // site nav + footer) with the two-column docs grid: the persistent grouped sidebar on the
 // left, the article (header scaffold + page slot + prev/next) on the right.
 //
-// Importing docs.css here (ADR-002) makes the shared prose classes available to every page's
+// Importing docs.css here makes the shared prose classes available to every page's
 // slot content, so pages are pure content composition with no duplicated chrome or styles.
 //
 // Pinned props (the seam T2–T5 bind to): { current?, title, description?, eyebrow, lede }.

@@ -1,6 +1,6 @@
 /**
- * docs-nav.ts — the single source of truth for the /docs information architecture
- * (ADR-005). The grouped sidebar, every page's active-state key, and the prev/next
+ * docs-nav.ts — the single source of truth for the /docs information architecture.
+ * The grouped sidebar, every page's active-state key, and the prev/next
  * sequencing all read from the one ordered structure here. Adding a page = one entry.
  *
  * Hrefs are stored BARE, with the trailing slash the canonicals use ("docs/quickstart/").

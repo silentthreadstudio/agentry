@@ -1,5 +1,5 @@
 /*
- * docs.css — the shared docs prose layer (ADR-002). Imported once by DocsLayout, so every
+ * docs.css — the shared docs prose layer. Imported once by DocsLayout, so every
  * /docs page's slot content can use these classes without re-declaring them.
  * Reads only tokens.css: the same paper, ink, 2px rules and signal colors as the landing.
  */
