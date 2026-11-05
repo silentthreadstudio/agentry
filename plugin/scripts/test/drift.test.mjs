@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileSpike } from "../lib/lane/spikes.mjs";
-import { keptTrees, landing, mechanical, nudges } from "../lib/process/drift.mjs";
+import { keptTrees, mechanical, nudges } from "../lib/process/drift.mjs";
+import { landing } from "../lib/process/landing.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 import {
   SPEC,
