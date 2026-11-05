@@ -65,7 +65,7 @@ import {
 import { gateStep, rollBack } from "./merge/gating.mjs";
 import { now, ok, save, setMerge, warn } from "./merge/lane.mjs";
 import { gatingNow } from "./restack.mjs";
-import { leftover, saveWork } from "./restart.mjs";
+import { keepBranchAs, leftover, saveWork } from "./restart.mjs";
 import { expects } from "./rounds.mjs";
 import { checkCommits, rulesOf } from "./subjects.mjs";
 import { branchOf, git, porcelain, remove } from "./worktree.mjs";
@@ -575,14 +575,15 @@ function recoverCut(ctx, ledger, { refuse, stop }) {
   );
 }
 
-// Keep the branch as `keptName`: a ref made at the listed tip (refused when one is there), then the old
-// one deleted at that tip, never `branch -D` or a read by name. null, or why it did not.
+// Keep the branch as `keptName` at the listed tip, by restart's case-safe rename (`keepBranchAs`, both
+// case-twin checks right where they count). null, or why it did not.
 function keepBranch(root, { branch, tip, keptName }) {
-  const zero = "0".repeat(tip.length);
-  const made = git(root, ["update-ref", `refs/heads/${keptName}`, tip, zero]);
-  if (made.status !== 0) return `git update-ref refs/heads/${keptName}: ${first(made.stderr)}`;
-  const gone = git(root, ["update-ref", "-d", `refs/heads/${branch}`, tip]);
-  return gone.status === 0 ? null : `git update-ref -d refs/heads/${branch}: ${first(gone.stderr)}`;
+  try {
+    keepBranchAs(root, { branch, tip, kept: keptName });
+    return null;
+  } catch (e) {
+    return e.message;
+  }
 }
 
 /** `lane exec cut <id> --decision <D> [--keep <paths>] [--message <subject>] [--apply]`. */

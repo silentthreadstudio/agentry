@@ -555,6 +555,23 @@ test("a case twin of the kept name (a packed agentry/T1.CUT) refuses, nothing wr
   assert.deepEqual(snapshot(r), before);
 });
 
+test("a case twin of the kept name made during the land stops the branch rename, the lane branch kept", () => {
+  // The gate packs a ref agentry/T1.CUT after the plan's check: the rename looks again right before it.
+  const twin = "git update-ref refs/heads/agentry/T1.CUT HEAD && git pack-refs --all";
+  const r = repo({
+    spec: { ...SPEC, gate: { tiers: [{ name: "full", command: ["sh", "-c", twin] }] } },
+  });
+  const { tip } = parked(r);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(res.exit, 1, res.out);
+  assert.match(
+    res.out,
+    /branch was not kept as agentry\/T1\.cut: agentry\/T1\.CUT would be a case twin of agentry\/T1\.cut/,
+  );
+  assert.equal(git(r.root, "rev-parse", "refs/heads/agentry/T1"), tip);
+  assert.ok(!git(r.root, "for-each-ref", "--format=%(refname)").includes("agentry/T1.cut"));
+});
+
 test("the lane's owner calls survive the cut and stay open in session close until recorded", () => {
   const r = repo();
   parked(r);

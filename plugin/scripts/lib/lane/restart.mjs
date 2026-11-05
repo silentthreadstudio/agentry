@@ -9,6 +9,7 @@
 // saveWork(worktree, file) -> { files } | { error }      the uncommitted diff (untracked files too) to `file`
 // archiveNumber(root, id) -> n                           the first number no archive or kept branch holds
 // retire(root, ledger, n) -> { kept: branch | null, tip }   worktree removed, branch renamed `agentry/<id>.<n>`
+// keepBranchAs(root, { branch, tip, kept })               the case-safe rename `retire` and the cut share
 // carry(worktree, { picks, diff }) -> { ok, conflict? }   cherry-pick `picks` (`carryRange`'s, none when
 //                                                         empty), then `git apply --3way`
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -97,13 +98,22 @@ export function retire(root, ledger, n) {
   const res = remove(root, { path: ledger.worktree, branch: null, force: true });
   if (!res.removed)
     throw new Error(`the worktree ${ledger.worktree} was not removed: ${res.reason}`);
-  const tips = branchTips(root);
-  const named = resolveBranch(root, ledger.branch, tips);
+  const named = resolveBranch(root, ledger.branch);
   if (named.missing) return { kept: null };
   if (named.problem) throw new Error(named.problem);
   const { tip } = named;
   const kept = branchOf(`${ledger.id}.${n}`);
-  const clash = [...tips.keys()].find((b) => b.toLowerCase() === kept.toLowerCase());
+  keepBranchAs(root, { branch: ledger.branch, tip, kept });
+  return { kept, tip };
+}
+
+/** Rename lane branch `branch`, listed at `tip`, to `kept`, the one case-safe way (`retire` and the cut
+ *  share it): `update-ref` of `kept` at `tip` (refused when it exists) then `update-ref -d` of `branch` at
+ *  it, never `branch -m` or a read by name. Throws when `kept` has a case twin (looked for right before),
+ *  when `branch` has one or left `tip` (looked for again between the two steps: a twin at the same sha
+ *  would pass the delete's old-value check and go with it), or when git refuses. */
+export function keepBranchAs(root, { branch, tip, kept }) {
+  const clash = [...branchTips(root).keys()].find((b) => b.toLowerCase() === kept.toLowerCase());
   if (clash) throw new Error(`${clash} would be a case twin of ${kept}: rename it first`);
   const run = (args) => {
     const moved = git(root, args);
@@ -111,11 +121,10 @@ export function retire(root, ledger, n) {
       throw new Error(`git ${args.map(shellWord).join(" ")}: ${first(moved.stderr)}`);
   };
   run(["update-ref", `refs/heads/${kept}`, tip, ""]);
-  const still = resolveBranch(root, ledger.branch);
+  const still = resolveBranch(root, branch);
   if (still.problem && !still.missing) throw new Error(still.problem);
-  if (still.tip !== tip) throw new Error(`${ledger.branch} moved off ${tip} during the restart`);
-  run(["update-ref", "-d", `refs/heads/${ledger.branch}`, tip]);
-  return { kept, tip };
+  if (still.tip !== tip) throw new Error(`${branch} moved off ${tip} meanwhile`);
+  run(["update-ref", "-d", `refs/heads/${branch}`, tip]);
 }
 
 /** The commits of the branch at `tip` that a carry picks onto `main` (field 100): `git rev-list --reverse
