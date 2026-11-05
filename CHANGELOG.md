@@ -23,7 +23,7 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   own steps and the merge role's gate tier (rolled back on red, the lane as it was); the board's `cut` status
   (the new `lifecycle.on.cut`, `exec.kinds.<kind>.on.cut` for a debt kind) goes in one board commit, so main
   is clean for the next land. The lane is closed, its uncommitted work saved, its worktree removed and its
-  branch kept as `agentry/<id>.cut`; the episode is printed for `episode_write`. Without `--keep` nothing of
+  branch kept as `agentry/<id>.cut`; the episode is printed and `exec close <id>` writes it. Without `--keep` nothing of
   the branch lands. A cut killed mid-land is rolled back by the next `exec cut <id> --decision <D> --apply`,
   only over its own commits and writes; one killed after its board commit refuses and is finished by hand.
   An agent out, a decision the board does not hold, a `--keep` path the
@@ -310,6 +310,16 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   SHA-256 repo reads its full commit ids.
 
 ### Changed
+- **Memory is the `agentry mem` CLI; the memory MCP server is gone** — every agent, command and skill now runs
+  `agentry mem <verb>` in Bash (`recall`, `write`, `search`, `feedback`, `episode`, `stats`, `distill`,
+  `consolidate`, `update`, `forget`, `recover`, `resync`; `agentry mem --help`) instead of calling
+  `mcp__plugin_agentry_mem__*` tools. The plugin starts no MCP server, and its 1 MB bundle (`plugin/mem/`) and
+  `packages/memory` are removed. Existing stores read unchanged: the same Markdown files, roots and env
+  (`AGENTRY_GLOBAL_DIR`, `CLAUDE_PROJECT_DIR`, `AGENTRY_PROJECT_DIR`); with no project dir in the env, the
+  project store is the main checkout's of the current git repo, from any of its worktrees. `lane exec close`
+  writes the lane's episode to that store and stamps its id in one call; `--episode <id>` still stamps an id
+  written elsewhere, deprecated, for one version. `check-plugin` fails on a leftover `mcp__plugin_agentry_mem__`
+  name in the payload, and its dist-lockstep check is gone with the bundle.
 - **A verified lane's restart** — `lane exec restart <id> --carry` of a lane whose last verdict passed, on the
   tip it settled on and with no uncommitted work, that carries cleanly goes on as a rebase does instead of
   briefing a build round for work already done: under `exec.rebase: "recheck"` a changed carry goes to a fresh
