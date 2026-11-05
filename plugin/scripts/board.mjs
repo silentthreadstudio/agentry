@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// board — the process kit's CLI (plan F13 §2.4): `board.mjs [<sub>] [--root <git root>] [--process
+// board — the process kit's CLI: `board.mjs [<sub>] [--root <git root>] [--process
 // <file>] …`. The subcommands live in `lib/process/cli/<sub>.mjs`; the routing (flags, spec load, exit
 // codes) is `lib/cli/router.mjs`, shared with `lane.mjs`. No sub = `status`. Node built-ins only.
 import { dirname, join } from "node:path";

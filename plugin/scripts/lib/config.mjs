@@ -1,5 +1,5 @@
-// config — the strict reader for the harness keys the lanes act on in `.agentry/config.json`
-// (plan R1b §2, §3.1): `merge.push`, `lanes.maxWriters` and `mode`. It mirrors those two blocks of core's
+// config — the strict reader for the harness keys the lanes act on in `.agentry/config.json`:
+// `merge.push`, `lanes.maxWriters` and `mode`. It mirrors those two blocks of core's
 // `AgentryConfig` (`packages/core/src/config.ts`; the plugin ships no dependency): an unknown key,
 // a wrong type or an out-of-range value is an error naming it, never read as a default, and a
 // missing one is the default (`push: "ask"`, `maxWriters: 3`). An unknown top-level key is an error

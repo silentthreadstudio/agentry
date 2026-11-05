@@ -2,7 +2,7 @@
 //
 // The project dir is the env's when it names one (CLAUDE_PROJECT_DIR, then AGENTRY_PROJECT_DIR), as the MCP
 // server had it from Claude Code. A session's Bash commands get neither, so with a `cwd` the project dir is
-// the main checkout of the git repo it is in (decision 57): a call from a lane worktree reaches the same
+// the main checkout of the git repo it is in: a call from a lane worktree reaches the same
 // store the main checkout does. Outside any git repo there is no project root.
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";

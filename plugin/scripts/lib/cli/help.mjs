@@ -1,4 +1,4 @@
-// help — the one help and error format of `board.mjs` and `lane.mjs` (A39). Every subcommand exports
+// help — the one help and error format of `board.mjs` and `lane.mjs`. Every subcommand exports
 // `help`: `{ usage, purpose, args, flags, exits, example }`; `--help` prints it the same way for all.
 // A flag key with a second word (`--why <id>`, `--verify [static|live]`) takes a value: the router
 // reads which options a subcommand takes from here, so the help and the parser cannot drift apart.
@@ -12,7 +12,7 @@
 // refuse(what, why, next?) -> { exit: 2, out }                that line as a refusal
 // usageError(what, why) -> { exit: 2, out }                   a refusal pointing at `<what> --help`
 // PREVIEW                                                     the line a write prints without --apply
-// pluginVersion(root?) -> string | null                         the running build's version (field 61)
+// pluginVersion(root?) -> string | null                         the running build's version
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -30,7 +30,7 @@ function git(root, args) {
   return res.stdout.trim();
 }
 
-// What the running build is past its version (field 61): `+<n> (<short HEAD>)`, n the commits on HEAD's
+// What the running build is past its version: `+<n> (<short HEAD>)`, n the commits on HEAD's
 // first-parent line since the commit that last changed plugin.json, and ` dirty` when the plugin tree has
 // uncommitted changes. "" when the root is no git checkout (a worktree is one), HEAD is that commit, the
 // commit is out of reach (a shallow clone's boundary stands in for it), or git fails.
