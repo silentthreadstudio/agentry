@@ -480,6 +480,17 @@ test("board contract --kind: a name only Object.prototype has, or no kind of the
   assert.equal(board(root, "contract", "KX-41", "--kind", "task").status, 0);
 });
 
+test("find-contract.mjs: a --kind the process file does not have is a usage error, like board contract", () => {
+  const root = repo(LINKED);
+  const run = (...args) => spawnSync("node", [CLI, ...args, "--root", root], { encoding: "utf8" });
+  for (const kind of ["constructor", "nosuch"]) {
+    const res = run("KX-41", "--kind", kind);
+    assert.equal(res.status, 2, `${kind}: ${res.stderr}`);
+    assert.match(res.stderr, new RegExp(`unknown kind "${kind}" \\(kinds: sprint, task\\)`));
+  }
+  assert.equal(run("KX-41", "--kind", "task").status, 0);
+});
+
 test("findContract looks the kind up as the board's own: a prototype name never throws", () => {
   const root = repo({ "TASKS.md": "- **KX-62** (S1): owns the stool.\n" });
   const spec = { root: ".", kinds: { task: { contract: { blocks: ["TASKS.md"] } } } };
