@@ -139,7 +139,7 @@ function build(out, file, status = "DONE") {
 }
 const ISO = "\\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z";
 
-test("a two-step lane holds for the owner after step 1, resumes its builder on step 2, then one verifier reads it all", () => {
+test("a two-step lane holds for the owner after step 1, starts a fresh builder on step 2, then one verifier reads it all", () => {
   const r = repo({ lanes: { maxWriters: 1 } });
   let out = lane(r, "start", "T1").json;
   assert.equal(out.steps, "1. Write one.txt → owner OK\n2. Write two.txt");
@@ -199,7 +199,7 @@ test("a two-step lane holds for the owner after step 1, resumes its builder on s
   const resumed = lane(r, "resume", "T1", "--note", "OK, go");
   assert.equal(resumed.exit, 0, resumed.stderr);
   out = resumed.json;
-  assert.deepEqual([out.next, out.mode, out.agent], ["continue", "resume", "builder-1"]);
+  assert.deepEqual([out.next, out.mode, out.agent], ["continue", "fresh", undefined]);
   assert.match(out.approved, new RegExp(`^step 1 of 2 at ${ISO}: "OK, go"$`));
   const brief = readFileSync(out.brief, "utf8");
   assert.match(brief, /^# Fix T1, round 2/);
@@ -208,6 +208,10 @@ test("a two-step lane holds for the owner after step 1, resumes its builder on s
     new RegExp(`## The owner's answer\\n\\n"OK, go" \\(${ISO}\\)\\n\\nGo on to the steps below\\.`),
   );
   assert.match(brief, /## This round: step 2 of 2/);
+  assert.match(
+    brief,
+    /The step before it ended with the report .*r1-build\.report\.md: if you are new/,
+  );
   assert.match(brief, /Built before this round \(on the branch\): step 1\./);
   assert.match(brief, /Not this round: none: the verifier then reads the whole contract/);
   assert.doesNotMatch(brief, /the lane holds for the owner's review/);
@@ -458,12 +462,16 @@ test("a parked lane resumes its builder with the parked line, or a fresh builder
   build(out, "one.txt");
   lane(r, "report", "T1", "--agent", "builder-1");
   out = lane(r, "resume", "T1", "--note", "OK").json;
-  assert.equal(out.agent, "builder-1");
+  assert.deepEqual(
+    [out.mode, out.agent],
+    ["fresh", undefined],
+    "a new step starts a fresh builder",
+  );
 
   writeFileSync(join(out.worktree, "two.txt"), "half\n");
-  assert.equal(lane(r, "hold", "T1", "--for", "later").exit, 0);
+  assert.equal(lane(r, "hold", "T1", "--for", "later", "--agent", "builder-2").exit, 0);
   out = lane(r, "resume", "T1", "--note", "go on").json;
-  assert.deepEqual([out.next, out.mode, out.agent], ["continue", "resume", "builder-1"]);
+  assert.deepEqual([out.next, out.mode, out.agent], ["continue", "resume", "builder-2"]);
   const brief = readFileSync(out.brief, "utf8");
   assert.match(
     brief,
@@ -676,6 +684,26 @@ test("a two-step lane asking once in each step reaches verified, each ask re-dis
     ledgerOf(r.root, "T1").rounds.map((x) => x.step),
     ["build", "needs-context", "continue", "needs-context", "verify"],
   );
+});
+
+test("ART-10b: step 1 DONE, owner OK, a needs-context round: the lane offers step 2, never close", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out, "one.txt");
+  assert.equal(lane(r, "report", "T1", "--agent", "builder-1").json.state, "held");
+  out = lane(r, "resume", "T1", "--note", "OK, go").json;
+  assert.deepEqual([out.next, out.mode], ["continue", "fresh"]);
+  ask(out);
+  out = lane(r, "report", "T1", "--agent", "builder-2").json;
+  assert.deepEqual([out.next, out.mode, out.agent], ["needs-context", "resume", "builder-2"]);
+  assert.equal(lane(r, "hold", "T1", "--for", "later").exit, 0);
+  const held = ledgerOf(r.root, "T1");
+  assert.deepEqual([held.state, held.next, held.hold.stepRun], ["held", "resume", [2, 2]]);
+  assert.match(text(r, "show", "T1"), /^held: parked, since /m);
+  out = lane(r, "resume", "T1", "--note", "go on").json;
+  assert.notEqual(out.next, "close");
+  assert.notEqual(out.next, "verify");
+  assert.deepEqual(ledgerOf(r.root, "T1").rounds.at(-1).stepRun, [2, 2]);
 });
 
 test("asked again in one step: held for the context, nothing changed; resume sends the fact to the builder", () => {

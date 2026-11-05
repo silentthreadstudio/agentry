@@ -276,6 +276,17 @@ owner's own words as `--note` once they answer. "Change it first" is `--redo`. N
 behalf. The owner can also look in while a builder works: once its reply is saved, `hold --for owner` holds
 the lane during the round, and the resume carries the same round on.
 
+**A new step starts a fresh builder.** The resume that approves a step (`after` hold, no `--redo`) dispatches
+the next step's first round as `mode: fresh`: the brief names the last report of the step before, and the
+model and agent follow that step's `(model:, agent:)` marker. `--same` keeps the old builder for the new step
+when the owner asks for it. Every other builder round stays on the builder it belongs to: a `--redo`, a fix,
+a needs-context round and the carry-on of a hold during a round resume it. A one-step lane builds as before.
+
+**Only a DONE moves a step.** A builder's DONE (or DONE_WITH_CONCERNS) on a step is what holds the lane after
+it or sends the work to the verifier. A NEEDS_CONTEXT round, a hold, a void verdict or a resumed context hold
+never moves it: a lane held after step 1 of 2 with a needs-context round in between still reads `after step 1
+of 2` and resumes into step 2, never to the verifier or close.
+
 ### Stacks
 
 A lane can start on another lane that is done building but not landed yet (A45), so serial work does not

@@ -60,8 +60,9 @@
 //   build / fix / continue on run a..g (a > 1): no commits since step a began → fix (resume) with the reason
 //                                             (a run the owner sent back with redo, from its own dispatch)
 //   { type: "hold" } while a builder's round is out → hold (held); the round is left unread
-//   held: { type: "resume", note }           → continue (resume the builder) on the next run; on the same run
-//                                             after a "during" hold or with redo; after the last step → verify
+//   held: { type: "resume", note }           → continue (fresh builder, the last report pointed to) on the next
+//                                             run, `same` keeping the old builder (resume); on the same run, the
+//                                             builder resumed, after a "during" hold or with redo; after the last step → verify
 //                                             (fresh), or the gate under exec.verify
 //   held: report / verdict / notes           → refused: the lane expects a resume (a guard hold takes a report,
 //                                             as above); a gate is recorded, decides nothing
@@ -274,7 +275,7 @@ const resend = (ledger, round, reason) =>
  *   { type: "gate", record }   (recorded at any time; decides only when the gate is the next step)
  *   { type: "notes", notes }   (a verified PASS WITH NOTES lane back to its builder)
  *   { type: "hold", for: "owner" | "later", evidence, at, why?, agent? }
- *   { type: "resume", note, redo?, at, skipVerify?, tip, gate, tier? }
+ *   { type: "resume", note, redo?, same? (the next step keeps the old builder), at, skipVerify?, tip, gate, tier? }
  *   { type: "rebase" } / { type: "rebased", tip, changed, gate, tier? } / { type: "reverify" }
  *                              (a verified lane: rebased by its builder, already rebased, or verified late)
  *   { type: "owner", note, at } (a verified lane the owner sends back with a change)
@@ -581,13 +582,15 @@ function onResume(ledger, event) {
     return { ledger, next, reason: "the parked lane is verified again" };
   }
   const round = ledger.rounds[n - 1] ?? last(ledger);
+  // A fresh builder (a new step's) is no agent of an earlier round: it gets the brief and a pointer to
+  // the last report (`from`), and its model and agent come from the step's own markers.
   const carryOn = (stepRun, reason, extra = {}) =>
     send(
       ledger,
       "continue",
       {
         from: held.evidence ?? round.reportPath,
-        agent: round.agent,
+        ...(extra.mode !== "fresh" && { agent: round.agent }),
         ...(stepRun && { stepRun }),
         ...extra,
       },
@@ -637,10 +640,12 @@ function onResume(ledger, event) {
       redo: true,
     });
   const g = held.stepRun?.[1] ?? total;
+  // The next step starts a fresh builder, unless the owner asked for the old one (`same`).
   if (g < total)
     return carryOn(
       runOf(ledger.steps, g + 1),
       `the owner approved ${runText(held.stepRun, total)}`,
+      event.same ? {} : { mode: "fresh" },
     );
   return routeBuilt(ledger, round, event);
 }

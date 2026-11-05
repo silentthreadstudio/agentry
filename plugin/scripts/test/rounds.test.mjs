@@ -774,7 +774,7 @@ test("steps with no gate are one run: one build round, then verify", () => {
   );
 });
 
-test("held: resume → continue (resume the builder) on the next run, its answer kept with its time", () => {
+test("held: resume → continue (a fresh builder, the last report pointed to) on the next run, its answer kept with its time", () => {
   const held = go(stepped(), done()).ledger;
   const res = pure(held, resume());
   assert.equal(res.next, "continue");
@@ -782,8 +782,9 @@ test("held: resume → continue (resume the builder) on the next run, its answer
   const round = res.ledger.rounds.at(-1);
   assert.deepEqual(
     [round.step, round.role, round.mode, round.agent, round.stepRun],
-    ["continue", "build", "resume", "builder-1", [2, 3]],
+    ["continue", "build", "fresh", undefined, [2, 3]],
   );
+  assert.equal(round.from, "/r", "the previous step's last report");
   assert.equal(res.ledger.hold, undefined);
   assert.deepEqual(res.ledger.holds, [
     {
@@ -797,6 +798,97 @@ test("held: resume → continue (resume the builder) on the next run, its answer
       redo: false,
     },
   ]);
+});
+
+test("held: resume --same keeps the old builder for the next step (resume, its agent)", () => {
+  const held = go(stepped(), done()).ledger;
+  const round = pure(held, resume({ same: true })).ledger.rounds.at(-1);
+  assert.deepEqual(
+    [round.step, round.mode, round.agent, round.stepRun],
+    ["continue", "resume", "builder-1", [2, 3]],
+  );
+});
+
+test("a redo inside a step still resumes the same builder", () => {
+  const held = go(stepped(), done()).ledger;
+  const round = pure(held, resume({ redo: true }), TIP).ledger.rounds.at(-1);
+  assert.deepEqual([round.mode, round.agent, round.stepRun], ["resume", "builder-1", [1, 1]]);
+});
+
+test("a fix, a needs-context and a carry-on inside a step resume the builder; a one-step lane builds fresh once", () => {
+  const steps = [step3(1, "owner"), step3(2)];
+  let ledger = go(stepped(steps), done()).ledger;
+  ledger = go(ledger, resume(), TIP).ledger; // step 2: a fresh builder
+  const asked = pure(ledger, report("NEEDS_CONTEXT", ok, { tip: MOVED, agent: "builder-2" }));
+  const ctx = asked.ledger.rounds.at(-1);
+  assert.deepEqual(
+    [ctx.step, ctx.mode, ctx.agent, ctx.stepRun],
+    ["needs-context", "resume", "builder-2", [2, 2]],
+  );
+  const hold = go(ledger, {
+    type: "hold",
+    for: "owner",
+    evidence: "/e",
+    at: AT,
+    agent: "builder-2",
+  }).ledger;
+  const on = pure(hold, resume());
+  assert.deepEqual(
+    [on.next, on.ledger.rounds.at(-1).mode, on.ledger.rounds.at(-1).agent],
+    ["continue", "resume", "builder-2"],
+  );
+  const one = pure(lane(), done());
+  assert.deepEqual(
+    one.ledger.rounds.map((r) => [r.step, r.mode]),
+    [
+      ["build", "fresh"],
+      ["verify", "fresh"],
+    ],
+  );
+});
+
+test("ART-10b: step 1 DONE, owner OK, a needs-context round: step 2 is still to build, never close", () => {
+  const steps = [step3(1, "owner"), step3(2)];
+  let ledger = go(stepped(steps), done()).ledger;
+  ledger = go(ledger, resume(), TIP).ledger; // step 2 dispatched
+  const asked = go(ledger, report("NEEDS_CONTEXT", ok, { tip: MOVED, agent: "builder-2" }), MOVED);
+  assert.equal(asked.next, "needs-context");
+  assert.deepEqual(
+    asked.ledger.rounds.map((r) => r.stepRun),
+    [
+      [1, 1],
+      [2, 2],
+      [2, 2],
+    ],
+  );
+  // Held mid-step 2 with the context round out: it stays on step 2, and a resume goes back to it, not to verify.
+  const held = go(asked.ledger, { type: "hold", for: "later", at: AT, evidence: null }).ledger;
+  assert.deepEqual(held.hold.stepRun, [2, 2]);
+  const back = pure(held, resume());
+  assert.notEqual(back.next, "verify");
+  assert.notEqual(back.next, "close");
+  assert.deepEqual(back.ledger.rounds.at(-1).stepRun, [2, 2]);
+  // Only a DONE of step 2 reaches the verifier.
+  assert.equal(pure(asked.ledger, done(MOVED)).next, "verify");
+});
+
+test("a step that asked once before its DONE still holds `after step 1 of 2` and resumes into step 2", () => {
+  const steps = [step3(1, "owner"), step3(2)];
+  let ledger = go(stepped(steps), report("NEEDS_CONTEXT", ok, { tip: TIP, agent: "b1" })).ledger;
+  ledger = go(ledger, done(MOVED), MOVED).ledger;
+  assert.equal(ledger.state, "held");
+  assert.deepEqual([ledger.hold.when, ledger.hold.stepRun], ["after", [1, 1]]);
+  const next = pure(ledger, resume());
+  assert.deepEqual(
+    [next.next, next.ledger.rounds.at(-1).stepRun, next.ledger.rounds.at(-1).mode],
+    ["continue", [2, 2], "fresh"],
+  );
+});
+
+test("a held lane takes no report, verdict or close: only a resume moves its step", () => {
+  const held = go(stepped(), done()).ledger;
+  for (const event of [done(MOVED), judge("PASS")])
+    assert.throws(() => step(held, event), /the lane is held: it expects a resume/);
 });
 
 test("runs [1,1] then [2,3] for steps 1 → owner OK, 2, 3; after the last step one verifier", () => {

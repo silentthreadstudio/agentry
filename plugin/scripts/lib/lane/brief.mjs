@@ -760,10 +760,17 @@ export const recheckSlots = ({ sentBack = [], mainBranch = "main", rangeDiff = "
 
 const NOT_THIS_ROUND_WIDTH = 100;
 
+// A step's fresh builder (not a resumed one) is pointed to the report the step before it ended with.
+const newBuilder = ({ evidence }, mode) =>
+  mode === "resume" || !evidence
+    ? ""
+    : ` The step before it ended with the report ${evidence}: if you are new to this lane, read it first.`;
+
 /** The slots of a contract built in steps (`process/steps.mjs`) for dispatch `step` on run `stepRun`
  *  (`[a, g]`), with the owner's answers so far (`holds`, the ledger's). A lane without steps gets every
- *  section off. `fresh` is false for a resent round, which carries no new section. */
-export function stepSlots({ steps = [], stepRun = null, holds = [], step, fresh = true }) {
+ *  section off. `fresh` is false for a resent round, which carries no new section; `mode` the round's
+ *  ("resume" keeps the pointer to the last step's report off: that builder wrote it). */
+export function stepSlots({ steps = [], stepRun = null, holds = [], step, fresh = true, mode }) {
   const total = steps.length;
   const run = total && stepRun ? steps.slice(stepRun[0] - 1, stepRun[1]) : [];
   const later = run.length ? steps.slice(stepRun[1]) : [];
@@ -793,7 +800,7 @@ export function stepSlots({ steps = [], stepRun = null, holds = [], step, fresh 
       : answer.redo
         ? "Rework the same steps to that answer; the lane holds for the owner again when you report."
         : answer.when === "after"
-          ? "Go on to the steps below."
+          ? `Go on to the steps below.${newBuilder(answer, mode)}`
           : "Carry on with the same steps, to that answer.",
     // A lane parked mid-round may hold uncommitted work; one parked at a run's end does not.
     parked: answer?.for === "later" && answer.when === "during",
