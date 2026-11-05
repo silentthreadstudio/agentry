@@ -576,13 +576,23 @@ function recoverCut(ctx, ledger, { refuse, stop }) {
 }
 
 // Keep the branch as `keptName` at the listed tip, by restart's case-safe rename (`keepBranchAs`, both
-// case-twin checks right where they count). null, or why it did not.
+// case-twin checks right where they count). null, or what is left as restart words a stop (why → fix
+// that, then: the steps), read from the branch list where the rename stopped: nothing made (both steps
+// owed), `keptName` made with the lane branch still at the tip (its delete owed), or the lane branch
+// moved off it (no step: the owner checks the moved branch).
 function keepBranch(root, { branch, tip, keptName }) {
   try {
     keepBranchAs(root, { branch, tip, kept: keptName });
     return null;
   } catch (e) {
-    return e.message;
+    const tips = branchTips(root);
+    const ref = (b) => shellWord(`refs/heads/${b}`);
+    const del = `git update-ref -d ${ref(branch)} ${tip}`;
+    if (tips.get(keptName) !== tip)
+      return `its branch was not kept as ${keptName}: ${e.message} → fix that, then: git update-ref ${ref(keptName)} ${tip} ''; ${del}`;
+    if (tips.get(branch) === tip)
+      return `${keptName} holds ${short(tip)} and ${branch} was not deleted: ${e.message} → fix that, then: ${del}`;
+    return `${keptName} holds ${short(tip)}, the old tip, and ${e.message}: ${branch} was left as it is; check it, then delete it by hand`;
   }
 }
 
@@ -678,10 +688,7 @@ export function cutLane(ctx, id, { ledger, refuse, stop, laneLine, episodeOf }) 
   const why = plan.tip
     ? keepBranch(root, { branch: ledger.branch, tip: plan.tip, keptName: plan.keptName })
     : null;
-  if (why)
-    stop(
-      `${done}, but its branch was not kept as ${plan.keptName}: ${why} → git update-ref refs/heads/${plan.keptName} ${plan.tip}; git update-ref -d refs/heads/${ledger.branch} ${plan.tip}`,
-    );
+  if (why) stop(`${done}, but ${why}`);
   const { gate: _gate, main: _main, ...told } = shown;
   return result({
     next: null,

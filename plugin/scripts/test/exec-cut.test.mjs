@@ -571,6 +571,13 @@ test("a case twin of the kept name made during the land stops the branch rename,
     res.out,
     /branch was not kept as agentry\/T1\.cut: agentry\/T1\.CUT would be a case twin of agentry\/T1\.cut/,
   );
+  // Nothing made: both steps are still owed, after the fix.
+  assert.ok(
+    res.out.includes(
+      `rename it first → fix that, then: git update-ref refs/heads/agentry/T1.cut ${tip} ''; git update-ref -d refs/heads/agentry/T1 ${tip}`,
+    ),
+    res.out,
+  );
   assert.equal(git(r.root, "rev-parse", "refs/heads/agentry/T1"), tip);
   assert.ok(!git(r.root, "for-each-ref", "--format=%(refname)").includes("agentry/T1.cut"));
 });
@@ -583,10 +590,17 @@ test("a case twin of the lane branch made during the land stops the rename: neit
   const { tip } = parked(r);
   const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
   assert.equal(res.exit, 1, res.out);
-  assert.match(
+  assert.match(res.out, /agentry\/T1 has a case twin agentry\/t1/);
+  // The kept branch is made: only the lane branch's delete is owed, after the fix.
+  assert.ok(
+    res.out.includes(`agentry/T1.cut holds ${tip.slice(0, 7)} and agentry/T1 was not deleted: `),
     res.out,
-    /branch was not kept as agentry\/T1\.cut: agentry\/T1 has a case twin agentry\/t1/,
   );
+  assert.ok(
+    res.out.includes(`→ fix that, then: git update-ref -d refs/heads/agentry/T1 ${tip}`),
+    res.out,
+  );
+  assert.doesNotMatch(res.out, /update-ref refs\/heads\/agentry\/T1\.cut/);
   const refs = agentryRefs(r);
   assert.ok(refs.includes(`refs/heads/agentry/T1 ${tip}`), refs);
   assert.ok(refs.includes(`refs/heads/agentry/t1 ${tip}`), refs);
@@ -598,6 +612,14 @@ test("the lane branch moved during the land stops the rename: the moved branch i
   const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
   assert.equal(res.exit, 1, res.out);
   assert.match(res.out, new RegExp(`agentry/T1 moved off ${tip} meanwhile`));
+  // No step: the owner checks the moved branch.
+  assert.ok(
+    res.out.includes(
+      `agentry/T1.cut holds ${tip.slice(0, 7)}, the old tip, and agentry/T1 moved off ${tip} meanwhile: agentry/T1 was left as it is; check it, then delete it by hand`,
+    ),
+    res.out,
+  );
+  assert.doesNotMatch(res.out, /update-ref|exec cut T1 --/);
   const refs = agentryRefs(r);
   assert.notEqual(git(r.root, "rev-parse", "refs/heads/agentry/T1"), tip, "the moved branch went");
   assert.ok(refs.includes(`refs/heads/agentry/T1.cut ${tip}`), refs);
