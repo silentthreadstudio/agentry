@@ -147,16 +147,19 @@ test("update() text is searchable by its new words while the store signature hol
   assert.equal(service.search("jasper").length, 0, "the old text is gone from the index");
 });
 
-test("a superseded fact set back to active by update() is searchable while the signature holds still", () => {
+test("update() tags are searchable by the new tag while the store signature holds still", () => {
   const dir = fresh();
-  const { id } = newService(dir).write({ type: "decision", scope: "global", text: "beryl wins" });
-  newService(dir).update(id, { status: "superseded" });
+  const service = newService(dir, held(dir));
+  const { id } = service.write({
+    type: "decision",
+    scope: "global",
+    text: "beryl wins the lookup",
+  });
 
-  const service = newService(dir, held(dir)); // loads it superseded, so it is not in the index
-  service.update(id, { status: "active" });
+  service.update(id, { tags: ["chrysoberyl"] });
 
   assert.deepEqual(
-    service.search("beryl").map((h) => h.id),
+    service.search("chrysoberyl").map((h) => h.id),
     [id],
   );
 });

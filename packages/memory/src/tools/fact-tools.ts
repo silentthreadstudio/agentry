@@ -65,7 +65,7 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
     "memory_update",
     {
       description:
-        "Patch a fact in place (text/tags/type/scope/confidence/status/supersedes) — for reflect/curation. `supersedes` retires the named fact, as on memory_write. A scope that would move the fact between the project and global roots is refused (write it anew with memory_write + supersedes); to bring back an archived fact use memory_recover.",
+        "Patch a fact in place (text/tags/type/scope/confidence/status/supersedes) — for reflect/curation. `supersedes` retires the named fact, as on memory_write. A scope that would move the fact between the project and global roots is refused (write it anew with memory_write + supersedes). Status 'active' is refused on a non-active fact: bring back an archived fact with memory_recover; a superseded fact stays superseded (write a new fact with memory_write).",
       inputSchema: {
         id: z.string(),
         text: z.string().optional(),
@@ -90,7 +90,9 @@ export function registerFactTools(server: McpServer, service: MemoryService): vo
         invalidState(
           "cannot set this memory active",
           `it is '${outcome.status}'`,
-          "use memory_recover to restore an archived memory",
+          outcome.status === "archived"
+            ? "use memory_recover to restore an archived memory"
+            : "supersession is final: write the fact anew with memory_write",
         ),
       );
     }),

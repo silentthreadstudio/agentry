@@ -56,7 +56,7 @@ by a full load of both roots at startup, and rebuilt by the same full load whene
 | `memory_write` | Capture a fact. Reinforces a near-duplicate instead of copying it; `supersedes` retires the old fact. |
 | `memory_recall` | A few ranked, active facts for a query; `mode: "prime"` returns the session warm set and recent episodes. |
 | `memory_search` | Broader full-text search with snippets. |
-| `memory_update` | Patch a fact. `supersedes` retires the target as on `memory_write`. A scope that would move the fact to the other root is refused, and so is setting an archived fact active (use `memory_recover`). |
+| `memory_update` | Patch a fact. `supersedes` retires the target as on `memory_write`, and may not name the fact itself. A scope that would move the fact to the other root is refused. So is setting a non-active fact active: use `memory_recover` for an archived one; a superseded one stays superseded. |
 | `memory_feedback` | Usefulness signal after a run: used facts are boosted, recalled-but-unused ones decay toward archive. |
 | `memory_forget` | Delete a fact or episode from the store and disk. |
 | `memory_recover` | Restore an archived fact to active. |

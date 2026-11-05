@@ -244,8 +244,16 @@ export class MemoryService {
         field: "scope",
         rule: "a scope stored in the fact's own root; to move it between the project and global roots, write it anew with memory_write and supersedes",
       };
-    // Un-archiving is recover()'s job: it also clears the tombstone and the strike counter.
-    if (changes.status === "active" && fact.status === "archived")
+    if (changes.supersedes === id)
+      return {
+        ok: false,
+        reason: "bad-input",
+        field: "supersedes",
+        rule: "the id of another fact",
+      };
+    // Only an active fact can be patched active. Un-archiving is recover()'s job (it also clears the
+    // tombstone and the strike counter); supersession is terminal.
+    if (changes.status === "active" && fact.status !== "active")
       return { ok: false, reason: "invalid-state", id, status: fact.status };
     const ts = this.iso();
     const supersededMissing = changes.supersedes ? this.retire(changes.supersedes, ts) : undefined;

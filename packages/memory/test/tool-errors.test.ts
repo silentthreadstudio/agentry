@@ -144,6 +144,24 @@ test("memory_update status:active on an archived fact → invalid-state that poi
   assert.ok(env.fix.includes("memory_recover"), "fix names the tool to use");
 });
 
+test("memory_update status:active on a superseded fact → invalid-state that points at memory_write", async () => {
+  const { service, call } = wired(fresh());
+  const old = service.write({ type: "decision", scope: "global", text: "builds run on node 22" });
+  service.write({
+    type: "decision",
+    scope: "global",
+    text: "builds run on node 24",
+    supersedes: old.id,
+  });
+
+  const env = envelopeOf(await call("memory_update", { id: old.id, status: "active" }));
+
+  assert.equal(env.code, "invalid-state");
+  assert.ok(env.why.includes("superseded"), "why names the actual status");
+  assert.ok(env.fix.includes("memory_write"), "fix names the tool to use");
+  assert.equal(service.stats().superseded, 1, "the fact stays superseded");
+});
+
 // ── AC3 — semantic bad-input: blank id → code:bad-input, fix names the field ────────────────────────
 test("AC3: a blank/whitespace id → isError, code:bad-input, fix names the field", async () => {
   const { call } = wired(fresh());

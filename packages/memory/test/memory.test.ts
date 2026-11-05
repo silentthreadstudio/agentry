@@ -452,3 +452,19 @@ test("update with supersedes of a missing id still applies and flags the link as
     supersededMissing: "g:MISSING",
   });
 });
+
+test("update refuses a supersedes that names the fact itself", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  const { id } = service.write({ type: "decision", scope: "global", text: "logs rotate daily" });
+
+  const outcome = service.update(id, { supersedes: id });
+
+  assert.equal(
+    outcome.ok === false && outcome.reason === "bad-input" && outcome.field,
+    "supersedes",
+  );
+  const onDisk = factOnDisk(dir, id);
+  assert.equal(onDisk?.status, "active");
+  assert.equal(onDisk?.supersedes, undefined);
+});
