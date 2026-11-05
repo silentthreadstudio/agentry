@@ -5,6 +5,7 @@
 // privateRefs(rootDir) -> string[]   "<file>:<line>: comment cites a private reference (<match>)" each,
 // over the comments of every code file under `plugin/`, `packages/` and `scripts/`. Strings are never read: a printed
 // message or a test name that holds an id is the program's own text, not a comment.
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -92,15 +93,31 @@ function yamlComments(text) {
   return out;
 }
 
+// The files git tracks under `top` (absolute paths): ignored output such as eval results is not shipped, so it is
+// not checked. Outside a git work tree (a copy of the repo) every file under `top` is.
+function shipped(rootDir, top) {
+  try {
+    const out = execFileSync("git", ["-C", rootDir, "ls-files", "-z", "--", top], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out
+      .split("\0")
+      .filter(Boolean)
+      .map((rel) => join(rootDir, rel));
+  } catch {
+    try {
+      return walk(join(rootDir, top));
+    } catch {
+      return [];
+    }
+  }
+}
+
 export function privateRefs(rootDir) {
   const problems = [];
   for (const top of ["plugin", "packages", "scripts"]) {
-    let files;
-    try {
-      files = walk(join(rootDir, top));
-    } catch {
-      continue;
-    }
+    const files = shipped(rootDir, top);
     for (const file of files) {
       const rel = relative(rootDir, file);
       if (SELF.test(rel) || BUILT.test(rel) || !(CODE.test(file) || YAML.test(file))) continue;

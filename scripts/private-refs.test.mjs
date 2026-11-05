@@ -1,6 +1,7 @@
 // Tests for scripts/lib/private-refs.mjs: the gate's guard against comments that cite private docs, on
 // synthetic trees, and over this repo's own tree.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -100,4 +101,19 @@ test("privateRefs gives the line of the hit", () => {
 test("this repo's plugin and packages cite no private reference in a comment", () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   assert.deepEqual(privateRefs(root), []);
+});
+
+test("in a git work tree only tracked files are read: an ignored build output is not shipped", () => {
+  const root = mkdtempSync(join(tmpdir(), "private-refs-git-"));
+  temps.push(root);
+  const git = (...args) => execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
+  git("init", "-q");
+  mkdirSync(join(root, "packages", "eval", "results"), { recursive: true });
+  writeFileSync(join(root, "packages", "eval", "kept.mjs"), "// see ADR-002\n");
+  writeFileSync(join(root, ".gitignore"), "packages/eval/results/\n");
+  writeFileSync(join(root, "packages", "eval", "results", "out.html"), "<!-- ADR-003 -->\n");
+  git("add", ".");
+  assert.deepEqual(privateRefs(root), [
+    "packages/eval/kept.mjs:1: comment cites a private reference (ADR-002)",
+  ]);
 });
