@@ -291,7 +291,8 @@ test("a debt lane runs from start to merge outside the sprints", () => {
   assert.deepEqual(git(r.root, "show", "--name-only", "--format=", "HEAD").split("\n"), [
     "plan/BOARD.md",
   ]);
-  assert.equal(git(r.root, "status", "--porcelain"), "");
+  // nothing but the episode close wrote, in the repo's own memory store
+  assert.equal(git(r.root, "status", "--porcelain"), "?? .agentry/memory/");
   const checked = boardCli(r, "check");
   assert.equal(checked.status, 0, checked.stdout);
   // The landed debt item is on the board, done: neither board fix nor the close plan reports it.
@@ -350,7 +351,8 @@ test("a debt lane and a task lane open at once pass each other's writes and land
     assert.equal(row(r.root, "DEBT-1")[2], "done");
     assert.equal(row(r.root, "T1")[2], "done");
     assert.equal(row(r.root, "T2")[2], "todo");
-    assert.equal(git(r.root, "status", "--porcelain"), "");
+    // nothing but the episodes close wrote, in the repo's own memory store
+    assert.equal(git(r.root, "status", "--porcelain"), "?? .agentry/memory/");
     assert.equal(boardCli(r, "check").status, 0);
   }
 });
