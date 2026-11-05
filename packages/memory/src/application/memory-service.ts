@@ -237,7 +237,13 @@ export class MemoryService {
     const changes = this.clean(patch);
     // The file lives in the root its id names; a scope that belongs in the other root would leave a
     // user fact in the project's store (or the reverse) under the wrong id.
-    if (changes.scope !== undefined && originForScope(changes.scope, this.roots) !== originOf(id))
+    // The fact's own scope is never a move, even if its id's root differs (a repo fact written
+    // before the project had a root).
+    if (
+      changes.scope !== undefined &&
+      changes.scope !== fact.scope &&
+      originForScope(changes.scope, this.roots) !== originOf(id)
+    )
       return {
         ok: false,
         reason: "bad-input",

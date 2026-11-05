@@ -468,3 +468,18 @@ test("update refuses a supersedes that names the fact itself", () => {
   assert.equal(onDisk?.status, "active");
   assert.equal(onDisk?.supersedes, undefined);
 });
+
+test("update with the fact's own scope is not a cross-root move, even when the id's root differs", () => {
+  const global = fresh();
+  const { id } = newService(global).write({
+    type: "repo-fact",
+    scope: "repo",
+    text: "written before the project had a root",
+  }); // no project root yet → a g: id with scope repo
+  const roots: Roots = { global, project: fresh() };
+  const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
+  service.load();
+
+  assert.deepEqual(service.update(id, { scope: "repo", confidence: 0.9 }), { ok: true, id });
+  assert.equal(factOnDisk(global, id)?.confidence, 0.9);
+});

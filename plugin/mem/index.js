@@ -28599,7 +28599,7 @@ var MemoryService = class {
     const fact = this.facts.get(id);
     if (!fact) return { ok: false, reason: "not-found", id };
     const changes = this.clean(patch);
-    if (changes.scope !== void 0 && originForScope(changes.scope, this.roots) !== originOf(id))
+    if (changes.scope !== void 0 && changes.scope !== fact.scope && originForScope(changes.scope, this.roots) !== originOf(id))
       return {
         ok: false,
         reason: "bad-input",
