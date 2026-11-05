@@ -989,12 +989,22 @@ test("the sweep lists and removes a gate slot temp file of the older naming a ki
   assert.ok(!existsSync(old));
 });
 
+// The sleeps the tests below fork out of every tree, by an argv only this process runs (`sleep 302.<pid>`):
+// another copy of this file (another lane's gate, at the same time) forks the same sleeps, and a bare
+// `pgrep -f "^sleep 302$"` counts its sleeps as ours and kills them.
+const ownSleep = (n) => `sleep ${n}.${process.pid}`;
+const ownSleeps = (n) =>
+  spawnSync("pgrep", ["-f", `^sleep ${n}\\.${process.pid}$`], { encoding: "utf8" })
+    .stdout.split("\n")
+    .filter(Boolean)
+    .map(Number);
+
 test("one --apply leaves nothing of a stray that forks a child on SIGTERM whose parent leaves at once", async () => {
   const { root } = fixture();
   const cwd = runFile(root, "scratch");
   mkdirSync(cwd, { recursive: true });
   const late = join(cwd, "late.pid");
-  const src = `process.on("SIGTERM", () => { require("child_process").spawn("sh", ["-c", "sleep 301 & echo $! > ${late}"], { stdio: "ignore" }); }); setInterval(() => {}, 1000);`;
+  const src = `process.on("SIGTERM", () => { require("child_process").spawn("sh", ["-c", "${ownSleep(301)} & echo $! > ${late}"], { stdio: "ignore" }); }); setInterval(() => {}, 1000);`;
   const stray = spawn("node", ["-e", src], { cwd, stdio: "ignore" });
   children.push(stray);
   await settle();
@@ -1005,17 +1015,11 @@ test("one --apply leaves nothing of a stray that forks a child on SIGTERM whose 
   if (forked) planted.push(forked);
   assert.ok(await waitDead(stray.pid));
   assert.equal(forked === null || !alive(forked), true, `its child ${forked} outlived the sweep`);
-  const left = spawnSync("pgrep", ["-f", "sleep 301"], { encoding: "utf8" }).stdout.trim();
-  assert.equal(left, "", "no sleep 301 runs");
+  assert.deepEqual(ownSleeps(301), [], "no sleep 301 runs");
 });
 
 // ---- every stray frozen before any is killed (R1d-37 r7 N18) ----------------------------------------
 
-const pgrepAll = (pattern) =>
-  spawnSync("pgrep", ["-f", pattern], { encoding: "utf8" })
-    .stdout.split("\n")
-    .filter(Boolean)
-    .map(Number);
 const killAll = (pids) => {
   for (const pid of pids)
     try {
@@ -1037,7 +1041,7 @@ test("a stray that reacts to another's end is frozen before that one is killed: 
       "sh",
       [
         "-c",
-        `while kill -0 ${first.pid} 2>/dev/null; do sleep 0.01; done; (sleep 303 &); sleep 300`,
+        `while kill -0 ${first.pid} 2>/dev/null; do sleep 0.01; done; (${ownSleep(303)} &); sleep 300`,
       ],
       { cwd, stdio: "ignore" },
     );
@@ -1046,10 +1050,10 @@ test("a stray that reacts to another's end is frozen before that one is killed: 
     const res = JSON.parse(sweep(root, "--apply", "--json").stdout);
     assert.ok(res.result.killed.includes(first.pid) && res.result.killed.includes(watcher.pid));
     await settle();
-    assert.deepEqual(pgrepAll("^sleep 303$"), [], "the watcher forked once the first stray died");
+    assert.deepEqual(ownSleeps(303), [], "the watcher forked once the first stray died");
     assert.deepEqual(res.result.appeared, []);
   } finally {
-    killAll(pgrepAll("^sleep 303$"));
+    killAll(ownSleeps(303));
   }
 });
 
@@ -1077,7 +1081,7 @@ test("one --apply on a fast forker names what it forked meanwhile, and a second 
   try {
     const forker = spawn(
       "sh",
-      ["-c", "i=0; while [ $i -lt 400 ]; do (sleep 302 &); i=$((i+1)); sleep 0.05; done"],
+      ["-c", `i=0; while [ $i -lt 400 ]; do (${ownSleep(302)} &); i=$((i+1)); sleep 0.05; done`],
       { cwd, stdio: "ignore" },
     );
     children.push(forker);
@@ -1086,7 +1090,7 @@ test("one --apply on a fast forker names what it forked meanwhile, and a second 
     const once = JSON.parse(res.stdout);
     assert.ok(once.result.killed.includes(forker.pid), "the forker was stopped");
     await settle();
-    const left = pgrepAll("^sleep 302$");
+    const left = ownSleeps(302);
     assert.deepEqual(left.toSorted(), once.result.appeared.toSorted(), "every one left is named");
     const said = once.warnings.filter((w) => w.startsWith("run lane sweep --apply again"));
     assert.deepEqual(
@@ -1095,9 +1099,9 @@ test("one --apply on a fast forker names what it forked meanwhile, and a second 
     );
     sweep(root, "--apply");
     await settle();
-    assert.deepEqual(pgrepAll("^sleep 302$"), [], "a second --apply leaves none");
+    assert.deepEqual(ownSleeps(302), [], "a second --apply leaves none");
   } finally {
-    killAll(pgrepAll("^sleep 302$"));
+    killAll(ownSleeps(302));
   }
 });
 
@@ -1110,7 +1114,7 @@ test("a 5 ms forker is stopped early in the apply, and one --apply leaves few of
   try {
     const forker = spawn(
       "sh",
-      ["-c", "i=0; while [ $i -lt 4000 ]; do (sleep 302 &); i=$((i+1)); sleep 0.005; done"],
+      ["-c", `i=0; while [ $i -lt 4000 ]; do (${ownSleep(302)} &); i=$((i+1)); sleep 0.005; done`],
       { cwd, stdio: "ignore" },
     );
     children.push(forker);
@@ -1138,10 +1142,10 @@ test("a 5 ms forker is stopped early in the apply, and one --apply leaves few of
       stoppedAt !== null && stoppedAt < 1500,
       `the forker was first stopped at ${stoppedAt} ms`,
     );
-    const left = pgrepAll("^sleep 302$").length;
+    const left = ownSleeps(302).length;
     assert.ok(left < 60, `${left} strays left after one --apply`);
   } finally {
-    killAll(pgrepAll("^sleep 302$"));
+    killAll(ownSleeps(302));
   }
 });
 
