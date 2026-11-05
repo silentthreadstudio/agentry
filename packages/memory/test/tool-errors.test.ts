@@ -133,6 +133,17 @@ test("AC2: recover on an existing non-archived fact → invalid-state, why names
   );
 });
 
+test("memory_update status:active on an archived fact → invalid-state that points at memory_recover", async () => {
+  const { service, call } = wired(fresh());
+  const id = archivedFact(service, () => 0);
+
+  const env = envelopeOf(await call("memory_update", { id, status: "active" }));
+
+  assert.equal(env.code, "invalid-state");
+  assert.ok(env.why.includes("archived"), "why names the actual status");
+  assert.ok(env.fix.includes("memory_recover"), "fix names the tool to use");
+});
+
 // ── AC3 — semantic bad-input: blank id → code:bad-input, fix names the field ────────────────────────
 test("AC3: a blank/whitespace id → isError, code:bad-input, fix names the field", async () => {
   const { call } = wired(fresh());

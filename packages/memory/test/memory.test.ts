@@ -366,3 +366,89 @@ test("episode_write + stats tracks undistilled debt", () => {
   });
   assert.equal(service.stats().undistilled, 1);
 });
+
+// ── memory_update: fields with side effects either apply them or refuse with the tool to use ────────
+
+test("update refuses a scope that would move the fact to the other root, and leaves it where it is", () => {
+  const project = fresh();
+  const roots: Roots = { global: fresh(), project };
+  const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
+  service.load();
+  const { id } = service.write({
+    type: "repo-fact",
+    scope: "repo",
+    text: "the lab repo pins pnpm",
+  });
+
+  const outcome = service.update(id, { scope: "user" });
+
+  assert.equal(outcome.ok === false && outcome.reason, "bad-input");
+  assert.equal(outcome.ok === false && outcome.reason === "bad-input" && outcome.field, "scope");
+  const onDisk = new MarkdownFileStore(roots).readFacts().records.find((r) => r.fact.id === id);
+  assert.equal(onDisk?.origin, "p");
+  assert.equal(onDisk?.fact.scope, "repo");
+});
+
+test("update allows a scope change that stays in the fact's root", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  const { id } = service.write({ type: "preference", scope: "global", text: "tabs over spaces" });
+
+  assert.deepEqual(service.update(id, { scope: "user" }), { ok: true, id });
+  assert.equal(factOnDisk(dir, id)?.scope, "user");
+});
+
+test("update refuses to set an archived fact active (that is memory_recover's job)", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const { id } = service.write({ type: "gotcha", scope: "global", text: "an archived lapis note" });
+  for (let strike = 1; strike <= ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  }
+
+  const outcome = service.update(id, { status: "active" });
+
+  assert.deepEqual(outcome, { ok: false, reason: "invalid-state", id, status: "archived" });
+  assert.equal(factOnDisk(dir, id)?.status, "archived");
+});
+
+test("update with supersedes retires the target, as memory_write does", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  const old = service.write({
+    type: "decision",
+    scope: "global",
+    text: "deploys go out on friday",
+  });
+  const next = service.write({
+    type: "decision",
+    scope: "global",
+    text: "deploys go out on monday",
+  });
+
+  assert.deepEqual(service.update(next.id, { supersedes: old.id }), { ok: true, id: next.id });
+
+  assert.equal(factOnDisk(dir, old.id)?.status, "superseded");
+  assert.equal(factOnDisk(dir, next.id)?.supersedes, old.id);
+  assert.deepEqual(
+    service.recall({ query: "deploys go out" }).memories.map((m) => m.fact.id),
+    [next.id],
+  );
+});
+
+test("update with supersedes of a missing id still applies and flags the link as a no-op", () => {
+  const service = newService(fresh());
+  const { id } = service.write({
+    type: "decision",
+    scope: "global",
+    text: "cache keys are hashed",
+  });
+
+  assert.deepEqual(service.update(id, { supersedes: "g:MISSING" }), {
+    ok: true,
+    id,
+    supersededMissing: "g:MISSING",
+  });
+});

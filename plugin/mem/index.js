@@ -28560,12 +28560,7 @@ var MemoryService = class {
       ...input.supersedes !== void 0 ? { supersedes: input.supersedes } : {},
       ...input.provenance ? { provenance: input.provenance } : {}
     };
-    let supersededMissing;
-    if (input.supersedes) {
-      const old = this.facts.get(input.supersedes);
-      if (old) this.save({ ...old, status: "superseded", updatedAt: ts });
-      else supersededMissing = input.supersedes;
-    }
+    const supersededMissing = input.supersedes ? this.retire(input.supersedes, ts) : void 0;
     this.save(fact);
     return {
       id: fact.id,
@@ -28603,8 +28598,20 @@ var MemoryService = class {
       return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
     if (!fact) return { ok: false, reason: "not-found", id };
-    this.save({ ...fact, ...this.clean(patch), updatedAt: this.iso() });
-    return { ok: true, id };
+    const changes = this.clean(patch);
+    if (changes.scope !== void 0 && originForScope(changes.scope, this.roots) !== originOf(id))
+      return {
+        ok: false,
+        reason: "bad-input",
+        field: "scope",
+        rule: "a scope stored in the fact's own root; to move it between the project and global roots, write it anew with memory_write and supersedes"
+      };
+    if (changes.status === "active" && fact.status === "archived")
+      return { ok: false, reason: "invalid-state", id, status: fact.status };
+    const ts = this.iso();
+    const supersededMissing = changes.supersedes ? this.retire(changes.supersedes, ts) : void 0;
+    this.save({ ...fact, ...changes, updatedAt: ts });
+    return { ok: true, id, ...supersededMissing !== void 0 ? { supersededMissing } : {} };
   }
   feedback(input) {
     const ts = this.iso();
@@ -28808,6 +28815,13 @@ var MemoryService = class {
     this.store.writeFact(originOf(fact.id), fact);
     this.facts.set(fact.id, fact);
     this.stale();
+  }
+  /** Mark `id` superseded, as a `supersedes` link does. Returns `id` when no such fact exists. */
+  retire(id, ts) {
+    const old = this.facts.get(id);
+    if (!old) return id;
+    this.save({ ...old, status: "superseded", updatedAt: ts });
+    return void 0;
   }
   body(fact) {
     return [fact.text, fact.why ?? "", (fact.tags ?? []).join(" ")].join(" ").trim();
@@ -29219,7 +29233,7 @@ function registerFactTools(server, service) {
   server.registerTool(
     "memory_update",
     {
-      description: "Patch a fact in place (text/tags/type/scope/confidence/status/supersedes) \u2014 for reflect/curation.",
+      description: "Patch a fact in place (text/tags/type/scope/confidence/status/supersedes) \u2014 for reflect/curation. `supersedes` retires the named fact, as on memory_write. A scope that would move the fact between the project and global roots is refused (write it anew with memory_write + supersedes); to bring back an archived fact use memory_recover.",
       inputSchema: {
         id: external_exports.string(),
         text: external_exports.string().optional(),
@@ -29234,9 +29248,19 @@ function registerFactTools(server, service) {
     guard(async (args) => {
       const { id, ...patch } = args;
       const outcome = service.update(id, patch);
-      if (outcome.ok) return ok({ id: outcome.id, updated: true });
+      if (outcome.ok) {
+        const { ok: _ok, ...payload } = outcome;
+        return ok({ ...payload, updated: true });
+      }
       if (outcome.reason === "bad-input") return err(badInput(outcome.field, outcome.rule));
-      return err(notFound(outcome.id));
+      if (outcome.reason === "not-found") return err(notFound(outcome.id));
+      return err(
+        invalidState(
+          "cannot set this memory active",
+          `it is '${outcome.status}'`,
+          "use memory_recover to restore an archived memory"
+        )
+      );
     })
   );
   server.registerTool(

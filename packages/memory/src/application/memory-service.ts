@@ -41,9 +41,11 @@ export interface WriteResult {
 //    expected failure. Envelope prose lives in tools/errors.ts at the adapter boundary.
 
 export type UpdateOutcome =
-  | { ok: true; id: string }
+  // supersededMissing: as on WriteResult, present only when `supersedes` named no existing fact.
+  | { ok: true; id: string; supersededMissing?: string }
   | { ok: false; reason: "bad-input"; field: string; rule: string }
-  | { ok: false; reason: "not-found"; id: string };
+  | { ok: false; reason: "not-found"; id: string }
+  | { ok: false; reason: "invalid-state"; id: string; status: Fact["status"] };
 
 export type ForgetOutcome =
   | { ok: true; id: string; kind: "fact" | "episode" }
@@ -181,12 +183,7 @@ export class MemoryService {
       ...(input.provenance ? { provenance: input.provenance } : {}),
     };
 
-    let supersededMissing: string | undefined;
-    if (input.supersedes) {
-      const old = this.facts.get(input.supersedes);
-      if (old) this.save({ ...old, status: "superseded", updatedAt: ts });
-      else supersededMissing = input.supersedes; // requested a supersession of an id that doesn't exist
-    }
+    const supersededMissing = input.supersedes ? this.retire(input.supersedes, ts) : undefined;
     this.save(fact);
     return {
       id: fact.id,
@@ -237,8 +234,23 @@ export class MemoryService {
       return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     const fact = this.facts.get(id);
     if (!fact) return { ok: false, reason: "not-found", id };
-    this.save({ ...fact, ...this.clean(patch), updatedAt: this.iso() });
-    return { ok: true, id };
+    const changes = this.clean(patch);
+    // The file lives in the root its id names; a scope that belongs in the other root would leave a
+    // user fact in the project's store (or the reverse) under the wrong id.
+    if (changes.scope !== undefined && originForScope(changes.scope, this.roots) !== originOf(id))
+      return {
+        ok: false,
+        reason: "bad-input",
+        field: "scope",
+        rule: "a scope stored in the fact's own root; to move it between the project and global roots, write it anew with memory_write and supersedes",
+      };
+    // Un-archiving is recover()'s job: it also clears the tombstone and the strike counter.
+    if (changes.status === "active" && fact.status === "archived")
+      return { ok: false, reason: "invalid-state", id, status: fact.status };
+    const ts = this.iso();
+    const supersededMissing = changes.supersedes ? this.retire(changes.supersedes, ts) : undefined;
+    this.save({ ...fact, ...changes, updatedAt: ts });
+    return { ok: true, id, ...(supersededMissing !== undefined ? { supersededMissing } : {}) };
   }
 
   feedback(input: FeedbackInput): PartialOutcome {
@@ -475,6 +487,14 @@ export class MemoryService {
     this.store.writeFact(originOf(fact.id), fact);
     this.facts.set(fact.id, fact);
     this.stale();
+  }
+
+  /** Mark `id` superseded, as a `supersedes` link does. Returns `id` when no such fact exists. */
+  private retire(id: string, ts: string): string | undefined {
+    const old = this.facts.get(id);
+    if (!old) return id;
+    this.save({ ...old, status: "superseded", updatedAt: ts });
+    return undefined;
   }
 
   private body(fact: Fact): string {
