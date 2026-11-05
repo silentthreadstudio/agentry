@@ -659,6 +659,11 @@ test("hold --for owner on a verified lane is refused, before and after it is par
   const owner = lane(r, "hold", "T3", "--for", "owner");
   assert.equal(owner.exit, 2);
   assert.match(owner.stderr, /hold --for owner is for a builder's round/);
+  // The refusal names the command that does it, quoted as every printed command is.
+  assert.match(
+    owner.stderr,
+    /T3 is verified \(next close\); park it with --for later: .*exec hold T3 --root '[^']*' --for later\n$/,
+  );
   assert.equal(
     readFileSync(join(r.root, ".agentry", "run", "process", "ledger", "T3.json"), "utf8"),
     ledger,
@@ -1352,6 +1357,21 @@ test("fix --owner on a lane held for the owner is refused, naming resume --redo 
   assert.match(
     refused.stderr,
     /T1 is held \(owner\): its change goes in the resume, .*exec resume T1 --root '.*' --redo --note "<the change>"/,
+  );
+  assert.equal(readFileSync(file, "utf8"), before);
+});
+
+test("fix --owner on a parked verified lane is refused with the resume and the fix lines, nothing changed", () => {
+  const r = repo();
+  verifiedLane(r);
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T3.json");
+  const before = readFileSync(file, "utf8");
+  const refused = lane(r, "fix", "T3", "--owner", "use two spaces");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /T3 is parked verified: resume it \(.*exec resume T3 --root '[^']*' --note "<why>"\), then send the change with .*exec fix T3 --root '[^']*' --owner "<the change>"\n$/,
   );
   assert.equal(readFileSync(file, "utf8"), before);
 });

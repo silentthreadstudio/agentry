@@ -19,6 +19,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **`lane exec resume --fresh` points the new builder at the report that stopped.** Its brief names the
   stopped round's report and quotes the list under that report's `Next` heading, so the conductor no longer
   copies the path into the owner's note.
+- **`lane exec hold --for owner` on a verified lane names the command that parks it.** The refusal ends with
+  the exact `exec hold … --for later` line.
 
 ## [0.3.0] — 2026-11-05
 

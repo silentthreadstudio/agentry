@@ -24,7 +24,7 @@ export function run(ctx, id) {
     (ledger.state === "verified" && ["close", "merge"].includes(ledger.next));
   if (verified && holdFor === "owner")
     refuse(
-      `hold --for owner is for a builder's round: ${id} is verified (next ${ledger.hold?.next ?? ledger.next}); park it with --for later`,
+      `hold --for owner is for a builder's round: ${id} is verified (next ${ledger.hold?.next ?? ledger.next}); park it with --for later: ${laneLine(root, "hold", id, " --for later")}`,
     );
   if (!held && !verified && expects(ledger) !== "report")
     refuse(`hold is for a builder's round: the lane is ${ledger.state} (next ${ledger.next})`);
