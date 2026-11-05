@@ -655,7 +655,7 @@ test("fill: every slot needs a value; sections keep or drop; an empty slot line 
   assert.deepEqual(slotsOf("{{a}} {{#b}}\n{{c}}\n{{/b}} {{a}}"), ["a", "b", "c"]);
 });
 
-// The slots the CLI fills (cli/exec.mjs `brief`); each template may use only these.
+// The slots the CLI fills (exec/briefs.mjs `brief`); each template may use only these.
 const VALUES = {
   id: "T1",
   round: 2,
