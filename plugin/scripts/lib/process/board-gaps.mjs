@@ -99,8 +99,8 @@ export function plan({ root, spec, model, item, landed }) {
   let shas = work.shas;
   if (cell !== undefined) {
     // A hand-written cell is never rewritten; the handoff then names the cell's first commit.
-    const named = (cell.match(md.SHA_TOKEN) ?? []).map((t) =>
-      work.shas.find((s) => s.startsWith(t)),
+    const named = (cell.match(md.SHA_TOKEN_I) ?? []).map((t) =>
+      work.shas.find((s) => s.startsWith(t.toLowerCase())),
     );
     if (!named.length || !named.every(Boolean))
       return {

@@ -745,3 +745,19 @@ test("property: random pick/revert/reset/squash/no-ff/revert -m 1/chmod walks wr
   // The walks reach every outcome: proven by a record, accepted, and on main but not provable.
   assert.ok(done.record && done.accept && done.refused, JSON.stringify(done));
 });
+
+test("a hand-written commit cell naming the landed commit in upper case is accepted; one glued to letters is not", () => {
+  const { root } = fresh();
+  const main = pickedByHand(root);
+  const up = main.slice(0, 7).toUpperCase();
+  handRow(root, `doing  |         | g${up} | The first  |`);
+  const before = files(root);
+  const glued = accept(root);
+  assert.equal(glued.status, 1);
+  assert.match(glued.stdout, /T1: commit cell "g\w{7}" is not the landed \w{7}; left alone/);
+  assert.deepEqual(files(root), before);
+  handRow(root, `doing  |         | ${up} (by hand) | The first  |`);
+  const out = accept(root);
+  assert.equal(out.status, 0, out.stdout);
+  assert.match(row(read(root, "plan/BOARD.md"), "T1"), /done/);
+});

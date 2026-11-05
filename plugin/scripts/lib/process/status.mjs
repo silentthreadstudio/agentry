@@ -20,7 +20,7 @@ import { findContract } from "./contract.mjs";
 import * as drafts from "./drafts.mjs";
 import { keptTrees, nudges } from "./drift.mjs";
 import * as git from "./git.mjs";
-import { isSha } from "./markdown.mjs";
+import { isShaAnyCase } from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 import { refKinds, resolve } from "./rules/structure.mjs";
 import { own } from "./spec/shape.mjs";
@@ -72,7 +72,10 @@ function shasOf(spec, model) {
       .filter(([, f]) => f.type === "commits" || f.type === "evidence")
       .map(([f]) => f);
     return items.flatMap((item) =>
-      fields.flatMap((f) => [item.fields[f] ?? []].flat()).filter(isSha),
+      fields
+        .flatMap((f) => [item.fields[f] ?? []].flat())
+        .filter(isShaAnyCase)
+        .map((t) => t.toLowerCase()),
     );
   });
 }
@@ -84,7 +87,10 @@ export function boardReport({ root, spec, model }) {
   const asked = new Set(shasOf(spec, model));
   const found = git.knownCommits(root, [...asked]);
   const ctx = {
-    hasCommit: (sha) => (asked.has(sha) ? found.has(sha) : git.hasCommit(root, sha)),
+    hasCommit: (token) => {
+      const sha = token.toLowerCase();
+      return asked.has(sha) ? found.has(sha) : git.hasCommit(root, sha);
+    },
     contractOf: (kind, id) => findContract({ root, spec, id, kind, model }),
   };
   const findings = [...model.problems, ...check(model, spec.rules, ctx)];

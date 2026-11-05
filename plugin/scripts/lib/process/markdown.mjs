@@ -15,8 +15,14 @@ const LEAD = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?\*\*(.+?)\*\*(.*)$/;
 // so it reads as a commit: in a `commits` or `evidence` cell it is checked against git and reported when
 // missing. Known and kept: an abbreviated SHA can be all digits, and telling the two apart would need
 // git, which this file lacks.
+//
+// The board reader and the lifecycle writer take lower-case only (`SHA_TOKEN`, `isSha`). The rules, the
+// status prefetch and board fix read a commit a hand wrote in any case (`SHA_TOKEN_I`, `isShaAnyCase`);
+// they compare it lower-cased.
 export const SHA_TOKEN = /(?<![0-9A-Za-z])[0-9a-f]{7,64}(?![0-9A-Za-z])/g;
+export const SHA_TOKEN_I = new RegExp(SHA_TOKEN.source, "gi");
 export const isSha = (token) => /^[0-9a-f]{7,64}$/.test(token ?? "");
+export const isShaAnyCase = (token) => /^[0-9a-f]{7,64}$/i.test(token ?? "");
 const LINK = /\[([^\]]*)\]\(\s*<?[^)\s>]+>?(?:\s+"[^"]*")?\s*\)/;
 const DATE = /^(\d{4}-\d{2}-\d{2})/;
 
