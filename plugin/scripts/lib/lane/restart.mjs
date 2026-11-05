@@ -4,11 +4,12 @@
 // of its work into the new worktree. `cli/exec.mjs` runs the checks, the order and the new lane's start.
 //
 // leftover(ledger, disposable) -> { ignored, tip, commits } | { problem }   read only
+// carryRange(root, main, tip) -> { picks, skipped, base, based }   the commits a carry picks, read only
 // saveWork(worktree, file) -> { files } | { error }      the uncommitted diff (untracked files too) to `file`
 // archiveNumber(root, id) -> n                           the first number no archive or kept branch holds
 // archive(root, id, n) -> { runs, ledger }               the ledger and run dir moved to `<id>.<n>`
 // retire(root, ledger, n) -> { kept: branch | null, tip }   worktree removed, branch renamed `agentry/<id>.<n>`
-// carry(worktree, { base, tip, diff }) -> { ok, conflict? }   cherry-pick base..tip (none when the range is
+// carry(worktree, { picks, diff }) -> { ok, conflict? }   cherry-pick `picks` (`carryRange`'s, none when
 //                                                         empty), then `git apply --3way`
 import {
   existsSync,
@@ -31,13 +32,12 @@ const processDir = (root) => join(root, ".agentry", "run", "process");
 const unmerged = (dir) =>
   git(dir, ["diff", "--name-only", "--diff-filter=U", "-z"]).stdout.split("\0").filter(Boolean);
 /** What the old lane leaves behind, read only: its branch tip (null when the branch is gone), the commits
- *  past its base, and the ignored files in its worktree that `cleanup.disposable` (and the defaults) do not
- *  cover, which a removal would delete. An empty directory (or one holding only empty ones) is no file: it
+ *  a carry would pick onto main's HEAD (`carryRange`), and the ignored files in its worktree that
+ *  `cleanup.disposable` (and the defaults) do not cover, which a removal would delete. An empty directory (or one holding only empty ones) is no file: it
  *  never counts, and the removal takes it. `{ problem }` when its worktree is mid-rebase or off its branch. */
 export function leftover(root, ledger, disposable = []) {
   const tip = commitOf(root, `refs/heads/${ledger.branch}`);
-  const count = tip ? git(root, ["rev-list", "--count", `${ledger.base}..${tip}`]) : null;
-  const commits = count?.status === 0 ? Number(count.stdout.trim()) : 0;
+  const commits = tip ? carryRange(root, "HEAD", tip).picks.length : 0;
   if (!existsSync(ledger.worktree)) return { ignored: [], tip, commits };
   if (currentBranch(ledger.worktree) !== ledger.branch)
     return {
@@ -138,20 +138,56 @@ export function retire(root, ledger, n) {
   return { kept, tip };
 }
 
-/** Carry the old branch's work into `worktree`: cherry-pick `base..tip` (oldest first; a branch with no
- *  commits past its base has nothing to pick), then apply the saved uncommitted diff with `git apply --3way`. `{ ok: true, applied }`, or on the first stop `{ ok:
- *  false, applied, conflict }`, the stop named (`<sha> <subject> conflicts in <files>` or `the uncommitted
+/** The commits of the branch at `tip` that a carry picks onto `main` (field 100): `git rev-list --reverse
+ *  --no-merges <main>..<tip>`, the branch's own commits, never `<base>..<tip>` (a branch rebased onto a
+ *  newer main holds main's commits already), less those whose patch main has (`git cherry` marks them `-`),
+ *  which are `skipped` as `{ sha, subject }`. `base`: the merge base of `main` and `tip` (null when there is
+ *  none); `based`: it is a commit of main's first-parent history, which a carry needs. A read git refuses
+ *  picks nothing and is not `based`. */
+export function carryRange(root, main, tip) {
+  const none = { picks: [], skipped: [], base: null, based: false };
+  const merged = git(root, ["merge-base", main, tip]);
+  if (merged.status !== 0) return none;
+  const base = merged.stdout.trim();
+  // On main's first-parent line: its walk back from main stops at `base` itself, not at an ancestor of it.
+  const line = git(root, ["rev-list", "--first-parent", "--reverse", `${base}..${main}`, "--"]);
+  const chain = line.stdout.split("\n").filter(Boolean);
+  const onLine = chain.length
+    ? commitOf(root, `${chain[0]}^`) === base
+    : commitOf(root, main) === base;
+  const listed = git(root, ["rev-list", "--reverse", "--no-merges", `${main}..${tip}`, "--"]);
+  const cherry = git(root, ["cherry", main, tip]);
+  if (line.status !== 0 || listed.status !== 0 || cherry.status !== 0) return { ...none, base };
+  const onMain = new Set(
+    cherry.stdout
+      .split("\n")
+      .filter((l) => l.startsWith("- "))
+      .map((l) => l.slice(2).trim()),
+  );
+  const shas = listed.stdout.split("\n").filter(Boolean);
+  return {
+    picks: shas.filter((sha) => !onMain.has(sha)),
+    skipped: shas
+      .filter((sha) => onMain.has(sha))
+      .map((sha) => ({ sha, subject: subjectOf(root, sha) })),
+    base,
+    based: onLine,
+  };
+}
+
+/** Carry the old branch's work into `worktree`: cherry-pick `picks` (oldest first, `carryRange`'s; none:
+ *  nothing to pick), then apply the saved uncommitted diff with `git apply --3way`. `{ ok: true, applied }`,
+ *  or on the first stop `{ ok: false, applied, conflict }`, the stop named (`<sha> <subject> conflicts in <files>` or `the uncommitted
  *  diff conflicts in <files>`) with the conflict left in the worktree for the builder. `applied`: the diff
  *  is in the tree (staged, its own conflicts marked); a pick that stopped leaves it still to apply. */
-export function carry(worktree, { base, tip, diff }) {
-  // git refuses an empty range ("empty commit set passed"): only uncommitted work goes straight to the diff.
-  const count = tip ? git(worktree, ["rev-list", "--count", `${base}..${tip}`]) : null;
-  if (tip && !(count.status === 0 && count.stdout.trim() === "0")) {
+export function carry(worktree, { picks = [], diff }) {
+  // git refuses an empty list: only uncommitted work goes straight to the diff.
+  if (picks.length) {
     const picked = git(worktree, [
       "cherry-pick",
       "--allow-empty",
       "--keep-redundant-commits",
-      `${base}..${tip}`,
+      ...picks,
     ]);
     if (picked.status !== 0) {
       const stopped = commitOf(worktree, "CHERRY_PICK_HEAD");

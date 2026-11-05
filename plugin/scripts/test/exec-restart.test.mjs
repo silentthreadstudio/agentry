@@ -263,7 +263,7 @@ test("a restart stopped before the rename names the rename first and keeps the p
   const out = res.stdout + res.stderr;
   assert.equal(res.status, 1, out);
   assert.ok(out.includes("its old work is on agentry/T3 "), out);
-  const base = ledgerOf(r.root, "T3.1").base.slice(0, 7);
+  const pick = oldTip.slice(0, 7); // the old branch's one commit not on main
   const diff = join(processDir(r.root), "runs", "T3.1", "restart", "uncommitted.diff");
   const steps = out.split("→ fix that, then: ")[1]?.trim().split("; ") ?? [];
   assert.deepEqual(
@@ -272,7 +272,7 @@ test("a restart stopped before the rename names the rename first and keeps the p
       `git update-ref refs/heads/agentry/T3.1 ${oldTip} ''`,
       `git update-ref -d refs/heads/agentry/T3 ${oldTip}`,
       "START",
-      `in its worktree git cherry-pick ${base}..agentry/T3.1`,
+      `in its worktree git cherry-pick ${pick}`,
       `git apply --3way ${diff}`,
     ],
     out,
@@ -283,7 +283,7 @@ test("a restart stopped before the rename names the rename first and keeps the p
   assert.equal(tipOf(r.root, "agentry/T3.1"), oldTip);
   const started = lane(r, "start", "T3");
   assert.equal(started.exit, 0, started.stderr);
-  git(started.json.worktree, "cherry-pick", `${base}..agentry/T3.1`);
+  git(started.json.worktree, "cherry-pick", pick);
   git(started.json.worktree, "apply", "--3way", diff);
   assert.equal(readFileSync(join(started.json.worktree, "three.txt"), "utf8"), "a\nlane\nc\n");
   assert.equal(readFileSync(join(started.json.worktree, "more.txt"), "utf8"), "half\n");
@@ -465,14 +465,14 @@ test(
     assert.equal(tipOf(r.root, "agentry/T3.1"), oldTip, "the kept branch survives");
     assert.match(readFileSync(diff, "utf8"), /\+\+\+ b\/more\.txt/);
     // The steps back, followed as printed, bring the commit and the uncommitted file back (r4 N9).
-    const base = ledgerOf(r.root, "T3.1").base.slice(0, 7);
+    const pick = oldTip.slice(0, 7); // the old branch's one commit not on main
     const steps = out.split("→ fix that, then: ")[1]?.trim().split("; ") ?? [];
     assert.deepEqual(
       steps.map((s) => s.replace(/^.*exec start T3 --root .*$/, "START")),
       [
         `git update-ref -d refs/heads/agentry/T3 ${newTip}`,
         "START",
-        `in its worktree git cherry-pick ${base}..agentry/T3.1`,
+        `in its worktree git cherry-pick ${pick}`,
         `git apply --3way ${diff}`,
       ],
       out,
@@ -480,7 +480,7 @@ test(
     git(r.root, "update-ref", "-d", "refs/heads/agentry/T3", newTip);
     const started = lane(r, "start", "T3");
     assert.equal(started.exit, 0, started.stderr);
-    git(started.json.worktree, "cherry-pick", `${base}..agentry/T3.1`);
+    git(started.json.worktree, "cherry-pick", pick);
     git(started.json.worktree, "apply", "--3way", diff);
     assert.equal(readFileSync(join(started.json.worktree, "three.txt"), "utf8"), "a\nlane\nc\n");
     assert.equal(readFileSync(join(started.json.worktree, "more.txt"), "utf8"), "half\n");
@@ -1127,4 +1127,110 @@ test("a lane branch listed only in another case refuses the restart: no twin pai
     assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
     assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
   }
+});
+
+// The field shape (field 100): T3 cut at A, main moves to B, the builder rebases the lane onto B in its
+// worktree and adds commits; then held. `agentry/T3` is main + the lane's own commits.
+function rebasedInBranch(r) {
+  const out = lane(r, "start", "T3").json;
+  commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  commitFile(r.root, "docs.txt", "one\n", "docs: main one");
+  commitFile(r.root, "docs.txt", "one\ntwo\n", "docs: main two");
+  git(out.worktree, "rebase", "-q", "main");
+  commitFile(out.worktree, "more.txt", "more\n", "feat: more");
+  assert.equal(lane(r, "hold", "T3", "--for", "later", "--note", "start over").exit, 0);
+  return out;
+}
+
+test("restart --carry of a lane rebased in-branch onto a newer main carries only its own commits", () => {
+  const r = repo();
+  rebasedInBranch(r);
+  const main = mainOf(r.root);
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.conflict, undefined);
+  assert.match(res.json.carried, /^2 commits, 0 files uncommitted/);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.equal(ledger.carried.commits, 2);
+  assert.equal(ledger.carried.skipped, undefined);
+  // Main's commits are never picked again: the new branch is main + the two lane commits.
+  assert.deepEqual(git(r.root, "log", "--format=%s", "main..agentry/T3").split("\n"), [
+    "feat: more",
+    "feat: three",
+  ]);
+  assert.equal(tipOf(r.root, "agentry/T3~2"), main[0]);
+  assert.match(
+    readFileSync(res.json.brief, "utf8"),
+    /in the tree \(2 commits, 0 files uncommitted\)/,
+  );
+  assert.deepEqual(mainOf(r.root), main, "main is untouched");
+});
+
+test("a lane commit whose patch main has already is skipped and listed, never picked again", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  const landed = commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  commitFile(out.worktree, "more.txt", "more\n", "feat: more");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  commitFile(r.root, "docs.txt", "one\n", "docs: main moves");
+  git(r.root, "cherry-pick", landed); // the same patch lands on main under another sha
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.equal(ledger.carried.commits, 1);
+  assert.deepEqual(ledger.carried.skipped, [{ sha: landed, subject: "feat: three" }]);
+  assert.equal(res.json.skipped, `1 already on main: ${landed.slice(0, 7)} feat: three`);
+  assert.deepEqual(git(r.root, "log", "--format=%s", "main..agentry/T3").split("\n"), [
+    "feat: more",
+  ]);
+});
+
+test("restart --carry of a lane branch not based on main's first-parent line refuses, nothing written", () => {
+  // The lane was merged into main by hand (a merge commit), then built on: its merge base with main is
+  // its own first commit, on main's second-parent side only.
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  git(r.root, "merge", "-q", "--no-ff", "-m", "merge agentry/T3 by hand", "agentry/T3");
+  commitFile(out.worktree, "more.txt", "more\n", "feat: more");
+  const [ledger, tip, status] = [
+    readFileSync(ledgerFile(r.root, "T3"), "utf8"),
+    tipOf(r.root, "agentry/T3"),
+    git(out.worktree, "status", "--porcelain"),
+  ];
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 2, res.stderr);
+  assert.match(
+    res.stderr,
+    /agentry\/T3 is not based on main: rebase it onto main or land it with lane merge --branch/,
+  );
+  assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
+  assert.equal(tipOf(r.root, "agentry/T3"), tip);
+  assert.equal(git(out.worktree, "status", "--porcelain"), status);
+  assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+  assert.equal(existsSync(join(processDir(r.root), "runs", "T3", "restart")), false);
+  assert.equal(hasRef(r.root, "refs/heads/agentry/T3.1"), false);
+});
+
+test("a build brief and a fix brief say never to rebase or merge main inside the lane", () => {
+  const r = repo();
+  const res = lane(r, "start", "T3");
+  assert.equal(res.exit, 0, res.stderr);
+  const rule =
+    /Never `git rebase` or `git merge` main inside the lane: when main must be taken in, report it and ask for\s+`exec rebase` \(a verified lane\) or `exec restart --carry`\./;
+  assert.match(readFileSync(res.json.brief, "utf8"), rule);
+  // A fix round: the verifier's FAIL sends the builder back.
+  commitFile(res.json.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  writeFileSync(res.json.reportPath, "DONE\nthree\nused_memories: none\n");
+  const verify = lane(r, "report", "T3").json;
+  writeFileSync(verify.reportPath, "Missing more.txt.\nused_memories: none\nVerdict: FAIL\n");
+  const fix = lane(r, "verdict", "T3");
+  assert.equal(fix.json.next, "fix", fix.stderr);
+  const text = readFileSync(fix.json.brief, "utf8");
+  assert.match(
+    text,
+    /never `git rebase` or `git merge` main into the branch; report it and ask for\n`exec rebase`/,
+  );
+  assert.match(text, rule);
 });

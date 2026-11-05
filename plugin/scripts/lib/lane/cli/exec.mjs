@@ -131,7 +131,15 @@ import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { callsLine } from "../owner-calls.mjs";
 import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
 import { RestackError, gatingNow, markGating, restackLane } from "../restack.mjs";
-import { archive, archiveNumber, carry, leftover, retire, saveWork } from "../restart.mjs";
+import {
+  archive,
+  archiveNumber,
+  carry,
+  carryRange,
+  leftover,
+  retire,
+  saveWork,
+} from "../restart.mjs";
 import {
   DISPATCHES,
   PASSES,
@@ -2995,6 +3003,13 @@ function restart(ctx, id) {
     refuse(
       `the worktree ${old.worktree} holds ${left.ignored.length} ignored file(s) a restart would delete (${left.ignored.slice(0, 5).join(", ")}): copy what you need out and remove them, or add them to cleanup.disposable, then restart`,
     );
+  // What a carry picks: the branch's commits not on main, never base..tip (field 100), from a branch
+  // based on main's first-parent line; a patch main has already is left out and named.
+  const range = withWork && oldTip ? carryRange(root, headOf(root), oldTip) : null;
+  if (range && !range.based)
+    refuse(
+      `${old.branch} is not based on ${mainBranch}: rebase it onto ${mainBranch} or land it with lane merge --branch`,
+    );
   // The new lane's board write, tried before anything is written: a row it cannot write refuses here.
   applyEvent({
     root,
@@ -3029,19 +3044,23 @@ function restart(ctx, id) {
         warnings: [clearVerdict(ctx, id)].filter(Boolean),
         shown: { restarted: `archived as ${id}.${n}; the old branch is kept as ${kept ?? "none"}` },
       };
-    const res = carry(path, { base: old.base, tip: oldTip, diff });
+    const res = carry(path, { picks: range?.picks ?? [], diff });
+    // The old commits' range-diff starts where they sat on main: after an in-branch rebase that is no
+    // longer the old base.
     const checked =
       res.ok && carriesVerified(old, oldTip, work.files)
         ? {
-            ...carryCheck(root, id, { base: old.base, tip: oldTip }, base, path),
+            ...carryCheck(root, id, { base: range?.base ?? old.base, tip: oldTip }, base, path),
             carriedRounds: carriedVerdicts(old, `${id}.${n}`, archived.runs),
           }
         : null;
     // The verdict on the board stands for a checked carry, as it does for a rebase.
     const warnings = checked ? [] : [clearVerdict(ctx, id)].filter(Boolean);
     const report = lastReport(old, archived.runs);
+    const skipped = range?.skipped ?? [];
     const carried = {
       commits: oldTip ? left.commits : 0,
+      ...(skipped.length && { skipped }),
       files: work.files.length,
       report,
       ...(work.files.length && { applied: res.applied, diff }),
@@ -3060,6 +3079,9 @@ function restart(ctx, id) {
       shown: {
         restarted: `archived as ${id}.${n}${branch ? `; the old branch is kept as ${branch}` : ""}`,
         carried: `${carried.commits} commits, ${carried.files} files uncommitted${report ? `; last report ${report}` : ""}`,
+        ...(skipped.length && {
+          skipped: `${skipped.length} already on ${mainBranch}: ${skipped.map((c) => `${short(c.sha)} ${c.subject}`).join(", ")}`,
+        }),
         ...(res.conflict && { conflict: `${res.conflict} in ${path}` }),
         ...(checked && { rangeDiff: checked.rebases[0].rangeDiff }),
       },
@@ -3103,8 +3125,8 @@ function restart(ctx, id) {
           ]
         : []),
       laneLine(root, "start", id),
-      ...(withWork && held && keptName && left.commits
-        ? [`in its worktree git cherry-pick ${short(old.base)}..${keptName}`]
+      ...(withWork && held && keptName && range?.picks.length
+        ? [`in its worktree git cherry-pick ${range.picks.map(short).join(" ")}`]
         : []),
       ...(withWork && work.files.length ? [`git apply --3way ${diff}`] : []),
       ...(unclear ? [unclear.slice(unclear.indexOf("agentry board set"))] : []),
