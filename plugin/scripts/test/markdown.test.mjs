@@ -118,7 +118,7 @@ test("unfenced drops each fence's lines, fence lines included, and keeps the res
 });
 
 // A fence in a nested list item sits 4 or more columns in (its indent counts from the item's content, as
-// in the board's own contracts): every reader of the fence rule reads it as code (R1f-1 r3 N1).
+// in the board's own contracts): every reader of the fence rule reads it as code.
 test("models: a Model bullet in a fence nested in a list item is an example, not the contract's model", () => {
   const block = [
     "- **Owns:** `a.mjs`",

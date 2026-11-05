@@ -1,4 +1,4 @@
-// Tests for lib/process/default-agent.mjs and `board default-agent` (F23): the merge-write into
+// Tests for lib/process/default-agent.mjs and `board default-agent`: the merge-write into
 // `<root>/.claude/settings.json`, the refusals, the static check and the live check's reading of a
 // stream-json run (a fake `claude` here; the real one only runs when a person asks for it).
 // Run: node --test plugin/scripts/test/default-agent.test.mjs

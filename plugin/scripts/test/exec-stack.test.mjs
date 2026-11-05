@@ -1,4 +1,4 @@
-// Tests for stacked exec lanes (A45) end to end on temp git repos: `lane exec start T2 --on T1` cuts T2 from
+// Tests for stacked exec lanes end to end on temp git repos: `lane exec start T2 --on T1` cuts T2 from
 // T1's tip and refuses what it cannot stack on; T2's steps say what is due when T1 moves; its gate refuses
 // until `restack`, which runs only with no agent out; a conflict leaves everything as it was, a hand
 // resolution gets the resolution recheck; show and the episode name the stack. Builders and verifiers are
@@ -364,7 +364,7 @@ test("T2's report after T1's land and board commit trips no main-touched guard",
   assert.match(res.json.stack, /; T1 landed → .*exec restack T2 --root /);
 });
 
-// ---- a gate already in flight (R1d-14 r2 F1) -------------------------------------------------------
+// ---- a gate already in flight -------------------------------------------------------
 
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 // Another lane's process holding gate slot 1 until it is killed.
@@ -487,7 +487,7 @@ function writeLedgerBack(root, id, changes) {
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...changes }));
 }
 
-// R1d-38 final N1: the refusal came from the step after the rebase, so the branch had already moved.
+// The refusal came from the step after the rebase, so the branch had already moved.
 test("restack refuses a lane held at its notes cap before any rebase: the branch tip is unmoved", () => {
   const r = repo();
   verified(r, "T1", "one.txt", { close: false });

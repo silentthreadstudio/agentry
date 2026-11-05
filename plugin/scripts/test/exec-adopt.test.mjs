@@ -1,4 +1,4 @@
-// Tests for `lane exec adopt <id> --branch <b>` (field 86) on temp git repos: work built outside exec becomes
+// Tests for `lane exec adopt <id> --branch <b>` on temp git repos: work built outside exec becomes
 // the lane, with `start`'s checks and records, `main..<b>` picked onto a fresh `agentry/<id>` and the
 // uncommitted diff of `<b>`'s worktree applied; `<b>` and its worktree are never touched; every refusal
 // writes nothing; a carried conflict stops as `restart --carry` does.

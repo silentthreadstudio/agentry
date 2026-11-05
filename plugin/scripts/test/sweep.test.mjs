@@ -77,7 +77,7 @@ after(async () => {
   assert.deepEqual(living(doomed), [], "a process this file started still runs");
 });
 
-/** A repo with a merged task (T1), a task still building (T2) and a worktree no ledger knows. */
+/** A repo with a merged task, a task still building and a worktree no ledger knows. */
 function fixture() {
   const repo = boardRepo();
   cleanups.push(repo.cleanup);
@@ -410,7 +410,7 @@ test("less than 10 GB free is a warning; plenty is not", () => {
   assert.deepEqual(plan(repo.root, { free: LOW_DISK }).warnings, []);
 });
 
-// ---- fix round 2 (R1b-7 re-verify) ----
+// ---- fix round 2 ----
 
 /** A shell script at `file` that `sh` runs as a plain (not detached) child of the test: no group of its own. */
 function plantShell(file, body, { cwd = tmpdir() } = {}) {
@@ -540,7 +540,7 @@ test("a missing lsof is a warning: strays by working directory can't be seen", (
   assert.match(res.stdout, /warning: lsof not found/);
 });
 
-// ---- fix round 3 (R1b-7 re-verify) ----
+// ---- fix round 3 ----
 
 /** `body` run by a login shell (`-sh`, so the owner's shell by name) in `cwd`, as a child of the test. */
 function plantLogin(file, body, { cwd = tmpdir(), detached = false } = {}) {
@@ -650,7 +650,7 @@ test("a merged worktree a spared shell sits in is kept: in use by a shell", asyn
   assert.ok(alive(shell.pid));
 });
 
-// ---- fix round 4 (R1b-7 re-verify): sweep signals only what it can prove is the stray's ----
+// ---- fix round 4: sweep signals only what it can prove is the stray's ----
 
 /** A detached shell outside the run directory (no terminal, leads a group) running `body`; its background jobs
  *  share its group. The whole group is killed when the tests end. */
@@ -1018,7 +1018,7 @@ test("one --apply leaves nothing of a stray that forks a child on SIGTERM whose 
   assert.deepEqual(ownSleeps(301), [], "no sleep 301 runs");
 });
 
-// ---- every stray frozen before any is killed (R1d-37 r7 N18) ----------------------------------------
+// ---- every stray frozen before any is killed ----------------------------------------
 
 const killAll = (pids) => {
   for (const pid of pids)
@@ -1105,7 +1105,7 @@ test("one --apply on a fast forker names what it forked meanwhile, and a second 
   }
 });
 
-// R1d-39 r4 N1, probe p16c: with one `ps` per stray, and the ledgers and lsof read before the first stop,
+// With one `ps` per stray, and the ledgers and lsof read before the first stop,
 // a 5 ms forker was first stopped 4.6 s into the apply and forked 434 strays out (the base: 0.5 s, 33).
 test("a 5 ms forker is stopped early in the apply, and one --apply leaves few of its strays", async () => {
   const { root } = fixture();
@@ -1149,7 +1149,7 @@ test("a 5 ms forker is stopped early in the apply, and one --apply leaves few of
   }
 });
 
-// ---- why the sweep kept a branch once its worktree went (S50) ----
+// ---- why the sweep kept a branch once its worktree went ----
 
 const branchRefs = (root) =>
   git(root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/agentry/");

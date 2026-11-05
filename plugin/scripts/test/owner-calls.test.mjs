@@ -1,4 +1,4 @@
-// Tests for the owner's calls on a lane or a spike (field 90) on temp git repos: `lane note <id> --owner`
+// Tests for the owner's calls on a lane or a spike on temp git repos: `lane note <id> --owner`
 // appends one to the open ledger, else to the spike filed for the item; with no flag it lists them;
 // `--recorded` marks them written down; `exec adopt` moves a spike's calls into the new ledger; `exec close`'s
 // episode counts them. A refused note writes nothing, and a ledger or `spikes.json` that cannot be read is

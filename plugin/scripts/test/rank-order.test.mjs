@@ -1,5 +1,5 @@
 // Property test: what the reader derives (ranks, parents, children, phases), what `check` finds and
-// what `status` shows never depend on the order the kinds are declared in (owner decision A27).
+// what `status` shows never depend on the order the kinds are declared in.
 // Synthetic boards: milestone > sprint (the ordered kind) > epic (parent sprint, children tasks) > task,
 // a task with two parents, an epic with a late sprint among its children, and two cycles (kinds that list each other as children), one reached from an epic and one reached from nothing.
 // Run: node --test plugin/scripts/test/rank-order.test.mjs

@@ -1,4 +1,4 @@
-// Tests for a debt lane (A43) on throwaway git repos with a sprint/task board and a debt kind the workflow
+// Tests for a debt lane on throwaway git repos with a sprint/task board and a debt kind the workflow
 // file's `exec.kinds` runs: `board add debt` writes the row and its light contract; `lane exec` runs a
 // debt item from start to gate and `lane merge` lands it outside the sprints (no handoff, no sprint read);
 // a light contract missing its Owns or Acceptance line refuses before anything is written; a debt lane and

@@ -1,4 +1,4 @@
-// The shared good/bad table for the harness keys (plan R1b §2.1): workflow.json `gate`, `extensions`,
+// The shared good/bad table for the harness keys: workflow.json `gate`, `extensions`,
 // `conductor` (and the lifecycle `write` keys), the process file's own keys, a key put in the other
 // file, and config.json `merge`, `lanes`. Each case is run through the plugin's validator
 // (`spec-keys.test.mjs`, `config.test.mjs`) and, side by side with core's zod, in
@@ -585,7 +585,7 @@ export const PROCESS_CASES = [
     bad: ["locks.Editor"],
   },
   { name: "locks as a list", workflow: { locks: ["editor"] }, bad: ["locks"] },
-  // models: a name, or one by path (field 73)
+  // models: a name, or one by path
   { name: "models by name", workflow: { models: { build: "sonnet", verify: { ui: "opus" } } } },
   {
     name: "models by path, for build and a verify key",

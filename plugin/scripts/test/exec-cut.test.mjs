@@ -1,4 +1,4 @@
-// Tests for `lane exec cut <id> --decision <D> [--keep <paths>] [--message <m>] [--apply]` (field 95) on
+// Tests for `lane exec cut <id> --decision <D> [--keep <paths>] [--message <m>] [--apply]` on
 // temp git repos: a preview writes nothing; the kept paths land from the lane's tip as one gated commit
 // (rolled back on a red gate, the lane left as it was), the other lanes' guards trip only on an overlap
 // with their files, `cut` is written, the ledger closed, the worktree removed and the branch kept as

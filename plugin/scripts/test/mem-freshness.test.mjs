@@ -214,7 +214,7 @@ test("resync twice with no disk change → search returns exactly one hit (no do
   // Force two rebuilds back-to-back with nothing changing on disk between them. add() is
   // delete-then-insert (db-index.mjs) and load() resets first (memory-service.mjs), so the term
   // resolves to a SINGLE row — a duplicate hit means add() regressed to INSERT-only and the
-  // no-UNIQUE FTS/LIKE tables started double-indexing (the invariant ADR-001 leans on).
+  // no-UNIQUE FTS/LIKE tables started double-indexing (an invariant the store leans on).
   service.resync();
   service.resync();
 

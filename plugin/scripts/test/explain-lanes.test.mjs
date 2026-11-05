@@ -587,7 +587,7 @@ test("the models row warns of models.verify.ui under a flagged route, wrapped to
     "! models.verify.ui is unused: exec.verify is flagged and a UI task is verified only when flagged";
   const warned = repo({ ...flagged, exec: { verify: "flagged" }, models });
   const plain = repo({ ...flagged, models });
-  // Without verify.flagged, a flagged UI task takes verify.ui: the key is used (R1d-22 N1).
+  // Without verify.flagged, a flagged UI task takes verify.ui: the key is used.
   const noFlagged = repo({
     ...flagged,
     exec: { verify: "flagged" },

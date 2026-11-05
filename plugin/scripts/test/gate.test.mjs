@@ -760,7 +760,7 @@ for (const signal of ["SIGKILL", "SIGHUP", "SIGINT", "SIGTERM"])
       assert.deepEqual(pids.filter(alive), [], "a gate process outlived its gate");
       assert.deepEqual(readdirSync(join(root, ".agentry", "run", "gate-locks")), []);
     } finally {
-      killAll([...pids, run.pid]); // R1d-37 r7 N19: a red run left its sleep 40 running
+      killAll([...pids, run.pid]); // a red run left its sleep 40 running
     }
   });
 
@@ -789,7 +789,7 @@ for (const signal of ["SIGKILL", "SIGTERM"])
     }
   });
 
-// R1d-37 r7 N17 (probe p15): the gate process and its watchdog SIGKILLed at once left the gate command
+// The gate process and its watchdog SIGKILLed at once left the gate command
 // running, its slot read free, and the sweep freed it without stopping the command.
 test("SIGKILL of lane exec gate and its watchdog together: the slot holds for the command's group, and the sweep stops it", async () => {
   const lane = join(dirname(new URL(import.meta.url).pathname), "..", "lane.mjs");

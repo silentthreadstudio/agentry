@@ -1,4 +1,4 @@
-// Tests for lib/process/spec.mjs — hand validation of the process and workflow files (plan F13 §3.1).
+// Tests for lib/process/spec.mjs — hand validation of the process and workflow files.
 // Run: node --test plugin/scripts/test/spec.test.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

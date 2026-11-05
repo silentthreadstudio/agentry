@@ -2,7 +2,7 @@
 // the ledger first), lands, and puts them back; a stop or a rerun after a kill puts them back too; any other
 // dirt still refuses; and a flagged item that no verifier read does not land. A new untracked `guard.allow`
 // file is carried the same way; a file only `board add` / `board set --apply` changed is set aside too, and
-// carried into the board commit (field 79). A stop that keeps them set aside names them.
+// carried into the board commit. A stop that keeps them set aside names them.
 // Run: node --test plugin/scripts/test/merge-allow.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -601,7 +601,7 @@ test("a file that is not UTF-8 comes back byte for byte, new or edited", () => {
   );
 });
 
-// --- a record written before the byte fix is never applied (R1d-17) ------------------------------------
+// --- a record written before the byte fix is never applied ------------------------------------
 
 // A ledger for the task with `merge` in it, as a killed or stopped land left it.
 function seedLedger(path, merge, extra = {}) {
@@ -1181,7 +1181,7 @@ test("scriptWrites never gives one file both cells and rows", () => {
   assert.deepEqual([mixed.loose, mixed.cells], [[file], []]); // a cell edit makes the file loose: no rows either
 });
 
-// --- an exec cell and a board add in one file (N3) ----------------------------------------------------------------
+// --- an exec cell and a board add in one file ----------------------------------------------------------------
 
 const execWrite = () =>
   edit("plan/BOARD.md", at("plan/BOARD.md").replace("| PASS    |", "| FAIL    |"));

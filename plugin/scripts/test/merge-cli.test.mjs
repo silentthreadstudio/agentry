@@ -1,4 +1,4 @@
-// Tests for `lane merge` (plan R1b-5) on throwaway repositories with a synthetic board: the land (pick →
+// Tests for `lane merge` on throwaway repositories with a synthetic board: the land (pick →
 // gate or skip → record → board commit), its refusals and rollbacks, the repo checks, the push policy and
 // the cleanup, each read through the step table and the repo's state afterwards.
 // Run: node --test plugin/scripts/test/merge-cli.test.mjs
@@ -515,7 +515,7 @@ test("with exec's board writes on main, any other change still refuses the land"
   assert.equal(head(), pre);
 });
 
-// R1b-5 fix 1 (and R1b-4 re-verify item 1): the carry took whole board files, so a builder's stray edit
+// The carry took whole board files, so a builder's stray edit
 // in BOARD.md rode into another lane's board commit.
 test("a stray edit in the board file next to exec's write blocks the land and is never committed", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -549,7 +549,7 @@ test("a lifecycle cell of a task with no open lane is not carried", () => {
   assert.match(out(res), /task T2 status "todo" → "doing", but T2 has no open lane/);
 });
 
-// R1b-5 re-verify item 5: the board check's baseline was read with the carry already back on the
+// The board check's baseline was read with the carry already back on the
 // board, so a finding the carry itself brought passed and was committed.
 test("a new finding brought by exec's carried write stops the land; nothing of it is committed", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -585,7 +585,7 @@ test("a red gate gives main back exec's uncommitted board writes as they were", 
   assert.equal(readLedger(root, ID).merge.carry, undefined);
 });
 
-// R1b-5 notes item 1: the carry went back as a text patch with three lines of context, so another lane's
+// The carry went back as a text patch with three lines of context, so another lane's
 // exec write on the next row, made while the gate ran on main, broke it ("patch failed") and the plain
 // rerun the table promised stopped on --drop-carry. Parallel lanes in one sprint do exactly that.
 test("another lane's exec write next to the carry during the gate: the carry goes back and the rerun lands", () => {
@@ -631,7 +631,7 @@ if (existsSync(once)) {
   assert.equal(status(), "");
 });
 
-// R1b-4 re-verify item 5: on a one-file-per-item board, another lane's lifecycle write in its own item
+// On a one-file-per-item board, another lane's lifecycle write in its own item
 // file blocked every land ("main is not clean").
 test("on a one-file-per-item board, an open lane's write in its own file is carried", () => {
   const stories = {
@@ -717,8 +717,8 @@ test("--drop-carry with nothing set aside is refused", () => {
   assert.match(out(res), /--drop-carry: the ledger holds no set-aside board writes/);
 });
 
-// R1b-5 fix 5: a carry that no longer applies used to be dropped on the next run, silently. The carry
-// goes back cell by cell, so only a carried cell that itself changed is in the way (R1b-5 notes item 1).
+// A carry that no longer applies used to be dropped on the next run, silently. The carry
+// goes back cell by cell, so only a carried cell that itself changed is in the way.
 test("a carried cell changed under the land blocks every rerun until --drop-carry, which keeps its patch", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
   commitFile(path, "plan/BOARD.md", BOARD_MD.replace(T2_DOING[0], "| T2   | S1     | verify |"));
@@ -832,7 +832,7 @@ const chainSince = (from) =>
 const pickInProgressFiles = () =>
   ["sequencer", "CHERRY_PICK_HEAD"].filter((name) => existsSync(join(root, ".git", name)));
 
-// R1b-5 re-verify item 1: a land killed after its board commit, before the ledger said so, stuck: every
+// A land killed after its board commit, before the ledger said so, stuck: every
 // rerun was red ("carry no longer applies", then "main has moved"), the ledger left at `merging`.
 test("a land killed right after its board commit is finished by the rerun, not redone", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -854,7 +854,7 @@ test("a land killed right after its board commit is finished by the rerun, not r
   assert.equal(status(), "");
 });
 
-// R1b-5 re-verify item 2: a land killed after its board writes, before the commit (a slow pre-commit
+// A land killed after its board writes, before the commit (a slow pre-commit
 // hook), left them staged on main, and no rerun got past them.
 test("a land killed with its board writes staged takes them back on the rerun and lands", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -879,7 +879,7 @@ test("a land killed with its board writes staged takes them back on the rerun an
   assert.equal(readLedger(root, ID).state, "merged");
 });
 
-// R1b-5 re-verify item 3: a red gate's rollback killed after the reset, before the ledger said so: the
+// A red gate's rollback killed after the reset, before the ledger said so: the
 // rerun read main at preHead as "main has moved", and the lane stayed `merging`.
 test("a rollback killed after its reset is finished by the rerun: lane back, exec's writes back", () => {
   const { path } = build({ "red.txt": "fails the gate\n" });
@@ -906,7 +906,7 @@ test("a rollback killed after its reset is finished by the rerun: lane back, exe
   assert.equal(ledger.gates.filter((g) => g.where === "main").length, 1); // no second gate run
 });
 
-// R1b-5 re-verify item 6: with the carry recorded but still on main's tree (killed before it was set
+// With the carry recorded but still on main's tree (killed before it was set
 // aside), --drop-carry said "dropped", then took the same edits as a new carry and committed them.
 test("--drop-carry of a carry still on main's tree takes it off, so it is not committed", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -927,7 +927,7 @@ test("--drop-carry of a carry still on main's tree takes it off, so it is not co
   assert.match(readFileSync(record.patchFile, "utf8"), /^\+\| T2 +\| S1 +\| doing/m);
 });
 
-// R1b-5 fix 2: a killed land set exec's writes aside in a patch file only; the rerun saw a clean main
+// A killed land set exec's writes aside in a patch file only; the rerun saw a clean main
 // and landed without them.
 test("a land killed during its gate keeps exec's writes in the ledger; the rerun commits them", async () => {
   const { path } = build({ "src/a.txt": "a\n" });
@@ -950,7 +950,7 @@ test("a land killed during its gate keeps exec's writes in the ledger; the rerun
   }
 });
 
-// R1b-5 fix 6: the gate of a killed land kept running, in its own process group, on main's tree.
+// The gate of a killed land kept running, in its own process group, on main's tree.
 test("a rerun stops the gate a killed land left running, then gates again", async () => {
   const { path } = build({ "src/a.txt": "a\n" });
   execLedger({ path, gated: null });
@@ -971,7 +971,7 @@ test("a rerun stops the gate a killed land left running, then gates again", asyn
     assert.equal(ledger.merge.gateRun, undefined);
     const mainGates = ledger.gates.filter((g) => g.where === "main");
     assert.equal(mainGates.length, 1); // the rerun's gate
-    // R1b-5 re-verify item 9: the rerun's gate wrote over the killed gate's log.
+    // The rerun's gate wrote over the killed gate's log.
     const killedLog = join(dirname(gatePidFile()), "merge-gate-1.log");
     assert.match(readFileSync(killedLog, "utf8"), /gate tier/);
     assert.notEqual(mainGates[0].log, killedLog);
@@ -991,7 +991,7 @@ function killedWhilePicking(shas) {
   });
 }
 
-// R1b-5 fix 3: picks a killed run made were not read back from main, so the rerun found nothing to land
+// Picks a killed run made were not read back from main, so the rerun found nothing to land
 // (or recorded the wrong commits).
 test("a land killed after its picks reads them back from main and does not pick twice", () => {
   const { shas } = build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
@@ -1033,7 +1033,7 @@ test("a rerun aborts the cherry-pick its killed land left midway, and picks agai
   assert.equal(status(), "");
 });
 
-// R1b-5 re-verify item 7: killed in the post-commit hook of the first pick, git keeps a stale
+// Killed in the post-commit hook of the first pick, git keeps a stale
 // CHERRY_PICK_HEAD after one `cherry-pick --abort` and does not rewind; the printed recovery said the
 // abort puts main back, and it took two.
 test("a land killed after its first pick's commit lands on the rerun, with no abort by hand", () => {
@@ -1094,7 +1094,7 @@ function addSprintS2() {
   git(root, "commit", "-q", "-m", "s2");
 }
 
-// R1b-5 round 4 item 1: killed at recording, then a note in a board file the land never writes; the
+// Killed at recording, then a note in a board file the land never writes; the
 // rerun put every dirty board file back to HEAD, and the note was gone.
 test("a rerun after a kill at recording leaves alone a board file the land did not write", () => {
   addSprintS2();
@@ -1110,7 +1110,7 @@ test("a rerun after a kill at recording leaves alone a board file the land did n
   assert.equal(status(), "M plan/sprints/S2.md"); // the land's own writes taken back, the note kept
 });
 
-// R1b-5 round 4 item 1: an edit on top of the land's own board writes was restored away with them.
+// An edit on top of the land's own board writes was restored away with them.
 test("a rerun after a kill at recording stops on a board file it wrote that changed since", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
   execLedger({ path, gated: shas[0] });
@@ -1129,7 +1129,7 @@ test("a rerun after a kill at recording stops on a board file it wrote that chan
   assert.equal(readLedger(root, ID).merge.step, "recording");
 });
 
-// R1b-5 notes item 2: an edit only staged did not show in `git diff HEAD` (the working copy), so the
+// An edit only staged did not show in `git diff HEAD` (the working copy), so the
 // printed recovery ("save that edit, then git restore --staged --worktree") erased it unseen.
 test("after a kill at recording, an edit only staged is named as staged and shown by the recovery", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -1146,7 +1146,7 @@ test("after a kill at recording, an edit only staged is named as staged and show
   assert.match(git(root, "show", ":plan/sprints/S1.md"), /STAGED NOTE/);
 });
 
-// R1b-5 notes item 6: the preflight's board row read the land's own writes from the working copy and
+// The preflight's board row read the land's own writes from the working copy and
 // said the task was "done" already.
 test("after a kill at recording the preflight reads the task as committed", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -1158,7 +1158,7 @@ test("after a kill at recording the preflight reads the task as committed", () =
   assert.match(pf.stdout, /✓ board +task T1 is "verify" as committed; landing makes it "done"/);
 });
 
-// R1b-5 notes item 3: killed at recording, then the owner commits only an episode: the rerun took that
+// Killed at recording, then the owner commits only an episode: the rerun took that
 // commit for a foreign board commit ("it also changes .agentry/memory/…") and gave no way on.
 test("after a kill at recording, a commit of only a memory record does not stop the rerun", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -1182,7 +1182,7 @@ test("after a kill at recording, a commit of only a memory record does not stop 
   assert.equal(status(), "");
 });
 
-// R1b-5 round 4 item 2: a board-only commit someone else made on the picks was taken for the land's
+// A board-only commit someone else made on the picks was taken for the land's
 // board commit: the land was "done", T1 never written, exec's carried writes erased.
 test("a board-only commit on the picks that is not the land's stops it; the carry is kept", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -1204,7 +1204,7 @@ test("a board-only commit on the picks that is not the land's stops it; the carr
   assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T1 +\| S1 +\| verify +\|/);
 });
 
-// R1b-5 round 4 item 3: a revert in progress was taken for the land's own pick and aborted.
+// A revert in progress was taken for the land's own pick and aborted.
 test("a revert in progress is not the land's pick: left alone, the land stops", () => {
   const { shas } = build({ "src/a.txt": "a\n" });
   killedWhilePicking(shas);
@@ -1220,7 +1220,7 @@ test("a revert in progress is not the land's pick: left alone, the land stops", 
   assert.equal(readFileSync(join(root, "r2.txt"), "utf8"), "HAND WORK\n");
 });
 
-// R1b-5 round 4 item 3: someone's cherry-pick sequence, its first commit resolved and committed by
+// Someone's cherry-pick sequence, its first commit resolved and committed by
 // hand (no CHERRY_PICK_HEAD, the sequencer left for the rest), was aborted as the land's own.
 test("a cherry-pick sequence with no planned commit left in it is not the land's: left alone", () => {
   const { shas } = build({ "src/a.txt": "a\n" });
@@ -1250,7 +1250,7 @@ test("a cherry-pick sequence with no planned commit left in it is not the land's
   assert.deepEqual(pickInProgressFiles(), ["sequencer"]); // left alone
 });
 
-// R1b-5 round 4 item 3 (LOW): the land's own planned commit, picked by hand and its conflict resolved
+// The land's own planned commit, picked by hand and its conflict resolved
 // and staged, was aborted with the resolution.
 test("a planned pick with a resolution staged by hand is left alone", () => {
   const { shas } = build({ "src/c.txt": "branch side\n" });
@@ -1266,7 +1266,7 @@ test("a planned pick with a resolution staged by hand is left alone", () => {
   assert.equal(readFileSync(join(root, "src", "c.txt"), "utf8"), "resolved by hand\n");
 });
 
-// R1b-5 round 4 item 4: a parallel lane's cell write while the gate ran made the rollback refuse, and
+// A parallel lane's cell write while the gate ran made the rollback refuse, and
 // `next` said to clear it; a plain rerun carries it and lands.
 test("a lane's cell write during the gate: next says to land again, and the rerun lands", () => {
   // The gate is green; on its first run, T2's lane writes its status cell on main meanwhile.
@@ -1292,7 +1292,7 @@ if (existsSync(${JSON.stringify(once)})) {
   assert.match(git(root, "show", "HEAD:plan/BOARD.md"), /\| T2 +\| S1 +\| doing +\|/);
 });
 
-// R1b-5 round 4 item 5: the land's own board commit with a later commit after it stayed `merging`,
+// The land's own board commit with a later commit after it stayed `merging`,
 // named "not this land's".
 test("a land killed after its board commit is recorded merged though a commit came after it", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -1309,7 +1309,7 @@ test("a land killed after its board commit is recorded merged though a commit ca
   assert.equal(ledger.merge.boardCommit, committed);
 });
 
-// R1b-5 round 4 item 5: a hook grew the board commit by a file; killed after it, the rerun named the
+// A hook grew the board commit by a file; killed after it, the rerun named the
 // land's own commit "not this land's" with no way out. The recovery it prints works as written.
 test("a board commit a hook grew stops the rerun with a recovery that works", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -1331,7 +1331,7 @@ test("a board commit a hook grew stops the rerun with a recovery that works", ()
   assert.equal(status(), "");
 });
 
-// R1b-5 round 4 item 6: at recording, the preflight skipped main's row, so a stray source edit read as
+// At recording, the preflight skipped main's row, so a stray source edit read as
 // "the land clears it" (the land then refused it).
 test("the preflight after a kill at recording still names other changes on main", () => {
   const { path, shas } = build({ "src/a.txt": "a\n" });
@@ -2340,7 +2340,7 @@ test("a land resumed after its picks does not check the subjects again", () => {
   assert.equal(readLedger(root, ID).state, "merged");
 });
 
-// --- the type hint (field 91) ------------------------------------------------------------------------
+// --- the type hint ------------------------------------------------------------------------
 
 const PATTERN = { commits: { subjectPattern: "^(feat|fix|docs)(\\(.+\\))?: " } };
 const ART_HINT = (n) =>
@@ -2378,7 +2378,7 @@ test("the hint never names a type main does not use: the line is as before", () 
   assert.doesNotMatch(pf.stdout, /is used|add it to/);
 });
 
-// --- a merge commit that brings in another lane's branch (field 91) ----------------------------------
+// --- a merge commit that brings in another lane's branch ----------------------------------
 
 /** T2's lane in `state`, its branch with one commit; T1's branch merges it. Returns T1's merge sha. */
 function mergeOfT2(state) {
@@ -2447,7 +2447,7 @@ test("a lane whose main branch reads as a git option is never passed to git, nor
   assert.deepEqual(readdirSync(`${trap}..refs/heads`), [], "git wrote no file");
 });
 
-// ---- --branch: a branch's exact listed name, resolved as exec adopt resolves it (S40) ----
+// ---- --branch: a branch's exact listed name, resolved as exec adopt resolves it ----
 
 const refs = () => git(root, "for-each-ref", "--format=%(refname) %(objectname)");
 /** A refused `--branch`: exit 2 naming `why`, no ledger written, no ref moved, main as it was. */
@@ -2560,7 +2560,7 @@ test("--branch by its exact name adopts at the listed tip, and no output names g
   for (const text of outputs) assert.doesNotMatch(text, /branch -D/);
 });
 
-// ---- every call re-resolves the ledger's branch from the branch list (R1d-47 r3 N1–N4) ----
+// ---- every call re-resolves the ledger's branch from the branch list ----
 
 /** A hand branch `feat/x` adopted at preflight, then packed, then a loose twin `feat/X` with its own commit. */
 function twinAfterAdopt() {
@@ -2645,7 +2645,7 @@ test("--cleanup deletes the branch at its listed tip, and keeps one that gained 
   assert.equal(git(root, "branch", "--list", "feat/x"), "");
 });
 
-// ---- every read after ledgerStep is at the tip it listed (S50, R1d-47 r5 N8, N9) ----
+// ---- every read after ledgerStep is at the tip it listed ----
 
 /** `lane merge <args>` with a `git` on PATH that, right after ledgerStep's `check-ref-format` of the
  *  ledger's branch (the branch list is read by then), packs the refs and makes the loose case twin
@@ -2730,7 +2730,7 @@ test("--check refuses a ledger branch with a case twin, by its listed name: noth
   assert.equal(readLedger(root, ID).checks["repo-merge"].tip, shas[0]);
 });
 
-// --- deps before the picks (field 105) --------------------------------------------------------------
+// --- deps before the picks --------------------------------------------------------------
 
 const DEPS_SPEC = {
   ...SPEC,
@@ -2827,7 +2827,7 @@ test("the printed board set line is one shell command: two remaining deps both s
   assert.match(board(), /\| T1 +\| S1 +\| verify \| PASS +\| +\| T4, T5 +\|/);
 });
 
-// ---- --resolve landed of a lane whose work reached main another way (R1f-9) ----
+// ---- --resolve landed of a lane whose work reached main another way ----
 
 /** Main fast-forwarded to a combined branch: another lane's commit first (so every copy is a new SHA),
  *  then `picks` cherry-picked in order, an array squashed into one commit. Returns main's new commits. */

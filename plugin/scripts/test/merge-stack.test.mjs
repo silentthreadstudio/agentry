@@ -1,4 +1,4 @@
-// Tests for landing stacked lanes (A45) on temp git repos: a stacked lane lands only after its parent and
+// Tests for landing stacked lanes on temp git repos: a stacked lane lands only after its parent and
 // only once restacked onto main; the parent's land names its children and restacks each one at rest onto
 // main itself, leaving one with an agent out or a conflict as it was. Lanes are real `lane exec` walks;
 // builders and verifiers are simulated by committing in the worktree and writing their report files.
@@ -303,7 +303,7 @@ test("the rerun of an already-merged land restacks a child that has come to rest
   assert.equal(git(r.root, "rev-parse", "agentry/T2^"), tipOf(r.root, "main"));
 });
 
-// ---- a child's gate in flight during the parent's land (R1d-14 r2 F1) ------------------------------
+// ---- a child's gate in flight during the parent's land ------------------------------
 
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -359,7 +359,7 @@ function finishVerdictOnly2(r, id, out) {
   assert.equal(lane(r, "verdict", id).json.next, "gate");
 }
 
-// ---- a held child (R1d-14 resolve N1, N2) ------------------------------------------------------------
+// ---- a held child ------------------------------------------------------------
 
 test("T1's land leaves a child held by a guard trip or parked verified as it was, naming why", () => {
   const cases = {

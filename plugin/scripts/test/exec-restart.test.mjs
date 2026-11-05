@@ -1,4 +1,4 @@
-// Tests for `lane exec restart <id> [--carry]` (field 69) on temp git repos: the old lane's ledger and run
+// Tests for `lane exec restart <id> [--carry]` on temp git repos: the old lane's ledger and run
 // files archived as `<id>.<n>`, its worktree removed and its branch kept as `agentry/<id>.<n>`, a fresh
 // `agentry/<id>` cut from main with every `start` record; `--carry` picks the old commits and applies the
 // uncommitted diff, stopping on a conflict in the new worktree, main untouched. Builders are simulated by
@@ -248,7 +248,7 @@ test("a carried commit that conflicts with main stops: exit 1, main untouched, m
     /Resolve this first: [0-9a-f]{7} feat: three conflicts in three\.txt: resolve it, git cherry-pick --continue, then git apply --3way \S+\.diff\.\n/,
   );
   // The pick stopped before the diff: it is still to apply, never "applied staged" (r4 N4, probe P3), and
-  // the step that applies it is named once, in the stop (R1d-23 r6 N13).
+  // the step that applies it is named once, in the stop.
   assert.doesNotMatch(brief, /applied staged/);
   assert.match(brief, /Its uncommitted changes are not in the tree yet\. Resolve this first: /);
   assert.equal(brief.match(/git apply --3way/g).length, 1, brief);
@@ -278,7 +278,7 @@ test("in a root holding a space, the carry's conflict and the brief quote the di
 });
 
 test("restart --carry of a lane with no commits, only uncommitted files, applies the diff: exit 0, staged", () => {
-  // R1d-23 r6 N11: the builder committed nothing; an empty pick range is no conflict.
+  // The builder committed nothing; an empty pick range is no conflict.
   const r = repo();
   const out = lane(r, "start", "T3").json;
   writeFileSync(join(out.worktree, "three.txt"), "a\nhalf done\nc\n");
@@ -298,7 +298,7 @@ test("restart --carry of a lane with no commits, only uncommitted files, applies
 });
 
 test("a restart stopped before the rename names the rename first and keeps the pick; the steps bring the work back", () => {
-  // R1d-23 r6 N12: a ref under agentry/T3.1/ blocks the rename, so the old work is still on agentry/T3.
+  // A ref under agentry/T3.1/ blocks the rename, so the old work is still on agentry/T3.
   const r = repo();
   worked(r);
   const oldTip = tipOf(r.root, "agentry/T3");
@@ -456,7 +456,7 @@ test("with .agentry/ untracked, start and restart warn once the process file cha
   assert.ok(t1.json.warning?.split("\n").includes(line), t1.json.warning);
 });
 
-// ---- a failure after the archive (R1d-23 r2 N1) --------------------------------------------------------
+// ---- a failure after the archive --------------------------------------------------------
 
 test("a restart whose board row is gone refuses before any write: the lane, its worktree and branch as they were", () => {
   const r = repo();
@@ -520,7 +520,7 @@ test(
     );
     assert.equal(tipOf(r.root, "agentry/T3.1"), oldTip, "the kept branch survives");
     assert.match(readFileSync(diff, "utf8"), /\+\+\+ b\/more\.txt/);
-    // The steps back, followed as printed, bring the commit and the uncommitted file back (r4 N9).
+    // The steps back, followed as printed, bring the commit and the uncommitted file back.
     const pick = oldTip.slice(0, 7); // the old branch's one commit not on main
     const steps = out.split("→ fix that, then: ")[1]?.trim().split("; ") ?? [];
     assert.deepEqual(
@@ -555,7 +555,7 @@ test(
   },
 );
 
-// ---- the old lane's verdict on the board (R1d-23 r2 N2) ------------------------------------------------
+// ---- the old lane's verdict on the board ------------------------------------------------
 
 test("restarting a verified lane clears its board verdict: the new lane has none yet", () => {
   const r = repo();
@@ -582,7 +582,7 @@ test("restarting a verified lane clears its board verdict: the new lane has none
   assert.equal(parked.json["main moved while parked"], undefined);
 });
 
-// ---- a lane others are stacked on (R1d-23 r2 N3) --------------------------------------------------------
+// ---- a lane others are stacked on --------------------------------------------------------
 
 test("a restart of a lane with an open stacked child is refused, nothing changed", () => {
   const r = repo();
@@ -605,7 +605,7 @@ test("a restart of a lane with an open stacked child is refused, nothing changed
   assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
 });
 
-// ---- empty ignored directories (field 94) ----------------------------------------------------------
+// ---- empty ignored directories ----------------------------------------------------------
 
 test("an ignored directory holding only an empty one is no reason to refuse: the restart takes it down", () => {
   const r = repo();
@@ -631,7 +631,7 @@ test("an ignored directory holding a file still refuses the restart, naming it",
   assert.ok(existsSync(join(out.worktree, "exports", "playtest", "run.log")));
 });
 
-// ---- one ignored-file filter for restart, land cleanup and sweep (field 106, S45) -------------------
+// ---- one ignored-file filter for restart, land cleanup and sweep -------------------
 
 test("art/preview/** in cleanup.disposable lets a restart through and the cache goes with the worktree", () => {
   const r = repo();
@@ -673,7 +673,7 @@ test("a folder holding the cache and one other file still refuses the restart an
   assert.equal(existsSync(join(out.worktree, "art", "preview")), false);
 });
 
-// ---- a verified lane's restart (field 94) ---------------------------------------------------------
+// ---- a verified lane's restart ---------------------------------------------------------
 
 const row = (root, id) =>
   readFileSync(join(root, "plan", "BOARD.md"), "utf8")
@@ -840,7 +840,7 @@ test("restart --carry of a lane with no verdict still builds", () => {
   assert.equal(ledgerOf(r.root, "T3").rounds[0].step, "build");
 });
 
-// ---- a flagged item's verified carry lands on the verdicts it carries (field 94) --------------------
+// ---- a flagged item's verified carry lands on the verdicts it carries --------------------
 
 const FLAG_SPEC = {
   ...SPEC,
@@ -885,7 +885,7 @@ for (const verify of ["flagged", "all"])
     assert.doesNotMatch(pre.stdout + pre.stderr, /reverify/);
   });
 
-// ---- carried verdicts: the lane's own budget, the first marker, a fresh recheck (field 94) ----------
+// ---- carried verdicts: the lane's own budget, the first marker, a fresh recheck ----------
 
 const NO_FINAL = { ...SPEC, exec: { final: "never" } };
 // The verifier `agent` sent on `out` returns `verdict`.
@@ -996,7 +996,7 @@ test("a recheck whose verifier comes from a carried round runs fresh; one of the
   assert.deepEqual([out.next, out.mode, out.agent], ["recheck", "resume", "verifier-2"]);
 });
 
-// ---- the lane branch by its exact listed name, never by a spelling the list did not give (S50) ----
+// ---- the lane branch by its exact listed name, never by a spelling the list did not give ----
 
 const branchRefs = (root) =>
   git(root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/");
@@ -1185,7 +1185,7 @@ test("a lane branch listed only in another case refuses the restart: no twin pai
   }
 });
 
-// The field shape (field 100): T3 cut at A, main moves to B, the builder rebases the lane onto B in its
+// The field shape: T3 cut at A, main moves to B, the builder rebases the lane onto B in its
 // worktree and adds commits; then held. `agentry/T3` is main + the lane's own commits.
 function rebasedInBranch(r) {
   const out = lane(r, "start", "T3").json;
@@ -1420,7 +1420,7 @@ test("owns --add grants ride through a restart --carry, never more than the old 
   assert.deepEqual(ledgerOf(r.root, "T4").rounds[0].stepRun, [3, 3]);
 });
 
-// The field shape (R1e-1 r3 N2): T3 started, main moves, the builder rebases onto it in the worktree.
+// The field shape: T3 started, main moves, the builder rebases onto it in the worktree.
 const COMMITS_SPEC = { ...SPEC, commits: { subjectPattern: "^(feat|fix): " } };
 function heldMain(r, { own }) {
   const out = lane(r, "start", "T3").json;

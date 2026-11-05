@@ -1,4 +1,4 @@
-// Tests for lib/process/write.mjs — the pure text edits and the re-read guard (plan F13 §6).
+// Tests for lib/process/write.mjs — the pure text edits and the re-read guard.
 // Golden style: each edit is compared with the original text changed by hand in exactly one place,
 // so "every other byte is kept" is the assertion. Fixture: test/fixtures/write (invented content).
 // Run: node --test plugin/scripts/test/write.test.mjs

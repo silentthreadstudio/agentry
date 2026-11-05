@@ -1,4 +1,4 @@
-// Tests for lib/process/read.mjs — process file + synthetic board files → Model (plan F13 §6).
+// Tests for lib/process/read.mjs — process file + synthetic board files → Model.
 // Fixtures (test/fixtures/, invented content): table-board (a row per task with its own flag, verdict
 // and commit), evidence-board (one free-text evidence column, multi-kind deps), frontmatter-board
 // (one file per item), broken (a spec and a board that no longer match).

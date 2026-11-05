@@ -1,4 +1,4 @@
-// The command names the trigger lines use, bound to the commands that exist (plan R1b-8, F18): the
+// The command names the trigger lines use, bound to the commands that exist: the
 // AGENTS.md block template, the conductor agent, the conductor prompt template and every command file
 // name `/agentry:<name>`s, and each must be a file in `plugin/commands/`, or one of the pinned names
 // still being built. The lane triggers appear in both the block and the agent, and the draft step names

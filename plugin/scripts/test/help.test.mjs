@@ -88,7 +88,7 @@ test("--help, on a sub and on the index, ends with the running build's version",
   }
 });
 
-// --- the running build's version (field 61) ----------------------------------------------------------
+// --- the running build's version ----------------------------------------------------------
 
 const BIN = join(HERE, "..", "..", "bin", "agentry");
 const VERSION = "1.2.0";

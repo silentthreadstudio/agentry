@@ -180,7 +180,7 @@ test("a branch a lane adopted (exec adopt) is no longer unlisted-worktree", () =
   assert.ok(!nudgesOf(root).some((n) => n.kind === "unlisted-worktree"));
 });
 
-// ---- spikes: worktrees `lane spike` filed (field 87) ----
+// ---- spikes: worktrees `lane spike` filed ----
 
 const spiked = (root, tree, extra) =>
   fileSpike(root, { branch: tree.branch, path: tree.path, ...extra, at: "2026-01-01T00:00:00Z" });
@@ -332,7 +332,7 @@ test("a board kept in a subfolder of a repo still sees the repo's worktrees", ()
   );
 });
 
-// ---- landing: work counts as on main only while it is there now (A23) ----
+// ---- landing: work counts as on main only while it is there now ----
 
 const at = (root, branch) => landing(root, { branch, onto: "main" });
 

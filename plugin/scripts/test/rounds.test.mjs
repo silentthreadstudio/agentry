@@ -1,4 +1,4 @@
-// Tests for lib/lane/rounds.mjs: every row of the exec round machine (plan R1b §3.2), driven through the
+// Tests for lib/lane/rounds.mjs: every row of the exec round machine, driven through the
 // pure (ledger, event) -> (ledger', next) seam with hand-made ledgers. No I/O.
 // Run: node --test plugin/scripts/test/rounds.test.mjs
 import assert from "node:assert/strict";
@@ -651,7 +651,7 @@ test("notes are refused unless the lane is verified PASS WITH NOTES, before it c
   assert.throws(() => step(merged, { type: "notes", notes: ["N1"] }), refused);
 });
 
-// ---- the owner sends a verified lane back (field 77) -----------------------------------------------
+// ---- the owner sends a verified lane back -----------------------------------------------
 
 const owner = (note = "rename it") => ({ type: "owner", note, at: "t1" });
 
@@ -1029,7 +1029,7 @@ test("a round sent back inside a run (a resend) builds the same run", () => {
   assert.deepEqual(res.ledger.rounds.at(-1).stepRun, [1, 1]);
 });
 
-// ---- presets: the final, the notes rounds, the rebase and the resolution recheck (A47, A48) ----------
+// ---- presets: the final, the notes rounds, the rebase and the resolution recheck ----------
 
 // A lane whose route is `route` (the ledger's snapshot from start), its first build round dispatched.
 const routed = (route) => ({ ...lane(), route: { verify: "all", flagged: false, ...route } });
@@ -1306,7 +1306,7 @@ test("every lane still ends with the new rows: rebase, resolve and notes walks s
   assert.throws(() => step(ledger, { type: "notes", notes: ["N1"] }), /3 of 3/);
 });
 
-// ---- restack (A45): a stacked lane's branch moved onto its parent's tip or main, no agent out ----------
+// ---- restack: a stacked lane's branch moved onto its parent's tip or main, no agent out ----------
 
 const PARENT_TIP = "c".repeat(40);
 const OLD_BASE = "d".repeat(40);
@@ -1441,7 +1441,7 @@ test("verifiedTip: the last verdict's tip, else builtTip, carried only through c
 
 // ---- the needs-context budget per step, the context hold, the notes cap (fields 83, 84) ------------------
 
-// Steps `1 → owner OK, 2`: field 83's shape.
+// Steps `1 → owner OK, 2`: the shape of a step list with an owner OK.
 const TWO = [step3(1, "owner"), step3(2)];
 const asks = (extra = {}) =>
   report("NEEDS_CONTEXT", { dirty: [], commits: 0 }, { agent: "builder-1", at: AT, ...extra });
@@ -1469,7 +1469,7 @@ test("a two-step lane asking once per step reaches verified: each step has its o
 });
 
 test("a context hold's reason cut at the summary's cap ends at a word, outside backticks and parentheses", () => {
-  // R1d-38 r2 N6: the cut fell inside a backticked path.
+  // The cut fell inside a backticked path.
   const first = go(lane(), asks()).ledger;
   const reasonOf = (summary) => go(first, asks({ summary })).ledger.hold.reason;
   // 129 characters: the cut at 119 falls inside the last backticked path.
@@ -1485,7 +1485,7 @@ test("a context hold's reason cut at the summary's cap ends at a word, outside b
 });
 
 test("a context hold's reason cuts back exactly what summaryOf cut: the two share one length", () => {
-  // R1d-39 r4 N4: rounds kept its own copy of the reader's cut length.
+  // Rounds kept its own copy of the reader's cut length.
   const first = go(lane(), asks()).ledger;
   const summary = summaryOf(`NEEDS_CONTEXT ${"which key holds it ".repeat(10)}`);
   assert.equal(summary.length, SUMMARY_CUT + 1);
@@ -1495,7 +1495,7 @@ test("a context hold's reason cuts back exactly what summaryOf cut: the two shar
 });
 
 test("a context hold's reason keeps a report's own ellipsis: only the reader's cut is cut back", () => {
-  // R1d-38 r4 N8: `is it \`a\` or \`b\`…` lost its last word.
+  // `is it \`a\` or \`b\`…` lost its last word.
   const first = go(lane(), asks()).ledger;
   const reasonOf = (summary) => go(first, asks({ summary })).ledger.hold.reason;
   assert.equal(reasonOf("is it `a` or `b`…"), "is it `a` or `b`…");
@@ -1661,7 +1661,7 @@ test("held at the notes cap: notes go only once the cap is raised; a restack is 
   assert.throws(() => step(contextHeld, owner()), /expects a resume/);
 });
 
-// ---- an external block holds the lane (field 98) -------------------------------------------------------
+// ---- an external block holds the lane -------------------------------------------------------
 
 const external = (extra = {}) =>
   report("BLOCKED", ok, {

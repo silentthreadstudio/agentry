@@ -1,5 +1,5 @@
-// Tests for lib/config.mjs — the strict reader of config.json's `merge` and `lanes` blocks (plan R1b
-// §2): the shared table through `checkConfig`, `readConfig`'s project → global order and defaults,
+// Tests for lib/config.mjs — the strict reader of config.json's `merge` and `lanes` blocks:
+// the shared table through `checkConfig`, `readConfig`'s project → global order and defaults,
 // errors naming the file and key, and `/agentry:config` documenting both keys with their defaults.
 // Run: node --test plugin/scripts/test/config.test.mjs
 import assert from "node:assert/strict";

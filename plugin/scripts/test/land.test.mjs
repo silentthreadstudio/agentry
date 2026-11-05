@@ -237,7 +237,7 @@ test("planRows and putCells refuse a path through a symlink that points out of t
   assert.equal(readFileSync(outside, "utf8"), table);
 });
 
-// R1b-5 notes item 4: the clean check split git's output on its own, so a rename's source came out as
+// The clean check split git's output on its own, so a rename's source came out as
 // an entry of its own, cut to "n/TASKS.md".
 test("statusEntries reads a rename as its delete and its add", () => {
   commitFile(repo.dir, "plan/TASKS.md", "tasks\n");
@@ -288,7 +288,7 @@ test("endStrayGate kills the gate group a killed run left, and leaves a reused p
   endStrayGate(other);
 });
 
-// R1b-5 re-verify item 11: the nonce sits past the wrapper's long script in the argv, so a `ps` that
+// The nonce sits past the wrapper's long script in the argv, so a `ps` that
 // cuts its output to 80 columns (procps documents that default for a pipe) lost it and took the gate
 // for a reused pid. A `ps` in front of the real one cuts like that unless asked for unlimited width.
 test("endStrayGate finds the nonce even where ps cuts its output short", () => {

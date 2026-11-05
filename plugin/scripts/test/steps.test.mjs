@@ -1,4 +1,4 @@
-// Tests for lib/process/steps.mjs (a contract's Steps part, field 48) and the steps `findContract` adds
+// Tests for lib/process/steps.mjs (a contract's Steps part) and the steps `findContract` adds
 // to a found result.
 // Run: node --test plugin/scripts/test/steps.test.mjs
 import assert from "node:assert/strict";

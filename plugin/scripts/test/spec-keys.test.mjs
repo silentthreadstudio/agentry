@@ -1,4 +1,4 @@
-// Tests for the harness keys and the lifecycle invariants in lib/process/spec.mjs (plan R1b §2):
+// Tests for the harness keys and the lifecycle invariants in lib/process/spec.mjs:
 // the shared table through the plugin's validator, `gateOf`, the exec presets (`resolveWorkflow`), the CLI
 // refusing a bad key (exit 2, naming it), the lifecycle writer's targets and the handoff self-consistency
 // check.

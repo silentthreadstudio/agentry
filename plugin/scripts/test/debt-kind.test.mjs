@@ -1,4 +1,4 @@
-// Tests for the debt kind (A43): a kind exec runs beside the lifecycle (`exec.kinds`), read and written
+// Tests for the debt kind: a kind exec runs beside the lifecycle (`exec.kinds`), read and written
 // without a terminal or a git repository. The workflow key's cross-file refusals (`ACROSS_CASES`, through
 // `validateSpec` and `board check`), the accessors and `runId`, `applyEvent`'s kind, `strayChanges` per
 // kind, the status view's `side` and its row, and the format reference's "exec kinds" table. The lanes

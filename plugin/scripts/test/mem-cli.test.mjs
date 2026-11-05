@@ -695,7 +695,7 @@ function spawn(bin, s, ...args) {
   });
 }
 
-// ── which project store a call opens (decision 57) ─────────────────────────────────────────────────────
+// ── which project store a call opens ─────────────────────────────────────────────────────
 
 const sh = (cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
 

@@ -371,7 +371,7 @@ test("a lane tripped by a commit on main touching its file parks (exit 0) with t
   assert.equal(ledgerOf(r.root, "T3").state, "held");
 });
 
-// ---- resume past a moved main (field 68): the guard's one overlap rule --------------------------------
+// ---- resume past a moved main: the guard's one overlap rule --------------------------------
 
 test("resume passes a main moved by commits touching none of the lane's files, and says so", () => {
   const r = repo();
@@ -527,7 +527,7 @@ test("lane sweep --apply keeps a held lane's worktree", () => {
   assert.equal(ledgerOf(r.root, "T1").state, "held");
 });
 
-// --- a verified lane parked for later (field 63) ------------------------------------------------------
+// --- a verified lane parked for later ------------------------------------------------------
 
 // T3 built, verified PASS and gated green: next close.
 function verifiedLane(r, id = "T3") {
@@ -651,7 +651,7 @@ test("resume --redo on a parked verified lane is refused, saying it is verified,
   assert.equal(ledgerOf(r.root, "T3").state, "held");
 });
 
-// ---- the needs-context budget per step and the context hold (field 83) ---------------------------------
+// ---- the needs-context budget per step and the context hold ---------------------------------
 
 // The builder asks for a fact: no commit, the report saved.
 const ask = (out, line = "which file holds the key?") =>
@@ -812,7 +812,7 @@ test("a guard trip on the report that asks again is a guard hold; once main is c
 });
 
 test("exec gate on a held lane refuses, records nothing and runs nothing: a context hold and a step hold", () => {
-  // R1d-38 final N3, probe C1: the gate ran and was recorded while the lane stayed held.
+  // The gate ran and was recorded while the lane stayed held.
   const r = repo();
   let out = lane(r, "start", "T3").json;
   ask(out);
@@ -897,7 +897,7 @@ test("owns --add on a lane held for the context: appended, a path already owned 
 });
 
 test("hold on a lane held for more context is refused, the hold kept, so the resume still sends the fact", () => {
-  // R1d-38 r2 N2: hold --for later re-parked it, and the resume then sent continue.
+  // Hold --for later re-parked it, and the resume then sent continue.
   const r = repo();
   let out = lane(r, "start", "T3").json;
   ask(out);
@@ -916,7 +916,7 @@ test("hold on a lane held for more context is refused, the hold kept, so the res
 });
 
 test("owns refuses a path that leaves the repository; the hint names only paths, never one outside", () => {
-  // R1d-38 r2 P5 and P7: --add ../outside.txt and /etc/passwd were taken, and the hint offered
+  // --add ../outside.txt and /etc/passwd were taken, and the hint offered
   // exec.noteRounds, e.g and ../up.txt.
   const r = repo();
   let out = lane(r, "start", "T3").json;
@@ -944,7 +944,7 @@ test("owns refuses a path that leaves the repository; the hint names only paths,
 });
 
 test("owns and its hint judge a path normalised: .//etc/passwd leaves the repository", () => {
-  // R1d-38 r4 N3, probes A1 and A2: the ./ strip ran after the check, so .//etc/passwd was stored as
+  // The ./ strip ran after the check, so .//etc/passwd was stored as
   // /etc/passwd, and the hint offered .//abs.txt.
   const r = repo();
   let out = lane(r, "start", "T3").json;
@@ -976,7 +976,7 @@ test("owns and its hint judge a path normalised: .//etc/passwd leaves the reposi
 });
 
 test("the owns hint drops a word starting with -, so the command it prints runs", () => {
-  // R1d-38 final N2, probe C3: `--apply/y` gave `--add --apply/y,real/path.mjs --apply`.
+  // `--apply/y` gave `--add --apply/y,real/path.mjs --apply`.
   const r = repo();
   let out = lane(r, "start", "T3").json;
   ask(out);
@@ -988,7 +988,7 @@ test("the owns hint drops a word starting with -, so the command it prints runs"
 });
 
 test("owns --add counts a path an owned entry already covers as owned: a directory, ./ and a trailing /", () => {
-  // R1d-38 r2 Q5: with lib/ owned, lib/a.txt and ./lib/ were appended; ./three.txt beside three.txt too.
+  // With lib/ owned, lib/a.txt and ./lib/ were appended; ./three.txt beside three.txt too.
   const r = repo();
   let out = lane(r, "start", "T3").json;
   ask(out);
@@ -1057,7 +1057,7 @@ test("owns --add in needs-context rewrites the waiting brief, keeping the fact; 
   );
 });
 
-// ---- the notes cap on a flagged item (field 84) ----------------------------------------------------------
+// ---- the notes cap on a flagged item ----------------------------------------------------------
 
 // A repo whose T3 is flagged, under `exec`.
 function flaggedRepo(exec = { noteRounds: 0, final: "never" }) {
@@ -1119,7 +1119,7 @@ test("a flagged item at the notes cap with a note open holds for the owner; resu
 });
 
 test("held at the notes cap: a cap raised since lets fix --notes send one more notes round", () => {
-  // R1d-38 r2 N5: the raised cap was not read while the item held.
+  // The raised cap was not read while the item held.
   const r = flaggedRepo();
   assert.equal(noted(r).json.state, "held");
   const spec = structuredClone(SPEC);
@@ -1140,7 +1140,7 @@ test("held at the notes cap: a cap raised since lets fix --notes send one more n
 });
 
 test("a second fix --notes while the notes round is out says to wait for its report, at the cap or under it", () => {
-  // R1d-38 r4 N9, probe A5: at the cap it said the gate goes on with the notes open, a builder still out.
+  // At the cap it said the gate goes on with the notes open, a builder still out.
   for (const noteRounds of [1, 2]) {
     const r = flaggedRepo({ noteRounds, final: "never" });
     assert.equal(noted(r).json.next, "gate");
@@ -1154,7 +1154,7 @@ test("a second fix --notes while the notes round is out says to wait for its rep
 });
 
 test("held at the notes cap: owns --add is refused as on a verified lane", () => {
-  // R1d-38 r2 N4: it was applied on a lane past its passing verdict.
+  // It was applied on a lane past its passing verdict.
   const r = flaggedRepo();
   assert.equal(noted(r).json.state, "held");
   const before = ledgerOf(r.root, "T3").owned;
@@ -1168,7 +1168,7 @@ test("held at the notes cap: owns --add is refused as on a verified lane", () =>
 });
 
 test("owns --add is refused between a passing verdict and the gate, and after a resumed cap hold", () => {
-  // R1d-38 r4 N7, probe A7: the refusal tested state "verified" only, so next gate let it through.
+  // The refusal tested state "verified" only, so next gate let it through.
   const r = repo();
   let out = lane(r, "start", "T3").json;
   build(out, "three.txt");

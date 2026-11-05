@@ -1,4 +1,4 @@
-// Tests for lib/process/lifecycle.mjs and `board lifecycle` (plan R1b §3.1): each event's writes on a
+// Tests for lib/process/lifecycle.mjs and `board lifecycle`: each event's writes on a
 // synthetic board in a temp git repo, the byte diff limited to the cells and line the lifecycle maps,
 // `board check` accepting the result, every step skipped "lifecycle off" without a lifecycle, and
 // every refusal writing nothing.

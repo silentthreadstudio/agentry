@@ -1,4 +1,4 @@
-// Tests for `lane spike` (field 87) on temp git repos: an agent worktree filed by its branch or its path in
+// Tests for `lane spike` on temp git repos: an agent worktree filed by its branch or its path in
 // `.agentry/run/spikes.json` as work for a board item (`--for`) or kept on purpose (`--keep`), dropped with
 // `--forget`, listed with no flag (a gone branch shown as `gone`); the refusals write nothing; the file is
 // written whole, so a torn write never leaves a part of it.

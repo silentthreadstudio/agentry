@@ -1,7 +1,7 @@
-// Ids as a person types them (lib/process/ids.mjs `boardId`, A39): case-insensitive, a decision's cited
+// Ids as a person types them (lib/process/ids.mjs `boardId`): case-insensitive, a decision's cited
 // form (`N2` for the decision the board numbers `2`), printed in the board's spelling. Unit cases on the
 // synthetic table board, then the CLI reading them the same way. And the next free id in a prefix family
-// (`nextInFamily`, `board next-id --family`, field 85).
+// (`nextInFamily`, `board next-id --family`).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";

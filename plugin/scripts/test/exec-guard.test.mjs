@@ -1,4 +1,4 @@
-// Tests for the main guard's snapshot after `lane exec rebase` (field 93) on temp git repos: the rebase
+// Tests for the main guard's snapshot after `lane exec rebase` on temp git repos: the rebase
 // that moves `mainAtStart.head` refreshes the start entries of paths clean on main now and keeps those
 // still dirty, and a path clean on main whose start entry is the lane's own board write is never "back to
 // HEAD". Builders and verifiers are simulated by committing in the worktree and writing their report files.
@@ -163,7 +163,7 @@ test("a path still dirty on main after the rebase keeps its start: an edit made 
 });
 
 test("a ledger already rebased with the mid-write board in its snapshot reports and resumes with no guard hold", () => {
-  // The ledger an earlier `exec rebase` left (field 93): head moved, the board's start entry not.
+  // The ledger an earlier `exec rebase` left: head moved, the board's start entry not.
   const r = repo();
   let out = lane(r, "start", "T1").json;
   commitBoard(r.root);
@@ -219,7 +219,7 @@ test("a path dirty at start and discarded during the rebase round keeps its star
   assert.ok(Object.hasOwn(ledgerOf(r.root, "T1").mainAtStart.files, "notes.txt"));
 });
 
-// The field shape (field 102): T2 cut at A, a commit X on main, the builder rebases the lane onto X in its
+// The field shape: T2 cut at A, a commit X on main, the builder rebases the lane onto X in its
 // worktree (`git rebase main`) and commits; the report runs the guard.
 function rebasedInBranch(r, path, text = "by the conductor\n") {
   const out = lane(r, "start", "T2").json;

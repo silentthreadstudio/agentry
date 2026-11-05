@@ -1,4 +1,4 @@
-// Tests for lib/process/spec/models.mjs's contract side (field 96): a step's model marker, then the
+// Tests for lib/process/spec/models.mjs's contract side: a step's model marker, then the
 // contract's bullet, then the workflow file's `models`, each named as its source, and the prose hint
 // `exec start` prints. The last tests run `lane exec start` on a temp repo to see the printed lines.
 // Run: node --test plugin/scripts/test/models.test.mjs

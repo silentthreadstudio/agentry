@@ -181,7 +181,7 @@ const judge = (out, verdict) =>
     out.reportPath,
     `All acceptance items checked.\nused_memories: none\nVerdict: ${verdict}\n`,
   );
-// A report that found main touched: the lane held for the guard (exit 0, field 75); its trip line.
+// A report that found main touched: the lane held for the guard (exit 0); its trip line.
 function tripped(res, what = "") {
   assert.equal(res.exit, 0, `${what} ${res.stderr}`);
   const { state, next, hold } = res.json;
@@ -512,7 +512,7 @@ test("a FAIL writes the verdict and the failed status, then a fix round resumes 
   assert.match(readFileSync(out.brief, "utf8"), /## Recheck/);
 });
 
-// ---- verdict --leave (S26): notes left as built are never sent back -----------------------------------
+// ---- verdict --leave: notes left as built are never sent back -----------------------------------
 
 // T1 failed with N1 and N2, the verdict read with `leave` args; then the fix and its recheck passing N1 only.
 function failedWith(r, ...leave) {
@@ -553,7 +553,7 @@ test("verdict --leave records the notes left as built; the recheck needs only th
 });
 
 test("fix --notes refuses a note the verdict left as built, and writes nothing", () => {
-  // R1d-39 r4 N2: it was accepted, and the recheck then judged nothing of it.
+  // It was accepted, and the recheck then judged nothing of it.
   const r = repo();
   let out = lane(r, "start", "T1").json;
   build(out);
@@ -1300,7 +1300,7 @@ test("close --episode (deprecated) stamps an id once, says so, and refuses anoth
 });
 
 test("close after a rebase on a lane whose episode is stamped moves next to merge and says close → merge", () => {
-  // S27: it printed "close → nothing" while show still said next close.
+  // It printed "close → nothing" while show still said next close.
   const r = repo();
   verified(r, "T1", "out.txt");
   const written = ledgerOf(r.root, "T1").episode.writtenId;
@@ -1731,7 +1731,7 @@ test("flakyLogs never turns a red the gate's own output names as flaky into a re
   assert.deepEqual(gated.json.gate.flaky, ["test_budget"]);
 });
 
-// A49: FAILED <name>, a <path>::<test> token and a JSON test event, in the gate's own log and in a step log.
+// FAILED <name>, a <path>::<test> token and a JSON test event, in the gate's own log and in a step log.
 for (const line of [
   "FAILED tests/test_a.py::test_budget - AssertionError",
   "tests/test_a.py::test_budget ERROR",
@@ -2301,7 +2301,7 @@ test("a hand commit on main touching only a guard.allow path passes the report; 
   );
 });
 
-// ---- Agentry's config is always allowed (field 58) ---------------------------------------------------
+// ---- Agentry's config is always allowed ---------------------------------------------------
 
 // The process and workflow files rewritten (the same spec, compact), uncommitted.
 function editConfig(dir) {
@@ -2459,7 +2459,7 @@ test("a green then a red gate on one tip says the latest is red, and the waiting
   );
 });
 
-// ---- config edits can't widen the guard (R1d-21 N3); R1d-21's probes P1, P7 and P8 ---------------------
+// ---- config edits can't widen the guard ---------------------
 
 // The workflow file in `.agentry/` with `change` made to its parsed value, left uncommitted.
 function editWorkflow(root, change) {
@@ -2468,7 +2468,7 @@ function editWorkflow(root, change) {
   writeFileSync(file, `${JSON.stringify(change(value), null, 2)}\n`);
 }
 
-// ---- one overlap rule for committed main moves (field 81) and Agentry's own files (field 78) ----------
+// ---- one overlap rule for committed main moves and Agentry's own files ----------
 
 test("a builder's own commit made in the main checkout (wrong cwd) touches its owned files and trips", () => {
   const r = repo();
@@ -2629,7 +2629,7 @@ test("P8: with .agentry/run not gitignored the run files stay Agentry's own, and
   assert.deepEqual(res.json.guards, [`main moved by allowed commits: 1 (${sha})`]);
 });
 
-// ---- hold: the owner's gate, the evidence (R1d-6 N9, final N3) ------------------------------------------
+// ---- hold: the owner's gate, the evidence ------------------------------------------
 
 const STEPS_MD = `# Tasks
 
@@ -2691,7 +2691,7 @@ test("a hold's evidence must be a file: a directory or a missing path is refused
   assert.equal(lane(r, "hold", "T1", "--for", "owner", "--evidence", t1.reportPath).exit, 0);
 });
 
-// ---- a recorded green is read only for the tier's current argv (R1d-12 gate notes) ---------------------
+// ---- a recorded green is read only for the tier's current argv ---------------------
 
 test("a green record whose argv is not the tier's current one is not read as the recorded gate", () => {
   const r = repo({ spec: VERIFY_GATES });
@@ -2716,7 +2716,7 @@ test("a green record whose argv is not the tier's current one is not read as the
   assert.match(text, /Run the gate as the lane records it/);
 });
 
-// ---- board files never trip a lane; a guard trip holds it; a stopped lane's ways on (field 75) -------
+// ---- board files never trip a lane; a guard trip holds it; a stopped lane's ways on -------
 
 // The process file naming every kind of board location: a sprint's own file, a create block's file and
 // a status note, beside the tables and the contract blocks.
@@ -2806,7 +2806,7 @@ function editProcess(root, change) {
   );
 }
 
-// R1d-29 F1 (the verifier's P1): an uncommitted process file edit naming a code file as a board location
+// An uncommitted process file edit naming a code file as a board location
 // never lets a main edit of that file through: the board is read as main's HEAD commits it.
 for (const [how, change] of Object.entries({
   "status.note": (p) => ({ ...p, status: { note: "src/app.js" } }),
@@ -2835,7 +2835,7 @@ for (const [how, change] of Object.entries({
       assert.match(tripped(lane(r, "report", "T1"), how), /files changed: {2}M src\/app\.js/, how);
     });
 
-// R1d-29 F2a (the verifier's R4-P8, R4-P8b): with `.agentry/` out of git, the board paths come from the
+// With `.agentry/` out of git, the board paths come from the
 // spec as `start` loaded it (`boardAtStart`).
 test("with .agentry/ untracked, a hand commit of BOARD.md and a sprint file passes the report", () => {
   const r = boardRepo({ tracked: false });
@@ -2882,7 +2882,7 @@ test("a sprint's own file made or removed by a hand commit passes: the kinds' gl
   assert.match(res.json.guards[0], /^main moved by allowed commits: 2 /);
 });
 
-// R1d-29 F2b (the verifier's R4-P10): a board path is kept when it stays inside the repository, as the
+// A board path is kept when it stays inside the repository, as the
 // spec's own check and `read.mjs` take it, though it goes up from the board root.
 test("a committed contract block ../docs/TASKS.md is a board file: a hand edit of it passes", () => {
   const spec = structuredClone(BOARD_FILES);
@@ -3161,7 +3161,7 @@ test("start refuses while a land's picks are on main: exit 2, nothing written; a
   assert.equal(lane(r, "start", "T1").exit, 0);
 });
 
-// ---- a rebased lane's guard starts at the commit it was rebased onto (R1d-23 N7) ---------------------
+// ---- a rebased lane's guard starts at the commit it was rebased onto ---------------------
 
 test("a lane rebased onto a main commit touching its file is not tripped by that commit at the rebase report", () => {
   const r = repo();
@@ -3188,7 +3188,7 @@ test("a lane rebased onto a main commit touching its file is not tripped by that
   );
 });
 
-// The rebase builder's own commit on main (wrong cwd), and its controls (R1d-23 r4 N7).
+// The rebase builder's own commit on main (wrong cwd), and its controls.
 function rebaseOntoMain(worktree) {
   const res = spawnSync("git", ["-C", worktree, "rebase", "main"], { env: gitEnv });
   if (res.status === 0) return;

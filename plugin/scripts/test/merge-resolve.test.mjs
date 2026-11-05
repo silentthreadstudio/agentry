@@ -1,4 +1,4 @@
-// Tests for `lane merge <id> --resolve landed|rolled-back` (field 82): the owner closes a land stuck in
+// Tests for `lane merge <id> --resolve landed|rolled-back`: the owner closes a land stuck in
 // `merging`. Each checks main first and refuses with what it found; neither touches main or the board, and
 // the ledger is written once, or not at all.
 // Run: node --test plugin/scripts/test/merge-resolve.test.mjs
@@ -87,7 +87,7 @@ const status = () => git(root, "status", "--porcelain", "--untracked-files=all")
 const ledgerDir = () => join(root, ".agentry", "run", "process", "ledger");
 const ledgerBytes = () => readFileSync(join(ledgerDir(), `${ID}.json`), "utf8");
 
-/** A land stuck in `merging` (field 82: picked and gated, its record stopped): `picks` of the branch's two
+/** A land stuck in `merging` (picked and gated, its record stopped): `picks` of the branch's two
  *  commits are cherry-picked onto main, and the ledger says all of them landed. */
 function stuckLand({ picks = 2 } = {}) {
   const { path } = create(root, { id: ID, base: "main" });
@@ -455,7 +455,7 @@ test("--resolve rolled-back after a revert of the picks refuses, naming --resolv
   assert.equal(ledgerBytes(), before);
 });
 
-// S32: a land killed after its board commit, before the step moved on: that commit is the ledger's.
+// A land killed after its board commit, before the step moved on: that commit is the ledger's.
 test("--resolve landed with the record's board commit already on HEAD records it as boardCommit", () => {
   stuckLand();
   const text = readFileSync(join(root, "plan", "BOARD.md"), "utf8").replace(
@@ -490,7 +490,7 @@ test("--resolve landed at recording with a commit the record does not prove keep
   assert.equal(readLedger(root, ID).merge.boardCommit, null);
 });
 
-// S33 N9 (verifier R1d-34 r7, Q2): the owner re-picked the land's commit by hand with -x on a drifted main.
+// The owner re-picked the land's commit by hand with -x on a drifted main.
 test("--resolve rolled-back refuses a pick made by hand with -x, by the planned sha its message names", () => {
   const path = laneWithF();
   const lane = editF(path, 5, "five", "feat: lane edit");
@@ -514,7 +514,7 @@ test("--resolve rolled-back refuses a pick made by hand with -x, by the planned 
   assert.equal(ledgerBytes(), before);
 });
 
-// S33 N9 (Q3, Q4): no pick found, but main changed the files the picks change: only the owner can tell.
+// No pick found, but main changed the files the picks change: only the owner can tell.
 test("--resolve rolled-back refuses when main changed a planned file with no pick found (a squash)", () => {
   const path = laneWithF();
   const first = editF(path, 5, "five", "feat: lane edit");
@@ -551,7 +551,7 @@ test("--resolve rolled-back refuses when main changed a planned file with no pic
   const [{ at, ...entry }] = ledger.resolutions;
   assert.deepEqual(entry, { as: "rolled-back", checked: true });
   assert.match(at, /^\d{4}-\d\d-\d\dT/);
-  // A later checked resolve appends; it never replaces the earlier record (R1d-39 r4 N3).
+  // A later checked resolve appends; it never replaces the earlier record.
   writeLedger(root, { ...ledger, state: "merging", merge: JSON.parse(before).merge });
   assert.equal(merge(ID, "--resolve", "rolled-back", "--checked").status, 0);
   assert.equal(readLedger(root, ID).resolutions.length, 2);
@@ -584,7 +584,7 @@ test("--resolve rolled-back never warns of changed files when main changed none 
   assert.equal(readLedger(root, ID).state, "verified");
 });
 
-// S33 N10 (Q1, Q5): with nothing recorded as landed, `--resolve landed` refuses too: name the reset instead.
+// With nothing recorded as landed, `--resolve landed` refuses too: name the reset instead.
 test("--resolve rolled-back with no landed pick names the reset to preHead, never --resolve landed", () => {
   const { preHead } = killedWhilePicking();
   const before = ledgerBytes();
@@ -600,7 +600,7 @@ test("--resolve rolled-back with no landed pick names the reset to preHead, neve
   assert.equal(ledgerBytes(), before);
 });
 
-// S33 N11 (Q6b): a bare sha in planned read as no pick, and resolved "no pick on main" with it on main.
+// A bare sha in planned read as no pick, and resolved "no pick on main" with it on main.
 test("--resolve refuses a planned or landed that is not a list, before any git call", () => {
   const { shas } = killedWhilePicking();
   const ledger = readLedger(root, ID);

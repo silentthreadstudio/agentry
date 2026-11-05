@@ -664,7 +664,7 @@ const VALUES = {
   cd: "cd '/w'",
   branch: "agentry/T1",
   base: "abc1234",
-  // a lane stacked on another (A45): off unless a test turns it on
+  // a lane stacked on another: off unless a test turns it on
   stacked: false,
   on: "",
   mainRoot: "/m",
@@ -1160,7 +1160,7 @@ test("ownsTestsWithoutFile is false when an owned path is a test file, or no tes
   assert.equal(ownsTestsWithoutFile("**Owns:** `src/a.mjs`."), false);
 });
 
-// --- the rebase brief's Reword list (field 92) -------------------------------------------------------
+// --- the rebase brief's Reword list -------------------------------------------------------
 
 const RULES = { subjectMax: 20, subjectPattern: "^(feat|fix): " };
 /** A repo with main and a lane branch `agentry/T1` holding `subjects`, one commit each, oldest first. */

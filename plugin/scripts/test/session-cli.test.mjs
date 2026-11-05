@@ -220,7 +220,7 @@ test("close gathers drafts, the fix plan, ledgers and sweep findings, and writes
   drafts.add(root, { kind: "rule", answer: "Always X" });
   const built = builtBranch(root, "T1");
   git(root, "cherry-pick", built.sha);
-  // board fix writes done only from a `lane merge` record (A23), so the fixture carries one.
+  // board fix writes done only from a `lane merge` record, so the fixture carries one.
   const landed = git(root, "rev-parse", "HEAD");
   const preHead = git(root, "rev-parse", `${landed}^`);
   const merge = { preHead, planned: [built.sha], landed: [landed] };
@@ -561,7 +561,7 @@ test("start shows three held lanes and counts the fourth", () => {
   assert.equal(JSON.parse(session(root, "start", "--json").stdout).held.length, 4);
 });
 
-// --- session checks (A42): extensions.start.checks and extensions.close.checks ----------------------------
+// --- session checks: extensions.start.checks and extensions.close.checks ----------------------------
 
 const CHECKS_FILE = ".agentry/run/process/session-checks.jsonl";
 // A repo naming `extensions` in its workflow file, holding the SKILL.md of each skill in `skills`.
@@ -819,7 +819,7 @@ test("start counts the dead writers' temp files it finds before its own reads sw
   assert.match(res.stdout, /^! stale: 0 lock slot\(s\), 2 temp file\(s\) → .*lane sweep --apply$/m);
 });
 
-// ---- the note's age and Now (#89), idle lanes asked once (#88) -----------------------------------------
+// ---- the note's age and Now, idle lanes asked once -----------------------------------------
 
 const RUN = (root, file) => join(root, ".agentry", "run", file);
 // A time `minutes` back, to the second (as an mtime and a commit date both keep it).
@@ -1115,7 +1115,7 @@ test("the quiet line's clock is the newest ask by its time; a value that is no t
   );
 });
 
-// --- owner calls (field 90): close lists the ones not written down -------------------------------------
+// --- owner calls: close lists the ones not written down -------------------------------------
 
 const call = (n, text, recorded = null) => ({ n, at: "2026-11-04T10:00:00.000Z", text, recorded });
 const spikeEntry = (root, branch, id, calls) => ({

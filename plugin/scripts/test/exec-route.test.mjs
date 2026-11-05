@@ -140,7 +140,7 @@ function build(out) {
 const judge = (out, verdict) =>
   writeFileSync(out.reportPath, `Checked.\nused_memories: none\nVerdict: ${verdict}\n`);
 
-// ---- exec.verify (#49) ------------------------------------------------------------------------------
+// ---- exec.verify ------------------------------------------------------------------------------
 
 test("exec.verify flagged: an item with no flag goes from built straight to the gate, then closes", () => {
   const r = repo({ exec: { verify: "flagged" } });
@@ -262,7 +262,7 @@ test("the workflow file refuses flagged without a flag field on the exec kind, a
   assert.match(bad.problems[0].message, /exec\.verify should be one of "all", "flagged", "none"/);
 });
 
-// ---- models (#50) -----------------------------------------------------------------------------------
+// ---- models -----------------------------------------------------------------------------------
 
 const MODELS = {
   build: "builder-m",
@@ -302,7 +302,7 @@ test("the readable view prints a model: line naming its source", () => {
   assert.equal(lane(r, "show", "T1").json.modelFrom, "models.build");
 });
 
-// ---- models by path and by contract (field 73) ---------------------------------------------------
+// ---- models by path and by contract ---------------------------------------------------
 
 const BY_PATH = {
   build: {
@@ -374,7 +374,7 @@ test("a contract's Model bullets win over the workflow file's, named as the cont
   assert.deepEqual([check.model, check.modelFrom], ["verify-m", "models.verify.default"]);
 });
 
-// ---- a verify model the route never uses (field 70) ------------------------------------------------
+// ---- a verify model the route never uses ------------------------------------------------
 
 const UNUSED =
   "! models.verify.ui is unused: exec.verify is flagged and a UI task is verified only when flagged";
@@ -399,7 +399,7 @@ test("models keys are checked at load", () => {
   assert.match(bad.problems[0].message, /models\.verify\.best is not a known key/);
 });
 
-// ---- a recorded green gate (#43) --------------------------------------------------------------------
+// ---- a recorded green gate --------------------------------------------------------------------
 
 // The verifier runs the gate itself here (gate.roles.verify "pick"; the default "none" gives it none).
 const VERIFY_GATES = { gate: { ...SPEC.gate, roles: { verify: "pick" } } };
@@ -458,7 +458,7 @@ test("exec start refuses an old gate.command or gate.quick at load, naming gate.
   assert.equal(existsSync(join(r.root, ".agentry", "run")), false);
 });
 
-// ---- presets: notes rounds, the final, the route snapshot (A47, #49) ----------------------------------
+// ---- presets: notes rounds, the final, the route snapshot ----------------------------------
 
 const ledgerBytes = (root, id) =>
   readFileSync(join(root, ".agentry", "run", "process", "ledger", `${id}.json`), "utf8");
@@ -664,7 +664,7 @@ test("show says when the route fixed at start differs from what the workflow fil
   );
 });
 
-// ---- reverify, the flag field, the idle threshold (R1c-9 N4, N5) ------------------------------------
+// ---- reverify, the flag field, the idle threshold ------------------------------------
 
 // T1 built under exec.verify none: gated and closed with no verifier.
 function gateClosed(r) {
@@ -747,7 +747,7 @@ test("the idle text names the last commit when it is the newest change, no file 
   assert.match(head("file", "a.txt"), /\(a\.txt\) → check the builder$/);
 });
 
-// ---- the land conflict, the rebase and the resolution recheck (A48) -----------------------------------
+// ---- the land conflict, the rebase and the resolution recheck -----------------------------------
 
 const ALLOW = { guard: { allow: ["notes/**"] } };
 const land = ({ root, home }) =>
@@ -991,7 +991,7 @@ test("merge on a flagged lane closed with no verifier names lane exec reverify",
   );
 });
 
-// ---- every pair the range-diff can show (A48; the failure bar's `<`, `>` and uncomputable cases) ------
+// ---- every pair the range-diff can show (the failure bar's `<`, `>` and uncomputable cases) ------
 
 const rangeDiffOf = (root, n = 1) =>
   readFileSync(
@@ -1138,7 +1138,7 @@ test("two lanes on one file: the second's land conflicts, rebases past the first
   assert.equal(readFileSync(join(r.root, "out.txt"), "utf8"), "T2 side\nT1 side\n");
 });
 
-// ---- the owner sends a verified lane back (field 77) -----------------------------------------------
+// ---- the owner sends a verified lane back -----------------------------------------------
 
 const ISO = "\\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z";
 // The owner's change made in the worktree, and the builder's report on it.

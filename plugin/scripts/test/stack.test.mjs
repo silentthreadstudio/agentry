@@ -1,4 +1,4 @@
-// Tests for stacked lanes (lib/lane/stack.mjs, A45) on scratch git repos: what `stackOf` says is due for
+// Tests for stacked lanes (lib/lane/stack.mjs) on scratch git repos: what `stackOf` says is due for
 // each state of the parent, and `lane exec restack` onto a moved parent, onto main after the parent landed
 // and off a stopped one, with a conflict, a branch rebased by hand, a dirty worktree and a hostile git
 // config. The lanes are hand-made ledgers over real branches and worktrees.
@@ -535,7 +535,7 @@ test("a hostile git config: a dirty worktree still refused, nothing squashed, no
   assert.deepEqual([tipOf(r.root, "inside"), tipOf(r.root, "agentry/T1")], [inside, t1tip]);
 });
 
-// ---- R1d-14 final N1, N2 and resolve N1, N2 ---------------------------------------------------------
+// ---- a held child and a hand commit ---------------------------------------------------------
 
 test("a stale restack plan plus a hand commit is never read as a finished restack: its old base is still there", () => {
   const r = stacked();
