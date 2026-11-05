@@ -1,9 +1,9 @@
-import { existsSync } from "node:fs";
 // exec/cut/plan — every check of `lane exec cut <id>` (field 95), read only: the lane at rest and main not
 // mid-land, the board's decision, the lifecycle's `cut` word, the branch and the name it is kept as, the
 // worktree's leftovers, and with `--keep` the kept paths, their message, the gate tier and main's row.
 // Nothing is written, so a preview is the same answer. Also the words the cut's other steps share: the
 // step that rolls a stuck cut back and a capped list.
+import { existsSync } from "node:fs";
 import { posix } from "node:path";
 import { branchTips } from "../../../process/git.mjs";
 import * as ledgers from "../../../process/ledger.mjs";
