@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.jpg" alt="Agentry" width="620">
+  <img src="assets/agentry-lockup.png" alt="Agentry: three stacked bars in orange, violet and green beside the lowercase wordmark" width="360">
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@ Plain Node, no dependencies, nothing to build.
 ## How it works
 
 <p align="center">
-  <img src="assets/harness.png" alt="The conductor routes a task to one-shot, spec-first or decompose" width="820">
+  <img src="assets/how-it-works.png" alt="The three shapes a task can take: one-shot (implement, verify), spec-first (spec, you approve, build, verify) and decompose plus verify (spec, plan, split, build, verify, assemble)" width="820">
 </p>
 
 - **The conductor.** Your main session. `/agentry:go <task>` routes the task to the least process that wins:
@@ -48,6 +48,10 @@ Plain Node, no dependencies, nothing to build.
   only on a green gate recorded on its tip, and `/agentry:merge` lands it only past that gate.
 - **Memory as `agentry mem`.** Decisions, gotchas and repo facts are kept as plain files, recalled per task,
   and distilled from each run. [More below](#memory).
+
+<p align="center">
+  <img src="assets/lanes.png" alt="Three lanes on a board: T-14 runs build, verify, gate and merged; T-16 is fixing a verifier note before a recheck; T-17 is stopped because main moved under it" width="820">
+</p>
 
 ## Install
 
@@ -122,6 +126,10 @@ repo already has, and `agentry board explain` shows every value in effect.
 ## Memory
 
 Memory is the `agentry mem` CLI over plain Markdown files. Nothing runs in the background.
+
+<p align="center">
+  <img src="assets/memory.png" alt="First run: no prior decision, so the task goes spec-first and the decision is written down. Next run: the decision is recalled and the task goes one-shot" width="640">
+</p>
 
 - **Two roots.** `.agentry/memory/` in the repo's main checkout holds what is true for this repo, reached
   from any of its worktrees. `~/.agentry/memory/` holds what is true across your work (`AGENTRY_GLOBAL_DIR`
