@@ -1,34 +1,35 @@
 ---
 // /docs/troubleshooting — common failure modes + fixes, from real gotchas: reload-gated plugin
-// changes and the Node >= 24 requirement. Gotchas use .note--warn.
+// changes, the Node >= 24 requirement and the agentry command off the PATH. Gotchas use .note--warn.
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
 ---
 
 <DocsLayout
   current="troubleshooting"
   title="Troubleshooting"
-  description="Common Agentry failure modes and their fixes — plugin changes that didn't take effect, and the Node version requirement."
+  description="Common Agentry failure modes and their fixes: plugin changes that didn't take effect, the Node version requirement, and agentry not found."
   eyebrow="Reference · Troubleshooting"
   lede="The handful of things that trip people up first — what you see, why it happens, and the fix. Most are a reload or a version away from working."
 >
   <div class="prose">
     <h2 class="prose__h">Plugin changes didn't take effect</h2>
     <p>
-      You edited an agent, command, skill, or MCP server, but the change isn't live in the session.
+      You edited or updated an agent, command or skill, but the change isn't live in the session.
       These changes are <strong>reload-gated</strong>: they only register on a reload/restart.
     </p>
     <div class="note note--warn">
       <span class="note__key">Gotcha</span>
       <span>
-        Agent / command / skill / MCP changes register only on a session restart. Restart the
+        Agent, command and skill changes register only on a session restart. Restart the
         session, then verify the change live.
       </span>
     </div>
 
     <h2 class="prose__h">Node version errors</h2>
     <p>
-      Agentry requires <strong>Node ≥ 24</strong>. The memory MCP uses <code>node:sqlite</code>, which
-      isn't available on older runtimes — so an older Node fails before anything useful happens.
+      Agentry requires <strong>Node ≥ 24</strong>. The <code>agentry mem</code> store uses
+      <code>node:sqlite</code>, which isn't available on older runtimes, so an older Node fails before
+      anything useful happens.
     </p>
     <div class="note note--warn">
       <span class="note__key">Gotcha</span>
@@ -36,5 +37,18 @@ import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
         Check with <code>node --version</code>. If it's below 24, upgrade Node before launching.
       </span>
     </div>
+
+    <h2 class="prose__h">agentry: command not found</h2>
+    <p>
+      The plugin puts <code>agentry</code> on the Bash tool's PATH while it is enabled, so a terminal
+      outside Claude Code may not have it. The slash commands fall back on their own. By hand, run
+      the script it wraps, from the installed plugin's folder, with the same arguments:
+    </p>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>{'node "${CLAUDE_PLUGIN_ROOT}/scripts/lane.mjs" exec show T-4'}</code></pre>
+    <p>
+      <code>CLAUDE_PLUGIN_ROOT</code> is that folder inside Claude Code; in another terminal, put its
+      path in. <code>board.mjs</code>, <code>lane.mjs</code> and <code>mem.mjs</code> sit side by side
+      in <code>scripts/</code>. <code>agentry --version</code> prints the build that is running.
+    </p>
   </div>
 </DocsLayout>

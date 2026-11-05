@@ -30,12 +30,12 @@ import { withBase } from "../../../lib/base.ts";
           <td>Nine roles, one job each. The builder never checks its own work; an independent verifier does.</td>
         </tr>
         <tr>
-          <th scope="row">Lanes</th>
+          <th scope="row"><a href={withBase("docs/lanes/")}>Lanes</a></th>
           <td><code>/agentry:exec</code> runs a pre-planned task in its own worktree through build, verify and your gate; <code>/agentry:merge</code> lands it.</td>
         </tr>
         <tr>
           <th scope="row"><a href={withBase("docs/memory/")}>Memory</a></th>
-          <td>A local store of decisions, gotchas and repo facts, recalled when a task needs them.</td>
+          <td>Decisions, gotchas and repo facts as plain local files, recalled when a task needs them through <code>agentry mem</code>.</td>
         </tr>
         <tr>
           <th scope="row"><a href={withBase("docs/permissions/")}>Permissions</a></th>
@@ -43,7 +43,7 @@ import { withBase } from "../../../lib/base.ts";
         </tr>
         <tr>
           <th scope="row">One CLI</th>
-          <td><code>agentry board</code>, <code>agentry lane</code> and <code>agentry draft</code>: writes preview until <code>--apply</code>, and every command takes <code>--json</code>.</td>
+          <td><code>agentry board</code>, <code>agentry lane</code>, <code>agentry mem</code> and <code>agentry draft</code>: board writes preview until <code>--apply</code>, and every command takes <code>--json</code>.</td>
         </tr>
       </tbody>
     </table>

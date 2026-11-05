@@ -1,31 +1,104 @@
 ---
-// /docs/memory — Memory, the moat. Composed through DocsLayout: header from props, body = prose.
+// /docs/memory — the memory store as it ships: the `agentry mem` CLI over plain Markdown files,
+// two roots, a derived in-memory index, ranked recall, and the lane close that writes episodes.
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
 ---
 
 <DocsLayout
   current="memory"
   title="Memory — the moat"
-  description="Memory is Agentry's durable fact and episode store, a local MCP server over node:sqlite. Each run starts warmer than the last."
+  description="Agentry's memory is the agentry mem CLI over plain Markdown files: decisions, gotchas and repo facts, recalled per task and distilled from each run."
   eyebrow="Capabilities · Memory"
-  lede="Memory is the durable store that lets a run remember. It graduates a run's lessons into recallable facts, so the next task starts warmer than the last — the compounding advantage Agentry is built around."
+  lede="Memory is what lets the next run start where this one ended. Decisions, gotchas and repo facts are kept as plain files with where they came from, recalled when a task needs them, and distilled from each run."
 >
   <div class="prose">
+    <h2 class="prose__h">Plain files, one CLI</h2>
     <p>
-      Memory is a <strong>durable fact/episode store</strong>: it keeps both the semantic facts a
-      project accumulates (conventions, gotchas, decisions) and the episodes a run produces, with the
-      provenance that earned them. It is exposed as a <strong>local stdio MCP over
-      <code>node:sqlite</code></strong> — no network service, no external database; it runs on your
-      machine and stores on your disk.
+      Memory is the <code>agentry mem</code> command over Markdown files. Nothing runs in the
+      background and nothing listens on a port: each call reads the files, answers and exits. The
+      agents run it in Bash, and so can you.
     </p>
+    <ul class="facts">
+      <li><strong>The project root</strong>, <code>.agentry/memory/</code> in the repo's main checkout, holds what is true for this repository. A call from any of its worktrees reaches the same store.</li>
+      <li><strong>The global root</strong>, <code>~/.agentry/memory/</code>, holds what is true across your work. <code>AGENTRY_GLOBAL_DIR</code> moves it.</li>
+      <li><strong>The files are the truth.</strong> The search index is built with Node's <code>node:sqlite</code> in memory on each call and never written to disk. There is no database file.</li>
+    </ul>
+
+    <h2 class="prose__h">The commands</h2>
+    <table class="layers" aria-label="agentry mem subcommands">
+      <thead>
+        <tr>
+          <th scope="col">Command</th>
+          <th scope="col">What it does</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row"><code>recall</code></th>
+          <td>The few ranked memories for a task (five by default); <code>--mode prime</code> is the session's warm set.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>write</code></th>
+          <td>Captures a gotcha, decision, preference or repo fact. A near-duplicate reinforces the fact already stored instead of copying it.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>search</code></th>
+          <td>Full-text search over the active facts, with snippets.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>feedback</code></th>
+          <td>Records which recalled memories a run used and whether it passed.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>episode</code></th>
+          <td>Records a run: what was done, how it ended and what to remember.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>distill</code> · <code>consolidate</code></th>
+          <td>List undistilled episodes with draft facts; propose skills from facts that recur. Nothing is installed.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>update</code> · <code>forget</code> · <code>recover</code></th>
+          <td>Patch a fact in place, remove one, or bring an archived one back.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>stats</code> · <code>resync</code></th>
+          <td>Counts across the store and any file that could not be read; rebuild the index from the files.</td>
+        </tr>
+      </tbody>
+    </table>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>agentry mem recall --query "bundling node:sqlite" --limit 3
+<span class="flag__sigil" aria-hidden="true">$ </span>agentry mem write --type gotcha --scope repo --text "esbuild must mark node:sqlite external"</code></pre>
     <p>
-      Recall is rooted in two scopes. A <strong>project root</strong> holds what is true for
-      <em>this</em> repository; a <strong>global root</strong> holds what is true across all your work.
-      A task pulls from both, so a lesson learned once is available everywhere it applies.
+      Every subcommand takes <code>--json</code>, and <code>agentry mem &lt;subcommand&gt; --help</code>
+      prints its flags, exit codes and an example.
     </p>
+
+    <h2 class="prose__h">How recall ranks</h2>
     <p>
-      This is <strong>the moat</strong>. Capability you can buy; a store of what <em>your</em> work has
-      already taught the system, you can only accumulate — and it compounds with every run.
+      Recall scores each fact by <strong>relevance × confidence × usefulness</strong>. Relevance comes
+      from the text index, confidence from how true the fact is held to be, usefulness from how often
+      it helped. A run's feedback moves them: memories a passing run used gain usefulness, ones
+      recalled and never used decay, and a fact that keeps missing is archived until
+      <code>recover</code> brings it back.
     </p>
+
+    <h2 class="prose__h">Runs become facts</h2>
+    <p>
+      A <a href={withBase("docs/lanes/")}>lane</a> closes by writing its episode to the project store
+      in one call, with the run's lesson and the memories it used.
+      <code>/agentry:reflect</code> distills episodes into facts with their provenance, and
+      <code>/agentry:remember</code> captures one now. The next task that meets the same decision
+      recalls it instead of deriving it again.
+    </p>
+
+    <div class="note">
+      <span class="note__key">Upgrading</span>
+      <span>
+        Earlier versions ran memory as an MCP server. It is gone, and the plugin starts no server.
+        Existing stores read unchanged: the same files, roots and environment variables.
+      </span>
+    </div>
   </div>
 </DocsLayout>

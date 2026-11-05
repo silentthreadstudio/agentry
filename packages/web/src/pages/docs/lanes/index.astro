@@ -1,0 +1,104 @@
+---
+// /docs/lanes — a board task as a lane: worktree, builder, independent verifier, the repo's gate,
+// then the land. Facts from the exec and merge commands and `agentry lane --help`.
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+---
+
+<DocsLayout
+  current="lanes"
+  title="Lanes — build, gate, land"
+  description="How Agentry runs a board task as a lane: its own worktree, a builder, an independent verifier, your repo's gate, then /agentry:merge lands it."
+  eyebrow="Capabilities · Lanes"
+  lede="A lane is one task built the same way every time: its own branch and worktree, a builder, a verifier that did not write the code, and your repo's own checks. Landing is a separate step."
+>
+  <div class="prose">
+    <h2 class="prose__h">Build a task in its lane</h2>
+    <p>
+      A lane starts from a task on your board whose contract is written: the files it owns, what it
+      exposes and its acceptance. <code>/agentry:init</code> learns where your board keeps them.
+    </p>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/agentry:exec T-4</code></pre>
+    <ol class="steps">
+      <li>
+        <strong>The worktree.</strong> <code>agentry lane exec start</code> finds the contract, cuts
+        the branch <code>agentry/T-4</code> in its own worktree under <code>.agentry/run/worktrees/</code>,
+        and writes the task's board cells. The builder never works in your main checkout.
+      </li>
+      <li>
+        <strong>The builder.</strong> Works only inside the contract and reports one of
+        <code>DONE</code>, <code>DONE_WITH_CONCERNS</code>, <code>NEEDS_CONTEXT</code> or
+        <code>BLOCKED</code>. A file it needs and does not own is a question for you, not a quiet edit.
+      </li>
+      <li>
+        <strong>The verifier.</strong> A fresh agent checks the work against the acceptance and returns
+        <code>PASS</code>, <code>PASS WITH NOTES</code> or <code>FAIL</code>. It never fixes what it
+        finds; notes go back to the builder for a round.
+      </li>
+      <li>
+        <strong>The gate.</strong> Your repo's own checks, named in <code>.agentry/workflow.json</code>.
+        <code>agentry lane exec gate T-4</code> runs them in the worktree and records the result on the
+        branch tip. The lane closes on a green gate and writes its episode to
+        <a href={withBase("docs/memory/")}>memory</a>.
+      </li>
+    </ol>
+    <p>
+      <code>exec.preset</code> sets how much checking a lane gets: <code>standard</code> by default,
+      <code>lean</code> to verify flagged items only, <code>strict</code> for more notes rounds and a
+      final verifier every time. A lane never merges and never pushes.
+    </p>
+
+    <h2 class="prose__h">Land it</h2>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/agentry:merge T-4</code></pre>
+    <p>
+      The land runs <code>agentry lane merge</code> one mode at a time, each printing a step table and
+      the next step: the preflight, your repo's merge checks, the cherry-pick onto main, the gate (or
+      the recorded gate it may trust), then the board's done row, commit and handoff line in one board
+      commit. It stops at the first red step. Exit <code>0</code> is done, <code>1</code> a red step,
+      <code>2</code> a refusal.
+    </p>
+    <p>
+      Pushing follows <code>merge.push</code>: <code>ask</code> by default, so main is pushed only on
+      your yes. <code>--cleanup</code> then removes the worktree and the branch.
+    </p>
+
+    <h2 class="prose__h">Work that already reached main</h2>
+    <p>
+      Sometimes a verified lane's commits get to main another way: a fast-forward of a combined branch,
+      or a squash. The preflight then finds nothing to land. Close the lane with:
+    </p>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>agentry lane merge T-4 --resolve landed</code></pre>
+    <ul class="facts">
+      <li><strong>It checks by patch.</strong> <code>git cherry</code> runs over the lane's own commits. When every one is on main, the lane is recorded as merged: nothing picked, no commit made.</li>
+      <li><strong>It refuses what it cannot find.</strong> A commit with no matching patch on main is named by its short SHA and subject. Add <code>--checked</code> only once you have checked it landed squashed or reworded; that answer is kept with the lane.</li>
+      <li><strong>The board stays yours.</strong> The done row and handoff line are left for you to write. A lane stacked on this one counts it as landed, and <code>--cleanup</code> follows as after any land.</li>
+    </ul>
+    <div class="note note--warn">
+      <span class="note__key">Gotcha</span>
+      <span>
+        "Found on main" is by patch, not by tree: a commit that landed and was reverted still counts.
+        git's patch id ignores whitespace, so check whitespace-significant files (Python, YAML,
+        Makefiles) by hand before closing.
+      </span>
+    </div>
+
+    <h2 class="prose__h">A land that stopped halfway</h2>
+    <p>
+      A land left in <code>merging</code> that cannot go on is closed on your call, after checking main:
+      <code>--resolve landed</code> when every pick is on main, <code>--resolve rolled-back</code> when
+      none is (the lane is verified again). Both refuse while git is mid-pick and touch neither main nor
+      the board.
+    </p>
+
+    <h2 class="prose__h">Lost track</h2>
+    <p>
+      <code>agentry lane exec show T-4</code> prints where one lane stands and its next step.
+      <code>/agentry:start</code> shows every lane in flight. <code>agentry lane --help</code> lists the
+      rest: <code>note</code>, <code>session</code>, <code>spike</code> and <code>sweep</code>.
+    </p>
+
+    <p class="prose__cta">
+      Next: <a href={withBase("docs/memory/")}>Memory</a>, where a lane's episode goes.
+    </p>
+  </div>
+</DocsLayout>

@@ -1,6 +1,6 @@
 ---
-// /docs/security — the posture, from repo facts. Local-first: memory is a local stdio MCP over
-// node:sqlite, the board and Agentry's own state are plain files in your repo, and outward or
+// /docs/security — the posture, from repo facts. Local-first: memory is plain Markdown files read
+// by the agentry mem CLI, the board and Agentry's own state are plain files in your repo, and outward or
 // irreversible actions go through permission prompts. The plugin sends nothing anywhere; this
 // website uses Vercel Analytics, Speed Insights and Google Fonts, and says so. MIT, pre-1.0.
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
@@ -21,7 +21,7 @@ import { withBase } from "../../../lib/base.ts";
       sign in to and no backend that sees your work:
     </p>
     <ul class="facts">
-      <li><strong>Memory</strong> is a local stdio MCP backed by <code>node:sqlite</code> — a file on disk. There is <strong>no network service and no external database</strong>; the memory server talks to Claude Code over stdio, not over a socket.</li>
+      <li><strong>Memory</strong> is plain Markdown files on your disk, read and written by the <code>agentry mem</code> command. There is <strong>no server, no network service and no external database</strong>: the search index lives in memory for one call and is never written out.</li>
       <li><strong>Your board</strong> stays plain markdown in your repo, and Agentry's own process file and lane state live under <code>.agentry/</code> beside it.</li>
       <li><strong>The plugin sends nothing anywhere.</strong> It has no telemetry and no analytics.</li>
     </ul>

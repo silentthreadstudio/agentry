@@ -1,6 +1,7 @@
 ---
-// /docs/changelog — hand-authored (NOT auto-generated). Two releases: v0.2 (current) and the
-// v0.1 → v0.1.2 line. Truthful to what ships — no invented features.
+// /docs/changelog — hand-authored (NOT auto-generated; CHANGELOG.md in the repo is the full record).
+// The 0.3 line in development, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
+// invented features.
 //
 // Base-path rule (#1 404 trap): every internal href goes through withBase().
 import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
@@ -10,12 +11,39 @@ import { withBase } from "../../../lib/base.ts";
 <DocsLayout
   current="changelog"
   title="Changelog"
-  description="What shipped in Agentry, by release — v0.2 (the docs site and the self-eval harness) back to the initial v0.1 line."
+  description="What changed in Agentry, by release: the 0.3 line in development (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
   eyebrow="Reference · Changelog"
-  lede="A hand-authored record of what shipped, newest first. It tracks releases, not commits — so it leans toward what changed for you, not every internal step."
+  lede="A hand-authored record of what changed, newest first. It tracks releases, not commits, so it leans toward what changed for you. The repo's CHANGELOG.md has every entry."
 >
   <div class="prose">
-    <h2 class="prose__h">v0.2 — current</h2>
+    <h2 class="prose__h">0.3 — in development</h2>
+    <p>
+      Not tagged yet. Installing from the marketplace gives you <code>main</code>, currently
+      <code>0.3.0-dev.12</code>; <code>agentry --version</code> prints the build you are running.
+    </p>
+
+    <h3 class="prose__h prose__h--sub">Added</h3>
+    <ul class="facts">
+      <li><strong>Your board, as <a href={withBase("docs/lanes/")}>lanes</a></strong> — <code>/agentry:exec</code> builds a contracted task in its own worktree with a builder, an independent verifier and your repo's gate; <code>/agentry:merge</code> lands it.</li>
+      <li><strong>Setup and sessions</strong> — <code>/agentry:init</code> learns your board or scaffolds one; <code>/agentry:new</code>, <code>/agentry:board</code>, <code>/agentry:start</code>, <code>/agentry:close</code> and <code>/agentry:ask</code>.</li>
+      <li><strong>The <code>agentry</code> CLI</strong> — <code>board</code>, <code>lane</code>, <code>mem</code>, <code>draft</code>, <code>run</code> and <code>lock</code>, on the Bash tool's PATH while the plugin is enabled.</li>
+      <li><strong>Work already on main</strong> — <code>agentry lane merge &lt;id&gt; --resolve landed</code> closes a verified lane whose commits reached main another way, found by patch.</li>
+      <li><strong>Time limits and locks</strong> — <code>agentry run --limit &lt;dur&gt;</code> stops a command's whole process group at the limit; named locks share a slot across worktrees.</li>
+      <li><strong>Workflow presets</strong> — <code>exec.preset</code> (<code>lean</code>, <code>standard</code>, <code>strict</code>) sets how much checking a lane gets.</li>
+    </ul>
+
+    <h3 class="prose__h prose__h--sub">Changed</h3>
+    <ul class="facts">
+      <li><strong><a href={withBase("docs/memory/")}>Memory</a> is the <code>agentry mem</code> CLI</strong> — the memory MCP server is gone and the plugin starts no server. Existing stores read unchanged. A lane's close writes its episode in one call.</li>
+    </ul>
+
+    <h3 class="prose__h prose__h--sub">Removed</h3>
+    <ul class="facts">
+      <li><strong>All plugin hooks</strong>, the primer among them. Their work moved into the commands.</li>
+      <li><strong>The run-state server</strong> from v0.2. <code>/agentry:go</code> and its steps write the spec, plan and task files as plain files under <code>.agentry/work/</code>.</li>
+    </ul>
+
+    <h2 class="prose__h">v0.2</h2>
     <p>
       The release that adds a multi-page docs site and a self-eval harness to the
       conductor-plus-memory core.
@@ -37,7 +65,7 @@ import { withBase } from "../../../lib/base.ts";
     <ul class="facts">
       <li><strong>The right-sized conductor</strong> — routes a task to the least process that wins (one-shot → spec-first → decompose + verify).</li>
       <li><strong>The SDLC specialist roster</strong> — the explorer, architect, implementer, verifier, librarian, and the rest of the specialist agents.</li>
-      <li><strong>The memory MCP</strong> — durable facts and episodes the conductor can recall, so run #2 is warmer than run #1.</li>
+      <li><strong>The memory MCP</strong> — durable facts and episodes the conductor can recall, so run #2 is warmer than run #1. Replaced by <code>agentry mem</code> in 0.3.</li>
       <li><strong>The primer</strong> — a minimal session nudge that points the conductor at the repo's conventions and memory.</li>
     </ul>
   </div>
