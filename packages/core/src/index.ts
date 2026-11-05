@@ -2,7 +2,7 @@
 // reads or writes. Split by concern (SRP); this file is a pure re-export barrel.
 //
 // Consumers: the eval harness (the benchmark).
-// Keep in lockstep with the design docs (.docs/internal).
+// Keep in step with the memory and lane modules that read these shapes.
 
 export * from "./enums.js";
 export * from "./errors.js";
