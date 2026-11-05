@@ -555,12 +555,15 @@ test("a case twin of the kept name (a packed agentry/T1.CUT) refuses, nothing wr
   assert.deepEqual(snapshot(r), before);
 });
 
+// A repo whose gate runs `script` on main mid-land: after the plan's checks, before the branch is kept.
+const gateRuns = (script) =>
+  repo({ spec: { ...SPEC, gate: { tiers: [{ name: "full", command: ["sh", "-c", script] }] } } });
+const agentryRefs = (r) =>
+  git(r.root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/agentry/");
+
 test("a case twin of the kept name made during the land stops the branch rename, the lane branch kept", () => {
   // The gate packs a ref agentry/T1.CUT after the plan's check: the rename looks again right before it.
-  const twin = "git update-ref refs/heads/agentry/T1.CUT HEAD && git pack-refs --all";
-  const r = repo({
-    spec: { ...SPEC, gate: { tiers: [{ name: "full", command: ["sh", "-c", twin] }] } },
-  });
+  const r = gateRuns("git update-ref refs/heads/agentry/T1.CUT HEAD && git pack-refs --all");
   const { tip } = parked(r);
   const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
   assert.equal(res.exit, 1, res.out);
@@ -570,6 +573,34 @@ test("a case twin of the kept name made during the land stops the branch rename,
   );
   assert.equal(git(r.root, "rev-parse", "refs/heads/agentry/T1"), tip);
   assert.ok(!git(r.root, "for-each-ref", "--format=%(refname)").includes("agentry/T1.cut"));
+});
+
+test("a case twin of the lane branch made during the land stops the rename: neither branch is deleted", () => {
+  // A packed agentry/t1 at the same commit would pass the delete's old-value check and go with it.
+  const r = gateRuns(
+    "git pack-refs --all && git update-ref refs/heads/agentry/t1 refs/heads/agentry/T1 && git pack-refs --all",
+  );
+  const { tip } = parked(r);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(res.exit, 1, res.out);
+  assert.match(
+    res.out,
+    /branch was not kept as agentry\/T1\.cut: agentry\/T1 has a case twin agentry\/t1/,
+  );
+  const refs = agentryRefs(r);
+  assert.ok(refs.includes(`refs/heads/agentry/T1 ${tip}`), refs);
+  assert.ok(refs.includes(`refs/heads/agentry/t1 ${tip}`), refs);
+});
+
+test("the lane branch moved during the land stops the rename: the moved branch is kept", () => {
+  const r = gateRuns("git update-ref refs/heads/agentry/T1 HEAD");
+  const { tip } = parked(r);
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
+  assert.equal(res.exit, 1, res.out);
+  assert.match(res.out, new RegExp(`agentry/T1 moved off ${tip} meanwhile`));
+  const refs = agentryRefs(r);
+  assert.notEqual(git(r.root, "rev-parse", "refs/heads/agentry/T1"), tip, "the moved branch went");
+  assert.ok(refs.includes(`refs/heads/agentry/T1.cut ${tip}`), refs);
 });
 
 test("the lane's owner calls survive the cut and stay open in session close until recorded", () => {
@@ -795,6 +826,37 @@ const laneState = (r) => {
     branch: git(r.root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/agentry/"),
   };
 };
+
+// A cut keeps its stuck state in the land's `merging` record (`merge.cut`): `lane merge` must refuse it in
+// every mode (and with `--json`, or a `--branch` that would adopt the lane), naming the cut as the way out,
+// with main and the ledger as they were.
+const STOPPED_CUT = /T1 is a stopped cut: exec cut T1 --decision <D> --apply rolls it back/;
+const MERGE_MODES = [
+  ["--preflight"],
+  ["--message", "chore(board): land T1"],
+  ["--resolve", "landed"],
+  ["--resolve", "rolled-back"],
+  ["--check", "owner-ok=pass"],
+  ["--push", "--approved"],
+  ["--cleanup"],
+  ["--preflight", "--json"],
+  ["--preflight", "--branch", "agentry/T1"],
+  ["--message", "chore(board): land T1", "--json"],
+  ["--message", "chore(board): land T1", "--branch", "agentry/T1", "--drop-carry"],
+];
+function mergeRefusesCut(r, label) {
+  const before = snapshot(r);
+  for (const args of MERGE_MODES) {
+    const res = run(r, LANE, ["merge", "T1", ...args]);
+    const call = `${label}, merge ${args.join(" ")}`;
+    assert.equal(res.exit, 2, `${call}: ${res.out}`);
+    assert.match(res.out, STOPPED_CUT, call);
+    assert.deepEqual(snapshot(r), before, `${call} changed something`);
+  }
+}
+// A gate checklist item, so `--check` reaches the ledger.
+const CHECKLIST = [{ name: "owner-ok", text: "the owner looked" }];
+
 // T1 parked and T3 building beside it (its dispatched write carried by T1's cut).
 function setup({ gate, checklist } = {}) {
   const tiers = gate ? [{ name: "full", command: gate }] : SPEC.gate.tiers;
@@ -844,10 +906,13 @@ const KILL_POINTS = [
   ],
 ];
 for (const [label, kill] of KILL_POINTS)
-  test(`a cut killed at ${label}: the rerun rolls back or cuts, then a cut finishes`, () => {
-    const { r, before, worktree } = setup();
+  test(`a cut killed at ${label}: lane merge refuses it, the rerun rolls back or cuts, then a cut finishes`, () => {
+    const { r, before, worktree } = setup({ checklist: CHECKLIST });
     assert.equal(cutT1(r, kill).signal, "SIGKILL", label);
+    const stuck = ledgerOf(r.root, "T1").merge?.cut;
+    if (stuck) mergeRefusesCut(r, label);
     const { again, kind } = rerunMeetsBar(r, before, worktree, label);
+    if (stuck) assert.equal(kind, "rolled-back", `${label}: ${again.out}`);
     if (kind === "rolled-back") finishes(r, label);
     else {
       assert.equal(again.exit, 0, `${label}: neither rolled back nor cut: ${again.out}`);
@@ -856,7 +921,31 @@ for (const [label, kill] of KILL_POINTS)
     }
   });
 
-test("a cut killed mid-gate, its gate running on: the rerun stops the gate and rolls back", () => {
+// A cut with no kept files: no pick and no gate, so a stuck one sits at `gated` with no `merge.gate`.
+const NO_KEEP = CUT_ARGS.filter((a) => a !== "--keep" && a !== "art/raw");
+for (const [label, kill] of [
+  ["N-K1 mid set-aside of the carry", KILL_POINTS[0][1]],
+  ["N-K5a board written, before git add", "before|add -- plan/BOARD.md|1"],
+  ["N-K5b board staged, before the board commit", "before|commit --quiet -m chore\\(board\\)|1"],
+])
+  test(`a cut with no kept files killed at ${label}: lane merge refuses it, the rerun rolls back`, () => {
+    const { r, before, worktree } = setup({ checklist: CHECKLIST });
+    assert.equal(runKilled(r, NO_KEEP, kill).signal, "SIGKILL", label);
+    const l = ledgerOf(r.root, "T1");
+    if (!l.merge?.cut) {
+      // Killed before the cut marked the ledger: nothing is stuck, and the rerun cuts.
+      assert.equal(runKilled(r, NO_KEEP, null).exit, 0, label);
+      return;
+    }
+    assert.deepEqual([l.merge.step, l.merge.gate], ["gated", undefined], label);
+    mergeRefusesCut(r, label);
+    const again = runKilled(r, NO_KEEP, null);
+    assert.match(again.out, /rolled back the stuck cut/, `${label}: ${again.out}`);
+    assert.deepEqual(laneState(r), before, label);
+    assert.ok(existsSync(join(worktree, "scratch.txt")), label);
+  });
+
+test("a cut killed mid-gate, its gate running on: lane merge refuses it, the rerun stops the gate and rolls back", () => {
   const killer = join(temp("cut-gate-killer-"), "gate-killer.sh");
   writeFileSync(
     killer,
@@ -869,9 +958,10 @@ touch "$HOME/gate-finished"
 exit 0
 `,
   );
-  const { r, before, worktree } = setup({ gate: ["sh", killer] });
+  const { r, before, worktree } = setup({ gate: ["sh", killer], checklist: CHECKLIST });
   assert.equal(cutT1(r).signal, "SIGKILL");
   assert.equal(ledgerOf(r.root, "T1").merge?.step, "gating");
+  mergeRefusesCut(r, "mid-gate");
   const { again, kind } = rerunMeetsBar(r, before, worktree, "mid-gate");
   assert.equal(kind, "rolled-back", again.out);
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 7000);
@@ -991,7 +1081,7 @@ test("a rollback killed after its reset is finished by the next rerun", () => {
 });
 
 test("a rollback killed before its reset (board files back to HEAD) is finished by the next rerun", () => {
-  const { r, before, worktree } = setup({ checklist: CHECKLIST });
+  const { r, before, worktree } = setup();
   assert.equal(cutT1(r, "before|add -- plan/BOARD.md|1").signal, "SIGKILL");
   assert.equal(cutT1(r, "before|reset --keep|1").signal, "SIGKILL");
   const { again, kind } = rerunMeetsBar(r, before, worktree, "R2");
@@ -1044,31 +1134,7 @@ test("a red gate whose rollback refuses names the cut as the way out, never lane
   assert.equal(kind, "rolled-back", third.out);
 });
 
-// ---- lane merge never lands a stopped cut ------------------------------------------------------------
-//
-// A cut keeps its stuck state in the land's `merging` record (`merge.cut`): `lane merge` must refuse it in
-// every mode, naming the cut as the way out, with main and the ledger as they were.
-const STOPPED_CUT = /T1 is a stopped cut: exec cut T1 --decision <D> --apply rolls it back/;
-const MERGE_MODES = [
-  ["--preflight"],
-  ["--message", "chore(board): land T1"],
-  ["--resolve", "landed"],
-  ["--resolve", "rolled-back"],
-  ["--check", "owner-ok=pass"],
-  ["--push", "--approved"],
-  ["--cleanup"],
-];
-function mergeRefusesCut(r, label) {
-  const before = snapshot(r);
-  for (const args of MERGE_MODES) {
-    const res = run(r, LANE, ["merge", "T1", ...args]);
-    assert.equal(res.exit, 2, `${label}, merge ${args[0]}: ${res.out}`);
-    assert.match(res.out, STOPPED_CUT, `${label}, merge ${args[0]}`);
-    assert.deepEqual(snapshot(r), before, `${label}, merge ${args[0]} changed something`);
-  }
-}
-// A gate checklist item, so `--check` reaches the ledger.
-const CHECKLIST = [{ name: "owner-ok", text: "the owner looked" }];
+// ---- lane merge never lands a stopped cut: the states no kill point reaches --------------------------
 
 test("a stopped cut whose gate rolled back but whose writes did not go back is never landed", () => {
   // The kept commit picked and rolled back off main, the give-back of the set-aside writes red: the
@@ -1084,25 +1150,6 @@ test("a stopped cut whose gate rolled back but whose writes did not go back is n
   assert.ok(ledgerOf(r.root, "T1").merge.carry, "the set-aside writes are still held");
   mergeRefusesCut(r, "rolled back");
   assert.equal(git(r.root, "rev-parse", "agentry/T1"), tip);
-});
-
-test("a --keep cut killed after its gate is refused by lane merge; exec cut rolls it back", () => {
-  const { r, before, worktree } = setup({ checklist: CHECKLIST });
-  assert.equal(cutT1(r, "before|add -- plan/BOARD.md|1").signal, "SIGKILL");
-  const l = ledgerOf(r.root, "T1");
-  assert.deepEqual([l.state, l.merge.step, l.merge.landed.length], ["merging", "gated", 1]);
-  mergeRefusesCut(r, "killed after its gate");
-  const { again, kind } = rerunMeetsBar(r, before, worktree, "after the merge refusals");
-  assert.equal(kind, "rolled-back", again.out);
-});
-
-test("a cut with no kept files killed after its gate is refused by lane merge, no TypeError", () => {
-  const { r } = setup({ checklist: CHECKLIST });
-  const args = CUT_ARGS.filter((a) => a !== "--keep" && a !== "art/raw");
-  assert.equal(runKilled(r, args, "before|add -- plan/BOARD.md|1").signal, "SIGKILL");
-  const l = ledgerOf(r.root, "T1");
-  assert.deepEqual([l.merge.cut, l.merge.step, l.merge.gate], [true, "gated", undefined]);
-  mergeRefusesCut(r, "no kept files");
 });
 
 test("lane merge --resolve landed never closes a stopped cut as merged, nor any other mode", () => {
