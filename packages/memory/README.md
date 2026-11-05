@@ -34,9 +34,10 @@ fields and a body for its prose (a fact's text, an episode's task):
 - **Supersede, don't mutate.** A replacing fact marks the old one `superseded`; recall never returns
   it. Facts that keep being recalled without being used self-archive, and `memory_recover` brings
   one back.
-- **Unreadable files** (no frontmatter header, bad YAML, a schema mismatch, a merge-conflict marker)
-  are left out of the store and reported in `memory_stats` as `readErrors`. One bad file never breaks
-  the load.
+- **Unreadable files** (no frontmatter header, bad YAML or a schema mismatch) are left out of the
+  store and reported in `memory_stats` as `readErrors`. One bad file never breaks the load. That
+  covers a merge conflict that breaks the header or YAML; there is no conflict detection as such, so a
+  conflict confined to the body loads as text.
 
 **The text index is derived and in memory.** `node:sqlite` holds an FTS5 table in `:memory:`, or a
 token-scan table on a runtime whose SQLite lacks FTS5. No database file exists. The index is built

@@ -91,3 +91,31 @@ test("a file with no frontmatter header is reported as a read error, not skipped
   ]);
   for (const e of errors) assert.match(e.reason, /no frontmatter header/);
 });
+
+test("a merge conflict is reported only when it breaks the header or YAML; in the body it is text", () => {
+  const dir = fresh();
+  const store = new MarkdownFileStore({ global: dir, project: null });
+  mkdirSync(join(dir, "facts"), { recursive: true });
+  const front = (id: string) =>
+    `---\nid: ${id}\ntype: gotcha\nscope: global\nconfidence: 0.7\nusefulness: 0\ndecay: 0\nstatus: active\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n`;
+  writeFileSync(
+    join(dir, "facts", "in-body.md"),
+    `${front("g:01BODY")}---\n\n<<<<<<< HEAD\none\n=======\ntwo\n>>>>>>> other\n`,
+  );
+  writeFileSync(
+    join(dir, "facts", "in-yaml.md"),
+    `${front("g:01YAML")}<<<<<<< HEAD\ndecay: 1\n=======\ndecay: 2\n>>>>>>> other\n---\n\nbody\n`,
+  );
+
+  const { records, errors } = store.readFacts();
+
+  assert.deepEqual(
+    records.map((r) => r.fact.id),
+    ["g:01BODY"],
+  );
+  assert.match(records[0]?.fact.text ?? "", /^<<<<<<< HEAD/);
+  assert.deepEqual(
+    errors.map((e) => e.file),
+    ["in-yaml.md"],
+  );
+});

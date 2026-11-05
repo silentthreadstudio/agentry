@@ -1,10 +1,11 @@
 // File store — the SOURCE OF TRUTH. One **Markdown** file per record under each root's memory dir:
 //   <root>/facts/<slug>-<ulid>.md      <root>/episodes/<slug>-<ulid>.md
 // YAML frontmatter holds the fields; the body holds the prose (a fact's text / an episode's task) —
-// human-readable and git-diffable. Origin is derived from which root a file lives in. A corrupt or
-// conflict-marked file is reported as a read error (and logged), never fatal: a bad merge can't break
-// the rebuild. A write goes to a temp file renamed into place, so a reader sees the old record or the
-// new one, never neither and never a part.
+// human-readable and git-diffable. Origin is derived from which root a file lives in. A file with no
+// frontmatter header, bad YAML or a schema mismatch is reported as a read error (and logged), never
+// fatal: a merge conflict that breaks the header or YAML can't break the rebuild. There is no conflict
+// detection as such: a conflict confined to the body loads as text. A write goes to a temp file
+// renamed into place, so a reader sees the old record or the new one, never neither and never a part.
 import {
   existsSync,
   mkdirSync,
