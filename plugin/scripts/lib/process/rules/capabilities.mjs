@@ -6,13 +6,12 @@
 // value may be garbage), `name` the kind tested, `of` the rule's own kind (for a kind named beside it,
 // such as members-listed's `member`). Each mirrors what `read.mjs` derives: phases from `status`, the
 // tree from `role` fields of the type it links by, ranks from the kinds a parent field refs. PURE.
+import { CLOSED, STARTED } from "../phases.mjs";
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const kindOf = (kinds, name) => (Object.hasOwn(kinds, name) ? kinds[name] : undefined);
 const fieldsOf = (kind) => (isObject(kind?.fields) ? Object.values(kind.fields) : []);
 const refsOf = (field) => [field?.ref ?? []].flat().filter((k) => typeof k === "string");
-const STARTED = ["active", "done"];
-const CLOSED = ["done", "dropped", "parked"];
 
 /** The type `read.mjs` links each role by: a parent is one id (a string), children a list. A role
  *  field of another type, or one that refs no kind, links nothing. */
@@ -40,7 +39,7 @@ export function phasesOf(kinds, name, seen = new Set()) {
   seen.add(name);
   const child = childKinds(kinds, name).flatMap((k) => phasesOf(kinds, k, seen));
   if (child.length === 0) return [];
-  const can = (phases) => child.some((p) => phases.includes(p));
+  const can = (phases) => child.some((p) => phases.has(p));
   return ["planned", ...(can(STARTED) ? ["active"] : []), ...(can(CLOSED) ? ["done"] : [])];
 }
 const canBe =

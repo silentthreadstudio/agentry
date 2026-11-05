@@ -1,8 +1,7 @@
 // Flow rules: what may start, in which order, and what waits on parked work. Pure.
+import { CLOSED, STARTED } from "../phases.mjs";
 import {
-  CLOSED,
   EXCEPT,
-  STARTED,
   contractHome,
   finding,
   idsIn,

@@ -2,9 +2,6 @@
 // Pure: reads the Model only. See the pinned Rule/Finding/Model seams in the process-kit design.
 // Each rule declares its `params` (see `index.mjs`); the process file is checked against them.
 
-export const STARTED = new Set(["active", "done"]);
-export const CLOSED = new Set(["done", "dropped", "parked"]);
-
 // The params most rules share: the kind they check (required, with what the rule `needs` of it:
 // `capabilities.mjs`) and the items they skip.
 export const kindParam = (...needs) => ({ type: "kind", required: true, needs });

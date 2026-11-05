@@ -6,11 +6,10 @@
 import { globSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import * as md from "./markdown.mjs";
+import { CLOSED, STARTED } from "./phases.mjs";
 import { parseSpec } from "./spec.mjs";
 import { escapesRoot, own } from "./spec/shape.mjs";
 
-const STARTED = new Set(["active", "done"]);
-const CLOSED = new Set(["done", "dropped", "parked"]);
 const noColumn = (file, head, col) => `${file}: the "${head}" table has no column "${col}"`;
 
 /** True when `path` (absolute) stays inside the repository at `root` once every symlink is

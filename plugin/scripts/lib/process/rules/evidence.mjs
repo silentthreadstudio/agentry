@@ -2,8 +2,8 @@
 // reached only through ctx.hasCommit. What a handoff line is (`handoffLines`, `namesCommits`) is exported:
 // `board fix` (drift.mjs) counts a task's handoff by the same definition this rule checks.
 import { isSha } from "../markdown.mjs";
+import { CLOSED } from "../phases.mjs";
 import {
-  CLOSED,
   EXCEPT,
   finding,
   kindParam,
