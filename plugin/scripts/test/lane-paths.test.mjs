@@ -50,7 +50,7 @@ test("the carry refuses a ledger path with a .. segment that stays inside the re
     mkdirSync(join(root, "a"));
     writeFileSync(join(root, "b.md"), "## T\n\n| id | what |\n|---|---|\n| T-1 | one |\n");
     const row = { file: "a/../b.md", heading: "T", header: ["id", "what"], idColumn: "id" };
-    const plan = planRows(root, [{ ...row, key: "T-2", prev: "T-1", text: "| T-2 | two |" }]);
+    const plan = planRows(root, {}, [{ ...row, key: "T-2", prev: "T-1", text: "| T-2 | two |" }]);
     assert.equal(plan.ok, false);
     assert.match(plan.reason, /a\/\.\.\/b\.md leaves the repository/);
     const put = putCells(root, {}, [{ file: "a/../b.md", from: "one", to: "ONE" }]);

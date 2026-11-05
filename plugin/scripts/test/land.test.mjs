@@ -7,7 +7,15 @@
 // Run: node --test plugin/scripts/test/land.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { addedRows, planRows, putCells, sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
@@ -149,6 +157,21 @@ test("uncommittedPatch records an edit against HEAD with its sha256", () => {
   assert.equal(uncommittedPatch(repo.dir, ["board.md"]).sha256, carry.sha256);
 });
 
+// The smallest board the carry reads: one task table in board.md.
+const BOARD = {
+  version: 1,
+  name: "Carry",
+  kinds: {
+    task: {
+      label: "Task",
+      at: { table: "board.md", heading: "Tasks" },
+      id: { column: "id" },
+      fields: { what: { column: "what" } },
+    },
+  },
+  rules: [],
+};
+
 // A ledger is data: a carried row or cell naming a path out of the repository is refused before
 // anything is read or written, however well-formed the rest of the record is.
 test("planRows and putCells refuse a ledger path that leaves the repository", () => {
@@ -159,7 +182,7 @@ test("planRows and putCells refuse a ledger path that leaves the repository", ()
   mkdirSync(root);
   const [row] = addedRows(table, `${table}| T-2 | two |\n`, () => "id");
   for (const file of ["../board.md", "inner/../../board.md", outside]) {
-    const plan = planRows(root, [{ ...row, file }]);
+    const plan = planRows(root, BOARD, [{ ...row, file }]);
     assert.equal(plan.ok, false, file);
     assert.match(plan.reason, /leaves the repository/);
     const put = putCells(root, {}, [{ file, from: "one", to: "ONE" }]);
@@ -169,10 +192,49 @@ test("planRows and putCells refuse a ledger path that leaves the repository", ()
   assert.equal(readFileSync(outside, "utf8"), table);
   // The same row inside the repository still goes back.
   writeFileSync(join(root, "board.md"), table);
-  const plan = planRows(root, [{ ...row, file: "board.md" }]);
+  const plan = planRows(root, BOARD, [{ ...row, file: "board.md" }]);
   assert.equal(plan.ok, true);
   plan.write();
   assert.match(readFileSync(join(root, "board.md"), "utf8"), /\| T-2 \| two \|/);
+});
+
+// Inside the repository is not enough: a symlink in the checkout can point out (on a case-insensitive
+// disk its case twin too). A carried row or cell must name one of the board's own files.
+test("planRows and putCells refuse a path through a symlink that points out of the repository", () => {
+  const table = "## Tasks\n\n| id | what |\n|---|---|\n| T-1 | one |\n";
+  const away = join(repo.dir, "away");
+  mkdirSync(away);
+  const outside = join(away, "board.md");
+  writeFileSync(outside, table);
+  const root = join(repo.dir, "inner");
+  mkdirSync(root);
+  writeFileSync(join(root, "board.md"), table);
+  symlinkSync(away, join(root, "link"));
+  symlinkSync(outside, join(root, "filelink.md"));
+  const [row] = addedRows(table, `${table}| T-2 | two |\n`, () => "id");
+  // A cell naming the real task but another file: the edit would go to the cell's own file.
+  const cell = { kind: "task", id: "T-1", column: "what", from: "one", to: "ONE" };
+  for (const file of ["link/board.md", "LINK/board.md", "filelink.md", "./link/board.md"]) {
+    const plan = planRows(root, BOARD, [{ ...row, file }]);
+    assert.equal(plan.ok, false, file);
+    assert.match(plan.reason, /not a board file|leaves the repository/);
+    const put = putCells(root, BOARD, [{ ...cell, file }]);
+    assert.equal(put.ok, false, file);
+    const left = putCells(root, BOARD, [{ ...cell, file }], { leave: true });
+    assert.deepEqual(left.set, [], file);
+    assert.equal(readFileSync(outside, "utf8"), table, file);
+  }
+  assert.equal(readFileSync(join(root, "board.md"), "utf8"), table);
+  // The board's own file still takes both.
+  const plan = planRows(root, BOARD, [{ ...row, file: "board.md" }]);
+  assert.equal(plan.ok, true);
+  plan.write();
+  const put = putCells(root, BOARD, [{ ...cell, file: "board.md" }]);
+  assert.equal(put.ok, true);
+  const now = readFileSync(join(root, "board.md"), "utf8");
+  assert.match(now, /\| T-1 \| ONE \|/);
+  assert.match(now, /\| T-2 \| two \|/);
+  assert.equal(readFileSync(outside, "utf8"), table);
 });
 
 // R1b-5 notes item 4: the clean check split git's output on its own, so a rename's source came out as

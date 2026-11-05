@@ -178,19 +178,34 @@ export function recordedFor(root, files) {
 // read or written.
 const leavesRepo = (file) => typeof file !== "string" || file === "" || leaves(file);
 const leftRepo = (file) => `${file} leaves the repository: a ledger path is never read or written`;
+// Inside the repository is not enough: a symlink in main's checkout (`link/board.md`, or its case twin
+// `LINK/board.md` on a case-insensitive disk) can still point out. So a ledger path must also be one of
+// the board's own files, as the board reads them (a board kept behind a symlink on purpose still is).
+const notBoard = (file) => `${file} is not a board file: a ledger path is never read or written`;
 
 /** Set the carried `cells` on the board under `dir` (main's checkout, or a scratch copy of its board)
  *  at the model level (`board-diff.cellEdits`): each that reads its `from` is set to its `to` through
  *  the board writer, all or nothing, and each that reads its `to` already is left. A cell that reads
  *  anything else is a conflict and nothing is written, unless `leave`: then it is left as it is and the
  *  rest are set. `{ ok, set, there, conflicts }`, or `{ ok: false, conflicts, reason? }`; a cell whose
- *  file leaves the repository refuses them all, nothing read or written. */
+ *  file leaves the repository refuses them all, nothing read or written. A cell whose file is not one
+ *  of the board's files is a conflict (`now: null`) that is never written: the edit goes to the cell's
+ *  own `file`, so a cell naming a real item but another file must not reach the writer. */
 export function putCells(dir, spec, cells, { leave = false } = {}) {
   const out = cells.find((cell) => leavesRepo(cell.file));
   if (out) return { ok: false, set: [], there: [], conflicts: [], reason: leftRepo(out.file) };
-  const plan = cellEdits(spec, workingBoard(dir, spec), cells);
-  const { set, there, conflicts } = plan;
-  if (conflicts.length > 0 && !leave) return { ok: false, set, there, conflicts };
+  const board = workingBoard(dir, spec);
+  const files = new Set(boardFiles(spec, board.model));
+  const stray = cells.filter((cell) => !files.has(cell.file));
+  const plan = cellEdits(
+    spec,
+    board,
+    cells.filter((cell) => files.has(cell.file)),
+  );
+  const { set, there } = plan;
+  const conflicts = [...plan.conflicts, ...stray.map((cell) => ({ ...cell, now: null }))];
+  const why = stray.length > 0 ? { reason: notBoard(stray[0].file) } : {};
+  if (conflicts.length > 0 && !leave) return { ok: false, set, there, conflicts, ...why };
   try {
     if (plan.edits.length > 0)
       applyAll(plan.edits.map(({ file, edit }) => ({ file: join(dir, file), edit })));
@@ -289,13 +304,17 @@ function insertAdded(text, row) {
   return { text: lines.join("\n") };
 }
 
-/** Put the added `rows` (`addedRows`, each with its `file`) back on the files under `root`, all or
- *  nothing: `{ ok, write() }` when every one has its place, else `{ ok: false, reason }`. Nothing is
- *  written until `write()`. A row whose file leaves the repository refuses them all, nothing read. */
-export function planRows(root, rows) {
+/** Put the added `rows` (`addedRows`, each with its `file`) back on the board files under `root` (the
+ *  board `spec` reads), all or nothing: `{ ok, write() }` when every one has its place, else `{ ok:
+ *  false, reason }`. Nothing is written until `write()`. A row whose file leaves the repository, or is
+ *  not one of the board's files, refuses them all, nothing read. */
+export function planRows(root, spec, rows) {
   const texts = new Map();
+  const files =
+    rows.length > 0 ? new Set(boardFiles(spec, readProcess({ root, spec }))) : new Set();
   for (const row of rows) {
     if (leavesRepo(row.file)) return { ok: false, reason: leftRepo(row.file) };
+    if (!files.has(row.file)) return { ok: false, reason: notBoard(row.file) };
     let text = texts.get(row.file);
     if (text === undefined) {
       try {

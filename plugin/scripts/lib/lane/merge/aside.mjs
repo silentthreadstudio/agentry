@@ -135,7 +135,7 @@ function putBackAside(lane, kind, { hold = false } = {}) {
     (file) => cells.some((c) => c.file === file) || added.some((r) => r.file === file),
   );
   if (intactRecord && covered && sha256(JSON.stringify([cells, added])) === held.cellsSha256) {
-    const plan = planRows(lane.root, added);
+    const plan = planRows(lane.root, lane.spec, added);
     const back = plan.ok ? putCells(lane.root, lane.spec, cells) : plan;
     if (back.ok) {
       plan.write();
