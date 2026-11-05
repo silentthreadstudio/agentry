@@ -56,7 +56,7 @@ function dirNonEmpty(dir: string): boolean {
 }
 
 /** The artifact evidence found across every `<workingDir>/.agentry/work/<slug>/` folder. */
-interface WorkArtifacts {
+export interface WorkArtifacts {
   /** Any `plan.md` exists in a work folder, OR any `tasks/` dir is non-empty (⇒ a build was decomposed). */
   hasDecompose: boolean;
   /** Any `spec.md` exists in a work folder (⇒ the work was spec'd before building). */
@@ -66,9 +66,13 @@ interface WorkArtifacts {
 /**
  * Scan `<workingDir>/.agentry/work/*` for the routing artifacts the conductor writes. Tolerates a MISSING
  * `.agentry/` (or `.agentry/work/`) — a genuine one-shot writes nothing there, so absence ⇒ no artifacts (the
- * one-shot / degenerate path). Pure fs reads; no mutation.
+ * one-shot / degenerate path). Only `spec.md` / `plan.md` / `tasks/` count (Flow's `events.jsonl` shares the
+ * folder and is ignored). Pure fs reads; no mutation.
+ *
+ * This is THE routing-shape rule: the live runner's kill-when-determined poll imports it too, so the early kill
+ * and the post-run verdict cannot drift apart.
  */
-function scanWorkArtifacts(workingDir: string): WorkArtifacts {
+export function scanWorkArtifacts(workingDir: string): WorkArtifacts {
   const workRoot = join(workingDir, ".agentry", "work");
   if (!existsSync(workRoot) || !statSync(workRoot).isDirectory()) {
     return { hasDecompose: false, hasSpec: false };

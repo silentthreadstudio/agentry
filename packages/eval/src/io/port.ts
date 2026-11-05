@@ -1,7 +1,5 @@
-// The `Runner` port: a PORT of benchmark/src/runner/port.ts, trimmed of all scoring (the
-// `Cost`/`RunRecord`/`Arm` contract is dropped). `live.ts` and `replay.ts` both implement it, so the probe is
-// testable against recorded streams with zero API spend. Capture is selfeval's only mode, so the
-// `captureStream` opt-in flag is gone and `streamPath` is unconditional.
+// The `Runner` port: how one `claude -p` run is invoked and captured. `live.ts` implements it; tests inject a fake,
+// so the probe is testable with zero API spend. Capture is the only mode, so `streamPath` is unconditional.
 
 /**
  * The token/time/$ cost of a SETTLED run, parsed from the trailing `result` envelope of

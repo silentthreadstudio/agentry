@@ -3,20 +3,14 @@
 // autopilot-design §3): the default kill-on-first-`Agent`-dispatch early-terminate, and an opt-in CAPPED /
 // no-kill mode (`Invocation.noKillOnDispatch`) that lets the conductor run on and emit its work-folder
 // routing artifacts, terminating at settle or a time cap. This is the only module that spends API; it is
-// written here but NOT executed by the tests (zero API spend — the fake child drives the capture path,
-// `replay.ts` covers the offline path).
-//
-// PORT of benchmark/src/runner/live.ts's CAPTURE half: `spawnClaudeStreaming`, `isAgentDispatch`, `buildArgs`,
-// `StreamChild`, `SpawnFn`, `runCaptured` (→ exported via `liveRunner.run`). DROPPED (all scoring): the
-// `--output-format json` branch, `mapResultToCost`, `ClaudeResult`, `ModelUsage`, `collectProducedTree` (now
-// a boolean walk in io/sandbox.ts). `buildArgs` here is UNCONDITIONAL stream-json — capture is selfeval's only
-// mode (no opt-in `captureStream` flag, no scoring path to preserve).
+// written here but NOT executed by the tests (zero API spend — a fake child drives the capture path).
 
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createWriteStream, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { scanWorkArtifacts } from "../conduct/extract.ts";
 import type { Invocation, RunCost, RunResult, Runner, Sandbox } from "./port.ts";
 import { producedTreeNonEmpty } from "./sandbox.ts";
 
@@ -170,45 +164,6 @@ export const DEFAULT_POLL_MS = 4_000;
 
 /** Default grace window after spec.md-only before concluding spec-first (autopilot-design §3: ~45s). */
 export const DEFAULT_GRACE_MS = 45_000;
-
-/** True iff `dir` exists, is a directory, and holds at least one entry (mirrors extract.ts's `dirNonEmpty`). */
-function dirNonEmpty(dir: string): boolean {
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return false;
-  return readdirSync(dir).length > 0;
-}
-
-/** The routing artifact evidence the poll watches for under `<workingDir>/.agentry/work/*`. */
-interface WorkArtifacts {
-  /** Any `plan.md` exists, OR any `tasks/` dir is non-empty (⇒ the run decomposed) — the DETERMINED signal. */
-  hasDecompose: boolean;
-  /** Any `spec.md` exists (⇒ the work was spec'd) — opens the grace window unless decompose already fired. */
-  hasSpec: boolean;
-}
-
-/**
- * Scan `<workingDir>/.agentry/work/*` for the routing artifacts the conductor writes — MIRRORS the mapping
- * `extract.ts` reads after the run, so the live kill-when-determined matches the post-run shape verdict. Only
- * `spec.md` / `plan.md` / `tasks/` count; Flow's own `events.jsonl` log shares the folder (a known
- * naming collision) and is IGNORED here, exactly as the extractor ignores it. Tolerates a missing work root
- * (a not-yet-written / one-shot run scans clean). Pure fs reads.
- */
-function scanWorkArtifacts(workingDir: string): WorkArtifacts {
-  const workRoot = join(workingDir, ".agentry", "work");
-  if (!existsSync(workRoot) || !statSync(workRoot).isDirectory()) {
-    return { hasDecompose: false, hasSpec: false };
-  }
-  let hasDecompose = false;
-  let hasSpec = false;
-  for (const slug of readdirSync(workRoot)) {
-    const slugDir = join(workRoot, slug);
-    if (!statSync(slugDir).isDirectory()) continue;
-    // events.jsonl is Flow's event log, not a routing artifact — never counted (only plan/tasks/spec are).
-    if (existsSync(join(slugDir, "plan.md")) || dirNonEmpty(join(slugDir, "tasks")))
-      hasDecompose = true;
-    if (existsSync(join(slugDir, "spec.md"))) hasSpec = true;
-  }
-  return { hasDecompose, hasSpec };
-}
 
 /**
  * Stream-capture spawn (ADR-002/005): run `claude -p --output-format stream-json --verbose`, tee stdout

@@ -7,12 +7,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  MAX_DIMENSION_SUM,
   OUTCOME_DIMENSIONS,
   type OutcomeDimensions,
   RUBRIC_TEXT,
-  overallFromDimensions,
 } from "../src/conduct/outcome-rubric.ts";
+import { makeRubric, overallFromDimensions as overallFor } from "../src/judge/rubric.ts";
+
+// The normalizer is the shared engine's; this rubric is the 4-dim value built from its dimensions.
+const rubric = makeRubric(OUTCOME_DIMENSIONS, RUBRIC_TEXT);
+const overallFromDimensions = (dims: OutcomeDimensions): number => overallFor(rubric, dims);
 
 // --- the canonical dimension set ------------------------------------------------------------------------------
 
@@ -20,8 +23,8 @@ test("OUTCOME_DIMENSIONS is exactly the four named dims, in order", () => {
   assert.deepEqual([...OUTCOME_DIMENSIONS], ["meetsIntent", "correct", "soundCode", "complete"]);
 });
 
-test("MAX_DIMENSION_SUM is 8 (4 dims × max 2) — the /8 denominator", () => {
-  assert.equal(MAX_DIMENSION_SUM, 8);
+test("the rubric's max is 8 (4 dims × max 2) — the /8 denominator", () => {
+  assert.equal(rubric.max, 8);
 });
 
 // --- overallFromDimensions: the sum/8 normalizer at the pinned anchor points ----------------------------------

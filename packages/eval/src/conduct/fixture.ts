@@ -15,16 +15,21 @@
 // path present under `seed/` may also be present under `oracle/`. An overlapping fixture would leak its oracle
 // into the agent-visible tree, which the Spec calls invalid; the loader makes that impossible to ship.
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import { parse as parseYaml } from "yaml";
 
-import { KnownKind } from "@agentry/core";
+import { KnownKind, RoutedShape } from "@agentry/core";
 import type { Kind } from "@agentry/core";
 
-/** The labeled routing shapes a fixture's planted task can carry (mirrors `routing/shape.ts`'s vocabulary). */
-export type FixtureShape = "one-shot" | "spec-first" | "decompose";
+import {
+  type Fail,
+  assertSeedOracleDisjoint,
+  describe,
+  parseOracle,
+  requireString,
+} from "../fixture-common.ts";
 
 /**
  * One loaded outcome fixture — the parsed `fixture.yaml` PLUS the resolved absolute paths to its four subtrees.
@@ -38,7 +43,7 @@ export interface OutcomeFixture {
   /** The task prompt handed to the agent (non-empty). */
   prompt: string;
   /** The expected routing shape the planted task should provoke. */
-  shape: FixtureShape;
+  shape: RoutedShape;
   /** The task kind (feature/bug/refactor/perf/dep-upgrade/ci-red). */
   kind: Kind;
   /** The command run INSIDE the injected sandbox to execute the held-out oracle (e.g. `node --test oracle/`). */
@@ -63,15 +68,15 @@ export class OutcomeFixtureError extends Error {
   }
 }
 
-const SHAPES: ReadonlySet<string> = new Set<FixtureShape>(["one-shot", "spec-first", "decompose"]);
 const KNOWN_KINDS: readonly string[] = KnownKind.options;
 const KNOWN_KINDS_SET: ReadonlySet<string> = new Set<string>(KNOWN_KINDS);
 
 /** The four subtrees every fixture must ship (ADR-003) — each is a required directory under the fixture root. */
 const REQUIRED_SUBTREES = ["seed", "oracle", "golden", "broken"] as const;
 
-/** Default oracle ceiling when `fixture.yaml` omits `oracle.timeoutMs` — conservative; a real suite is sub-minute. */
-const DEFAULT_ORACLE_TIMEOUT_MS = 60_000;
+const fail: Fail = (message) => {
+  throw new OutcomeFixtureError(message);
+};
 
 /**
  * Parse + validate the outcome fixture rooted at `fixtureDir` into an {@link OutcomeFixture}. THROWS an
@@ -111,32 +116,33 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
   }
   const root = raw as Record<string, unknown>;
 
-  const id = requireString(root.id, "id", yamlPath);
-  const prompt = requireString(root.prompt, "prompt", yamlPath);
+  const id = requireString(root.id, "id", yamlPath, fail);
+  const prompt = requireString(root.prompt, "prompt", yamlPath, fail);
 
-  const shapeRaw = requireString(root.shape, "shape", yamlPath);
-  if (!SHAPES.has(shapeRaw)) {
+  const shapeRaw = requireString(root.shape, "shape", yamlPath, fail);
+  const shapeParsed = RoutedShape.safeParse(shapeRaw);
+  if (!shapeParsed.success) {
     throw new OutcomeFixtureError(
-      `${yamlPath}: \`shape\` "${shapeRaw}" is not one of ${[...SHAPES].join("|")}`,
+      `${yamlPath}: \`shape\` "${shapeRaw}" is not one of ${RoutedShape.options.join("|")}`,
     );
   }
-  const shape = shapeRaw as FixtureShape;
+  const shape = shapeParsed.data;
 
-  const kind = requireString(root.kind, "kind", yamlPath);
+  const kind = requireString(root.kind, "kind", yamlPath, fail);
   if (!KNOWN_KINDS_SET.has(kind)) {
     throw new OutcomeFixtureError(
       `${yamlPath}: \`kind\` "${kind}" is not one of ${KNOWN_KINDS.join("|")}`,
     );
   }
 
-  const { oracleCmd, oracleTimeoutMs } = parseOracle(root.oracle, yamlPath);
+  const { oracleCmd, oracleTimeoutMs } = parseOracle(root.oracle, "oracle", yamlPath, fail);
 
   // THE SAFETY RULE (AC5): the agent-visible seed must not contain ANY oracle file. Enforced structurally by
   // asserting the two subtrees share no relative path — obscurity (rename / gitignore) is rejected by ADR-001,
   // only disjointness counts.
   const seedDir = requireSubtree("seed");
   const oracleDir = requireSubtree("oracle");
-  assertSeedOracleDisjoint(seedDir, oracleDir, fixtureDir);
+  assertSeedOracleDisjoint(seedDir, oracleDir, fixtureDir, fail);
 
   return {
     id,
@@ -150,81 +156,4 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
     goldenDir: requireSubtree("golden"),
     brokenDir: requireSubtree("broken"),
   };
-}
-
-/** Parse the `oracle` mapping: a required non-empty `cmd` and an optional positive-integer `timeoutMs`. */
-function parseOracle(
-  value: unknown,
-  yamlPath: string,
-): { oracleCmd: string; oracleTimeoutMs: number } {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new OutcomeFixtureError(
-      `${yamlPath}: \`oracle\` must be a mapping, got ${describe(value)}`,
-    );
-  }
-  const obj = value as Record<string, unknown>;
-  const oracleCmd = requireString(obj.cmd, "oracle.cmd", yamlPath);
-
-  let oracleTimeoutMs = DEFAULT_ORACLE_TIMEOUT_MS;
-  if (obj.timeoutMs !== undefined) {
-    if (
-      typeof obj.timeoutMs !== "number" ||
-      !Number.isInteger(obj.timeoutMs) ||
-      obj.timeoutMs <= 0
-    ) {
-      throw new OutcomeFixtureError(
-        `${yamlPath}: \`oracle.timeoutMs\` must be a positive integer when present, got ${describe(obj.timeoutMs)}`,
-      );
-    }
-    oracleTimeoutMs = obj.timeoutMs;
-  }
-  return { oracleCmd, oracleTimeoutMs };
-}
-
-/**
- * Assert `seedDir` and `oracleDir` are disjoint subtrees: no relative path present under one is also present
- * under the other. THROWS naming the first overlapping path. This is the AC5 oracle-hiding guarantee enforced
- * at load — a careless fixture that co-locates an oracle file under `seed/` fails to load, not at review.
- */
-function assertSeedOracleDisjoint(seedDir: string, oracleDir: string, fixtureDir: string): void {
-  const seedPaths = new Set(relativeFiles(seedDir));
-  for (const oraclePath of relativeFiles(oracleDir)) {
-    if (seedPaths.has(oraclePath)) {
-      throw new OutcomeFixtureError(
-        `${fixtureDir}: seed/ and oracle/ overlap on "${oraclePath}" — the oracle would be agent-visible (ADR-001/AC5)`,
-      );
-    }
-  }
-}
-
-/** Recursively list every FILE under `dir`, as paths relative to `dir` (posix-style, dirs not listed). */
-function relativeFiles(dir: string): string[] {
-  const out: string[] = [];
-  const walk = (current: string): void => {
-    for (const entry of readdirSync(current)) {
-      const abs = join(current, entry);
-      if (statSync(abs).isDirectory()) {
-        walk(abs);
-      } else {
-        out.push(relative(dir, abs).split(/[\\/]/).join("/"));
-      }
-    }
-  };
-  walk(dir);
-  return out;
-}
-
-function requireString(value: unknown, field: string, path: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new OutcomeFixtureError(
-      `${path}: \`${field}\` must be a non-empty string, got ${describe(value)}`,
-    );
-  }
-  return value;
-}
-
-function describe(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "array";
-  return typeof value;
 }

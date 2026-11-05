@@ -22,15 +22,6 @@ export type QualityDimension = (typeof QUALITY_DIMENSIONS)[number];
 /** The per-dimension 0/1/2 scores the judge assigns (one entry per {@link QUALITY_DIMENSIONS}). */
 export type QualityDimensions = Record<QualityDimension, number>;
 
-/** The maximum sum (5 dimensions × 2) — the denominator for the normalized `overall`. */
-export const MAX_DIMENSION_SUM = QUALITY_DIMENSIONS.length * 2;
-
-/** Normalize a per-dimension score map to the 0..1 overall: `sum / 10`. */
-export function overallFromDimensions(dimensions: QualityDimensions): number {
-  const sum = QUALITY_DIMENSIONS.reduce((acc, d) => acc + dimensions[d], 0);
-  return sum / MAX_DIMENSION_SUM;
-}
-
 /**
  * The anchored rubric the judge prompt embeds. Each dimension states what 0 vs 2 looks like so the judge
  * grades against a fixed bar, not a vibe. The closing CONTENT clause is load-bearing: it forbids rewarding

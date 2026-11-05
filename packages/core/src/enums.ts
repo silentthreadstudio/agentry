@@ -26,6 +26,13 @@ export type MemoryType = z.infer<typeof MemoryType>;
 export const KnownShape = z.enum(["one-shot", "spec-first", "decompose+verify"]);
 export type KnownShape = z.infer<typeof KnownShape>;
 
+// The shape a run's work-folder artifacts EVIDENCE (what the self-eval reads back from `.agentry/work/`), in
+// ascending process weight: `one-shot` writes nothing, `spec-first` leaves a `spec.md`, `decompose` leaves a
+// `plan.md` and/or `tasks/`. It is `KnownShape`'s `decompose+verify` seen from the artifacts: the verify step
+// leaves no artifact of its own, so the artifact name is the shorter one.
+export const RoutedShape = z.enum(["one-shot", "spec-first", "decompose"]);
+export type RoutedShape = z.infer<typeof RoutedShape>;
+
 export const Shape = z.string();
 export type Shape = string;
 

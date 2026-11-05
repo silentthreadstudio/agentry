@@ -9,7 +9,7 @@
 // need — `fork` (a short description of the hidden decision the task carries, evidence for the Axis-A showcase) and
 // `bugProne` (whether the obvious solution has a subtle bug the oracle catches — the Axis-D escaped-defect set).
 //
-// THE LOAD-BEARING SAFETY RULE is reused verbatim from `conduct/fixture.ts`: `seed/` and `oracle/` must be DISJOINT
+// THE LOAD-BEARING SAFETY RULE is shared with `conduct/fixture.ts` (`fixture-common.ts`): `seed/` and `oracle/` must be DISJOINT
 // subtrees, so the held-out oracle can never leak into the agent-visible tree. The validator THROWS a specific
 // `BenchFixtureError` per violation — a malformed fixture is a deliverable bug surfaced loudly, never defaulted away.
 
@@ -17,6 +17,14 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { parse as parseYaml } from "yaml";
+
+import {
+  type Fail,
+  assertSeedOracleDisjoint,
+  describe,
+  parseOracle,
+  requireString,
+} from "../fixture-common.ts";
 
 /**
  * One loaded bench fixture — the parsed `fixture.yaml` PLUS the resolved absolute paths to its four subtrees. The
@@ -58,8 +66,9 @@ export class BenchFixtureError extends Error {
 /** The four subtrees every fixture must ship — each a required directory under the fixture root. */
 const REQUIRED_SUBTREES = ["seed", "oracle", "golden", "broken"] as const;
 
-/** Default oracle ceiling when `fixture.yaml` omits `oracle.timeoutMs` — conservative; a real suite is sub-minute. */
-const DEFAULT_ORACLE_TIMEOUT_MS = 60_000;
+const fail: Fail = (message) => {
+  throw new BenchFixtureError(message);
+};
 
 /**
  * The reserved child directory under a bench corpus that holds the SHARED Axis-A decision controls
@@ -140,7 +149,7 @@ export function loadBenchFixture(fixtureDir: string): BenchFixture {
   const where = `fixture "${dirId}"`;
 
   if (root.id !== undefined) {
-    const declaredId = requireString(root.id, `${where}.id`, yamlPath);
+    const declaredId = requireString(root.id, `${where}.id`, yamlPath, fail);
     if (declaredId !== dirId) {
       throw new BenchFixtureError(
         `${yamlPath}: \`id\` "${declaredId}" must match the directory name "${dirId}"`,
@@ -148,15 +157,20 @@ export function loadBenchFixture(fixtureDir: string): BenchFixture {
     }
   }
 
-  const prompt = requireString(root.prompt, `${where}.prompt`, yamlPath);
+  const prompt = requireString(root.prompt, `${where}.prompt`, yamlPath, fail);
   const fork = parseFork(root.fork, where, yamlPath);
   const bugProne = parseBugProne(root.bugProne, where, yamlPath);
-  const { oracleCmd, oracleTimeoutMs } = parseOracle(root.oracle, where, yamlPath);
+  const { oracleCmd, oracleTimeoutMs } = parseOracle(
+    root.oracle,
+    `${where}.oracle`,
+    yamlPath,
+    fail,
+  );
 
-  // THE SAFETY RULE: the agent-visible seed must not contain ANY oracle file (reused from conduct/fixture.ts).
+  // THE SAFETY RULE: the agent-visible seed must not contain ANY oracle file (fixture-common.ts).
   const seedDir = requireSubtree("seed");
   const oracleDir = requireSubtree("oracle");
-  assertSeedOracleDisjoint(seedDir, oracleDir, fixtureDir);
+  assertSeedOracleDisjoint(seedDir, oracleDir, fixtureDir, fail);
 
   const fixture: BenchFixture = {
     id: dirId,
@@ -176,7 +190,7 @@ export function loadBenchFixture(fixtureDir: string): BenchFixture {
 /** Parse the optional `fork` — a non-empty string when present (a short description of the hidden decision). */
 function parseFork(value: unknown, where: string, path: string): string | undefined {
   if (value === undefined) return undefined;
-  return requireString(value, `${where}.fork`, path);
+  return requireString(value, `${where}.fork`, path, fail);
 }
 
 /** Parse the optional `bugProne` flag — strict on type, defaulting to `false` when absent. */
@@ -188,82 +202,4 @@ function parseBugProne(value: unknown, where: string, path: string): boolean {
     );
   }
   return value;
-}
-
-/** Parse the `oracle` mapping: a required non-empty `cmd` and an optional positive-integer `timeoutMs`. */
-function parseOracle(
-  value: unknown,
-  where: string,
-  path: string,
-): { oracleCmd: string; oracleTimeoutMs: number } {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new BenchFixtureError(
-      `${path}: ${where}.oracle must be a mapping, got ${describe(value)}`,
-    );
-  }
-  const obj = value as Record<string, unknown>;
-  const oracleCmd = requireString(obj.cmd, `${where}.oracle.cmd`, path);
-
-  let oracleTimeoutMs = DEFAULT_ORACLE_TIMEOUT_MS;
-  if (obj.timeoutMs !== undefined) {
-    if (
-      typeof obj.timeoutMs !== "number" ||
-      !Number.isInteger(obj.timeoutMs) ||
-      obj.timeoutMs <= 0
-    ) {
-      throw new BenchFixtureError(
-        `${path}: ${where}.oracle.timeoutMs must be a positive integer when present, got ${describe(obj.timeoutMs)}`,
-      );
-    }
-    oracleTimeoutMs = obj.timeoutMs;
-  }
-  return { oracleCmd, oracleTimeoutMs };
-}
-
-/**
- * Assert `seedDir` and `oracleDir` are disjoint subtrees: no relative path present under one is also present under
- * the other. THROWS naming the first overlapping path — the oracle-hiding guarantee enforced at load (reused
- * verbatim from conduct/fixture.ts).
- */
-function assertSeedOracleDisjoint(seedDir: string, oracleDir: string, fixtureDir: string): void {
-  const seedPaths = new Set(relativeFiles(seedDir));
-  for (const oraclePath of relativeFiles(oracleDir)) {
-    if (seedPaths.has(oraclePath)) {
-      throw new BenchFixtureError(
-        `${fixtureDir}: seed/ and oracle/ overlap on "${oraclePath}" — the oracle would be agent-visible`,
-      );
-    }
-  }
-}
-
-/** Recursively list every FILE under `dir`, as paths relative to `dir` (posix-style, dirs not listed). */
-function relativeFiles(dir: string): string[] {
-  const out: string[] = [];
-  const walk = (current: string): void => {
-    for (const entry of readdirSync(current)) {
-      const abs = join(current, entry);
-      if (statSync(abs).isDirectory()) {
-        walk(abs);
-      } else {
-        out.push(relative(dir, abs).split(/[\\/]/).join("/"));
-      }
-    }
-  };
-  walk(dir);
-  return out;
-}
-
-function requireString(value: unknown, field: string, path: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new BenchFixtureError(
-      `${path}: \`${field}\` must be a non-empty string, got ${describe(value)}`,
-    );
-  }
-  return value;
-}
-
-function describe(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "array";
-  return typeof value;
 }

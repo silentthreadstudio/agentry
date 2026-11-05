@@ -1,6 +1,5 @@
-// Per-run sandbox preparation — the isolation recipe ported from benchmark/src/arms/sandbox.ts, trimmed of
-// the `Arm` parameter (selfeval has no arms — one config). For every run we mint a FRESH temp working dir
-// plus two FRESH temp memory-root *base* dirs, then build the env that points `claude -p` at them.
+// Per-run sandbox preparation — the isolation recipe. For every run we mint a FRESH temp working dir plus two
+// FRESH temp memory-root *base* dirs, then build the env that points `claude -p` at them.
 //
 // The `Sandbox` TYPE is owned by io/port.ts and IMPORTED here, never redeclared (CONTRIBUTING.md: never duplicate a
 // contract type). This module also owns the produced-tree DISAMBIGUATOR walk — a boolean, not a tree list:

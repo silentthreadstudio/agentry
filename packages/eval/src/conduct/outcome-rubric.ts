@@ -24,15 +24,6 @@ export type OutcomeDimension = (typeof OUTCOME_DIMENSIONS)[number];
 /** The per-dimension 0/1/2 scores the judge assigns (one entry per {@link OUTCOME_DIMENSIONS}). */
 export type OutcomeDimensions = Record<OutcomeDimension, number>;
 
-/** The maximum sum (4 dimensions × 2) — the denominator for the normalized `overall`. */
-export const MAX_DIMENSION_SUM = OUTCOME_DIMENSIONS.length * 2;
-
-/** Normalize a per-dimension score map to the 0..1 overall: `sum / 8`. */
-export function overallFromDimensions(dimensions: OutcomeDimensions): number {
-  const sum = OUTCOME_DIMENSIONS.reduce((acc, d) => acc + dimensions[d], 0);
-  return sum / MAX_DIMENSION_SUM;
-}
-
 /**
  * The anchored rubric the judge prompt embeds. Each dimension states what 0 vs 2 looks like so the judge grades
  * the produced code against a fixed bar, not a vibe. The closing CONTENT clause is load-bearing: it forbids
