@@ -3,6 +3,7 @@ name: researcher
 model: inherit
 color: pink
 skills: [researching]
+disallowedTools: Artifact, ArtifactComments, ArtifactData
 description: |
   Use this agent to investigate genuine unknowns — anything the team can't answer from what it already knows: a library's current API or version behavior, an external standard, a "how does X actually work" question that spans the web and the repo. It returns cited findings and their implications for the spec or plan, never a guess. The conductor dispatches it when a task hinges on a fact nobody on the team can confirm from memory or stale training. Examples:
 

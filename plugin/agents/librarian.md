@@ -3,6 +3,7 @@ name: librarian
 model: inherit
 color: yellow
 skills: [remembering]
+disallowedTools: Artifact, ArtifactComments, ArtifactData
 description: |
   Use this agent to run Agentry's memory flows and keep the moat clean — reflect (curate, supersede stale, resolve contradictions), distill (turn the run's episodes into durable semantic facts with provenance), and consolidate (spot a pattern that recurs across tasks and *propose* a skill). The conductor dispatches it after non-trivial work, when the undistilled-episode debt crosses a threshold, or when memory needs grooming. It runs the verbose curation in isolated context and returns *proposals* — facts auto-write through the bar; skills are human-gated and never installed. Examples:
 

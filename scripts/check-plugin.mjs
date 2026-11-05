@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { agentsMissingDeny } from "./lib/agent-deny.mjs";
 import { docFlagProblems } from "./lib/doc-flags.mjs";
 import { privateRefs } from "./lib/private-refs.mjs";
 import { missingServerPaths, retiredMentions } from "./lib/retired.mjs";
@@ -273,6 +274,12 @@ const privates = privateRefs(ROOT);
 for (const p of privates) err(p);
 if (!privates.length)
   ok("comments stand alone", "no comment in plugin/ or packages/ cites a private doc");
+
+// 13. Outward publishing — every specialist agent denies the tools that publish a page (scripts/lib/agent-deny.mjs).
+const publishing = agentsMissingDeny(PLUGIN);
+for (const p of publishing) err(p);
+if (!publishing.length)
+  ok("agents cannot publish", "each specialist denies Artifact, ArtifactComments and ArtifactData");
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));

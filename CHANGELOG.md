@@ -11,6 +11,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - `agentry mem recall` and `agentry mem search` take the query as one bare argument, as the old memory tools
   did: `agentry mem recall "bundling node:sqlite"`. `--query` still works; giving both, or more than one bare
   argument, is a usage error.
+- Every specialist agent (all but the conductor) now lists `disallowedTools: Artifact, ArtifactComments,
+  ArtifactData`, so a subagent cannot publish a page. The plugin check fails if one loses the entries.
 
 ## [0.3.0] — 2026-11-05
 

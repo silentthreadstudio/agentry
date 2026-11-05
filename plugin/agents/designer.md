@@ -3,6 +3,7 @@ name: designer
 model: inherit
 color: purple
 skills: [designing]
+disallowedTools: Artifact, ArtifactComments, ArtifactData
 description: |
   Use this agent for UX/UI and product-design work — turning a feature into an interface that is coherent, hierarchical, accessible, and consistent with the repo's existing design system, then *seeing the rendered result* before calling it done. The conductor dispatches it whenever work bears a UI: a new screen or component, a visual/layout/styling change, a polish pass, or an accessibility fix. It exists to prevent the "engineers build ugly, incoherent UIs" failure. Examples:
 

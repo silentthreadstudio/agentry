@@ -3,6 +3,7 @@ name: implementer
 model: inherit
 color: green
 skills: [implementing, testing]
+disallowedTools: Artifact, ArtifactComments, ArtifactData
 description: |
   Use this agent to write clean, bounded code to a Task contract — implementing a feature slice, fixing a bug, or wiring up logic inside the files a task already owns. The conductor dispatches it once a Task (with a `contract`) exists, or inline for a clear one-shot edit. It builds inside the boundary it's given; it does not redesign it. Examples:
 

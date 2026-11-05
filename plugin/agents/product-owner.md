@@ -3,6 +3,7 @@ name: product-owner
 model: inherit
 color: orange
 skills: [product, writing]
+disallowedTools: Artifact, ArtifactComments, ArtifactData
 description: |
   Use this agent to own the *what & why* — turn an under-specified goal ("make X better") into a crisp Spec with observable, verifiable acceptance criteria. The conductor dispatches it whenever the ask is vague, product-shaped, or user-facing and "done = X" isn't clear yet: feature requests, UX/product work, docs/README/release-notes. It defines needs; it never builds them. Examples:
 

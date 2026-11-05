@@ -3,6 +3,7 @@ name: explorer
 model: inherit
 color: cyan
 skills: [exploring]
+disallowedTools: Artifact, ArtifactComments, ArtifactData
 description: |
   Use this agent to comprehend an existing codebase, read-only — how the repo is built, where things live, the conventions in force, and how data/control flows through it. The conductor dispatches it whenever work touches code it hasn't mapped yet: a fresh repo, an unfamiliar subsystem, or a change that needs to land inside existing structure. It produces the Context map; it never edits. Examples:
 

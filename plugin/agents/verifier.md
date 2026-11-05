@@ -3,6 +3,7 @@ name: verifier
 model: inherit
 color: red
 skills: [reviewing, integrating]
+disallowedTools: Artifact, ArtifactComments, ArtifactData
 description: |
   Use this agent to prove work wrong — adversarial, independent verification that is never done by the author. The conductor dispatches it after an implementer (or any builder) reports done, to check a task against its `## Acceptance`, a change against the Spec's acceptance criteria, or the whole assembled product against reality. It reviews behavior, runs the tests, applies a security lens, and returns a Verdict; it does not fix what it finds. Examples:
 

@@ -3,6 +3,7 @@ name: architect
 model: inherit
 color: blue
 skills: [architecting, planning]
+disallowedTools: Artifact, ArtifactComments, ArtifactData
 description: |
   Use this agent for design and decomposition work — turning a spec or under-specified goal into a sound structure, recording architectural decisions (ADRs), producing a Plan with an architecture map, and slicing that map into bounded Task contracts. The conductor dispatches it whenever work is multi-file, structurally non-trivial, or hinges on a decision between real alternatives. Examples:
 
