@@ -362,7 +362,7 @@ test("hand-edited fact files read as the bundle reads them", { skip }, async () 
       "01HE0000000000000000000001": (b) => `${b}meta:\n  source: hand\n`,
       "01HE0000000000000000000002": (b) => b.replace("type: gotcha", '"type": gotcha'),
       "01HE0000000000000000000003": (b) => `${b}my note: added by hand\n`,
-      "01HE0000000000000000000004": (b) => `${b}extra: {a: 1}\n`,
+      "01HE0000000000000000000004": (b) => `${b}extra:\n  a:\n    deeper: 1\n# note\n  b: 2\n`,
     };
     for (const [id, edit] of Object.entries(cases))
       writeFileSync(join(dir, `hand-${id}.md`), `---\n${edit(base(id))}---\n\nhand edit ${id}\n`);
@@ -430,7 +430,7 @@ test(
 );
 
 test(
-  "an apostrophe in an unknown flow mapping neither drops the next key nor refuses the file",
+  "a flow mapping is a loud readError for the file, never a fact missing a field",
   { skip },
   async () => {
     const t = await setup();
@@ -439,10 +439,13 @@ test(
       mkdirSync(dir, { recursive: true });
       const base = (id) =>
         `id: p:${id}\ntype: gotcha\nscope: repo\nconfidence: 0.7\nusefulness: 0\ndecay: 0\nstatus: active\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n`;
+      // the apostrophe and colon repros of the swallow, an unclosed map, and one that closes on the next key
       const edits = [
         "meta: {note: it's mine}\nwhy: don't drop me}\n",
-        "meta: {note: it's}\nwhy: second\n",
+        "meta: {note: ratio 1:'x}\nwhy: don't drop me}\n",
         "meta: {author: O'Brien}\nwhy: third\n",
+        "meta: {a: 1,\nwhy: x}\n",
+        "meta: {a: 1}\nwhy: plain\n",
       ];
       edits.forEach((edit, i) => {
         const id = `01SW000000000000000000000${i}`;
@@ -453,17 +456,15 @@ test(
       });
 
       const view = t.service();
-      assert.deepEqual(view.stats().readErrors, []);
-      const theirs = await t.mcp.call("memory_recall", { query: "swallow probe", limit: 10 });
-      assert.deepEqual(json(view.recall({ query: "swallow probe", limit: 10 })), theirs);
-      assert.deepEqual(theirs.memories.map((m) => m.fact.why).sort(), [
-        "don't drop me}",
-        "second",
-        "third",
-      ]);
+      const stats = view.stats();
+      assert.equal(stats.facts, 0, "no record is loaded without its why");
+      assert.equal(stats.readErrors.length, edits.length);
+      for (const e of stats.readErrors) assert.match(e.reason, /^line \d+: .*flow mapping/);
+      assert.deepEqual(view.recall({ query: "swallow probe", limit: 10 }).memories, []);
+      const cli = await t.mem("stats");
       assert.deepEqual(
-        json(await t.mem("recall", "--query", "swallow probe", "--limit", "10")),
-        theirs,
+        cli.readErrors.map((e) => e.file),
+        stats.readErrors.map((e) => e.file),
       );
     } finally {
       t.mcp.stop();

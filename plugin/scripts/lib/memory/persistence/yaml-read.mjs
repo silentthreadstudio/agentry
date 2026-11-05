@@ -1,15 +1,18 @@
 // yaml-read — the YAML the store's frontmatter is read in: one block mapping whose values are scalars (plain,
 // 'single' or "double" quoted, one line or folded over several; `|` and `>` block scalars with their chomping
-// and indent indicators) or lists of scalars (block `- item` lines, or a flow `[a, b]`), with `#` comments.
-// Keys are plain (spaces allowed) or quoted. That is every file the store has written (the `yaml` package
-// wrote them) and what a hand edit of one is likely to hold, including a nested block mapping or a flow
-// mapping under a key of the schema's no concern: it is read past, and a key the schema does know that
-// holds one fails the record check as an object, as before. Plain scalars resolve as in the YAML 1.2 core
-// schema (null, true/false, integers, floats, `.inf`, `.nan`); everything else is a string.
+// and indent indicators) or lists of scalars (block `- item` lines, or a flow `[a, b]` whose items are plain or
+// quoted scalars), with `#` comments. Keys are plain (spaces allowed) or quoted. That is every file the store
+// has written (the `yaml` package wrote them) and what a hand edit of one is likely to hold, including a nested
+// BLOCK mapping under a key: it is found by its indentation and read past (a key the schema knows that holds
+// one fails the record check as an object, as before). Plain scalars resolve as in the YAML 1.2 core schema
+// (null, true/false, integers, floats, `.inf`, `.nan`); everything else is a string.
 //
-// Refused, with the line, never guessed at: anchors, aliases and tags, a fully indented frontmatter, a `...`
-// line, a byte-order mark, and flow lists nested in flow lists. These are loud (a readError names the file
-// and line) and no store file or realistic hand edit holds them.
+// Refused, with the line (a readError names the file; the record is not loaded), never guessed at:
+//   - a flow mapping `{…}`, on any key. Where one ends depends on quotes, comments and nesting that a scanner
+//     got wrong three times, each time by silently swallowing the next field; a loud refusal of a rare hand
+//     edit is cheaper than a quiet loss.
+//   - a flow list with an item that is not a plain or quoted scalar (a list or a mapping in it).
+//   - anchors, aliases and tags; a fully indented frontmatter; a `...` line; a byte-order mark.
 // A document that is not a mapping at all reads as an empty one, so the record check says what is missing.
 //
 // parseMap(text) -> object        throws Error("line N: …") when the text is not YAML of that subset
@@ -167,7 +170,8 @@ class Reader {
       return { value, next };
     }
     if (c === "[") return this.flow(at, rest);
-    if (c === "{") return this.flowMap(at, rest);
+    if (c === "{")
+      this.fail(at, "a flow mapping {…} is refused on any key (see the header of yaml-read.mjs)");
     if (c === "&" || c === "*" || c === "!")
       this.fail(at, "anchors, aliases and tags are outside the frontmatter subset");
     if (c === "@" || c === "`") this.fail(at, `a plain value cannot start with "${c}"`);
@@ -297,43 +301,6 @@ class Reader {
         next: i,
       };
     return { value: body.length ? `${text}\n` : "", next: i };
-  }
-
-  // A flow mapping, read past (its content is never used): `{}` stands for it, over as many lines as it takes.
-  flowMap(at, rest) {
-    let depth = 0;
-    let quote = null;
-    let before = "{"; // the last character that is not a space, outside a quote
-    for (let i = at, text = rest; ; ) {
-      for (let k = 0; k < text.length; k++) {
-        const ch = text[k];
-        if (quote) {
-          if (ch === "\\" && quote === '"') k++;
-          else if (ch === quote && quote === "'" && text[k + 1] === "'")
-            k++; // '' is a quote in the text
-          else if (ch === quote) quote = null;
-          continue;
-        }
-        if (ch === " " || ch === "\t") continue;
-        // a quote opens a value or a key; anywhere else (O'Brien) it is a plain character
-        if ((ch === '"' || ch === "'") && "{[,:".includes(before)) quote = ch;
-        else if (ch === "#" && (k === 0 || /[ \t]/.test(text[k - 1])))
-          break; // a comment to the line's end
-        else if (ch === "{" || ch === "[") depth++;
-        else if (ch === "}" || ch === "]") {
-          depth--;
-          if (depth === 0) {
-            const tail = trim(text.slice(k + 1));
-            if (tail !== "" && !/^#/.test(tail)) this.fail(i, "text after a flow mapping");
-            return { value: {}, next: i + 1 };
-          }
-        }
-        before = ch;
-      }
-      i++;
-      if (i >= this.lines.length) this.fail(at, "a flow mapping is never closed");
-      text = this.lines[i];
-    }
   }
 
   // A flow list `[a, 'b', "c"]` opening on line `at`, which may run over several lines.

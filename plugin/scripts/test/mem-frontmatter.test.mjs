@@ -134,7 +134,7 @@ test("a |+ scalar on the last key keeps exactly its trailing newlines (the file'
     assert.deepEqual({ ...parseMap(text) }, want, JSON.stringify(text));
 });
 
-test("an unknown key may hold a nested mapping or a flow mapping, or be quoted or hold a space; known keys read", () => {
+test("an unknown key may hold a nested block mapping, or be quoted or hold a space; known keys read", () => {
   const got = parseMap(
     [
       "id: g:01",
@@ -144,8 +144,6 @@ test("an unknown key may hold a nested mapping or a flow mapping, or be quoted o
       "    a: 1",
       "# between",
       "my note: added by hand",
-      "extra: {a: 1, b: [2, 3],",
-      "  c: 'x}'}",
       '"type": gotcha',
       "'scope': repo",
       "why: kept",
@@ -158,7 +156,6 @@ test("an unknown key may hold a nested mapping or a flow mapping, or be quoted o
       id: "g:01",
       meta: {},
       "my note": "added by hand",
-      extra: {},
       type: "gotcha",
       scope: "repo",
       why: "kept",
@@ -166,24 +163,30 @@ test("an unknown key may hold a nested mapping or a flow mapping, or be quoted o
   );
 });
 
-test("a quote inside a flow mapping opens only at the start of a key or value; elsewhere it is text", () => {
-  const read = (text) => ({ ...parseMap(text) });
-  assert.deepEqual(read("meta: {note: it's mine}\nwhy: don't drop me}\n"), {
-    meta: {},
-    why: "don't drop me}",
-  });
-  assert.deepEqual(read("meta: {note: it's}\nwhy: x\n"), { meta: {}, why: "x" });
-  assert.deepEqual(read("meta: {author: O'Brien}\nwhy: x\n"), { meta: {}, why: "x" });
-  assert.deepEqual(read("meta: {a: 'it''s }', \"b\": \"}\"}\nwhy: x\n"), { meta: {}, why: "x" });
-  assert.deepEqual(read("meta: {a: 1, # note }\n  b: 2}\nwhy: x\n"), { meta: {}, why: "x" });
+test("a flow mapping is refused on any key, with its line, whatever it holds", () => {
+  const texts = [
+    "meta: {note: it's mine}\nwhy: don't drop me}\n",
+    "meta: {note: it's}\nwhy: x\n",
+    "meta: {author: O'Brien}\nwhy: x\n",
+    "meta: {note: ratio 1:'x}\nwhy: don't drop me}\n",
+    "meta: {a: 1,\nwhy: x}\n",
+    "meta: {a: 1\nwhy: x\n",
+    "meta: {a: 1} trailing\nwhy: x\n",
+    "meta: {a: 1, # note }\n  b: 2}\nwhy: x\n",
+    "id: g:1\nwhy: {a: 1}\n",
+    "meta:\n  {a: 1}\nwhy: x\n",
+  ];
+  for (const text of texts)
+    assert.throws(() => parseMap(text), /line \d+: .*flow mapping/, JSON.stringify(text));
 });
 
-test("a flow mapping that never closes is a read error, not a swallowed key; text after one is refused", () => {
-  assert.throws(() => parseMap("meta: {a: 1\nwhy: x\n"), /line 1: .*never closed/);
-  assert.throws(
-    () => parseMap("meta: {a: 1} trailing\nwhy: x\n"),
-    /line 1: .*after a flow mapping/,
+test("a flow list reads when its items are plain or quoted scalars, and is refused otherwise", () => {
+  assert.deepEqual(
+    { ...parseMap("tags: [a, 'b, c', \"d\", 1]\nx: []\n") },
+    { tags: ["a", "b, c", "d", 1], x: [] },
   );
+  for (const text of ["tags: [[a]]\n", "tags: [a, {b: 1}]\n", "tags: [a,\n  [b]]\n"])
+    assert.throws(() => parseMap(text), /line \d+: .*flow list item/, JSON.stringify(text));
 });
 
 test("a known key that holds a mapping reads as an object, so the record check refuses it", () => {
