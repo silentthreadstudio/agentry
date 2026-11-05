@@ -47,10 +47,11 @@ const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 // The held start (see above): a closed fd 3 with no go line (this process died first) ends it unrun.
 // bash (3.2 on macOS) and zsh read a leading `-` of the command as an option unless `exec --` ends the
 // options; dash has no options on exec and takes `--` as the command name. So the form is picked by what the
-// shell accepts, and the command is always run in place (same pid and group).
+// shell accepts (probed with an absolute /bin/sh, never a PATH lookup), and the command is always run in
+// place (same pid and group).
 const HELD = [
   "-c",
-  'read -r go <&3 || exit 1; exec 3<&-; if (exec -- true) 2>/dev/null; then exec -- "$@"; fi; exec "$@"',
+  'read -r go <&3 || exit 1; exec 3<&-; if (exec -- /bin/sh -c :) 2>/dev/null; then exec -- "$@"; fi; exec "$@"',
   "sh",
 ];
 
