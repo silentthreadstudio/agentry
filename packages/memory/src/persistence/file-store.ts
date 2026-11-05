@@ -3,11 +3,15 @@
 // YAML frontmatter holds the fields; the body holds the prose (a fact's text / an episode's task) —
 // human-readable and git-diffable. Origin is derived from which root a file lives in. Corrupt/
 // conflict-marked files are skipped (logged), never fatal — a bad merge can't break the rebuild.
+// A write goes to a temp file renamed into place, so a reader sees the old record or the new one, never
+// neither and never a part.
 import {
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -28,6 +32,21 @@ import type {
 import { type Roots, dirFor } from "../resolution/roots.js";
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+
+/**
+ * Write `text` to `file` whole: a temp file beside it, renamed over it. The temp name does not end in
+ * `.md`, so reads and the signature never see it. Mirrors the plugin's `lib/fs/atomic.mjs`, which the
+ * bundle cannot import.
+ */
+function atomicWrite(file: string, text: string): void {
+  const tmp = `${file}.agentry-${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, text);
+    renameSync(tmp, file);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
 
 export class MarkdownFileStore implements FileStore {
   constructor(private readonly roots: Roots) {}
@@ -111,14 +130,16 @@ export class MarkdownFileStore implements FileStore {
     const dir = join(dirFor(origin, this.roots), kind);
     mkdirSync(dir, { recursive: true });
 
-    // One file per id: drop any stale sibling (e.g. text changed → slug changed) before writing.
     const suffix = `-${bareId(id)}.md`;
-    for (const f of readdirSync(dir)) if (f.endsWith(suffix)) unlinkSync(join(dir, f));
-
     const { [bodyKey]: body, ...front } = record;
     const text = typeof body === "string" ? body : "";
     const file = `${slug(text || bareId(id))}${suffix}`;
-    writeFileSync(join(dir, file), `---\n${stringifyYaml(front)}---\n\n${text}\n`);
+    atomicWrite(join(dir, file), `---\n${stringifyYaml(front)}---\n\n${text}\n`);
+
+    // One file per id: only once the new file is in place, drop a sibling left under an old name
+    // (text changed → slug changed).
+    for (const f of readdirSync(dir))
+      if (f.endsWith(suffix) && f !== file) unlinkSync(join(dir, f));
   }
 
   private read<S extends z.ZodType<{ id: string }, z.ZodTypeDef, unknown>, R>(

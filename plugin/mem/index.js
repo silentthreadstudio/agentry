@@ -28880,6 +28880,8 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync
@@ -28974,6 +28976,15 @@ var Episode = external_exports.object({
 // src/persistence/file-store.ts
 var import_yaml = __toESM(require_dist2(), 1);
 var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+function atomicWrite(file, text) {
+  const tmp = `${file}.agentry-${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, text);
+    renameSync(tmp, file);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
 var MarkdownFileStore = class {
   constructor(roots) {
     this.roots = roots;
@@ -29039,15 +29050,16 @@ var MarkdownFileStore = class {
     const dir = join2(dirFor(origin, this.roots), kind);
     mkdirSync(dir, { recursive: true });
     const suffix = `-${bareId(id)}.md`;
-    for (const f of readdirSync(dir)) if (f.endsWith(suffix)) unlinkSync(join2(dir, f));
     const { [bodyKey]: body, ...front } = record2;
     const text = typeof body === "string" ? body : "";
     const file = `${slug(text || bareId(id))}${suffix}`;
-    writeFileSync(join2(dir, file), `---
+    atomicWrite(join2(dir, file), `---
 ${(0, import_yaml.stringify)(front)}---
 
 ${text}
 `);
+    for (const f of readdirSync(dir))
+      if (f.endsWith(suffix) && f !== file) unlinkSync(join2(dir, f));
   }
   read(kind, schema, bodyKey, wrap) {
     const sources = [["g", this.roots.global]];
