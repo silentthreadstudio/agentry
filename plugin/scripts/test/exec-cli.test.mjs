@@ -690,7 +690,8 @@ const episodeFiles = (root) => {
   const dir = join(root, ".agentry", "memory", "episodes");
   return existsSync(dir) ? readdirSync(dir) : [];
 };
-/** Stored episode `id` (its id, task and shape), read back through the memory store `agentry mem` uses. */
+/** Stored episode `id` (its id, task, shape, lesson and used memories), read back through the memory store
+ *  `agentry mem` uses. */
 function storedEpisode(root, id) {
   const store = new MarkdownFileStore({
     global: join(root, "no-global"),
@@ -700,7 +701,13 @@ function storedEpisode(root, id) {
   assert.deepEqual(errors, []);
   const found = records.find((r) => r.episode.id === id)?.episode;
   assert.ok(found, `no episode ${id} in the store`);
-  return { id: found.id, task: found.task, shape: found.shape };
+  return {
+    id: found.id,
+    task: found.task,
+    shape: found.shape,
+    lesson: found.lesson,
+    used: found.usedMemories,
+  };
 }
 /** Lane `id` as the two-step close of the last version left it: payload printed, no id stamped, nothing
  *  in the store. */
@@ -1327,11 +1334,58 @@ test("a lane the old two-step close left unstamped gets its episode written by c
   assert.equal(closed.exit, 0, closed.stderr);
   assert.equal(closed.json.stored, true);
   const { writtenId } = ledgerOf(r.root, "T1").episode;
-  assert.deepEqual(storedEpisode(r.root, writtenId), {
-    id: writtenId,
-    task: "T1: added out.txt",
-    shape: "exec",
-  });
+  const { id, task, shape } = storedEpisode(r.root, writtenId);
+  assert.deepEqual(
+    { id, task, shape },
+    { id: writtenId, task: "T1: added out.txt", shape: "exec" },
+  );
+});
+
+test("close --lesson and --used-memories go into the episode the store holds", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  judge(out, "PASS");
+  lane(r, "verdict", "T1");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  const closed = lane(
+    r,
+    "close",
+    "T1",
+    "--lesson",
+    "  the gate needs a clean tree  ",
+    "--used-memories",
+    "p:01A, g:01B,p:01A",
+  );
+  assert.equal(closed.exit, 0, closed.stderr);
+  assert.equal(closed.json.episode.lesson, "the gate needs a clean tree");
+  const { writtenId, payload } = ledgerOf(r.root, "T1").episode;
+  assert.deepEqual(payload.usedMemories, ["p:01A", "g:01B"]);
+  const stored = storedEpisode(r.root, writtenId);
+  assert.equal(stored.lesson, "the gate needs a clean tree");
+  assert.deepEqual(stored.used, ["p:01A", "g:01B"]);
+});
+
+test("close takes no lesson once the episode is written, nor with --episode, nor an empty one", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const late = lane(r, "close", "T1", "--lesson", "too late");
+  assert.equal(late.exit, 2);
+  assert.match(late.stderr, /already written .*takes no --lesson/);
+  assert.equal(episodeFiles(r.root).length, 1, "no second episode");
+  for (const args of [
+    ["--episode", "p:X", "--lesson", "both"],
+    ["--lesson", "   "],
+    ["--used-memories", " , "],
+  ]) {
+    const res = spawnSync("node", [LANE, "exec", "close", "T1", ...args, "--root", r.root], {
+      encoding: "utf8",
+      env: { ...gitEnv, HOME: r.home },
+    });
+    assert.equal(res.status, 2, args.join(" "));
+    assert.match(res.stdout + res.stderr, /--lesson|--used-memories/, args.join(" "));
+  }
 });
 
 test("a close that cannot write the episode stops and records nothing", () => {

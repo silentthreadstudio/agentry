@@ -4,9 +4,10 @@ import { short } from "../fmt.mjs";
 import { callsLine } from "../owner-calls.mjs";
 import { verdicts } from "../rounds.mjs";
 
-// The episode for this lane (the fields `agentry mem episode` takes), from the ledger alone.
 const ownerHolds = (ledger) => (ledger.holds ?? []).filter((h) => h.for === "owner").length;
-export function episodeOf(ledger) {
+// The episode for this lane (the fields `agentry mem episode` takes), from the ledger, plus what the
+// conductor adds at close: the `lesson` worth remembering and the memories the run used beyond the ledger's.
+export function episodeOf(ledger, { lesson = null, usedMemories = [] } = {}) {
   const judged = verdicts(ledger);
   const guardTrips = ledger.rounds.flatMap((r) => r.guards ?? []);
   const lastGate = ledger.gates?.at(-1);
@@ -47,6 +48,7 @@ export function episodeOf(ledger) {
     shape: "exec",
     outcome,
     retries: Math.max(0, ledger.rounds.filter((r) => r.role === "build").length - 1),
-    usedMemories: ledger.usedMemories ?? [],
+    ...(lesson && { lesson }),
+    usedMemories: [...new Set([...(ledger.usedMemories ?? []), ...usedMemories])],
   };
 }

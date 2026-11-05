@@ -714,7 +714,7 @@ test("a cut's episode is in its closed ledger, written and stamped by exec close
   );
   assert.match(
     res.json.afterwards,
-    /^\S.*exec close T1 --root \S+ writes this episode to the memory store and stamps it$/,
+    /^\S.*exec close T1 --root \S+ --lesson "<the one thing worth remembering>" writes this episode, with the lesson, to the memory store and stamps it$/,
   );
   assert.deepEqual(ledgerOf(r.root, "T1").episode.payload, res.json.episode);
   assert.ok(JSON.parse(run(r, LANE, ["session", "close"]).out).episodesPending.includes("T1"));

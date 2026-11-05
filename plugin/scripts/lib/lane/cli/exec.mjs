@@ -15,7 +15,8 @@
 //   rebase <id>               a verified lane whose branch no longer lands: its builder rebases it onto main,
 //                             then a verifier reads the resolution (`exec.rebase: "recheck"`) or the gate
 //   reverify <id>             a lane closed with no verifier (the route skipped it): one fresh verifier
-//   close <id>                write the lane's episode to the repo's memory store and stamp its id
+//   close <id> [--lesson "<text>"] [--used-memories a,b]   write the lane's episode (with the lesson and
+//                             the memories the run used) to the repo's memory store and stamp its id
 //                             (`--episode e`, deprecated, stamps an id written elsewhere and says whether
 //                             the store holds it)
 //   show <id>                 the ledger and the pending step, for a cold resume (the route fixed at start, the
@@ -96,7 +97,7 @@ const HANDLERS = {
 };
 const STEPS = Object.keys(HANDLERS);
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--same] [--on <id>] [--main] [--carry] [--branch <b>] [--decision <D>] [--keep <paths>] [--message <subject>] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--lesson <text>] [--used-memories <ids>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--same] [--on <id>] [--main] [--carry] [--branch <b>] [--decision <D>] [--keep <paths>] [--message <subject>] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -104,7 +105,8 @@ export const help = {
     verdict: "read the verifier's report, write the verdict, brief the next round",
     gate: "run the repo's gate in the worktree and record it",
     fix: "after PASS WITH NOTES: a builder round on the named notes, then a recheck; or the owner's change (--owner)",
-    close: "write the lane's episode to the memory store and stamp its id",
+    close:
+      "write the lane's episode to the memory store and stamp its id (--lesson: the one thing worth remembering)",
     show: "the ledger and the pending step, for a cold resume",
     owns: "the owned files every brief names, parsed once at start (--set replaces them)",
     hold: "a builder's round waits for the owner (--for owner), or is parked (--for later)",
@@ -128,6 +130,10 @@ export const help = {
       "verdict: notes of this report left as built on the owner's or conductor's word; never sent back",
     "--by <owner|conductor>": "verdict --leave: whose word leaves them (default conductor)",
     "--episode <episode id>": "close, deprecated: stamp an episode id written elsewhere",
+    "--lesson <text>":
+      "close: the one thing worth remembering from the run, written into the episode distill reads",
+    "--used-memories <ids>":
+      "close: comma-separated memory ids the run used, added to the ones its reports cited",
     "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
     "--owner <text>": "fix: the owner's change to a verified lane, for one builder round",
     "--cite <A40,A41>":
@@ -168,6 +174,8 @@ const STEPS_OF = {
   "--leave": ["verdict"],
   "--by": ["verdict"],
   "--episode": ["close"],
+  "--lesson": ["close"],
+  "--used-memories": ["close"],
   "--notes": ["fix"],
   "--owner": ["fix"],
   "--cite": ["start"],
@@ -190,7 +198,7 @@ const STEPS_OF = {
 };
 
 // argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, same, on, toMain,
-// carry, branch, decision, keep, message } or { error }.
+// carry, branch, decision, keep, message, lesson, usedMemories } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
   const words = [];
@@ -229,6 +237,22 @@ function parse(argv) {
     return { error: "owns takes --set or --add, not both" };
   if (step === "cut" && given["--decision"] === undefined)
     return { error: "cut needs --decision <D>: the board decision it follows" };
+  if (
+    given["--episode"] !== undefined &&
+    (given["--lesson"] !== undefined || given["--used-memories"] !== undefined)
+  )
+    return {
+      error:
+        "--lesson and --used-memories go with the close that writes the episode, not --episode",
+    };
+  if (given["--lesson"] !== undefined && !given["--lesson"].trim())
+    return { error: "--lesson needs the lesson's text" };
+  const usedMemories = (given["--used-memories"] ?? "")
+    .split(",")
+    .map((m) => m.trim())
+    .filter(Boolean);
+  if (given["--used-memories"] !== undefined && !usedMemories.length)
+    return { error: "--used-memories needs comma-separated memory ids" };
   if (given["--message"] !== undefined && given["--keep"] === undefined)
     return { error: "--message names the kept commit: it goes with --keep" };
   if (
@@ -263,6 +287,8 @@ function parse(argv) {
     decision: given["--decision"] ?? null,
     keep: given["--keep"] ?? null,
     message: given["--message"] ?? null,
+    lesson: given["--lesson"]?.trim() ?? null,
+    usedMemories,
   };
 }
 

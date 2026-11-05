@@ -1,4 +1,5 @@
-// exec/steps/close — `lane exec close <id>`: the lane's episode written to the repo's memory store
+// exec/steps/close — `lane exec close <id> [--lesson "<text>"] [--used-memories <ids>]`: the lane's
+// episode, with the conductor's lesson and the memories it used, written to the repo's memory store
 // (`<root>/.agentry/memory`) and its id stamped in the ledger, in one call. `--episode <id>` (stamp an id
 // written elsewhere) is still taken for one version, with a deprecation line.
 import { episodeStored, recordEpisode } from "../../../memory/episodes.mjs";
@@ -26,9 +27,13 @@ function stamp(root, id, ledger, episodeId) {
 }
 
 export function run(ctx, id) {
-  const { root, value: episodeId } = ctx;
+  const { root, value: episodeId, lesson = null, usedMemories = [] } = ctx;
   let ledger = mustLedger(root, id);
   if (episodeId !== null) return stamp(root, id, ledger, episodeId);
+  if (ledger.episode?.writtenId && (lesson || usedMemories.length))
+    refuse(
+      `the episode is already written (${ledger.episode.writtenId}): it takes no --lesson or --used-memories now → agentry mem write --type learning --scope repo --text "<the lesson>"`,
+    );
   if (ledger.episode?.writtenId) {
     // Closed again after a rebase or an owner's fix: the episode stands, and the land is next again.
     if (ledger.state === "verified" && ledger.next === "close") {
@@ -57,7 +62,7 @@ export function run(ctx, id) {
     ledger.cut ||
     ledger.episode;
   if (!closable) refuse(`the lane is not done (state ${ledger.state}, next ${ledger.next})`);
-  const payload = episodeOf(ledger);
+  const payload = episodeOf(ledger, { lesson, usedMemories });
   let written;
   try {
     written = recordEpisode(root, payload).id;
