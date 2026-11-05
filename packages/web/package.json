@@ -11,6 +11,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "metrics": "node scripts/load-metrics.mjs",
+    "readme-images": "node scripts/readme-images.mjs",
     "preview": "astro preview",
     "typecheck": "astro check",
     "test": "node --import tsx --test test/*.test.ts"
