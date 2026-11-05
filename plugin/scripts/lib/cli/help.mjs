@@ -14,19 +14,19 @@
 // PREVIEW                                                     the line a write prints without --apply
 // pluginVersion(root?) -> string | null                         the running build's version (field 61)
 
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runGit } from "../process/git.mjs";
 import { nextStep } from "./invoke.mjs";
 
 const PAD = 2;
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-// `git -C root …`'s output, trimmed; throws when git fails or can't start.
+// `git -C root …`'s output, trimmed; throws when git fails, can't start or outlasts the timeout.
 function git(root, args) {
-  const res = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
-  if (res.error || res.status !== 0) throw new Error(`git ${args[0]} failed`);
+  const res = runGit(root, args);
+  if (res.status !== 0) throw new Error(`git ${args[0]} failed`);
   return res.stdout.trim();
 }
 
