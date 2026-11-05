@@ -1,4 +1,4 @@
-// Config — the config-read mechanism (doc 01 §7).
+// Config — the config-read mechanism.
 // Read from `<root>/.agentry/config.json` (project) or `~/.agentry/config.json` (global), merged
 // over DEFAULT_CONFIG. The seam set is deliberately small: every toggle is a code path.
 // commit-or-not is NOT here — it's the user's .gitignore.
@@ -12,7 +12,7 @@ import { z } from "zod";
 export const AgentryConfig = z
   .object({
     workDir: z.string().default(".agentry"),
-    /** The active working mode (a name such as `night`; A29). Each mode's meaning is a skill of the repo's
+    /** The active working mode (a name such as `night`). Each mode's meaning is a skill of the repo's
      *  own: Agentry only carries the name, so any non-empty string is accepted and none is the default. */
     mode: z.string().min(1).optional(),
     evolution: z

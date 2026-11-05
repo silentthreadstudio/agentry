@@ -1,4 +1,4 @@
-// Enums shared across the contract (doc 07 §1).
+// Enums shared across the contract.
 import { z } from "zod";
 
 export const Scope = z.enum(["user", "global", "repo"]);
@@ -13,15 +13,15 @@ export const MemoryType = z.enum([
   "decision",
   "preference",
   "repo-fact",
-  // evolution layer (doc 01 §5) — `subject` distinguishes the harness target
+  // evolution layer — `subject` distinguishes the harness target
   "learning",
   "gap",
   "limitation",
 ]);
 export type MemoryType = z.infer<typeof MemoryType>;
 
-// The routing shapes the brain chooses (doc 04). The CURRENT set is enumerated, but the stored
-// value is permissive on purpose (doc 07): accept an unknown shape rather than reject it, so adding
+// The routing shapes the brain chooses. The CURRENT set is enumerated, but the stored
+// value is permissive on purpose: accept an unknown shape rather than reject it, so adding
 // a shape later can't corrupt routing precedent or throw on old records.
 export const KnownShape = z.enum(["one-shot", "spec-first", "decompose+verify"]);
 export type KnownShape = z.infer<typeof KnownShape>;
@@ -36,7 +36,7 @@ export type RoutedShape = z.infer<typeof RoutedShape>;
 export const Shape = z.string();
 export type Shape = string;
 
-// The routing kind axis (ADR-005) — orthogonal to Shape. The CURRENT set is enumerated, but the
+// The routing kind axis — orthogonal to Shape. The CURRENT set is enumerated, but the
 // stored value is permissive on purpose (same rationale as Shape): accept an unknown kind rather
 // than reject it, so adding a kind later can't corrupt routing precedent or throw on old records.
 export const KnownKind = z.enum(["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"]);

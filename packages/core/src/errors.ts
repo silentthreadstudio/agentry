@@ -1,9 +1,9 @@
-// Structured error envelope — the one shape every memory MCP tool returns on failure (ADR-001 §A).
+// Structured error envelope — the one shape every memory MCP tool returns on failure.
 // A calling model sees only the response, so the envelope must be machine-routable (`code`) AND
 // self-explanatory (`what`/`why`/`fix`). Pure data shape: no logic, no imports beyond zod.
 import { z } from "zod";
 
-// Closed, stable machine category. A sixth value fails to parse (AC8 — the set is closed in core).
+// Closed, stable machine category. A sixth value fails to parse (the set is closed in core).
 export const MemoryErrorCode = z.enum([
   "bad-input", // passes shape validation but is semantically invalid (blank id, limit ≤ 0)
   "not-found", // a referenced id does not exist

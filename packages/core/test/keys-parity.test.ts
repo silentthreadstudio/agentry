@@ -1,4 +1,4 @@
-// The harness keys hold one verdict in both validators (plan R1b §2.1): every case of the shared table
+// The harness keys hold one verdict in both validators: every case of the shared table
 // (`plugin/scripts/test/key-cases.mjs`) goes through core's zod and the plugin's dependency-free
 // validator (`spec.mjs` for process.json and workflow.json, against `ProcessBoard` plus `Workflow`;
 // `lib/config.mjs` for config.json), which must accept the same cases and name the same paths.

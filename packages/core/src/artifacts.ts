@@ -1,4 +1,4 @@
-// Artifact frontmatter — the structured parts agents write (doc 01).
+// Artifact frontmatter — the structured parts agents write.
 import { z } from "zod";
 import { Kind } from "./enums.js";
 
@@ -16,8 +16,8 @@ export const TaskFrontmatter = z.object({
   title: z.string(),
   status: TaskStatus,
   owner: z.string().optional(),
-  lockedBy: z.string().optional(), // who holds the task while in-progress (doc 08 §3)
-  version: z.string().optional(), // content-hash for optimistic concurrency (doc 08 §2)
+  lockedBy: z.string().optional(), // who holds the task while in-progress
+  version: z.string().optional(), // content-hash for optimistic concurrency
   satisfies: z.array(z.string()).default([]), // → Spec AC ids (coverage)
   deps: z.array(z.string()).default([]), // serialize only where contracts overlap
   contract: Contract,
@@ -29,6 +29,6 @@ export const SpecFrontmatter = z.object({
   title: z.string(),
   status: z.enum(["draft", "approved", "superseded"]),
   version: z.string().optional(),
-  kind: Kind.optional(), // the routing kind axis (ADR-005); optional — a spec may predate it
+  kind: Kind.optional(), // the routing kind axis; optional — a spec may predate it
 });
 export type SpecFrontmatter = z.infer<typeof SpecFrontmatter>;

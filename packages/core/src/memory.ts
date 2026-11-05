@@ -1,4 +1,4 @@
-// Memory records — the moat's data shapes (doc 07 §1).
+// Memory records — the moat's data shapes.
 import { z } from "zod";
 import { MemoryType, Scope, Shape, Status } from "./enums.js";
 
@@ -12,7 +12,7 @@ export const Fact = z.object({
   subject: z.string().optional(), // evolution only
   confidence: z.number().min(0).max(1),
   usefulness: z.number().min(0),
-  decay: z.number().min(0).default(0), // recalled-but-unused strike counter (doc 02 §3)
+  decay: z.number().min(0).default(0), // recalled-but-unused strike counter
   status: Status,
   archivedAt: z.string().optional(), // tombstone timestamp (audit/recoverability)
   supersedes: z.string().optional(),
@@ -30,9 +30,9 @@ export const Episode = z.object({
   outcome: z.string(),
   retries: z.number().optional(),
   lesson: z.string().optional(),
-  usedMemories: z.array(z.string()).optional(), // citation signal (doc 02 §4)
+  usedMemories: z.array(z.string()).optional(), // citation signal
   recallMisses: z.array(z.string()).optional(),
-  distilled: z.boolean(), // idempotent file field (doc 03)
+  distilled: z.boolean(), // idempotent file field
   repoId: z.string().optional(),
   createdAt: z.string(),
 });
