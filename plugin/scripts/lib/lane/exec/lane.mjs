@@ -10,7 +10,8 @@ import { prefix } from "../../cli/invoke.mjs";
 import { kindOf } from "../../process/ids.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { flaggedItem } from "../../process/spec/workflow.mjs";
-import { ownedFiles, shellQuote as q, withNew } from "../brief.mjs";
+import { shellQuote as q } from "../../text/shell.mjs";
+import { ownedFiles, withNew } from "../brief.mjs";
 import { step as advance } from "../rounds.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

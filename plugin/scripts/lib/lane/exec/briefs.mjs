@@ -5,6 +5,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path";
 import * as ledgers from "../../process/ledger.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
+import { shellQuote as q } from "../../text/shell.mjs";
 import { adoptedWork } from "../adopt.mjs";
 import {
   appendedAfter,
@@ -14,7 +15,6 @@ import {
   notesSection,
   ownerChange,
   policySlots,
-  shellQuote as q,
   recalledFacts,
   recheckSlots,
   renderBrief,

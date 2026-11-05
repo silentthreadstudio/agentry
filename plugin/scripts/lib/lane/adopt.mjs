@@ -11,7 +11,6 @@
 // pickOnto(worktree, { commits, diff }) -> { ok, conflict? }   cherry-pick the commits, merges left out
 // adoptedWork(adopted) -> the round-1 brief's `## Adopted work` section
 // cleanupSteps(adopted) -> the commands that remove the source once the lane has landed
-// shellWord(text) -> text as one shell word: as it is when plain, else single-quoted
 // shownName(text) -> text for a one-line message: JSON-escaped when empty or holding a control character
 // resolveBranch(root, name, tips?) -> { branch, tip } | { problem, missing? }   one listed branch, exactly
 // isBranch(root, name) -> whether `name` is a branch's own name, exactly: not a revision (`b~0`, `b@{0}`)
@@ -21,16 +20,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { branchTips, worktrees } from "../process/git.mjs";
-import { shellQuote } from "./brief.mjs";
+import { shellWord } from "../text/shell.mjs";
 import { first, short } from "./fmt.mjs";
 import { commitOf, filesOf, subjectOf } from "./land.mjs";
 import { spikeCalls } from "./owner-calls.mjs";
 import { git, porcelain } from "./worktree.mjs";
-
-/** `text` as one shell word for a command a person or agent pastes: as it is when it holds only plain
- *  characters, else single-quoted (`brief.mjs`'s `shellQuote`). */
-export const shellWord = (text) =>
-  /^[\w./@%+=:,-]+$/.test(String(text)) ? String(text) : shellQuote(text);
 
 /** `text` for a one-line message: as it is, or JSON-escaped when it is empty or holds a control
  *  character (a newline would split the line). */

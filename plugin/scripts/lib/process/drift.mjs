@@ -23,8 +23,8 @@
 // through git.mjs, asked once per run for all the ledgers (`survey`, `records`), never once per ledger.
 import { realpathSync } from "node:fs";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
-import { shellWord as w } from "../lane/adopt.mjs";
 import { readSpikes, spikesFile } from "../lane/spikes.mjs";
+import { shellWord as w } from "../text/shell.mjs";
 import * as git from "./git.mjs";
 import { kindOf } from "./ids.mjs";
 import { isKept } from "./keep.mjs";

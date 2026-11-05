@@ -47,7 +47,7 @@ import { readInside } from "../process/read.mjs";
 import { bulletOf } from "../process/spec/models.mjs";
 import { own } from "../process/spec/shape.mjs";
 import { runMark, runText } from "../process/steps.mjs";
-import { shellWord } from "./adopt.mjs";
+import { shellWord } from "../text/shell.mjs";
 import { answerLine } from "./exec-view.mjs";
 import { toLand } from "./land.mjs";
 import { checkCommits, readCommits, rulesOf } from "./subjects.mjs";
@@ -861,6 +861,3 @@ export function carriedWork({ commits, files, report, conflict, applied = true, 
 
 /** A list as brief lines (`- item`), or `none`. */
 export const bullets = (items) => (items.length ? items.map((i) => `- ${i}`).join("\n") : "none");
-
-/** `text` as one POSIX shell word: single-quoted, each `'` written `'\''`. */
-export const shellQuote = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;

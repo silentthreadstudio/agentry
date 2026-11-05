@@ -16,7 +16,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { prefix } from "../cli/invoke.mjs";
-import { shellQuote as q } from "./brief.mjs";
+import { shellQuote as q } from "../text/shell.mjs";
 import { short } from "./fmt.mjs";
 import { commitOf, isAncestor, subjectOf } from "./land.mjs";
 import { git, porcelain } from "./worktree.mjs";

@@ -7,7 +7,7 @@ import { readConfig } from "../../config.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
-import { shellQuote as q } from "../brief.mjs";
+import { shellQuote as q } from "../../text/shell.mjs";
 import { clock } from "../exec-view.mjs";
 import { isAncestor } from "../land.mjs";
 import { OVERLAP_SHOWN, ownsPath } from "./guard/allow.mjs";
