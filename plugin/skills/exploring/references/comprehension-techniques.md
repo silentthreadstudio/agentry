@@ -51,7 +51,7 @@ Always also read CI (`.github/workflows`, `Makefile`, `Justfile`) — it states 
 
 ## The Context map template
 
-Distill everything read into this shape (doc-01 — `.agentry/context.md`). Coordinates + structure + the few load-bearing facts:
+Distill everything read into this shape (`.agentry/context.md`). Coordinates + structure + the few load-bearing facts:
 
 ```markdown
 ## Stack / environment   — language(s), package manager, framework, build/test/run commands, code-intel tools available

@@ -51,7 +51,7 @@ The Spec is the **only always-on doc**, but it scales. A tiny, clear task gets a
 
 ## Output
 
-A shaped **Spec** (doc-01 format): Problem/intent (JTBD) · Scope + explicit non-goals · `AC1..n` (observable + verifiable) · Constraints · Context · Open questions — ready for the conductor to gate with the user. Report any memory that shaped the Spec in `used_memories`.
+A shaped **Spec**: Problem/intent (JTBD) · Scope + explicit non-goals · `AC1..n` (observable + verifiable) · Constraints · Context · Open questions — ready for the conductor to gate with the user. Report any memory that shaped the Spec in `used_memories`.
 
 ## Anti-patterns (refuse these)
 

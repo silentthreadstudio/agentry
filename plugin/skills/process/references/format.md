@@ -87,7 +87,7 @@ No `version`, and every key is optional.
 - **`create`** — how `/agentry:new` adds one: `ask` (the fields to ask, nothing else), `id` (a pattern such
   as `T{n}` or `Q-{n:02}`, `{n}` for plain numbers, or `ask`; with `ask` or none,
   `board next-id <kind> --family <prefix>` proposes one above the highest board id of any kind in that
-  prefix family, a bare number counted in its cited form (`A52` with `id.prefix` `A`), and a family that
+  prefix family, a bare number counted in its cited form (`D52` with `id.prefix` `D`), and a family that
   ends in a digit needing a separator (`R1-3`, never `R19`)), `rows` and `blocks`:
   - row: `{ "in": "self" | "parent.file:<section>", "at": "end" | "after-last:<field>", "cells": { "<header>": "<template>" } }`
   - block: `{ "file": "TASKS.md", "under": "<heading template>" | "ask", "text": "<template>" }`

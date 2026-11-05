@@ -10,6 +10,6 @@ Brief for the explorer:
 - Prefer a semantic code-intel tool (Serena/LSP) if present; fall back to grep/glob/read. **Distill — do not dump files.**
 - Detect the available tools/MCPs in this environment and record them.
 
-Output: a **Context map** (doc-01 format) at `.agentry/context.md`, plus seeded `repo-fact` memories (including the available-capabilities profile). Change nothing — this node is read-only.
+Output: a **Context map** at `.agentry/context.md`, plus seeded `repo-fact` memories (including the available-capabilities profile). Change nothing — this node is read-only.
 
 See also `/agentry:init`: the setup front door, which offers this map when `.agentry/context.md` is missing.

@@ -35,7 +35,7 @@ An open debt lane and an open task lane pass each other's board writes.
 
 | Step | Does | Board (through `lifecycle`) |
 | :--- | :--- | :--- |
-| `start <id> [--cite A40,A41]` | finds the contract, refuses at `lanes.maxWriters` and a contract whose Steps part has a problem, refuses while another lane's land has its picks on main (`main is mid-land (<id>, since HH:MM): its picks may still roll back → start after it lands, or agentry lane merge <id> --resolve landed\|rolled-back`, exit 2, nothing written), cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder on the first run of steps (`steps:` lists them); `--cite` adds decisions to every brief by id (a decision whose row names the task is quoted anyway) | `dispatched` |
+| `start <id> [--cite <id>,<id>]` | finds the contract, refuses at `lanes.maxWriters` and a contract whose Steps part has a problem, refuses while another lane's land has its picks on main (`main is mid-land (<id>, since HH:MM): its picks may still roll back → start after it lands, or agentry lane merge <id> --resolve landed\|rolled-back`, exit 2, nothing written), cuts `agentry/<id>` in `.agentry/run/worktrees/<id>`, briefs the builder on the first run of steps (`steps:` lists them); `--cite` adds decisions to every brief by id (a decision whose row names the task is quoted anyway) | `dispatched` |
 | `start <id> --on <Y>` | stacks the lane on Y's (see [Stacks](#stacks)), with every `start` check and record (a land mid-pick, `lanes.maxWriters`, the contract, `boardAtStart`): Y resolves like `<id>`, and is `verified` (any next), `held` or at its gate (`next: gate`); cuts `agentry/<id>` from `agentry/<Y>`'s tip, writes `on: "<Y>"` and `base` (Y's tip) to the ledger and prints `stack: on <Y> at <short> (<Y> is <state>); <Y> lands first` | `dispatched` |
 | `report <id> [--agent a]` | reads the builder's report, runs the guards, briefs the next round; a run that ends at `→ owner OK` holds the lane instead; a main the guard finds touched holds it for the guard, and on a lane held so it reads the saved report again | `built` when a verifier (or, under `exec.verify`, the gate alone) is next |
 | `verdict <id> [--agent a] [--leave N2,N9 [--by owner\|conductor]]` | reads the verifier's report and its tip, briefs the next round. `--leave` records those notes of this report as left as built on the owner's or the conductor's word (`--by`, default `conductor`): `left: [{ label, by, at, round }]` in the ledger, shown by `show`. A left note is never sent back: the recheck brief does not ask for it, `covered` does not need it (so `final: "after-fix"` sends no final for it), and the notes line does not offer it. A label the report does not have refuses, nothing written | the verdict (`FAIL` also `failed`) |
@@ -301,7 +301,7 @@ of 2` and resumes into step 2, never to the verifier or close.
 
 ### Stacks
 
-A lane can start on another lane that is done building but not landed yet (A45), so serial work does not
+A lane can start on another lane that is done building but not landed yet, so serial work does not
 wait for a land: `agentry lane exec start T2 --on T1`. T1 may be `verified` (any next), `held`, or at its gate
 (`next: gate`), and may itself be stacked (a chain). T2 is cut from `agentry/T1`'s tip; its ledger has
 `on: "T1"` and `base` = that tip, so every `base..HEAD` reader (the commit count, the gate tier, the briefs)
@@ -353,7 +353,7 @@ by hand) and sets `base` to `base.to`; one onto main removes `on`.
 **Rounds.** A clean restack gets the gate only, the trust a land's cherry-pick onto a moved main gets: the
 verdict stands for the same commits (`verifiedTip`, the last counted verdict's tip or `builtTip`, carries
 through each clean restack from it), and a gate on the old tip no longer counts. One by hand after a verdict
-gets the resolution recheck (A48) on the restack's ranges; the resolve brief names the parent's branch. A held
+gets the resolution recheck on the restack's ranges; the resolve brief names the parent's branch. A held
 lane with no verdict yet records it and goes on: the one verifier after the build reads it all. The verify
 and build briefs of a stacked lane carry a `Stacked` section: judge (or build) only `base..HEAD`, the parent's
 commits are its own lane's, and never rebase: the lane restacks. `exec rebase T2` while T1 is not merged is
@@ -410,10 +410,10 @@ says `stacked on T1; restacks: N`.
   dirty at start that changed or was reverted since (board files no running lane owns are allowed, below). HEAD may move by other lanes' merges, each the run `preHead` → landed
   commits → board commit its ledger records, matched against main's first-parent history, and by any commit
   that touches none of this lane's owned files and none of the files its worktree changed (committed past base
-  or uncommitted), whoever made it (field 81). The commit list is the lane's start..HEAD, judged against its
+  or uncommitted), whoever made it. The commit list is the lane's start..HEAD, judged against its
   owned files at that moment, so removing a one-off `guard.allow` entry never re-trips a lane; a commit
   touching a file only another running lane owns trips that lane, not this one. When the lane's branch holds main past
-  the start (the builder rebased or merged main in-branch, field 102), the start follows it: the merge base of
+  the start (the builder rebased or merged main in-branch), the start follows it: the merge base of
   main's HEAD and the branch's listed tip becomes `mainAtStart.head` (its snapshot moved as a rebase's is),
   recorded in `startMoves[]` as `{ from, to, why: "branch holds main", at }`, but only when every main commit
   from the old start to there passes this rule judged against the lane's owned files alone; one touching an
@@ -425,7 +425,7 @@ says `stacked on T1; restacks: N`.
   `(+<n> more)`). `report`, `hold` and `resume` run this one rule, so they never disagree. Agentry's own files
   are not checked: `.agentry/run/`, and new memory records (`.agentry/memory/<facts|episodes>/<slug>-<ULID>.md`,
   untracked, or in a commit that only adds them). Anything else under `.agentry/memory/` is let through as a
-  `guard.allow` glob, committed or uncommitted (field 78), unless a running lane's contract owns it; `agentry
+  `guard.allow` glob, committed or uncommitted, unless a running lane's contract owns it; `agentry
   lane merge` and the gate keep the stricter definition for a clean main (one function, `own-memory.mjs`). A
   path's type and mode count with its content (a symlink, a chmod).
   `agentry board add` and `agentry board set --apply` run in the main checkout record what they wrote the same way

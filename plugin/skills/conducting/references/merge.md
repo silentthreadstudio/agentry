@@ -5,7 +5,7 @@ every git, gate and board step and prints what it did. A repo's own merge skill 
 to that repo, and merge calls it as a check (`extensions.merge.checks`). `lane` means
 `agentry lane`.
 
-A task is `done` when its commits are on main (A23). The merge is what makes it `done`. A verifier's PASS
+A task is `done` when its commits are on main. The merge is what makes it `done`. A verifier's PASS
 leaves the task in verify.
 
 ## The calls

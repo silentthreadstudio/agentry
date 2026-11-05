@@ -10,4 +10,4 @@ Brief for the researcher:
 - Capability-first: use web search (WebSearch/WebFetch) if present, a library-docs MCP (e.g. context7) if present; otherwise state what couldn't be verified.
 - Scope tightly — answer the question, don't wander.
 
-Output: a **Research** doc (doc-01: `## Findings` cited + `## Implications`) under the work folder. Thread its implications into the spec/plan when the conductor continues.
+Output: a **Research** doc (`## Findings` cited + `## Implications`) under the work folder. Thread its implications into the spec/plan when the conductor continues.

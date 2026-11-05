@@ -58,7 +58,7 @@ You are primed with what memory already knows about this repo. **Recall before r
 
 ## Output
 
-A **Context map** — *Stack/environment · Structure & where-things-live · Key flows · Conventions · Entry points* (doc-01 format) — or, for a narrow ask, a **targeted trace**: the path through the code and the load-bearing location. Plus the **available capabilities** observed (tools, package manager, run commands), `used_memories`, and any external/out-of-scope items flagged for the researcher.
+A **Context map** — *Stack/environment · Structure & where-things-live · Key flows · Conventions · Entry points* — or, for a narrow ask, a **targeted trace**: the path through the code and the load-bearing location. Plus the **available capabilities** observed (tools, package manager, run commands), `used_memories`, and any external/out-of-scope items flagged for the researcher.
 
 ## Additional resources
 

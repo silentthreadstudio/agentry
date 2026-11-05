@@ -11,6 +11,6 @@ Brief for the verifier:
 - **Cite evidence/method** for every verdict — test counts, a command run, a trace, a screenshot path. **No bare PASS.** Use a browser MCP to verify UI behavior if present.
 - Name any gotcha discovered.
 
-Output: a **Verdict** (doc-01 Review): per-AC PASS/FAIL/UNVERIFIED + cited evidence + named gotchas. On an escalated run the conductor sets the task file's `status:` in `.agentry/work/<run>/tasks/` on the outcome and surfaces the verdict to the user in the chat.
+Output: a **Verdict** (a review): per-AC PASS/FAIL/UNVERIFIED + cited evidence + named gotchas. On an escalated run the conductor sets the task file's `status:` in `.agentry/work/<run>/tasks/` on the outcome and surfaces the verdict to the user in the chat.
 
 After the verdict: the conductor harvests any named gotcha to memory (the verifier stays read-only). On needs-changes touching a shared seam, pause and re-thread the not-yet-started tasks on that seam.
