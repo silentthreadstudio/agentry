@@ -29,8 +29,7 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { atomicWrite } from "../fs/atomic.mjs";
-import { sessionChecks } from "../process/spec/extensions.mjs";
-import { skillExists } from "../process/spec/extensions.mjs";
+import { sessionChecks, skillExists } from "../process/spec/extensions.mjs";
 
 const PHASES = ["start", "close"];
 const RESULTS = ["pass", "fail"];
