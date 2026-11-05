@@ -68,6 +68,7 @@ const BOARD_MD = `# Restart
 | T1   | todo   |         |
 | T2   | todo   |         |
 | T3   | todo   |         |
+| T4   | todo   |         |
 `;
 const TASKS_MD = `# Tasks
 
@@ -87,6 +88,16 @@ const TASKS_MD = `# Tasks
 ### T3 · No steps
 
 - **Owns:** \`three.txt\`, \`more.txt\`. Accept: three.txt exists.
+
+### T4 · Three steps, two owner gates
+
+- **Owns:** \`a.txt\`, \`b.txt\`, \`c.txt\`
+- **Steps:**
+  1. Write a.txt → owner OK
+  2. Write b.txt → owner OK
+  3. Write c.txt
+- **Acceptance:**
+  - c.txt exists
 `;
 
 // A repo on main with the board committed; `.agentry/` committed too unless `untracked`.
@@ -164,7 +175,14 @@ test("restart --carry archives the lane, cuts T3 from main and carries its commi
   assert.equal(ledger.base, main[0]);
   assert.equal(ledger.restarted.from, "T3.1");
   const diff = join(processDir(r.root), "runs", "T3.1", "restart", "uncommitted.diff");
-  assert.deepEqual(ledger.carried, { commits: 1, files: 1, report, applied: true, diff });
+  assert.deepEqual(ledger.carried, {
+    rounds: { total: 1, builds: 1, verdicts: 0 },
+    commits: 1,
+    files: 1,
+    report,
+    applied: true,
+    diff,
+  });
   assert.equal(tipOf(r.root, "agentry/T3^"), main[0]);
   assert.equal(git(r.root, "log", "-1", "--format=%s", "agentry/T3"), "feat: three");
   assert.equal(readFileSync(join(old.worktree, "three.txt"), "utf8"), "a\nlane\nc\n");
@@ -1233,4 +1251,174 @@ test("a build brief and a fix brief say never to rebase or merge main inside the
     /never `git rebase` or `git merge` main into the branch; report it and ask for\n`exec rebase`/,
   );
   assert.match(text, rule);
+});
+
+// T4 through two owner gates: step 1 and 2 built, reported and OK'd; the builder of step 3 has committed c.txt
+// and is parked (`hold --for later`), so the lane can restart.
+function midStepThree(r) {
+  const out = lane(r, "start", "T4").json;
+  const wt = out.worktree;
+  commitFile(wt, "a.txt", "a\n", "feat: a");
+  writeFileSync(out.reportPath, "DONE\na\nused_memories: none\n");
+  assert.equal(lane(r, "report", "T4").json.state, "held");
+  const two = lane(r, "resume", "T4", "--note", "step 1 is fine").json;
+  commitFile(wt, "b.txt", "b\n", "feat: b");
+  writeFileSync(two.reportPath, "DONE\nb\nused_memories: none\n");
+  assert.equal(lane(r, "report", "T4").json.state, "held");
+  const three = lane(r, "resume", "T4", "--note", "step 2 is fine").json;
+  commitFile(wt, "c.txt", "c\n", "feat: c");
+  assert.equal(lane(r, "hold", "T4", "--for", "later", "--note", "park").exit, 0);
+  return { wt, three };
+}
+
+test("restart --carry of a 3-step lane stopped in step 3 keeps the owner OKs and briefs step 3, not step 1", () => {
+  const r = repo();
+  midStepThree(r);
+  const old = ledgerOf(r.root, "T4");
+  const res = lane(r, "restart", "T4", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.deepEqual([res.json.next, res.json.state], ["continue", "building"]);
+  const ledger = ledgerOf(r.root, "T4");
+  // The OKs of the two passed gates, as the old ledger had them.
+  assert.deepEqual(
+    ledger.holds.map((h) => [h.for, h.stepRun, h.note]),
+    [
+      ["owner", [1, 1], "step 1 is fine"],
+      ["owner", [2, 2], "step 2 is fine"],
+    ],
+  );
+  // Their evidence read where the archive holds the old run's files.
+  assert.deepEqual(
+    ledger.holds.map((h) => h.evidence),
+    old.holds.map((h) => h.evidence.replace("/runs/T4/", "/runs/T4.1/")),
+  );
+  // The first round: a fresh builder continues step 3.
+  const first = ledger.rounds[0];
+  assert.deepEqual([first.step, first.mode, first.stepRun], ["continue", "fresh", [3, 3]]);
+  assert.match(first.from, /T4\.1\/r\d+-\w+\.report\.md$/);
+  assert.deepEqual(ledger.carried.stepRun, [3, 3]);
+  assert.deepEqual(ledger.carried.rounds, {
+    total: old.rounds.length,
+    builds: old.rounds.length,
+    verdicts: 0,
+  });
+  const brief = readFileSync(res.json.brief, "utf8");
+  assert.match(brief, /Built before this round \(on the branch\): steps 1–2\./);
+  assert.match(brief, /step 3 of 3/);
+  assert.match(brief, /step 2 is fine/);
+  assert.doesNotMatch(brief, /step 1 of 3/);
+  assert.match(res.json.progress, /2 owner OK\(s\) carried; the first brief is for step 3 of 3/);
+  assert.equal(res.json.dropped, undefined);
+});
+
+test("a restart before any step passed still starts at step 1, with no OKs", () => {
+  const r = repo();
+  const out = lane(r, "start", "T4").json;
+  commitFile(out.worktree, "a.txt", "a\n", "feat: a");
+  assert.equal(lane(r, "hold", "T4", "--for", "later", "--note", "park").exit, 0);
+  const res = lane(r, "restart", "T4", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "build");
+  const ledger = ledgerOf(r.root, "T4");
+  assert.deepEqual([ledger.rounds[0].step, ledger.rounds[0].stepRun], ["build", [1, 1]]);
+  assert.equal(ledger.holds, undefined);
+  assert.equal(ledger.carried.stepRun, undefined);
+});
+
+test("an owner hold not yet answered is no OK: the step is built again and the output says so", () => {
+  const r = repo();
+  const out = lane(r, "start", "T4").json;
+  commitFile(out.worktree, "a.txt", "a\n", "feat: a");
+  writeFileSync(out.reportPath, "DONE\na\nused_memories: none\n");
+  assert.equal(lane(r, "report", "T4").json.state, "held");
+  const res = lane(r, "restart", "T4", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.match(res.json.dropped, /the owner hold on step 1 of 3: not an OK/);
+  const ledger = ledgerOf(r.root, "T4");
+  assert.deepEqual([ledger.rounds[0].step, ledger.rounds[0].stepRun], ["build", [1, 1]]);
+});
+
+test("a contract whose steps changed since drops the OKs and the pointer, and says so", () => {
+  const r = repo();
+  midStepThree(r);
+  const tasks = readFileSync(join(r.root, "plan", "TASKS.md"), "utf8");
+  commitFile(
+    r.root,
+    "plan/TASKS.md",
+    tasks.replace("Write c.txt", "Write c.txt twice"),
+    "docs: edit",
+  );
+  const res = lane(r, "restart", "T4", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.match(
+    res.json.dropped,
+    /2 owner OK\(s\) and the step pointer: the contract's steps changed/,
+  );
+  assert.equal(res.json.next, "build");
+  assert.equal(ledgerOf(r.root, "T4").holds, undefined);
+});
+
+test("owns --add grants ride through a restart --carry, never more than the old ledger had", () => {
+  const r = repo();
+  midStepThree(r);
+  assert.equal(lane(r, "owns", "T4", "--add", "extra.txt", "--apply").exit, 0);
+  const old = ledgerOf(r.root, "T4").owned;
+  assert.ok(old.some((o) => o.path === "extra.txt"));
+  const res = lane(r, "restart", "T4", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  const now = ledgerOf(r.root, "T4").owned;
+  assert.deepEqual(now.map((o) => o.path).sort(), old.map((o) => o.path).sort());
+  // A second restart keeps them again, and the OKs with them.
+  assert.equal(lane(r, "hold", "T4", "--for", "later", "--note", "park").exit, 0);
+  const again = lane(r, "restart", "T4", "--carry");
+  assert.equal(again.exit, 0, again.stderr);
+  assert.deepEqual(
+    ledgerOf(r.root, "T4")
+      .owned.map((o) => o.path)
+      .sort(),
+    old.map((o) => o.path).sort(),
+  );
+  assert.equal(ledgerOf(r.root, "T4").holds.length, 2);
+  assert.deepEqual(ledgerOf(r.root, "T4").rounds[0].stepRun, [3, 3]);
+});
+
+// The field shape (R1e-1 r3 N2): T3 started, main moves, the builder rebases onto it in the worktree.
+const COMMITS_SPEC = { ...SPEC, commits: { subjectPattern: "^(feat|fix): " } };
+function heldMain(r, { own }) {
+  const out = lane(r, "start", "T3").json;
+  if (own) commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  commitFile(r.root, "docs.txt", "one\n", "docs: main one");
+  commitFile(r.root, "docs.txt", "one\ntwo\n", "docs: main two");
+  git(out.worktree, "rebase", "-q", "main");
+  writeFileSync(out.reportPath, "DONE\nthree\nused_memories: none\n");
+  return out;
+}
+
+test("a branch holding main is not charged main's commit subjects: only the lane's own are checked", () => {
+  const r = repo({ spec: COMMITS_SPEC });
+  heldMain(r, { own: true });
+  const res = lane(r, "report", "T3");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "verify", JSON.stringify(res.json));
+});
+
+test("a branch holding main with no commit of its own still trips no commits past base", () => {
+  const r = repo();
+  heldMain(r, { own: false });
+  const res = lane(r, "report", "T3");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.next, "fix");
+  assert.match(ledgerOf(r.root, "T3").rounds[0].guards.join(";"), /no commits past base/);
+});
+
+test("the lane's own subjects are still checked once the branch holds main", () => {
+  const r = repo({ spec: COMMITS_SPEC });
+  const out = lane(r, "start", "T3").json;
+  commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "wip three");
+  commitFile(r.root, "docs.txt", "one\n", "feat: main one");
+  git(out.worktree, "rebase", "-q", "main");
+  writeFileSync(out.reportPath, "DONE\nthree\nused_memories: none\n");
+  const res = lane(r, "report", "T3");
+  assert.equal(res.json.next, "fix");
+  assert.match(ledgerOf(r.root, "T3").rounds[0].guards.join(";"), /wip three/);
 });

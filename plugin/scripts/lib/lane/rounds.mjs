@@ -55,7 +55,8 @@
 //                                             the usual rows
 //   gate: red only in listed flaky tests    → no decision: the alone re-run's record decides
 //   start, the contract has steps            → build (fresh) on the first run: steps 1..g, g the first step
-//                                             ending "→ owner OK", else the last step
+//                                             ending "→ owner OK", else the last step; a restart --carry that
+//                                             passed an owner gate → continue (fresh) on the run it stopped in
 //   build / fix / continue on run a..g, no verdict yet: DONE or DONE_WITH_CONCERNS, guards hold
 //                                           → hold (held) when step g ends "→ owner OK"; else g is the last
 //                                             step: as build above (verify, or the gate under exec.verify)
@@ -206,7 +207,21 @@ export const begin = (steps = []) => ({
   dispatch: { step: "build", ...STEPS.build, ...(steps.length && { stepRun: runOf(steps, 1) }) },
 });
 
-/** Append the round `dispatch` describes (from `begin` or `step`), with its files and the branch tip at
+/** The plan for a restarted lane's first round (field 99): a fresh builder `continue`s the run the old lane
+ *  stopped in (`stepRun`, past step 1), `from` the old builder's last report, never step 1 again. */
+export const beginAt = (stepRun, from, reason) => ({
+  next: "continue",
+  dispatch: {
+    step: "continue",
+    ...STEPS.continue,
+    mode: "fresh",
+    from,
+    stepRun,
+    ...(reason && { reason }),
+  },
+});
+
+/** Append the round `dispatch` describes (from `begin`, `beginAt` or `step`), with its files and the branch tip at
  *  dispatch; the ledger's `next` and `state` follow it. */
 export function addRound(ledger, dispatch, { brief, reportPath, tip, at }) {
   const out = structuredClone(ledger);

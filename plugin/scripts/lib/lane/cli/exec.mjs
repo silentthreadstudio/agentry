@@ -77,6 +77,7 @@ import { modelFor, proseModelHint, unusedUiModel } from "../../process/spec/mode
 import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
 import { escapesRoot, own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
+import { runOf, runText } from "../../process/steps.mjs";
 import { WriteError } from "../../process/write.mjs";
 import {
   adoptedWork,
@@ -146,6 +147,7 @@ import {
   addRound,
   step as advance,
   begin,
+  beginAt,
   expects,
   gateTally,
   greenOn,
@@ -863,6 +865,11 @@ function heldMain(root, ledger, since) {
   const base = since && tip ? mergeBaseOf(root, "HEAD", tip) : null;
   return base && base !== since && isAncestor(root, since, base) ? base : null;
 }
+
+// Where the lane's own commits start (field 102): the merge base with main once the branch holds main past
+// its base (the guard's start moved to it, `startMoves`), else the base. `<start>..<tip>` is never main's
+// commits the branch holds.
+const ownStart = (root, ledger) => heldMain(root, ledger, ledger.base) ?? ledger.base;
 
 // The guard's start follows the branch (field 102): when the branch holds main past the start, the start
 // moves to that merge base, its snapshot with it (`moveStart`), recorded in `startMoves[]` as `{ from, to,
@@ -1582,6 +1589,9 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     rebases = null,
     rebased = null,
     carriedRounds = [],
+    holds = [],
+    grants = [],
+    startAt = null,
     shown = {},
     warnings = [],
     exit = 0,
@@ -1606,6 +1616,15 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   writeFileSync(contractFile(root, id), `${found.block.trimEnd()}\n`);
   const at = now();
   const workflow = resolveWorkflow(spec);
+  // The contract's own owned files, then the old lane's `owns --add` grants the contract does not cover.
+  const fromContract = withNew(tree.path, ownedFiles(found.block, tree.path));
+  const owned = [
+    ...fromContract,
+    ...withNew(
+      tree.path,
+      grants.map((g) => g.path),
+    ).filter((g) => !fromContract.some((o) => ownsPath(o.path, g.path))),
+  ];
   let ledger = {
     v: 1,
     id,
@@ -1627,7 +1646,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     boardAtStart: boardPaths(spec),
     ...(hash && { boardAtStartHash: hash }),
     worktreesAtStart: worktrees(root).map((t) => t.path),
-    owned: withNew(tree.path, ownedFiles(found.block, tree.path)),
+    owned,
     ...(found.steps?.length && { steps: found.steps }),
     ...(cite.length && { cite }),
     // The route is fixed here: an edit of the workflow file mid-lane changes no running lane.
@@ -1640,6 +1659,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
       rebase: workflow.exec.rebase,
     },
     rounds: carriedRounds,
+    ...(holds.length && { holds }),
     gates: [],
     checks: {},
     usedMemories: [],
@@ -1672,7 +1692,12 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
         { ...ledger, state: "verified" },
         { type: "rebased", ...rebased, gate: gateOf(spec) !== null, tier: buildTier(ctx, ledger) },
       )
-    : { ledger, dispatch: begin(ledger.steps).dispatch };
+    : {
+        ledger,
+        dispatch: startAt
+          ? beginAt(startAt.stepRun, startAt.from, startAt.reason).dispatch
+          : begin(ledger.steps).dispatch,
+      };
   ledger = dispatchNext(ctx, moved.ledger, moved.dispatch);
   ledgers.write(root, ledger);
   const res = view(ctx, ledger, {
@@ -1934,14 +1959,16 @@ function report(ctx, id, agent) {
   // A rebase moves the base: the guards count from the new one.
   const before = structuredClone(ledger);
   const changed = isRebase ? finishRebase(root, before, tip) : undefined;
-  const count = git(root, ["rev-list", "--count", `${before.base}..${ledger.branch}`]);
   // From the new base after a rebase: the lane's own changes are the files main may not touch.
   const main = mainGuard(ctx, before, all);
+  // The lane's own commits: from its moved start when the branch holds main, never main's own.
+  const start = ownStart(root, before);
+  const count = git(root, ["rev-list", "--count", `${start}..${ledger.branch}`]);
   const guards = {
     mainTouched: main.touched,
     dirty,
     commits: count.status === 0 ? Number(count.stdout.trim()) : 0,
-    subjects: subjectsOf(root, ctx.spec, before.base, ledger.branch),
+    subjects: subjectsOf(root, ctx.spec, start, ledger.branch),
   };
   const flagged = isFlagged(ctx, ledger);
   const res = stepWith(before, {
@@ -3012,6 +3039,37 @@ const carriedVerdicts = (ledger, archive, runs) => {
   }));
 };
 
+// The old lane's progress through its contract's steps (field 99): the owner OKs of its passed gates
+// (`holds[]` with `for: owner`, resolved) and, when a step past 1 follows an OK, the run it stopped in (its
+// newest builder round's) for the new lane's first brief. Carried only while the contract's steps are the
+// ones the OKs were given on, their evidence read where the archive holds it; what is not carried is named in `dropped`.
+function progressOf(old, steps, runs) {
+  const oks = (old.holds ?? []).filter((h) => h.for === "owner");
+  const none = { holds: [], stepRun: null, dropped: [] };
+  if (!oks.length && old.hold?.for !== "owner") return none;
+  const dropped = [];
+  if (old.hold?.for === "owner")
+    dropped.push(
+      `the owner hold on ${runText(old.hold.stepRun, old.steps?.length ?? 0)}: not an OK, the step is built again`,
+    );
+  if (JSON.stringify(old.steps ?? []) !== JSON.stringify(steps ?? []))
+    return {
+      ...none,
+      dropped: [
+        ...dropped,
+        ...(oks.length
+          ? [`${oks.length} owner OK(s) and the step pointer: the contract's steps changed`]
+          : []),
+      ],
+    };
+  const a = old.rounds.findLast((r) => r.role === "build" && r.stepRun)?.stepRun?.[0] ?? 1;
+  const passed = oks.some((h) => h.when === "after" && !h.redo && h.stepRun?.[1] === a - 1);
+  if (a > 1 && !passed) dropped.push(`the step pointer: no owner OK before step ${a}`);
+  const moved = archivedPath(old.id, runs);
+  const holds = oks.map((h) => ({ ...h, evidence: moved(h.evidence) }));
+  return { holds, stepRun: a > 1 && passed ? runOf(steps, a) : null, dropped };
+}
+
 // A verified lane's carry, taken as a rebase: the range-diff of the old base..tip against the new
 // `base`..HEAD of `worktree` as the new lane's first `rebases[]` entry, and the `rebased` facts (`tip`,
 // `changed`) its next step is picked from.
@@ -3144,7 +3202,13 @@ function restart(ctx, id) {
     const warnings = checked ? [] : [clearVerdict(ctx, id)].filter(Boolean);
     const report = lastReport(old, archived.runs);
     const skipped = range?.skipped ?? [];
+    const progress = progressOf(old, found.steps, archived.runs);
+    // A verified carry goes on past the build: only the owner OKs ride with it, no step to continue.
+    const stepRun = checked ? null : progress.stepRun;
+    const builds = old.rounds.filter((r) => r.role === "build").length;
     const carried = {
+      rounds: { total: old.rounds.length, builds, verdicts: verdicts(old).length },
+      ...(stepRun && { stepRun }),
       commits: oldTip ? left.commits : 0,
       ...(skipped.length && { skipped }),
       files: work.files.length,
@@ -3159,6 +3223,15 @@ function restart(ctx, id) {
     return {
       restarted: { ...restarted, branch },
       carried,
+      holds: progress.holds,
+      grants: old.owned ?? [],
+      ...(stepRun && {
+        startAt: {
+          stepRun,
+          from: report ?? undefined,
+          reason: `restarted: ${id}.${n} stopped in ${runText(stepRun, found.steps.length)}`,
+        },
+      }),
       ...checked,
       warnings,
       exit: res.ok ? 0 : 1,
@@ -3169,6 +3242,10 @@ function restart(ctx, id) {
           skipped: `${skipped.length} already on ${mainBranch}: ${skipped.map((c) => `${short(c.sha)} ${c.subject}`).join(", ")}`,
         }),
         ...(res.conflict && { conflict: `${res.conflict} in ${path}` }),
+        ...(progress.holds.length && {
+          progress: `${progress.holds.length} owner OK(s) carried${stepRun ? `; the first brief is for ${runText(stepRun, found.steps.length)}` : ""}`,
+        }),
+        ...(progress.dropped.length && { dropped: progress.dropped.join("; ") }),
         ...(checked && { rangeDiff: checked.rebases[0].rangeDiff }),
       },
     };
