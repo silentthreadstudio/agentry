@@ -400,7 +400,15 @@ says `stacked on T1; restacks: N`.
   that touches none of this lane's owned files and none of the files its worktree changed (committed past base
   or uncommitted), whoever made it (field 81). The commit list is the lane's start..HEAD, judged against its
   owned files at that moment, so removing a one-off `guard.allow` entry never re-trips a lane; a commit
-  touching a file only another running lane owns trips that lane, not this one. An overlapping commit trips
+  touching a file only another running lane owns trips that lane, not this one. When the lane's branch holds main past
+  the start (the builder rebased or merged main in-branch, field 102), the start follows it: the merge base of
+  main's HEAD and the branch's listed tip becomes `mainAtStart.head` (its snapshot moved as a rebase's is),
+  recorded in `startMoves[]` as `{ from, to, why: "branch holds main", at }`, but only when every main commit
+  from the old start to there passes this rule judged against the lane's owned files alone; one touching an
+  owned file (a wrong-cwd commit the branch was then rebased onto) keeps the start, so it trips. Commits after
+  the merge base are judged as any. "The files its worktree changed" are counted from that merge base once the
+  branch holds main past its base, so main's own changes are never this lane's files, and a start moved this way
+  counts as moved for the board's mid-write entry, as a rebase's does. An overlapping commit trips
   with the overlap named: `HEAD moved a → b (<sha> touches <paths>, this lane's files)` (at most 5 paths,
   `(+<n> more)`). `report`, `hold` and `resume` run this one rule, so they never disagree. Agentry's own files
   are not checked: `.agentry/run/`, and new memory records (`.agentry/memory/<facts|episodes>/<slug>-<ULID>.md`,

@@ -500,9 +500,10 @@ function reachable(moves, from, to) {
 }
 
 // The main files whose content no recorded lifecycle or board write explains, and whose path `excused`
-// does not let through, as `git status` entries. Once a rebase moved the guard's start, a path clean on main
-// whose start is one of the lane's own board writes was mid-write at start and is as HEAD holds it now:
-// never "back to HEAD" (field 93). Before that, a discard of the board is a trip as any other.
+// does not let through, as `git status` entries. Once a rebase (or the branch holding main, `startMoves`)
+// moved the guard's start, a path clean on main whose start is one of the lane's own board writes was
+// mid-write at start and is as HEAD holds it now: never "back to HEAD" (field 93). Before that, a discard of
+// the board is a trip as any other.
 function strayFiles(root, ledger, head, all, boards, excused) {
   const was = ledger.mainAtStart;
   const started = was.files ?? {};
@@ -518,7 +519,8 @@ function strayFiles(root, ledger, head, all, boards, excused) {
     ...all.flatMap((l) => l.boardWrites ?? []).filter((m) => boards.has(m.file)),
     ...logged,
   ];
-  const moved = (ledger.rebases ?? []).some((r) => !r.carried);
+  const moved =
+    (ledger.rebases ?? []).some((r) => !r.carried) || Boolean(ledger.startMoves?.length);
   const ownWrites = new Set(
     moved ? (ledger.boardWrites ?? []).map((m) => `${m.file}\0${m.to}`) : [],
   );
@@ -592,8 +594,9 @@ function landedOnly(root, from, to, others, blocked = () => "") {
 const RUNNING = ["building", "fixing", "verifying", "held"];
 
 // The files a commit on main may not touch while this lane runs (field 81): its owned entries (as
-// `ownsPath` reads them) and every path its worktree changed, committed past base or uncommitted. null
-// when they cannot be read: a doubt keeps the guard on.
+// `ownsPath` reads them) and every path its worktree changed, committed past base or uncommitted. Once the
+// branch holds main past its base (an in-branch rebase), "past base" is past that merge base: main's own
+// changes are never this lane's files (field 102). null when they cannot be read: a doubt keeps the guard on.
 function laneFiles(root, ledger) {
   try {
     const owned = ownedOf(root, ledger).map((o) => (typeof o === "string" ? o : o.path));
@@ -602,7 +605,7 @@ function laneFiles(root, ledger) {
       "--no-renames",
       "--name-only",
       "-z",
-      ledger.base,
+      heldMain(root, ledger, ledger.base) ?? ledger.base,
       `refs/heads/${ledger.branch}`,
       "--",
     ]);
@@ -817,10 +820,12 @@ function configTrips(root, allow, dirty) {
 // `touched` why not (or null), `allowed` the commits on main the guard let through, `moved` how many of
 // them the rule judged when all passed (other lanes' landed picks and record-shaped memory commits not
 // counted), `overlap` whether a commit touched this lane's files. The one rule for HEAD's move
-// (`allowedCommit`), so report, hold and resume never disagree.
+// (`allowedCommit`), so report, hold and resume never disagree. The start follows the branch first
+// (`followBranch`), which can change `ledger.mainAtStart` and `startMoves` in place.
 function mainGuard(ctx, ledger, all) {
   const { root, spec, model } = ctx;
   const allow = allowOf(ctx, ledger);
+  followBranch(root, ledger, all, allow);
   const was = ledger.mainAtStart;
   const head = headOf(root);
   const others = all.filter((l) => l.id !== ledger.id);
@@ -850,6 +855,40 @@ function mainGuard(ctx, ledger, all) {
 
 // Why the main checkout no longer matches the lane's start, or null.
 const mainTouched = (ctx, ledger, all) => mainGuard(ctx, ledger, all).touched;
+
+// The main commit the lane's branch holds past `since`, or null: the merge base of main's HEAD and the
+// branch's listed tip, when it is a descendant of `since` (an in-branch rebase or merge of main).
+function heldMain(root, ledger, since) {
+  const tip = resolveBranch(root, ledger.branch).tip;
+  const base = since && tip ? mergeBaseOf(root, "HEAD", tip) : null;
+  return base && base !== since && isAncestor(root, since, base) ? base : null;
+}
+
+// The guard's start follows the branch (field 102): when the branch holds main past the start, the start
+// moves to that merge base, its snapshot with it (`moveStart`), recorded in `startMoves[]` as `{ from, to,
+// why: "branch holds main", at }`. Only when every main commit from the start to there passes the guard's
+// rule judged against the lane's owned files alone (its changed files hold main's own diffs after the
+// rebase): a commit that touches an owned file (a builder's wrong-cwd commit it then rebased onto) keeps
+// the start, so it trips as before. Changes `ledger` in place.
+function followBranch(root, ledger, all, allow) {
+  const to = heldMain(root, ledger, ledger.mainAtStart?.head);
+  if (!to) return;
+  let owned;
+  try {
+    owned = ownedOf(root, ledger).map((o) => (typeof o === "string" ? o : o.path));
+  } catch {
+    return; // a doubt keeps the start
+  }
+  const others = all.filter((l) => l.id !== ledger.id);
+  const blocked = allowedCommit(root, allow, all, { owned, changed: new Set() });
+  if (!landedOnly(root, ledger.mainAtStart.head, to, others, blocked).ok) return;
+  const from = ledger.mainAtStart.head;
+  moveStart(root, ledger, to);
+  ledger.startMoves = [
+    ...(ledger.startMoves ?? []),
+    { from, to, why: "branch holds main", at: now() },
+  ];
+}
 
 // Is `path` strictly inside the directory `dir`?
 const inside = (dir, path) => {
@@ -1815,21 +1854,27 @@ function finishRebase(root, ledger, tip) {
   // but never past main as the rebase was asked for, so a commit made on main during the round still counts.
   const asked = entry.mainHead;
   const to = base && asked ? (isAncestor(root, base, asked) ? base : asked) : null;
-  if (to && ledger.mainAtStart?.head && isAncestor(root, ledger.mainAtStart.head, to)) {
-    const was = ledger.mainAtStart;
-    const dirty = dirtyPaths(root);
-    const paths = Object.keys(was.files ?? {});
-    const before = blobsAt(root, was.head, paths);
-    const after = blobsAt(root, to, paths);
-    const keep = new Set(paths.filter((p) => dirty.has(p) || before[p] === after[p]));
-    ledger.mainAtStart = {
-      ...was,
-      head: to,
-      files: Object.fromEntries(Object.entries(was.files ?? {}).filter(([p]) => keep.has(p))),
-      porcelain: (was.porcelain ?? []).filter((e) => keep.has(e.slice(3))),
-    };
-  }
+  if (to && ledger.mainAtStart?.head && isAncestor(root, ledger.mainAtStart.head, to))
+    moveStart(root, ledger, to);
   return changed;
+}
+
+// The main guard's start moved to `to`, its snapshot with it (field 93): a path clean on main now whose
+// content the commits from the old start to `to` changed was committed, so its start entry goes; a path
+// still dirty, or clean with those commits leaving it as it was (its edit discarded), keeps its start.
+function moveStart(root, ledger, to) {
+  const was = ledger.mainAtStart;
+  const dirty = dirtyPaths(root);
+  const paths = Object.keys(was.files ?? {});
+  const before = blobsAt(root, was.head, paths);
+  const after = blobsAt(root, to, paths);
+  const keep = new Set(paths.filter((p) => dirty.has(p) || before[p] === after[p]));
+  ledger.mainAtStart = {
+    ...was,
+    head: to,
+    files: Object.fromEntries(Object.entries(was.files ?? {}).filter(([p]) => keep.has(p))),
+    porcelain: (was.porcelain ?? []).filter((e) => keep.has(e.slice(3))),
+  };
 }
 
 // Where a builder's report is kept while a guard trip holds the lane: next to it, so the report the

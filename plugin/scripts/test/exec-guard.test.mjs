@@ -218,3 +218,75 @@ test("a path dirty at start and discarded during the rebase round keeps its star
   assert.match(res.json.guards[0], /notes\.txt \(back to HEAD\)/);
   assert.ok(Object.hasOwn(ledgerOf(r.root, "T1").mainAtStart.files, "notes.txt"));
 });
+
+// The field shape (field 102): T2 cut at A, a commit X on main, the builder rebases the lane onto X in its
+// worktree (`git rebase main`) and commits; the report runs the guard.
+function rebasedInBranch(r, path, text = "by the conductor\n") {
+  const out = lane(r, "start", "T2").json;
+  const start = ledgerOf(r.root, "T2").mainAtStart.head;
+  const x = commitFile(r.root, path, text, "chore: the conductor's commit");
+  git(out.worktree, "rebase", "-q", "main");
+  commitFile(out.worktree, "two.txt", "two\n", "feat: two");
+  done(out, "added two.txt");
+  return { out, start, x };
+}
+
+test("a lane rebased in-branch onto a main commit outside its files: the guard's start follows, no hold", () => {
+  const r = repo();
+  const { start, x } = rebasedInBranch(r, "notes.txt");
+  const out = clear(lane(r, "report", "T2"), "the report");
+  assert.equal(out.next, "verify");
+  const ledger = ledgerOf(r.root, "T2");
+  assert.equal(ledger.mainAtStart.head, x, "the start is the merge base");
+  assert.deepEqual(
+    ledger.startMoves.map(({ from, to, why }) => ({ from, to, why })),
+    [{ from: start, to: x, why: "branch holds main" }],
+  );
+});
+
+test("a main commit the branch holds that touches an owned file still trips, the start kept", () => {
+  const r = repo();
+  const { start, x } = rebasedInBranch(r, "two.txt", "a wrong-cwd edit\n");
+  const res = lane(r, "report", "T2");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.hold?.for, "guard", JSON.stringify(res.json));
+  assert.match(
+    res.json.guards[0],
+    new RegExp(`${x.slice(0, 7)} touches two\\.txt, this lane's files`),
+  );
+  const ledger = ledgerOf(r.root, "T2");
+  assert.equal(ledger.mainAtStart.head, start);
+  assert.equal(ledger.startMoves, undefined);
+});
+
+test("once the start followed the branch, a main commit after the merge base touching the lane's files trips", () => {
+  const r = repo();
+  const { x } = rebasedInBranch(r, "notes.txt");
+  const y = commitFile(r.root, "two.txt", "on main after\n", "fix: two on main");
+  const res = lane(r, "report", "T2");
+  assert.equal(res.json.hold?.for, "guard", JSON.stringify(res.json));
+  assert.match(
+    res.json.guards[0],
+    new RegExp(
+      `HEAD moved ${x.slice(0, 7)} → ${y.slice(0, 7)} \\(${y.slice(0, 7)} touches two\\.txt`,
+    ),
+  );
+  assert.equal(ledgerOf(r.root, "T2").mainAtStart.head, x, "the start moved to the merge base");
+});
+
+test("a start the branch moved counts as moved: the lane's own mid-write board entry is not back to HEAD", () => {
+  // As the field-93 test above, with the move recorded in `startMoves` instead of `rebases`.
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  const from = ledgerOf(r.root, "T1").mainAtStart.head;
+  commitBoard(r.root);
+  const ledger = ledgerOf(r.root, "T1");
+  const head = git(r.root, "rev-parse", "HEAD");
+  ledger.startMoves = [{ from, to: head, why: "branch holds main", at: new Date().toISOString() }];
+  ledger.mainAtStart.head = head;
+  writeLedger(r.root, ledger);
+  commitFile(out.worktree, "one.txt", "one\n", "feat: one");
+  done(out, "added one.txt");
+  out = clear(lane(r, "report", "T1"), "the report");
+  assert.equal(out.next, "verify");
+});
