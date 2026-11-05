@@ -9,6 +9,7 @@
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { isAncestor as ancestor, commitOf, mergeBase } from "../process/git.mjs";
 import { globMatch } from "../process/glob.mjs";
 import { first } from "./fmt.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
@@ -17,13 +18,8 @@ import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
 const lines = (text) => text.split("\n").filter(Boolean);
 const short = (sha) => sha.slice(0, 7);
 
-/** The commit `ref` names, as a full SHA, or null. `--end-of-options` keeps a ref from reading as an
- *  option. */
-export function commitOf(dir, ref) {
-  if (typeof ref !== "string" || ref === "") return null;
-  const res = git(dir, ["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`]);
-  return res.status === 0 ? res.stdout.trim() : null;
-}
+// The commit a ref names, as a full SHA, or null: `process/git.mjs`'s, which checks the ref first.
+export { commitOf };
 
 /** The tree of commit `ref`, or null. */
 export function treeOf(dir, ref) {
@@ -41,18 +37,16 @@ export function commitsBetween(dir, from, to, { firstParent = false } = {}) {
   return res.status === 0 ? lines(res.stdout) : null;
 }
 
-/** The best common ancestor of `a` and `b`, or null. */
+/** The best common ancestor of `a` and `b`, each resolved to its commit first, or null. */
 export function mergeBaseOf(dir, a, b) {
   const [x, y] = [commitOf(dir, a), commitOf(dir, b)];
-  if (!x || !y) return null;
-  const res = git(dir, ["merge-base", x, y]);
-  return res.status === 0 ? res.stdout.trim() : null;
+  return x && y ? mergeBase(dir, x, y) : null;
 }
 
-/** True when commit `a` is an ancestor of (or is) commit `b`. */
+/** True when commit `a` is an ancestor of (or is) commit `b`, each resolved to its commit first. */
 export function isAncestor(dir, a, b) {
   const [x, y] = [commitOf(dir, a), commitOf(dir, b)];
-  return Boolean(x && y) && git(dir, ["merge-base", "--is-ancestor", x, y]).status === 0;
+  return Boolean(x && y) && ancestor(dir, x, y);
 }
 
 /** The files commit `sha` changes against its first parent, or null when git cannot say. */
