@@ -33,7 +33,7 @@ compile). From a Claude Code session:
 /plugin install agentry@agentry-dev
 ```
 
-Restart the session — agents, commands, and the bundled memory MCP server load at startup. Then:
+Restart the session — agents and commands load at startup, and the plugin puts the `agentry` command on the PATH. Then:
 
 ```
 /agentry:onboard                                       # warm memory on this repo (read-only)
@@ -85,23 +85,24 @@ one by hand — same machinery, one shared contract.
 ## Architecture
 
 The **repo root is the plugin marketplace.** `plugin/` is the **shipped payload** — installing copies only that
-directory, never the dev tree. TypeScript dev packages live under `packages/` and build down into the committed,
-zero-install bundles inside `plugin/`.
+directory, never the dev tree: plain Node ≥ 24 scripts with no dependencies, nothing to build. TypeScript dev
+packages live under `packages/`.
 
 | Where | What it is |
 | :--- | :--- |
-| `plugin/` | the **shipped plugin** — `agents/ commands/ skills/` + the committed `mem` bundle |
-| `plugin/.claude-plugin/plugin.json` | the manifest — wires the `mem` MCP server inline (`${CLAUDE_PLUGIN_ROOT}/mem/index.js`) |
+| `plugin/` | the **shipped plugin** — `agents/ commands/ skills/` + `bin/agentry` and the `scripts/` it runs (board, lane, mem) |
+| `plugin/.claude-plugin/plugin.json` | the manifest |
 | `.claude-plugin/marketplace.json` | the marketplace manifest (stays at the repo root; `source: "./plugin"`) |
 | `packages/core` | `@agentry/core` — the single typed contract every node shares |
-| `packages/memory` | the memory MCP → builds to `plugin/mem/index.js` |
 | `packages/web` | the site |
 | `packages/eval` | the self-evaluation harness |
 
 ## Memory — the moat that compounds (mandatory)
 
-A local, **zero-install** MCP (stdio, `node:sqlite`). **Text files are the source of truth; a derived SQLite index
-powers recall.** It's project-rooted with a global root alongside, so facts and episodes follow the work.
+A local, **zero-install** CLI, `agentry mem <verb>` (`recall`, `write`, `search`, `episode`, `stats`, … ;
+`agentry mem --help`), on Node's built-in `node:sqlite`. **Text files are the source of truth; a derived SQLite
+index powers recall.** It's project-rooted (the repo's main checkout, from any of its worktrees) with a global
+root alongside, so facts and episodes follow the work. A lane's `exec close` writes its episode itself.
 
 Recall is **task-specific** — pulled per task, ranked by relevance × confidence × usefulness, never a session-start
 dump. Writes pass a write-bar; stale facts decay; a graduation pipeline turns **episodes → facts → skills**. The
@@ -141,13 +142,11 @@ escaped defects — so the probes share a run instead of each paying for their o
 ## Repo layout & dev
 
 ```
-plugin/            the shipped plugin (agents · commands · skills · mem)
-packages/          TypeScript dev sources (core · memory · web · eval)
+plugin/            the shipped plugin (agents · commands · skills · bin · scripts)
+packages/          TypeScript dev sources (core · web · eval)
 ```
 
-Two standing rules if you hack on the bundles: any change to a `packages/*/src` that ships must rebuild and commit
-its `plugin/` dist in the same change (**dist-lockstep**), and `node scripts/check-plugin.mjs` must pass before
-every commit. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full dev setup and the bar a change is held to.
+One standing rule if you hack on the plugin: `node scripts/check-plugin.mjs` must pass before every commit. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full dev setup and the bar a change is held to.
 
 ## Maturity & license
 

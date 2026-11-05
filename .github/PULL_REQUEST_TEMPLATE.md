@@ -17,9 +17,7 @@
 
 - [ ] `node scripts/check-plugin.mjs` (`pnpm check`) passes
 - [ ] `pnpm -r typecheck` and `pnpm -r test` pass
-- [ ] If I changed `packages/memory/src`: I ran `pnpm --filter @agentry/memory build` and committed the
-      updated `plugin/mem/index.js` (+ `.srchash`) in this PR (**dist-lockstep**)
-- [ ] If I changed the plugin payload (agents/commands/skills/MCP): I verified it **live after a
+- [ ] If I changed the plugin payload (agents/commands/skills/scripts): I verified it **live after a
       reload/restart** (these are reload-gated)
 - [ ] The change is right-sized (no god-files, no over-abstraction) and contract types stay in `@agentry/core`
 

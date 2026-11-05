@@ -79,9 +79,8 @@ export interface Invocation {
   permissionMode?: string;
   /**
    * Extra MCP servers to load into the conduct, as the JSON `claude -p --mcp-config` accepts (inline string or a
-   * path). `--plugin-dir` loads the plugin's skills/commands/agents but NOT its MCP servers, so the moat probe
-   * passes the bundled mem server here to make `memory_recall` available — without it the conductor has no memory
-   * faculty at all (the seed can never land). Absent ⇒ only the host's globally-configured MCPs.
+   * path). The plugin ships no MCP server (memory is the `agentry mem` CLI), so this is only for a probe that
+   * needs one. Absent ⇒ only the host's globally-configured MCPs.
    */
   mcpConfig?: string;
   /**

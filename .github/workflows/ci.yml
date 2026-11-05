@@ -1,7 +1,7 @@
 name: CI
 
-# The correctness net for the pnpm workspace: install (frozen) → build → the plugin structure + dist-lockstep
-# gate → typecheck + tests for ALL packages (core · memory · eval). Every test is offline (replay/pure — no
+# The correctness net for the pnpm workspace: install (frozen) → build → the plugin structure gate →
+# typecheck + tests for ALL packages (core · eval) and the plugin's scripts. Every test is offline (replay/pure — no
 # live `claude -p`), so CI never spends API budget.
 
 on:
@@ -21,16 +21,16 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: "24" # the memory MCP uses the built-in node:sqlite (Node ≥ 24)
+          node-version: "24" # the memory store uses the built-in node:sqlite (Node ≥ 24)
           cache: pnpm
 
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
-      - name: Build (core tsc + the memory MCP esbuild bundle)
+      - name: Build (core tsc)
         run: pnpm -r build
 
-      - name: Plugin structure + dist-lockstep gate (validates the shipped mem bundle ↔ src)
+      - name: Plugin structure gate
         run: node scripts/check-plugin.mjs
 
       - name: Typecheck (all packages)

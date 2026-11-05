@@ -25,11 +25,11 @@ You can expect an acknowledgement within a few days and a coordinated fix before
 
 ## Scope & what to consider
 
-Agentry runs inside Claude Code and ships **markdown** (agents/commands/skills) plus one local **stdio MCP
-server** (memory, at `plugin/mem/index.js`). Areas worth scrutiny:
+Agentry runs inside Claude Code and ships **markdown** (agents/commands/skills) plus dependency-free Node
+scripts behind one command, `agentry` (`plugin/bin/agentry`). Areas worth scrutiny:
 
-- the **memory MCP** — it reads/writes files under the resolved memory roots and runs a local `node:sqlite`
-  index; path handling and untrusted-input parsing matter,
+- the **memory CLI** (`agentry mem`, `plugin/scripts/lib/memory`) — it reads/writes files under the resolved
+  memory roots and runs a local `node:sqlite` index; path handling and untrusted-input parsing matter,
 - the **lane scripts** (`plugin/scripts`) — dependency-free Node that the commands run to create
   worktrees, run the repo's gate and land commits,
 - anything that handles **untrusted repo content** a conductor or agent might read.

@@ -1,7 +1,7 @@
 // @agentry/core — the typed contract. Single source of truth for every structured shape Agentry
 // reads or writes. Split by concern (SRP); this file is a pure re-export barrel.
 //
-// Consumers: @agentry/memory, the benchmark and the check-plugin gate.
+// Consumers: the eval harness (the benchmark).
 // Keep in lockstep with the design docs (.docs/internal).
 
 export * from "./enums.js";
