@@ -45,6 +45,8 @@ test("an evidence cell holding the commit in upper case is a commit that git has
   assert.match(found[0].message, /commit DDDDDDD is not in git/);
 });
 
+// Git ids are case-insensitive. The first version of this check compared case-sensitively and reported
+// "names no matching commit" for `(ABC1234)` against `abc1234`, which was a false finding.
 test("a handoff line names a commit in either case", () => {
   const lead = (sha) => [{ lead: "**T1**", text: `**T1** (${sha}) done` }];
   const full = "1b72454aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

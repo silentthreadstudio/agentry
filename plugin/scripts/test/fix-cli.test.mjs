@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { plan } from "../lib/process/board-gaps.mjs";
 import { run as fix } from "../lib/process/cli/fix.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
 import {
@@ -746,18 +747,21 @@ test("property: random pick/revert/reset/squash/no-ff/revert -m 1/chmod walks wr
   assert.ok(done.record && done.accept && done.refused, JSON.stringify(done));
 });
 
-test("a hand-written commit cell naming the landed commit in upper case is accepted; one glued to letters is not", () => {
-  const { root } = fresh();
-  const main = pickedByHand(root);
-  const up = main.slice(0, 7).toUpperCase();
-  handRow(root, `doing  |         | g${up} | The first  |`);
-  const before = files(root);
-  const glued = accept(root);
-  assert.equal(glued.status, 1);
-  assert.match(glued.stdout, /T1: commit cell "g\w{7}" is not the landed \w{7}; left alone/);
-  assert.deepEqual(files(root), before);
-  handRow(root, `doing  |         | ${up} (by hand) | The first  |`);
-  const out = accept(root);
-  assert.equal(out.status, 0, out.stdout);
-  assert.match(row(read(root, "plan/BOARD.md"), "T1"), /done/);
+// board fix's match of a hand-written commit cell against the landed commit, with the landing stubbed:
+// no git, so the SHA is fixed and the case never depends on a hash.
+test("plan: a hand-written commit cell naming the landed commit in upper case matches; one glued to letters does not", () => {
+  const { root, cleanup } = fresh();
+  const landed = { shas: ["1b72454aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"] };
+  const planFor = (cell) => {
+    handRow(root, `doing  |         | ${cell} | The first  |`);
+    const { spec } = loadSpec(join(root, ".agentry", "process.json"), { root });
+    const model = readProcess({ root, spec });
+    const item = model.kinds.task.items.find((i) => i.id === "T1");
+    return plan({ root, spec, model, item, landed: () => landed });
+  };
+  assert.deepEqual(planFor("1B72454").fixes?.shas, landed.shas);
+  assert.deepEqual(planFor("1B72454 (by hand)").fixes?.shas, landed.shas);
+  assert.deepEqual(planFor("1b72454").fixes?.shas, landed.shas);
+  assert.match(planFor("g1B72454").left, /cell "g1B72454" is not the landed 1b72454; left alone/);
+  cleanup();
 });
