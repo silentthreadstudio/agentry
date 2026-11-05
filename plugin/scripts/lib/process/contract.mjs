@@ -247,7 +247,7 @@ export function findContract({ root, spec, id: asked, kind = "task", model }) {
   if (spec) {
     const contract = own(spec.kinds, kind)?.contract;
     const board = model ?? readProcess({ root, spec });
-    const item = board.kinds[kind]?.items.find((i) => same(i.id, asked));
+    const item = own(board.kinds, kind)?.items.find((i) => same(i.id, asked));
     id = item?.id ?? asked;
     const base = posix(relative(root, join(root, spec.root ?? ".")));
     const linked = item ? contractLinks(root, base, board, item) : [];

@@ -469,6 +469,24 @@ test("board contract's usage says it takes a task id", () => {
   assert.match(res.stderr, /^✗ board contract: needs an id → board contract --help/);
 });
 
+test("board contract --kind: a name only Object.prototype has, or no kind of the board, is a usage error", () => {
+  const root = repo(LINKED);
+  for (const kind of ["constructor", "toString", "nosuch"]) {
+    const res = board(root, "contract", "KX-41", "--kind", kind);
+    assert.equal(res.status, 2, `${kind}: ${res.stderr}`);
+    assert.match(res.stderr, new RegExp(`unknown kind "${kind}" \\(kinds: sprint, task\\)`));
+    assert.doesNotMatch(res.stderr, /TypeError/);
+  }
+  assert.equal(board(root, "contract", "KX-41", "--kind", "task").status, 0);
+});
+
+test("findContract looks the kind up as the board's own: a prototype name never throws", () => {
+  const root = repo({ "TASKS.md": "- **KX-62** (S1): owns the stool.\n" });
+  const spec = { root: ".", kinds: { task: { contract: { blocks: ["TASKS.md"] } } } };
+  for (const kind of ["constructor", "__proto__", "hasOwnProperty"])
+    assert.equal(findContract({ root, spec, id: "KX-62", kind }).status, "found", kind);
+});
+
 test("board explain's help example names the process file the run keeps", () => {
   const res = board(repo(LINKED), "explain", "--help");
   assert.equal(res.status, 0, res.stderr);
