@@ -281,6 +281,18 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   board), and a `mentions` field type so `refs-resolve` checks ids cited in text.
 - **`ready-has-contract` rule** — an open task in an active sprint must have a contract that
   `board contract` finds.
+- **A fresh builder for each step, and `resume --same`** — the `resume` that approves a step of a multi-step
+  lane dispatches the next step's first round to a fresh builder, its brief naming the last report and its
+  model and agent following that step's `(model:, agent:)` marker. `--same` keeps the old builder instead. A
+  `--redo`, a fix, a needs-context round and the carry-on of a hold during a round still resume the builder
+  they belong to, and a one-step lane builds as before. The brief that answers a context hold now names the
+  step the round is on and says it is done only when its own work is.
+- **`BLOCKED: external: <reason>` holds the lane** — a builder whose report starts with that line, for a cause
+  the owner can clear (a key not issued, a service down), holds the lane (`held: blocked: <reason>`) instead
+  of stopping it: no verdict is spent and the step does not move. `exec resume <id> --note "<what changed>"`
+  sends the round it stopped on again, as it was dispatched (a fix still points at the verifier's report), to
+  a fresh builder unless `--same`. A plain `BLOCKED` still stops the lane. `exec hold` on a blocked lane is
+  refused, and so is `fix --owner` on any held lane, naming the resume that carries the change.
 
 ### Changed
 - **A verified lane's restart** — `lane exec restart <id> --carry` of a lane whose last verdict passed, on the
@@ -400,6 +412,29 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   flaky re-run the land refused is recorded on the first gate run and named in the gate row. A
   `join` holding a line break or another control character is refused when the process file
   loads. `/agentry:init` offers lifecycle board writes once, saying what they write.
+- **`lane exec restart --carry`** carries only the branch's commits that are not on main (merges left out,
+  patches main already has skipped), so a lane rebased in-branch onto a newer main no longer re-applies
+  main's own commits, and it refuses, before writing anything, a branch whose merge base is not on main's
+  first-parent line. It also keeps the lane's owner OKs and `owns --add` grants, carries a summary of the old
+  rounds and briefs the step the lane stopped in rather than step 1.
+- **The guard follows an in-branch rebase** — when a builder rebases onto, or merges, a newer main, the
+  guard's start moves to the merge base, recorded in `startMoves[]`, so a main commit the branch already holds
+  no longer trips it, and main's own changes are no longer counted as the lane's files. A main commit that
+  touches an owned file still trips. After a moved start the report's commits count and subject check read
+  `<moved start>..<listed tip>`. The build and fix briefs now tell the builder never to rebase or merge main in
+  a lane, but to ask for `exec rebase` or `exec restart --carry`.
+- **Owner gates in a step list** — an item ending `→ owner OK` is still a gate, and now so are `-> owner OK`,
+  `— owner OK`, `– owner OK` and `**owner OK**`; a trailing `(note)` is kept as the gate's note. An item that
+  mentions an owner gate (`OK`, `okay`, `review`, `approve`, `approval`, `sign-off`, `gate`, also inflected)
+  without ending that way is a steps problem naming the spelling to write, and `start` refuses it rather than
+  merging the steps into one run.
+- **`lane merge` and its preflight refuse a land over an open dependency** — the new `deps` row runs the
+  board's `deps-done` rule on the item as the land would leave it, before any pick, and prints the `board set`
+  line that clears it (a list of two dependencies stays one word). Only the item's own findings count, a
+  refused land leaves the ledger alone, and the row is absent without a `deps-done` rule.
+- **`cleanup.disposable` is honoured by `restart`, the land's cleanup and `lane sweep`**, which read ignored
+  files through one filter: a cache the globs cover no longer stops them, and a folder with no file at any
+  depth never counts.
 
 ### Fixed
 - **Branch names that differ only in case** — on a case-insensitive filesystem a read by name could open
@@ -433,6 +468,18 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **`board`** — `board add` refuses a field value holding a line break; `board fix` lists a landed item of a
   kind it does not write with the `board set` that records it; a process file whose `exec.kinds` names a kind
   another kind lists as its children is refused at load.
+- **`agentry run` holds its command until the slot records it** — the command used to start before its
+  process group was written to the slot, so a `kill -9` of the run in that window left it running while the
+  slot read free and a second run of the lock could start beside it. It now starts held and runs only once the
+  record is written; if the run dies first it never runs. The gate watchdog records its own group before it
+  spawns its command, for the same reason.
+- **`agentry run` on a command that cannot start** exits 127 (not found) or 126 (found, but not executable or
+  a directory) with the `cannot start <command>: <why>` line on every platform; a command that was found but
+  not executable used to exit 127, and a missing path exited 126 on macOS. A command named like an option
+  (`-x`) is run as a command, not taken as an option.
+- **`restart` on an owner hold with no run** no longer crashes.
+- **Flaky lock, sweep and eval tests under load** — the sweep forker tests count and kill only the sleeps
+  their own process forked, and the eval test tells a decompose kill from a grace expiry by a 2 s grace.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a

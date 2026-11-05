@@ -166,7 +166,7 @@ Without `--apply` it only reports. With it:
 
 - removes the worktree of a task whose ledger says `merged` or `closed` (through `worktree.remove`: a
   worktree with uncommitted changes is kept and named, and the branch is deleted only when everything on it
-  is on main). One holding ignored files (`.env`, build output) is kept and named unless `--discard-ignored`;
+  is on main). One holding ignored files (`.env`, build output) is kept and named unless `--discard-ignored`; files `cleanup.disposable` and its defaults cover are discarded without asking, and a folder with no file at any depth is no file;
 - stops each stray: a process whose executable, script (for an interpreter such as `node` or `sh`) or
   working directory is under `<root>/.agentry/run/`, that no lane still building owns. A command line that
   only mentions such a path (`tail -f …/gate.log`) is not one. The stray and its whole descendant tree are
