@@ -28901,6 +28901,7 @@ var MemoryType = external_exports.enum([
   "limitation"
 ]);
 var KnownShape = external_exports.enum(["one-shot", "spec-first", "decompose+verify"]);
+var RoutedShape = external_exports.enum(["one-shot", "spec-first", "decompose"]);
 var Shape = external_exports.string();
 var KnownKind = external_exports.enum(["feature", "bug", "refactor", "perf", "dep-upgrade", "ci-red"]);
 var Kind = external_exports.string();
