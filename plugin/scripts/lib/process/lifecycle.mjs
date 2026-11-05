@@ -147,8 +147,8 @@ function shortOf(root, sha) {
 }
 
 // A finding's identity for "the board already had it": its rule, kind and item, else its message (the
-// merge's record step keys them the same way).
-const findingKey = (f) =>
+// message often quotes the status the write just changed). The merge's record step keys them by it too.
+export const findingKey = (f) =>
   JSON.stringify([f.rule ?? null, f.kind ?? null, f.id ?? null, f.id ? null : f.message]);
 
 // Is `path` outside the directory `home` (both real paths)?

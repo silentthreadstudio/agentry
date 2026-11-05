@@ -18,7 +18,7 @@ import {
 import { dirname, join } from "node:path";
 import { boardFiles } from "../../process/board-diff.mjs";
 import { runDir } from "../../process/ledger.mjs";
-import { applyEvent } from "../../process/lifecycle.mjs";
+import { applyEvent, findingKey } from "../../process/lifecycle.mjs";
 import { readProcess } from "../../process/read.mjs";
 import { boardReport } from "../../process/status.mjs";
 import { WriteError } from "../../process/write.mjs";
@@ -34,11 +34,6 @@ import {
 } from "./carry.mjs";
 import { now, ok, red, save, setMerge, short, skip } from "./lane.mjs";
 
-// A finding is "new" when its rule fails for an item it did not fail for before the board write. The
-// message is not part of it (it often quotes the status the write just changed); a problem with no item
-// is keyed by its message.
-const findingKey = (f) =>
-  JSON.stringify([f.rule ?? null, f.kind ?? null, f.id ?? null, f.id ? null : f.message]);
 // A stop that put the board back as it was: the land is gated again, and resumes from there.
 const unrecorded = (lane, stop) => {
   setMerge(lane, { step: "gated", record: undefined });
