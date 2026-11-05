@@ -20,13 +20,14 @@ export function lines(text) {
 }
 
 // Which of `rows` (a text's lines, with or without their line ends) are fenced code, the fence lines
-// included. A fence opens at 0-3 spaces then three or more backticks or tildes (a backtick fence's info
-// string holds no backtick) and closes at a line of the same mark, at least as long, with nothing after
-// it: a ``` line inside a ~~~ fence, or inside a ```` one, is code. An unclosed fence runs to the end.
+// included. A fence opens at any indent (a fence in a nested list item sits 4 or more columns in, its
+// indent counted from the item's content) then three or more backticks or tildes (a backtick fence's
+// info string holds no backtick), and closes at a line of the same mark, at least as long, with nothing
+// after it: a ``` line inside a ~~~ fence, or inside a ```` one, is code. An unclosed fence runs to the end.
 function fencedRows(rows) {
   let fence = null;
   return rows.map((row) => {
-    const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(row.replace(/\r?\n?$/, ""));
+    const m = /^\s*(`{3,}|~{3,})(.*)$/.exec(row.replace(/\r?\n?$/, ""));
     if (!fence) {
       if (!m || (m[1][0] === "`" && m[2].includes("`"))) return false;
       fence = { char: m[1][0], len: m[1].length };

@@ -2,6 +2,8 @@
 // Run: node --test plugin/scripts/test/markdown.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { ownedFiles } from "../lib/lane/brief.mjs";
+import { coveredBy } from "../lib/lane/exec/notes.mjs";
 import {
   boldLeads,
   cellValue,
@@ -15,6 +17,8 @@ import {
   tables,
   unfenced,
 } from "../lib/process/markdown.mjs";
+import { bulletOf } from "../lib/process/spec/models.mjs";
+import { stepsOf } from "../lib/process/steps.mjs";
 
 const doc = [
   "# Board", //                                   1
@@ -101,12 +105,69 @@ test("maskFences blanks each fence, its lines and line ends kept; an unclosed fe
     "```a`b\n## H\n",
     "a backtick in the info string opens none",
   );
-  assert.equal(maskFences("    ```\n## H\n"), "    ```\n## H\n", "four spaces in is indented code");
+  assert.equal(
+    maskFences("    ```\n## H\n    ```\n## I\n"),
+    "       \n    \n       \n## I\n",
+    "a fence indented in a list item, at any depth, is a fence",
+  );
 });
 
 test("unfenced drops each fence's lines, fence lines included, and keeps the rest as they were", () => {
   assert.equal(unfenced("a\n~~~\n```\n\nb\n~~~\n\nc\n````\n```\n````\nd"), "a\n\nc\nd");
   assert.equal(unfenced("a\r\n```\r\nb\r\n```\r\nc"), "a\r\nc", "a CRLF fence closes");
+});
+
+// A fence in a nested list item sits 4 or more columns in (its indent counts from the item's content, as
+// in the board's own contracts): every reader of the fence rule reads it as code (R1f-1 r3 N1).
+test("models: a Model bullet in a fence nested in a list item is an example, not the contract's model", () => {
+  const block = [
+    "- **Owns:** `a.mjs`",
+    "- **Exposes:**",
+    "  - an example contract:",
+    "    ```",
+    "    - **Model:** opus",
+    "    ```",
+  ].join("\n");
+  assert.equal(bulletOf(block, "model"), null);
+});
+
+test("brief: an Owns line in a fence nested in a list item owns nothing", () => {
+  const block = [
+    "- **Notes:**",
+    "  - the shape:",
+    "    ```",
+    "    **Owns:** `secret/x.mjs`",
+    "    ```",
+  ].join("\n");
+  assert.deepEqual(ownedFiles(block), []);
+});
+
+test("steps: a fence nested in a step's list item adds nothing to the step", () => {
+  const block = [
+    "**Steps:**",
+    "1. Build the reader",
+    "2. Wire it:",
+    "   - like this:",
+    "     ```",
+    "     **Acceptance:** not a label",
+    "     ```",
+    "3. Ship it",
+  ].join("\n");
+  assert.deepEqual(
+    stepsOf(block).steps.map((s) => s.text),
+    ["Build the reader", "Wire it: - like this:", "Ship it"],
+  );
+});
+
+test("notes: a recheck line the verifier only quoted in a nested fence covers no label", () => {
+  const report = [
+    "- N1: the fix is in, the example the builder quoted:",
+    "  - verbatim:",
+    "    ```",
+    "    N2: PASS",
+    "    ```",
+  ].join("\n");
+  assert.equal(coveredBy(report, ["N2"]), false);
 });
 
 test("a section runs to the next heading of the same or a higher level", () => {
