@@ -1,6 +1,6 @@
 ---
 // /docs/changelog — hand-authored (NOT auto-generated; CHANGELOG.md in the repo is the full record).
-// The 0.3 line in development, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
+// Release 0.3.0, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
 // invented features.
 //
 // Base-path rule (#1 404 trap): every internal href goes through withBase().
@@ -11,15 +11,25 @@ import { withBase } from "../../../lib/base.ts";
 <DocsLayout
   current="changelog"
   title="Changelog"
-  description="What changed in Agentry, by release: the 0.3 line in development (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
+  description="What changed in Agentry, by release: 0.3.0 (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
   eyebrow="Reference · Changelog"
   lede="A hand-authored record of what changed, newest first. It tracks releases, not commits, so it leans toward what changed for you. The repo's CHANGELOG.md has every entry."
 >
   <div class="prose">
-    <h2 class="prose__h">0.3 — in development</h2>
+    <h2 class="prose__h">0.3.0 — 2026-11-05</h2>
     <p>
-      Not tagged yet. Installing from the marketplace gives you <code>main</code>, currently
-      <code>0.3.0-dev.12</code>; <code>agentry --version</code> prints the build you are running.
+      Agentry 0.3 turns the plugin into a harness for a repo's own board. <code>/agentry:exec</code> builds a
+      task whose contract is already written, in its own git worktree. A second agent checks the work against
+      the acceptance, and <code>/agentry:merge</code> lands it only past your repo's gate. Each step is recorded
+      in a ledger, so a cold session can resume. <code>/agentry:init</code> learns the board you have or
+      scaffolds one, and <code>/agentry:start</code> and <code>/agentry:close</code> open and end a session the
+      same way each time. The <code>agentry</code> command does the mechanical work; the plugin starts no server
+      and ships no hooks. Memory is now <code>agentry mem</code>, over the same files as before. The Workbench
+      and the flow server are gone.
+    </p>
+    <p>
+      Restart Claude Code after updating. <code>agentry --version</code> prints the build you are running.
+      The repo's <code>CHANGELOG.md</code> lists what to change when upgrading from 0.2.
     </p>
 
     <h3 class="prose__h prose__h--sub">Added</h3>
