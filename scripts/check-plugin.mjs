@@ -4,7 +4,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { docFlagProblems } from "./lib/doc-flags.mjs";
 import { missingServerPaths, retiredMentions } from "./lib/retired.mjs";
@@ -298,6 +298,31 @@ if (!retired.length)
     "no retired surfaces",
     "no removed UI, flow tool or channel names; every MCP server bundle exists",
   );
+
+// 11. Import direction — the process kit is the lower layer: lane/ builds on it, so no module under
+// scripts/lib/process may import one under scripts/lib/lane (a cycle, and the lane graph loaded by every
+// board command). Each relative specifier (static, re-export or dynamic) is resolved before it is judged.
+const LIB = join(PLUGIN, "scripts", "lib");
+const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/g;
+const modulesUnder = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory()
+      ? modulesUnder(join(dir, e.name))
+      : /\.m?js$/.test(e.name)
+        ? [join(dir, e.name)]
+        : [],
+  );
+const inward = [];
+for (const file of modulesUnder(join(LIB, "process"))) {
+  for (const [, spec] of readFileSync(file, "utf8").matchAll(SPECIFIER)) {
+    if (!spec.startsWith(".")) continue;
+    const to = relative(join(LIB, "lane"), resolve(dirname(file), spec));
+    if (!to.startsWith("..") && !isAbsolute(to))
+      inward.push(`${relative(PLUGIN, file)} imports lane/${to}`);
+  }
+}
+for (const p of inward) err(`plugin/${p}: process/ must not depend on lane/ (move the leaf down)`);
+if (!inward.length) ok("import direction", "nothing under scripts/lib/process imports lib/lane");
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));
