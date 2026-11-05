@@ -6,7 +6,7 @@
 // (a static file shipped beside this module); it writes nothing (that's `emit.ts`). This is what makes a generated
 // page snapshot-testable: same data + same template → byte-identical HTML.
 //
-// Security: the JSON is serialized with `<` escaped to `<` so a value containing `</script>` cannot break out
+// Security: the JSON is serialized with `<` escaped to `\u003c` so a value containing `</script>` cannot break out
 // of the injected script tag. The data is our own run artifacts, but escaping the script-close sequence is the
 // correct, cost-free habit for any HTML-embedded JSON.
 
@@ -34,5 +34,6 @@ export function renderPage(data: PageData, templatePath: string = TEMPLATE_PATH)
   }
   const json = JSON.stringify(data).replace(/</g, "\\u003c");
   const injected = `<script>window.__SELFEVAL__ = ${json};</script>`;
-  return template.replace(DATA_MARKER, injected);
+  // A replacer FUNCTION: a string replacement would expand `$&`, `$'`, `` $` `` and `$$` found inside the data.
+  return template.replace(DATA_MARKER, () => injected);
 }
