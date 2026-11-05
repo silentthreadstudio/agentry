@@ -428,3 +428,45 @@ test(
     }
   },
 );
+
+test(
+  "an apostrophe in an unknown flow mapping neither drops the next key nor refuses the file",
+  { skip },
+  async () => {
+    const t = await setup();
+    try {
+      const dir = join(t.roots.CLAUDE_PROJECT_DIR, ".agentry", "memory", "facts");
+      mkdirSync(dir, { recursive: true });
+      const base = (id) =>
+        `id: p:${id}\ntype: gotcha\nscope: repo\nconfidence: 0.7\nusefulness: 0\ndecay: 0\nstatus: active\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n`;
+      const edits = [
+        "meta: {note: it's mine}\nwhy: don't drop me}\n",
+        "meta: {note: it's}\nwhy: second\n",
+        "meta: {author: O'Brien}\nwhy: third\n",
+      ];
+      edits.forEach((edit, i) => {
+        const id = `01SW000000000000000000000${i}`;
+        writeFileSync(
+          join(dir, `swallow-probe-${id}.md`),
+          `---\n${base(id)}${edit}---\n\nswallow probe fact\n`,
+        );
+      });
+
+      const view = t.service();
+      assert.deepEqual(view.stats().readErrors, []);
+      const theirs = await t.mcp.call("memory_recall", { query: "swallow probe", limit: 10 });
+      assert.deepEqual(json(view.recall({ query: "swallow probe", limit: 10 })), theirs);
+      assert.deepEqual(theirs.memories.map((m) => m.fact.why).sort(), [
+        "don't drop me}",
+        "second",
+        "third",
+      ]);
+      assert.deepEqual(
+        json(await t.mem("recall", "--query", "swallow probe", "--limit", "10")),
+        theirs,
+      );
+    } finally {
+      t.mcp.stop();
+    }
+  },
+);

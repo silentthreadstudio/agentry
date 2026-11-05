@@ -303,18 +303,32 @@ class Reader {
   flowMap(at, rest) {
     let depth = 0;
     let quote = null;
+    let before = "{"; // the last character that is not a space, outside a quote
     for (let i = at, text = rest; ; ) {
       for (let k = 0; k < text.length; k++) {
         const ch = text[k];
         if (quote) {
           if (ch === "\\" && quote === '"') k++;
+          else if (ch === quote && quote === "'" && text[k + 1] === "'")
+            k++; // '' is a quote in the text
           else if (ch === quote) quote = null;
-        } else if (ch === '"' || ch === "'") quote = ch;
+          continue;
+        }
+        if (ch === " " || ch === "\t") continue;
+        // a quote opens a value or a key; anywhere else (O'Brien) it is a plain character
+        if ((ch === '"' || ch === "'") && "{[,:".includes(before)) quote = ch;
+        else if (ch === "#" && (k === 0 || /[ \t]/.test(text[k - 1])))
+          break; // a comment to the line's end
         else if (ch === "{" || ch === "[") depth++;
         else if (ch === "}" || ch === "]") {
           depth--;
-          if (depth === 0) return { value: {}, next: i + 1 };
+          if (depth === 0) {
+            const tail = trim(text.slice(k + 1));
+            if (tail !== "" && !/^#/.test(tail)) this.fail(i, "text after a flow mapping");
+            return { value: {}, next: i + 1 };
+          }
         }
+        before = ch;
       }
       i++;
       if (i >= this.lines.length) this.fail(at, "a flow mapping is never closed");
