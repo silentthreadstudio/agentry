@@ -28,7 +28,7 @@ export class SqliteTextIndex implements TextIndex {
     this.fts = this.tryCreateFts();
     if (!this.fts) {
       this.db.exec("CREATE TABLE docs (id TEXT, body TEXT);");
-      process.stderr.write("[mem] FTS5 unavailable — using LIKE fallback index\n");
+      process.stderr.write("[mem] FTS5 unavailable — using a token-scan fallback index\n");
     }
   }
 
@@ -38,7 +38,7 @@ export class SqliteTextIndex implements TextIndex {
 
   add(id: string, body: string): void {
     // Idempotent upsert: clear any prior row for this id first, so re-adding an id never leaves a
-    // duplicate. Works for both the FTS5 and LIKE-fallback tables (neither has a UNIQUE
+    // duplicate. Works for both the FTS5 and token-scan tables (neither has a UNIQUE
     // constraint, so ON CONFLICT can't fire) — and a fresh add is just a delete of zero rows.
     this.db.prepare("DELETE FROM docs WHERE id = ?").run(id);
     this.db.prepare("INSERT INTO docs(id, body) VALUES (?, ?)").run(id, body);

@@ -40,7 +40,7 @@ export interface StoreSignature {
   maxMtimeMs: number; // max mtimeMs across those files; 0 when there are none
 }
 
-/** The source of truth: one JSON file per record under each root's memory dir. */
+/** The source of truth: one Markdown file (YAML frontmatter + body) per record under each root's memory dir. */
 export interface FileStore {
   readonly hasProjectRoot: boolean;
   writeFact(origin: Origin, fact: Fact): void;

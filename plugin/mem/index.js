@@ -28850,7 +28850,7 @@ var SqliteTextIndex = class {
     this.fts = this.tryCreateFts();
     if (!this.fts) {
       this.db.exec("CREATE TABLE docs (id TEXT, body TEXT);");
-      process.stderr.write("[mem] FTS5 unavailable \u2014 using LIKE fallback index\n");
+      process.stderr.write("[mem] FTS5 unavailable \u2014 using a token-scan fallback index\n");
     }
   }
   reset() {

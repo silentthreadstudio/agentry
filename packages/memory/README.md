@@ -1,43 +1,96 @@
 # @agentry/memory
 
-Agentry's durable memory MCP — the moat. A local **stdio** MCP server (TypeScript + `node:sqlite`)
-bundled into the plugin and launched via the plugin-root `.mcp.json` as the `mem` server.
+Agentry's durable memory: a local **stdio** MCP server (TypeScript + `node:sqlite`) that the plugin
+starts as its `mem` server. The wiring is inline in `plugin/.claude-plugin/plugin.json`:
 
-**Zero-install:** ships as a single self-contained `dist/index.js` (deps bundled by esbuild;
-`node:sqlite` is built into Node ≥ 24). A fresh clone runs it with just Node — no `npm install`, no
-native build. `dist/index.js` is the one **committed** build artifact (doc 09).
+```json
+"mcpServers": { "mem": { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/mem/index.js"] } }
+```
 
-## Storage (doc 02 §6 / doc 07 §0)
+**Zero-install.** The server ships as one self-contained ESM bundle, `plugin/mem/index.js`, built by
+esbuild with every dependency inlined except `node:sqlite`, which is built into Node ≥ 24. A plugin
+install runs it with just Node: no `npm install`, no native build. The bundle and its stamp
+`plugin/mem/.srchash` are committed; this package's `dist/` is not used.
 
-**Text files are the source of truth; the SQLite DB is a disposable, gitignored index** rebuilt from
-them. One file per memory, origin-qualified ULID ids, supersede-not-mutate, two roots (global
-`~/.agentry` + project `.agentry/`). A write is atomic *inline* (file + row); out-of-band changes
-(git pull/merge) are absorbed by an atomic rebuild-on-start.
+## Storage
 
-## Tools (doc 07 §2)
+**Markdown files are the source of truth.** Each record is one file with YAML frontmatter for its
+fields and a body for its prose (a fact's text, an episode's task):
 
-`memory_write` · `episode_write` · `memory_recall` · `memory_search` · `memory_update` ·
-`memory_feedback` · `memory_distill` · `memory_consolidate` · `memory_stats`
+```
+<root>/facts/<slug>-<ulid>.md
+<root>/episodes/<slug>-<ulid>.md
+```
 
-## Layout (ports-and-adapters)
+- **Two roots.** Global: `~/.agentry/memory` (base dir overridable with `AGENTRY_GLOBAL_DIR`).
+  Project: `<dir>/.agentry/memory`, where `<dir>` is `CLAUDE_PROJECT_DIR`, else
+  `AGENTRY_PROJECT_DIR`; there is no project root when neither is set. A fact with scope `repo` goes to the project root when there is one; `user` and
+  `global` facts always go to the global root.
+- **Ids** are origin-qualified ULIDs: `p:01J…` lives in the project root, `g:01J…` in the global one.
+  The slug only makes the file name readable; the ULID is the identity.
+- **Writes** go to a temp file beside the target, renamed into place; a sibling left under an old
+  slug is removed only after that. A reader sees the old record or the new one, never neither and
+  never a part. Each write is atomic per file, not across files.
+- **Supersede, don't mutate.** A replacing fact marks the old one `superseded`; recall never returns
+  it. Facts that keep being recalled without being used self-archive, and `memory_recover` brings
+  one back.
+- **Unreadable files** (no frontmatter header, bad YAML, a schema mismatch, a merge-conflict marker)
+  are left out of the store and reported in `memory_stats` as `readErrors`. One bad file never breaks
+  the load.
+
+**The text index is derived and in memory.** `node:sqlite` holds an FTS5 table in `:memory:`, or a
+token-scan table on a runtime whose SQLite lacks FTS5. No database file exists. The index is built
+by a full load of both roots at startup, and rebuilt by the same full load whenever it may be stale:
+
+- before each search, recall or stats, the server compares a cheap stat-only fingerprint of the
+  files (count and newest mtime) with the one it last loaded, which catches another process's
+  writes;
+- the server's own writes mark the loaded view stale, so the next read reloads it (the index is never
+  patched in place);
+- `memory_resync` forces a reload.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `memory_write` | Capture a fact. Reinforces a near-duplicate instead of copying it; `supersedes` retires the old fact. |
+| `memory_recall` | A few ranked, active facts for a query; `mode: "prime"` returns the session warm set and recent episodes. |
+| `memory_search` | Broader full-text search with snippets. |
+| `memory_update` | Patch a fact. `supersedes` retires the target as on `memory_write`. A scope that would move the fact to the other root is refused, and so is setting an archived fact active (use `memory_recover`). |
+| `memory_feedback` | Usefulness signal after a run: used facts are boosted, recalled-but-unused ones decay toward archive. |
+| `memory_forget` | Delete a fact or episode from the store and disk. |
+| `memory_recover` | Restore an archived fact to active. |
+| `memory_resync` | Force a reload from the files and report the counts before and after. |
+| `episode_write` | Record an episode (task, shape, outcome, lesson, used memories). |
+| `memory_stats` | Counts by status and type, undistilled-episode debt, and `readErrors`. |
+| `memory_distill` | List undistilled episodes with draft facts, or stamp episodes distilled. |
+| `memory_consolidate` | Cluster recurring facts and propose skills. It never installs one. |
+
+A failure is a typed error envelope (`code`, `what`, `why`, `fix`) whose closed `code` set is defined
+in `@agentry/core`. An id that names nothing is `not-found`; a call the record's state does not allow
+is `invalid-state`.
+
+## Layout (ports and adapters, dependencies point inward)
 
 ```
 src/
-  domain/        pure types + MemoryStore logic (no I/O, unit-tested)
-  application/   services per tool
-  persistence/   file-store (truth) + db-index (node:sqlite/FTS5, derived)
-  resolution/    two-root resolution + id origin-qualification
-  tools/         thin MCP adapters
+  domain/        pure: ids (id.ts), dedup, ranking, and the ports (FileStore, TextIndex). No I/O.
+  application/   memory-service.ts (the one service: facts, episodes, recall, freshness) and
+                 flows.ts (distill and consolidate analyses)
+  persistence/   file-store.ts (Markdown files, the truth) and db-index.ts (the derived index)
+  resolution/    roots.ts (the two roots and which one a scope writes to)
+  tools/         thin MCP adapters: input schemas, outcome → envelope (errors.ts)
   index.ts       stdio server wiring
 ```
 
 ## Develop
 
 ```bash
-pnpm --filter @agentry/memory build      # esbuild → dist/index.js (commit it — dist-lockstep, doc 09)
-pnpm --filter @agentry/memory test       # node:test — unit + stdio integration
+pnpm --filter @agentry/memory build      # esbuild → plugin/mem/index.js + plugin/mem/.srchash
+pnpm --filter @agentry/memory test       # node:test, against temp-dir stores
 pnpm --filter @agentry/memory typecheck
 ```
 
-**Dist-lockstep rule:** any change under `src/` requires rebuilding and committing `dist/index.js` in
-the same change. `node scripts/check-plugin.mjs` flags drift.
+**Dist-lockstep:** any change under `src/` (or in `@agentry/core`, which the bundle inlines) means
+rebuilding and committing `plugin/mem/index.js` and `plugin/mem/.srchash` in the same change.
+`node scripts/check-plugin.mjs` flags a bundle that is out of step with its source.
