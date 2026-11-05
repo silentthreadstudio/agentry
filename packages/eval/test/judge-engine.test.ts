@@ -1,4 +1,4 @@
-// Tests for the shared judge engine (ADR-002). ZERO API spend: every case drives `judgeWithRubric` through an
+// Tests for the shared judge engine. ZERO API spend: every case drives `judgeWithRubric` through an
 // INJECTED judge fn that returns canned JSON — no `claude -p` ever runs (`realJudgeFn` is exercised only R-gated).
 // This proves the rubric-parameterized parse + range validation + overall normalization (`sum / rubric.max`, the
 // anti-flattery contract), and that one engine normalizes a 4-dim and a 5-dim rubric correctly through one path.

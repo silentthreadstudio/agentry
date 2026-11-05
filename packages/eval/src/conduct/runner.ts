@@ -1,16 +1,16 @@
-// SHARED CONDUCT INFRA (relocated by T-10 from `outcome/runner.ts`). `runCell` is the shared conduct primitive the
+// SHARED CONDUCT INFRA (relocated from `outcome/runner.ts`). `runCell` is the shared conduct primitive the
 // live rightsizing probe drives, so it survived the deletion of `outcome/` and now lives in the NEUTRAL
 // `src/conduct/` home — no probe imports another probe's old folder.
 //
-// The per-cell run orchestration (ADR-001 / ADR-002) — a THIN layer OVER the shared `Runner` port (`io/port.ts`),
+// The per-cell run orchestration — a THIN layer OVER the shared `Runner` port (`io/port.ts`),
 // reused exactly as the routing probe reuses it (DIP at the `claude -p` boundary, replay-injectable for zero
 // API). For one (fixture × cell) it: prepares an isolated sandbox (`prepareSandbox`), seeds it with the
-// fixture's AGENT-VISIBLE `seed/` tree ONLY (`seedSandbox` — never `oracle/`, ADR-001), builds the per-cell
+// fixture's AGENT-VISIBLE `seed/` tree ONLY (`seedSandbox` — never `oracle/`), builds the per-cell
 // `Invocation` (bare vs `/agentry:go`-wrapped, model pinned to sonnet, plugin loaded only for the Agentry cell),
 // and drives the injected runner to completion. It returns the settled `RunResult` + the sandbox dir so the
 // caller can capture-then-inject-then-run the oracle.
 //
-// RUN-TO-COMPLETION (ADR-002): this slice must let the build finish, NOT kill it on the first dispatch the way
+// RUN-TO-COMPLETION: this slice must let the build finish, NOT kill it on the first dispatch the way
 // routing does. It sets T2's `runToCompletion: true` on the Invocation, so the live runner takes neither
 // early-kill path and settles on the trailing `result` envelope or the `timeoutMs` hard ceiling. Tests still
 // drive runs through the injected fake/replay runner (zero API); the field only changes live-run behavior.
@@ -25,10 +25,10 @@ import { prepareSandbox, seedSandbox } from "../io/sandbox.ts";
 import type { Cell } from "./cell.ts";
 import type { OutcomeFixture } from "./fixture.ts";
 
-/** The default model id when the caller pins none. A generic default; the caller overrides via `--model` (ADR-003). */
+/** The default model id when the caller pins none. A generic default; the caller overrides via `--model`. */
 export const DEFAULT_MODEL = "sonnet";
 
-/** Default hard ceiling (ms) for a full build run — far larger than routing's killed-early cap (ADR-002). */
+/** Default hard ceiling (ms) for a full build run — far larger than routing's killed-early cap. */
 export const DEFAULT_TIMEOUT_MS = 600_000;
 
 /** Per-cell run options — the resolved plugin path + model + cap the caller discovers; all optional with defaults. */
@@ -49,19 +49,19 @@ export interface RunCellOptions {
 export interface RunCellResult {
   /** The runner's settled `RunResult` (the build's outcome record; cost lands here once T2 extends it). */
   result: RunResult;
-  /** The sandbox working dir the agent ran in — captured (ADR-001), then oracle-injected, then torn down. */
+  /** The sandbox working dir the agent ran in — captured, then oracle-injected, then torn down. */
   sandboxDir: string;
 }
 
 /**
- * Run ONE (fixture × cell) through the injected `runner` (ADR-001/002). Prepares a fresh isolated sandbox,
- * seeds it with the fixture's `seed/` tree ONLY (the oracle is never seeded — structural absence, ADR-001),
+ * Run ONE (fixture × cell) through the injected `runner`. Prepares a fresh isolated sandbox,
+ * seeds it with the fixture's `seed/` tree ONLY (the oracle is never seeded — structural absence),
  * builds the per-cell `Invocation` (model pinned, prompt wrapped per cell, plugin + `bypassPermissions` only
  * for the Agentry cell), and drives the runner. Returns the settled `RunResult` + the sandbox dir; it does NOT
- * inject the oracle or tear down — the caller owns the capture → inject → run-oracle → teardown order (ADR-001).
+ * inject the oracle or tear down — the caller owns the capture → inject → run-oracle → teardown order.
  *
  * THROWS if an Agentry (plugin-loading) cell is given no `pluginDir` — a misconfigured cell is a loud bug, not
- * a silently plugin-less run. The public bench is Agentry-value-only (ADR-003), so the only live cell loads the
+ * a silently plugin-less run. The public bench is Agentry-value-only, so the only live cell loads the
  * plugin; a non-plugin cell (`loadsPlugin: false`) would ignore `pluginDir` entirely.
  */
 export async function runCell(
@@ -90,7 +90,7 @@ export async function runCell(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const sandbox: Sandbox = prepareSandbox();
-  // Seed the AGENT-VISIBLE tree only. The oracle/golden/broken subtrees are NEVER passed here (ADR-001): the
+  // Seed the AGENT-VISIBLE tree only. The oracle/golden/broken subtrees are NEVER passed here: the
   // oracle is injected post-capture by the harness; golden/broken are control overlays the probe applies
   // without an agent run. Gated on the seed dir existing so a malformed fixture surfaces, not silently runs empty.
   if (existsSync(fixture.seedDir)) {
@@ -109,7 +109,7 @@ export async function runCell(
       ? buildConductorPrompt(repoRoot, fixture.prompt)
       : cell.promptWrap(fixture.prompt);
 
-  // Build the per-cell Invocation. RUN-TO-COMPLETION (ADR-002): `runToCompletion: true` makes the live runner
+  // Build the per-cell Invocation. RUN-TO-COMPLETION: `runToCompletion: true` makes the live runner
   // let the build finish — it takes NEITHER early-kill path (not kill-on-first-dispatch, not terminate-on-artifact),
   // settling on the trailing `result` envelope or the `timeoutMs` hard ceiling. Without this an Agentry build would
   // be killed at its first subagent dispatch and the oracle would only ever see the seed stub. The plugin +

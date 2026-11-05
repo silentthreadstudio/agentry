@@ -150,7 +150,7 @@ async function runBench(
   return { code, stderr: chunks.join("") };
 }
 
-/** Read back the stored artifact the run persisted into `summary.json` (the AC4 evidence). */
+/** Read back the stored artifact the run persisted into `summary.json`. */
 function storedArtifact(
   runsRoot: string,
   runId: string,
@@ -171,7 +171,7 @@ function storedArtifact(
   return JSON.parse(readFileSync(join(runsRoot, runId, "summary.json"), "utf8")).artifact;
 }
 
-// --- AC1: cost is measured -----------------------------------------------------------------------------------
+// --- cost is measured -----------------------------------------------------------------------------------
 
 test("every task's record carries the real cost read from its settled stream — not zero, not absent", async () => {
   const runsRoot = freshRunsRoot();
@@ -191,7 +191,7 @@ test("every task's record carries the real cost read from its settled stream —
   }
 });
 
-// --- AC2 + AC4: the cap stops the run, and the partial says so ------------------------------------------------
+// --- the cap stops the run, and the partial says so ------------------------------------------------
 
 test("--budget-usd stops the run partway and reports how many of the planned tasks ran", async () => {
   const runsRoot = freshRunsRoot();
@@ -219,7 +219,7 @@ test("--budget-usd stops the run partway and reports how many of the planned tas
   assert.match(stderr, /ran 3 of 8 planned task\(s\)/);
 });
 
-// --- AC3: the partial is REAL data — scored, persisted, reportable --------------------------------------------
+// --- the partial is REAL data — scored, persisted, reportable --------------------------------------------
 
 test("a partial run is scored and persisted exactly like a full one, and `report <id>` works on it", async () => {
   const runsRoot = freshRunsRoot();
@@ -248,7 +248,7 @@ test("a partial run is scored and persisted exactly like a full one, and `report
   assert.equal(code, 0, "the stored partial is reportable offline, with zero API");
 });
 
-// --- AC5: the overshoot bound is stated, not implied -----------------------------------------------------------
+// --- the overshoot bound is stated, not implied -----------------------------------------------------------
 
 test("the run's own output states that the cap stops NEW tasks and can be exceeded per concurrency slot", async () => {
   const runsRoot = freshRunsRoot();
@@ -284,7 +284,7 @@ test("the usage text states the --budget-usd semantics and its bound", async () 
   assert.match(usage, /one in-flight task per concurrency slot/);
 });
 
-// --- AC6: an unmeasurable task is never counted as free --------------------------------------------------------
+// --- an unmeasurable task is never counted as free --------------------------------------------------------
 
 test("a task that settles with NO total_cost_usd is charged the projection, and the cap still holds", async () => {
   const runsRoot = freshRunsRoot();
@@ -315,7 +315,7 @@ test("a task that settles with NO total_cost_usd is charged the projection, and 
   );
 });
 
-// --- AC7: no cap = today's behavior, exactly -------------------------------------------------------------------
+// --- no cap = today's behavior, exactly -------------------------------------------------------------------
 
 test("omitting --budget-usd runs the full matrix with no admission gate and no budget stamp", async () => {
   const runsRoot = freshRunsRoot();
@@ -329,7 +329,7 @@ test("omitting --budget-usd runs the full matrix with no admission gate and no b
   assert.equal(artifact.budget, undefined, "an ungated run carries no budget block at all");
 });
 
-// --- AC8: the flag is validated like every other ---------------------------------------------------------------
+// --- the flag is validated like every other ---------------------------------------------------------------
 
 test("a non-numeric, zero, or negative --budget-usd is a loud usage error (exit 2)", async () => {
   for (const bad of ["abc", "0", "-1", ""]) {

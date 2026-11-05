@@ -1,4 +1,4 @@
-// Tests for the pure kind-extractor (ADR-005 / AC11). ZERO API spend: every case runs `extractKind` over a
+// Tests for the pure kind-extractor. ZERO API spend: every case runs `extractKind` over a
 // SYNTHETIC `.agentry/work/*` layout built in a temp working dir (no `claude -p`, no runner). These prove the
 // `spec.md` frontmatter → kind read, the `null` signals (no work folder / no spec.md / no kind field), and the
 // independence from the shape settle-signals (kind is a function of artifact CONTENT, not the ctx) — the same

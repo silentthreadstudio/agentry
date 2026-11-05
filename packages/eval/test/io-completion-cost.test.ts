@@ -1,4 +1,4 @@
-// Tests for the run-to-completion mode + cost capture extension to the shared io seam (ADR-002, T2). ZERO API
+// Tests for the run-to-completion mode + cost capture extension to the shared io seam. ZERO API
 // spend: the streaming branch is driven by a FAKE CHILD emitting a synthetic NDJSON stream (no `claude -p`
 // ever runs). Two behaviors are proved here:
 //   - `Invocation.runToCompletion` takes NEITHER early-kill path: a stream with an `Agent` dispatch followed by

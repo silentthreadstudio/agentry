@@ -1,4 +1,4 @@
-// The PURE four-axis scorer (the reshape plan §"score.ts") — the absolute-value HEART of the bench. It aggregates
+// The PURE four-axis scorer — the absolute-value HEART of the bench. It aggregates
 // the flat per-run `BenchRecord[]` the probe collects into a `BenchArtifact` carrying the four measured axes:
 //   A — decisionQuality   (mean±std of the judged decision trail; absent records excluded)
 //   B — codeQuality       (mean±std of the judged produced tree) + correctnessPassRate (the held-out oracle)
@@ -15,7 +15,7 @@
 // field — an ABSENT `decisionScore` (a one-shot wrote no trail) or an ABSENT `codeScore`/`oraclePass` (a degenerate
 // run) is a valid record that the axes simply exclude from their own denominator.
 //
-// THE REFRAME (the reshape plan): all four numbers are ABSOLUTE — no routing label-match, no floor/correctFloor
+// THE REFRAME: all four numbers are ABSOLUTE — no routing label-match, no floor/correctFloor
 // bucketing, no bare/baseline cell. We judge Agentry's actual work for quality in absolute terms.
 
 import { mean as meanOf, stdev } from "../stats.ts";
@@ -23,7 +23,7 @@ import { mean as meanOf, stdev } from "../stats.ts";
 import type { Score } from "../judge/index.ts";
 
 /**
- * The judged-quality bar a result must clear to count as GOOD (the reshape plan §"score.ts"). A code result whose
+ * The judged-quality bar a result must clear to count as GOOD. A code result whose
  * judged overall is `>=` this is GOOD; strictly below is BAD. `0.5` = at least half the rubric's max — a deliverable
  * the judge rates below half-quality is not a credible success. Pinned explicitly so the good/bad split (and the
  * overclaim signal that reads it) is reproducible, not a vibe.
@@ -225,7 +225,7 @@ function fraction(count: number, denom: number): number {
 /**
  * Aggregate the flat per-run records into the four {@link BenchAxes}. Each axis uses its OWN denominator — the
  * records that carried the signal it measures — so an absent signal excludes a record from that axis without
- * dragging it down to 0 (the reshape plan's axis formulas verbatim):
+ * dragging it down to 0 (the axis formulas):
  *   - A decisionQuality: mean±std over records with a `decisionScore`.
  *   - B codeQuality: mean±std over records with a `codeScore`; correctnessPassRate = pass / (records with an oracle).
  *   - C overclaimRate: overclaiming records / ALL records.

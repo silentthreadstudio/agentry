@@ -1,12 +1,12 @@
-// SHARED JUDGE INFRA (relocated by T-10 from `outcome-judge/rubric.ts`). `OUTCOME_DIMENSIONS` + `RUBRIC_TEXT` are
+// SHARED JUDGE INFRA (relocated from `outcome-judge/rubric.ts`). `OUTCOME_DIMENSIONS` + `RUBRIC_TEXT` are
 // the rubric DATA the live rightsizing probe feeds the shared judge engine (`makeRubric`), so they survived the
 // deletion of `outcome-judge/` and now live in the NEUTRAL `src/conduct/` home — no probe imports another probe's
 // old folder.
 //
-// The outcome-criteria RUBRIC (ADR-002 / Spec v2 BUILD §1) — the FOUR anchored dimensions the judge scores a
+// The outcome-criteria RUBRIC — the FOUR anchored dimensions the judge scores a
 // task's PRODUCED RESULT (the code an open-ended task yields) against, plus the rubric TEXT the judge prompt
 // embeds. This module owns ONLY the rubric definition (the scoring vocabulary + the prompt the judge reads);
-// judge.ts (T-04) owns the LLM call, control.ts (T-04) the gates. It mirrors `quality/rubric.ts` EXACTLY in
+// judge.ts owns the LLM call, control.ts the gates. It mirrors `quality/rubric.ts` EXACTLY in
 // shape — the only differences are the 4-dimension set, the `/8` denominator, and an anti-gaming clause adapted
 // to scoring CODE quality rather than a decision artifact's text.
 //
@@ -27,7 +27,7 @@ export type OutcomeDimensions = Record<OutcomeDimension, number>;
 /**
  * The anchored rubric the judge prompt embeds. Each dimension states what 0 vs 2 looks like so the judge grades
  * the produced code against a fixed bar, not a vibe. The closing CONTENT clause is load-bearing: it forbids
- * rewarding more code / heavier formatting, so volume cannot be the discriminator (ADR-002 / Spec v2 BUILD §1).
+ * rewarding more code / heavier formatting, so volume cannot be the discriminator.
  */
 export const RUBRIC_TEXT = `Score the PRODUCED RESULT (the code the task yielded) on FOUR dimensions, each 0, 1, or 2 (integers only):
 

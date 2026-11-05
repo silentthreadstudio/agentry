@@ -1,4 +1,4 @@
-// Tests for the unified self-eval CLI composition root (cli.ts / T-10) — the GENERIC dispatch + path-resolution +
+// Tests for the unified self-eval CLI composition root (cli.ts) — the GENERIC dispatch + path-resolution +
 // offline-replay + argument-error surfaces. ZERO live API by construction: the replay path is a pure fs read, and
 // the argument-error cases never reach a conduct. The `run bench` conduct itself is covered end-to-end in
 // `cli-bench.test.ts` (the injected fake-runner + canned-judge composition); this file owns the surfaces that are

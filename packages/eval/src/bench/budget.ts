@@ -161,7 +161,7 @@ export function overshootBoundUsd(budget: BenchBudget): number {
 /**
  * The unmissable terminal notice for a budget-capped run — ONE source for this wording, so the event trail, the
  * summary line, and the usage text cannot drift apart. A `budget-exhausted` run leads with PARTIAL BENCH and the
- * planned/run counts (AC4); a completed run still states the bound, because the cap was in force either way (AC5).
+ * planned/run counts; a completed run still states the bound, because the cap was in force either way.
  */
 export function formatBudgetNotice(budget: BenchBudget): string {
   const usd = (n: number): string => `$${n.toFixed(2)}`;

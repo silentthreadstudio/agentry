@@ -1,4 +1,4 @@
-# A planted outcome fixture (ADR-003) — spec-first / feature.
+# A planted outcome fixture — spec-first / feature.
 #
 # Task: implement `wordCount(text)` in src/wordcount.js. The goal is deliberately UNDER-SPECIFIED (what is a
 # "word"? how is punctuation handled?) — a design choice the agent must settle — but the held-out oracle pins only

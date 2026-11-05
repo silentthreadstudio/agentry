@@ -274,7 +274,7 @@ test("renderPage: a scored bench run injects the four axes as the page payload (
   assert.match(html, /"decisionQuality":/);
   assert.match(html, /"escapedDefectRate":0\.5/);
 
-  // value-only (ADR-003): no head-to-head delta wire field anywhere on the page
+  // value-only: no head-to-head delta wire field anywhere on the page
   assert.equal(/"delta":/.test(html), false, "no delta wire field on the value-only page");
   // de-Sonnet: no hardcoded "Sonnet" literal in the rendered output
   assert.doesNotMatch(html, /Sonnet/);

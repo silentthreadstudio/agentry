@@ -1,4 +1,4 @@
-// The reporter's READ side (doc 08 §6) — reconstructs a {@link PageData} view-model from a STORED run with ZERO
+// The reporter's READ side — reconstructs a {@link PageData} view-model from a STORED run with ZERO
 // live API. The PUBLIC report LEADS with the value-axis BENCH plus the Tasks explorer. It reads the run's
 // `summary.json` (for the per-task labels), `events.jsonl` (per-task shapes + timings), and the optional
 // `decision-quality.json` (ONLY the per-task overalls the Tasks drawer shows) — then folds in the bench loader,
@@ -60,13 +60,13 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
       runId: summary.runId,
       fixture: config.fixtureDir ? basename(config.fixtureDir) : "—",
       repeats: config.runs ?? 1,
-      // De-Sonnet (ADR-003): the model label flows from the run's `--model` flag, never a hardcoded "Sonnet".
+      // De-Sonnet: the model label flows from the run's `--model` flag, never a hardcoded "Sonnet".
       model: config.model ?? "—",
       generatedAt: opts.generatedAt,
     },
     ...(bench !== undefined ? { bench } : {}),
     // rightsizing/honesty are SUBSUMED by the bench and no longer attached on the public lead; routing/quality stay
-    // PARKED off the public path (ADR-002/ADR-003). The raw routing artifact is still read LOCALLY to label the
+    // PARKED off the public path. The raw routing artifact is still read LOCALLY to label the
     // per-task rows; it just never becomes a public page section.
     tasks: buildTasks(routingRaw, perTaskRuns, perTaskQuality),
     corrections: loadCorrections(opts.correctionsPath),
@@ -77,7 +77,7 @@ export function buildPageData(runsRoot: string, runId: string, opts: BuildOption
 // --- tasks (events.jsonl + stability + quality) ------------------------------------------------------------------
 // The stored routing artifact is read ONLY to label the per-task rows (its stability table carries each task's
 // labeled floor + the noisy set). The routing label-match VIEW (confusion/accuracy) is retired off the public
-// path (ADR-002/ADR-003), so this raw shape narrows just the two fields `buildTasks` consumes — nothing more.
+// path, so this raw shape narrows just the two fields `buildTasks` consumes — nothing more.
 
 interface RawStabilityRow {
   taskId: string;
@@ -153,7 +153,7 @@ function buildTasks(
 }
 
 // --- quality -----------------------------------------------------------------------------------------------------
-// Decision-quality is PARKED off the public path (ADR-002): no quality VIEW (overall/dims/controls) ships on the
+// Decision-quality is PARKED off the public path: no quality VIEW (overall/dims/controls) ships on the
 // public report. The stored `decision-quality.json` is read ONLY for the per-task overall scores the Tasks explorer
 // drawer still shows — never the aggregate quality section, which is retired.
 

@@ -1,4 +1,4 @@
-# A planted outcome fixture (ADR-003) — decompose+verify / bug.
+# A planted outcome fixture — decompose+verify / bug.
 #
 # Task: FIX a cross-file pagination bug spread across three files. The seed is a working library EXCEPT the
 # total-pages math (src/meta.js) floors instead of ceils, dropping the final partial page — which also makes

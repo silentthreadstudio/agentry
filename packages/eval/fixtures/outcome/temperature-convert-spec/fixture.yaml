@@ -1,4 +1,4 @@
-# A planted outcome fixture (ADR-003) — spec-first / feature.
+# A planted outcome fixture — spec-first / feature.
 #
 # Task: implement `toFahrenheit(celsius)` in src/temperature.js. The goal is under-specified at the edges
 # (rounding? float precision?) — a design choice the agent settles — but the held-out oracle pins only the exact

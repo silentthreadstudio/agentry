@@ -1,6 +1,5 @@
 // The LIVE Runner — invokes the real `claude -p --output-format stream-json --verbose` under a prepared
-// sandbox/env and tees the event stream to `stream.jsonl`. It has TWO termination modes (ADR-002/005 +
-// autopilot-design §3): the default kill-on-first-`Agent`-dispatch early-terminate, and an opt-in CAPPED /
+// sandbox/env and tees the event stream to `stream.jsonl`. It has TWO termination modes: the default kill-on-first-`Agent`-dispatch early-terminate, and an opt-in CAPPED /
 // no-kill mode (`Invocation.noKillOnDispatch`) that lets the conductor run on and emit its work-folder
 // routing artifacts, terminating at settle or a time cap. This is the only module that spends API; it is
 // written here but NOT executed by the tests (zero API spend — a fake child drives the capture path).
@@ -40,7 +39,7 @@ export function buildArgs(invocation: Invocation): string[] {
 
 /**
  * True iff a parsed stream-json event is an `assistant` message carrying a `tool_use` block whose tool is
- * `Agent` — i.e. the conductor has dispatched a subagent (the early-terminate trigger, ADR-002/OQ2). Reads
+ * `Agent` — i.e. the conductor has dispatched a subagent (the early-terminate trigger). Reads
  * the `--output-format stream-json` shape: `{type:"assistant", message:{content:[{type:"tool_use",
  * name:"Agent", ...}]}}`. Returns false for any non-matching or malformed line (a partial/garbled tail must
  * never be mistaken for a dispatch).
@@ -74,8 +73,8 @@ function numOrUndefined(v: unknown): number | undefined {
 }
 
 /**
- * The token/time/$ cost of a settled run, if this event is the final `result` envelope; else undefined
- * (ADR-002). Reads the SAME envelope `resultSubtypeOf` reads, normalizing the CLI's snake_case
+ * The token/time/$ cost of a settled run, if this event is the final `result` envelope; else undefined.
+ * Reads the SAME envelope `resultSubtypeOf` reads, normalizing the CLI's snake_case
  * (`usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens`, `total_cost_usd`,
  * `duration_ms`, `num_turns`) into {@link RunCost}'s camelCase. Field names PINNED against a real captured
  * `claude -p --output-format stream-json` `result` event. Tolerant of any missing/non-numeric field (a
@@ -129,13 +128,13 @@ const realSpawn: SpawnFn = (args, sandbox) =>
 /** Options governing how a captured stream terminates. */
 export interface CaptureOptions {
   /**
-   * CAPPED / no-kill mode (autopilot-design §3): when true the run is NOT killed on the first `Agent`
+   * CAPPED / no-kill mode: when true the run is NOT killed on the first `Agent`
    * dispatch — it runs to settle (its trailing `result` envelope) or until {@link timeoutMs}, so the
    * conductor can emit its work-folder routing artifacts. Default false ⇒ kill-on-first-dispatch.
    */
   noKillOnDispatch?: boolean;
   /**
-   * ARTIFACT-AWARE early-terminate (autopilot-design §3): when true, poll the sandbox work folder while the
+   * ARTIFACT-AWARE early-terminate: when true, poll the sandbox work folder while the
    * child runs and kill it as soon as the routing SHAPE is DETERMINED (plan/tasks ⇒ decompose; spec-only
    * past a grace ⇒ spec-first). Supersedes {@link noKillOnDispatch} for live routing runs — it terminates on
    * the artifact, not the dispatch, so it both reads more accurately AND kills earlier/cheaper. {@link timeoutMs}
@@ -143,7 +142,7 @@ export interface CaptureOptions {
    */
   terminateOnArtifact?: boolean;
   /**
-   * RUN-TO-COMPLETION mode (ADR-002): when true, take NEITHER early-kill path (not kill-on-dispatch, not
+   * RUN-TO-COMPLETION mode: when true, take NEITHER early-kill path (not kill-on-dispatch, not
    * {@link terminateOnArtifact}) — let the headless build run until it settles on its trailing `result`
    * envelope or {@link timeoutMs} fires. Overrides both kill flags. Default false ⇒ routing behavior unchanged.
    */
@@ -159,21 +158,21 @@ export interface CaptureOptions {
 /** Default hard ceiling for a capped/artifact-aware run — the fallback when no artifact ever determines a shape. */
 export const DEFAULT_CAP_MS = 300_000;
 
-/** Default poll interval for the artifact watch (autopilot-design §3: every few seconds). */
+/** Default poll interval for the artifact watch (every few seconds). */
 export const DEFAULT_POLL_MS = 4_000;
 
-/** Default grace window after spec.md-only before concluding spec-first (autopilot-design §3: ~45s). */
+/** Default grace window after spec.md-only before concluding spec-first (~45s). */
 export const DEFAULT_GRACE_MS = 45_000;
 
 /**
- * Stream-capture spawn (ADR-002/005): run `claude -p --output-format stream-json --verbose`, tee stdout
+ * Stream-capture spawn: run `claude -p --output-format stream-json --verbose`, tee stdout
  * line-by-line to `streamPath`, and observe the trailing `result` envelope when the run settles — its
  * `subtype` and its token/time/$ {@link RunCost} (both absent on a killed run, which forfeits that envelope).
  *
  * Termination modes:
  *   - RUN-TO-COMPLETION ({@link CaptureOptions.runToCompletion}): take NEITHER early-kill path — no
  *     kill-on-dispatch, no artifact poll — so the full headless build runs to its trailing `result` envelope
- *     or `timeoutMs`. Overrides both kill flags; this is the outcome run's mode (ADR-002).
+ *     or `timeoutMs`. Overrides both kill flags; this is the outcome run's mode.
  *   - DEFAULT (kill-on-dispatch): `proc.kill()` the moment the first `tool_use name:"Agent"` event is seen
  *     (OQ2 early-terminate). A no-dispatch run is never killed; it closes normally and its `result` envelope
  *     is observed. A killed run's partial stream lacks the trailing `result`, so `resultSubtype` is undefined.
@@ -185,10 +184,10 @@ export const DEFAULT_GRACE_MS = 45_000;
  *     decompose (kill at once); `spec.md`-only ⇒ open a grace window, killing on spec-first if plan/tasks
  *     never appear within it (or earlier on decompose if they do). A run that writes no artifact and settles
  *     on its own is one-shot/degenerate (the natural close, never force-killed). `timeoutMs` is the hard
- *     ceiling fallback. This supersedes `noKillOnDispatch` for live routing runs (autopilot-design §3).
+ *     ceiling fallback. This supersedes `noKillOnDispatch` for live routing runs.
  *
  * Resolves with the observed `result.subtype` (or undefined) once the child closes. The settled run's
- * {@link RunCost} (ADR-002) is surfaced through the optional `onCost` side channel — parsed from the SAME
+ * {@link RunCost} is surfaced through the optional `onCost` side channel — parsed from the SAME
  * `result` envelope `result.subtype` is read from, so the resolved value (and every existing caller) is
  * unchanged. `onCost` fires once, when the trailing `result` envelope is seen; a killed run never fires it.
  *
@@ -203,7 +202,7 @@ export function spawnClaudeStreaming(
   spawnFn: SpawnFn = realSpawn,
   onCost?: (cost: RunCost) => void,
 ): Promise<string | undefined> {
-  // RUN-TO-COMPLETION (ADR-002) suppresses BOTH early-kill paths: no artifact poll, no kill-on-dispatch — the
+  // RUN-TO-COMPLETION suppresses BOTH early-kill paths: no artifact poll, no kill-on-dispatch — the
   // build runs to its trailing `result` envelope or the `timeoutMs` cap. Otherwise routing behavior is unchanged.
   const toCompletion = options.runToCompletion === true;
   const onArtifact = !toCompletion && options.terminateOnArtifact === true;
@@ -277,8 +276,8 @@ export function spawnClaudeStreaming(
       }
       const subtype = resultSubtypeOf(event);
       if (subtype !== undefined) resultSubtype = subtype;
-      // The trailing `result` envelope also carries the run's cost (ADR-002); parse it where we already read
-      // subtype and hand it to the optional side channel — the resolved value stays subtype-only (AC8: existing
+      // The trailing `result` envelope also carries the run's cost; parse it where we already read
+      // subtype and hand it to the optional side channel — the resolved value stays subtype-only (existing
       // callers unchanged). A non-`result` event yields undefined and never fires the sink.
       if (onCost !== undefined) {
         const parsedCost = costOf(event);
@@ -316,13 +315,13 @@ export function spawnClaudeStreaming(
 }
 
 /**
- * Run one captured invocation (ADR-002/005): stream `claude -p --output-format stream-json --verbose`, tee to
+ * Run one captured invocation: stream `claude -p --output-format stream-json --verbose`, tee to
  * `invocation.streamPath`, and return the MINIMAL `RunResult` the extractor needs — `streamPath` (the captured
  * `stream.jsonl`), `resultSubtype` (the settled run's `result.subtype`, or undefined on a killed run), and
  * `producedTreeNonEmpty` (the OQ1 one-shot disambiguator's tree boolean).
  *
  * Termination follows the invocation: `noKillOnDispatch` ⇒ CAPPED mode (run to settle or `timeoutMs`, so the
- * conductor emits its work-folder artifacts — autopilot-design §3); otherwise the original kill-on-first-
+ * conductor emits its work-folder artifacts); otherwise the original kill-on-first-
  * dispatch early-terminate. The shape itself is read by the extractor from the work folder, not from here.
  *
  * `spawnFn` is injected only in tests (a fake child driving a synthetic NDJSON stream); production passes the
@@ -349,7 +348,7 @@ export async function runCaptured(
       : {}),
     ...(invocation.timeoutMs !== undefined ? { timeoutMs: invocation.timeoutMs } : {}),
   };
-  // Cost (ADR-002) is captured via the side channel: `spawnClaudeStreaming` resolves the subtype only (so its
+  // Cost is captured via the side channel: `spawnClaudeStreaming` resolves the subtype only (so its
   // existing routing callers are unchanged), and hands the parsed `RunCost` here when the run settles.
   let cost: RunCost | undefined;
   const resultSubtype = await spawnClaudeStreaming(

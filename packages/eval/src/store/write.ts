@@ -1,9 +1,9 @@
-// The WRITE side of the artifact store (ADR-001 / T-B). It materializes one self-eval run as the on-disk tree
+// The WRITE side of the artifact store. It materializes one self-eval run as the on-disk tree
 // `runs/<runId>/{config.json, summary.json, tasks/<taskId>[.r<i>]/{stream.jsonl, shape.json, timing.json, work/…}}`
 // — capturing each task's `stream.jsonl` + `.agentry/work/` tree out of its sandbox BEFORE the sandbox is
-// discarded (the keystone ordering; AC3 later reads the copied `work/`).
+// discarded (the capture-before-discard ordering; the offline rescore later reads the copied `work/`).
 //
-// SRP: write-only. Reading a stored run is T-E's `store/read.ts`; this module never reads back what it wrote.
+// SRP: write-only. Reading a stored run is `store/read.ts`; this module never reads back what it wrote.
 // Pure `node:fs` writes against the schema — no `@agentry/core`, no probe imports.
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import type { RunConfig, RunSummary, TaskCaptureSrc } from "./schema.ts";
 /**
  * The write-side port for one run, bound to a fixed `runs/<runId>/` directory. The three methods follow a run's
  * lifecycle: `beginRun` once at the start, `captureTask` per completed task (before its sandbox is gone), and
- * `finishRun` once at the end. T-D's probe seam drives `captureTask` through `EvalObserver.onTaskComplete`.
+ * `finishRun` once at the end. The probe seam drives `captureTask` through `EvalObserver.onTaskComplete`.
  */
 export interface RunStore {
   /** Create `runs/<runId>/` and write the reproducibility header `config.json`. */
@@ -60,7 +60,7 @@ export function createRunStore(runsRoot: string, runId: string): RunStore {
         cpSync(src.streamPath, join(taskDir, "stream.jsonl"));
       }
 
-      // Copy the `.agentry/work/` artifact tree (the keystone AC3 reads). Tolerate its absence: a one-shot task
+      // Copy the `.agentry/work/` artifact tree (the offline rescore reads it). Tolerate its absence: a one-shot task
       // produces no work folder — copy nothing, no error.
       const workSrc = join(src.sandboxDir, ".agentry", "work");
       if (existsSync(workSrc)) {

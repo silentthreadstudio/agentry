@@ -1,11 +1,11 @@
-// Conformance test for the WHOLE outcome-fixture corpus (T5 / AC3) — ZERO live API by construction. It walks
+// Conformance test for the WHOLE outcome-fixture corpus — ZERO live API by construction. It walks
 // every `fixtures/outcome/<id>/` directory and, for each, asserts the three load-time + discrimination controls
-// the matrix's ground truth depends on (Spec AC3/AC5): the fixture LOADS via `loadOutcomeFixture`; seed+golden
+// the matrix's ground truth depends on (the fixture contract): the fixture LOADS via `loadOutcomeFixture`; seed+golden
 // PASSES the held-out oracle (positive arm); seed+broken FAILS it (negative arm); and an untouched seed FAILS it
 // (the no-leakage / un-built control). No `claude -p`, no API spend — the oracle is run directly over overlaid
 // copies, exactly as the discrimination control does in outcome-slice.test.ts.
 //
-// It also asserts the CORPUS-LEVEL coverage AC3 demands: ≥8 fixtures spanning all three shapes and ≥2 kinds.
+// It also asserts the CORPUS-LEVEL coverage the corpus needs: ≥8 fixtures spanning all three shapes and ≥2 kinds.
 
 import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -46,7 +46,7 @@ function runOracleOver(
 
 const ids = fixtureIds();
 
-// --- per-fixture: loads + the three discrimination/leakage controls (AC3/AC5) ----------------------------------
+// --- per-fixture: loads + the three discrimination/leakage controls ----------------------------------
 
 for (const id of ids) {
   const fixtureDir = join(OUTCOME_DIR, id);
@@ -77,7 +77,7 @@ for (const id of ids) {
   });
 }
 
-// --- corpus-level coverage (AC3): ≥8 fixtures spanning all three shapes and ≥2 kinds ---------------------------
+// --- corpus-level coverage: ≥8 fixtures spanning all three shapes and ≥2 kinds ---------------------------
 
 test("corpus: at least 8 fixtures are present", () => {
   assert.ok(

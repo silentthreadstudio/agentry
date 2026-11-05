@@ -1,4 +1,4 @@
-// Tests for the PRODUCED-RESULT reader (ADR-002 / ADR-001 capture-step consumer / AC2) — the PURE, oracle-free
+// Tests for the PRODUCED-RESULT reader — the PURE, oracle-free
 // rendering of an agent-visible sandbox tree into the judge's input. ZERO API: the reader only touches the
 // filesystem, so the tests build a throwaway sandbox, render it, and assert the contract: produced files are
 // included, the `oracle/` subtree is NOT, the rendering is deterministic (sorted), and an oversized tree is
@@ -82,7 +82,7 @@ test("summarizeProducedResult: output is deterministic (file order does not depe
   }
 });
 
-// --- oracle exclusion: the held-out subtree is never in the judged input (AC2 / AC5) --------------------------
+// --- oracle exclusion: the held-out subtree is never in the judged input --------------------------
 
 test("summarizeProducedResult: EXCLUDES the oracle/ subtree entirely", () => {
   const sandbox = makeSandbox();

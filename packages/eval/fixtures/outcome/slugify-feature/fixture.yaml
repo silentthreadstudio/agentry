@@ -1,4 +1,4 @@
-# One planted outcome fixture (ADR-003) — the T1 exemplar/template.
+# One planted outcome fixture — the exemplar/template.
 #
 # Task: implement `slugify(title)` in src/slugify.js. The seed ships a stub that throws; the agent must make it
 # turn a human title into a URL slug. The HIDDEN oracle (oracle/, never seeded) holds the held-out node:test

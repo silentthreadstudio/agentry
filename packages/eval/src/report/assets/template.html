@@ -391,7 +391,7 @@ const C = { good:"#46c98a", warn:"#ef8a5c", bad:"#f0604d", info:"#56b6c2", amber
 const pct = (x) => Math.round(x*100) + "%";
 const pct1 = (x) => (x*100).toFixed(1) + "%";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
-// De-hardcode the model label (ADR-003): the arm label is DERIVED from the run's model id, never a baked-in name.
+// De-hardcode the model label: the arm label is DERIVED from the run's model id, never a baked-in name.
 const MODEL_FAMILIES = ["opus", "sonnet", "haiku"];
 const modelShort = (m) => { const s=(m||"").toLowerCase();
   for (const k of MODEL_FAMILIES) if (s.includes(k)) return k;

@@ -1,5 +1,5 @@
 # Routing-accuracy labeled task set — the ground truth for the self-eval ROUTING probe.
-# Spec: .agentry/work/benchmark-selfeval/spec.md (AC1) · OQ3 resolution: floors are rubric-anchored,
+# Floors are rubric-anchored,
 # carry a structured/checkable rationale, and were agreed by a SECOND INDEPENDENT labeler (blind) at
 # fixture-creation. Non-circular: correct_floor = what the conducting rubric's INTENT prescribes; the
 # probe measures what the conductor's BEHAVIOR (events.jsonl dispatch) actually did.
@@ -13,14 +13,14 @@
 # given ONLY the rubric + the bare prompts (blind to labeler_a). agreement: true iff both reached the same
 # floor. Disagreements are escalated/excluded, never shipped. Agreement at creation: 7/7.
 #
-# Spread (AC8 saturation guard — must NOT collapse to one shape): one-shot x2, spec-first x3, decompose x2.
+# Spread (saturation guard — must NOT collapse to one shape): one-shot x2, spec-first x3, decompose x2.
 #
-# KIND axis (ADR-005 / AC11): escalated tasks (where the conductor writes a `spec.md` an `extractKind` can read)
+# KIND axis: escalated tasks (where the conductor writes a `spec.md` an `extractKind` can read)
 # carry an OPTIONAL `kind` label drawn from the six known kinds (feature, bug, refactor, perf, dep-upgrade,
 # ci-red). One-shots omit it by design (a one-shot writes no artifact, so its kind is not measurable here). The
 # loader enforces that the labeled set covers all six kinds. `feature` appears at BOTH spec-first
 # (re-sf-soft-delete) and decompose (routing-notifications-feature) — the same kind at two complexities, the
-# orthogonality (AC4) the kind axis is measured against. The kind label is orthogonal metadata for the kind
+# orthogonality the kind axis is measured against. The kind label is orthogonal metadata for the kind
 # probe; it never changes a task's `correct_floor`.
 
 version: 1
@@ -231,7 +231,7 @@ tasks:
     prompt: Add rate limiting to the login endpoint in src/routes/auth.js.
     correct_floor: spec-first
     held_out: true
-    # kind=ci-red — labels this escalated task for the kind-axis fixture's six-kind coverage (ADR-005 / AC11).
+    # kind=ci-red — labels this escalated task for the kind-axis fixture's six-kind coverage.
     # The kind label is orthogonal metadata for the kind probe; it does not change the complexity floor above.
     kind: ci-red
     trap: must-escalate
@@ -274,7 +274,7 @@ tasks:
     correct_floor: spec-first
     held_out: true
     # kind=feature at spec-first while routing-notifications-feature is feature at decompose — the same kind at
-    # two complexities, the orthogonality (AC4) the kind axis is measured against.
+    # two complexities, the orthogonality the kind axis is measured against.
     kind: feature
     rationale:
       governing_signal: "The task names one target (src/notes.js) and is one coherent change (soft-delete), but the seed exposes an undecided policy in code: notes.js fixes a timestamp convention (createdAt/updatedAt stored as ISO strings, not epoch numbers or Date objects) and remove() hard-deletes, while queries.js holds four read paths (list/search/count/byId) that all assume every stored row is a live note and filter nothing. There is a real decision fork and a cross-file consistency obligation, so a spec must be pinned before writing — this is spec-first, not a one-shot."
@@ -370,8 +370,8 @@ tasks:
     prompt: "Build a job queue: a job model, an enqueue API, a worker that processes jobs, and a dead-letter handler for repeatedly-failing jobs."
     correct_floor: decompose
     held_out: true
-    # kind=dep-upgrade — labels this escalated task for the kind-axis fixture's six-kind coverage (ADR-005 /
-    # AC11). The kind label is orthogonal metadata for the kind probe; it does not change the complexity floor.
+    # kind=dep-upgrade — labels this escalated task for the kind-axis fixture's six-kind coverage.
+    # The kind label is orthogonal metadata for the kind probe; it does not change the complexity floor.
     kind: dep-upgrade
     rationale:
       governing_signal: "The seed already ships four distinct layers, each in its own directory with its own contract and an explicit missing slot: models/job.js (record store, no lifecycle fields), services/queue.service.js (stores+counts, no enqueue/claim contract), api/jobs.routes.js (inspection route only, no enqueue endpoint), and workers/runner.js (a bare tick loop that claims nothing and has no failure path). The task names exactly four units — job model, enqueue API, worker, dead-letter handler — and each maps onto a separate seam in the skeleton, so the work is genuinely separable rather than one coherent edit."

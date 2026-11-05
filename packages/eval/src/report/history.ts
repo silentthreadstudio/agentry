@@ -1,4 +1,4 @@
-// Builds the run-history table by scanning the runs root (doc 08 §6 — the dashboard's "Run history" view). Every
+// Builds the run-history table by scanning the runs root (the dashboard's "Run history" view). Every
 // captured run persists a `summary.json`; this module reads each one, summarizes it into a {@link HistoryRow}, and
 // sorts newest-first. The "capture-once, analyze-many" payoff made visible: past runs become browsable rows with no
 // re-run.

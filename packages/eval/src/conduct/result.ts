@@ -1,14 +1,14 @@
-// SHARED CONDUCT/JUDGE INFRA (relocated by T-10 from `outcome-judge/result.ts`). It is a primitive the live
+// SHARED CONDUCT/JUDGE INFRA (relocated from `outcome-judge/result.ts`). It is a primitive the live
 // rightsizing probe consumes (`summarizeProducedResult`), so it survived the deletion of `outcome-judge/` and now
 // lives in the NEUTRAL `src/conduct/` home — no probe imports another probe's old folder.
 //
-// The PRODUCED-RESULT reader (ADR-002 / ADR-001 capture-step consumer) — renders the agent-visible produced
+// The PRODUCED-RESULT reader — renders the agent-visible produced
 // sandbox tree into the bounded, oracle-free TEXT the judge reads. This module owns the "what counts as
 // the produced result" contract: which files the judge sees, in what order, and under what size cap. It is PURE
 // in the same sense as the rest of the judge core — it may READ the filesystem but does NO spawn / NO
 // API; given the same tree it renders byte-identical text (paths sorted, contents size-capped).
 //
-// ORACLE-FREE BY CONSTRUCTION (ADR-001 / AC5): the captured tree this reads is the SAME pre-floor-injection tree
+// ORACLE-FREE BY CONSTRUCTION: the captured tree this reads is the SAME pre-floor-injection tree
 // the runner captured BEFORE `injectOracle` ran, so the held-out oracle is absent. This reader ADDITIONALLY and
 // DEFENSIVELY excludes any `oracle/` subtree, so even a tree read after injection never leaks an oracle file
 // into the judged input — the oracle-free guarantee holds by construction, not by trusting call order.

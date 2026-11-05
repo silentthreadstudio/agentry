@@ -1,6 +1,5 @@
-// The TWO rubrics the value bench judges through — both built from EXISTING rubric DATA (the reshape plan §"one
-// conduct, four scores"), re-exported as named `Rubric` values so the probe scores Axis A and Axis B through the
-// one shared judge engine (`judgeWithRubric`). A rubric is DATA (ADR-002): this module authors NO new rubric prose
+// The TWO rubrics the value bench judges through — both built from EXISTING rubric DATA, re-exported as named `Rubric` values so the probe scores Axis A and Axis B through the
+// one shared judge engine (`judgeWithRubric`). A rubric is DATA: this module authors NO new rubric prose
 // — it composes the two anchored, anti-gaming-clause'd rubric texts that already ship, so the bench inherits their
 // validated calibration rather than re-litigating it.
 //
@@ -22,7 +21,7 @@ import { RUBRIC_TEXT as DECISION_RUBRIC_TEXT, QUALITY_DIMENSIONS } from "../qual
 /**
  * Axis A — DECISION QUALITY. The 5-dim decision rubric (`forkSurfacing · decisionSoundness · accountability ·
  * scope · coherence`), max 10, judging the conductor's decision trail. Reuses `quality/rubric.ts`'s anchored text
- * verbatim — no new prose authored here (the reshape plan §"rubric.ts: re-export the two existing rubrics").
+ * verbatim — no new prose authored here.
  */
 export const DECISION_RUBRIC: Rubric = makeRubric(QUALITY_DIMENSIONS, DECISION_RUBRIC_TEXT);
 

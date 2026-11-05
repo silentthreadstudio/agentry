@@ -1,4 +1,4 @@
-// The conduct-once → FOUR-axis value-bench probe (the reshape plan §"one conduct, four scores"). It MIRRORS
+// The conduct-once → FOUR-axis value-bench probe. It MIRRORS
 // `rightsizing/probe.ts` in structure — controls-first gate (zero conduct spend) → matrix (fixture × repeat) via
 // `mapPool` → pure score — and COMPOSES the existing spine (no new runner capability): `runCell` drives ONE conduct
 // to SETTLE; `summarizeProducedResult` renders the oracle-free produced tree; `judgeWithRubric` scores it; the
@@ -7,7 +7,7 @@
 // decision trail, B: the code + oracle, C: honesty = overclaim + escaped-defect) rather than one shape + one
 // result, and it gates TWO judges (a CODE control and a DECISION control) before any conduct spends.
 //
-// THE CAPTURE-BEFORE-INJECT ORDER IS THE CONTRACT (ADR-001): every read of the agent-visible tree (the decision
+// THE CAPTURE-BEFORE-INJECT ORDER IS THE CONTRACT: every read of the agent-visible tree (the decision
 // trail, the produced code, the no-leak assertion, the self-report) happens BEFORE `injectOracle`, so the judged
 // inputs are oracle-free by construction. A leaked oracle file in the captured tree is an invariant breach, never a
 // score.

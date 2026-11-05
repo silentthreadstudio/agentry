@@ -1,4 +1,4 @@
-// Loads the CURATED corrections log (doc 08 §6 — "the corrections log is the product"). Unlike routing/quality,
+// Loads the CURATED corrections log. Unlike routing/quality,
 // this content is NOT derived from a run: it is the human-maintained record of times the meter disagreed with the
 // conductor and the conductor was right. It lives in a JSON file the reporter reads if present.
 //

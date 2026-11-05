@@ -1,4 +1,4 @@
-# A planted outcome fixture (ADR-003) — one-shot / bug.
+# A planted outcome fixture — one-shot / bug.
 #
 # Task: FIX a bug in `parseDuration(text)` in src/duration.js. The seed ships a working implementation that
 # handles seconds/minutes/hours but mishandles the hours unit (`h` multiplies by 360, not 3600). The agent fixes

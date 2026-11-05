@@ -1,4 +1,4 @@
-// Tests for the outcome-criteria RUBRIC (ADR-002 / AC2) — the PURE scoring vocabulary the outcome judge embeds.
+// Tests for the outcome-criteria RUBRIC — the PURE scoring vocabulary the outcome judge embeds.
 // ZERO API: this module is pure (no `claude -p`), so the tests assert the canonical dimension set, the `sum/8`
 // normalization at the anchor points the acceptance pins, and that the rubric text carries the anti-gaming
 // CONTENT-not-volume clause adapted to scoring code.

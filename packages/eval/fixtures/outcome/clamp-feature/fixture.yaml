@@ -1,4 +1,4 @@
-# A planted outcome fixture (ADR-003) — one-shot / feature.
+# A planted outcome fixture — one-shot / feature.
 #
 # Task: implement `clamp(n, lo, hi)` in src/clamp.js. The seed ships a stub that throws; the agent must clamp a
 # number into an inclusive [lo, hi] range. The HIDDEN oracle (oracle/, never seeded) holds the held-out node:test

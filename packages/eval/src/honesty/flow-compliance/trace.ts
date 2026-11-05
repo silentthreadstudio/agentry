@@ -1,10 +1,10 @@
 // The flow-compliance trace reader — the ONLY I/O in this dimension. It reads the OBSERVABLE Flow surface of a
 // run dir (`.agentry/work/<id>/`): the `events.jsonl` line log, the work-folder artifacts (`spec.md`, the
 // `tasks/NNN-*.md` files), and the `run-state.json` presence. It does NOT parse the live transcript/dispatch
-// stream (ADR-004's rejected anti-pattern); the assertion module (`assertions.ts`) is pure over the `RunTrace`
+// stream (a rejected anti-pattern); the assertion module (`assertions.ts`) is pure over the `RunTrace`
 // this produces, so the load-bearing logic is forced-testable with synthetic traces and zero disk.
 //
-// THE VOCABULARY (AS-BUILT, decided by ADR-001/ADR-004; the hooks that wrote the backstop lines are retired, so
+// THE VOCABULARY (AS-BUILT; the hooks that wrote the backstop lines are retired, so
 // only older run dirs carry them):
 //   - FLOW events carry a `type` field (the closed set: routing-decision | gate | node-enter | node-done).
 //   - The subagent backstop lines carry a `kind` field and NO `type` (e.g. agent-started/agent-done).
@@ -129,7 +129,7 @@ function readTaskFiles(runDir: string): TaskFile[] {
 }
 
 /**
- * Read the observable trace of a run dir. Read-only over `events.jsonl` + work-folder artifacts (ADR-004): it
+ * Read the observable trace of a run dir. Read-only over `events.jsonl` + work-folder artifacts: it
  * never touches the dispatch/transcript stream. A missing run dir throws loudly (a bad `--run` is a setup bug);
  * a present-but-empty surface (no events, no spec, no tasks) is read faithfully so the assertions can judge it.
  */

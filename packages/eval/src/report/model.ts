@@ -1,11 +1,11 @@
-// The reporter's view-model — the JSON contract injected into the dashboard as `window.__SELFEVAL__` (doc 08 §6).
+// The reporter's view-model — the JSON contract injected into the dashboard as `window.__SELFEVAL__`.
 // This is the SINGLE seam between the headless TS (which reads the run store) and the static view template (which
 // renders it). The template's client JS reads exactly this shape; `load.ts` produces exactly this shape from the
 // stored run. Keep the two in lockstep: a field added here must be populated by `load.ts` AND consumed by
 // `assets/template.html`, or it's dead weight.
 //
 // SRP: types only — no I/O, no rendering. The reporter owns this contract locally (a derived projection of a run,
-// dev-only per doc 09); it is NOT added to `@agentry/core` (which is the SHIPPED plugin contract).
+// dev-only); it is NOT added to `@agentry/core` (which is the SHIPPED plugin contract).
 //
 // Field names are deliberately terse (`t`, `rt`, `qa`, `h`) because this object is serialized verbatim into the
 // page and the template's render functions read these keys directly — they ARE the wire format, not an internal
@@ -21,7 +21,7 @@ export interface PageMeta {
   /** The multi-run repeat count (k). */
   repeats: number;
   /**
-   * The model id the run was pinned to (`config.model`, derived from the `--model` flag — ADR-003 de-Sonnet). The
+   * The model id the run was pinned to (`config.model`, derived from the `--model` flag). The
    * template renders every cell/arm label from THIS, never a hardcoded "Sonnet": an Opus run labels as Opus. Falls
    * back to a neutral dash when the stored config carried no model.
    */

@@ -1,4 +1,4 @@
-// The shared JUDGE ENGINE (ADR-002) — ONE rubric-parameterized "LLM-judge-a-rubric-with-controls" kernel,
+// The shared JUDGE ENGINE — ONE rubric-parameterized "LLM-judge-a-rubric-with-controls" kernel,
 // lifting the spawn seam from `quality/judge.ts` (its original home) UP into the shared `judge/` layer and
 // generalizing `quality`'s `judgeArtifact` / `outcome-judge`'s `judgeOutcome` into a single `judgeWithRubric`
 // that takes a {@link Rubric} value. It mirrors `io/live.ts`'s INJECTABLE-spawn discipline: the real judge shells
@@ -15,14 +15,14 @@ import { spawnSync } from "node:child_process";
 
 import { type Rubric, type RubricDimensions, overallFromDimensions } from "./rubric.ts";
 
-/** The model the judge pins for every call. A generic default; the caller may override it (ADR-002). */
+/** The model the judge pins for every call. A generic default; the caller may override it. */
 export const DEFAULT_JUDGE_MODEL = "claude-opus-4-8[1m]";
 
 /** The injectable judging seam: prompt in, raw model-JSON text out (the model's rubric verdict as a JSON string). */
 export type JudgeFn = (prompt: string, model: string) => string;
 
 /**
- * The structured score the engine returns for one judged subject (ADR-002). `overall` is `dimensionSum / max`
+ * The structured score the engine returns for one judged subject. `overall` is `dimensionSum / max`
  * (0..1), recomputed from `dimensions` — never trusted from the model.
  */
 export interface Score {
@@ -100,7 +100,7 @@ ${dimensionKeys}
 
 /**
  * Coerce a value to an integer dimension score in {0,1,2}, throwing if it is out of range. Range validation is
- * the judge's contract (ADR-002): a model that returns 3, -1, or a non-integer for a dimension is a malformed
+ * the judge's contract: a model that returns 3, -1, or a non-integer for a dimension is a malformed
  * verdict, surfaced loudly rather than silently clamped (a clamp would hide a broken judge).
  */
 function validatedDimension(name: string, raw: unknown): number {
@@ -195,7 +195,7 @@ export function parseScore(rubric: Rubric, raw: string): Score {
 }
 
 /**
- * Judge ONE subject against a {@link Rubric} (ADR-002): build the rubric prompt from the task + subject text, call
+ * Judge ONE subject against a {@link Rubric}: build the rubric prompt from the task + subject text, call
  * the (injected or real) judge fn, and parse + validate the response into a {@link Score}. Async to match the
  * probe's awaited flow and the live `claude` round-trip, even though the injected test path resolves
  * synchronously.

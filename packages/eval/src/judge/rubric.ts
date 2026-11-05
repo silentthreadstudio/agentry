@@ -1,4 +1,4 @@
-// The shared RUBRIC value type (ADR-002) — a rubric is DATA, not code. Where `quality/rubric.ts` and
+// The shared RUBRIC value type — a rubric is DATA, not code. Where `quality/rubric.ts` and
 // `outcome-judge/rubric.ts` each baked their dimension set, denominator, and prompt text into a module, the
 // shared engine consumes a `Rubric` VALUE: a list of anchored 0/1/2 dimensions, the `max` divisor the engine
 // normalizes against (`overall = sum / max`), and the prompt text the judge reads. One engine, many rubrics —
@@ -16,7 +16,7 @@ export const RUBRIC_MAX_PER_DIMENSION = 2;
 export type RubricDimensions = Record<string, number>;
 
 /**
- * A rubric the engine can judge against — the value the per-module constants generalize into (ADR-002).
+ * A rubric the engine can judge against — the value the per-module constants generalize into.
  *
  * @property dimensions the anchored dimension names, in canonical order; the judge returns a 0/1/2 for each.
  * @property max        the denominator for the normalized overall (`sum / max`) — the engine reads it off the

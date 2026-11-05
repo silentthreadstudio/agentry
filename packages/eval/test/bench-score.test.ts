@@ -1,4 +1,4 @@
-// Pure-core tests for the four-axis bench scorer (the reshape plan §"score.ts") — ZERO spend: the axis aggregation
+// Pure-core tests for the four-axis bench scorer — ZERO spend: the axis aggregation
 // (A decisionQuality incl. the absent-score exclusion, B codeQuality + correctnessPassRate, C overclaimRate, D
 // escapedDefectRate over bugProne ONLY), the overclaim logic, the census null-on-absent contract,
 // and the aborted (gate-fired) discriminator. Synthetic records only — the purity claim is proven by constructing

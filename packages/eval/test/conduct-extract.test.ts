@@ -1,4 +1,4 @@
-// Tests for the pure-ish shape-extractor (autopilot-design §2 / AC2). ZERO API spend: every case runs
+// Tests for the pure-ish shape-extractor. ZERO API spend: every case runs
 // `extractShape` over a SYNTHETIC `.agentry/work/*` layout built in a temp working dir (no `claude -p`, no
 // runner) plus the `ctx` settle signals. These prove the artifact→shape mapping, the one-shot-vs-degenerate
 // disambiguation, and tolerance of a missing `.agentry/` — the faithful mechanism that replaced the

@@ -1,6 +1,6 @@
 # SYNTHETIC kind-mini routing fixture — OWNED BY routing-probe.test.ts, decoupled from the real product set.
 #
-# Why it exists: to drive the KIND AXIS (ADR-005 / AC11) through the probe end-to-end offline. It mirrors the
+# Why it exists: to drive the KIND AXIS through the probe end-to-end offline. It mirrors the
 # shape-mini fixture's invariants (task[0] one-shot = the A/A + positive-control anchor; all three shapes
 # covered so saturation passes; ≥1 must-escalate trap; ≥1 trivial) AND opts into the kind axis: the five
 # ESCALATED tasks cover all six known kinds (feature appears at both spec-first and decompose). task[0] is a

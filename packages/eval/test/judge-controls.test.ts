@@ -1,8 +1,8 @@
-// Tests for the shared control layer (ADR-002/003). ZERO API spend: every case is a pure predicate over synthetic
+// Tests for the shared control layer. ZERO API spend: every case is a pure predicate over synthetic
 // score arrays — no judge, no `claude -p`, no fs. These two controls are the load-bearing trust gate of every
 // probe (a flattering judge is worthless), so the forced cases (a noisy A/A spread, a judge that cannot separate
 // gold from broken, a collapsed gap) are exercised directly. (The former PORT-FIDELITY block compared the shared
-// controls against `outcome-judge/control.ts`; T-10 deleted that superseded module, so the dead comparison is gone.)
+// controls against `outcome-judge/control.ts`; that superseded module is gone, so the dead comparison is gone.)
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -17,7 +17,7 @@ import {
   discrimination,
 } from "../src/judge/index.ts";
 
-// --- the pinned default thresholds (ADR-003) -----------------------------------------------------------
+// --- the pinned default thresholds -----------------------------------------------------------
 
 test("defaults: gold-min/broken-max/min-gap/tolerance/repeats match the ADR-003 thresholds", () => {
   assert.equal(DEFAULT_GOLD_MIN, 0.7);

@@ -16,10 +16,10 @@ export const GLOBAL_DIR_ENV = "AGENTRY_GLOBAL_DIR";
 /** The env var (base dir) that relocates the project memory root. */
 export const PROJECT_DIR_ENV = "AGENTRY_PROJECT_DIR";
 /**
- * The env var that puts the conductor in AUTO-PILOT (autopilot-design §1): decide-record-proceed at every
+ * The env var that puts the conductor in AUTO-PILOT: decide-record-proceed at every
  * gate instead of blocking on `AskUserQuestion`, and ALWAYS emit the decision artifact on any escalation
  * above one-shot. The probe sets it so the headless run produces the work-folder artifacts the extractor
- * reads (the faithful routing signal — autopilot-design §2/§3), never stalling on an interactive gate.
+ * reads (the faithful routing signal), never stalling on an interactive gate.
  */
 export const AUTOPILOT_ENV = "AGENTRY_AUTOPILOT";
 
@@ -101,7 +101,7 @@ const PRIMER_LOG_FILE = "events.jsonl";
 const WORK_SUBTREE = join(".agentry", "work");
 
 /**
- * The one-shot disambiguator's tree signal (OQ1): did the run leave a non-empty produced tree of ITS OWN?
+ * The one-shot disambiguator's tree signal: did the run leave a non-empty produced tree of ITS OWN?
  * Ported from benchmark's `collectProducedTree` walk, but returns a *boolean* instead of a `TreePath[]` — the
  * extractor only needs "did the run produce anything?", not the tree itself. This is disambiguator input, NOT
  * scoring (no grader reads it). Stops at the first qualifying file.

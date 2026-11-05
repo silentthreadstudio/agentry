@@ -1,5 +1,4 @@
-// Conformance test for the REALISTIC bench corpus under `fixtures/bench/` (the reshape plan §"Phase 2 — Realistic
-// harder fixtures") — ZERO live API by construction. It drives the real fs load via `loadBenchFixtures`, then for
+// Conformance test for the REALISTIC bench corpus under `fixtures/bench/` — ZERO live API by construction. It drives the real fs load via `loadBenchFixtures`, then for
 // each fixture PROVES the discrimination control by overlaying seed (+ golden/broken) into a temp sandbox, injecting
 // the held-out oracle, and running it: seed+golden PASSES, seed+broken FAILS, and an untouched seed FAILS. It also
 // asserts the corpus SPREAD the value bench's axes need (≥1 bugProne, ≥1 hidden-decision fork, ≥1 trivial), the

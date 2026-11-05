@@ -1,4 +1,4 @@
-# A planted outcome fixture (ADR-003) — decompose+verify / feature.
+# A planted outcome fixture — decompose+verify / feature.
 #
 # Task: build a small inventory library across THREE files that must agree on a shared contract — a store
 # (src/store.js), a report over it (src/report.js), and a barrel (src/index.js) wiring them together. The seed

@@ -1,4 +1,4 @@
-// The events adapter (T-C / ADR-002): the `events.jsonl` writer + the stdout progress formatter. One run's
+// The events adapter: the `events.jsonl` writer + the stdout progress formatter. One run's
 // lifecycle is captured two ways from a single `emit` — (a) the durable, append-only `runs/<id>/events.jsonl`
 // log (one JSON line per event, machine-readable), and (b) a terse human progress line written through an
 // injected `out` sink (default stdout). The two are derived from the same `EvalEvent` so they never drift.
@@ -11,7 +11,7 @@ import { appendFileSync } from "node:fs";
 
 import type { EvalEvent } from "./schema.ts";
 
-/** The emitter port the probe seam (T-D) and CLI write through. One method: record a lifecycle event. */
+/** The emitter port the probe seam and CLI write through. One method: record a lifecycle event. */
 export interface EvalEmitter {
   /** Append `event` to the run's `events.jsonl` AND surface a human progress line through the injected `out`. */
   emit(event: EvalEvent): void;
@@ -30,7 +30,7 @@ const writeStdout: OutFn = (line) => {
  *
  * @param eventsPath  Absolute path to the run's append-only `events.jsonl`. `emit` uses `appendFileSync`, so the
  *                    file is created on first write and every later event is appended — never overwritten. The
- *                    parent `runs/<id>/` dir must already exist (the write side, T-B, creates it).
+ *                    parent `runs/<id>/` dir must already exist (the write side creates it).
  * @param out         The human-progress sink; defaults to stdout. Injected so a test can capture lines instead.
  */
 export function createEmitter(eventsPath: string, out: OutFn = writeStdout): EvalEmitter {
@@ -45,7 +45,7 @@ export function createEmitter(eventsPath: string, out: OutFn = writeStdout): Eva
 }
 
 /**
- * Format one event as a terse, readable stdout progress line (ADR-002). `detail` carries the specifics (the probe
+ * Format one event as a terse, readable stdout progress line. `detail` carries the specifics (the probe
  * fills it, e.g. `"12/30 webhooks → decompose (134s)"`); this only chooses the per-kind prefix and indentation:
  *
  *   run-started  → "▶ <detail>"

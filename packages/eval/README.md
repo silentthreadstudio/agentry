@@ -26,7 +26,7 @@ passing work isn't an error — it's the floor being lighter than the label assu
 ## The bench (`src/bench/`)
 
 There is **one** subcommand that conducts Agentry: `run bench`. It conducts each fixture in `fixtures/bench/` **once**
-through the expanded `/agentry:go` prompt (ADR-001), then derives every value axis from that single run:
+through the expanded `/agentry:go` prompt, then derives every value axis from that single run:
 
 | Axis | Question |
 |---|---|
@@ -40,7 +40,7 @@ artifacts, never from a dispatch proxy. The other subcommands are zero-API: `rep
 stored run and `report <id>` renders its dashboard. A read-only flow-compliance probe
 (`src/honesty/flow-compliance/`) exists for a captured run dir, but no CLI subcommand runs it today.
 
-The bench is **Agentry-value-only** (ADR-003): the old bare baseline is retired — there is no bare-vs-Agentry
+The bench is **Agentry-value-only**: the old bare baseline is retired — there is no bare-vs-Agentry
 delta on the public path.
 
 ## Methodology (the spine)

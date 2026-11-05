@@ -1,4 +1,4 @@
-// The unified self-eval CLI — the composition root (ADR-002 / T-10). A thin subcommand dispatcher that OWNS no
+// The unified self-eval CLI — the composition root. A thin subcommand dispatcher that OWNS no
 // probe logic: it constructs the persistence layer (`RunStore` + `EvalEmitter`), bundles them into the injected
 // `EvalObserver`, and threads them into the BENCH probe — reused via its public export, never rewritten.
 //
@@ -213,7 +213,7 @@ function summaryFor(config: RunConfig, taskCount: number, artifact: unknown): Ru
 }
 
 /**
- * `run bench` — drive the conduct-once → FOUR-axis value bench (the reshape plan) ONCE with full persistence into
+ * `run bench` — drive the conduct-once → FOUR-axis value bench ONCE with full persistence into
  * `runs/<id>/` (require `--fixtures-dir`; open the run; thread the filters/knobs into the probe; wrap the returned
  * artifact into `summary.json`; echo the run dir). The bench probe owns ALL four axes from the one conduct.
  *
@@ -274,7 +274,7 @@ async function runBench(
 
   store.finishRun(summaryFor(config, result.records.length, result.artifact));
 
-  // The unmissable line (AC4/AC5): a budget-stopped run announces itself as PARTIAL with its planned/run counts,
+  // The unmissable line: a budget-stopped run announces itself as PARTIAL with its planned/run counts,
   // and either way the overshoot bound is stated. stderr, so stdout stays exactly the run dir (script-friendly).
   if (result.artifact.budget !== undefined) {
     process.stderr.write(`${formatBudgetNotice(result.artifact.budget)}\n`);
@@ -307,7 +307,7 @@ function replay(positionals: string[], flags: CliFlags): number {
 }
 
 /**
- * `report <id>` — generate the static dashboard for a STORED run with ZERO live API (doc 08 §6). Reads the run's
+ * `report <id>` — generate the static dashboard for a STORED run with ZERO live API. Reads the run's
  * stored artifacts + the curated corrections file + the run-history index, and writes a self-contained
  * `results/<date>/<id>/index.html`. Echoes the written path.
  */

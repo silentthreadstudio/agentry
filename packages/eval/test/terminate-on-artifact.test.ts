@@ -1,4 +1,4 @@
-// Tests for the ARTIFACT-AWARE early-terminate seam (autopilot-design §3). ZERO API spend: the capture path is
+// Tests for the ARTIFACT-AWARE early-terminate seam. ZERO API spend: the capture path is
 // driven by a FAKE CHILD that stays running (no auto-close) while a synthetic work folder gains `spec.md` then
 // `plan.md` at controlled times — modeling the conductor writing its routing artifacts mid-run. We assert WHEN
 // the child is killed (the only thing artifact-aware mode changes), not how the shape is later computed.

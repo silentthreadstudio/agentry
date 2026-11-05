@@ -1,4 +1,4 @@
-// The BENCH-fixture schema + strict loader/validator (the reshape plan §Phase 2). A bench fixture is the realistic
+// The BENCH-fixture schema + strict loader/validator. A bench fixture is the realistic
 // task the value bench conducts ONCE and then derives all four axis signals from. On disk it carries the SAME four
 // subtrees the conduct instrument needs — the agent-visible `seed/`, the held-out `oracle/`, and the `golden/`
 // (known-correct) / `broken/` (planted-wrong) control overlays — plus a small `fixture.yaml`.

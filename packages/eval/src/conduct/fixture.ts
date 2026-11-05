@@ -1,9 +1,9 @@
-// SHARED CONDUCT INFRA (relocated by T-10 from `outcome/fixture.ts`). The `OutcomeFixture` shape is the structural
+// SHARED CONDUCT INFRA (relocated from `outcome/fixture.ts`). The `OutcomeFixture` shape is the structural
 // VIEW the live rightsizing probe's `runCell` + `summarizeProducedResult` read (the rightsizing fixture is projected
 // onto it), so it survived the deletion of `outcome/` and now lives in the NEUTRAL `src/conduct/` home — no probe
 // imports another probe's old folder.
 //
-// The outcome-fixture schema + strict loader/validator (ADR-003 / AC1). A planted seed-repo fixture carries,
+// The outcome-fixture schema + strict loader/validator. A planted seed-repo fixture carries,
 // on disk, the five parts the outcome instrument needs: the agent-visible `seed/` tree, the task `prompt`, the
 // HIDDEN held-out `oracle/` tests, a known-correct `golden/` overlay, and a planted-wrong `broken/` overlay.
 // This module owns the contract between `fixtures/outcome/<id>/` and every consumer (the runner seeds from
@@ -11,7 +11,7 @@
 // it parses the as-shipped YAML and VALIDATES STRUCTURE, THROWING a specific error per violation — a malformed
 // fixture is a deliverable bug to surface loudly, never to default away.
 //
-// THE LOAD-BEARING SAFETY RULE (ADR-001 / AC5): it asserts the `seed/` and `oracle/` subtrees are DISJOINT — no
+// THE LOAD-BEARING SAFETY RULE: it asserts the `seed/` and `oracle/` subtrees are DISJOINT — no
 // path present under `seed/` may also be present under `oracle/`. An overlapping fixture would leak its oracle
 // into the agent-visible tree, which the Spec calls invalid; the loader makes that impossible to ship.
 
@@ -71,7 +71,7 @@ export class OutcomeFixtureError extends Error {
 const KNOWN_KINDS: readonly string[] = KnownKind.options;
 const KNOWN_KINDS_SET: ReadonlySet<string> = new Set<string>(KNOWN_KINDS);
 
-/** The four subtrees every fixture must ship (ADR-003) — each is a required directory under the fixture root. */
+/** The four subtrees every fixture must ship — each is a required directory under the fixture root. */
 const REQUIRED_SUBTREES = ["seed", "oracle", "golden", "broken"] as const;
 
 const fail: Fail = (message) => {
@@ -80,7 +80,7 @@ const fail: Fail = (message) => {
 
 /**
  * Parse + validate the outcome fixture rooted at `fixtureDir` into an {@link OutcomeFixture}. THROWS an
- * {@link OutcomeFixtureError} with a specific message on the first violation. The rules (AC1/AC5):
+ * {@link OutcomeFixtureError} with a specific message on the first violation. The rules:
  *   1. the dir holds `fixture.yaml` + all four subtrees (`seed/ oracle/ golden/ broken/`);
  *   2. `fixture.yaml` parses to a mapping with a non-empty `prompt`, a `shape ∈ {one-shot,spec-first,decompose}`,
  *      a `kind ∈` the six known kinds, and a non-empty `oracle.cmd` (with an optional numeric `oracle.timeoutMs`);
@@ -137,8 +137,8 @@ export function loadOutcomeFixture(fixtureDir: string): OutcomeFixture {
 
   const { oracleCmd, oracleTimeoutMs } = parseOracle(root.oracle, "oracle", yamlPath, fail);
 
-  // THE SAFETY RULE (AC5): the agent-visible seed must not contain ANY oracle file. Enforced structurally by
-  // asserting the two subtrees share no relative path — obscurity (rename / gitignore) is rejected by ADR-001,
+  // THE SAFETY RULE: the agent-visible seed must not contain ANY oracle file. Enforced structurally by
+  // asserting the two subtrees share no relative path — obscurity (rename / gitignore) is rejected,
   // only disjointness counts.
   const seedDir = requireSubtree("seed");
   const oracleDir = requireSubtree("oracle");

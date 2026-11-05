@@ -1,4 +1,4 @@
-// Zero-API tests for the conduct-once → four-axis bench probe (the reshape plan §"probe.ts"). The probe is driven
+// Zero-API tests for the conduct-once → four-axis bench probe. The probe is driven
 // by an INJECTED FAKE RUNNER (overlays a chosen tree + writes the decision trail + the stream — NO `claude -p`) and
 // a CANNED CONTENT-KEYED JUDGE (a BUG/poor/weak marker ⇒ low, else high — zero API), so the whole flow runs offline.
 //

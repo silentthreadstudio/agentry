@@ -2,7 +2,7 @@
 // control gates. Zero I/O, no API: forced-testable with synthetic traces. Each of the four ordered checks
 // returns a {@link Check} (status + a human verdict); `runAllChecks` aggregates them into a {@link FlowVerdict}.
 //
-// The contract asserted (ADR-004, AS-BUILT shapes decided by ADR-001/B1 + the A3/C1 single-frontmatter rule):
+// The contract asserted (AS-BUILT shapes, with the single-frontmatter rule):
 //   1. run_start-before-dispatch — the first `type`-bearing FLOW line precedes the first `agent-started` line. Only
 //      those lines show order; the `run-state.json` roster cannot (see `firstDispatchStamp`), so roster-only
 //      evidence is N/A.

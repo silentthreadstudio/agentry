@@ -1,15 +1,15 @@
-// The artifact-store's typed contract (ADR-001 / ADR-002). These types describe what a self-eval RUN is and
-// what it persists under `selfeval/runs/<id>/`. They are DEV-ONLY (doc 09) and deliberately NOT added to
+// The artifact-store's typed contract. These types describe what a self-eval RUN is and
+// what it persists under `selfeval/runs/<id>/`. They are DEV-ONLY and deliberately NOT added to
 // `@agentry/core` — `@agentry/core` stays the single source of truth for *shipped* plugin contracts; the
 // eval store owns its run/task schema locally. selfeval is self-contained and is NOT wired to `@agentry/core`,
 // so the lifecycle event it emits is the local `EvalEvent` below (not core's `WorkEvent`) — no cross-package
 // import, no runtime dependency, module stays pure (no I/O).
 //
 // SRP: this module is types only. The id generator lives in `runId.ts`; the write/read/event adapters (sibling
-// tasks T-B/C/E) live in their own modules and import these types.
+// modules) live in their own modules and import these types.
 
 /**
- * The on-disk schema version, stamped into `config.json` and `summary.json` (ADR-001). Bump when the run-dir
+ * The on-disk schema version, stamped into `config.json` and `summary.json`. Bump when the run-dir
  * layout changes so a later reporter/UI can detect a mismatch instead of mis-parsing silently. A string (not an
  * int) so a future scheme like "2.1" stays representable without a type change.
  */
@@ -25,7 +25,7 @@ export const SCHEMA_VERSION = "1";
 export type RunKind = "routing" | "quality" | "moat" | "outcome" | "rightsizing" | "bench";
 
 /**
- * The resolved parameters of one run — the reproducibility header written verbatim to `config.json` (ADR-001).
+ * The resolved parameters of one run — the reproducibility header written verbatim to `config.json`.
  * Fields are derived from `RoutingProbeOptions` / `QualityProbeOptions` (the probes' own option shapes): the
  * persisted config records HOW a run was parameterized so any later analysis is auditable. The probe-specific
  * knobs (`fixtureDir`, `k`, `runs`) are optional because a quality run doesn't carry routing's `fixtureDir`/`runs`
@@ -51,7 +51,7 @@ export interface RunConfig {
 }
 
 /**
- * One labeled task's persisted record (ADR-001, `tasks/<taskId>[.r<i>]/`). Captures what the store knows about a
+ * One labeled task's persisted record (`tasks/<taskId>[.r<i>]/`). Captures what the store knows about a
  * task after it ran: which labeled floor it carried (routing), the shape that was dispatched, and how long it took.
  * `runIndex` is present only under multi-run (`runs > 1`) to disambiguate the `.r<i>` task dirs.
  */
@@ -69,7 +69,7 @@ export interface TaskRecord {
 }
 
 /**
- * The run-level summary written to `summary.json` (ADR-001). Wraps the run header + the probe's OWN returned
+ * The run-level summary written to `summary.json`. Wraps the run header + the probe's OWN returned
  * artifact verbatim — so no probe-artifact schema is re-declared here (that would create an import cycle and
  * duplicate the probe's contract). `artifact` is typed `unknown` on purpose: this module must not import
  * `RoutingArtifact`/`QualityArtifact` from the probes; the write side stores whatever the probe returned and a
@@ -94,10 +94,10 @@ export interface RunSummary {
 }
 
 /**
- * The input the WRITE side (T-B) needs to capture one task out of its sandbox before the sandbox is discarded
- * (ADR-001's keystone ordering). It names the source paths to copy — the per-task `stream.jsonl` and the
+ * The input the WRITE side needs to capture one task out of its sandbox before the sandbox is discarded
+ * (the capture-before-discard ordering). It names the source paths to copy — the per-task `stream.jsonl` and the
  * `work/` tree under `sandboxDir` — plus the already-extracted shape and timing. This is the payload the probe
- * seam (T-D) hands to `EvalObserver.onTaskComplete`.
+ * seam hands to `EvalObserver.onTaskComplete`.
  */
 export interface TaskCaptureSrc {
   /** The labeled task id. */
@@ -116,7 +116,7 @@ export interface TaskCaptureSrc {
 
 /**
  * A self-eval lifecycle event (local; selfeval is self-contained — not `@agentry/core`'s `WorkEvent`). This is the
- * line shape appended to `events.jsonl` and surfaced as a stdout progress line (ADR-002). It is intentionally a
+ * line shape appended to `events.jsonl` and surfaced as a stdout progress line. It is intentionally a
  * small, self-contained record so the eval store carries no cross-package dependency.
  */
 export interface EvalEvent {
@@ -131,10 +131,10 @@ export interface EvalEvent {
 }
 
 /**
- * The injected observability PORT the probes receive (ADR-002 + ADR-001 capture seam). Both hooks are OPTIONAL so
- * the default (no observer / both absent) is byte-for-byte today's silent, no-capture probe behavior — the AC5
- * guarantee by construction. The probe only ever WRITES through this sink (never reads it), so it cannot affect
- * the probe's gated decisions. This is the single seam T-D threads in and T-B/T-C implement.
+ * The injected observability PORT the probes receive (the capture seam). Both hooks are OPTIONAL so
+ * the default (no observer / both absent) is byte-for-byte today's silent, no-capture probe behavior — a guarantee
+ * by construction. The probe only ever WRITES through this sink (never reads it), so it cannot affect
+ * the probe's gated decisions. This is the single seam the probe threads in and the write and event adapters implement.
  */
 export interface EvalObserver {
   /** Append a lifecycle event (events.jsonl + stdout progress line). The local {@link EvalEvent} shape. */

@@ -1,4 +1,4 @@
-// date-range.js — inclusive date ranges. WORKING BUT WRONG (the planted bug, ADR-003 bug-kind fixture).
+// date-range.js — inclusive date ranges. WORKING BUT WRONG (the planted bug, a bug-kind fixture).
 //
 // Both functions run and look plausible, but:
 //   - daysBetween is OFF BY ONE: it returns the exclusive gap (same day -> 0), not the inclusive count.

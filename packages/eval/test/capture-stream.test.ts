@@ -1,7 +1,7 @@
-// Tests for the ported stream-capture + early-terminate seam (ADR-002/005). ZERO API spend: the streaming
+// Tests for the ported stream-capture + early-terminate seam. ZERO API spend: the streaming
 // branch is driven by a FAKE CHILD emitting a synthetic NDJSON stream (no `claude -p` ever runs). This proves
 // the line-tee + kill-after-dispatch logic; the LIVE reliability of `proc.kill()` leaving a well-formed
-// partial `stream.jsonl` is a separate live probe (R1) — out of scope here.
+// partial `stream.jsonl` is a separate live probe — out of scope here.
 //
 // PORT of benchmark/test/capture-stream.test.ts: imports retargeted to ../src/io/*; assertions retyped from
 // the dropped `RunRecord.eventsPath` to the minimal `RunResult.streamPath`; the two `buildArgs` cases reworked

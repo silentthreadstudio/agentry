@@ -1,4 +1,4 @@
-// Tests for the flow-compliance dimension (ADR-004 / AC7) — ZERO live API by construction: the probe is a
+// Tests for the flow-compliance dimension — ZERO live API by construction: the probe is a
 // read-only assertion over an already-produced run dir, so every test drives it over committed replay fixtures
 // or a REAL captured `/agentry:go` trace on disk. No runner, no judge, no subprocess.
 //
@@ -6,7 +6,7 @@
 //   - pure assertions (`assertions.ts`) over synthetic traces — each of the four checks, pass + fail.
 //   - the probe (`probe.ts`) over the replay fixtures: PASS on the compliant run, FAIL on EACH of the four
 //     violations, with the failing check identified.
-//   - the AC7 REAL-TRACE assertion: the probe pointed at a real on-disk run dir
+//   - the REAL-TRACE assertion: the probe pointed at a real on-disk run dir
 //     (`.agentry/work/build-agentry-workbench-…/`) — a genuine `/agentry:go` trace, not a canned fixture.
 
 import assert from "node:assert/strict";
@@ -40,7 +40,7 @@ import type { RunTrace, TraceEvent } from "../src/honesty/flow-compliance/trace.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "..", "fixtures", "flow-compliance");
-// The repo's real `.agentry/work/` (four dirs up: test/ → eval/ → packages/ → repo-root). The AC7 real-trace.
+// The repo's real `.agentry/work/` (four dirs up: test/ → eval/ → packages/ → repo-root). The real-trace case.
 const REPO_ROOT = join(HERE, "..", "..", "..");
 const REAL_RUN_DIR = join(
   REPO_ROOT,
@@ -379,11 +379,11 @@ test("probe: a skip-flag fixture still passes; no-skip-flag N/A alone is not inc
   assert.equal(c4?.status, "na");
 });
 
-// (The former `run flow-compliance --run <dir>` CLI subcommand was removed by T-10: flow-compliance is no longer a
+// (The former `run flow-compliance --run <dir>` CLI subcommand was removed: flow-compliance is no longer a
 // standalone public subcommand — it runs inside the honesty probe over escalated run dirs. The probe is covered
 // directly above (over the replay fixtures) and through the honesty surface in outcome-compliance.test.ts.)
 
-// --- AC7: the REAL-TRACE assertion — the probe over a genuine `/agentry:go` run on disk --------------------------
+// --- the REAL-TRACE assertion — the probe over a genuine `/agentry:go` run on disk --------------------------
 
 test("AC7 real-trace: the probe runs over a real captured /agentry:go run dir", () => {
   // This is the disambiguator exercised on the REAL shape (not only canned fixtures): a genuine escalated run
@@ -394,7 +394,7 @@ test("AC7 real-trace: the probe runs over a real captured /agentry:go run dir", 
   }
   const a = probeOver(REAL_RUN_DIR);
 
-  // The load-bearing real-shape assertion: run_start fired before dispatch on a real trace — the AC7 signal.
+  // The load-bearing real-shape assertion: run_start fired before dispatch on a real trace — the signal.
   const c1 = a.checks.find((c) => c.id === "run-start-before-dispatch")!;
   assert.equal(c1.status, "pass", `real trace must show run_start before dispatch: ${c1.detail}`);
   const c4 = a.checks.find((c) => c.id === "no-skip-flag")!;

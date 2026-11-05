@@ -1,4 +1,4 @@
-// Tests for the events adapter (T-C / ADR-002). The emitter has two observable effects per `emit`: an appended
+// Tests for the events adapter. The emitter has two observable effects per `emit`: an appended
 // JSON line on `events.jsonl`, and a formatted progress line through the injected `out`. We assert both via an
 // injected sink + a temp `eventsPath` (no stdout coupling, no API spend), and that multiple emits append rather
 // than overwrite. `formatProgressLine` is exercised directly as the pure unit it is.

@@ -1,14 +1,14 @@
-// SHARED CONDUCT INFRA (relocated by T-10 from `outcome/cell.ts`). `Cell` + `agentryCell`/`AGENTRY_CELL` are
+// SHARED CONDUCT INFRA (relocated from `outcome/cell.ts`). `Cell` + `agentryCell`/`AGENTRY_CELL` are
 // consumed by the live rightsizing probe + the CLI, so they survived the deletion of `outcome/` and now live in the
 // NEUTRAL `src/conduct/` home — no probe imports another probe's old folder.
 //
-// The Cell record + the Agentry matrix cell (ADR-002 / ADR-003). A `Cell` is the DATA that distinguishes one arm
-// of the matrix from another — the cell asymmetry is data, not a code fork (ADR-002). The public bench is
-// Agentry-value-only (ADR-003): the bare baseline is RETIRED, so the matrix has a single Agentry arm that loads the
+// The Cell record + the Agentry matrix cell. A `Cell` is the DATA that distinguishes one arm
+// of the matrix from another — the cell asymmetry is data, not a code fork. The public bench is
+// Agentry-value-only: the bare baseline is RETIRED, so the matrix has a single Agentry arm that loads the
 // plugin (`pluginDir`) and routes the prompt through `/agentry:go`. The runner (`runner.ts`) turns a Cell + a
 // fixture into the per-cell `Invocation`.
 //
-// The cell `id` is the model-derived label (ADR-003): `Agentry-<model>`, where `<model>` comes from the `--model`
+// The cell `id` is the model-derived label: `Agentry-<model>`, where `<model>` comes from the `--model`
 // flag — NOT a hardcoded model name. An Opus-later run labels as Opus, and runs across models don't collide on the
 // same id. `agentryCell(model)` builds the cell for a given model; `CELLS` is the default matrix at the default model.
 
@@ -17,7 +17,7 @@ export const DEFAULT_CELL_MODEL = "sonnet";
 
 /**
  * One cell of the outcome matrix — the per-arm differences the runner bakes into the `Invocation`:
- *   - `id` the cell label stamped onto records (`Agentry-<model>`, derived from the `--model` flag — ADR-003);
+ *   - `id` the cell label stamped onto records (`Agentry-<model>`, derived from the `--model` flag);
  *   - `loadsPlugin` is whether this cell loads the Agentry plugin (`--plugin-dir`) — its presence ALSO gates
  *     `bypassPermissions` (an Agentry cell must dispatch subagents headless). The actual repo path is resolved by
  *     the runner caller, not hard-coded here; the Cell only declares WHETHER a plugin is loaded (a marker), and the
@@ -41,7 +41,7 @@ export interface Cell {
  * instead delivers the EXPANDED go.md conductor prompt as plain text (see `buildConductorPrompt` in runner.ts), so
  * the conducting skill actually runs. `promptWrap` is therefore identity here — the runner owns the real construction.
  *
- * The `id` derives from the model (ADR-003), so the stored label matches the model that actually ran.
+ * The `id` derives from the model, so the stored label matches the model that actually ran.
  */
 export function agentryCell(model: string = DEFAULT_CELL_MODEL): Cell {
   return {
@@ -54,5 +54,5 @@ export function agentryCell(model: string = DEFAULT_CELL_MODEL): Cell {
 /** The default Agentry cell at the default model — the fallback matrix when the caller pins no model. */
 export const AGENTRY_CELL: Cell = agentryCell();
 
-/** The matrix: the single Agentry arm (the bare baseline is retired — ADR-003). The caller pins the model via `agentryCell`. */
+/** The matrix: the single Agentry arm (the bare baseline is retired). The caller pins the model via `agentryCell`. */
 export const CELLS: readonly Cell[] = [AGENTRY_CELL];

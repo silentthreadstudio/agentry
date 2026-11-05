@@ -1,15 +1,15 @@
-// SHARED CONDUCT INFRA (relocated by T-10 into the NEUTRAL `src/conduct/` home). `extractShape` + `extractKind` +
-// `DegenerateRunError` are the canonical extractor T-03 evolved; they are consumed by `store/read.ts` (the offline
+// SHARED CONDUCT INFRA (relocated into the NEUTRAL `src/conduct/` home). `extractShape` + `extractKind` +
+// `DegenerateRunError` are the canonical extractor; they are consumed by `store/read.ts` (the offline
 // rescore) and the bench probe's neighbours, so the canonical copy lives here — no probe (or the store) imports
 // another probe's folder.
 //
-// The shape-extractor (ADR-001, moved from `routing/extract.ts` + `routing/extract-kind.ts`) — infer the routed
+// The shape-extractor (moved from `routing/extract.ts` + `routing/extract-kind.ts`) — infer the routed
 // `Shape` from the conductor's SETTLED WORK-FOLDER ARTIFACTS, not the subagent-dispatch pattern. The dispatch
 // pattern was a proven-INVALID proxy: the conductor escalates via gates/artifacts (it writes a `spec.md` /
 // `plan.md` / `tasks/`), not via which subagent it happens to dispatch. The artifact IS the routing decision made
 // concrete.
 //
-// SETTLE-THEN-EXTRACT (ADR-001 R1): the unified conduct-and-judge probe lets the build SETTLE (it does not kill on
+// SETTLE-THEN-EXTRACT: the unified conduct-and-judge probe lets the build SETTLE (it does not kill on
 // the routing artifact), then this reads the FINAL settled tree. `extractShape` already reads a settled work folder
 // — the call is identical to the routing read, just not preceded by a terminate-on-artifact kill.
 //
@@ -93,7 +93,7 @@ export function scanWorkArtifacts(workingDir: string): WorkArtifacts {
 }
 
 /**
- * Infer the routed {@link Shape} from the conductor's settled work-folder artifacts (ADR-001). The only effect is
+ * Infer the routed {@link Shape} from the conductor's settled work-folder artifacts. The only effect is
  * reading `<workingDir>/.agentry/work/*`; the verdict is a function of the artifacts found and the `ctx` settle
  * signals.
  *
@@ -106,7 +106,7 @@ export function scanWorkArtifacts(workingDir: string): WorkArtifacts {
  *
  * The degenerate fallback is an explicit THROW, not a silent label: a no-artifact run that did not settle
  * cleanly (no `success`, or an empty produced tree — e.g. an aborted/errored run) can never be mistaken for a
- * genuine one-shot, and the probe maps that throw to the `indeterminate` terminal category (T-02). A genuine
+ * genuine one-shot, and the probe maps that throw to the `indeterminate` terminal category. A genuine
  * one-shot settles, so its `result` envelope (hence `resultSubtype`) IS present.
  */
 export function extractShape(workingDir: string, ctx: ExtractContext): Shape {

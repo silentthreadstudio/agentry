@@ -40,7 +40,7 @@ test("seedSandbox copies a nested fixture tree into the working dir with content
 });
 
 test("prepareSandbox sets AGENTRY_AUTOPILOT=1 in the child env (decide-record-proceed)", () => {
-  // The conductor reads this to run in auto-pilot and emit its work-folder routing artifacts (autopilot §1/§3).
+  // The conductor reads this to run in auto-pilot and emit its work-folder routing artifacts.
   const sandbox = prepareSandbox();
   assert.equal(sandbox.env[AUTOPILOT_ENV], "1");
 });

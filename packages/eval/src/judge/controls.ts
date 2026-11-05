@@ -1,4 +1,4 @@
-// The shared CONTROL layer (ADR-002/003) — two PURE predicates over judge scores that make a flattering judge
+// The shared CONTROL layer — two PURE predicates over judge scores that make a flattering judge
 // structurally impossible, generalized from `outcome-judge/control.ts` so EVERY probe gates through one pair. A
 // judge that can hand out generous scores is worthless, so the controls-as-structure discipline gates it: the
 // predicates take only numbers and return verdicts; they do ZERO I/O and call no API, so each is forced-testable
@@ -14,24 +14,24 @@
 //
 // The verdict literals carry a `<subject>-judge-…` shape; each probe passes its own subject label so the
 // artifact/report surface the same pinned strings the per-probe code consumed before the lift (e.g.
-// "outcome-judge-measures-noise"). The literals are the contract and must never drift (ADR-003).
+// "outcome-judge-measures-noise"). The literals are the contract and must never drift.
 
 import { stdev } from "../stats.ts";
 
-/** Default tolerance (population stdev) for the A/A stability null — scores within this agree (ADR-003). */
+/** Default tolerance (population stdev) for the A/A stability null — scores within this agree. */
 export const DEFAULT_AA_TOLERANCE = 0.1;
 
-/** Default floor the `gold` overall must clear (ADR-003 — conservative floor vs the validated 1.0 gold). */
+/** Default floor the `gold` overall must clear (conservative floor vs the validated 1.0 gold). */
 export const DEFAULT_GOLD_MIN = 0.7;
 
-/** Default ceiling the `broken` overall must stay under (ADR-003 — conservative vs the validated 0.2 poor). */
+/** Default ceiling the `broken` overall must stay under (conservative vs the validated 0.2 poor). */
 export const DEFAULT_BROKEN_MAX = 0.4;
 
-/** Default minimum gold − broken gap required (ADR-003 — the explicit separation clause on top of the bounds). */
+/** Default minimum gold − broken gap required (the explicit separation clause on top of the bounds). */
 export const DEFAULT_MIN_GAP = 0.3;
 
 /**
- * Minimum repeats the discrimination control judges gold/broken before comparing MEANS (ADR-003). The judge has
+ * Minimum repeats the discrimination control judges gold/broken before comparing MEANS. The judge has
  * real per-draw variance (a tidy-but-wrong `broken` subject legitimately floats ~0.25–0.5 across draws), so a
  * single-draw gate flakes false-negative even though the means separate cleanly. Averaging over ≥ this many draws
  * is measurement-noise reduction — NOT threshold-loosening — and mirrors the matrix's own k-fold averaging. The
@@ -66,7 +66,7 @@ export function discriminationVerdict(subject: string): string {
 }
 
 /**
- * The A/A NEGATIVE control (ADR-003). Given the OVERALL scores from judging the SAME subject `k` times, agreement
+ * The A/A NEGATIVE control. Given the OVERALL scores from judging the SAME subject `k` times, agreement
  * within `tol` (population stdev ≤ `tol`) is the expected null; a wider spread means the judge measures noise and
  * the run must abort with no score.
  *
@@ -90,13 +90,13 @@ export function aaStability(
 }
 
 /**
- * The gold/broken POSITIVE control (ADR-003). A known-correct `gold` subject must score HIGH (overall ≥ `goldMin`)
+ * The gold/broken POSITIVE control. A known-correct `gold` subject must score HIGH (overall ≥ `goldMin`)
  * and a planted-wrong `broken` subject must score LOW (overall ≤ `brokenMax`), AND GOLD must beat BROKEN by an
  * explicit minimum GAP (`gold − broken ≥ minGap`). All clauses must hold: a judge that scores GOLD high but also
  * scores BROKEN high (no separation), that inverts them, or that leaves only a collapsed gap, cannot tell good
  * from bad and the run aborts.
  *
- * The `minGap` clause is the explicit separation on top of the bounds (ADR-003): a near-tie that still technically
+ * The `minGap` clause is the explicit separation on top of the bounds: a near-tie that still technically
  * clears the bounds (e.g. gold 0.8, broken 0.7) is rejected as too weak a separation.
  *
  * @param gold      the judge's overall for the `gold` subject.

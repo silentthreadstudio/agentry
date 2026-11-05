@@ -1,4 +1,4 @@
-// The reporter's WRITE side + composition root (doc 08 §6). Given a stored run, it assembles the page data
+// The reporter's WRITE side + composition root. Given a stored run, it assembles the page data
 // (`load.ts`), renders the HTML (`render.ts`), and writes a self-contained `results/<date>/<runId>/index.html` —
 // the committed, reproducible dashboard artifact ("run the eval, get this page").
 //

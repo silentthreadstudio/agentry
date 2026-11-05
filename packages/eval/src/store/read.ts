@@ -1,4 +1,4 @@
-// The READ side of the artifact store (ADR-003 / T-E). It reconstructs analysis inputs from a STORED run with ZERO
+// The READ side of the artifact store. It reconstructs analysis inputs from a STORED run with ZERO
 // live API: instead of re-running the conductor, it reads the artifacts the write side (`store/write.ts`) already
 // copied out of each task's sandbox under `runs/<id>/tasks/<taskId>[.r<i>]/work/<slug>/` — `rescoreRun` re-derives
 // each stored task's routing shape offline, proof a persisted run is re-analyzable after the fact.
@@ -61,7 +61,7 @@ export interface RescoredTask {
 }
 
 /**
- * Read a stored run's reproducibility header back from `<runDir>/config.json` (ADR-001). The inverse of the write
+ * Read a stored run's reproducibility header back from `<runDir>/config.json`. The inverse of the write
  * side's `beginRun`; a pure parse, no validation beyond JSON shape (the write side is the single source of truth
  * for what a valid config is).
  */

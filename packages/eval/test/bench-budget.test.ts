@@ -109,7 +109,7 @@ test("the seed projection is the documented historical worst case (rounded up fr
   assert.equal(SEED_PROJECTION_USD, 1.0);
 });
 
-// --- AC6: an unmeasurable task is charged the projection, NEVER $0 ----------------------------------------------
+// --- an unmeasurable task is charged the projection, NEVER $0 ----------------------------------------------
 
 test("a task that settles with no measurable cost is charged the projection, not $0", () => {
   const ledger = createBudgetLedger(10, 1.0);

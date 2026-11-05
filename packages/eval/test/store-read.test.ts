@@ -1,4 +1,4 @@
-// Tests for the READ side of the artifact store (read.ts / T-E). Pure fs, ZERO API spend by construction: every
+// Tests for the READ side of the artifact store (read.ts). Pure fs, ZERO API spend by construction: every
 // test builds a fake `runs/<id>/` tree on disk (a `config.json` pointing at a tiny temp fixture dir + stored
 // `tasks/<id>/work/<slug>/spec.md` files), then drives `readRunConfig`/`rescoreRun` and asserts they reconstruct
 // the config / shape from disk WITHOUT any live call.

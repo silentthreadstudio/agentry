@@ -1,4 +1,4 @@
-// The decision-quality RUBRIC (design §1) — the five anchored dimensions the judge scores a conductor-produced
+// The decision-quality RUBRIC — the five anchored dimensions the judge scores a conductor-produced
 // spec/plan against, plus the rubric TEXT the judge prompt embeds. This module owns ONLY the rubric definition
 // (the scoring vocabulary + the prompt the judge reads); judge.ts owns the LLM call, control.ts the gates.
 //
@@ -25,7 +25,7 @@ export type QualityDimensions = Record<QualityDimension, number>;
 /**
  * The anchored rubric the judge prompt embeds. Each dimension states what 0 vs 2 looks like so the judge
  * grades against a fixed bar, not a vibe. The closing CONTENT clause is load-bearing: it forbids rewarding
- * verbosity/formatting, so length cannot be the discriminator (design §1, §4).
+ * verbosity/formatting, so length cannot be the discriminator.
  */
 export const RUBRIC_TEXT = `Score the artifact on FIVE dimensions, each 0, 1, or 2 (integers only):
 

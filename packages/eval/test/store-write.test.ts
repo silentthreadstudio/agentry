@@ -1,6 +1,6 @@
-// Tests for the WRITE side of the artifact store (write.ts / T-B). Pure fs, ZERO API spend: it builds a fake
+// Tests for the WRITE side of the artifact store (write.ts). Pure fs, ZERO API spend: it builds a fake
 // sandbox tree in a temp dir, drives the full run lifecycle (beginRun → captureTask → finishRun) into a temp
-// runs-root, and asserts the on-disk tree (ADR-001) landed with correct paths and content. Covers the keystone
+// runs-root, and asserts the on-disk tree landed with correct paths and content. Covers the keystone
 // `.agentry/work/` copy, the `.r<i>` multi-run suffix, and the missing-work-folder tolerance.
 
 import assert from "node:assert/strict";
@@ -75,7 +75,7 @@ test("a full run round-trips the ADR-001 tree to disk with correct paths and con
     timingMs: 123,
   });
 
-  // the keystone: the `.agentry/work/` tree copied to `tasks/t1/work/` (AC3 later reads this).
+  // the keystone: the `.agentry/work/` tree copied to `tasks/t1/work/` (the offline rescore later reads this).
   assert.equal(readFileSync(join(taskDir, "work", "x", "spec.md"), "utf8"), "# spec\nhello\n");
 });
 

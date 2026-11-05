@@ -1,4 +1,4 @@
-// Tests for the store's typed contract + run-id (T-A / ADR-001). ZERO API spend: pure id-string assertions and
+// Tests for the store's typed contract + run-id. ZERO API spend: pure id-string assertions and
 // a type-shape compile check. The run-id behavior is the testable logic here; the schema types are exercised by
 // constructing a value typed as each exported shape (so a sibling task that mis-binds a field is caught at author
 // time, and the assertions confirm the values round-trip).
@@ -75,7 +75,7 @@ test("the exported schema types compile and carry their pinned fields", () => {
     artifact: { anything: "stored verbatim" },
   };
 
-  // EvalObserver: both hooks optional; the recorded sink proves the seam shape T-D writes through.
+  // EvalObserver: both hooks optional; the recorded sink proves the seam shape the probe writes through.
   const emitted: string[] = [];
   const captured: TaskCaptureSrc[] = [];
   const observer: EvalObserver = {
@@ -99,7 +99,7 @@ test("the exported schema types compile and carry their pinned fields", () => {
   assert.deepEqual(emitted, ["task-done"]);
   assert.equal(captured[0]?.taskId, "routing-token-ttl");
 
-  // An empty observer is valid (both hooks optional) — the AC5 default-no-op shape.
+  // An empty observer is valid (both hooks optional) — the default no-op shape.
   const noop: EvalObserver = {};
   assert.equal(noop.emit, undefined);
   assert.equal(noop.onTaskComplete, undefined);

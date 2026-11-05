@@ -1,9 +1,9 @@
-// Run-id generation (ADR-001). A run id is a sortable wall-clock prefix + a short random suffix:
+// Run-id generation. A run id is a sortable wall-clock prefix + a short random suffix:
 // `YYYYMMDD-HHMMSS-<rand4>`. The timestamp prefix gives free chronological `ls runs/` ordering for
 // `replay <latest>`; the 4-hex suffix disambiguates two runs started in the same second with no collision risk.
 //
 // SRP: this module is the id function only. `new Date()` is permitted at selfeval runtime (only workflow SCRIPTS
-// forbid wall-clock; this is a CLI run — ADR-001). The `--run-id` override is what makes a replay/test path
+// forbid wall-clock; this is a CLI run). The `--run-id` override is what makes a replay/test path
 // deterministic: pass a fixed id and the generator returns it unchanged.
 
 import { randomBytes } from "node:crypto";
