@@ -1,7 +1,7 @@
 // merge/rows — the rows the preflight and the land both read before main changes: the ledger (adopting
 // a `--branch`), the board, the commits to land, the repo checks and the push policy.
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { readConfig } from "../../config.mjs";
 import { check } from "../../process/check.mjs";
 import { branchTips, defaultBranch, worktrees } from "../../process/git.mjs";
@@ -12,6 +12,7 @@ import {
 } from "../../process/ledger.mjs";
 import { ruleOf, withDefaults } from "../../process/rules/index.mjs";
 import { idsIn, refKinds, resolve as resolveDep } from "../../process/rules/structure.mjs";
+import { SKILL_DIR, skillExists } from "../../process/spec/extensions.mjs";
 import { own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { shellWord } from "../../text/shell.mjs";
@@ -212,9 +213,6 @@ export function ledgerStep(lane, { adopt }) {
   return ok("ledger", `adopted ${branch}: ledger created (origin "adopted")`);
 }
 
-// Repo skills live in the host's own folder (A28); `extensions.merge.checks` names them natively.
-export const SKILL_DIR = ".claude/skills";
-export const skillExists = (root, name) => existsSync(join(root, SKILL_DIR, name, "SKILL.md"));
 /** The newest gate of `tier` the ledger holds from the worktree, whatever its exit (`canSkip` refuses a
  *  red one, so a red run after a green one is never passed over; a flaky red's green re-run is newer);
  *  with no `tier`, the newest worktree gate of any tier. Null when there is none. */

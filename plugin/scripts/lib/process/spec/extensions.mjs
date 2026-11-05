@@ -1,6 +1,9 @@
 // extensions — the workflow file's `extensions` key: the repo skills each command runs as checks, `merge`
 // (before a land), `start` and `close` (a session's opening and ending, A42), each `{ checks: [<skill>, …] }`.
-// The checker for the schema entry in `workflow.mjs` and the accessor the session readers share. PURE.
+// The checker for the schema entry in `workflow.mjs` and the accessor the session readers share, both
+// PURE; and `skillExists`, which looks for a named skill on disk.
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { FULL, distinct, has, isObject, like, own, shape } from "./shape.mjs";
 
 const PHASES = ["merge", "start", "close"];
@@ -24,3 +27,7 @@ export const sessionChecks = (spec, phase) => {
   const checks = own(own(own(spec, "extensions"), phase), "checks");
   return Array.isArray(checks) ? [...checks] : [];
 };
+
+// Repo skills live in the host's own folder (A28); `extensions.merge.checks` names them natively.
+export const SKILL_DIR = ".claude/skills";
+export const skillExists = (root, name) => existsSync(join(root, SKILL_DIR, name, "SKILL.md"));

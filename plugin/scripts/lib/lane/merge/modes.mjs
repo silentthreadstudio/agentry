@@ -5,13 +5,14 @@ import { join } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
 import { read as readLedger } from "../../process/ledger.mjs";
+import { SKILL_DIR, skillExists } from "../../process/spec/extensions.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { resolveBranch } from "../adopt.mjs";
 import { cleanup, commitOf, isAncestor, push } from "../land.mjs";
 import { worktreesDir } from "../worktree.mjs";
 import { mainRow } from "./carry.mjs";
 import { afterLand, checkNext, done, landNext, now, ok, red, save, short } from "./lane.mjs";
-import { SKILL_DIR, checksState, skillExists, stoppedCut } from "./rows.mjs";
+import { checksState, stoppedCut } from "./rows.mjs";
 
 const CHECK_RESULTS = ["pass", "fail"];
 
