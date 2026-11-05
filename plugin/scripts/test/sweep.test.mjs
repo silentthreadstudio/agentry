@@ -269,6 +269,26 @@ test("an ignored directory with no file at any depth does not keep a merged work
   assert.ok(!existsSync(merged.path));
 });
 
+test("a folder holding the cache and one other file keeps the worktree; without the other file it is disposable", () => {
+  const { root, merged } = fixture();
+  appendFileSync(join(root, ".git", "info", "exclude"), "art/\n");
+  mkdirSync(join(merged.path, "art", "preview"), { recursive: true });
+  writeFileSync(join(merged.path, "art", "preview", "shot.png"), "x");
+  writeFileSync(join(merged.path, "art", "source.psd"), "precious");
+  const disposable = ["art/preview/**"];
+  const mixed = plan(root, { free: LOW_DISK * 10, disposable }).cleanable.find(
+    (w) => w.id === "T1",
+  );
+  assert.deepEqual(mixed.ignored, ["art/"]);
+  assert.deepEqual(mixed.disposable, []);
+  rmSync(join(merged.path, "art", "source.psd"));
+  const clean = plan(root, { free: LOW_DISK * 10, disposable }).cleanable.find(
+    (w) => w.id === "T1",
+  );
+  assert.deepEqual(clean.ignored, []);
+  assert.deepEqual(clean.disposable, ["art/"]);
+});
+
 test("a node_modules folder of 300 files counts as one disposable path", () => {
   const { root, merged } = fixture();
   appendFileSync(join(root, ".git", "info", "exclude"), "node_modules/\n");

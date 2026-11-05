@@ -18,6 +18,7 @@ import {
   boardCommit,
   cherryPick,
   cleanup,
+  ignoredIn,
   landedSince,
   pickInProgress,
   push,
@@ -317,6 +318,43 @@ test("an ignored directory holding no file at any depth never blocks the cleanup
   rmSync(join(path, "kept"), { recursive: true });
   const res = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: path });
   assert.equal(res.ignored, undefined);
+  assert.ok(!existsSync(path));
+});
+
+test("a folder with the cache and one other file refuses the cleanup and removes nothing", () => {
+  branch({ ".gitignore": "art/\n" });
+  const path = join(repo.dir, ".agentry", "run", "worktrees", "B");
+  mkdirSync(join(path, "art", "preview"), { recursive: true });
+  writeFileSync(join(path, "art", "preview", "shot.png"), "x");
+  writeFileSync(join(path, "art", "keep.psd"), "x");
+  const found = ignoredIn(path, ["art/preview/**"]);
+  assert.deepEqual(found.ignored, ["art/"]);
+  assert.deepEqual(found.disposable, []);
+  const res = cleanup(repo.dir, {
+    branch: "b",
+    main: "main",
+    fallbackPath: path,
+    disposable: ["art/preview/**"],
+  });
+  assert.equal(res.ok, false);
+  assert.ok(existsSync(join(path, "art", "keep.psd")));
+  assert.ok(existsSync(join(path, "art", "preview", "shot.png")));
+});
+
+test("a folder of cache files and empty subfolders is disposable and the cleanup removes it", () => {
+  branch({ ".gitignore": "art/\n" });
+  const path = join(repo.dir, ".agentry", "run", "worktrees", "B");
+  mkdirSync(join(path, "art", "preview"), { recursive: true });
+  writeFileSync(join(path, "art", "preview", "shot.png"), "x");
+  mkdirSync(join(path, "art", "empty", "deeper"), { recursive: true });
+  const res = cleanup(repo.dir, {
+    branch: "b",
+    main: "main",
+    fallbackPath: path,
+    disposable: ["art/preview/**"],
+  });
+  assert.equal(res.ignored, undefined, JSON.stringify(res)); // nothing asks; the branch itself is not on main
+  assert.equal(res.removed, true);
   assert.ok(!existsSync(path));
 });
 

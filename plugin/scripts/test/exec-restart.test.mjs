@@ -594,6 +594,29 @@ test("art/preview/** in cleanup.disposable lets a restart through and the cache 
   assert.equal(existsSync(join(out.worktree, "art", "preview")), false);
 });
 
+test("a folder holding the cache and one other file still refuses the restart and loses nothing", () => {
+  const r = repo();
+  writeFileSync(join(r.root, ".gitignore"), ".agentry/run/\nart/\n");
+  git(r.root, "commit", "-qam", "chore: ignore art");
+  writeSpec(join(r.root, ".agentry"), { ...SPEC, cleanup: { disposable: ["art/preview/**"] } });
+  git(r.root, "commit", "-qam", "chore: the preview cache is disposable");
+  const out = worked(r);
+  mkdirSync(join(out.worktree, "art", "preview", "deep"), { recursive: true });
+  writeFileSync(join(out.worktree, "art", "preview", "deep", "shot.png"), "x\n");
+  writeFileSync(join(out.worktree, "art", "source.psd"), "precious\n");
+  const before = mainOf(r.root);
+  const refused = lane(r, "restart", "T3", "--carry");
+  assert.equal(refused.exit, 2);
+  assert.match(refused.stderr, /art\//);
+  assert.ok(existsSync(join(out.worktree, "art", "source.psd")));
+  assert.ok(existsSync(join(out.worktree, "art", "preview", "deep", "shot.png")));
+  assert.deepEqual(mainOf(r.root), before);
+  rmSync(join(out.worktree, "art", "source.psd"));
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(existsSync(join(out.worktree, "art", "preview")), false);
+});
+
 // ---- a verified lane's restart (field 94) ---------------------------------------------------------
 
 const row = (root, id) =>

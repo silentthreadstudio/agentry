@@ -14,7 +14,7 @@ import { ruleOf, withDefaults } from "../../process/rules/index.mjs";
 import { idsIn, refKinds, resolve as resolveDep } from "../../process/rules/structure.mjs";
 import { own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
-import { resolveBranch, shownName, strayTree, unnamedHead } from "../adopt.mjs";
+import { resolveBranch, shellWord, shownName, strayTree, unnamedHead } from "../adopt.mjs";
 import { headBoard } from "../carry-io.mjs";
 import { changedSince, checklistFor } from "../gate.mjs";
 import { commitOf, commitsBetween, isAncestor, mergeBaseOf, subjectOf, toLand } from "../land.mjs";
@@ -262,7 +262,7 @@ export function depsRow({ spec, model, id, kind }) {
   const keep = idsIn(item.fields[field]).filter(
     (dep) => !open(resolveDep(model, dep, refKinds(def), def?.prefix)[0]?.id),
   );
-  const next = `agentry board set ${life.kind} ${id} ${field}=${keep.join(", ")} --apply`;
+  const next = `agentry board set ${life.kind} ${id} ${shellWord(`${field}=${keep.join(", ")}`)} --apply`;
   return {
     row: red("deps", `${life.kind} ${id} would be ${found[0].message}`, [
       ...found.slice(1).map((f) => `would be ${f.message}`),

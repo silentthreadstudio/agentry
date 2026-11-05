@@ -2800,3 +2800,27 @@ test("after the dependency is dropped the land goes through; a deps problem of a
   assert.equal(res.status, 0, out(res));
   assert.match(board(), /\| T1 +\| S1 +\| done /);
 });
+
+test("the printed board set line is one shell command: two remaining deps both survive running it", () => {
+  commitDeps("T2, T4, T5");
+  const { path, shas } = buildSubjects("feat: a");
+  execLedger({ path, gated: shas[0] });
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  const line = out(res)
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.startsWith("agentry board set"));
+  assert.ok(line, out(res));
+  const run = spawnSync(
+    "sh",
+    ["-c", line.replace(/^agentry board /, `node ${join(dirname(LANE), "board.mjs")} `)],
+    {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...gitEnv, HOME: home, NO_COLOR: "1" },
+    },
+  );
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(board(), /\| T1 +\| S1 +\| verify \| PASS +\| +\| T4, T5 +\|/);
+});
