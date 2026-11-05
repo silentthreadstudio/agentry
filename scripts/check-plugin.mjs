@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Agentry plugin gate — validates the plugin payload before commit (doc 09 §5).
+// Agentry plugin gate — validates the plugin payload before commit.
 // Dependency-free. Exits non-zero on hard errors; warnings don't fail.
 
 import { execFileSync } from "node:child_process";
@@ -7,6 +7,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { docFlagProblems } from "./lib/doc-flags.mjs";
+import { privateRefs } from "./lib/private-refs.mjs";
 import { missingServerPaths, retiredMentions } from "./lib/retired.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -70,7 +71,7 @@ if (existsSync(market)) {
   ok("marketplace.json", `${m.plugins?.length ?? 0} plugin(s)`);
 }
 
-// 3. agents — frontmatter name + description; no forbidden tools allowlist (capability-first, doc 04)
+// 3. agents — frontmatter name + description; no forbidden tools allowlist (capability-first)
 const agentsDir = join(PLUGIN, "agents");
 if (existsSync(agentsDir)) {
   const files = readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
@@ -203,7 +204,7 @@ if (manifestHooks) {
 if (!existsSync(hooksJson) && !manifestHooks) ok("no hooks", "none shipped");
 
 // 8. Doc flags — a command or skill doc that names a board/lane subcommand or flag the script would refuse
-// fails the gate: the agents run what the docs say (A39).
+// fails the gate: the agents run what the docs say.
 const docProblems = await docFlagProblems(PLUGIN);
 for (const p of docProblems) err(`doc flags: ${p}`);
 if (!docProblems.length) ok("doc flags", "every board/lane call in the docs is one the CLI takes");
@@ -264,6 +265,14 @@ for (const file of modulesUnder(join(LIB, "process"))) {
 }
 for (const p of inward) err(`plugin/${p}: process/ must not depend on lane/ (move the leaf down)`);
 if (!inward.length) ok("import direction", "nothing under scripts/lib/process imports lib/lane");
+
+// 12. Private references — a comment in a shipped file must say its reason itself, not cite a design doc, an
+// ADR, an acceptance-criterion number, a field number, an owner-call id or a task id a reader cannot open
+// (scripts/lib/private-refs.mjs).
+const privates = privateRefs(ROOT);
+for (const p of privates) err(p);
+if (!privates.length)
+  ok("comments stand alone", "no comment in plugin/ or packages/ cites a private doc");
 
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));

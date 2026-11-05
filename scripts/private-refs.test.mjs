@@ -1,0 +1,91 @@
+// Tests for scripts/lib/private-refs.mjs: the gate's guard against comments that cite private docs, on
+// synthetic trees, and over this repo's own tree.
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { privateRefs } from "./lib/private-refs.mjs";
+
+const temps = [];
+after(() => {
+  for (const dir of temps) rmSync(dir, { recursive: true, force: true });
+});
+
+// A tree with `files` ({ "plugin/a.mjs": text }) written under it.
+function tree(files) {
+  const dir = mkdtempSync(join(tmpdir(), "private-refs-"));
+  temps.push(dir);
+  for (const [name, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, name)), { recursive: true });
+    writeFileSync(join(dir, name), text);
+  }
+  return dir;
+}
+
+test("privateRefs names each form of citation in a line, block or trailing comment", () => {
+  for (const [text, hit] of [
+    ["// the cap (field 84) is read live\n", "field 84"],
+    ["const a = 1; // see ADR-005\n", "ADR-005"],
+    ["/**\n * The shape (doc 07 §4).\n */\n", "doc 07"],
+    ["// stacked lanes (A45) land after their parent\n", "A45"],
+    ["// asserted by AC4\n", "AC4"],
+    ["// the old T-003 lookup\n", "T-003"],
+    ["// fixed in R1d-38\n", "R1d-38"],
+    ["// the pinned F13 design\n", "F13"],
+    ["// decision 51 allows it\n", "decision 51"],
+    ["// (plan R1b-5)\n", "plan R1b"],
+  ]) {
+    const [problem, ...rest] = privateRefs(tree({ "plugin/scripts/a.mjs": text }));
+    assert.deepEqual(rest, [], text);
+    assert.match(
+      problem,
+      new RegExp(
+        `^plugin/scripts/a\\.mjs:\\d+: comment cites a private reference \\(${hit.replace(/[()]/g, "\\$&")}`,
+      ),
+      text,
+    );
+  }
+});
+
+test("privateRefs reads typescript, astro and yaml comments under packages too", () => {
+  const found = privateRefs(
+    tree({
+      "packages/x/src/a.ts": "export const a = 1; // ADR-002\n",
+      "packages/web/src/b.astro": "// DocsLayout (ADR-001)\n",
+      "packages/x/fixtures/t.yaml": "# floors (AC1)\nkey: value\n",
+    }),
+  );
+  assert.equal(found.length, 3);
+});
+
+test("privateRefs leaves strings, usage examples and plain ids alone", () => {
+  assert.deepEqual(
+    privateRefs(
+      tree({
+        "plugin/scripts/a.mjs": [
+          'const msg = "a name holds ADR-001 and field 84";',
+          "const t = 'T-4'; // a usage example: lane merge T-4",
+          "// SHA-256 of the file; Field 22 of /proc/<pid>/stat; the A/A control; decision 5-dim",
+          'const url = "https://example.com/§";',
+          "",
+        ].join("\n"),
+        "plugin/README.md": "see ADR-001\n",
+        "plugin/mem/index.js": "// ADR-001\n",
+        "packages/x/node_modules/dep/index.js": "// ADR-001\n",
+      }),
+    ),
+    [],
+  );
+});
+
+test("privateRefs gives the line of the hit", () => {
+  const [problem] = privateRefs(tree({ "plugin/a.mjs": "const a = 1;\n\n// (field 7)\n" }));
+  assert.equal(problem, "plugin/a.mjs:3: comment cites a private reference (field 7)");
+});
+
+test("this repo's plugin and packages cite no private reference in a comment", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  assert.deepEqual(privateRefs(root), []);
+});
