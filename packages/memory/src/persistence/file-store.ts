@@ -38,8 +38,9 @@ const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 /**
  * Write `text` to `file` whole: a temp file beside it, renamed over it. The result takes the permission
  * bits of `modeFrom` (by default the file it replaces) when that exists. The temp name does not end in
- * `.md`, so reads and the signature never see it. Mirrors the plugin's `lib/fs/atomic.mjs`, which the
- * bundle cannot import.
+ * `.md`, so reads and the signature never see it. Like the plugin's `lib/fs/atomic.mjs` (which the bundle
+ * cannot import), except that a read-only fact file is replaced rather than refused: the store has always
+ * rewritten a fact whatever its mode, and a store's files are the store's to rewrite.
  */
 function atomicWrite(file: string, text: string, modeFrom: string = file): void {
   const tmp = `${file}.agentry-${process.pid}.tmp`;
