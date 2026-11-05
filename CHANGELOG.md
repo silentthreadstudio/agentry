@@ -317,7 +317,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `packages/memory` are removed. Existing stores read unchanged: the same Markdown files, roots and env
   (`AGENTRY_GLOBAL_DIR`, `CLAUDE_PROJECT_DIR`, `AGENTRY_PROJECT_DIR`); with no project dir in the env, the
   project store is the main checkout's of the current git repo, from any of its worktrees. `lane exec close`
-  writes the lane's episode to that store and stamps its id in one call; `--episode <id>` still stamps an id
+  writes the lane's episode to that store and stamps its id in one call, with the run's `--lesson "<text>"` and
+  `--used-memories <ids>` when given; `--episode <id>` still stamps an id
   written elsewhere, deprecated, for one version. `check-plugin` fails on a leftover `mcp__plugin_agentry_mem__`
   name in the payload, and its dist-lockstep check is gone with the bundle.
 - **A verified lane's restart** — `lane exec restart <id> --carry` of a lane whose last verdict passed, on the
