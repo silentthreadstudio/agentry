@@ -22,12 +22,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { branchTips, worktrees } from "../process/git.mjs";
 import { shellQuote } from "./brief.mjs";
-import { short } from "./fmt.mjs";
+import { first, short } from "./fmt.mjs";
 import { commitOf, filesOf, subjectOf } from "./land.mjs";
 import { spikeCalls } from "./owner-calls.mjs";
 import { git, porcelain } from "./worktree.mjs";
-
-const first = (text) => text.trim().split("\n")[0] ?? "";
 
 /** `text` as one shell word for a command a person or agent pastes: as it is when it holds only plain
  *  characters, else single-quoted (`brief.mjs`'s `shellQuote`). */

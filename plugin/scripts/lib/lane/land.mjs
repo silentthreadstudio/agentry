@@ -9,11 +9,11 @@
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { first } from "./fmt.mjs";
 import { globMatch } from "./gate.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
 import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
 
-const first = (text) => text.trim().split("\n")[0] ?? "";
 const lines = (text) => text.split("\n").filter(Boolean);
 const short = (sha) => sha.slice(0, 7);
 

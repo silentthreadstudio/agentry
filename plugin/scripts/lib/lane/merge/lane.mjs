@@ -5,13 +5,15 @@
 import { nextStep } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { write as writeLedger } from "../../process/ledger.mjs";
+import { now } from "../fmt.mjs";
 import { commitOf } from "../land.mjs";
+
+export { now };
 
 // The land steps from which nothing of this land is on main: a run starts the picks over.
 export const FRESH = [undefined, "conflict", "rolled-back"];
 const MARK = { ok: "✓", warn: "!", red: "✗", skip: "·", wait: "…" };
 export const short = (sha) => (sha ? sha.slice(0, 7) : "-");
-export const now = () => new Date().toISOString();
 const row =
   (mark) =>
   (step, detail, more = []) => ({ step, mark, detail, more });

@@ -14,9 +14,8 @@ import { contentOf } from "../process/board-writes.mjs";
 import * as md from "../process/markdown.mjs";
 import { readProcess } from "../process/read.mjs";
 import { WriteError, applyAll } from "../process/write.mjs";
+import { first } from "./fmt.mjs";
 import { git } from "./worktree.mjs";
-
-const first = (text) => text.trim().split("\n")[0] ?? "";
 
 // A patch is bytes, not text: it is kept as a latin1 string (one char per byte), so a file that is not
 // UTF-8 survives the ledger, the sha256 and `git apply` byte for byte. `worktree.git` decodes as UTF-8.
