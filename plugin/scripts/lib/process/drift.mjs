@@ -23,7 +23,6 @@
 // through git.mjs, asked once per run for all the ledgers (`survey`, `records`), never once per ledger.
 import { realpathSync } from "node:fs";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
-import { readSpikes, spikesFile } from "../lane/spikes.mjs";
 import { shellWord as w } from "../text/shell.mjs";
 import * as git from "./git.mjs";
 import { kindOf } from "./ids.mjs";
@@ -35,6 +34,7 @@ import { commitsIn, handoffLines, namesCommits } from "./rules/evidence.mjs";
 import { parentOf } from "./rules/structure.mjs";
 import { own } from "./spec/shape.mjs";
 import { lifecycleOf } from "./spec/workflow.mjs";
+import { readSpikes, spikesFile } from "./spikes.mjs";
 import { staleStatus } from "./stale-status.mjs";
 
 const MERGED_STATES = ["merged", "closed"];

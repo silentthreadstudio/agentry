@@ -21,7 +21,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import * as ledgers from "../process/ledger.mjs";
-import { readSpikes, setSpikeCalls, spikesFile } from "./spikes.mjs";
+import { readSpikes, spikesFile } from "../process/spikes.mjs";
+import { setSpikeCalls } from "./spikes.mjs";
 
 const MAX_IDS = 3;
 
