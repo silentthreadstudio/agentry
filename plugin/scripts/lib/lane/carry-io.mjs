@@ -21,9 +21,9 @@ import { boardFiles, cellEdits } from "../process/board-diff.mjs";
 import { contentOf } from "../process/board-writes.mjs";
 import * as md from "../process/markdown.mjs";
 import { readProcess } from "../process/read.mjs";
-import { escapesRoot } from "../process/spec/shape.mjs";
 import { WriteError, applyAll } from "../process/write.mjs";
 import { first } from "./fmt.mjs";
+import { leaves } from "./paths.mjs";
 import { git } from "./worktree.mjs";
 
 // A patch is bytes, not text: it is kept as a latin1 string (one char per byte), so a file that is not
@@ -171,9 +171,10 @@ export function recordedFor(root, files) {
   return out;
 }
 
-// A file a ledger record names (a carried cell's or row's): repo-relative and inside the repository. A
-// ledger is data, and its sha256 sits in the same file, so a path out of it is never read or written.
-const leavesRepo = (file) => typeof file !== "string" || file === "" || escapesRoot(".", file);
+// A file a ledger record names (a carried cell's or row's): repo-relative and inside the repository, no
+// `..` in it at all. A ledger is data, and its sha256 sits in the same file, so a path out of it is never
+// read or written.
+const leavesRepo = (file) => typeof file !== "string" || file === "" || leaves(file);
 const leftRepo = (file) => `${file} leaves the repository: a ledger path is never read or written`;
 
 /** Set the carried `cells` on the board under `dir` (main's checkout, or a scratch copy of its board)

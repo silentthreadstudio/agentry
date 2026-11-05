@@ -19,6 +19,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { unfenced } from "../process/markdown.mjs";
+import { leaves } from "./paths.mjs";
 
 // Where a contract's own-list ends: the next labelled part of the contract.
 const OWNS = /\bowns\b\s*[:*]*/i;
@@ -212,9 +213,6 @@ function asideAt(part, masked, at, toAt = false) {
   const close = masked.indexOf(")", at);
   return part.slice(open[0], toAt ? at : close < 0 ? part.length : close);
 }
-
-// Does the path leave the repository: a `..` segment, even one that would come back in?
-const leaves = (path) => path.split("/").includes("..");
 
 /** The paths the block's "owns" clause names in backticks, de-duplicated, in order. The clause runs to
  *  the next ` · `, labelled part or bold label (an owns label, like "**step 2 owns:**", carries on). Only

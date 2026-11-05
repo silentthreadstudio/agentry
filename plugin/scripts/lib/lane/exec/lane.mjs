@@ -35,8 +35,6 @@ export const contractFile = (root, id) => join(ledgers.runDir(root, id), "contra
 export const isVerifiedPark = (ledger) =>
   ledger.state === "held" && ledger.hold?.when === "verified";
 
-// A path that leaves the repository: a leading `/` or a `..` segment. `owns` never takes one.
-export const leaves = (path) => path.startsWith("/") || path.split("/").includes("..");
 // A path as `owns` reads it: each leading `./` dropped, `//` collapsed, a trailing `/` dropped. `leaves`
 // judges this form, so `.//etc/passwd` is `/etc/passwd`, never `etc/passwd` after the check.
 export const normalised = (path) =>

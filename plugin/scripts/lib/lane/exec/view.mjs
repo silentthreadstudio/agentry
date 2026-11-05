@@ -11,6 +11,7 @@ import { resolveWorkflow } from "../../process/spec/presets.mjs";
 import { shellQuote as q } from "../../text/shell.mjs";
 import { suggestBuilder } from "../builder.mjs";
 import { answerText, heldText, routeText } from "../exec-view.mjs";
+import { leaves } from "../paths.mjs";
 import { DISPATCHES, expects, routeOf } from "../rounds.mjs";
 import { stackOf } from "../stack.mjs";
 import { ownsPath } from "./guard/allow.mjs";
@@ -20,7 +21,6 @@ import {
   isFile,
   isFlagged,
   laneLine,
-  leaves,
   normalised,
   ownedOf,
   readOr,
