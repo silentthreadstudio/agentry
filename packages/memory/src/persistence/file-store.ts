@@ -1,10 +1,10 @@
 // File store — the SOURCE OF TRUTH. One **Markdown** file per record under each root's memory dir:
 //   <root>/facts/<slug>-<ulid>.md      <root>/episodes/<slug>-<ulid>.md
 // YAML frontmatter holds the fields; the body holds the prose (a fact's text / an episode's task) —
-// human-readable and git-diffable. Origin is derived from which root a file lives in. Corrupt/
-// conflict-marked files are skipped (logged), never fatal — a bad merge can't break the rebuild.
-// A write goes to a temp file renamed into place, so a reader sees the old record or the new one, never
-// neither and never a part.
+// human-readable and git-diffable. Origin is derived from which root a file lives in. A corrupt or
+// conflict-marked file is reported as a read error (and logged), never fatal: a bad merge can't break
+// the rebuild. A write goes to a temp file renamed into place, so a reader sees the old record or the
+// new one, never neither and never a part.
 import {
   existsSync,
   mkdirSync,
@@ -160,7 +160,10 @@ export class MarkdownFileStore implements FileStore {
         if (!file.endsWith(".md")) continue;
         try {
           const m = FRONTMATTER.exec(readFileSync(join(dir, file), "utf8"));
-          if (!m) continue;
+          if (!m)
+            throw new Error(
+              "no frontmatter header (the file must open with a '---' line, LF endings)",
+            );
           const front = parseYaml(m[1] ?? "") as Record<string, unknown>;
           records.push(wrap(origin, schema.parse({ ...front, [bodyKey]: (m[2] ?? "").trim() })));
         } catch (cause) {

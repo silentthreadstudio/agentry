@@ -29073,7 +29073,10 @@ ${text}
         if (!file.endsWith(".md")) continue;
         try {
           const m = FRONTMATTER.exec(readFileSync(join2(dir, file), "utf8"));
-          if (!m) continue;
+          if (!m)
+            throw new Error(
+              "no frontmatter header (the file must open with a '---' line, LF endings)"
+            );
           const front = (0, import_yaml.parse)(m[1] ?? "");
           records.push(wrap(origin, schema.parse({ ...front, [bodyKey]: (m[2] ?? "").trim() })));
         } catch (cause) {

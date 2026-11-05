@@ -1,6 +1,7 @@
-// MarkdownFileStore on disk: a rewrite never leaves a record missing or half-written.
+// MarkdownFileStore on disk: a rewrite never leaves a record missing or half-written, and a file the
+// store cannot read is reported, never skipped silently.
 import assert from "node:assert/strict";
-import fs, { mkdtempSync, readdirSync } from "node:fs";
+import fs, { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,4 +69,25 @@ test("a rewrite that changes the slug leaves exactly one file for the id", () =>
     "the-opal-build-skips-its-cache-01JABCDEFGHJKMNPQRSTVWXYZ0.md",
   ]);
   assert.equal(store.readFacts().records[0]?.fact.text, "the opal build skips its cache");
+});
+
+test("a file with no frontmatter header is reported as a read error, not skipped", () => {
+  const dir = fresh();
+  const store = new MarkdownFileStore({ global: dir, project: null });
+  store.writeFact("g", fact());
+  mkdirSync(join(dir, "facts"), { recursive: true });
+  writeFileSync(
+    join(dir, "facts", "conflicted.md"),
+    "<<<<<<< HEAD\n---\nid: g:01X\n---\n=======\n>>>>>>> theirs\n",
+  );
+  writeFileSync(join(dir, "facts", "crlf.md"), "---\r\nid: g:01Y\r\n---\r\n\r\nbody\r\n");
+
+  const { records, errors } = store.readFacts();
+
+  assert.equal(records.length, 1, "the readable fact still loads");
+  assert.deepEqual(errors.map((e) => [e.kind, e.file]).sort(), [
+    ["facts", "conflicted.md"],
+    ["facts", "crlf.md"],
+  ]);
+  for (const e of errors) assert.match(e.reason, /no frontmatter header/);
 });
