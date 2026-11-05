@@ -56,7 +56,9 @@ function git(root, args, input, env) {
   return res.status === 0 ? res.stdout : null;
 }
 
-const known = new Map(); // `${root}\0${sha}` → boolean
+// `${root}\0${sha}` of each commit found. Only a commit is remembered: a SHA git did not have may
+// arrive later (a fetch, a cherry-pick), so a miss is asked again.
+const known = new Set();
 
 /** The `shas` that name a commit in the repo at `root`, as a Set. The ones not yet cached are asked in
  *  one `git cat-file --batch-check` (one line out per line in), so a board's every SHA costs one process. */
@@ -66,12 +68,12 @@ export function knownCommits(root, shas) {
   if (asked.length) {
     const input = asked.map((sha) => `${sha}^{commit}\n`).join("");
     const out = git(root, ["cat-file", "--batch-check=%(objecttype)"], input)?.split("\n") ?? [];
-    asked.forEach((sha, i) => known.set(key(sha), out[i] === "commit"));
+    asked.forEach((sha, i) => out[i] === "commit" && known.add(key(sha)));
   }
-  return new Set(shas.filter((sha) => known.get(key(sha)) === true));
+  return new Set(shas.filter((sha) => known.has(key(sha))));
 }
 
-/** True when `sha` names a commit in the repo at `root`. Cached per root and SHA (see `knownCommits`). */
+/** True when `sha` names a commit in the repo at `root`. A commit found is cached per root and SHA (see `knownCommits`). */
 export const hasCommit = (root, sha) => knownCommits(root, [sha]).has(sha);
 
 /** True when git ignores `path` (relative to `root`; `git check-ignore`). False outside a repository. */

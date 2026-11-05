@@ -76,9 +76,12 @@ function shasOf(spec, model) {
 
 /** Load-time problems plus every enabled rule's findings, and the counts the header shows. */
 export function boardReport({ root, spec, model }) {
-  git.knownCommits(root, shasOf(spec, model)); // one git process for the whole board
+  // One git process for the whole board. git does not remember a miss, so the report keeps its own
+  // answer for the SHAs it asked about: a missing commit costs no process per rule.
+  const asked = new Set(shasOf(spec, model));
+  const found = git.knownCommits(root, [...asked]);
   const ctx = {
-    hasCommit: (sha) => git.hasCommit(root, sha),
+    hasCommit: (sha) => (asked.has(sha) ? found.has(sha) : git.hasCommit(root, sha)),
     contractOf: (kind, id) => findContract({ root, spec, id, kind, model }),
   };
   const findings = [...model.problems, ...check(model, spec.rules, ctx)];

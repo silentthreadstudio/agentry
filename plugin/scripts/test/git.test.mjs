@@ -102,6 +102,31 @@ test("hasCommit: a full 64-hex SHA is asked of git, so a SHA-256 repository work
   assert.equal(hasCommit(dir, full), true);
 });
 
+test("hasCommit: a commit that was missing once is found when it arrives", () => {
+  const base = join(repo, "..");
+  const other = join(base, "late-other");
+  const here = join(base, "late-here");
+  for (const dir of [other, here]) {
+    mkdirSync(dir);
+    spawnSync("git", ["-C", dir, "init", "-q", "-b", "main"], { env });
+  }
+  const at = {
+    ...env,
+    GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+    GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+  };
+  writeFileSync(join(other, "a.txt"), "late\n");
+  spawnSync("git", ["-C", other, "add", "a.txt"], { env: at });
+  spawnSync("git", ["-C", other, "commit", "-q", "-m", "feat: late"], { env: at });
+  const late = spawnSync("git", ["-C", other, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+    env,
+  }).stdout.trim();
+  assert.equal(hasCommit(here, late), false);
+  assert.equal(spawnSync("git", ["-C", here, "fetch", "-q", other, "main"], { env }).status, 0);
+  assert.equal(hasCommit(here, late), true, "a miss is not remembered");
+});
+
 test("knownCommits: one call answers many SHAs, short or full, and hasCommit agrees", () => {
   const tree = run("rev-parse", "HEAD^{tree}");
   const asked = [sha.first, sha.second.slice(0, 8), "0000000", tree, "--all", sha.picked];
