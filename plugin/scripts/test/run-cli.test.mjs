@@ -232,6 +232,17 @@ test("a command whose name starts with - runs as that command, never as an optio
   assert.equal(run.stdout, "ran\n");
 });
 
+test("a command named like an env assignment (-e=v) runs as that command", async () => {
+  const dir = repo();
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "-e=v"), "#!/bin/sh\necho ran\n", { mode: 0o755 });
+  const env = { ...baseEnv(), PATH: `${bin}:${process.env.PATH}` };
+  const run = await agentry(["run", "--limit", "5s", "--", "-e=v", "echo", "X"], { cwd: dir, env });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout, "ran\n");
+});
+
 test("--limit 0s, --limit x, no --limit and no command are refused, and nothing runs", async () => {
   const dir = repo();
   const marker = join(dir, "ran");
