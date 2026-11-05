@@ -5,11 +5,11 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { runOf, runText } from "../../process/steps.mjs";
 import { now } from "../fmt.mjs";
 import { ownedFiles, withNew } from "../owns.mjs";
-import { PASSES, verdicts } from "../rounds.mjs";
+import { PASSES, parkedVerified, verdicts } from "../rounds.mjs";
 import { git } from "../worktree.mjs";
 import { ownsPath } from "./guard/allow.mjs";
 import { headOf } from "./guard/snapshot.mjs";
-import { heldCopy, isVerifiedPark, saved } from "./lane.mjs";
+import { heldCopy, saved } from "./lane.mjs";
 import { keepRangeDiff } from "./rebasing.mjs";
 
 // A path under lane `id`'s run dir as the archive `runs` holds it now; any other path as it is. The archive
@@ -34,7 +34,7 @@ export function lastReport(ledger, runs) {
 // Is the old lane's carry its verified work: its last verdict passed with nothing after it but the gate
 // or the close, on the very tip carried, and no uncommitted work beside it (field 94)?
 export function carriesVerified(ledger, tip, files) {
-  const settled = ["gate", "close", "merge"].includes(ledger.next) || isVerifiedPark(ledger);
+  const settled = ["gate", "close", "merge"].includes(ledger.next) || parkedVerified(ledger);
   const trusted = ledger.next === "gate" ? ledger.gateTip : ledger.closedTip;
   return (
     settled &&

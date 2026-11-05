@@ -549,7 +549,9 @@ const capHeld = (ledger) => ledger.state === "held" && ledger.hold?.when === "ve
 
 // A verified lane the conductor parks (field 63): only for later, as the owner's review is of a builder's round.
 const ownerHoldRefusal = "hold --for owner is for a builder's round";
-const parkedVerified = (ledger) => ledger.state === "held" && ledger.hold?.when === "verified";
+/** A parked verified lane: held with no builder round, its next step kept in the hold. */
+export const parkedVerified = (ledger) =>
+  ledger.state === "held" && ledger.hold?.when === "verified";
 
 // The owner looks at a builder's round that is out (`for: "owner"`), or the conductor parks a lane whose
 // builder was stopped (`for: "later"`): the round is left unread. A held lane takes the new `for` and

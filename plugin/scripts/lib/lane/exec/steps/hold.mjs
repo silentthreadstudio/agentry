@@ -3,9 +3,9 @@
 import { resolve } from "node:path";
 import * as ledgers from "../../../process/ledger.mjs";
 import { now } from "../../fmt.mjs";
-import { expects } from "../../rounds.mjs";
+import { expects, parkedVerified } from "../../rounds.mjs";
 import { mainTouched } from "../guard/main-guard.mjs";
-import { isFile, isVerifiedPark, laneLine, mustLedger, refuse, saved, stepWith } from "../lane.mjs";
+import { isFile, laneLine, mustLedger, refuse, saved, stepWith } from "../lane.mjs";
 import { view } from "../view.mjs";
 
 // A builder's round waits: for the owner, who reviews what its saved reply points at (`--evidence`, by
@@ -20,7 +20,7 @@ export function run(ctx, id) {
   const ledger = mustLedger(root, id);
   const held = ledger.state === "held";
   const verified =
-    isVerifiedPark(ledger) ||
+    parkedVerified(ledger) ||
     (ledger.state === "verified" && ["close", "merge"].includes(ledger.next));
   if (verified && holdFor === "owner")
     refuse(

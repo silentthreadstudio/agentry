@@ -3,13 +3,13 @@ import * as ledgers from "../../../process/ledger.mjs";
 import { gateOf } from "../../../process/spec/workflow.mjs";
 import { answerLabel } from "../../exec-view.mjs";
 import { now, short } from "../../fmt.mjs";
-import { redoRefusal, skipsVerifier } from "../../rounds.mjs";
+import { parkedVerified, redoRefusal, skipsVerifier } from "../../rounds.mjs";
 import { nestedTrees, refuseAtWriterCap } from "../admission.mjs";
 import { writeBuilt } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { mainGuard } from "../guard/main-guard.mjs";
 import { headOf } from "../guard/snapshot.mjs";
-import { isFlagged, isVerifiedPark, laneLine, mustLedger, refuse, stepWith } from "../lane.mjs";
+import { isFlagged, laneLine, mustLedger, refuse, stepWith } from "../lane.mjs";
 import { answerOf, stepCount, view } from "../view.mjs";
 
 // The owner's answer to a hold: recorded with its time, then the held round's builder carries on (the
@@ -23,7 +23,7 @@ export function run(ctx, id) {
   if (!note) refuse(`resume needs --note "<the owner's words>"`);
   if (redo && ledger.hold?.when !== "after") refuse(redoRefusal(ledger.hold));
   // A parked verified lane, or one the notes cap holds: no builder is out or sent, and built is written.
-  const parked = isVerifiedPark(ledger) || ledger.hold?.when === "verdict";
+  const parked = parkedVerified(ledger) || ledger.hold?.when === "verdict";
   // Main may have moved by commits that touch none of the lane's files (field 68): the guard's own rule.
   const main = parked ? null : mainGuard(ctx, ledger, ledgers.list(root));
   if (main?.touched)

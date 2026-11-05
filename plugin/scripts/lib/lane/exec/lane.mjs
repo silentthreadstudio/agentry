@@ -31,10 +31,6 @@ export const laneLine = (root, sub, id, extra = "") =>
 
 export const contractFile = (root, id) => join(ledgers.runDir(root, id), "contract.md");
 
-// A parked verified lane (field 63): held with no builder round, its next step kept in the hold.
-export const isVerifiedPark = (ledger) =>
-  ledger.state === "held" && ledger.hold?.when === "verified";
-
 // A path as `owns` reads it: each leading `./` dropped, `//` collapsed, a trailing `/` dropped. `leaves`
 // judges this form, so `.//etc/passwd` is `/etc/passwd`, never `etc/passwd` after the check.
 export const normalised = (path) =>
