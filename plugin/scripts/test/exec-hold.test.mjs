@@ -706,6 +706,43 @@ test("ART-10b: step 1 DONE, owner OK, a needs-context round: the lane offers ste
   assert.deepEqual(ledgerOf(r.root, "T1").rounds.at(-1).stepRun, [2, 2]);
 });
 
+test("resume --same keeps the step-1 builder for step 2 (no pointer line); --same with --fresh is refused", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out, "one.txt");
+  lane(r, "report", "T1", "--agent", "builder-1");
+  const both = lane(r, "resume", "T1", "--note", "OK", "--same", "--fresh");
+  assert.equal(both.exit, 2);
+  assert.match(both.stderr, /resume takes --same or --fresh, not both/);
+  assert.equal(ledgerOf(r.root, "T1").state, "held");
+  out = lane(r, "resume", "T1", "--note", "OK", "--same").json;
+  assert.deepEqual([out.next, out.mode, out.agent], ["continue", "resume", "builder-1"]);
+  const brief = readFileSync(out.brief, "utf8");
+  assert.match(brief, /## This round: step 2 of 2/);
+  assert.doesNotMatch(brief, /The step before it ended with the report/);
+});
+
+test("field 103: step 2 asks, owns --add, the context resume reports DONE: the brief names step 2 and the lane goes to the verifier, not close", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out, "one.txt");
+  lane(r, "report", "T1", "--agent", "builder-1");
+  out = lane(r, "resume", "T1", "--note", "OK, go").json;
+  ask(out);
+  out = lane(r, "report", "T1", "--agent", "builder-2").json;
+  assert.equal(out.next, "needs-context");
+  assert.equal(lane(r, "owns", "T1", "--add", "cfg/keys.json", "--apply").exit, 0);
+  const brief = readFileSync(out.brief, "utf8");
+  assert.match(brief, /## This round: step 2 of 2/);
+  assert.match(brief, /You are on step 2 of 2: Write two\.txt/);
+  assert.match(brief, /step is done only when its own work is/);
+  // The resumed builder reports DONE; the round is step 2's, so the work goes to the verifier.
+  build(out, "two.txt");
+  out = lane(r, "report", "T1", "--agent", "builder-2").json;
+  assert.deepEqual([out.next, out.state], ["verify", "verifying"]);
+  assert.equal(ledgerOf(r.root, "T1").hold, undefined);
+});
+
 test("asked again in one step: held for the context, nothing changed; resume sends the fact to the builder", () => {
   const r = repo();
   let out = lane(r, "start", "T3").json;

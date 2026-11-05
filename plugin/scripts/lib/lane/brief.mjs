@@ -809,6 +809,22 @@ export function stepSlots({ steps = [], stepRun = null, holds = [], step, fresh 
   };
 }
 
+/** The `## Your step` section of a builder round sent back on a run of a contract's steps (a context
+ *  answer): the step the round is on, and that it is done only when its own work is. "" with no steps. */
+export function stepReminder({ steps = [], stepRun = null }) {
+  const run = steps.length && stepRun ? steps.slice(stepRun[0] - 1, stepRun[1]) : [];
+  if (!run.length) return "";
+  const what = run.map((s) => s.text).join("; ");
+  return [
+    "## Your step",
+    "",
+    `You are on ${runText(stepRun, steps.length)}: ${what}`,
+    "",
+    "The step is done only when its own work is on the branch: a test or a fix for something else does not finish it. Report DONE for it only then.",
+    "",
+  ].join("\n");
+}
+
 /** `text` (a rendered brief) with `section` put in before its first `## ` section, or at the end. */
 export function withSection(text, section) {
   const at = text.indexOf("\n## ");

@@ -24,7 +24,7 @@
 //                             lane), and the brief waiting to be answered is rewritten
 //   hold <id> --for owner|later [--agent a]   a builder's round waits for the owner's review (its reply
 //                             saved), or is parked (its builder stopped); the ledger alone is written
-//   resume <id> --note "<the OK>" [--redo] [--fresh]   the owner's answer to a hold, then the next round
+//   resume <id> --note "<the OK>" [--redo] [--fresh|--same]   the owner's answer to a hold, then the next round
 //   start <id> --on <Y>       stack the lane on Y's lane (A45): cut from agentry/<Y>, `on` and `base` in the ledger
 //   restack <id> [--main]     a stacked lane, no agent out: rebase it onto its parent's new tip, or main
 //                             (its parent landed, or --main); the branch and ledger alone are written
@@ -102,6 +102,7 @@ import {
   recheckSlots,
   relatedNotes,
   renderBrief,
+  stepReminder,
   stepSlots,
   suggestBuilder,
   unknownCites,
@@ -172,7 +173,7 @@ const STEPS = [
   "cut",
 ];
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--on <id>] [--main] [--carry] [--branch <b>] [--decision <D>] [--keep <paths>] [--message <subject>] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--notes <N1,N3>] [--owner <text>] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--same] [--on <id>] [--main] [--carry] [--branch <b>] [--decision <D>] [--keep <paths>] [--message <subject>] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -219,6 +220,8 @@ export const help = {
     "--note <text>": "resume: the owner's words; hold --for later: why the lane is parked",
     "--redo": "resume: the owner sent the finished run back: build the same steps again",
     "--fresh": "resume: a fresh builder with the same brief (the held round's agent is gone)",
+    "--same":
+      "resume: the next step keeps the builder of the step before (default: a fresh builder per step)",
     "--on <id>":
       "start: stack the lane on that lane's branch (verified, held or at its gate); it lands after it",
     "--main": "restack: onto main's tip, off the parent (the owner's call)",
@@ -253,6 +256,7 @@ const STEPS_OF = {
   "--note": ["hold", "resume"],
   "--redo": ["resume"],
   "--fresh": ["resume"],
+  "--same": ["resume"],
   "--on": ["start"],
   "--main": ["restack"],
   "--carry": ["restart"],
@@ -273,7 +277,7 @@ const short = (sha) => String(sha ?? "").slice(0, 7);
 const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
-// argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, on, toMain,
+// argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, same, on, toMain,
 // carry, branch, decision, keep, message } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
@@ -303,6 +307,8 @@ function parse(argv) {
     return { error: 'fix needs --notes N1,N3 or --owner "<the change>", one of them' };
   if (step === "adopt" && given["--branch"] === undefined)
     return { error: "adopt needs --branch <b>: the branch built outside exec" };
+  if (given["--same"] && given["--fresh"])
+    return { error: "resume takes --same or --fresh, not both" };
   if (given["--by"] !== undefined && given["--leave"] === undefined)
     return { error: "--by goes with --leave" };
   if (given["--by"] !== undefined && !["owner", "conductor"].includes(given["--by"]))
@@ -337,6 +343,7 @@ function parse(argv) {
     owner: given["--owner"] ?? null,
     redo: Boolean(given["--redo"]),
     fresh: Boolean(given["--fresh"]),
+    same: Boolean(given["--same"]),
     on: given["--on"] ?? null,
     toMain: Boolean(given["--main"]),
     carry: Boolean(given["--carry"]),
@@ -1051,6 +1058,7 @@ function brief({ root, spec, model }, ledger, dispatch) {
       holds: ledger.holds,
       step: dispatch.step,
       fresh,
+      mode: dispatch.mode,
     }),
   };
   // The owner's change: in its fix round's brief, and the recheck's after it (field 77).
@@ -1063,6 +1071,11 @@ function brief({ root, spec, model }, ledger, dispatch) {
   const file = join(dir, `${name}.md`);
   let text = renderBrief(dispatch.step, values);
   if (dispatch.step === "fix" && picked) text = withNotesToFix(text, picked, ledger.openNotes);
+  // A builder answered with the fact it asked for is told which step it is on, and what finishes it.
+  if (dispatch.step === "needs-context" && fresh) {
+    const reminder = stepReminder({ steps: ledger.steps, stepRun: dispatch.stepRun });
+    if (reminder) text = withSection(text, reminder);
+  }
   if (owner)
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
   // A restarted lane's first brief says what was carried into the tree (field 69).
@@ -2481,7 +2494,7 @@ function hold(ctx, id, agent) {
 // next run, the same run with --redo, or the same round after a hold during it), or after the last step
 // the verifier (or the gate) is next and built is written. Main must be as the lane left it.
 function resume(ctx, id) {
-  const { root, spec, note, redo, fresh } = ctx;
+  const { root, spec, note, redo, fresh, same } = ctx;
   const ledger = mustLedger(root, id);
   if (ledger.state !== "held")
     refuse(`the lane is not held (state ${ledger.state}, next ${ledger.next})`);
@@ -2505,6 +2518,7 @@ function resume(ctx, id) {
     type: "resume",
     note,
     redo,
+    same,
     at: now(),
     skipVerify: skipsVerifier(ledger.route, flagged),
     tip: headOf(root, ledger.branch),
