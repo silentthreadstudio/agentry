@@ -26,7 +26,6 @@ import { basename, join, relative } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { nextStep } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
-import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
 import { run as fix } from "../../process/cli/fix.mjs";
 import * as drafts from "../../process/drafts.mjs";
 import { mainRoot } from "../../process/git.mjs";
@@ -42,7 +41,7 @@ import { clock, heldText, idleHead } from "../exec-view.mjs";
 import { gateLockDir, heldSlots } from "../gate-lock.mjs";
 import { idleOf } from "../idle.mjs";
 import { callLines, openCalls } from "../owner-calls.mjs";
-import { forThisRepo, primeLimitOf } from "../recall.mjs";
+import { conductorFacts } from "../recall.mjs";
 import * as sessionChecksFile from "../session-checks.mjs";
 import { stackOf } from "../stack.mjs";
 import { leftovers, plan } from "../sweep.mjs";
@@ -89,9 +88,7 @@ function modeOf(root) {
 
 // A repo's own and the user's facts (what a brief may carry), ranked against `task`; none when memory.prime is off.
 function recallFor(root, task) {
-  const config = readMemoryConfig(root);
-  if (config.prime === "off") return [];
-  return rankFacts(readFacts(root).filter(forThisRepo), task, primeLimitOf(config)).map((f) => ({
+  return conductorFacts(root, task).map((f) => ({
     id: f.id,
     type: f.type,
     text: f.body.split("\n")[0],

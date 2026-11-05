@@ -1,7 +1,7 @@
-// recall — which memory facts a lane brief carries: this repo's store, the user's own and the
-// cross-project facts, never another project's, ranked for the contract and capped by `primeLimit`, and
-// only when the repo's `memory.prime` is "all" (briefs are primed). Reads the memory store; writes
-// nothing.
+// recall — which memory facts a lane primes with: this repo's store, the user's own and the
+// cross-project facts, never another project's, ranked for the work and capped by `primeLimit`. The
+// repo's `memory.prime` says who is primed: "all" primes the briefs (`recalledFacts`), anything but
+// "off" primes the conductor's session start (`conductorFacts`). Reads the memory store; writes nothing.
 import { rankFacts, readFacts, readMemoryConfig } from "../memory/recall.mjs";
 
 // A brief may carry what this repo's store holds, plus the user's own (`scope: user`) and the
@@ -29,4 +29,11 @@ export function recalledFacts(root, { owned, block }) {
     prime: config.prime,
     facts: rankFacts(readFacts(root).filter(forThisRepo), task, primeLimitOf(config)),
   };
+}
+
+/** The facts ranked for `task` at the conductor's session start: none when `memory.prime` is "off". */
+export function conductorFacts(root, task) {
+  const config = readMemoryConfig(root);
+  if (config.prime === "off") return [];
+  return rankFacts(readFacts(root).filter(forThisRepo), task, primeLimitOf(config));
 }
