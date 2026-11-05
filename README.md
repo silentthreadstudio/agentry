@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <code>0.3.0-dev.12 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
+  <code>0.3.0 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
 </p>
 
 ---
@@ -188,9 +188,8 @@ pnpm --filter @agentry/eval selfeval report <run-id>    # a self-contained HTML 
 
 ## Status
 
-Pre-1.0. Installing from the marketplace gives you `main`, now `0.3.0-dev.12`; the last tagged release is
-`v0.2.0`. Commands and flags can still change between dev builds, and [`CHANGELOG.md`](./CHANGELOG.md) records
-each change. Claude Code is the host today.
+Pre-1.0. The current release is `0.3.0`. Commands and flags can still change between releases, and
+[`CHANGELOG.md`](./CHANGELOG.md) records each change. Claude Code is the host today.
 
 ## Docs
 
