@@ -10,12 +10,12 @@
   },
   "dependencies": {
     "@agentry/core": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "yaml": "^2.5.0",
-    "zod": "^3.23.0"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "esbuild": "^0.24.0"
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2"
   }
 }
