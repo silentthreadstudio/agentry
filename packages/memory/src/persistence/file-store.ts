@@ -36,15 +36,16 @@ import { type Roots, dirFor } from "../resolution/roots.js";
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 
 /**
- * Write `text` to `file` whole: a temp file beside it, renamed over it. A file it replaces keeps its
- * permission bits. The temp name does not end in `.md`, so reads and the signature never see it.
- * Mirrors the plugin's `lib/fs/atomic.mjs`, which the bundle cannot import.
+ * Write `text` to `file` whole: a temp file beside it, renamed over it. The result takes the permission
+ * bits of `modeFrom` (by default the file it replaces) when that exists. The temp name does not end in
+ * `.md`, so reads and the signature never see it. Mirrors the plugin's `lib/fs/atomic.mjs`, which the
+ * bundle cannot import.
  */
-function atomicWrite(file: string, text: string): void {
+function atomicWrite(file: string, text: string, modeFrom: string = file): void {
   const tmp = `${file}.agentry-${process.pid}.tmp`;
   try {
     writeFileSync(tmp, text);
-    const mode = modeOf(file);
+    const mode = modeOf(modeFrom);
     if (mode !== null) chmodSync(tmp, mode);
     renameSync(tmp, file);
   } finally {
@@ -147,7 +148,14 @@ export class MarkdownFileStore implements FileStore {
     const { [bodyKey]: body, ...front } = record;
     const text = typeof body === "string" ? body : "";
     const file = `${slug(text || bareId(id))}${suffix}`;
-    atomicWrite(join(dir, file), `---\n${stringifyYaml(front)}---\n\n${text}\n`);
+    // A text change renames the file: the new one keeps the mode of the old-slug file it replaces.
+    const siblings = readdirSync(dir).filter((f) => f.endsWith(suffix));
+    const modeFrom = siblings.includes(file) ? file : (siblings[0] ?? file);
+    atomicWrite(
+      join(dir, file),
+      `---\n${stringifyYaml(front)}---\n\n${text}\n`,
+      join(dir, modeFrom),
+    );
 
     // One file per id: only once the new file is in place, drop a sibling left under an old name
     // (text changed → slug changed).

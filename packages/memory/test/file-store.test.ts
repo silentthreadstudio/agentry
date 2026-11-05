@@ -99,16 +99,23 @@ test("a file with no frontmatter header is reported as a read error, not skipped
   for (const e of errors) assert.match(e.reason, /no frontmatter header/);
 });
 
-test("a rewrite keeps the permission bits of the record's file", () => {
+test("a rewrite keeps the permission bits of the record's file, under the same name or a new one", () => {
   const dir = fresh();
   const store = new MarkdownFileStore({ global: dir, project: null });
   store.writeFact("g", fact());
-  const file = join(dir, "facts", readdirSync(join(dir, "facts"))[0] ?? "");
-  chmodSync(file, 0o600);
+  const only = (): string => {
+    const names = readdirSync(join(dir, "facts"));
+    assert.equal(names.length, 1);
+    return join(dir, "facts", names[0] ?? "");
+  };
+  chmodSync(only(), 0o600);
 
-  store.writeFact("g", fact({ confidence: 0.9 }));
+  store.writeFact("g", fact({ confidence: 0.9 })); // same text → same file name
+  assert.equal(statSync(only()).mode & 0o777, 0o600);
 
-  assert.equal(statSync(file).mode & 0o777, 0o600);
+  store.writeFact("g", fact({ text: "the opal build skips its cache" })); // new slug → new name
+  assert.match(only(), /the-opal-build-skips-its-cache-/);
+  assert.equal(statSync(only()).mode & 0o777, 0o600);
 });
 
 test("a merge conflict is reported only when it breaks the header or YAML; in the body it is text", () => {

@@ -29001,11 +29001,11 @@ var Episode = external_exports.object({
 // src/persistence/file-store.ts
 var import_yaml = __toESM(require_dist2(), 1);
 var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
-function atomicWrite(file, text) {
+function atomicWrite(file, text, modeFrom = file) {
   const tmp = `${file}.agentry-${process.pid}.tmp`;
   try {
     writeFileSync(tmp, text);
-    const mode = modeOf(file);
+    const mode = modeOf(modeFrom);
     if (mode !== null) chmodSync(tmp, mode);
     renameSync(tmp, file);
   } finally {
@@ -29087,11 +29087,17 @@ var MarkdownFileStore = class {
     const { [bodyKey]: body, ...front } = record2;
     const text = typeof body === "string" ? body : "";
     const file = `${slug(text || bareId(id))}${suffix}`;
-    atomicWrite(join2(dir, file), `---
+    const siblings = readdirSync(dir).filter((f) => f.endsWith(suffix));
+    const modeFrom = siblings.includes(file) ? file : siblings[0] ?? file;
+    atomicWrite(
+      join2(dir, file),
+      `---
 ${(0, import_yaml.stringify)(front)}---
 
 ${text}
-`);
+`,
+      join2(dir, modeFrom)
+    );
     for (const f of readdirSync(dir))
       if (f.endsWith(suffix) && f !== file) unlinkSync(join2(dir, f));
   }
