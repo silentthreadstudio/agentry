@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "name": "Upkeep",
+  "root": "docs",
+  "kinds": {
+    "debt": {
+      "label": "Debt",
+      "note": "Debt and chores, one row each. The contract is a block in DEBT.md.",
+      "at": {
+        "table": "DEBT.md",
+        "heading": "Debt"
+      },
+      "id": {
+        "column": "Debt"
+      },
+      "fields": {
+        "what": {
+          "column": "What"
+        },
+        "status": {
+          "column": "Status"
+        },
+        "verdict": {
+          "column": "Verdict",
+          "case": "upper"
+        },
+        "commit": {
+          "column": "Commit",
+          "type": "commits"
+        }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped"
+        }
+      },
+      "contract": {
+        "blocks": ["DEBT.md"],
+        "lead": ["heading"]
+      },
+      "create": {
+        "ask": ["what", "owns", "acceptance"],
+        "id": "DEBT-{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": {
+              "Debt": "{id}",
+              "What": "{what}",
+              "Status": "todo",
+              "Verdict": "",
+              "Commit": ""
+            }
+          }
+        ],
+        "blocks": [
+          {
+            "file": "DEBT.md",
+            "under": "# Contracts",
+            "text": "### {id} · {what}\n- **Owns:** {owns}\n- **Acceptance:** {acceptance}"
+          }
+        ]
+      }
+    }
+  },
+  "rules": [
+    {
+      "rule": "ids-unique"
+    },
+    {
+      "rule": "status-known"
+    },
+    {
+      "rule": "done-has-evidence",
+      "kind": "debt",
+      "field": "commit",
+      "evidence": "commit"
+    }
+  ]
+}

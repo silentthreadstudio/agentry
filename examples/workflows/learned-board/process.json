@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "name": "Planning",
+  "root": ".",
+  "kinds": {
+    "iteration": {
+      "label": "Iteration",
+      "note": "Two-week iterations, one row each in PLANNING.md.",
+      "at": {
+        "table": "PLANNING.md",
+        "heading": "Iterations"
+      },
+      "id": {
+        "column": "Iteration"
+      },
+      "fields": {
+        "goal": {
+          "column": "Goal"
+        },
+        "state": {
+          "column": "State",
+          "case": "upper"
+        }
+      },
+      "status": {
+        "field": "state",
+        "values": {
+          "NEXT": "planned",
+          "NOW": "active",
+          "SHIPPED": "done"
+        }
+      }
+    },
+    "ticket": {
+      "label": "Ticket",
+      "note": "The backlog. A ticket's spec is specs/<id>.md, linked from its row as [contract](…); the contract is its bold-led block.",
+      "at": {
+        "table": "PLANNING.md",
+        "heading": "Backlog"
+      },
+      "id": {
+        "column": "Ticket",
+        "match": "^(PLAT-\\d+)"
+      },
+      "fields": {
+        "title": {
+          "column": "Title"
+        },
+        "iteration": {
+          "column": "Iteration",
+          "type": "ref",
+          "ref": "iteration",
+          "role": "parent",
+          "also": ["ICEBOX"]
+        },
+        "state": {
+          "column": "State",
+          "case": "upper"
+        },
+        "owner": {
+          "column": "Owner"
+        },
+        "blockedBy": {
+          "column": "Blocked by",
+          "type": "list",
+          "ref": "ticket"
+        },
+        "spec": {
+          "column": "Spec",
+          "type": "link"
+        },
+        "review": {
+          "column": "Review",
+          "case": "upper"
+        },
+        "landed": {
+          "column": "Landed in",
+          "type": "evidence"
+        }
+      },
+      "status": {
+        "field": "state",
+        "values": {
+          "OPEN": "planned",
+          "IN-PROGRESS": "active",
+          "IN-REVIEW": "active",
+          "CLOSED": "done",
+          "WONTFIX": "dropped",
+          "ICEBOX": "parked"
+        }
+      },
+      "file": {
+        "glob": "specs/{id}.md",
+        "required": false
+      },
+      "contract": {
+        "blocks": [],
+        "lead": ["bold"]
+      },
+      "create": {
+        "ask": ["iteration", "title", "owner"],
+        "id": "PLAT-{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "after-last:iteration",
+            "cells": {
+              "Ticket": "{id}",
+              "Title": "{title}",
+              "Iteration": "{iteration}",
+              "State": "OPEN",
+              "Owner": "{owner}",
+              "Blocked by": "",
+              "Spec": "",
+              "Review": "",
+              "Landed in": ""
+            }
+          }
+        ]
+      }
+    }
+  },
+  "rules": [
+    {
+      "rule": "ids-unique"
+    },
+    {
+      "rule": "status-known"
+    },
+    {
+      "rule": "refs-resolve"
+    },
+    {
+      "rule": "deps-done",
+      "kind": "ticket",
+      "field": "blockedBy"
+    },
+    {
+      "rule": "parent-active",
+      "kind": "ticket",
+      "except": {
+        "iteration": ["ICEBOX"]
+      }
+    },
+    {
+      "rule": "done-has-evidence",
+      "kind": "ticket",
+      "field": "landed",
+      "evidence": "commit-or-note"
+    }
+  ],
+  "status": {
+    "now": "iteration"
+  }
+}

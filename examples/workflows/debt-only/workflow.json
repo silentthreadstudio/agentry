@@ -1,0 +1,27 @@
+{
+  "lifecycle": {
+    "kind": "debt",
+    "on": {
+      "dispatched": "doing",
+      "built": "verify",
+      "failed": "doing",
+      "merged": "done"
+    },
+    "write": {
+      "status": "status",
+      "verdict": "verdict",
+      "commit": "commit"
+    }
+  },
+  "gate": {
+    "tiers": [
+      {
+        "name": "full",
+        "command": ["cargo", "test"]
+      }
+    ]
+  },
+  "cleanup": {
+    "disposable": ["target"]
+  }
+}

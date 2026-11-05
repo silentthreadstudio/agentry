@@ -1,0 +1,8 @@
+{
+  "merge": {
+    "push": "never"
+  },
+  "lanes": {
+    "maxWriters": 2
+  }
+}

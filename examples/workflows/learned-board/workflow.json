@@ -1,0 +1,31 @@
+{
+  "lifecycle": {
+    "kind": "ticket",
+    "on": {
+      "dispatched": "IN-PROGRESS",
+      "built": "IN-REVIEW",
+      "failed": "IN-PROGRESS",
+      "merged": "CLOSED"
+    },
+    "write": {
+      "status": "state",
+      "verdict": "review",
+      "commit": "landed"
+    }
+  },
+  "gate": {
+    "tiers": [
+      {
+        "name": "full",
+        "command": ["make", "check"]
+      }
+    ]
+  },
+  "commits": {
+    "subjectMax": 72,
+    "subjectPattern": "^PLAT-\\d+: "
+  },
+  "worktrees": {
+    "keep": ["release-*"]
+  }
+}

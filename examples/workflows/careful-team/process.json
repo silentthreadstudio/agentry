@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "name": "Team",
+  "root": "docs/work",
+  "kinds": {
+    "sprint": {
+      "label": "Sprint",
+      "note": "A block of tasks, worked in row order.",
+      "at": {
+        "table": "BOARD.md",
+        "heading": "Sprints"
+      },
+      "id": {
+        "column": "Sprint"
+      },
+      "fields": {
+        "name": {
+          "column": "Name"
+        },
+        "status": {
+          "column": "Status"
+        }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "doing": "active",
+          "done": "done"
+        }
+      },
+      "create": {
+        "ask": ["name"],
+        "id": "S{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": {
+              "Sprint": "{id}",
+              "Name": "{name}",
+              "Status": "todo"
+            }
+          }
+        ]
+      }
+    },
+    "task": {
+      "label": "Task",
+      "note": "One row per task, in its sprint; its contract is a block in TASKS.md.",
+      "at": {
+        "table": "BOARD.md",
+        "heading": "Tasks"
+      },
+      "id": {
+        "column": "Task"
+      },
+      "fields": {
+        "sprint": {
+          "column": "Sprint",
+          "type": "ref",
+          "ref": "sprint",
+          "role": "parent"
+        },
+        "what": {
+          "column": "What"
+        },
+        "status": {
+          "column": "Status"
+        },
+        "deps": {
+          "column": "Depends on",
+          "type": "list",
+          "ref": "task"
+        },
+        "flag": {
+          "column": "Flag",
+          "type": "flag"
+        },
+        "verdict": {
+          "column": "Verdict",
+          "case": "upper"
+        },
+        "commit": {
+          "column": "Commit",
+          "type": "commits"
+        }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped"
+        }
+      },
+      "contract": {
+        "blocks": ["TASKS.md"],
+        "lead": ["heading"]
+      },
+      "create": {
+        "ask": ["sprint", "what", "deps"],
+        "id": "T{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "after-last:sprint",
+            "cells": {
+              "Task": "{id}",
+              "Sprint": "{sprint}",
+              "What": "{what}",
+              "Status": "todo",
+              "Depends on": "{deps}",
+              "Flag": "",
+              "Verdict": "",
+              "Commit": ""
+            }
+          }
+        ],
+        "blocks": [
+          {
+            "file": "TASKS.md",
+            "under": "# Tasks",
+            "text": "### {id} · {what}\n- **Owns:** …\n- **Exposes:** …\n- **Acceptance:** …"
+          }
+        ]
+      }
+    }
+  },
+  "rules": [
+    {
+      "rule": "ids-unique"
+    },
+    {
+      "rule": "status-known"
+    },
+    {
+      "rule": "refs-resolve"
+    },
+    {
+      "rule": "deps-done",
+      "kind": "task",
+      "field": "deps"
+    },
+    {
+      "rule": "parent-active",
+      "kind": "task"
+    },
+    {
+      "rule": "sequential",
+      "kind": "sprint"
+    },
+    {
+      "rule": "closed-children",
+      "kind": "sprint"
+    },
+    {
+      "rule": "ready-has-contract",
+      "kind": "task"
+    },
+    {
+      "rule": "done-has-evidence",
+      "kind": "task",
+      "field": "commit",
+      "evidence": "commit"
+    },
+    {
+      "rule": "flagged-needs-verdict",
+      "kind": "task",
+      "flag": "flag",
+      "verdict": "verdict",
+      "pass": ["PASS"]
+    }
+  ],
+  "status": {
+    "now": "sprint"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "lifecycle": {
+    "kind": "task",
+    "on": {
+      "dispatched": "doing",
+      "built": "verify",
+      "failed": "doing",
+      "merged": "done"
+    },
+    "write": {
+      "status": "status",
+      "verdict": "verdict",
+      "commit": "commit"
+    }
+  },
+  "exec": {
+    "preset": "lean"
+  },
+  "gate": {
+    "tiers": [
+      {
+        "name": "full",
+        "command": ["npm", "test"]
+      }
+    ]
+  },
+  "cleanup": {
+    "disposable": ["node_modules", "dist"]
+  }
+}

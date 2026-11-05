@@ -1,0 +1,8 @@
+{
+  "merge": {
+    "push": "ask"
+  },
+  "lanes": {
+    "maxWriters": 3
+  }
+}

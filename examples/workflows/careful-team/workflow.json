@@ -1,0 +1,70 @@
+{
+  "lifecycle": {
+    "kind": "task",
+    "on": {
+      "dispatched": "doing",
+      "built": "verify",
+      "failed": "doing",
+      "merged": "done"
+    },
+    "write": {
+      "status": "status",
+      "verdict": "verdict",
+      "commit": "commit"
+    }
+  },
+  "exec": {
+    "preset": "strict"
+  },
+  "gate": {
+    "tiers": [
+      {
+        "name": "docs",
+        "command": ["npm", "run", "lint:docs"],
+        "when": {
+          "only": ["docs/**", "**/*.md"]
+        }
+      },
+      {
+        "name": "full",
+        "command": ["npm", "run", "ci"]
+      }
+    ],
+    "roles": {
+      "build": "pick"
+    },
+    "checklist": [
+      {
+        "name": "ui-smoke",
+        "text": "Open each changed screen; no errors in the console",
+        "when": {
+          "any": ["src/ui/**"]
+        }
+      }
+    ],
+    "after": ["CHANGELOG.md"],
+    "concurrency": 1
+  },
+  "models": {
+    "build": "sonnet",
+    "verify": {
+      "default": "sonnet",
+      "flagged": "opus"
+    }
+  },
+  "briefs": {
+    "build": ["Use npm, never yarn.", "Every new module gets a test next to it."],
+    "verify": ["Read CHANGELOG.md for the change and check it says what the diff does."]
+  },
+  "commits": {
+    "subjectMax": 72,
+    "subjectPattern": "^(feat|fix|docs|refactor|test|chore)(\\([a-z0-9-]+\\))?: ",
+    "forbid": ["^Co-Authored-By:"]
+  },
+  "guard": {
+    "allow": ["docs/STATUS.md"]
+  },
+  "cleanup": {
+    "disposable": ["node_modules", "dist", "coverage"]
+  }
+}

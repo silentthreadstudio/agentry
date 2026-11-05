@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "name": "Solo",
+  "root": "docs/work",
+  "kinds": {
+    "task": {
+      "label": "Task",
+      "note": "One row per task; its contract is a block in TASKS.md. Mark Flag for work that must get a verifier.",
+      "at": {
+        "table": "BOARD.md",
+        "heading": "Tasks"
+      },
+      "id": {
+        "column": "Task"
+      },
+      "fields": {
+        "what": {
+          "column": "What"
+        },
+        "status": {
+          "column": "Status"
+        },
+        "flag": {
+          "column": "Flag",
+          "type": "flag"
+        },
+        "verdict": {
+          "column": "Verdict",
+          "case": "upper"
+        },
+        "commit": {
+          "column": "Commit",
+          "type": "commits"
+        }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped"
+        }
+      },
+      "contract": {
+        "blocks": ["TASKS.md"],
+        "lead": ["heading"]
+      },
+      "create": {
+        "ask": ["what"],
+        "id": "T{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": {
+              "Task": "{id}",
+              "What": "{what}",
+              "Status": "todo",
+              "Flag": "",
+              "Verdict": "",
+              "Commit": ""
+            }
+          }
+        ],
+        "blocks": [
+          {
+            "file": "TASKS.md",
+            "under": "# Tasks",
+            "text": "### {id} · {what}\n- **Owns:** …\n- **Exposes:** …\n- **Acceptance:** …"
+          }
+        ]
+      }
+    }
+  },
+  "rules": [
+    {
+      "rule": "ids-unique"
+    },
+    {
+      "rule": "status-known"
+    },
+    {
+      "rule": "done-has-evidence",
+      "kind": "task",
+      "field": "commit",
+      "evidence": "commit"
+    },
+    {
+      "rule": "flagged-needs-verdict",
+      "kind": "task",
+      "flag": "flag",
+      "verdict": "verdict",
+      "pass": ["PASS", "PASS WITH NOTES"]
+    }
+  ]
+}
