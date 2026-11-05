@@ -7,13 +7,12 @@
 //
 // lanes({ root, spec, workflowPath }) -> [{ lane, ok, value, set }]   workflowPath: the workflow file in use
 // renderLanes(rows, width) -> string[]
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { nextStep } from "../cli/invoke.mjs";
 import { checkConfig } from "../config.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
-import { trackedFiles, worktrees } from "./git.mjs";
+import { isIgnored, trackedFiles, worktrees } from "./git.mjs";
 import { LOCAL, TEMPLATE, localCaveat, locateBlock } from "./instruction-files.mjs";
 import { renderBlock, upsertBlock } from "./instructions.mjs";
 import { isKept } from "./keep.mjs";
@@ -39,21 +38,12 @@ const POLICY = [
   [".agentry/work", "dir", "ignore"],
 ];
 
-function ignored(root, path) {
-  try {
-    execFileSync("git", ["-C", root, "check-ignore", "-q", "--", path], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function policy(root, [path, type, how]) {
   const tracked = trackedFiles(root, type === "dir" ? `${path}/**` : path);
   // A directory is probed through a child, so a `run/` pattern, which only matches a directory, applies.
   const state = tracked?.length
     ? "tracked"
-    : ignored(root, type === "dir" ? `${path}/_` : path)
+    : isIgnored(root, type === "dir" ? `${path}/_` : path)
       ? "ignored"
       : "undecided";
   const set = how === "ignore" ? `echo ${path}/ >> .gitignore` : `git add ${path}`;

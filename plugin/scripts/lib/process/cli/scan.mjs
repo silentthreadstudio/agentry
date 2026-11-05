@@ -9,12 +9,12 @@
 // read (`not scanned (ignored): .docs (44 md) → agentry board scan .docs/…`). Exit 0, or 2 for a `<dir>` outside the repository (as written or through a symlink).
 //
 // run(argv, { root }) -> { exit, out }
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { refuse } from "../../cli/help.mjs";
 import { nextStep } from "../../cli/invoke.mjs";
 import { ID_TOKEN, blockStarts, markdownFiles, repoMarkdown } from "../contract.mjs";
+import { ignoredPaths } from "../git.mjs";
 import * as md from "../markdown.mjs";
 import { staysInside } from "../read.mjs";
 import { fit } from "../render.mjs";
@@ -80,18 +80,7 @@ const NOT_BOARDS = new Set([
   "venv",
 ]);
 export function ignoredDirs(root) {
-  let out;
-  try {
-    out = execFileSync(
-      "git",
-      ["-C", root, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    );
-  } catch {
-    return [];
-  }
-  return out
-    .split("\0")
+  return ignoredPaths(root)
     .filter((p) => p.endsWith("/") && !p.split("/").some((seg) => NOT_BOARDS.has(seg)))
     .map((p) => p.slice(0, -1))
     .map((dir) => ({ dir, md: markdownFiles(join(root, dir)).length }))

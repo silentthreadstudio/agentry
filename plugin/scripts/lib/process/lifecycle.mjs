@@ -16,7 +16,6 @@
 // board did not have is skipped, with the rule and its message (the verdict write itself always lands).
 // A pass verdict and merged are not: the merge's record step checks the board and stops on a finding
 // by design.
-import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
@@ -31,6 +30,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, posix, relative } from "node:path";
 import { boardFiles } from "./board-diff.mjs";
+import { shortestUnique } from "./git.mjs";
 import * as md from "./markdown.mjs";
 import { readProcess } from "./read.mjs";
 import { handoffRejection } from "./spec/across.mjs";
@@ -119,31 +119,13 @@ function learnedJoin({ root, spec, name, kind, model, column }) {
   return [...seen].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
-// git's answer to `args` in `root`, trimmed; null when it fails.
-function ask(root, args) {
-  try {
-    return execFileSync("git", ["-C", root, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return null;
-  }
-}
-
-// The shortest prefix of `sha`, from 7 characters, that names that commit and no other object of any
-// type (a tag or a blob sharing the prefix would make the board's checker fail on it). `sha` itself
-// must be a commit: `cat-file -t` does not peel a tag to the commit it points at.
+// The shortest prefix of `sha` that names that commit alone (`git.mjs`'s `shortestUnique`). `sha` itself
+// must be a commit.
 function shortOf(root, sha) {
-  if (ask(root, ["cat-file", "-t", sha]) !== "commit")
-    return refuse(
-      `${sha} is not a commit in git (a tag or another object, or a prefix not unique)`,
-    );
-  const full = ask(root, ["rev-parse", "--verify", sha]);
-  for (let n = 7; n < full.length; n++)
-    if (ask(root, ["rev-parse", `--disambiguate=${full.slice(0, n)}`]) === full)
-      return full.slice(0, n);
-  return full;
+  return (
+    shortestUnique(root, sha) ??
+    refuse(`${sha} is not a commit in git (a tag or another object, or a prefix not unique)`)
+  );
 }
 
 // A finding's identity for "the board already had it": its rule, kind and item, else its message (the

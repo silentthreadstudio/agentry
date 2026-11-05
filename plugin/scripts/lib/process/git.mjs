@@ -1,7 +1,8 @@
 // git — the process kit's only git I/O: does a commit exist, recent history, ancestry, parents and
 // identities, a branch's reflog, worktrees, patch ids (to match a cherry-picked commit to its branch
 // original), whether a change is still in effect where it landed (`inEffect`), the default branch, the
-// branch checked out, the main checkout of a linked worktree and the tracked files.
+// branch checked out, the main checkout of a linked worktree, a commit's shortest unique prefix, the tracked
+// files and the ignored ones.
 //
 // Every function takes the git root first and never throws: outside a repo, or on any git error, it
 // answers false / [] / null. Refs and SHAs are checked before they reach argv, so a board cell can never
@@ -72,6 +73,16 @@ export function knownCommits(root, shas) {
 
 /** True when `sha` names a commit in the repo at `root`. Cached per root and SHA (see `knownCommits`). */
 export const hasCommit = (root, sha) => knownCommits(root, [sha]).has(sha);
+
+/** True when git ignores `path` (relative to `root`; `git check-ignore`). False outside a repository. */
+export const isIgnored = (root, path) => git(root, ["check-ignore", "-q", "--", path]) !== null;
+
+/** The untracked paths git ignores under `root`, relative to it, a wholly ignored directory as one entry
+ *  ending in `/` (`ls-files --others --ignored --exclude-standard --directory`). [] when git cannot say. */
+export function ignoredPaths(root) {
+  const args = ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"];
+  return (git(root, args) ?? "").split("\0").filter(Boolean);
+}
 
 // The tracked files under `root` matching `pattern`, a glob pathspec in which `**` crosses directories
 // (`**/TASKS.md`), relative to `root` and sorted; null when git cannot answer (not a repository).
@@ -147,6 +158,19 @@ export function patchIds(root, revs) {
 export const commitOf = (root, ref) =>
   (safeRef(ref) && git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])?.trim()) ||
   null;
+
+/** The shortest prefix of commit `sha`, from 7 characters, that names that commit and no other object of
+ *  any type (a tag or a blob sharing the prefix would make the board's checker fail on it). null when `sha`
+ *  is not a commit: `cat-file -t` does not peel a tag to the commit it points at. */
+export function shortestUnique(root, sha) {
+  if (!safeRef(sha) || git(root, ["cat-file", "-t", sha])?.trim() !== "commit") return null;
+  const full = git(root, ["rev-parse", "--verify", sha])?.trim();
+  if (!full) return null;
+  for (let n = 7; n < full.length; n++)
+    if (git(root, ["rev-parse", `--disambiguate=${full.slice(0, n)}`])?.trim() === full)
+      return full.slice(0, n);
+  return full;
+}
 
 /** The full SHA of the commit each of `refs` names, in one `cat-file --batch-check`: Map ref → SHA, a ref
  *  that names no commit left out. */

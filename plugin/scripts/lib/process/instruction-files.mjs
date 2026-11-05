@@ -11,11 +11,10 @@
 //   `files` is `{ [name]: { text, lossy? } }` for AGENTS.md and CLAUDE.local.md, the second left out when
 //   it is the same file as the first; a block in both is an `error`
 // localCaveat(root) -> "tracked" | "not-ignored" | null    why a block in CLAUDE.local.md would leak
-import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PLUGIN_ROOT } from "./default-agent.mjs";
-import { trackedFiles } from "./git.mjs";
+import { isIgnored, trackedFiles } from "./git.mjs";
 import { hasBlock } from "./instructions.mjs";
 import { staysInside } from "./read.mjs";
 
@@ -68,10 +67,5 @@ export function localCaveat(root) {
   const tracked = trackedFiles(root, LOCAL);
   if (tracked === null) return null;
   if (tracked.length > 0) return "tracked";
-  try {
-    execFileSync("git", ["-C", root, "check-ignore", "-q", "--", LOCAL], { stdio: "ignore" });
-    return null;
-  } catch {
-    return "not-ignored";
-  }
+  return isIgnored(root, LOCAL) ? null : "not-ignored";
 }
