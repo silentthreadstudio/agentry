@@ -7,14 +7,14 @@ import { now, short } from "../../fmt.mjs";
 import { builderStatus, summaryOf, unwrap, usedMemories } from "../../report.mjs";
 import { expects, skipsVerifier } from "../../rounds.mjs";
 import { brokenIn, rulesOf } from "../../subjects.mjs";
-import { git, porcelain } from "../../worktree.mjs";
+import { git, porcelain, rebaseInProgress } from "../../worktree.mjs";
 import { nestedTrees } from "../admission.mjs";
 import { writeBuilt } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { mainGuard } from "../guard/main-guard.mjs";
 import { headOf, ownStart } from "../guard/snapshot.mjs";
 import { heldCopy, isFlagged, mustLedger, readReport, refuse, stepWith } from "../lane.mjs";
-import { finishRebase, rebasing } from "../rebasing.mjs";
+import { finishRebase } from "../rebasing.mjs";
 import { view } from "../view.mjs";
 
 // The outside cause a `BLOCKED: external: <reason>` report names, read on the status line builderStatus
@@ -69,7 +69,7 @@ export function run(ctx, id) {
   const text = readReport(parked ? saved : round.reportPath, "builder");
   const all = ledgers.list(root);
   const isRebase = round.step === "rebase";
-  if (isRebase && rebasing(ledger.worktree))
+  if (isRebase && rebaseInProgress(ledger.worktree))
     refuse(
       `a rebase is still in progress in the worktree ${ledger.worktree}: finish it (git rebase --continue) or abort it, then report again`,
     );

@@ -7,8 +7,8 @@
 // Unlike `process/git.mjs` (read-only, never throws), these calls change the repository, so a git failure
 // throws an Error carrying git's own stderr. Node built-ins only.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { idProblem } from "../id.mjs";
 import { branchTips, defaultBranch, worktrees } from "../process/git.mjs";
 
@@ -72,6 +72,34 @@ export function porcelain(dir) {
   if (res.status !== 0) throw new Error(`git status: ${res.stderr.trim()}`);
   return res.stdout.split("\0").filter(Boolean);
 }
+
+/** The path git keeps `name` at for the worktree at `dir` (`rev-parse --git-path`: `MERGE_HEAD`,
+ *  `rebase-merge`, `sequencer/todo`), when it exists; else null. */
+export function gitPathIn(dir, name) {
+  const res = git(dir, ["rev-parse", "--git-path", name]);
+  const path = res.status === 0 ? resolve(dir, res.stdout.trim()) : null;
+  return path && existsSync(path) ? path : null;
+}
+
+/** Is a rebase in progress in the worktree at `dir` (a conflict stopped it, or a run was killed mid-way)? */
+export const rebaseInProgress = (dir) =>
+  Boolean(gitPathIn(dir, "rebase-merge") || gitPathIn(dir, "rebase-apply"));
+
+/** The branch a rebase in the worktree at `dir` works on (its HEAD is detached meanwhile), or null. */
+export function rebasingBranch(dir) {
+  for (const name of ["rebase-merge/head-name", "rebase-apply/head-name"]) {
+    const file = gitPathIn(dir, name);
+    if (file)
+      return readFileSync(file, "utf8")
+        .trim()
+        .replace(/^refs\/heads\//, "");
+  }
+  return null;
+}
+
+/** The files a stopped cherry-pick, rebase or merge left unmerged in the worktree at `dir`. */
+export const unmergedFiles = (dir) =>
+  git(dir, ["diff", "--name-only", "--diff-filter=U", "-z"]).stdout.split("\0").filter(Boolean);
 
 /** Ignored files and directories in `dir` (a wholly ignored directory is one entry, `dir/`). */
 export function ignoredFiles(dir) {

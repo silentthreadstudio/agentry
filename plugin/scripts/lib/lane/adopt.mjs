@@ -17,14 +17,20 @@
 //                         nor another case of one
 // strayTree(trees, branch, tips) -> the worktree on another spelling of `branch` that no branch is named
 // unnamedHead(tree) -> the refusal for a worktree on a spelling no branch is named
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { branchTips, worktrees } from "../process/git.mjs";
 import { shellWord } from "../text/shell.mjs";
 import { first, short } from "./fmt.mjs";
 import { commitOf, filesOf, subjectOf } from "./land.mjs";
 import { spikeCalls } from "./owner-calls.mjs";
-import { git, porcelain } from "./worktree.mjs";
+import {
+  git,
+  gitPathIn,
+  porcelain,
+  rebaseInProgress,
+  rebasingBranch,
+  unmergedFiles,
+} from "./worktree.mjs";
 
 /** `text` for a one-line message: as it is, or JSON-escaped when it is empty or holds a control
  *  character (a newline would split the line). */
@@ -69,30 +75,11 @@ export const unnamedHead = (tree) =>
 // The open lanes of `lanes` (ledgers): not merged or closed.
 const isOpen = (l) => l.state !== "merged" && l.state !== "closed";
 
-// The git-path `name` of the worktree at `dir` when it is there, else null.
-function gitPathIn(dir, name) {
-  const res = git(dir, ["rev-parse", "--git-path", name]);
-  const path = res.status === 0 ? resolve(dir, res.stdout.trim()) : null;
-  return path && existsSync(path) ? path : null;
-}
-
 // What the worktree at `dir` is in the middle of, or null: a rebase, a merge or a cherry-pick.
 function midOp(dir) {
-  if (gitPathIn(dir, "rebase-merge") || gitPathIn(dir, "rebase-apply")) return "rebase";
+  if (rebaseInProgress(dir)) return "rebase";
   if (gitPathIn(dir, "MERGE_HEAD")) return "merge";
   if (gitPathIn(dir, "CHERRY_PICK_HEAD")) return "cherry-pick";
-  return null;
-}
-
-// The branch a rebase in the worktree at `dir` works on (its HEAD is detached meanwhile), or null.
-function rebasing(dir) {
-  for (const name of ["rebase-merge/head-name", "rebase-apply/head-name"]) {
-    const file = gitPathIn(dir, name);
-    if (file)
-      return readFileSync(file, "utf8")
-        .trim()
-        .replace(/^refs\/heads\//, "");
-  }
   return null;
 }
 
@@ -107,7 +94,7 @@ function treeOf(root, branch, tips) {
   if (stray) return { problem: unnamedHead(stray) };
   const heads = all
     .filter((t) => t.branch === null && existsSync(t.path))
-    .map((t) => ({ path: t.path, branch: rebasing(t.path) }))
+    .map((t) => ({ path: t.path, branch: rebasingBranch(t.path) }))
     .filter((t) => t.branch);
   const mid = heads.find((t) => t.branch === branch);
   if (mid) return { path: mid.path, op: "rebase" };
@@ -197,9 +184,7 @@ export function pickOnto(worktree, { commits, diff }) {
   ]);
   if (picked.status === 0) return { ok: true };
   const stopped = commitOf(worktree, "CHERRY_PICK_HEAD");
-  const files = git(worktree, ["diff", "--name-only", "--diff-filter=U", "-z"])
-    .stdout.split("\0")
-    .filter(Boolean);
+  const files = unmergedFiles(worktree);
   const what = stopped ? `${short(stopped)} ${subjectOf(worktree, stopped)}` : "the cherry-pick";
   const then = diff ? `, then git apply --3way ${shellWord(diff)}` : "";
   return {

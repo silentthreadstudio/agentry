@@ -1,21 +1,12 @@
-// exec/rebasing — what a rebase of a lane's branch leaves: whether one is still in progress in its
-// worktree, the range-diff kept in the run dir, and the base and the guard's start moved once it is done.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+// exec/rebasing — what a rebase of a lane's branch leaves: the range-diff kept in the run dir, and the base
+// and the guard's start moved once it is done (whether one is still in progress is `worktree.mjs`'s).
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import * as ledgers from "../../process/ledger.mjs";
 import { short } from "../fmt.mjs";
 import { isAncestor, mergeBaseOf } from "../land.mjs";
 import { git } from "../worktree.mjs";
 import { moveStart } from "./guard/main-guard.mjs";
-
-// Is a rebase still in progress in `worktree` (a conflict stopped it, or it was never continued)?
-export function rebasing(worktree) {
-  for (const name of ["rebase-merge", "rebase-apply"]) {
-    const res = git(worktree, ["rev-parse", "--git-path", name]);
-    if (res.status === 0 && existsSync(resolve(worktree, res.stdout.trim()))) return true;
-  }
-  return false;
-}
 
 // A range-diff line pairing an old commit with a new one: `1:  abc1234 = 1:  def5678 subject`, its mark
 // `=` (the same patch), `!` (changed), `<` (dropped) or `>` (added).

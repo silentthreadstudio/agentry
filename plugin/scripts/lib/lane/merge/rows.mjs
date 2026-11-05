@@ -1,7 +1,6 @@
 // merge/rows — the rows the preflight and the land both read before main changes: the ledger (adopting
 // a `--branch`), the board, the commits to land, the repo checks and the push policy.
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { readConfig } from "../../config.mjs";
 import { check } from "../../process/check.mjs";
 import { branchTips, defaultBranch, worktrees } from "../../process/git.mjs";
@@ -24,7 +23,7 @@ import { dirtyEntries } from "../own-memory.mjs";
 import { verdicts } from "../rounds.mjs";
 import { chainOf } from "../stack.mjs";
 import { brokenIn, rulesOf, withTypeHints } from "../subjects.mjs";
-import { findByBranch, git } from "../worktree.mjs";
+import { findByBranch, rebasingBranch } from "../worktree.mjs";
 import { ok, red, save, short, skip, wait, warn } from "./lane.mjs";
 
 // The ledger states a land may start or resume from; an exec lane still building or verifying is not
@@ -37,20 +36,6 @@ export const stoppedCut = (id, ledger) =>
   ledger?.merge?.cut
     ? `${id} is a stopped cut: exec cut ${id} --decision <D> --apply rolls it back`
     : null;
-
-// The branch a rebase in the worktree at `dir` works on (its HEAD is detached meanwhile), or null: read
-// as `exec adopt` reads it.
-function rebasing(dir) {
-  for (const name of ["rebase-merge/head-name", "rebase-apply/head-name"]) {
-    const res = git(dir, ["rev-parse", "--git-path", name]);
-    const file = res.status === 0 ? resolve(dir, res.stdout.trim()) : null;
-    if (file && existsSync(file))
-      return readFileSync(file, "utf8")
-        .trim()
-        .replace(/^refs\/heads\//, "");
-  }
-  return null;
-}
 
 /** `--branch` as a branch to land, worded as `exec adopt` words it: `{ branch, tip }`, the tip from the
  *  branch list (`resolveBranch`), or `{ problem }`: no branch by that exact name (a worktree on it with no
@@ -69,7 +54,7 @@ function adoptable(root, branch) {
   if (checkedOut) return named;
   const heads = all
     .filter((t) => t.branch === null && existsSync(t.path))
-    .map((t) => ({ path: t.path, branch: rebasing(t.path) }))
+    .map((t) => ({ path: t.path, branch: rebasingBranch(t.path) }))
     .filter((t) => t.branch && t.branch !== branch);
   const stray = strayTree(all, branch, tips) ?? strayTree(heads, branch, tips);
   return stray ? { problem: unnamedHead(stray) } : named;

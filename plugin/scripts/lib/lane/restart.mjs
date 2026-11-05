@@ -21,11 +21,9 @@ import { resolveBranch } from "./adopt.mjs";
 import { applyPatch, asidePatch } from "./carry-io.mjs";
 import { first, short } from "./fmt.mjs";
 import { commitOf, ignoredIn, subjectOf } from "./land.mjs";
-import { branchOf, git, porcelain, remove } from "./worktree.mjs";
+import { branchOf, git, porcelain, remove, unmergedFiles } from "./worktree.mjs";
 
 const processDir = (root) => join(root, ".agentry", "run", "process");
-const unmerged = (dir) =>
-  git(dir, ["diff", "--name-only", "--diff-filter=U", "-z"]).stdout.split("\0").filter(Boolean);
 /** What the old lane leaves behind, read only: its branch tip (null when the branch is gone), the commits
  *  a carry would pick onto main's HEAD (`carryRange`), and the ignored files in its worktree that
  *  `cleanup.disposable` (and the defaults) do not cover, which a removal would delete. An empty directory (or one holding only empty ones) is no file: it
@@ -181,7 +179,7 @@ export function carry(worktree, { picks = [], diff }) {
     ]);
     if (picked.status !== 0) {
       const stopped = commitOf(worktree, "CHERRY_PICK_HEAD");
-      const files = unmerged(worktree);
+      const files = unmergedFiles(worktree);
       const what = stopped
         ? `${short(stopped)} ${subjectOf(worktree, stopped)}`
         : "the cherry-pick";
@@ -198,7 +196,7 @@ export function carry(worktree, { picks = [], diff }) {
   if (!patch) return { ok: true, applied: false };
   const applied = applyPatch(worktree, patch, "--3way");
   if (applied.status === 0) return { ok: true, applied: true };
-  const files = unmerged(worktree);
+  const files = unmergedFiles(worktree);
   return {
     ok: false,
     applied: files.length > 0,

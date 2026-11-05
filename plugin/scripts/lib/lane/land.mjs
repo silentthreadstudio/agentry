@@ -7,13 +7,13 @@
 // Every git call is an argv array, never a shell line (a zsh variable that did not split once turned a
 // cherry-pick into a silent no-op), and every one reads its own exit code. A git refusal is an answer
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { isAncestor as ancestor, commitOf, mergeBase } from "../process/git.mjs";
 import { globMatch } from "../process/glob.mjs";
 import { first } from "./fmt.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
-import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
+import { findByBranch, git, gitPathIn, ignoredFiles, remove } from "./worktree.mjs";
 
 const lines = (text) => text.split("\n").filter(Boolean);
 const short = (sha) => sha.slice(0, 7);
@@ -143,26 +143,21 @@ export function landedSince(root, { preHead, planned }) {
   return { landed: chain, rest: planned.slice(chain.length) };
 }
 
-const gitPath = (root, name) => {
-  const res = git(root, ["rev-parse", "--git-path", name]);
-  return res.status === 0 ? resolve(root, res.stdout.trim()) : null;
-};
-
 /** The cherry-pick or revert git is in the middle of in `root` (a killed run leaves one): `[{ name,
  *  path }]` for each of `.git/sequencer`, `CHERRY_PICK_HEAD` and `REVERT_HEAD` that exists; empty when
  *  none. */
 export function pickInProgress(root) {
   return ["sequencer", "CHERRY_PICK_HEAD", "REVERT_HEAD"].flatMap((name) => {
-    const path = gitPath(root, name);
-    return path && existsSync(path) ? [{ name, path }] : [];
+    const path = gitPathIn(root, name);
+    return path ? [{ name, path }] : [];
   });
 }
 
 /** What git's sequencer still has to do, as its todo file lists it: `[{ command, word, sha }]` (`sha`
  *  the full SHA `word` names, or null), or null when there is no todo file. */
 export function sequencerTodo(root) {
-  const path = gitPath(root, "sequencer/todo");
-  if (!path || !existsSync(path)) return null;
+  const path = gitPathIn(root, "sequencer/todo");
+  if (!path) return null;
   return lines(readFileSync(path, "utf8"))
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"))

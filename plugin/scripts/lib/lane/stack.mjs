@@ -12,14 +12,13 @@
 // rebaseOnto(worktree, { onto, base, tip }) -> { ok } | { ok: false, stopped, subject, files, reason, restored }
 //
 // Every git call is one argv; a git refusal is an answer, not a throw. Node built-ins only.
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { prefix } from "../cli/invoke.mjs";
 import { shellQuote as q } from "../text/shell.mjs";
 import { short } from "./fmt.mjs";
 import { commitOf, isAncestor, subjectOf } from "./land.mjs";
-import { git, porcelain } from "./worktree.mjs";
+import { git, porcelain, rebaseInProgress, unmergedFiles } from "./worktree.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "lane.mjs");
 
@@ -89,15 +88,6 @@ export function gateRefusal(root, ledger, { on, due, tip, state }) {
   return `${on} is ${state} since ${id} was cut on it: ${wont}; ${id} lands only after it, or ${restackLine(root, id, " --main")} takes it off`;
 }
 
-/** Is a rebase in progress in `worktree` (a conflict stopped it, or a restack was killed mid-way)? */
-function rebaseInProgress(worktree) {
-  for (const name of ["rebase-merge", "rebase-apply"]) {
-    const res = git(worktree, ["rev-parse", "--git-path", name]);
-    if (res.status === 0 && existsSync(resolve(worktree, res.stdout.trim()))) return true;
-  }
-  return false;
-}
-
 /** What keeps a restack from starting in `worktree`: `rebase in progress` first when one is, then each
  *  `git status` entry. Empty when the worktree is clean. Throws when it is not a work tree. */
 export const unclean = (worktree) => [
@@ -135,9 +125,7 @@ export function rebaseOnto(worktree, { onto, base, tip }) {
   const res = git(worktree, [...REBASE, "--onto", onto, base]);
   if (res.status === 0) return { ok: true };
   const stopped = commitOf(worktree, "REBASE_HEAD");
-  const files = git(worktree, ["diff", "--name-only", "--diff-filter=U", "-z"])
-    .stdout.split("\0")
-    .filter(Boolean);
+  const files = unmergedFiles(worktree);
   const reason =
     (res.stderr || res.stdout).trim().split("\n")[0] || `git rebase exited ${res.status}`;
   git(worktree, ["rebase", "--abort"]); // nothing in progress (a bad ref) fails here, harmlessly
