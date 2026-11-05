@@ -1,6 +1,7 @@
 // exec/view — what a step prints: the one JSON object every step returns (the next step, the prompt,
 // brief and dispatch of an agent round, how a held or stopped lane goes on), from the ledger and the
-// workflow file as they are now. `exec-view.mjs` renders it as text.
+// workflow file as they are now. Its text form, and the words for holds and idle lanes, are in the
+// library's `../exec-view.mjs`.
 import { basename, join } from "node:path";
 import { prefix } from "../../cli/invoke.mjs";
 import * as ledgers from "../../process/ledger.mjs";

@@ -1,6 +1,8 @@
 // exec/lane — what every exec step and domain module shares: the refusal and the stop a step throws
 // (`run` makes them exit 2 and 1), the `lane exec` line a step names next, and the reads every step
-// starts from: the lane's ledger, its owned files, its flag and its saved reports.
+// starts from: the lane's ledger, its owned files, its flag and its saved reports. They live together
+// as the bottom of `exec/`, as `merge/lane.mjs` is of `merge/`: every module above may import them, and
+// they import nothing in `exec/`, so no cycle can form through them.
 import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

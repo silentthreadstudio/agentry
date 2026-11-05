@@ -1,7 +1,8 @@
 // exec-view — the readable form of a `lane exec` step's result (the same fields `--json` prints, same
 // names, same order): a header line, then one `key: value` per field; a multi-line text (the prompt) or
 // an object is indented under its key; `idle` is its one line. Also the words a held lane and an idle one
-// are shown in, which `lane session start` prints too. PURE.
+// are shown in, which `lane session start` prints too. PURE. The object it renders is built by
+// `exec/view.mjs`.
 //
 // humanView(result) -> string
 // heldText(hold, total) -> string      the `held:` line's text (`total`: the contract's steps, 0 for none)
