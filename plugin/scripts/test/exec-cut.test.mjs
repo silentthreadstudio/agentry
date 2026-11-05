@@ -1120,3 +1120,18 @@ test("lane merge --resolve landed never closes a stopped cut as merged, nor any 
   mergeRefusesCut(r, "--resolve");
   assert.equal(ledgerOf(r.root, "T1").state, "merging");
 });
+
+test("lane merge --push and --cleanup on a completed cut refuse and write nothing, no land advertised", () => {
+  const r = repo();
+  parked(r);
+  assert.equal(lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply").exit, 0);
+  const before = snapshot(r);
+  for (const args of [["--push", "--approved"], ["--cleanup"]]) {
+    const res = run(r, LANE, ["merge", "T1", ...args]);
+    assert.equal(res.exit, 2, res.out);
+    assert.match(res.out, /T1's lane is closed \(cut\): there is no land to (push|clean up)/);
+    assert.doesNotMatch(res.out, /next:|stopped cut/, res.out);
+    assert.deepEqual(snapshot(r), before, `merge ${args[0]} changed something`);
+  }
+  assert.equal(ledgerOf(r.root, "T1").next, null);
+});

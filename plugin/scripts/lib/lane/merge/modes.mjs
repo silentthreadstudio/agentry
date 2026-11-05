@@ -27,6 +27,12 @@ function mergedLedger(lane, step) {
   lane.ledger = ledger;
   const cut = stoppedCut(lane.id, ledger);
   if (cut) return done(2, lane, [red(step, cut)]);
+  // A closed (cut) lane never lands: refused without a land as its next, which `done` would keep.
+  if (ledger.state === "closed") {
+    const verb = step === "cleanup" ? "clean up" : step;
+    const why = `${lane.id}'s lane is closed${ledger.cut ? " (cut)" : ""}: there is no land to ${verb}`;
+    return done(2, lane, [red(step, why)]);
+  }
   if (ledger.state !== "merged")
     return done(2, lane, [red(step, `${lane.id} is not landed yet`)], landNext(lane.id));
   return null;
