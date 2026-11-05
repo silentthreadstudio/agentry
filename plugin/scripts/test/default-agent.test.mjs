@@ -8,9 +8,11 @@ import {
   chmodSync,
   existsSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -104,6 +106,20 @@ test("a different agent is reported, and replaced in its place only with --apply
   assert.equal(written.json.current, "someone:else");
   assert.equal(written.json.wrote, true);
   assert.equal(settingsOf(ctx.root), `{\n  "agent": "${AGENT}",\n  "model": "opus"\n}\n`);
+});
+
+test("--apply writes through a settings link, leaves it a link and no temp file behind", () => {
+  const ctx = project();
+  const real = join(scratch(), "shared.json");
+  writeFileSync(real, '{"model":"opus"}');
+  mkdirSync(join(ctx.root, ".claude"));
+  const link = join(ctx.root, ".claude", "settings.json");
+  symlinkSync(real, link);
+  assert.equal(call(["--apply"], ctx).json.wrote, true);
+  assert.equal(lstatSync(link).isSymbolicLink(), true);
+  assert.equal(readFileSync(real, "utf8"), `{\n  "model": "opus",\n  "agent": "${AGENT}"\n}\n`);
+  assert.deepEqual(readdirSync(dirname(real)), ["shared.json"]);
+  assert.deepEqual(readdirSync(join(ctx.root, ".claude")), ["settings.json"]);
 });
 
 test("--apply leaves a file that already names the agent byte for byte", () => {

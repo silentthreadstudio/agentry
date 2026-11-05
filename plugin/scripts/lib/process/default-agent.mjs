@@ -9,17 +9,10 @@
 // resolvedFrom(stream, current) -> { resolved, how }   PURE: reads a `claude -p` stream-json run
 // verifyLive(root, current, { claude }) -> { resolved, how }
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { atomicWrite } from "../fs/atomic.mjs";
 
 export const AGENT = "agentry:conductor";
 const [PLUGIN, NAME] = AGENT.split(":");
@@ -104,7 +97,9 @@ export function writeAgent(root, { pluginRoot = PLUGIN_ROOT } = {}) {
   if (data.agent === AGENT) return { file, wrote: false };
   try {
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, `${JSON.stringify({ ...data, agent: AGENT }, null, 2)}\n`);
+    // Through the whole file: a settings.json that is a link (a dotfiles setup) stays a link.
+    const target = existsSync(file) ? realpathSync(file) : file;
+    atomicWrite(target, `${JSON.stringify({ ...data, agent: AGENT }, null, 2)}\n`);
   } catch (e) {
     return { file, error: `cannot write (${e.code ?? e.message})` };
   }
