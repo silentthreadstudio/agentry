@@ -18,6 +18,7 @@ import {
   renderBrief,
   stepReminder,
   stepSlots,
+  stoppedRound,
   withSection,
 } from "../brief.mjs";
 import { citedDecisions } from "../decisions.mjs";
@@ -25,10 +26,11 @@ import { ownedMark } from "../exec-view.mjs";
 import { now, short } from "../fmt.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { recalledFacts } from "../recall.mjs";
+import { nextListOf } from "../report.mjs";
 import { addRound, greenOn, verdicts } from "../rounds.mjs";
 import { branchOf } from "../worktree.mjs";
 import { headOf } from "./guard/snapshot.mjs";
-import { contractFile, isFlagged, laneLine, ownedOf } from "./lane.mjs";
+import { contractFile, isFlagged, laneLine, ownedOf, readOr } from "./lane.mjs";
 import { noteLines, sentBack, withNotesToFix } from "./notes.mjs";
 
 function gateLine(root, spec, ledger) {
@@ -183,6 +185,12 @@ export function brief({ root, spec, model }, ledger, dispatch) {
     const reminder = stepReminder({ steps: ledger.steps, stepRun: dispatch.stepRun });
     if (reminder) text = withSection(text, reminder);
   }
+  // A fresh builder sent on after `resume --fresh` is told where the one before it stopped.
+  if (dispatch.stopped && fresh)
+    text = withSection(
+      text,
+      stoppedRound({ report: dispatch.stopped, next: nextListOf(readOr(dispatch.stopped)) }),
+    );
   if (owner)
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
   // A restarted lane's first brief says what was carried into the tree.

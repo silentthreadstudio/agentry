@@ -20,6 +20,7 @@
 //   withSection     a rendered brief with a section put in before its first `## ` section
 //   ownerChange     the owner's change a verified lane was sent back with, as a builder's or verifier's section
 //   carriedWork     the `## Carried work` section of a restarted lane's first build brief
+//   stoppedRound    the `## The stopped round` section of a fresh builder's brief after a resume
 //   bullets         a list as brief lines
 //
 // Reads the board's files, the templates and (for a rebase) the lane's commits; writes nothing. Node
@@ -351,6 +352,26 @@ export function carriedWork({
     `A previous builder's work is in the tree (${commits} commits, ${files} files uncommitted). ${last}${staged}${stop}`,
     ...(verdictLine ? ["", verdictLine] : []),
     ...(noteLines ? ["", ...noteLines] : []),
+    "",
+  ].join("\n");
+}
+
+/** The `## The stopped round` section of a fresh builder's brief after `resume --fresh`: the report of
+ *  the round that stopped (`report`, a path) to read first, and `next`, the items of that report's own next
+ *  list (`nextListOf`), quoted when it has one. */
+export function stoppedRound({ report, next = [] }) {
+  return [
+    "## The stopped round",
+    "",
+    `The builder before you stopped this lane. Its report is ${report}: read it first.`,
+    ...(next.length
+      ? [
+          "",
+          "Its own next list, which you carry on from:",
+          "",
+          ...next.map((item) => `> - ${item}`),
+        ]
+      : []),
     "",
   ].join("\n");
 }

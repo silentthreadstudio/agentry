@@ -9,6 +9,7 @@
 //   verdictOf      `Verdict: PASS | PASS WITH NOTES | FAIL`, and only as the LAST non-empty line
 //   usedMemories   the ids a builder cites in `used_memories`
 //   summaryOf      one line, ≤ 120 chars, for the ledger and the handoff
+//   nextListOf     the list under a report's own `Next` heading or label, as plain items
 import { idProblem } from "../id.mjs";
 
 const WRAPPER = /<\/?(?:subagent|task|task_result|text)(?:\s[^>]*)?>/g;
@@ -109,4 +110,29 @@ export function summaryOf(text) {
     return body.length > SUMMARY_CUT + 1 ? `${body.slice(0, SUMMARY_CUT)}…` : body;
   }
   return "";
+}
+
+const NEXT_LABEL = /^[\s>#*`_-]*next(?:\s+(?:steps?|list|up|actions?))?[\s*`_]*:?[\s*`_]*$/i;
+/** How many items of a report's next list are kept. */
+export const NEXT_CAP = 10;
+
+/** The items of the list under the report's `Next` heading or label (a line holding only that word, or
+ *  `Next steps`, `Next list`), as text without the bullet or number: the list ends at the first line that
+ *  is neither an item nor an item's indented continuation, at most `NEXT_CAP` items. `[]` when the report
+ *  has no such label or nothing under it. */
+export function nextListOf(text) {
+  const lines = unwrap(text).split("\n");
+  const at = lines.findIndex((l) => NEXT_LABEL.test(l));
+  if (at < 0) return [];
+  const items = [];
+  for (const line of lines.slice(at + 1)) {
+    if (!line.trim()) {
+      if (items.length) break;
+      continue;
+    }
+    if (ITEM.test(line.trim())) items.push(line.trim().replace(ITEM, ""));
+    else if (items.length && /^\s{2,}\S/.test(line)) items[items.length - 1] += ` ${line.trim()}`;
+    else break;
+  }
+  return items.slice(0, NEXT_CAP);
 }

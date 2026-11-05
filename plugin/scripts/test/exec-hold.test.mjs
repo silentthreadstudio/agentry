@@ -485,6 +485,39 @@ test("a parked lane resumes its builder with the parked line, or a fresh builder
   assert.match(readFileSync(out.brief, "utf8"), /The lane was parked with uncommitted work/);
 });
 
+test("resume --fresh names the stopped round's report and quotes its next list; with no report it names none", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out, "one.txt");
+  lane(r, "report", "T1", "--agent", "builder-1");
+  out = lane(r, "resume", "T1", "--note", "OK").json;
+  // Parked before the builder wrote anything: nothing to point at.
+  assert.equal(lane(r, "hold", "T1", "--for", "later").exit, 0);
+  out = lane(r, "resume", "T1", "--note", "a new agent", "--fresh").json;
+  assert.equal(out.mode, "fresh");
+  assert.doesNotMatch(readFileSync(out.brief, "utf8"), /## The stopped round/);
+  // Parked with a report that ends in a next list.
+  writeFileSync(
+    out.reportPath,
+    "NEEDS_CONTEXT\nstopped half way\n\n## Next\n\n- write two.txt\n  with two lines\n- run the checks\n\nused_memories: none\n",
+  );
+  assert.equal(lane(r, "hold", "T1", "--for", "later").exit, 0);
+  const stopped = out.reportPath;
+  out = lane(r, "resume", "T1", "--note", "again", "--fresh").json;
+  const brief = readFileSync(out.brief, "utf8");
+  assert.ok(
+    brief.includes(
+      `## The stopped round\n\nThe builder before you stopped this lane. Its report is ${stopped}: read it first.\n\nIts own next list, which you carry on from:\n\n> - write two.txt with two lines\n> - run the checks\n`,
+    ),
+    brief,
+  );
+  assert.equal(ledgerOf(r.root, "T1").rounds.at(-1).stopped, stopped);
+  // A resume that keeps the builder (no --fresh) adds no such section.
+  assert.equal(lane(r, "hold", "T1", "--for", "later").exit, 0);
+  const same = lane(r, "resume", "T1", "--note", "go on").json;
+  assert.doesNotMatch(readFileSync(same.brief, "utf8"), /## The stopped round/);
+});
+
 test("a hold may name the builder out on the round, and the resume goes back to it", () => {
   const r = repo();
   const out = lane(r, "start", "T3").json;

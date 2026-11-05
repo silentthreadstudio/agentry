@@ -9,7 +9,7 @@ import { writeBuilt } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { mainGuard } from "../guard/main-guard.mjs";
 import { headOf } from "../guard/snapshot.mjs";
-import { isFlagged, laneLine, mustLedger, refuse, stepWith } from "../lane.mjs";
+import { isFlagged, laneLine, mustLedger, refuse, saved, stepWith } from "../lane.mjs";
 import { answerOf, stepCount, view } from "../view.mjs";
 
 // The owner's answer to a hold: recorded with its time, then the held round's builder carries on (the
@@ -36,6 +36,11 @@ export function run(ctx, id) {
     ? `main moved by ${main.moved} commits, none touching this lane's files: resuming on base ${short(ledger.base)}`
     : null;
   const flagged = isFlagged(ctx, ledger);
+  // The report of the round that stopped, for a fresh builder: the hold's own, else the held round's.
+  const stopped =
+    ledger.hold?.report ??
+    ledger.hold?.evidence ??
+    (ledger.rounds[(ledger.hold?.round ?? 0) - 1] ?? ledger.rounds.at(-1))?.reportPath;
   const res = stepWith(ledger, {
     type: "resume",
     note,
@@ -56,7 +61,7 @@ export function run(ctx, id) {
   let dispatch = res.dispatch;
   if (dispatch && fresh) {
     const { agent, ...rest } = dispatch;
-    dispatch = { ...rest, mode: "fresh" };
+    dispatch = { ...rest, mode: "fresh", ...(saved(stopped) && { stopped }) };
   }
   next = dispatchNext(ctx, next, dispatch);
   ledgers.write(root, next);

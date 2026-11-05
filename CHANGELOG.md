@@ -16,6 +16,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **`lane exec restart --carry` takes `--note "<why>"`.** The note is recorded and quoted in the carried
   lane's first brief, which now also lists the old lane's verdicts and says verified commits are not to be
   built again.
+- **`lane exec resume --fresh` points the new builder at the report that stopped.** Its brief names the
+  stopped round's report and quotes the list under that report's `Next` heading, so the conductor no longer
+  copies the path into the owner's note.
 
 ## [0.3.0] — 2026-11-05
 

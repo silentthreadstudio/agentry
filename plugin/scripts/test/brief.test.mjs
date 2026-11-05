@@ -28,11 +28,13 @@ import {
   rewordSlots,
   slotsOf,
   stepSlots,
+  stoppedRound,
 } from "../lib/lane/brief.mjs";
 import { suggestBuilder } from "../lib/lane/builder.mjs";
 import { citedDecisions, decisionKind } from "../lib/lane/decisions.mjs";
 import { outsideOwns, ownedFiles, ownsTestsWithoutFile, withNew } from "../lib/lane/owns.mjs";
 import { recalledFacts } from "../lib/lane/recall.mjs";
+import { NEXT_CAP, nextListOf } from "../lib/lane/report.mjs";
 import { readProcess } from "../lib/process/read.mjs";
 import { stepsOf } from "../lib/process/steps.mjs";
 import { commitFile, git, gitEnv, tempRepo } from "./git-repo.mjs";
@@ -1341,3 +1343,37 @@ for (const mainName of ["main", "trunk"]) {
     assert.match(brief, /no clean-up, no reworded commit, no extra commit\./);
   });
 }
+
+// ---- the stopped round a fresh builder is pointed to -------------------------------------
+
+test("nextListOf reads the list under a Next heading or label, in bullets or numbers, with continuations", () => {
+  assert.deepEqual(
+    nextListOf("DONE\n\n## Next\n\n- one\n- two\n  more of two\n\nused_memories: none\n"),
+    ["one", "two more of two"],
+  );
+  assert.deepEqual(nextListOf("NEEDS_CONTEXT\nNext steps:\n1. a\n2) b\nThen prose.\n"), ["a", "b"]);
+  assert.deepEqual(nextListOf("**Next**\n* x\n"), ["x"]);
+});
+
+test("nextListOf is empty without a label, with nothing under it, or when next is only prose", () => {
+  assert.deepEqual(nextListOf("DONE\n- a\n- b\n"), []);
+  assert.deepEqual(nextListOf("## Next\n\nNothing, it is done.\n"), []);
+  assert.deepEqual(nextListOf("The next step is to rebase.\n- a\n"), []);
+  assert.deepEqual(nextListOf(""), []);
+});
+
+test("nextListOf keeps at most NEXT_CAP items", () => {
+  const long = `Next:\n${Array.from({ length: NEXT_CAP + 4 }, (_, i) => `- item ${i}`).join("\n")}\n`;
+  assert.equal(nextListOf(long).length, NEXT_CAP);
+});
+
+test("stoppedRound names the report, and quotes the next list only when there is one", () => {
+  assert.equal(
+    stoppedRound({ report: "/r/r1-build.report.md" }),
+    "## The stopped round\n\nThe builder before you stopped this lane. Its report is /r/r1-build.report.md: read it first.\n",
+  );
+  assert.match(
+    stoppedRound({ report: "/r/x.md", next: ["a", "b"] }),
+    /Its own next list, which you carry on from:\n\n> - a\n> - b\n$/,
+  );
+});
