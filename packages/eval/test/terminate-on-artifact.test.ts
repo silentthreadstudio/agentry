@@ -147,17 +147,19 @@ test("a plan.md arriving within the spec grace upgrades to decompose and kills a
   const child = new RunningChild();
   const spawnFn: SpawnFn = () => child;
 
+  // A grace far longer than the decompose poll takes even under load: a kill before it can only be the
+  // decompose kill (the grace opens after the start, so it cannot expire before `graceMs` has passed).
+  const graceMs = 2_000;
   const before = Date.now();
-  const run = spawnClaudeStreaming([], sandbox, streamFile(sandbox), FAST, spawnFn);
+  const run = spawnClaudeStreaming([], sandbox, streamFile(sandbox), { ...FAST, graceMs }, spawnFn);
   setTimeout(() => writeArtifact(sandbox, "spec.md"), 5); // opens the grace
   setTimeout(() => writeArtifact(sandbox, "plan.md"), 15); // arrives within it → decompose
   await run;
   const elapsed = Date.now() - before;
 
   assert.equal(child.killCount, 1, "decompose within the grace → killed");
-  // It killed on the decompose poll (~15-20ms), NOT by waiting the full grace (~45ms from the spec sighting).
   assert.ok(
-    elapsed < 45,
+    elapsed < graceMs,
     `decompose-within-grace kills on plan.md, not on grace expiry (elapsed=${elapsed}ms)`,
   );
 });
