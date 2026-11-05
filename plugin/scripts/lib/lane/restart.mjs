@@ -1,8 +1,8 @@
 // restart — the git and file work of `lane exec restart` (field 69): what the old lane leaves (its tip, its
 // uncommitted diff, the ignored files a removal would delete), the first free number to archive its ledger
 // and run files under (`process/ledger.mjs`'s `archive` moves them), the old worktree taken down and its
-// branch kept as `agentry/<id>.<n>`, and the carry of its work into the new worktree. `exec/steps/restart.mjs` runs the checks, the order and the new
-// lane's start (`exec/open-lane.mjs`).
+// branch kept as `agentry/<id>.<n>`, and the carry of its work into the new worktree.
+// `exec/steps/restart.mjs` runs the checks, the order and the new lane's start (`exec/open-lane.mjs`).
 //
 // leftover(ledger, disposable) -> { ignored, tip, commits } | { problem }   read only
 // carryRange(root, main, tip) -> { picks, skipped, base, based }   the commits a carry picks, read only
@@ -57,8 +57,8 @@ export function saveWork(worktree, file) {
   return { files };
 }
 
-/** The archive number for lane `id`: one past the highest `runs/<id>.<k>`, ledger archive (`ledgers.archives`,
- *  either layout) or `agentry/<id>.<k>` branch, so an archive never overwrites an older one. */
+/** The archive number for lane `id`: one past the highest archive (`ledgers.archives`, any layout), flat
+ *  `runs/<id>.<k>` or `agentry/<id>.<k>` branch, so an archive never overwrites an older one. */
 export function archiveNumber(root, id) {
   const of = (names, suffix = "") =>
     names

@@ -132,6 +132,7 @@ test("list names each file it skips and why", () => {
 
 // ---- archives (process review P1-1) ------------------------------------------------------------------
 
+const runsOf = (r) => join(r, ".agentry", "run", "process", "runs");
 // The flat archive an older restart left: `T-1`'s ledger renamed `T-1.2.json`, a name the valid id
 // `T-1.2` also reaches.
 const flatArchive = (r, id, n, extra = {}) => {
@@ -144,6 +145,7 @@ const flatArchive = (r, id, n, extra = {}) => {
 test("an older restart's flat archive <id>.<n>.json is no ledger of the id <id>.<n>, and never blocks it", () => {
   write(root, ledger("T-1"));
   const text = flatArchive(root, "T-1", 2, { state: "held" });
+  mkdirSync(join(runsOf(root), "T-1.2"), { recursive: true }); // its flat run dir
   assert.equal(read(root, "T-1.2"), null);
   const listed = list(root);
   assert.deepEqual(
@@ -153,13 +155,17 @@ test("an older restart's flat archive <id>.<n>.json is no ledger of the id <id>.
   assert.deepEqual(listed.skipped, [
     { file: join(dirOf(root), "T-1.2.json"), why: "an archive of T-1 (restart 2)" },
   ]);
-  // The real T-1.2 takes its name; the archive it held moves under archive/, byte for byte.
+  assert.deepEqual(archives(root, "T-1"), [
+    { n: 2, file: join(dirOf(root), "T-1.2.json"), runs: join(runsOf(root), "T-1.2") },
+  ]);
+  // The real T-1.2 takes its name; the archive it held moves under .archive/, byte for byte.
   write(root, ledger("T-1.2", { state: "verified" }));
   assert.equal(read(root, "T-1.2").state, "verified");
-  assert.equal(readFileSync(join(dirOf(root), "archive", "T-1.2.json"), "utf8"), text);
-  assert.deepEqual(archives(root, "T-1"), [
-    { n: 2, file: join(dirOf(root), "archive", "T-1.2.json") },
-  ]);
+  assert.equal(readFileSync(join(dirOf(root), ".archive", "T-1.2.json"), "utf8"), text);
+  assert.deepEqual(
+    archives(root, "T-1").map((a) => [a.n, a.file]),
+    [[2, join(dirOf(root), ".archive", "T-1.2.json")]],
+  );
   assert.deepEqual(
     list(root)
       .map((l) => l.id)
@@ -168,18 +174,19 @@ test("an older restart's flat archive <id>.<n>.json is no ledger of the id <id>.
   );
 });
 
-test("archive moves the ledger to ledger/archive/<id>.<n>.json and the run dir to runs/<id>.<n>", () => {
+test("archive moves the ledger to ledger/.archive/<id>.<n>.json and the run dir to runs/.archive/<id>.<n>", () => {
   write(root, ledger("T-1"));
   write(root, ledger("T-1.2", { state: "verified" }));
   const before = readFileSync(join(dirOf(root), "T-1.json"), "utf8");
   writeFileSync(join(runDir(root, "T-1"), "r1-build.md"), "brief\n");
-  const runs = join(root, ".agentry", "run", "process", "runs");
-  assert.deepEqual(archive(root, "T-1", 2), {
-    ledger: join(dirOf(root), "archive", "T-1.2.json"),
-    runs: join(runs, "T-1.2"),
-  });
-  assert.equal(readFileSync(join(dirOf(root), "archive", "T-1.2.json"), "utf8"), before);
-  assert.equal(readFileSync(join(runs, "T-1.2", "r1-build.md"), "utf8"), "brief\n");
+  const archived = {
+    ledger: join(dirOf(root), ".archive", "T-1.2.json"),
+    runs: join(runsOf(root), ".archive", "T-1.2"),
+  };
+  assert.deepEqual(archive(root, "T-1", 2), archived);
+  assert.equal(readFileSync(archived.ledger, "utf8"), before);
+  assert.equal(readFileSync(join(archived.runs, "r1-build.md"), "utf8"), "brief\n");
+  assert.deepEqual(archives(root, "T-1"), [{ n: 2, file: archived.ledger, runs: archived.runs }]);
   assert.equal(read(root, "T-1"), null);
   assert.equal(read(root, "T-1.2").state, "verified", "the real T-1.2 is untouched");
   assert.deepEqual(
@@ -189,11 +196,28 @@ test("archive moves the ledger to ledger/archive/<id>.<n>.json and the run dir t
   assert.deepEqual(list(root).skipped, []);
 });
 
-test("archive never overwrites one of either layout, and archives lists both by number", () => {
+test("a real T-1.2 started after T-1's archive 2 has a run dir of its own", () => {
+  write(root, ledger("T-1"));
+  writeFileSync(join(runDir(root, "T-1"), "r1-build.md"), "T-1's brief\n");
+  const archived = archive(root, "T-1", 2);
+  write(root, ledger("T-1.2"));
+  const own = runDir(root, "T-1.2");
+  assert.equal(own, join(runsOf(root), "T-1.2"));
+  assert.notEqual(own, archived.runs);
+  assert.deepEqual(readdirSync(own), [], "none of T-1's files");
+  assert.deepEqual(readdirSync(archived.runs), ["r1-build.md"]);
+});
+
+test("archive never overwrites one of any layout, and archives lists them all by number", () => {
   write(root, ledger("T-1"));
   flatArchive(root, "T-1", 1);
   assert.throws(() => archive(root, "T-1", 1), /an archive T-1\.1 exists/);
   assert.equal(read(root, "T-1").id, "T-1", "nothing moved");
+  // `ledger/archive/`, a layout no release wrote, and a run dir an archive cut short left alone.
+  mkdirSync(join(dirOf(root), "archive"));
+  writeFileSync(join(dirOf(root), "archive", "T-1.2.json"), JSON.stringify(ledger("T-1")));
+  mkdirSync(join(runsOf(root), ".archive", "T-1.4"), { recursive: true });
+  for (const n of [2, 4]) assert.throws(() => archive(root, "T-1", n), /an archive T-1\.\d exists/);
   archive(root, "T-1", 3);
   write(root, ledger("T-1"));
   assert.throws(() => archive(root, "T-1", 3), /an archive T-1\.3 exists/);
@@ -201,14 +225,16 @@ test("archive never overwrites one of either layout, and archives lists both by 
     archives(root, "T-1").map((a) => [a.n, a.file]),
     [
       [1, join(dirOf(root), "T-1.1.json")],
-      [3, join(dirOf(root), "archive", "T-1.3.json")],
+      [2, join(dirOf(root), "archive", "T-1.2.json")],
+      [3, join(dirOf(root), ".archive", "T-1.3.json")],
+      [4, null],
     ],
   );
-  write(root, ledger("T-1.4"));
+  write(root, ledger("T-1.5"));
   assert.deepEqual(
     archives(root, "T-1").map((a) => a.n),
-    [1, 3],
-    "the real ledger of T-1.4 is no archive of T-1",
+    [1, 2, 3, 4],
+    "the real ledger of T-1.5 is no archive of T-1",
   );
   assert.deepEqual(archives(root, "T-9"), []);
 });

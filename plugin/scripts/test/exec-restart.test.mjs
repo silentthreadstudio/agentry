@@ -137,6 +137,10 @@ function lane(r, ...args) {
 }
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const ledgerFile = (root, id) => join(processDir(root), "ledger", `${id}.json`);
+// Where a restart archives lane `id` as number `n`: its ledger and its run dir.
+const archiveFile = (root, id, n) =>
+  join(processDir(root), "ledger", ".archive", `${id}.${n}.json`);
+const archiveRuns = (root, id, n) => join(processDir(root), "runs", ".archive", `${id}.${n}`);
 const ledgerOf = (root, id) => JSON.parse(readFileSync(ledgerFile(root, id), "utf8"));
 const tipOf = (root, ref) => git(root, "rev-parse", ref);
 const hasRef = (root, ref) =>
@@ -167,14 +171,14 @@ test("restart --carry archives the lane, cuts T3 from main and carries its commi
     ["restart", "build", "building"],
   );
   // The archive: the old ledger byte for byte, its run files with the report.
-  assert.equal(readFileSync(ledgerFile(r.root, "T3.1"), "utf8"), oldLedger);
-  const report = join(processDir(r.root), "runs", "T3.1", "r1-build.report.md");
+  assert.equal(readFileSync(archiveFile(r.root, "T3", 1), "utf8"), oldLedger);
+  const report = join(archiveRuns(r.root, "T3", 1), "r1-build.report.md");
   assert.match(readFileSync(report, "utf8"), /^NEEDS_CONTEXT/);
   // The new lane: cut from main, the old commit picked on top, the untracked file back.
   const ledger = ledgerOf(r.root, "T3");
   assert.equal(ledger.base, main[0]);
   assert.equal(ledger.restarted.from, "T3.1");
-  const diff = join(processDir(r.root), "runs", "T3.1", "restart", "uncommitted.diff");
+  const diff = join(archiveRuns(r.root, "T3", 1), "restart", "uncommitted.diff");
   assert.deepEqual(ledger.carried, {
     rounds: { total: 1, builds: 1, verdicts: 0 },
     commits: 1,
@@ -218,7 +222,7 @@ test("restart without --carry starts clean and keeps the old branch as agentry/T
   assert.equal(ledger.carried, undefined);
   assert.equal(ledger.restarted.branch, "agentry/T3.1");
   assert.doesNotMatch(readFileSync(res.json.brief, "utf8"), /## Carried work/);
-  const diff = join(processDir(r.root), "runs", "T3.1", "restart", "uncommitted.diff");
+  const diff = join(archiveRuns(r.root, "T3", 1), "restart", "uncommitted.diff");
   assert.match(readFileSync(diff, "utf8"), /\+\+\+ b\/more\.txt/);
 });
 
@@ -282,7 +286,7 @@ test("a restart stopped before the rename names the rename first and keeps the p
   assert.equal(res.status, 1, out);
   assert.ok(out.includes("its old work is on agentry/T3 "), out);
   const pick = oldTip.slice(0, 7); // the old branch's one commit not on main
-  const diff = join(processDir(r.root), "runs", "T3.1", "restart", "uncommitted.diff");
+  const diff = join(archiveRuns(r.root, "T3", 1), "restart", "uncommitted.diff");
   const steps = out.split("→ fix that, then: ")[1]?.trim().split("; ") ?? [];
   assert.deepEqual(
     steps.map((s) => s.replace(/^.*exec start T3 --root .*$/, "START")),
@@ -334,7 +338,7 @@ test("a restart with a builder out is refused, nothing changed; a merged lane to
   assert.equal(res.exit, 2);
   assert.match(res.stderr, /✗ lane exec restart T3: a builder is out: hold it first/);
   assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), before);
-  assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+  assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
   assert.equal(hasRef(r.root, "refs/heads/agentry/T3.1"), false);
   writeFileSync(
     ledgerFile(r.root, "T3"),
@@ -398,7 +402,7 @@ test("a held lane's restart keeps its holds[] in the archive, and a second resta
   assert.equal(lane(r, "hold", "T1", "--for", "later").exit, 0);
   const held = ledgerOf(r.root, "T1");
   assert.equal(lane(r, "restart", "T1").exit, 0);
-  const first = readFileSync(ledgerFile(r.root, "T1.1"), "utf8");
+  const first = readFileSync(archiveFile(r.root, "T1", 1), "utf8");
   assert.deepEqual(JSON.parse(first).holds, held.holds);
   assert.equal(JSON.parse(first).holds.length, 1);
   assert.equal(JSON.parse(first).hold.for, "later");
@@ -407,8 +411,8 @@ test("a held lane's restart keeps its holds[] in the archive, and a second resta
   const again = lane(r, "restart", "T1");
   assert.equal(again.exit, 0, again.stderr);
   assert.equal(ledgerOf(r.root, "T1").restarted.from, "T1.2");
-  assert.equal(readFileSync(ledgerFile(r.root, "T1.1"), "utf8"), first);
-  assert.ok(existsSync(ledgerFile(r.root, "T1.2")));
+  assert.equal(readFileSync(archiveFile(r.root, "T1", 1), "utf8"), first);
+  assert.ok(existsSync(archiveFile(r.root, "T1", 2)));
   assert.ok(hasRef(r.root, "refs/heads/agentry/T1.1") && hasRef(r.root, "refs/heads/agentry/T1.2"));
 });
 
@@ -452,7 +456,7 @@ test("a restart whose board row is gone refuses before any write: the lane, its 
     },
     before,
   );
-  assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+  assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
   assert.equal(existsSync(join(processDir(r.root), "runs", "T3", "restart")), false);
   assert.equal(hasRef(r.root, "refs/heads/agentry/T3.1"), false);
 });
@@ -473,9 +477,9 @@ test(
     const newTip = tipOf(r.root, "agentry/T3");
     const out = res.stdout + res.stderr;
     assert.equal(res.status, 1, out);
-    const runs = join(processDir(r.root), "runs", "T3.1");
+    const runs = archiveRuns(r.root, "T3", 1);
     const diff = join(runs, "restart", "uncommitted.diff");
-    assert.ok(out.includes(ledgerFile(r.root, "T3.1")), out);
+    assert.ok(out.includes(archiveFile(r.root, "T3", 1)), out);
     assert.ok(
       out.includes(`its old work is on agentry/T3.1 and its uncommitted diff at ${diff}`),
       out,
@@ -564,7 +568,7 @@ test("a restart of a lane with an open stacked child is refused, nothing changed
     /✗ lane exec restart T3: T2 is stacked on T3: restack or close it first/,
   );
   assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), before);
-  assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+  assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
 });
 
 // ---- empty ignored directories (field 94) ----------------------------------------------------------
@@ -683,7 +687,7 @@ test("restart --carry of a verified lane whose carry changed goes to the resolve
     existsSync(ledger.rounds[0].reportPath),
     "the carried verdict's report, in the archive",
   );
-  assert.match(ledger.rounds[0].reportPath, /\/runs\/T3\.1\//);
+  assert.match(ledger.rounds[0].reportPath, /\/runs\/\.archive\/T3\.1\//);
   // The rebase recheck: the range-diff of the old base..tip against the new one, which the brief names.
   const [entry] = ledger.rebases;
   const newTip = tipOf(r.root, "agentry/T3");
@@ -939,7 +943,7 @@ test("a round carried by two restarts keeps its first marker and its first archi
   carriedOver(r);
   const [round] = ledgerOf(r.root, "T3").rounds;
   assert.deepEqual([round.step, round.verdict, round.carried], ["verify", "PASS", "T3.1"]);
-  assert.match(round.reportPath, /\/runs\/T3\.1\//);
+  assert.match(round.reportPath, /\/runs\/\.archive\/T3\.1\//);
   assert.ok(existsSync(round.reportPath));
 });
 
@@ -1017,7 +1021,7 @@ test("restart and restart --carry refuse a lane branch with a case twin: nothing
     assert.equal(branchRefs(r.root), refs);
     assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
     assert.equal(git(old.worktree, "status", "--porcelain"), status);
-    assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+    assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
   }
 });
 
@@ -1116,7 +1120,7 @@ test("a kept name another branch has in another case refuses the restart before 
     assert.equal(branchRefs(r.root), refs);
     assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
     assert.equal(git(old.worktree, "status", "--porcelain"), status);
-    assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+    assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
     assert.equal(existsSync(join(processDir(r.root), "runs", "T3", "restart")), false);
   }
 });
@@ -1143,7 +1147,7 @@ test("a lane branch listed only in another case refuses the restart: no twin pai
     );
     assert.equal(branchRefs(r.root), refs);
     assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
-    assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+    assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
   }
 });
 
@@ -1226,7 +1230,7 @@ test("restart --carry of a lane branch not based on main's first-parent line ref
   assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), ledger);
   assert.equal(tipOf(r.root, "agentry/T3"), tip);
   assert.equal(git(out.worktree, "status", "--porcelain"), status);
-  assert.equal(existsSync(ledgerFile(r.root, "T3.1")), false);
+  assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
   assert.equal(existsSync(join(processDir(r.root), "runs", "T3", "restart")), false);
   assert.equal(hasRef(r.root, "refs/heads/agentry/T3.1"), false);
 });
@@ -1290,7 +1294,7 @@ test("restart --carry of a 3-step lane stopped in step 3 keeps the owner OKs and
   // Their evidence read where the archive holds the old run's files.
   assert.deepEqual(
     ledger.holds.map((h) => h.evidence),
-    old.holds.map((h) => h.evidence.replace("/runs/T4/", "/runs/T4.1/")),
+    old.holds.map((h) => h.evidence.replace("/runs/T4/", "/runs/.archive/T4.1/")),
   );
   // The first round: a fresh builder continues step 3.
   const first = ledger.rounds[0];
@@ -1516,7 +1520,7 @@ test("a restart of a lane whose verifier failed it briefs the failing verdict's 
   const res = lane(r, "restart", "T3", "--carry");
   assert.equal(res.exit, 0, res.stderr);
   const brief = readFileSync(res.json.brief, "utf8");
-  const archived = verdictReport.replace("/runs/T3/", "/runs/T3.1/");
+  const archived = verdictReport.replace("/runs/T3/", "/runs/.archive/T3.1/");
   assert.match(
     brief,
     /## The last verdict\n\nThe old lane's verifier returned FAIL\. Its report is /,

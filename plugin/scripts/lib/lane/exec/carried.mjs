@@ -12,9 +12,10 @@ import { headOf } from "./guard/snapshot.mjs";
 import { heldCopy, isVerifiedPark, saved } from "./lane.mjs";
 import { keepRangeDiff } from "./rebasing.mjs";
 
-// A path under lane `id`'s run dir as the archive `runs` holds it now; any other path as it is.
+// A path under lane `id`'s run dir as the archive `runs` holds it now; any other path as it is. The archive
+// is `runs/.archive/<id>.<n>/` (`ledgers.archive`), so the lane's own dir is `runs/<id>/` two levels up.
 export const archivedPath = (id, runs) => (path) => {
-  const rel = relative(join(dirname(runs), id), path ?? "");
+  const rel = relative(join(dirname(dirname(runs)), id), path ?? "");
   return rel && !rel.startsWith("..") && !isAbsolute(rel) ? join(runs, rel) : path;
 };
 

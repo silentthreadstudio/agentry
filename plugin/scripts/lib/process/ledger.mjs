@@ -1,9 +1,11 @@
 // ledger — a lane task's state on disk: `<main root>/.agentry/run/process/ledger/<id>.json` (shape pinned
 // in the R1b plan §3.1), with its run files (briefs, reports, gate logs) in `…/process/runs/<id>/`. A
-// restart's archive of it is `ledger/archive/<id>.<n>.json` (with the run files in `runs/<id>.<n>/`), a
-// path no id's ledger reaches. An older restart kept it flat as `ledger/<id>.<n>.json`, a name the valid id
-// `<id>.<n>` reaches too: such a file, the ledger of the id before the dot, is read as that archive, never
-// as a ledger, and moves under `archive/` when the id it names writes its own ledger.
+// restart's archive of them is `ledger/.archive/<id>.<n>.json` and `runs/.archive/<id>.<n>/`: an id opens
+// with a letter or a digit, so no id's ledger or run dir reaches a dot directory. Older restarts kept them
+// flat as `ledger/<id>.<n>.json` and `runs/<id>.<n>/`, names the valid id `<id>.<n>` reaches too: such a
+// ledger file, the ledger of the id before the dot, is read as that archive, never as a ledger, and moves
+// under `.archive/` when the id it names writes its own ledger. (`ledger/archive/`, a layout no release
+// wrote, reads as an archive too.)
 //
 // Every path hangs off the MAIN checkout's root, never a worktree's, so a step run from inside a worktree
 // reads and writes the same ledger. Writes are atomic (temp file, then rename), and every read first sweeps
@@ -25,7 +27,9 @@ export const OLD_TEMP = /^.+\.json\.(\d+)\.tmp$/;
 
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const ledgerDir = (root) => join(processDir(root), "ledger");
-const archiveDir = (root) => join(ledgerDir(root), "archive");
+const runsDir = (root) => join(processDir(root), "runs");
+const archiveDir = (root) => join(ledgerDir(root), ".archive");
+const runsArchiveDir = (root) => join(runsDir(root), ".archive");
 const fileOf = (root, id) => join(ledgerDir(root), `${id}.json`);
 const names = (dir) => {
   try {
@@ -104,7 +108,7 @@ export function write(root, ledger) {
   return out;
 }
 
-// An older restart's flat archive at `id`'s ledger path goes under `archive/` before `id` writes there:
+// An older restart's flat archive at `id`'s ledger path goes under `.archive/` before `id` writes there:
 // never overwritten, never lost.
 function moveFlatArchive(root, id) {
   let data;
@@ -147,14 +151,15 @@ export function list(root, { sweep = true } = {}) {
   return Object.defineProperty(out, "skipped", { value: skipped });
 }
 
-/** Lane `id`'s archives, by number: `{ n, file }`, each `ledger/archive/<id>.<n>.json` and each older
- *  restart's flat `ledger/<id>.<n>.json` that holds `id`'s ledger. */
+/** Lane `id`'s archives, by number: `{ n, file, runs }`. `file` is the archived ledger: each
+ *  `ledger/.archive/<id>.<n>.json`, `ledger/archive/<id>.<n>.json` and older restart's flat
+ *  `ledger/<id>.<n>.json` that holds `id`'s ledger; null for a `runs/.archive/<id>.<n>/` with none (an
+ *  archive cut short). `runs` is its run dir: `runs/.archive/<id>.<n>/`, else an older restart's flat
+ *  `runs/<id>.<n>/`, else null. */
 export function archives(root, id) {
-  const numberOf = (name) => {
-    const n = name.slice(id.length + 1, -".json".length);
-    return name.startsWith(`${id}.`) && name.endsWith(".json") && /^\d+$/.test(n)
-      ? Number(n)
-      : null;
+  const numberOf = (name, ext = ".json") => {
+    const n = name.slice(id.length + 1, name.length - ext.length);
+    return name.startsWith(`${id}.`) && name.endsWith(ext) && /^\d+$/.test(n) ? Number(n) : null;
   };
   // A flat one is `id`'s only when it holds `id`'s ledger: else it is the ledger of the id it names.
   const holdsId = (file, name) => {
@@ -164,31 +169,40 @@ export function archives(root, id) {
       return false; // not JSON: no archive of anything
     }
   };
-  const found = [];
+  const files = new Map();
   for (const [dir, flat] of [
     [archiveDir(root), false],
+    [join(ledgerDir(root), "archive"), false],
     [ledgerDir(root), true],
   ])
     for (const name of names(dir)) {
       const n = numberOf(name);
       const file = join(dir, name);
-      if (n !== null && (!flat || holdsId(file, name))) found.push({ n, file });
+      if (n !== null && !files.has(n) && (!flat || holdsId(file, name))) files.set(n, file);
     }
-  return found.sort((a, b) => a.n - b.n);
+  for (const name of names(runsArchiveDir(root))) {
+    const n = numberOf(name, "");
+    if (n !== null && !files.has(n)) files.set(n, null);
+  }
+  const runsOf = (n) =>
+    [join(runsArchiveDir(root), `${id}.${n}`), join(runsDir(root), `${id}.${n}`)].find((dir) =>
+      existsSync(dir),
+    ) ?? null;
+  return [...files].map(([n, file]) => ({ n, file, runs: runsOf(n) })).sort((a, b) => a.n - b.n);
 }
 
-/** Archive lane `id` as number `n`: its ledger moved to `ledger/archive/<id>.<n>.json`, its run dir to
- *  `runs/<id>.<n>/` (made empty when it has none). `{ runs, ledger }`, the archived paths. Throws when
- *  an archive `n` of `id` exists in either layout, or its run dir does (never overwritten). */
+/** Archive lane `id` as number `n`: its ledger moved to `ledger/.archive/<id>.<n>.json`, its run dir to
+ *  `runs/.archive/<id>.<n>/` (made empty when it has none). `{ runs, ledger }`, the archived paths.
+ *  Throws when an archive `n` of `id` exists in any layout (never overwritten). */
 export function archive(root, id, n) {
   if (!validId(id)) throw new Error(`ledger id "${id}" is not a plain id`);
   const ledger = join(archiveDir(root), `${id}.${n}.json`);
-  const runs = join(processDir(root), "runs", `${id}.${n}`);
-  if (archives(root, id).some((a) => a.n === n) || existsSync(runs))
-    throw new Error(`an archive ${id}.${n} exists`);
-  const from = join(processDir(root), "runs", id);
+  const runs = join(runsArchiveDir(root), `${id}.${n}`);
+  if (archives(root, id).some((a) => a.n === n)) throw new Error(`an archive ${id}.${n} exists`);
+  const from = join(runsDir(root), id);
+  mkdirSync(runsArchiveDir(root), { recursive: true });
   if (existsSync(from)) renameSync(from, runs);
-  else mkdirSync(runs, { recursive: true });
+  else mkdirSync(runs);
   mkdirSync(archiveDir(root), { recursive: true });
   renameSync(fileOf(root, id), ledger);
   return { runs, ledger };
@@ -197,7 +211,7 @@ export function archive(root, id, n) {
 /** The task's run directory (briefs, reports, gate logs), created if missing. */
 export function runDir(root, id) {
   if (!validId(id)) throw new Error(`ledger id "${id}" is not a plain id`);
-  const dir = join(processDir(root), "runs", id);
+  const dir = join(runsDir(root), id);
   mkdirSync(dir, { recursive: true });
   return dir;
 }
