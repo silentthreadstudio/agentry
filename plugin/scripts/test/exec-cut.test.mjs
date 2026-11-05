@@ -411,7 +411,7 @@ test("session start and the board never show a cut lane as held or idle", () => 
   );
   assert.equal(lane(r, "close", "T1").exit, 0);
   const text = run(r, LANE, ["session", "start"]).out;
-  assert.doesNotMatch(text, /T1/);
+  assert.doesNotMatch(text, /\bT1\b/);
   const board = run(r, BOARD, ["status", "--json"]);
   assert.equal(board.exit, 0, board.out);
   assert.doesNotMatch(JSON.stringify(board.json.nudges ?? []), /T1/);

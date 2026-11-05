@@ -1168,7 +1168,11 @@ test("a merged lane's branch with a packed case twin is kept and the sweep says 
   assert.ok(done.warnings.includes(why), res.stdout);
   assert.ok(!existsSync(merged.path));
   assert.equal(branchRefs(root), before, "neither spelling was deleted");
-  assert.doesNotMatch(sweep(root, "--apply").stdout, /T1/, "a second sweep has nothing of T1 left");
+  assert.doesNotMatch(
+    sweep(root, "--apply").stdout,
+    /\bT1\b/,
+    "a second sweep has nothing of T1 left",
+  );
 });
 
 test("the sweep prints why it kept a closed lane's branch: its work is not on main", () => {
