@@ -588,13 +588,20 @@ function foundOnMain(lane, checked) {
   const named = resolveBranch(root, ledger.branch);
   if (named.problem) return no(`${named.problem}: cannot tell what ${id}'s lane holds`);
   const { tip } = named;
-  // What was verified is what closes: a branch moved since (on, or back past a verified commit) is not it.
+  // What was verified is what closes. A verified lane closed on its tip, as a land refuses a branch moved
+  // since; any other is never moved back past its verified tip, and commits after it are unverified.
+  if (ledger.state === "verified" && ledger.closedTip && tip !== ledger.closedTip)
+    return no(
+      `${ledger.branch} moved since the lane closed on ${short(ledger.closedTip)} (now ${short(tip)}): lane exec rebase ${id}`,
+    );
   const verified = settledTip(ledger);
   if (!verified) return no(`${id}'s ledger names no verified tip: cannot tell what was verified`);
-  if (tip !== verified)
+  if (!isAncestor(root, verified, tip))
     return no(
       `${ledger.branch} is at ${short(tip)}, not at ${short(verified)}, the tip it was verified on: not landed`,
     );
+  const unverified = commitsBetween(root, verified, tip, { firstParent: true });
+  if (!unverified) return no(`git cannot list ${short(verified)}..${short(tip)}: not landed`);
   // Main is the main branch, never whatever the main checkout has out (a combined branch, a detached
   // HEAD): and the push and cleanup that follow run there, so it must be on it, as for a land.
   const on = currentBranch(root);
@@ -611,11 +618,24 @@ function foundOnMain(lane, checked) {
       `${ledger.branch} has no commits past its base ${short(ledger.base)}: nothing to close`,
     );
   const listed = (shas) => shas.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`);
-  if (missing.length > 0 && !checked)
-    return no(
-      `${missing.length} of ${id}'s ${landed.length + missing.length} commit(s) have no matching patch on main: not landed → if they landed squashed or reworded, check by hand, then --resolve landed --checked`,
-      listed(missing),
-    );
+  const refusals = checked
+    ? []
+    : [
+        missing.length > 0 &&
+          red(
+            "resolve",
+            `${missing.length} of ${id}'s ${landed.length + missing.length} commit(s) have no matching patch on main: not landed → if they landed squashed or reworded, check by hand, then --resolve landed --checked`,
+            listed(missing),
+          ),
+        unverified.length > 0 &&
+          red(
+            "resolve",
+            `${unverified.length} commit(s) came after the verified tip ${short(verified)}, unverified: check them, then --resolve landed --checked, or lane exec restart ${id} --carry to verify them again`,
+            listed(unverified),
+          ),
+      ].filter(Boolean);
+  if (refusals.length > 0) return done(2, lane, refusals);
+  const withSubjects = (shas) => shas.map((sha) => ({ sha, subject: subjectOf(root, sha) }));
   const at = now();
   const resolutions = checked
     ? {
@@ -625,7 +645,8 @@ function foundOnMain(lane, checked) {
             as: "landed",
             at,
             checked: true,
-            missing: missing.map((sha) => ({ sha, subject: subjectOf(root, sha) })),
+            missing: withSubjects(missing),
+            unverified: withSubjects(unverified),
           },
         ],
       }
@@ -647,12 +668,21 @@ function foundOnMain(lane, checked) {
   lane.ledger = { ...ledger, ...merged };
   const next = afterLand(lane);
   save(lane, { ...merged, next });
-  const by = missing.length > 0 ? `; ${missing.length} checked by hand` : "";
+  const by = [
+    missing.length > 0 && `; ${missing.length} checked by hand`,
+    unverified.length > 0 && `; ${unverified.length} unverified, checked by hand`,
+  ]
+    .filter(Boolean)
+    .join("");
   const detail = `resolved: ${id}'s work is on main (${landed.length} commit(s) by patch${by}); ledger merged, nothing picked (the board record is yours: board set … and the handoff line)`;
   const kids = childrenOf(listLedgers(root), id).map((child) =>
     warn("stack", `${child} is stacked on ${id}: agentry lane exec restack ${child} --main`),
   );
-  const more = [...listed(landed), ...listed(missing).map((line) => `${line} (checked by hand)`)];
+  const more = [
+    ...listed(landed),
+    ...listed(missing).map((line) => `${line} (checked by hand)`),
+    ...listed(unverified).map((line) => `${line} (unverified, checked by hand)`),
+  ];
   // Work left in the worktree is no part of what closed: named now, as the cleanup will refuse over it.
   const left = worktreeLeft(root, ledger);
   const dirty = left.entries.length

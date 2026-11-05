@@ -470,9 +470,11 @@ says `stacked on T1; restacks: N`.
   matching commits, nothing picked, committed or written on the board. Any without a matching patch refuses,
   naming each, unless `--checked` (the owner checked they landed squashed or reworded), recorded as `{ as, at,
   checked, missing }` in `resolutions[]`. A parent closed so counts as merged for its children; `--cleanup`
-  follows as after a land. It refuses unless the main checkout is on the main branch and the lane's branch is
-  at its verified tip (`closedTip`, else the last pass's tip, else the last worktree gate's commit), and names
-  uncommitted work left in the worktree. "Found on main" is by patch, not by tree: a later revert on main is
+  follows as after a land. It refuses unless the main checkout is on the main branch, refuses a verified lane
+  whose branch moved since `closedTip` (`lane exec rebase`), and refuses a branch not at or past its verified
+  tip (the last pass's tip, else the last worktree gate's commit). Commits after that tip are unverified: named,
+  and closed only with `--checked` (recorded as `unverified`), or verified again by `lane exec restart <id>
+  --carry`. It names uncommitted work left in the worktree. "Found on main" is by patch, not by tree: a later revert on main is
   not seen. git's patch id ignores whitespace, so whitespace-significant files are checked by hand.
 - **The worktree.** A builder leaves no uncommitted or untracked files and at least one commit past base. After a
   moved start (the branch holds main, above) the report's commits count and subject check read `<moved start>..<listed tip>`.

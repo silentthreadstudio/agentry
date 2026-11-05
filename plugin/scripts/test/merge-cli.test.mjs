@@ -3112,3 +3112,38 @@ test("a close over a worktree with uncommitted work names the files and says the
   assert.notEqual(clean.status, 0, out(clean));
   assert.equal(readFileSync(join(path, "src", "new.txt"), "utf8"), "new, untracked\n");
 });
+
+// Recheck r4, N9: a lane stopped on a red gate gets its fix after the PASS. Those commits are named as
+// unverified and close only on the owner's --checked, recorded beside missing.
+test("a stopped lane with a commit after its PASS tip refuses it as unverified, and closes with --checked", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0], record: { exit: 1 } });
+  writeLedger(root, {
+    ...readLedger(root, ID),
+    rounds: [{ n: 1, role: "verify", step: "verify", verdict: "PASS", tip: shas[0] }],
+    state: "stopped",
+    next: "stop",
+  });
+  const fix = commitFile(path, "src/fix.txt", "fix\n", "fix(src): make the gate green");
+  const [, a, f] = combine(shas[0], fix);
+  const before = ledgerBytes();
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    new RegExp(
+      `✗ resolve +1 commit\\(s\\) came after the verified tip ${shas[0].slice(0, 7)}, unverified: check them, then --resolve landed --checked, or lane exec restart T1 --carry`,
+    ),
+  );
+  assert.match(out(res), new RegExp(`${fix.slice(0, 7)} fix\\(src\\): make the gate green`));
+  assert.equal(ledgerBytes(), before);
+  const checked = merge(ID, "--resolve", "landed", "--checked");
+  assert.equal(checked.status, 0, out(checked));
+  assert.match(checked.stdout, /2 commit\(s\) by patch; 1 unverified, checked by hand/);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "merged");
+  assert.deepEqual(ledger.merge.landed, [a, f]);
+  const [entry] = ledger.resolutions;
+  assert.deepEqual(entry.missing, []);
+  assert.deepEqual(entry.unverified, [{ sha: fix, subject: "fix(src): make the gate green" }]);
+});
