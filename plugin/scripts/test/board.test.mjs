@@ -448,7 +448,10 @@ test("scan with no dir ends by naming the ignored folders it did not read", () =
       mkdirSync(join(tmp, dir), { recursive: true });
       writeFileSync(join(tmp, dir, "b.md"), table);
     }
-    writeFileSync(join(tmp, ".gitignore"), ".notes/\nnode_modules/\n.agentry/\n");
+    // An ignored folder is named whether or not it holds markdown: none is walked to find out.
+    mkdirSync(join(tmp, "scratch"));
+    writeFileSync(join(tmp, "scratch", "a.txt"), "x");
+    writeFileSync(join(tmp, ".gitignore"), ".notes/\nnode_modules/\n.agentry/\nscratch/\n");
     const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
     for (const args of [
       ["init", "-q"],
@@ -463,7 +466,7 @@ test("scan with no dir ends by naming the ignored folders it did not read", () =
     const all = cli();
     assert.match(
       all.stdout,
-      /\nnot scanned \(ignored\): \.notes \(1 md\) → .*board scan \.notes\/…\n$/,
+      /\nnot scanned \(ignored\): \.notes, scratch → .*board scan \.notes\/…\n$/,
     );
     assert.doesNotMatch(all.stdout, /node_modules|\.agentry/);
     assert.doesNotMatch(cli(".notes").stdout, /not scanned/);
@@ -473,7 +476,7 @@ test("scan with no dir ends by naming the ignored folders it did not read", () =
   }
 });
 
-test("scan points at the ignored folder with the most markdown, counts the rest and skips tool folders", () => {
+test("scan points at the first ignored folder by name, counts the rest and skips tool folders", () => {
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), "agentry-scan-")));
   try {
     const table = "| Code |\n| --- |\n| T1 |\n";
@@ -500,7 +503,7 @@ test("scan points at the ignored folder with the most markdown, counts the rest 
     });
     assert.match(
       res.stdout,
-      /\nnot scanned \(ignored\): \.zbig \(3 md\), \.a \(1 md\), \.c \(1 md\), \+2 more → .*board scan \.zbig\/…\n$/,
+      /\nnot scanned \(ignored\): \.a, \.c, \.d, \+2 more → .*board scan \.a\/…\n$/,
     );
     assert.doesNotMatch(res.stdout, /\.claude|venv/);
   } finally {
@@ -529,7 +532,7 @@ test("scan moves the arrow and command to an indented next line when the not-sca
     const [line, next] = res.stdout.trimEnd().split("\n").slice(-2);
     assert.match(line, /^not scanned \(ignored\): .*\+\d more$/);
     assert.ok([...line].length <= 100, line);
-    assert.match(next, /^ {2}→ .*board scan \.b{40}\/…$/);
+    assert.match(next, /^ {2}→ .*board scan \.a{40}\/…$/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

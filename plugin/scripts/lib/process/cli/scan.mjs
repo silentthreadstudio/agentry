@@ -5,8 +5,9 @@
 // dot-directories, when git cannot answer). `<dir>` (relative to the root) narrows it to that directory
 // as it is on disk, so it reaches an untracked board or one under a dot-directory. Needs no process
 // file. A file a symlink takes out of the repository is listed as skipped, never read. Writes
-// nothing. With no `<dir>`, a last line names the git-ignored directories holding markdown it did not
-// read (`not scanned (ignored): .docs (44 md) → agentry board scan .docs/…`). Exit 0, or 2 for a `<dir>` outside the repository (as written or through a symlink).
+// nothing. With no `<dir>`, a last line names the git-ignored directories it did not read, by name
+// and in name order, without walking them (`not scanned (ignored): .docs → agentry board scan .docs/…`).
+// Exit 0, or 2 for a `<dir>` outside the repository (as written or through a symlink).
 //
 // run(argv, { root }) -> { exit, out }
 import { readFileSync } from "node:fs";
@@ -66,9 +67,9 @@ export function scan(root, dir = "") {
 const ids = (xs) =>
   `${xs.length} (${xs.slice(0, SAMPLE).join(", ")}${xs.length > SAMPLE ? ", …" : ""})`;
 
-// The git-ignored directories that hold markdown a whole-repo scan did not read: `{ dir, md }`, the one
-// with the most markdown first. Build and dependency folders, tool folders and Agentry's own run state are
-// not boards, so they are left out.
+// The git-ignored directories a whole-repo scan did not read, by name. Git names a wholly ignored folder
+// as one entry, so none is walked here (a build tree can be huge). Build and dependency folders, tool
+// folders and Agentry's own run state are not boards, so they are left out.
 const NOT_BOARDS = new Set([
   "node_modules",
   "dist",
@@ -78,35 +79,37 @@ const NOT_BOARDS = new Set([
   ".agents",
   ".venv",
   "venv",
+  "build",
+  "target",
+  "coverage",
+  ".next",
+  ".turbo",
+  "Pods",
 ]);
 export function ignoredDirs(root) {
   return ignoredPaths(root)
     .filter((p) => p.endsWith("/") && !p.split("/").some((seg) => NOT_BOARDS.has(seg)))
     .map((p) => p.slice(0, -1))
-    .map((dir) => ({ dir, md: markdownFiles(join(root, dir)).length }))
-    .filter((x) => x.md > 0)
-    .sort((a, b) => b.md - a.md || a.dir.localeCompare(b.dir));
+    .sort((a, b) => a.localeCompare(b));
 }
 
-// The last line: the biggest ignored folders first, the rest counted, and an arrow to the biggest. The arrow
+// The last line: the first ignored folders by name, the rest counted, and an arrow to the first. The arrow
 // is never cut: folders drop into `+N more` until the whole line fits; when even one folder and the arrow
 // pass the width, the arrow and command go on the next line, indented two spaces.
 function hiddenLine(ignored) {
   const label = "not scanned (ignored): ";
-  const arrow = nextStep(` → board scan ${ignored[0].dir}/…`);
-  const entry = (x) => `${x.dir} (${x.md} md)`;
+  const arrow = nextStep(` → board scan ${ignored[0]}/…`);
   const list = (k) =>
-    [
-      ...ignored.slice(0, k).map(entry),
-      ...(ignored.length > k ? [`+${ignored.length - k} more`] : []),
-    ].join(", ");
+    [...ignored.slice(0, k), ...(ignored.length > k ? [`+${ignored.length - k} more`] : [])].join(
+      ", ",
+    );
   for (let k = Math.min(HIDDEN_LISTED, ignored.length); k >= 1; k--) {
     const line = `${label}${list(k)}${arrow}`;
     if ([...line].length <= WIDTH) return line;
   }
   const tail = ignored.length > 1 ? `, +${ignored.length - 1} more` : "";
   const room = Math.max(1, WIDTH - [...label].length - [...tail].length);
-  return `${label}${fit(entry(ignored[0]), room)}${tail}\n ${arrow}`;
+  return `${label}${fit(ignored[0], room)}${tail}\n ${arrow}`;
 }
 
 function render(all, dir, ignored) {
