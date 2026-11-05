@@ -249,7 +249,7 @@ left of the label's indent); check it before pasting it in. A `Steps` heading fo
 step, as before.
 An item ending `→ owner OK`, `-> owner OK` or `— owner OK` (also `–`; any case, optional period, `**owner OK**`)
 has an owner gate; a trailing `(note)` is kept as the gate's note, and a `(model: …, agent: …)` marker is still a
-marker. An item that mentions the owner with `OK`, `review`, `approves` or `gate` but does not end that way is a
+marker. An item that mentions the owner with `OK`, `okay`, `review(s/ed)`, `approve(s/d)`, `approval`, `sign-off`, `signs off` or `gate` but does not end that way is a
 steps problem (`step 2 mentions an owner gate but does not end with "→ owner OK": write it as "… → owner OK"`),
 so `start` refuses it rather than merging the steps into one run. An item ending
 `(model: <m>, agent: <designer|implementer>)` (either key, before or after the gate, any case, read in lower

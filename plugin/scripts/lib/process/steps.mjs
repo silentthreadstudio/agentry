@@ -34,7 +34,9 @@ const LISTED = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
 const GATE =
   /\s*(?:→|->|—|–)\s*(?:\*\*\s*owner\s+ok\s*\*\*|owner\s+ok)\.?(?:\s*\((?!\s*(?:model|agent)\s*:)([^()]*)\))?\.?\s*$/i;
 // A step that names the owner next to a gate word but did not parse as a gate.
-const GATE_TALK = /\bowner\b(?=.*\b(?:ok|review|approves|gate)\b)|\b(?:ok|review|approves|gate)\b(?=.*\bowner\b)/is;
+const OWNER = /\bowners?\b/i;
+const GATE_WORD =
+  /\b(?:ok|okay|reviews?|reviewed|approve[sd]?|approval|sign-?offs?|signs? off|signed off|gate)\b/i;
 const MARK = /\s*\(\s*((?:model|agent)\s*:[^()]*)\)\s*$/i;
 const AGENTS = ["designer", "implementer"];
 const TAG = /^step\s+(\d+)\s*:\s*/i;
@@ -206,7 +208,7 @@ export function stepsOf(block) {
       };
     step.accept.push(text.slice(tag[0].length).trim());
   }
-  const talk = steps.find((s) => !s.gate && GATE_TALK.test(s.text));
+  const talk = steps.find((s) => !s.gate && OWNER.test(s.text) && GATE_WORD.test(s.text));
   if (talk)
     return {
       steps,

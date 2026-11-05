@@ -348,6 +348,9 @@ test("a step that names the owner gate but does not parse as one is a problem na
     "Draw it, then the owner approves",
     "Stop at the owner gate",
     "Draw it → owner OK then ship",
+    "Draw it → owner reviews",
+    "Draw it → owner okay",
+    "Draw it → owners OK",
   ])
     assert.equal(problem(text), want, text);
 });
@@ -356,4 +359,17 @@ test("a step that names the owner in prose without OK, review, approves or gate 
   const { steps, problem } = stepsOf("- **Steps:**\n  1. Ask the owner's name\n  2. Okay, the okapi");
   assert.equal(problem, null);
   assert.deepEqual(steps.map((s) => s.gate), [null, null]);
+});
+
+test("each inflection of a gate word beside the owner is the problem", () => {
+  for (const text of [
+    "Draw it → owner reviewed",
+    "Draw it → owner approve",
+    "Draw it → owner approved",
+    "Draw it → owner approval",
+    "Draw it → owner sign-off",
+    "Draw it → the owner signs off",
+    "Draw it → the owner signed off",
+  ])
+    assert.match(stepsOf(`- **Steps:**\n  1. ${text}`).problem, /^step 1 mentions an owner gate/, text);
 });
