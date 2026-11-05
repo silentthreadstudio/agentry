@@ -1422,3 +1422,105 @@ test("the lane's own subjects are still checked once the branch holds main", () 
   assert.equal(res.json.next, "fix");
   assert.match(ledgerOf(r.root, "T3").rounds[0].guards.join(";"), /wip three/);
 });
+
+test("a stepless lane held for the owner mid-round restarts: the hold is named by its round, not a run", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  writeFileSync(out.reportPath, "DONE\nthree\nused_memories: none\n");
+  assert.equal(lane(r, "hold", "T3", "--for", "owner", "--note", "look").exit, 0);
+  assert.equal(ledgerOf(r.root, "T3").hold.stepRun, null);
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.match(res.json.dropped, /the owner hold on round 1: not an OK, not carried/);
+  assert.equal(res.json.next, "build");
+});
+
+test("a lane held at the notes cap (an owner hold with no run) restarts: named as the cap, not a step", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  commitFile(out.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  assert.equal(lane(r, "hold", "T3", "--for", "later", "--note", "park").exit, 0);
+  // Planted: the shape a notes-cap hold has (rounds.mjs), without the flagged flow that makes one.
+  const file = ledgerFile(r.root, "T3");
+  const planted = ledgerOf(r.root, "T3");
+  planted.hold = {
+    for: "owner",
+    when: "verdict",
+    stepRun: null,
+    evidence: out.reportPath,
+    since: "2026-01-01T00:00:00.000Z",
+    round: 1,
+    tip: tipOf(r.root, "agentry/T3"),
+  };
+  writeFileSync(file, JSON.stringify(planted));
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.match(res.json.dropped, /the owner hold at the notes cap: not an OK, not carried/);
+  assert.doesNotMatch(res.json.dropped, /built again/);
+});
+
+test("owns --set is carried as the old ledger had it; a changed contract keeps its grants beside its own owns", () => {
+  const r = repo();
+  midStepThree(r);
+  assert.equal(lane(r, "owns", "T4", "--set", "a.txt,b.txt", "--apply").exit, 0);
+  assert.equal(lane(r, "owns", "T4", "--add", "extra.txt", "--apply").exit, 0);
+  const old = ledgerOf(r.root, "T4").owned;
+  assert.deepEqual(
+    old.map((o) => o.path),
+    ["a.txt", "b.txt", "extra.txt"],
+  );
+  assert.equal(lane(r, "restart", "T4", "--carry").exit, 0);
+  // Unchanged contract: the entries exactly as they were, c.txt not put back.
+  assert.deepEqual(ledgerOf(r.root, "T4").owned, old);
+  // The contract now owns d.txt too: its owns plus the grant, the grant's entry as it was.
+  assert.equal(lane(r, "hold", "T4", "--for", "later", "--note", "park").exit, 0);
+  const tasks = readFileSync(join(r.root, "plan", "TASKS.md"), "utf8");
+  commitFile(
+    r.root,
+    "plan/TASKS.md",
+    tasks.replace("`c.txt`\n", "`c.txt`, `d.txt`\n"),
+    "docs: own d",
+  );
+  assert.equal(lane(r, "restart", "T4", "--carry").exit, 0);
+  const now = ledgerOf(r.root, "T4").owned;
+  assert.deepEqual(
+    now.map((o) => o.path),
+    ["a.txt", "b.txt", "c.txt", "d.txt", "extra.txt"],
+  );
+  assert.deepEqual(now.at(-1), old.at(-1));
+});
+
+test("the progress line counts only the owner's OKs of passed gates, not answers given mid-round", () => {
+  const r = repo();
+  const out = lane(r, "start", "T4").json;
+  commitFile(out.worktree, "a.txt", "a\n", "feat: a");
+  writeFileSync(out.reportPath, "DONE\na\nused_memories: none\n");
+  assert.equal(lane(r, "report", "T4").json.state, "held");
+  const two = lane(r, "resume", "T4", "--note", "step 1 is fine").json;
+  writeFileSync(two.reportPath, "NEEDS_CONTEXT\nwhich?\n");
+  assert.equal(lane(r, "hold", "T4", "--for", "owner", "--note", "look").exit, 0);
+  assert.equal(lane(r, "resume", "T4", "--note", "go on").exit, 0);
+  assert.equal(lane(r, "hold", "T4", "--for", "later", "--note", "park").exit, 0);
+  const res = lane(r, "restart", "T4", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(ledgerOf(r.root, "T4").holds.length, 2);
+  assert.match(res.json.progress, /^1 owner OK\(s\) carried/);
+});
+
+test("a restart of a lane whose verifier failed it briefs the failing verdict's report first", () => {
+  const r = repo();
+  assert.equal(judged(r, "FAIL").next, "fix");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const verdictReport = ledgerOf(r.root, "T3").rounds.find((x) => x.role === "verify").reportPath;
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  const brief = readFileSync(res.json.brief, "utf8");
+  const archived = verdictReport.replace("/runs/T3/", "/runs/T3.1/");
+  assert.match(
+    brief,
+    /## The last verdict\n\nThe old lane's verifier returned FAIL\. Its report is /,
+  );
+  assert.ok(brief.includes(archived), brief);
+  assert.equal(ledgerOf(r.root, "T3").carried.verdict.report, archived);
+});

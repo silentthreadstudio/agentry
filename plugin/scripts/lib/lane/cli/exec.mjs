@@ -1136,6 +1136,12 @@ function brief({ root, spec, model }, ledger, dispatch) {
   // A resolve check of a verified carry judges the range-diff, not the old builder's report.
   if (n === 1 && fresh && ledger.carried && dispatch.step !== "resolve")
     text = withSection(text, carriedWork(ledger.carried));
+  // The old lane's last verdict, when its verifier failed the work: the report to read first.
+  if (n === 1 && fresh && ledger.carried?.verdict)
+    text = withSection(
+      text,
+      `## The last verdict\n\nThe old lane's verifier returned ${ledger.carried.verdict.verdict}. Its report is ${ledger.carried.verdict.report}: read it and fix what it names.\n`,
+    );
   // An adopted lane's first brief lists the commits it took in (field 86).
   if (n === 1 && fresh && ledger.adopted) text = withSection(text, adoptedWork(ledger.adopted));
   // The fact the owner supplied at a context hold goes where the conductor puts one: at the end.
@@ -1590,7 +1596,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
     rebased = null,
     carriedRounds = [],
     holds = [],
-    grants = [],
+    ownedKept = null,
     startAt = null,
     shown = {},
     warnings = [],
@@ -1616,15 +1622,7 @@ function cut(ctx, id, { found, parent, mainBranch, again = null }) {
   writeFileSync(contractFile(root, id), `${found.block.trimEnd()}\n`);
   const at = now();
   const workflow = resolveWorkflow(spec);
-  // The contract's own owned files, then the old lane's `owns --add` grants the contract does not cover.
-  const fromContract = withNew(tree.path, ownedFiles(found.block, tree.path));
-  const owned = [
-    ...fromContract,
-    ...withNew(
-      tree.path,
-      grants.map((g) => g.path),
-    ).filter((g) => !fromContract.some((o) => ownsPath(o.path, g.path))),
-  ];
+  const owned = ownedKept ?? withNew(tree.path, ownedFiles(found.block, tree.path));
   let ledger = {
     v: 1,
     id,
@@ -3045,13 +3043,21 @@ const carriedVerdicts = (ledger, archive, runs) => {
 // ones the OKs were given on, their evidence read where the archive holds it; what is not carried is named in `dropped`.
 function progressOf(old, steps, runs) {
   const oks = (old.holds ?? []).filter((h) => h.for === "owner");
-  const none = { holds: [], stepRun: null, dropped: [] };
+  const none = { holds: [], approved: 0, stepRun: null, dropped: [] };
   if (!oks.length && old.hold?.for !== "owner") return none;
   const dropped = [];
-  if (old.hold?.for === "owner")
+  const held = old.hold?.for === "owner" ? old.hold : null;
+  if (held) {
+    // A step hold names its run; a hold with none (a stepless lane's, or the notes cap's) is no step's.
+    const where = held.stepRun
+      ? `on ${runText(held.stepRun, old.steps?.length ?? 0)}`
+      : held.when === "verdict"
+        ? "at the notes cap"
+        : `on round ${held.round}`;
     dropped.push(
-      `the owner hold on ${runText(old.hold.stepRun, old.steps?.length ?? 0)}: not an OK, the step is built again`,
+      `the owner hold ${where}: not an OK${held.stepRun ? ", the step is built again" : ", not carried"}`,
     );
+  }
   if (JSON.stringify(old.steps ?? []) !== JSON.stringify(steps ?? []))
     return {
       ...none,
@@ -3067,7 +3073,25 @@ function progressOf(old, steps, runs) {
   if (a > 1 && !passed) dropped.push(`the step pointer: no owner OK before step ${a}`);
   const moved = archivedPath(old.id, runs);
   const holds = oks.map((h) => ({ ...h, evidence: moved(h.evidence) }));
-  return { holds, stepRun: a > 1 && passed ? runOf(steps, a) : null, dropped };
+  const approved = oks.filter((h) => h.when === "after" && !h.redo).length;
+  return { holds, approved, stepRun: a > 1 && passed ? runOf(steps, a) : null, dropped };
+}
+
+// The owned files a restart carries (field 101): the old ledger's `owned` entries as they are while the
+// contract's owns are the ones the old lane started with; when the contract's owns changed, the contract's
+// now plus the old ledger's grants (entries the old contract did not name), copied as they are. null when
+// the old ledger kept none (the contract's own are read as `start` reads them).
+function keptOwned(old, oldBlock, block, dir) {
+  if (!old.owned?.length) return null;
+  const was = withNew(dir, ownedFiles(oldBlock, dir));
+  const now = withNew(dir, ownedFiles(block, dir));
+  if (JSON.stringify(was.map((o) => o.path)) === JSON.stringify(now.map((o) => o.path)))
+    return structuredClone(old.owned);
+  const grants = old.owned.filter((o) => !was.some((w) => w.path === o.path));
+  return [
+    ...now,
+    ...structuredClone(grants).filter((g) => !now.some((o) => ownsPath(o.path, g.path))),
+  ];
 }
 
 // A verified lane's carry, taken as a rebase: the range-diff of the old base..tip against the new
@@ -3170,6 +3194,10 @@ function restart(ctx, id) {
     : { files: [] };
   if (work.error) refuse(`the worktree's uncommitted work could not be saved: ${work.error}`);
 
+  let oldBlock = "";
+  try {
+    oldBlock = readFileSync(contractFile(root, id), "utf8");
+  } catch {} // an older run dir without it: every owned entry reads as a grant
   const archived = archive(root, id, n);
   const diff = diffIn(archived.runs);
   let kept = null;
@@ -3206,7 +3234,16 @@ function restart(ctx, id) {
     // A verified carry goes on past the build: only the owner OKs ride with it, no step to continue.
     const stepRun = checked ? null : progress.stepRun;
     const builds = old.rounds.filter((r) => r.role === "build").length;
+    const lastVerdict = verdicts(old).at(-1);
     const carried = {
+      ...(lastVerdict &&
+        !PASSES.includes(lastVerdict.verdict) &&
+        !checked && {
+          verdict: {
+            verdict: lastVerdict.verdict,
+            report: archivedPath(old.id, archived.runs)(lastVerdict.reportPath),
+          },
+        }),
       rounds: { total: old.rounds.length, builds, verdicts: verdicts(old).length },
       ...(stepRun && { stepRun }),
       commits: oldTip ? left.commits : 0,
@@ -3224,7 +3261,7 @@ function restart(ctx, id) {
       restarted: { ...restarted, branch },
       carried,
       holds: progress.holds,
-      grants: old.owned ?? [],
+      ownedKept: keptOwned(old, oldBlock, found.block, path),
       ...(stepRun && {
         startAt: {
           stepRun,
@@ -3242,8 +3279,8 @@ function restart(ctx, id) {
           skipped: `${skipped.length} already on ${mainBranch}: ${skipped.map((c) => `${short(c.sha)} ${c.subject}`).join(", ")}`,
         }),
         ...(res.conflict && { conflict: `${res.conflict} in ${path}` }),
-        ...(progress.holds.length && {
-          progress: `${progress.holds.length} owner OK(s) carried${stepRun ? `; the first brief is for ${runText(stepRun, found.steps.length)}` : ""}`,
+        ...(progress.approved && {
+          progress: `${progress.approved} owner OK(s) carried${stepRun ? `; the first brief is for ${runText(stepRun, found.steps.length)}` : ""}`,
         }),
         ...(progress.dropped.length && { dropped: progress.dropped.join("; ") }),
         ...(checked && { rangeDiff: checked.rebases[0].rangeDiff }),
