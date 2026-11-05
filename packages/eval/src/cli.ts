@@ -16,7 +16,7 @@
 // that survives being read back later, which an exit code does not.
 
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createEmitter } from "./store/events.ts";
 import { readRunConfig, rescoreRun } from "./store/read.ts";
@@ -104,10 +104,14 @@ const FLAGS: Record<string, keyof CliFlags> = {
  */
 const USAGE = `usage:
   selfeval run bench --fixtures-dir <dir> [--fixture <id>] [--k <n>] [--concurrency <n>] [--model <id>]
-                     [--judge-model <id>] [--timeout <ms>] [--plugin-dir <dir>] [--runs-root <dir>]
+                     [--judge-model <id>] [--timeout <ms>] [--plugin-dir <repo-root>] [--runs-root <dir>]
                      [--run-id <id>] [--budget-usd <n>]
   selfeval replay <id> [--runs-root <dir>]
   selfeval report <id> [--runs-root <dir>] [--results-root <dir>] [--corrections <file>]
+
+  --plugin-dir       the Agentry REPO ROOT (the directory that holds plugin/); claude is started with
+                     --plugin-dir <repo-root>/plugin.
+  --k, --concurrency, --timeout (ms)   whole numbers >= 1.
 
   --budget-usd <n>   ADMISSION cap in USD (must be a positive number). A task's cost is only knowable from its
                      SETTLED result message, so there is no mid-task abort: the cap refuses to START a task whose
@@ -152,6 +156,20 @@ function positiveNumberFlag(raw: string | undefined, flag: string): number | und
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
     throw new UsageError(`selfeval: flag "${flag}" expects a positive number (got "${raw}")`);
+  }
+  return value;
+}
+
+/**
+ * Parse a flag that must be a whole number >= 1 (`--k`, `--runs`, `--concurrency`, `--timeout`): a non-number, a
+ * fraction or anything below 1 is a usage error. A bare `Number()` would let `abc` become `NaN`, which quietly
+ * runs zero work items, zero workers or a timer that fires at once, and still exits 0.
+ */
+function positiveIntFlag(raw: string | undefined, flag: string): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = raw.trim() === "" ? Number.NaN : Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new UsageError(`selfeval: flag "${flag}" expects a whole number >= 1 (got "${raw}")`);
   }
   return value;
 }
@@ -218,10 +236,11 @@ async function runBench(
   const fixturesDir = resolve(fixturesDirRaw);
   // Validated BEFORE the run dir is opened: a bad cap must fail as a usage error, not leave a half-open run behind.
   const budgetUsd = positiveNumberFlag(flags.budgetUsd, "--budget-usd");
+  const k = positiveIntFlag(flags.k, "--k") ?? positiveIntFlag(flags.runs, "--runs") ?? 1;
+  const concurrency = positiveIntFlag(flags.concurrency, "--concurrency");
+  const timeoutMs = positiveIntFlag(flags.timeout, "--timeout");
   const runsRoot = resolveRunsRoot(flags);
   const runId = newRunId(flags.runId);
-  const k =
-    flags.k !== undefined ? Number(flags.k) : flags.runs !== undefined ? Number(flags.runs) : 1;
   const judgeModel = flags.judgeModel ?? DEFAULT_JUDGE_MODEL;
 
   const config: RunConfig = {
@@ -246,9 +265,9 @@ async function runBench(
     runId,
     k,
     ...(flags.fixture !== undefined ? { fixtureFilter: flags.fixture } : {}),
-    ...(flags.concurrency !== undefined ? { concurrency: Number(flags.concurrency) } : {}),
+    ...(concurrency !== undefined ? { concurrency } : {}),
     ...(flags.model !== undefined ? { model: flags.model } : {}),
-    ...(flags.timeout !== undefined ? { timeoutMs: Number(flags.timeout) } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(flags.pluginDir !== undefined ? { pluginDir: resolve(flags.pluginDir) } : {}),
     ...(budgetUsd !== undefined ? { budgetUsd } : {}),
   });
@@ -360,7 +379,7 @@ export async function main(
 
 // Entry point: run when invoked directly (`node --import tsx src/cli.ts ...`). No TTY prompt.
 const invokedDirectly =
-  process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (invokedDirectly) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
