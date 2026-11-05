@@ -83,8 +83,8 @@ export class MarkdownFileStore implements FileStore {
    * Stat-only freshness fingerprint (ADR-001): count `.md` files and fold their `mtimeMs` into a max,
    * across `facts/`+`episodes/` under BOTH roots. Same source list as the reads (global always; project
    * when present). Limitation: two writes within one `mtimeMs` tick to the same file are indistinguishable
-   * — accepted, the out-of-band writer is a separate process (>1ms round-trip) and the in-process writer
-   * updates the map directly (it never relies on this probe). No content hashing (ADR-001 alt #3).
+   * — accepted: this probe only has to catch other processes' writes. The service marks its own view stale
+   * after each of its writes and never relies on the probe for them. No content hashing (ADR-001 alt #3).
    */
   signature(): StoreSignature {
     const sources: string[] = [this.roots.global];

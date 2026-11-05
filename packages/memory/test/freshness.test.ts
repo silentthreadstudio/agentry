@@ -121,6 +121,75 @@ test("stable store does NOT rebuild on a second read (signature short-circuits)"
   );
 });
 
+// A store whose fingerprint never moves, as on a filesystem with coarse mtimes where a write lands in
+// the same tick as the last load. Search after the service's own writes must still be right: the
+// service's own writes mark its view stale, they do not wait for the probe to notice them.
+class HeldSignatureStore extends CountingStore {
+  override signature(): StoreSignature {
+    return { count: 0, maxMtimeMs: 0 };
+  }
+}
+const held = (dir: string): HeldSignatureStore =>
+  new HeldSignatureStore(new MarkdownFileStore({ global: dir, project: null }));
+
+test("update() text is searchable by its new words while the store signature holds still", () => {
+  const dir = fresh();
+  const service = newService(dir, held(dir));
+  const { id } = service.write({ type: "gotcha", scope: "global", text: "the jasper cache warms" });
+  assert.equal(service.search("jasper")[0]?.id, id);
+
+  service.update(id, { text: "the obsidian cache warms" });
+
+  assert.deepEqual(
+    service.search("obsidian").map((h) => h.id),
+    [id],
+  );
+  assert.equal(service.search("jasper").length, 0, "the old text is gone from the index");
+});
+
+test("a superseded fact set back to active by update() is searchable while the signature holds still", () => {
+  const dir = fresh();
+  const { id } = newService(dir).write({ type: "decision", scope: "global", text: "beryl wins" });
+  newService(dir).update(id, { status: "superseded" });
+
+  const service = newService(dir, held(dir)); // loads it superseded, so it is not in the index
+  service.update(id, { status: "active" });
+
+  assert.deepEqual(
+    service.search("beryl").map((h) => h.id),
+    [id],
+  );
+});
+
+test("recover() makes the fact searchable again while the signature holds still", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = new MemoryService(
+    held(dir),
+    new SqliteTextIndex(),
+    { global: dir, project: null },
+    () => clock,
+  );
+  service.load();
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "the zircon gauge drifts",
+  });
+  for (let strike = 0; strike < 4; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  }
+  assert.equal(service.search("zircon").length, 0, "archived facts are not searchable");
+
+  service.recover(id);
+
+  assert.deepEqual(
+    service.search("zircon").map((h) => h.id),
+    [id],
+  );
+});
+
 test("resync() force-rebuilds and reports before/after counts reflecting out-of-band facts", () => {
   const dir = fresh();
   const serviceA = newService(dir); // empty store → before.facts === 0

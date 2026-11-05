@@ -1,6 +1,11 @@
-// MemoryService — the memory store aggregate. Holds the in-memory record maps (loaded from the file
-// store), keeps the file store (truth) and text index (derived) in sync on writes, and implements the
-// fact/episode operations + recall ranking. Graduation analyses (distill/consolidate) live in flows.ts.
+// MemoryService — the memory store aggregate. Holds the in-memory record maps and the text index, both
+// loaded from the file store (truth), and implements the fact/episode operations + recall ranking.
+// Graduation analyses (distill/consolidate) live in flows.ts.
+//
+// Freshness: the maps are updated on every write, but the text index is only ever rebuilt by load(),
+// never patched. Every write marks the loaded view stale, so the next search/recall/stats reloads it.
+// Search after update() or recover() is right because of that reload, not because a write happened to
+// move a file mtime.
 import type { Episode, Fact, MemoryType, Scope } from "@agentry/core";
 import { DEDUP_THRESHOLD, similarity } from "../domain/dedup.js";
 import { type Origin, newId, originOf } from "../domain/id.js";
@@ -104,7 +109,8 @@ export class MemoryService {
   // parse. Surfaced through stats() so memory_stats can report them (Q1); never silently swallowed.
   private readErrors: ReadError[] = [];
   // Freshness fingerprint captured at the end of the last load() (ADR-001). ensureFresh() re-probes and
-  // compares against this to detect out-of-band writes; null until the first load().
+  // compares against this to detect out-of-band writes. null = the view is stale and the next read
+  // reloads: before the first load(), and after each of this service's own writes (see stale()).
   private signature: StoreSignature | null = null;
 
   constructor(
@@ -181,7 +187,7 @@ export class MemoryService {
       if (old) this.save({ ...old, status: "superseded", updatedAt: ts });
       else supersededMissing = input.supersedes; // requested a supersession of an id that doesn't exist
     }
-    this.create(fact);
+    this.save(fact);
     return {
       id: fact.id,
       action: "created",
@@ -350,6 +356,7 @@ export class MemoryService {
     };
     this.store.writeEpisode(origin, episode);
     this.episodes.set(episode.id, episode);
+    this.stale();
     return { id: episode.id };
   }
 
@@ -373,6 +380,7 @@ export class MemoryService {
       const next: Episode = { ...e, distilled: true };
       this.store.writeEpisode(originOf(e.id), next);
       this.episodes.set(id, next);
+      this.stale();
       applied.push(id);
     }
     return { applied, skipped, requested: ids.length };
@@ -384,10 +392,9 @@ export class MemoryService {
 
   /**
    * Restore a tombstoned (archived) fact back to active — the recover side of auto-decay (doc 02 §3).
-   * Clears the strike counter and tombstone. Because save() does not re-index, also re-add the fact to
-   * the text index so it's immediately searchable again (task mode) without waiting for a full load().
-   * Splits failure (ADR-001 §B): id absent → not-found; present but not archived → invalid-state
-   * (carrying the actual status so the adapter can distinguish the two for the caller).
+   * Clears the strike counter and tombstone; the reload that follows every write puts it back in the
+   * text index. Splits failure (ADR-001 §B): id absent → not-found; present but not archived →
+   * invalid-state (carrying the actual status so the adapter can distinguish the two for the caller).
    */
   recover(id: string): RecoverOutcome {
     if (id.trim() === "")
@@ -399,7 +406,6 @@ export class MemoryService {
     const { archivedAt: _tombstone, ...live } = fact;
     const restored: Fact = { ...live, status: "active", decay: 0, updatedAt: this.iso() };
     this.save(restored);
-    this.index.add(id, this.body(restored));
     return { ok: true, id };
   }
 
@@ -409,10 +415,12 @@ export class MemoryService {
       return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     if (this.facts.delete(id)) {
       this.store.deleteFact(originOf(id), id);
+      this.stale();
       return { ok: true, id, kind: "fact" };
     }
     if (this.episodes.delete(id)) {
       this.store.deleteEpisode(originOf(id), id);
+      this.stale();
       return { ok: true, id, kind: "episode" };
     }
     return { ok: false, reason: "not-found", id };
@@ -457,16 +465,16 @@ export class MemoryService {
     }
   }
 
-  private create(fact: Fact): void {
-    this.store.writeFact(originOf(fact.id), fact);
-    this.facts.set(fact.id, fact);
-    this.index.add(fact.id, this.body(fact));
+  /** Mark the loaded view stale after one of this service's own writes: the next read reloads it. */
+  private stale(): void {
+    this.signature = null;
   }
 
-  /** Update an existing fact (no re-index; recall filters superseded via the map's status). */
+  /** Write a fact to the file store and the map. The index catches up on the reload stale() forces. */
   private save(fact: Fact): void {
     this.store.writeFact(originOf(fact.id), fact);
     this.facts.set(fact.id, fact);
+    this.stale();
   }
 
   private body(fact: Fact): string {

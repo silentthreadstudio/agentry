@@ -28508,7 +28508,8 @@ var MemoryService = class {
   // parse. Surfaced through stats() so memory_stats can report them (Q1); never silently swallowed.
   readErrors = [];
   // Freshness fingerprint captured at the end of the last load() (ADR-001). ensureFresh() re-probes and
-  // compares against this to detect out-of-band writes; null until the first load().
+  // compares against this to detect out-of-band writes. null = the view is stale and the next read
+  // reloads: before the first load(), and after each of this service's own writes (see stale()).
   signature = null;
   /** Load the file store into memory and (re)build the text index. Call once at startup. */
   load() {
@@ -28565,7 +28566,7 @@ var MemoryService = class {
       if (old) this.save({ ...old, status: "superseded", updatedAt: ts });
       else supersededMissing = input.supersedes;
     }
-    this.create(fact);
+    this.save(fact);
     return {
       id: fact.id,
       action: "created",
@@ -28706,6 +28707,7 @@ var MemoryService = class {
     };
     this.store.writeEpisode(origin, episode);
     this.episodes.set(episode.id, episode);
+    this.stale();
     return { id: episode.id };
   }
   undistilledEpisodes() {
@@ -28727,6 +28729,7 @@ var MemoryService = class {
       const next = { ...e, distilled: true };
       this.store.writeEpisode(originOf(e.id), next);
       this.episodes.set(id, next);
+      this.stale();
       applied.push(id);
     }
     return { applied, skipped, requested: ids.length };
@@ -28736,10 +28739,9 @@ var MemoryService = class {
   }
   /**
    * Restore a tombstoned (archived) fact back to active — the recover side of auto-decay (doc 02 §3).
-   * Clears the strike counter and tombstone. Because save() does not re-index, also re-add the fact to
-   * the text index so it's immediately searchable again (task mode) without waiting for a full load().
-   * Splits failure (ADR-001 §B): id absent → not-found; present but not archived → invalid-state
-   * (carrying the actual status so the adapter can distinguish the two for the caller).
+   * Clears the strike counter and tombstone; the reload that follows every write puts it back in the
+   * text index. Splits failure (ADR-001 §B): id absent → not-found; present but not archived →
+   * invalid-state (carrying the actual status so the adapter can distinguish the two for the caller).
    */
   recover(id) {
     if (id.trim() === "")
@@ -28751,7 +28753,6 @@ var MemoryService = class {
     const { archivedAt: _tombstone, ...live } = fact;
     const restored = { ...live, status: "active", decay: 0, updatedAt: this.iso() };
     this.save(restored);
-    this.index.add(id, this.body(restored));
     return { ok: true, id };
   }
   /** Manual-removal override (doc 02 §3): delete a memory from the live store and disk by id. */
@@ -28760,10 +28761,12 @@ var MemoryService = class {
       return { ok: false, reason: "bad-input", field: "id", rule: "a non-empty id" };
     if (this.facts.delete(id)) {
       this.store.deleteFact(originOf(id), id);
+      this.stale();
       return { ok: true, id, kind: "fact" };
     }
     if (this.episodes.delete(id)) {
       this.store.deleteEpisode(originOf(id), id);
+      this.stale();
       return { ok: true, id, kind: "episode" };
     }
     return { ok: false, reason: "not-found", id };
@@ -28796,15 +28799,15 @@ var MemoryService = class {
       this.load();
     }
   }
-  create(fact) {
-    this.store.writeFact(originOf(fact.id), fact);
-    this.facts.set(fact.id, fact);
-    this.index.add(fact.id, this.body(fact));
+  /** Mark the loaded view stale after one of this service's own writes: the next read reloads it. */
+  stale() {
+    this.signature = null;
   }
-  /** Update an existing fact (no re-index; recall filters superseded via the map's status). */
+  /** Write a fact to the file store and the map. The index catches up on the reload stale() forces. */
   save(fact) {
     this.store.writeFact(originOf(fact.id), fact);
     this.facts.set(fact.id, fact);
+    this.stale();
   }
   body(fact) {
     return [fact.text, fact.why ?? "", (fact.tags ?? []).join(" ")].join(" ").trim();
@@ -29014,8 +29017,8 @@ var MarkdownFileStore = class {
    * Stat-only freshness fingerprint (ADR-001): count `.md` files and fold their `mtimeMs` into a max,
    * across `facts/`+`episodes/` under BOTH roots. Same source list as the reads (global always; project
    * when present). Limitation: two writes within one `mtimeMs` tick to the same file are indistinguishable
-   * — accepted, the out-of-band writer is a separate process (>1ms round-trip) and the in-process writer
-   * updates the map directly (it never relies on this probe). No content hashing (ADR-001 alt #3).
+   * — accepted: this probe only has to catch other processes' writes. The service marks its own view stale
+   * after each of its writes and never relies on the probe for them. No content hashing (ADR-001 alt #3).
    */
   signature() {
     const sources = [this.roots.global];
