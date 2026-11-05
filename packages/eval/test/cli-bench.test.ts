@@ -22,7 +22,7 @@ import { seedSandbox } from "../src/io/sandbox.ts";
 import type { JudgeFn } from "../src/judge/index.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = join(HERE, "..");
+const REPO_ROOT = join(HERE, "..", "..", "..");
 const BENCH_MINI_DIR = join(HERE, "fixtures", "bench-mini");
 const BM_CLAMP_GOLDEN = join(BENCH_MINI_DIR, "bm-clamp", "golden");
 
@@ -116,7 +116,7 @@ test("run bench writes a complete runs/<id>/ with kind=bench and a scored summar
       "--fixture",
       "bm-clamp", // restrict the matrix to the one trivial fixture (the loader still validates the corpus)
       "--plugin-dir",
-      PKG_ROOT, // the Agentry cell declares loadsPlugin; the fake runner ignores the path, runCell just requires it present
+      REPO_ROOT, // the Agentry cell declares loadsPlugin; runCell checks it is the real repo root, the fake runner ignores it
       "--runs-root",
       runsRoot,
       "--run-id",
@@ -173,7 +173,7 @@ test("run bench stdout is exactly the run dir (script-friendly)", async () => {
         "--fixture",
         "bm-clamp",
         "--plugin-dir",
-        PKG_ROOT,
+        REPO_ROOT,
         "--runs-root",
         runsRoot,
         "--run-id",

@@ -33,7 +33,11 @@ export const DEFAULT_TIMEOUT_MS = 600_000;
 
 /** Per-cell run options — the resolved plugin path + model + cap the caller discovers; all optional with defaults. */
 export interface RunCellOptions {
-  /** Resolved `--plugin-dir` path for the Agentry cell (the repo's `plugin/` root). Required when the cell loads a plugin. */
+  /**
+   * The Agentry REPO ROOT (the `--plugin-dir` flag of the CLI). The conductor prompt is read from
+   * `<root>/plugin/commands/go.md` and `claude` is handed `--plugin-dir <root>/plugin`. Required when the cell
+   * loads a plugin.
+   */
   pluginDir?: string;
   /** Model id pinned for the run; defaults to {@link DEFAULT_MODEL}. */
   model?: string;
@@ -71,6 +75,16 @@ export async function runCell(
       `runCell: cell "${cell.id}" loads the Agentry plugin but no pluginDir was provided`,
     );
   }
+  // A wrong directory must fail here, loudly: `claude` would start without Agentry and the run would score a bare model.
+  if (
+    cell.loadsPlugin &&
+    opts.pluginDir !== undefined &&
+    !existsSync(join(opts.pluginDir, "plugin", ".claude-plugin", "plugin.json"))
+  ) {
+    throw new Error(
+      `runCell: ${opts.pluginDir}/plugin/.claude-plugin/plugin.json not found — pass the Agentry repo root as pluginDir`,
+    );
+  }
 
   const model = opts.model ?? DEFAULT_MODEL;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -86,10 +100,13 @@ export async function runCell(
   const streamPath = join(sandbox.workingDir, "stream.jsonl");
   // The Agentry cell delivers the EXPANDED go.md conductor prompt (NOT the 0-turn `/agentry:go` slash form);
   // the bare cell hands the raw task through its identity promptWrap.
-  const pluginDir = cell.loadsPlugin ? opts.pluginDir : undefined; // defined whenever the cell loads it (guarded above)
+  const repoRoot = cell.loadsPlugin ? opts.pluginDir : undefined; // defined whenever the cell loads it (guarded above)
+  // `claude --plugin-dir` takes the PLUGIN root (`<repo>/plugin`, where agents/commands/skills/mem live), while the
+  // conductor prompt is read relative to the repo root: two different directories, derived from the one flag.
+  const pluginDir = repoRoot !== undefined ? join(repoRoot, "plugin") : undefined;
   const prompt =
-    pluginDir !== undefined
-      ? buildConductorPrompt(pluginDir, fixture.prompt)
+    repoRoot !== undefined
+      ? buildConductorPrompt(repoRoot, fixture.prompt)
       : cell.promptWrap(fixture.prompt);
 
   // Build the per-cell Invocation. RUN-TO-COMPLETION (ADR-002): `runToCompletion: true` makes the live runner

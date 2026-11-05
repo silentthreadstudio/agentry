@@ -22,7 +22,7 @@ import { seedSandbox } from "../src/io/sandbox.ts";
 import type { JudgeFn } from "../src/judge/index.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = join(HERE, "..");
+const REPO_ROOT = join(HERE, "..", "..", "..");
 const BENCH_MINI_DIR = join(HERE, "fixtures", "bench-mini");
 const BM_CLAMP_GOLDEN = join(BENCH_MINI_DIR, "bm-clamp", "golden");
 
@@ -135,7 +135,7 @@ async function runBench(
         "--k",
         String(PLANNED),
         "--plugin-dir",
-        PKG_ROOT,
+        REPO_ROOT,
         "--runs-root",
         runsRoot,
         "--run-id",

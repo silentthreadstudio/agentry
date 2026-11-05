@@ -30,7 +30,7 @@ export const AUTOPILOT_DIRECTIVE =
 /**
  * Build the headless conductor prompt: the EXPANDED `/agentry:go` command content (never the 0-turn slash form).
  * Reads `<pluginRoot>/plugin/commands/go.md`, strips its YAML frontmatter, and substitutes `$ARGUMENTS` with the
- * task + the auto-pilot directive. `pluginRoot` is the `--plugin-dir` value (the repo root that holds `plugin/`).
+ * task + the auto-pilot directive. `pluginRoot` is the REPO ROOT that holds `plugin/` (the CLI's `--plugin-dir`, not the plugin folder itself).
  * Falls back to a minimal conductor framing when the command file isn't on disk (e.g. a synthetic test root) — so
  * the prompt is always a real model prompt, never the slash no-op.
  */
@@ -39,5 +39,6 @@ export function buildConductorPrompt(pluginRoot: string, task: string): string {
   const body = existsSync(goPath)
     ? readFileSync(goPath, "utf8").replace(/^---[\s\S]*?---\n/, "")
     : "You are Agentry's conductor. Route this task to the least process that wins (one-shot → spec-first → decompose+verify) and conduct it end to end:\n\n$ARGUMENTS";
-  return body.replace(/\$ARGUMENTS/g, task + AUTOPILOT_DIRECTIVE);
+  // A replacer FUNCTION: a task containing `$&` or `$'` must not be expanded as a replacement pattern.
+  return body.replace(/\$ARGUMENTS/g, () => task + AUTOPILOT_DIRECTIVE);
 }
