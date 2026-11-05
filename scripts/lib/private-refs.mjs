@@ -1,10 +1,14 @@
 // private-refs — comments in shipped files must stand on their own. The repo is public, and a comment that
 // cites a design doc, an ADR, an acceptance-criterion number, a field number, an owner-call id or a task id
-// points at something a reader cannot open. Say the reason in a clause, or drop the citation.
+// points at something a reader cannot open. Say the reason in a clause, or drop the citation. The same holds for
+// the prose of the shipped markdown (agents, commands, skills and their references): a model and its reader get
+// only what the file says.
 //
 // privateRefs(rootDir) -> string[]   "<file>:<line>: comment cites a private reference (<match>)" each,
-// over the comments of every code file under `plugin/`, `packages/` and `scripts/`. Strings are never read: a printed
-// message or a test name that holds an id is the program's own text, not a comment.
+// over the comments of every code file under `plugin/`, `packages/` and `scripts/`, and "<file>:<line>: prose
+// cites a private reference (<match>)" over every line of the markdown under `plugin/`, code fences included
+// (examples ship too). Strings are never read: a printed message or a test name that holds an id is the
+// program's own text, not a comment.
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -33,8 +37,31 @@ export const PRIVATE_REF = new RegExp(
   ].join("|"),
 );
 
+// The same for markdown prose. Tighter than PRIVATE_REF: `AC1..n` (the Spec's own criteria ids), `T-1` and `T-014`
+// (placeholder task ids in examples), a `§` that points at another section of the shipped files, and `ADR-worthy`
+// are the plugin's own words, so none of them is a citation here.
+export const PRIVATE_REF_PROSE = new RegExp(
+  [
+    String.raw`\bADR-\d+`, // ADR-001
+    String.raw`\bdoc[ -]\d{2}\b`, // doc 07, doc-01
+    String.raw`\bA\d{2}\b`, // A45: an owner-call id
+    String.raw`\b[Ff]ield #?\d+\b`, // field 84
+    String.raw`(?<![\w&/])#\d{2,}\b`, // #97: a field report or issue number (not #L42, not &#10;)
+    String.raw`\bR1[a-z]-\d+`, // R1d-27: a task id
+    String.raw`\bS\d{2}\b`, // S46: a triage id
+    String.raw`\b[Dd]ecisions? \d+\b(?![\w-])`, // decision 51
+    String.raw`\bplan (?:R1\w*|F\d+)`,
+    String.raw`\bR1[a-z] plan\b`,
+    String.raw`\.docs/`,
+    String.raw`\bautopilot-design\b`,
+    String.raw`\breshape plan\b`,
+    String.raw`\b(?:Plan|Spec) v2\b`,
+  ].join("|"),
+);
+
 const CODE = /\.(?:mjs|js|ts|astro|css|html)$/;
 const YAML = /\.ya?ml$/;
+const MARKDOWN = /^plugin\/.*\.md$/;
 const SKIP_DIR = new Set(["node_modules", "dist", ".astro", ".git"]);
 // The memory server bundle is built output: its comments are its dependencies', not this repo's.
 // This check's own file and test name the patterns they look for.
@@ -120,7 +147,17 @@ export function privateRefs(rootDir) {
     const files = shipped(rootDir, top);
     for (const file of files) {
       const rel = relative(rootDir, file);
-      if (SELF.test(rel) || BUILT.test(rel) || !(CODE.test(file) || YAML.test(file))) continue;
+      if (SELF.test(rel) || BUILT.test(rel)) continue;
+      if (MARKDOWN.test(rel)) {
+        readFileSync(file, "utf8")
+          .split("\n")
+          .forEach((line, i) => {
+            const hit = PRIVATE_REF_PROSE.exec(line);
+            if (hit) problems.push(`${rel}:${i + 1}: prose cites a private reference (${hit[0]})`);
+          });
+        continue;
+      }
+      if (!(CODE.test(file) || YAML.test(file))) continue;
       const text = readFileSync(file, "utf8");
       for (const [line, comment] of CODE.test(file) ? codeComments(text) : yamlComments(text)) {
         const hit = PRIVATE_REF.exec(comment);
