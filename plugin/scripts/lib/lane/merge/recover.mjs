@@ -4,11 +4,13 @@
 // It acts only on what it can prove is its own: board writes and a board commit by the sha256 the record
 // stored before writing (`merge.record`), a cherry-pick by the planned commits git names. Anything else
 // stops the land, left as it is, with the commands that clear it. A land that cannot go on at all is
-// closed on the owner's call (`--resolve landed|rolled-back`, field 82), checked against main first.
+// closed on the owner's call (`--resolve landed|rolled-back`, field 82), checked against main first; so is
+// a verified lane whose work reached main another way (`--resolve landed`, by `git cherry`).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { identities } from "../../process/git.mjs";
 import { list as listLedgers, read as readLedger } from "../../process/ledger.mjs";
+import { resolveBranch } from "../adopt.mjs";
 import { sha256 } from "../carry-io.mjs";
 import { endStrayGate } from "../gate-group.mjs";
 import {
@@ -25,12 +27,25 @@ import {
   textAt,
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
+import { PASSES, greenOn, verdicts } from "../rounds.mjs";
 import { childrenOf } from "../stack.mjs";
 import { git } from "../worktree.mjs";
 import { backStop, putBackAllow, releaseWrites } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
-import { afterLand, done, landNext, now, ok, red, save, setMerge, short, warn } from "./lane.mjs";
-import { stoppedCut } from "./rows.mjs";
+import {
+  FRESH,
+  afterLand,
+  done,
+  landNext,
+  now,
+  ok,
+  red,
+  save,
+  setMerge,
+  short,
+  warn,
+} from "./lane.mjs";
+import { lastWorktreeGate, stoppedCut } from "./rows.mjs";
 
 const readText = (root, file) => {
   try {
@@ -484,21 +499,149 @@ function plannedFilesChanged(root, preHead, planned, cannotTell) {
   return `${shown} changed on main since this land began: check by hand, then --resolve rolled-back --checked`;
 }
 
+// --- --resolve landed of a lane whose work reached main another way ---------------------------------
+
+// A lane that no land of its own is under way for (a red gate's rollback leaves `merge` at a fresh step)
+// and whose work may be on main by another route: verified, or stopped on a red worktree gate after a pass.
+function closable(ledger) {
+  if (ledger.merge && !FRESH.includes(ledger.merge.step)) return false;
+  if (ledger.state === "verified") return true;
+  if (ledger.state !== "stopped") return false;
+  const gate = lastWorktreeGate(ledger);
+  const pass = PASSES.includes(verdicts(ledger).at(-1)?.verdict);
+  return pass && Boolean(gate) && !greenOn([gate], gate.commit);
+}
+
+const firstLine = (res, what) => res.stderr.trim().split("\n")[0] || `${what} failed`;
+const lines = (text) => text.split("\n").filter(Boolean);
+
+// The lane's own commits (`base..tip` on its first-parent line, oldest first: a merge brings in no one's
+// commits as the lane's) against `head`, main: `{ landed, missing }`. A commit main has as an ancestor is
+// landed as itself; one `git cherry` marks "-" as the main commit with its patch; one it marks "+", and a
+// merge commit main lacks (no patch proves one), is missing. `{ error }` when git cannot say.
+function laneOnMain(root, { base, tip, head }) {
+  const own = git(root, ["rev-list", "--reverse", "--first-parent", `${base}..${tip}`, "--"]);
+  if (own.status !== 0) return { error: firstLine(own, "git rev-list") };
+  const merges = git(root, ["rev-list", "--merges", tip, `^${base}`, `^${head}`, "--"]);
+  if (merges.status !== 0) return { error: firstLine(merges, "git rev-list") };
+  const cherry = git(root, ["cherry", head, tip, base]);
+  if (cherry.status !== 0) return { error: firstLine(cherry, "git cherry") };
+  const marks = new Map(lines(cherry.stdout).map((line) => line.split(" ").reverse()));
+  for (const sha of lines(merges.stdout)) marks.set(sha, "+");
+  const twins = [...marks].filter(([, mark]) => mark === "-").map(([sha]) => sha);
+  const on = new Map();
+  if (twins.length > 0) {
+    const mine = patchIdsOf(root, ["--no-walk=unsorted", ...twins]);
+    const main = mine.error ? mine : patchIdsOf(root, ["--reverse", `${tip}..${head}`]);
+    if (main.error) return { error: main.error };
+    const theirs = new Map();
+    for (const p of main.ids) if (!theirs.has(p.patchId)) theirs.set(p.patchId, p.sha);
+    for (const p of mine.ids) if (theirs.has(p.patchId)) on.set(p.sha, theirs.get(p.patchId));
+  }
+  const landed = [];
+  const missing = [];
+  for (const sha of lines(own.stdout)) {
+    const mark = marks.get(sha);
+    if (mark === undefined) landed.push(sha);
+    else if (mark === "-" && on.has(sha)) landed.push(on.get(sha));
+    else if (mark === "-")
+      return { error: `git cherry finds ${short(sha)}'s patch on main, its patch id does not` };
+    else missing.push(sha);
+  }
+  return { landed: [...new Set(landed)], missing };
+}
+
+// `--resolve landed` of a lane `closable` says may be on main: every commit of its own on main (by patch,
+// or as itself), or the owner's word that the rest landed squashed or reworded (`--checked`, recorded with
+// them in `resolutions[]`), and the ledger is `merged` with `merge.how: "found-on-main"`. Nothing is
+// picked, gated or committed, and the board record stays the owner's, as for a stuck land.
+function foundOnMain(lane, checked) {
+  const { root, id, ledger } = lane;
+  const no = (why, more = []) => done(2, lane, [red("resolve", why, more)]); // the ledger is not written
+  const held = HELD.filter((key) => ledger.merge?.[key]);
+  if (held.length > 0)
+    return no(
+      `the ledger still holds what a land set aside (merge.${held.join(", merge.")}): land again to put it back first (${landNext(id)})`,
+    );
+  if (!(typeof ledger.base === "string" && FULL_SHA.test(ledger.base)))
+    return no(`ledger value base ${JSON.stringify(ledger.base)} is not a commit sha: not landed`);
+  const named = resolveBranch(root, ledger.branch);
+  if (named.problem) return no(`${named.problem}: cannot tell what ${id}'s lane holds`);
+  const { tip } = named;
+  if (ledger.state === "verified" && ledger.closedTip && tip !== ledger.closedTip)
+    return no(
+      `${ledger.branch} moved since the lane closed on ${short(ledger.closedTip)}: lane exec rebase ${id}`,
+    );
+  const head = commitOf(root, "HEAD");
+  if (!head) return no("git cannot read main's HEAD: not landed");
+  const found = laneOnMain(root, { base: ledger.base, tip, head });
+  if (found.error)
+    return no(`cannot tell whether ${id}'s commits are on main (${found.error}): not landed`);
+  const { landed, missing } = found;
+  if (landed.length + missing.length === 0)
+    return no(
+      `${ledger.branch} has no commits past its base ${short(ledger.base)}: nothing to close`,
+    );
+  const listed = (shas) => shas.map((sha) => `${short(sha)} ${subjectOf(root, sha)}`);
+  if (missing.length > 0 && !checked)
+    return no(
+      `${missing.length} of ${id}'s ${landed.length + missing.length} commit(s) have no matching patch on main: not landed → if they landed squashed or reworded, check by hand, then --resolve landed --checked`,
+      listed(missing),
+    );
+  const at = now();
+  const resolutions = checked
+    ? {
+        resolutions: [
+          ...(ledger.resolutions ?? []),
+          {
+            as: "landed",
+            at,
+            checked: true,
+            missing: missing.map((sha) => ({ sha, subject: subjectOf(root, sha) })),
+          },
+        ],
+      }
+    : {};
+  const merged = {
+    state: "merged",
+    merge: {
+      how: "found-on-main",
+      landed,
+      tip,
+      stateBefore: ledger.state,
+      step: "committed",
+      boardCommit: null,
+      resolved: { as: "landed", at },
+      at,
+    },
+    ...resolutions,
+  };
+  lane.ledger = { ...ledger, ...merged };
+  const next = afterLand(lane);
+  save(lane, { ...merged, next });
+  const by = missing.length > 0 ? `; ${missing.length} checked by hand` : "";
+  const detail = `resolved: ${id}'s work is on main (${landed.length} commit(s) by patch${by}); ledger merged, nothing picked (the board record is yours: board set … and the handoff line)`;
+  const kids = childrenOf(listLedgers(root), id).map((child) =>
+    warn("stack", `${child} is stacked on ${id}: agentry lane exec restack ${child} --main`),
+  );
+  const more = [...listed(landed), ...listed(missing).map((line) => `${line} (checked by hand)`)];
+  return done(0, lane, [ok("resolve", detail, more), ...kids], next);
+}
+
 /** `lane merge <id> --resolve landed|rolled-back`: on the owner's call, close a ledger in `merging` a land
  *  cannot finish. `landed`: every recorded pick is on main; the ledger is `merged` with the picks as its
  *  commits and no board commit (the board record is the owner's), or the one a land killed at `recording`
  *  made, when the record proves it. `rolled-back`: no pick is on main; the
  *  ledger's `merge` goes and the lane is `verified` again (`--checked`: the owner checked by hand the planned
  *  files main changed, so that refusal is skipped and `{ as, at, checked }` appended to `resolutions[]`). Each checks main first and refuses with what it
- *  found; neither touches main or the board, and the ledger is written once. */
+ *  found; neither touches main or the board, and the ledger is written once. `landed` also closes a lane
+ *  that never landed itself, its work on main another way (`foundOnMain`). */
 export function resolveMode(lane) {
   const { root, id, opts } = lane;
   const as = opts["--resolve"];
   if (!RESOLUTIONS.includes(as))
     return done(2, lane, [red("resolve", `--resolve takes landed or rolled-back, not "${as}"`)]);
   const checked = Boolean(opts["--checked"]);
-  if (checked && as !== "rolled-back")
-    return done(2, lane, [red("resolve", "--checked goes with --resolve rolled-back only")]);
   let ledger;
   try {
     ledger = readLedger(root, id);
@@ -510,8 +653,16 @@ export function resolveMode(lane) {
   const no = (why) => done(2, lane, [red("resolve", why)]); // no next: the ledger is not written
   const cut = stoppedCut(id, ledger);
   if (cut) return no(cut);
-  if (ledger.state !== "merging")
-    return no(`${id}'s lane is "${ledger.state}": --resolve closes only a land in "merging"`);
+  if (ledger.state !== "merging") {
+    if (as === "landed" && closable(ledger)) return foundOnMain(lane, checked);
+    return no(
+      `${id}'s lane is "${ledger.state}": --resolve closes only a land in "merging", or with landed a lane verified (or stopped on a red gate after a pass) whose work is on main`,
+    );
+  }
+  if (checked && as !== "rolled-back")
+    return no(
+      "--checked goes with --resolve rolled-back only on a land in merging (with landed, only on a lane whose work reached main another way)",
+    );
   const merge = ledger.merge ?? {};
   // The ledger's commits go to git as revisions: each must be a full SHA, before any git call, and the
   // picks a list of them (a bare sha would read as no pick).

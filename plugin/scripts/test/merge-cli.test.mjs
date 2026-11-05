@@ -22,7 +22,9 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { create } from "../lib/lane/worktree.mjs";
+import { nudges } from "../lib/process/drift.mjs";
 import { read as readLedger, write as writeLedger } from "../lib/process/ledger.mjs";
+import { loadSpec, readProcess } from "../lib/process/read.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
 import { writeSpec } from "./spec-files.mjs";
 
@@ -2823,4 +2825,193 @@ test("the printed board set line is one shell command: two remaining deps both s
   );
   assert.equal(run.status, 0, run.stdout + run.stderr);
   assert.match(board(), /\| T1 +\| S1 +\| verify \| PASS +\| +\| T4, T5 +\|/);
+});
+
+// ---- --resolve landed of a lane whose work reached main another way (R1f-9) ----
+
+/** Main fast-forwarded to a combined branch: another lane's commit first (so every copy is a new SHA),
+ *  then `picks` cherry-picked in order, an array squashed into one commit. Returns main's new commits. */
+function combine(...picks) {
+  const before = head();
+  git(root, "checkout", "-q", "-b", "combined");
+  commitFile(root, "src/other.txt", "another lane\n", "feat(other): another lane's work");
+  for (const pick of picks) {
+    if (!Array.isArray(pick)) git(root, "cherry-pick", pick);
+    else {
+      git(root, "cherry-pick", "-n", ...pick);
+      git(root, "commit", "-q", "-m", "feat(src): squashed");
+    }
+  }
+  git(root, "checkout", "-q", "main");
+  git(root, "merge", "-q", "--ff-only", "combined");
+  git(root, "branch", "-q", "-D", "combined");
+  return git(root, "rev-list", "--reverse", `${before}..HEAD`).split("\n");
+}
+const nudgeKinds = (id) => {
+  const spec = loadSpec(join(root, ".agentry", "process.json"), { root }).spec;
+  return nudges({ root, spec, model: readProcess({ root, spec }) })
+    .filter((n) => n.id === id)
+    .map((n) => n.kind);
+};
+
+test("a verified lane whose commits main has by patch closes found-on-main: nothing picked, main and the board untouched", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
+  execLedger({ path, gated: shas[1] });
+  const [, a, b] = combine(...shas);
+  git(root, "commit", "-q", "--amend", "-m", "feat(src): b, reworded"); // a reword keeps the patch
+  const reworded = head();
+  assert.equal(merge(ID, "--preflight").status, 1); // nothing to land: the commits are on main
+  const before = [head(), board(), sprint()];
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /✓ resolve +resolved: T1's work is on main \(2 commit\(s\) by patch\)/);
+  assert.match(res.stdout, new RegExp(`${a.slice(0, 7)} add src/a.txt`));
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "merged");
+  assert.equal(ledger.merge.how, "found-on-main");
+  assert.deepEqual(ledger.merge.landed, [a, reworded]);
+  assert.notEqual(b, reworded);
+  assert.equal(ledger.merge.boardCommit, null);
+  assert.equal(ledger.merge.planned, undefined);
+  assert.equal(ledger.resolutions, undefined);
+  assert.equal(ledger.next, res.stdout.match(/next: (.*)/)[1]);
+  assert.deepEqual([head(), board(), sprint()], before);
+  assert.equal(status(), "");
+  assert.ok(!nudgeKinds(ID).includes("verified-not-merged"), nudgeKinds(ID).join(", "));
+  const clean = merge(ID, "--cleanup");
+  assert.equal(clean.status, 0, out(clean));
+  assert.ok(!existsSync(path));
+  assert.equal(spawnSync("git", ["-C", root, "rev-parse", "--verify", "-q", BRANCH]).status, 1);
+});
+
+test("a lane with commits squashed on main refuses, naming each, and closes only with --checked", () => {
+  const { path, shas } = build({
+    "src/a.txt": "a\n",
+    "src/b.txt": "b\n",
+    "src/c.txt": "c\n",
+  });
+  execLedger({ path, gated: shas[2] });
+  const [, a] = combine(shas[0], [shas[1], shas[2]]);
+  const before = [head(), ledgerBytes(), board()];
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 2, out(res));
+  assert.match(
+    out(res),
+    /✗ resolve +2 of T1's 3 commit\(s\) have no matching patch on main: not landed → .*--resolve landed --checked/,
+  );
+  assert.match(out(res), new RegExp(`${shas[1].slice(0, 7)} add src/b.txt`));
+  assert.match(out(res), new RegExp(`${shas[2].slice(0, 7)} add src/c.txt`));
+  assert.deepEqual([head(), ledgerBytes(), board()], before);
+  const checked = merge(ID, "--resolve", "landed", "--checked");
+  assert.equal(checked.status, 0, out(checked));
+  assert.match(checked.stdout, /1 commit\(s\) by patch; 2 checked by hand/);
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "merged");
+  assert.deepEqual(ledger.merge.landed, [a]);
+  const [entry] = ledger.resolutions;
+  assert.equal(entry.as, "landed");
+  assert.equal(entry.checked, true);
+  assert.deepEqual(entry.missing, [
+    { sha: shas[1], subject: "add src/b.txt" },
+    { sha: shas[2], subject: "add src/c.txt" },
+  ]);
+  assert.deepEqual([head(), board()], [before[0], before[2]]);
+  // The branch the owner checked goes with the worktree, though its commits are not on main by patch.
+  const clean = merge(ID, "--cleanup");
+  assert.equal(clean.status, 0, out(clean));
+  assert.equal(spawnSync("git", ["-C", root, "rev-parse", "--verify", "-q", BRANCH]).status, 1);
+});
+
+test("a lane stopped on a red worktree gate after a pass closes found-on-main; one stopped after a FAIL does not", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0], record: { exit: 1 } });
+  const stopped = (verdict) =>
+    writeLedger(root, {
+      ...readLedger(root, ID),
+      rounds: [{ n: 1, role: "verify", step: "verify", verdict, tip: shas[0] }],
+      state: "stopped",
+      next: "stop",
+      stopReason: "the worktree gate is red (exit 1)",
+    });
+  const [, a] = combine(shas[0]);
+  stopped("FAIL");
+  const failed = ledgerBytes();
+  const no = merge(ID, "--resolve", "landed");
+  assert.equal(no.status, 2, out(no));
+  assert.match(out(no), /T1's lane is "stopped": --resolve closes only a land in "merging"/);
+  assert.equal(ledgerBytes(), failed);
+  stopped("PASS");
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 0, out(res));
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "merged");
+  assert.equal(ledger.merge.stateBefore, "stopped");
+  assert.deepEqual(ledger.merge.landed, [a]);
+});
+
+test("a stacked parent closed found-on-main counts as merged for its child, which closes on its own commits", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n" });
+  execLedger({ path, gated: shas[0] });
+  const kid = create(root, { id: "T2", base: BRANCH });
+  const own = commitFile(kid.path, "src/k.txt", "k\n", "add src/k.txt");
+  writeLedger(root, {
+    ...readLedger(root, ID),
+    id: "T2",
+    branch: "agentry/T2",
+    worktree: kid.path,
+    on: ID,
+    base: shas[0],
+  });
+  const [, a, k] = combine(shas[0], own);
+  const parent = merge(ID, "--resolve", "landed");
+  assert.equal(parent.status, 0, out(parent));
+  assert.match(parent.stdout, /! stack +T2 is stacked on T1: agentry lane exec restack T2 --main/);
+  const pf = merge("T2", "--preflight");
+  assert.match(
+    out(pf),
+    /✗ stack +T1 landed \(1 commit\(s\), board -\); T2 is still cut from T1's old tip/,
+  );
+  const child = merge("T2", "--resolve", "landed");
+  assert.equal(child.status, 0, out(child));
+  assert.match(child.stdout, /resolved: T2's work is on main \(1 commit\(s\) by patch\)/);
+  assert.deepEqual(readLedger(root, ID).merge.landed, [a]);
+  assert.deepEqual(readLedger(root, "T2").merge.landed, [k]);
+});
+
+test("a stuck land's --resolve landed is unchanged: its picks, no how, and --checked still refused", () => {
+  const { path, shas } = build({ "src/a.txt": "a\n", "src/b.txt": "b\n" });
+  execLedger({ path, gated: shas[1] });
+  const preHead = head();
+  git(root, "cherry-pick", ...shas);
+  const landed = git(root, "rev-list", "--reverse", `${preHead}..HEAD`).split("\n");
+  writeLedger(root, {
+    ...readLedger(root, ID),
+    state: "merging",
+    merge: {
+      preHead,
+      planned: shas,
+      landed,
+      tip: shas[1],
+      stateBefore: "verified",
+      step: "gated",
+      at: "2026-11-01T00:00:00.000Z",
+    },
+  });
+  const before = ledgerBytes();
+  const checked = merge(ID, "--resolve", "landed", "--checked");
+  assert.equal(checked.status, 2, out(checked));
+  assert.match(out(checked), /--checked goes with --resolve rolled-back only/);
+  assert.equal(ledgerBytes(), before);
+  const res = merge(ID, "--resolve", "landed");
+  assert.equal(res.status, 0, out(res));
+  assert.match(
+    res.stdout,
+    /✓ resolve +resolved: 2 pick\(s\) on main; ledger merged \(the board record is yours: board set … and the handoff line\)/,
+  );
+  const ledger = readLedger(root, ID);
+  assert.equal(ledger.state, "merged");
+  assert.deepEqual(ledger.merge.landed, landed);
+  assert.deepEqual(ledger.merge.planned, shas);
+  assert.equal(ledger.merge.how, undefined);
+  assert.equal(ledger.merge.resolved.as, "landed");
 });

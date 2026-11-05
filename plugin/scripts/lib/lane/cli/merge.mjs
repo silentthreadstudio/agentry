@@ -7,7 +7,8 @@
 //                                                        land → gate or skip → record → board commit
 //   merge <id> --push [--approved]                       push per config merge.push (ask|auto|never)
 //   merge <id> --cleanup [--discard-ignored]             the worktree and branch, found by branch
-//   merge <id> --resolve landed|rolled-back              close a stuck land on the owner's call
+//   merge <id> --resolve landed|rolled-back [--checked]  close a stuck land on the owner's call, or (landed)
+//                                                        a verified lane whose work reached main another way
 //
 // `--branch` adopts work built outside exec: the ledger is created with origin "adopted". `<b>` is a
 // branch's exact listed name (`adopt.mjs`'s `resolveBranch`), refused as `exec adopt` refuses it.
@@ -92,9 +93,9 @@ export const help = {
     "--cleanup": "remove the task's worktree and branch",
     "--discard-ignored": "with --cleanup: also when the worktree holds ignored files",
     "--resolve <landed|rolled-back>":
-      "close a land stuck in merging (owner's call): its picks all on main, or none; main and the board untouched",
+      "close a land stuck in merging (owner's call): its picks all on main, or none; landed also closes a verified lane whose commits main has by patch (git cherry); main and the board untouched",
     "--checked":
-      "with --resolve rolled-back: you checked by hand the planned files main changed since the land began",
+      "with --resolve rolled-back: you checked by hand the planned files main changed since the land began; with landed on a lane found on main: the commits main lacks by patch landed squashed or reworded",
     "--json": "with any mode: print { id, branch, main, rows, next } as one JSON object",
   },
   exits: { 0: "done, next printed", 1: "a red step stopped it", 2: "usage or refusal" },

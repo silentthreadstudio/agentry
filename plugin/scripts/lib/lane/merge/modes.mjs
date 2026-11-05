@@ -1,6 +1,6 @@
 // merge/modes — the three small `lane merge` modes around the land (plan R1b-5): `--check` records a
 // repo check or a gate checklist item on the branch's tip, `--push` pushes main per `merge.push`, `--cleanup` takes the worktree
-// and branch down, found by branch.
+// and branch down, found by branch (a lane closed found on main by the owner's `--checked`, at the tip checked).
 import { join } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
@@ -9,7 +9,7 @@ import { SKILL_DIR, skillExists } from "../../process/spec/extensions.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { resolveBranch } from "../adopt.mjs";
 import { cleanup, commitOf, isAncestor, push } from "../land.mjs";
-import { worktreesDir } from "../worktree.mjs";
+import { git, worktreesDir } from "../worktree.mjs";
 import { mainRow } from "./carry.mjs";
 import { afterLand, checkNext, done, landNext, now, ok, red, save, short } from "./lane.mjs";
 import { checksState, stoppedCut } from "./rows.mjs";
@@ -110,8 +110,9 @@ export function pushMode(lane) {
   const main = mainRow(lane);
   if (main.mark === "red") return done(2, lane, [main]);
   const head = commitOf(root, "HEAD");
+  // A lane found on main with every commit checked by hand has no landed commit to look for.
   const landedTip = merge.boardCommit ?? merge.landed.at(-1);
-  if (!isAncestor(root, landedTip, head)) {
+  if (landedTip && !isAncestor(root, landedTip, head)) {
     const why = `${short(landedTip)} is not on ${ledger.mainBranch} any more`;
     return done(2, lane, [main, red("push", why)]);
   }
@@ -127,6 +128,18 @@ export function pushMode(lane) {
   return done(0, lane, [main, ok("push", detail)], afterLand(lane));
 }
 
+// A lane closed found on main with commits the owner checked by hand (`--checked`): those have no patch on
+// main, so the cleanup's own test keeps the branch. It goes at the tip the owner checked, and only there
+// (the branch list's exact name: never a case twin).
+function dropChecked({ root, ledger }) {
+  const merge = ledger.merge;
+  if (merge.how !== "found-on-main") return false;
+  if (!ledger.resolutions?.some((r) => r.as === "landed" && r.checked)) return false;
+  const named = resolveBranch(root, ledger.branch);
+  if (named.problem || named.tip !== merge.tip) return false;
+  return git(root, ["update-ref", "-d", `refs/heads/${ledger.branch}`, named.tip]).status === 0;
+}
+
 export function cleanupMode(lane) {
   const refused = mergedLedger(lane, "cleanup");
   if (refused) return refused;
@@ -138,13 +151,17 @@ export function cleanupMode(lane) {
     return done(0, lane, [ok("cleanup", gone)]);
   }
   const discard = Boolean(opts["--discard-ignored"]);
-  const res = cleanup(root, {
+  const kept = cleanup(root, {
     branch: ledger.branch,
     main: ledger.mainBranch,
     fallbackPath: ledger.worktree ?? join(worktreesDir(root), id),
     discardIgnored: discard,
     disposable: spec.cleanup?.disposable ?? [],
   });
+  const res =
+    kept.removed && !kept.branchDeleted && dropChecked(lane)
+      ? { ...kept, ok: true, branchDeleted: true, reason: undefined }
+      : kept;
   if (res.ignored && !discard)
     return done(
       2,
