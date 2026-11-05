@@ -7,6 +7,7 @@ import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { runId } from "../../process/ids.mjs";
 import * as ledgers from "../../process/ledger.mjs";
+import { unfenced } from "../../process/markdown.mjs";
 import { proseModelHint, unusedUiModel } from "../../process/spec/models.mjs";
 import { resolveWorkflow } from "../../process/spec/presets.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
@@ -65,16 +66,9 @@ export function stackParent({ root, spec, model, on }, id) {
 // A light contract (an `exec.kinds` kind's): an Owns line naming at least one path, and a bold Acceptance
 // label with text after it on its line, both outside a code fence.
 const ACCEPTANCE = /\*\*acceptance:?\*\*:?[ \t]*\S/i;
-const FENCE = /^\s*(```|~~~)/;
 function lightContract(block, root) {
-  let fenced = false;
-  const lines = block.split("\n").filter((line) => {
-    if (FENCE.test(line)) fenced = !fenced;
-    else if (!fenced) return true;
-    return false;
-  });
-  const prose = lines.join("\n");
-  return ownedFiles(prose, root).length > 0 && lines.some((l) => ACCEPTANCE.test(l));
+  const prose = unfenced(block);
+  return ownedFiles(prose, root).length > 0 && prose.split("\n").some((l) => ACCEPTANCE.test(l));
 }
 
 // The route `start` prints: with the `models.verify.ui` warning for an item a designer builds (its first

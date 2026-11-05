@@ -1,5 +1,5 @@
 // steps — the Steps part of a contract block (field 48): numbered steps the lane builds in runs, the
-// owner's gates between them, and the acceptance items tagged to each step. PURE: no imports, no I/O.
+// owner's gates between them, and the acceptance items tagged to each step. PURE: no I/O.
 //
 // The part opens at a `**Steps:**` / `**Steps**:` label or a `Steps` heading of any level and holds one
 // numbered item per line (`1.` or `1)`); a more indented line joins the item above; it ends at the next
@@ -16,6 +16,7 @@
 //   runOf(steps, from) -> [from, g]   g: the first step from `from` with an owner gate, else the last
 //   runMark(steps, stepRun, key) -> { value, from: "step N" } | null   the run's first step naming `key`
 //   runText([a, g], total) -> "step 1 of 2" | "steps 2–3 of 3"
+import { maskFences } from "./markdown.mjs";
 
 // A bold run that opens a line (after an optional bullet) is a label; a numbered item is not.
 const LABEL = /^\s*(?:[-*+]\s+)?\*\*[^*\n]+\*\*/;
@@ -40,23 +41,21 @@ const GATE_WORD =
 const MARK = /\s*\(\s*((?:model|agent)\s*:[^()]*)\)\s*$/i;
 const AGENTS = ["designer", "implementer"];
 const TAG = /^step\s+(\d+)\s*:\s*/i;
-const FENCE = /^\s*(```|~~~)/;
 
 const indentOf = (line) => /^\s*/.exec(line)[0].length;
 
 // The first part `name` opens: `{ head, body, indent }`, `head` the rest of a label's line ("" after a
 // heading), `body` the lines after it, `indent` the opening line's; null when none opens. A bold run more
-// indented than the list item above it is that item's text, not a label.
+// indented than the list item above it is that item's text, not a label. `lines` have their fences
+// blanked (`maskFences`), so code opens, ends and holds nothing.
 function partOf(lines, name) {
-  let fenced = false;
   let body = null;
   let head = "";
   let indent = 0;
   let item = -1; // the indent of the last list item in the part
   for (const line of lines) {
-    if (FENCE.test(line)) fenced = !fenced;
-    const heading = !fenced && HEADING.exec(line);
-    const opens = !fenced && name.label.exec(line);
+    const heading = HEADING.exec(line);
+    const opens = name.label.exec(line);
     if (body === null) {
       if (opens) head = line.slice(opens[0].length).trim();
       if (opens || (heading && name.heading.test(heading[1]))) body = [];
@@ -64,9 +63,9 @@ function partOf(lines, name) {
       continue;
     }
     const label = LABEL.test(line) && (item < 0 || indentOf(line) <= item);
-    if (!fenced && (heading || label)) break;
-    if (!fenced && LISTED.test(line)) item = indentOf(line);
-    body.push(fenced || FENCE.test(line) ? "" : line);
+    if (heading || label) break;
+    if (LISTED.test(line)) item = indentOf(line);
+    body.push(line);
   }
   return body && { head, body, indent };
 }
@@ -170,7 +169,7 @@ function disagreement(steps) {
 /** The block's steps and the one problem with them, or `{ steps: [], problem: null }` when the block
  *  has no Steps part. */
 export function stepsOf(block) {
-  const lines = String(block ?? "").split(/\r?\n/);
+  const lines = maskFences(String(block ?? "")).split(/\r?\n/);
   const part = partOf(lines, STEPS);
   if (part === null) return { steps: [], problem: null };
   if (INLINE.test(part.head))

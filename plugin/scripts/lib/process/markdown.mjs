@@ -2,9 +2,9 @@
 // frontmatter, plus the cell parsers the process file's field types name (plan F13 §3.1).
 //
 // PURE: every function takes text and returns data. No I/O, no knowledge of the process file; `read.mjs`
-// decides what a cell means. Line numbers are 1-based, as an editor shows them.
+// decides what a cell means. Line numbers are 1-based, as an editor shows them. The one fence rule every
+// reader of the kit (and lane's) uses lives here: `maskFences` and `unfenced`.
 
-const FENCE = /^\s*(```|~~~)/;
 const HEADING = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const SEPARATOR_CELL = /^:?-+:?$/;
 const LEAD = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?\*\*(.+?)\*\*(.*)$/;
@@ -19,13 +19,43 @@ export function lines(text) {
   return text.split(/\r?\n/);
 }
 
+// Which of `rows` (a text's lines, with or without their line ends) are fenced code, the fence lines
+// included. A fence opens at 0-3 spaces then three or more backticks or tildes (a backtick fence's info
+// string holds no backtick) and closes at a line of the same mark, at least as long, with nothing after
+// it: a ``` line inside a ~~~ fence, or inside a ```` one, is code. An unclosed fence runs to the end.
+function fencedRows(rows) {
+  let fence = null;
+  return rows.map((row) => {
+    const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(row.replace(/\r?\n?$/, ""));
+    if (!fence) {
+      if (!m || (m[1][0] === "`" && m[2].includes("`"))) return false;
+      fence = { char: m[1][0], len: m[1].length };
+      return true;
+    }
+    if (m && m[1][0] === fence.char && m[1].length >= fence.len && !m[2].trim()) fence = null;
+    return true;
+  });
+}
+
+/** `text` with each fenced code block blanked out: every character but the line ends turned into a
+ *  space, so lines and offsets stay where they were. */
+export function maskFences(text) {
+  const rows = text.split(/(?<=\n)/);
+  const fenced = fencedRows(rows);
+  return rows.map((row, i) => (fenced[i] ? row.replace(/[^\r\n]/g, " ") : row)).join("");
+}
+
+/** `text` with each fenced code block's lines, fence lines included, left out. */
+export function unfenced(text) {
+  const rows = text.split("\n");
+  const fenced = fencedRows(rows);
+  return rows.filter((_, i) => !fenced[i]).join("\n");
+}
+
 /** Every ATX heading outside fenced code: `{ level, text, line }`. */
 export function headings(text) {
   const out = [];
-  let fenced = false;
-  lines(text).forEach((raw, i) => {
-    if (FENCE.test(raw)) fenced = !fenced;
-    if (fenced || FENCE.test(raw)) return;
+  lines(maskFences(text)).forEach((raw, i) => {
     const m = HEADING.exec(raw);
     if (m) out.push({ level: m[1].length, text: m[2], line: i + 1 });
   });
@@ -79,13 +109,10 @@ const isSeparator = (raw) => isRow(raw) && splitRow(raw).every((c) => SEPARATOR_
  *  `heading` is the nearest heading above it, `header` the plain header names and `cells` maps each
  *  header name to the row's raw cell (missing cells read as ""). */
 export function tables(text) {
-  const all = lines(text);
+  const all = lines(maskFences(text));
   const out = [];
   let heading = null;
-  let fenced = false;
   for (let i = 0; i < all.length; i++) {
-    if (FENCE.test(all[i])) fenced = !fenced;
-    if (fenced || FENCE.test(all[i])) continue;
     const h = HEADING.exec(all[i]);
     if (h) heading = h[2];
     if (!isRow(all[i]) || !isSeparator(all[i + 1])) continue;

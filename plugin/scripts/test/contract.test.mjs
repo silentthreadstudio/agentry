@@ -101,6 +101,20 @@ test("ids are looked up without regard to case", () => {
   assert.deepEqual(blocksIn(BOLD, "kx-01"), [], "still exact apart from case");
 });
 
+test("a ``` line inside a ~~~ fence opens no block and closes nothing: the block after the fence is found", () => {
+  const text = [
+    "~~~md",
+    "```",
+    "- **KX-60** (S1): an example, not a contract.",
+    "~~~",
+    "- **KX-61** (S1): owns the real one.",
+  ].join("\n");
+  assert.deepEqual(blocksIn(text, "KX-60"), []);
+  assert.deepEqual(blocksIn(text, "KX-61"), [
+    { line: 5, block: "- **KX-61** (S1): owns the real one.", title: false },
+  ]);
+});
+
 const ROWS = [
   "- **KX-30** (S1): owns the felt.",
   "",

@@ -8,10 +8,12 @@ import {
   filenameId,
   frontmatter,
   headings,
+  maskFences,
   plain,
   section,
   tableIn,
   tables,
+  unfenced,
 } from "../lib/process/markdown.mjs";
 
 const doc = [
@@ -50,6 +52,61 @@ test("headings skip fenced code and keep their level and line", () => {
       [2, "After", 21],
     ],
   );
+});
+
+// A fence closes only at a line of its own mark, at least as long: a ``` line inside a ~~~ fence, or
+// inside a ```` fence, is code (process review P1-2: the ``` closed the ~~~ and `## Fake` read as a heading).
+const NESTED = [
+  "# Tasks", //                                  1
+  "~~~md", //                                    2
+  "```", //                                      3
+  "## Fake", //                                  4
+  "| A | B |", //                                5
+  "| --- | --- |", //                            6
+  "~~~", //                                      7
+  "## Real", //                                  8
+  "````", //                                     9
+  "```", //                                      10
+  "## Also fake", //                             11
+  "```", //                                      12
+  "````", //                                     13
+  "| C | D |", //                                14
+  "| --- | --- |", //                            15
+  "| 1 | 2 |", //                                16
+].join("\n");
+
+test("headings: a ``` line inside a ~~~ or a longer ``` fence neither closes it nor opens one", () => {
+  assert.deepEqual(
+    headings(NESTED).map((h) => [h.text, h.line]),
+    [
+      ["Tasks", 1],
+      ["Real", 8],
+    ],
+  );
+  assert.equal(section(NESTED, "## Real")?.line, 8);
+});
+
+test("tables: a table inside a ~~~ fence that holds a ``` line is code, the one after it is read", () => {
+  assert.deepEqual(
+    tables(NESTED).map((t) => [t.heading, t.line, t.rows.length]),
+    [["Real", 14, 1]],
+  );
+});
+
+test("maskFences blanks each fence, its lines and line ends kept; an unclosed fence runs to the end", () => {
+  const text = "a\r\n~~~\r\n```\r\nb\r\n~~~\r\nc\n```js\nd";
+  assert.equal(maskFences(text), "a\r\n   \r\n   \r\n \r\n   \r\nc\n     \n ");
+  assert.equal(
+    maskFences("```a`b\n## H\n"),
+    "```a`b\n## H\n",
+    "a backtick in the info string opens none",
+  );
+  assert.equal(maskFences("    ```\n## H\n"), "    ```\n## H\n", "four spaces in is indented code");
+});
+
+test("unfenced drops each fence's lines, fence lines included, and keeps the rest as they were", () => {
+  assert.equal(unfenced("a\n~~~\n```\n\nb\n~~~\n\nc\n````\n```\n````\nd"), "a\n\nc\nd");
+  assert.equal(unfenced("a\r\n```\r\nb\r\n```\r\nc"), "a\r\nc", "a CRLF fence closes");
 });
 
 test("a section runs to the next heading of the same or a higher level", () => {

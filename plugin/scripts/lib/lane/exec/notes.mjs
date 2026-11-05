@@ -1,6 +1,7 @@
 // exec/notes — a verifier's `N<number>` notes: read from its report, judged by a recheck, sent back
 // by a notes round or left as built, kept open on the ledger, and counted against `exec.noteRounds`.
 import { readFileSync } from "node:fs";
+import { unfenced } from "../../process/markdown.mjs";
 import { resolveWorkflow } from "../../process/spec/presets.mjs";
 import { withSection } from "../brief.mjs";
 import { now } from "../fmt.mjs";
@@ -43,16 +44,8 @@ export function notesOf(text) {
 // `- ` or `* `), any case. Prose ("N1 passes") is not one.
 // A note's label, or `owner` for the owner's change (field 77).
 const RECHECK_LINE = /^[ \t]*(?:[-*][ \t]+)?(N\d+|owner):[ \t]*(PASS|FAIL)\b/i;
-const FENCE_LINE = /^\s*(```|~~~)/;
 // The lines of `text` outside a fenced block.
-function prose(text) {
-  let fenced = false;
-  return text.split("\n").filter((line) => {
-    if (FENCE_LINE.test(line)) fenced = !fenced;
-    else if (!fenced) return true;
-    return false;
-  });
-}
+const prose = (text) => unfenced(text).split("\n");
 
 /** Each label a recheck report judged: label → { pass, fail }, counting only `RECHECK_LINE`s outside a fence. */
 function recheckLines(text) {

@@ -14,6 +14,10 @@
 // removeBlock(text) -> { text, action, old } | { error }   the exact inverse of `upsertBlock`'s append:
 //   the marker range, its line end and the one blank line before it; action "remove" | "none"
 // maskFences(text), maskBlocks(masked)              the text with fences / Agentry blocks blanked out
+import { maskFences } from "./markdown.mjs";
+
+// The kit's one fence rule is markdown.mjs's; the lint takes it from here.
+export { maskFences };
 
 export const BEGIN = "<!-- agentry:begin v1 -->";
 export const END = "<!-- agentry:end -->";
@@ -30,24 +34,6 @@ const eolOf = (text) => (text.includes("\r\n") ? "\r\n" : "\n");
 const withEol = (text, eol) => text.split("\n").join(eol);
 // The same text with every character but the line ends turned into a space: offsets stay valid.
 const blank = (text) => text.replace(/[^\r\n]/g, " ");
-
-/** `text` with each fenced code block blanked out. An unclosed fence runs to the end. */
-export function maskFences(text) {
-  let fence = null;
-  return text
-    .split(/(?<=\n)/)
-    .map((line) => {
-      const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line.replace(/\r?\n$/, ""));
-      if (!fence) {
-        if (!m || (m[1][0] === "`" && m[2].includes("`"))) return line;
-        fence = { char: m[1][0], len: m[1].length };
-        return blank(line);
-      }
-      if (m && m[1][0] === fence.char && m[1].length >= fence.len && !m[2].trim()) fence = null;
-      return blank(line);
-    })
-    .join("");
-}
 
 // The import as Claude Code reads it: whitespace-delimited, with an optional leading `./`.
 const importPattern = (ref) =>

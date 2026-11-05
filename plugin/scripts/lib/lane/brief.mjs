@@ -42,6 +42,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rankFacts, readFacts, readMemoryConfig } from "../memory/recall.mjs";
+import { unfenced } from "../process/markdown.mjs";
 import { readInside } from "../process/read.mjs";
 import { bulletOf } from "../process/spec/models.mjs";
 import { own } from "../process/spec/shape.mjs";
@@ -266,31 +267,6 @@ function asideAt(part, masked, at, toAt = false) {
   if (!open.length) return "";
   const close = masked.indexOf(")", at);
   return part.slice(open[0], toAt ? at : close < 0 ? part.length : close);
-}
-
-// A fence opens a line with three or more backticks or tildes and closes at the same mark, at least as
-// long (an unclosed one runs to the end). The lines inside, and the fence lines, are not prose.
-const FENCE = /^\s*(`{3,}|~{3,})/;
-function unfenced(text) {
-  let open = null;
-  return text
-    .split("\n")
-    .filter((line) => {
-      const mark = FENCE.exec(line)?.[1];
-      if (!open) {
-        open = mark ?? null;
-        return !mark;
-      }
-      if (
-        mark &&
-        mark[0] === open[0] &&
-        mark.length >= open.length &&
-        !line.trim().slice(mark.length)
-      )
-        open = null;
-      return false;
-    })
-    .join("\n");
 }
 
 // Does the path leave the repository: a `..` segment, even one that would come back in?

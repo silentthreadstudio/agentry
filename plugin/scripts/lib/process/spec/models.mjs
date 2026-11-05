@@ -9,6 +9,7 @@
 //   proseModelHint(block, steps) -> string | null           a model named only in prose, as `exec start`'s line
 //   unusedUiModel(models, verify) -> string | null          the `! models.verify.ui is unused: …` line
 import { globMatch } from "../../lane/gate.mjs";
+import { unfenced } from "../markdown.mjs";
 import { runMark } from "../steps.mjs";
 import { FULL, filled, isObject, own, repoPath, shape, text } from "./shape.mjs";
 
@@ -42,25 +43,14 @@ function resolve(value, path, owned) {
   return { model: value.default, from: `${path}.default` };
 }
 
-// The contract's lines outside its code fences: a bullet shown in a fence is an example, not the contract's.
-const FENCE = /^\s*(`{3,}|~{3,})/;
-function unfenced(block) {
-  let fenced = false;
-  return String(block ?? "")
-    .split("\n")
-    .filter((line) => {
-      if (FENCE.test(line)) fenced = !fenced;
-      else return !fenced;
-      return false;
-    })
-    .join("\n");
-}
+// The contract read outside its code fences (`unfenced`): a bullet shown in a fence is an example, not
+// the contract's.
 
 /** The first word of the contract's `- **<label>:** <word>` bullet outside a code fence, backticks
  *  dropped; `label` is a regexp source matched in any case. Null when the contract has none. */
 export function bulletOf(block, label) {
   const re = new RegExp(String.raw`^[ \t]*(?:[-*+][ \t]+)?\*\*${label}:?\*\*:?[ \t]*(\S+)`, "im");
-  return re.exec(unfenced(block))?.[1].replace(/`/g, "") || null;
+  return re.exec(unfenced(String(block ?? "")))?.[1].replace(/`/g, "") || null;
 }
 
 // The contract's own model for `role`: for a builder the first step of its run (`stepRun`) naming one,
@@ -97,7 +87,7 @@ export function proseModelHint(block, steps = []) {
   if (steps.some((s) => s.model) || bulletOf(block, String.raw`model(?: \(verify\))?`)) return null;
   // Prose only: code spans and path-like tokens (`src/opus/model.ts`, `model.ts`) name no model.
   // Each whitespace-split token is tested on its own, so a long token costs linear time.
-  const words = unfenced(block)
+  const words = unfenced(String(block ?? ""))
     .replace(/`[^`]*`/g, " ")
     .split(/\s+/)
     .filter((token) => !PATHY.test(token))

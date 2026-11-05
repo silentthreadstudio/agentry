@@ -68,11 +68,8 @@ export function repoMarkdown(root, pattern, keep = () => true) {
  *  whose first cell is an id token; a table's first line is also a `{ line, col, type: "table" }`. */
 export function blockStarts(text) {
   const out = [];
-  let fenced = false;
-  const all = md.lines(text);
+  const all = md.lines(md.maskFences(text));
   all.forEach((raw, i) => {
-    if (/^\s*(```|~~~)/.test(raw)) fenced = !fenced;
-    if (fenced) return;
     const h = /^(#{1,6})\s+(.*)$/.exec(raw);
     if (h) {
       const id = md.leadIds(h[2])[0];
