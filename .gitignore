@@ -1,9 +1,8 @@
 # dependencies
 node_modules/
 
-# build output — all dev-only. The SHIPPED mem MCP bundle is built into plugin/mem/ (committed, zero-install).
+# build output — all dev-only; the plugin ships no build output
 packages/core/dist/
-packages/memory/dist/
 
 # derived memory index (text files are the source of truth and ARE committed; the DB is rebuilt)
 **/.agentry/memory/**/*.db

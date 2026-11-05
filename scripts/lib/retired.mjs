@@ -1,5 +1,6 @@
-// retired — the surfaces the plugin no longer ships (the web UI, its run-state MCP server and its channels).
-// An agent told to call a tool that is not there stalls or improvises, and a manifest that starts a server
+// retired — the surfaces the plugin no longer ships (the web UI, its run-state MCP server and its channels,
+// and the memory MCP server `agentry mem` replaced). An agent told to call a tool that is not there stalls or
+// improvises, and a manifest that starts a server
 // whose bundle is gone fails at load, so the gate refuses both.
 //
 // retiredMentions(pluginDir) -> string[]      "<file>: names a removed surface (<pattern>)" each
@@ -33,6 +34,7 @@ const TOOLS = [
 export const RETIRED = [
   /workbench/i,
   /mcp__plugin_agentry_flow/,
+  /mcp__plugin_agentry_mem__/,
   new RegExp(`\\b(?:${TOOLS.join("|")})\\b`),
 ];
 

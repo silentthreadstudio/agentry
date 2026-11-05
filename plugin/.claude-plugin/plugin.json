@@ -9,11 +9,5 @@
   "license": "MIT",
   "homepage": "https://github.com/silentthreadstudio/agentry",
   "repository": "https://github.com/silentthreadstudio/agentry",
-  "keywords": ["orchestration", "memory", "agents", "skills", "sdlc", "claude-code"],
-  "mcpServers": {
-    "mem": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mem/index.js"]
-    }
-  }
+  "keywords": ["orchestration", "memory", "agents", "skills", "sdlc", "claude-code"]
 }

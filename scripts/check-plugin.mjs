@@ -8,7 +8,6 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { docFlagProblems } from "./lib/doc-flags.mjs";
 import { missingServerPaths, retiredMentions } from "./lib/retired.mjs";
-import { bundleSrcHash, distHash, parseStamp } from "./lib/src-hash.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // The shipped plugin payload lives in `plugin/` (marketplace `source: "./plugin"`) = CLAUDE_PLUGIN_ROOT.
@@ -113,70 +112,12 @@ if (existsSync(skillsDir)) {
   ok("skills", `${dirs.length} validated`);
 }
 
-// 6. dist-lockstep — each committed plugin bundle must track its package src, AND be the bundle its stamp
-// was taken over. The MCP src lives in the package; the SHIPPED bundle is built into plugin/<label>/
-// (committed with the payload). Content-hash compare, not mtime: git doesn't preserve mtimes, so a
-// checkout/squash-merge would otherwise trip a false "dist is stale". build.mjs stamps plugin/<label>/.srchash
-// with BOTH hashes (see scripts/lib/src-hash.mjs); this recomputes + compares both:
-//
-//   - `src`  vs bundleSrcHash — covers the package's own src AND every @agentry/* workspace dep esbuild
-//     inlines, so a transitive dep change can't leave the bundle stale yet report green. → WARN.
-//   - `dist` vs distHash — reads the committed bundle bytes themselves. → ERROR.
-//
-// The severity split is deliberate. A src mismatch is a normal working state: you just edited source and
-// haven't rebuilt yet, and the developer already knows it — a warning is the right nudge. A dist mismatch
-// cannot happen in the course of ordinary work: rebuilding rewrites both hashes together, so the only ways to
-// reach it are a `.srchash` committed WITHOUT its rebuilt bundle (partial stage, a revert that took only the
-// bundle, a squash that dropped it) or a hand-edited bundle. That is precisely the silent failure this gate
-// exists to catch — and a warning that lets the commit through would leave the hole open. It fails the gate.
-//
-// A stamp that carries no dist hash (the pre-verification format — a bare src hash) is NOT green: it has
-// never been dist-verified, so green would be a claim the file cannot support. Warn and ask for a rebuild.
-const checkBundle = (pkgDir, distPath, srchashPath, label) => {
-  if (!existsSync(join(pkgDir, "src"))) return;
-  const distRel = relative(PLUGIN, distPath);
-  const dir = dirname(distRel);
-  if (!existsSync(distPath)) {
-    warn(`plugin/${distRel} missing — build + commit before the bundle can run (dist-lockstep)`);
-    return;
-  }
-  if (!existsSync(srchashPath)) {
-    warn(`plugin/${dir}/.srchash missing — rebuild so dist-lockstep is verifiable`);
-    return;
-  }
-  // null = not a verifiable stamp (the old src-only format, or malformed) — it makes no claim about the bytes.
-  const stamp = parseStamp(readFileSync(srchashPath, "utf8"));
-  if (!stamp)
-    warn(
-      `plugin/${dir}/.srchash predates dist verification (src hash only — it says nothing about the committed bundle bytes) — rebuild + commit (dist-lockstep)`,
-    );
-  else if (stamp.dist !== distHash(dirname(distPath)))
-    err(
-      `plugin/${dir} bundle does NOT match its .srchash stamp — the stamp was committed without its rebuilt bundle, the bundle was hand-edited, or a file was added/removed under it; rebuild + commit (dist-lockstep)`,
-    );
-  else if (stamp.src !== bundleSrcHash(pkgDir))
-    warn(
-      `plugin/${dir} is stale (${label} src or a bundled @agentry/* dep changed since last build) — rebuild + commit (dist-lockstep)`,
-    );
-  else ok(`dist-lockstep (${label})`, "up to date");
-};
-checkBundle(
-  join(ROOT, "packages", "memory"),
-  join(PLUGIN, "mem", "index.js"),
-  join(PLUGIN, "mem", ".srchash"),
-  "mem",
-);
-
-// 6b. No workspace package may re-invoke a SIBLING package's script of the same name.
+// 6. No workspace package may re-invoke a SIBLING package's script of the same name.
 //
 // A package that orchestrates `pnpm --filter <sibling> build` while the sibling is a workspace package in
 // its own right gets built TWICE by `pnpm -r build`: directly AND through the orchestrator, concurrently
-// (nothing declares an ordering edge between them), into the same output directory. It once went unseen
-// for months because the builds are content-deterministic — two racing writers produced identical bytes.
-//
-// It stopped being harmless when `.srchash` started carrying a hash of the whole dist DIRECTORY: a
-// `writeStamp` landing mid-build now snapshots a transient tree, and that stamp then hard-fails for
-// everyone. So this is a gate, not a style note.
+// (nothing declares an ordering edge between them), into the same output directory: two racing writers
+// whose output only looks right while the builds happen to be content-deterministic.
 // The packages `pnpm -r` actually selects — read from pnpm-workspace.yaml, not by walking the tree. The
 // walk was wrong: `packages/eval/fixtures/**` holds seed projects with their own package.json that pnpm
 // never sees, and a guard that checks a different set than the command it guards is guarding nothing.
@@ -290,13 +231,13 @@ else {
 }
 
 // 10. Retired surfaces — no payload file may name the removed web UI, its run-state MCP server, its tools
-// or its channels, and every server the manifest starts must have its bundle (scripts/lib/retired.mjs).
+// or its channels, or a tool of the removed memory MCP server (`mcp__plugin_agentry_mem__…`), and every server the manifest starts must have its bundle (scripts/lib/retired.mjs).
 const retired = [...retiredMentions(PLUGIN), ...missingServerPaths(PLUGIN)];
 for (const p of retired) err(`plugin/${p}`);
 if (!retired.length)
   ok(
     "no retired surfaces",
-    "no removed UI, flow tool or channel names; every MCP server bundle exists",
+    "no removed UI, flow or memory MCP tool or channel names; every MCP server bundle exists",
   );
 
 // 11. Import direction — the process kit is the lower layer: lane/ builds on it, so no module under

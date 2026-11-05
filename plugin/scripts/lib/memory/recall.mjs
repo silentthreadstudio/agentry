@@ -5,10 +5,10 @@
 // — use them; recall further only for the specific symbol you're touching." This module makes the
 // sentence true: the lane scripts call it to put the few facts that earned a slot into a task brief.
 //
-// It reads the FILE STORE directly (text is truth — doc 07) rather than going through the MCP: the lane
-// scripts are fast, synchronous and dependency-free, and the files are the same source the MCP indexes.
-// Ranking mirrors `packages/memory/src/domain/ranking.ts` — `relevance × confidence × (1 + usefulness)`
-// — so a brief-primed fact and an MCP-recalled one agree about what matters.
+// It reads the FILE STORE directly (text is truth — doc 07) rather than loading the memory service: the
+// lane scripts stay fast and synchronous, and the files are the same source the service indexes.
+// Ranking mirrors `domain/ranking.mjs` — `relevance × confidence × (1 + usefulness)` — so a
+// brief-primed fact and one `agentry mem recall` returns agree about what matters.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

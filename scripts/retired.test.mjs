@@ -36,6 +36,7 @@ test("retiredMentions names the UI, the namespaced server prefix and a bare tool
   for (const [text, hit] of [
     ["Open the Workbench to review.\n", "Workbench"],
     ["Call mcp__plugin_agentry_flow__task_get.\n", "mcp__plugin_agentry_flow"],
+    ["Recall with `mcp__plugin_agentry_mem__memory_recall`.\n", "mcp__plugin_agentry_mem__"],
     ["Then call `task_status(run, done)`.\n", "task_status"],
     ["First `run_start(goal)`.\n", "run_start"],
     ["Answer via `channel_reply`.\n", "channel_reply"],
