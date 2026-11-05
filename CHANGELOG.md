@@ -13,6 +13,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   argument, is a usage error.
 - Every specialist agent (all but the conductor) now lists `disallowedTools: Artifact, ArtifactComments,
   ArtifactData`, so a subagent cannot publish a page. The plugin check fails if one loses the entries.
+- **`lane exec restart --carry` takes `--note "<why>"`.** The note is recorded and quoted in the carried
+  lane's first brief, which now also lists the old lane's verdicts and says verified commits are not to be
+  built again.
 
 ## [0.3.0] — 2026-11-05
 

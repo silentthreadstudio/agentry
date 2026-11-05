@@ -304,10 +304,21 @@ export function ownerChange({ note, at }, role) {
 }
 
 /** The `## Carried work` section of a restarted lane's first build brief: what `exec restart
- *  --carry` put in the tree (`{ commits, files, report, applied?, diff?, conflict? }`, the ledger's
- *  `carried`; `applied` whether the uncommitted diff is in the tree yet). A carry that
- *  stopped names its conflict, to resolve first. */
-export function carriedWork({ commits, files, report, conflict, applied = true, diff }) {
+ *  --carry` put in the tree (`{ commits, files, report, applied?, diff?, conflict?, judged?, note? }`, the
+ *  ledger's `carried`, and the restart's `note`; `applied` whether the uncommitted diff is in the tree yet).
+ *  `judged` is the old lane's verdicts, `{ verdict, report }` each: when the last one passed, the commits
+ *  are verified work and the builder is told not to build them again. A carry that stopped names its
+ *  conflict, to resolve first. */
+export function carriedWork({
+  commits,
+  files,
+  report,
+  conflict,
+  applied = true,
+  diff,
+  judged = [],
+  note,
+}) {
   const last = report ? `Its last report is ${report}: read it first.` : "It left no report.";
   // Applied only when the carry got that far: a pick that stopped leaves the diff still to apply. The step
   // is named once: in the stop when it names it, else here.
@@ -321,10 +332,25 @@ export function carriedWork({ commits, files, report, conflict, applied = true, 
         ? " Its uncommitted changes are not in the tree yet."
         : ` Its uncommitted changes are not in the tree yet: once the pick is done, apply them with \`${apply}\`.`;
   const stop = conflict ? ` Resolve this first: ${conflict}.` : "";
+  const passed = /^PASS/.test(judged.at(-1)?.verdict ?? "");
+  const verdictLine = judged.length
+    ? `The old lane's verifier judged it: ${judged.map((j) => `${j.verdict} (${j.report})`).join(", ")}.${passed ? " Those commits are verified work: do not build them again. Build only what the contract still lacks or the note below asks." : ""}`
+    : null;
+  const noteLines = note
+    ? [
+        "The owner's note for this restart:",
+        "",
+        ...String(note)
+          .split(/\r?\n/)
+          .map((line) => `> ${line}`.trimEnd()),
+      ]
+    : null;
   return [
     "## Carried work",
     "",
     `A previous builder's work is in the tree (${commits} commits, ${files} files uncommitted). ${last}${staged}${stop}`,
+    ...(verdictLine ? ["", verdictLine] : []),
+    ...(noteLines ? ["", ...noteLines] : []),
     "",
   ].join("\n");
 }

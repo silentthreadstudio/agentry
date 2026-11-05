@@ -188,7 +188,7 @@ export function brief({ root, spec, model }, ledger, dispatch) {
   // A restarted lane's first brief says what was carried into the tree.
   // A resolve check of a verified carry judges the range-diff, not the old builder's report.
   if (n === 1 && fresh && ledger.carried && dispatch.step !== "resolve")
-    text = withSection(text, carriedWork(ledger.carried));
+    text = withSection(text, carriedWork({ ...ledger.carried, note: ledger.restarted?.note }));
   // The old lane's last verdict, when its verifier failed the work: the report to read first.
   if (n === 1 && fresh && ledger.carried?.verdict)
     text = withSection(

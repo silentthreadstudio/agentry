@@ -30,9 +30,10 @@
 //   start <id> --on <Y>       stack the lane on Y's lane: cut from agentry/<Y>, `on` and `base` in the ledger
 //   restack <id> [--main]     a stacked lane, no agent out: rebase it onto its parent's new tip, or main
 //                             (its parent landed, or --main); the branch and ledger alone are written
-//   restart <id> [--carry]    a lane not merged, no agent out: archive its ledger and run files as
-//                             `<id>.<n>`, keep its branch as `agentry/<id>.<n>`, start it again from main;
-//                             `--carry` picks its commits and applies its uncommitted diff (stops on a conflict)
+//   restart <id> [--carry [--note "<why>"]]   a lane not merged, no agent out: archive its ledger and run
+//                             files as `<id>.<n>`, keep its branch as `agentry/<id>.<n>`, start it again from
+//                             main; `--carry` picks its commits and applies its uncommitted diff (stops on a
+//                             conflict); its note is recorded and quoted in the first brief
 //   adopt <id> --branch <b>   work built outside exec becomes the lane: `start`'s checks and records, a lane cut
 //                             from main, `main..<b>` picked onto it and the uncommitted diff of <b>'s worktree
 //                             applied (stops on a conflict); <b> and its worktree are left as they are
@@ -146,7 +147,8 @@ export const help = {
     "--for <owner|later>":
       "hold: the owner reviews the round (its reply saved), or later: the lane is parked",
     "--evidence <path>": "hold --for owner: what the owner opens (default: the round's report)",
-    "--note <text>": "resume: the owner's words; hold --for later: why the lane is parked",
+    "--note <text>":
+      "resume: the owner's words; hold --for later: why the lane is parked; restart --carry: why, quoted in the first brief",
     "--redo": "resume: the owner sent the finished run back: build the same steps again",
     "--fresh": "resume: a fresh builder with the same brief (the held round's agent is gone)",
     "--same":
@@ -184,7 +186,7 @@ const STEPS_OF = {
   "--apply": ["owns", "cut"],
   "--for": ["hold"],
   "--evidence": ["hold"],
-  "--note": ["hold", "resume"],
+  "--note": ["hold", "resume", "restart"],
   "--redo": ["resume"],
   "--fresh": ["resume"],
   "--same": ["resume"],
@@ -227,6 +229,8 @@ function parse(argv) {
     return { error: 'fix needs --notes N1,N3 or --owner "<the change>", one of them' };
   if (step === "adopt" && given["--branch"] === undefined)
     return { error: "adopt needs --branch <b>: the branch built outside exec" };
+  if (step === "restart" && given["--note"] !== undefined && !given["--carry"])
+    return { error: "restart takes --note with --carry: the note rides into the carried brief" };
   if (given["--same"] && given["--fresh"])
     return { error: "resume takes --same or --fresh, not both" };
   if (given["--by"] !== undefined && given["--leave"] === undefined)

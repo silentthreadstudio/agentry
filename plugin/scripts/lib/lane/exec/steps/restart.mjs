@@ -59,7 +59,7 @@ function clearVerdict({ root, spec, model, kind }, id) {
 // branch goes once all of it is carried, and a stop leaves the conflict in the new worktree (exit 1). A
 // verified lane carried whole goes to the resolve check, its board verdict kept; any other a build round.
 export function run(ctx, id) {
-  const { root, spec, carry: withWork } = ctx;
+  const { root, spec, carry: withWork, note } = ctx;
   refuseMidLand(root);
   const old = mustLedger(root, id);
   if (old.state === "merged") refuse(`${id} is merged: nothing to restart`);
@@ -142,6 +142,7 @@ export function run(ctx, id) {
       ledger: archived.ledger,
       runs: archived.runs,
       at: now(),
+      ...(note && { note }),
     };
     if (!withWork)
       return {
@@ -168,16 +169,20 @@ export function run(ctx, id) {
     const stepRun = checked ? null : progress.stepRun;
     const builds = old.rounds.filter((r) => r.role === "build").length;
     const lastVerdict = verdicts(old).at(-1);
+    const moved = archivedPath(old.id, archived.runs);
     const carried = {
       ...(lastVerdict &&
         !PASSES.includes(lastVerdict.verdict) &&
         !checked && {
           verdict: {
             verdict: lastVerdict.verdict,
-            report: archivedPath(old.id, archived.runs)(lastVerdict.reportPath),
+            report: moved(lastVerdict.reportPath),
           },
         }),
       rounds: { total: old.rounds.length, builds, verdicts: verdicts(old).length },
+      ...(lastVerdict && {
+        judged: verdicts(old).map((r) => ({ verdict: r.verdict, report: moved(r.reportPath) })),
+      }),
       ...(stepRun && { stepRun }),
       commits: oldTip ? left.commits : 0,
       ...(skipped.length && { skipped }),
@@ -207,6 +212,7 @@ export function run(ctx, id) {
       exit: res.ok ? 0 : 1,
       shown: {
         restarted: `archived as ${id}.${n}${branch ? `; the old branch is kept as ${branch}` : ""}`,
+        ...(note && { note }),
         carried: `${carried.commits} commits, ${carried.files} files uncommitted${report ? `; last report ${report}` : ""}`,
         ...(skipped.length && {
           skipped: `${skipped.length} already on ${mainBranch}: ${skipped.map((c) => `${short(c.sha)} ${c.subject}`).join(", ")}`,

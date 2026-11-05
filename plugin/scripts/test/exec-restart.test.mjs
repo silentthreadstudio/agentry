@@ -816,6 +816,55 @@ test("restart --carry of a verified lane whose carry conflicts keeps today's bui
   assert.match(row(r.root, "T3"), /^\| T3 +\| doing +\| +\|$/);
 });
 
+test("restart --carry --note of a verified lane that builds again: the note is recorded and the first brief says the verified commits are not to be built again", () => {
+  const r = repo();
+  judged(r);
+  commitFile(r.root, "three.txt", "a\nmain\nc\n", "fix: three on main");
+  const verifierReport = ledgerOf(r.root, "T3").rounds.find((x) => x.role === "verify").reportPath;
+  const res = lane(r, "restart", "T3", "--carry", "--note", "main took three.txt;\nresolve it");
+  assert.equal(res.exit, 1, res.stderr);
+  assert.deepEqual([res.json.next, res.json.state], ["build", "building"]);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.equal(ledger.restarted.note, "main took three.txt;\nresolve it");
+  assert.equal(res.json.note, "main took three.txt;\nresolve it");
+  const archived = verifierReport.replace("/runs/T3/", "/runs/.archive/T3.1/");
+  assert.deepEqual(ledger.carried.judged, [{ verdict: "PASS", report: archived }]);
+  const brief = readFileSync(res.json.brief, "utf8");
+  const section = brief.slice(brief.indexOf("## Carried work"));
+  assert.ok(
+    section.includes(
+      `The old lane's verifier judged it: PASS (${archived}). Those commits are verified work: do not build them again. Build only what the contract still lacks or the note below asks.\n\nThe owner's note for this restart:\n\n> main took three.txt;\n> resolve it\n`,
+    ),
+    section,
+  );
+  assert.ok(
+    brief.indexOf("## Carried work") < brief.indexOf("## Where you work"),
+    "the carried work opens the brief",
+  );
+});
+
+test("restart --carry --note of a lane whose verifier failed it lists the verdict but does not call the commits verified", () => {
+  const r = repo();
+  assert.equal(judged(r, "FAIL").next, "fix");
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const res = lane(r, "restart", "T3", "--carry", "--note", "go on from the FAIL");
+  assert.equal(res.exit, 0, res.stderr);
+  const brief = readFileSync(res.json.brief, "utf8");
+  assert.match(brief, /The old lane's verifier judged it: FAIL \(.*\)\.\n/);
+  assert.doesNotMatch(brief, /do not build them again/);
+  assert.match(brief, /> go on from the FAIL\n/);
+});
+
+test("restart --note without --carry is a usage error, nothing changed", () => {
+  const r = repo();
+  worked(r);
+  const before = readFileSync(ledgerFile(r.root, "T3"), "utf8");
+  const res = lane(r, "restart", "T3", "--note", "why");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /restart takes --note with --carry/);
+  assert.equal(readFileSync(ledgerFile(r.root, "T3"), "utf8"), before);
+});
+
 test("restart --carry of a lane whose last verdict is FAIL still builds", () => {
   const r = repo();
   assert.equal(judged(r, "FAIL").next, "fix");
