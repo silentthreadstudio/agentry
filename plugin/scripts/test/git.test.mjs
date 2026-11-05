@@ -23,7 +23,6 @@ import {
   defaultBranch,
   graph,
   hasCommit,
-  inEffect,
   knownCommits,
   log,
   octopusBase,
@@ -33,6 +32,7 @@ import {
   trackedFiles,
   worktrees,
 } from "../lib/process/git.mjs";
+import { inEffect } from "../lib/process/in-effect.mjs";
 
 let repo;
 let outside;

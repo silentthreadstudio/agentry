@@ -16,7 +16,7 @@
 //
 // Done is written only when provable (A23): a `lane merge` record that matches its branch, whose landed
 // commits are still main's first-parent history right after the record's preHead, and whose change is
-// still in effect on main's tip where it landed (`git.inEffect`: every line it added still there, every
+// still in effect on main's tip where it landed (`inEffect`: every line it added still there, every
 // line it removed not back, by line history, not by matching text). Anything else is "unsure" and nothing
 // is written. A hand merge (no record) is a nudge to `board fix --accept <id>`: the owner says it landed,
 // and the commits on main that carry it must still be in effect the same way. The git proof is

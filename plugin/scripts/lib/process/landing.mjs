@@ -1,6 +1,6 @@
 // landing — where a branch's work stands on main, proven from git alone: its own commits (`ownCommits`),
 // how they were picked onto main (`picks`, `survey`), whether their change is still in effect on main's
-// tip (`undone`, by `git.inEffect`), and a `lane merge` record checked the same way (`records`,
+// tip (`undone`, by `inEffect`), and a `lane merge` record checked the same way (`records`,
 // `recorded`). Read-only; git is asked once per run for all the branches and ledgers, never once per
 // branch.
 //
@@ -11,6 +11,7 @@
 //   byHand(root, ledger, onto, seen?)        -> a ledger's hand merge, by its branch alone
 //   finished(ledger)                         -> whether a ledger has landed commits to prove
 import * as git from "./git.mjs";
+import { inEffect } from "./in-effect.mjs";
 
 const MERGED_STATES = ["merged", "closed"];
 
@@ -66,18 +67,18 @@ function untouched(root, list, onto) {
   return new Set(todo.filter(clear).map(runKey));
 }
 
-// Why the work `shas` carry is not in effect on `onto` now (`git.inEffect`, run by run), or null. `up`
+// Why the work `shas` carry is not in effect on `onto` now (`inEffect`, run by run), or null. `up`
 // (each commit's parents) and `clear` (the runs `untouched` found) spare git calls asked for already.
 function undone(root, shas, onto, { up = git.parents(root, shas), clear = new Set() } = {}) {
   for (const run of runs(shas, up)) {
     if (clear.has(runKey(run))) continue;
-    const off = run.from ? git.inEffect(root, { ...run, onto }) : { what: "git" };
+    const off = run.from ? inEffect(root, { ...run, onto }) : { what: "git" };
     if (off) return off;
   }
   return null;
 }
 
-// `git.inEffect`'s answer, in words.
+// `inEffect`'s answer, in words.
 function said({ file, line, what }) {
   const at = line ? `${file}:${line}` : file;
   if (what === "added") return `the line it added at ${at} is not there now (reverted or changed?)`;
