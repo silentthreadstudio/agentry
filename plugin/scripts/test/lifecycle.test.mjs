@@ -398,7 +398,7 @@ test("every refusal is exit 2 and writes nothing", () => {
     ],
     [
       ["lifecycle", "merged", "T1", "--sha", shas[0].toUpperCase(), "--summary", "x"],
-      /is not a commit SHA \(7 to 40 lower-case hex\)/,
+      /is not a commit SHA \(7 to 64 lower-case hex\)/,
     ],
     [
       ["lifecycle", "merged", "T1", "--sha", "0000000000", "--summary", "x"],

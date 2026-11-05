@@ -1,6 +1,7 @@
 // Evidence rules: what a finished item must show (commits, handoff, verdict, sign-off). Pure; git is
 // reached only through ctx.hasCommit. What a handoff line is (`handoffLines`, `namesCommits`) is exported:
 // `board fix` (drift.mjs) counts a task's handoff by the same definition this rule checks.
+import { isSha } from "../markdown.mjs";
 import {
   CLOSED,
   EXCEPT,
@@ -15,8 +16,6 @@ import {
   withId,
 } from "./structure.mjs";
 
-const SHA = /^[0-9a-f]{7,40}$/i;
-
 /** The commits a commits/evidence cell holds (as the board read it: tokens, or a string), as the rules
  *  read them. */
 export const commitsIn = (value) => evidenceOf(value).shas;
@@ -25,8 +24,8 @@ export const commitsIn = (value) => evidenceOf(value).shas;
 function evidenceOf(value) {
   const tokens = (Array.isArray(value) ? value : String(value ?? "").split(/\s+/)).filter(Boolean);
   return {
-    shas: tokens.filter((t) => SHA.test(t)),
-    note: tokens.filter((t) => !SHA.test(t)).join(" "),
+    shas: tokens.filter(isSha),
+    note: tokens.filter((t) => !isSha(t)).join(" "),
   };
 }
 
@@ -61,7 +60,7 @@ const doneHasEvidence = {
 
 // Does a handoff line name one of the task's commits? A sha matches when either is a prefix of the other.
 function names(line, shas, mode) {
-  const named = [...line.matchAll(/\(([0-9a-f]{7,40})/gi)].map((m) => m[1]);
+  const named = [...line.matchAll(/\(([0-9a-f]{7,64})/g)].map((m) => m[1]);
   const match = (a) => named.some((b) => a.startsWith(b) || b.startsWith(a));
   return mode === "first" ? match(shas[0]) : shas.some(match);
 }

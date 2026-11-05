@@ -8,10 +8,14 @@
 const HEADING = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const SEPARATOR_CELL = /^:?-+:?$/;
 const LEAD = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?\*\*(.+?)\*\*(.*)$/;
-// A run of 7+ decimal digits (`20261031`) is also valid hex, so it reads as a commit: in a `commits`
-// or `evidence` cell it is checked against git and reported when missing. Known and kept: an
-// abbreviated SHA can be all digits, and telling the two apart would need git, which this file lacks.
-const SHA = /(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])/g;
+// The one commit-SHA token of the kit: 7 to 64 lower-case hex digits (SHA-1 abbreviated or full, SHA-256
+// full), not inside a longer word. `SHA_TOKEN` is global: use it with `match`, `matchAll` and `replace`,
+// never `test`; `isSha` tests one whole token. A run of 7+ decimal digits (`20261031`) is also valid hex,
+// so it reads as a commit: in a `commits` or `evidence` cell it is checked against git and reported when
+// missing. Known and kept: an abbreviated SHA can be all digits, and telling the two apart would need
+// git, which this file lacks.
+export const SHA_TOKEN = /(?<![0-9A-Za-z])[0-9a-f]{7,64}(?![0-9A-Za-z])/g;
+export const isSha = (token) => /^[0-9a-f]{7,64}$/.test(token ?? "");
 const LINK = /\[([^\]]*)\]\(\s*<?[^)\s>]+>?(?:\s+"[^"]*")?\s*\)/;
 const DATE = /^(\d{4}-\d{2}-\d{2})/;
 
@@ -209,10 +213,10 @@ const PARSE = {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-  commits: (v) => v.match(SHA) ?? [],
+  commits: (v) => v.match(SHA_TOKEN) ?? [],
   // The SHAs, then the remaining text as one note token when there is any.
   evidence: (v) => {
-    const note = v.replace(SHA, " ").replace(/\s+/g, " ");
+    const note = v.replace(SHA_TOKEN, " ").replace(/\s+/g, " ");
     const trimmed = note.replace(/^[\s,;:+…·.-]+|[\s,;:+…·-]+$/g, "");
     return trimmed ? [...PARSE.commits(v), trimmed] : PARSE.commits(v);
   },
@@ -229,7 +233,7 @@ const PARSE = {
   },
 };
 
-/** `commits`: every `[0-9a-f]{7,40}` token of a cell. */
+/** `commits`: every `SHA_TOKEN` of a cell. */
 export const parseCommits = (cell) => PARSE.commits(plain(cell));
 
 /** One cell (or frontmatter value) as its field reads it: plain, then `match`, then the `type`:

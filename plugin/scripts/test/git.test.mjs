@@ -85,6 +85,23 @@ test("hasCommit: a real commit, short or full; not a missing one or an option", 
   assert.equal(hasCommit(outside, sha.first), false);
 });
 
+test("hasCommit: a full 64-hex SHA is asked of git, so a SHA-256 repository works", (t) => {
+  const dir = join(repo, "..", "sha256");
+  mkdirSync(dir);
+  const init = spawnSync("git", ["-C", dir, "init", "-q", "--object-format=sha256", "-b", "main"], {
+    encoding: "utf8",
+    env,
+  });
+  if (init.status !== 0) return t.skip("this git cannot make a SHA-256 repository");
+  writeFileSync(join(dir, "a.txt"), "one\n");
+  const git256 = (...args) => spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
+  git256("add", "a.txt");
+  git256("commit", "-q", "-m", "feat: first");
+  const full = git256("rev-parse", "HEAD").stdout.trim();
+  assert.equal(full.length, 64);
+  assert.equal(hasCommit(dir, full), true);
+});
+
 test("knownCommits: one call answers many SHAs, short or full, and hasCommit agrees", () => {
   const tree = run("rev-parse", "HEAD^{tree}");
   const asked = [sha.first, sha.second.slice(0, 8), "0000000", tree, "--all", sha.picked];

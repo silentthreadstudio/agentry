@@ -38,7 +38,6 @@ import { readSpikes, spikesFile } from "./spikes.mjs";
 import { staleStatus } from "./stale-status.mjs";
 
 const MERGED_STATES = ["merged", "closed"];
-const SHA_TOKEN = /[0-9a-f]{7,40}/gi;
 
 const workName = (spec) => spec.lifecycle?.kind;
 const workItems = (spec, model) => {
@@ -429,8 +428,8 @@ function plan({ root, spec, model, item, landed }) {
   let shas = work.shas;
   if (cell !== undefined) {
     // A hand-written cell is never rewritten; the handoff then names the cell's first commit.
-    const named = (cell.match(SHA_TOKEN) ?? []).map((t) =>
-      work.shas.find((s) => s.startsWith(t.toLowerCase())),
+    const named = (cell.match(md.SHA_TOKEN) ?? []).map((t) =>
+      work.shas.find((s) => s.startsWith(t)),
     );
     if (!named.length || !named.every(Boolean))
       return {

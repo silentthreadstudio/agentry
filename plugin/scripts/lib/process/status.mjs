@@ -17,6 +17,7 @@ import { findContract } from "./contract.mjs";
 import * as drafts from "./drafts.mjs";
 import { keptTrees, nudges } from "./drift.mjs";
 import * as git from "./git.mjs";
+import { isSha } from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 import { refKinds, resolve } from "./rules/structure.mjs";
 import { own } from "./spec/shape.mjs";
@@ -61,8 +62,6 @@ export function titleOf(spec, item) {
   return found ?? undefined;
 }
 
-const SHA = /^[0-9a-f]{7,40}$/i;
-
 // Every SHA-looking token in a commits or evidence field: what the evidence rules may ask git about.
 function shasOf(spec, model) {
   return Object.entries(model.kinds).flatMap(([name, { items }]) => {
@@ -70,7 +69,7 @@ function shasOf(spec, model) {
       .filter(([, f]) => f.type === "commits" || f.type === "evidence")
       .map(([f]) => f);
     return items.flatMap((item) =>
-      fields.flatMap((f) => [item.fields[f] ?? []].flat()).filter((t) => SHA.test(t)),
+      fields.flatMap((f) => [item.fields[f] ?? []].flat()).filter(isSha),
     );
   });
 }

@@ -54,9 +54,7 @@ const STEPS = {
   cut: { steps: () => ["status"], takes: [] },
 };
 const GUARDED = new Set(["dispatched", "built", "failed"]);
-const SHA = /^[0-9a-f]{7,40}$/;
 const RANGE = ["…", "..", "..."];
-const TOKEN = /[0-9a-f]{7,40}/g;
 
 const refuse = (message) => {
   throw new WriteError(message);
@@ -83,8 +81,8 @@ function checkData(event, data) {
   const shas = data.shas;
   if (!Array.isArray(shas) || shas.length === 0) refuse("merged needs the landed commits (shas)");
   for (const sha of shas)
-    if (typeof sha !== "string" || !SHA.test(sha))
-      refuse(`"${sha}" is not a commit SHA (7 to 40 lower-case hex)`);
+    if (typeof sha !== "string" || !md.isSha(sha))
+      refuse(`"${sha}" is not a commit SHA (7 to 64 lower-case hex)`);
   if (data.summary !== undefined && typeof data.summary !== "string")
     refuse("summary should be text");
 }
@@ -110,7 +108,7 @@ function learnedJoin({ root, spec, name, kind, model, column }) {
   for (const row of table?.rows ?? []) {
     if (!done.has(md.plain(row.cells[kind.id.column] ?? ""))) continue;
     const cell = md.plain(row.cells[column] ?? "");
-    const found = [...cell.matchAll(TOKEN)];
+    const found = [...cell.matchAll(md.SHA_TOKEN)];
     for (let i = 1; i < found.length; i++) {
       const gap = cell.slice(found[i - 1].index + found[i - 1][0].length, found[i].index);
       if (gap && gap.length <= 4) seen.set(gap, (seen.get(gap) ?? 0) + 1);

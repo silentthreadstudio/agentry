@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-const SHA = /^[0-9a-f]{4,40}$/i;
+const SHA = /^[0-9a-f]{4,64}$/i;
 const FULL_SHA = /^[0-9a-f]{40,64}$/;
 const safeRef = (ref) => typeof ref === "string" && ref.length > 0 && !ref.startsWith("-");
 

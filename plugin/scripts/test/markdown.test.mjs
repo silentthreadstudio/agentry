@@ -242,6 +242,8 @@ test("cellValue reads each field type", () => {
   assert.deepEqual(cellValue(["T1", "**T2**"], { type: "list" }), ["T1", "T2"]);
   assert.deepEqual(cellValue("abc1234 0f9e8d7c", { type: "commits" }), ["abc1234", "0f9e8d7c"]);
   assert.deepEqual(cellValue("2026-01-05; 12 files", { type: "commits" }), []);
+  const sha256 = "a".repeat(64);
+  assert.deepEqual(cellValue(`${sha256} ${"b".repeat(65)}`, { type: "commits" }), [sha256]);
   assert.equal(cellValue("⚑", { type: "flag", mark: "⚑" }), true);
   assert.equal(cellValue("", { type: "flag", mark: "⚑" }), false);
   assert.equal(cellValue("x", { type: "flag" }), true);
