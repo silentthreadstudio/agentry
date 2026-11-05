@@ -4,7 +4,14 @@
 // absent (it is retired by the switch-over lane).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -297,6 +304,125 @@ test(
       const { memories } = await t.mem("recall", "--query", "evolution subject");
       assert.deepEqual(memories[0].fact.tags, ["evolution", "edited"]);
       assert.equal(memories[0].fact.confidence, 0.9);
+    } finally {
+      t.mcp.stop();
+    }
+  },
+);
+
+test(
+  "values that end in newlines, on the last frontmatter key, read the same as the bundle reads them",
+  { skip },
+  async () => {
+    // memory_write puts `subject` last, episode_write puts `lesson` last when no memory was used: both end the
+    // frontmatter, where a |+ scalar's trailing newlines are the file's last lines
+    const t = await setup();
+    try {
+      await t.mcp.call("memory_write", {
+        type: "learning",
+        scope: "repo",
+        text: "keep chomp probe fact",
+        subject: "the subject\n\n",
+      });
+      await t.mcp.call("episode_write", {
+        task: "keep chomp probe episode",
+        shape: "one-shot",
+        outcome: "pass",
+        lesson: "the lesson\n\n",
+      });
+
+      const view = t.service();
+      assert.deepEqual(
+        json(view.recall({ query: "keep chomp probe" })),
+        await t.mcp.call("memory_recall", { query: "keep chomp probe" }),
+      );
+      assert.deepEqual(
+        json(view.recall({ mode: "prime" })),
+        await t.mcp.call("memory_recall", { mode: "prime" }),
+      );
+      assert.equal(
+        view.recall({ query: "keep chomp probe" }).memories[0].fact.subject,
+        "the subject\n",
+      );
+      assert.equal(view.recall({ mode: "prime" }).episodes[0].lesson, "the lesson\n");
+    } finally {
+      t.mcp.stop();
+    }
+  },
+);
+
+test("hand-edited fact files read as the bundle reads them", { skip }, async () => {
+  const t = await setup();
+  try {
+    const dir = join(t.roots.CLAUDE_PROJECT_DIR, ".agentry", "memory", "facts");
+    mkdirSync(dir, { recursive: true });
+    const base = (id) =>
+      `id: p:${id}\ntype: gotcha\nscope: repo\nconfidence: 0.7\nusefulness: 0\ndecay: 0\nstatus: active\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n`;
+    const cases = {
+      "01HE0000000000000000000001": (b) => `${b}meta:\n  source: hand\n`,
+      "01HE0000000000000000000002": (b) => b.replace("type: gotcha", '"type": gotcha'),
+      "01HE0000000000000000000003": (b) => `${b}my note: added by hand\n`,
+      "01HE0000000000000000000004": (b) => `${b}extra: {a: 1}\n`,
+    };
+    for (const [id, edit] of Object.entries(cases))
+      writeFileSync(join(dir, `hand-${id}.md`), `---\n${edit(base(id))}---\n\nhand edit ${id}\n`);
+
+    const view = t.service();
+    const mine = view.stats();
+    assert.equal(mine.facts, 4);
+    assert.deepEqual(mine.readErrors, []);
+    assert.deepEqual(json(mine), await t.mcp.call("memory_stats"));
+    assert.deepEqual(
+      json(view.recall({ query: "hand edit", limit: 10 })),
+      await t.mcp.call("memory_recall", { query: "hand edit", limit: 10 }),
+    );
+    assert.deepEqual(await t.mem("stats"), json(mine));
+  } finally {
+    t.mcp.stop();
+  }
+});
+
+test(
+  "update --tags-clear writes tags: [] as the bundle's memory_update does",
+  { skip },
+  async () => {
+    const t = await setup();
+    try {
+      const { id } = await t.mem(
+        "write",
+        "--type",
+        "gotcha",
+        "--scope",
+        "global",
+        "--text",
+        "a tagged fact for clearing",
+        "--tags",
+        "a",
+        "--tags",
+        "b",
+      );
+      await t.mem("update", "--id", id, "--tags-clear");
+      const [file] = readdirSync(join(t.roots.AGENTRY_GLOBAL_DIR, ".agentry", "memory", "facts"));
+      const written = readFileSync(
+        join(t.roots.AGENTRY_GLOBAL_DIR, ".agentry", "memory", "facts", file),
+        "utf8",
+      );
+      assert.match(written, /^tags: \[\]$/m);
+
+      // the bundle writes the same line, and reads what the CLI wrote
+      await t.mcp.call("memory_stats"); // the bundle sees another process's write on a read
+      await t.mcp.call("memory_update", { id, tags: [] });
+      assert.equal(
+        readFileSync(
+          join(t.roots.AGENTRY_GLOBAL_DIR, ".agentry", "memory", "facts", file),
+          "utf8",
+        ).match(/^tags: \[\]$/m)?.[0],
+        "tags: []",
+      );
+      assert.deepEqual(
+        json(t.service().recall({ query: "tagged fact clearing" })),
+        await t.mcp.call("memory_recall", { query: "tagged fact clearing" }),
+      );
     } finally {
       t.mcp.stop();
     }
