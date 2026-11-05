@@ -1,0 +1,13 @@
+a: "true"
+b: "false"
+c: "null"
+d: "~"
+e: "123"
+f: "1.5"
+g: "0x1F"
+h: ".inf"
+i: "1e3"
+j: yes
+k: No
+l: 2026-01-01
+m: ""

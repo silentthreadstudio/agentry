@@ -1,0 +1,145 @@
+{
+  "fact-minimal": {
+    "id": "g:01JABCDEFGHJKMNPQRSTVWXYZ0",
+    "type": "gotcha",
+    "scope": "global",
+    "confidence": 0.7,
+    "usefulness": 0,
+    "decay": 0,
+    "status": "active",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "fact-full": {
+    "id": "p:01JABCDEFGHJKMNPQRSTVWXYZ1",
+    "type": "repo-fact",
+    "scope": "repo",
+    "confidence": 0.85,
+    "usefulness": 2.5,
+    "decay": 1,
+    "status": "superseded",
+    "archivedAt": "2026-02-01T00:00:00.000Z",
+    "supersedes": "p:01JABCDEFGHJKMNPQRSTVWXYZ0",
+    "provenance": ["p:01JEPISODE00000000000000A", "packages/memory/src/index.ts"],
+    "repoId": "agentry",
+    "subject": "memory",
+    "tags": ["testing", "cross-component", "zod"],
+    "why": "Names the fix: derive the fixture from the emitter's source and live-verify the seam.",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-02-01T12:30:45.123Z"
+  },
+  "episode-full": {
+    "id": "p:01JABCDEFGHJKMNPQRSTVWXYZ2",
+    "shape": "decompose+verify (parallel build)",
+    "outcome": "shipped it: 78 tests passing, committed 700659e",
+    "retries": 1,
+    "lesson": "When N implementers build DISJOINT files in the SAME package concurrently, a whole-package typecheck run by one surfaces a sibling's IN-PROGRESS error. word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1",
+    "usedMemories": ["g:01JUSED000000000000000001", "g:01JUSED000000000000000002"],
+    "recallMisses": [],
+    "distilled": true,
+    "repoId": "agentry",
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  "scalars-that-look-like-other-types": {
+    "a": "true",
+    "b": "false",
+    "c": "null",
+    "d": "~",
+    "e": "123",
+    "f": "1.5",
+    "g": "0x1F",
+    "h": ".inf",
+    "i": "1e3",
+    "j": "yes",
+    "k": "No",
+    "l": "2026-01-01",
+    "m": ""
+  },
+  "numbers-and-booleans": {
+    "zero": 0,
+    "int": 7,
+    "neg": -3,
+    "float": 0.75,
+    "small": 1e-7,
+    "big": 1e21,
+    "t": true,
+    "f": false,
+    "nul": null
+  },
+  "quoting-colon-hash-lead-trail": {
+    "colon": "a: b",
+    "colonEnd": "a:",
+    "hash": "a #b",
+    "hashStart": "#x",
+    "lead": " lead",
+    "trail": "trail ",
+    "dash": "- x",
+    "dashOnly": "-",
+    "q": "? x",
+    "amp": "&a",
+    "star": "*a",
+    "bang": "!a",
+    "pct": "%a",
+    "at": "@a",
+    "tick": "`a",
+    "pipe": "|a",
+    "gt": ">a",
+    "sq": "[a]",
+    "cb": "{a}",
+    "comma": "a, b"
+  },
+  "quotes-and-unicode": {
+    "dq": "say \"hi\"",
+    "sq": "it's",
+    "both": "it's \"x\"",
+    "uni": "café ✓ — naïve 日本語",
+    "backslash": "a\\b",
+    "tab": "a\tb"
+  },
+  "control-characters": {
+    "ctrl": "a\u0001b",
+    "esc": "a\u001bb",
+    "nel": "ab",
+    "crlf": "a\r\nb"
+  },
+  "long-plain-folds": {
+    "why": "word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3",
+    "id": "g:01JABCDEFGHJKMNPQRSTVWXYZ0"
+  },
+  "long-quoted-folds": {
+    "why": "word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3: word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3",
+    "lesson": "key0 key1 key2 key3 key4 key5 key6 key0 key1 key2 key3 key4 key5 key6 key0 key1 key2 key3 key4 key5 #word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 ",
+    "quote": "say \"word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4\""
+  },
+  "multiline-literal": {
+    "a": "line1\nline2",
+    "b": "line1\nline2\n",
+    "c": "a\n\nb",
+    "d": "x\n\n\n",
+    "e": " lead\nnext",
+    "f": "a\n  indented\nb"
+  },
+  "multiline-folded": {
+    "a": "word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4\nword0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4",
+    "b": "word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1\n\nword0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1"
+  },
+  "lists": {
+    "tags": ["one", "two words", "a: b", "123", "true", "it's", "say \"hi\""],
+    "empty": [],
+    "long": [
+      "word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1",
+      "word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5 word6 word0 word1 word2 word3 word4 word5\nword0 word1 word2 word3 word4"
+    ]
+  },
+  "list-item-block-scalars": {
+    "items": ["a\nb", "c\n", " lead\nx"]
+  },
+  "special-keys-order": {
+    "zed": "last",
+    "alpha": "first",
+    "id": "g:01X",
+    "snake_case": "ok",
+    "kebab-key": "ok",
+    "camelCase": "ok"
+  }
+}

@@ -1,0 +1,21 @@
+a: |-
+  line1
+  line2
+b: |
+  line1
+  line2
+c: |-
+  a
+
+  b
+d: |+
+  x
+
+
+e: |2-
+   lead
+  next
+f: |-
+  a
+    indented
+  b

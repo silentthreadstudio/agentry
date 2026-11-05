@@ -1,0 +1,9 @@
+id: g:01JABCDEFGHJKMNPQRSTVWXYZ0
+type: gotcha
+scope: global
+confidence: 0.7
+usefulness: 0
+decay: 0
+status: active
+createdAt: 2026-01-01T00:00:00.000Z
+updatedAt: 2026-01-01T00:00:00.000Z

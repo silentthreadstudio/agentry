@@ -1,0 +1,9 @@
+zero: 0
+int: 7
+neg: -3
+float: 0.75
+small: 1e-7
+big: 1e+21
+t: true
+f: false
+nul: null

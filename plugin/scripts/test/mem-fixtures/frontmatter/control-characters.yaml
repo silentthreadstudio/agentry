@@ -1,0 +1,4 @@
+ctrl: "a\x01b"
+esc: "a\eb"
+nel: "ab"
+crlf: "a\r\nb"

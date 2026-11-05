@@ -1,0 +1,6 @@
+dq: say "hi"
+sq: it's
+both: it's "x"
+uni: café ✓ — naïve 日本語
+backslash: a\b
+tab: a	b
