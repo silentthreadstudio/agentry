@@ -436,25 +436,42 @@ test("a stray that does not lead its group is stopped with its whole descendant 
   assert.ok(await waitDead(kid), "the child must not be orphaned and left running");
 });
 
-test("an interactive shell in a merged worktree is never signalled", async () => {
-  const { root, merged } = fixture();
-  const stdio = ["pipe", "ignore", "ignore"];
-  const login = spawn("/bin/zsh", ["-f"], { argv0: "-zsh", cwd: merged.path, stdio });
-  const inter = spawn("/bin/zsh", ["-f", "-i"], { cwd: merged.path, stdio });
-  const plain = plant(join(root, "elsewhere", "plain.js"), { cwd: merged.path });
-  children.push(login, inter);
-  await settle();
-  const dry = sweep(root);
-  assert.match(dry.stdout, new RegExp(`left alone: interactive shell.*${login.pid}`));
-  assert.match(dry.stdout, new RegExp(`left alone: interactive shell.*${inter.pid}`));
-  assert.match(dry.stdout, new RegExp(`would stop process ${plain.pid}`));
-  const res = sweep(root, "--apply");
-  assert.equal(res.status, 1, res.stdout); // the worktree the shells sit in is kept
-  assert.ok(await waitDead(plain.pid), "an ordinary stray is still stopped");
-  await settle();
-  assert.ok(alive(login.pid), "the login shell must survive");
-  assert.ok(alive(inter.pid), "the interactive shell must survive");
-});
+// The host's own interactive-capable shell: zsh, else bash (Linux images often ship only bash).
+const hostShell = ["zsh", "bash"]
+  .map((name) => ({
+    name,
+    path: spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim(),
+  }))
+  .find((shell) => shell.path);
+const noFlags = hostShell?.name === "zsh" ? ["-f"] : ["--norc", "--noprofile"];
+
+test(
+  "an interactive shell in a merged worktree is never signalled",
+  { skip: hostShell ? false : "no zsh or bash on this host" },
+  async () => {
+    const { root, merged } = fixture();
+    const stdio = ["pipe", "ignore", "ignore"];
+    const login = spawn(hostShell.path, noFlags, {
+      argv0: `-${hostShell.name}`,
+      cwd: merged.path,
+      stdio,
+    });
+    const inter = spawn(hostShell.path, [...noFlags, "-i"], { cwd: merged.path, stdio });
+    const plain = plant(join(root, "elsewhere", "plain.js"), { cwd: merged.path });
+    children.push(login, inter);
+    await settle();
+    const dry = sweep(root);
+    assert.match(dry.stdout, new RegExp(`left alone: interactive shell.*${login.pid}`));
+    assert.match(dry.stdout, new RegExp(`left alone: interactive shell.*${inter.pid}`));
+    assert.match(dry.stdout, new RegExp(`would stop process ${plain.pid}`));
+    const res = sweep(root, "--apply");
+    assert.equal(res.status, 1, res.stdout); // the worktree the shells sit in is kept
+    assert.ok(await waitDead(plain.pid), "an ordinary stray is still stopped");
+    await settle();
+    assert.ok(alive(login.pid), "the login shell must survive");
+    assert.ok(alive(inter.pid), "the interactive shell must survive");
+  },
+);
 
 const python = spawnSync("python3", ["-c", "import pty"]).status === 0;
 test(
