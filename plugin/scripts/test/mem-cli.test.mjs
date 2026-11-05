@@ -809,3 +809,41 @@ test("what a verb wrote is on disk as a Markdown file the next call reads", asyn
   );
   assert.equal((await ok(s, "stats")).facts, 1);
 });
+
+test("recall and search take the query as one bare argument, the same as --query", async () => {
+  const s = store();
+  await ok(s, ...GOTCHA, "the topaz build caches its output");
+  assert.deepEqual(
+    await ok(s, "recall", "topaz build"),
+    await ok(s, "recall", "--query", "topaz build"),
+  );
+  assert.deepEqual(
+    await ok(s, "recall", "--limit", "1", "topaz build"),
+    await ok(s, "recall", "topaz build", "--limit", "1"),
+  );
+  const found = await ok(s, "search", "topaz");
+  assert.equal(found.results.length, 1);
+  assert.deepEqual(found, await ok(s, "search", "--query", "topaz"));
+});
+
+test("a bare query together with --query, or more than one bare argument, is a usage error", async () => {
+  const s = store();
+  for (const verb of ["recall", "search"]) {
+    const twice = await mem(s, verb, "topaz", "--query", "build");
+    assert.equal(twice.exit, 2, verb);
+    assert.match(twice.out, /the query was given twice/, verb);
+    const many = await mem(s, verb, "topaz", "build");
+    assert.equal(many.exit, 2, verb);
+    assert.match(many.out, /takes one query, got 2 arguments/, verb);
+    assert.match(many.out, new RegExp(`→ (agentry )?mem ${verb} --help$`), verb);
+  }
+});
+
+test("recall and search help name the positional query", async () => {
+  const s = store();
+  for (const verb of ["recall", "search"]) {
+    const help = await mem(s, verb, "--help");
+    assert.equal(help.exit, 0, verb);
+    assert.match(help.out, /<query>/, verb);
+  }
+});

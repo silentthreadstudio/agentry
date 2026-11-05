@@ -5,6 +5,7 @@
 import { flagHelp, usage } from "../tools/args.mjs";
 import { EXITS, command } from "../tools/command.mjs";
 import { ok } from "../tools/result.mjs";
+import { queryFirst } from "./positional-query.mjs";
 
 const fields = {
   query: { kind: "string", required: true, doc: "the words to look for" },
@@ -13,15 +14,20 @@ const fields = {
 
 export const noSpec = true;
 export const help = {
-  usage: usage("search", fields),
+  usage: usage("search", fields).replace(
+    "search --query <text>",
+    "search (<query> | --query <text>)",
+  ),
   purpose: "Full-text search over the active facts, with snippets.",
-  args: {},
+  args: { "<query>": "the words to look for, the same as --query" },
   flags: flagHelp(fields),
   exits: EXITS,
-  example: 'agentry mem search --query "sqlite external"',
+  example: 'agentry mem search "sqlite external"',
 };
 
 export const run = (argv) =>
-  command("search", fields, argv, (service, { query, limit }) =>
-    ok({ results: service.search(query, limit) }),
+  queryFirst("search", argv, (a) =>
+    command("search", fields, a, (service, { query, limit }) =>
+      ok({ results: service.search(query, limit) }),
+    ),
   );

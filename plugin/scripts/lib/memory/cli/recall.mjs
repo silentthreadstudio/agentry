@@ -5,6 +5,7 @@
 import { flagHelp, usage } from "../tools/args.mjs";
 import { EXITS, command } from "../tools/command.mjs";
 import { ok } from "../tools/result.mjs";
+import { queryFirst } from "./positional-query.mjs";
 
 const fields = {
   query: { kind: "string", doc: "what the task is about" },
@@ -14,13 +15,15 @@ const fields = {
 
 export const noSpec = true;
 export const help = {
-  usage: usage("recall", fields),
+  usage: usage("recall", fields).replace("recall ", "recall [<query>] "),
   purpose: "The few ranked memories for a task; --mode prime is the session warm set.",
-  args: {},
+  args: { "<query>": "what the task is about, the same as --query" },
   flags: flagHelp(fields),
   exits: EXITS,
-  example: 'agentry mem recall --query "bundling node:sqlite" --limit 3',
+  example: 'agentry mem recall "bundling node:sqlite" --limit 3',
 };
 
 export const run = (argv) =>
-  command("recall", fields, argv, (service, args) => ok(service.recall(args)));
+  queryFirst("recall", argv, (a) =>
+    command("recall", fields, a, (service, args) => ok(service.recall(args))),
+  );

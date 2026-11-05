@@ -6,6 +6,12 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+### Changed
+
+- `agentry mem recall` and `agentry mem search` take the query as one bare argument, as the old memory tools
+  did: `agentry mem recall "bundling node:sqlite"`. `--query` still works; giving both, or more than one bare
+  argument, is a usage error.
+
 ## [0.3.0] — 2026-11-05
 
 Agentry 0.3 turns the plugin into a harness for a repo's own board. `/agentry:exec` builds a task whose
