@@ -58,12 +58,16 @@ Plain Node, no dependencies, nothing to build.
 Requires Claude Code and Node 24 or newer. From a Claude Code session:
 
 ```
-/plugin marketplace add silentthreadstudio/agentry
+/plugin marketplace add silentthreadstudio/agentry#v0.3.0
 /plugin install agentry@agentry-dev
 ```
 
 Restart the session. Agents, commands and skills load at startup, and the plugin puts `agentry` on the
 Bash tool's PATH.
+
+`#v0.3.0` pins the install to the 0.3.0 release; `main` moves with development. To move to a later release,
+remove the marketplace and add it again with the new tag. Each release is also on
+[GitHub Releases](https://github.com/silentthreadstudio/agentry/releases) as a zip.
 
 ## First run
 

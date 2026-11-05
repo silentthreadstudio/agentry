@@ -21,7 +21,7 @@ export const PUBLISHER = { name: "Silent Thread", url: "https://silentthreadstud
 
 /** The install lines, as the docs install page gives them. */
 export const INSTALL_COMMANDS = [
-  "/plugin marketplace add silentthreadstudio/agentry",
+  "/plugin marketplace add silentthreadstudio/agentry#v0.3.0",
   "/plugin install agentry@agentry-dev",
   "/agentry:init",
 ] as const;

@@ -16,7 +16,7 @@ import { withBase } from "../../../lib/base.ts";
     <p>
       Agentry installs as a Claude Code plugin from its GitHub repo. From a Claude Code session in your repo, add it, install it, and let <code>/agentry:init</code> draft its process file from what it finds:
     </p>
-    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add silentthreadstudio/agentry
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add silentthreadstudio/agentry#v0.3.0
 <span class="flag__sigil" aria-hidden="true">$ </span>/plugin install agentry@agentry-dev
 <span class="flag__sigil" aria-hidden="true">$ </span>/agentry:init</code></pre>
     <p>
@@ -24,6 +24,12 @@ import { withBase } from "../../../lib/base.ts";
       specialists, and the durable memory layer all run from here — entirely from the terminal,
       no account and no build step. Head to <a href={withBase("docs/quickstart/")}>Quickstart</a>
       to hand it a first task.
+    </p>
+    <p>
+      The <code>#v0.3.0</code> suffix pins the install to the 0.3.0 release; the repo's main branch moves with
+      development. To move to a later release, remove the marketplace and add it again with the new tag. Each
+      release is also on <a href="https://github.com/silentthreadstudio/agentry/releases">GitHub Releases</a>
+      as a zip.
     </p>
 
     <div class="note">
