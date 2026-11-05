@@ -2,7 +2,16 @@
 // which is then renamed over the file, so a reader sees the old text or the new, never a part. A writer killed
 // between the two leaves its temp file behind; `sweepTemps` removes those whose pid no longer runs (a live
 // writer's is never touched). Node built-ins only.
-import { chmodSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  constants,
+  accessSync,
+  chmodSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { running } from "../process/pid.mjs";
 
@@ -12,12 +21,14 @@ const TEMP = /\.agentry-(\d+)\.tmp$/;
 export const tempOf = (file) => `${file}.agentry-${process.pid}.tmp`;
 
 /** Write `text` to `file` whole: a temp file beside it, renamed over it. The temp never outlives a failure.
- *  A file it replaces keeps its permission bits, as an in-place write would. */
+ *  A file it replaces keeps its permission bits, and one this process may not write is refused (EACCES)
+ *  before anything is written, as an in-place write would be: a rename alone would replace a read-only file. */
 export function atomicWrite(file, text) {
+  const mode = modeOf(file);
+  if (mode !== null) accessSync(file, constants.W_OK);
   const tmp = tempOf(file);
   try {
     writeFileSync(tmp, text);
-    const mode = modeOf(file);
     if (mode !== null) chmodSync(tmp, mode);
     renameSync(tmp, file);
   } finally {

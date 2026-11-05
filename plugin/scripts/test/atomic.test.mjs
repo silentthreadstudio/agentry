@@ -49,6 +49,21 @@ test("atomicWrite keeps the permission bits of the file it replaces", () => {
   assert.equal(statSync(file).mode & 0o777, 0o600);
 });
 
+test(
+  "atomicWrite refuses a file it may not write, as an in-place write would, and writes nothing",
+  { skip: process.getuid?.() === 0 && "root writes a read-only file" },
+  () => {
+    const dir = fresh();
+    const file = join(dir, "BOARD.md");
+    writeFileSync(file, "one");
+    chmodSync(file, 0o444);
+    assert.throws(() => atomicWrite(file, "two"), { code: "EACCES" });
+    chmodSync(file, 0o644);
+    assert.equal(readFileSync(file, "utf8"), "one");
+    assert.deepEqual(readdirSync(dir), ["BOARD.md"]);
+  },
+);
+
 test("a write whose rename fails leaves the target as it was and no temp file", () => {
   const dir = fresh();
   const target = join(dir, "busy");
