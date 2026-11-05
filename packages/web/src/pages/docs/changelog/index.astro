@@ -24,8 +24,8 @@ import { withBase } from "../../../lib/base.ts";
       in a ledger, so a cold session can resume. <code>/agentry:init</code> learns the board you have or
       scaffolds one, and <code>/agentry:start</code> and <code>/agentry:close</code> open and end a session the
       same way each time. The <code>agentry</code> command does the mechanical work; the plugin starts no server
-      and ships no hooks. Memory is now <code>agentry mem</code>, over the same files as before. The Workbench
-      and the flow server are gone.
+      and ships no hooks. Memory is now <code>agentry mem</code>, over the same files as before, and the plugin's
+      own servers are gone.
     </p>
     <p>
       Restart Claude Code after updating. <code>agentry --version</code> prints the build you are running.
