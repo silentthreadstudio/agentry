@@ -9,7 +9,7 @@
 //   verdictOf      `Verdict: PASS | PASS WITH NOTES | FAIL`, and only as the LAST non-empty line
 //   usedMemories   the ids a builder cites in `used_memories`
 //   summaryOf      one line, ≤ 120 chars, for the ledger and the handoff
-import { idProblem } from "./id.mjs";
+import { idProblem } from "../id.mjs";
 
 const WRAPPER = /<\/?(?:subagent|task|task_result|text)(?:\s[^>]*)?>/g;
 

@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { idProblem } from "../lib/lane/id.mjs";
+import { idProblem } from "../lib/id.mjs";
 import { create, mainRoot } from "../lib/lane/worktree.mjs";
 import { archive, archives, list, read, runDir, write } from "../lib/process/ledger.mjs";
 import { tempRepo } from "./git-repo.mjs";

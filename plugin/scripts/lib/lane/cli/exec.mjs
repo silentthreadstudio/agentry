@@ -48,6 +48,7 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import { realpathSync } from "node:fs";
 import { flagsOf, say, usageError } from "../../cli/help.mjs";
+import { idProblem } from "../../id.mjs";
 import { kindOf, runId } from "../../process/ids.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { WriteError } from "../../process/write.mjs";
@@ -70,7 +71,6 @@ import * as show from "../exec/steps/show.mjs";
 import * as start from "../exec/steps/start.mjs";
 import * as verdict from "../exec/steps/verdict.mjs";
 import { withModelSource } from "../exec/view.mjs";
-import { idProblem } from "../id.mjs";
 import { RestackError } from "../restack.mjs";
 import { mainRoot } from "../worktree.mjs";
 

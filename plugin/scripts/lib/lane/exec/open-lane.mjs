@@ -3,6 +3,7 @@
 // with what main and the board look like now, its first round briefed.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { idProblem } from "../../id.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { runId } from "../../process/ids.mjs";
@@ -23,7 +24,6 @@ import {
 import { sha256 } from "../carry-io.mjs";
 import { routeText } from "../exec-view.mjs";
 import { now, short } from "../fmt.mjs";
-import { idProblem } from "../id.mjs";
 import { step as advance, begin, beginAt } from "../rounds.mjs";
 import { chainOf } from "../stack.mjs";
 import { create, git, remove } from "../worktree.mjs";

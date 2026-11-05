@@ -28,11 +28,11 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import { realpathSync } from "node:fs";
 import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
+import { idProblem } from "../../id.mjs";
 import { kindOf, runId } from "../../process/ids.mjs";
 import { list as listLedgers, read as readLedger } from "../../process/ledger.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
-import { idProblem } from "../id.mjs";
 import { attributionIn, mergeBaseOf } from "../land.mjs";
 import {
   carryBackStep,

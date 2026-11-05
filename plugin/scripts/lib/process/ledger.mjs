@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, sweepTemps } from "../fs/atomic.mjs";
-import { idProblem } from "../lane/id.mjs";
+import { idProblem } from "../id.mjs";
 
 const VERSION = 1;
 const validId = (id) => idProblem(id) === null;

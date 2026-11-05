@@ -9,8 +9,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { idProblem } from "../id.mjs";
 import { branchTips, defaultBranch, worktrees } from "../process/git.mjs";
-import { idProblem } from "./id.mjs";
 
 /** Where the lane's worktrees live, under the main checkout. */
 export const worktreesDir = (root) => join(root, ".agentry", "run", "worktrees");
