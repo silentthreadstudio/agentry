@@ -1,7 +1,8 @@
 // restart — the git and file work of `lane exec restart` (field 69): what the old lane leaves (its tip, its
 // uncommitted diff, the ignored files a removal would delete), the archive of its ledger and run files under
 // the first free number, the old worktree taken down and its branch kept as `agentry/<id>.<n>`, and the carry
-// of its work into the new worktree. `cli/exec.mjs` runs the checks, the order and the new lane's start.
+// of its work into the new worktree. `exec/steps/restart.mjs` runs the checks, the order and the new
+// lane's start (`exec/open-lane.mjs`).
 //
 // leftover(ledger, disposable) -> { ignored, tip, commits } | { problem }   read only
 // carryRange(root, main, tip) -> { picks, skipped, base, based }   the commits a carry picks, read only

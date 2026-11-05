@@ -2,8 +2,9 @@
 // to take in (its tip, its commits past main, the worktree it is checked out in and that worktree's
 // uncommitted files, and the owner's calls noted on the spike filed for the lane's id on it), the refusals
 // that leave nothing written, and the words the lane prints and briefs with. The branch and its worktree
-// are only read, never moved: `cli/exec.mjs` cuts the lane, picks the commits with `pickOnto`, carries the
-// uncommitted work with `restart.mjs`'s `saveWork` and `carry`, and moves the calls into the ledger.
+// are only read, never moved: `exec/steps/adopt.mjs` opens the lane, picks the commits with `pickOnto`,
+// carries the uncommitted work with `restart.mjs`'s `saveWork` and `carry`, and moves the calls into the
+// ledger.
 //
 // source(root, { id, branch, base, mainBranch, lanes })
 //   -> { branch, tip, commits, merges, worktree, dirty, calls } | { problem }

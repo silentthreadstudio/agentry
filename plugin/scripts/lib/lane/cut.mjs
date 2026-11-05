@@ -11,7 +11,8 @@
 // one board commit holds them (`land.mjs`'s `boardCommit`, `chore(board): cut <id> (<D>)`), so main is
 // clean for the next land; the owner's guard.allow edits go back after it. The ledger records `cut` and is
 // closed, the worktree is removed (its uncommitted work saved) and the branch is kept as
-// `agentry/<id>.cut`, by ref at its listed tip. `cli/exec.mjs` parses the call.
+// `agentry/<id>.cut`, by ref at its listed tip. `cli/exec.mjs` parses the call; `exec/steps/cut.mjs`
+// runs it.
 //
 // cutLane(ctx, id, { ledger, refuse, stop, laneLine, episodeOf }) -> { exit, out }   `out` the step's JSON
 import { spawnSync } from "node:child_process";
