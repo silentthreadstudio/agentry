@@ -20,6 +20,8 @@ import { fileURLToPath } from "node:url";
 import {
   TEMPLATES,
   fill,
+  isBuilderBrief,
+  isVerifierBrief,
   notesSection,
   policySlots,
   recheckSlots,
@@ -29,6 +31,8 @@ import {
   slotsOf,
   stepSlots,
   stoppedRound,
+  verifierRules,
+  withRules,
 } from "../lib/lane/brief.mjs";
 import { suggestBuilder } from "../lib/lane/builder.mjs";
 import { citedDecisions, decisionKind } from "../lib/lane/decisions.mjs";
@@ -1376,4 +1380,19 @@ test("stoppedRound names the report, and quotes the next list only when there is
     stoppedRound({ report: "/r/x.md", next: ["a", "b"] }),
     /Its own next list, which you carry on from:\n\n> - a\n> - b\n$/,
   );
+});
+
+test("verify, recheck and final briefs take the publish-nothing rule before ## Report; build, fix and resolve differ", () => {
+  for (const step of ["verify", "recheck", "final"]) {
+    assert.ok(isVerifierBrief(step), step);
+    const text = withRules(renderBrief(step, VALUES), verifierRules());
+    assert.equal(text.split("Publish and upload nothing").length - 1, 1, step);
+    assert.ok(text.includes("The report goes only to its path below.\n\n## Report"), step);
+  }
+  for (const step of ["build", "fix", "needs-context", "continue"]) {
+    assert.ok(isBuilderBrief(step) && !isVerifierBrief(step), step);
+  }
+  for (const step of ["rebase", "resolve"]) {
+    assert.ok(!isBuilderBrief(step) && !isVerifierBrief(step), step);
+  }
 });

@@ -22,6 +22,7 @@
 //   carriedWork     the `## Carried work` section of a restarted lane's first build brief
 //   stoppedRound    the `## The stopped round` section of a fresh builder's brief after a resume
 //   builderRules    the two rules every build and fix brief carries from code: publish nothing, subject limit
+//   verifierRules   the publish-nothing rule the verify, recheck and final briefs carry from code
 //   withRules       a rendered builder brief with those rules put in at the end of its Rules list
 //   rewordSection   the `## Subjects to reword` section of a refused report's fix brief
 //   bullets         a list as brief lines
@@ -385,12 +386,21 @@ export const isBuilderBrief = (step) =>
 
 /** The rules a builder's brief carries beyond its template's: nothing is published or uploaded (the report
  *  goes only to its path), and a commit subject stays within `limit` characters. */
+const NO_PUBLISH =
+  "- Publish and upload nothing: no Artifact page, gist, paste or any other outward tool, for the report or for anything else. The report goes only to its path below.";
 export const builderRules = (limit) => [
-  "- Publish and upload nothing: no Artifact page, gist, paste or any other outward tool, for the report or for anything else. The report goes only to its path below.",
+  NO_PUBLISH,
   `- Keep every commit subject within ${limit} characters: a longer one is named when you report, with the line that rewords it.`,
 ];
 
-/** `text` (a rendered builder brief) with `rules` put in at the end of its Rules list, before `## Report`.
+/** Is `step` rendered from the verify or final template (verify, recheck, final; not the resolve check)? */
+export const isVerifierBrief = (step) =>
+  Object.hasOwn(TEMPLATE_OF, step) && ["verify", "final"].includes(TEMPLATE_OF[step]);
+
+/** The rule a verifier's brief carries beyond its template's: the same publish-nothing rule. */
+export const verifierRules = () => [NO_PUBLISH];
+
+/** `text` (a rendered builder or verifier brief) with `rules` put in at the end of its rules list, before `## Report`.
  *  Unchanged when it has no such section. */
 export function withRules(text, rules) {
   const at = text.indexOf("\n\n## Report");

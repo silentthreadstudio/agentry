@@ -24,7 +24,7 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **`lane exec report` reads a needs-context reply saved under the build brief's name.** A resumed builder
   often writes `r<n>-build.report.md` instead of `r<n>-needs-context.report.md`; either is read now, and
   the output says which. Two different replies under the two names are refused.
-- **Build and fix briefs say to publish and upload nothing.** No Artifact page, gist, paste or other
+- **Build, fix, verify, recheck and final briefs say to publish and upload nothing.** No Artifact page, gist, paste or other
   outward tool, for the report or anything else: the report goes only to its path.
 - **Build briefs print the commit subject limit, and `lane exec report` names each subject over it.** The
   limit is `commits.subjectMax`, else 72. Each over-long commit comes with the exact line that rewords it, and

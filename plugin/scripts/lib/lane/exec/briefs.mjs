@@ -13,6 +13,7 @@ import {
   bullets,
   carriedWork,
   isBuilderBrief,
+  isVerifierBrief,
   notesSection,
   ownerChange,
   policySlots,
@@ -22,6 +23,7 @@ import {
   stepReminder,
   stepSlots,
   stoppedRound,
+  verifierRules,
   withRules,
   withSection,
 } from "../brief.mjs";
@@ -185,6 +187,7 @@ export function brief({ root, spec, model }, ledger, dispatch) {
   const file = join(dir, `${name}.md`);
   let text = renderBrief(dispatch.step, values);
   if (isBuilderBrief(dispatch.step)) text = withRules(text, builderRules(subjectLimit(spec)));
+  if (isVerifierBrief(dispatch.step)) text = withRules(text, verifierRules());
   if (dispatch.step === "fix" && picked) text = withNotesToFix(text, picked, ledger.openNotes);
   // A builder answered with the fact it asked for is told which step it is on, and what finishes it.
   if (dispatch.step === "needs-context" && fresh) {

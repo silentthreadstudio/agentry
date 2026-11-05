@@ -1362,12 +1362,26 @@ test("a build, a fix and a needs-context brief each say nothing is published and
   commitFile(asked.json.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
   writeFileSync(asked.json.reportPath, "DONE\nthree\nused_memories: none\n");
   const verify = lane(r, "report", "T3").json;
-  // The verifier's brief is not a builder's: it carries no such rule.
-  assert.doesNotMatch(readFileSync(verify.brief, "utf8"), /Publish and upload nothing/);
+  // The verifier's brief carries the publish rule, not the builder's subject limit.
+  const verifyText = readFileSync(verify.brief, "utf8");
+  assert.ok(
+    verifyText.includes("The report goes only to its path below.\n\n## Report"),
+    verifyText,
+  );
+  assert.equal(verifyText.split("Publish and upload nothing").length - 1, 1);
+  assert.doesNotMatch(verifyText, /Keep every commit subject/);
   writeFileSync(verify.reportPath, "Missing more.txt.\nused_memories: none\nVerdict: FAIL\n");
   const fix = lane(r, "verdict", "T3");
   assert.equal(fix.json.next, "fix", fix.stderr);
   check(fix.json.brief);
+  // The recheck after the fix is a verifier's brief too.
+  commitFile(asked.json.worktree, "more.txt", "m\n", "feat: more");
+  writeFileSync(fix.json.reportPath, "DONE\nmore\nused_memories: none\n");
+  const recheck = lane(r, "report", "T3");
+  assert.equal(recheck.json.next, "recheck", recheck.stderr);
+  const recheckText = readFileSync(recheck.json.brief, "utf8");
+  assert.equal(recheckText.split("Publish and upload nothing").length - 1, 1);
+  assert.ok(recheckText.includes("only to its path below.\n\n## Report"));
 });
 
 // T4 through two owner gates: step 1 and 2 built, reported and OK'd; the builder of step 3 has committed c.txt
