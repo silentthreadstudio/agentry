@@ -316,7 +316,12 @@ for (const [spelling, text] of [
   ["any case and a period", "Draw it. → OWNER ok."],
 ]) {
   test(`the gate spelled with ${spelling} is a gate`, () => {
-    assert.deepEqual(gateOf(text), { n: 1, text: text.slice(0, text.search(/\s*[→–—]|\s*->/)).trim(), gate: "owner", accept: [] });
+    assert.deepEqual(gateOf(text), {
+      n: 1,
+      text: text.slice(0, text.search(/\s*[→–—]|\s*->/)).trim(),
+      gate: "owner",
+      accept: [],
+    });
   });
 }
 
@@ -334,7 +339,10 @@ test("a note and a marker together: the marker is still a marker, either order",
   const a = gateOf("Draw it → owner OK (see sheet) (model: opus)");
   assert.deepEqual([a.gate, a.note, a.model], ["owner", "see sheet", "opus"]);
   const b = gateOf("Draw it (agent: designer) → **owner OK** (see sheet)");
-  assert.deepEqual([b.gate, b.note, b.agent, b.text], ["owner", "see sheet", "designer", "Draw it"]);
+  assert.deepEqual(
+    [b.gate, b.note, b.agent, b.text],
+    ["owner", "see sheet", "designer", "Draw it"],
+  );
   const c = gateOf("Draw it → owner OK (model: opus, agent: designer)");
   assert.deepEqual([c.gate, c.note, c.model, c.agent], ["owner", undefined, "opus", "designer"]);
 });
@@ -356,9 +364,14 @@ test("a step that names the owner gate but does not parse as one is a problem na
 });
 
 test("a step that names the owner in prose without OK, review, approves or gate is unchanged", () => {
-  const { steps, problem } = stepsOf("- **Steps:**\n  1. Ask the owner's name\n  2. Okay, the okapi");
+  const { steps, problem } = stepsOf(
+    "- **Steps:**\n  1. Ask the owner's name\n  2. Okay, the okapi",
+  );
   assert.equal(problem, null);
-  assert.deepEqual(steps.map((s) => s.gate), [null, null]);
+  assert.deepEqual(
+    steps.map((s) => s.gate),
+    [null, null],
+  );
 });
 
 test("each inflection of a gate word beside the owner is the problem", () => {
@@ -371,5 +384,9 @@ test("each inflection of a gate word beside the owner is the problem", () => {
     "Draw it → the owner signs off",
     "Draw it → the owner signed off",
   ])
-    assert.match(stepsOf(`- **Steps:**\n  1. ${text}`).problem, /^step 1 mentions an owner gate/, text);
+    assert.match(
+      stepsOf(`- **Steps:**\n  1. ${text}`).problem,
+      /^step 1 mentions an owner gate/,
+      text,
+    );
 });
