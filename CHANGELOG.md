@@ -293,6 +293,11 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   sends the round it stopped on again, as it was dispatched (a fix still points at the verifier's report), to
   a fresh builder unless `--same`. A plain `BLOCKED` still stops the lane. `exec hold` on a blocked lane is
   refused, and so is `fix --owner` on any held lane, naming the resume that carries the change.
+- **Import-direction check** — `scripts/check-plugin.mjs` fails when a module under `plugin/scripts/lib/process/`
+  imports one under `lib/lane/` (static, re-export and dynamic imports). The process kit no longer depends on the
+  lane: the leaves it needed moved to `process/` or to neutral `lib/` modules (`lib/id.mjs`, `lib/text/shell.mjs`).
+- **SHA-256 repositories** — commit cells, evidence and handoff lines accept 7 to 64 hex digits, so a board in a
+  SHA-256 repo reads its full commit ids.
 
 ### Changed
 - **A verified lane's restart** — `lane exec restart <id> --carry` of a lane whose last verdict passed, on the
@@ -435,6 +440,35 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **`cleanup.disposable` is honoured by `restart`, the land's cleanup and `lane sweep`**, which read ignored
   files through one filter: a cache the globs cover no longer stops them, and a folder with no file at any
   depth never counts.
+- **Restart archives live in dot folders** — an archived ledger is `ledger/.archive/<id>.<n>.json` and its run
+  folder `runs/.archive/<id>.<n>/`, where no valid task id can reach, so a task named `T-1.2` no longer collides
+  with the second archive of `T-1`. Archives in the old flat layout are still read as archives, and `ledger`
+  lists name any file they skip.
+- **One code-fence reader** — every markdown reader (board, contracts, briefs, steps, notes, instruction files)
+  masks fences through one scanner: a fence opens at any indent, nests by character and length, and closes only
+  on the same character at least as long with nothing after it. Fences inside list items and longer fences
+  holding shorter ones now read as code everywhere.
+- **`board contract --kind` and `find-contract.mjs --kind`** exit 2 on a kind the process file does not have,
+  naming the kinds it has (was exit 1, or a crash on names such as `toString`).
+- **Atomic file writes refuse a read-only file** — the board writer now writes through the same temp-then-rename
+  helper as the ledgers, and that helper refuses (EACCES) a file the process may not write, before writing
+  anything, as an in-place write does; a rename alone would have replaced it. A replaced file keeps its mode.
+- **`memory_update`** applies the side effects of the dedicated tools or refuses with the tool to use: `supersedes`
+  retires its target, `status: "superseded"` leaves search, an archived fact back to active points at
+  `memory_recover`, a superseded fact cannot become active again, a fact superseding itself and a scope that moves
+  a fact to another root are refused. Re-sending a fact's own scope is accepted.
+- **`board scan`** names the git-ignored folders in its hint without walking them (no markdown counts), and skips
+  more build folders.
+- **A handoff line matches its commit in either case**, and status, evidence and `board fix` read hand-written
+  upper-case commit cells again; `board fix` no longer takes a hex run glued to letters (`g1b72454`) for a commit.
+- **Eval**: `selfeval` starts `claude` with `--plugin-dir <repo>/plugin`. Bench results recorded before this
+  change ran without the plugin loaded. The README's reproduce steps use pnpm and the commands the CLI has, and
+  warn that the bench runs `claude -p` with `bypassPermissions` on your machine. `--k`, `--concurrency` and
+  `--timeout` refuse a non-number or a value below 1 (exit 2).
+- **Structure, no behavior change**: the lane's `exec` command is split into `lane/exec/` domain modules and one
+  module per step; `process/drift.mjs` and `process/git.mjs` are split by concern; one glob matcher, one commit
+  token, one path display helper and one phase list replace their copies; every git call in `process/` goes
+  through `git.mjs` with its timeout.
 
 ### Fixed
 - **Branch names that differ only in case** — on a case-insensitive filesystem a read by name could open
@@ -480,6 +514,18 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **`restart` on an owner hold with no run** no longer crashes.
 - **Flaky lock, sweep and eval tests under load** — the sweep forker tests count and kill only the sleeps
   their own process forked, and the eval test tells a decompose kill from a grace expiry by a 2 s grace.
+- **A cut stopped mid-land is never landed by `lane merge`** — every merge mode refuses a ledger holding a stopped
+  cut and names `exec cut <id> --decision <D> --apply`, which rolls it back; `--push` and `--cleanup` on a cut
+  lane write nothing. When a cut cannot keep its branch it prints only the steps still owed.
+- **Printed commands quote their paths** — the restart diff in a carry conflict, a brief or a stopped restart's
+  steps pastes as is in a repo whose path holds a space.
+- **Memory writes survive a kill** — a fact or episode file is written to a temp file and renamed into place, so a
+  process killed mid-write no longer loses the record; its permission bits are kept, also when a text change
+  renames the file. A memory file with no readable header is reported in `memory_stats` `readErrors` instead of
+  skipped. Search after an update reads the store's own write.
+- **A commit that arrives later is found** — git lookups no longer remember a missing commit for the life of the
+  process; a board report asks git once for the commits it names. Short SHAs come from one `git rev-parse`.
+- **Eval report data keeps `$` sequences**, and the direct-run check works on paths that need URL encoding.
 
 ### Removed
 - **All plugin hooks.** Their work moved into the commands above; the plugin check fails if a
