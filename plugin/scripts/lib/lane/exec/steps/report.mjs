@@ -25,6 +25,7 @@ import {
   stepWith,
 } from "../lane.mjs";
 import { finishRebase } from "../rebasing.mjs";
+import { overLimit, rewordsText } from "../rewords.mjs";
 import { view } from "../view.mjs";
 
 // The outside cause a `BLOCKED: external: <reason>` report names, read on the status line builderStatus
@@ -148,7 +149,18 @@ export function run(ctx, id) {
   next.nested = nestedTrees(root, next);
   // A rebase builds nothing new: built was written when the work was first checked.
   const board = isRebase ? null : writeBuilt(ctx, next, res);
-  next = dispatchNext(ctx, next, res.dispatch);
+  // The commits over the subject limit and the lines that reword them, with or without commit rules.
+  const rewords = rewordsText(
+    ctx.spec,
+    ledger,
+    tip,
+    overLimit(root, ctx.spec, start, ledger.branch),
+  );
+  next = dispatchNext(
+    ctx,
+    next,
+    res.dispatch?.guard && rewords ? { ...res.dispatch, rewords } : res.dispatch,
+  );
   ledgers.write(root, next);
   const allowed = main.allowed.length
     ? [
@@ -162,6 +174,7 @@ export function run(ctx, id) {
     extra: {
       ...(res.reason && { why: res.reason }),
       ...(board && { board }),
+      ...(rewords && { rewords }),
       ...(named && { "report read": `${named} (the round's own is ${round.reportPath})` }),
     },
   });

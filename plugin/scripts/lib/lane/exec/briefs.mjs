@@ -18,6 +18,7 @@ import {
   policySlots,
   recheckSlots,
   renderBrief,
+  rewordSection,
   stepReminder,
   stepSlots,
   stoppedRound,
@@ -31,6 +32,7 @@ import { changedSince, pickTier } from "../gate.mjs";
 import { recalledFacts } from "../recall.mjs";
 import { nextListOf } from "../report.mjs";
 import { addRound, greenOn, verdicts } from "../rounds.mjs";
+import { subjectLimit } from "../subjects.mjs";
 import { branchOf } from "../worktree.mjs";
 import { headOf } from "./guard/snapshot.mjs";
 import { contractFile, isFlagged, laneLine, ownedOf, readOr } from "./lane.mjs";
@@ -182,7 +184,7 @@ export function brief({ root, spec, model }, ledger, dispatch) {
         : null;
   const file = join(dir, `${name}.md`);
   let text = renderBrief(dispatch.step, values);
-  if (isBuilderBrief(dispatch.step)) text = withRules(text, builderRules());
+  if (isBuilderBrief(dispatch.step)) text = withRules(text, builderRules(subjectLimit(spec)));
   if (dispatch.step === "fix" && picked) text = withNotesToFix(text, picked, ledger.openNotes);
   // A builder answered with the fact it asked for is told which step it is on, and what finishes it.
   if (dispatch.step === "needs-context" && fresh) {
@@ -195,6 +197,9 @@ export function brief({ root, spec, model }, ledger, dispatch) {
       text,
       stoppedRound({ report: dispatch.stopped, next: nextListOf(readOr(dispatch.stopped)) }),
     );
+  // A refused report whose subjects are over the limit: the lines that reword them.
+  if (dispatch.guard && dispatch.rewords && fresh)
+    text = withSection(text, rewordSection(dispatch.rewords));
   if (owner)
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
   // A restarted lane's first brief says what was carried into the tree.

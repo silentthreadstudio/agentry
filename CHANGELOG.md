@@ -26,6 +26,10 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   the output says which. Two different replies under the two names are refused.
 - **Build and fix briefs say to publish and upload nothing.** No Artifact page, gist, paste or other
   outward tool, for the report or anything else: the report goes only to its path.
+- **Build briefs print the commit subject limit, and `lane exec report` names each subject over it.** The
+  limit is `commits.subjectMax`, else 72. Each over-long commit comes with the exact line that rewords it, and
+  a refused report's fix brief carries those lines. A repo with no `commits` rules gets the lines too, but
+  nothing is refused.
 
 ## [0.3.0] — 2026-11-05
 

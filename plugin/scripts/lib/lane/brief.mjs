@@ -21,8 +21,9 @@
 //   ownerChange     the owner's change a verified lane was sent back with, as a builder's or verifier's section
 //   carriedWork     the `## Carried work` section of a restarted lane's first build brief
 //   stoppedRound    the `## The stopped round` section of a fresh builder's brief after a resume
-//   builderRules    the rules every build and fix brief carries from code (publish nothing)
+//   builderRules    the two rules every build and fix brief carries from code: publish nothing, subject limit
 //   withRules       a rendered builder brief with those rules put in at the end of its Rules list
+//   rewordSection   the `## Subjects to reword` section of a refused report's fix brief
 //   bullets         a list as brief lines
 //
 // Reads the board's files, the templates and (for a rebase) the lane's commits; writes nothing. Node
@@ -382,10 +383,11 @@ export function stoppedRound({ report, next = [] }) {
 export const isBuilderBrief = (step) =>
   Object.hasOwn(TEMPLATE_OF, step) && ["build", "fix"].includes(TEMPLATE_OF[step]);
 
-/** The rules a builder's brief carries beyond its template's: nothing is published or uploaded (the
- *  report goes only to its path). */
-export const builderRules = () => [
+/** The rules a builder's brief carries beyond its template's: nothing is published or uploaded (the report
+ *  goes only to its path), and a commit subject stays within `limit` characters. */
+export const builderRules = (limit) => [
   "- Publish and upload nothing: no Artifact page, gist, paste or any other outward tool, for the report or for anything else. The report goes only to its path below.",
+  `- Keep every commit subject within ${limit} characters: a longer one is named when you report, with the line that rewords it.`,
 ];
 
 /** `text` (a rendered builder brief) with `rules` put in at the end of its Rules list, before `## Report`.
@@ -394,6 +396,18 @@ export function withRules(text, rules) {
   const at = text.indexOf("\n\n## Report");
   return at === -1 ? text : `${text.slice(0, at)}\n${rules.join("\n")}${text.slice(at)}`;
 }
+
+/** The `## Subjects to reword` section: `lines` (`exec report`'s, one per commit over the limit) a builder
+ *  runs to fix them. */
+export const rewordSection = (lines) =>
+  [
+    "## Subjects to reword",
+    "",
+    "Each of these commits has a subject over the limit. Run its line with a new subject, then report again:",
+    "",
+    lines,
+    "",
+  ].join("\n");
 
 /** A list as brief lines (`- item`), or `none`. */
 export const bullets = (items) => (items.length ? items.map((i) => `- ${i}`).join("\n") : "none");

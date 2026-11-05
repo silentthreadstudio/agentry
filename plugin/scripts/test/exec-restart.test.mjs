@@ -1340,12 +1340,12 @@ test("a build brief and a fix brief say never to rebase or merge main inside the
   assert.match(text, rule);
 });
 
-test("a build, a fix and a needs-context brief each say nothing is published or uploaded, in the Rules list", () => {
+test("a build, a fix and a needs-context brief each say nothing is published and name the subject limit, in the Rules list", () => {
   const r = repo();
   const started = lane(r, "start", "T3");
   assert.equal(started.exit, 0, started.stderr);
   const rule =
-    "- Publish and upload nothing: no Artifact page, gist, paste or any other outward tool, for the report or for anything else. The report goes only to its path below.\n\n## Report";
+    "- Publish and upload nothing: no Artifact page, gist, paste or any other outward tool, for the report or for anything else. The report goes only to its path below.\n- Keep every commit subject within 72 characters: a longer one is named when you report, with the line that rewords it.\n\n## Report";
   const lastRule =
     "`exec rebase` (a verified lane) or `exec restart --carry`.\n- Publish and upload nothing";
   const check = (brief) => {

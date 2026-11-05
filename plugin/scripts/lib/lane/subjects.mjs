@@ -6,6 +6,7 @@
 //   brokenIn      the two together: the commits among `shas` that break the spec's rules
 //   withTypeHints the broken commits, each that fails the pattern on a type main already uses with a hint
 //                 naming that type and the pattern widened to take it
+//   subjectLimit  the longest subject the briefs and `exec report` name: subjectMax, else 72
 //
 // `exec report`, the merge (preflight and land) and the rebase brief are the readers; the rules are checked
 // at load by `process/spec/workflow.mjs`, so a pattern here always compiles. What main's history says (its
@@ -16,6 +17,10 @@ import { git } from "./worktree.mjs";
 
 /** The spec's `commits` rules, or null when the workflow file sets none. */
 export const rulesOf = (spec) => own(spec, "commits") ?? null;
+
+/** The longest commit subject (in code points) the briefs and `exec report` name: `commits.subjectMax`,
+ *  else 72. */
+export const subjectLimit = (spec) => rulesOf(spec)?.subjectMax ?? 72;
 
 const NO_MATCH = "subject does not match commits.subjectPattern";
 
