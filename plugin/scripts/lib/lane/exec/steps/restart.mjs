@@ -12,15 +12,7 @@ import { runText } from "../../../process/steps.mjs";
 import { resolveBranch, shellWord } from "../../adopt.mjs";
 import { now, short } from "../../fmt.mjs";
 import { gatingNow } from "../../restack.mjs";
-import {
-  archive,
-  archiveNumber,
-  carry,
-  carryRange,
-  leftover,
-  retire,
-  saveWork,
-} from "../../restart.mjs";
+import { archiveNumber, carry, carryRange, leftover, retire, saveWork } from "../../restart.mjs";
 import { PASSES, expects, verdicts } from "../../rounds.mjs";
 import { childrenOf, restackLine, stackOf } from "../../stack.mjs";
 import { branchOf, git } from "../../worktree.mjs";
@@ -138,7 +130,7 @@ export function run(ctx, id) {
   try {
     oldBlock = readFileSync(contractFile(root, id), "utf8");
   } catch {} // an older run dir without it: every owned entry reads as a grant
-  const archived = archive(root, id, n);
+  const archived = ledgers.archive(root, id, n);
   const diff = diffIn(archived.runs);
   let kept = null;
   let keptTip = null;

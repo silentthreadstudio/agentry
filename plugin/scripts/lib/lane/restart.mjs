@@ -1,27 +1,20 @@
 // restart — the git and file work of `lane exec restart` (field 69): what the old lane leaves (its tip, its
-// uncommitted diff, the ignored files a removal would delete), the archive of its ledger and run files under
-// the first free number, the old worktree taken down and its branch kept as `agentry/<id>.<n>`, and the carry
-// of its work into the new worktree. `exec/steps/restart.mjs` runs the checks, the order and the new
+// uncommitted diff, the ignored files a removal would delete), the first free number to archive its ledger
+// and run files under (`process/ledger.mjs`'s `archive` moves them), the old worktree taken down and its
+// branch kept as `agentry/<id>.<n>`, and the carry of its work into the new worktree. `exec/steps/restart.mjs` runs the checks, the order and the new
 // lane's start (`exec/open-lane.mjs`).
 //
 // leftover(ledger, disposable) -> { ignored, tip, commits } | { problem }   read only
 // carryRange(root, main, tip) -> { picks, skipped, base, based }   the commits a carry picks, read only
 // saveWork(worktree, file) -> { files } | { error }      the uncommitted diff (untracked files too) to `file`
 // archiveNumber(root, id) -> n                           the first number no archive or kept branch holds
-// archive(root, id, n) -> { runs, ledger }               the ledger and run dir moved to `<id>.<n>`
 // retire(root, ledger, n) -> { kept: branch | null, tip }   worktree removed, branch renamed `agentry/<id>.<n>`
 // carry(worktree, { picks, diff }) -> { ok, conflict? }   cherry-pick `picks` (`carryRange`'s, none when
 //                                                         empty), then `git apply --3way`
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { branchTips } from "../process/git.mjs";
+import * as ledgers from "../process/ledger.mjs";
 import { resolveBranch, shellWord } from "./adopt.mjs";
 import { applyPatch, asidePatch } from "./carry-io.mjs";
 import { first, short } from "./fmt.mjs";
@@ -64,8 +57,8 @@ export function saveWork(worktree, file) {
   return { files };
 }
 
-/** The archive number for lane `id`: one past the highest `runs/<id>.<k>`, `ledger/<id>.<k>.json` or
- *  `agentry/<id>.<k>` branch, so an archive never overwrites an older one. */
+/** The archive number for lane `id`: one past the highest `runs/<id>.<k>`, ledger archive (`ledgers.archives`,
+ *  either layout) or `agentry/<id>.<k>` branch, so an archive never overwrites an older one. */
 export function archiveNumber(root, id) {
   const of = (names, suffix = "") =>
     names
@@ -86,23 +79,10 @@ export function archiveNumber(root, id) {
     .map((b) => b.replace(/^agentry\//, ""));
   const taken = [
     ...of(list(join(processDir(root), "runs"))),
-    ...of(list(join(processDir(root), "ledger")), ".json"),
+    ...ledgers.archives(root, id).map((a) => a.n),
     ...of(branches),
   ];
   return Math.max(0, ...taken) + 1;
-}
-
-/** Move lane `id`'s ledger to `ledger/<id>.<n>.json` and its run dir to `runs/<id>.<n>/`: `{ runs, ledger }`,
- *  the archived paths. Throws when either target exists (never overwritten). */
-export function archive(root, id, n) {
-  const ledger = join(processDir(root), "ledger", `${id}.${n}.json`);
-  const runs = join(processDir(root), "runs", `${id}.${n}`);
-  if (existsSync(ledger) || existsSync(runs)) throw new Error(`an archive ${id}.${n} exists`);
-  const from = join(processDir(root), "runs", id);
-  if (existsSync(from)) renameSync(from, runs);
-  else mkdirSync(runs, { recursive: true });
-  renameSync(join(processDir(root), "ledger", `${id}.json`), ledger);
-  return { runs, ledger };
 }
 
 /** Take down the old lane's worktree (its uncommitted work saved, its ignored files checked by `leftover`)
