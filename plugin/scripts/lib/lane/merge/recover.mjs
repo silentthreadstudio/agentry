@@ -30,6 +30,7 @@ import { git } from "../worktree.mjs";
 import { backStop, putBackAllow, releaseWrites } from "./carry.mjs";
 import { rollBack } from "./gating.mjs";
 import { afterLand, done, landNext, now, ok, red, save, setMerge, short, warn } from "./lane.mjs";
+import { stoppedCut } from "./rows.mjs";
 
 const readText = (root, file) => {
   try {
@@ -507,6 +508,8 @@ export function resolveMode(lane) {
   if (!ledger) return done(2, lane, [red("resolve", `no ledger for ${id}`)]);
   lane.ledger = ledger;
   const no = (why) => done(2, lane, [red("resolve", why)]); // no next: the ledger is not written
+  const cut = stoppedCut(id, ledger);
+  if (cut) return no(cut);
   if (ledger.state !== "merging")
     return no(`${id}'s lane is "${ledger.state}": --resolve closes only a land in "merging"`);
   const merge = ledger.merge ?? {};

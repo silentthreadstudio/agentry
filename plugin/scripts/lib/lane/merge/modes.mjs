@@ -11,7 +11,7 @@ import { cleanup, commitOf, isAncestor, push } from "../land.mjs";
 import { worktreesDir } from "../worktree.mjs";
 import { mainRow } from "./carry.mjs";
 import { afterLand, checkNext, done, landNext, now, ok, red, save, short } from "./lane.mjs";
-import { SKILL_DIR, checksState, skillExists } from "./rows.mjs";
+import { SKILL_DIR, checksState, skillExists, stoppedCut } from "./rows.mjs";
 
 const CHECK_RESULTS = ["pass", "fail"];
 
@@ -25,6 +25,8 @@ function mergedLedger(lane, step) {
   }
   if (!ledger) return done(2, lane, [red(step, `no ledger for ${lane.id}`)]);
   lane.ledger = ledger;
+  const cut = stoppedCut(lane.id, ledger);
+  if (cut) return done(2, lane, [red(step, cut)]);
   if (ledger.state !== "merged")
     return done(2, lane, [red(step, `${lane.id} is not landed yet`)], landNext(lane.id));
   return null;
@@ -59,6 +61,8 @@ export function check(lane) {
   }
   if (!ledger) return no(`no ledger for ${id}`, `lane merge ${id} --preflight [--branch <b>]`);
   lane.ledger = ledger;
+  const cut = stoppedCut(id, ledger);
+  if (cut) return no(cut);
   if (ledger.state === "merged") return no(`${id} is already landed; a check now changes nothing`);
   // The tip as the branch list has it by the ledger's exact name, as the land resolves it: a case twin
   // is refused, and a read by name (which could open the twin's loose file) never records a check.

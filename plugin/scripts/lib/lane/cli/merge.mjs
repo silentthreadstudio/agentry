@@ -13,7 +13,9 @@
 // branch's exact listed name (`adopt.mjs`'s `resolveBranch`), refused as `exec adopt` refuses it.
 // Each call prints a step table and the next step. Exit 0 = done, next printed; 1 = a red step stopped it (the
 // row says why); 2 = usage or refusal. A call stops at its first red row and is idempotent from the
-// ledger: re-running the land after a stop resumes from what the ledger says already happened.
+// ledger: re-running the land after a stop resumes from what the ledger says already happened. A ledger a
+// stopped cut left (`merge.cut`) is no land: every mode refuses it (`rows.mjs`'s `stoppedCut`), since only
+// `exec cut <id> --apply` rolls it back.
 //
 // A land can be killed (a long gate outlives the host's foreground limit), so it writes what it is
 // about to do to the ledger before it does it, and a rerun starts from there (`merge/recover.mjs`).

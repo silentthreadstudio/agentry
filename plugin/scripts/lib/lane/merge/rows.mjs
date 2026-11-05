@@ -29,6 +29,13 @@ import { ok, red, save, short, skip, wait, warn } from "./lane.mjs";
 // done, and a stopped one needs the owner.
 const LANDABLE = ["verified", "merging", "merged"];
 
+/** Why `lane merge` refuses `ledger` in every mode, or null: a cut that stopped mid-land keeps its stuck
+ *  state in the land's `merging` record (`merge.cut`), which only the cut itself rolls back. */
+export const stoppedCut = (id, ledger) =>
+  ledger?.merge?.cut
+    ? `${id} is a stopped cut: exec cut ${id} --decision <D> --apply rolls it back`
+    : null;
+
 // The branch a rebase in the worktree at `dir` works on (its HEAD is detached meanwhile), or null: read
 // as `exec adopt` reads it.
 function rebasing(dir) {
@@ -85,6 +92,8 @@ export function ledgerStep(lane, { adopt }) {
   }
   if (ledger) {
     lane.ledger = ledger;
+    const cut = stoppedCut(id, ledger);
+    if (cut) return { exit: 2, rows: [red("ledger", cut)] };
     // What a call lands is the branch as listed now: a case twin made since an earlier call is refused,
     // and the tip comes from the list, never by name (that could open the twin's loose file). A merged
     // lane lands nothing again, and its branch may be gone.
