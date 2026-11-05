@@ -1,9 +1,12 @@
 // status — the checked board and its derived view (plan F13 §3.5), built fresh every call from the
-// Model, the rule findings, git and the optional note file. Nothing is cached or written.
+// Model, the rule findings, git and the optional note file. Nothing is written to the repo and nothing is
+// cached here (git.mjs keeps its per-process answers); listing the ledgers sweeps the temp files of dead
+// writers.
 //
 //   boardReport({ root, spec, model })          -> BoardReport (core's `--json` shape, without status)
 //   statusView({ root, spec, model })           -> StatusView
 //   noteView({ root, spec, model, runRoot })    -> the view's `note`, or undefined with no note file
+//   workKind, titleOf, stateOf, depsOf          the board's work kind, an item's title, its state, its deps
 // The "work" kind is the lifecycle's (else the leaf of the parent tree, ties by name); "now" is
 // `status.now` (else that parent's kind). `nudges` are the work done outside Agentry's commands (`drift.mjs`)
 // and `drafts` the count of the owner's calls not yet written down (`drafts.mjs`); both read `runRoot`, the

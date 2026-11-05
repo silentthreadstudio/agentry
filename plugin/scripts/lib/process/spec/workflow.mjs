@@ -1,7 +1,7 @@
 // workflow — the workflow file (`.agentry/workflow.json`, optional): how the harness works this repo,
 // one schema entry per key (mirrors core's `Workflow`, `packages/core/src/workflow.ts`), and the accessors
-// that read a key with its default. An absent key is today's behaviour for it. Nothing here reads the
-// board: every check that needs both files is `across.mjs`'s. PURE: never reads, never throws.
+// that read a key with its default. An absent key is today's behaviour for it. Only `flaggedItem` looks at
+// the Model; every check that needs both files is `across.mjs`'s. PURE: never reads files, never throws.
 //
 // The harness keys (`gate`, `extensions`, `conductor`, …): no empty string or list, no unknown key, paths
 // inside the repository, skill names unique. Core's zod gives the same verdict on each (the shared table,

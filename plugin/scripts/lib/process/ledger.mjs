@@ -9,8 +9,9 @@
 //
 // Every path hangs off the MAIN checkout's root, never a worktree's, so a step run from inside a worktree
 // reads and writes the same ledger. Writes are atomic (temp file, then rename), and every read first sweeps
-// the temp files a killed writer left (`fs/atomic.mjs`). Along with `drafts`, this is
-// the only `.agentry/run` I/O of the process kit. Node built-ins only.
+// the temp files a killed writer left (`fs/atomic.mjs`). The ledger layout is this file's; other
+// modules also keep files under `.agentry/run` (`drafts`, `board-writes`, `stale-status`, `spikes`). Node
+// built-ins only.
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, sweepTemps } from "../fs/atomic.mjs";

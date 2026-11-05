@@ -1,6 +1,8 @@
 // read — process file (+ its sibling workflow file) + board files → the Model (plan F13 §6): items per kind with header-named
 // fields, the tree, phases (own or derived from children), ranks, each item's own file and sections.
-// The kit's only file reads (git is `git.mjs`). A missing file, heading or column is a `problems`
+// It reads the process file and the board's files; the run state under `.agentry/run` and the repo's other
+// documents are read by their own modules (`ledger`, `drafts`, `contract`, …), git by `git.mjs`. A missing
+// file, heading or column is a `problems`
 // entry (rule "read"), never a throw. Item `file` and `own.path` are relative to the spec's `root`.
 // Every read stays inside the repository once symlinks are resolved (`staysInside`).
 import { globSync, readFileSync, realpathSync } from "node:fs";
