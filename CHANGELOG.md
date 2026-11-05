@@ -31,7 +31,7 @@ started before the update still holds the old servers.
   in one call; pass the run's `--lesson "<text>"` and `--used-memories <ids>` to it. Writing the episode
   yourself and passing `--episode <id>` still works, deprecated, for one version.
 - **No hooks, so nothing primes memory at session start.** `/agentry:start` prints the ranked memories and
-  `/agentry:go` and `/agentry:ask` begin with `agentry mem recall`. `memory.prime` now sets what `start` and
+  `/agentry:go` and `/agentry:ask` begin with `agentry mem recall`. The new `memory.prime` sets what `start` and
   the `exec` briefs carry.
 - **The Workbench and the flow server are removed.** `/agentry:workbench` is gone. `/agentry:go`, `spec`,
   `plan`, `split` and `fix` write the spec, plan and task files as plain files under `.agentry/work/<run>/`,
@@ -40,6 +40,11 @@ started before the update still holds the old servers.
 - **The board commands need a board.** `/agentry:exec`, `merge`, `new` and `board` read the repo's
   `.agentry/process.json` and `.agentry/workflow.json`. Run `/agentry:init` once to learn the board you have
   or scaffold one. Every 0.2 command keeps its name, `/agentry:workbench` apart.
+- **Memory files land in your repo.** Repo memory and each lane's episode now live in `<repo>/.agentry/memory/`
+  in the main checkout, and show up untracked after the first `lane exec close`. Commit them to share them
+  with your team, or add them to `.gitignore`.
+- **The repo moved to `silentthreadstudio/agentry`.** GitHub redirects the old path. The marketplace name is
+  still `agentry-dev`.
 - **`.agentry/config.json` has new keys and is read strictly by the lane scripts.** See `/agentry:config`.
   A key outside `workDir`, `mode`, `evolution`, `memory`, `merge` and `lanes` stops the step with an error that
   names it.
@@ -440,7 +445,7 @@ Node 24 or newer is still required.
   gate, and stops a lane whose builder edited main outside its own board cells.
 - **`board fix`** writes `done` only from a `lane merge` record whose commits are still on main.
   A hand merge is a nudge to `board fix --accept <id>`, which the owner confirms.
-- **`/agentry:go`, `/agentry:ask`** recall memory first; `memory.prime` now sets what `start` and
+- **`/agentry:go`, `/agentry:ask`** recall memory first; the new `memory.prime` sets what `start` and
   `exec` briefs carry.
 - **One convention for `board` and `lane`.** Every subcommand has `--help` (usage, purpose, args,
   flags, exit codes, an example) and takes `--json`. A command that writes previews by default and
@@ -723,7 +728,8 @@ without the fix.
   - **Self-eval harness** — measures the system's own routing and decision
     quality instead of asserting it works.
 
-[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/silentthreadstudio/agentry/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/silentthreadstudio/agentry/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/silentthreadstudio/agentry/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/silentthreadstudio/agentry/compare/v0.1.0...v0.1.1
