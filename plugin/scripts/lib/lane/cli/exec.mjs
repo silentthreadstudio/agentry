@@ -53,17 +53,14 @@ import {
   realpathSync,
   rmSync,
   rmdirSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { PREVIEW, flagsOf, say, usageError } from "../../cli/help.mjs";
 import { prefix } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { episodeStored } from "../../memory/episodes.mjs";
-import { contentOf as contentIds, recordedSince } from "../../process/board-writes.mjs";
 import { run as boardSet } from "../../process/cli/set.mjs";
 import { findContract } from "../../process/contract.mjs";
 import { branchTips, worktrees } from "../../process/git.mjs";
@@ -72,10 +69,9 @@ import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { applyEvent } from "../../process/lifecycle.mjs";
 import { workflowPathOf } from "../../process/read.mjs";
-import { parseSpec } from "../../process/spec.mjs";
 import { modelFor, proseModelHint, unusedUiModel } from "../../process/spec/models.mjs";
 import { idleMinutes, resolveWorkflow } from "../../process/spec/presets.mjs";
-import { escapesRoot, own } from "../../process/spec/shape.mjs";
+import { own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { runOf, runText } from "../../process/steps.mjs";
 import { WriteError } from "../../process/write.mjs";
@@ -123,12 +119,44 @@ import {
   routeFixedText,
   routeText,
 } from "../exec-view.mjs";
+import {
+  OVERLAP_SHOWN,
+  RUNNING,
+  boardPaths,
+  committedSpec,
+  configPaths,
+  ownsPath,
+} from "../exec/guard/allow.mjs";
+import { mainGuard, mainTouched, moveStart } from "../exec/guard/main-guard.mjs";
+import { contentOf, headOf, mainSnapshot, ownStart } from "../exec/guard/snapshot.mjs";
+import { boardFiles } from "../exec/guard/stray.mjs";
+import {
+  LANE,
+  Refusal,
+  Stopped,
+  contractFile,
+  heldCopy,
+  isFile,
+  isFlagged,
+  isVerifiedPark,
+  laneLine,
+  leaves,
+  mustLedger,
+  normalised,
+  now,
+  ownedOf,
+  readOr,
+  readReport,
+  refuse,
+  saved,
+  short,
+  stepWith,
+} from "../exec/lane.mjs";
 import { gateLockDir, holdGate } from "../gate-lock.mjs";
-import { changedSince, flakyReds, globMatch, pickTier, runGate } from "../gate.mjs";
+import { changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { idProblem } from "../id.mjs";
 import { idleOf } from "../idle.mjs";
 import { isAncestor, mergeBaseOf } from "../land.mjs";
-import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { callsLine } from "../owner-calls.mjs";
 import { builderStatus, summaryOf, unwrap, usedMemories, verdictOf } from "../report.mjs";
 import { RestackError, gatingNow, markGating, restackLane } from "../restack.mjs";
@@ -162,8 +190,6 @@ import { chainOf, childrenOf, gateRefusal, restackLine, stackOf } from "../stack
 import { brokenIn, rulesOf } from "../subjects.mjs";
 import { branchOf, create, git, mainRoot, porcelain, remove } from "../worktree.mjs";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const LANE = join(HERE, "..", "..", "..", "lane.mjs");
 const STEPS = [
   "start",
   "report",
@@ -275,17 +301,6 @@ const STEPS_OF = {
   "--keep": ["cut"],
   "--message": ["cut"],
 };
-
-class Refusal extends Error {}
-// A step that stopped with nothing written, and says why (exit 1): a gate whose lane moved while it ran.
-class Stopped extends Error {}
-const refuse = (message) => {
-  throw new Refusal(message);
-};
-const now = () => new Date().toISOString();
-const short = (sha) => String(sha ?? "").slice(0, 7);
-const laneLine = (root, sub, id, extra = "") =>
-  `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
 // argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, redo, fresh, same, on, toMain,
 // carry, branch, decision, keep, message } or { error }.
@@ -403,500 +418,6 @@ function withModelSource({ modelFrom, ...shown }) {
   return modelFrom ? { ...shown, model: `${shown.model} (${modelFrom})` } : shown;
 }
 
-// ---- git facts ------------------------------------------------------------------------------------
-//
-// The main-touched guard is content-exact. `start` records the content id (git's blob id) of every
-// file that is dirty in main, and each lifecycle write a lane makes records `{ file, from, to }` in its
-// ledger (`boardWrites`); each `board add` / `board set --apply` in main records the same in a shared log
-// (`board-writes.mjs`). At a report, a main file may differ from the lane's start only when its content is
-// reachable from its start content, or from the content a recorded merge committed, through recorded
-// lifecycle writes or board writes made since the lane started. Any other edit (another row, free text, a
-// non-board file, a file dirty at start that changed since) is the builder's, unless its path is one
-// `guard.allow` lets through (`allowOf`: its globs, the config files in use, the board's own files) and no
-// running lane owns it. HEAD may move only by merges other ledgers record, each a run preHead → landed… →
-// board commit that git's first-parent history confirms, by commits on main whose every path
-// `guard.allow` lets through and no running lane owns (A44), and by any commit that touches none of this
-// lane's owned files and none of the files its worktree changed (field 81). A report that finds main
-// touched holds the lane for the guard, its report saved, until a report again finds main clean (field 75).
-
-// Agentry's own files: the run state. (The memory records a lane writes are `own-memory.mjs`'s.)
-const OWN_DIRS = [".agentry/run/"];
-const ABSENT = "-";
-const MODE_SUFFIX = { 100755: ":x", 120000: ":l" };
-const STAGED = /^[MADRC]/;
-const stagedKey = (entry) => `${entry[0]}${entry.slice(3)}`; // index column + path
-const headOf = (dir, ref = "HEAD") =>
-  git(dir, ["rev-parse", "--verify", "--quiet", ref]).stdout.trim();
-
-// Main's changed paths (Agentry's run files and new memory records left out) → their `git status` entry; a rename
-// comes as its delete and its add (`porcelain`), so both paths are checked.
-function dirtyPaths(root) {
-  const parts = dirtyEntries(root);
-  if (!parts) refuse(`git status failed in ${root}`);
-  const out = new Map();
-  for (const entry of parts) {
-    const path = entry.slice(3);
-    if (!OWN_DIRS.some((d) => path.startsWith(d)) && !STAGED.test(out.get(path) ?? ""))
-      out.set(path, entry); // a staged entry stays when the path is also untracked (`rm --cached`)
-  }
-  return out;
-}
-
-// What is stored for each path as it is in main's working tree (`board-writes.mjs`): the ids recorded
-// lifecycle and board writes carry.
-function contentOf(root, paths) {
-  try {
-    return contentIds(root, paths);
-  } catch (e) {
-    return refuse(e.message);
-  }
-}
-
-// The same, as `commit` holds it, ABSENT when the commit has no such file.
-function blobsAt(root, commit, paths) {
-  const out = Object.fromEntries(paths.map((p) => [p, ABSENT]));
-  const res = git(root, ["--literal-pathspecs", "ls-tree", "-r", "-z", commit, "--", ...paths]);
-  for (const line of res.stdout.split("\0").filter(Boolean)) {
-    const tab = line.indexOf("\t");
-    const path = line.slice(tab + 1);
-    const [mode, , id] = line.slice(0, tab).split(" ");
-    if (Object.hasOwn(out, path)) out[path] = id + (MODE_SUFFIX[mode] ?? "");
-  }
-  return out;
-}
-
-/** What main looks like when a lane starts: HEAD, the `git status` entries and the content of each. */
-function mainSnapshot(root) {
-  const dirty = dirtyPaths(root);
-  return {
-    head: headOf(root),
-    porcelain: [...new Set(dirty.values())],
-    files: contentOf(root, [...dirty.keys()]),
-    modes: true, // `files` ids carry `:x` / `:l`; a ledger without this holds an executable as a bare id
-  };
-}
-
-// The files a lifecycle event of item `id` of `name` writes (relative to the git root).
-function boardFiles(spec, model, id, name) {
-  if (!spec.lifecycle) return [];
-  const kind = own(spec.kinds, name);
-  const item = own(model.kinds, name)?.items.find((i) => i.id === id);
-  const file = kind?.at?.table ?? item?.file;
-  return file ? [posix.join(spec.root, file)] : [];
-}
-
-// Is `to` reachable from one of `from` through recorded writes?
-function reachable(moves, from, to) {
-  const seen = new Set(from);
-  const queue = [...from];
-  while (queue.length) {
-    const at = queue.shift();
-    if (at === to) return true;
-    for (const m of moves)
-      if (m.from === at && !seen.has(m.to)) {
-        seen.add(m.to);
-        queue.push(m.to);
-      }
-  }
-  return false;
-}
-
-// The main files whose content no recorded lifecycle or board write explains, and whose path `excused`
-// does not let through, as `git status` entries. Once a rebase (or the branch holding main, `startMoves`)
-// moved the guard's start, a path clean on main whose start is one of the lane's own board writes was
-// mid-write at start and is as HEAD holds it now: never "back to HEAD" (field 93). Before that, a discard of
-// the board is a trip as any other.
-function strayFiles(root, ledger, head, all, boards, excused) {
-  const was = ledger.mainAtStart;
-  const started = was.files ?? {};
-  const dirty = new Map([...dirtyPaths(root)].filter(([p]) => !excused(p)));
-  const paths = [...new Set([...dirty.keys(), ...Object.keys(started)])].filter((p) => !excused(p));
-  if (!paths.length) return [];
-  const now = contentOf(root, paths);
-  const atStart = blobsAt(root, was.head, paths);
-  const atHead = head === was.head ? atStart : blobsAt(root, head, paths);
-  // A ledger without `startedAt` predates the board-write log: no logged write is trusted for it.
-  const logged = ledger.startedAt ? recordedSince(root, ledger.startedAt) : [];
-  const moves = [
-    ...all.flatMap((l) => l.boardWrites ?? []).filter((m) => boards.has(m.file)),
-    ...logged,
-  ];
-  const moved =
-    (ledger.rebases ?? []).some((r) => !r.carried) || Boolean(ledger.startMoves?.length);
-  const ownWrites = new Set(
-    moved ? (ledger.boardWrites ?? []).map((m) => `${m.file}\0${m.to}`) : [],
-  );
-  const changed = paths
-    .filter((p) => {
-      const start = Object.hasOwn(started, p) ? started[p] : atStart[p];
-      if (now[p] === start) return false;
-      if (!dirty.has(p) && Object.hasOwn(started, p) && ownWrites.has(`${p}\0${start}`))
-        return false;
-      // A ledger written before ids carried `:x` holds an executable file as its bare blob id.
-      if (!was.modes && Object.hasOwn(started, p) && now[p] === `${start}:x`) return false;
-      const from = atHead[p] === atStart[p] ? [start] : [start, atHead[p]];
-      return !reachable(
-        moves.filter((m) => m.file === p),
-        from,
-        now[p],
-      );
-    })
-    .map((p) => dirty.get(p) ?? `${p} (back to HEAD)`);
-  // An index-only change (`git rm --cached`) leaves the content as it was: any staged entry that was
-  // not there at start is the builder's too.
-  // The index column is compared, not the whole entry: a recorded write on a file staged at start turns
-  // "M " into "MM" and the index is as it was.
-  const stagedAtStart = new Set(was.porcelain.map(stagedKey));
-  const staged = [...new Set(dirty.values())].filter(
-    (e) => STAGED.test(e) && !stagedAtStart.has(stagedKey(e)),
-  );
-  return [...new Set([...changed, ...staged])];
-}
-
-// Are main's first-parent commits from `from` to `to`, end to end, merges other ledgers record or
-// commits `blocked` lets through? A merge must be the run preHead → landed… → board commit its ledger
-// names, in that order, on git's own first-parent line: a ledger is trusted only as far as git confirms
-// it. `blocked(sha)` is null for a commit the guard lets through, else why not ("" for no reason to
-// name). Returns `{ ok, allowed: [sha], why? }`: the allowed commits, and why the first other one is not.
-function landedOnly(root, from, to, others, blocked = () => "") {
-  const no = (why = "") => ({ ok: false, allowed: [], why });
-  const res = git(root, ["rev-list", "--first-parent", "--reverse", `${from}..${to}`, "--"]);
-  const chain = res.stdout.split("\n").filter(Boolean);
-  if (res.status !== 0 || !chain.length) return no();
-  if (headOf(root, `${chain[0]}^`) !== from) return no();
-  const allowed = [];
-  const runs = others
-    .map((l) => l.merge)
-    .filter((m) => typeof m?.preHead === "string" && Array.isArray(m.landed) && m.landed.length)
-    .map((m) => ({
-      preHead: m.preHead,
-      shas: [...m.landed, ...(typeof m.boardCommit === "string" ? [m.boardCommit] : [])],
-    }));
-  let at = from;
-  for (let i = 0; i < chain.length; ) {
-    if (isMemoryCommit(root, chain[i])) {
-      at = chain[i++]; // the owner committing Agentry's own memory records
-      continue;
-    }
-    const run = runs.find((r) => r.preHead === at && r.shas.every((s, k) => chain[i + k] === s));
-    if (run) {
-      i += run.shas.length;
-      at = chain[i - 1];
-      continue;
-    }
-    const why = blocked(chain[i]);
-    if (why !== null) return no(why);
-    allowed.push(chain[i]);
-    at = chain[i++];
-  }
-  return { ok: true, allowed };
-}
-
-// The lanes whose owned files no commit on main may touch (A44): every one still running.
-const RUNNING = ["building", "fixing", "verifying", "held"];
-
-// The files a commit on main may not touch while this lane runs (field 81): its owned entries (as
-// `ownsPath` reads them) and every path its worktree changed, committed past base or uncommitted. Once the
-// branch holds main past its base (an in-branch rebase), "past base" is past that merge base: main's own
-// changes are never this lane's files (field 102). null when they cannot be read: a doubt keeps the guard on.
-function laneFiles(root, ledger) {
-  try {
-    const owned = ownedOf(root, ledger).map((o) => (typeof o === "string" ? o : o.path));
-    const res = git(root, [
-      "diff",
-      "--no-renames",
-      "--name-only",
-      "-z",
-      heldMain(root, ledger, ledger.base) ?? ledger.base,
-      `refs/heads/${ledger.branch}`,
-      "--",
-    ]);
-    if (res.status !== 0) return null;
-    const changed = new Set(res.stdout.split("\0").filter(Boolean));
-    for (const entry of porcelain(ledger.worktree)) changed.add(entry.slice(3));
-    return { owned, changed };
-  } catch {
-    return null;
-  }
-}
-
-// Why a commit on main trips this lane's guard, as `landedOnly` asks (null when it passes). It passes when
-// every path it touches (against its first parent) is one `guard.allow` lets through (`allowsPath`) and no
-// running lane owns (A44), or when it touches none of this lane's files (`mine`, from `laneFiles`; field
-// 81), whoever made it. An overlap is named, `<sha> touches <paths>, this lane's files`, and `hit` is
-// called; "" when the commit or the lane's files cannot be read.
-function allowedCommit(root, allow, all, mine, hit = () => {}) {
-  let owners;
-  const allowedAll = (paths) => {
-    try {
-      owners ??= all
-        .filter((l) => RUNNING.includes(l.state))
-        .map((l) => ownedOf(root, l).map((o) => (typeof o === "string" ? o : o.path)));
-    } catch {
-      return false;
-    }
-    return paths.every(
-      (path) =>
-        allowsPath(allow, path) && !owners.some((owned) => owned.some((e) => ownsPath(e, path))),
-    );
-  };
-  return (sha) => {
-    const res = git(root, ["diff", "--no-renames", "--name-only", "-z", `${sha}^1`, sha, "--"]);
-    if (res.status !== 0) return "";
-    const paths = res.stdout.split("\0").filter(Boolean);
-    if (allowedAll(paths)) return null;
-    if (!mine) return "";
-    const hits = paths.filter((p) => mine.changed.has(p) || mine.owned.some((e) => ownsPath(e, p)));
-    if (!hits.length) return null;
-    hit(hits);
-    const more = hits.length > OVERLAP_SHOWN ? ` (+${hits.length - OVERLAP_SHOWN} more)` : "";
-    return `${short(sha)} touches ${hits.slice(0, OVERLAP_SHOWN).join(", ")}${more}, this lane's files`;
-  };
-}
-
-// The board's own files (field 75), as the process file `spec` names them and `read.mjs` resolves them,
-// from the root: each kind's table, contract blocks and create blocks and `status.note` as `paths`, and
-// each kind's `at.files` and `file.glob` (its `{id}` any name) as `globs`, so an item file made or removed
-// passes too. A path or glob is kept when it stays inside the repository, the test the spec's own check
-// uses (`escapesRoot(spec.root, p)`); an item id never builds one.
-function boardPaths(spec) {
-  const paths = [];
-  const globs = [];
-  const base = typeof spec?.root === "string" ? spec.root : ".";
-  if (!spec || escapesRoot(".", base)) return { paths, globs };
-  const inRepo = (from) => (p) => typeof p === "string" && p !== "" && !escapesRoot(from, p);
-  for (const kind of Object.values(spec.kinds ?? {})) {
-    paths.push(kind?.at?.table, ...[kind?.contract?.blocks ?? []].flat());
-    paths.push(...[kind?.create?.blocks ?? []].flat().map((b) => b?.file));
-    globs.push(kind?.at?.files, kind?.file?.glob?.replaceAll?.("{id}", "*"));
-  }
-  const fromBase = (list) => [
-    ...new Set(list.filter(inRepo(base)).map((p) => posix.normalize(posix.join(base, p)))),
-  ];
-  const note = spec.status?.note;
-  return {
-    paths: [...fromBase(paths), ...(inRepo(".")(note) ? [posix.normalize(note)] : [])],
-    globs: fromBase(globs),
-  };
-}
-
-// The process file and its workflow file as main's HEAD commits them (paths from the root), parsed as
-// `loadSpec` parses them: `{ tracked: false }` when HEAD has no process file there, else `{ tracked: true,
-// spec }`, the spec null when it has a problem.
-function committedSpec(root, processRel, workflowRel) {
-  const at = (path) => {
-    const res = git(root, ["show", `HEAD:${path}`]);
-    return res.status === 0 ? res.stdout : undefined;
-  };
-  const board = at(processRel);
-  if (board === undefined) return { tracked: false };
-  const { spec, problems } = parseSpec({ board, workflow: at(workflowRel) });
-  return { tracked: true, spec: spec && !problems.length ? spec : null };
-}
-
-// The board paths a lane's guard lets through, never widened by an edit made after it started (F1, F2a):
-// the process file as main's HEAD commits it when it is tracked there, else the paths `start` saved in
-// the ledger (`boardAtStart`) from the spec as it loaded then; an older ledger without them, none.
-function boardOf(root, ledger, processRel, workflowRel) {
-  const committed = processRel ? committedSpec(root, processRel, workflowRel) : { tracked: false };
-  if (committed.tracked) return boardPaths(committed.spec);
-  const saved = ledger?.boardAtStart;
-  const strings = (list) => (Array.isArray(list) ? list.filter((p) => typeof p === "string") : []);
-  return { paths: strings(saved?.paths), globs: strings(saved?.globs) };
-}
-
-// The process file and its workflow file in use, as `loadSpec` resolves them, from the root: `{ processRel,
-// workflowRel }`, each null when it is not inside the repository (or has no folder).
-function configPaths({ root, processPath }) {
-  const file = processPath ?? join(root, ".agentry", "process.json");
-  let dir;
-  try {
-    dir = realpathSync(dirname(file));
-  } catch {
-    return { processRel: null, workflowRel: null }; // no process file's folder: no config file to let through
-  }
-  const inRepo = (p) => (p && !p.startsWith("..") && !isAbsolute(p) ? p : null);
-  const [processRel, workflowRel] = [file, workflowPathOf(file)].map((f) =>
-    inRepo(
-      relative(root, join(dir, basename(f)))
-        .split(sep)
-        .join("/"),
-    ),
-  );
-  return { processRel, workflowRel };
-}
-
-// Agentry's own files the guard lets through like `guard.allow` paths (field 78): the harness config, and
-// the memory store, committed or uncommitted.
-const CONFIG_FILE = ".agentry/config.json";
-const OWN_GLOBS = [".agentry/memory/**"];
-
-// What the guards let through as `guard.allow` paths for `ledger`'s guard: its globs, Agentry's config in
-// use (field 58: the process file and its workflow file, and `.agentry/config.json`), the memory store and
-// the board's own files (`boardOf`).
-function allowOf(ctx, ledger) {
-  const { processRel, workflowRel } = configPaths(ctx);
-  const config = [processRel, workflowRel, CONFIG_FILE].filter(Boolean);
-  const board = boardOf(ctx.root, ledger, processRel, workflowRel);
-  return { globs: own(ctx.spec, "guard")?.allow ?? [], config, board };
-}
-const allowsPath = (allow, path) =>
-  allow.config.includes(path) ||
-  allow.board.paths.includes(path) ||
-  matchesAny(allow.board.globs, path) ||
-  matchesAny(OWN_GLOBS, path) ||
-  matchesAny(allow.globs, path);
-
-// A glob test with the gate's own matcher, as merge does.
-const matchesAny = (globs, path) => globMatch(globs, path);
-
-// Does an entry of a contract's owned files (a path, a directory, a glob, a bare file name, a
-// `path:lines`) cover `path`? Read wide, case ignored: a doubt keeps the guard on.
-function ownsPath(entry, path) {
-  const e = entry
-    .toLowerCase()
-    .replace(/:[\d\s,–-]+$/, "")
-    .replace(/^(?:\.\/)+/, "")
-    .replace(/\/+$/, "");
-  const p = path.toLowerCase();
-  if (p === e || p.startsWith(`${e}/`) || matchesAny([e], p)) return true;
-  return !e.includes("/") && posix.basename(p) === e;
-}
-
-// The main edits `guard.allow` lets through: an allowed path (`allowsPath`) no running lane owns.
-// When a running lane's owned files cannot be read, nothing is let through.
-function allowedEdit(root, allow, all) {
-  let owned;
-  try {
-    owned = all
-      .filter((l) => l.state !== "merged" && l.state !== "closed")
-      .flatMap((l) => ownedOf(root, l).map((o) => (typeof o === "string" ? o : o.path)));
-  } catch {
-    return () => false;
-  }
-  return (path) => allowsPath(allow, path) && !owned.some((entry) => ownsPath(entry, path));
-}
-
-// The keys an uncommitted edit of Agentry's config may not change while lanes run: they decide what the
-// guard lets through and what the gate checks (R1d-21 N3).
-const GUARDED_KEYS = ["guard", "gate"];
-// A value as one string with its keys sorted, so a re-indented file compares equal.
-const canonical = (v) =>
-  JSON.stringify(v, (_, x) =>
-    x && typeof x === "object" && !Array.isArray(x)
-      ? Object.fromEntries(
-          Object.keys(x)
-            .sort()
-            .map((k) => [k, x[k]]),
-        )
-      : x,
-  );
-const parsed = (text) => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { guard: text, gate: text }; // not JSON: every guarded key reads as changed
-  }
-};
-
-// Each process or workflow file in use edited in main (uncommitted) so that its `guard` or `gate` key
-// differs from HEAD's, as a reason: `.agentry/workflow.json changes guard while lanes run → commit it
-// between lanes`. `.agentry/config.json` holds neither key.
-function configTrips(root, allow, dirty) {
-  const out = [];
-  for (const path of allow.config.filter((p) => p !== CONFIG_FILE && dirty.has(p))) {
-    let now = null;
-    try {
-      now = parsed(readFileSync(join(root, path), "utf8"));
-    } catch {} // deleted: every key it held is gone
-    const shown = git(root, ["show", `HEAD:${path}`]);
-    const was = shown.status === 0 ? parsed(shown.stdout) : null;
-    const keys = GUARDED_KEYS.filter((k) => canonical(own(now, k)) !== canonical(own(was, k)));
-    if (keys.length)
-      out.push(`${path} changes ${keys.join(" and ")} while lanes run → commit it between lanes`);
-  }
-  return out;
-}
-
-// Whether the main checkout still matches the lane's start: `{ touched, allowed, moved, overlap }`,
-// `touched` why not (or null), `allowed` the commits on main the guard let through, `moved` how many of
-// them the rule judged when all passed (other lanes' landed picks and record-shaped memory commits not
-// counted), `overlap` whether a commit touched this lane's files. The one rule for HEAD's move
-// (`allowedCommit`), so report, hold and resume never disagree. The start follows the branch first
-// (`followBranch`), which can change `ledger.mainAtStart` and `startMoves` in place.
-function mainGuard(ctx, ledger, all) {
-  const { root, spec, model } = ctx;
-  const allow = allowOf(ctx, ledger);
-  followBranch(root, ledger, all, allow);
-  const was = ledger.mainAtStart;
-  const head = headOf(root);
-  const others = all.filter((l) => l.id !== ledger.id);
-  const reasons = [];
-  let allowed = [];
-  let moved = 0;
-  let overlap = false;
-  if (head !== was.head) {
-    const blocked = allowedCommit(root, allow, all, laneFiles(root, ledger), () => {
-      overlap = true;
-    });
-    const res = landedOnly(root, was.head, head, others, blocked);
-    if (res.ok) {
-      allowed = res.allowed;
-      moved = res.allowed.length; // the commits the rule judged, not other lanes' landed picks
-    } else
-      reasons.push(
-        `HEAD moved ${short(was.head)} → ${short(head)}${res.why ? ` (${res.why})` : ""}`,
-      );
-  }
-  reasons.push(...configTrips(root, allow, dirtyPaths(root)));
-  const boards = new Set(all.flatMap((l) => boardFiles(spec, model, l.id, kindOf(l, spec))));
-  const stray = strayFiles(root, ledger, head, all, boards, allowedEdit(root, allow, all));
-  if (stray.length) reasons.push(`files changed: ${stray.slice(0, 10).join(", ")}`);
-  return { touched: reasons.length ? reasons.join("; ") : null, allowed, moved, overlap };
-}
-
-// Why the main checkout no longer matches the lane's start, or null.
-const mainTouched = (ctx, ledger, all) => mainGuard(ctx, ledger, all).touched;
-
-// The main commit the lane's branch holds past `since`, or null: the merge base of main's HEAD and the
-// branch's listed tip, when it is a descendant of `since` (an in-branch rebase or merge of main).
-function heldMain(root, ledger, since) {
-  const tip = resolveBranch(root, ledger.branch).tip;
-  const base = since && tip ? mergeBaseOf(root, "HEAD", tip) : null;
-  return base && base !== since && isAncestor(root, since, base) ? base : null;
-}
-
-// Where the lane's own commits start (field 102): the merge base with main once the branch holds main past
-// its base (the guard's start moved to it, `startMoves`), else the base. `<start>..<tip>` is never main's
-// commits the branch holds.
-const ownStart = (root, ledger) => heldMain(root, ledger, ledger.base) ?? ledger.base;
-
-// The guard's start follows the branch (field 102): when the branch holds main past the start, the start
-// moves to that merge base, its snapshot with it (`moveStart`), recorded in `startMoves[]` as `{ from, to,
-// why: "branch holds main", at }`. Only when every main commit from the start to there passes the guard's
-// rule judged against the lane's owned files alone (its changed files hold main's own diffs after the
-// rebase): a commit that touches an owned file (a builder's wrong-cwd commit it then rebased onto) keeps
-// the start, so it trips as before. Changes `ledger` in place.
-function followBranch(root, ledger, all, allow) {
-  const to = heldMain(root, ledger, ledger.mainAtStart?.head);
-  if (!to) return;
-  let owned;
-  try {
-    owned = ownedOf(root, ledger).map((o) => (typeof o === "string" ? o : o.path));
-  } catch {
-    return; // a doubt keeps the start
-  }
-  const others = all.filter((l) => l.id !== ledger.id);
-  const blocked = allowedCommit(root, allow, all, { owned, changed: new Set() });
-  if (!landedOnly(root, ledger.mainAtStart.head, to, others, blocked).ok) return;
-  const from = ledger.mainAtStart.head;
-  moveStart(root, ledger, to);
-  ledger.startMoves = [
-    ...(ledger.startMoves ?? []),
-    { from, to, why: "branch holds main", at: now() },
-  ];
-}
-
 // Is `path` strictly inside the directory `dir`?
 const inside = (dir, path) => {
   const rel = relative(dir, path);
@@ -973,10 +494,6 @@ function refuseMidLand(root) {
         : `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): its picks may still roll back → start after it lands, or ${prefix("lane", `node ${q(LANE)}`)} merge ${landing.id} --resolve landed|rolled-back`,
     );
 }
-
-// ---- briefs ---------------------------------------------------------------------------------------
-
-const contractFile = (root, id) => join(ledgers.runDir(root, id), "contract.md");
 
 function gateLine(root, spec, ledger) {
   if (!gateOf(spec)) return "none: the workflow file has no gate, so run the repo's own checks";
@@ -1183,15 +700,11 @@ function externalBlock(text) {
 const dispatchNext = (ctx, ledger, dispatch) =>
   dispatch ? addRound(ledger, dispatch, brief(ctx, ledger, dispatch)) : ledger;
 
-// ---- output ---------------------------------------------------------------------------------------
-
 // The steps of a contract, one line each: `1. <text> → owner OK`.
 const stepLines = (steps) =>
   steps.map((s) => `${s.n}. ${s.text}${s.gate === "owner" ? " → owner OK" : ""}`).join("\n");
 const stepCount = (ledger) => ledger.steps?.length ?? 0;
 
-// A parked verified lane (field 63): held with no builder round, its next step kept in the hold.
-const isVerifiedPark = (ledger) => ledger.state === "held" && ledger.hold?.when === "verified";
 // The held line, and an owner's answer after its label: a parked verified lane's say so.
 const heldLine = (hold, total) =>
   hold.when === "verified"
@@ -1203,16 +716,6 @@ const answerOf = (h, total) =>
     : h.when === "verdict"
       ? `at the notes cap at ${h.resumedAt}: "${h.note}"`
       : answerText(h, total);
-
-// A path that leaves the repository: a leading `/` or a `..` segment. `owns` never takes one.
-const leaves = (path) => path.startsWith("/") || path.split("/").includes("..");
-// A path as `owns` reads it: each leading `./` dropped, `//` collapsed, a trailing `/` dropped. `leaves`
-// judges this form, so `.//etc/passwd` is `/etc/passwd`, never `etc/passwd` after the check.
-const normalised = (path) =>
-  path
-    .replace(/^(?:\.\/)+/, "")
-    .replace(/\/{2,}/g, "/")
-    .replace(/(.)\/+$/, "$1") || path;
 
 // The paths a NEEDS_CONTEXT report names that the lane does not own, in its first 20 lines: those of each
 // `needs: <path>` line and each backticked path (a word with a `/` or a file extension, no spaces). A
@@ -1353,32 +856,6 @@ function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, extra = 
   };
 }
 
-// Is the item flagged: when the lane started, or on the board now (a flag set since still counts).
-const isFlagged = ({ spec, model }, ledger) =>
-  Boolean(ledger.route?.flagged) || flaggedItem(spec, model, ledger.id, kindOf(ledger, spec));
-
-// The owned files every brief names: parsed once at start and kept in the ledger (amended by `owns`).
-// A ledger from before that is parsed from its contract file, against its worktree as `start` does.
-const ownedOf = (root, ledger) =>
-  ledger.owned ??
-  withNew(
-    ledger.worktree,
-    ownedFiles(readFileSync(contractFile(root, ledger.id), "utf8"), ledger.worktree),
-  );
-
-// ---- steps ----------------------------------------------------------------------------------------
-
-function mustLedger(root, id) {
-  let ledger;
-  try {
-    ledger = ledgers.read(root, id);
-  } catch (e) {
-    refuse(e.message);
-  }
-  if (!ledger) refuse(`no lane for ${id}: run ${laneLine(root, "start", id)}`);
-  return ledger;
-}
-
 // One lifecycle event on item `id` of the lane's kind (`ctx.kind`), and what it did to each file as
 // `{ file, from, to }` content ids: the writes the main guard follows (`boardWrites` in the ledger).
 function boardEvent(ctx, event, id, data) {
@@ -1395,7 +872,6 @@ function boardEvent(ctx, event, id, data) {
 // narrower of the two is named. A running lane whose owned files can't be read is skipped. The lanes of a
 // stacked lane's `chain` (its parent first) land before it: what it shares with them is one line,
 // `stack: shares with T1: a.txt, b.txt`.
-const OVERLAP_SHOWN = 5;
 function ownsOverlap(root, owned, chain = []) {
   const mine = owned.map((o) => o.path);
   const lines = [];
@@ -1804,26 +1280,6 @@ function owns(ctx, id) {
   return shown({ applied: true, ...said, ...(waiting && { rewrote: round.brief }) });
 }
 
-function readReport(path, who) {
-  let text = "";
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (e) {
-    if (e.code !== "ENOENT") throw e;
-  }
-  if (!text.trim())
-    refuse(`no report at ${path}: save the ${who}'s full reply there, then run this step again`);
-  return text;
-}
-
-function stepWith(ledger, event) {
-  try {
-    return advance(ledger, event);
-  } catch (e) {
-    return refuse(`${e.message} (next is ${ledger.next})`);
-  }
-}
-
 // The commits past `base` on the branch that break the workflow file's `commits` rules. A read that fails
 // is one broken entry (`failed`), never "nothing breaks a rule": the rev-list as `<base>..<tip>`, a
 // `git show` that failed as the range it was reading.
@@ -1905,29 +1361,6 @@ function finishRebase(root, ledger, tip) {
     moveStart(root, ledger, to);
   return changed;
 }
-
-// The main guard's start moved to `to`, its snapshot with it (field 93): a path clean on main now whose
-// content the commits from the old start to `to` changed was committed, so its start entry goes; a path
-// still dirty, or clean with those commits leaving it as it was (its edit discarded), keeps its start.
-function moveStart(root, ledger, to) {
-  const was = ledger.mainAtStart;
-  const dirty = dirtyPaths(root);
-  const paths = Object.keys(was.files ?? {});
-  const before = blobsAt(root, was.head, paths);
-  const after = blobsAt(root, to, paths);
-  const keep = new Set(paths.filter((p) => dirty.has(p) || before[p] === after[p]));
-  ledger.mainAtStart = {
-    ...was,
-    head: to,
-    files: Object.fromEntries(Object.entries(was.files ?? {}).filter(([p]) => keep.has(p))),
-    porcelain: (was.porcelain ?? []).filter((e) => keep.has(e.slice(3))),
-  };
-}
-
-// Where a builder's report is kept while a guard trip holds the lane: next to it, so the report the
-// builder wrote is never needed again.
-const heldCopy = (reportPath) =>
-  join(dirname(reportPath), `${basename(reportPath, ".md")}.held.md`);
 
 function report(ctx, id, agent) {
   const { root } = ctx;
@@ -2329,14 +1762,6 @@ const coveredBy = (text, labels) => {
   );
 };
 
-const readOr = (path) => {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return "";
-  }
-};
-
 // The labels of the notes sent back since the last counted verdict: the ones a notes round picked, or every
 // `N<k>` of a FAIL report, and `owner` after an owner's fix. None for a PASS with no such round since. A
 // note that verdict left as built (`verdict --leave`) is never one.
@@ -2515,24 +1940,6 @@ function ownerFix(ctx, id) {
     extra: { owner: next.ownerFixes.at(-1), why: res.reason },
   });
 }
-
-// Is `path` a file (not a directory)?
-const isFile = (path) => {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-};
-
-// Is there a saved reply at `path`?
-const saved = (path) => {
-  try {
-    return readFileSync(path, "utf8").trim() !== "";
-  } catch {
-    return false;
-  }
-};
 
 // A builder's round waits: for the owner, who reviews what its saved reply points at (`--evidence`, by
 // default that reply), or for later, a parked lane whose builder was stopped mid-round (no reply needed,
@@ -2990,14 +2397,14 @@ function clearVerdict({ root, spec, model, kind }, id) {
     : `! board ${field} ${was} is from the old lane: agentry board set ${life.kind} ${id} ${field}= --apply`;
 }
 
-// The old builder's last report, as the archive holds it: the report a guard trip saved, else the newest
-// build round's report (or its held copy) that is there; null when no builder reported.
 // A path under lane `id`'s run dir as the archive `runs` holds it now; any other path as it is.
 const archivedPath = (id, runs) => (path) => {
   const rel = relative(join(dirname(runs), id), path ?? "");
   return rel && !rel.startsWith("..") && !isAbsolute(rel) ? join(runs, rel) : path;
 };
 
+// The old builder's last report, as the archive holds it: the report a guard trip saved, else the newest
+// build round's report (or its held copy) that is there; null when no builder reported.
 function lastReport(ledger, runs) {
   const moved = archivedPath(ledger.id, runs);
   const builds = ledger.rounds.filter((r) => r.role === "build" && r.reportPath).reverse();
