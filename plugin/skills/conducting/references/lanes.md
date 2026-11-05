@@ -463,6 +463,14 @@ says `stacked on T1; restacks: N`.
 - **Mid-land.** `start` refuses while a ledger is `merging` with its picks on main: a red gate may still take
   them off, and a lane cut then would carry them. A land that cannot go on is closed on the owner's call:
   `agentry lane merge <id> --resolve landed|rolled-back` (every pick on main, or none; it checks first).
+- **Landed another way.** A verified lane (or one stopped on a red gate after a pass) whose work reached main
+  without its own land (a fast-forward of a combined branch, a squash) is closed by `agentry lane merge <id>
+  --resolve landed`: `git cherry` over its own `base..tip` (a stacked lane's parent's commits are the
+  parent's). Every commit on main by patch: `merged`, `merge.how: "found-on-main"`, `merge.landed` main's
+  matching commits, nothing picked, committed or written on the board. Any without a matching patch refuses,
+  naming each, unless `--checked` (the owner checked they landed squashed or reworded), recorded as `{ as, at,
+  checked, missing }` in `resolutions[]`. A parent closed so counts as merged for its children; `--cleanup`
+  follows as after a land.
 - **The worktree.** A builder leaves no uncommitted or untracked files and at least one commit past base. After a
   moved start (the branch holds main, above) the report's commits count and subject check read `<moved start>..<listed tip>`.
 - **The tip.** A verdict counts only for the tip it was dispatched on: nobody rebases while a verifier reads.
