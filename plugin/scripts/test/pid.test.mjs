@@ -111,7 +111,7 @@ test("a start that cannot be read (no ps on PATH) while the pid runs reads alive
     { encoding: "utf8", env: { ...process.env, PATH: "/nonexistent" } },
   );
   assert.equal(blind.status, 0, blind.stderr);
-  // With /proc the start is read without ps, so a wrong start is a different process: dead.
+  // The unreadable-start branch only exists without /proc (macOS). With /proc the start is read without ps, so a wrong start is a different process: dead.
   const unreadable = existsSync("/proc/self/stat") ? "false" : "true";
   assert.equal(
     blind.stdout.trim(),

@@ -107,6 +107,9 @@ beforeEach(() => {
   home = realpathSync(mkdtempSync(join(tmpdir(), "allow-home-")));
   root = realpathSync(mkdtempSync(join(tmpdir(), "allow-repo-")));
   git(root, "init", "-q", "-b", "main");
+  // commitStep commits in this process, with no gitEnv identity: the repo carries its own.
+  git(root, "config", "user.name", "Test");
+  git(root, "config", "user.email", "test@example.invalid");
   writeFileSync(join(root, ".gitignore"), ".agentry/run/\n");
   writeFileSync(join(root, "gate.mjs"), GATE_JS);
   mkdirSync(join(root, "plan"), { recursive: true });
