@@ -8,7 +8,7 @@
 // lanes({ root, spec, workflowPath }) -> [{ lane, ok, value, set }]   workflowPath: the workflow file in use
 // renderLanes(rows, width) -> string[]
 import { existsSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { nextStep } from "../cli/invoke.mjs";
 import { checkConfig } from "../config.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
@@ -19,6 +19,7 @@ import { isKept } from "./keep.mjs";
 import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 import { columns } from "./render.mjs";
+import { shownPath } from "./shown-path.mjs";
 import { WORKFLOW_KEYS } from "./spec.mjs";
 import { SPEC_VERSION } from "./spec/board.mjs";
 import { sessionChecks, skillExists } from "./spec/extensions.mjs";
@@ -157,10 +158,6 @@ function gateRows(spec) {
     ],
   ];
 }
-
-/** A path as the output shows it: from `root` when it is inside, else as given. */
-export const shownPath = (root, path) =>
-  relative(root, path).startsWith("..") ? path : relative(root, path);
 
 // The workflow file in use and its preset; none when there is no such file. The row carries
 // `resolveWorkflow`'s object (`workflow`) and the keys the file sets (`keys`) for `--json`.

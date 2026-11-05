@@ -10,11 +10,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { check } from "../check.mjs";
 import { refuseConductor } from "../conductor.mjs";
-import { lanes, renderLanes, shownPath } from "../lanes.mjs";
+import { lanes, renderLanes } from "../lanes.mjs";
 import * as md from "../markdown.mjs";
 import { readInside } from "../read.mjs";
 import { columns } from "../render.mjs";
 import { CATALOG } from "../rules/index.mjs";
+import { shownPath } from "../shown-path.mjs";
 import { boardReport } from "../status.mjs";
 
 export const help = {

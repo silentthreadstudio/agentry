@@ -22,7 +22,7 @@
 // and the commits on main that carry it must still be in effect the same way. Read-only; git goes
 // through git.mjs, asked once per run for all the ledgers (`survey`, `records`), never once per ledger.
 import { realpathSync } from "node:fs";
-import { basename, isAbsolute, join, relative, sep } from "node:path";
+import { basename, join, sep } from "node:path";
 import { shellWord as w } from "../text/shell.mjs";
 import * as git from "./git.mjs";
 import { kindOf } from "./ids.mjs";
@@ -32,6 +32,7 @@ import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
 import { commitsIn, handoffLines, namesCommits } from "./rules/evidence.mjs";
 import { parentOf } from "./rules/structure.mjs";
+import { shownPath } from "./shown-path.mjs";
 import { own } from "./spec/shape.mjs";
 import { lifecycleOf } from "./spec/workflow.mjs";
 import { readSpikes, spikesFile } from "./spikes.mjs";
@@ -474,11 +475,6 @@ const accept = (id) => `/agentry:board fix --accept ${id ?? "<id>"}`;
 // Work merged by hand from a worktree no ledger knows: `--branch` adopts it (a ledger; merge then finds
 // nothing left to land), and only then can the owner accept it.
 const adopt = (id, branch) => `${merge(id)} --branch ${w(branch)}, then ${accept(id)}`;
-// `path` as the main checkout `runRoot` reaches it, where the commands run: relative when inside it.
-const shownPath = (runRoot, path) => {
-  const rel = relative(runRoot, path);
-  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : path;
-};
 // Work in a worktree no ledger knows, for item `id` (branch `b`, null when unknown): land it as it is, or
 // continue it in a lane (field 86). An orphan `agentry/<id>` is the branch a lane for `id` would cut, so
 // it only lands. Real names are shell-quoted when they need it; the placeholders are not.

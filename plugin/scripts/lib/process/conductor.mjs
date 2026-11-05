@@ -6,10 +6,11 @@
 //
 // conductorProblems(root, spec) -> string[]      each message names the key and what was looked for
 // refuseConductor(root, spec, workflowPath) -> { exit: 2, out } | null   under the workflow file's name
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { say } from "../cli/help.mjs";
 import * as md from "./markdown.mjs";
 import { readInside } from "./read.mjs";
+import { shownPath } from "./shown-path.mjs";
 
 // A heading without its leading number (`10. Standing rules` → `standing rules`), for the hint only.
 const bare = (text) =>
@@ -43,8 +44,6 @@ export function conductorProblems(root, spec) {
 export function refuseConductor(root, spec, workflowPath) {
   const problems = conductorProblems(root, spec);
   if (!problems.length) return null;
-  const rel = relative(root, workflowPath);
-  const shown = rel.startsWith("..") ? workflowPath : rel;
-  const head = say(shown, "cannot use the workflow file", "/agentry:init");
+  const head = say(shownPath(root, workflowPath), "cannot use the workflow file", "/agentry:init");
   return { exit: 2, out: [head, ...problems.map((p) => `  ${p}`)].join("\n") };
 }

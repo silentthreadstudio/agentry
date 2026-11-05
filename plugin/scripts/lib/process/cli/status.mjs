@@ -4,13 +4,13 @@
 // `board check`).
 //
 // run(argv, { root, processPath, spec, model }) -> { exit, out }
-import { relative } from "node:path";
 import { usageError } from "../../cli/help.mjs";
 import { refuseConductor } from "../conductor.mjs";
 import { mainRoot } from "../git.mjs";
 import { boardId } from "../ids.mjs";
 import { readyView, renderReady } from "../ready.mjs";
 import { renderStatus, why } from "../render.mjs";
+import { shownPath } from "../shown-path.mjs";
 import { boardReport, statusView, workKind } from "../status.mjs";
 
 export const help = {
@@ -51,8 +51,7 @@ export function run(argv, { root, processPath, workflowPath, spec, model }) {
   if (at >= 0) return why({ spec, model, report, id, tty: tty() });
   const view = statusView({ root, spec, model, runRoot: mainRoot(root) ?? root });
   if (argv.includes("--json")) return { exit, out: JSON.stringify({ ...report, status: view }) };
-  const file = processPath ? relative(root, processPath) : "";
-  const shown = file.startsWith("..") ? processPath : file;
+  const shown = processPath ? shownPath(root, processPath) : "";
   const subtitle = [spec.root, shown, `read ${clock()}`].filter(Boolean).join(" · ");
   const work = workKind(spec);
   return { exit, out: renderStatus({ spec, report, view, work, subtitle, tty: tty() }) };
