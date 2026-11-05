@@ -5,17 +5,12 @@
 // they import nothing in `exec/`, so no cycle can form through them.
 import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { prefix } from "../../cli/invoke.mjs";
 import { kindOf } from "../../process/ids.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { flaggedItem } from "../../process/spec/workflow.mjs";
-import { shellQuote as q } from "../../text/shell.mjs";
+import { laneCommand } from "../commands.mjs";
 import { ownedFiles, withNew } from "../owns.mjs";
 import { step as advance } from "../rounds.mjs";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-export const LANE = join(HERE, "..", "..", "..", "lane.mjs");
 
 export class Refusal extends Error {}
 // A step that stopped with nothing written, and says why (exit 1): a gate whose lane moved while it ran.
@@ -27,7 +22,7 @@ export const stop = (message) => {
   throw new Stopped(message);
 };
 export const laneLine = (root, sub, id, extra = "") =>
-  `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
+  laneCommand(`exec ${sub} ${id}`, { root, extra });
 
 export const contractFile = (root, id) => join(ledgers.runDir(root, id), "contract.md");
 

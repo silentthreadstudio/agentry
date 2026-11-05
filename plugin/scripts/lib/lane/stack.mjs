@@ -12,15 +12,10 @@
 // rebaseOnto(worktree, { onto, base, tip }) -> { ok } | { ok: false, stopped, subject, files, reason, restored }
 //
 // Every git call is one argv; a git refusal is an answer, not a throw. Node built-ins only.
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { prefix } from "../cli/invoke.mjs";
-import { shellQuote as q } from "../text/shell.mjs";
+import { laneCommand } from "./commands.mjs";
 import { short } from "./fmt.mjs";
 import { commitOf, isAncestor, subjectOf } from "./land.mjs";
 import { git, porcelain, rebaseInProgress, unmergedFiles } from "./worktree.mjs";
-
-const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "lane.mjs");
 
 // A parent in one of these states leaves its child nothing to land after: the child is an orphan.
 const ENDED = ["stopped", "closed"];
@@ -29,7 +24,7 @@ const DONE = ["merged", "closed", "stopped"];
 
 /** `agentry lane exec restack <id> --root '<root>'`, `extra` after it. */
 export const restackLine = (root, id, extra = "") =>
-  `${prefix("lane", `node ${q(LANE)}`)} exec restack ${id} --root ${q(root)}${extra}`;
+  laneCommand(`exec restack ${id}`, { root, extra });
 
 /** The lanes under `on`: the parent, the parent's parent, and so on (a loop ends it). */
 export function chainOf(all, on) {

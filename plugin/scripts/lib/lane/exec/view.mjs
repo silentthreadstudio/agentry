@@ -3,28 +3,19 @@
 // workflow file as they are now. Its text form, and the words for holds and idle lanes, are in the
 // library's `../exec-view.mjs`.
 import { basename, join } from "node:path";
-import { prefix } from "../../cli/invoke.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { workflowPathOf } from "../../process/read.mjs";
 import { modelFor } from "../../process/spec/models.mjs";
 import { resolveWorkflow } from "../../process/spec/presets.mjs";
 import { shellQuote as q } from "../../text/shell.mjs";
 import { suggestBuilder } from "../builder.mjs";
+import { laneCommand } from "../commands.mjs";
 import { answerText, heldText, routeText } from "../exec-view.mjs";
 import { leaves } from "../paths.mjs";
 import { DISPATCHES, expects, routeOf } from "../rounds.mjs";
 import { stackOf } from "../stack.mjs";
 import { ownsPath } from "./guard/allow.mjs";
-import {
-  LANE,
-  contractFile,
-  isFile,
-  isFlagged,
-  laneLine,
-  normalised,
-  ownedOf,
-  readOr,
-} from "./lane.mjs";
+import { contractFile, isFile, isFlagged, laneLine, normalised, ownedOf, readOr } from "./lane.mjs";
 
 // The text's `model:` line names its source: `model: opus (contract)` (field 73).
 export function withModelSource({ modelFrom, ...shown }) {
@@ -200,5 +191,5 @@ export function routeNow(ctx, ledger) {
 // A stopped lane's ways on (field 75): land it as it is, or start it again with its work.
 export const waysOn = (root, ledger) => ({
   stopped: ledger.stopReason ?? "unknown",
-  "ways on": `${prefix("lane", `node ${q(LANE)}`)} merge ${ledger.id} --branch ${ledger.branch ?? `agentry/${ledger.id}`} --root ${q(root)} (lands as is, the owner's call) · ${laneLine(root, "restart", ledger.id, " --carry")} (starts it again with its work)`,
+  "ways on": `${laneCommand(`merge ${ledger.id} --branch ${ledger.branch ?? `agentry/${ledger.id}`}`, { root })} (lands as is, the owner's call) · ${laneLine(root, "restart", ledger.id, " --carry")} (starts it again with its work)`,
 });

@@ -2,18 +2,17 @@
 // in progress on main, a ledger already there for the id; the worktrees nested in a lane's own; and
 // the owned files a new lane shares with a running one, as warnings.
 import { join } from "node:path";
-import { prefix } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { worktrees } from "../../process/git.mjs";
 import { isKept } from "../../process/keep.mjs";
 import * as ledgers from "../../process/ledger.mjs";
-import { shellQuote as q } from "../../text/shell.mjs";
+import { laneCommand } from "../commands.mjs";
 import { clock } from "../exec-view.mjs";
 import { isAncestor } from "../land.mjs";
 import { insideDir } from "../paths.mjs";
 import { OVERLAP_SHOWN, ownsPath } from "./guard/allow.mjs";
 import { headOf } from "./guard/snapshot.mjs";
-import { LANE, laneLine, ownedOf, refuse } from "./lane.mjs";
+import { laneLine, ownedOf, refuse } from "./lane.mjs";
 
 // The worktrees inside the lane's own worktree (a nested builder, #7): nothing else. A worktree made
 // elsewhere while the lane ran (the conductor's own) is not the lane's.
@@ -82,8 +81,8 @@ export function refuseMidLand(root) {
   if (landing)
     refuse(
       landing.merge.cut
-        ? `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): a cut of it stopped there → ${prefix("lane", `node ${q(LANE)}`)} exec cut ${landing.id} --decision <D> --apply rolls it back`
-        : `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): its picks may still roll back → start after it lands, or ${prefix("lane", `node ${q(LANE)}`)} merge ${landing.id} --resolve landed|rolled-back`,
+        ? `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): a cut of it stopped there → ${laneCommand(`exec cut ${landing.id} --decision <D> --apply`)} rolls it back`
+        : `main is mid-land (${landing.id}, since ${clock(landing.merge.at)}): its picks may still roll back → start after it lands, or ${laneCommand(`merge ${landing.id} --resolve landed|rolled-back`)}`,
     );
 }
 
