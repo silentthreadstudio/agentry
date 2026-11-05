@@ -15,10 +15,11 @@
 // lane's owned files and none of the files its worktree changed (field 81). A report that finds main
 // touched holds the lane for the guard, its report saved, until a report again finds main clean (field 75).
 import { kindOf } from "../../../process/ids.mjs";
+import { blobsAt } from "../../carry-io.mjs";
 import { now, short } from "../../fmt.mjs";
 import { ownedOf } from "../lane.mjs";
 import { allowOf, allowedCommit, allowedEdit, configTrips } from "./allow.mjs";
-import { blobsAt, dirtyPaths, headOf, heldMain } from "./snapshot.mjs";
+import { dirtyPaths, headOf, heldMain } from "./snapshot.mjs";
 import { boardFiles, landedOnly, laneFiles, strayFiles } from "./stray.mjs";
 
 // Whether the main checkout still matches the lane's start: `{ touched, allowed, moved, overlap }`,

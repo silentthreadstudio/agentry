@@ -90,10 +90,12 @@ export function removeFiles(root, files) {
   }
 }
 
-// The content ids (git's blob id, `:x` an executable, `:l` a symlink) of `files` as `commit` holds them,
-// "-" for a file it lacks: the shape `board-writes.contentOf` gives for the working tree.
+// The suffix a content id carries for what the blob id leaves out, by the tree entry's mode.
 const MODE_SUFFIX = { 100755: ":x", 120000: ":l" };
-function blobIds(root, commit, files) {
+/** The content ids (git's blob id, `:x` an executable, `:l` a symlink) of `files` as `commit` holds them,
+ *  "-" for a file it lacks: the shape `board-writes.contentOf` gives for the working tree. The carry and
+ *  the main guard compare ids from this one encoder. */
+export function blobsAt(root, commit, files) {
   const out = Object.fromEntries(files.map((file) => [file, "-"]));
   const res = git(root, ["--literal-pathspecs", "ls-tree", "-r", "-z", commit, "--", ...files]);
   for (const line of res.stdout.split("\0").filter(Boolean)) {
@@ -134,7 +136,7 @@ function recordedWrites(root) {
 export function writtenByScript(root, files) {
   if (files.length === 0) return {};
   const now = contentOf(root, files);
-  const head = blobIds(root, "HEAD", files);
+  const head = blobsAt(root, "HEAD", files);
   const log = recordedWrites(root);
   const out = {};
   for (const file of files) {
@@ -159,7 +161,7 @@ export function writtenByScript(root, files) {
 export function recordedFor(root, files) {
   if (files.length === 0) return {};
   const now = contentOf(root, files);
-  const head = blobIds(root, "HEAD", files);
+  const head = blobsAt(root, "HEAD", files);
   const log = recordedWrites(root);
   const out = {};
   for (const file of files) {

@@ -5,18 +5,11 @@
 import { posix } from "node:path";
 import { recordedSince } from "../../../process/board-writes.mjs";
 import { own } from "../../../process/spec/shape.mjs";
+import { blobsAt } from "../../carry-io.mjs";
 import { isMemoryCommit } from "../../own-memory.mjs";
 import { git, porcelain } from "../../worktree.mjs";
 import { ownedOf } from "../lane.mjs";
-import {
-  STAGED,
-  blobsAt,
-  contentOf,
-  dirtyPaths,
-  headOf,
-  heldMain,
-  stagedKey,
-} from "./snapshot.mjs";
+import { STAGED, contentOf, dirtyPaths, headOf, heldMain, stagedKey } from "./snapshot.mjs";
 
 // The files a lifecycle event of item `id` of `name` writes (relative to the git root).
 export function boardFiles(spec, model, id, name) {

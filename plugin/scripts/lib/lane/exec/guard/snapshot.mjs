@@ -1,6 +1,6 @@
 // exec/guard/snapshot — the git facts the main guard reads: main's changed paths and the content id of
-// each, a commit's blob ids, the snapshot `start` records, and the main commit a lane's branch holds
-// past its base.
+// each, the snapshot `start` records, and the main commit a lane's branch holds past its base (a
+// commit's content ids are `carry-io.mjs`'s `blobsAt`).
 import { contentOf as contentIds } from "../../../process/board-writes.mjs";
 import { resolveBranch } from "../../adopt.mjs";
 import { isAncestor, mergeBaseOf } from "../../land.mjs";
@@ -10,8 +10,6 @@ import { refuse } from "../lane.mjs";
 
 // Agentry's own files: the run state. (The memory records a lane writes are `own-memory.mjs`'s.)
 const OWN_DIRS = [".agentry/run/"];
-const ABSENT = "-";
-const MODE_SUFFIX = { 100755: ":x", 120000: ":l" };
 export const STAGED = /^[MADRC]/;
 export const stagedKey = (entry) => `${entry[0]}${entry.slice(3)}`; // index column + path
 export const headOf = (dir, ref = "HEAD") =>
@@ -39,19 +37,6 @@ export function contentOf(root, paths) {
   } catch (e) {
     return refuse(e.message);
   }
-}
-
-// The same, as `commit` holds it, ABSENT when the commit has no such file.
-export function blobsAt(root, commit, paths) {
-  const out = Object.fromEntries(paths.map((p) => [p, ABSENT]));
-  const res = git(root, ["--literal-pathspecs", "ls-tree", "-r", "-z", commit, "--", ...paths]);
-  for (const line of res.stdout.split("\0").filter(Boolean)) {
-    const tab = line.indexOf("\t");
-    const path = line.slice(tab + 1);
-    const [mode, , id] = line.slice(0, tab).split(" ");
-    if (Object.hasOwn(out, path)) out[path] = id + (MODE_SUFFIX[mode] ?? "");
-  }
-  return out;
 }
 
 /** What main looks like when a lane starts: HEAD, the `git status` entries and the content of each. */
