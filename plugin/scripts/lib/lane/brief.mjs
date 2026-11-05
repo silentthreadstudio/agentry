@@ -47,6 +47,7 @@ import { readInside } from "../process/read.mjs";
 import { bulletOf } from "../process/spec/models.mjs";
 import { own } from "../process/spec/shape.mjs";
 import { runMark, runText } from "../process/steps.mjs";
+import { shellWord } from "./adopt.mjs";
 import { answerLine } from "./exec-view.mjs";
 import { toLand } from "./land.mjs";
 import { checkCommits, readCommits, rulesOf } from "./subjects.mjs";
@@ -840,14 +841,15 @@ export function carriedWork({ commits, files, report, conflict, applied = true, 
   const last = report ? `Its last report is ${report}: read it first.` : "It left no report.";
   // Applied only when the carry got that far: a pick that stopped leaves the diff still to apply. The step
   // is named once: in the stop when it names it, else here.
-  const named = Boolean(diff) && String(conflict ?? "").includes(`git apply --3way ${diff}`);
+  const apply = diff && `git apply --3way ${shellWord(diff)}`;
+  const named = Boolean(apply) && String(conflict ?? "").includes(apply);
   const staged = !files
     ? ""
     : applied
       ? " Its uncommitted changes are applied staged (`git apply --3way` stages them): `git diff --cached` shows them."
       : named
         ? " Its uncommitted changes are not in the tree yet."
-        : ` Its uncommitted changes are not in the tree yet: once the pick is done, apply them with \`git apply --3way ${diff}\`.`;
+        : ` Its uncommitted changes are not in the tree yet: once the pick is done, apply them with \`${apply}\`.`;
   const stop = conflict ? ` Resolve this first: ${conflict}.` : "";
   return [
     "## Carried work",

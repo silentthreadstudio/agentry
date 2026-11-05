@@ -179,7 +179,7 @@ export function carry(worktree, { picks = [], diff }) {
         ok: false,
         applied: false,
         conflict: files.length
-          ? `${what} conflicts in ${files.join(", ")}: resolve it, git cherry-pick --continue, then git apply --3way ${diff}`
+          ? `${what} conflicts in ${files.join(", ")}: resolve it, git cherry-pick --continue, then git apply --3way ${shellWord(diff)}`
           : `${what} stopped: ${first(picked.stderr || picked.stdout)}`,
       };
     }

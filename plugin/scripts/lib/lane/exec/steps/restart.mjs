@@ -260,7 +260,7 @@ export function run(ctx, id) {
       ...(withWork && held && keptName && range?.picks.length
         ? [`in its worktree git cherry-pick ${range.picks.map(short).join(" ")}`]
         : []),
-      ...(withWork && work.files.length ? [`git apply --3way ${diff}`] : []),
+      ...(withWork && work.files.length ? [`git apply --3way ${shellWord(diff)}`] : []),
       ...(unclear ? [unclear.slice(unclear.indexOf("agentry board set"))] : []),
     ];
     throw new Stopped(

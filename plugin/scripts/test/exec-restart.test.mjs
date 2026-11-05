@@ -101,8 +101,8 @@ const TASKS_MD = `# Tasks
 `;
 
 // A repo on main with the board committed; `.agentry/` committed too unless `untracked`.
-function repo({ spec = SPEC, untracked = false, board = BOARD_MD } = {}) {
-  const root = temp("restart-repo-");
+function repo({ spec = SPEC, untracked = false, board = BOARD_MD, prefix = "restart-repo-" } = {}) {
+  const root = temp(prefix);
   const home = temp("restart-home-");
   git(root, "init", "-q", "-b", "main");
   commitFile(
@@ -253,6 +253,28 @@ test("a carried commit that conflicts with main stops: exit 1, main untouched, m
   assert.match(brief, /Its uncommitted changes are not in the tree yet\. Resolve this first: /);
   assert.equal(brief.match(/git apply --3way/g).length, 1, brief);
   assert.equal(ledgerOf(r.root, "T3").carried.applied, false);
+});
+
+test("in a root holding a space, the carry's conflict and the brief quote the diff path, which pastes as is", () => {
+  const r = repo({ prefix: "restart repo-" });
+  worked(r);
+  commitFile(r.root, "three.txt", "a\nmain\nc\n", "fix: three on main");
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 1, res.stderr);
+  const diff = join(archiveRuns(r.root, "T3", 1), "restart", "uncommitted.diff");
+  const apply = `git apply --3way '${diff}'`;
+  assert.ok(res.json.conflict.includes(`then ${apply} in `), res.json.conflict);
+  const brief = readFileSync(res.json.brief, "utf8");
+  assert.ok(brief.includes(`then ${apply}.`), brief);
+  assert.equal(brief.match(/git apply --3way/g).length, 1, brief);
+  // The builder resolves the pick, then pastes the step as the stop prints it.
+  const tree = res.json.worktree;
+  writeFileSync(join(tree, "three.txt"), "a\nlane\nc\n");
+  git(tree, "add", "three.txt");
+  git(tree, "-c", "core.editor=true", "cherry-pick", "--continue");
+  const pasted = spawnSync("sh", ["-c", apply], { cwd: tree, encoding: "utf8", env: gitEnv });
+  assert.equal(pasted.status, 0, pasted.stderr);
+  assert.equal(readFileSync(join(tree, "more.txt"), "utf8"), "half\n");
 });
 
 test("restart --carry of a lane with no commits, only uncommitted files, applies the diff: exit 0, staged", () => {
@@ -459,6 +481,18 @@ test("a restart whose board row is gone refuses before any write: the lane, its 
   assert.equal(existsSync(archiveFile(r.root, "T3", 1)), false);
   assert.equal(existsSync(join(processDir(r.root), "runs", "T3", "restart")), false);
   assert.equal(hasRef(r.root, "refs/heads/agentry/T3.1"), false);
+});
+
+test("in a root holding a space, a stopped restart's steps back quote the diff path", () => {
+  const r = repo({ prefix: "restart repo-" });
+  worked(r);
+  git(r.root, "branch", "agentry/T3.1/x", "main"); // blocks the rename: the restart stops
+  const res = spawnLane(r, ["exec", "restart", "T3", "--carry"]);
+  const out = res.stdout + res.stderr;
+  assert.equal(res.status, 1, out);
+  const diff = join(archiveRuns(r.root, "T3", 1), "restart", "uncommitted.diff");
+  const steps = out.split("→ fix that, then: ")[1]?.trim().split("; ") ?? [];
+  assert.equal(steps.at(-1), `git apply --3way '${diff}'`, out);
 });
 
 test(
