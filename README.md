@@ -129,7 +129,7 @@ Memory is the `agentry mem` CLI over plain Markdown files. Nothing runs in the b
 - **Files are the truth.** The search index is built with Node's `node:sqlite` in memory on each call and
   never written to disk. No database file, nothing to migrate.
 - **Recall is per task.** `agentry mem recall --query "<the task>"` returns a few memories (five by default),
-  ranked by relevance × confidence × usefulness.
+  ranked by relevance × confidence × (1 + usefulness).
 - **Writes reinforce.** A write that nearly matches a fact already stored reinforces it instead of copying
   it; `--supersedes <id>` replaces one.
 - **Use shapes it.** `agentry mem feedback` raises the memories a passing run used; ones recalled and never

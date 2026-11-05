@@ -77,7 +77,7 @@ import { withBase } from "../../../lib/base.ts";
 
     <h2 class="prose__h">How recall ranks</h2>
     <p>
-      Recall scores each fact by <strong>relevance × confidence × usefulness</strong>. Relevance comes
+      Recall scores each fact by <strong>relevance × confidence × (1 + usefulness)</strong>. Relevance comes
       from the text index, confidence from how true the fact is held to be, usefulness from how often
       it helped. A run's feedback moves them: memories a passing run used gain usefulness, ones
       recalled and never used decay, and a fact that keeps missing is archived until
