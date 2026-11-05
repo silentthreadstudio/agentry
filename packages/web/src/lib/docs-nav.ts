@@ -16,6 +16,7 @@ export type DocsKey =
   | "when"
   | "capabilities"
   | "lanes"
+  | "workflows"
   | "memory"
   | "permissions"
   | "evals"
@@ -57,6 +58,7 @@ export const docsGroups: DocsGroup[] = [
     items: [
       { key: "capabilities", label: "Overview", href: "docs/capabilities/" },
       { key: "lanes", label: "Lanes", href: "docs/lanes/" },
+      { key: "workflows", label: "Workflows", href: "docs/workflows/" },
       { key: "memory", label: "Memory", href: "docs/memory/" },
       { key: "permissions", label: "Permissions", href: "docs/permissions/" },
     ],

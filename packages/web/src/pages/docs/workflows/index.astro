@@ -1,0 +1,209 @@
+---
+// /docs/workflows — what .agentry/process.json, .agentry/workflow.json and .agentry/config.json
+// control, key by key, with each default, read from the loaders (plugin/scripts/lib/process/spec/*,
+// read.mjs, lib/config.mjs, the memory config reader). Every key in a `<th scope="row"><code>` cell
+// is checked against the loader source by the docs key check; keep that cell form for key rows.
+// The solo example is imported raw from examples/workflows/, so the page shows the file as it ships.
+import soloJson from "../../../../../../examples/workflows/solo-fast/workflow.json?raw";
+import DocsLayout from "../../../layouts/docs-layout/DocsLayout.astro";
+import { withBase } from "../../../lib/base.ts";
+import { REPO_URL } from "../../../lib/site.ts";
+
+const examples = `${REPO_URL}/tree/main/examples/workflows`;
+---
+
+<DocsLayout
+  current="workflows"
+  title="Workflows — configure the harness"
+  description="What .agentry/workflow.json, process.json and config.json control: every key, its default and its effect, how /agentry:init learns them, and examples."
+  eyebrow="Capabilities · Workflows"
+  lede="Three small JSON files under .agentry/ say how Agentry works your repo: what your board looks like, how a lane is checked and landed, and a few settings. Every key is optional unless marked, and every default is the stock behavior."
+>
+  <div class="prose">
+    <h2 class="prose__h">Three files</h2>
+    <table class="layers" aria-label="The configuration files">
+      <thead>
+        <tr>
+          <th scope="col">File</th>
+          <th scope="col">What it holds</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row"><code>.agentry/process.json</code></th>
+          <td>Your board: which kinds of item it has, where each lives, what each column means, which rules hold. The board, lane and merge commands need it.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>.agentry/workflow.json</code></th>
+          <td>How the harness works the repo: the gate, how much checking a lane gets, what it writes on the board, the commit rules. Optional; with none, every key is absent.</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>.agentry/config.json</code></th>
+          <td>Settings: the push policy, how many builders at once, memory priming. Read from the project first, then <code>~/.agentry/config.json</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      The files load strictly. An unknown key, a wrong type or an empty list is refused (exit 2), naming
+      the key and the nearest known one, so a typo never loosens a check. A key in the wrong file is
+      refused with the file it belongs in. <code>agentry board explain</code> prints every value in effect
+      and where it came from (<code>preset</code> or <code>set</code>); <code>agentry board check</code> runs
+      the rules.
+    </p>
+
+    <h2 class="prose__h">How /agentry:init learns them</h2>
+    <ul class="facts">
+      <li><strong>A new repo.</strong> It copies the templates: a board in <code>docs/work/</code> (milestones, sprints, tasks, questions, decisions, epics, debt) and a <code>process.json</code> for it, then runs <code>agentry board check</code>.</li>
+      <li><strong>A repo with a board.</strong> <code>agentry board scan</code> finds its tables and contract blocks. Each table becomes a kind: columns become fields, typed from their cells; status words are mapped to phases (it asks only about a word it cannot place); files named after items become own files. It turns on each rule whose fields exist, and redrafts until <code>agentry board explain</code> finds every kind with its items.</li>
+      <li><strong>The lanes.</strong> Then <code>workflow.json</code>, one step at a time: the gate from your workflow doc, gate script, CI config or <code>package.json</code>, as argv; the conductor prompt; the push policy; your own merge and session skills as checks; <code>guard.allow</code>; <code>cleanup.disposable</code> from your <code>.gitignore</code>; the lifecycle writes, asked once; debt kinds under <code>exec.kinds</code>; decision drafts; commit rules from <code>agentry board commits --learn</code>.</li>
+      <li><strong>Nothing unchecked, nothing committed.</strong> Each change goes through a draft that <code>agentry board explain</code> must load before the real file is written, and the diff is yours to review.</li>
+    </ul>
+
+    <h2 class="prose__h">Presets</h2>
+    <p>
+      <code>exec.preset</code> sets five keys at once. A key you give yourself wins over the preset;
+      <code>gate.roles</code> wins role by role.
+    </p>
+    <table class="layers" aria-label="Workflow presets">
+      <thead>
+        <tr>
+          <th scope="col">Key</th>
+          <th scope="col"><code>lean</code> · <code>standard</code> (default) · <code>strict</code></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>exec.verify</code></th><td><code>flagged</code> · <code>all</code> · <code>all</code></td></tr>
+        <tr><th scope="row"><code>exec.noteRounds</code></th><td>0 · 1 · 3</td></tr>
+        <tr><th scope="row"><code>exec.final</code></th><td><code>never</code> · <code>after-fix</code> · <code>always</code></td></tr>
+        <tr><th scope="row"><code>exec.rebase</code></th><td><code>gate</code> · <code>recheck</code> · <code>recheck</code></td></tr>
+        <tr><th scope="row"><code>gate.roles</code></th><td>build <code>pick</code>, verify <code>none</code>, merge <code>pick</code> · the same · build and merge <code>full</code>, verify <code>none</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="prose__h">workflow.json: the lane</h2>
+    <table class="layers" aria-label="exec keys">
+      <thead>
+        <tr><th scope="col">Key</th><th scope="col">Default</th><th scope="col">What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>exec.preset</code></th><td><code>standard</code></td><td>Fills the keys in the table above.</td></tr>
+        <tr><th scope="row"><code>exec.verify</code></th><td>from the preset</td><td>Which items get an independent verifier: <code>all</code>, <code>flagged</code> (only an item whose flag is set; the gate stands in for the rest) or <code>none</code>. A flagged item always gets one. <code>flagged</code> needs a flag field on every kind exec runs.</td></tr>
+        <tr><th scope="row"><code>exec.noteRounds</code></th><td>from the preset</td><td>How many fix rounds a <code>PASS WITH NOTES</code> may send back, 0 to 3. Read live, so a raised value applies to running lanes.</td></tr>
+        <tr><th scope="row"><code>exec.final</code></th><td>from the preset</td><td>When a fresh final verifier follows a recheck: <code>never</code>, <code>after-fix</code> (unless the recheck passed every note on a tip moved only by fix commits) or <code>always</code>.</td></tr>
+        <tr><th scope="row"><code>exec.rebase</code></th><td>from the preset</td><td>What checks a rebase that cleared a land conflict: <code>recheck</code> (a fresh verifier reads the range-diff) or <code>gate</code>.</td></tr>
+        <tr><th scope="row"><code>exec.flagField</code></th><td><code>flag</code></td><td>The field <code>verify</code> reads to tell a flagged item.</td></tr>
+        <tr><th scope="row"><code>exec.idleMinutes</code></th><td>20</td><td>Quiet minutes before a building lane shows as idle; at least 5.</td></tr>
+        <tr><th scope="row"><code>exec.kinds</code></th><td>none</td><td>Kinds exec and merge run beside the lifecycle's (debt, chores): each <code>&#123; on, write &#125;</code>, as <code>lifecycle</code> but with no handoff. Their items take a light contract: an Owns line and an Acceptance line. Needs a <code>lifecycle</code>.</td></tr>
+        <tr><th scope="row"><code>models.build</code></th><td>none</td><td>The model a builder dispatch names: a name (<code>"sonnet"</code>) or <code>&#123; default, paths &#125;</code>, where the first <code>paths</code> entry whose <code>when.any</code> glob matches an owned file wins. A contract's <code>**Model:**</code> bullet wins over it.</td></tr>
+        <tr><th scope="row"><code>models.verify</code></th><td>none</td><td><code>default</code>, <code>ui</code> (a UI-shaped task) and <code>flagged</code> (a flagged task): the verifier's model, each a name or by path.</td></tr>
+        <tr><th scope="row"><code>briefs.build</code> · <code>briefs.verify</code></th><td>none</td><td>Up to 20 one-line policy lines printed in every builder or verifier brief, under "Repo policy".</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="prose__h">workflow.json: the gate</h2>
+    <p>
+      The gate is your repo's own checks. Each tier is argv, run with no shell in the git root of the tree
+      under test; its exit code is the verdict, and a run that leaves files changed counts as red. With no
+      <code>gate</code>, a lane still gets a verifier: nothing else would check the work.
+    </p>
+    <table class="layers" aria-label="gate keys">
+      <thead>
+        <tr><th scope="col">Key</th><th scope="col">Default</th><th scope="col">What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>gate.tiers</code></th><td>required in a gate</td><td>The tiers in precedence order, each <code>&#123; name, command, when &#125;</code>. Every tier but the last has a <code>when</code>; the last is the fallback. <code>full</code> may name only the last.</td></tr>
+        <tr><th scope="row"><code>gate.tiers[].when.only</code></th><td>—</td><td>Globs: the tier applies when every changed file matches one.</td></tr>
+        <tr><th scope="row"><code>gate.tiers[].when.any</code></th><td>—</td><td>Globs: it applies when some changed file matches one.</td></tr>
+        <tr><th scope="row"><code>gate.tiers[].when.flag</code></th><td>—</td><td><code>true</code>: it applies when the item's flag is set.</td></tr>
+        <tr><th scope="row"><code>gate.roles.build</code></th><td><code>pick</code></td><td>The tier a lane's gate runs: <code>pick</code> (the first tier whose <code>when</code> holds, else the last), <code>full</code> (the last) or a tier's name.</td></tr>
+        <tr><th scope="row"><code>gate.roles.verify</code></th><td><code>none</code></td><td>The tier run while a verifier is out; <code>none</code> leaves the gate to after the verdict.</td></tr>
+        <tr><th scope="row"><code>gate.roles.merge</code></th><td><code>pick</code></td><td>The tier the land runs on main. It skips it only on a green record of the same tier and argv on the lane's tip.</td></tr>
+        <tr><th scope="row"><code>gate.checklist</code></th><td><code>[]</code></td><td>Manual checks the land waits on, each <code>&#123; name, text, when &#125;</code>, recorded with <code>agentry lane merge &lt;id&gt; --check &lt;name&gt;=pass</code>.</td></tr>
+        <tr><th scope="row"><code>gate.after</code></th><td><code>[]</code></td><td>Globs of files allowed to change after the gate ran green (a changelog written at merge).</td></tr>
+        <tr><th scope="row"><code>gate.concurrency</code></th><td>1</td><td>How many lane gates run at once in this checkout; the rest queue for a slot.</td></tr>
+        <tr><th scope="row"><code>gate.flaky</code></th><td><code>[]</code></td><td>Test names known to fail under load. A red whose output fails only in these is run again alone, once; both runs are recorded.</td></tr>
+        <tr><th scope="row"><code>gate.flakyLogs</code></th><td><code>[]</code></td><td>Globs of step logs read for failing test names when the gate's own output has only a summary.</td></tr>
+        <tr><th scope="row"><code>gate.note</code></th><td>—</td><td>Free text.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="prose__h">workflow.json: the board and the land</h2>
+    <table class="layers" aria-label="lifecycle, extensions and other keys">
+      <thead>
+        <tr><th scope="col">Key</th><th scope="col">Default</th><th scope="col">What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>lifecycle.kind</code></th><td>none: nothing is written</td><td>The kind whose board cells the harness writes as work moves.</td></tr>
+        <tr><th scope="row"><code>lifecycle.on</code></th><td>—</td><td>Your status word for each event: <code>dispatched</code>, <code>built</code>, <code>failed</code> (a verifier's FAIL), <code>merged</code> (the only one that may set a done status) and <code>cut</code> (a lane retired on a decision).</td></tr>
+        <tr><th scope="row"><code>lifecycle.write</code></th><td>—</td><td>Where each value goes: <code>status</code>, <code>verdict</code>, <code>commit</code>, and <code>handoff</code> as <code>parent.file:&lt;section&gt;</code>.</td></tr>
+        <tr><th scope="row"><code>lifecycle.handoff</code></th><td>—</td><td>The one-line handoff template, filling <code>&#123;id&#125;</code>, <code>&#123;sha&#125;</code> and <code>&#123;summary&#125;</code>. Tried against <code>done-has-handoff</code> at load.</td></tr>
+        <tr><th scope="row"><code>extensions.merge.checks</code></th><td>—</td><td>Your own skills (<code>.claude/skills/&lt;name&gt;</code>) the land waits on, each recorded like a checklist item.</td></tr>
+        <tr><th scope="row"><code>extensions.start.checks</code> · <code>extensions.close.checks</code></th><td>—</td><td>Skills <code>/agentry:start</code> and <code>/agentry:close</code> run and record. A failed close check is named in the handoff; it refuses nothing.</td></tr>
+        <tr><th scope="row"><code>conductor.prompt</code></th><td>—</td><td>Your conductor prompt, from the git root; the conductor reads it first and follows it.</td></tr>
+        <tr><th scope="row"><code>conductor.rules</code></th><td>—</td><td>The heading in that prompt where a standing rule you state is appended once you confirm it.</td></tr>
+        <tr><th scope="row"><code>commits.subjectMax</code></th><td>—</td><td>The longest subject a builder's commit may have, in characters.</td></tr>
+        <tr><th scope="row"><code>commits.subjectPattern</code></th><td>—</td><td>A regular expression every subject must match.</td></tr>
+        <tr><th scope="row"><code>commits.forbid</code></th><td>—</td><td>Regular expressions no message may match, per line (an attribution trailer). A commit that breaks a rule goes back to the builder once; the land refuses it.</td></tr>
+        <tr><th scope="row"><code>guard.allow</code></th><td>—</td><td>Globs of main-checkout files you may edit by hand while lanes run, unless a running lane owns them.</td></tr>
+        <tr><th scope="row"><code>cleanup.disposable</code></th><td>—</td><td>Globs of ignored files (build output, caches) <code>lane merge --cleanup</code> discards without asking. Any other ignored file still stops it.</td></tr>
+        <tr><th scope="row"><code>worktrees.keep</code></th><td>—</td><td>Names or globs of worktrees kept on purpose: shown as kept, never as drift.</td></tr>
+        <tr><th scope="row"><code>drafts.&lt;kind&gt;.map</code></th><td>derived from the decision kind</td><td>How an answered question fills a decision draft: <code>&#123;answer&#125;</code>, <code>&#123;why&#125;</code>, <code>&#123;question&#125;</code>, <code>&#123;unpicked&#125;</code>. A draft is written only on your approval.</td></tr>
+        <tr><th scope="row"><code>locks</code></th><td>none</td><td>Named locks shared by every worktree, <code>&#123; "editor": 1 &#125;</code>: <code>agentry run --lock</code> and <code>agentry lock take</code> wait for a slot.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="prose__h">process.json: the board</h2>
+    <table class="layers" aria-label="process.json keys">
+      <thead>
+        <tr><th scope="col">Key</th><th scope="col">Default</th><th scope="col">What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>version</code></th><td>required: <code>1</code></td><td>The file format.</td></tr>
+        <tr><th scope="row"><code>name</code></th><td>required</td><td>Shown in the board header.</td></tr>
+        <tr><th scope="row"><code>root</code></th><td>required</td><td>The board's folder, from the git root; every path below is relative to it.</td></tr>
+        <tr><th scope="row"><code>kinds</code></th><td>required</td><td>Your kinds by your own names, each with <code>label</code>, <code>at</code> (a table under a heading, or one file per item), <code>id</code>, <code>fields</code> (column, type, refs, role), <code>status</code> (your words mapped to <code>planned</code>, <code>active</code>, <code>done</code>, <code>dropped</code>, <code>parked</code>, or derived from children), and optionally <code>file</code>, <code>contract</code> and <code>create</code>.</td></tr>
+        <tr><th scope="row"><code>rules</code></th><td>required</td><td>The rules turned on, from a fixed catalog of 17: <code>ids-unique</code>, <code>status-known</code>, <code>refs-resolve</code>, <code>deps-done</code>, <code>ready-has-contract</code>, <code>done-has-evidence</code> and the rest. <code>agentry board explain</code> lists them all, on and off.</td></tr>
+        <tr><th scope="row"><code>status.now</code></th><td>—</td><td>The kind that is current, such as <code>sprint</code>, for the Now row of <code>agentry board status</code>.</td></tr>
+        <tr><th scope="row"><code>status.note</code></th><td><code>.agentry/NOTE.md</code></td><td>The hand-written note <code>/agentry:start</code> shows, with its age.</td></tr>
+        <tr><th scope="row"><code>status.file</code> · <code>status.next</code></th><td>—</td><td>A status file kept by hand and its heading; status nudges once when an id listed there is already done.</td></tr>
+        <tr><th scope="row"><code>status.prime</code> · <code>status.lines</code></th><td>—</td><td>Still accepted at load; nothing in 0.3 acts on them. The session-start hook they fed was removed.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="prose__h">config.json: settings</h2>
+    <table class="layers" aria-label="config.json keys">
+      <thead>
+        <tr><th scope="col">Key</th><th scope="col">Default</th><th scope="col">What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>merge.push</code></th><td><code>ask</code></td><td>What <code>/agentry:merge</code> does once a task lands: <code>ask</code> (push only on your yes), <code>auto</code> or <code>never</code>.</td></tr>
+        <tr><th scope="row"><code>lanes.maxWriters</code></th><td>3</td><td>How many builder lanes may write at once; <code>/agentry:exec</code> refuses one more.</td></tr>
+        <tr><th scope="row"><code>mode</code></th><td>none</td><td>A working mode's name, printed by <code>/agentry:start</code>.</td></tr>
+        <tr><th scope="row"><code>memory.prime</code></th><td><code>conductor</code></td><td>Who gets ranked facts: <code>off</code>, <code>conductor</code> (the session start) or <code>all</code> (every lane brief too).</td></tr>
+        <tr><th scope="row"><code>memory.primeLimit</code></th><td>5</td><td>The most facts one prime carries.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      <code>/agentry:config</code> shows the effective settings and sets one, written to the project file.
+    </p>
+
+    <h2 class="prose__h">Examples</h2>
+    <p>
+      Four complete setups, each with a small board, that load clean and pass <code>agentry board
+      check</code> as they are. Copy the files into <code>.agentry/</code> and the board into its
+      <code>root</code>; each folder's README says where.
+    </p>
+    <ul class="facts">
+      <li><a href={`${examples}/solo-fast`}><strong>solo-fast</strong></a> — one developer: the <code>lean</code> preset, one gate tier, push never.</li>
+      <li><a href={`${examples}/careful-team`}><strong>careful-team</strong></a> — the <code>strict</code> preset, a docs tier and a full tier, a UI checklist item, commit rules, push on ask.</li>
+      <li><a href={`${examples}/learned-board`}><strong>learned-board</strong></a> — an existing board as init learns it: tickets in iterations, upper-case states, linked specs as contracts.</li>
+      <li><a href={`${examples}/debt-only`}><strong>debt-only</strong></a> — upkeep with no sprints: one debt kind run by its own lanes.</li>
+    </ul>
+    <p>The solo developer's <code>workflow.json</code>, as it ships:</p>
+    <pre class="flag"><code>{soloJson}</code></pre>
+
+    <p class="prose__cta">
+      Next: <a href={withBase("docs/lanes/")}>Lanes</a>, where these keys take effect.
+    </p>
+  </div>
+</DocsLayout>
