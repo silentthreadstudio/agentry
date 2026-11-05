@@ -19,24 +19,20 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   TEMPLATES,
-  citedDecisions,
-  decisionKind,
   fill,
   notesSection,
-  outsideOwns,
-  ownedFiles,
-  ownsTestsWithoutFile,
   policySlots,
-  recalledFacts,
   recheckSlots,
   relatedNotes,
   renderBrief,
   rewordSlots,
   slotsOf,
   stepSlots,
-  suggestBuilder,
-  withNew,
 } from "../lib/lane/brief.mjs";
+import { suggestBuilder } from "../lib/lane/builder.mjs";
+import { citedDecisions, decisionKind } from "../lib/lane/decisions.mjs";
+import { outsideOwns, ownedFiles, ownsTestsWithoutFile, withNew } from "../lib/lane/owns.mjs";
+import { recalledFacts } from "../lib/lane/recall.mjs";
 import { readProcess } from "../lib/process/read.mjs";
 import { stepsOf } from "../lib/process/steps.mjs";
 import { commitFile, git, gitEnv, tempRepo } from "./git-repo.mjs";

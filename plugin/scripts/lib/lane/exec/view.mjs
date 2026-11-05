@@ -9,7 +9,7 @@ import { workflowPathOf } from "../../process/read.mjs";
 import { modelFor } from "../../process/spec/models.mjs";
 import { resolveWorkflow } from "../../process/spec/presets.mjs";
 import { shellQuote as q } from "../../text/shell.mjs";
-import { suggestBuilder } from "../brief.mjs";
+import { suggestBuilder } from "../builder.mjs";
 import { answerText, heldText, routeText } from "../exec-view.mjs";
 import { DISPATCHES, expects, routeOf } from "../rounds.mjs";
 import { stackOf } from "../stack.mjs";

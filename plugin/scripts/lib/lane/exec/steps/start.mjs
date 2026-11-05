@@ -1,5 +1,5 @@
 // exec/steps/start — `lane exec start <id>`: a lane's checks, then the lane opened (`open-lane`).
-import { unknownCites } from "../../brief.mjs";
+import { unknownCites } from "../../decisions.mjs";
 import { refuseAtWriterCap, refuseLane, refuseMidLand } from "../admission.mjs";
 import { refuse } from "../lane.mjs";
 import { contractOf, mainBranchOf, openLane, stackParent } from "../open-lane.mjs";

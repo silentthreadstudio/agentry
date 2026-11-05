@@ -13,17 +13,12 @@ import { proseModelHint, unusedUiModel } from "../../process/spec/models.mjs";
 import { resolveWorkflow } from "../../process/spec/presets.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { boardPaths } from "../board-paths.mjs";
-import {
-  outsideOwns,
-  ownedFiles,
-  ownsTestsWithoutFile,
-  relatedNotes,
-  suggestBuilder,
-  withNew,
-} from "../brief.mjs";
+import { relatedNotes } from "../brief.mjs";
+import { suggestBuilder } from "../builder.mjs";
 import { sha256 } from "../carry-io.mjs";
 import { routeText } from "../exec-view.mjs";
 import { now, short } from "../fmt.mjs";
+import { outsideOwns, ownedFiles, ownsTestsWithoutFile, withNew } from "../owns.mjs";
 import { step as advance, begin, beginAt } from "../rounds.mjs";
 import { chainOf } from "../stack.mjs";
 import { create, git, remove } from "../worktree.mjs";

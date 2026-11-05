@@ -2,8 +2,8 @@
 // Run: node --test plugin/scripts/test/markdown.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ownedFiles } from "../lib/lane/brief.mjs";
 import { coveredBy } from "../lib/lane/exec/notes.mjs";
+import { ownedFiles } from "../lib/lane/owns.mjs";
 import {
   boldLeads,
   cellValue,

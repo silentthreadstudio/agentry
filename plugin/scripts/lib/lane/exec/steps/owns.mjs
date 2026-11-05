@@ -3,7 +3,8 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { PREVIEW } from "../../../cli/help.mjs";
 import * as ledgers from "../../../process/ledger.mjs";
-import { appendedAfter, withNew } from "../../brief.mjs";
+import { appendedAfter } from "../../brief.mjs";
+import { withNew } from "../../owns.mjs";
 import { PASSES, expects, verdicts } from "../../rounds.mjs";
 import { brief } from "../briefs.mjs";
 import { ownsPath } from "../guard/allow.mjs";

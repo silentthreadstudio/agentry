@@ -3,8 +3,8 @@
 // check that lets a verified carry go on as a rebase does.
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { runOf, runText } from "../../process/steps.mjs";
-import { ownedFiles, withNew } from "../brief.mjs";
 import { now } from "../fmt.mjs";
+import { ownedFiles, withNew } from "../owns.mjs";
 import { PASSES, verdicts } from "../rounds.mjs";
 import { git } from "../worktree.mjs";
 import { ownsPath } from "./guard/allow.mjs";

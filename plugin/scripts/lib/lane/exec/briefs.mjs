@@ -11,20 +11,20 @@ import {
   appendedAfter,
   bullets,
   carriedWork,
-  citedDecisions,
   notesSection,
   ownerChange,
   policySlots,
-  recalledFacts,
   recheckSlots,
   renderBrief,
   stepReminder,
   stepSlots,
   withSection,
 } from "../brief.mjs";
+import { citedDecisions } from "../decisions.mjs";
 import { ownedMark } from "../exec-view.mjs";
 import { now, short } from "../fmt.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
+import { recalledFacts } from "../recall.mjs";
 import { addRound, greenOn, verdicts } from "../rounds.mjs";
 import { branchOf } from "../worktree.mjs";
 import { headOf } from "./guard/snapshot.mjs";
