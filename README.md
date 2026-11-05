@@ -3,154 +3,196 @@
 </p>
 
 <p align="center">
-  <b>An adaptive agentic layer for Claude Code.</b><br>
-  Right-sized orchestration · SDLC specialists · durable memory that compounds.
+  <b>Built by one agent. Checked by another. Merged when green.</b><br>
+  Agentry is the harness around Claude Code.
 </p>
 
 <p align="center">
-  <code>v0.2 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
+  <code>0.3.0-dev.12 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
 </p>
 
 ---
 
-Agentry wraps Claude Code in **right-sized orchestration**, a roster of **SDLC specialists**, and **durable
-memory**. You give it a task through one front door — **`/agentry:go <task>`** — and it picks the *least
-process that wins*: a one-liner goes straight to a fix; a tangled feature earns a spec, a plan, independent
-verification, and a clean merge. The model doesn't change. The conducting, the specialists, and the learning
-memory are the product.
+Agentry sizes the process to the task, runs each task in its own git worktree against a written contract,
+has a second agent check the work, and lands it only after your repo's own checks pass. It remembers what
+each run decided, so the next run starts from it. The model stays the same. The conducting around it is the
+product.
+
+It is a Claude Code plugin: nine agents, fifteen skills, twenty-two slash commands and one CLI, `agentry`.
+Plain Node, no dependencies, nothing to build.
+
+## Who it is for
+
+- You use Claude Code on a real repository and want its work held to a bar: a contract, an independent
+  check, your own gate.
+- You keep a board (tasks in Markdown) and want each task built, verified and landed the same way every time.
+- You want the agent to stop re-deriving last week's decisions.
+
+## How it works
 
 <p align="center">
-  <img src="assets/what-is-agentry.png" alt="What is Agentry" width="820">
+  <img src="assets/harness.png" alt="The conductor routes a task to one-shot, spec-first or decompose" width="820">
 </p>
+
+- **The conductor.** Your main session. `/agentry:go <task>` routes the task to the least process that wins:
+  a clear, reversible change goes **one-shot**; an unclear "done" goes **spec-first**; several coupled parts
+  go **decompose + verify** (spec, plan, split, build, verify, assemble). It asks you at every fork.
+- **A contract per task.** A task names the files it owns, what it exposes and its acceptance. A builder
+  that needs a file outside its contract stops and asks instead of reaching across.
+- **Lanes in worktrees.** `/agentry:exec <id>` cuts `agentry/<id>` in its own worktree, briefs a builder,
+  then an independent verifier, round by round. The builder never works in your main checkout.
+- **An independent verifier.** The builder never grades its own work. A fresh verifier checks it against the
+  acceptance, with a security lens, and returns a verdict. It does not fix what it finds. Every lane gets
+  one by default; the `lean` preset keeps it for flagged items.
+- **A recorded gate.** The gate is your repo's own checks, named in `.agentry/workflow.json`. A lane closes
+  only on a green gate recorded on its tip, and `/agentry:merge` lands it only past that gate.
+- **Memory as `agentry mem`.** Decisions, gotchas and repo facts are kept as plain files, recalled per task,
+  and distilled from each run. [More below](#memory).
 
 ## Install
 
-**Requires Node ≥ 24** — the memory engine uses Node's built-in `node:sqlite` (no native modules, nothing to
-compile). From a Claude Code session:
+Requires Claude Code and Node 24 or newer. From a Claude Code session:
 
 ```
 /plugin marketplace add silentthreadstudio/agentry
 /plugin install agentry@agentry-dev
 ```
 
-Restart the session — agents and commands load at startup, and the plugin puts the `agentry` command on the PATH. Then:
+Restart the session. Agents, commands and skills load at startup, and the plugin puts `agentry` on the
+Bash tool's PATH.
+
+## First run
 
 ```
-/agentry:onboard                                       # warm memory on this repo (read-only)
-/agentry:go "add pagination to the users endpoint"     # the front door routes and conducts it
+/agentry:init                                        # learn your board, or scaffold one; never commits
+/agentry:go "add pagination to the users endpoint"   # routed, conducted, gated with you
 ```
 
-That's the whole setup.
+With a board and a task whose contract is written:
 
-## How it works — the right-sizing harness
+```
+/agentry:start        # where the work stands, and one recommendation
+/agentry:exec T-4     # build and verify T-4 in its lane, close on the gate
+/agentry:merge T-4    # land it on main; push asks you first
+/agentry:close        # drafts to confirm, cleanup, the handoff
+```
 
-`/agentry:go` routes every task to the **least process that wins**, then conducts it. The conductor (your main
-session) is biased to the floor and escalates only on evidence:
+## Main commands
 
-| Shape | When it's used | What runs |
-| :--- | :--- | :--- |
-| **one-shot** | a clear, reversible change with no hidden decision | a single bounded edit, then verify |
-| **spec-first** | "done = X" isn't clear yet, or the ask is product-shaped | shape a Spec with observable acceptance criteria, gate it, then build |
-| **decompose + verify** | multiple coupled parts, real design forks | spec → plan → split into tasks → build → verify → assemble |
-
-A hidden decision fork vetoes a one-shot; several coupled components earn a decompose. Once work is built and
-verified, the last mile has one bar: **done = merged + green.** At each step the conductor dispatches specialist
-subagents only when the work earns them, and **gates approvals with you** — you stay in the loop at every fork.
-
-<p align="center">
-  <img src="assets/harness.png" alt="The right-sizing harness" width="820">
-</p>
-
-## The specialists
-
-Each agent owns one slice of the SDLC. Its craft comes from preloaded **skills**, and it is **capability-first** —
-no tool allowlists; it uses whatever you have (Serena, web search, a browser MCP) and degrades gracefully when
-one's absent. The conductor dispatches a specialist only when the work needs it.
-
-| Agent | Owns |
+| Command | What it does |
 | :--- | :--- |
-| **product-owner** | the *what & why* — turns "make X better" into a Spec with observable acceptance criteria; also docs, READMEs, release notes |
-| **architect** | sound structure — module boundaries, ADRs, a Plan with an architecture map, then bounded Task contracts |
-| **implementer** | clean, bounded code **and tests** to a Task contract; also the debugging mode (reproduce → fix the smallest thing → prove it) |
-| **designer** | UX/UI craft — hierarchy, layout, accessibility, design-system fit — verified against the **rendered** result |
-| **verifier** | adversarial, **independent** verification against acceptance + a security lens; returns a Verdict, never fixes |
-| **explorer** | read-only comprehension of an existing codebase → a Context map (where things live, conventions, how data flows) |
-| **researcher** | investigates genuine unknowns (a library's current API, an external standard) → **cited** findings + implications |
-| **librarian** | runs the memory flows — curate, distill (episodes → facts), and *propose* skills (human-gated) |
+| `/agentry:go <task>` | The front door. Routes a task to one-shot, spec-first or decompose + verify, and conducts it. |
+| `/agentry:init` | Sets Agentry up for the repo: scaffolds a board or learns the one you have, then wires the lanes. |
+| `/agentry:start` · `/agentry:close` | Open and close a session the same way every time. |
+| `/agentry:exec <id>` | Builds one contracted task in its lane: worktree, builder, verifier, gate, episode. No merge, no push. |
+| `/agentry:merge <id>` | Lands one task: preflight, your checks, cherry-pick, gate, one board commit, push per policy. |
+| `/agentry:board` | Derived status, drift and every rule finding. Read-only unless `--apply`. |
+| `/agentry:new <kind>` | Adds a task, sprint, question or decision everywhere that kind lives. |
+| `/agentry:ask <question>` | One read-only specialist answers with cited sources. No edits. |
+| `/agentry:fix <failure>` | A repro-first debug run: reproduce, isolate, fix, leave a regression test. |
+| `/agentry:ship` | Branch, commit, PR, CI, merge. Stops before anything leaves the machine. |
+| `/agentry:remember` · `/agentry:reflect` | Capture one memory now; curate and distill after a piece of work. |
 
-Every step is also a standalone command (`/agentry:spec`, `/agentry:plan`, `/agentry:implement`, `/agentry:verify`,
-`/agentry:ship`, …) emitting one typed artifact. `/agentry:go` chains them for you; you can also drive a single
-one by hand — same machinery, one shared contract.
+Every step also runs on its own: `/agentry:spec`, `plan`, `split`, `implement`, `verify`, `assemble`,
+`research`, `onboard`, `config`.
 
-## Architecture
+Underneath the slash commands is one CLI the agents call, and so can you:
 
-The **repo root is the plugin marketplace.** `plugin/` is the **shipped payload** — installing copies only that
-directory, never the dev tree: plain Node ≥ 24 scripts with no dependencies, nothing to build. TypeScript dev
-packages live under `packages/`.
+```
+agentry board status            # the board: status, check, add, set, fix, …
+agentry lane exec show T-4      # the lanes: exec, merge, session, sweep, …
+agentry mem recall --query "…"  # the memory store
+agentry run --limit 10m -- <cmd>
+```
 
-| Where | What it is |
-| :--- | :--- |
-| `plugin/` | the **shipped plugin** — `agents/ commands/ skills/` + `bin/agentry` and the `scripts/` it runs (board, lane, mem) |
-| `plugin/.claude-plugin/plugin.json` | the manifest |
-| `.claude-plugin/marketplace.json` | the marketplace manifest (stays at the repo root; `source: "./plugin"`) |
-| `packages/core` | `@agentry/core` — the single typed contract every node shares |
-| `packages/web` | the site |
-| `packages/eval` | the self-evaluation harness |
+Board writes preview until `--apply`, most commands take `--json`, and every group and subcommand has a
+`--help` with its flags, exit codes and an example.
 
-## Memory — the moat that compounds (mandatory)
+## Memory
 
-A local, **zero-install** CLI, `agentry mem <verb>` (`recall`, `write`, `search`, `episode`, `stats`, … ;
-`agentry mem --help`), on Node's built-in `node:sqlite`. **Text files are the source of truth; a derived SQLite
-index powers recall.** It's project-rooted (the repo's main checkout, from any of its worktrees) with a global
-root alongside, so facts and episodes follow the work. A lane's `exec close` writes its episode itself.
+Memory is the `agentry mem` CLI over plain Markdown files. Nothing runs in the background.
 
-Recall is **task-specific** — pulled per task, ranked by relevance × confidence × usefulness, never a session-start
-dump. Writes pass a write-bar; stale facts decay; a graduation pipeline turns **episodes → facts → skills**. The
-payoff: the second time Agentry meets a decision it settled before, it recalls it, applies it, and routes the task
-lighter — spec-first becomes one-shot. **Run #2 is warmer than run #1.**
+- **Two roots.** `.agentry/memory/` in the repo's main checkout holds what is true for this repo, reached
+  from any of its worktrees. `~/.agentry/memory/` holds what is true across your work (`AGENTRY_GLOBAL_DIR`
+  moves it).
+- **Files are the truth.** The search index is built with Node's `node:sqlite` in memory on each call and
+  never written to disk. No database file, nothing to migrate.
+- **Recall is per task.** `agentry mem recall --query "<the task>"` returns a few memories (five by default),
+  ranked by relevance × confidence × usefulness.
+- **Writes reinforce.** A write that nearly matches a fact already stored reinforces it instead of copying
+  it; `--supersedes <id>` replaces one.
+- **Use shapes it.** `agentry mem feedback` raises the memories a passing run used; ones recalled and never
+  used decay and are archived after repeated misses (`agentry mem recover` brings one back).
+- **Runs become facts.** `/agentry:exec` closes a lane by writing its episode, with the lesson you give it.
+  `agentry mem distill` turns episodes into draft facts; `agentry mem consolidate` proposes skills and installs
+  nothing.
 
-## Does it work? — yes, and we measure it
+The verbs: `recall`, `write`, `search`, `feedback`, `episode`, `stats`, `distill`, `consolidate`,
+`update`, `forget`, `recover`, `resync`. `agentry mem --help` lists them.
 
-Agentry ships a self-evaluation harness that scores its own routing, decision quality, and memory-compounding —
-every number gated by controls and read from real work artifacts, never a proxy. Reproduce it yourself:
+Coming from an earlier version: the memory MCP server is gone. Existing stores read unchanged, same files
+and roots.
+
+## Safety model
+
+Nothing lands or leaves the machine without you.
+
+- **Lanes never merge or push.** A builder works on `agentry/<id>` in its own worktree. Landing is a separate
+  command, `/agentry:merge`, and it stops at the first red step.
+- **Pushing asks.** `merge.push` is `ask` by default: the push runs only with your yes. `/agentry:ship` stops
+  at the authorization gate before anything leaves the machine.
+- **Your calls stay yours.** When you reject a proposal or state a rule, the conductor drafts it; nothing is
+  written as a decision until you confirm. Closing work that already reached main
+  (`lane merge <id> --resolve landed`) or a stuck land is your call too.
+- **Claude Code's permission prompts still apply.** Agentry runs inside them.
+- **Local.** Memory, the board and lane state are files on your machine. The plugin has no telemetry and
+  sends nothing anywhere.
+
+## Does it work?
+
+Agentry ships a self-evaluation harness that scores its own routing, decision quality and memory against
+controls, from the artifacts of real conducted runs:
 
 ```bash
-pnpm install                                   # at the repo root (the packages are a pnpm workspace)
-pnpm --filter @agentry/core build              # @agentry/eval imports the built contract
+pnpm install && pnpm --filter @agentry/core build
 pnpm --filter @agentry/eval selfeval run bench --fixtures-dir fixtures/bench --plugin-dir ../..
-pnpm --filter @agentry/eval selfeval replay <run-id>    # offline re-analysis of a stored run — zero API
-pnpm --filter @agentry/eval selfeval report <run-id>    # → a self-contained dashboard HTML
+pnpm --filter @agentry/eval selfeval report <run-id>    # a self-contained HTML report
 ```
 
-`--plugin-dir` is the Agentry **repo root** (the folder that holds `plugin/`); the bench starts `claude` with
-`--plugin-dir <repo-root>/plugin`, and refuses to run if that folder has no `plugin.json`. Paths are relative to
-`packages/eval`.
+`--plugin-dir` is the repo root (the folder that holds `plugin/`); paths are relative to `packages/eval`.
 
-> **Read this before `run bench`.** It runs `claude -p` with `--permission-mode bypassPermissions` on **your own
-> machine**: the conducted model can read and write files and run commands without asking. Each task runs in a
-> fresh temp directory, but nothing sandboxes the process from the rest of your system, and every conduct and
-> judge call spends real API credit (`--budget-usd <n>` stops new tasks past a cap). Run it only on a machine and
-> account you are comfortable with that. `replay` and `report` make no API calls.
->
-> **Earlier results.** Bench results recorded before this fix ran without the Agentry plugin: `claude` was started
-> with the repo root, not `plugin/`, so no `agentry:*` subagents or `mem` server were loaded. Do not quote them
-> as measurements of Agentry.
+> **Read this before `run bench`.** It runs `claude -p` with `--permission-mode bypassPermissions` on your
+> machine: the conducted model reads and writes files and runs commands without asking. Each task runs in a
+> fresh temp directory, but nothing sandboxes the process from the rest of your system, and every call spends
+> API credit (`--budget-usd <n>` caps it). `replay` and `report` make no API calls. Bench results recorded
+> before the `--plugin-dir` fix ran without the plugin loaded; do not quote them as measurements of Agentry.
 
-One conducted run per fixture yields every axis — decision quality, code correctness, honesty/overclaim, and
-escaped defects — so the probes share a run instead of each paying for their own.
+## Status
 
-## Repo layout & dev
+Pre-1.0. Installing from the marketplace gives you `main`, now `0.3.0-dev.12`; the last tagged release is
+`v0.2.0`. Commands and flags can still change between dev builds, and [`CHANGELOG.md`](./CHANGELOG.md) records
+each change. Claude Code is the host today.
 
-```
-plugin/            the shipped plugin (agents · commands · skills · bin · scripts)
-packages/          TypeScript dev sources (core · web · eval)
-```
+## Docs
 
-One standing rule if you hack on the plugin: `node scripts/check-plugin.mjs` must pass before every commit. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full dev setup and the bar a change is held to.
+The site has the long form: [agentry.silentthreadstudio.com](https://agentry.silentthreadstudio.com/).
 
-## Maturity & license
+- [Quickstart](https://agentry.silentthreadstudio.com/docs/quickstart/) ·
+  [Install](https://agentry.silentthreadstudio.com/docs/install/) ·
+  [When to use it](https://agentry.silentthreadstudio.com/docs/when/)
+- [Lanes](https://agentry.silentthreadstudio.com/docs/lanes/) ·
+  [Memory](https://agentry.silentthreadstudio.com/docs/memory/) ·
+  [Permissions](https://agentry.silentthreadstudio.com/docs/permissions/)
+- [Security](https://agentry.silentthreadstudio.com/docs/security/) ·
+  [Troubleshooting](https://agentry.silentthreadstudio.com/docs/troubleshooting/)
 
-**v0.2, pre-1.0.** The shape is settled and the core paths are exercised, but contracts can still change between
-versions. Use it, file issues, expect some churn.
+## Contributing
 
-MIT.
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) has the dev setup and the bar a change is held to. The plugin ships
+from `plugin/`; the TypeScript packages under `packages/` (`core`, `web`, `eval`) are dev-only.
+`node scripts/check-plugin.mjs` must pass before every commit. Security reports go through
+[`SECURITY.md`](./SECURITY.md), not a public issue.
+
+## License
+
+MIT. Built by Esteban Estrada in the [Silent Thread](https://silentthreadstudio.com) Lab.
