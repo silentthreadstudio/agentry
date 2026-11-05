@@ -1,5 +1,5 @@
 // markdown — the pure half of reading a board: headings, sections, tables, bold-lead lines and
-// frontmatter, plus the cell parsers the process file's field types name (plan F13 §3.1).
+// frontmatter, plus the cell parsers the process file's field types name.
 //
 // PURE: every function takes text and returns data. No I/O, no knowledge of the process file; `read.mjs`
 // decides what a cell means. Line numbers are 1-based, as an editor shows them. The one fence rule every
@@ -211,7 +211,7 @@ export function filenameId(pattern) {
   return new RegExp(`^${pattern.split("{id}").map(wildcardSource).join("(.+?)")}$`);
 }
 
-// Cell parsers, one per field type (plan F13 §3.1). Each takes a plain cell.
+// Cell parsers, one per field type. Each takes a plain cell.
 const PARSE = {
   list: (v) =>
     v

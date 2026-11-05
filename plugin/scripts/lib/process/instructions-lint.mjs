@@ -1,7 +1,7 @@
 // board instructions --lint — reads the repo's instruction files and points at the lines that compete with
-// the Agentry block (A41), each with the replacement to offer. Suggest only: it never writes. Read in this
-// order, each once (a link to a file already read is not read again): AGENTS.md, CLAUDE.md,
-// .claude/CLAUDE.md, CLAUDE.local.md and the workflow file's `conductor.prompt`. A file that is absent is
+// the Agentry block, each with the replacement to offer. Suggest only: it never writes. Read in this
+// order, each once (a link to a file already read is not read again): AGENTS.md, CLAUDE.md,.
+// claude/CLAUDE.md, CLAUDE.local.md and the workflow file's `conductor.prompt`. A file that is absent is
 // skipped; one that can't be read prints `skip: <name>: <why>` and the rest still run. Exit 1 with
 // findings, else 0.
 //

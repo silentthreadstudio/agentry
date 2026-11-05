@@ -190,7 +190,7 @@ function execRows(spec) {
   });
   return [
     row("verify", exec.verify === "flagged" ? `flagged · ${keyed}` : exec.verify),
-    // Read live by every running lane (field 84); the other exec keys are fixed at each lane's start.
+    // Read live by every running lane; the other exec keys are fixed at each lane's start.
     row("noteRounds", `${exec.noteRounds} (live)`),
     row("final", exec.final),
     row("rebase", exec.rebase),
@@ -266,7 +266,7 @@ function keys({ root, spec }) {
   return rows.filter(Boolean).map(([lane, value, ok = true]) => ({ lane, ok, value, set: INIT }));
 }
 
-// The models row, with the warning for a verify model the route never uses (field 70).
+// The models row, with the warning for a verify model the route never uses.
 function modelsRow(spec) {
   const value = modelsValue(spec.models);
   const unused = unusedUiModel(spec.models, resolveWorkflow(spec).exec.verify);

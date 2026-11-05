@@ -10,7 +10,7 @@ function git(root, args) {
   return res.status === 0 ? res.stdout : null;
 }
 
-// ---- is a change still in effect on a later commit (A23: done = on main now) ----
+// ---- is a change still in effect on a later commit (done = on main now) ----
 //
 // The question `board fix` asks before it writes done: is the net change `from..to` (commits on `onto`'s
 // history) still in `onto`'s tree, AT THE PLACE IT LANDED? `git apply --check -R` cannot answer it: a

@@ -1,6 +1,6 @@
-// board next-id <kind> — the next free id from the kind's `create.id` pattern (plan F13 §2.4; see
+// board next-id <kind> — the next free id from the kind's `create.id` pattern (see
 // `ids.mjs`), or with `--family <prefix>` the next free one in that prefix family across the board, whatever
-// `create.id` says (field 85). Exit 2 when the kind asks for its ids (`"ask"`) and no family is given, the
+// `create.id` says. Exit 2 when the kind asks for its ids (`"ask"`) and no family is given, the
 // pattern needs more than a number, or the family is missing or has no letter. Writes nothing.
 //
 // run(argv, { spec, model }) -> { exit, out }

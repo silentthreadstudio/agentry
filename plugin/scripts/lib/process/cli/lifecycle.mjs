@@ -1,7 +1,7 @@
 // board lifecycle <event> <id> [--verdict v] [--sha s]… [--summary t] [--apply] [--json] — apply one
-// harness event to a board item through `lifecycle.mjs` (plan R1b §3.1): the status, verdict, commit cell
+// harness event to a board item through `lifecycle.mjs`: the status, verdict, commit cell
 // and handoff line the process file's `lifecycle` maps it to, in one write or none. Without `--apply` it
-// runs the same edits and refusals and writes nothing (A39).
+// runs the same edits and refusals and writes nothing.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written, previewed or every step skipped,
 // 2 = usage or refusal (nothing written)

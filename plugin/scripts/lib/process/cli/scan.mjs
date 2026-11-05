@@ -1,4 +1,4 @@
-// board scan [<dir>] [--json] — every board-like thing in the repository's markdown (plan F13 §2.4),
+// board scan [<dir>] [--json] — every board-like thing in the repository's markdown,
 // the grounding `/agentry:init` learns a process from: each table (file, line, heading, header, row
 // count, a first-column sample), the id-led bold leads and headings (contract blocks) and the
 // frontmatter docs. The whole repository means its git-tracked `*.md` (every one on disk, outside

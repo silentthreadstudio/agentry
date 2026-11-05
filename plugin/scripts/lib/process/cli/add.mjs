@@ -1,10 +1,10 @@
 // board add <kind> --fields '{"id": "…", …}' [--apply] — write a new item at every `create` location of its
-// kind: each row (own table, or the parent's file) and each block (plan F13 §2.2, §2.4). The id is passed
+// kind: each row (own table, or the parent's file) and each block. The id is passed
 // in (`next-id` proposes it) or, when `create.id` is a pattern and none is given, filled the same way and
 // printed; only `create.id: "ask"` requires it. A duplicate id is refused. All files are edited as one
 // step, or none. A parent given as one of its field's `also` values (LATER) is no item: the parent-file
 // rows and the blocks that name `{parent.…}` are skipped, and the output says so. Without `--apply` it
-// runs the same edits and refusals, prints the lines each place would get, and writes nothing (A39). A
+// runs the same edits and refusals, prints the lines each place would get, and writes nothing. A
 // write is recorded (`board-writes.mjs`) so a running lane's main-touched guard lets it through.
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written or previewed, 2 = usage

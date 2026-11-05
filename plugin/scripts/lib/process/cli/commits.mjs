@@ -1,4 +1,4 @@
-// board commits --learn [--min <n>] — the `commits` rules the default branch's history keeps (field 91):
+// board commits --learn [--min <n>] — the `commits` rules the default branch's history keeps:
 // its last 500 first-parent subjects read, the Conventional Commits types plus each other type used
 // `--min` times or more (default 3) with its count, the subject length and whether scopes are always there.
 // Prints the rules for init to propose through its draft; writes nothing. Needs no process file.

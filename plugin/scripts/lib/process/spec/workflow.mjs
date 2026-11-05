@@ -46,7 +46,7 @@ const lifecycle = shape({
 export const execKindSchema = shape({ "on!": on, write: shape(writes) }, FULL);
 // The repo's gate: its tiers (argv, no shell, each but the last with a `when`), the tier each role runs,
 // a manual checklist and the files it may leave changed; the repo skills merge runs as checks; the
-// repo's conductor prompt (plan R1b §2, §3.1).
+// repo's conductor prompt.
 const argv = filled(text);
 const globs = filled(repoPath);
 // A log glob for `gate.flakyLogs`: from the gate's cwd, or from the temp directory when it starts `$TMPDIR/`.

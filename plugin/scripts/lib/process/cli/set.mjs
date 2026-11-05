@@ -1,6 +1,6 @@
 // board set <kind> <id> <field>=<value> [--apply] — change one mechanical field of one item: a table cell,
-// or a frontmatter key for a one-file-per-item kind. One cell per write, every other byte kept (plan F13
-// §2.4). Without `--apply` it runs the same edit and refusals and writes nothing (A39). A write is
+// or a frontmatter key for a one-file-per-item kind. One cell per write, every other byte kept.
+// Without `--apply` it runs the same edit and refusals and writes nothing. A write is
 // recorded (`board-writes.mjs`) so a running lane's main-touched guard lets it through.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written or previewed, 2 = usage or refusal

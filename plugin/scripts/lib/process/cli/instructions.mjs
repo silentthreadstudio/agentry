@@ -1,7 +1,7 @@
 // board instructions [--target agents|local] [--apply] — the Agentry block in `<root>/AGENTS.md` (or, with
 // `--target local`, in `<root>/CLAUDE.local.md`, so the block stays out of a public repo) and the `@AGENTS.md`
 // import in `<root>/CLAUDE.md` (or `<root>/.claude/CLAUDE.md` as `@../AGENTS.md`, when that is where the
-// repo's project instructions live and there is no root one), for `/agentry:init` (plan R1b-8, F18).
+// repo's project instructions live and there is no root one), for `/agentry:init`.
 // Without `--apply` it prints what would change (the block's lines as `-`/`+`) and writes nothing; with it,
 // it writes the same. The target file is created when absent; CLAUDE.md never is, and gets the import only
 // when it exists without one (none for CLAUDE.local.md: Claude Code loads it itself). Without `--target`

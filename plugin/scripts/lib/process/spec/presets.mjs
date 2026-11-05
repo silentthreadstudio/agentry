@@ -1,4 +1,4 @@
-// presets — the exec lane's workflow presets (A47, A48, #49) and the one home of their defaults: `lean`,
+// presets — the exec lane's workflow presets and the one home of their defaults: `lean`,
 // `standard` (the default) and `strict`, each a value for every exec key a preset sets and the tier each gate
 // role runs. A key the workflow file gives wins over its preset, `gate.roles` per role. Also the exec keys'
 // load check, which `workflow.mjs` puts in the workflow schema. PURE: never reads, never throws.

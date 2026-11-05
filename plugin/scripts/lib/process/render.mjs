@@ -1,4 +1,4 @@
-// render — the board as terminal text (the pinned F13 checker design). Line 1 is always the verdict
+// render — the board as terminal text (the pinned checker design). Line 1 is always the verdict
 // with the exit code, because Claude Code folds long tool output and shows the top. One line per
 // thing, ≤ WIDTH columns, no emoji. Color only on a TTY and only on glyphs; words keep the default
 // color (bold and dim mark structure). PURE: data in, text out.

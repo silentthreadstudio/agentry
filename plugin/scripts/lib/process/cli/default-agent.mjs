@@ -1,5 +1,5 @@
-// board default-agent [--apply] [--verify [static|live]] — the project's default main-session agent
-// (F23), for `/agentry:init`. Prints JSON `{ settings, current, wrote, resolved, how }`: the settings
+// board default-agent [--apply] [--verify [static|live]] — the project's default main-session agent,
+// for `/agentry:init`. Prints JSON `{ settings, current, wrote, resolved, how }`: the settings
 // file, its `agent` before any write (null when unset), whether this run wrote it, and whether
 // `agentry:conductor` resolves ("unchecked" without `--verify`). `--apply` sets it (replacing a
 // different value) in `<root>/.claude/settings.json`; without it a different value is only reported.

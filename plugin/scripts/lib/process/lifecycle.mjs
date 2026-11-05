@@ -1,4 +1,4 @@
-// lifecycle — the one place a harness event becomes board writes (plan R1b §3.1): the status, the
+// lifecycle — the one place a harness event becomes board writes: the status, the
 // verdict, the commit cell and the handoff line, as the workflow file's `lifecycle` maps them. Every
 // edit of one event goes through one `write.applyAll` (all or nothing, re-read guard); a refusal is a
 // `WriteError` and nothing is written. No `lifecycle` key: nothing is written, every step is skipped
@@ -6,7 +6,7 @@
 //
 // Events: dispatched · built · failed → the status `on` maps them to. verdict (data.verdict) → the
 // verdict field; FAIL also applies "failed"; a pass leaves the status (only the merge makes a task
-// done, A23). cut → `on.cut`, the status of a lane retired by `exec cut` (field 95). merged (data.shas, first landed first; data.summary) → `on.merged`, the commit cell
+// done). cut → `on.cut`, the status of a lane retired by `exec cut`. merged (data.shas, first landed first; data.summary) → `on.merged`, the commit cell
 // `<first>` or, for several, the shas joined by the separator the board's done rows use (the field's `join`
 // pins it; `<first>…<last>` when nothing is learned) (short SHAs) and the handoff line in the parent's file, naming the
 // first. A `writes` file is relative to the git root. A step whose edit changes nothing (already set,

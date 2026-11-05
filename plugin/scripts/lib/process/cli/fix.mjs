@@ -1,5 +1,5 @@
-// board fix [--accept <id>] [--apply] [--json] — write what is provable, report the rest (A23, A31; plan
-// R1b-6). A task whose `lane merge` record still holds on main (`drift.mechanical`: it matches its branch,
+// board fix [--accept <id>] [--apply] [--json] — write what is provable, report the rest.
+// A task whose `lane merge` record still holds on main (`drift.mechanical`: it matches its branch,
 // its landed commits are main's first-parent history and their change is still in effect where it landed)
 // and whose board row lacks the done status, the commit cell or the handoff line gets the lifecycle's
 // `merged` event narrowed to those missing steps, through `applyEvent`, in one write: a step the board
@@ -8,7 +8,7 @@
 // it with `--accept <id>`, which writes it only while the commits carrying it are still in effect on main
 // (`drift.accepted`). Anything unsure writes nothing and is listed, as is every other drift, with the
 // command that deals with it. The output lists exactly the writes made; running it again finds nothing to
-// do; without `--apply` it writes nothing and says what it would fix (A39). A row wider than 80 columns
+// do; without `--apply` it writes nothing and says what it would fix. A row wider than 80 columns
 // wraps between words: a command is never cut.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = nothing left for the owner, 1 = items left

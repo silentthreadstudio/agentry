@@ -1,4 +1,4 @@
-// spikes — reading the agent worktrees the owner filed (field 87): `.agentry/run/spikes.json` in the main
+// spikes — reading the agent worktrees the owner filed: `.agentry/run/spikes.json` in the main
 // checkout, a list of `{ branch, path, for?, keep?, at, calls? }`, one per branch. `drift.mjs` reads it to
 // show a filed worktree as kept or as work for its item, never as an unlisted one; the lanes read it too.
 // The writes are `lane/spikes.mjs`'s. Node built-ins only.

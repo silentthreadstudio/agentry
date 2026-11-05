@@ -1,10 +1,10 @@
-// steps — the Steps part of a contract block (field 48): numbered steps the lane builds in runs, the
+// steps — the Steps part of a contract block: numbered steps the lane builds in runs, the
 // owner's gates between them, and the acceptance items tagged to each step. PURE: no I/O.
 //
 // The part opens at a `**Steps:**` / `**Steps**:` label or a `Steps` heading of any level and holds one
 // numbered item per line (`1.` or `1)`); a more indented line joins the item above; it ends at the next
 // bold label or heading. A label followed on its own line by `1. ` lists the steps inline: that is a
-// problem, never parsed, and its words carry a best-effort rewrite, one step per line (field 96). An item
+// problem, never parsed, and its words carry a best-effort rewrite, one step per line. An item
 // ending `→ owner OK`, `-> owner OK` or `— owner OK` (any case, optional period, `**owner OK**`, a trailing
 // `(note)` kept as the step's `note`) has an owner gate; a step that talks of an owner gate but ends
 // with none is a problem; one ending

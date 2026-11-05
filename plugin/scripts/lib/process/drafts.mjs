@@ -1,4 +1,4 @@
-// drafts — the owner's calls the conductor caught in conversation and has not yet written down (plan R1b §5):
+// drafts — the owner's calls the conductor caught in conversation and has not yet written down:
 // `<main root>/.agentry/run/process/drafts.jsonl`, one JSON object per line, never committed. A draft is
 // `{ n, kind: "decision" | "rule", answer, why?, question?, unpicked?, source?, at, state }`. `n` is the line it
 // was added on and is never reused: applying or dropping a draft changes its `state`, it does not remove

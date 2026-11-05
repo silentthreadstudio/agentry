@@ -1,4 +1,4 @@
-// write — the only way the kit changes a user's board file (plan F13 §4.5, §6). Mechanical fields
+// write — the only way the kit changes a user's board file. Mechanical fields
 // only, written directly so they show in the user's diff.
 //
 // The edits are PURE text → text: they change one cell, one line or one inserted row/block and leave

@@ -1,4 +1,4 @@
-// contract — an item's contract block, found by id in any case (plan F13 §8, the old F2 lookup). Tiers,
+// contract — an item's contract block, found by id in any case. Tiers,
 // the first with a hit answers: (1) with a process file, the files the item's own rows link as its
 // contract (`[contract](path#anchor)` on the board or in its parent's file), then the kind's
 // `contract.blocks`; a titled or owning block beats an acceptance-only line, which beats a bare one
@@ -8,8 +8,8 @@
 // cannot answer). Two hits in tier 2 or 3 are `ambiguous`.
 //
 // A block starts where its id is the first token of a heading (`### F1 · …`), of a bold run at the
-// start of a line or right after a sentence (`- **T-03** (…)`, `**A1 splits.** **A1a** …`), or of a
-// table row (`| T-03 | … |`, the row alone). Ids match exactly apart from case: `DS-1` never matches
+// start of a line or right after a sentence (`- **T-3** (…)`, `**A1 splits.** **A1a** …`), or of a
+// table row (`| T-3 | … |`, the row alone). Ids match exactly apart from case: `DS-1` never matches
 // `DS-1a`. Reads files; asks git only which files are tracked.
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";

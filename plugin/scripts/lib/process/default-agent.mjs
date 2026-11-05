@@ -1,4 +1,4 @@
-// default-agent — the project's default main-session agent (F23): reads and merge-writes `"agent":
+// default-agent — the project's default main-session agent: reads and merge-writes `"agent":
 // "agentry:conductor"` in `<root>/.claude/settings.json`, and checks that it resolves. The only
 // `.claude/` I/O in the process kit. Set per project, never in the plugin's own `settings.json` (a
 // plugin-level `agent` would take over every session where the plugin is enabled).

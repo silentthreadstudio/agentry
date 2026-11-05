@@ -1,5 +1,5 @@
 // drift — work done outside Agentry's commands, found by comparing the worktrees, the ledgers, the board and
-// main with each other (A35; plan R1b-6). No hook: `board status` asks every time. Two answers:
+// main with each other. No hook: `board status` asks every time. Two answers:
 //
 //   nudges(args)     -> [{ kind, id?, path?, branch?, command }]   what to flag, naming the command to use
 //   mechanical(args) -> { fixes, left }                            what `board fix` may write, and what it only reports
@@ -14,7 +14,7 @@
 // wrote) and `stale-status` (a hand status file still listing a finished task; one for the file). A task gets one nudge at most, in that order of precedence: merged-by-hand, verified-not-merged,
 // episode-pending. Without a `lifecycle` the board has no started words, so `started-by-hand` stays quiet.
 //
-// Done is written only when provable (A23): a `lane merge` record that matches its branch, whose landed
+// Done is written only when provable: a `lane merge` record that matches its branch, whose landed
 // commits are still main's first-parent history right after the record's preHead, and whose change is
 // still in effect on main's tip where it landed (`inEffect`: every line it added still there, every
 // line it removed not back, by line history, not by matching text). Anything else is "unsure" and nothing
@@ -76,7 +76,7 @@ const accept = (id) => `/agentry:board fix --accept ${id ?? "<id>"}`;
 // nothing left to land), and only then can the owner accept it.
 const adopt = (id, branch) => `${merge(id)} --branch ${w(branch)}, then ${accept(id)}`;
 // Work in a worktree no ledger knows, for item `id` (branch `b`, null when unknown): land it as it is, or
-// continue it in a lane (field 86). An orphan `agentry/<id>` is the branch a lane for `id` would cut, so
+// continue it in a lane. An orphan `agentry/<id>` is the branch a lane for `id` would cut, so
 // it only lands. Real names are shell-quoted when they need it; the placeholders are not.
 function landOrContinue(id, b) {
   const [i, br] = [id ?? "<id>", b ? w(b) : "<b>"];
@@ -98,7 +98,7 @@ function refusedBranch(b, tips) {
       : `${b} has no commits yet: commit on it ${then}`;
   return twin ? `${b} has a case twin ${twin}: rename one first ${then}` : null;
 }
-// An unlisted worktree not on main: those, file it (`lane spike`), or remove it (field 87). One on a
+// An unlisted worktree not on main: those, file it (`lane spike`), or remove it. One on a
 // branch they all refuse (`refusedBranch`) only removes, and the row says how to make them take it.
 function unlisted(tree, runRoot, id, tips) {
   const path = w(shownPath(runRoot, tree.path));

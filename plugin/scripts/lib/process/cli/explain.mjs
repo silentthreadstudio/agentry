@@ -1,4 +1,4 @@
-// board explain [--json] — how the process file meets the board (plan F13 §2.4), the ground truth
+// board explain [--json] — how the process file meets the board, the ground truth
 // `/agentry:init` learns against: per kind, where it was found, its items, table columns no field
 // maps, unknown status values, unresolved refs and read problems; per catalog rule, on or off and its
 // finding count; then the lanes (the workflow file, gate, conductor, trigger block, default agent, push policy, merge

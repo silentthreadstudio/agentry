@@ -1,5 +1,5 @@
 // board check [--json] [--why <id>] — read the board, run the process file's rules, print the
-// verdict and the findings (plan F13 §2.4). Writes nothing. Exit 0 = OK, 1 = findings, 2 = a
+// verdict and the findings. Writes nothing. Exit 0 = OK, 1 = findings, 2 = a
 // `conductor.prompt` that is not a file or a `conductor.rules` heading it does not hold.
 //
 // run(argv, { root, spec, model }) -> { exit, out }

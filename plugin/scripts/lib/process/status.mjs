@@ -1,4 +1,4 @@
-// status — the checked board and its derived view (plan F13 §3.5), built fresh every call from the
+// status — the checked board and its derived view, built fresh every call from the
 // Model, the rule findings, git and the optional note file. Nothing is written to the repo and nothing is
 // cached here (git.mjs keeps its per-process answers); listing the ledgers sweeps the temp files of dead
 // writers.

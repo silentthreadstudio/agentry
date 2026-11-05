@@ -1,5 +1,5 @@
-// ledger — a lane task's state on disk: `<main root>/.agentry/run/process/ledger/<id>.json` (shape pinned
-// in the R1b plan §3.1), with its run files (briefs, reports, gate logs) in `…/process/runs/<id>/`. A
+// ledger — a lane task's state on disk: `<main root>/.agentry/run/process/ledger/<id>.json` (shape pinned),
+// with its run files (briefs, reports, gate logs) in `…/process/runs/<id>/`. A
 // restart's archive of them is `ledger/.archive/<id>.<n>.json` and `runs/.archive/<id>.<n>/`: an id opens
 // with a letter or a digit, so no id's ledger or run dir reaches a dot directory. Older restarts kept them
 // flat as `ledger/<id>.<n>.json` and `runs/<id>.<n>/`, names the valid id `<id>.<n>` reaches too: such a

@@ -1,6 +1,6 @@
 // models — the workflow file's `models` key (mirrors core's `Models`) and the model each exec dispatch
-// names, with where it came from (field 73): for a builder the run's step marker (field 96), then a
-// contract bullet, then a path entry, then the key itself. And the model a route never uses (field 70).
+// names, with where it came from: for a builder the run's step marker, then a
+// contract bullet, then a path entry, then the key itself. And the model a route never uses.
 // PURE: never reads, never throws.
 //
 //   modelsSchema                                            the `models` checker (workflowSchema's entry)

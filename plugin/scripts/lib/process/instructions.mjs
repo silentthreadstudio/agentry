@@ -1,5 +1,5 @@
-// instructions — the Agentry block in a repo's `AGENTS.md` and the `@AGENTS.md` import in its `CLAUDE.md`
-// (plan R1b §3, F18). AGENTS.md is the one instruction file every host reads; Claude Code reads it next to
+// instructions — the Agentry block in a repo's `AGENTS.md` and the `@AGENTS.md` import in its `CLAUDE.md`.
+// AGENTS.md is the one instruction file every host reads; Claude Code reads it next to
 // a CLAUDE.md only through that import. PURE: text in, text out. The block sits between `BEGIN` and `END`,
 // and nothing outside the markers is ever changed. Re-running gives the same bytes, and a file's CRLF line
 // ends are kept. Markers inside a fenced code block are examples, not the block; likewise an import inside

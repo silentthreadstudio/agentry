@@ -1,4 +1,4 @@
-// read — process file (+ its sibling workflow file) + board files → the Model (plan F13 §6): items per kind with header-named
+// read — process file (+ its sibling workflow file) + board files → the Model: items per kind with header-named
 // fields, the tree, phases (own or derived from children), ranks, each item's own file and sections.
 // It reads the process file and the board's files; the run state under `.agentry/run` and the repo's other
 // documents are read by their own modules (`ledger`, `drafts`, `contract`, …), git by `git.mjs`. A missing

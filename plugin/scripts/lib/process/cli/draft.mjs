@@ -1,5 +1,5 @@
 // board draft add --fields '{…}' | list | drop <n> | apply <n> — the owner's calls the conductor caught in
-// conversation, held until the owner says OK (plan R1b §5). `add` keeps a draft in `.agentry/run`, `list` shows
+// conversation, held until the owner says OK. `add` keeps a draft in `.agentry/run`, `list` shows
 // the pending ones, `drop` forgets one, and `apply` writes it: a decision through `next-id` and `add` with the
 // workflow file's `drafts.decision.map` (`{answer}`, `{why}`, `{question}`, `{unpicked}`; with none in the file,
 // a map derived from the decision kind), a rule as a line under `conductor.rules` in the conductor prompt.
@@ -7,8 +7,8 @@
 // after the owner's OK. The drafts live in the main checkout, so `apply` edits the main checkout's board: from
 // inside a linked worktree it refuses rather than write the edit in one checkout and the state in another. A
 // line of the drafts file that is not a draft is kept as written and named in the output of list, drop and
-// apply. `apply <n>` alone shows what it would write and writes nothing; `apply <n> --apply` writes it
-// (A39). `add` and `drop` write only the drafts file under `.agentry/run`, never the repo: holding a draft
+// apply. `apply <n>` alone shows what it would write and writes nothing; `apply <n> --apply` writes it.
+// `add` and `drop` write only the drafts file under `.agentry/run`, never the repo: holding a draft
 // is their job, and the drafts are the preview.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = done or previewed, 2 = usage or refusal

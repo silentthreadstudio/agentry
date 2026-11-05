@@ -200,7 +200,7 @@ export function handoffRejection(spec, line, { id, sha, parent }) {
   return null;
 }
 
-/** Only `merged` may finish a task (A23: done = on main), and when it does it must write everything the
+/** Only `merged` may finish a task (done = on main), and when it does it must write everything the
  *  "done" rules on the lifecycle's kind read: a `done-has-evidence` field gets the commits, a
  *  `done-signoff` date is never written by the lifecycle (so that rule can't sit on its kind). Otherwise
  *  an event the writer applies would leave a done task the checker rejects. */
@@ -236,7 +236,7 @@ function doneOf(spec, life, at, bad) {
   });
 }
 
-/** Load-time self-consistency (plan R1b §2.6): with a `done-has-handoff` rule on the lifecycle's kind,
+/** Load-time self-consistency: with a `done-has-handoff` rule on the lifecycle's kind,
  *  the line the writer would append, filled with a fake SHA, goes through that rule's own check on a
  *  one-item board. A template the rule rejects (no bold lead, the SHA not right after `(` with
  *  `commit: "first"`), a handoff written to another section than the rule reads, or no handoff

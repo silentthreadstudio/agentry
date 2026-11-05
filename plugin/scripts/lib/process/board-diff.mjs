@@ -1,4 +1,4 @@
-// board-diff — what changed between two versions of a board, read at the model level (plan R1b-5).
+// board-diff — what changed between two versions of a board, read at the model level.
 // `lane merge` uses it to tell which of main's uncommitted board edits it may carry into its board
 // commit (only exec's lifecycle writes); anything else that asks "did only lifecycle cells change?"
 // can use it the same way.

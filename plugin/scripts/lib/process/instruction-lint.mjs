@@ -1,5 +1,5 @@
-// instruction-lint — the lines in a repo's instruction files that compete with the Agentry block
-// (A41): a rule that sends tasks, sessions, landings or the gate through a hand-written path where Agentry
+// instruction-lint — the lines in a repo's instruction files that compete with the Agentry block:
+// a rule that sends tasks, sessions, landings or the gate through a hand-written path where Agentry
 // has a command for it. PURE: text in, findings out; no fs, no git. Suggest only: nothing here writes.
 //
 // RULES                                      the four rules, in the order they are tried

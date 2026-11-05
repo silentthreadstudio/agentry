@@ -1,5 +1,5 @@
-// board contract <task id> [--kind <kind>] [--json] — a task's contract block as one JSON line (plan
-// F13 §8; the same result as find-contract.mjs); `--kind` looks up another kind that has contracts. The
+// board contract <task id> [--kind <kind>] [--json] — a task's contract block as one JSON line (the same result
+// as find-contract.mjs); `--kind` looks up another kind that has contracts. The
 // output is always JSON, so `--json` changes nothing. Writes nothing. Exit 0 = found, 1 = not found or
 // ambiguous, 2 = usage (a `--kind` the board does not have among them).
 //

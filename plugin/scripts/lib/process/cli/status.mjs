@@ -1,4 +1,4 @@
-// board status [--json] [--why <id>] — the derived view (plan F13 §3.5): what is in flight, what waits
+// board status [--json] [--why <id>] — the derived view: what is in flight, what waits
 // on the owner, what is blocked and ahead, then the findings. Also what `board.mjs` runs with no
 // subcommand. Writes nothing. Exit 0 = OK, 1 = findings, 2 = a conductor key it cannot use (as
 // `board check`).

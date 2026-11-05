@@ -1,15 +1,15 @@
-// Ids. The next free id of a kind, from its `create.id` pattern (plan F13 §2.4): `{n}` is one above the
+// Ids. The next free id of a kind, from its `create.id` pattern: `{n}` is one above the
 // highest number in use, `{n:02}` the same, zero-padded. Shared by `next-id` and `add`. And an id as a
-// person types it, read the board's way (A39): case-insensitive, and a kind's cited form (`D281` for a
+// person types it, read the board's way: case-insensitive, and a kind's cited form (`D281` for a
 // decision the board numbers `281`, where the kind's `id.prefix` is `D`) as its id.
 //
 // nextId(name, kind, model) -> { id } | { error }   error = the kind asks for its ids ("ask"), or the
 // pattern needs more than a number.
-// nextInFamily(spec, model, family) -> { family, id } | { error }   the next free id in a prefix family
-// (field 85), whatever the kind's `create.id`: every id on the board, of any kind, that is the family, an
+// nextInFamily(spec, model, family) -> { family, id } | { error }   the next free id in a prefix family,
+// whatever the kind's `create.id`: every id on the board, of any kind, that is the family, an
 // optional separator (`-`, `_`, `.`) and digits, then any suffix, counts (`ART-10a` is 10); a bare number
-// of a kind with an `id.prefix` counts in its cited form (decision `52` with prefix `A` is `A52`). A
-// family that ends in a digit needs the separator (`R1` counts `R1-3`, never `R19` or `R1d-43`). The answer
+// of a kind with an `id.prefix` counts in its cited form (decision `52` with prefix `D` is `D52`). A
+// family that ends in a digit needs the separator (`W1` counts `W1-3`, never `W19` or `W1b-43`). The answer
 // is one above the highest, in that id's case, separator and zero-padding, else `<family>-1`.
 // Case-insensitive; the family is trimmed and a trailing separator dropped (`ART-` is `ART`). error = a
 // family with no letter, or with a space inside.
@@ -77,7 +77,7 @@ export function nextId(name, kind, model) {
   return { id: `${before}${next}${after}` };
 }
 
-// An id as the board cites it: a bare number of a kind with an `id.prefix` takes the prefix (`A52`), as
+// An id as the board cites it: a bare number of a kind with an `id.prefix` takes the prefix (`D52`), as
 // `boardId` reads the cited form back.
 const citedOf = (spec, kind, id) => {
   const prefix = spec.kinds[kind]?.id?.prefix;
