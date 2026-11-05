@@ -304,3 +304,56 @@ test("a marker value with a space is a problem naming the step", () => {
     `step 2's marker names model "opus agent: designer": a marker value is one word, and its keys are split by a comma`,
   );
 });
+
+const gateOf = (text) => stepsOf(`- **Steps:**\n  1. ${text}\n  2. Ship it`).steps[0];
+
+for (const [spelling, text] of [
+  ["a unicode arrow", "Draw it → owner OK"],
+  ["an ascii arrow", "Draw it -> owner OK"],
+  ["an em dash", "Draw it — owner OK"],
+  ["an en dash", "Draw it – owner OK"],
+  ["a bold gate", "Draw it → **owner OK**"],
+  ["any case and a period", "Draw it. → OWNER ok."],
+]) {
+  test(`the gate spelled with ${spelling} is a gate`, () => {
+    assert.deepEqual(gateOf(text), { n: 1, text: text.slice(0, text.search(/\s*[→–—]|\s*->/)).trim(), gate: "owner", accept: [] });
+  });
+}
+
+test("a gate's (note) is kept as the note, not read as a marker", () => {
+  assert.deepEqual(gateOf("Draw it → owner OK (the sprite sheet in the lab)"), {
+    n: 1,
+    text: "Draw it",
+    gate: "owner",
+    accept: [],
+    note: "the sprite sheet in the lab",
+  });
+});
+
+test("a note and a marker together: the marker is still a marker, either order", () => {
+  const a = gateOf("Draw it → owner OK (see sheet) (model: opus)");
+  assert.deepEqual([a.gate, a.note, a.model], ["owner", "see sheet", "opus"]);
+  const b = gateOf("Draw it (agent: designer) → **owner OK** (see sheet)");
+  assert.deepEqual([b.gate, b.note, b.agent, b.text], ["owner", "see sheet", "designer", "Draw it"]);
+  const c = gateOf("Draw it → owner OK (model: opus, agent: designer)");
+  assert.deepEqual([c.gate, c.note, c.model, c.agent], ["owner", undefined, "opus", "designer"]);
+});
+
+test("a step that names the owner gate but does not parse as one is a problem naming the step", () => {
+  const problem = (text) => stepsOf(`- **Steps:**\n  1. Build it\n  2. ${text}`).problem;
+  const want = `step 2 mentions an owner gate but does not end with "→ owner OK": write it as "… → owner OK"`;
+  for (const text of [
+    "Draw it → owner review",
+    "Owner OK before step 3.",
+    "Draw it, then the owner approves",
+    "Stop at the owner gate",
+    "Draw it → owner OK then ship",
+  ])
+    assert.equal(problem(text), want, text);
+});
+
+test("a step that names the owner in prose without OK, review, approves or gate is unchanged", () => {
+  const { steps, problem } = stepsOf("- **Steps:**\n  1. Ask the owner's name\n  2. Okay, the okapi");
+  assert.equal(problem, null);
+  assert.deepEqual(steps.map((s) => s.gate), [null, null]);
+});

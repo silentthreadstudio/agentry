@@ -247,7 +247,11 @@ markers kept as written. The rewrite is a best-effort hint, cut at the next numb
 (` 2. `, then ` 3. `, …) outside code spans, from the label's paragraph (to a blank line or a list item at or
 left of the label's indent); check it before pasting it in. A `Steps` heading followed by `1. a 2. b` is one
 step, as before.
-An item ending `→ owner OK` or `-> owner OK` (any case, optional period) has an owner gate. An item ending
+An item ending `→ owner OK`, `-> owner OK` or `— owner OK` (also `–`; any case, optional period, `**owner OK**`)
+has an owner gate; a trailing `(note)` is kept as the gate's note, and a `(model: …, agent: …)` marker is still a
+marker. An item that mentions the owner with `OK`, `review`, `approves` or `gate` but does not end that way is a
+steps problem (`step 2 mentions an owner gate but does not end with "→ owner OK": write it as "… → owner OK"`),
+so `start` refuses it rather than merging the steps into one run. An item ending
 `(model: <m>, agent: <designer|implementer>)` (either key, before or after the gate, any case, read in lower
 case; each value one word, the keys split by a comma) names its run's builder model and agent: the first step
 of the run with each wins over the contract's `- **Model:**` / `- **Agent:**` bullets, which win over the

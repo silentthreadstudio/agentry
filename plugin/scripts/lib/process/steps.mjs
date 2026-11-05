@@ -5,7 +5,9 @@
 // numbered item per line (`1.` or `1)`); a more indented line joins the item above; it ends at the next
 // bold label or heading. A label followed on its own line by `1. ` lists the steps inline: that is a
 // problem, never parsed, and its words carry a best-effort rewrite, one step per line (field 96). An item
-// ending `→ owner OK` or `-> owner OK` (any case, optional period) has an owner gate; one ending
+// ending `→ owner OK`, `-> owner OK` or `— owner OK` (any case, optional period, `**owner OK**`, a trailing
+// `(note)` kept as the step's `note`) has an owner gate; a step that talks of an owner gate but ends
+// with none is a problem; one ending
 // `(model: <m>, agent: <a>)` (either key, either order, before or after the gate, any case, each value one
 // word) names its builder; the steps of one run must not name two models or two agents. Under the
 // Acceptance label or heading, a list item that starts `Step N:` is step N's.
@@ -27,7 +29,12 @@ const STEPS = named("steps");
 const ACCEPT = named("accept(?:ance)?");
 const NUMBERED = /^(\s*)(\d+)[.)]\s+(.*)$/;
 const LISTED = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
-const GATE = /\s*(?:→|->)\s*owner\s+ok\.?\s*$/i;
+// The gate: an arrow or dash, `owner OK` (bold or not), an optional period, an optional `(note)` that is
+// not a `(model: …)` / `(agent: …)` marker.
+const GATE =
+  /\s*(?:→|->|—|–)\s*(?:\*\*\s*owner\s+ok\s*\*\*|owner\s+ok)\.?(?:\s*\((?!\s*(?:model|agent)\s*:)([^()]*)\))?\.?\s*$/i;
+// A step that names the owner next to a gate word but did not parse as a gate.
+const GATE_TALK = /\bowner\b(?=.*\b(?:ok|review|approves|gate)\b)|\b(?:ok|review|approves|gate)\b(?=.*\bowner\b)/is;
 const MARK = /\s*\(\s*((?:model|agent)\s*:[^()]*)\)\s*$/i;
 const AGENTS = ["designer", "implementer"];
 const TAG = /^step\s+(\d+)\s*:\s*/i;
@@ -114,11 +121,14 @@ const pairsOf = (mark) =>
 function stepOf(n, raw) {
   let text = raw;
   let gate = null;
+  let note = null;
   let marks = null;
   for (let pass = 0; pass < 2; pass++) {
-    if (!gate && GATE.test(text)) {
+    const found = !gate && GATE.exec(text);
+    if (found) {
       gate = "owner";
-      text = text.replace(GATE, "");
+      note = found[1]?.trim() || null;
+      text = text.slice(0, found.index);
     }
     const mark = !marks && MARK.exec(text);
     if (!mark) continue;
@@ -126,6 +136,7 @@ function stepOf(n, raw) {
     text = text.slice(0, mark.index);
   }
   const step = { n, text: text.trim(), gate, accept: [] };
+  if (note) step.note = note;
   let problem = null;
   for (const [key, value] of marks ?? []) {
     if (!["model", "agent"].includes(key) || !value) continue;
@@ -195,6 +206,12 @@ export function stepsOf(block) {
       };
     step.accept.push(text.slice(tag[0].length).trim());
   }
+  const talk = steps.find((s) => !s.gate && GATE_TALK.test(s.text));
+  if (talk)
+    return {
+      steps,
+      problem: `step ${talk.n} mentions an owner gate but does not end with "→ owner OK": write it as "… → owner OK"`,
+    };
   return { steps, problem: null };
 }
 
