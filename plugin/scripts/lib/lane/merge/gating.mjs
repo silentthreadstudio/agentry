@@ -4,10 +4,11 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { globMatch } from "../../process/glob.mjs";
 import { runDir } from "../../process/ledger.mjs";
 import { gateArgv } from "../gate-group.mjs";
 import { gateLockDir, holdGate } from "../gate-lock.mjs";
-import { canSkip, changedSince, flakyReds, globMatch, pickTier, runGate } from "../gate.mjs";
+import { canSkip, changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { commitOf, rollback, treeOf } from "../land.mjs";
 import { now, ok, red, save, setMerge, short } from "./lane.mjs";
 import { lastWorktreeGate } from "./rows.mjs";

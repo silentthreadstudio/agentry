@@ -9,8 +9,8 @@
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { globMatch } from "../process/glob.mjs";
 import { first } from "./fmt.mjs";
-import { globMatch } from "./gate.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
 import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
 

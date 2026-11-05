@@ -1,8 +1,8 @@
 // board-paths — the board's own files as a process file names them, read one way for the lane guard
 // (`exec/guard/allow.mjs`, the lists) and the land's board-only commit check (`merge/picks.mjs`, a test).
 import { posix } from "node:path";
+import { globMatch } from "../process/glob.mjs";
 import { escapesRoot } from "../process/spec/shape.mjs";
-import { globMatch } from "./gate.mjs";
 
 // The board's own files (field 75), as the process file `spec` names them and `read.mjs` resolves them,
 // from the root: each kind's table, contract blocks and create blocks and `status.note` as `paths`, and

@@ -3,12 +3,12 @@
 // that touches none of this lane's files; and the config edits that trip it while lanes run.
 import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, posix, relative, sep } from "node:path";
+import { globMatch } from "../../../process/glob.mjs";
 import { workflowPathOf } from "../../../process/read.mjs";
 import { parseSpec } from "../../../process/spec.mjs";
 import { own } from "../../../process/spec/shape.mjs";
 import { boardPaths } from "../../board-paths.mjs";
 import { short } from "../../fmt.mjs";
-import { globMatch } from "../../gate.mjs";
 import { git } from "../../worktree.mjs";
 import { ownedOf } from "../lane.mjs";
 

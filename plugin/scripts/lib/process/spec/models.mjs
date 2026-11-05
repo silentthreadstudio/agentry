@@ -8,7 +8,7 @@
 //   bulletOf(block, label) -> string | null                 `- **<label>:** <word>`'s word, outside fences
 //   proseModelHint(block, steps) -> string | null           a model named only in prose, as `exec start`'s line
 //   unusedUiModel(models, verify) -> string | null          the `! models.verify.ui is unused: …` line
-import { globMatch } from "../../lane/gate.mjs";
+import { globMatch } from "../glob.mjs";
 import { unfenced } from "../markdown.mjs";
 import { runMark } from "../steps.mjs";
 import { FULL, filled, isObject, own, repoPath, shape, text } from "./shape.mjs";

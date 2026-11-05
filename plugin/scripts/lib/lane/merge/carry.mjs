@@ -23,6 +23,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { boardFiles, cellText, diffBoard, strayChanges } from "../../process/board-diff.mjs";
+import { globMatch } from "../../process/glob.mjs";
 import { list as listLedgers, runDir } from "../../process/ledger.mjs";
 import {
   addedRows,
@@ -38,7 +39,6 @@ import {
   workingBoard,
   writtenByScript,
 } from "../carry-io.mjs";
-import { globMatch } from "../gate.mjs";
 import {
   commitOf,
   currentBranch,

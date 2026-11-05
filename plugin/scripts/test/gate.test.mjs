@@ -20,10 +20,10 @@ import {
   changedSince,
   checklistFor,
   flakyReds,
-  globMatch,
   pickTier,
   runGate,
 } from "../lib/lane/gate.mjs";
+import { globMatch } from "../lib/process/glob.mjs";
 import { commitFile, git, gitEnv, tempRepo } from "./git-repo.mjs";
 
 let repo;

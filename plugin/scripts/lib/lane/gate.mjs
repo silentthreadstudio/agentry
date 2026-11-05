@@ -6,8 +6,8 @@
 // The command runs under `cli/supervise.mjs`'s watchdog, so it never outlives the process that runs the
 // gate: this one waits synchronously and can't act on a signal, and a SIGKILL ends it outright.
 // `pickTier`, `checklistFor` and `canSkip` are pure: which tier a role runs on a change, which manual
-// checks a land waits on, and whether a merge may skip the main gate. `globMatch` is the one glob test
-// every lane step uses. Node built-ins only.
+// checks a land waits on, and whether a merge may skip the main gate. `globMatch` (`process/glob.mjs`) is
+// the one glob test every lane step uses. Node built-ins only.
 import { spawnSync } from "node:child_process";
 import {
   closeSync,
@@ -21,6 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { watchdogArgv } from "../cli/supervise.mjs";
+import { globMatch, segmentToRegExp } from "../process/glob.mjs";
 import { slotsHeldHere } from "./gate-lock.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
 import { git } from "./worktree.mjs";
@@ -279,50 +280,6 @@ export function flakyReds(logFile, flaky, { logs = [], cwd = ".", since = 0 } = 
   }
   return hit.size > 0 ? [...hit] : null;
 }
-
-// A glob over repo-relative paths, matched per segment: a segment that is exactly `**` crosses directories;
-// anywhere else `*` and `?` stay inside one segment (`a**b` is just `a*b`). A glob with a `..` segment
-// matches nothing.
-function segmentToRegExp(segment) {
-  let re = "";
-  for (const c of segment) {
-    if (c === "*") re += "[^/]*";
-    else if (c === "?") re += "[^/]";
-    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  }
-  return re;
-}
-function globToRegExp(glob) {
-  const segments = glob.split("/");
-  if (segments.includes("..")) return /(?!)/;
-  let re = "";
-  segments.forEach((segment, i) => {
-    const last = i === segments.length - 1;
-    if (segment === "**") re += last ? ".+" : "(?:[^/]+/)*";
-    else re += segmentToRegExp(segment) + (last ? "" : "/");
-  });
-  return new RegExp(`^${re}$`);
-}
-
-// A changed path as a glob sees it: a leading `./` dropped; absolute paths, empty segments and `..` (which
-// could make `docs/../src/x` look like docs) are not repo-relative paths at all.
-function plainPath(file) {
-  if (typeof file !== "string") return null;
-  const path = file.replace(/^(?:\.\/)+/, "");
-  return path && !path.split("/").some((s) => s === "" || s === "..") ? path : null;
-}
-
-const matcher = (globs) => {
-  const res = (globs ?? []).map(globToRegExp);
-  return (file) => {
-    const path = plainPath(file);
-    return path !== null && res.some((re) => re.test(path));
-  };
-};
-
-/** Does `path` (repo-relative) match one of `globs`: `*` and `?` stay inside one folder, a `**` segment
- *  crosses folders, case counts, and a `..` or absolute path never matches. */
-export const globMatch = (globs, path) => matcher(globs)(path);
 
 // Does a tier's or checklist item's `when` hold for a change: any one of its conditions is enough. `only`:
 // every changed file matches (no changed files never does); `any`: some changed file does; `flag`: the
