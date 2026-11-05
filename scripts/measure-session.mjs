@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// measure-session — dev-only: the live-week numbers from Claude Code transcripts (+ exec ledgers). Plan R1b §9.
+// measure-session — dev-only: the live-week numbers from Claude Code transcripts (+ exec ledgers).
 //
 //   node scripts/measure-session.mjs --transcripts <dir|files…> [--ledger <dir>…] [--since <date>] [--json]
 //
