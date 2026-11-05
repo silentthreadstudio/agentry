@@ -310,6 +310,11 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   SHA-256 repo reads its full commit ids.
 
 ### Changed
+- **Comments stand on their own** — code comments no longer cite internal design documents or task ids; the
+  plugin check fails on such a citation in a comment under `plugin/`, `packages/` or `scripts/`.
+- **Lane internals split by concern, no behavior change** — the brief builder, the land's carry and the cut are
+  separate modules (the cut now under `lane/exec/cut/`), and the git mid-operation checks, the path check, the
+  commit content id and the printed lane command line each have one copy.
 - **Memory is the `agentry mem` CLI; the memory MCP server is gone** — every agent, command and skill now runs
   `agentry mem <verb>` in Bash (`recall`, `write`, `search`, `feedback`, `episode`, `stats`, `distill`,
   `consolidate`, `update`, `forget`, `recover`, `resync`; `agentry mem --help`) instead of calling
@@ -492,6 +497,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   through `git.mjs` with its timeout.
 
 ### Fixed
+- **Carried board writes stay inside the board** — a lane's carried rows and cells are written only to the board's
+  own files, before anything is read: a crafted ledger path through a symlink (or its case twin on macOS) can no
+  longer write outside the repository, and a carried path with `..` or an absolute path is refused.
 - **Branch names that differ only in case** — on a case-insensitive filesystem a read by name could open
   another branch's ref. `lane merge --branch` takes only a branch's own name exactly as git lists it, its tip
   from that line, and refuses a revision, a case twin, a branch with no commits yet and a worktree on a
