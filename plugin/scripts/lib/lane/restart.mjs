@@ -22,25 +22,14 @@ import { dirname, join } from "node:path";
 import { branchTips } from "../process/git.mjs";
 import { resolveBranch, shellWord } from "./adopt.mjs";
 import { applyPatch, asidePatch } from "./carry-io.mjs";
-import { commitOf, currentBranch, disposableMatcher, subjectOf } from "./land.mjs";
-import { branchOf, git, ignoredFiles, porcelain, remove } from "./worktree.mjs";
+import { commitOf, currentBranch, ignoredIn, subjectOf } from "./land.mjs";
+import { branchOf, git, porcelain, remove } from "./worktree.mjs";
 
 const short = (sha) => String(sha ?? "").slice(0, 7);
 const first = (text) => text.trim().split("\n")[0] ?? "";
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const unmerged = (dir) =>
   git(dir, ["diff", "--name-only", "--diff-filter=U", "-z"]).stdout.split("\0").filter(Boolean);
-// Does `dir` hold a file at any depth (a link counts as one)? Unreadable answers yes: it stays counted.
-function holdsFile(dir) {
-  try {
-    return readdirSync(dir, { withFileTypes: true }).some(
-      (e) => !e.isDirectory() || holdsFile(join(dir, e.name)),
-    );
-  } catch {
-    return true;
-  }
-}
-
 /** What the old lane leaves behind, read only: its branch tip (null when the branch is gone), the commits
  *  past its base, and the ignored files in its worktree that `cleanup.disposable` (and the defaults) do not
  *  cover, which a removal would delete. An empty directory (or one holding only empty ones) is no file: it
@@ -54,13 +43,7 @@ export function leftover(root, ledger, disposable = []) {
     return {
       problem: `the worktree ${ledger.worktree} is not on ${ledger.branch} (a rebase or pick in progress?): finish or abort it, then restart`,
     };
-  let found = [];
-  try {
-    found = ignoredFiles(ledger.worktree);
-  } catch {} // no work tree git can read: nothing to lose
-  const kept = disposableMatcher(disposable);
-  const lost = (entry) => !entry.endsWith("/") || holdsFile(join(ledger.worktree, entry));
-  return { ignored: found.filter((entry) => lost(entry) && !kept(entry)), tip, commits };
+  return { ignored: ignoredIn(ledger.worktree, disposable).ignored, tip, commits };
 }
 
 /** The worktree's uncommitted work against its HEAD (staged, unstaged and untracked) as one binary patch,

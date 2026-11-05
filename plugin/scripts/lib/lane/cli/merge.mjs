@@ -52,6 +52,7 @@ import {
   boardRow,
   checksState,
   commitsRow,
+  depsRow,
   lastWorktreeGate,
   ledgerStep,
   listedTip,
@@ -187,6 +188,10 @@ function preflight(lane) {
   if (left.row) rows.push(left.row);
   const merge = lane.ledger.merge;
   rows.push(boardRow(lane));
+  if (FRESH.includes(merge?.step)) {
+    const deps = depsRow(lane);
+    if (deps) rows.push(deps.row);
+  }
   if (!left.skipMain) rows.push(mainRow(lane, { carry: true, ignore: left.ignore }));
   if (merge?.carry)
     rows.push(
@@ -270,6 +275,12 @@ function land(lane) {
   if (checks.failed.length > 0)
     return done(1, lane, rows, `fix what ${checks.failed.join(", ")} found, then record it again`);
   if (checks.pending.length > 0) return done(2, lane, rows, checkNext(id, checks.pending));
+  // Before any pick: a dependency still open on the item as the land leaves it refuses with the fix.
+  if (FRESH.includes(merged?.step)) {
+    const deps = depsRow(lane);
+    if (deps) rows.push(deps.row);
+    if (deps?.row.mark === "red") return done(2, lane, rows, deps.next);
+  }
   if (opts["--drop-carry"] && !merged?.carry && !hasOldRecord(merged))
     return done(2, lane, [
       ...rows,

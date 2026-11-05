@@ -7,8 +7,8 @@
 // Every git call is an argv array, never a shell line (a zsh variable that did not split once turned a
 // cherry-pick into a silent no-op), and every one reads its own exit code. A git refusal is an answer
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { globMatch } from "./gate.mjs";
 import { dirtyEntries } from "./own-memory.mjs";
 import { findByBranch, git, ignoredFiles, remove } from "./worktree.mjs";
@@ -350,15 +350,7 @@ export function cleanup(
   const path = findByBranch(root, branch) ?? fallbackPath;
   if (path === root)
     return { ok: false, path, reason: `${branch} is checked out in the main checkout` };
-  let found = [];
-  try {
-    found = ignoredFiles(path);
-  } catch {
-    found = []; // no work tree there (already gone): nothing to lose
-  }
-  const isDisposable = disposableMatcher(disposable);
-  const thrown = found.filter(isDisposable);
-  const ignored = found.filter((entry) => !isDisposable(entry));
+  const { ignored, disposable: thrown } = ignoredIn(path, disposable);
   const kept = {
     ...(ignored.length > 0 && { ignored }),
     ...(thrown.length > 0 && { disposable: thrown }),
@@ -394,4 +386,57 @@ export function disposableMatcher(globs = []) {
     const paths = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
     return paths.some((path) => globMatch(forms, path));
   };
+}
+
+// The files under `rel` (a path in `dir`), as paths from `dir` (a link counts as a file). A folder git
+// cannot read is yielded as itself: it stays counted.
+function* filesUnder(dir, rel) {
+  let entries;
+  try {
+    entries = readdirSync(join(dir, rel), { withFileTypes: true });
+  } catch {
+    yield rel.replace(/\/$/, "");
+    return;
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) yield* filesUnder(dir, `${rel}${e.name}/`);
+    else yield `${rel}${e.name}`;
+  }
+}
+
+/** The ignored entries of the worktree at `dir` that a removal would delete, split by `disposableMatcher`
+ *  (`DEFAULT_DISPOSABLE` and `globs`): `{ ignored, disposable }`. The one filter restart, the land's
+ *  cleanup and the sweep share. An entry is disposable when it matches or, for a folder, when every file in it
+ *  does (git lists `art/` and `art/preview/` both, and only the second names the glob). A folder with no file at
+ *  any depth is in neither: the removal takes it. A directory git cannot read as a work tree holds nothing to
+ *  lose. */
+export function ignoredIn(dir, globs = []) {
+  let found = [];
+  try {
+    found = ignoredFiles(dir);
+  } catch {} // no work tree there (already gone): nothing to lose
+  const isDisposable = disposableMatcher(globs);
+  const out = { ignored: [], disposable: [] };
+  for (const entry of found) {
+    if (isDisposable(entry)) {
+      out.disposable.push(entry);
+      continue;
+    }
+    if (!entry.endsWith("/")) {
+      out.ignored.push(entry);
+      continue;
+    }
+    let held = false;
+    let rest = false;
+    for (const file of filesUnder(dir, entry)) {
+      held = true;
+      if (!isDisposable(file)) {
+        rest = true;
+        break;
+      }
+    }
+    if (rest) out.ignored.push(entry);
+    else if (held) out.disposable.push(entry);
+  }
+  return out;
 }

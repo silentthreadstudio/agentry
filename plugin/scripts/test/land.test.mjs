@@ -7,7 +7,7 @@
 // Run: node --test plugin/scripts/test/land.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { sha256, uncommittedPatch } from "../lib/lane/carry-io.mjs";
@@ -302,6 +302,22 @@ test("a dir/** disposable glob takes the wholly ignored directory; a near name s
   assert.deepEqual(res.ignored, ["builds/"]);
   assert.deepEqual(res.disposable, ["build/"]);
   assert.ok(existsSync(path));
+});
+
+test("an ignored directory holding no file at any depth never blocks the cleanup", () => {
+  branch({ ".gitignore": "cache/\nkept/\n" });
+  const path = join(repo.dir, ".agentry", "run", "worktrees", "B");
+  mkdirSync(join(path, "cache", "a", "b"), { recursive: true });
+  mkdirSync(join(path, "kept"));
+  writeFileSync(join(path, "kept", "note.txt"), "x");
+  const blocked = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: path });
+  assert.equal(blocked.ok, false);
+  assert.deepEqual(blocked.ignored, ["kept/"]);
+  assert.equal(blocked.disposable, undefined, "an empty directory is no disposable path either");
+  rmSync(join(path, "kept"), { recursive: true });
+  const res = cleanup(repo.dir, { branch: "b", main: "main", fallbackPath: path });
+  assert.equal(res.ignored, undefined);
+  assert.ok(!existsSync(path));
 });
 
 test("a disposable glob naming a folder covers the files under it, not a near name", () => {

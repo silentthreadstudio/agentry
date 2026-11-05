@@ -253,6 +253,22 @@ test("a merged worktree holding only node_modules and dist output is swept, and 
   assert.ok(!existsSync(merged.path));
 });
 
+test("an ignored directory with no file at any depth does not keep a merged worktree", () => {
+  const { root, merged } = fixture();
+  appendFileSync(join(root, ".git", "info", "exclude"), "cache/\nart/\n");
+  mkdirSync(join(merged.path, "cache", "a", "b"), { recursive: true });
+  mkdirSync(join(merged.path, "art", "preview"), { recursive: true });
+  writeFileSync(join(merged.path, "art", "preview", "shot.png"), "x");
+  const kept = sweep(root, "--apply");
+  assert.match(kept.stdout, /kept worktree T1: holds 1 ignored file\(s\).*art\//);
+  assert.ok(existsSync(merged.path));
+  rmSync(join(merged.path, "art"), { recursive: true });
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 0, res.stdout);
+  assert.match(res.stdout, /removed worktree T1/);
+  assert.ok(!existsSync(merged.path));
+});
+
 test("a node_modules folder of 300 files counts as one disposable path", () => {
   const { root, merged } = fixture();
   appendFileSync(join(root, ".git", "info", "exclude"), "node_modules/\n");

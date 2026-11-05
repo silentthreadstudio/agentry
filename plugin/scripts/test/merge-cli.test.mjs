@@ -2727,3 +2727,75 @@ test("--check refuses a ledger branch with a case twin, by its listed name: noth
   assert.equal(merge(ID, "--check", "repo-merge=pass").status, 0);
   assert.equal(readLedger(root, ID).checks["repo-merge"].tip, shas[0]);
 });
+
+// --- deps before the picks (field 105) --------------------------------------------------------------
+
+const DEPS_SPEC = {
+  ...SPEC,
+  kinds: {
+    ...SPEC.kinds,
+    task: {
+      ...SPEC.kinds.task,
+      fields: {
+        ...SPEC.kinds.task.fields,
+        deps: { column: "Deps", type: "list", ref: "task" },
+      },
+    },
+  },
+  rules: [...SPEC.rules, { rule: "deps-done", kind: "task", field: "deps" }],
+};
+// T1 (the lane) waits on T2 and T4; T3 is active and waits on T2: a problem of its own, not the land's.
+const depsBoard = (t1) => `# Merge
+
+## Sprints
+
+| Sprint | Status |
+| ------ | ------ |
+| S1     | doing  |
+
+## Tasks
+
+| Task | Sprint | Status | Verdict | Commit | Deps |
+| ---- | ------ | ------ | ------- | ------ | ---- |
+| T1   | S1     | verify | PASS    |        | ${t1} |
+| T2   | S1     | todo   |         |        |      |
+| T3   | S1     | doing  |         |        | T2   |
+| T4   | S1     | done   |         |        |      |
+`;
+function commitDeps(t1) {
+  setSpec(DEPS_SPEC);
+  writeFileSync(join(root, "plan", "BOARD.md"), depsBoard(t1));
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "-m", "deps board");
+}
+
+test("a land whose item would be done with a dependency open is refused before any pick, with the board set line", () => {
+  commitDeps("T2, T4");
+  const { path, shas } = buildSubjects("feat: a");
+  execLedger({ path, gated: shas[0] });
+  const [pre, ledger] = [head(), ledgerBytes()];
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 1, out(pf));
+  assert.match(pf.stdout, /✗ deps +task T1 would be done, but depends on T2 \(task, todo\)/);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 2, out(res));
+  assert.match(res.stdout, /✗ deps +task T1 would be done, but depends on T2 \(task, todo\)/);
+  assert.match(res.stdout, /agentry board set task T1 deps=T4 --apply/);
+  assert.doesNotMatch(res.stdout, /✓ land|picked/);
+  assert.equal(head(), pre);
+  assert.equal(status(), "");
+  assert.equal(ledgerBytes(), ledger);
+  assert.equal(readLedger(root, ID).merge, undefined, "no merge record");
+});
+
+test("after the dependency is dropped the land goes through; a deps problem of another item does not stop it", () => {
+  commitDeps("T4");
+  const { path, shas } = buildSubjects("feat: a");
+  execLedger({ path, gated: shas[0] });
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 0, out(pf));
+  assert.match(pf.stdout, /✓ deps +task T1 has no open dependency/);
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(board(), /\| T1 +\| S1 +\| done /);
+});

@@ -45,9 +45,9 @@ import {
   staleWriteLocks,
   takeOverMutex,
 } from "./gate-lock.mjs";
-import { disposableMatcher } from "./land.mjs";
+import { ignoredIn } from "./land.mjs";
 import { clearLockSlot, deadLockTemps, lockDirs, staleLockSlots } from "./named-lock.mjs";
-import { ignoredFiles, remove, worktreesDir } from "./worktree.mjs";
+import { remove, worktreesDir } from "./worktree.mjs";
 
 const GB = 1024 ** 3;
 export const LOW_DISK = 10 * GB;
@@ -281,7 +281,6 @@ export function leftovers(root) {
 /** What a sweep would do in the repo whose main checkout is `root`. `free` overrides the disk reading;
  *  `disposable` is the process file's `cleanup.disposable`, on top of `DEFAULT_DISPOSABLE`. */
 export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
-  const isDisposable = disposableMatcher(disposable);
   // Listed before anything reads the ledgers, and read without sweeping: the preview changes nothing.
   const left = leftovers(root);
   const all = ledgers.list(root, { sweep: false });
@@ -294,18 +293,12 @@ export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
     );
     if (!ledger) unknown.push({ path: tree.path, branch: tree.branch });
     else if (ledger.state === "merged" || ledger.state === "closed") {
-      let ignored = [];
-      try {
-        ignored = ignoredFiles(tree.path);
-      } catch {
-        ignored = []; // no work tree there: nothing to lose
-      }
+      const found = ignoredIn(tree.path, disposable);
       cleanable.push({
         id: ledger.id,
         path: tree.path,
         branch: tree.branch,
-        ignored: ignored.filter((entry) => !isDisposable(entry)),
-        disposable: ignored.filter(isDisposable),
+        ...found,
         inUse: false,
       });
     }

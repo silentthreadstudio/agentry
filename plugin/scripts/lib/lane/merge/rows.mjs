@@ -3,12 +3,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { readConfig } from "../../config.mjs";
+import { check } from "../../process/check.mjs";
 import { branchTips, defaultBranch, worktrees } from "../../process/git.mjs";
 import {
   list as listLedgers,
   read as readLedger,
   write as writeLedger,
 } from "../../process/ledger.mjs";
+import { ruleOf, withDefaults } from "../../process/rules/index.mjs";
+import { idsIn, refKinds, resolve as resolveDep } from "../../process/rules/structure.mjs";
 import { own } from "../../process/spec/shape.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
 import { resolveBranch, shownName, strayTree, unnamedHead } from "../adopt.mjs";
@@ -225,6 +228,49 @@ export function boardRow({ root, spec, model, id, kind, ledger }) {
   const to = own(life.on, "merged") ?? "-";
   const is = `${life.kind} ${id} is "${items[0].status ?? ""}"${killed ? " as committed" : ""}`;
   return ok("board", `${is}; landing makes it "${to}"`);
+}
+
+/** The board's `deps-done` check for the lane's item as the land would leave it (its status the lifecycle's
+ *  `merged` one), read before any pick. `null` when the lifecycle is off or the board has no such rule or
+ *  item (`boardRow` says so); else `{ row, next }`: green, or red with the rule's finding for this item and
+ *  the `board set` line that drops the open dependencies from its field. Only this item's findings count:
+ *  another item's deps problem is the board check's, as today. The model is changed for the check and put
+ *  back. */
+export function depsRow({ spec, model, id, kind }) {
+  const life = spec.lifecycle && lifecycleOf(spec, kind);
+  const entries = spec.rules.filter((r) => r.rule === "deps-done");
+  const to = life && own(life.on, "merged");
+  const item = life && (own(model.kinds, life.kind)?.items ?? []).find((i) => i.id === id);
+  if (!item || !entries.length || to === undefined) return null;
+  const before = { status: item.status, phase: item.phase };
+  item.status = to;
+  item.phase = own(spec.kinds[life.kind].status?.values ?? {}, to) ?? item.phase;
+  let found;
+  try {
+    found = check(model, entries, {}).filter((f) => f.kind === life.kind && f.id === id);
+  } finally {
+    Object.assign(item, before);
+  }
+  if (found.length === 0)
+    return { row: ok("deps", `${life.kind} ${id} has no open dependency once it is "${to}"`) };
+  // The deps field of the rule that found it (given, or the one `withDefaults` picks), less the open ones.
+  const field = entries
+    .map((e) => withDefaults(ruleOf("deps-done"), e, spec.kinds))
+    .find((e) => e.kind === life.kind || e.kind === undefined)?.field;
+  const def = spec.kinds[life.kind].fields?.[field];
+  const open = (dep) => found.some((f) => f.message.includes(`depends on ${dep} (`));
+  const keep = idsIn(item.fields[field]).filter(
+    (dep) => !open(resolveDep(model, dep, refKinds(def), def?.prefix)[0]?.id),
+  );
+  const next = `agentry board set ${life.kind} ${id} ${field}=${keep.join(", ")} --apply`;
+  return {
+    row: red("deps", `${life.kind} ${id} would be ${found[0].message}`, [
+      ...found.slice(1).map((f) => `would be ${f.message}`),
+      `the land makes ${id} "${to}" with a dependency open: drop it, or finish it first`,
+      next,
+    ]),
+    next,
+  };
 }
 
 // A lane in one of these has no branch left to land first.

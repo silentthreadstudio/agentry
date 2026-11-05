@@ -575,6 +575,25 @@ test("an ignored directory holding a file still refuses the restart, naming it",
   assert.ok(existsSync(join(out.worktree, "exports", "playtest", "run.log")));
 });
 
+// ---- one ignored-file filter for restart, land cleanup and sweep (field 106, S45) -------------------
+
+test("art/preview/** in cleanup.disposable lets a restart through and the cache goes with the worktree", () => {
+  const r = repo();
+  writeFileSync(join(r.root, ".gitignore"), ".agentry/run/\nart/preview/\n");
+  git(r.root, "commit", "-qam", "chore: ignore the preview cache");
+  const out = worked(r);
+  mkdirSync(join(out.worktree, "art", "preview", "deep"), { recursive: true });
+  writeFileSync(join(out.worktree, "art", "preview", "deep", "shot.png"), "x\n");
+  const refused = lane(r, "restart", "T3", "--carry");
+  assert.equal(refused.exit, 2);
+  assert.match(refused.stderr, /ignored file\(s\) a restart would delete \(art\//);
+  writeSpec(join(r.root, ".agentry"), { ...SPEC, cleanup: { disposable: ["art/preview/**"] } });
+  git(r.root, "commit", "-qam", "chore: the preview cache is disposable");
+  const res = lane(r, "restart", "T3", "--carry");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(existsSync(join(out.worktree, "art", "preview")), false);
+});
+
 // ---- a verified lane's restart (field 94) ---------------------------------------------------------
 
 const row = (root, id) =>
