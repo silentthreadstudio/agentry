@@ -3,6 +3,7 @@
 // Run: node --test plugin/scripts/test/pid.test.mjs
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { after, test } from "node:test";
 import { alive, groupAlive, identity } from "../lib/process/pid.mjs";
 
@@ -110,5 +111,11 @@ test("a start that cannot be read (no ps on PATH) while the pid runs reads alive
     { encoding: "utf8", env: { ...process.env, PATH: "/nonexistent" } },
   );
   assert.equal(blind.status, 0, blind.stderr);
-  assert.equal(blind.stdout.trim(), "true true false", "no reading is no proof of another process");
+  // With /proc the start is read without ps, so a wrong start is a different process: dead.
+  const unreadable = existsSync("/proc/self/stat") ? "false" : "true";
+  assert.equal(
+    blind.stdout.trim(),
+    `true ${unreadable} false`,
+    "no reading is no proof of another process",
+  );
 });
