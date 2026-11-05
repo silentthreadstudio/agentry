@@ -1,6 +1,7 @@
 // exec/steps/report — `lane exec report <id>`: the builder's report read, the guards run, the next
 // round briefed.
-import { writeFileSync } from "node:fs";
+import { copyFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import * as ledgers from "../../../process/ledger.mjs";
 import { gateOf } from "../../../process/spec/workflow.mjs";
 import { now, short } from "../../fmt.mjs";
@@ -13,7 +14,16 @@ import { writeBuilt } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { mainGuard } from "../guard/main-guard.mjs";
 import { headOf, ownStart } from "../guard/snapshot.mjs";
-import { heldCopy, isFlagged, mustLedger, readReport, refuse, stepWith } from "../lane.mjs";
+import {
+  heldCopy,
+  isFlagged,
+  saved as isSaved,
+  mustLedger,
+  readOr,
+  readReport,
+  refuse,
+  stepWith,
+} from "../lane.mjs";
 import { finishRebase } from "../rebasing.mjs";
 import { view } from "../view.mjs";
 
@@ -55,6 +65,25 @@ function subjectsOf(root, spec, base, branch) {
   );
 }
 
+// A needs-context round resumes the builder that asked, whose first brief named its report `r<n>-build`:
+// it may save the reply under that name instead of the round's own. One of the two is read: the other
+// name's reply is copied to the round's path; both saved and different is refused, never one picked.
+// Returns the name read when it is the build one, else undefined.
+function buildNamed(round) {
+  if (round.step !== "needs-context") return undefined;
+  const alt = join(dirname(round.reportPath), `r${round.n}-build.report.md`);
+  if (!isSaved(alt)) return undefined;
+  if (!isSaved(round.reportPath)) {
+    copyFileSync(alt, round.reportPath);
+    return alt;
+  }
+  if (readOr(alt) !== readOr(round.reportPath))
+    refuse(
+      `two different reports for round ${round.n}: ${round.reportPath} and ${alt}: remove the one that is not the reply, then report again`,
+    );
+  return undefined;
+}
+
 export function run(ctx, id) {
   const { root, value: agent } = ctx;
   const ledger = mustLedger(root, id);
@@ -66,6 +95,7 @@ export function run(ctx, id) {
     );
   const round = ledger.rounds.at(-1);
   const saved = parked ? ledger.hold.report : heldCopy(round.reportPath);
+  const named = parked ? undefined : buildNamed(round);
   const text = readReport(parked ? saved : round.reportPath, "builder");
   const all = ledgers.list(root);
   const isRebase = round.step === "rebase";
@@ -129,6 +159,10 @@ export function run(ctx, id) {
     step: "report",
     guards: [...(next.rounds.at(res.dispatch ? -2 : -1).guards ?? []), ...allowed],
     nested: next.nested,
-    extra: { ...(res.reason && { why: res.reason }), ...(board && { board }) },
+    extra: {
+      ...(res.reason && { why: res.reason }),
+      ...(board && { board }),
+      ...(named && { "report read": `${named} (the round's own is ${round.reportPath})` }),
+    },
   });
 }

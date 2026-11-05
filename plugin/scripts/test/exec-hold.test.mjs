@@ -724,6 +724,58 @@ test("a two-step lane asking once in each step reaches verified, each ask re-dis
   );
 });
 
+// The resumed builder answers a needs-context round, writing its reply under the build brief's name.
+function answerNamedBuild(r, out, file, body = "DONE\nadded it\nused_memories: none\n") {
+  commitFile(out.worktree, file, "made\n", `feat: add ${file}`);
+  const named = join(
+    dirname(out.reportPath),
+    `r${ledgerOf(r.root, "T1").rounds.length}-build.report.md`,
+  );
+  writeFileSync(named, body);
+  return named;
+}
+
+test("a needs-context round reads the reply saved under the build brief's name, once, and says which", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  ask(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  assert.match(out.reportPath, /r2-needs-context\.report\.md$/);
+  const named = answerNamedBuild(r, out, "one.txt");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  assert.equal(res.json.state, "held", "step 1 done: the lane holds for the owner");
+  assert.equal(res.json["report read"], `${named} (the round's own is ${out.reportPath})`);
+  assert.equal(readFileSync(out.reportPath, "utf8"), readFileSync(named, "utf8"));
+  assert.equal(ledgerOf(r.root, "T1").rounds[1].report, out.reportPath);
+});
+
+test("a needs-context reply under both names is read once when the two are the same, refused when they differ", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  ask(out);
+  out = lane(r, "report", "T1", "--agent", "builder-1").json;
+  const named = answerNamedBuild(r, out, "one.txt");
+  writeFileSync(out.reportPath, "DONE\nsomething else\nused_memories: none\n");
+  const before = readFileSync(
+    join(r.root, ".agentry", "run", "process", "ledger", "T1.json"),
+    "utf8",
+  );
+  const refused = lane(r, "report", "T1");
+  assert.equal(refused.exit, 2);
+  assert.ok(
+    refused.stderr.includes(`two different reports for round 2: ${out.reportPath} and ${named}`),
+  );
+  assert.equal(
+    readFileSync(join(r.root, ".agentry", "run", "process", "ledger", "T1.json"), "utf8"),
+    before,
+  );
+  writeFileSync(out.reportPath, readFileSync(named, "utf8"));
+  const same = lane(r, "report", "T1");
+  assert.equal(same.exit, 0, same.stderr);
+  assert.equal(same.json["report read"], undefined, "the round's own name was read");
+});
+
 test("ART-10b: step 1 DONE, owner OK, a needs-context round: the lane offers step 2, never close", () => {
   const r = repo();
   let out = lane(r, "start", "T1").json;

@@ -21,6 +21,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   copies the path into the owner's note.
 - **`lane exec hold --for owner` on a verified lane names the command that parks it.** The refusal ends with
   the exact `exec hold … --for later` line.
+- **`lane exec report` reads a needs-context reply saved under the build brief's name.** A resumed builder
+  often writes `r<n>-build.report.md` instead of `r<n>-needs-context.report.md`; either is read now, and
+  the output says which. Two different replies under the two names are refused.
 
 ## [0.3.0] — 2026-11-05
 
