@@ -66,8 +66,8 @@ const RUN_HELP = {
   exits: {
     "<code>": "the command's own exit code (128 + the signal when a signal ended it)",
     124: "the command hit the limit and was stopped",
-    126: "the command is not executable",
-    127: "the command could not be started (not found)",
+    126: "the command was found but cannot be run (not executable, or a directory)",
+    127: "the command was not found",
     2: "usage, or a lock the workflow file does not declare",
     75: "the lock (or the gate slot) stayed busy for the whole --wait; the command never ran",
   },

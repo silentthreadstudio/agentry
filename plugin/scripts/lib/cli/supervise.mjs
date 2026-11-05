@@ -1,11 +1,13 @@
 // supervise — runs one command in a process group of its own under a time limit: stdio inherited, the
 // group gets SIGTERM at the limit and SIGKILL `GRACE_KILL_MS` later (grandchildren too), and the exit is
-// the command's own, 124 at the limit, 127 when it could not start. However the command ends, what is left
-// of its group is killed before the promise settles. `agentry run` (run.mjs) wraps it with the locks.
+// the command's own, 124 at the limit, 127 or 126 when it could not start. However the command ends, what
+// is left of its group is killed before the promise settles. `agentry run` (run.mjs) wraps it with the locks.
 // The command starts held: `/bin/sh` waits on fd 3 until `onStart` has recorded the group in the slots,
 // then `exec`s the argv as given (no shell parsing; same pid, so the same group). Should this process die
 // before that (even by SIGKILL), fd 3 closes, the shell ends and the command never runs: no slot ever reads
-// free while its command runs. A command the shell cannot find exits 127 (126: not executable), as sh says.
+// free while its command runs. The command is looked up first (`startError`, as exec does: a path as given,
+// a bare name on PATH), so one that cannot start exits 127 (not found) or 126 (not executable) with the same
+// line on every platform, whatever its sh would say.
 //
 // One handler set for the whole process, installed once (`onEnd`): what is registered runs once when the
 // process exits (normally or on a thrown error) or gets SIGINT, SIGTERM or SIGHUP. A signal while a command
@@ -26,7 +28,9 @@
 // ever signals that group (SIGTERM, a holder's timeout, kills it, then the watchdog ends by SIGKILL).
 // `watchdogArgv` builds that argv. Node built-ins only.
 import { spawn } from "node:child_process";
+import { accessSync, constants as fsConstants, statSync } from "node:fs";
 import { constants } from "node:os";
+import { delimiter, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { freeDeadHolder, recordGroup } from "../lane/gate-lock.mjs";
 import { alive, groupRunning, identity } from "../process/pid.mjs";
@@ -41,7 +45,7 @@ const SETTLE_MS = 2000;
 
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 // The held start (see above): a closed fd 3 with no go line (this process died first) ends it unrun.
-const HELD = ["-c", 'read -r go <&3 || exit 1; exec 3<&-; exec "$@"', "sh"];
+const HELD = ["-c", 'read -r go <&3 || exit 1; exec 3<&-; exec -- "$@"', "sh"];
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const signalGroup = (pgid, signal) => {
@@ -89,6 +93,32 @@ async function endGroup(pgid) {
   for (let waited = 0; waited < SETTLE_MS && groupRunning(pgid); waited += 20) await sleep(20);
 }
 
+// Why `file` cannot be run: "ENOENT" (no such file), "EACCES" (a directory, or not executable), or null.
+function unrunnable(file) {
+  try {
+    if (statSync(file).isDirectory()) return "EACCES";
+    accessSync(file, fsConstants.X_OK);
+    return null;
+  } catch (error) {
+    return error.code === "ENOENT" || error.code === "ENOTDIR" ? "ENOENT" : "EACCES";
+  }
+}
+
+/** Why the command `name` cannot start, as exec would find it (a name with a slash is a path; a bare name
+ *  is the first runnable one on PATH, an empty entry the working directory): "ENOENT", "EACCES" (one was
+ *  found, none runnable), or null. */
+function startError(name) {
+  if (!name) return "ENOENT";
+  if (name.includes("/")) return unrunnable(name);
+  let found = "ENOENT";
+  for (const dir of (process.env.PATH ?? "/usr/bin:/bin").split(delimiter)) {
+    const why = unrunnable(join(dir || ".", name));
+    if (why === null) return null;
+    if (why === "EACCES") found = why;
+  }
+  return found;
+}
+
 /**
  * Run `cmd` (argv, no shell) in its own group under `limitMs`: a promise of the exit code `agentry run`
  * ends with. `onStart(pgid)` is called with its process group before the command runs (it is let go once
@@ -96,6 +126,11 @@ async function endGroup(pgid) {
  */
 export function supervise(cmd, limitMs, limitText, { onStart } = {}) {
   install();
+  const why = startError(cmd[0]);
+  if (why !== null) {
+    process.stderr.write(`${say("run", `cannot start ${cmd[0]}: ${why}`)}\n`);
+    return Promise.resolve(why === "ENOENT" ? 127 : 126);
+  }
   return new Promise((done, fail) => {
     const child = spawn("/bin/sh", [...HELD, ...cmd], {
       stdio: ["inherit", "inherit", "inherit", "pipe"],

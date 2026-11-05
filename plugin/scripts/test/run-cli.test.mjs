@@ -204,6 +204,34 @@ test("needs no timeout binary: a PATH with nothing on it still stops the command
   assert.equal(run.status, 124);
 });
 
+test("a command that is not found exits 127 and one that cannot be run 126, each with its cannot start line", async () => {
+  const dir = repo();
+  writeFileSync(join(dir, "plain"), "#!/bin/sh\necho ran\n", { mode: 0o644 });
+  mkdirSync(join(dir, "folder"));
+  const cases = [
+    ["no-such-command-r1e6", 127, "ENOENT"],
+    [join(dir, "no", "such", "path"), 127, "ENOENT"],
+    [join(dir, "plain"), 126, "EACCES"],
+    [join(dir, "folder"), 126, "EACCES"],
+  ];
+  for (const [cmd, status, code] of cases) {
+    const run = await agentry(["run", "--limit", "5s", "--", cmd], { cwd: dir });
+    assert.equal(run.status, status, cmd);
+    assert.equal(run.stderr, `✗ run: cannot start ${cmd}: ${code}\n`, cmd);
+  }
+});
+
+test("a command whose name starts with - runs as that command, never as an option", async () => {
+  const dir = repo();
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "-n"), "#!/bin/sh\necho ran\n", { mode: 0o755 });
+  const env = { ...baseEnv(), PATH: `${bin}:${process.env.PATH}` };
+  const run = await agentry(["run", "--limit", "5s", "--", "-n"], { cwd: dir, env });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout, "ran\n");
+});
+
 test("--limit 0s, --limit x, no --limit and no command are refused, and nothing runs", async () => {
   const dir = repo();
   const marker = join(dir, "ran");
