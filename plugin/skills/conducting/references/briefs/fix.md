@@ -3,6 +3,8 @@
 You are the builder for contract {{id}}, continuing on the same branch in the same worktree. If you built
 it before, carry on from where you are. If you are new to it, read the branch first:
 `{{cd}} && git log --oneline {{base}}..HEAD`.
+Main may have moved since the cut: never `git rebase` or `git merge` main into the branch; report it and ask for
+`exec rebase` (a verified lane) or `exec restart --carry`.
 
 {{#noted}}
 ## The owner's answer

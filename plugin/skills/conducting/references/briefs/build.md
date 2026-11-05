@@ -84,6 +84,8 @@ Not this round: {{notThisRound}}
 - Commit on `{{branch}}` following the repo's commit conventions, with no AI attribution. Leave no
   uncommitted or untracked files behind. Do not merge, push or rebase, and once you have reported, don't
   rewrite the branch: a verifier may be reading it.
+- Never `git rebase` or `git merge` main inside the lane: when main must be taken in, report it and ask for
+  `exec rebase` (a verified lane) or `exec restart --carry`.
 
 ## Report
 
