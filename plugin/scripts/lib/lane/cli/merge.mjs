@@ -36,18 +36,11 @@ import { list as listLedgers, read as readLedger } from "../../process/ledger.mj
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { attributionIn, mergeBaseOf } from "../land.mjs";
-import {
-  carryBackStep,
-  dropNext,
-  giveBack,
-  hasOldRecord,
-  heldRow,
-  mainRow,
-  mainStep,
-  takeCarryStep,
-} from "../merge/carry.mjs";
+import { hasOldRecord, heldRow } from "../merge/aside.mjs";
+import { carryBackStep, dropNext, giveBack, takeCarryStep } from "../merge/carry.mjs";
 import { gateStep } from "../merge/gating.mjs";
 import { FRESH, afterLand, checkNext, done, landNext, ok, red, short } from "../merge/lane.mjs";
+import { mainRow, mainStep } from "../merge/main-row.mjs";
 import { check, cleanupMode, pushMode } from "../merge/modes.mjs";
 import { landStep } from "../merge/picks.mjs";
 import { commitStep, recordStep } from "../merge/record.mjs";

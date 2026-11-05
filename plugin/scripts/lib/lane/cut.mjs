@@ -54,17 +54,11 @@ import {
   textAt,
   treeOf,
 } from "./land.mjs";
-import {
-  carryBackStep,
-  carryWritesStep,
-  giveBack,
-  mainRow,
-  mainStep,
-  putBackAllow,
-  takeCarryStep,
-} from "./merge/carry.mjs";
+import { carryWritesStep, putBackAllow } from "./merge/aside.mjs";
+import { carryBackStep, giveBack, takeCarryStep } from "./merge/carry.mjs";
 import { gateStep, rollBack } from "./merge/gating.mjs";
 import { now, ok, save, setMerge, warn } from "./merge/lane.mjs";
+import { mainRow, mainStep } from "./merge/main-row.mjs";
 import { gatingNow } from "./restack.mjs";
 import { keepBranchAs, leftover, saveWork } from "./restart.mjs";
 import { expects } from "./rounds.mjs";

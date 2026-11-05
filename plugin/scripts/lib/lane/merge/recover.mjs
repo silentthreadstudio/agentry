@@ -30,7 +30,7 @@ import { isMemoryCommit } from "../own-memory.mjs";
 import { PASSES, greenOn, verdicts } from "../rounds.mjs";
 import { childrenOf } from "../stack.mjs";
 import { findByBranch, git, porcelain } from "../worktree.mjs";
-import { backStop, putBackAllow, releaseWrites } from "./carry.mjs";
+import { backStop, putBackAllow, releaseWrites } from "./aside.mjs";
 import { rollBack } from "./gating.mjs";
 import {
   FRESH,

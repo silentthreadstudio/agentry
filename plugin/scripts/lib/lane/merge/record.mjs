@@ -24,14 +24,8 @@ import { boardReport } from "../../process/status.mjs";
 import { WriteError } from "../../process/write.mjs";
 import { putCells, sha256 } from "../carry-io.mjs";
 import { boardCommit, commitOf, restoreFiles, subjectOf, textAt } from "../land.mjs";
-import {
-  backStop,
-  carryWritesStep,
-  conflictLine,
-  dropNext,
-  putBackAllow,
-  releaseWrites,
-} from "./carry.mjs";
+import { backStop, carryWritesStep, putBackAllow, releaseWrites } from "./aside.mjs";
+import { conflictLine, dropNext } from "./carry.mjs";
 import { now, ok, red, save, setMerge, short, skip } from "./lane.mjs";
 
 // A stop that put the board back as it was: the land is gated again, and resumes from there.

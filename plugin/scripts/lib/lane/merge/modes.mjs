@@ -10,8 +10,8 @@ import { gateOf } from "../../process/spec/workflow.mjs";
 import { resolveBranch } from "../adopt.mjs";
 import { cleanup, commitOf, isAncestor, push } from "../land.mjs";
 import { git, worktreesDir } from "../worktree.mjs";
-import { mainRow } from "./carry.mjs";
 import { afterLand, checkNext, done, landNext, now, ok, red, save, short } from "./lane.mjs";
+import { mainRow } from "./main-row.mjs";
 import { checksState, stoppedCut } from "./rows.mjs";
 
 const CHECK_RESULTS = ["pass", "fail"];
