@@ -4,6 +4,10 @@
 //
 // globMatch(globs, path) -> boolean
 // segmentToRegExp(segment) -> the regexp source one path segment of a glob matches (no anchors)
+// wildcardSource(pattern) -> the regexp source a flat name pattern matches (no anchors)
+
+// One character as a regexp matches it, itself.
+const literal = (c) => c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 
 // A glob over repo-relative paths, matched per segment: a segment that is exactly `**` crosses directories;
 // anywhere else `*` and `?` stay inside one segment (`a**b` is just `a*b`). A glob with a `..` segment
@@ -13,10 +17,16 @@ export function segmentToRegExp(segment) {
   for (const c of segment) {
     if (c === "*") re += "[^/]*";
     else if (c === "?") re += "[^/]";
-    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    else re += literal(c);
   }
   return re;
 }
+
+/** The regexp source of a flat name pattern, for a name that is not a path (a branch, a file's basename,
+ *  an id in a filename): `*` is any run of characters, a `/` too, `?` any one character, the rest literal.
+ *  A path takes `globMatch`, where `*` stops at a `/`. */
+export const wildcardSource = (pattern) =>
+  [...pattern].map((c) => (c === "*" ? ".*" : c === "?" ? "." : literal(c))).join("");
 function globToRegExp(glob) {
   const segments = glob.split("/");
   if (segments.includes("..")) return /(?!)/;

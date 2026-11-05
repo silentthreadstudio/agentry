@@ -4,6 +4,7 @@
 // PURE: every function takes text and returns data. No I/O, no knowledge of the process file; `read.mjs`
 // decides what a cell means. Line numbers are 1-based, as an editor shows them. The one fence rule every
 // reader of the kit (and lane's) uses lives here: `maskFences` and `unfenced`.
+import { wildcardSource } from "./glob.mjs";
 
 const HEADING = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const SEPARATOR_CELL = /^:?-+:?$/;
@@ -201,9 +202,7 @@ export function frontmatter(text) {
 
 /** `filename:<pattern with {id}>` → a regex over a file's basename, group 1 = the id. */
 export function filenameId(pattern) {
-  const parts = pattern.split("{id}").map((p) => p.replace(/[.+^$()|[\]\\]/g, "\\$&"));
-  const glob = parts.map((p) => p.replaceAll("*", ".*").replaceAll("?", "."));
-  return new RegExp(`^${glob.join("(.+?)")}$`);
+  return new RegExp(`^${pattern.split("{id}").map(wildcardSource).join("(.+?)")}$`);
 }
 
 // Cell parsers, one per field type (plan F13 §3.1). Each takes a plain cell.
