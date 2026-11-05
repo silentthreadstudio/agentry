@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { STANDARD_TYPES } from "../lib/lane/subjects.mjs";
+import { STANDARD_TYPES } from "../lib/process/commits.mjs";
 import { commitFile, git, gitEnv, tempRepo } from "./git-repo.mjs";
 
 const BOARD = join(dirname(fileURLToPath(import.meta.url)), "..", "board.mjs");

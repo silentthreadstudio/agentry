@@ -6,17 +6,14 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import {
-  STANDARD_TYPES,
   brokenIn,
   checkCommits,
-  historySubjects,
-  learnRules,
   readCommits,
   rulesOf,
-  typeOf,
   withType,
   withTypeHints,
 } from "../lib/lane/subjects.mjs";
+import { STANDARD_TYPES, historySubjects, learnRules, typeOf } from "../lib/process/commits.mjs";
 import { commitFile, git, tempRepo } from "./git-repo.mjs";
 
 const c = (message, sha = "a".repeat(40)) => ({ sha, message });

@@ -5,7 +5,7 @@
 //
 // run(argv, { root }) -> { exit, out }
 import { refuse, usageError } from "../../cli/help.mjs";
-import { HISTORY, historySubjects, learnRules } from "../../lane/subjects.mjs";
+import { HISTORY, historySubjects, learnRules } from "../commits.mjs";
 import { commitOf, currentBranch, defaultBranch, topLevel } from "../git.mjs";
 
 export const noSpec = true;
