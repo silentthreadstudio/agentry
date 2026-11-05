@@ -1,4 +1,4 @@
-// mem update — patch a fact in place (the MCP's memory_update), for curation. `--supersedes` retires the
+// mem update — patch a fact in place, for curation. `--supersedes` retires the
 // named fact, as on write. A scope that would move the fact between the project and global roots is
 // refused (write it anew, with --supersedes); `--status active` is refused on a non-active fact (bring an
 // archived one back with mem recover; a superseded fact stays superseded).

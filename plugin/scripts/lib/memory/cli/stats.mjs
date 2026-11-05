@@ -1,4 +1,4 @@
-// mem stats — aggregate counts (the MCP's memory_stats): facts and episodes, active / superseded /
+// mem stats — aggregate counts: facts and episodes, active / superseded /
 // archived, the undistilled-episode debt, facts by type, and the read errors of any store file that could
 // not be read (a corrupt file is reported here, never hidden).
 //

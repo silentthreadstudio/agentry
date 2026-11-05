@@ -1,4 +1,4 @@
-// mem recover — restore a tombstoned (archived) memory to active (the MCP's memory_recover): decay
+// mem recover — restore a tombstoned (archived) memory to active: decay
 // archives, this undoes a false archive. A fact that is not archived is refused as invalid-state.
 //
 // run(argv) -> { exit, out }   exit 0 = recovered, 1 = refused, 2 = usage

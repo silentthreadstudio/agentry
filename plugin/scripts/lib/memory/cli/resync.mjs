@@ -1,4 +1,4 @@
-// mem resync — force-rebuild the derived index from the files (the MCP's memory_resync) and report the
+// mem resync — force-rebuild the derived index from the files and report the
 // fact and episode counts before and after. Each `agentry mem` call reads the files afresh, so this is
 // the check that the store reads as expected after another process wrote to it.
 //

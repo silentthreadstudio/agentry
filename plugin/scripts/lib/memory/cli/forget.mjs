@@ -1,4 +1,4 @@
-// mem forget — remove a memory by id, from the live store and disk (the MCP's memory_forget): the manual
+// mem forget — remove a memory by id, from the live store and disk: the manual
 // override; decay handles routine cleanup, so use it sparingly.
 //
 // run(argv) -> { exit, out }   exit 0 = forgotten, 1 = refused (no such id), 2 = usage

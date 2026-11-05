@@ -1,4 +1,4 @@
-// mem distill — graduate episodes into facts (the MCP's memory_distill). `--mode list` returns the
+// mem distill — graduate episodes into facts. `--mode list` returns the
 // undistilled episodes with a draft fact each (provenance-linked); it writes nothing. `--mode stamp`
 // marks the given episodes distilled; when none of the ids is an undistilled episode it is refused.
 //

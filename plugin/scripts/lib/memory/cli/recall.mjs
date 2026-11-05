@@ -1,4 +1,4 @@
-// mem recall — the few, ranked, scope-aware memories for a task (the MCP's memory_recall): never superseded,
+// mem recall — the few, ranked, scope-aware memories for a task: never superseded,
 // safe to inject. `--mode prime` with no query is the session warm set: the top facts and recent episodes.
 //
 // run(argv) -> { exit, out }   exit 0 = done (an empty result is still 0), 1 = refused, 2 = usage

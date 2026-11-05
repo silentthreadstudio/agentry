@@ -1,5 +1,5 @@
 import { MEMORY_TYPES, SCOPES } from "../domain/schema.mjs";
-// mem write — capture a durable memory (the MCP's memory_write). Dedup-reinforces a near-duplicate of the
+// mem write — capture a durable memory. Dedup-reinforces a near-duplicate of the
 // same type instead of creating a copy; `--supersedes` retires the named fact and skips that dedup.
 //
 // run(argv) -> { exit, out }   exit 0 = written or reinforced, 1 = refused, 2 = usage

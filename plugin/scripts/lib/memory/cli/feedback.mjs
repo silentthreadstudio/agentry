@@ -1,4 +1,4 @@
-// mem feedback — record the usefulness signal after a run (the MCP's memory_feedback): used + pass boosts,
+// mem feedback — record the usefulness signal after a run: used + pass boosts,
 // recalled but unused decays (and self-archives after enough strikes), used + fail lowers confidence,
 // a recall miss nudges confidence up. An id that is not an active fact is skipped with its reason; when
 // every id is skipped the call is refused as not-found.

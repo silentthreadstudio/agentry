@@ -1,4 +1,4 @@
-// mem search — broader full-text search with snippets (the MCP's memory_search), for exploration when
+// mem search — broader full-text search with snippets, for exploration when
 // recall's few are not enough.
 //
 // run(argv) -> { exit, out }   exit 0 = done (no match is still 0), 1 = refused, 2 = usage

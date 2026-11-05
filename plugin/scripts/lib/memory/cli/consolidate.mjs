@@ -1,4 +1,4 @@
-// mem consolidate — cluster recurring facts and PROPOSE skill promotions (the MCP's memory_consolidate).
+// mem consolidate — cluster recurring facts and PROPOSE skill promotions.
 // It never installs anything: skills are the owner's call. Returns the proposals with their provenance.
 //
 // run(argv) -> { exit, out }   exit 0 = done (no proposals is still 0), 1 = refused, 2 = usage

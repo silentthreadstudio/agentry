@@ -1,4 +1,4 @@
-// mem episode — record a structured episode (the MCP's episode_write): task, shape, outcome, retries,
+// mem episode — record a structured episode: task, shape, outcome, retries,
 // lesson, the memories it used: the episodic layer that distill graduates into facts.
 //
 // run(argv) -> { exit, out }   exit 0 = recorded, 1 = refused, 2 = usage
