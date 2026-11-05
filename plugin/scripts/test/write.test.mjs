@@ -3,7 +3,18 @@
 // so "every other byte is kept" is the assertion. Fixture: test/fixtures/write (invented content).
 // Run: node --test plugin/scripts/test/write.test.mjs
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -217,6 +228,26 @@ test("apply refuses, and writes nothing, when the file changed between the read 
     (e) => e instanceof WriteError && /changed/.test(e.message),
   );
   assert.equal(readFileSync(file, "utf8"), handEdit, "the owner's text is what is on disk");
+});
+
+test("apply replaces the file whole: a reader that opened it before keeps the old text", () => {
+  const file = scratch("old text\n");
+  const fd = openSync(file, "r");
+  apply(file, () => "new text, longer than the old\n");
+  const buf = Buffer.alloc(64);
+  assert.equal(buf.subarray(0, readSync(fd, buf, 0, 64, 0)).toString(), "old text\n");
+  assert.equal(readFileSync(file, "utf8"), "new text, longer than the old\n");
+});
+
+test("apply keeps the file's mode and writes through a symlink", () => {
+  const file = scratch("a\n");
+  chmodSync(file, 0o600);
+  const link = join(dirname(file), "LINK.md");
+  symlinkSync(file, link);
+  apply(link, () => "b\n");
+  assert.equal(lstatSync(link).isSymbolicLink(), true);
+  assert.equal(readFileSync(file, "utf8"), "b\n");
+  assert.equal(statSync(file).mode & 0o777, 0o600);
 });
 
 test("apply writes nothing when the edit itself refuses", () => {

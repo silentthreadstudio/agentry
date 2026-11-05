@@ -4,12 +4,14 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,6 +39,14 @@ test("atomicWrite writes the file whole, replaces it, and leaves no temp file", 
   assert.equal(readFileSync(file, "utf8"), "two");
   assert.deepEqual(readdirSync(dir), ["state.json"]);
   assert.equal(tempOf(file), `${file}.agentry-${process.pid}.tmp`);
+});
+
+test("atomicWrite keeps the permission bits of the file it replaces", () => {
+  const file = join(fresh(), "private.json");
+  writeFileSync(file, "one");
+  chmodSync(file, 0o600);
+  atomicWrite(file, "two");
+  assert.equal(statSync(file).mode & 0o777, 0o600);
 });
 
 test("a write whose rename fails leaves the target as it was and no temp file", () => {
