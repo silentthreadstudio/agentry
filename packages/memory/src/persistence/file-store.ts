@@ -7,6 +7,7 @@
 // detection as such: a conflict confined to the body loads as text. A write goes to a temp file
 // renamed into place, so a reader sees the old record or the new one, never neither and never a part.
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -35,17 +36,28 @@ import { type Roots, dirFor } from "../resolution/roots.js";
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 
 /**
- * Write `text` to `file` whole: a temp file beside it, renamed over it. The temp name does not end in
- * `.md`, so reads and the signature never see it. Mirrors the plugin's `lib/fs/atomic.mjs`, which the
- * bundle cannot import.
+ * Write `text` to `file` whole: a temp file beside it, renamed over it. A file it replaces keeps its
+ * permission bits. The temp name does not end in `.md`, so reads and the signature never see it.
+ * Mirrors the plugin's `lib/fs/atomic.mjs`, which the bundle cannot import.
  */
 function atomicWrite(file: string, text: string): void {
   const tmp = `${file}.agentry-${process.pid}.tmp`;
   try {
     writeFileSync(tmp, text);
+    const mode = modeOf(file);
+    if (mode !== null) chmodSync(tmp, mode);
     renameSync(tmp, file);
   } finally {
     rmSync(tmp, { force: true });
+  }
+}
+
+/** `file`'s permission bits, or null when it is not there to keep them from. */
+function modeOf(file: string): number | null {
+  try {
+    return statSync(file).mode & 0o7777;
+  } catch {
+    return null;
   }
 }
 

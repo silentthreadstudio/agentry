@@ -30,7 +30,8 @@ fields and a body for its prose (a fact's text, an episode's task):
   The slug only makes the file name readable; the ULID is the identity.
 - **Writes** go to a temp file beside the target, renamed into place; a sibling left under an old
   slug is removed only after that. A reader sees the old record or the new one, never neither and
-  never a part. Each write is atomic per file, not across files.
+  never a part. Each write is atomic per file, not across files, and keeps the permission bits of
+  the file it replaces.
 - **Supersede, don't mutate.** A replacing fact marks the old one `superseded`; recall never returns
   it. Facts that keep being recalled without being used self-archive, and `memory_recover` brings
   one back.

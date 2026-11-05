@@ -28900,6 +28900,7 @@ var SqliteTextIndex = class {
 
 // src/persistence/file-store.ts
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -29004,9 +29005,18 @@ function atomicWrite(file, text) {
   const tmp = `${file}.agentry-${process.pid}.tmp`;
   try {
     writeFileSync(tmp, text);
+    const mode = modeOf(file);
+    if (mode !== null) chmodSync(tmp, mode);
     renameSync(tmp, file);
   } finally {
     rmSync(tmp, { force: true });
+  }
+}
+function modeOf(file) {
+  try {
+    return statSync(file).mode & 4095;
+  } catch {
+    return null;
   }
 }
 var MarkdownFileStore = class {

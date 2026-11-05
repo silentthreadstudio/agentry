@@ -1,7 +1,14 @@
 // MarkdownFileStore on disk: a rewrite never leaves a record missing or half-written, and a file the
 // store cannot read is reported, never skipped silently.
 import assert from "node:assert/strict";
-import fs, { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import fs, {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -90,6 +97,18 @@ test("a file with no frontmatter header is reported as a read error, not skipped
     ["facts", "crlf.md"],
   ]);
   for (const e of errors) assert.match(e.reason, /no frontmatter header/);
+});
+
+test("a rewrite keeps the permission bits of the record's file", () => {
+  const dir = fresh();
+  const store = new MarkdownFileStore({ global: dir, project: null });
+  store.writeFact("g", fact());
+  const file = join(dir, "facts", readdirSync(join(dir, "facts"))[0] ?? "");
+  chmodSync(file, 0o600);
+
+  store.writeFact("g", fact({ confidence: 0.9 }));
+
+  assert.equal(statSync(file).mode & 0o777, 0o600);
 });
 
 test("a merge conflict is reported only when it breaks the header or YAML; in the body it is text", () => {
