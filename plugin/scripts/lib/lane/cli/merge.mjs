@@ -140,7 +140,7 @@ function parse(argv) {
 
 // --- the land and its preflight ------------------------------------------------------------------
 
-// A stack stop changes nothing: its next is printed, not kept in the ledger.
+// A stack stop (or a refusal before any pick) changes nothing: its next is printed, not kept in the ledger.
 const stackStop = (exit, lane, rows, next) =>
   done(exit, { ...lane, ledger: { ...lane.ledger, next } }, rows, next);
 
@@ -279,7 +279,7 @@ function land(lane) {
   if (FRESH.includes(merged?.step)) {
     const deps = depsRow(lane);
     if (deps) rows.push(deps.row);
-    if (deps?.row.mark === "red") return done(2, lane, rows, deps.next);
+    if (deps?.row.mark === "red") return stackStop(2, lane, rows, deps.next);
   }
   if (opts["--drop-carry"] && !merged?.carry && !hasOldRecord(merged))
     return done(2, lane, [

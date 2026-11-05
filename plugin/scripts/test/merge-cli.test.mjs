@@ -2773,15 +2773,16 @@ test("a land whose item would be done with a dependency open is refused before a
   commitDeps("T2, T4");
   const { path, shas } = buildSubjects("feat: a");
   execLedger({ path, gated: shas[0] });
-  const [pre, ledger] = [head(), ledgerBytes()];
+  const pre = head();
   const pf = merge(ID, "--preflight");
   assert.equal(pf.status, 1, out(pf));
+  const ledger = ledgerBytes(); // the preflight keeps its own next; the land must leave the ledger as it is
   assert.match(pf.stdout, /✗ deps +task T1 would be done, but depends on T2 \(task, todo\)/);
   const res = merge(ID, "--message", "docs(board): land T1");
   assert.equal(res.status, 2, out(res));
-  assert.match(res.stdout, /✗ deps +task T1 would be done, but depends on T2 \(task, todo\)/);
-  assert.match(res.stdout, /agentry board set task T1 deps=T4 --apply/);
-  assert.doesNotMatch(res.stdout, /✓ land|picked/);
+  assert.match(out(res), /✗ deps +task T1 would be done, but depends on T2 \(task, todo\)/);
+  assert.match(out(res), /agentry board set task T1 deps=T4 --apply/);
+  assert.doesNotMatch(out(res), /✓ land|picked/);
   assert.equal(head(), pre);
   assert.equal(status(), "");
   assert.equal(ledgerBytes(), ledger);
