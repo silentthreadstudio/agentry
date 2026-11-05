@@ -23,6 +23,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { boardFiles, cellText, diffBoard, strayChanges } from "../../process/board-diff.mjs";
+import { currentBranch } from "../../process/git.mjs";
 import { globMatch } from "../../process/glob.mjs";
 import { list as listLedgers, runDir } from "../../process/ledger.mjs";
 import {
@@ -39,15 +40,7 @@ import {
   workingBoard,
   writtenByScript,
 } from "../carry-io.mjs";
-import {
-  commitOf,
-  currentBranch,
-  filesOf,
-  notEdits,
-  restoreFiles,
-  statusEntries,
-  toLand,
-} from "../land.mjs";
+import { commitOf, filesOf, notEdits, restoreFiles, statusEntries, toLand } from "../land.mjs";
 import { git } from "../worktree.mjs";
 import { landNext, now, ok, red, setMerge, short, warn } from "./lane.mjs";
 import { listedTip } from "./rows.mjs";

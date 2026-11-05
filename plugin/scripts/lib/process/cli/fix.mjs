@@ -15,8 +15,8 @@
 // to report, 2 = usage
 import { basename } from "node:path";
 import { PREVIEW, usageError } from "../../cli/help.mjs";
-import { mainRoot } from "../../lane/worktree.mjs";
 import { accepted, mechanical, nudges } from "../drift.mjs";
+import { mainRoot } from "../git.mjs";
 import { boardId } from "../ids.mjs";
 import { applyEvent } from "../lifecycle.mjs";
 import { readProcess } from "../read.mjs";

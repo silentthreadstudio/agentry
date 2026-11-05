@@ -11,10 +11,10 @@ import {
   idProblem,
   ignoredFiles,
   git as laneGit,
-  mainRoot,
   porcelain,
   remove,
 } from "../lib/lane/worktree.mjs";
+import { mainRoot } from "../lib/process/git.mjs";
 import { commitFile, git, tempRepo } from "./git-repo.mjs";
 
 let repo;

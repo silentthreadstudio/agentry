@@ -6,8 +6,8 @@
 // run(argv, { root, processPath, spec, model }) -> { exit, out }
 import { relative } from "node:path";
 import { usageError } from "../../cli/help.mjs";
-import { mainRoot } from "../../lane/worktree.mjs";
 import { refuseConductor } from "../conductor.mjs";
+import { mainRoot } from "../git.mjs";
 import { boardId } from "../ids.mjs";
 import { readyView, renderReady } from "../ready.mjs";
 import { renderStatus, why } from "../render.mjs";

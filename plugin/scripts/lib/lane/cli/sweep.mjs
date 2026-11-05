@@ -13,9 +13,9 @@
 //
 // run(argv, { root }) -> { exit, out }
 import { existsSync } from "node:fs";
+import { mainRoot } from "../../process/git.mjs";
 import { loadSpec } from "../../process/read.mjs";
 import { apply, keepReason, plan } from "../sweep.mjs";
-import { mainRoot } from "../worktree.mjs";
 
 export const help = {
   usage: "sweep [--apply [--discard-ignored]] [--json]",

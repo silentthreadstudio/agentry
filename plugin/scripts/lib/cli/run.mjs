@@ -35,8 +35,9 @@ import {
   setGroup,
   tryLock,
 } from "../lane/named-lock.mjs";
-import { mainRoot, worktreesDir } from "../lane/worktree.mjs";
+import { worktreesDir } from "../lane/worktree.mjs";
 import { gitRootOf } from "../process/contract.mjs";
+import { mainRoot } from "../process/git.mjs";
 import { workflowPathOf } from "../process/read.mjs";
 import { gateOf, validateWorkflow } from "../process/spec/workflow.mjs";
 import { renderHelp, say } from "./help.mjs";

@@ -33,12 +33,6 @@ export function treeOf(dir, ref) {
   return res.status === 0 ? res.stdout.trim() : null;
 }
 
-/** The branch checked out at `dir`, or null when HEAD is detached. */
-export function currentBranch(dir) {
-  const res = git(dir, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  return res.status === 0 ? res.stdout.trim() : null;
-}
-
 /** `git rev-list --reverse [--first-parent] from..to`: the commits after `from` up to `to`, oldest
  *  first; null when git cannot say. */
 export function commitsBetween(dir, from, to, { firstParent = false } = {}) {

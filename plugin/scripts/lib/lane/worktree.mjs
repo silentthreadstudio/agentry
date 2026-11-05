@@ -1,5 +1,5 @@
 // worktree — the lane's git I/O for isolation (ADR-R2): Agentry creates the worktree and branch itself, on
-// every host. `mainRoot` resolves any directory (a worktree included) to the main checkout; `create` adds
+// every host. `create` adds
 // `agentry/<id>` under `<mainRoot>/.agentry/run/worktrees/<id>`; `remove` takes it down again, force-
 // removing a locked worktree and deleting the branch (at its listed tip) only when nothing on it is
 // missing from main.
@@ -42,12 +42,6 @@ function must(dir, args) {
   const res = git(dir, args);
   if (res.status !== 0) throw new Error(`git ${args.join(" ")}: ${res.stderr.trim()}`);
   return res.stdout.trim();
-}
-
-/** The main checkout for `dir`, which may be inside a linked worktree. Null outside a repository. */
-export function mainRoot(dir) {
-  const res = git(dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  return res.status === 0 ? dirname(res.stdout.trim()) : null;
 }
 
 export { idProblem };

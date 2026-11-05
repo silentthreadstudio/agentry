@@ -14,13 +14,13 @@
 //                                                         empty), then `git apply --3way`
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { branchTips } from "../process/git.mjs";
+import { branchTips, currentBranch } from "../process/git.mjs";
 import * as ledgers from "../process/ledger.mjs";
 import { shellWord } from "../text/shell.mjs";
 import { resolveBranch } from "./adopt.mjs";
 import { applyPatch, asidePatch } from "./carry-io.mjs";
 import { first, short } from "./fmt.mjs";
-import { commitOf, currentBranch, ignoredIn, subjectOf } from "./land.mjs";
+import { commitOf, ignoredIn, subjectOf } from "./land.mjs";
 import { branchOf, git, porcelain, remove } from "./worktree.mjs";
 
 const processDir = (root) => join(root, ".agentry", "run", "process");

@@ -9,9 +9,9 @@
 // run(argv, { root, spec, model }) -> { exit, out }
 import { refuse, usageError } from "../../cli/help.mjs";
 import { idProblem } from "../../id.mjs";
+import { mainRoot } from "../../process/git.mjs";
 import { runId } from "../../process/ids.mjs";
 import { added, callProblem, holderName, holdersOf, marked, saveCalls } from "../owner-calls.mjs";
-import { mainRoot } from "../worktree.mjs";
 
 export const help = {
   usage:

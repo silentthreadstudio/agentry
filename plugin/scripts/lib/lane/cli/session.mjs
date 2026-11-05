@@ -29,6 +29,7 @@ import { readConfig } from "../../config.mjs";
 import { rankFacts, readFacts, readMemoryConfig } from "../../memory/recall.mjs";
 import { run as fix } from "../../process/cli/fix.mjs";
 import * as drafts from "../../process/drafts.mjs";
+import { mainRoot } from "../../process/git.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { fit } from "../../process/render.mjs";
 import { SKILL_DIR, sessionChecks, skillExists } from "../../process/spec/extensions.mjs";
@@ -45,7 +46,6 @@ import { callLines, openCalls } from "../owner-calls.mjs";
 import * as sessionChecksFile from "../session-checks.mjs";
 import { stackOf } from "../stack.mjs";
 import { leftovers, plan } from "../sweep.mjs";
-import { mainRoot } from "../worktree.mjs";
 
 export const help = {
   usage: [

@@ -16,8 +16,9 @@
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
-import { git, mainRoot } from "../../lane/worktree.mjs";
+import { git } from "../../lane/worktree.mjs";
 import * as drafts from "../drafts.mjs";
+import { mainRoot } from "../git.mjs";
 import { fit } from "../render.mjs";
 import { has, own } from "../spec/shape.mjs";
 import { WriteError, appendLine, apply } from "../write.mjs";

@@ -13,13 +13,12 @@
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
-import { branchTips, worktrees } from "../../process/git.mjs";
+import { branchTips, mainRoot, worktrees } from "../../process/git.mjs";
 import { runId } from "../../process/ids.mjs";
 import { list as listLedgers } from "../../process/ledger.mjs";
 import { readSpikes, spikesFile } from "../../process/spikes.mjs";
 import { isBranch, resolveBranch, shownName, strayTree, unnamedHead } from "../adopt.mjs";
 import { fileSpike, forgetSpike } from "../spikes.mjs";
-import { mainRoot } from "../worktree.mjs";
 
 export const help = {
   usage: 'spike [<branch|path> --for <id> | --keep "<why>" | --forget] [--json]',

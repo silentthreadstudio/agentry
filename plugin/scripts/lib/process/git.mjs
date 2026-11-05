@@ -1,7 +1,7 @@
 // git — the process kit's only git I/O: does a commit exist, recent history, ancestry, parents and
 // identities, a branch's reflog, worktrees, patch ids (to match a cherry-picked commit to its branch
-// original), whether a change is still in effect where it landed (`inEffect`), the default branch and the
-// tracked files.
+// original), whether a change is still in effect where it landed (`inEffect`), the default branch, the
+// branch checked out, the main checkout of a linked worktree and the tracked files.
 //
 // Every function takes the git root first and never throws: outside a repo, or on any git error, it
 // answers false / [] / null. Refs and SHAs are checked before they reach argv, so a board cell can never
@@ -9,7 +9,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const SHA = /^[0-9a-f]{4,40}$/i;
 const FULL_SHA = /^[0-9a-f]{40,64}$/;
@@ -238,6 +238,16 @@ export function reflog(root, branch) {
       return { sha: line.slice(0, at), says: line.slice(at + 1) };
     });
 }
+
+/** The main checkout for `dir`, which may be inside a linked worktree. Null outside a repository. */
+export function mainRoot(dir) {
+  const out = git(dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  return out === null ? null : dirname(out.trim());
+}
+
+/** The branch checked out at `dir`, or null when HEAD is detached. */
+export const currentBranch = (dir) =>
+  git(dir, ["symbolic-ref", "--quiet", "--short", "HEAD"])?.trim() ?? null;
 
 const tops = new Map(); // root → its top, once found
 

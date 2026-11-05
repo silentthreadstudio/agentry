@@ -29,6 +29,7 @@
 import { realpathSync } from "node:fs";
 import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
 import { idProblem } from "../../id.mjs";
+import { mainRoot } from "../../process/git.mjs";
 import { kindOf, runId } from "../../process/ids.mjs";
 import { list as listLedgers, read as readLedger } from "../../process/ledger.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
@@ -64,7 +65,6 @@ import {
 import { childRows, stackRows } from "../merge/stack.mjs";
 import { RestackError, restackLane } from "../restack.mjs";
 import { childrenOf } from "../stack.mjs";
-import { mainRoot } from "../worktree.mjs";
 
 export const help = {
   usage: [

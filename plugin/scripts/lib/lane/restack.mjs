@@ -11,11 +11,12 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { atomicWrite } from "../fs/atomic.mjs";
+import { currentBranch } from "../process/git.mjs";
 import * as ledgers from "../process/ledger.mjs";
 import { gateOf } from "../process/spec/workflow.mjs";
 import { now, short } from "./fmt.mjs";
 import { gateLockDir, heldSlots, holderOf, running } from "./gate-lock.mjs";
-import { commitOf, currentBranch } from "./land.mjs";
+import { commitOf } from "./land.mjs";
 import { step as advance, verifiedTip } from "./rounds.mjs";
 import { onTarget, rebaseOnto, restackLine, stackOf, unclean } from "./stack.mjs";
 import { branchOf, git } from "./worktree.mjs";
