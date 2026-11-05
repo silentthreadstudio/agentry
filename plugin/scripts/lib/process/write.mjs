@@ -5,7 +5,8 @@
 // every other byte as it was (a table is never reflowed or realigned). `apply` / `applyAll` are the
 // only I/O, with a re-read guard: if a file changed between the read and the write, nothing is written.
 // A refusal is a `WriteError`; the CLIs turn it into a message and exit 2.
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { atomicWrite } from "../fs/atomic.mjs";
 import * as md from "./markdown.mjs";
 
 export class WriteError extends Error {}
@@ -160,7 +161,8 @@ export function applyAll(edits, { preview = false } = {}) {
   for (const [file, { before }] of seen)
     if (readOrRefuse(file) !== before)
       refuse(`${file} changed while it was being edited; nothing written`);
-  for (const [file, { after }] of seen) writeFileSync(file, after);
+  // Through a link to the file it names, so the link stays a link.
+  for (const [file, { after }] of seen) atomicWrite(realpathSync(file), after);
   return result;
 }
 
