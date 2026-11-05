@@ -10,6 +10,7 @@ import * as ledgers from "../../process/ledger.mjs";
 import { proseModelHint, unusedUiModel } from "../../process/spec/models.mjs";
 import { resolveWorkflow } from "../../process/spec/presets.mjs";
 import { flaggedItem, gateOf, lifecycleOf } from "../../process/spec/workflow.mjs";
+import { boardPaths } from "../board-paths.mjs";
 import {
   outsideOwns,
   ownedFiles,
@@ -27,7 +28,7 @@ import { create, git, remove } from "../worktree.mjs";
 import { ownsOverlap } from "./admission.mjs";
 import { boardEvent } from "./board.mjs";
 import { buildTier, dispatchNext } from "./briefs.mjs";
-import { RUNNING, boardPaths, committedSpec, configPaths } from "./guard/allow.mjs";
+import { RUNNING, committedSpec, configPaths } from "./guard/allow.mjs";
 import { headOf, mainSnapshot } from "./guard/snapshot.mjs";
 import { contractFile, laneLine, now, readOr, refuse, short } from "./lane.mjs";
 import { stepLines, view } from "./view.mjs";

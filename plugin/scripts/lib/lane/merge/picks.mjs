@@ -2,9 +2,7 @@
 // one argv call that is aborted on any stop. `merge.preHead` and `merge.planned` are written before the
 // pick, and what landed is read from main's first-parent history since preHead, so a rerun after a kill
 // knows which picks main holds.
-import { posix } from "node:path";
-import { escapesRoot } from "../../process/spec/shape.mjs";
-import { globMatch } from "../gate.mjs";
+import { boardPathTest } from "../board-paths.mjs";
 import {
   cherryPick,
   commitOf,
@@ -17,33 +15,6 @@ import {
 import { isMemoryCommit } from "../own-memory.mjs";
 import { FRESH, now, ok, red, save, setMerge, short } from "./lane.mjs";
 import { commitsRow, listedTip } from "./rows.mjs";
-
-// Twin of `boardPaths` in lane/cli/exec.mjs, kept in step with it until both move into one shared module.
-// The board's own files as the lane's guard reads them (field 75): each kind's table,
-// contract blocks and create blocks and `status.note` as paths, each kind's `at.files` and `file.glob` (its
-// `{id}` any name) as globs, from the spec's root; one that leaves the repository is never one. A path
-// test: (path) => boolean, for a repo-relative, `/`-separated path.
-function boardPathTest(spec) {
-  const base = typeof spec?.root === "string" ? spec.root : ".";
-  if (!spec || escapesRoot(".", base)) return () => false;
-  const inRepo = (from) => (p) => typeof p === "string" && p !== "" && !escapesRoot(from, p);
-  const paths = [];
-  const globs = [];
-  for (const kind of Object.values(spec.kinds ?? {})) {
-    paths.push(kind?.at?.table, ...[kind?.contract?.blocks ?? []].flat());
-    paths.push(...[kind?.create?.blocks ?? []].flat().map((b) => b?.file));
-    globs.push(kind?.at?.files, kind?.file?.glob?.replaceAll?.("{id}", "*"));
-  }
-  const fromBase = (list) =>
-    list.filter(inRepo(base)).map((p) => posix.normalize(posix.join(base, p)));
-  const note = spec.status?.note;
-  const exact = new Set([
-    ...fromBase(paths),
-    ...(inRepo(".")(note) ? [posix.normalize(note)] : []),
-  ]);
-  const wild = fromBase(globs);
-  return (path) => exact.has(path) || (wild.length > 0 && globMatch(wild, path));
-}
 
 // Agentry's own config at the root of `.agentry/` (process.json, workflow.json, config.json).
 const AGENTRY_CONFIG = /^\.agentry\/[^/]+\.json$/;

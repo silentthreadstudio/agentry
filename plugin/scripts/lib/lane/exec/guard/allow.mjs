@@ -5,7 +5,8 @@ import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { workflowPathOf } from "../../../process/read.mjs";
 import { parseSpec } from "../../../process/spec.mjs";
-import { escapesRoot, own } from "../../../process/spec/shape.mjs";
+import { own } from "../../../process/spec/shape.mjs";
+import { boardPaths } from "../../board-paths.mjs";
 import { globMatch } from "../../gate.mjs";
 import { git } from "../../worktree.mjs";
 import { ownedOf, short } from "../lane.mjs";
@@ -44,32 +45,6 @@ export function allowedCommit(root, allow, all, mine, hit = () => {}) {
     hit(hits);
     const more = hits.length > OVERLAP_SHOWN ? ` (+${hits.length - OVERLAP_SHOWN} more)` : "";
     return `${short(sha)} touches ${hits.slice(0, OVERLAP_SHOWN).join(", ")}${more}, this lane's files`;
-  };
-}
-
-// The board's own files (field 75), as the process file `spec` names them and `read.mjs` resolves them,
-// from the root: each kind's table, contract blocks and create blocks and `status.note` as `paths`, and
-// each kind's `at.files` and `file.glob` (its `{id}` any name) as `globs`, so an item file made or removed
-// passes too. A path or glob is kept when it stays inside the repository, the test the spec's own check
-// uses (`escapesRoot(spec.root, p)`); an item id never builds one.
-export function boardPaths(spec) {
-  const paths = [];
-  const globs = [];
-  const base = typeof spec?.root === "string" ? spec.root : ".";
-  if (!spec || escapesRoot(".", base)) return { paths, globs };
-  const inRepo = (from) => (p) => typeof p === "string" && p !== "" && !escapesRoot(from, p);
-  for (const kind of Object.values(spec.kinds ?? {})) {
-    paths.push(kind?.at?.table, ...[kind?.contract?.blocks ?? []].flat());
-    paths.push(...[kind?.create?.blocks ?? []].flat().map((b) => b?.file));
-    globs.push(kind?.at?.files, kind?.file?.glob?.replaceAll?.("{id}", "*"));
-  }
-  const fromBase = (list) => [
-    ...new Set(list.filter(inRepo(base)).map((p) => posix.normalize(posix.join(base, p)))),
-  ];
-  const note = spec.status?.note;
-  return {
-    paths: [...fromBase(paths), ...(inRepo(".")(note) ? [posix.normalize(note)] : [])],
-    globs: fromBase(globs),
   };
 }
 
