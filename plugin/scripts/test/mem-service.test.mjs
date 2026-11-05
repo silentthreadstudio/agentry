@@ -1,0 +1,484 @@
+// The memory service (lib/memory/application): write, dedup, supersede, forget, decay and archive,
+// recover, stats and update, over a real file store and index in a temp dir.
+import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { ARCHIVE_THRESHOLD } from "../lib/memory/application/feedback.mjs";
+import { MemoryService } from "../lib/memory/application/memory-service.mjs";
+import { SqliteTextIndex } from "../lib/memory/persistence/db-index.mjs";
+import { MarkdownFileStore } from "../lib/memory/persistence/file-store.mjs";
+
+function newService(global, now) {
+  const roots = { global, project: null };
+  const service = new MemoryService(
+    new MarkdownFileStore(roots),
+    new SqliteTextIndex(),
+    roots,
+    now,
+  );
+  service.load();
+  return service;
+}
+
+const fresh = () => mkdtempSync(join(tmpdir(), "agentry-mem-"));
+
+// Read a fact (any status — including archived) straight off disk, the file store being truth. Lets a
+// test inspect tombstone fields (decay/status/archivedAt) that recall/search deliberately don't expose.
+function factOnDisk(global, id) {
+  const store = new MarkdownFileStore({ global, project: null });
+  return store.readFacts().records.find((r) => r.fact.id === id)?.fact;
+}
+
+test("write → recall round-trips", () => {
+  const service = newService(fresh());
+  const { id, action } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "esbuild must mark node:sqlite external when bundling",
+  });
+  assert.equal(action, "created");
+  const { memories } = service.recall({ query: "esbuild sqlite external" });
+  assert.equal(memories.length, 1);
+  assert.equal(memories[0]?.fact.id, id);
+});
+
+test("dedup-reinforce: a near-duplicate reinforces, not duplicates", () => {
+  const service = newService(fresh());
+  service.write({
+    type: "preference",
+    scope: "global",
+    text: "always use pnpm for installs in this repo",
+  });
+  const second = service.write({
+    type: "preference",
+    scope: "global",
+    text: "always use pnpm for installs in this repo",
+  });
+  assert.equal(second.action, "reinforced");
+  assert.equal(service.stats().active, 1);
+});
+
+test("rebuild-on-start: a fresh service reads the files (text = truth)", () => {
+  const dir = fresh();
+  newService(dir).write({
+    type: "decision",
+    scope: "global",
+    text: "memory is text-as-truth with a derived sqlite index",
+  });
+  const restarted = newService(dir); // simulates a session restart
+  const { memories } = restarted.recall({ query: "text-as-truth sqlite index" });
+  assert.equal(memories.length, 1);
+});
+
+test("supersede: recall returns only the active fact", () => {
+  const service = newService(fresh());
+  const first = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the auth module lives under src server handlers",
+  });
+  service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the auth module moved to packages identity adapters",
+    supersedes: first.id,
+  });
+  const { memories } = service.recall({ query: "auth module location" });
+  assert.equal(memories.length, 1);
+  assert.match(memories[0]?.fact.text ?? "", /identity adapters/);
+});
+
+test("supersede beats dedup: an explicit supersedes is honored even on near-duplicate text", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  // variant A: the new text near-dups the very fact being superseded.
+  const old = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the database connection pool size is set to ten in config",
+  });
+  const res = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the database connection pool size is set to ten in config",
+    supersedes: old.id,
+  });
+  assert.equal(res.action, "created");
+  assert.equal(res.supersededMissing, undefined);
+  assert.equal(factOnDisk(dir, old.id)?.status, "superseded");
+  assert.notEqual(res.id, old.id);
+});
+
+test("supersede beats dedup: honored when the new text near-dups a different active fact", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  // the fact we explicitly retire (dissimilar text).
+  const target = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the auth module lives under src server handlers legacy path",
+  });
+  // a different active fact whose text the new write near-duplicates.
+  service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the database connection pool size is set to ten in config",
+  });
+  // the new write supersedes `target` but its text near-dups the pool-size fact.
+  const res = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the database connection pool size is set to ten in config",
+    supersedes: target.id,
+  });
+  assert.equal(res.action, "created");
+  assert.equal(res.supersededMissing, undefined);
+  assert.equal(factOnDisk(dir, target.id)?.status, "superseded");
+});
+
+test("forget: removes a memory from the store and disk", () => {
+  const service = newService(fresh());
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "this temporary fact will be forgotten shortly",
+  });
+  assert.equal(service.stats().active, 1);
+  assert.deepEqual(service.forget(id), { ok: true, id, kind: "fact" });
+  assert.equal(service.stats().facts, 0);
+  assert.equal(service.recall({ query: "temporary forgotten fact" }).memories.length, 0);
+  assert.equal(service.forget(id).ok, false); // idempotent — now a not-found outcome
+});
+
+test("decay → archive: recalled-but-unused crosses the strike threshold and self-archives", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "this fact will be recalled but never used and should self-archive",
+  });
+
+  // strikes 1..THRESHOLD-1 accrue without archiving; usefulness floors at 0 along the way
+  for (let strike = 1; strike < ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+    const f = factOnDisk(dir, id);
+    assert.equal(f?.status, "active");
+    assert.equal(f?.decay, strike);
+    assert.equal(f?.usefulness, 0); // floored
+  }
+
+  clock += 1_000;
+  service.feedback({ recalled: [id], used: [], outcome: "pass" }); // the strike that crosses
+  const archived = factOnDisk(dir, id);
+  assert.equal(archived?.status, "archived");
+  assert.equal(archived?.usefulness, 0);
+  assert.equal(archived?.decay, ARCHIVE_THRESHOLD);
+  assert.ok(archived?.archivedAt, "archivedAt tombstone is set");
+
+  // excluded from recall in both modes
+  assert.equal(service.recall({ query: "recalled never used self-archive" }).memories.length, 0);
+  assert.equal(
+    service.recall({ mode: "prime" }).memories.some((m) => m.fact.id === id),
+    false,
+  );
+});
+
+test("decay reset: a cite+pass clears strikes and prevents archive", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "this fact gets recalled-unused thrice then cited so it survives",
+  });
+
+  for (let strike = 1; strike < ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  }
+  assert.equal(factOnDisk(dir, id)?.decay, ARCHIVE_THRESHOLD - 1);
+
+  clock += 1_000;
+  service.feedback({ recalled: [id], used: [id], outcome: "pass" }); // cite + pass resets
+  assert.equal(factOnDisk(dir, id)?.decay, 0);
+
+  // a further recalled-unused strike does not archive (counter restarted from 0)
+  clock += 1_000;
+  service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  assert.equal(factOnDisk(dir, id)?.status, "active");
+});
+
+test("recover: a tombstoned fact returns to active and is recallable again without a reload", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "archive me then recover me back into the search index",
+  });
+  for (let strike = 1; strike <= ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  }
+  assert.equal(factOnDisk(dir, id)?.status, "archived");
+
+  assert.deepEqual(service.recover(id), { ok: true, id });
+  const recovered = factOnDisk(dir, id);
+  assert.equal(recovered?.status, "active");
+  assert.equal(recovered?.decay, 0);
+  assert.equal(recovered?.archivedAt, undefined);
+
+  // recall (task mode) finds it again — recover re-added it to the text index in-process
+  const { memories } = service.recall({ query: "recover me back into the search index" });
+  assert.equal(
+    memories.some((m) => m.fact.id === id),
+    true,
+  );
+
+  // recover on an already-active id → invalid-state (it exists but isn't archived); unknown id → not-found
+  const reRecover = service.recover(id);
+  assert.equal(reRecover.ok, false);
+  assert.equal(reRecover.ok === false && reRecover.reason, "invalid-state");
+  const missing = service.recover("p:nonexistent");
+  assert.equal(missing.ok, false);
+  assert.equal(missing.ok === false && missing.reason, "not-found");
+});
+
+test("feedback ignores non-active ids: a superseded fact can never be decayed or archived", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const first = service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the config loader lives under src config legacy path",
+  });
+  clock += 1_000;
+  service.write({
+    type: "repo-fact",
+    scope: "global",
+    text: "the config loader moved to packages config modern path",
+    supersedes: first.id,
+  });
+  assert.equal(factOnDisk(dir, first.id)?.status, "superseded");
+
+  // feed the superseded id back as recalled-but-unused past the threshold — supersession is terminal,
+  // so it must stay superseded with its strike counter untouched (never flips to archived).
+  for (let strike = 1; strike <= ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [first.id], used: [], outcome: "pass" });
+  }
+  const stillSuperseded = factOnDisk(dir, first.id);
+  assert.equal(stillSuperseded?.status, "superseded");
+  assert.equal(stillSuperseded?.decay, 0, "decay counter never advanced on a non-active fact");
+
+  // and recover() cannot resurrect it (it exists but isn't archived → invalid-state, not not-found)
+  const rec = service.recover(first.id);
+  assert.equal(rec.ok, false);
+  assert.equal(rec.ok === false && rec.reason, "invalid-state");
+  assert.equal(factOnDisk(dir, first.id)?.status, "superseded");
+});
+
+test("feedback ignores non-active ids: an archived fact is not further mutated", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "archive me then feed me back as recalled to confirm no further mutation",
+  });
+  for (let strike = 1; strike <= ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  }
+  const archived = factOnDisk(dir, id);
+  assert.equal(archived?.status, "archived");
+  const decayAtArchive = archived?.decay;
+
+  clock += 1_000;
+  service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  const after = factOnDisk(dir, id);
+  assert.equal(after?.status, "archived");
+  assert.equal(after?.decay, decayAtArchive, "archived fact's strike counter is left untouched");
+});
+
+test("recover is idempotent in the index: a recovered fact appears exactly once in recall", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "archive recover and prove this unique phrase resolves to a single index row",
+  });
+  for (let strike = 1; strike <= ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  }
+  assert.deepEqual(service.recover(id), { ok: true, id });
+
+  // task-mode recall returns the fact exactly once (count, not .some — the double-index bug would
+  // have surfaced two scored entries for the same id, consuming two of the ranked slots).
+  const { memories } = service.recall({ query: "unique phrase resolves single index row" });
+  assert.equal(memories.filter((m) => m.fact.id === id).length, 1);
+
+  // the raw index (observed via search(), one entry per index hit) returns a single row for the id.
+  const hits = service.search("unique phrase resolves single index row").filter((h) => h.id === id);
+  assert.equal(hits.length, 1, "exactly one index row for the recovered fact");
+});
+
+test("stats: archived facts count in the archived bucket, not superseded", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const { id } = service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "a fact that will end up in the archived stats bucket",
+  });
+  service.write({ type: "decision", scope: "global", text: "an active fact that stays put" });
+  for (let strike = 1; strike <= ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  }
+  const stats = service.stats();
+  assert.equal(stats.archived, 1);
+  assert.equal(stats.superseded, 0);
+  assert.equal(stats.active, 1);
+});
+
+test("episode_write + stats tracks undistilled debt", () => {
+  const service = newService(fresh());
+  service.episodeWrite({
+    task: "build the memory mcp",
+    shape: "decompose+verify",
+    outcome: "pass",
+    lesson: "node:sqlite is flag-free only on Node 24",
+  });
+  assert.equal(service.stats().undistilled, 1);
+});
+
+// ── memory_update: fields with side effects either apply them or refuse with the tool to use ────────
+
+test("update refuses a scope that would move the fact to the other root, and leaves it where it is", () => {
+  const project = fresh();
+  const roots = { global: fresh(), project };
+  const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
+  service.load();
+  const { id } = service.write({
+    type: "repo-fact",
+    scope: "repo",
+    text: "the lab repo pins pnpm",
+  });
+
+  const outcome = service.update(id, { scope: "user" });
+
+  assert.equal(outcome.ok === false && outcome.reason, "bad-input");
+  assert.equal(outcome.ok === false && outcome.reason === "bad-input" && outcome.field, "scope");
+  const onDisk = new MarkdownFileStore(roots).readFacts().records.find((r) => r.fact.id === id);
+  assert.equal(onDisk?.origin, "p");
+  assert.equal(onDisk?.fact.scope, "repo");
+});
+
+test("update allows a scope change that stays in the fact's root", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  const { id } = service.write({ type: "preference", scope: "global", text: "tabs over spaces" });
+
+  assert.deepEqual(service.update(id, { scope: "user" }), { ok: true, id });
+  assert.equal(factOnDisk(dir, id)?.scope, "user");
+});
+
+test("update refuses to set an archived fact active (that is recover's job)", () => {
+  const dir = fresh();
+  let clock = 1_000;
+  const service = newService(dir, () => clock);
+  const { id } = service.write({ type: "gotcha", scope: "global", text: "an archived lapis note" });
+  for (let strike = 1; strike <= ARCHIVE_THRESHOLD; strike++) {
+    clock += 1_000;
+    service.feedback({ recalled: [id], used: [], outcome: "pass" });
+  }
+
+  const outcome = service.update(id, { status: "active" });
+
+  assert.deepEqual(outcome, { ok: false, reason: "invalid-state", id, status: "archived" });
+  assert.equal(factOnDisk(dir, id)?.status, "archived");
+});
+
+test("update with supersedes retires the target, as write does", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  const old = service.write({
+    type: "decision",
+    scope: "global",
+    text: "deploys go out on friday",
+  });
+  const next = service.write({
+    type: "decision",
+    scope: "global",
+    text: "deploys go out on monday",
+  });
+
+  assert.deepEqual(service.update(next.id, { supersedes: old.id }), { ok: true, id: next.id });
+
+  assert.equal(factOnDisk(dir, old.id)?.status, "superseded");
+  assert.equal(factOnDisk(dir, next.id)?.supersedes, old.id);
+  assert.deepEqual(
+    service.recall({ query: "deploys go out" }).memories.map((m) => m.fact.id),
+    [next.id],
+  );
+});
+
+test("update with supersedes of a missing id still applies and flags the link as a no-op", () => {
+  const service = newService(fresh());
+  const { id } = service.write({
+    type: "decision",
+    scope: "global",
+    text: "cache keys are hashed",
+  });
+
+  assert.deepEqual(service.update(id, { supersedes: "g:MISSING" }), {
+    ok: true,
+    id,
+    supersededMissing: "g:MISSING",
+  });
+});
+
+test("update refuses a supersedes that names the fact itself", () => {
+  const dir = fresh();
+  const service = newService(dir);
+  const { id } = service.write({ type: "decision", scope: "global", text: "logs rotate daily" });
+
+  const outcome = service.update(id, { supersedes: id });
+
+  assert.equal(
+    outcome.ok === false && outcome.reason === "bad-input" && outcome.field,
+    "supersedes",
+  );
+  const onDisk = factOnDisk(dir, id);
+  assert.equal(onDisk?.status, "active");
+  assert.equal(onDisk?.supersedes, undefined);
+});
+
+test("update with the fact's own scope is not a cross-root move, even when the id's root differs", () => {
+  const global = fresh();
+  const { id } = newService(global).write({
+    type: "repo-fact",
+    scope: "repo",
+    text: "written before the project had a root",
+  }); // no project root yet → a g: id with scope repo
+  const roots = { global, project: fresh() };
+  const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
+  service.load();
+
+  assert.deepEqual(service.update(id, { scope: "repo", confidence: 0.9 }), { ok: true, id });
+  assert.equal(factOnDisk(global, id)?.confidence, 0.9);
+});
