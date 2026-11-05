@@ -4,6 +4,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import * as ledgers from "../../../process/ledger.mjs";
 import { gateOf } from "../../../process/spec/workflow.mjs";
+import { now, short } from "../../fmt.mjs";
 import { gateLockDir, holdGate } from "../../gate-lock.mjs";
 import { flakyReds, runGate } from "../../gate.mjs";
 import { markGating } from "../../restack.mjs";
@@ -11,7 +12,7 @@ import { expects, gateTally } from "../../rounds.mjs";
 import { gateRefusal, stackOf } from "../../stack.mjs";
 import { laneTier, refreshBrief } from "../briefs.mjs";
 import { headOf } from "../guard/snapshot.mjs";
-import { Stopped, laneLine, mustLedger, now, refuse, short, stepWith } from "../lane.mjs";
+import { Stopped, laneLine, mustLedger, refuse, stepWith } from "../lane.mjs";
 import { view } from "../view.mjs";
 
 // Gates queue behind the lock (`gate.concurrency` slots, in the main checkout's run directory); a flaky

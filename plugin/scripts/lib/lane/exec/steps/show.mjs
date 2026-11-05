@@ -2,11 +2,12 @@
 import * as ledgers from "../../../process/ledger.mjs";
 import { idleMinutes, resolveWorkflow } from "../../../process/spec/presets.mjs";
 import { answerLabel, restackText, routeFixedText } from "../../exec-view.mjs";
+import { short } from "../../fmt.mjs";
 import { idleOf } from "../../idle.mjs";
 import { routeOf } from "../../rounds.mjs";
 import { childrenOf } from "../../stack.mjs";
 import { nestedTrees } from "../admission.mjs";
-import { laneLine, mustLedger, ownedOf, short } from "../lane.mjs";
+import { laneLine, mustLedger, ownedOf } from "../lane.mjs";
 import { liveNotes } from "../notes.mjs";
 import { answerOf, routeNow, stepCount, stepLines, view, waysOn } from "../view.mjs";
 

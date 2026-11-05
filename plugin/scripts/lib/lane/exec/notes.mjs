@@ -3,10 +3,11 @@
 import { readFileSync } from "node:fs";
 import { resolveWorkflow } from "../../process/spec/presets.mjs";
 import { withSection } from "../brief.mjs";
+import { now } from "../fmt.mjs";
 import { isAncestor } from "../land.mjs";
 import { verdicts } from "../rounds.mjs";
 import { git } from "../worktree.mjs";
-import { now, readOr, refuse } from "./lane.mjs";
+import { readOr, refuse } from "./lane.mjs";
 
 // The notes-round cap as the workflow file says now (field 84): read at each call, not fixed at start.
 export const liveNotes = ({ spec }) => resolveWorkflow(spec).exec.noteRounds;

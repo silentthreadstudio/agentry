@@ -23,10 +23,10 @@ import { dirname, join } from "node:path";
 import { branchTips } from "../process/git.mjs";
 import { resolveBranch, shellWord } from "./adopt.mjs";
 import { applyPatch, asidePatch } from "./carry-io.mjs";
+import { short } from "./fmt.mjs";
 import { commitOf, currentBranch, ignoredIn, subjectOf } from "./land.mjs";
 import { branchOf, git, porcelain, remove } from "./worktree.mjs";
 
-const short = (sha) => String(sha ?? "").slice(0, 7);
 const first = (text) => text.trim().split("\n")[0] ?? "";
 const processDir = (root) => join(root, ".agentry", "run", "process");
 const unmerged = (dir) =>

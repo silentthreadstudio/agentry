@@ -1,10 +1,11 @@
 // exec/steps/fix — `lane exec fix <id>`: a verified lane back to its builder, on the verifier's notes
 // or the owner's change.
 import * as ledgers from "../../../process/ledger.mjs";
+import { now } from "../../fmt.mjs";
 import { expects, notesBudget, verdicts } from "../../rounds.mjs";
 import { nestedTrees, refuseAtWriterCap } from "../admission.mjs";
 import { dispatchNext } from "../briefs.mjs";
-import { laneLine, mustLedger, now, readReport, refuse, stepWith } from "../lane.mjs";
+import { laneLine, mustLedger, readReport, refuse, stepWith } from "../lane.mjs";
 import { liveNotes, notesOf, withOpen } from "../notes.mjs";
 import { view } from "../view.mjs";
 

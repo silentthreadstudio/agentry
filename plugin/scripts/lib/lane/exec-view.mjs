@@ -14,6 +14,7 @@
 //                                      the notes cap `notes 2 (live)` when the caller read it live
 // restackText(entry) -> string         one `restacks[]` entry: `onto T1 at def5678 (was abc1234): tip …`
 import { runText } from "../process/steps.mjs";
+import { short } from "./fmt.mjs";
 
 /** The verify route a lane runs, as one line (`route` is the ledger's `{ verify, flagged }`). */
 export function routeText(route) {
@@ -47,8 +48,6 @@ export function workflowText({ preset, exec, roles, set }) {
  *  is read live (field 84): given `live`, the workflow file's `exec.noteRounds` now, it shows that, marked. */
 export const routeFixedText = (route, live) =>
   `${route.preset ?? "standard"} · verify ${route.verify} · notes ${live === undefined ? route.noteRounds : `${live} (live)`} · final ${route.final} · rebase ${route.rebase}`;
-
-const short = (sha) => String(sha ?? "").slice(0, 7);
 
 /** One restack of a stacked lane (a ledger `restacks[]` entry) as a line: `onto T1 at def5678 (was
  *  abc1234): tip 1234567 → 89abcde, no conflict · <ISO>`; onto main reads `onto main off T1 at …`. */

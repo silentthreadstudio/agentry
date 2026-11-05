@@ -4,11 +4,12 @@
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { runOf, runText } from "../../process/steps.mjs";
 import { ownedFiles, withNew } from "../brief.mjs";
+import { now } from "../fmt.mjs";
 import { PASSES, verdicts } from "../rounds.mjs";
 import { git } from "../worktree.mjs";
 import { ownsPath } from "./guard/allow.mjs";
 import { headOf } from "./guard/snapshot.mjs";
-import { heldCopy, isVerifiedPark, now, saved } from "./lane.mjs";
+import { heldCopy, isVerifiedPark, saved } from "./lane.mjs";
 import { keepRangeDiff } from "./rebasing.mjs";
 
 // A path under lane `id`'s run dir as the archive `runs` holds it now; any other path as it is.

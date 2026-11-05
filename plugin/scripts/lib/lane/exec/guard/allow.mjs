@@ -7,9 +7,10 @@ import { workflowPathOf } from "../../../process/read.mjs";
 import { parseSpec } from "../../../process/spec.mjs";
 import { own } from "../../../process/spec/shape.mjs";
 import { boardPaths } from "../../board-paths.mjs";
+import { short } from "../../fmt.mjs";
 import { globMatch } from "../../gate.mjs";
 import { git } from "../../worktree.mjs";
-import { ownedOf, short } from "../lane.mjs";
+import { ownedOf } from "../lane.mjs";
 
 // The lanes whose owned files no commit on main may touch (A44): every one still running.
 export const RUNNING = ["building", "fixing", "verifying", "held"];

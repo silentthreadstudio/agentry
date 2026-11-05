@@ -31,6 +31,7 @@ import { WriteError } from "../process/write.mjs";
 import { resolveBranch, shellWord } from "./adopt.mjs";
 import { decisionKind } from "./brief.mjs";
 import { headBoard, putCells, workingBoard } from "./carry-io.mjs";
+import { short } from "./fmt.mjs";
 import { endStrayGate } from "./gate-group.mjs";
 import { changedSince, pickTier } from "./gate.mjs";
 import {
@@ -68,7 +69,6 @@ import { expects } from "./rounds.mjs";
 import { checkCommits, rulesOf } from "./subjects.mjs";
 import { branchOf, git, porcelain, remove } from "./worktree.mjs";
 
-const short = (sha) => String(sha ?? "").slice(0, 7);
 const first = (text) => String(text).trim().split("\n")[0] ?? "";
 const MARK = { ok: "✓", warn: "!", red: "✗", skip: "·", wait: "…" };
 const SHOWN = 5;

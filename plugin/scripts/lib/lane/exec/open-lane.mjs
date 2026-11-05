@@ -21,6 +21,7 @@ import {
 } from "../brief.mjs";
 import { sha256 } from "../carry-io.mjs";
 import { routeText } from "../exec-view.mjs";
+import { now, short } from "../fmt.mjs";
 import { idProblem } from "../id.mjs";
 import { step as advance, begin, beginAt } from "../rounds.mjs";
 import { chainOf } from "../stack.mjs";
@@ -30,7 +31,7 @@ import { boardEvent } from "./board.mjs";
 import { buildTier, dispatchNext } from "./briefs.mjs";
 import { RUNNING, committedSpec, configPaths } from "./guard/allow.mjs";
 import { headOf, mainSnapshot } from "./guard/snapshot.mjs";
-import { contractFile, laneLine, now, readOr, refuse, short } from "./lane.mjs";
+import { contractFile, laneLine, readOr, refuse } from "./lane.mjs";
 import { stepLines, view } from "./view.mjs";
 
 // The lane `start --on` stacks on: resolved like an id, a lane that is verified (any next), held or at

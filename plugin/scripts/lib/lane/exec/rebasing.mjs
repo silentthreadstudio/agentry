@@ -3,10 +3,10 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import * as ledgers from "../../process/ledger.mjs";
+import { short } from "../fmt.mjs";
 import { isAncestor, mergeBaseOf } from "../land.mjs";
 import { git } from "../worktree.mjs";
 import { moveStart } from "./guard/main-guard.mjs";
-import { short } from "./lane.mjs";
 
 // Is a rebase still in progress in `worktree` (a conflict stopped it, or it was never continued)?
 export function rebasing(worktree) {

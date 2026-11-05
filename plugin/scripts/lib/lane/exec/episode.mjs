@@ -1,8 +1,8 @@
 // exec/episode — the `episode_write` payload a lane's close (or its cut) prints, from its ledger alone.
 import { routeText } from "../exec-view.mjs";
+import { short } from "../fmt.mjs";
 import { callsLine } from "../owner-calls.mjs";
 import { verdicts } from "../rounds.mjs";
-import { short } from "./lane.mjs";
 
 // The `episode_write` arguments for this lane, from the ledger alone.
 const ownerHolds = (ledger) => (ledger.holds ?? []).filter((h) => h.for === "owner").length;

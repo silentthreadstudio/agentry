@@ -15,13 +15,14 @@ import * as ledgers from "../../../process/ledger.mjs";
 import { applyEvent } from "../../../process/lifecycle.mjs";
 import { cleanupSteps, pickOnto, shellWord, source } from "../../adopt.mjs";
 import { ownedFiles, withNew } from "../../brief.mjs";
+import { now, short } from "../../fmt.mjs";
 import { carry, saveWork } from "../../restart.mjs";
 import { setSpikeCalls } from "../../spikes.mjs";
 import { branchOf, git, remove } from "../../worktree.mjs";
 import { refuseAtWriterCap, refuseLane, refuseMidLand } from "../admission.mjs";
 import { ownsPath } from "../guard/allow.mjs";
 import { headOf } from "../guard/snapshot.mjs";
-import { Stopped, laneLine, now, refuse, short } from "../lane.mjs";
+import { Stopped, laneLine, refuse } from "../lane.mjs";
 import { contractOf, mainBranchOf, openLane } from "../open-lane.mjs";
 
 // Work built outside exec taken in as the lane (field 86): `start`'s checks and board write, a fresh

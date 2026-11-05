@@ -3,6 +3,7 @@
 import { writeFileSync } from "node:fs";
 import * as ledgers from "../../../process/ledger.mjs";
 import { gateOf } from "../../../process/spec/workflow.mjs";
+import { now, short } from "../../fmt.mjs";
 import { builderStatus, summaryOf, unwrap, usedMemories } from "../../report.mjs";
 import { expects, skipsVerifier } from "../../rounds.mjs";
 import { brokenIn, rulesOf } from "../../subjects.mjs";
@@ -12,16 +13,7 @@ import { writeBuilt } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { mainGuard } from "../guard/main-guard.mjs";
 import { headOf, ownStart } from "../guard/snapshot.mjs";
-import {
-  heldCopy,
-  isFlagged,
-  mustLedger,
-  now,
-  readReport,
-  refuse,
-  short,
-  stepWith,
-} from "../lane.mjs";
+import { heldCopy, isFlagged, mustLedger, readReport, refuse, stepWith } from "../lane.mjs";
 import { finishRebase, rebasing } from "../rebasing.mjs";
 import { view } from "../view.mjs";
 

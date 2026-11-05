@@ -2,13 +2,14 @@
 // builder.
 import * as ledgers from "../../../process/ledger.mjs";
 import { gateOf } from "../../../process/spec/workflow.mjs";
+import { now } from "../../fmt.mjs";
 import { isAncestor } from "../../land.mjs";
 import { expects } from "../../rounds.mjs";
 import { restackLine, stackOf } from "../../stack.mjs";
 import { nestedTrees, refuseAtWriterCap } from "../admission.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { headOf } from "../guard/snapshot.mjs";
-import { mustLedger, now, refuse, stepWith } from "../lane.mjs";
+import { mustLedger, refuse, stepWith } from "../lane.mjs";
 import { finishRebase } from "../rebasing.mjs";
 import { view } from "../view.mjs";
 

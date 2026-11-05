@@ -17,11 +17,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { prefix } from "../cli/invoke.mjs";
 import { shellQuote as q } from "./brief.mjs";
+import { short } from "./fmt.mjs";
 import { commitOf, isAncestor, subjectOf } from "./land.mjs";
 import { git, porcelain } from "./worktree.mjs";
 
 const LANE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "lane.mjs");
-const short = (sha) => String(sha ?? "").slice(0, 7);
 
 // A parent in one of these states leaves its child nothing to land after: the child is an orphan.
 const ENDED = ["stopped", "closed"];

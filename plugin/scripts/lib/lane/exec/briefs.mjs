@@ -23,11 +23,12 @@ import {
   withSection,
 } from "../brief.mjs";
 import { ownedMark } from "../exec-view.mjs";
+import { now, short } from "../fmt.mjs";
 import { changedSince, pickTier } from "../gate.mjs";
 import { addRound, greenOn, verdicts } from "../rounds.mjs";
 import { branchOf } from "../worktree.mjs";
 import { headOf } from "./guard/snapshot.mjs";
-import { contractFile, isFlagged, laneLine, now, ownedOf, short } from "./lane.mjs";
+import { contractFile, isFlagged, laneLine, ownedOf } from "./lane.mjs";
 import { noteLines, sentBack, withNotesToFix } from "./notes.mjs";
 
 function gateLine(root, spec, ledger) {

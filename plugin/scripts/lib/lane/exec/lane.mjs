@@ -1,7 +1,6 @@
 // exec/lane — what every exec step and domain module shares: the refusal and the stop a step throws
-// (`run` makes them exit 2 and 1), the time and short-sha forms the ledger and the output use, the
-// `lane exec` line a step names next, and the reads every step starts from: the lane's ledger, its
-// owned files, its flag and its saved reports.
+// (`run` makes them exit 2 and 1), the `lane exec` line a step names next, and the reads every step
+// starts from: the lane's ledger, its owned files, its flag and its saved reports.
 import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,8 +20,6 @@ export class Stopped extends Error {}
 export const refuse = (message) => {
   throw new Refusal(message);
 };
-export const now = () => new Date().toISOString();
-export const short = (sha) => String(sha ?? "").slice(0, 7);
 export const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 

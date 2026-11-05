@@ -10,6 +10,7 @@ import { own } from "../../../process/spec/shape.mjs";
 import { lifecycleOf } from "../../../process/spec/workflow.mjs";
 import { runText } from "../../../process/steps.mjs";
 import { resolveBranch, shellWord } from "../../adopt.mjs";
+import { now, short } from "../../fmt.mjs";
 import { gatingNow } from "../../restack.mjs";
 import {
   archive,
@@ -34,7 +35,7 @@ import {
   progressOf,
 } from "../carried.mjs";
 import { headOf } from "../guard/snapshot.mjs";
-import { Stopped, contractFile, laneLine, mustLedger, now, refuse, short } from "../lane.mjs";
+import { Stopped, contractFile, laneLine, mustLedger, refuse } from "../lane.mjs";
 import { contractOf, mainBranchOf, openLane } from "../open-lane.mjs";
 
 // The board's verdict cell (`lifecycle.write.verdict`) is the old lane's: a restarted lane has none yet, so it
