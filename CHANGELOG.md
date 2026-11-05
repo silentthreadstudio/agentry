@@ -7,6 +7,16 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 ## [Unreleased]
 
 ### Added
+- **`lane merge <id> --resolve landed` closes a lane whose work is already on main** — a verified lane (or one
+  stopped on a red gate after a passing verdict) whose commits reached main another way, through a
+  fast-forward of a combined branch or a squash, can now be closed. It reads `git cherry` over the lane's own
+  commits: with every one on main by patch the ledger is merged (`merge.how: "found-on-main"`, `merge.landed`
+  the matching main commits) with nothing picked, no commit made and the board left to the owner. A commit
+  with no matching patch refuses the close, named with its short SHA and subject, until the owner passes
+  `--checked` after checking it landed squashed or reworded; that answer is kept in `resolutions[]`. A stacked
+  parent closed this way counts as merged for its children, `--cleanup` takes the worktree and branch down as
+  after a land, and `board status` stops nudging the lane as verified but not merged. A stuck land's
+  `--resolve landed|rolled-back` is unchanged.
 - **`lane exec cut <id> --decision <D> [--keep <paths>] [--message "<subject>"] [--apply]`** — retires a lane
   on the owner's call, recorded as a decision the board holds. It previews by default and writes nothing. With
   `--apply`, the `--keep` files and folders land on main from the lane's tip as one commit, through the land's
