@@ -35,7 +35,7 @@
 //                             from main, `main..<b>` picked onto it and the uncommitted diff of <b>'s worktree
 //                             applied (stops on a conflict); <b> and its worktree are left as they are
 //   cut <id> --decision <D> [--keep <paths>] [--message <m>] [--apply]   retire a lane on a board decision:
-//                             the kept paths land from its tip as one gated commit (`cut.mjs`), `cut` is
+//                             the kept paths land from its tip as one gated commit (`exec/cut/`), `cut` is
 //                             written, the ledger closed, the worktree removed, the branch kept as `<id>.cut`
 //
 // Board writes go through `applyEvent` only (no `lifecycle` → none), and a restart's clear of the old

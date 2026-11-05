@@ -23,6 +23,9 @@ export class Stopped extends Error {}
 export const refuse = (message) => {
   throw new Refusal(message);
 };
+export const stop = (message) => {
+  throw new Stopped(message);
+};
 export const laneLine = (root, sub, id, extra = "") =>
   `${prefix("lane", `node ${q(LANE)}`)} exec ${sub} ${id} --root ${q(root)}${extra}`;
 
