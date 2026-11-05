@@ -1,4 +1,4 @@
-// session-checks — the repo session skills' outcomes (A42): `<main root>/.agentry/run/process/session-checks.jsonl`,
+// session-checks — the repo session skills' outcomes: `<main root>/.agentry/run/process/session-checks.jsonl`,
 // one JSON object per line, append-only, never committed:
 //   { "phase": "start" | "close", "skill", "result": "pass" | "fail", "note"?, "at": <ISO> }
 // Written by `lane session <start|close> --check`; read by `lane session` and the commands.
@@ -14,7 +14,7 @@
 // checksView(spec, entries, root) -> { start: View, close: View } | null     null: neither phase names a check
 //   View = { named, recorded: [{ skill, result, note?, at }], pending, failed, missing }
 //
-// Beside it, the idle lanes `lane session start` asked the owner to park (field 88):
+// Beside it, the idle lanes `lane session start` asked the owner to park:
 // `<main root>/.agentry/run/idle-asked.json`, `{ <id>: { lastChange, asked: <ISO> } }`, written whole
 // (atomically), never committed. It holds just the lanes idle at the last start, so a lane whose lastChange
 // moved, or that left idle and came back, is asked again. Unlike the checks record it never refuses: one it

@@ -168,7 +168,7 @@ export function brief({ root, spec, model }, ledger, dispatch) {
       mode: dispatch.mode,
     }),
   };
-  // The owner's change: in its fix round's brief, and the recheck's after it (field 77).
+  // The owner's change: in its fix round's brief, and the recheck's after it.
   const owner =
     dispatch.step === "fix"
       ? dispatch.owner
@@ -185,7 +185,7 @@ export function brief({ root, spec, model }, ledger, dispatch) {
   }
   if (owner)
     text = withSection(text, ownerChange(owner, dispatch.step === "fix" ? "build" : "verify"));
-  // A restarted lane's first brief says what was carried into the tree (field 69).
+  // A restarted lane's first brief says what was carried into the tree.
   // A resolve check of a verified carry judges the range-diff, not the old builder's report.
   if (n === 1 && fresh && ledger.carried && dispatch.step !== "resolve")
     text = withSection(text, carriedWork(ledger.carried));
@@ -195,7 +195,7 @@ export function brief({ root, spec, model }, ledger, dispatch) {
       text,
       `## The last verdict\n\nThe old lane's verifier returned ${ledger.carried.verdict.verdict}. Its report is ${ledger.carried.verdict.report}: read it and fix what it names.\n`,
     );
-  // An adopted lane's first brief lists the commits it took in (field 86).
+  // An adopted lane's first brief lists the commits it took in.
   if (n === 1 && fresh && ledger.adopted) text = withSection(text, adoptedWork(ledger.adopted));
   // The fact the owner supplied at a context hold goes where the conductor puts one: at the end.
   if (dispatch.fact) text = `${text.trimEnd()}\n\n## The fact\n\n${dispatch.fact}\n`;
@@ -220,7 +220,7 @@ export const dispatchNext = (ctx, ledger, dispatch) =>
   dispatch ? addRound(ledger, dispatch, brief(ctx, ledger, dispatch)) : ledger;
 
 // A verifier's brief that is waiting is written again from its template, so a gate that went green on its
-// tip since (#43) is read, not re-run, and one that went red after it is run again. What the conductor
+// tip since is read, not re-run, and one that went red after it is run again. What the conductor
 // appended after the last section is put back.
 export function refreshBrief(ctx, ledger) {
   const round = ledger.rounds.at(-1);

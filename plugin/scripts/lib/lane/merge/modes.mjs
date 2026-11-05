@@ -1,4 +1,4 @@
-// merge/modes — the three small `lane merge` modes around the land (plan R1b-5): `--check` records a
+// merge/modes — the three small `lane merge` modes around the land: `--check` records a
 // repo check or a gate checklist item on the branch's tip, `--push` pushes main per `merge.push`, `--cleanup` takes the worktree
 // and branch down, found by branch (a lane closed found on main by the owner's `--checked`, at the tip checked).
 import { join } from "node:path";

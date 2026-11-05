@@ -1,4 +1,4 @@
-// lane sweep [--apply [--discard-ignored]] [--json] — clean up after a session (plan R1b-7, #8, #9). Without
+// lane sweep [--apply [--discard-ignored]] [--json] — clean up after a session. Without
 // `--apply` it only reports: the worktrees of merged or closed tasks, the worktrees no ledger knows (never
 // removed), the processes left running under `.agentry/run/` by a finished lane or by none (an interactive
 // shell among them is listed as left alone, never stopped), what killed writers and holders left (temp files

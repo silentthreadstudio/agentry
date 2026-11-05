@@ -1,5 +1,5 @@
-// exec/steps/cut — `lane exec cut <id> --decision <D> [--keep <paths>] [--message <subject>] [--apply]`
-// (field 95): retire a lane on the owner's decision, landing only the paths the owner keeps. Every check
+// exec/steps/cut — `lane exec cut <id> --decision <D> [--keep <paths>] [--message <subject>] [--apply]`:
+// retire a lane on the owner's decision, landing only the paths the owner keeps. Every check
 // comes first and writes nothing (`exec/cut/plan.mjs`), so a preview (no `--apply`) is the same answer with
 // nothing written. With `--apply` the kept paths and the board's `cut` word land (`exec/cut/land.mjs`), a
 // cut a kill left mid-land is rolled back first (`exec/cut/recover.mjs`), the ledger records `cut` and is

@@ -24,7 +24,7 @@ export function run(ctx, id) {
   if (redo && ledger.hold?.when !== "after") refuse(redoRefusal(ledger.hold));
   // A parked verified lane, or one the notes cap holds: no builder is out or sent, and built is written.
   const parked = parkedVerified(ledger) || ledger.hold?.when === "verdict";
-  // Main may have moved by commits that touch none of the lane's files (field 68): the guard's own rule.
+  // Main may have moved by commits that touch none of the lane's files: the guard's own rule.
   const main = parked ? null : mainGuard(ctx, ledger, ledgers.list(root));
   if (main?.touched)
     refuse(

@@ -17,7 +17,7 @@ import { stackOf } from "../stack.mjs";
 import { ownsPath } from "./guard/allow.mjs";
 import { contractFile, isFile, isFlagged, laneLine, normalised, ownedOf, readOr } from "./lane.mjs";
 
-// The text's `model:` line names its source: `model: opus (contract)` (field 73).
+// The text's `model:` line names its source: `model: opus (contract)`.
 export function withModelSource({ modelFrom, ...shown }) {
   return modelFrom ? { ...shown, model: `${shown.model} (${modelFrom})` } : shown;
 }
@@ -144,7 +144,7 @@ export function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, e
     out.mode = round.mode === "resume" && round.agent ? "resume" : "fresh";
     if (out.mode === "resume") out.agent = round.agent;
     const owned = ownedOf(root, ledger).map((o) => o.path);
-    // The run's step markers, then the contract's bullets, name the builder and its model (field 96).
+    // The run's step markers, then the contract's bullets, name the builder and its model.
     const marks = {
       contract: readOr(contractFile(root, ledger.id)),
       steps: ledger.steps ?? [],
@@ -177,7 +177,7 @@ export function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, e
 }
 
 // The verify route the lane runs, and what the workflow file says now when that differs: the route is
-// fixed at start (field 59), so a task flagged or a route changed since needs `reverify`.
+// fixed at start, so a task flagged or a route changed since needs `reverify`.
 export function routeNow(ctx, ledger) {
   const now = resolveWorkflow(ctx.spec).exec.verify;
   const was = routeOf(ledger).verify;
@@ -188,7 +188,7 @@ export function routeNow(ctx, ledger) {
   return `${was} (fixed at start; ${file} now says ${now})`;
 }
 
-// A stopped lane's ways on (field 75): land it as it is, or start it again with its work.
+// A stopped lane's ways on: land it as it is, or start it again with its work.
 export const waysOn = (root, ledger) => ({
   stopped: ledger.stopReason ?? "unknown",
   "ways on": `${laneCommand(`merge ${ledger.id} --branch ${ledger.branch ?? `agentry/${ledger.id}`}`, { root })} (lands as is, the owner's call) · ${laneLine(root, "restart", ledger.id, " --carry")} (starts it again with its work)`,

@@ -58,7 +58,7 @@ function subjectsOf(root, spec, base, branch) {
 export function run(ctx, id) {
   const { root, value: agent } = ctx;
   const ledger = mustLedger(root, id);
-  // A lane a guard trip holds takes a report again: it reads the saved one (field 75).
+  // A lane a guard trip holds takes a report again: it reads the saved one.
   const parked = ledger.state === "held" && ledger.hold?.for === "guard";
   if (!parked && expects(ledger) !== "report")
     refuse(

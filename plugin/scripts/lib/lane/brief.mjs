@@ -1,5 +1,5 @@
 // brief — what an exec round's brief says, rendered from the templates in the conducting skill's
-// `references/briefs/` (ADR-R3): the same brief every time, on disk, quoting the board instead of memory.
+// `references/briefs/`: the same brief every time, on disk, quoting the board instead of memory.
 // The owns clause is read by `owns.mjs`, the decisions quoted by `decisions.mjs`, the facts recalled by
 // `recall.mjs` and the builder suggested by `builder.mjs`; this module fills the templates.
 //
@@ -175,7 +175,7 @@ export function policySlots(spec, step) {
   };
 }
 
-/** The rebase brief's Reword slots (field 92): the commits the land would pick (`branch` past
+/** The rebase brief's Reword slots: the commits the land would pick (`branch` past
  *  `mainBranch`, in `mainRoot`) that break `commitRules` (the workflow file's `commits`), one
  *  `- reword <short sha> "<subject>": <why>` line each in `rewordLines`; `reword` turns the section on and
  *  `rewordExcept` lets rule 3 name it. A commit git cannot read is the land's to report, never listed.
@@ -280,7 +280,7 @@ export function withSection(text, section) {
     : `${text.slice(0, at + 1)}${section}\n${text.slice(at + 1)}`;
 }
 
-/** The `## The owner's change` section (field 77): the owner's words quoted with their time, and for
+/** The `## The owner's change` section: the owner's words quoted with their time, and for
  *  `role` "build" what to do with them, for "verify" how to judge the round that made them. */
 export function ownerChange({ note, at }, role) {
   const quoted = String(note)
@@ -303,7 +303,7 @@ export function ownerChange({ note, at }, role) {
   ].join("\n");
 }
 
-/** The `## Carried work` section of a restarted lane's first build brief (field 69): what `exec restart
+/** The `## Carried work` section of a restarted lane's first build brief: what `exec restart
  *  --carry` put in the tree (`{ commits, files, report, applied?, diff?, conflict? }`, the ledger's
  *  `carried`; `applied` whether the uncommitted diff is in the tree yet). A carry that
  *  stopped names its conflict, to resolve first. */

@@ -1,4 +1,4 @@
-// lane merge <id> — land one task on main (plan R1b-5, F14): one procedure, stepped by the ledger.
+// lane merge <id> — land one task on main: one procedure, stepped by the ledger.
 //
 //   merge <id> [--branch <b>] --preflight                what landing needs (adopts --branch work)
 //   merge <id> --check <name>=pass|fail [--note <t>]     record a merge check (extensions.merge.checks)

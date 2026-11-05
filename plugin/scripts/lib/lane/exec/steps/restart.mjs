@@ -52,7 +52,7 @@ function clearVerdict({ root, spec, model, kind }, id) {
     : `! board ${field} ${was} is from the old lane: agentry board set ${life.kind} ${id} ${field}= --apply`;
 }
 
-// A lane started again (field 69): not merged and no agent out, its ledger and run files archived as
+// A lane started again: not merged and no agent out, its ledger and run files archived as
 // `<id>.<n>` (a hold's `holds[]` with them), its worktree removed (only `cleanup.disposable` ignored files
 // may go), its branch kept as `agentry/<id>.<n>`, and a fresh `agentry/<id>` cut from main with every
 // `start` record. `--carry` picks the old branch's commits and applies its uncommitted diff; the kept
@@ -104,7 +104,7 @@ export function run(ctx, id) {
     refuse(
       `the worktree ${old.worktree} holds ${left.ignored.length} ignored file(s) a restart would delete (${left.ignored.slice(0, 5).join(", ")}): copy what you need out and remove them, or add them to cleanup.disposable, then restart`,
     );
-  // What a carry picks: the branch's commits not on main, never base..tip (field 100), from a branch
+  // What a carry picks: the branch's commits not on main, never base..tip, from a branch
   // based on main's first-parent line; a patch main has already is left out and named.
   const range = withWork && oldTip ? carryRange(root, headOf(root), oldTip) : null;
   if (range && !range.based)
@@ -223,7 +223,7 @@ export function run(ctx, id) {
   // Past the archive nothing is refused: a failure is a stop that says where the old work is.
   try {
     ({ kept, tip: keptTip } = retire(root, old, n));
-    // The owner's calls are the lane's, not the attempt's: the new ledger keeps them (field 90).
+    // The owner's calls are the lane's, not the attempt's: the new ledger keeps them.
     const withCalls = (path, base) => ({ calls: old.calls ?? [], ...again(path, base) });
     const res = openLane({ ...ctx, on: null, cite: old.cite ?? [] }, id, {
       found,

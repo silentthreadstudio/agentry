@@ -32,7 +32,7 @@ export function keepRangeDiff(root, id, n, res) {
 // The rebase the last `rebases[]` entry started, finished at `tip`: the base becomes the new merge base
 // with main, and the range-diff of old base..old tip against new base..new tip goes to
 // `logs/range-diff-<n>.txt`. The main guard's start moves to the new base, up to main's HEAD as the entry
-// recorded it, and its snapshot with it (field 93): a path clean on main now whose content the commits
+// recorded it, and its snapshot with it: a path clean on main now whose content the commits
 // from the old start to the new one changed was committed, so its start entry goes; a path still dirty,
 // or clean with those commits leaving it as it was (its edit discarded), keeps its start, so it still
 // trips. Changes `ledger` in place; returns `changed`.

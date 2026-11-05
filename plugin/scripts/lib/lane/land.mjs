@@ -1,4 +1,4 @@
-// land — the git that lands a task's branch on main (plan R1b-5): which commits to pick, the
+// land — the git that lands a task's branch on main: which commits to pick, the
 // cherry-pick (aborted on any stop), which picks main really holds, the rollback after a red gate, the
 // board commit, the push and the cleanup by branch. `cli/merge.mjs` and `merge/` sequence these steps
 // against the ledger; the carry's patch and boards are `carry-io.mjs`, the gate's process group
@@ -258,7 +258,7 @@ export function restoreFiles(root, files) {
   return res.status === 0 ? { ok: true } : { ok: false, reason: first(res.stderr) };
 }
 
-// A line of a commit message that credits an AI tool (A13: commits carry the author only).
+// A line of a commit message that credits an AI tool (commits carry the author only).
 const ATTRIBUTION = [
   /^co-authored-by:.*\b(claude|anthropic|openai|chatgpt|gpt|copilot|gemini|codex|ai)\b/i,
   /noreply@anthropic\.com/i,

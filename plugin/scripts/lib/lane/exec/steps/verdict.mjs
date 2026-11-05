@@ -40,7 +40,7 @@ export function run(ctx, id) {
           onlyFixCommits: onlyFixCommits(root, verdicts(ledger).at(-1)?.tip, tip),
         }
       : {};
-  // The notes this verdict would leave open: a flagged item at the notes cap holds on them (field 84).
+  // The notes this verdict would leave open: a flagged item at the notes cap holds on them.
   const opened = round.step === "resolve" ? [] : openNotesOf(text, round, ledger.openNotes);
   const res = stepWith(ledger, {
     type: "verdict",

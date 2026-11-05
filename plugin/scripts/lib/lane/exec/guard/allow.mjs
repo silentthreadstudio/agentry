@@ -12,12 +12,12 @@ import { short } from "../../fmt.mjs";
 import { git } from "../../worktree.mjs";
 import { ownedOf } from "../lane.mjs";
 
-// The lanes whose owned files no commit on main may touch (A44): every one still running.
+// The lanes whose owned files no commit on main may touch: every one still running.
 export const RUNNING = ["building", "fixing", "verifying", "held"];
 
 // Why a commit on main trips this lane's guard, as `landedOnly` asks (null when it passes). It passes when
 // every path it touches (against its first parent) is one `guard.allow` lets through (`allowsPath`) and no
-// running lane owns (A44), or when it touches none of this lane's files (`mine`, from `laneFiles`; field
+// running lane owns, or when it touches none of this lane's files (`mine`, from `laneFiles`; field
 // 81), whoever made it. An overlap is named, `<sha> touches <paths>, this lane's files`, and `hit` is
 // called; "" when the commit or the lane's files cannot be read.
 export function allowedCommit(root, allow, all, mine, hit = () => {}) {
@@ -63,7 +63,7 @@ export function committedSpec(root, processRel, workflowRel) {
   return { tracked: true, spec: spec && !problems.length ? spec : null };
 }
 
-// The board paths a lane's guard lets through, never widened by an edit made after it started (F1, F2a):
+// The board paths a lane's guard lets through, never widened by an edit made after it started (F2a):
 // the process file as main's HEAD commits it when it is tracked there, else the paths `start` saved in
 // the ledger (`boardAtStart`) from the spec as it loaded then; an older ledger without them, none.
 function boardOf(root, ledger, processRel, workflowRel) {
@@ -95,13 +95,13 @@ export function configPaths({ root, processPath }) {
   return { processRel, workflowRel };
 }
 
-// Agentry's own files the guard lets through like `guard.allow` paths (field 78): the harness config, and
+// Agentry's own files the guard lets through like `guard.allow` paths: the harness config, and
 // the memory store, committed or uncommitted.
 const CONFIG_FILE = ".agentry/config.json";
 const OWN_GLOBS = [".agentry/memory/**"];
 
 // What the guards let through as `guard.allow` paths for `ledger`'s guard: its globs, Agentry's config in
-// use (field 58: the process file and its workflow file, and `.agentry/config.json`), the memory store and
+// use (the process file and its workflow file, and `.agentry/config.json`), the memory store and
 // the board's own files (`boardOf`).
 export function allowOf(ctx, ledger) {
   const { processRel, workflowRel } = configPaths(ctx);
@@ -147,7 +147,7 @@ export function allowedEdit(root, allow, all) {
 }
 
 // The keys an uncommitted edit of Agentry's config may not change while lanes run: they decide what the
-// guard lets through and what the gate checks (R1d-21 N3).
+// guard lets through and what the gate checks.
 const GUARDED_KEYS = ["guard", "gate"];
 // A value as one string with its keys sorted, so a re-indented file compares equal.
 const canonical = (v) =>

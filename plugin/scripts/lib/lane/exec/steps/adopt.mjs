@@ -26,7 +26,7 @@ import { headOf } from "../guard/snapshot.mjs";
 import { Stopped, laneLine, refuse } from "../lane.mjs";
 import { contractOf, mainBranchOf, openLane } from "../open-lane.mjs";
 
-// Work built outside exec taken in as the lane (field 86): `start`'s checks and board write, a fresh
+// Work built outside exec taken in as the lane: `start`'s checks and board write, a fresh
 // `agentry/<id>` cut from main, `main..<b>`'s commits picked onto it and, when <b> is checked out in a
 // worktree, that worktree's uncommitted diff applied (`restart.mjs`'s `saveWork` and `carry`). <b> and its
 // worktree are only read. Every refusal comes before the cut; a carry that stops leaves the conflict in the
@@ -123,7 +123,7 @@ export function run(ctx, id) {
       }
     };
     const res = openLane({ ...ctx, on: null }, id, { found, parent: null, mainBranch, again });
-    // The spike's calls are the ledger's now (written above): the spike keeps none (field 90).
+    // The spike's calls are the ledger's now (written above): the spike keeps none.
     if (from.calls.length) setSpikeCalls(root, branch, []);
     return res;
   } finally {

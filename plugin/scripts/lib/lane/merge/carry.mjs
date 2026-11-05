@@ -1,4 +1,4 @@
-// merge/carry — the carry of exec's uncommitted board writes (plan R1b-5). The land records main's
+// merge/carry — the carry of exec's uncommitted board writes. The land records main's
 // lifecycle cells (`merge/main-row.mjs` found them) in the ledger (`merge.carry`: the cells, each with its
 // text before and after, and the patch, each with its sha256) and only then sets them aside, so the picks,
 // the gate and a rollback see a clean tree and a killed run cannot lose them. They go into the board

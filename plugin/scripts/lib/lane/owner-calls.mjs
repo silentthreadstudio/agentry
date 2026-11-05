@@ -1,4 +1,4 @@
-// owner-calls — the owner's calls made on a lane or a spike (field 90), so none is left only in a chat:
+// owner-calls — the owner's calls made on a lane or a spike, so none is left only in a chat:
 // `calls[]` of the item's ledger, or of the spike filed for it in `spikes.json`, each `{ n, at, text,
 // recorded }`, `recorded` null until the call is written down where the repo keeps decisions (`{ at, where }`).
 // A lane's ledger and a spike are the holders of an item's calls; `lane note` appends to the open ledger,

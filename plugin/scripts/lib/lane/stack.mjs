@@ -1,4 +1,4 @@
-// stack — stacked lanes (A45): a lane cut from another lane's branch, `on: "<Y>"` in its ledger, with
+// stack — stacked lanes: a lane cut from another lane's branch, `on: "<Y>"` in its ledger, with
 // `base` Y's tip at the cut, so every `base..HEAD` reader measures only its own commits. What is due on
 // it (`stackOf`), the lines a step prints for it, and the git of a restack: the guarded rebase onto Y's
 // new tip or main, aborted on any stop so the branch, worktree and index are as they were.

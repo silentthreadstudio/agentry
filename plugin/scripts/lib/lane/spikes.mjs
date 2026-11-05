@@ -1,7 +1,7 @@
-// spikes — the agent worktrees the owner filed (field 87): `.agentry/run/spikes.json` in the main checkout,
+// spikes — the agent worktrees the owner filed: `.agentry/run/spikes.json` in the main checkout,
 // a list of `{ branch, path, for?, keep?, at, calls? }`, one per branch. `for` names the board item the work
-// is meant for; `keep` is why it is kept on purpose; `calls` are the owner's calls noted on it (field 90,
-// `owner-calls.mjs`), kept when the spike is filed again for the same item: a re-file for another item or
+// is meant for; `keep` is why it is kept on purpose; `calls` are the owner's calls noted on it
+// (`owner-calls.mjs`), kept when the spike is filed again for the same item: a re-file for another item or
 // kept, and a forget, refuse while one is not written down (it would be lost). Local run state, not the board: written whole
 // through `fs/atomic.mjs`, so a killed writer leaves the old list or the new, never a part. The reads
 // (`spikesFile`, `readSpikes`) are `process/spikes.mjs`'s, which `drift.mjs` shares. Node built-ins only.

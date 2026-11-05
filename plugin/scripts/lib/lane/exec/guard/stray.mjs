@@ -39,7 +39,7 @@ function reachable(moves, from, to) {
 // The main files whose content no recorded lifecycle or board write explains, and whose path `excused`
 // does not let through, as `git status` entries. Once a rebase (or the branch holding main, `startMoves`)
 // moved the guard's start, a path clean on main whose start is one of the lane's own board writes was
-// mid-write at start and is as HEAD holds it now: never "back to HEAD" (field 93). Before that, a discard of
+// mid-write at start and is as HEAD holds it now: never "back to HEAD". Before that, a discard of
 // the board is a trip as any other.
 export function strayFiles(root, ledger, head, all, boards, excused) {
   const was = ledger.mainAtStart;
@@ -127,10 +127,10 @@ export function landedOnly(root, from, to, others, blocked = () => "") {
   return { ok: true, allowed };
 }
 
-// The files a commit on main may not touch while this lane runs (field 81): its owned entries (as
+// The files a commit on main may not touch while this lane runs: its owned entries (as
 // `ownsPath` reads them) and every path its worktree changed, committed past base or uncommitted. Once the
 // branch holds main past its base (an in-branch rebase), "past base" is past that merge base: main's own
-// changes are never this lane's files (field 102). null when they cannot be read: a doubt keeps the guard on.
+// changes are never this lane's files. null when they cannot be read: a doubt keeps the guard on.
 export function laneFiles(root, ledger) {
   try {
     const owned = ownedOf(root, ledger).map((o) => (typeof o === "string" ? o : o.path));

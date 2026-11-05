@@ -1,4 +1,4 @@
-// gate-group — the merge gate's process group across a killed run (plan R1b-5). `lane merge` runs the
+// gate-group — the merge gate's process group across a killed run. `lane merge` runs the
 // gate under a wrapper that writes the id of the group it runs in to a file the ledger names, with a nonce
 // in its argv; a rerun finds the group by that file and stops it, unless the id now belongs to another
 // process. (`runGate`'s watchdog already ends that group about a second after the merge dies; this is

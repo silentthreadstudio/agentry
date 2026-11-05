@@ -14,7 +14,7 @@ import { OVERLAP_SHOWN, ownsPath } from "./guard/allow.mjs";
 import { headOf } from "./guard/snapshot.mjs";
 import { laneLine, ownedOf, refuse } from "./lane.mjs";
 
-// The worktrees inside the lane's own worktree (a nested builder, #7): nothing else. A worktree made
+// The worktrees inside the lane's own worktree (a nested builder): nothing else. A worktree made
 // elsewhere while the lane ran (the conductor's own) is not the lane's.
 export function nestedTrees(root, ledger) {
   const seen = worktrees(root)
@@ -73,7 +73,7 @@ function picksOnMain(root, merge) {
   );
 }
 
-// A lane cut while another lands could carry picks a red gate then takes off main (S24): `start` waits.
+// A lane cut while another lands could carry picks a red gate then takes off main: `start` waits.
 export function refuseMidLand(root) {
   const landing = ledgers
     .list(root)
@@ -87,7 +87,7 @@ export function refuseMidLand(root) {
 }
 
 // The owned files `owned` shares with a running lane (not merged or closed), as warning lines: `! owns
-// overlap with R1c-4: plugin/commands/go.md`. A pair overlaps when one entry covers the other; the
+// overlap with T-4: plugin/commands/go.md`. A pair overlaps when one entry covers the other; the
 // narrower of the two is named. A running lane whose owned files can't be read is skipped. The lanes of a
 // stacked lane's `chain` (its parent first) land before it: what it shares with them is one line,
 // `stack: shares with T1: a.txt, b.txt`.

@@ -68,7 +68,7 @@ function lightContract(block, root) {
 
 // The route `start` prints: with the `models.verify.ui` warning for an item a designer builds (its first
 // run's step marker, its Agent bullet or a UI-shaped path) that is not flagged when the route verifies only
-// flagged items (field 70).
+// flagged items.
 function startRoute({ root, spec }, ledger) {
   const route = routeText(ledger.route);
   const ui =
@@ -107,7 +107,7 @@ export function mainBranchOf(root) {
 }
 
 // The sha256 of the process file in use as it is now (null when it cannot be read): saved beside
-// `boardAtStart`, so a later start can tell the file changed while lanes run (R1d-29 N6).
+// `boardAtStart`, so a later start can tell the file changed while lanes run.
 function processHash({ root, processPath }) {
   try {
     return sha256(readFileSync(processPath ?? join(root, ".agentry", "process.json"), "utf8"));
@@ -244,7 +244,7 @@ export function openLane(ctx, id, { found, parent, mainBranch, again = null }) {
     .filter(Boolean)
     .join("\n");
   const hint = proseModelHint(found.block, ledger.steps);
-  // A verified lane's carry (field 94) goes on as a rebase's does: a changed carry under `rebase: "recheck"`
+  // A verified lane's carry goes on as a rebase's does: a changed carry under `rebase: "recheck"`
   // to a fresh verifier (`resolve`), any other to the gate, or the close when one is green on the tip.
   const moved = rebased
     ? advance(

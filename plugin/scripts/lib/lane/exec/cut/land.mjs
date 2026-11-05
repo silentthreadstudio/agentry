@@ -4,7 +4,7 @@
 // (`merge/main-row.mjs`, `merge/carry.mjs`), the cherry-pick and what main holds after it (`land.mjs`),
 // the merge role's gate tier on those paths and the rollback on red (`merge/gating.mjs`). Once the
 // commit is gated its land record leaves the ledger, so the other lanes' guards judge it as any commit on
-// main (decision 51: only an overlap with their files trips) and drift never reads it as a land. Then, as
+// main (only an overlap with their files trips) and drift never reads it as a land. Then, as
 // the land's record and commit steps do, exec's carried writes and the owner's recorded board writes go
 // back on the board with the lifecycle's `cut` word, and one board commit holds them (`land.mjs`'s
 // `boardCommit`, `chore(board): cut <id> (<D>)`), so main is clean for the next land; the owner's

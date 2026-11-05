@@ -1,5 +1,5 @@
 // lane spike [<branch|path> --for <id> | --keep "<why>" | --forget] [--json] — file an agent worktree no ledger
-// knows (field 87), by its branch or its path, in `.agentry/run/spikes.json` (`spikes.mjs`): `--for <id>` is
+// knows, by its branch or its path, in `.agentry/run/spikes.json` (`spikes.mjs`): `--for <id>` is
 // work meant for that board item, `--keep "<why>"` keeps it on purpose, `--forget` drops the entry. With no
 // flag it lists the filed spikes, a branch gone since shown as `gone`. A local run-state write, not a board
 // write: the registration flags write at once, no `--apply`. Refuses an unknown branch or path, the main

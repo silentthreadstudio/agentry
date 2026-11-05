@@ -1,4 +1,4 @@
-// lane session <start|close> [--json] — the opening and the ending of a session (plan R1b-7, F20, A36).
+// lane session <start|close> [--json] — the opening and the ending of a session.
 //
 //   start   what the conductor needs once, in one object: the conductor prompt's path, the mode, the held
 //           and idle lanes, the derived status (nudges and pending drafts included), recall ranked against the
@@ -13,12 +13,12 @@
 //           written down (`../owner-calls.mjs`) and the note. Always JSON.
 //
 //   <start|close> --check <skill>=pass|fail [--note <t>]
-//           records one session check (`extensions.start.checks` / `extensions.close.checks`, A42) in
+//           records one session check (`extensions.start.checks` / `extensions.close.checks`) in
 //           `session-checks.jsonl` (`../session-checks.mjs`).
 //
 // Besides start's two records, without `--check` it only reads: board fix, the drafts and the sweep each do
 // their own writing, when the command says so. The mode comes from the config reader (`mode` in `.agentry/config.json`) and is never
-// interpreted here (A29). With checks named, start and close carry `checks: { start, close }` (a View each).
+// interpreted here. With checks named, start and close carry `checks: { start, close }` (a View each).
 // Exit 0, or 2 for a usage error.
 //
 // run(argv, { root, spec, model }) -> { exit, out }
@@ -114,7 +114,7 @@ const pendingEpisodes = (all) =>
   );
 
 // A held lane as start shows it: what it waits for, where in its steps, since when, the evidence (from
-// the root) and the step that answers it: the resume, or for a guard hold (field 75) its reason and the
+// the root) and the step that answers it: the resume, or for a guard hold its reason and the
 // report to run again once main is fixed. A context hold carries its reason, and its resume asks for the
 // fact. The owner's holds come before the parked lanes.
 const heldOf = (runRoot, all) =>
@@ -142,14 +142,14 @@ const heldOf = (runRoot, all) =>
           }),
     }));
 
-// The merged lanes whose merge record is from today, local time (field 60); one with no time is not.
+// The merged lanes whose merge record is from today, local time; one with no time is not.
 const mergedToday = (all) => {
   const today = new Date().toDateString();
   return all.filter((l) => l.state === "merged" && new Date(l.merge?.at).toDateString() === today)
     .length;
 };
 
-// The building lanes nothing changed in for `exec.idleMinutes` (field 53), read live from the workflow file.
+// The building lanes nothing changed in for `exec.idleMinutes`, read live from the workflow file.
 const idleOfAll = (all, spec) =>
   all.flatMap((l) => {
     const idle = idleOf(l.worktree, l, Date.now(), idleMinutes(spec));
@@ -224,7 +224,7 @@ function closing({ root, spec, model }) {
   };
 }
 
-// The owner's calls not written down, per lane or spike (field 90): `calls` whole, and `callLines`, the
+// The owner's calls not written down, per lane or spike: `calls` whole, and `callLines`, the
 // lines to show (one per id, capped), then one naming each ledger file or `spikes.json` it cannot read.
 function callsField(runRoot) {
   const { calls, errors } = openCalls(runRoot);
@@ -315,7 +315,7 @@ function renderStart(s, { name, root }) {
   );
   if (s.checks) startChecks(s.checks, { add, addList });
   // The lanes that wait on the owner, before anything else the session holds.
-  // A parked lane reads like a held one: its why, its evidence when it has one, and the resume (field 62).
+  // A parked lane reads like a held one: its why, its evidence when it has one, and the resume.
   for (const h of s.held.slice(0, MAX_HELD)) {
     if (h.for === "guard") {
       add(`held: ${h.id} guard tripped, since ${clock(h.since)}`);
@@ -391,7 +391,7 @@ function renderStart(s, { name, root }) {
   if (s.status.nudges.length > 5)
     add(`drift: +${s.status.nudges.length - 5} more (/agentry:board)`);
   if (s.status.drafts) add(`drafts: ${s.status.drafts} pending → /agentry:close`);
-  // The open lanes (the held ones are above), then how many merged today (field 60).
+  // The open lanes (the held ones are above), then how many merged today.
   const lanes = s.ledgers.filter((l) => !["held", "merged", "closed"].includes(l.state));
   if (lanes.length || s.mergedToday)
     addList(

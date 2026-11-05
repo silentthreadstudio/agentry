@@ -1,4 +1,4 @@
-// merge/picks — the land's `land` step (plan R1b-5): the branch's commits cherry-picked onto main, as
+// merge/picks — the land's `land` step: the branch's commits cherry-picked onto main, as
 // one argv call that is aborted on any stop. `merge.preHead` and `merge.planned` are written before the
 // pick, and what landed is read from main's first-parent history since preHead, so a rerun after a kill
 // knows which picks main holds.
@@ -108,7 +108,7 @@ export function landStep(lane, rows) {
   if (!FRESH.includes(merge.step)) {
     // Main is preHead plus the picks. Once the gate passed, commits after them that only add Agentry's
     // memory records (the owner committing an episode), or change only board files and Agentry's config
-    // (the owner's fix for a finding the record stopped on, field 79), may follow: they are no one's land,
+    // (the owner's fix for a finding the record stopped on), may follow: they are no one's land,
     // nothing is rolled back over them any more, and the board commit goes on top.
     const chain = commitsBetween(root, merge.preHead, "HEAD", { firstParent: true });
     const n = merge.landed.length;

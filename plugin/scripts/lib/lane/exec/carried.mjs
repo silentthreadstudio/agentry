@@ -32,7 +32,7 @@ export function lastReport(ledger, runs) {
 }
 
 // Is the old lane's carry its verified work: its last verdict passed with nothing after it but the gate
-// or the close, on the very tip carried, and no uncommitted work beside it (field 94)?
+// or the close, on the very tip carried, and no uncommitted work beside it?
 export function carriesVerified(ledger, tip, files) {
   const settled = ["gate", "close", "merge"].includes(ledger.next) || parkedVerified(ledger);
   const trusted = ledger.next === "gate" ? ledger.gateTip : ledger.closedTip;
@@ -60,7 +60,7 @@ export const carriedVerdicts = (ledger, archive, runs) => {
   }));
 };
 
-// The old lane's progress through its contract's steps (field 99): the owner OKs of its passed gates
+// The old lane's progress through its contract's steps: the owner OKs of its passed gates
 // (`holds[]` with `for: owner`, resolved) and, when a step past 1 follows an OK, the run it stopped in (its
 // newest builder round's) for the new lane's first brief. Carried only while the contract's steps are the
 // ones the OKs were given on, their evidence read where the archive holds it; what is not carried is named in `dropped`.
@@ -100,7 +100,7 @@ export function progressOf(old, steps, runs) {
   return { holds, approved, stepRun: a > 1 && passed ? runOf(steps, a) : null, dropped };
 }
 
-// The owned files a restart carries (field 101): the old ledger's `owned` entries as they are while the
+// The owned files a restart carries: the old ledger's `owned` entries as they are while the
 // contract's owns are the ones the old lane started with; when the contract's owns changed, the contract's
 // now plus the old ledger's grants (entries the old contract did not name), copied as they are. null when
 // the old ledger kept none (the contract's own are read as `start` reads them).

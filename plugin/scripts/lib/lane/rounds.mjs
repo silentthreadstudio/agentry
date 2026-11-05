@@ -1,4 +1,4 @@
-// rounds — the exec round machine (plan R1b §3.2, pinned). PURE: no I/O, no clock; the caller hands in
+// rounds — the exec round machine (pinned). PURE: no I/O, no clock; the caller hands in
 // every fact (the report's status, the guards it measured, the branch tip, the gate record) and gets back
 // a new ledger (the input is never changed) and the next step.
 //
@@ -73,7 +73,7 @@
 //                                             kept); no round changes. Resumed → verified, the same next step
 //   restack, resolution none, a verdict or builtTip → gate (verifying): the verdict stands for the same
 //                                             commits; a gate on the old tip no longer counts
-//   restack, resolution by hand, a verdict     → R1d-11's A48 resolution recheck on the restack's ranges
+//   restack, resolution by hand, a verdict     → the resolution recheck on the restack's ranges
 //   restack, no verdict yet (held)             → no change: the one verifier after the build reads it all
 //   restack, a guard hold or a parked verified lane → refused: its report, or its resume, comes first
 //
@@ -95,10 +95,10 @@
 // The route is the ledger's snapshot from start, `route: { verify, flagged, preset, noteRounds, final,
 // rebase }`: an edit of the workflow file mid-lane changes no running lane's verify, final or rebase, and a
 // key the ledger lacks reads as the standard preset's. The notes cap is the caller's live read when an
-// event gives `noteRounds` (field 84); the snapshot's only when none is given. The machine writes `gateTip` whenever it settles `gate` and `closedTip`
+// event gives `noteRounds`; the snapshot's only when none is given. The machine writes `gateTip` whenever it settles `gate` and `closedTip`
 // whenever it settles `close`: the tips the gate and the land check.
 //
-// A stacked lane (`on`, A45) is restacked only with no agent out: each restack appends `restacks[]`:
+// A stacked lane (`on`) is restacked only with no agent out: each restack appends `restacks[]`:
 // { at, parent, onto: "parent" | "main", from, to, base: { from, to }, resolution: "none" | "by hand",
 // rangeDiff? } and sets `base` to `base.to`; one onto main drops `on`.
 import { PRESETS } from "../process/spec/presets.mjs";
@@ -207,7 +207,7 @@ export const begin = (steps = []) => ({
   dispatch: { step: "build", ...STEPS.build, ...(steps.length && { stepRun: runOf(steps, 1) }) },
 });
 
-/** The plan for a restarted lane's first round (field 99): a fresh builder `continue`s the run the old lane
+/** The plan for a restarted lane's first round: a fresh builder `continue`s the run the old lane
  *  stopped in (`stepRun`, past step 1), `from` the old builder's last report, never step 1 again. */
 export const beginAt = (stepRun, from, reason) => ({
   next: "continue",
@@ -543,11 +543,11 @@ const hold = (ledger, entry, reason) => {
   return settle(ledger, "resume", reason);
 };
 
-/** The reason a flagged item's lane holds at the notes cap with notes open (field 84). */
+/** The reason a flagged item's lane holds at the notes cap with notes open. */
 export const CAP_REASON = "notes cap reached with open notes on a flagged item";
 const capHeld = (ledger) => ledger.state === "held" && ledger.hold?.when === "verdict";
 
-// A verified lane the conductor parks (field 63): only for later, as the owner's review is of a builder's round.
+// A verified lane the conductor parks: only for later, as the owner's review is of a builder's round.
 const ownerHoldRefusal = "hold --for owner is for a builder's round";
 /** A parked verified lane: held with no builder round, its next step kept in the hold. */
 export const parkedVerified = (ledger) =>
@@ -750,7 +750,7 @@ function onVerdict(ledger, round, event) {
   return capHold(ledger, round, event) ?? gateOrClose(ledger, tip, { gate, tier });
 }
 
-// A flagged item never closes over an open note by the notes cap alone (field 84): a verdict that leaves
+// A flagged item never closes over an open note by the notes cap alone: a verdict that leaves
 // notes open (`openNotes`, counted by the caller) at the cap holds the lane for the owner, the verdict's
 // tip kept for the gate the resume settles. null when the lane goes on.
 function capHold(ledger, round, { tip, flagged, openNotes = 0, noteRounds, at }) {
@@ -784,7 +784,7 @@ function finalWhy(final, round) {
 }
 
 /** The notes-fix rounds a lane has run and the most it may: `live`, the workflow file's `exec.noteRounds`
- *  as the caller read it now (field 84), else the route's (the preset's). */
+ *  as the caller read it now, else the route's (the preset's). */
 export const notesBudget = (ledger, live) => ({
   used: ledger.rounds.filter((r) => r.notes).length,
   max: live ?? routeOf(ledger).noteRounds,
@@ -792,7 +792,7 @@ export const notesBudget = (ledger, live) => ({
 
 // A verified lane (PASS WITH NOTES, gate or close next) sends the builder back to fix the named notes; the
 // round after it is the usual recheck by the verifier. A resolve verdict opens no notes round.
-// A lane the notes cap holds takes one too once the cap is raised (field 84): the round ends the hold.
+// A lane the notes cap holds takes one too once the cap is raised: the round ends the hold.
 function onNotes(ledger, { notes, noteRounds, at }) {
   const verifier = verdicts(ledger).at(-1);
   const capped = capHeld(ledger);
@@ -842,7 +842,7 @@ function onRebase(ledger) {
   );
 }
 
-// The owner sends a verified lane back with a change (field 77): one round for its last builder, recorded
+// The owner sends a verified lane back with a change: one round for its last builder, recorded
 // in `ownerFixes[]` with the round it went out as. The round's report goes on as any fix's (`routeBuilt`).
 // A lane the notes cap holds for the owner goes back the same way, the change its answer in `holds[]`.
 function onOwnerFix(ledger, { note, at }) {

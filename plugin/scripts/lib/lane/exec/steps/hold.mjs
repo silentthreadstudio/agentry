@@ -11,8 +11,8 @@ import { view } from "../view.mjs";
 // A builder's round waits: for the owner, who reviews what its saved reply points at (`--evidence`, by
 // default that reply), or for later, a parked lane whose builder was stopped mid-round (no reply needed,
 // the worktree kept as it is). The ledger alone is written: no board cell, nothing on main. A touched main
-// refuses the owner's hold; a park records it anyway and says so (field 57): `resume` checks main again.
-// A verified lane (next close or merge) parks too, `--for later` only (field 63): no builder is out, so
+// refuses the owner's hold; a park records it anyway and says so: `resume` checks main again.
+// A verified lane (next close or merge) parks too, `--for later` only: no builder is out, so
 // main is not checked, and the resume makes it verified again with the same next step.
 export function run(ctx, id) {
   const { root, holdFor, evidence: given, note, value: agent } = ctx;
@@ -38,13 +38,13 @@ export function run(ctx, id) {
     refuse(
       `${id} waits for the owner ${ledger.hold.when === "verdict" ? "at its notes cap" : `after step ${ledger.hold.stepRun?.[1] ?? "?"}`}: resume it with the owner's words (exec resume ${id} --note "…"), or keep it held`,
     );
-  // A context hold is answered by the fact: another hold would drop its re-dispatch (R1d-38 r2 N2).
+  // A context hold is answered by the fact: another hold would drop its re-dispatch.
   if (held && ledger.hold?.for === "context")
     refuse(`${id} is held for more context: resume it with --note "<the fact>"`);
   // A blocked hold is answered by the cause cleared: another hold would turn its resume into a continue.
   if (held && ledger.hold?.for === "blocked")
     refuse(`${id} is held, blocked: clear it, then resume with --note "<what changed>"`);
-  // A guard hold is answered by fixing main and reporting again, not by the owner's review (R1d-29 N2).
+  // A guard hold is answered by fixing main and reporting again, not by the owner's review.
   if (held && holdFor === "owner" && ledger.hold?.for === "guard")
     refuse(`the lane is held for the guard: fix it and run ${laneLine(root, "report", id)}`);
   const round = ledger.rounds.at(-1);

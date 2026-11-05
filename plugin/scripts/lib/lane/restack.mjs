@@ -1,4 +1,4 @@
-// restack — a stacked lane's restack (A45), the one core `lane exec restack` and a parent's land both run:
+// restack — a stacked lane's restack, the one core `lane exec restack` and a parent's land both run:
 // the guards (no agent out, no gate queued or running for the lane, a clean worktree on its branch), the
 // target, the planned move written to the ledger before the rebase, the guarded rebase, and the round
 // machine's record. Only the lane's branch and ledger are written; a stop leaves both byte-identical.
@@ -129,7 +129,7 @@ function rebaseAsPlanned(root, ledger, move, again) {
  * landed, or `toMain`: the owner's call, on any state of the parent). A branch already on the target
  * (moved by hand, or by a restack killed after its rebase: the ledger's `restacking` plan says what that
  * rebase was) is recorded as resolved by hand, so the resolution is checked: never a silent pass; with
- * `byHand: false` it is refused instead. `dispatch(ledger, plan)` adds the round the machine sends (the
+ * `byHand: false` it is refused instead. `dispatch(ledger)` adds the round the machine sends (the
  * resolve check); without one a restack that would send a round is refused. Throws a `RestackError`.
  */
 export function restackLane(
@@ -147,7 +147,7 @@ export function restackLane(
   const again = restackLine(root, id, toMain ? " --main" : "");
   const plan = ledger.restacking;
   // A killed restack whose rebase finished: the branch moved onto the target it planned, its old base gone
-  // from it (`onTarget`), so a stale plan plus a hand commit is never read as one (R1d-14 N1).
+  // from it (`onTarget`), so a stale plan plus a hand commit is never read as one.
   const killed =
     plan &&
     plan.from !== tip &&

@@ -1,10 +1,10 @@
-// merge/recover — what a killed land leaves, dealt with before anything else on the rerun (plan R1b-5).
+// merge/recover — what a killed land leaves, dealt with before anything else on the rerun.
 // A land writes what it is about to do to the ledger before it does it; this step reads that intent
 // against main and either finishes what the killed run did or puts main back where the rerun can start.
 // It acts only on what it can prove is its own: board writes and a board commit by the sha256 the record
 // stored before writing (`merge.record`), a cherry-pick by the planned commits git names. Anything else
 // stops the land, left as it is, with the commands that clear it. A land that cannot go on at all is
-// closed on the owner's call (`--resolve landed|rolled-back`, field 82), checked against main first; so is
+// closed on the owner's call (`--resolve landed|rolled-back`), checked against main first; so is
 // a verified lane whose work reached main another way (`--resolve landed`, by `git cherry`).
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -101,7 +101,7 @@ function notOurCommit({ root, ledger }, sha) {
 // foreign }` (main at the picks: the board writes left in the record's files). A commit that only adds
 // Agentry's memory records (the owner committing an episode) is not past the picks: it is no one's
 // board commit, and the land goes on on top of it. Nor is one the land accepted after its gate before it
-// wrote the board (the owner's board fix, field 79): the record names the commit it wrote on (`on`).
+// wrote the board (the owner's board fix): the record names the commit it wrote on (`on`).
 function recordingLeft(lane) {
   const { root } = lane;
   const merge = lane.ledger.merge;

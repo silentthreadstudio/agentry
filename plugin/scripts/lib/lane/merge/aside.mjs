@@ -8,7 +8,7 @@
 // is a file only `agentry board add` / `board set --apply` changed, by the content ids they recorded
 // (`merge.writes`, the same record plus the cells for a pick that touches the file). A new `guard.allow`
 // file is never committed by the land: it goes back to the owner uncommitted. The recorded board writes
-// are the owner's board record (field 79: a verdict the board check needs): they go back onto main at the
+// are the owner's board record (a verdict the board check needs): they go back onto main at the
 // start of the record, so the check sees them and the board commit holds them; with the lifecycle off
 // there is no board commit, and they go back uncommitted. A record an older version wrote is
 // `merge/legacy.mjs`'s.
@@ -184,7 +184,7 @@ export function backStop(back) {
 }
 
 /** The record's first step: the recorded board writes (`merge.writes`) back onto main, the ledger keeping
- *  them, so the board check reads the board with them and the board commit holds them (field 79). A row
+ *  them, so the board check reads the board with them and the board commit holds them. A row
  *  per file; a stop when they do not go back (the stop's put-back then saves them, never lost). */
 export function carryWritesStep(lane, rows) {
   const held = lane.ledger.merge?.writes;

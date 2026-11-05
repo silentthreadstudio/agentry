@@ -4,7 +4,7 @@ import { posix } from "node:path";
 import { globMatch } from "../process/glob.mjs";
 import { escapesRoot } from "../process/spec/shape.mjs";
 
-// The board's own files (field 75), as the process file `spec` names them and `read.mjs` resolves them,
+// The board's own files, as the process file `spec` names them and `read.mjs` resolves them,
 // from the root: each kind's table, contract blocks and create blocks and `status.note` as `paths`, and
 // each kind's `at.files` and `file.glob` (its `{id}` any name) as `globs`, so an item file made or removed
 // passes too. A path or glob is kept when it stays inside the repository, the test the spec's own check

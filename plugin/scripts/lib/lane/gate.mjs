@@ -1,7 +1,7 @@
-// gate — running a repo's gate command as a ledger fact (ADR-R4), plus the two pure decisions around it.
+// gate — running a repo's gate command as a ledger fact, plus the two pure decisions around it.
 //
-// `runGate` reads the gate command's OWN exit code: argv, no shell, so nothing can pipe the failure away
-// (#1). It refuses to start on a dirty tree (an untracked file made "tree identical" lie, #2), counts a gate
+// `runGate` reads the gate command's OWN exit code: argv, no shell, so nothing can pipe the failure away.
+// It refuses to start on a dirty tree (an untracked file made "tree identical" lie), counts a gate
 // that leaves files behind as red, and writes the command's stdout and stderr to a per-run log file (appended to, as it runs).
 // The command runs under `cli/supervise.mjs`'s watchdog, so it never outlives the process that runs the
 // gate: this one waits synchronously and can't act on a signal, and a SIGKILL ends it outright.

@@ -58,7 +58,7 @@ export function heldMain(root, ledger, since) {
   return base && base !== since && isAncestor(root, since, base) ? base : null;
 }
 
-// Where the lane's own commits start (field 102): the merge base with main once the branch holds main past
+// Where the lane's own commits start: the merge base with main once the branch holds main past
 // its base (the guard's start moved to it, `startMoves`), else the base. `<start>..<tip>` is never main's
 // commits the branch holds.
 export const ownStart = (root, ledger) => heldMain(root, ledger, ledger.base) ?? ledger.base;

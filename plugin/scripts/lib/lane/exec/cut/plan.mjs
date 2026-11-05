@@ -1,4 +1,4 @@
-// exec/cut/plan — every check of `lane exec cut <id>` (field 95), read only: the lane at rest and main not
+// exec/cut/plan — every check of `lane exec cut <id>`, read only: the lane at rest and main not
 // mid-land, the board's decision, the lifecycle's `cut` word, the branch and the name it is kept as, the
 // worktree's leftovers, and with `--keep` the kept paths, their message, the gate tier and main's row.
 // Nothing is written, so a preview is the same answer. Also the words the cut's other steps share: the

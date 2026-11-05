@@ -7,7 +7,7 @@ import { dispatchNext } from "../briefs.mjs";
 import { mustLedger, refuse, stepWith } from "../lane.mjs";
 import { view } from "../view.mjs";
 
-// A lane closed with no verdict because its route skipped the verifier (R1c-9 N4): one fresh verifier now,
+// A lane closed with no verdict because its route skipped the verifier: one fresh verifier now,
 // then the usual rows.
 export function run(ctx, id) {
   const { root } = ctx;

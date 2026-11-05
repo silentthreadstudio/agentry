@@ -1,4 +1,4 @@
-// merge/record — the land's last two steps (plan R1b-5): `record` writes the lifecycle's `merged` event
+// merge/record — the land's last two steps: `record` writes the lifecycle's `merged` event
 // to the board (the owner's recorded board writes and exec's carried writes put back first) and stops on
 // a new `board check` finding;
 // `commit` makes the one board commit of exactly those files, through the repo's own hooks.

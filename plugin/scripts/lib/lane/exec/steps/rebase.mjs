@@ -30,7 +30,7 @@ export function run(ctx, id) {
     ledger.merge?.stateBefore === "verified";
   if (ledger.state !== "verified" && !conflicted)
     refuse(`rebase is for a verified lane: ${id} is ${ledger.state} (next ${ledger.next})`);
-  // A stacked lane moves with its parent until the parent lands (R1d-14 N2).
+  // A stacked lane moves with its parent until the parent lands.
   const stack = stackOf(root, ledger, ledgers.list(root));
   if (stack.on && stack.state !== "merged")
     refuse(
@@ -46,7 +46,7 @@ export function run(ctx, id) {
     state: "verified",
     ...(conflicted && { next: "merge" }),
   };
-  // `mainHead`: main as the rebase was asked for, the furthest the guard's start may move to (N7).
+  // `mainHead`: main as the rebase was asked for, the furthest the guard's start may move to.
   if (next.rebases?.at(-1)?.toTip === undefined && next.rebases?.length) {
     // A killed run's entry: reused as it is.
     next.rebases.at(-1).mainHead ??= headOf(root);

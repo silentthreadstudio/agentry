@@ -1,4 +1,4 @@
-// carry-io — the I/O behind the carry of exec's uncommitted board writes (plan R1b-5): the patch and its
+// carry-io — the I/O behind the carry of exec's uncommitted board writes: the patch and its
 // sha256 the ledger keeps of them, the two boards (the working tree's and HEAD's) `board-diff` reads them
 // against, and the board writes that put their cells back. `merge/main-row.mjs` decides what may be
 // carried; this only reads and writes. Every git call is an argv array; a refusal is `{ ok: false,

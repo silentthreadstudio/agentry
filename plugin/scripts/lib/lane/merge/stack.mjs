@@ -1,4 +1,4 @@
-// merge/stack — the `stack` rows of a land (A45): a stacked lane lands only after its parent, and only once
+// merge/stack — the `stack` rows of a land: a stacked lane lands only after its parent, and only once
 // restacked onto main (`stackRows`, the child's side); a parent's land names the lanes stacked on it
 // (`childRows`, the parent's side). A stack stop changes nothing: main, the ledger and `merge` as they were.
 //

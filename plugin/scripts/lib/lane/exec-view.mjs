@@ -8,7 +8,7 @@
 // heldText(hold, total) -> string      the `held:` line's text (`total`: the contract's steps, 0 for none)
 // holdWhere(hold, total) -> string     `after step 1 of 2`, `during steps 2–3 of 3`, `mid-build`
 // answerLine(entry, total) -> string   one owner's answer: `approved: step 1 of 2 at <ISO>: "<note>"`
-// idleText(id, idle) -> string         the `idle:` line's text (field 53); idleHead, up to its park step
+// idleText(id, idle) -> string         the `idle:` line's text; idleHead, up to its park step
 // clock(iso) -> "HH:MM"                local time
 // workflowText(resolved) -> string     the `workflow:` line: `standard · verify all · notes 1 · final never (set) · …`
 // routeFixedText(route, live?) -> string   a ledger's route snapshot: `standard · verify all · notes 1 · …`,
@@ -46,7 +46,7 @@ export function workflowText({ preset, exec, roles, set }) {
 }
 
 /** A lane's route as fixed at start (the ledger's snapshot, the standard values filled in). The notes cap
- *  is read live (field 84): given `live`, the workflow file's `exec.noteRounds` now, it shows that, marked. */
+ *  is read live: given `live`, the workflow file's `exec.noteRounds` now, it shows that, marked. */
 export const routeFixedText = (route, live) =>
   `${route.preset ?? "standard"} · verify ${route.verify} · notes ${live === undefined ? route.noteRounds : `${live} (live)`} · final ${route.final} · rebase ${route.rebase}`;
 
@@ -95,7 +95,7 @@ export const span = (minutes) =>
     ? `${minutes}m`
     : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
 
-/** The idle line (field 53): `<id> 2h13m: last change 11:44 (<file>) → check the builder; <park> to park
+/** The idle line: `<id> 2h13m: last change 11:44 (<file>) → check the builder; <park> to park
  *  it`. `idle` is `{ minutes, lastChange, file, newest, park }`: in the parentheses the file, `the last
  *  commit` when the branch's last commit is the newest change, else `no file changed` (the dispatch is). */
 export const idleText = (id, idle) => `${idleHead(id, idle)}; ${idle.park} to park it`;

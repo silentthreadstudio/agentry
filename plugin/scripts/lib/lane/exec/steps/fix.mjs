@@ -58,7 +58,7 @@ export function run(ctx, id) {
   });
 }
 
-// The owner sends a verified lane back with a change (field 77): one builder round on it (the lane's last
+// The owner sends a verified lane back with a change: one builder round on it (the lane's last
 // builder resumed, a fresh one with the brief when none can be), then the lane's own route. Recorded in
 // `ownerFixes[]`; the board is not written until the work is built again.
 function ownerFix(ctx, id) {
@@ -70,7 +70,7 @@ function ownerFix(ctx, id) {
     refuse(
       `a builder is out on round ${ledger.rounds.at(-1).n} (${ledger.next}): report it first (${laneLine(root, "report", id)})`,
     );
-  // A lane the notes cap holds for the owner (field 84) goes back on the owner's word too.
+  // A lane the notes cap holds for the owner goes back on the owner's word too.
   const capped = ledger.state === "held" && ledger.hold?.when === "verdict";
   // Any other hold is answered by its resume: the owner's change is the note (--redo past a finished run).
   if (ledger.state === "held" && !capped) {

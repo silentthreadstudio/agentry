@@ -1,4 +1,4 @@
-// merge/gating — the land's `gate` step (plan R1b-5): skip on a trusted worktree gate of the tier the
+// merge/gating — the land's `gate` step: skip on a trusted worktree gate of the tier the
 // `merge` role needs (`canSkip`), or run that tier (`pickTier`) on main, in a process group the ledger names first (`merge.gateRun`) so
 // a rerun can stop it if this run dies. A red gate takes the picks off main again (`rollBack`).
 import { randomBytes } from "node:crypto";

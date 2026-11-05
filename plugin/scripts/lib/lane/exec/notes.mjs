@@ -10,7 +10,7 @@ import { verdicts } from "../rounds.mjs";
 import { git } from "../worktree.mjs";
 import { readOr, refuse } from "./lane.mjs";
 
-// The notes-round cap as the workflow file says now (field 84): read at each call, not fixed at start.
+// The notes-round cap as the workflow file says now: read at each call, not fixed at start.
 export const liveNotes = ({ spec }) => resolveWorkflow(spec).exec.noteRounds;
 
 // The notes `verdict --leave` leaves as built: `[{ label, by, at, round }]`, each a note of this report
@@ -42,7 +42,7 @@ export function notesOf(text) {
 
 // A recheck's line for a note: `N1: PASS <evidence>` / `N1: FAIL …` at the start of a line (after an optional
 // `- ` or `* `), any case. Prose ("N1 passes") is not one.
-// A note's label, or `owner` for the owner's change (field 77).
+// A note's label, or `owner` for the owner's change.
 const RECHECK_LINE = /^[ \t]*(?:[-*][ \t]+)?(N\d+|owner):[ \t]*(PASS|FAIL)\b/i;
 // The lines of `text` outside a fenced block.
 const prose = (text) => unfenced(text).split("\n");

@@ -1,4 +1,4 @@
-// idle — how long a building lane's worktree has gone without a change (field 53): the newest of the
+// idle — how long a building lane's worktree has gone without a change: the newest of the
 // current round's dispatch, the last commit on the lane branch and the mtime of every file git does not
 // ignore in the worktree, tracked or not. A builder that stopped (killed, lost, waiting on a hung command) shows here. Reads git
 // and the file system; writes nothing.

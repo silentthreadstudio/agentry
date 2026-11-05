@@ -1,4 +1,4 @@
-// adopt — the git reads of `lane exec adopt` (field 86): what a branch built outside exec holds for a lane
+// adopt — the git reads of `lane exec adopt`: what a branch built outside exec holds for a lane
 // to take in (its tip, its commits past main, the worktree it is checked out in and that worktree's
 // uncommitted files, and the owner's calls noted on the spike filed for the lane's id on it), the refusals
 // that leave nothing written, and the words the lane prints and briefs with. The branch and its worktree

@@ -1,4 +1,4 @@
-// restart — the git and file work of `lane exec restart` (field 69): what the old lane leaves (its tip, its
+// restart — the git and file work of `lane exec restart`: what the old lane leaves (its tip, its
 // uncommitted diff, the ignored files a removal would delete), the first free number to archive its ledger
 // and run files under (`process/ledger.mjs`'s `archive` moves them), the old worktree taken down and its
 // branch kept as `agentry/<id>.<n>`, and the carry of its work into the new worktree.
@@ -126,7 +126,7 @@ export function keepBranchAs(root, { branch, tip, kept }) {
   run(["update-ref", "-d", `refs/heads/${branch}`, tip]);
 }
 
-/** The commits of the branch at `tip` that a carry picks onto `main` (field 100): `git rev-list --reverse
+/** The commits of the branch at `tip` that a carry picks onto `main`: `git rev-list --reverse
  *  --no-merges <main>..<tip>`, the branch's own commits, never `<base>..<tip>` (a branch rebased onto a
  *  newer main holds main's commits already), less those whose patch main has (`git cherry` marks them `-`),
  *  which are `skipped` as `{ sha, subject }`. `base`: the merge base of `main` and `tip` (null when there is

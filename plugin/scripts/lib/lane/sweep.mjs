@@ -1,5 +1,4 @@
-// sweep — what a finished session leaves behind, and the removal of the part that is safely Agentry's (plan
-// R1b-7, #8, #9). `plan` only looks: it lists
+// sweep — what a finished session leaves behind, and the removal of the part that is safely Agentry's. `plan` only looks: it lists
 //   cleanable  the worktrees of tasks whose ledger says `merged` or `closed`, each with the ignored files
 //              (`.env`, screenshots) removal would delete, and the disposable ones (`DEFAULT_DISPOSABLE` and
 //              the process file's `cleanup.disposable`, as `merge --cleanup` matches them) it discards

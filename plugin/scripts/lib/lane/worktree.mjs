@@ -1,4 +1,4 @@
-// worktree — the lane's git I/O for isolation (ADR-R2): Agentry creates the worktree and branch itself, on
+// worktree — the lane's git I/O for isolation: Agentry creates the worktree and branch itself, on
 // every host. `create` adds
 // `agentry/<id>` under `<mainRoot>/.agentry/run/worktrees/<id>`; `remove` takes it down again, force-
 // removing a locked worktree and deleting the branch (at its listed tip) only when nothing on it is

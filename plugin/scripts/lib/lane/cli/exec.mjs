@@ -1,4 +1,4 @@
-// lane exec <step> <id> — the exec lane's stepper (plan R1b §3.2, ADR-R1): each step checks the ledger
+// lane exec <step> <id> — the exec lane's stepper: each step checks the ledger
 // expects it, does the git and board work, records it and prints the next step as readable text, or with
 // `--json` as one object `{ id, step, next, prompt?, brief?, reportPath, worktree, branch, guards, nested, … }`.
 //
@@ -27,7 +27,7 @@
 //   hold <id> --for owner|later [--agent a]   a builder's round waits for the owner's review (its reply
 //                             saved), or is parked (its builder stopped); the ledger alone is written
 //   resume <id> --note "<the OK>" [--redo] [--fresh|--same]   the owner's answer to a hold, then the next round
-//   start <id> --on <Y>       stack the lane on Y's lane (A45): cut from agentry/<Y>, `on` and `base` in the ledger
+//   start <id> --on <Y>       stack the lane on Y's lane: cut from agentry/<Y>, `on` and `base` in the ledger
 //   restack <id> [--main]     a stacked lane, no agent out: rebase it onto its parent's new tip, or main
 //                             (its parent landed, or --main); the branch and ledger alone are written
 //   restart <id> [--carry]    a lane not merged, no agent out: archive its ledger and run files as

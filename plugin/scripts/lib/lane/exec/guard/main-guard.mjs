@@ -11,9 +11,9 @@
 // `guard.allow` lets through (`allowOf`: its globs, the config files in use, the board's own files) and no
 // running lane owns it. HEAD may move only by merges other ledgers record, each a run preHead → landed… →
 // board commit that git's first-parent history confirms, by commits on main whose every path
-// `guard.allow` lets through and no running lane owns (A44), and by any commit that touches none of this
-// lane's owned files and none of the files its worktree changed (field 81). A report that finds main
-// touched holds the lane for the guard, its report saved, until a report again finds main clean (field 75).
+// `guard.allow` lets through and no running lane owns, and by any commit that touches none of this
+// lane's owned files and none of the files its worktree changed. A report that finds main
+// touched holds the lane for the guard, its report saved, until a report again finds main clean.
 import { kindOf } from "../../../process/ids.mjs";
 import { blobsAt } from "../../carry-io.mjs";
 import { now, short } from "../../fmt.mjs";
@@ -62,7 +62,7 @@ export function mainGuard(ctx, ledger, all) {
 // Why the main checkout no longer matches the lane's start, or null.
 export const mainTouched = (ctx, ledger, all) => mainGuard(ctx, ledger, all).touched;
 
-// The guard's start follows the branch (field 102): when the branch holds main past the start, the start
+// The guard's start follows the branch: when the branch holds main past the start, the start
 // moves to that merge base, its snapshot with it (`moveStart`), recorded in `startMoves[]` as `{ from, to,
 // why: "branch holds main", at }`. Only when every main commit from the start to there passes the guard's
 // rule judged against the lane's owned files alone (its changed files hold main's own diffs after the
@@ -88,7 +88,7 @@ function followBranch(root, ledger, all, allow) {
   ];
 }
 
-// The main guard's start moved to `to`, its snapshot with it (field 93): a path clean on main now whose
+// The main guard's start moved to `to`, its snapshot with it: a path clean on main now whose
 // content the commits from the old start to `to` changed was committed, so its start entry goes; a path
 // still dirty, or clean with those commits leaving it as it was (its edit discarded), keeps its start.
 export function moveStart(root, ledger, to) {

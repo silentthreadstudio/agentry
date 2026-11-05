@@ -1,5 +1,5 @@
 // lane note <id> [--owner "<call>" | --recorded <n,n|all> [--where "<file or section>"]] [--json] — the
-// owner's calls on a lane or a spike (field 90, `owner-calls.mjs`). `--owner` appends one call (one line) to
+// owner's calls on a lane or a spike (`owner-calls.mjs`). `--owner` appends one call (one line) to
 // the open ledger of `<id>`, else to the spike filed `--for <id>`; `--recorded` marks calls as written down
 // where the repo keeps decisions; with no flag it lists them. A local run-state write, not a board write: no
 // `--apply`. Refuses, writing nothing: an item with no lane and no spike, an empty or multi-line call, a call
