@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Agentry's routing-accuracy self-eval — an early-signal probe that captures the conductor's claude -p event stream, infers the dispatched shape, and reports accuracy only after the control gates pass. Self-contained; dev-only, run via tsx (not bundled); imports nothing from benchmark/.",
+  "description": "Agentry's self-eval — conducts each bench fixture once through claude -p, then scores decision quality, code correctness, honesty and verification from that run, behind control gates. Dev-only, run via tsx (not bundled).",
   "engines": {
     "node": ">=24"
   },

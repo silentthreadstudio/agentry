@@ -114,14 +114,29 @@ Agentry ships a self-evaluation harness that scores its own routing, decision qu
 every number gated by controls and read from real work artifacts, never a proxy. Reproduce it yourself:
 
 ```bash
-cd packages/eval && npm install
-npm run selfeval -- run bench --fixtures-dir fixtures/bench --plugin-dir ../..
-npm run selfeval -- replay <run-id>    # offline re-analysis of a stored run — zero API
-npm run selfeval -- report <run-id>    # → a self-contained dashboard HTML
+pnpm install                                   # at the repo root (the packages are a pnpm workspace)
+pnpm --filter @agentry/core build              # @agentry/eval imports the built contract
+pnpm --filter @agentry/eval selfeval run bench --fixtures-dir fixtures/bench --plugin-dir ../..
+pnpm --filter @agentry/eval selfeval replay <run-id>    # offline re-analysis of a stored run — zero API
+pnpm --filter @agentry/eval selfeval report <run-id>    # → a self-contained dashboard HTML
 ```
 
+`--plugin-dir` is the Agentry **repo root** (the folder that holds `plugin/`); the bench starts `claude` with
+`--plugin-dir <repo-root>/plugin`, and refuses to run if that folder has no `plugin.json`. Paths are relative to
+`packages/eval`.
+
+> **Read this before `run bench`.** It runs `claude -p` with `--permission-mode bypassPermissions` on **your own
+> machine**: the conducted model can read and write files and run commands without asking. Each task runs in a
+> fresh temp directory, but nothing sandboxes the process from the rest of your system, and every conduct and
+> judge call spends real API credit (`--budget-usd <n>` stops new tasks past a cap). Run it only on a machine and
+> account you are comfortable with that. `replay` and `report` make no API calls.
+>
+> **Earlier results.** Bench results recorded before this fix ran without the Agentry plugin: `claude` was started
+> with the repo root, not `plugin/`, so no `agentry:*` subagents or `mem` server were loaded. Do not quote them
+> as measurements of Agentry.
+
 One conducted run per fixture yields every axis — decision quality, code correctness, honesty/overclaim, and
-verification — so the probes share a run instead of each paying for their own.
+escaped defects — so the probes share a run instead of each paying for their own.
 
 ## Repo layout & dev
 

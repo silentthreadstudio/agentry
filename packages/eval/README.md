@@ -23,30 +23,25 @@ What it *can* add — and what this eval measures — is precision:
 A routing "miss" against a label only counts if the **outcome** suffered: an under-route that still ships
 passing work isn't an error — it's the floor being lighter than the label assumed.
 
-## The probes (`src/<probe>/`)
+## The bench (`src/bench/`)
 
-The public bench is **three probes**, each built to one uniform five-stage shape (`fixture → probe → artifact →
-controls → report-section`, ADR-002) so adding a fourth is mechanical:
+There is **one** subcommand that conducts Agentry: `run bench`. It conducts each fixture in `fixtures/bench/` **once**
+through the expanded `/agentry:go` prompt (ADR-001), then derives every value axis from that single run:
 
-| Probe | Question | `run` subcommand |
-|---|---|---|
-| `moat` | Does a recalled gotcha prevent a re-bug (memory hygiene)? | `run moat` |
-| `rightsizing` | Did the conductor route to the least process that *wins* (results-gated, not label-match)? | `run rightsizing` |
-| `honesty` | Did it ever claim "done" below the oracle bar (overclaim gap)? | (rides the same conduct as `run rightsizing`) |
+| Axis | Question |
+|---|---|
+| Decision quality | Did the conductor surface the fork the task hides, and record its assumption and override hint? (judged 0–2 against a rubric that is gated by planted gold/poor controls) |
+| Code correctness | Does the produced tree pass the **hidden held-out oracle**, and how is it judged on soundness and completeness? |
+| Honesty | Did it ever claim "done" below the oracle bar (the overclaim gap)? |
+| Escaped defects | On fixtures whose obvious solution hides a subtle bug, did that bug ship? |
 
-`run rightsizing` is the **unified conduct-and-judge** harness (ADR-001): it conducts each task **once**, reads the
-routed shape from the settled work-folder artifacts **and** judges the produced tree, then scores results-gated
-(`right-sizing-success` / `over-route-tax` / `under-route-failure`, with `indeterminate` as its own terminal
-category — never a bare label-match accuracy). The **honesty** probe rides that same conduct: it is a pure read
-over the same per-run records (the overclaim gap), so it never re-conducts. A read-only flow-compliance probe
-(`src/honesty/flow-compliance/`) exists for a captured run dir, but no CLI subcommand or probe runs it today; its
-verdict is `inconclusive` for any run without `agent-started` lines, which nothing writes now.
-The CLI persists the rightsizing artifact in `summary.json` and writes the honesty artifact as a sibling
-`honesty.json` in the same run dir.
+The shape the conductor routed to (one-shot / spec-first / decompose) is read from the settled work-folder
+artifacts, never from a dispatch proxy. The other subcommands are zero-API: `replay <id>` re-derives shapes from a
+stored run and `report <id>` renders its dashboard. A read-only flow-compliance probe
+(`src/honesty/flow-compliance/`) exists for a captured run dir, but no CLI subcommand runs it today.
 
 The bench is **Agentry-value-only** (ADR-003): the old bare baseline is retired — there is no bare-vs-Agentry
-delta on the public path. The decision-quality 0–2 rubric (`src/quality/`) is **parked**: it stays as a dev
-instrument (code + tests kept) but is off the public subcommand set and the public report.
+delta on the public path.
 
 ## Methodology (the spine)
 
@@ -70,16 +65,30 @@ it measures a conductor that never ran.
 ```sh
 pnpm --filter @agentry/eval typecheck   # tsc --noEmit
 pnpm --filter @agentry/eval test        # node --import tsx --test  (zero API — fake child / replay runners)
-
-# a live run (spends API): drive the unified rightsizing+honesty conduct through real `claude -p`
-node --import tsx src/cli.ts run rightsizing --fixtures-dir fixtures/rightsizing \
-  --plugin-dir <repo-root> --model sonnet --runs 3 --concurrency 4 --run-id <id>
-
-# then render the static dashboard for a stored run (zero API), or re-derive its shapes offline
-node --import tsx src/cli.ts report <id>
-node --import tsx src/cli.ts replay <id>
 ```
 
-Tests never spend API — they drive the probes through replay/fake runners. Live runs are isolated per task in
-a temp sandbox; `--concurrency N` batches independent runs (keep it modest, ~3–4: Agentry cells spawn
-subagents, so a high limit hits API rate limits). No build / bundle / `dist` — run via `tsx`.
+A live run (spends API). **It runs `claude -p` with `bypassPermissions` on your own machine** — the conducted model
+can read, write and run commands without asking; each task gets a fresh temp directory, but the process is not
+otherwise sandboxed. Only run it where you are comfortable with that.
+
+```sh
+pnpm --filter @agentry/core build   # once: @agentry/eval imports the built contract
+pnpm --filter @agentry/eval selfeval run bench --fixtures-dir fixtures/bench \
+  --plugin-dir ../.. --model sonnet --k 3 --concurrency 3 --budget-usd 20 --run-id <id>
+
+# then render the static dashboard for a stored run (zero API), or re-derive its shapes offline
+pnpm --filter @agentry/eval selfeval report <id>
+pnpm --filter @agentry/eval selfeval replay <id>
+```
+
+`--plugin-dir` is the Agentry **repo root**; the runner reads `plugin/commands/go.md` from it and starts `claude`
+with `--plugin-dir <repo-root>/plugin`, and a root with no `plugin/.claude-plugin/plugin.json` is refused.
+`--k`, `--concurrency` and `--timeout` (ms) must be whole numbers >= 1, or the command exits 2.
+
+Bench results recorded before this fix ran **without** the Agentry plugin (`claude` was given the repo root rather
+than `plugin/`), so treat them as unmeasured.
+
+Tests never spend API — they drive the probes through fake runners (one test puts a fake `claude` on `PATH` and
+records its argv). Live runs are isolated per task in a temp sandbox; `--concurrency N` batches independent runs
+(keep it modest, ~3–4: Agentry cells spawn subagents, so a high limit hits API rate limits). No build / bundle /
+`dist` — run via `tsx`.
