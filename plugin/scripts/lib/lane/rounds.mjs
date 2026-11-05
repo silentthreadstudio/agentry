@@ -634,24 +634,29 @@ function onResume(ledger, event) {
       },
       "the owner supplied the fact",
     );
-  // The outside cause the builder reported is cleared: the same round goes again, to a fresh builder
-  // with the same brief unless the owner asked for the old one (`same`); the owner's words come last.
+  // The outside cause the builder reported is cleared: the round it stopped on goes again, as it was
+  // dispatched (its `from`, `reason`, `fact`, notes, owner's change, guard and run), to a fresh builder
+  // unless the owner asked for the old one (`same`). The block and the owner's words join its fact.
   if (held.for === "blocked") {
-    const { stepRun, notes, owner, guard, redo: redone } = round;
+    const { reason, ...dispatched } = Object.fromEntries(
+      ["from", "reason", "stepRun", "notes", "owner", "guard", "redo"]
+        .filter((key) => round[key] !== undefined)
+        .map((key) => [key, round[key]]),
+    );
+    const fact = [
+      round.fact,
+      `The last builder stopped on: ${held.reason} (its report ${held.report}).`,
+      `What changed: ${note}`,
+    ];
     return send(
       ledger,
       round.step,
       {
-        from: held.evidence,
+        ...dispatched,
         ...(event.same ? { mode: "resume", agent: round.agent } : { mode: "fresh" }),
-        ...(stepRun && { stepRun }),
-        ...(notes && { notes }),
-        ...(owner && { owner }),
-        ...(guard && { guard }),
-        ...(redone && { redo: redone }),
-        fact: note,
+        fact: fact.filter(Boolean).join("\n\n"),
       },
-      "the outside cause is cleared: the same round goes again",
+      reason ?? "the outside cause is cleared: the same round goes again",
     );
   }
   const total = ledger.steps?.length ?? 0;

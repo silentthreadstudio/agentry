@@ -1699,9 +1699,11 @@ test("resume on a blocked hold sends the same step again to a fresh builder; --s
   const fresh = pure(held, resume({ note: "the key is issued" }));
   const round = fresh.ledger.rounds.at(-1);
   assert.deepEqual(
-    [fresh.next, round.step, round.mode, round.agent, round.from, round.fact],
-    ["build", "build", "fresh", undefined, held.rounds[0].reportPath, "the key is issued"],
+    [fresh.next, round.step, round.mode, round.agent, round.from],
+    ["build", "build", "fresh", undefined, undefined],
   );
+  assert.ok(round.fact.includes(`its report ${held.rounds[0].reportPath}`));
+  assert.ok(round.fact.endsWith("What changed: the key is issued"));
   assert.equal(fresh.ledger.holds.at(-1).for, "blocked");
   const same = pure(held, resume({ same: true })).ledger.rounds.at(-1);
   assert.deepEqual([same.step, same.mode, same.agent], ["build", "resume", "b1"]);
@@ -1728,4 +1730,54 @@ test("a block in a run of steps keeps the step pointer: the same run is sent aga
   assert.deepEqual(held.hold.stepRun, [2, 3]);
   const round = pure(held, resume()).ledger.rounds.at(-1);
   assert.deepEqual([round.step, round.stepRun, round.mode], ["continue", [2, 3], "fresh"]);
+});
+
+// The round a blocked hold sends again is the round it stopped on, whatever its step.
+const resent = (ledger) => {
+  const blocked = ledger.rounds.at(-1);
+  const held = go(ledger, external({ tip: MOVED })).ledger;
+  const res = pure(held, resume({ tip: MOVED, note: "the key is issued" }));
+  return { blocked, held, round: res.ledger.rounds.at(-1) };
+};
+
+test("a blocked fix re-sends the verifier's FAIL report as its from, not the blocked report", () => {
+  let ledger = go(lane(), report("DONE", ok, { tip: TIP })).ledger;
+  ledger = go(ledger, judge("FAIL", TIP, { agent: "v1" })).ledger;
+  const { blocked, round } = resent(ledger);
+  assert.equal(blocked.step, "fix");
+  assert.deepEqual([round.step, round.mode, round.from], ["fix", "fresh", blocked.from]);
+  assert.match(
+    round.fact,
+    /The last builder stopped on: the API key is not issued yet \(its report /,
+  );
+  assert.match(round.fact, /What changed: the key is issued$/);
+});
+
+test("a blocked notes fix re-sends its notes and the verifier's report", () => {
+  const res = go(withNotes(), { type: "notes", notes: ["N1", "N3"] });
+  const { blocked, round } = resent(res.ledger);
+  assert.deepEqual([round.step, round.notes, round.from], ["fix", ["N1", "N3"], blocked.from]);
+});
+
+test("a blocked guard fix re-sends its guard flag, reason and refused report", () => {
+  const first = go(lane(), report("DONE", { dirty: ["a.txt"], commits: 1 }, { tip: TIP }));
+  const { blocked, round } = resent(first.ledger);
+  assert.equal(blocked.guard, true);
+  assert.deepEqual(
+    [round.step, round.guard, round.from, round.reason],
+    ["fix", true, blocked.from, blocked.reason],
+  );
+});
+
+test("a blocked needs-context round re-sends its fact with the block and the note joined to it", () => {
+  let ledger = go(lane(), asks()).ledger;
+  ledger = go(ledger, asks({ summary: "which key?" })).ledger;
+  ledger = go(ledger, resume({ note: "the key is `id`" })).ledger;
+  const { blocked, round } = resent(ledger);
+  assert.deepEqual([blocked.step, blocked.fact], ["needs-context", "the key is `id`"]);
+  assert.deepEqual([round.step, round.from], ["needs-context", blocked.from]);
+  assert.match(
+    round.fact,
+    /^the key is `id`\n\nThe last builder stopped on: .*\n\nWhat changed: the key is issued$/,
+  );
 });

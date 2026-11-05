@@ -1276,7 +1276,10 @@ test("resume on a blocked hold sends the same round again to a fresh builder wit
   assert.equal(resumed.exit, 0, resumed.stderr);
   out = resumed.json;
   assert.deepEqual([out.next, out.mode, out.agent], ["build", "fresh", undefined]);
-  assert.ok(readFileSync(out.brief, "utf8").endsWith("\n## The fact\n\nthe key is issued\n"));
+  assert.match(
+    readFileSync(out.brief, "utf8"),
+    /\n## The fact\n\nThe last builder stopped on: the API key is not issued yet \(its report .*r1-build\.report\.md\)\.\n\nWhat changed: the key is issued\n$/,
+  );
   assert.equal(ledgerOf(r.root, "T3").holds.at(-1).for, "blocked");
 
   blockedBy(out);
@@ -1332,4 +1335,66 @@ test("fix --owner on a blocked hold is refused naming resume --note, with no --r
   );
   assert.doesNotMatch(refused.stderr, /--redo/);
   assert.equal(ledgerOf(r.root, "T3").hold.for, "blocked");
+});
+
+test("a blocked fix round resumes as the same fix: its brief still points at the verifier's FAIL report", () => {
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  build(out, "three.txt");
+  out = lane(r, "report", "T3", "--agent", "builder-1").json;
+  const failPath = out.reportPath;
+  writeFileSync(failPath, "three.txt is wrong\nused_memories: none\nVerdict: FAIL\n");
+  out = lane(r, "verdict", "T3", "--agent", "verifier-1").json;
+  assert.equal(out.next, "fix");
+  const fixBrief = readFileSync(out.brief, "utf8");
+  assert.ok(fixBrief.includes(`The verifier's FAIL is in ${failPath}.`));
+  blockedBy(out);
+  lane(r, "report", "T3", "--agent", "builder-1");
+  const resumed = lane(r, "resume", "T3", "--note", "the key is issued");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  assert.deepEqual([resumed.json.next, resumed.json.mode], ["fix", "fresh"]);
+  const again = readFileSync(resumed.json.brief, "utf8");
+  assert.ok(again.includes(`The verifier's FAIL is in ${failPath}.`), again);
+  assert.match(again, /What changed: the key is issued/);
+});
+
+test("a plain BLOCKED first line stops the lane even when a later line has the external form", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  writeFileSync(
+    out.reportPath,
+    "BLOCKED\nBLOCKED: external: none, the parser is broken\nused_memories: none\n",
+  );
+  assert.equal(lane(r, "report", "T3").exit, 1);
+  assert.equal(ledgerOf(r.root, "T3").state, "stopped");
+});
+
+test("fix --owner on a parked verified lane is refused: resume it, then fix --owner", () => {
+  const r = repo();
+  verifiedLane(r);
+  assert.equal(lane(r, "hold", "T3", "--for", "later").exit, 0);
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T3.json");
+  const before = readFileSync(file, "utf8");
+  const refused = lane(r, "fix", "T3", "--owner", "use two spaces");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /T3 is parked verified: resume it \(.*exec resume T3 .*--note "<why>"\), then send the change with .*exec fix T3 .*--owner "<the change>"/,
+  );
+  assert.equal(readFileSync(file, "utf8"), before);
+  assert.equal(lane(r, "resume", "T3", "--note", "back").exit, 0);
+  assert.equal(lane(r, "fix", "T3", "--owner", "use two spaces").exit, 0);
+});
+
+test("hold --for owner|later on a blocked hold is refused, the hold kept, so the resume still re-sends the round", () => {
+  const r = repo();
+  blockedBy(lane(r, "start", "T3").json);
+  lane(r, "report", "T3");
+  for (const who of ["owner", "later"]) {
+    const refused = lane(r, "hold", "T3", "--for", who);
+    assert.equal(refused.exit, 2);
+    assert.match(refused.stderr, /T3 is held, blocked: clear it, then resume with --note/);
+    assert.equal(ledgerOf(r.root, "T3").hold.for, "blocked");
+  }
+  assert.equal(lane(r, "resume", "T3", "--note", "cleared").json.next, "build");
 });

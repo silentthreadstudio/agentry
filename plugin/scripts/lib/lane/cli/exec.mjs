@@ -1150,21 +1150,21 @@ function lastMove(ledger) {
   return { mainBranch: ledger.mainBranch, rangeDiff: rebase?.rangeDiff ?? "" };
 }
 
-// The outside cause a `BLOCKED: external: <reason>` report names, in the lines builderStatus reads, or
-// undefined: any other BLOCKED is a code problem and stops the lane.
+// The outside cause a `BLOCKED: external: <reason>` report names, read on the status line builderStatus
+// matched (the first of the first 5 lines that holds a status), or undefined: any other BLOCKED is a
+// code problem and stops the lane.
 function externalBlock(text) {
-  if (builderStatus(text) !== "BLOCKED") return undefined;
-  for (const line of unwrap(text)
+  const lines = unwrap(text)
     .split("\n")
     .filter((l) => l.trim())
-    .slice(0, 5)) {
-    const m =
-      /^[\s>#*`_-]*(?:[Ss]tatus\s*:\s*)?[*`]*BLOCKED[*`]*\s*:\s*[*`]*external[*`]*\s*:\s*(.+?)[\s*`_]*$/.exec(
-        line,
-      );
-    if (m) return m[1].length > 120 ? `${m[1].slice(0, 119)}…` : m[1];
-  }
-  return undefined;
+    .slice(0, 5);
+  const line = lines.find((l) => builderStatus(l) !== null);
+  if (builderStatus(line) !== "BLOCKED") return undefined;
+  const m =
+    /^[\s>#*`_-]*(?:[Ss]tatus\s*:\s*)?[*`]*BLOCKED[*`]*\s*:\s*[*`]*external[*`]*\s*:\s*(.+?)[\s*`_]*$/.exec(
+      line,
+    );
+  return m ? (m[1].length > 120 ? `${m[1].slice(0, 119)}…` : m[1]) : undefined;
 }
 
 const dispatchNext = (ctx, ledger, dispatch) =>
@@ -2468,6 +2468,11 @@ function ownerFix(ctx, id) {
   if (ledger.state === "held" && !capped) {
     const { hold } = ledger;
     const redo = hold.when === "after" ? " --redo" : "";
+    // A parked verified lane's resume only makes it verified again: the change is a fix after it.
+    if (hold.when === "verified")
+      refuse(
+        `${id} is parked verified: resume it (${laneLine(root, "resume", id, ' --note "<why>"')}), then send the change with ${laneLine(root, "fix", id, ' --owner "<the change>"')}`,
+      );
     refuse(
       `${id} is held (${hold.for}): its change goes in the resume, ${laneLine(root, "resume", id, `${redo} --note "<the change>"`)}`,
     );
@@ -2537,6 +2542,9 @@ function hold(ctx, id, agent) {
   // A context hold is answered by the fact: another hold would drop its re-dispatch (R1d-38 r2 N2).
   if (held && ledger.hold?.for === "context")
     refuse(`${id} is held for more context: resume it with --note "<the fact>"`);
+  // A blocked hold is answered by the cause cleared: another hold would turn its resume into a continue.
+  if (held && ledger.hold?.for === "blocked")
+    refuse(`${id} is held, blocked: clear it, then resume with --note "<what changed>"`);
   // A guard hold is answered by fixing main and reporting again, not by the owner's review (R1d-29 N2).
   if (held && holdFor === "owner" && ledger.hold?.for === "guard")
     refuse(`the lane is held for the guard: fix it and run ${laneLine(root, "report", id)}`);
