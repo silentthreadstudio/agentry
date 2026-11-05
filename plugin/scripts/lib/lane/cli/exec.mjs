@@ -129,7 +129,7 @@ import { idleOf } from "../idle.mjs";
 import { isAncestor, mergeBaseOf } from "../land.mjs";
 import { dirtyEntries, isMemoryCommit } from "../own-memory.mjs";
 import { callsLine } from "../owner-calls.mjs";
-import { builderStatus, summaryOf, usedMemories, verdictOf } from "../report.mjs";
+import { builderStatus, summaryOf, unwrap, usedMemories, verdictOf } from "../report.mjs";
 import { RestackError, gatingNow, markGating, restackLane } from "../restack.mjs";
 import {
   archive,
@@ -1150,6 +1150,23 @@ function lastMove(ledger) {
   return { mainBranch: ledger.mainBranch, rangeDiff: rebase?.rangeDiff ?? "" };
 }
 
+// The outside cause a `BLOCKED: external: <reason>` report names, in the lines builderStatus reads, or
+// undefined: any other BLOCKED is a code problem and stops the lane.
+function externalBlock(text) {
+  if (builderStatus(text) !== "BLOCKED") return undefined;
+  for (const line of unwrap(text)
+    .split("\n")
+    .filter((l) => l.trim())
+    .slice(0, 5)) {
+    const m =
+      /^[\s>#*`_-]*(?:[Ss]tatus\s*:\s*)?[*`]*BLOCKED[*`]*\s*:\s*[*`]*external[*`]*\s*:\s*(.+?)[\s*`_]*$/.exec(
+        line,
+      );
+    if (m) return m[1].length > 120 ? `${m[1].slice(0, 119)}…` : m[1];
+  }
+  return undefined;
+}
+
 const dispatchNext = (ctx, ledger, dispatch) =>
   dispatch ? addRound(ledger, dispatch, brief(ctx, ledger, dispatch)) : ledger;
 
@@ -1228,6 +1245,13 @@ function heldLead(root, ledger) {
     return {
       held: `the builder needs more context again → supply it: ${run}${ownsHint(root, ledger, hold.report)}; or start it again with its work: ${laneLine(root, "restart", ledger.id, " --carry")}`,
       asks: `${hold.reason} (${hold.report}), since ${hold.since}`,
+      run,
+    };
+  }
+  if (hold.for === "blocked") {
+    const run = laneLine(root, "resume", ledger.id, ' --note "<what changed>"');
+    return {
+      held: `blocked: ${hold.reason} → clear it, then ${run} (the same round goes again; --same keeps the builder) · report ${hold.report}`,
       run,
     };
   }
@@ -1923,6 +1947,7 @@ function report(ctx, id, agent) {
   const res = stepWith(before, {
     type: "report",
     status: builderStatus(text),
+    blocked: externalBlock(text),
     report: round.reportPath,
     agent,
     summary: summaryOf(text),
@@ -2439,6 +2464,14 @@ function ownerFix(ctx, id) {
     );
   // A lane the notes cap holds for the owner (field 84) goes back on the owner's word too.
   const capped = ledger.state === "held" && ledger.hold?.when === "verdict";
+  // Any other hold is answered by its resume: the owner's change is the note (--redo past a finished run).
+  if (ledger.state === "held" && !capped) {
+    const { hold } = ledger;
+    const redo = hold.when === "after" ? " --redo" : "";
+    refuse(
+      `${id} is held (${hold.for}): its change goes in the resume, ${laneLine(root, "resume", id, `${redo} --note "<the change>"`)}`,
+    );
+  }
   if (!capped && (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next)))
     refuse(`fix --owner is for a verified lane: ${id} is ${ledger.state} (next ${ledger.next})`);
   refuseAtWriterCap(root, spec);

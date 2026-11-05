@@ -1235,3 +1235,101 @@ test("an item not flagged at the cap goes on to the gate; fix --notes names the 
     /0 of 0 notes rounds are used \(exec\.noteRounds is 0; next is gate: .*exec gate T3 .* goes on with the notes open\) → raise exec\.noteRounds, or send it back on your word: .*exec fix T3 --root '.*' --owner "<the change>"/,
   );
 });
+
+// ---- an external block holds the lane; fix --owner on a held lane says what to do (fields 98, 104) -----
+
+const blockedBy = (out, line = "BLOCKED: external: the API key is not issued yet") =>
+  writeFileSync(out.reportPath, `${line}\nnothing to build until then\nused_memories: none\n`);
+
+test("BLOCKED: external holds the lane with the reason, the board and worktree untouched; a plain BLOCKED still stops", () => {
+  const r = repo();
+  const out = lane(r, "start", "T3").json;
+  const cells = board(r.root);
+  blockedBy(out);
+  const held = lane(r, "report", "T3", "--agent", "builder-1");
+  assert.equal(held.exit, 0, held.stderr);
+  assert.deepEqual([held.json.state, held.json.next], ["held", "resume"]);
+  assert.match(
+    held.json.held,
+    /^blocked: the API key is not issued yet → clear it, then .*exec resume T3 --root '.*' --note "<what changed>"/,
+  );
+  assert.match(text(r, "show", "T3"), /^held: blocked: the API key is not issued yet → /m);
+  const ledger = ledgerOf(r.root, "T3");
+  assert.deepEqual(
+    [ledger.hold.for, ledger.hold.reason, ledger.rounds.length, ledger.stopReason],
+    ["blocked", "the API key is not issued yet", 1, undefined],
+  );
+  assert.equal(board(r.root), cells);
+
+  const code = lane(r, "start", "T4").json;
+  writeFileSync(code.reportPath, "BLOCKED\nthe parser cannot read it\nused_memories: none\n");
+  assert.equal(lane(r, "report", "T4").exit, 1);
+  assert.equal(ledgerOf(r.root, "T4").state, "stopped");
+});
+
+test("resume on a blocked hold sends the same round again to a fresh builder with the note; --same keeps the builder", () => {
+  const r = repo();
+  let out = lane(r, "start", "T3").json;
+  blockedBy(out, "**BLOCKED: external: the API key is not issued yet**");
+  lane(r, "report", "T3", "--agent", "builder-1");
+  const resumed = lane(r, "resume", "T3", "--note", "the key is issued");
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  out = resumed.json;
+  assert.deepEqual([out.next, out.mode, out.agent], ["build", "fresh", undefined]);
+  assert.ok(readFileSync(out.brief, "utf8").endsWith("\n## The fact\n\nthe key is issued\n"));
+  assert.equal(ledgerOf(r.root, "T3").holds.at(-1).for, "blocked");
+
+  blockedBy(out);
+  lane(r, "report", "T3", "--agent", "builder-2");
+  const same = lane(r, "resume", "T3", "--note", "issued now", "--same").json;
+  assert.deepEqual([same.next, same.mode, same.agent], ["build", "resume", "builder-2"]);
+});
+
+test("a block inside step 2 holds and resumes on step 2: the step pointer and the verdict count do not move", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out, "one.txt");
+  lane(r, "report", "T1", "--agent", "builder-1");
+  out = lane(r, "resume", "T1", "--note", "OK, go").json;
+  blockedBy(out);
+  assert.equal(lane(r, "report", "T1").exit, 0);
+  const held = ledgerOf(r.root, "T1");
+  assert.deepEqual([held.state, held.hold.for, held.hold.stepRun], ["held", "blocked", [2, 2]]);
+  out = lane(r, "resume", "T1", "--note", "unblocked").json;
+  const after = ledgerOf(r.root, "T1");
+  assert.deepEqual(
+    [out.next, after.rounds.at(-1).stepRun, after.rounds.filter((x) => x.verdict).length],
+    ["continue", [2, 2], 0],
+  );
+  assert.match(readFileSync(out.brief, "utf8"), /## This round: step 2 of 2/);
+});
+
+test("fix --owner on a lane held for the owner is refused, naming resume --redo --note; nothing changes", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  build(out, "one.txt");
+  assert.equal(lane(r, "report", "T1", "--agent", "builder-1").json.state, "held");
+  const file = join(r.root, ".agentry", "run", "process", "ledger", "T1.json");
+  const before = readFileSync(file, "utf8");
+  const refused = lane(r, "fix", "T1", "--owner", "use two spaces");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /T1 is held \(owner\): its change goes in the resume, .*exec resume T1 --root '.*' --redo --note "<the change>"/,
+  );
+  assert.equal(readFileSync(file, "utf8"), before);
+});
+
+test("fix --owner on a blocked hold is refused naming resume --note, with no --redo", () => {
+  const r = repo();
+  blockedBy(lane(r, "start", "T3").json);
+  lane(r, "report", "T3");
+  const refused = lane(r, "fix", "T3", "--owner", "use two spaces");
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /T3 is held \(blocked\): its change goes in the resume, .*exec resume T3 --root '[^']*' --note "<the change>"/,
+  );
+  assert.doesNotMatch(refused.stderr, /--redo/);
+  assert.equal(ledgerOf(r.root, "T3").hold.for, "blocked");
+});

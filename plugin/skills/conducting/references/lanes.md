@@ -151,7 +151,8 @@ Under `--json` that is `idle: { minutes, lastChange, file }`.
 | build, fix | `DONE` / `DONE_WITH_CONCERNS`, guards hold | `verify` (fresh) when there is no verdict yet; `recheck` (resume the last verifier) after a fix |
 | build, fix | the same, no verdict yet, `exec.verify` is `flagged` or `none`, the item's flag is not set and the workflow file has a gate | `gate` (built is written), then `close`: no verifier. A flagged item is verified as above; a red gate stops the lane |
 | build, fix | `NEEDS_CONTEXT` | `needs-context` (resume, with the fact) once per step: the run of `steps` the builder is on, so the owner's resume past a step hold starts a fresh one (a lane with no steps is one step); asked again in the step, held for the context (`hold: { for: "context", reason: <the report's first line>, report, since }`, the report read, nothing in the worktree changed): `held: the builder needs more context again → supply it: agentry lane exec resume <id> --note "<the fact>"` |
-| build, fix | `BLOCKED` | `stop` |
+| build, fix | `BLOCKED: external: <reason>` (first line) | held (`hold: { for: "blocked", reason, report, stepRun, since }`), no verdict spent, the step pointer unmoved, nothing sent: `held: blocked: <reason> → clear it, then exec resume <id> --note "<what changed>"`; the resume sends the same round again (same step, a fresh builder with the same brief and the note under `## The fact`; `--same` keeps the old builder). `fix --owner` on any held lane is refused naming the resume (`--redo` too after a run's end) |
+| build, fix | `BLOCKED` (a code problem) | `stop` |
 | any | no status line / no `Verdict:` last line | `resend` (resume) once per role in the lane, then `stop` |
 | verify, recheck, final | the branch tip moved since the dispatch | `recheck`: the verdict is void, nothing written; the 3rd void → `stop` |
 | verify | `PASS` / `PASS WITH NOTES` | `gate` when no green worktree gate is on this tip, then `close` |

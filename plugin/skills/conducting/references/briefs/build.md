@@ -92,6 +92,7 @@ Not this round: {{notThisRound}}
 Write your full report to {{reportPath}} and reply with the same text. Its first line is one of `DONE`,
 `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, `BLOCKED`, followed by one line saying what you did. Then the
 commits, each check you ran with its exit code, any concern, and a `used_memories:` line (ids, or `none`).
+`BLOCKED` is for a problem in the code or the contract. When the cause is outside the repo and the owner can clear it (a key not issued, a service down, an access not granted), make the first line `BLOCKED: external: <the reason in one line>`: the lane then waits for the owner and sends the round again.
 
 {{#ownerGate}}
 When you report, the lane holds for the owner's review: say what the owner should open or run to see it.

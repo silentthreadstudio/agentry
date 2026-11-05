@@ -1660,3 +1660,72 @@ test("held at the notes cap: notes go only once the cap is raised; a restack is 
   const contextHeld = go(go(lane(), asks()).ledger, asks()).ledger;
   assert.throws(() => step(contextHeld, owner()), /expects a resume/);
 });
+
+// ---- an external block holds the lane (field 98) -------------------------------------------------------
+
+const external = (extra = {}) =>
+  report("BLOCKED", ok, {
+    blocked: "the API key is not issued yet",
+    at: AT,
+    agent: "b1",
+    ...extra,
+  });
+
+test("BLOCKED external → held for blocked, the reason kept, no builder sent and no verdict spent", () => {
+  const first = pure(lane(), external());
+  const blocked = first.ledger.rounds[0];
+  assert.deepEqual([first.next, first.dispatch, first.ledger.state], ["resume", undefined, "held"]);
+  assert.deepEqual(first.ledger.hold, {
+    for: "blocked",
+    when: "during",
+    stepRun: null,
+    evidence: blocked.reportPath,
+    reason: "the API key is not issued yet",
+    report: blocked.reportPath,
+    since: AT,
+    round: blocked.n,
+  });
+  assert.equal(verdicts(first.ledger).length, 0);
+  assert.equal(first.ledger.rounds.length, 1);
+});
+
+test("a plain BLOCKED still stops the lane, a blocked reason or not on another status", () => {
+  assert.equal(go(lane(), report("BLOCKED")).next, "stop");
+  assert.equal(go(lane(), report("DONE", ok, { blocked: "x" })).next, "verify");
+});
+
+test("resume on a blocked hold sends the same step again to a fresh builder; --same keeps the old one", () => {
+  const held = go(lane(), external()).ledger;
+  const fresh = pure(held, resume({ note: "the key is issued" }));
+  const round = fresh.ledger.rounds.at(-1);
+  assert.deepEqual(
+    [fresh.next, round.step, round.mode, round.agent, round.from, round.fact],
+    ["build", "build", "fresh", undefined, held.rounds[0].reportPath, "the key is issued"],
+  );
+  assert.equal(fresh.ledger.holds.at(-1).for, "blocked");
+  const same = pure(held, resume({ same: true })).ledger.rounds.at(-1);
+  assert.deepEqual([same.step, same.mode, same.agent], ["build", "resume", "b1"]);
+});
+
+test("a block mid-fix after a verdict keeps the verdict count; the resume sends the fix again", () => {
+  let ledger = go(lane(), report("DONE", ok, { tip: TIP })).ledger;
+  ledger = go(ledger, judge("FAIL", TIP, { agent: "v1" })).ledger;
+  assert.equal(ledger.rounds.at(-1).step, "fix");
+  const before = verdicts(ledger).length;
+  const blocked = go(ledger, external({ tip: MOVED }));
+  assert.equal(blocked.next, "resume");
+  assert.equal(verdicts(blocked.ledger).length, before, "no verdict spent");
+  const again = go(blocked.ledger, resume({ tip: MOVED }));
+  assert.deepEqual([again.ledger.rounds.at(-1).step, again.next], ["fix", "fix"]);
+  assert.equal(verdicts(again.ledger).length, before);
+});
+
+test("a block in a run of steps keeps the step pointer: the same run is sent again", () => {
+  const steps = [step3(1, "owner"), step3(2), step3(3)];
+  const first = go(stepped(steps), done()).ledger;
+  const second = go(first, resume()).ledger;
+  const held = go(second, external()).ledger;
+  assert.deepEqual(held.hold.stepRun, [2, 3]);
+  const round = pure(held, resume()).ledger.rounds.at(-1);
+  assert.deepEqual([round.step, round.stepRun, round.mode], ["continue", [2, 3], "fresh"]);
+});

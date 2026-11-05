@@ -18,6 +18,8 @@
 //                                             first line the hold's reason
 //   held for the context: { type: "resume", note } → needs-context (resume the builder) with the note as
 //                                             `fact`; a hold never sends a builder by itself
+//   build / fix: BLOCKED: external: <why>   → held (`for: "blocked"`, no verdict spent): resume sends the
+//                                             same round again (a fresh builder unless `same`)
 //   build / fix: BLOCKED                    → stop; no status line → resend once, then stop
 //   verify / recheck / final: tip moved     → recheck: the verdict is void (no rebase while one reads);
 //                                             the 3rd void verdict → stop
@@ -266,7 +268,7 @@ const resend = (ledger, round, reason) =>
  * round to send next (pass it to `addRound` with the brief rendered for it). Throws on an event the
  * ledger does not expect (out of order).
  *
- *   { type: "report", status, report, agent?, summary?, guards: { mainTouched?, dirty?, commits?, subjects?: [{ sha, subject, why, failed? }] },
+ *   { type: "report", status, blocked? (the reason of a `BLOCKED: external: <why>` report), report, agent?, summary?, guards: { mainTouched?, dirty?, commits?, subjects?: [{ sha, subject, why, failed? }] },
  *     skipVerify?: true (exec.verify routes this item past the verifier), tip, gate: true | false, tier?,
  *     changed? (a rebase report: the range-diff has a pair not marked `=`), saved? (where the report is
  *     kept while a guard holds the lane; `report` when not given), at }
@@ -413,6 +415,21 @@ function onReport(ledger, round, event) {
     return hold(ledger, entry, `guard tripped: ${guards.mainTouched}`);
   }
   if (!status) return resend(ledger, round, "the report has no status line");
+  if (status === "BLOCKED" && event.blocked) {
+    // An outside cause (`BLOCKED: external: <reason>`): nothing the builder can fix, so the lane waits
+    // for the owner. No verdict is spent and the step pointer stays: the resume sends the same round.
+    const entry = {
+      for: "blocked",
+      when: "during",
+      stepRun: round.stepRun ?? null,
+      evidence: round.reportPath,
+      reason: event.blocked,
+      report: round.reportPath,
+      since: event.at,
+      round: round.n,
+    };
+    return hold(ledger, entry, `blocked by an outside cause: ${event.blocked}`);
+  }
   if (status === "BLOCKED") return stop(ledger, "the builder reported BLOCKED");
   const rebasing = round.step === "rebase";
   if (status === "NEEDS_CONTEXT" && rebasing)
@@ -617,6 +634,26 @@ function onResume(ledger, event) {
       },
       "the owner supplied the fact",
     );
+  // The outside cause the builder reported is cleared: the same round goes again, to a fresh builder
+  // with the same brief unless the owner asked for the old one (`same`); the owner's words come last.
+  if (held.for === "blocked") {
+    const { stepRun, notes, owner, guard, redo: redone } = round;
+    return send(
+      ledger,
+      round.step,
+      {
+        from: held.evidence,
+        ...(event.same ? { mode: "resume", agent: round.agent } : { mode: "fresh" }),
+        ...(stepRun && { stepRun }),
+        ...(notes && { notes }),
+        ...(owner && { owner }),
+        ...(guard && { guard }),
+        ...(redone && { redo: redone }),
+        fact: note,
+      },
+      "the outside cause is cleared: the same round goes again",
+    );
+  }
   const total = ledger.steps?.length ?? 0;
   // A rebase held during its round carries on as the rebase, so its report is read as one.
   if (held.when !== "after" && round.step === "rebase")
