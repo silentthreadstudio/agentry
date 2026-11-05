@@ -8,9 +8,7 @@
 // command(verb, fields, argv, handler) -> { exit, out }     handler(service, args) -> ok(...) | refused(...)
 // EXITS                                                     the exit codes every verb's help lists
 import { refuse } from "../../cli/help.mjs";
-import { MemoryService } from "../application/memory-service.mjs";
-import { SqliteTextIndex } from "../persistence/db-index.mjs";
-import { MarkdownFileStore } from "../persistence/file-store.mjs";
+import { openMemory } from "../open.mjs";
 import { resolveRoots } from "../resolution/roots.mjs";
 import { parse } from "./args.mjs";
 import { internal } from "./errors.mjs";
@@ -19,12 +17,7 @@ import { refusal, text } from "./render.mjs";
 export const EXITS = { 0: "done", 1: "refused (the reason is printed)", 2: "usage" };
 
 /** The memory service over the store the environment (or the cwd's repo) names, loaded. */
-function open(env = process.env, cwd = process.cwd()) {
-  const roots = resolveRoots(env, cwd);
-  const service = new MemoryService(new MarkdownFileStore(roots), new SqliteTextIndex(), roots);
-  service.load();
-  return service;
-}
+const open = (env = process.env, cwd = process.cwd()) => openMemory(resolveRoots(env, cwd));
 
 export function command(verb, fields, argv, handler) {
   const parsed = parse(fields, argv);

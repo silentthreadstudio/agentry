@@ -15,8 +15,9 @@
 //   rebase <id>               a verified lane whose branch no longer lands: its builder rebases it onto main,
 //                             then a verifier reads the resolution (`exec.rebase: "recheck"`) or the gate
 //   reverify <id>             a lane closed with no verifier (the route skipped it): one fresh verifier
-//   close <id> [--episode e]  print the episode payload; `--episode` stamps the id episode_write gave
-//                             (and says whether the memory store holds it)
+//   close <id>                write the lane's episode to the repo's memory store and stamp its id
+//                             (`--episode e`, deprecated, stamps an id written elsewhere and says whether
+//                             the store holds it)
 //   show <id>                 the ledger and the pending step, for a cold resume (the route fixed at start, the
 //                             workflow as the file says now, the notes kept open)
 //   owns <id> [--set a,b]     the owned files the briefs name (parsed once at start); `--set … --apply`
@@ -103,7 +104,7 @@ export const help = {
     verdict: "read the verifier's report, write the verdict, brief the next round",
     gate: "run the repo's gate in the worktree and record it",
     fix: "after PASS WITH NOTES: a builder round on the named notes, then a recheck; or the owner's change (--owner)",
-    close: "print the episode payload (--episode stamps the id episode_write gave)",
+    close: "write the lane's episode to the memory store and stamp its id",
     show: "the ledger and the pending step, for a cold resume",
     owns: "the owned files every brief names, parsed once at start (--set replaces them)",
     hold: "a builder's round waits for the owner (--for owner), or is parked (--for later)",
@@ -126,7 +127,7 @@ export const help = {
     "--leave <N2,N9>":
       "verdict: notes of this report left as built on the owner's or conductor's word; never sent back",
     "--by <owner|conductor>": "verdict --leave: whose word leaves them (default conductor)",
-    "--episode <episode id>": "close: the id episode_write returned",
+    "--episode <episode id>": "close, deprecated: stamp an episode id written elsewhere",
     "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
     "--owner <text>": "fix: the owner's change to a verified lane, for one builder round",
     "--cite <A40,A41>":

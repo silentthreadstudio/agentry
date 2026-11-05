@@ -151,7 +151,7 @@ export function run(ctx, id) {
     ...(landed.boardCommit && { boardCommit: landed.boardCommit }),
     ...(landed.rows.length && { land: rowLines(landed.rows).join("\n") }),
     episode: payload,
-    afterwards: `episode_write with this payload, then ${laneLine(root, "close", id, " --episode <its id>")}`,
+    afterwards: `${laneLine(root, "close", id)} writes this episode to the memory store and stamps it`,
     ...(plan.dirty.length && { uncommitted: diff }),
   });
 }

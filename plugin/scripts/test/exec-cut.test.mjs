@@ -12,6 +12,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -380,7 +381,11 @@ test("after a cut, another lane's lane merge preflights and lands normally", () 
     ["T1", "T3"].map((id) => statusOf(r.root, id)),
     ["cut", "done"],
   );
-  assert.equal(git(r.root, "status", "--porcelain", "--untracked-files=all"), "");
+  // Nothing but the episode T3's close wrote to the repo's memory store.
+  assert.match(
+    git(r.root, "status", "--porcelain", "--untracked-files=all"),
+    /^\?\? \.agentry\/memory\/episodes\/t3-built-it-[0-9A-Z]{26}\.md$/,
+  );
 });
 
 test("session start and the board never show a cut lane as held or idle", () => {
@@ -398,13 +403,13 @@ test("session start and the board never show a cut lane as held or idle", () => 
   assert.deepEqual(s.held, []);
   assert.deepEqual(s.idle, []);
   assert.deepEqual(s.ledgers, []);
-  // Its episode waits to be written, as any finished lane's does; once stamped nothing names it.
+  // Its episode waits to be written, as any finished lane's does; once closed nothing names it.
   assert.deepEqual(
     s.status.nudges.filter((n) => n.id === "T1").map((n) => n.kind),
     ["episode-pending"],
     start.out,
   );
-  assert.equal(lane(r, "close", "T1", "--episode", "ep-cut-1").exit, 0);
+  assert.equal(lane(r, "close", "T1").exit, 0);
   const text = run(r, LANE, ["session", "start"]).out;
   assert.doesNotMatch(text, /T1/);
   const board = run(r, BOARD, ["status", "--json"]);
@@ -698,7 +703,7 @@ test("a commit-msg hook refusing the board commit takes the kept commit off main
   assert.equal(existsSync(join(runsDir(r.root), "T1", "cut", "uncommitted.diff")), false);
 });
 
-test("a cut's episode is in its closed ledger, stamped by exec close, and then not pending", () => {
+test("a cut's episode is in its closed ledger, written and stamped by exec close, and then not pending", () => {
   const r = repo();
   parked(r);
   const res = lane(r, "cut", "T1", "--decision", "D7", "--keep", "art/raw", "--apply");
@@ -709,13 +714,17 @@ test("a cut's episode is in its closed ledger, stamped by exec close, and then n
   );
   assert.match(
     res.json.afterwards,
-    /^episode_write with this payload, then .*exec close T1 .*--episode <its id>$/,
+    /^\S.*exec close T1 --root \S+ writes this episode to the memory store and stamps it$/,
   );
   assert.deepEqual(ledgerOf(r.root, "T1").episode.payload, res.json.episode);
   assert.ok(JSON.parse(run(r, LANE, ["session", "close"]).out).episodesPending.includes("T1"));
-  const stamp = lane(r, "close", "T1", "--episode", "ep-cut-1");
-  assert.equal(stamp.exit, 0, stamp.out);
-  assert.equal(ledgerOf(r.root, "T1").episode.writtenId, "ep-cut-1");
+  const closed = lane(r, "close", "T1");
+  assert.equal(closed.exit, 0, closed.out);
+  assert.equal(closed.json.episode.outcome, res.json.episode.outcome);
+  const { writtenId } = ledgerOf(r.root, "T1").episode;
+  assert.match(writtenId, /^p:[0-9A-Z]{26}$/);
+  const episodes = readdirSync(join(r.root, ".agentry", "memory", "episodes"));
+  assert.deepEqual(episodes.filter((f) => f.endsWith(`-${writtenId.slice(2)}.md`)).length, 1);
   assert.ok(!JSON.parse(run(r, LANE, ["session", "close"]).out).episodesPending.includes("T1"));
 });
 
@@ -1125,7 +1134,7 @@ test("while a cut is stuck, another cut, a start and the preview name the cut as
   for (const res of [t3, start, preview]) assert.doesNotMatch(res.out, /--resolve/);
 });
 
-test("exec close refuses held, building, stuck and rolled-back lanes; a cut lane stamps its episode", () => {
+test("exec close refuses held, building, stuck and rolled-back lanes; a cut lane writes its episode", () => {
   const { r } = setup();
   for (const id of ["T1", "T3"]) assert.equal(lane(r, "close", id).exit, 2, id);
   assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
@@ -1134,7 +1143,7 @@ test("exec close refuses held, building, stuck and rolled-back lanes; a cut lane
   assert.equal(lane(r, "close", "T1").exit, 2, "a rolled-back lane closed");
   assert.equal(ledgerOf(r.root, "T1").episode, undefined);
   finishes(r, "close");
-  assert.equal(lane(r, "close", "T1", "--episode", "ep-1").exit, 0);
+  assert.equal(lane(r, "close", "T1").exit, 0);
   assert.equal(statusOf(r.root, "T1"), "cut");
   assert.ok(!JSON.parse(run(r, LANE, ["session", "close"]).out).episodesPending.includes("T1"));
 });

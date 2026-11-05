@@ -207,7 +207,7 @@ episode:
     "retries": 0,
     "usedMemories": []
   }
-afterwards: episode_write with this payload, then node '<PLUGIN>/scripts/lane.mjs' exec close T-1 --root '<ROOT>' --episode <its id>
+stored: true
 
 --- merge preflight: exit 0
 merge T-1 · agentry/T-1 → main
@@ -239,14 +239,11 @@ merge T-1 · agentry/T-1 → main
   · commit  nothing written to the board, nothing to commit
 next: ask the owner to push main; on yes: lane merge T-1 --push --approved
 
---- board fix: exit 1
-would fix 0, 1 left for you
-left for you:
-  episode-pending T-1 → /agentry:close
+--- board fix: exit 0
+would fix 0, 0 left for you
 
 --- board status: exit 0
 ✓ Golden  OK · 2 rules · 1 tasks · exit 0
 
 Now        —
 On you     —
-Drift      ! episode-pending T-1 → /agentry:close

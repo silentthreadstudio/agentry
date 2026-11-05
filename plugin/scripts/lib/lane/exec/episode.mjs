@@ -1,10 +1,10 @@
-// exec/episode — the `episode_write` payload a lane's close (or its cut) prints, from its ledger alone.
+// exec/episode — the episode a lane's close writes (and its cut prints), from its ledger alone.
 import { routeText } from "../exec-view.mjs";
 import { short } from "../fmt.mjs";
 import { callsLine } from "../owner-calls.mjs";
 import { verdicts } from "../rounds.mjs";
 
-// The `episode_write` arguments for this lane, from the ledger alone.
+// The episode for this lane (the fields `agentry mem episode` takes), from the ledger alone.
 const ownerHolds = (ledger) => (ledger.holds ?? []).filter((h) => h.for === "owner").length;
 export function episodeOf(ledger) {
   const judged = verdicts(ledger);

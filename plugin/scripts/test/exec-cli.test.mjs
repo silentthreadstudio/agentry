@@ -12,6 +12,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -22,6 +23,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { MarkdownFileStore } from "../lib/memory/persistence/file-store.mjs";
 import { commitFile, git, gitEnv } from "./git-repo.mjs";
 import { writeSpec } from "./spec-files.mjs";
 
@@ -469,10 +471,11 @@ test("a full lane: build → verify PASS → gate → close; the board moves onl
   assert.equal(episode.retries, 0);
   assert.match(episode.outcome, /^verified \(PASS\); rounds: build, verify; verdicts: PASS;/);
   assert.match(episode.outcome, /worktree gate: green full on [0-9a-f]{7}/);
-  const stamped = lane(r, "close", "T1", "--episode", "e-42");
-  assert.equal(stamped.exit, 0);
+  assert.equal(closed.json.stored, true);
+  assert.equal(closed.json.afterwards, undefined, "nothing left for the session to write");
   const ledger = ledgerOf(r.root, "T1");
-  assert.equal(ledger.episode.writtenId, "e-42");
+  assert.match(ledger.episode.writtenId, EPISODE_ID);
+  assert.equal(storedEpisode(r.root, ledger.episode.writtenId).task, "T1: added out.txt");
   assert.equal(ledger.state, "verified");
   assert.equal(ledger.gates.length, 1);
   assert.equal(ledger.rounds.filter((x) => x.verdict).length, 1);
@@ -481,7 +484,8 @@ test("a full lane: build → verify PASS → gate → close; the board moves onl
   assert.deepEqual(changedLines(before, board(r.root)), [
     "| T1   | S1     | verify | PASS    |        |",
   ]);
-  assert.equal(git(r.root, "status", "--porcelain"), "M plan/BOARD.md");
+  // and the episode close wrote, in the repo's own memory store
+  assert.equal(git(r.root, "status", "--porcelain"), "M plan/BOARD.md\n?? .agentry/memory/");
 });
 
 test("a FAIL writes the verdict and the failed status, then a fix round resumes the builder", () => {
@@ -678,6 +682,34 @@ function verified(r, id, file) {
   assert.equal(lane(r, "verdict", id).json.next, "gate");
   assert.equal(lane(r, "gate", id).exit, 0);
   assert.equal(lane(r, "close", id).exit, 0);
+}
+// A memory id as the store makes them: the project root's `p:` and a ULID.
+const EPISODE_ID = /^p:[0-9A-HJKMNP-TV-Z]{26}$/;
+// The episodes in the repo's own store, where close writes them.
+const episodeFiles = (root) => {
+  const dir = join(root, ".agentry", "memory", "episodes");
+  return existsSync(dir) ? readdirSync(dir) : [];
+};
+/** Stored episode `id` (its id, task and shape), read back through the memory store `agentry mem` uses. */
+function storedEpisode(root, id) {
+  const store = new MarkdownFileStore({
+    global: join(root, "no-global"),
+    project: join(root, ".agentry", "memory"),
+  });
+  const { records, errors } = store.readEpisodes();
+  assert.deepEqual(errors, []);
+  const found = records.find((r) => r.episode.id === id)?.episode;
+  assert.ok(found, `no episode ${id} in the store`);
+  return { id: found.id, task: found.task, shape: found.shape };
+}
+/** Lane `id` as the two-step close of the last version left it: payload printed, no id stamped, nothing
+ *  in the store. */
+function closedByTheOldClose(r, id) {
+  verified(r, id, "out.txt");
+  const ledger = ledgerOf(r.root, id);
+  rmSync(join(r.root, ".agentry", "memory"), { recursive: true, force: true });
+  const { writtenId: _id, ...episode } = ledger.episode;
+  writeFileSync(ledgerFile(r.root, id), JSON.stringify({ ...ledger, episode }));
 }
 const merge = ({ root, home }, ...args) =>
   spawnSync("node", [LANE, "merge", ...args, "--root", root], {
@@ -1247,11 +1279,12 @@ test("an index-only change in main (git rm --cached) trips the guard", () => {
   assert.match(tripped(lane(r, "report", "T1")), /files changed: .*README\.md/);
 });
 
-test("a second close --episode with another id is refused and names the stamped one", () => {
+test("close --episode (deprecated) stamps an id once, says so, and refuses another id", () => {
   const r = repo();
-  verified(r, "T1", "out.txt");
-  lane(r, "close", "T1");
-  assert.equal(lane(r, "close", "T1", "--episode", "p:FIRST").exit, 0);
+  closedByTheOldClose(r, "T1");
+  const stamped = lane(r, "close", "T1", "--episode", "p:FIRST");
+  assert.equal(stamped.exit, 0);
+  assert.match(stamped.json.deprecated, /--episode is deprecated .*writes the episode itself/);
   const again = lane(r, "close", "T1", "--episode", "p:SECOND");
   assert.notEqual(again.exit, 0);
   assert.match(again.stderr + again.stdout, /already stamped as p:FIRST/);
@@ -1263,7 +1296,7 @@ test("close after a rebase on a lane whose episode is stamped moves next to merg
   // S27: it printed "close → nothing" while show still said next close.
   const r = repo();
   verified(r, "T1", "out.txt");
-  assert.equal(lane(r, "close", "T1", "--episode", "p:FIRST").exit, 0);
+  const written = ledgerOf(r.root, "T1").episode.writtenId;
   commitFile(r.root, "two.txt", "x\n", "chore: main moves");
   let out = lane(r, "rebase", "T1").json;
   git(out.worktree, "rebase", "-q", "main");
@@ -1282,22 +1315,58 @@ test("close after a rebase on a lane whose episode is stamped moves next to merg
   assert.equal(closed.status, 0, closed.stderr);
   assert.match(closed.stdout, /^T1 · close → merge/);
   assert.equal(ledgerOf(r.root, "T1").next, "merge");
-  assert.equal(ledgerOf(r.root, "T1").episode.writtenId, "p:FIRST");
+  assert.equal(ledgerOf(r.root, "T1").episode.writtenId, written);
+  assert.equal(episodeFiles(r.root).length, 1, "no second episode");
   assert.match(lane(r, "show", "T1").json.next, /^merge/);
+});
+
+test("a lane the old two-step close left unstamped gets its episode written by close", () => {
+  const r = repo();
+  closedByTheOldClose(r, "T1");
+  const closed = lane(r, "close", "T1");
+  assert.equal(closed.exit, 0, closed.stderr);
+  assert.equal(closed.json.stored, true);
+  const { writtenId } = ledgerOf(r.root, "T1").episode;
+  assert.deepEqual(storedEpisode(r.root, writtenId), {
+    id: writtenId,
+    task: "T1: added out.txt",
+    shape: "exec",
+  });
+});
+
+test("a close that cannot write the episode stops and records nothing", () => {
+  const r = repo();
+  let out = lane(r, "start", "T1").json;
+  build(out);
+  out = lane(r, "report", "T1").json;
+  judge(out, "PASS");
+  lane(r, "verdict", "T1");
+  assert.equal(lane(r, "gate", "T1").json.next, "close");
+  mkdirSync(join(r.root, ".agentry"), { recursive: true });
+  writeFileSync(join(r.root, ".agentry", "memory"), "not a dir\n");
+  const closed = spawnSync("node", [LANE, "exec", "close", "T1", "--root", r.root], {
+    encoding: "utf8",
+    env: { ...gitEnv, HOME: r.home },
+  });
+  assert.equal(closed.status, 1, closed.stdout + closed.stderr);
+  assert.match(
+    closed.stdout,
+    /the episode was not written \(.+\): nothing recorded → fix the memory store/,
+  );
+  const ledger = ledgerOf(r.root, "T1");
+  assert.deepEqual([ledger.next, ledger.episode], ["close", undefined]);
 });
 
 test("close --episode says whether the memory store holds the episode it stamps", () => {
   const r = repo();
-  verified(r, "T1", "out.txt");
-  lane(r, "close", "T1");
+  closedByTheOldClose(r, "T1");
   const unknown = lane(r, "close", "T1", "--episode", "p:01NOSUCH");
   assert.equal(unknown.exit, 0);
   assert.equal(unknown.json.stored, false);
   assert.match(unknown.json.warning, /no episode p:01NOSUCH in the memory store/);
 
   const s = repo();
-  verified(s, "T1", "out.txt");
-  lane(s, "close", "T1");
+  closedByTheOldClose(s, "T1");
   const episodes = join(s.root, ".agentry", "memory", "episodes");
   mkdirSync(episodes, { recursive: true });
   writeFileSync(join(episodes, "t1-added-out-01KNOWN.md"), "---\nid: p:01KNOWN\n---\n\nT1\n");
@@ -1322,7 +1391,7 @@ test("a lane whose ledger predates executable ids is not stopped by a pre-modifi
   assert.equal(res.json.next, "verify", JSON.stringify(res.json));
 });
 
-test('close accepts a merged ledger (next done, or "" when adopted) and stamps its episode', () => {
+test('close accepts a merged ledger (next done, or "" when adopted) and writes its episode', () => {
   const r = repo();
   let out = lane(r, "start", "T1").json;
   build(out);
@@ -1339,8 +1408,8 @@ test('close accepts a merged ledger (next done, or "" when adopted) and stamps i
   const closed = lane(r, "close", "T1");
   assert.equal(closed.exit, 0, closed.stderr);
   assert.equal(closed.json.episode.shape, "exec");
-  const stamped = lane(r, "close", "T1", "--episode", "01EP");
-  assert.equal(stamped.json.episode.writtenId, "01EP");
+  assert.equal(closed.json.stored, true);
+  assert.match(ledgerOf(r.root, "T1").episode.writtenId, EPISODE_ID);
 });
 
 test("close accepts a stopped lane", () => {
@@ -1354,80 +1423,22 @@ test("close accepts a stopped lane", () => {
 
 // ---- Agentry's own memory writes, store NOT ignored (the normal path for a repo that commits it) ----
 
-const MEM = join(dirname(LANE), "..", "mem", "index.js");
-
-// A real `episode_write` through the shipped memory MCP, writing into the repo's `.agentry/memory`.
-// Resolves to the episode id.
-function episodeWrite({ root, home }, payload) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("node", [MEM], {
-      env: { ...gitEnv, HOME: home, CLAUDE_PROJECT_DIR: root, AGENTRY_PROJECT_DIR: root },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const send = (msg) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...msg })}\n`);
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error("the memory MCP did not answer"));
-    }, 20000);
-    let buf = "";
-    child.stdout.on("data", (d) => {
-      buf += d;
-      const lines = buf.split("\n");
-      buf = lines.pop();
-      for (const line of lines) {
-        const msg = JSON.parse(line);
-        if (msg.id === 1) {
-          send({ method: "notifications/initialized" });
-          send({
-            id: 2,
-            method: "tools/call",
-            params: { name: "episode_write", arguments: payload },
-          });
-        } else if (msg.id === 2) {
-          clearTimeout(timer);
-          child.kill();
-          resolve(JSON.parse(msg.result.content[0].text).id);
-        }
-      }
-    });
-    send({
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-06-18",
-        capabilities: {},
-        clientInfo: { name: "test", version: "0" },
-      },
-    });
-  });
-}
-
-// Close lane `id`, write its episode for real and stamp the id.
-async function closeAndRecord(r, id) {
-  const { episode } = lane(r, "close", id).json;
-  const { task, shape, outcome } = episode;
-  const written = await episodeWrite(r, { task, shape, outcome });
-  assert.equal(lane(r, "close", id, "--episode", written).exit, 0);
-  return written;
-}
 const status = (root) => git(root, "status", "--porcelain", "--untracked-files=all");
 
-test("close, a real episode_write, stamp and lane merge land with the store not ignored", async () => {
+test("close writes the episode, and the lane merge lands with the store not ignored", () => {
   const r = repo();
   verified(r, "T1", "out.txt");
-  await closeAndRecord(r, "T1");
   assert.match(status(r.root), /^\?\? \.agentry\/memory\/episodes\/.+\.md$/m);
   const landed = merge(r, "T1", "--message", "chore(board): land T1");
   assert.equal(landed.status, 0, landed.stdout + landed.stderr);
   assert.match(status(r.root), /^\?\? \.agentry\/memory\/episodes\//m, "left as it was");
 });
 
-test("committing the episode between two lanes stops neither, and the land still works", async () => {
+test("committing the episode between two lanes stops neither, and the land still works", () => {
   const r = repo();
   const building = lane(r, "start", "T1").json;
   build(building, "t1.txt");
   verified(r, "T2", "out.txt");
-  await closeAndRecord(r, "T2");
   git(r.root, "add", ".agentry/memory");
   git(r.root, "commit", "-q", "-m", "chore(memory): record the T2 episode");
   const landed = merge(r, "T2", "--message", "chore(board): land T2");
@@ -1436,15 +1447,16 @@ test("committing the episode between two lanes stops neither, and the land still
   assert.equal(res.json.next, "verify", JSON.stringify(res.json.guards));
 });
 
-test("close on a stamped lane says the episode is written and prints no payload to follow", async () => {
+test("close on a stamped lane says the episode is written and writes no second one", () => {
   const r = repo();
   verified(r, "T1", "out.txt");
-  const written = await closeAndRecord(r, "T1");
+  const written = ledgerOf(r.root, "T1").episode.writtenId;
   const again = lane(r, "close", "T1");
   assert.equal(again.exit, 0);
   assert.match(again.json.already, /already|is written/);
   assert.equal(again.json.afterwards, undefined);
   assert.equal(ledgerOf(r.root, "T1").episode.writtenId, written);
+  assert.equal(episodeFiles(r.root).length, 1);
 });
 
 test("close on an adopted lane says it was not verified by a lane", () => {
