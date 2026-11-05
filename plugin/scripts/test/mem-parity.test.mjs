@@ -430,6 +430,45 @@ test(
 );
 
 test(
+  "an unclosed bracket or quote in a nested block under an unknown key is refused, as the bundle refuses it",
+  { skip },
+  async () => {
+    const t = await setup();
+    try {
+      const dir = join(t.roots.CLAUDE_PROJECT_DIR, ".agentry", "memory", "facts");
+      mkdirSync(dir, { recursive: true });
+      const base = (id) =>
+        `id: p:${id}\ntype: gotcha\nscope: repo\nconfidence: 0.7\nusefulness: 0\ndecay: 0\nstatus: active\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n`;
+      const edits = [
+        "meta:\n  a: {x,\nwhy: y}\n",
+        "meta:\n  a: [x,\nwhy: y]\n",
+        'meta:\n  a: "x\nwhy: y"\n',
+        "meta:\n  a: 'x\nwhy: y'\n",
+      ];
+      edits.forEach((edit, i) => {
+        const id = `01NS000000000000000000000${i}`;
+        writeFileSync(
+          join(dir, `nested-spill-${id}.md`),
+          `---\n${base(id)}${edit}---\n\nnested spill fact\n`,
+        );
+      });
+
+      const mine = t.service().stats();
+      const theirs = await t.mcp.call("memory_stats");
+      assert.equal(mine.facts, 0);
+      assert.equal(theirs.facts, 0);
+      assert.deepEqual(
+        mine.readErrors.map((e) => e.file).sort(),
+        theirs.readErrors.map((e) => e.file).sort(),
+      );
+      assert.equal(mine.readErrors.length, edits.length);
+    } finally {
+      t.mcp.stop();
+    }
+  },
+);
+
+test(
   "a flow mapping is a loud readError for the file, never a fact missing a field",
   { skip },
   async () => {

@@ -180,6 +180,30 @@ test("a flow mapping is refused on any key, with its line, whatever it holds", (
     assert.throws(() => parseMap(text), /line \d+: .*flow mapping/, JSON.stringify(text));
 });
 
+test("a nested block under an unknown key is read strictly: what spills out of it is a loud refusal", () => {
+  const refused = {
+    "meta:\n  a: {x,\nwhy: y}\n": /line 2: .*flow mapping/,
+    "meta:\n  a: [x,\nwhy: y]\n": /line 2: .*never closed/,
+    'meta:\n  a: "x\nwhy: y"\n': /line 2: .*never closed/,
+    "meta:\n  a: 'x\nwhy: y'\n": /line 2: .*never closed/,
+    "meta:\n  a: {b: 1}\nwhy: x\n": /line 2: .*flow mapping/,
+    "id: g:1\nmeta:\n  a: 1\n  b:\n    c: {d}\nwhy: x\n": /line 5: .*flow mapping/,
+    "meta:\n    a: 1\n  b: 2\nwhy: x\n": /line 3: .*inconsistent indentation/,
+  };
+  for (const [text, why] of Object.entries(refused))
+    assert.throws(() => parseMap(text), why, JSON.stringify(text));
+  // a block scalar or a folded plain value inside it is its own, as in yaml
+  assert.deepEqual(
+    { ...parseMap("meta:\n  a: |\n    why: no\nwhy: yes\n") },
+    { meta: {}, why: "yes" },
+  );
+  assert.deepEqual({ ...parseMap("meta:\n  a: one\n    two\nwhy: x\n") }, { meta: {}, why: "x" });
+  assert.deepEqual(
+    { ...parseMap("meta:\n  a: 1\n  # c\n\n  b:\n    c: 2\nwhy: x\n") },
+    { meta: {}, why: "x" },
+  );
+});
+
 test("a flow list reads when its items are plain or quoted scalars, and is refused otherwise", () => {
   assert.deepEqual(
     { ...parseMap("tags: [a, 'b, c', \"d\", 1]\nx: []\n") },

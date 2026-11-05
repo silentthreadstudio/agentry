@@ -3,7 +3,8 @@
 // and indent indicators) or lists of scalars (block `- item` lines, or a flow `[a, b]` whose items are plain or
 // quoted scalars), with `#` comments. Keys are plain (spaces allowed) or quoted. That is every file the store
 // has written (the `yaml` package wrote them) and what a hand edit of one is likely to hold, including a nested
-// BLOCK mapping under a key: it is found by its indentation and read past (a key the schema knows that holds
+// BLOCK mapping under a key: it is found by its indentation, parsed strictly by this same reader and the result
+// dropped, so a quote or bracket left open in it is a loud refusal (a key the schema knows that holds
 // one fails the record check as an object, as before). Plain scalars resolve as in the YAML 1.2 core schema
 // (null, true/false, integers, floats, `.inf`, `.nan`); everything else is a string.
 //
@@ -75,12 +76,13 @@ function resolve(text) {
 }
 
 class Reader {
-  constructor(lines) {
+  constructor(lines, base = 0) {
     this.lines = lines;
+    this.base = base; // the line number of lines[0], less one, in the whole frontmatter
   }
 
   fail(at, why) {
-    throw new Error(`line ${at + 1}: ${why}`);
+    throw new Error(`line ${at + 1 + this.base}: ${why}`);
   }
 
   // The first line at or after `from` that is not blank or a comment, or -1.
@@ -128,10 +130,19 @@ class Reader {
     if (nextAt !== -1 && isItem(this.lines[nextAt])) return this.list(nextAt);
     if (nextAt === -1 || indentOf(this.lines[nextAt]) === 0) return { value: null, next: at + 1 };
     if (this.keyLine(nextAt, ltrim(this.lines[nextAt]))) {
-      // a nested block mapping: read past it; a field the schema knows then fails as an object, as it did
+      // a nested block mapping: read with the same strict reader, dedented, and the result dropped, so
+      // whatever is malformed in it (an unclosed quote or bracket, a `{`) fails here with its line instead
+      // of running on into the next top-level key. A field the schema knows then fails as an object.
       let j = nextAt;
       while (j < this.lines.length && (skippable(this.lines[j]) || indentOf(this.lines[j]) > 0))
         j++;
+      const width = indentOf(this.lines[nextAt]);
+      const inner = this.lines.slice(nextAt, j).map((line, k) => {
+        if (!skippable(line) && indentOf(line) < width)
+          this.fail(nextAt + k, "inconsistent indentation in a nested mapping");
+        return line.slice(Math.min(width, indentOf(line)));
+      });
+      new Reader(inner, this.base + nextAt).map();
       return { value: {}, next: j };
     }
     return this.value(nextAt, ltrim(this.lines[nextAt]), 0);
