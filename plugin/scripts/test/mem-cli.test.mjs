@@ -338,6 +338,27 @@ test("list flags repeat, one item each, taken as given", async () => {
   assert.deepEqual(memories[0].fact.provenance, ["p:1", "p:2"]);
 });
 
+test("update --tags-clear removes the tags; with --tags it is refused; an empty --tags is not a clear", async () => {
+  const s = store();
+  const { id } = await ok(s, ...GOTCHA, "a tagged fact", "--tags", "a", "--tags", "b");
+  assert.deepEqual(await ok(s, "update", "--id", id, "--tags-clear"), { id, updated: true });
+  assert.deepEqual((await ok(s, "recall", "--query", "tagged fact")).memories[0].fact.tags, []);
+  const both = await refused(s, "update", "--id", id, "--tags", "x", "--tags-clear");
+  assert.equal(both.code, "bad-input");
+  const raw = readFileSync(
+    join(
+      s.global,
+      ".agentry",
+      "memory",
+      "facts",
+      readdirSync(join(s.global, ".agentry", "memory", "facts"))[0],
+    ),
+    "utf8",
+  );
+  assert.match(raw, /^tags: \[\]$/m);
+  assert.match((await mem(s, "update", "--help")).out, /--tags-clear +remove all/);
+});
+
 test("recall --mode prime is the warm set: top facts and recent episodes; no query and no mode is empty", async () => {
   const s = store();
   await ok(s, ...GOTCHA, "a fact for the warm set");

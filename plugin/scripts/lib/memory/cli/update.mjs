@@ -7,13 +7,14 @@
 import { MEMORY_TYPES, SCOPES } from "../domain/schema.mjs";
 import { flagHelp, usage } from "../tools/args.mjs";
 import { EXITS, command } from "../tools/command.mjs";
-import { invalidState } from "../tools/errors.mjs";
-import { failed, ok } from "../tools/result.mjs";
+import { badInput, invalidState } from "../tools/errors.mjs";
+import { failed, ok, refused } from "../tools/result.mjs";
 
 const fields = {
   id: { kind: "string", value: "<id>", required: true, doc: "the fact to patch" },
   text: { kind: "string", doc: "the new text" },
   tags: { kind: "list", value: "<tag>", doc: "a tag (replaces the fact's tags)" },
+  tagsClear: { kind: "flag", doc: "remove all the fact's tags (writes tags: [])" },
   type: { kind: "enum", options: MEMORY_TYPES, doc: "the new type" },
   scope: { kind: "enum", options: SCOPES, doc: "the new scope, within the fact's own root" },
   confidence: { kind: "number", min: 0, max: 1, doc: "the new confidence, 0 to 1" },
@@ -41,7 +42,10 @@ const stuck = ({ status }) =>
   );
 
 export const run = (argv) =>
-  command("update", fields, argv, (service, { id, ...patch }) => {
+  command("update", fields, argv, (service, { id, tagsClear, ...given }) => {
+    if (tagsClear && given.tags)
+      return refused(badInput("tags", "either --tags or --tags-clear, not both"));
+    const patch = tagsClear ? { ...given, tags: [] } : given;
     const outcome = service.update(id, patch);
     if (!outcome.ok) return failed(outcome, stuck);
     const { ok: _ok, ...payload } = outcome;

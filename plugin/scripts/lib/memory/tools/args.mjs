@@ -1,7 +1,7 @@
 // args — a verb's options, from its field list. A field is `{ kind, doc, required?, min?, max?, options? }`
 // under its camelCase name (`usedMemories`); its flag is the kebab-case `--used-memories`, the name the
 // MCP tool took the argument by. Kinds: "string"; "int" and "number" (with min, max); "enum" (options);
-// "list" (the flag repeated, one item each, taken as given: no comma splitting). Every verb also takes
+// "list" (the flag repeated, one item each, taken as given: no comma splitting); "flag" (takes no value). Every verb also takes
 // `--json`. A field may name its placeholder in the help with `value` (`"<id>"`). The router has already refused an option no field names and spelled `--flag=value` as
 // `--flag value`; what is left to check here is the values.
 //
@@ -13,12 +13,16 @@ const kebab = (name) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 const VALUE = { string: "<text>", int: "<n>", number: "<n>", list: "<id>" };
 
 const placeholder = (field) =>
-  field.kind === "enum" ? `<${field.options.join("|")}>` : (field.value ?? VALUE[field.kind]);
+  field.kind === "flag"
+    ? ""
+    : field.kind === "enum"
+      ? `<${field.options.join("|")}>`
+      : (field.value ?? VALUE[field.kind]);
 
 /** The `help.usage` line of a verb: its required flags, then the optional ones in brackets. */
 export function usage(verb, fields) {
   const flags = Object.entries(fields).map(([name, f]) => {
-    const flag = `--${kebab(name)} ${placeholder(f)}`;
+    const flag = `--${kebab(name)} ${placeholder(f)}`.trimEnd();
     return f.required ? flag : `[${flag}]`;
   });
   return [verb, ...flags, "[--json]"].join(" ");
@@ -29,7 +33,7 @@ export function flagHelp(fields) {
   return {
     ...Object.fromEntries(
       Object.entries(fields).map(([name, f]) => [
-        `--${kebab(name)} ${placeholder(f)}`,
+        `--${kebab(name)} ${placeholder(f)}`.trimEnd(),
         `${f.required ? "(required) " : ""}${f.doc}${f.kind === "list" ? " (repeat for more)" : ""}`,
       ]),
     ),
@@ -65,6 +69,10 @@ export function parse(fields, argv) {
     const entry = byFlag.get(flag);
     if (!entry) return { error: `unexpected argument "${flag}"` };
     const [name, field] = entry;
+    if (field.kind === "flag") {
+      args[name] = true;
+      continue;
+    }
     const text = argv[++i];
     if (text === undefined) return { error: `${flag} needs a value` };
     if (field.kind === "list") {
