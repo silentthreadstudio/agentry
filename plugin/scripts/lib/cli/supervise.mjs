@@ -45,7 +45,13 @@ const SETTLE_MS = 2000;
 
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
 // The held start (see above): a closed fd 3 with no go line (this process died first) ends it unrun.
-const HELD = ["-c", 'read -r go <&3 || exit 1; exec 3<&-; exec -- "$@"', "sh"];
+// `exec --` is an option terminator in bash but a command name in dash, so a name that starts with `-`
+// goes through env(1), which takes `--` everywhere and keeps the pid.
+const HELD = [
+  "-c",
+  'read -r go <&3 || exit 1; exec 3<&-; case $1 in -*) exec env -- "$@";; esac; exec "$@"',
+  "sh",
+];
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const signalGroup = (pgid, signal) => {
