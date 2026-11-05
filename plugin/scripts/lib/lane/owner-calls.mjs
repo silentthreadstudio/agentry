@@ -169,8 +169,9 @@ export function spikeCalls(root, { id, branch }) {
 }
 
 // The ledger files that cannot be read at all (torn, unreadable): `<path> unreadable` each. A file that
-// parses is skipped here, whatever it holds: a restart's archive (`<id>.<n>.json`) is one, and its calls
-// went to the new ledger.
+// parses is skipped here, whatever it holds: an older restart's flat archive (`<id>.<n>.json`) is one,
+// and its calls went to the new ledger. A restart's archive now sits in `ledger/.archive/`, outside this
+// listing.
 function unreadableLedgers(root, listed) {
   let names;
   try {
