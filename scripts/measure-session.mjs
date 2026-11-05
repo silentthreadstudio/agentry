@@ -17,12 +17,15 @@
 //   merges         `lane merge` = distinct task ids merged through it; by hand = `git cherry-pick` calls
 //   typed / conductor  `/agentry:start` typed by the user vs. run by an agent through the Skill tool
 //   nudges         drift kinds named in the output of a Bash call that ran a `status` command
+//   recall         `agentry mem recall` Bash calls, and the memory MCP's `memory_recall` in older transcripts
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { findMarker } from "../plugin/scripts/lib/lane/report.mjs";
 
+// A Bash call that runs `agentry mem recall` (or the script behind it).
+const RECALL_COMMAND = /\bmem(?:\.mjs)?["']?\s+recall(?![\w-])/;
 const WORK_TYPES = new Set(["implementer", "designer", "verifier", "general-purpose"]);
 const NUDGE_KINDS = [
   "unlisted-worktree",
@@ -137,9 +140,11 @@ function tally(t, o) {
       const merge = /\blane(?:\.mjs)?["']?\s+merge\s+([A-Za-z0-9][A-Za-z0-9._-]*)/.exec(cmd);
       if (merge) t.laneMerges.add(merge[1]);
       if (/\bstatus\b/.test(cmd)) t.statusCalls.add(b.id);
+      if (RECALL_COMMAND.test(cmd)) session.recalls++;
     } else if (b.name === "Skill" && /^(?:agentry:)?start$/.test(String(input.skill ?? ""))) {
       session.startConductor = true;
     } else if (/memory_recall$/.test(b.name)) {
+      // the memory MCP's tool, in transcripts from before `agentry mem`
       session.recalls++;
     }
   }
@@ -329,7 +334,7 @@ export function render(s) {
     ["hand git cherry-pick calls", `${s.merges.handCherryPicks}`],
     ["  lane merge share", pct(s.merges.laneShare)],
     [
-      "memory_recall calls",
+      "memory recall calls",
       `${s.recall.calls} (${s.recall.perSession ?? "n/a"} per session; ${s.recall.sessionsWithRecall} sessions with one)`,
     ],
     [

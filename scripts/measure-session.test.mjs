@@ -50,6 +50,8 @@ describe("transcripts", () => {
     asst("s1", "25", agent("agentry:verifier", "agentry-task: R-1 role=verify\ncheck")),
     asst("s1", "25", agent("general-purpose", "agentry-task: R-1 role=verify round=2\ncheck")),
     asst("s1", "25", tool("mcp__plugin_agentry_mem__memory_recall", { query: "x" })),
+    asst("s1", "25", tool("Bash", { command: 'agentry mem recall --query "x"' })),
+    asst("s1", "25", tool("Bash", { command: "agentry mem recall-ish --help" })),
     asst("s1", "25", tool("Bash", { command: "git cherry-pick abc123" })),
     asst("s1", "25", tool("Bash", { command: "git cherry-pick --abort" })),
     asst("s1", "25", tool("Bash", { command: 'node "/p/scripts/lane.mjs" merge R-1 --preflight' })),
@@ -80,7 +82,7 @@ describe("transcripts", () => {
     assert.equal(s.merges.handCherryPicks, 1);
     assert.equal(s.merges.laneTasks, 1);
     assert.equal(s.merges.laneShare, 0.5);
-    assert.equal(s.recall.calls, 1);
+    assert.equal(s.recall.calls, 2, "the MCP tool and the CLI");
     assert.equal(s.recall.sessionsWithRecall, 1);
     assert.deepEqual(s.verifyDispatchesPerTask, { tasks: 1, mean: 2, max: 2 });
     assert.equal(s.nudges["started-by-hand"], 1);
