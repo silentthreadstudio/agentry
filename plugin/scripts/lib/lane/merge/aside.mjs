@@ -12,10 +12,17 @@
 // start of the record, so the check sees them and the board commit holds them; with the lifecycle off
 // there is no board commit, and they go back uncommitted. A record an older version wrote is
 // `merge/legacy.mjs`'s.
-import { existsSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync } from "node:fs";
 import { runDir } from "../../process/ledger.mjs";
-import { applyPatch, asidePatch, planRows, putCells, removeFiles, sha256 } from "../carry-io.mjs";
+import {
+  applyPatch,
+  asidePatch,
+  nextPatchFile,
+  planRows,
+  putCells,
+  removeFiles,
+  sha256,
+} from "../carry-io.mjs";
 import { restoreFiles } from "../land.mjs";
 import { landNext, now, ok, red, setMerge, warn } from "./lane.mjs";
 import { OLD_LINE, isOld, oldRecord } from "./legacy.mjs";
@@ -91,10 +98,7 @@ export function takeAside(lane, rows, kind) {
 
 // Where an edit that cannot go back is kept: the first <name>-<n>.patch the run directory lacks.
 function keepPatch(lane, name, patch) {
-  const dir = runDir(lane.root, lane.id);
-  let n = 1;
-  while (existsSync(join(dir, `${name}-${n}.patch`))) n++;
-  const file = join(dir, `${name}-${n}.patch`);
+  const file = nextPatchFile(runDir(lane.root, lane.id), name);
   writeFileSync(file, patch, "latin1"); // the patch is bytes kept one per char
   return file;
 }
@@ -173,7 +177,7 @@ const DROP_CARRY = " --drop-carry";
 const BUG_NEXT = "this is a bug: report it; nothing was changed";
 /** The stop for a put-back row that refused (red: an old record, or a record that is a bug), else null.
  *  Its `next` is the refusing row's own; a row that names none gets the general line. */
-export function backStop(_lane, back) {
+export function backStop(back) {
   if (back?.mark !== "red") return null;
   const next = back.next ?? "show the owner the carry row: nothing was written or put back";
   return { exit: 2, keepCarry: true, next };

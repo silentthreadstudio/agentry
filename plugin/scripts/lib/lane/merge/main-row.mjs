@@ -11,7 +11,7 @@ import { currentBranch } from "../../process/git.mjs";
 import { globMatch } from "../../process/glob.mjs";
 import { list as listLedgers } from "../../process/ledger.mjs";
 import { addedRows, headBoard, recordedFor, workingBoard, writtenByScript } from "../carry-io.mjs";
-import { commitOf, filesOf, notEdits, statusEntries, toLand } from "../land.mjs";
+import { PLAIN_EDIT, commitOf, filesOf, notEdits, statusEntries, toLand } from "../land.mjs";
 import { git } from "../worktree.mjs";
 import { cellLine } from "./carry.mjs";
 import { ok, red, short } from "./lane.mjs";
@@ -97,9 +97,6 @@ function sharedFiles({ root }, diff) {
     ]),
   );
 }
-// A glob test with the gate's own matcher, as exec's guard does.
-const matchesAny = (globs, path) => globMatch(globs, path);
-const PLAIN_EDIT = /^(?: M|M |MM)$/;
 
 // The entries that are the owner's plain edits of a `guard.allow` file, or a new untracked one. A board
 // file is never one: its edits are exec's lifecycle writes, carried into the board commit.
@@ -109,7 +106,7 @@ function allowedEdits({ spec, model }, entries) {
   const board = new Set(boardFiles(spec, model ?? { kinds: {} }));
   return entries.filter((entry) => {
     const [how, path] = [entry.slice(0, 2), entry.slice(3)];
-    return (PLAIN_EDIT.test(how) || how === "??") && !board.has(path) && matchesAny(globs, path);
+    return (PLAIN_EDIT.test(how) || how === "??") && !board.has(path) && globMatch(globs, path);
   });
 }
 

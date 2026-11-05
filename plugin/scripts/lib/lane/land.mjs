@@ -237,11 +237,14 @@ export function rollback(root, { preHead, landed }) {
  *  records are left out, so main counts as clean with them on it, and the land leaves them as they are. */
 export const statusEntries = dirtyEntries;
 
+/** A status entry's two letters for a plain edit: changed in the index, the tree or both. */
+export const PLAIN_EDIT = /^(?: M|M |MM)$/;
+
 /** The entries that are not a plain edit of one of `files` (a rename is two: its delete and its add). */
 export function notEdits(entries, files) {
   const wanted = new Set(files);
   return entries.filter(
-    (entry) => !wanted.has(entry.slice(3)) || !/^(?: M|M |MM)$/.test(entry.slice(0, 2)),
+    (entry) => !wanted.has(entry.slice(3)) || !PLAIN_EDIT.test(entry.slice(0, 2)),
   );
 }
 

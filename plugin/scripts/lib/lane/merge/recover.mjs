@@ -195,7 +195,7 @@ function recordedCommit(lane, rows, { commit, later, why }) {
   if (writes.length > 0 && writes.every((file) => merge.record?.base?.[file])) releaseWrites(lane);
   const back = putBackAllow(lane);
   if (back) rows.push(back);
-  const stop = backStop(lane, back);
+  const stop = backStop(back);
   if (stop) return stop;
   // The record's files, carried writes included, are in that commit as written: the ledger lets go.
   save(lane, {

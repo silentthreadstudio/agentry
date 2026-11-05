@@ -6,7 +6,15 @@
 // new-file patch) and the files only `agentry board add` / `board set --apply` changed.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { boardFiles, cellEdits } from "../process/board-diff.mjs";
@@ -35,6 +43,13 @@ export const applyPatch = (root, patch, ...flags) =>
 
 /** The sha256 of `text`, hex. */
 export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
+/** Where a patch that cannot go back is kept: the first `<name>-<n>.patch` that `dir` lacks. */
+export function nextPatchFile(dir, name) {
+  let n = 1;
+  while (existsSync(join(dir, `${name}-${n}.patch`))) n++;
+  return join(dir, `${name}-${n}.patch`);
+}
 
 /** The uncommitted edits of `files` against HEAD as one binary patch, and its sha256: `{ patch,
  *  sha256 }`, or `{ error }` when git cannot say. */

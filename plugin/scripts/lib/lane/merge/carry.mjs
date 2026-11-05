@@ -68,7 +68,7 @@ function giveBackCarry(lane) {
 export function carryBackStep(lane, rows) {
   const edits = putBackAllow(lane);
   if (edits) rows.push(edits);
-  const stop = backStop(lane, edits);
+  const stop = backStop(edits);
   if (stop) return stop;
   const merge = lane.ledger.merge;
   if (!merge?.carry) return null;

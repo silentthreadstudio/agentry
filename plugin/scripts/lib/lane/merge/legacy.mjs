@@ -3,8 +3,9 @@
 // patch, from before patches were kept as bytes. Neither is ever applied: the old patch is kept in the
 // run directory and the land stops until the owner restores it by hand and passes `--drop-carry`.
 import { existsSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { runDir } from "../../process/ledger.mjs";
+import { nextPatchFile } from "../carry-io.mjs";
 import { ok, red, setMerge } from "./lane.mjs";
 
 // A carry with no cells was recorded before cells were (dev.4): not tampered with, just old.
@@ -44,12 +45,7 @@ function keptFile(dir, name) {
 // then a red row that stops the land, or on `--drop-carry` an ok row and the record let go.
 export function oldRecord(lane, kind, held) {
   const dir = runDir(lane.root, lane.id);
-  let file = keptFile(dir, held.patchFile);
-  if (!file) {
-    let n = 1;
-    while (existsSync(join(dir, `${kind.patch}-${n}.patch`))) n++;
-    file = join(dir, `${kind.patch}-${n}.patch`);
-  }
+  const file = keptFile(dir, held.patchFile) ?? nextPatchFile(dir, kind.patch);
   const bytes = oldPatchBytes(held.patch);
   if (!existsSync(file)) writeFileSync(file, bytes.utf8);
   const other = bytes.latin1 && `${file}.latin1`;

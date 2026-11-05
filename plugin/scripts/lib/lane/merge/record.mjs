@@ -167,7 +167,7 @@ export function commitStep(lane, rows) {
   if (files.length === 0) {
     const back = putBackAllow(lane);
     if (back) rows.push(back);
-    const stop = backStop(lane, back);
+    const stop = backStop(back);
     if (stop) return stop;
     save(lane, {
       state: "merged",
@@ -203,7 +203,7 @@ export function commitStep(lane, rows) {
   if (back) rows.push(back);
   // An old record stops here with the board commit made and the ledger still recording: the rerun proves
   // the commit (merge/recover.mjs) and stops on the record the same way until it is dropped.
-  const stop = backStop(lane, back);
+  const stop = backStop(back);
   if (stop) return stop;
   save(lane, {
     state: "merged",
