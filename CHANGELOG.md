@@ -24,6 +24,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **`lane exec report` reads a needs-context reply saved under the build brief's name.** A resumed builder
   often writes `r<n>-build.report.md` instead of `r<n>-needs-context.report.md`; either is read now, and
   the output says which. Two different replies under the two names are refused.
+- **Build and fix briefs say to publish and upload nothing.** No Artifact page, gist, paste or other
+  outward tool, for the report or anything else: the report goes only to its path.
 
 ## [0.3.0] — 2026-11-05
 

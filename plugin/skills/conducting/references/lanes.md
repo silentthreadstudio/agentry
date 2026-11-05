@@ -514,6 +514,7 @@ templates, once:
   time limit (`agentry run --limit <dur> -- …`), and hitting it is a finding to report, never a wait (build and
   verify briefs).
 - Commits on `agentry/<id>` with no AI attribution; no merge, push or rebase.
+- Every build and fix brief (`fix`, `needs-context`, `continue` included; not the rebase or a verifier's) adds one rule, from code, at the end of its Rules list: publish and upload nothing (no Artifact page, gist, paste or other outward tool), the report goes only to its path.
 - A contract with steps: the build brief says `## This round: step 1 of 2` (`steps 2–3 of 3`), `Build only
   this part of the contract:` with the run's steps, `It is done when:` with the run's tagged acceptance items,
   `Built before this round (on the branch): step 1.` past the first run, and `Not this round:` with the later

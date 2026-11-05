@@ -1340,6 +1340,36 @@ test("a build brief and a fix brief say never to rebase or merge main inside the
   assert.match(text, rule);
 });
 
+test("a build, a fix and a needs-context brief each say nothing is published or uploaded, in the Rules list", () => {
+  const r = repo();
+  const started = lane(r, "start", "T3");
+  assert.equal(started.exit, 0, started.stderr);
+  const rule =
+    "- Publish and upload nothing: no Artifact page, gist, paste or any other outward tool, for the report or for anything else. The report goes only to its path below.\n\n## Report";
+  const lastRule =
+    "`exec rebase` (a verified lane) or `exec restart --carry`.\n- Publish and upload nothing";
+  const check = (brief) => {
+    const text = readFileSync(brief, "utf8");
+    assert.equal(text.split("Publish and upload nothing").length - 1, 1, "once, not twice");
+    assert.ok(text.includes(rule), text);
+    assert.ok(text.includes(lastRule), "after the Rules list's last rule");
+  };
+  check(started.json.brief);
+  writeFileSync(started.json.reportPath, "NEEDS_CONTEXT\nwhich file?\nused_memories: none\n");
+  const asked = lane(r, "report", "T3", "--agent", "b1");
+  assert.equal(asked.json.next, "needs-context", asked.stderr);
+  check(asked.json.brief);
+  commitFile(asked.json.worktree, "three.txt", "a\nlane\nc\n", "feat: three");
+  writeFileSync(asked.json.reportPath, "DONE\nthree\nused_memories: none\n");
+  const verify = lane(r, "report", "T3").json;
+  // The verifier's brief is not a builder's: it carries no such rule.
+  assert.doesNotMatch(readFileSync(verify.brief, "utf8"), /Publish and upload nothing/);
+  writeFileSync(verify.reportPath, "Missing more.txt.\nused_memories: none\nVerdict: FAIL\n");
+  const fix = lane(r, "verdict", "T3");
+  assert.equal(fix.json.next, "fix", fix.stderr);
+  check(fix.json.brief);
+});
+
 // T4 through two owner gates: step 1 and 2 built, reported and OK'd; the builder of step 3 has committed c.txt
 // and is parked (`hold --for later`), so the lane can restart.
 function midStepThree(r) {

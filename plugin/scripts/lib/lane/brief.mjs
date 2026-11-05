@@ -21,6 +21,8 @@
 //   ownerChange     the owner's change a verified lane was sent back with, as a builder's or verifier's section
 //   carriedWork     the `## Carried work` section of a restarted lane's first build brief
 //   stoppedRound    the `## The stopped round` section of a fresh builder's brief after a resume
+//   builderRules    the rules every build and fix brief carries from code (publish nothing)
+//   withRules       a rendered builder brief with those rules put in at the end of its Rules list
 //   bullets         a list as brief lines
 //
 // Reads the board's files, the templates and (for a rebase) the lane's commits; writes nothing. Node
@@ -374,6 +376,23 @@ export function stoppedRound({ report, next = [] }) {
       : []),
     "",
   ].join("\n");
+}
+
+/** Is `step` rendered from the build or fix template: a builder's brief (the rebase's is its own)? */
+export const isBuilderBrief = (step) =>
+  Object.hasOwn(TEMPLATE_OF, step) && ["build", "fix"].includes(TEMPLATE_OF[step]);
+
+/** The rules a builder's brief carries beyond its template's: nothing is published or uploaded (the
+ *  report goes only to its path). */
+export const builderRules = () => [
+  "- Publish and upload nothing: no Artifact page, gist, paste or any other outward tool, for the report or for anything else. The report goes only to its path below.",
+];
+
+/** `text` (a rendered builder brief) with `rules` put in at the end of its Rules list, before `## Report`.
+ *  Unchanged when it has no such section. */
+export function withRules(text, rules) {
+  const at = text.indexOf("\n\n## Report");
+  return at === -1 ? text : `${text.slice(0, at)}\n${rules.join("\n")}${text.slice(at)}`;
 }
 
 /** A list as brief lines (`- item`), or `none`. */

@@ -9,8 +9,10 @@ import { shellQuote as q } from "../../text/shell.mjs";
 import { adoptedWork } from "../adopt.mjs";
 import {
   appendedAfter,
+  builderRules,
   bullets,
   carriedWork,
+  isBuilderBrief,
   notesSection,
   ownerChange,
   policySlots,
@@ -19,6 +21,7 @@ import {
   stepReminder,
   stepSlots,
   stoppedRound,
+  withRules,
   withSection,
 } from "../brief.mjs";
 import { citedDecisions } from "../decisions.mjs";
@@ -179,6 +182,7 @@ export function brief({ root, spec, model }, ledger, dispatch) {
         : null;
   const file = join(dir, `${name}.md`);
   let text = renderBrief(dispatch.step, values);
+  if (isBuilderBrief(dispatch.step)) text = withRules(text, builderRules());
   if (dispatch.step === "fix" && picked) text = withNotesToFix(text, picked, ledger.openNotes);
   // A builder answered with the fact it asked for is told which step it is on, and what finishes it.
   if (dispatch.step === "needs-context" && fresh) {
