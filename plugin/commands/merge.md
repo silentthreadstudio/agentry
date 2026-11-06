@@ -3,7 +3,7 @@ description: Land one task (or debt item) on main — preflight, the repo's own 
 argument-hint: <task or debt id> [--branch <branch>]
 ---
 
-Land task `$ARGUMENTS` on main. A debt id (`DEBT-2`) lands the same way: its row gets the done status and the commit, and no handoff line is written (the record row says `no handoff: debt is outside the tree`), so `--summary` is not needed. What each row means and every edge case: the `conducting` skill's `references/merge.md`.
+Land task `$ARGUMENTS` on main. A debt id (`DEBT-2`) lands the same way. A debt kind declared in `exec.kinds` gets the done status and the commit and no handoff line (the record row says `no handoff: debt is outside the tree`), so `--summary` is not needed. A debt kept as an ordinary task in the lifecycle board writes a handoff line like any task, and needs a summary (declaring a debt kind is in the workflows docs, `exec.kinds`). What each row means and every edge case: the `conducting` skill's `references/merge.md`.
 
 Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
 

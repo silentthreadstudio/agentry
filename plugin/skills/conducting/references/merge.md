@@ -61,7 +61,7 @@ A land that was killed resumes the same way: see [A killed land](#a-killed-land)
 The board commit message follows the repo's commit conventions and carries the author only. A message with
 AI attribution (a co-author trailer, a session link, a "generated with" line) is refused before anything
 runs. `--summary` is the handoff text. Without it, the first landed commit's subject is used. A debt item
-(`DEBT-2`, a kind in `exec.kinds`) has no handoff: `record` writes its done status and commit cell and skips
+(`DEBT-2`) of a kind declared in `exec.kinds` has no handoff (a debt kept as a task on the lifecycle board writes one like any task; the workflows docs show how to declare a debt kind): `record` writes its done status and commit cell and skips
 the handoff (`no handoff: debt is outside the tree`), and a task's open lane and a debt's open lane carry each
 other's cells.
 

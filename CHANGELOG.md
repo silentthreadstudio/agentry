@@ -8,6 +8,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ### Changed
 
+- **`merge` docs: a debt writes no handoff only as a kind declared in `exec.kinds`.** A debt kept as a task on
+  the lifecycle board writes one like any task.
 - **`lane exec show` labels a round that only stopped.** A round the lane held before its report was read
   (parked while the builder was stopped for a restart) carries `label: "r3 (restart)"`, so the owner's count of
   build and verify rounds matches. Round numbers do not change.
