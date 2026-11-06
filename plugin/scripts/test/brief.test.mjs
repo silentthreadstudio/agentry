@@ -488,7 +488,7 @@ test("withNew marks a plain file the tree lacks, never an existing file, a glob 
 });
 
 test("suggestBuilder: a UI-shaped owned path suggests the designer, else the implementer", () => {
-  assert.equal(suggestBuilder(["src/ui/panel.gd"]).agent, "designer");
+  assert.equal(suggestBuilder(["src/ui/panel.gd"]).agent, "implementer");
   assert.equal(suggestBuilder(["web/components/Card.vue"]).agent, "designer");
   assert.equal(suggestBuilder(["scenes/menu.tscn"]).agent, "designer");
   assert.match(suggestBuilder(["a/Styles/x.ts"]).why, /UI-shaped/);

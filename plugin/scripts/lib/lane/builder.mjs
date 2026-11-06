@@ -4,16 +4,10 @@
 import { bulletOf } from "../process/spec/models.mjs";
 import { runMark } from "../process/steps.mjs";
 
-const UI_DIRS = new Set([
-  "ui",
-  "components",
-  "screens",
-  "views",
-  "pages",
-  "styles",
-  "theme",
-  "themes",
-]);
+// Folders visual by name: whatever sits in them is UI. Generic folders hold anything, so a file there is
+// UI only by its extension.
+const VISUAL_DIRS = new Set(["styles", "css", "theme", "themes", "assets"]);
+const UI_DIRS = new Set(["ui", "components", "screens", "views", "pages"]);
 // A glob under one of these names a whole front end (`web/**`), where a plain file there may be anything.
 // A path that ends in a file name under a UI folder is UI only by its extension: `ui/panel.gd` is logic.
 const FRONT_DIRS = new Set(["web", "app"]);
@@ -34,6 +28,7 @@ export function suggestBuilder(owned, { contract = "", steps = [], stepRun = nul
     const parts = path.toLowerCase().split("/");
     return (
       UI_EXT.test(path) ||
+      parts.some((part) => VISUAL_DIRS.has(part)) ||
       (!hasExt(parts.at(-1)) && parts.some((part) => UI_DIRS.has(part))) ||
       (/[*?]/.test(path) && parts.slice(0, -1).some((part) => FRONT_DIRS.has(part)))
     );

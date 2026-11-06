@@ -12,7 +12,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   (parked while the builder was stopped for a restart) carries `label: "r3 (restart)"`, so the owner's count of
   build and verify rounds matches. Round numbers do not change.
 - **A script under a `ui/` folder goes to the implementer, not the designer.** A path counts as UI by its
-  file kind (`.tscn`, stylesheets, markup, `.vue`, `.svelte`); a folder or a glob in a UI folder still does.
+  file kind (`.tscn`, stylesheets, markup, `.vue`, `.svelte`); a folder or a glob in a UI folder, and any file in
+  a folder visual by name (`styles`, `css`, `theme`, `assets`), still does.
   The route line says why and names the override, `- **Agent:** designer` in the contract.
 - `agentry mem recall` and `agentry mem search` take the query as one bare argument, as the old memory tools
   did: `agentry mem recall "bundling node:sqlite"`. `--query` still works; giving both, or more than one bare

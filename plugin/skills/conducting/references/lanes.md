@@ -374,8 +374,8 @@ says `stacked on T1; restacks: N`.
 - The prompt is the two lines the step printed, verbatim: the marker `agentry-task: <id> role=<build|verify>
   round=<n>`, then "Read your brief first: <path>…". Everything else is in the brief.
 - `fresh`: a new agent of the type `dispatch.agent` names. For a build, `designer` is suggested when an owned
-  path is UI by its file kind (a UI extension, or a folder or glob in a `ui/`-style folder; a script under
-  `ui/` is not), `implementer` otherwise, with `- **Agent:** designer` in the contract as the override; the conductor decides. No worktree isolation option: Agentry
+  path is UI by its file kind (a UI extension; a folder or glob in a `ui/`-style folder; any file in a folder visual by name such as
+  `styles/` or `assets/`; a script under `ui/` or `components/` is not), `implementer` otherwise, with `- **Agent:** designer` in the contract as the override; the conductor decides. No worktree isolation option: Agentry
   made the worktree, and the brief holds the agent to it.
 - `resume`: continue the agent `agent` with the prompt (Claude Code: SendMessage to it; opencode: the same
   `sessionID`). Pass its id as `--agent` on `report` / `verdict` so a later round can resume it. When it can't

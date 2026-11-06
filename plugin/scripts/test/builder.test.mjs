@@ -43,3 +43,10 @@ test("a path outside any ui folder keeps the plain implementer why", () => {
     why: "no owned path is UI-shaped",
   });
 });
+
+test("a folder visual by name is UI whatever the extension, a generic folder is not", () => {
+  for (const path of ["a/Styles/x.ts", "src/css/tokens.js", "game/assets/hud.gd", "src/theme/a.py"])
+    assert.equal(suggestBuilder([path]).agent, "designer", path);
+  for (const path of ["src/ui/x.gd", "web/lib/x.ts", "src/views/store.js", "src/components/s.py"])
+    assert.equal(suggestBuilder([path]).agent, "implementer", path);
+});
