@@ -123,6 +123,7 @@ test("start --json carries prompt, mode, status, recall, questions and ledgers",
     "recall",
     "stale",
     "status",
+    "vendoredCLI",
   ]);
   assert.equal(data.mode, null);
   assert.deepEqual(data.ledgers, [

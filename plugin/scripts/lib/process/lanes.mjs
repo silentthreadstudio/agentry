@@ -9,8 +9,8 @@
 // renderLanes(rows, width) -> string[]
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { nextStep } from "../cli/invoke.mjs";
 import { relationWord, stampOf } from "../cli/init-vendor.mjs";
+import { nextStep } from "../cli/invoke.mjs";
 import { checkConfig } from "../config.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
 import { isIgnored, trackedFiles, worktrees } from "./git.mjs";
@@ -65,7 +65,7 @@ function pluginVersion() {
 // The vendored CLI underneath (.agentry/bin), when `agentry init --vendor` copied one: a ✗ row when its
 // stamp is behind the running plugin, silent when the stamp is absent, or current. The set line is the
 // verb that refreshes the copy (and, with it, the payload it was generated for).
-function vendored(root) {
+export function vendored(root) {
   const stamp = stampOf(root);
   if (stamp === null) return null;
   const current = pluginVersion();

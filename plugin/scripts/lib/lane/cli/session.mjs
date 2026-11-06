@@ -2,7 +2,9 @@
 //
 //   start   what the conductor needs once, in one object: the conductor prompt's path, the mode, the held
 //           and idle lanes, the derived status (nudges and pending drafts included), recall ranked against the
-//           work in flight, the owner's open questions, the lane ledgers and how many merged today. Printed
+//           work in flight, the owner's open questions, the lane ledgers, how many merged today, and the
+//           vendored CLI's staleness as the main checkout's stamp says (`process/lanes.mjs`' vendored(), the
+//           row `board explain` shows). Printed
 //           as at most 40 lines, or `--json`. It records two things in the main checkout's `.agentry/run/`,
 //           the same with `--json` or without: the Now a note was first read under (`note-seen.json`,
 //           `stale-status.mjs`) and, per idle lane, the `lastChange` it asked the owner about
@@ -30,6 +32,7 @@ import { run as fix } from "../../process/cli/fix.mjs";
 import * as drafts from "../../process/drafts.mjs";
 import { mainRoot } from "../../process/git.mjs";
 import * as ledgers from "../../process/ledger.mjs";
+import { vendored } from "../../process/lanes.mjs";
 import { fit } from "../../process/render.mjs";
 import { SKILL_DIR, sessionChecks, skillExists } from "../../process/spec/extensions.mjs";
 import { idleMinutes } from "../../process/spec/presets.mjs";
@@ -191,6 +194,7 @@ function start({ root, spec, model }, asked) {
     mergedToday: mergedToday(all),
     gateSlots: heldSlots(gateLockDir(runRoot)),
     stale,
+    vendoredCLI: vendoredCLI(runRoot),
     ...checksField(runRoot, { root, spec }),
   };
 }
@@ -199,6 +203,18 @@ function start({ root, spec, model }, asked) {
 function staleOf(runRoot) {
   const { slots, temps } = leftovers(runRoot);
   return { slots: slots.length, temps: temps.length };
+}
+
+// The vendored CLI underneath the MAIN checkout's .agentry (`process/lanes.mjs`' vendored(), the reader
+// `board explain` shows), null when its stamp is absent or current. runRoot, not root: a lane worktree
+// must not imagine a phantom stamp its own .agentry does not carry. The row's value's parts parse back
+// out, so the JSON names what the row says — one reader, one text (a second version reader, help.mjs'
+// pluginVersion, says more than the row's own does: a build suffix the row does not carry).
+function vendoredCLI(runRoot) {
+  const row = vendored(runRoot);
+  if (!row) return null;
+  const [, stamp, current, word] = /^(.*) \(plugin: (.+), ([a-z]+)\)$/.exec(row.value);
+  return { stamp, current, word, set: row.set };
 }
 
 function closing({ root, spec, model }) {
@@ -313,6 +329,13 @@ function renderStart(s, { name, root }) {
       ? `conductor prompt: ${relative(root, s.prompt)} (read it once)`
       : "conductor prompt: none set",
   );
+  // The vendored CLI's stamp behind the plugin, as `board explain` says it: one `!` advisory line after
+  // the prompt, silent when the stamp is current or absent; a whole line, so the set step is never cut.
+  if (s.vendoredCLI)
+    add(
+      `! vendored CLI: ${s.vendoredCLI.stamp} (plugin: ${s.vendoredCLI.current}, ${s.vendoredCLI.word}) → ${nextStep(s.vendoredCLI.set)}`,
+      Number.POSITIVE_INFINITY,
+    );
   if (s.checks) startChecks(s.checks, { add, addList });
   // The lanes that wait on the owner, before anything else the session holds.
   // A parked lane reads like a held one: its why, its evidence when it has one, and the resume.
