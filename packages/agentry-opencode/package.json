@@ -16,5 +16,8 @@
     "type": "git",
     "url": "git+https://github.com/silentthreadstudio/agentry.git",
     "directory": "packages/agentry-opencode"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
   }
 }
