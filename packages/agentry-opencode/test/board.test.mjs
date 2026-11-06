@@ -41,6 +41,7 @@ test("setup registers exactly the six tools through the editor, namespaced, type
     "commits",
     "scan",
     "draft",
+    "instructions",
   ]);
   assert.deepEqual(added[1].input.properties.verb.enum, ["add", "set", "fix", "draft"]);
 });
@@ -77,6 +78,19 @@ test("explain works: the lanes rendering reads the board", async () => {
   const root = mkBoard();
   const { content } = await boardRead.execute({ verb: "explain", root });
   assert.match(content[0].text, /^Sample · docs\/board · 5 kinds · 8 rules on\n/);
+});
+
+test("instructions is a read the enum carries; the CLI's own what-would-change plan comes back", async () => {
+  const root = mkBoard();
+  const before = snapshot(root);
+  const { content } = await boardRead.execute({ verb: "instructions", root });
+  assert.match(
+    content[0].text,
+    /^AGENTS\.md: create it with the Agentry block\n\+ <!-- agentry:begin v1 -->/,
+    "the plan's own first lines, exactly as the CLI prints them",
+  );
+  assert.match(content[0].text, /preview: nothing written; add --apply to write it$/);
+  assert.deepEqual(snapshot(root), before, "instructions writes nothing");
 });
 
 test("contract and next-id take one id; a missing one is the CLI's own refusal", async () => {

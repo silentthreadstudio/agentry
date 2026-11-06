@@ -224,6 +224,7 @@ test("setup registers the lane pair beside the board and mem pairs, namespaced, 
     "sweep",
     "note",
     "spike",
+    "session",
   ]);
 });
 
@@ -264,6 +265,33 @@ test("a planted stale stamp adds the vendored-CLI row, exactly the bare CLI's ro
     /conductor prompt: [^\n]+\n! vendored CLI: /,
     "the row sits after the prompt row",
   );
+});
+
+test("a stamp the running package equals is silent; one behind says newer against the package's own version", async () => {
+  // The vendored copy under this package carries no plugin manifest: the running build's version is
+  // the package's own package.json — so a stamp equal to it prints nothing, and one behind names it
+  // as the `current` the row compares against (never "unknown", never a path past the package root).
+  const { version } = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8"));
+  assert.ok(version, "the package carries a version");
+  const equal = mkBoard("table-board");
+  stamp(equal, version);
+  const silentTxt = (
+    await withFixtureEnv(() => laneRead.execute({ verb: "session", json: true, root: equal }))
+  ).content[0].text;
+  assert.equal(JSON.parse(silentTxt).vendoredCLI, null, "current stamp: silent, no row");
+
+  const behind = copyOf(equal);
+  stamp(behind, "0.3.0");
+  const data = JSON.parse(
+    (await withFixtureEnv(() => laneRead.execute({ verb: "session", json: true, root: behind })))
+      .content[0].text,
+  ).vendoredCLI;
+  assert.deepEqual(data, {
+    stamp: "0.3.0",
+    current: version,
+    word: "newer",
+    set: "agentry init --host opencode --vendor --apply",
+  });
 });
 
 test("sweep through the read tool is the plan only: the CLI's preview, and nothing written", async () => {
@@ -333,6 +361,52 @@ test("a drive exec start runs the CLI's one step and writes the ledger the bare 
   const viaTool = readFileSync(join(a, ".agentry", "run", "process", "ledger", "T1.json"), "utf8");
   const viaCli = readFileSync(join(b, ".agentry", "run", "process", "ledger", "T1.json"), "utf8");
   assert.equal(normalize(viaTool, a), normalize(viaCli, b), "<TIME>/<ROOT> are the run's alone");
+});
+
+test("a drive session close runs the CLI's close round; its ledgers read back through the read tool", async () => {
+  const a = execRepo();
+  const b = copyOf(a);
+  // The lane both ways over the same commit: T1 goes todo → building, the state the close round
+  // reports and `exec show` reads back.
+  const started = await withFixtureEnv(() =>
+    laneDrive.execute({ verb: "exec", words: ["start", "T1"], root: a }),
+  );
+  assert.match(started.content[0].text, /report T1/, "start puts T1 mid-round");
+  const viaCli = bareCLI("exec", "start", "T1", "--root", b);
+  assert.equal(viaCli.status, 0, viaCli.stderr);
+
+  // close travels only through the drive tool's words (the read tool's session is start-only).
+  const closeText = (
+    await withFixtureEnv(() => laneDrive.execute({ verb: "session", words: ["close"], root: a }))
+  ).content[0].text;
+  const viaClose = bareCLI("session", "close", "--root", b);
+  assert.equal(viaClose.status, 0, viaClose.stderr);
+  const closed = JSON.parse(closeText);
+  assert.deepEqual(
+    Object.fromEntries(
+      ["drafts", "fixPlan", "ledgers", "cleanable", "strays", "leftAlone", "episodesPending"].map(
+        (key) => [key, closed[key]],
+      ),
+    ),
+    Object.fromEntries(
+      ["drafts", "fixPlan", "ledgers", "cleanable", "strays", "leftAlone", "episodesPending"].map(
+        (key) => [key, JSON.parse(viaClose.stdout)[key]],
+      ),
+    ),
+    "the CLI's own close round, run state but the disk's own alone",
+  );
+  assert.deepEqual(closed.ledgers, [{ id: "T1", state: "building", next: "build" }]);
+
+  // The state the close round named reads back through the read tool, the bare CLI's own bytes.
+  const shown = await withFixtureEnv(() => laneRead.execute({ verb: "show", id: "T1", root: a }));
+  const viaShow = bareCLI("exec", "show", "T1", "--root", b);
+  assert.equal(viaShow.status, 0, viaShow.stderr);
+  assert.equal(
+    normalize(shown.content[0].text, a),
+    normalize(viaShow.stdout.trimEnd(), b),
+    "the CLI's own show, the repos' locations the run's alone",
+  );
+  assert.match(shown.content[0].text, /T1 · show → build \(building\)/);
 });
 
 test("an unknown verb is the CLI's refusal with the help-steer line, verbatim", async () => {

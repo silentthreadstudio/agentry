@@ -60,9 +60,14 @@ export function pluginVersion(root = PLUGIN_ROOT) {
     ({ version } = JSON.parse(readFileSync(join(root, ".claude-plugin", "plugin.json"), "utf8")));
   } catch {
     try {
-      return readFileSync(join(root, "bin", ".agentry-version"), "utf8").trim() || null;
+      // no plugin manifest beside the running CLI: a vendored copy — one inside the npm package
+      // reads the package manifest beside it; an .agentry copy reads the stamp `init --vendor` wrote.
+      return (
+        packageManifestVersion(root) ??
+        (readFileSync(join(root, "bin", ".agentry-version"), "utf8").trim() || null)
+      );
     } catch {
-      return null;
+      return packageManifestVersion(root) ?? null;
     }
   }
   return `${version}${buildOf(root)}`;
@@ -70,6 +75,19 @@ export function pluginVersion(root = PLUGIN_ROOT) {
 
 /** What a version line says when plugin.json can't be read. */
 export const UNKNOWN_VERSION = "(version unknown)";
+
+// The package's vendored copy of this CLI (`packages/agentry-opencode/vendor/scripts/…`, and so any
+// copy the npm package runs in) carries no plugin manifest — the npm package's own package.json is
+// the running build's manifest instead. The name pins it: some other parent repo's package.json is
+// not this build's version and stands in for nothing. Exported once, one reader per fact.
+export function packageManifestVersion(root = PLUGIN_ROOT) {
+  try {
+    const manifest = JSON.parse(readFileSync(join(root, "..", "package.json"), "utf8"));
+    return manifest.name === "agentry-opencode" ? manifest.version : null;
+  } catch {
+    return null;
+  }
+}
 
 // The plugin's version, the one a session that started before a flag changed can check itself against.
 const version = () => `agentry plugin ${pluginVersion() ?? UNKNOWN_VERSION}`;

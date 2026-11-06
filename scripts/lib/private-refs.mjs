@@ -148,17 +148,28 @@ export function privateRefs(rootDir) {
     for (const file of files) {
       const rel = relative(rootDir, file);
       if (SELF.test(rel) || BUILT.test(rel)) continue;
-      if (MARKDOWN.test(rel)) {
-        readFileSync(file, "utf8")
-          .split("\n")
-          .forEach((line, i) => {
-            const hit = PRIVATE_REF_PROSE.exec(line);
-            if (hit) problems.push(`${rel}:${i + 1}: prose cites a private reference (${hit[0]})`);
-          });
+      const prose = MARKDOWN.test(rel);
+      if (!prose && !(CODE.test(file) || YAML.test(file))) continue;
+      // A tracked file the disk no longer has (a parked package's entry, a dangling symlink): the
+      // absence itself is the finding, named like any other — never an uncaught ENOENT mid-check.
+      // Any other read failure is not this one's finding: it keeps throwing.
+      let text;
+      try {
+        text = readFileSync(file, "utf8");
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        problems.push(
+          `${rel}: git tracks it, but the file is absent → restore the file or drop it from the index`,
+        );
         continue;
       }
-      if (!(CODE.test(file) || YAML.test(file))) continue;
-      const text = readFileSync(file, "utf8");
+      if (prose) {
+        text.split("\n").forEach((line, i) => {
+          const hit = PRIVATE_REF_PROSE.exec(line);
+          if (hit) problems.push(`${rel}:${i + 1}: prose cites a private reference (${hit[0]})`);
+        });
+        continue;
+      }
       for (const [line, comment] of CODE.test(file) ? codeComments(text) : yamlComments(text)) {
         const hit = PRIVATE_REF.exec(comment);
         if (hit)

@@ -52,13 +52,20 @@ function policy(root, [path, type, how]) {
   return { lane: path, ok: state !== "undecided", value: state, set };
 }
 
+// The running npm package's version: the package's vendored copy (`vendor/`) carries no plugin
+// manifest — the package manifest beside it is the running build's manifest instead (`cli/help`
+// names it once; the name pins it so a parent repo's package.json stands in for nothing).
+import { packageManifestVersion } from "../cli/help.mjs";
+
 function pluginVersion() {
   try {
     return JSON.parse(readFileSync(join(PLUGIN_ROOT, ".claude-plugin", "plugin.json"), "utf8"))
       .version;
   } catch {
-    // no plugin manifest beside the running CLI: a vendored copy, whose stamp named its version
-    return stampOf(join(PLUGIN_ROOT, "..")) ?? "unknown";
+    // no plugin manifest beside the running CLI: a vendored copy — one inside the npm package reads
+    // its own version from the package.json beside it, any other one from the stamp it was init'd
+    // with; when neither exists, nobody knows.
+    return packageManifestVersion() ?? stampOf(join(PLUGIN_ROOT, "..")) ?? "unknown";
   }
 }
 

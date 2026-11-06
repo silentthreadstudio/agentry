@@ -82,6 +82,19 @@ test("all four tools route through runVerb; none imports the router privately", 
   }
 });
 
+test("root is where the CLI runs, never where the store relocates: the description says the resolution", () => {
+  const description = (tool) => tool.input.properties.root.description;
+  for (const tool of [memRead, memWrite]) {
+    assert.match(description(tool), /defaults to the current directory\./, tool.name);
+    assert.match(
+      description(tool),
+      /resolves from the environment, then the current git root, then the global location/,
+      tool.name,
+    );
+    assert.match(description(tool), /this parameter does not relocate it\.$/, tool.name);
+  }
+});
+
 test("recall and search are the CLI's ranked rows, in text and --json, through the tool", async () => {
   const s = store();
   const seed = {

@@ -8,7 +8,7 @@
 import { runVerb } from "../run.mjs";
 
 const READ_VERBS = ["session", "sweep", "show"];
-const DRIVE_VERBS = ["exec", "merge", "sweep", "note", "spike"];
+const DRIVE_VERBS = ["exec", "merge", "sweep", "note", "spike", "session"];
 
 const ROOT_PARAM = {
   type: "string",
@@ -56,7 +56,7 @@ export const laneRead = {
 export const laneDrive = {
   name: "agentry_lane_drive",
   description:
-    "Drive the agentry lane: exec steps, merge, sweep --apply, note, or spike — steps, ids and flags travel as words; the CLI is the one strict validator and its exit 2 is the denial.",
+    "Drive the agentry lane: exec steps, merge, sweep --apply, note, spike, or session close (words: [close], always JSON) — steps, ids and flags travel as words; the CLI is the one strict validator and its exit 2 is the denial.",
   options: { namespace: "agentry" },
   input: {
     type: "object",

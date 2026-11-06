@@ -14,6 +14,7 @@ const READ_VERBS = [
   "commits",
   "scan",
   "draft",
+  "instructions",
 ];
 const WRITE_VERBS = ["add", "set", "fix", "draft"];
 
@@ -25,7 +26,7 @@ const ROOT_PARAM = {
 export const boardRead = {
   name: "agentry_board",
   description:
-    "Read the agentry board: status, check, explain, contract (id of an item), next-id (id is a kind), commits, scan, or draft list.",
+    "Read the agentry board: status, check, explain, contract (id of an item), next-id (id is a kind), commits, scan, draft list, or instructions (what would change in the trigger block).",
   options: { namespace: "agentry" },
   input: {
     type: "object",

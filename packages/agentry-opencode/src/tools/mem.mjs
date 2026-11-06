@@ -11,7 +11,8 @@ const WRITE_VERBS = ["write", "update", "forget", "feedback", "episode"];
 
 const ROOT_PARAM = {
   type: "string",
-  description: "Absolute path of the repository to run against; defaults to the current directory.",
+  description:
+    "Absolute path of the repository to run against; defaults to the current directory. The memory store itself resolves from the environment, then the current git root, then the global location — this parameter does not relocate it.",
 };
 
 const WORDS_PARAM = {

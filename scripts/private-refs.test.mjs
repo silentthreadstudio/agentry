@@ -161,3 +161,22 @@ test("in a git work tree only tracked files are read: an ignored build output is
     "packages/eval/kept.mjs:1: comment cites a private reference (ADR-002)",
   ]);
 });
+
+// The package parked (its entry file gone, the index still carrying it): the absence itself is the
+// finding — named like any other line, the gate's exit code unchanged — never an ENOENT mid-check.
+test("a tracked file absent from the disk is a named finding, not a crash", () => {
+  const root = mkdtempSync(join(tmpdir(), "private-refs-git-"));
+  temps.push(root);
+  const git = (...args) => execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
+  git("init", "-q");
+  mkdirSync(join(root, "packages", "agentry-opencode"), { recursive: true });
+  writeFileSync(
+    join(root, "packages", "agentry-opencode", "index.js"),
+    "export const Plugin = 1;\n",
+  );
+  git("add", ".");
+  rmSync(join(root, "packages", "agentry-opencode", "index.js"));
+  assert.deepEqual(privateRefs(root), [
+    "packages/agentry-opencode/index.js: git tracks it, but the file is absent → restore the file or drop it from the index",
+  ]);
+});
