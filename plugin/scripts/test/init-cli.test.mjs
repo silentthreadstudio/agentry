@@ -3,7 +3,16 @@
 // writes nothing; --apply writes, and a second --apply finds zero drift.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -34,7 +43,9 @@ function scratch() {
 function tree(root) {
   const out = [];
   const walk = (base) => {
-    for (const e of readdirSync(join(root, base), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    for (const e of readdirSync(join(root, base), { withFileTypes: true }).sort((a, b) =>
+      a.name < b.name ? -1 : 1,
+    )) {
       const rel = base ? `${base}/${e.name}` : e.name;
       if (e.isDirectory()) walk(rel);
       else out.push(rel);
@@ -57,10 +68,7 @@ test("an unknown host exits 2 with one line that names the next command", () =>
   withTemp((root) => {
     const res = run(root, "--host", "claude");
     assert.equal(res.status, 2);
-    assert.equal(
-      res.stderr,
-      '✗ init: host "claude" unknown → init --host opencode\n',
-    );
+    assert.equal(res.stderr, '✗ init: host "claude" unknown → init --host opencode\n');
     assert.equal(res.stdout, "");
   }));
 
@@ -98,29 +106,67 @@ test("--apply writes the payload, the jsonc, the trigger block, and the vendored
     // the payload: agents, commands, skills, and the jsonc the host reads
     const jsonc = JSON.parse(readFileSync(join(root, ".opencode", "opencode.jsonc"), "utf8"));
     assert.equal(jsonc.default_agent, "agentry/conductor");
-    assert.deepEqual(jsonc.permissions, [{ action: "external_directory", resource: "*", effect: "ask" }]);
-    assert.match(readFileSync(join(root, ".opencode", "agents", "agentry", "conductor.md"), "utf8"), /mode: primary/);
+    assert.deepEqual(jsonc.permissions, [
+      { action: "external_directory", resource: "*", effect: "ask" },
+    ]);
+    assert.match(
+      readFileSync(join(root, ".opencode", "agents", "agentry", "conductor.md"), "utf8"),
+      /mode: primary/,
+    );
     // the trigger block, in AGENTS.md
     assert.match(readFileSync(join(root, "AGENTS.md"), "utf8"), /agentry:begin v1/);
     assert.deepEqual(state.trigger.files.includes("AGENTS.md"), true);
     // the vendored copy: stamped, executable, and its own --version
     const stamp = readFileSync(join(root, ".agentry", "bin", ".agentry-version"), "utf8");
     assert.match(stamp, /^[\w.+-]+\n$/, "one version line");
-    assert.ok(statSync(join(root, ".agentry", "bin", "agentry")).mode & 0o111, "the bin is executable");
-    const vendored = spawnSync(process.execPath, [join(root, ".agentry", "bin", "agentry"), "--version"], {
-      encoding: "utf8",
-    });
+    assert.ok(
+      statSync(join(root, ".agentry", "bin", "agentry")).mode & 0o111,
+      "the bin is executable",
+    );
+    const vendored = spawnSync(
+      process.execPath,
+      [join(root, ".agentry", "bin", "agentry"), "--version"],
+      {
+        encoding: "utf8",
+      },
+    );
     assert.deepEqual([vendored.status, vendored.stdout], [0, `${stamp.trim()}\n`]);
     assert.deepEqual(state.vendored.drift, true);
     assert.deepEqual(state.check, { exit: 0, ok: true });
+    // the block template came with the copy, so the vendored CLI can read its lanes back
+    assert.ok(
+      existsSync(join(root, ".agentry", "skills", "process", "templates", "agents-block.md")),
+    );
+    const explain = spawnSync(
+      process.execPath,
+      [
+        join(root, ".agentry", "bin", "agentry"),
+        "board",
+        "explain",
+        "--root",
+        root,
+        "--process",
+        join(root, ".agentry", "process.json"),
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(explain.status, 0, explain.stderr);
+    assert.match(explain.stdout, /AGENTS\.md block is current/);
   }));
 
 test("the vendored copy leaves test files, node_modules and .docs out, and keeps the lib", () =>
   withTemp((root) => {
     assert.equal(run(root, "--vendor", "--apply", "--json").status, 0);
     const files = tree(join(root, ".agentry"));
-    assert.ok(files.some((f) => f.startsWith("scripts/lib/")), "the lib copied");
-    assert.equal(files.some((f) => f.startsWith("scripts/test/")), false, "no test directory");
+    assert.ok(
+      files.some((f) => f.startsWith("scripts/lib/")),
+      "the lib copied",
+    );
+    assert.equal(
+      files.some((f) => f.startsWith("scripts/test/")),
+      false,
+      "no test directory",
+    );
     for (const f of files)
       if (/(^|\/)(\.docs|node_modules|test|tests)(\/|$)/.test(f) || f.includes(".test"))
         assert.fail(`copied what never copies: ${f}`);
@@ -136,7 +182,7 @@ test("a second --apply reports zero drift", () =>
     assert.match(res.stdout, /payload: in sync \(\d+ kept\) → \.opencode\//);
     assert.match(res.stdout, /vendor: in sync \(stamp [\w.+-]+\)/);
     assert.match(res.stdout, /AGENTS\.md: the Agentry block is up to date/);
-    assert.doesNotMatch(res.stdout, /^      (new|rewrite) \./m);
+    assert.doesNotMatch(res.stdout, /^ {6}(new|rewrite) \./m);
     assert.deepEqual(tree(root), before);
   }));
 

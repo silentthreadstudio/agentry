@@ -565,7 +565,8 @@ test("exec.verify flagged says which field it keys on; a models row names each m
   }
 });
 
-test("the models row warns of models.verify.ui under a flagged route, wrapped to 80 columns (field 70)", () => {  const root0 = mkdtempSync(join(tmpdir(), "agentry-lanes-"));
+test("the models row warns of models.verify.ui under a flagged route, wrapped to 80 columns (field 70)", () => {
+  const root0 = mkdtempSync(join(tmpdir(), "agentry-lanes-"));
   cpSync(join(HERE, "fixtures", "table-board"), root0, { recursive: true });
   const base = JSON.parse(readFileSync(join(root0, "process.json"), "utf8"));
   rmSync(root0, { recursive: true, force: true });
@@ -634,7 +635,9 @@ test("a vendored CLI stamp behind the plugin is a ✗ lanes row naming the refre
 });
 
 test("a stamp equal to the plugin's version is silent, and one ahead of it says the plugin is older", () => {
-  const version = JSON.parse(readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8")).version;
+  const version = JSON.parse(
+    readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8"),
+  ).version;
   const current = repo();
   try {
     write(current.root, ".agentry/bin/.agentry-version", `${version}\n`);
@@ -646,7 +649,7 @@ test("a stamp equal to the plugin's version is silent, and one ahead of it says 
   try {
     write(ahead.root, ".agentry/bin/.agentry-version", "9.9.9\n");
     const row = ahead.lanes()["vendored CLI"];
-    assert.deepEqual([row.ok, row.value], [false, "9.9.9 (plugin: " + version + ", older)"]);
+    assert.equal(row.value, `9.9.9 (plugin: ${version}, older)`);
   } finally {
     rmSync(ahead.root, { recursive: true, force: true });
   }

@@ -292,7 +292,98 @@ try {
   ok("opencode payload in sync", "generated from plugin/, zero drift");
 } catch (run) {
   const out = `${run.stdout ?? ""}${run.stderr ?? ""}`.trim().split("\n").slice(1);
-  err(`opencode payload out of sync → node scripts/build-opencode.mjs${out.length ? `\n         ${out.join("\n         ")}` : ""}`);
+  err(
+    `opencode payload out of sync → node scripts/build-opencode.mjs${out.length ? `\n         ${out.join("\n         ")}` : ""}`,
+  );
+}
+
+// Package check — packages/agentry-opencode (the omit-one-engine-miss-one rule works both ways): the
+// generated vendor copy must be in sync with plugin/ (one file-set, two writers), the manifest must
+// meet the publish shape (versions equal, zero deps), and the tarball must actually carry the vendored
+// core with its bin executable and nothing the package does not ship.
+const OCODE = join(ROOT, "packages", "agentry-opencode");
+try {
+  execFileSync(process.execPath, [join(ROOT, "scripts", "build-agentry-opencode.mjs"), "--check"], {
+    cwd: ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
+  ok("agentry-opencode package in sync", "generated from plugin/, zero drift");
+} catch (run) {
+  const out = `${run.stdout ?? ""}${run.stderr ?? ""}`.trim().split("\n").slice(1);
+  err(
+    `agentry-opencode vendor out of sync → node scripts/build-agentry-opencode.mjs${out.length ? `\n         ${out.join("\n         ")}` : ""}`,
+  );
+}
+
+{
+  const manifest0 = join(OCODE, "package.json");
+  if (!existsSync(manifest0)) {
+    err("packages/agentry-opencode/package.json missing");
+  } else {
+    const m = readJson(manifest0);
+    const problems = [];
+    if (m.name !== "agentry-opencode")
+      problems.push(`name ${JSON.stringify(m.name)} ≠ agentry-opencode`);
+    if (m.type !== "module") problems.push("type is not module");
+    if (m.license !== "MIT") problems.push(`license ${JSON.stringify(m.license)} ≠ MIT`);
+    if (m.version !== readJson(pluginManifest).version)
+      problems.push(`version ${m.version} ≠ plugin.json's ${readJson(pluginManifest).version}`);
+    if (Object.keys(m.dependencies ?? {}).length)
+      problems.push(`ships dependencies: ${Object.keys(m.dependencies).join(" ")}`);
+    if (Object.keys(m.devDependencies ?? {}).length)
+      problems.push(`ships devDependencies: ${Object.keys(m.devDependencies).join(" ")}`);
+    const files = Array.isArray(m.files) ? m.files : [];
+    for (const wanted of ["index.js", "src/**", "vendor/**", "README.md"])
+      if (!files.includes(wanted)) problems.push(`files whitelist omits ${wanted}`);
+    if (m.engines?.node !== ">=24")
+      problems.push(`engines.node ${JSON.stringify(m.engines?.node)} ≠ >=24`);
+    for (const p of problems) err(`agentry-opencode manifest: ${p}`);
+    if (!problems.length)
+      ok("agentry-opencode manifest", `${m.name} v${m.version}, engines >=24, zero deps`);
+  }
+}
+
+{
+  let pack = null;
+  try {
+    const res = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+      cwd: OCODE,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+    });
+    // npm versions disagree on the JSON envelope (array, or an object keyed by package name)
+    const parsed = JSON.parse(res);
+    pack = (Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0]) ?? null;
+  } catch (run) {
+    err(
+      `agentry-opencode tarball unreadable → cd packages/agentry-opencode && npm pack --dry-run --json (${(run.stderr ?? "").trim().split("\n")[0] ?? ""})`,
+    );
+  }
+  if (pack) {
+    const entries = pack.files ?? [];
+    const paths = new Map(entries.map((e) => [e.path.replace(/^package\//, ""), e]));
+    const problems = [];
+    // npm versions disagree on how a mode is reported: decimal permission bits (493 = 0o755) or the
+    // stat mode's octal string ("100755"); either way the bin must be executable in the tarball
+    const modeOf = (e) =>
+      typeof e.mode === "string" ? e.mode : typeof e.mode === "number" ? e.mode.toString(8) : "";
+    const isExecFile = (m) => m === "100755" || m === "755";
+    const bin = paths.get("vendor/bin/agentry");
+    if (!bin) problems.push("tarball has no vendor/bin/agentry");
+    else if (!isExecFile(modeOf(bin)))
+      problems.push(`vendor/bin/agentry mode ${modeOf(bin)} is not executable`);
+    for (const wanted of [
+      "vendor/scripts/lib/memory/persistence/db-index.mjs",
+      "vendor/scripts/lib/cli/router.mjs",
+    ])
+      if (!paths.has(wanted)) problems.push(`tarball has no ${wanted}`);
+    for (const [path] of paths)
+      if (/(^|\/)(node_modules|test)\//.test(path)) problems.push(`tarball ships ${path}`);
+    for (const p of problems) err(`agentry-opencode tarball: ${p}`);
+    if (!problems.length)
+      ok("agentry-opencode tarball", `${entries.length} entries, the vendored core and its bin in`);
+  }
 }
 
 // Report

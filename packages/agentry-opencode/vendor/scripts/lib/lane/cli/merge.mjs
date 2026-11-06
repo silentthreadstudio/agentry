@@ -1,0 +1,354 @@
+// lane merge <id> — land one task on main: one procedure, stepped by the ledger.
+//
+//   merge <id> [--branch <b>] --preflight                what landing needs (adopts --branch work)
+//   merge <id> --check <name>=pass|fail [--note <t>]     record a merge check (extensions.merge.checks)
+//                                                        or a gate checklist item (gate.checklist)
+//   merge <id> [--branch <b>] --message <m> [--summary <t>] [--drop-carry]
+//                                                        land → gate or skip → record → board commit
+//   merge <id> --push [--approved]                       push per config merge.push (ask|auto|never)
+//   merge <id> --cleanup [--discard-ignored]             the worktree and branch, found by branch
+//   merge <id> --resolve landed|rolled-back [--checked]  close a stuck land on the owner's call, or (landed)
+//                                                        a verified lane whose work reached main another way
+//
+// `--branch` adopts work built outside exec: the ledger is created with origin "adopted". `<b>` is a
+// branch's exact listed name (`adopt.mjs`'s `resolveBranch`), refused as `exec adopt` refuses it.
+// Each call prints a step table and the next step. Exit 0 = done, next printed; 1 = a red step stopped it (the
+// row says why); 2 = usage or refusal. A call stops at its first red row and is idempotent from the
+// ledger: re-running the land after a stop resumes from what the ledger says already happened. A ledger a
+// stopped cut left (`merge.cut`) is no land: every mode refuses it (`rows.mjs`'s `stoppedCut`), since only
+// `exec cut <id> --apply` rolls it back.
+//
+// A land can be killed (a long gate outlives the host's foreground limit), so it writes what it is
+// about to do to the ledger before it does it, and a rerun starts from there (`merge/recover.mjs`).
+// This file parses the call and sequences the steps; each step lives in `../merge/`: the carry of
+// exec's board writes (`carry`), the picks (`picks`), the gate (`gating`), the board write and commit
+// (`record`), the rows the preflight shares (`rows`), the stacked lanes' rows (`stack`) and the modes after
+// the land (`modes`). A stacked lane lands only after its parent, once restacked onto main; a parent's land
+// restacks each child at rest onto main itself, after its board commit (`lane exec restack <child> --main`).
+//
+// run(argv, { root, spec, model }) -> { exit, out }
+import { realpathSync } from "node:fs";
+import { flagsOf, refuse, usageError } from "../../cli/help.mjs";
+import { idProblem } from "../../id.mjs";
+import { mainRoot } from "../../process/git.mjs";
+import { kindOf, runId } from "../../process/ids.mjs";
+import { list as listLedgers, read as readLedger } from "../../process/ledger.mjs";
+import { gateOf } from "../../process/spec/workflow.mjs";
+import { changedSince, pickTier } from "../gate.mjs";
+import { attributionIn, mergeBaseOf } from "../land.mjs";
+import { hasOldRecord, heldRow } from "../merge/aside.mjs";
+import { carryBackStep, dropNext, giveBack, takeCarryStep } from "../merge/carry.mjs";
+import { gateStep } from "../merge/gating.mjs";
+import { FRESH, afterLand, checkNext, done, landNext, ok, red, short } from "../merge/lane.mjs";
+import { mainRow, mainStep } from "../merge/main-row.mjs";
+import { check, cleanupMode, pushMode } from "../merge/modes.mjs";
+import { landStep } from "../merge/picks.mjs";
+import { commitStep, recordStep } from "../merge/record.mjs";
+import { recoverPreview, recoverStep, resolveMode } from "../merge/recover.mjs";
+import {
+  boardRow,
+  checksState,
+  commitsRow,
+  depsRow,
+  lastWorktreeGate,
+  ledgerStep,
+  listedTip,
+  pushRow,
+  subjectsRow,
+} from "../merge/rows.mjs";
+import { childRows, stackRows } from "../merge/stack.mjs";
+import { RestackError, restackLane } from "../restack.mjs";
+import { childrenOf } from "../stack.mjs";
+
+export const help = {
+  usage: [
+    "merge <id> [--branch <b>] --preflight [--json]",
+    "merge <id> --check <name>=pass|fail [--note <t>]",
+    "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
+    "merge <id> --push [--approved]",
+    "merge <id> --cleanup [--discard-ignored]",
+    "merge <id> --resolve landed|rolled-back [--checked]",
+  ],
+  purpose: "Land one task on main, one mode per call; each prints a step table and the next step.",
+  args: { "<id>": "the task's id, any case" },
+  flags: {
+    "--preflight": "what landing needs; changes nothing on main",
+    "--check <name>=pass|fail":
+      "record one merge check (extensions.merge.checks) or gate checklist item (gate.checklist) on the branch tip",
+    "--note <t>": "with --check: one line on why",
+    "--branch <b>":
+      "with --preflight or --message: adopt work built outside lane exec, on the branch named exactly <b>",
+    "--message <board commit>": "land: pick, gate or skip, record, board commit with this message",
+    "--summary <t>": "with --message: the handoff text (default: the first commit's subject)",
+    "--drop-carry": "with --message: land without exec's set-aside board writes (owner's call)",
+    "--push": "push main per merge.push (ask|auto|never)",
+    "--approved": "with --push: the owner said yes (merge.push ask)",
+    "--cleanup": "remove the task's worktree and branch",
+    "--discard-ignored": "with --cleanup: also when the worktree holds ignored files",
+    "--resolve <landed|rolled-back>":
+      "close a land stuck in merging (owner's call): its picks all on main, or none; landed also closes a verified lane whose commits main has by patch (git cherry); main and the board untouched",
+    "--checked":
+      "with --resolve rolled-back: you checked by hand the planned files main changed since the land began; with landed on a lane found on main: the commits main lacks by patch landed squashed or reworded",
+    "--json": "with any mode: print { id, branch, main, rows, next } as one JSON object",
+  },
+  exits: { 0: "done, next printed", 1: "a red step stopped it", 2: "usage or refusal" },
+  example: "lane merge T-4 --preflight",
+};
+const flags = flagsOf(help);
+// Each mode and the options that go with it.
+const MODES = {
+  "--preflight": ["--branch"],
+  "--check": ["--note"],
+  "--message": ["--branch", "--summary", "--drop-carry"],
+  "--push": ["--approved"],
+  "--cleanup": ["--discard-ignored"],
+  "--resolve": ["--checked"],
+};
+// argv → { id, mode, opts } or { error }.
+function parse(argv) {
+  const words = [];
+  const opts = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!Object.hasOwn(flags, arg)) {
+      words.push(arg);
+      continue;
+    }
+    if (Object.hasOwn(opts, arg)) return { error: `${arg} is given twice` };
+    if (!flags[arg]) {
+      opts[arg] = true;
+      continue;
+    }
+    const value = argv[++i];
+    if (value === undefined || value.startsWith("--")) return { error: `${arg} needs a value` };
+    opts[arg] = value;
+  }
+  if (words.length !== 1) return { error: "needs one task id" };
+  const modes = Object.keys(MODES).filter((m) => Object.hasOwn(opts, m));
+  if (modes.length !== 1) return { error: `give exactly one of ${Object.keys(MODES).join(", ")}` };
+  const [mode] = modes;
+  const stray = Object.keys(opts).find(
+    (k) => k !== mode && k !== "--json" && !MODES[mode].includes(k),
+  );
+  if (stray) return { error: `${stray} does not go with ${mode}` };
+  return { id: words[0], mode, opts };
+}
+
+// --- the land and its preflight ------------------------------------------------------------------
+
+// A stack stop (or a refusal before any pick) changes nothing: its next is printed, not kept in the ledger.
+const stackStop = (exit, lane, rows, next) =>
+  done(exit, { ...lane, ledger: { ...lane.ledger, next } }, rows, next);
+
+// One child's restack onto main, guarded as `lane exec restack <child> --main`: `{ restacked: <commits> }`,
+// `{ conflict: <first path> }` (aborted, nothing changed) or `{ left: <why> }` (refused: an agent out, a
+// gate queued or running, a dirty worktree, a branch moved by hand, which its own restack records).
+function restackChild({ root, spec }, id) {
+  try {
+    const ledger = readLedger(root, id);
+    if (!ledger) return { left: `no ledger for ${id}` };
+    return {
+      restacked: restackLane({ root, spec }, ledger, { toMain: true, byHand: false }).commits,
+    };
+  } catch (e) {
+    if (!(e instanceof RestackError)) return { left: e.message };
+    return e.exit === 1 ? { conflict: e.files[0] ?? null } : { left: e.message };
+  }
+}
+
+// After a land that reached its board commit (and on the rerun of one that did): each child at rest is
+// restacked onto main, in id order; a child with an agent out, or one that conflicts, is left as it was and
+// named.
+function restackChildren(lane) {
+  const outcomes = {};
+  for (const child of childrenOf(listLedgers(lane.root), lane.id))
+    outcomes[child] = restackChild(lane, child);
+  return childRows(lane, outcomes);
+}
+
+function preflight(lane) {
+  const got = ledgerStep(lane, { adopt: true });
+  if (got.exit) return done(got.exit, lane, got.rows, got.next);
+  const rows = [got];
+  if (lane.ledger.state === "merged") {
+    rows.push(ok("land", `already merged (board commit ${short(lane.ledger.merge?.boardCommit)})`));
+    rows.push(...childRows(lane));
+    return done(0, lane, rows, afterLand(lane));
+  }
+  const stack = stackRows(lane);
+  rows.push(...stack.rows, ...childRows(lane));
+  if (stack.stop) return stackStop(1, lane, rows, stack.stop.next);
+  // What a killed land left: the land's own board writes are its to clear, any other change on main
+  // still shows in main's row; git mid-pick in the land's own leaves main's row to the land.
+  const left = recoverPreview(lane);
+  if (left.row) rows.push(left.row);
+  const merge = lane.ledger.merge;
+  rows.push(boardRow(lane));
+  if (FRESH.includes(merge?.step)) {
+    const deps = depsRow(lane);
+    if (deps) rows.push(deps.row);
+  }
+  if (!left.skipMain) rows.push(mainRow(lane, { carry: true, ignore: left.ignore }));
+  if (merge?.carry)
+    rows.push(
+      ok(
+        "carry",
+        `exec's board writes are set aside in the ledger (${merge.carry.files.join(", ")})`,
+        ["the land puts them back on main first"],
+      ),
+    );
+  if (FRESH.includes(merge?.step)) {
+    rows.push(commitsRow(lane).row);
+    const subjects = subjectsRow(lane);
+    if (subjects) rows.push(subjects);
+  } else rows.push(ok("land", `a land is under way (step "${merge.step}"): the land resumes it`));
+  const gate = gateOf(lane.spec);
+  if (!gate) rows.push(red("gate", "the workflow file has no gate: merge cannot prove main"));
+  else {
+    const { root, ledger } = lane;
+    // Read at the tip `ledgerStep` listed, as the land plans it: never the branch by name.
+    const tip = listedTip(lane);
+    const base = tip && mergeBaseOf(root, ledger.mainBranch, tip);
+    const changed = (base && changedSince(root, base, tip)) || [];
+    const need = pickTier(gate, "merge", { changed, flagged: Boolean(ledger.route?.flagged) });
+    const record = lastWorktreeGate(ledger, need.tier) ?? lastWorktreeGate(ledger);
+    rows.push(
+      ok("gate", `${need.tier} would run (${need.reason})`, [
+        record
+          ? `worktree gate: ${record.tier} exit ${record.exit} on ${short(record.commit)}; the land skips only when canSkip holds`
+          : "no worktree gate recorded: the land runs the gate on main",
+      ]),
+    );
+  }
+  const checks = checksState(lane);
+  rows.push(checks.row);
+  if (checks.exit) return done(2, lane, rows);
+  rows.push(pushRow(lane));
+  if (rows.some((r) => r.mark === "red"))
+    return done(1, lane, rows, `fix the red row(s), then lane merge ${lane.id} --preflight`);
+  const next = checks.pending.length > 0 ? checkNext(lane.id, checks.pending) : landNext(lane.id);
+  return done(0, lane, rows, next);
+}
+
+function land(lane) {
+  const { id, opts } = lane;
+  const message = opts["--message"];
+  if (!message.trim())
+    return usageError(`lane merge ${id}`, "--message is empty: give the board commit's message");
+  const credit = attributionIn(message);
+  if (credit)
+    return refuse(
+      `lane merge ${id}`,
+      `the board commit message carries AI attribution ("${credit}"): commits carry the author only`,
+    );
+  const got = ledgerStep(lane, { adopt: true });
+  if (got.exit) return done(got.exit, lane, got.rows, got.next);
+  const rows = [got];
+  const merged = lane.ledger.merge;
+  if (lane.ledger.state === "merged") {
+    rows.push(
+      ok("land", `already merged: ${merged.landed.map(short).join(" ")}`, [
+        `board commit ${short(merged.boardCommit)}`,
+      ]),
+    );
+    rows.push(...restackChildren(lane));
+    return done(0, lane, rows, afterLand(lane));
+  }
+  const stack = stackRows(lane);
+  rows.push(...stack.rows);
+  if (stack.stop) return stackStop(2, lane, rows, stack.stop.next);
+  lane.gate = gateOf(lane.spec);
+  if (!lane.gate) {
+    rows.push(red("gate", "the workflow file has no gate: merge cannot prove main"));
+    return done(2, lane, rows, "add a gate to the workflow file (/agentry:init)");
+  }
+  const board = boardRow(lane);
+  rows.push(board);
+  if (board.mark === "red") return done(2, lane, rows);
+  const checks = checksState(lane);
+  rows.push(checks.row);
+  if (checks.exit) return done(2, lane, rows);
+  if (checks.failed.length > 0)
+    return done(1, lane, rows, `fix what ${checks.failed.join(", ")} found, then record it again`);
+  if (checks.pending.length > 0) return done(2, lane, rows, checkNext(id, checks.pending));
+  // Before any pick: a dependency still open on the item as the land leaves it refuses with the fix.
+  if (FRESH.includes(merged?.step)) {
+    const deps = depsRow(lane);
+    if (deps) rows.push(deps.row);
+    if (deps?.row.mark === "red") return stackStop(2, lane, rows, deps.next);
+  }
+  if (opts["--drop-carry"] && !merged?.carry && !hasOldRecord(merged))
+    return done(2, lane, [
+      ...rows,
+      red("carry", "--drop-carry: the ledger holds no set-aside board writes, so nothing to drop"),
+    ]);
+  // Before any pick (a land resumed after its picks has checked already): a commit that breaks a rule
+  // stops it with main and the ledger as they are, so no next step is saved: the row says what to do.
+  if (FRESH.includes(merged?.step)) {
+    const subjects = subjectsRow(lane);
+    if (subjects) rows.push(subjects);
+    if (subjects?.mark === "red") {
+      subjects.more.push("ask the builder to reword them on the branch, then land again");
+      return done(1, lane, rows);
+    }
+  }
+  const steps = [
+    recoverStep,
+    carryBackStep,
+    mainStep,
+    takeCarryStep,
+    landStep,
+    gateStep,
+    recordStep,
+    commitStep,
+  ];
+  for (const step of steps) {
+    const stop = step(lane, rows);
+    if (!stop) continue;
+    // At a stop, main gets exec's writes back, unless git is mid-pick or they would not go back.
+    const back = stop.keepCarry ? null : giveBack(lane);
+    if (back) rows.push(back);
+    // A stop that gives nothing back holds the set-aside files in the ledger: say which, and how they return.
+    const held = stop.keepCarry ? heldRow(lane) : null;
+    if (held) rows.push(held);
+    // A give-back that is itself a conflict has its own next; "land again" would only hit it again.
+    return done(stop.exit, lane, rows, back?.mark === "red" ? dropNext(lane) : stop.next);
+  }
+  rows.push(...restackChildren(lane));
+  return done(0, lane, rows, afterLand(lane));
+}
+
+const RUN = {
+  "--preflight": preflight,
+  "--check": check,
+  "--message": land,
+  "--push": pushMode,
+  "--cleanup": cleanupMode,
+  "--resolve": resolveMode,
+};
+
+export function run(argv, { root, spec, model }) {
+  const parsed = parse(argv);
+  if (parsed.error) return usageError("lane merge", parsed.error);
+  const resolved = runId(spec, model, parsed.id);
+  if (resolved.error) return refuse(`lane merge ${parsed.id}`, resolved.error);
+  parsed.id = resolved.id;
+  const problem = idProblem(parsed.id);
+  if (problem) return usageError("lane merge", problem);
+  const main = mainRoot(root);
+  if (!main || main !== realpathSync(root))
+    return refuse(
+      `lane merge ${parsed.id}`,
+      `run merge from the main checkout${main ? ` (${main})` : ""}, not ${root}`,
+      main ? `pass --root ${main}` : undefined,
+    );
+  // The lane's kind: its ledger's (the lifecycle's for a ledger from before kinds), else the id's.
+  let ledger = null;
+  try {
+    ledger = readLedger(root, parsed.id);
+  } catch {} // ledgerStep refuses an unreadable ledger
+  const kind = ledger ? kindOf(ledger, spec) : resolved.kind;
+  const { id, opts } = parsed;
+  const lane = { root, spec, model, id, kind, opts, ledger: null, files: [] };
+  return RUN[parsed.mode](lane);
+}

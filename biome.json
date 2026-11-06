@@ -12,6 +12,7 @@
       ".agentry/**",
       ".agents/**",
       "packages/eval/fixtures/**",
+      "packages/agentry-opencode/vendor/**",
       ".claude/**",
       "**/.astro/**",
       "packages/web/src/data/corrections.ts",

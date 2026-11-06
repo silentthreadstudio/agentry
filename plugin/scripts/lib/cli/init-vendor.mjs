@@ -1,17 +1,27 @@
 // init-vendor — the vendored CLI of `agentry init --vendor`: a runnable copy of this bin and the
 // scripts its groups route to, under <root>/.agentry/ (`bin/agentry`, `scripts/<group>.mjs`,
-// `scripts/lib/**`), plus a version stamp (`bin/.agentry-version`, one line) naming what was copied.
-// `agentry board explain` reads the stamp back to warn when the copy is behind the plugin, so the copy
-// and its read-back live in one place beside the verb that writes them. Test files, `node_modules` and
-// `.docs` never copy; the bin keeps its executable bit. Node built-ins only.
+// `scripts/lib/**`, the process templates the read side opens back), plus a version stamp
+// (`bin/.agentry-version`, one line) naming what was copied. `agentry board explain` reads the stamp
+// back to warn when the copy is behind the plugin, so the copy and its read-back live in one place
+// beside the verb that writes them. Test files, `node_modules` and `.docs` never copy; the bin keeps
+// its executable bit. Node built-ins only.
 //
 // stampOf(root) -> string | null                                  the copy's version, read back
 // relationWord(plugin, stamp) -> "newer" | "older" | "differs"      which side is ahead
 // vendorVersion(source) -> string | null                            the source plugin's version
 // vendoredFiles(source) -> [{ path, src, bytes }]                   the copy's file set, sorted
-// planVendor(root, source) -> { version, changed, drift }            whether the copy is behind
-// applyVendor(root, source) -> { version, changed, refreshed }       write it (rm the two dirs first)
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+// planVendor(root, source) -> { version, changed, drift, files }     whether the copy is behind
+// applyVendor(root, source) -> {..., refreshed}                      write it (rm the two dirs first)
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 /** The plugin root (as the generator addresses it) the vendored copy stands in for. */
@@ -26,7 +36,9 @@ const SKIP_DIR = new Set(["node_modules", ".docs", "test", "tests"]);
 /** The name of every file under `dir`, as `<sub>/…<name>`, sorted. */
 function walkFiles(dir, base = "") {
   const out = [];
-  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
+  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+    a.name < b.name ? -1 : 1,
+  );
   for (const e of entries) {
     if (e.isDirectory()) {
       if (SKIP_DIR.has(e.name)) continue;
@@ -51,7 +63,8 @@ export function stampOf(root) {
 
 /** `<a>` against `<b>` by semver parts: -1, 0 or 1; null when either is not `n(.n…)`. */
 export function compareVersions(a, b) {
-  const parse = (text) => (typeof text === "string" ? (text.match(/^v?(\d+(?:\.\d+)*)/) ?? [])[1] : undefined);
+  const parse = (text) =>
+    typeof text === "string" ? (text.match(/^v?(\d+(?:\.\d+)*)/) ?? [])[1] : undefined;
   const first = parse(a);
   const second = parse(b);
   if (!first || !second) return null;
@@ -73,7 +86,9 @@ export function relationWord(plugin, stamp) {
 /** The source plugin's own version, read back; null when its manifest says none. */
 export function vendorVersion(source) {
   try {
-    const { version } = JSON.parse(readFileSync(join(source, ".claude-plugin", "plugin.json"), "utf8"));
+    const { version } = JSON.parse(
+      readFileSync(join(source, ".claude-plugin", "plugin.json"), "utf8"),
+    );
     return version ?? null;
   } catch {
     return null;
@@ -87,12 +102,19 @@ export function vendoredFiles(source) {
   if (existsSync(bin)) out.push({ path: BIN, src: bin, bytes: readFileSync(bin) });
   for (const name of TOP_SCRIPTS) {
     const file = join(source, "scripts", name);
-    if (existsSync(file)) out.push({ path: `scripts/${name}`, src: file, bytes: readFileSync(file) });
+    if (existsSync(file))
+      out.push({ path: `scripts/${name}`, src: file, bytes: readFileSync(file) });
   }
   const lib = join(source, "scripts", "lib");
   if (existsSync(lib))
     for (const { path, src } of walkFiles(lib, "lib/"))
       out.push({ path: `scripts/${path}`, src, bytes: readFileSync(src) });
+  // the block template the vendored CLI reads back (`board explain`'s lanes, `board instructions`):
+  // without it its read side crashes instead of reading the stamp
+  const templates = join(source, "skills", "process", "templates");
+  if (existsSync(templates))
+    for (const { path, src } of walkFiles(templates))
+      out.push({ path: `skills/process/templates/${path}`, src, bytes: readFileSync(src) });
   return out.sort((a, b) => (a.path < b.path ? -1 : 1));
 }
 
@@ -115,7 +137,11 @@ export function planVendor(root, source) {
   }
   const stamp = stampOf(root);
   if (stamp !== version)
-    changed.push({ path: STAMP, write: stamp === null ? "new" : "rewrite", why: `stamp ${stamp ?? "gone"} vs ${version}` });
+    changed.push({
+      path: STAMP,
+      write: stamp === null ? "new" : "rewrite",
+      why: `stamp ${stamp ?? "gone"} vs ${version}`,
+    });
   return { version, files, changed, drift: changed.length > 0 };
 }
 

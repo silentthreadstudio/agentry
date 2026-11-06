@@ -18,6 +18,8 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
+  packages/agentry-opencode: {}
+
   packages/core:
     dependencies:
       zod:

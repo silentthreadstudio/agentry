@@ -1,0 +1,258 @@
+{
+  "version": 1,
+  "name": "Work",
+  "root": "docs/work",
+  "kinds": {
+    "milestone": {
+      "label": "Milestone",
+      "note": "A release-sized goal. Its status comes from its sprints.",
+      "at": { "table": "BOARD.md", "heading": "Milestones" },
+      "id": { "column": "Milestone", "match": "^(\\S+)" },
+      "fields": {
+        "name": { "column": "Milestone", "match": "·\\s*(.+)$" },
+        "goal": { "column": "Goal" },
+        "sprints": { "column": "Sprints", "type": "list", "ref": "sprint", "role": "children" }
+      },
+      "status": { "derived": "children" },
+      "create": {
+        "ask": ["name", "goal"],
+        "id": "M{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": { "Milestone": "{id} · {name}", "Goal": "{goal}", "Sprints": "" }
+          }
+        ]
+      }
+    },
+    "sprint": {
+      "label": "Sprint",
+      "note": "A short block of tasks, worked in row order. Its file holds the goal and the handoff.",
+      "at": { "table": "BOARD.md", "heading": "Sprints" },
+      "id": { "column": "Sprint" },
+      "fields": {
+        "name": { "column": "Name" },
+        "status": { "column": "Status" },
+        "signoff": { "column": "Signed off", "type": "date" }
+      },
+      "status": {
+        "field": "status",
+        "values": { "todo": "planned", "doing": "active", "done": "done" }
+      },
+      "file": {
+        "glob": "sprints/{id}_*.md",
+        "required": false,
+        "sections": { "handoff": { "heading": "Handoff", "as": "bold-lead" } }
+      },
+      "create": {
+        "ask": ["name"],
+        "id": "S{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": { "Sprint": "{id}", "Name": "{name}", "Status": "todo", "Signed off": "" }
+          }
+        ],
+        "blocks": [{ "file": "TASKS.md", "under": "# Task contracts", "text": "## {id} · {name}" }]
+      }
+    },
+    "task": {
+      "label": "Task",
+      "note": "One row on the board, one contract in TASKS.md under its sprint.",
+      "at": { "table": "BOARD.md", "heading": "Tasks" },
+      "id": { "column": "Task" },
+      "fields": {
+        "sprint": { "column": "Sprint", "type": "ref", "ref": "sprint", "role": "parent" },
+        "what": { "column": "What" },
+        "status": { "column": "Status" },
+        "deps": { "column": "Depends on", "type": "list", "ref": "task" },
+        "verdict": { "column": "Verdict", "case": "upper" },
+        "commit": { "column": "Commit", "type": "commits" }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "ready": "active",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped",
+          "later": "parked"
+        }
+      },
+      "contract": { "blocks": ["TASKS.md"], "lead": ["heading", "bold"] },
+      "create": {
+        "ask": ["sprint", "what", "deps"],
+        "id": "T{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "after-last:sprint",
+            "cells": {
+              "Task": "{id}",
+              "Sprint": "{sprint}",
+              "What": "{what}",
+              "Status": "todo",
+              "Depends on": "{deps}",
+              "Verdict": "",
+              "Commit": ""
+            }
+          }
+        ],
+        "blocks": [
+          {
+            "file": "TASKS.md",
+            "under": "## {sprint} · {parent.name}",
+            "text": "### {id} · {what}\n- **Owns:** …\n- **Exposes:** …\n- **Acceptance:** …"
+          }
+        ]
+      }
+    },
+    "debt": {
+      "label": "Debt",
+      "note": "Debt and chores outside the sprints. A light contract in TASKS.md (owned files, one acceptance line); exec and merge run it (exec.kinds).",
+      "at": { "table": "BOARD.md", "heading": "Debt" },
+      "id": { "column": "Debt" },
+      "fields": {
+        "what": { "column": "What" },
+        "status": { "column": "Status" },
+        "verdict": { "column": "Verdict", "case": "upper" },
+        "commit": { "column": "Commit", "type": "commits" }
+      },
+      "status": {
+        "field": "status",
+        "values": {
+          "todo": "planned",
+          "doing": "active",
+          "verify": "active",
+          "done": "done",
+          "cut": "dropped"
+        }
+      },
+      "contract": { "blocks": ["TASKS.md"] },
+      "create": {
+        "ask": ["what", "owns", "acceptance"],
+        "id": "DEBT-{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": {
+              "Debt": "{id}",
+              "What": "{what}",
+              "Status": "todo",
+              "Verdict": "",
+              "Commit": ""
+            }
+          }
+        ],
+        "blocks": [
+          {
+            "file": "TASKS.md",
+            "under": "# Debt",
+            "text": "### {id} · {what}\n- **Owns:** {owns}\n- **Acceptance:** {acceptance}"
+          }
+        ]
+      }
+    },
+    "question": {
+      "label": "Question",
+      "note": "Something only the owner can answer. While open it holds the tasks it blocks.",
+      "at": { "table": "BOARD.md", "heading": "Questions" },
+      "id": { "column": "#" },
+      "fields": {
+        "question": { "column": "Question" },
+        "status": { "column": "Status" },
+        "blocks": { "column": "Blocks", "type": "list", "ref": "task" },
+        "answer": { "column": "Answer" }
+      },
+      "status": { "field": "status", "values": { "open": "active", "answered": "done" } },
+      "create": {
+        "ask": ["question", "blocks"],
+        "id": "Q{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": {
+              "#": "{id}",
+              "Question": "{question}",
+              "Status": "open",
+              "Blocks": "{blocks}",
+              "Answer": ""
+            }
+          }
+        ]
+      }
+    },
+    "decision": {
+      "label": "Decision",
+      "note": "One row per decision, numbered, never edited after the fact: a change is a new row.",
+      "at": { "table": "DECISIONS.md", "heading": "Decisions" },
+      "id": { "column": "#", "prefix": "D" },
+      "fields": {
+        "decision": { "column": "Decision" },
+        "why": { "column": "Why" },
+        "rejected": { "column": "Rejected alternatives" }
+      },
+      "create": {
+        "ask": ["decision", "why", "rejected"],
+        "id": "{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": {
+              "#": "{id}",
+              "Decision": "{decision}",
+              "Why": "{why}",
+              "Rejected alternatives": "{rejected}"
+            }
+          }
+        ]
+      }
+    },
+    "epic": {
+      "label": "Epic",
+      "note": "Optional. A theme that groups tasks across sprints; its status comes from its tasks.",
+      "at": { "table": "BOARD.md", "heading": "Epics" },
+      "id": { "column": "Epic" },
+      "fields": {
+        "name": { "column": "Name" },
+        "tasks": { "column": "Tasks", "type": "list", "ref": "task", "role": "children" }
+      },
+      "status": { "derived": "children" },
+      "create": {
+        "ask": ["name", "tasks"],
+        "id": "E{n}",
+        "rows": [
+          {
+            "in": "self",
+            "at": "end",
+            "cells": { "Epic": "{id}", "Name": "{name}", "Tasks": "{tasks}" }
+          }
+        ]
+      }
+    }
+  },
+  "rules": [
+    { "rule": "ids-unique" },
+    { "rule": "status-known" },
+    { "rule": "refs-resolve" },
+    { "rule": "deps-done", "kind": "task", "field": "deps" },
+    { "rule": "parent-active", "kind": "task" },
+    { "rule": "done-has-evidence", "kind": "task", "field": "commit", "evidence": "commit" },
+    { "rule": "done-has-handoff", "kind": "task", "section": "handoff", "commit": "first" },
+    { "rule": "closed-children", "kind": "sprint" },
+    { "rule": "done-signoff", "kind": "sprint", "field": "signoff" },
+    { "rule": "sequential", "kind": "sprint" },
+    { "rule": "question-blocks", "kind": "question", "field": "blocks" },
+    { "rule": "deps-not-forward", "kind": "task", "field": "deps" },
+    { "rule": "ready-has-contract", "kind": "task" },
+    { "rule": "done-has-evidence", "kind": "debt", "field": "commit", "evidence": "commit" }
+  ],
+  "status": { "now": "sprint", "note": ".agentry/NOTE.md", "prime": true, "lines": 12 }
+}

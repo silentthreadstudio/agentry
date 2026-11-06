@@ -15,10 +15,10 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PREVIEW, renderHelp, say } from "./help.mjs";
-import { applyVendor, planVendor, vendorVersion } from "./init-vendor.mjs";
 import { gitRootOf } from "../process/contract.mjs";
 import { mainRoot } from "../process/git.mjs";
+import { PREVIEW, renderHelp, say } from "./help.mjs";
+import { applyVendor, planVendor, vendorVersion } from "./init-vendor.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // <plugin>/scripts/lib/cli
 const HOSTS = ["opencode"];
@@ -33,7 +33,8 @@ const HELP = {
   flags: {
     "--host <host>": "the host (opencode; Claude Code keeps the /agentry:init command flow)",
     "--root <dir>": "the git root (default: the current directory's main checkout)",
-    "--src <dir>": "the payload source: a plugin dir (agents/ plus .claude-plugin/plugin.json); default: this plugin",
+    "--src <dir>":
+      "the payload source: a plugin dir (agents/ plus .claude-plugin/plugin.json); default: this plugin",
     "--vendor":
       "copy bin/agentry and the scripts its groups run into .agentry/, so the generated payload calls the copy",
     "--apply": "write: vendored copy, payload, trigger block, then agentry board check",
@@ -66,7 +67,8 @@ function parseFlags(argv) {
     if (seen.has(name)) return { err: say(WHAT, `"${name}" is given twice`, `${WHAT} --help`) };
     seen.add(name);
     if (switches.has(name)) {
-      if (value !== undefined) return { err: say(WHAT, `"${name}" takes no value`, `${WHAT} --help`) };
+      if (value !== undefined)
+        return { err: say(WHAT, `"${name}" takes no value`, `${WHAT} --help`) };
       got[name] = true;
       continue;
     }
@@ -107,19 +109,28 @@ function resolveSource(srcArg) {
     const src = resolve(srcArg);
     const plugin = isPluginLayout(src)
       ? src
-      : (existsSync(join(src, "plugin", ".claude-plugin", "plugin.json"))
+      : existsSync(join(src, "plugin", ".claude-plugin", "plugin.json"))
         ? join(src, "plugin")
-        : null);
+        : null;
     if (!plugin)
-      return { err: `no payload under ${src} (agents/ and .claude-plugin/plugin.json) with --src ${srcArg}` };
+      return {
+        err: `no payload under ${src} (agents/ and .claude-plugin/plugin.json) with --src ${srcArg}`,
+      };
     return { src: plugin, generator: generatorBeside(plugin) };
   }
   for (const dir of parents(HERE)) {
     const plugin = join(dir, "plugin");
-    if (existsSync(join(plugin, "agents")) && existsSync(join(plugin, ".claude-plugin", "plugin.json")))
+    // a repo checkout of the plugin, not any stray plugin directory: its repo's scripts/ holds the
+    // generator beside it, or source resolution moves on to the layout walk below
+    if (
+      existsSync(join(plugin, "agents")) &&
+      existsSync(join(plugin, ".claude-plugin", "plugin.json")) &&
+      existsSync(join(dir, "scripts", "build-opencode.mjs"))
+    )
       return { src: plugin, generator: join(dir, "scripts", "build-opencode.mjs") };
   }
-  for (const dir of parents(HERE)) if (isPluginLayout(dir)) return { src: dir, generator: generatorBeside(dir) };
+  for (const dir of parents(HERE))
+    if (isPluginLayout(dir)) return { src: dir, generator: generatorBeside(dir) };
   return { err: "no payload source (a vendored CLI copy carries none)" };
 }
 
@@ -127,7 +138,10 @@ function resolveSource(srcArg) {
 // subprocesses: every one is a whole CLI run, stdio piped, output kept
 
 const cmd = (script, args) =>
-  spawnSync(process.execPath, [script, ...args], { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
+  spawnSync(process.execPath, [script, ...args], {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
 
 const failText = (run) => `${run.stderr ?? ""}${run.stdout ?? ""}`.trim();
 
@@ -166,9 +180,19 @@ function filesOf(dir, base = "") {
 function plan(got, source, root) {
   const probe = mkdtempSync(join(tmpdir(), "agentry-init-"));
   try {
-    const gen = cmd(source.generator, ["--out", probe, "--src", source.src, ...(got["--vendor"] ? ["--vendor"] : [])]);
+    const gen = cmd(source.generator, [
+      "--out",
+      probe,
+      "--src",
+      source.src,
+      ...(got["--vendor"] ? ["--vendor"] : []),
+    ]);
     if (gen.status !== 0)
-      return { blocked: true, status: gen.status ?? 2, why: failText(gen) || `exited ${gen.status ?? "?"}` };
+      return {
+        blocked: true,
+        status: gen.status ?? 2,
+        why: failText(gen) || `exited ${gen.status ?? "?"}`,
+      };
     // the payload: the probe's files against the target's, one change or kept; opencode.jsonc and the
     // root AGENTS.md are the owner's once born, written only when missing
     const payload = { changes: [], kept: 0 };
@@ -184,7 +208,12 @@ function plan(got, source, root) {
       } catch {
         current = null;
       }
-      const write = current === null ? "new" : bytes === null || current.compare(bytes) !== 0 ? "rewrite" : null;
+      const write =
+        current === null
+          ? "new"
+          : bytes === null || current.compare(bytes) !== 0
+            ? "rewrite"
+            : null;
       if (write) payload.changes.push({ path: `.opencode/${rel}`, write });
       else payload.kept++;
     }
@@ -247,7 +276,8 @@ function text(state) {
       ? `  payload: in sync (${payload.kept} kept) → .opencode/`
       : `  payload: ${payload.changes.length} change${payload.changes.length === 1 ? "" : "s"} ${apply ? "written" : "(would write)"} (${payload.kept} kept) → .opencode/`,
   );
-  for (const { path, write } of payload.changes) lines.push(`      ${MARK[write] ?? write} ${path}`);
+  for (const { path, write } of payload.changes)
+    lines.push(`      ${MARK[write] ?? write} ${path}`);
   const vendored = state.vendored;
   if (vendored?.enabled) {
     lines.push(
@@ -255,10 +285,14 @@ function text(state) {
         ? `  vendor: ${vendored.changed.length} file${vendored.changed.length === 1 ? "" : "s"} → ${VENDOR_HOME}/bin/agentry, ${VENDOR_HOME}/scripts/ (stamp ${vendored.version}, ${apply ? "copied" : "would copy"})`
         : `  vendor: in sync (stamp ${vendored.version})`,
     );
-    for (const { path, write } of vendored.changed) lines.push(`      ${MARK[write] ?? write} ${path}`);
+    for (const { path, write } of vendored.changed)
+      lines.push(`      ${MARK[write] ?? write} ${path}`);
   }
   if (state.trigger?.data?.lines?.length)
-    lines.push("  trigger block:", ...state.trigger.data.lines.filter((l) => l !== PREVIEW).map((l) => `      ${l}`));
+    lines.push(
+      "  trigger block:",
+      ...state.trigger.data.lines.filter((l) => l !== PREVIEW).map((l) => `      ${l}`),
+    );
   else lines.push("  trigger block: nothing printed by the instructions verb");
   if (state.check) {
     const said = failText(state.check) || `exited ${state.check.status ?? "?"}`;
@@ -285,7 +319,9 @@ function json(state) {
     payload: state.payload,
     vendored: state.vendored,
     trigger: state.trigger?.data ?? { exit: state.trigger?.exit ?? 2 },
-    ...(state.check ? { check: { exit: state.check.status ?? 1, ok: state.check.status === 0 } } : {}),
+    ...(state.check
+      ? { check: { exit: state.check.status ?? 1, ok: state.check.status === 0 } }
+      : {}),
     exit: state.check ? (state.check.status === 0 ? 0 : 1) : 0,
   });
 }
@@ -303,7 +339,8 @@ export async function main(argv = process.argv.slice(2)) {
   const { got, err } = parseFlags(argv);
   if (err) return out(2, err);
   const host = got["--host"] ?? HOSTS[0];
-  if (!HOSTS.includes(host)) return out(2, say(WHAT, `host "${host}" unknown`, `${WHAT} --host ${HOSTS[0]}`));
+  if (!HOSTS.includes(host))
+    return out(2, say(WHAT, `host "${host}" unknown`, `${WHAT} --host ${HOSTS[0]}`));
   const root = got["--root"]
     ? resolve(got["--root"])
     : (mainRoot(process.cwd()) ?? gitRootOf(process.cwd()) ?? process.cwd());
@@ -317,17 +354,24 @@ export async function main(argv = process.argv.slice(2)) {
   const apply = got["--apply"] === true;
   const state = plan(got, source, root);
   if (state.blocked)
-    return out(state.status === 2 ? 2 : 1, `✗ init: the payload generator refused: ${state.why} → node ${source.generator} --help`);
+    return out(
+      state.status === 2 ? 2 : 1,
+      `✗ init: the payload generator refused: ${state.why.split("\n")[0]} → node ${source.generator} --help`,
+    );
   // A refusal of the trigger block ends the run before a file is written: the instructions verb and its
   // writers are all-or-nothing, so this stays as clean as the caller's tree was.
   if (state.trigger.exit >= 2) {
-    const why = state.trigger.data?.lines?.join("; ") || failText(state.trigger) || `exited ${state.trigger.exit}`;
+    const why =
+      state.trigger.data?.lines?.join("; ") ||
+      failText(state.trigger) ||
+      `exited ${state.trigger.exit}`;
     return out(2, say(WHAT, `the trigger block refused: ${why}`, "/agentry:init"));
   }
   Object.assign(state, { host, root, src: source.src, apply });
   if (!apply) return out(0, got["--json"] ? json(state) : text(state));
   // --apply, in order: the vendored copy first (the generated text then calls it), the payload, the
-  // trigger block (run above with --apply), the check — whose findings keep the write.
+  // trigger block (planned above; written below by the verb that owns it), the check — whose findings
+  // keep the write.
   let vendored = state.vendored;
   if (vendored.drift) {
     vendored = vendoredState(applyVendor(root, source.src));
@@ -336,18 +380,41 @@ export async function main(argv = process.argv.slice(2)) {
     const bin = join(root, ".agentry", "bin", "agentry");
     const said = cmd(bin, ["--version"]).stdout?.trim();
     if (said !== (vendored.version ?? ""))
-      return out(1, say(WHAT, `the vendored CLI did not run (no ${vendored.version} from --version)`, `node ${bin} --version`));
+      return out(
+        1,
+        say(
+          WHAT,
+          `the vendored CLI did not run (no ${vendored.version} from --version)`,
+          `node ${bin} --version`,
+        ),
+      );
   }
   if (state.payload.changes.length) {
-    const gen = cmd(source.generator, ["--out", root, "--src", source.src, ...(got["--vendor"] ? ["--vendor"] : [])]);
+    const gen = cmd(source.generator, [
+      "--out",
+      root,
+      "--src",
+      source.src,
+      ...(got["--vendor"] ? ["--vendor"] : []),
+    ]);
     if (gen.status !== 0)
-      return out(2, `✗ init: the payload generator refused: ${failText(gen) || `exited ${gen.status}`} → node ${source.generator} --help`);
+      return out(
+        2,
+        `✗ init: the payload generator refused: ${failText(gen).split("\n")[0] || `exited ${gen.status}`} → node ${source.generator} --help`,
+      );
   }
-  // the trigger block, through the verb that owns it: the plan above already showed its refusal, this
-  // one writes
+  // the trigger block, through the verb that owns it: the plan above already showed its refusal
+  // without writing, this one writes
   const trigger = runInstructions(source, root, true);
   if (trigger.exit >= 2)
-    return out(2, say(WHAT, `the trigger block refused: ${(trigger.data?.lines?.join("; ") || failText(trigger) || `exited ${trigger.exit}`)}`, "/agentry:init"));
+    return out(
+      2,
+      say(
+        WHAT,
+        `the trigger block refused: ${trigger.data?.lines?.join("; ") || failText(trigger) || `exited ${trigger.exit}`}`,
+        "/agentry:init",
+      ),
+    );
   const check = cmd(join(source.src, "scripts", "board.mjs"), ["check", "--root", root]);
   const final = { ...state, check, vendored, trigger, apply: true };
   return out(check.status === 0 ? 0 : 1, got["--json"] ? json(final) : text(final));
