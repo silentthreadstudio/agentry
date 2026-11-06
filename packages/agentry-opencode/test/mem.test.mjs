@@ -73,25 +73,69 @@ const firstFactFile = (factsDir) =>
 const normalize = (text) =>
   text.replace(/g:[0-9A-Z]{26}/g, "<ID>").replace(/\d{4}-\d{2}-\d{2}T[\d:.]{8,}Z?/g, "<TIME>");
 
-test("all four tools route through runVerb; none imports the router privately", async () => {
-  for (const source of ["lane.mjs", "mem.mjs"]) {
-    const text = readFileSync(join(HERE, "..", "src", "tools", source), "utf8");
-    const calls = text.match(/runVerb\("(\w+)"/g) ?? [];
-    assert.ok(calls.length >= 2, `${source}: both of its tools call runVerb`);
-    assert.doesNotMatch(text, /vendor\/scripts\/lib\/cli\/router/, `${source}: no private route`);
+test("board and lane route through runVerb; mem spawns the vendored cli and imports no router", async () => {
+  const lane = readFileSync(join(HERE, "..", "src", "tools", "lane.mjs"), "utf8");
+  assert.ok(
+    (lane.match(/runVerb\("(\w+)"/g) ?? []).length >= 2,
+    "lane: both of its tools call runVerb",
+  );
+  assert.doesNotMatch(lane, /vendor\/scripts\/lib\/cli\/router/, "lane: no private route");
+  const mem = readFileSync(join(HERE, "..", "src", "tools", "mem.mjs"), "utf8");
+  assert.ok(
+    mem.includes("spawnSync"),
+    "mem: the survived-ghost store resolution spawns the vendor cli",
+  );
+  assert.doesNotMatch(mem, /vendor\/scripts\/lib\/cli\/router/, "mem: no private route");
+  assert.match(mem, /CLAUDE_PROJECT_DIR: root/, "mem: the spawned env names the store's root");
+});
+
+test("root is where the CLI runs and where the store resolves for the call: the description says both", () => {
+  const description = (tool) => tool.input.properties.root.description;
+  for (const tool of [memRead, memWrite]) {
+    assert.match(
+      description(tool),
+      /defaults to the location that loaded this plugin\./,
+      tool.name,
+    );
+    assert.match(description(tool), /the CLI resolves this session.s store under it/, tool.name);
+    assert.match(description(tool), /never the service process's\.$/, tool.name);
   }
 });
 
-test("root is where the CLI runs, never where the store relocates: the description says the resolution", () => {
-  const description = (tool) => tool.input.properties.root.description;
-  for (const tool of [memRead, memWrite]) {
-    assert.match(description(tool), /defaults to the current directory\./, tool.name);
-    assert.match(
-      description(tool),
-      /resolves from the environment, then the current git root, then the global location/,
-      tool.name,
+test("a write with the root set lands in that root's own store, not the running repo's", async () => {
+  const root = fresh(); // the workspace the plugin was loaded from (what setup binds as the default)
+  const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+  try {
+    for (const k of ENV_KEYS) delete process.env[k]; // the CLI resolves the store from the explicit root, never the env
+    const out = await memWrite.execute(
+      {
+        verb: "write",
+        words: [
+          "--type",
+          "learning",
+          "--scope",
+          "repo",
+          "--subject",
+          "q4 store",
+          "--text",
+          "the store resolves under the tool's root",
+        ],
+        root,
+      },
+      { sessionID: "ses_t", messageID: "msg_t", id: "prt_t" },
     );
-    assert.match(description(tool), /this parameter does not relocate it\.$/, tool.name);
+    assert.match(out.content[0].text, /id:/);
+    const dir = join(root, ".agentry", "memory", "facts");
+    const saw = existsSync(dir) ? readdirSync(dir) : [];
+    assert.ok(
+      saw.some((f) => f.includes("the-store-resolves")),
+      `expected the fact under ${dir}, saw: ${saw.join(", ")}, cwd=${process.cwd()}, env=${JSON.stringify(process.env.AGENTRY_PROJECT_DIR)}`,
+    );
+  } finally {
+    for (const [k, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[k];
+      else process.env[k] = value;
+    }
   }
 });
 

@@ -23,7 +23,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { writeSpec } from "../../../plugin/scripts/test/spec-files.mjs";
-import { Plugin } from "../index.js";
+import { NAMESPACE, NAMESPACE_DESCRIPTION, Plugin } from "../index.js";
 import { laneDrive, laneRead } from "../src/tools/lane.mjs";
 import { fixtureCleanup, git, gitEnv, mkBoard } from "./fixture.mjs";
 
@@ -204,7 +204,19 @@ const normSnap = (root) =>
 
 test("setup registers the lane pair beside the board and mem pairs, namespaced, typed reads", async () => {
   const added = [];
-  await Plugin.setup({ tool: { transform: { editor: { add: (tool) => added.push(tool) } } } });
+  const namespaced = [];
+  await Plugin.setup({
+    tool: {
+      transform: async (register) => {
+        const editor = {
+          namespace: (ns) => namespaced.push(ns),
+          add: (tool) => added.push(tool),
+        };
+        await register(editor);
+      },
+    },
+  });
+  assert.deepEqual(namespaced, [{ name: "agentry", description: NAMESPACE_DESCRIPTION }]);
   assert.deepEqual(
     added.map(({ name }) => name),
     [
@@ -216,7 +228,10 @@ test("setup registers the lane pair beside the board and mem pairs, namespaced, 
       "agentry_mem_write",
     ],
   );
-  for (const tool of added) assert.deepEqual(tool.options, { namespace: "agentry" });
+  for (const tool of added) {
+    assert.equal(tool.options.namespace, NAMESPACE);
+    assert.equal(tool.options.codemode, true);
+  }
   assert.deepEqual(added[2].input.properties.verb.enum, ["session", "sweep", "show"]);
   assert.deepEqual(added[3].input.properties.verb.enum, [
     "exec",

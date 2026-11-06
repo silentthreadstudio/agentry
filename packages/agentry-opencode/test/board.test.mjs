@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { Plugin } from "../index.js";
+import { NAMESPACE, NAMESPACE_DESCRIPTION, Plugin } from "../index.js";
 import { boardRead, boardWrite } from "../src/tools/board.mjs";
 import { fixtureCleanup, mkBoard, snapshot } from "./fixture.mjs";
 
@@ -19,7 +19,19 @@ after(fixtureCleanup);
 
 test("setup registers exactly the six tools through the editor, namespaced, typed reads", async () => {
   const added = [];
-  await Plugin.setup({ tool: { transform: { editor: { add: (tool) => added.push(tool) } } } });
+  const namespaced = [];
+  await Plugin.setup({
+    tool: {
+      transform: async (register) => {
+        const editor = {
+          namespace: (ns) => namespaced.push(ns),
+          add: (tool) => added.push(tool),
+        };
+        await register(editor);
+      },
+    },
+  });
+  assert.deepEqual(namespaced, [{ name: "agentry", description: NAMESPACE_DESCRIPTION }]);
   assert.deepEqual(
     added.map(({ name }) => name),
     [
@@ -31,7 +43,10 @@ test("setup registers exactly the six tools through the editor, namespaced, type
       "agentry_mem_write",
     ],
   );
-  for (const tool of added) assert.deepEqual(tool.options, { namespace: "agentry" });
+  for (const tool of added) {
+    assert.equal(tool.options.namespace, "agentry");
+    assert.equal(tool.options.codemode, true);
+  }
   assert.deepEqual(added[0].input.properties.verb.enum, [
     "status",
     "check",
@@ -46,26 +61,46 @@ test("setup registers exactly the six tools through the editor, namespaced, type
   assert.deepEqual(added[1].input.properties.verb.enum, ["add", "set", "fix", "draft"]);
 });
 
-test("the older host shapes register through the fallbacks; nothing matching registers nothing", async () => {
-  const names = [];
-  await Plugin.setup({ tool: { transform: (tool) => names.push(tool.name) } });
-  await Plugin.setup({ tool: (tool) => names.push(tool.name) });
-  assert.deepEqual(names, [
-    "agentry_board",
-    "agentry_board_write",
-    "agentry_lane",
-    "agentry_lane_drive",
-    "agentry_mem",
-    "agentry_mem_write",
-    "agentry_board",
-    "agentry_board_write",
-    "agentry_lane",
-    "agentry_lane_drive",
-    "agentry_mem",
-    "agentry_mem_write",
-  ]);
+test("a host with the permission domain: the three write tools assert their own action, reads assert nothing", async () => {
+  const added = [];
+  const asserted = [];
+  await Plugin.setup({
+    tool: {
+      transform: async (register) => {
+        const editor = {
+          namespace: () => {},
+          add: (tool) => added.push(tool),
+        };
+        await register(editor);
+      },
+    },
+    permission: {
+      assert: async (call) => asserted.push(call),
+    },
+  });
+  const call = { sessionID: "ses_t", messageID: "msg_t", id: "prt_t" };
+  await added[1].execute({ verb: "draft", words: ["list"] }, call); // agentry_board_write
+  await added[0].execute({ verb: "status" }, call); // agentry_board (read)
+  await added[3].execute({ verb: "sweep", words: [] }, call); // agentry_lane_drive, plan only
+  assert.deepEqual(
+    asserted.map(({ action, resources }) => [action, resources]),
+    [
+      ["agentry_board_write", ["*"]],
+      ["agentry_lane_drive", ["*"]],
+    ],
+  );
+  for (const call of asserted) {
+    assert.equal(call.sessionID, "ses_t");
+    assert.deepEqual(call.source, { type: "tool", messageID: "msg_t", id: "prt_t" });
+  }
+});
+
+test("a host whose transform is not a function registers nothing", async () => {
+  const calls = 0;
   await Plugin.setup({});
+  await Plugin.setup({ tool: {} });
   await Plugin.setup({ tool: { transform: {} } });
+  assert.equal(calls, 0);
 });
 
 test("status returns the board's own lines as content", async () => {

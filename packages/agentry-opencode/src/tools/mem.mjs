@@ -1,10 +1,22 @@
-// mem — the memory group as two native tools over the shared seam (`src/run.mjs`): reads are typed —
-// `query` and `limit` — because recall and search are the hot path and the CLI's own parser still
-// validates every value; writes pass whole flags and arguments through as `words`, each one whole
-// token, so the CLI's grammar (write's fields, update's, feedback's) never forks. `agentry_mem` never
-// writes; `agentry_mem_write` refuses nothing itself — the CLI's exit 1 and exit 2 travel through the
-// seam as content and denials. Node built-ins only.
-import { runVerb } from "../run.mjs";
+// mem — the memory group as two native tools. Unlike board and lane (which run through the shared
+// in-process seam), these run the vendored CLI as a child process: the store resolution reads the
+// process environment, and the one experience this runtime gave the in-process route is that env
+// writes from our own side do not reach the CLI chain (measured four separate ways on this branch).
+// A spawned child gets the store's root as the CLI's own first-resolution env variable, so every
+// read and write lands in this session's repo store, never the service process's. Node built-ins
+// only.
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const MEM = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "vendor",
+  "scripts",
+  "mem.mjs",
+);
 
 const READ_VERBS = ["recall", "search", "stats"];
 const WRITE_VERBS = ["write", "update", "forget", "feedback", "episode"];
@@ -12,7 +24,7 @@ const WRITE_VERBS = ["write", "update", "forget", "feedback", "episode"];
 const ROOT_PARAM = {
   type: "string",
   description:
-    "Absolute path of the repository to run against; defaults to the current directory. The memory store itself resolves from the environment, then the current git root, then the global location — this parameter does not relocate it.",
+    "Absolute path of the repository to run against; defaults to the location that loaded this plugin. For the memory group this root is also the store root: the CLI resolves this session's store under it, so a session works on its own repo's store and never the service process's.",
 };
 
 const WORDS_PARAM = {
@@ -21,6 +33,33 @@ const WORDS_PARAM = {
   description:
     "The CLI's own grammar for the verb: each member one whole flag or argument (never a shell line), e.g. write --type <t> --scope <s> --text <t>.",
 };
+
+// The spawned CLI's env: the store root as the CLI's own first-resolution variable (both spellings
+// the resolvers read), everything else inherited. cwd stays the caller's — with both variables set
+// the cwd names no store.
+function memEnv(root) {
+  return { ...process.env, CLAUDE_PROJECT_DIR: root, AGENTRY_PROJECT_DIR: root };
+}
+
+/** Run the vendored `mem` CLI on `argv` with the store env above; map the exits like the seam does:
+ *  0 → the CLI's stdout alone (its stderr carries runtime notices only), 1 → findings as content
+ *  (stdout; stderr fills in when stdout is empty), 2 → throw its refusal verbatim (the host renders
+ *  a tool error), anything else → the same shape carrying the cause. */
+function memRun(argv, root, context) {
+  const spawned = spawnSync(process.execPath, [MEM, ...argv], {
+    encoding: "utf8",
+    env: memEnv(root),
+    signal: context?.signal,
+  });
+  if (spawned.error)
+    throw new Error(`✗ agentry_mem: ${spawned.error.message}`, { cause: spawned.error });
+  const stdout = (spawned.stdout ?? "").trim();
+  const stderr = (spawned.stderr ?? "").trim();
+  if (spawned.status === 0) return { content: [{ type: "text", text: stdout }] };
+  if (spawned.status === 1)
+    return { content: [{ type: "text", text: stdout || stderr || "(no output)" }] };
+  throw new Error(stderr || stdout);
+}
 
 export const memRead = {
   name: "agentry_mem",
@@ -45,13 +84,13 @@ export const memRead = {
       root: ROOT_PARAM,
     },
   },
-  async execute(input) {
+  async execute(input, context) {
     const { verb, query, limit, json, root } = input ?? {};
-    if (verb === "stats") return runVerb("mem", ["stats"], { root, json });
-    const words = [verb];
-    if (query !== undefined) words.push("--query", query);
-    if (limit !== undefined) words.push("--limit", String(limit));
-    return runVerb("mem", words, { root, json });
+    const argv = [verb];
+    if (query !== undefined) argv.push("--query", query);
+    if (limit !== undefined) argv.push("--limit", String(limit));
+    if (json) argv.push("--json");
+    return memRun(argv, root, context);
   },
 };
 
@@ -70,8 +109,8 @@ export const memWrite = {
       root: ROOT_PARAM,
     },
   },
-  async execute(input) {
+  async execute(input, context) {
     const { verb, words = [], root } = input ?? {};
-    return runVerb("mem", [verb, ...words], { root });
+    return memRun([verb, ...words], root, context);
   },
 };
