@@ -413,7 +413,7 @@ export const rewordSection = (lines) =>
   [
     "## Subjects to reword",
     "",
-    "Each of these commits has a subject over the limit. Run its line with a new subject, then report again:",
+    "Each of these commits has a subject over the limit. Run the lines in the order given (newest first, so each older commit's sha is still right), each with a new subject, then report again:",
     "",
     lines,
     "",

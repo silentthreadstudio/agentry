@@ -110,7 +110,7 @@ test("with no commits rules, report names a subject over 72 with its line, and t
   assert.equal(res.json.next, "verify", "no rule, no refusal");
   assert.equal(
     res.json.rewords,
-    `commit ${sha.slice(0, 7)} "${LONG}" is 86 chars, over the 72 limit → ${rewordLine({ worktree: out.worktree, branch: "agentry/T1", sha, tip: sha, limit: 72 })}`,
+    `run in this order, newest first:\ncommit ${sha.slice(0, 7)} "${LONG}" is 86 chars, over the 72 limit → ${rewordLine({ worktree: out.worktree, branch: "agentry/T1", sha, tip: sha, limit: 72 })}`,
   );
 });
 
@@ -143,7 +143,7 @@ test("with commits.subjectMax set the refused report's fix brief carries the lin
     tip: git(out.worktree, "rev-parse", "HEAD"),
     limit: 30,
   });
-  const expected = `commit ${sha.slice(0, 7)} "${long}" is 46 chars, over the 30 limit → ${line}`;
+  const expected = `run in this order, newest first:\ncommit ${sha.slice(0, 7)} "${long}" is 46 chars, over the 30 limit → ${line}`;
   assert.equal(res.json.rewords, expected);
   const brief = readFileSync(res.json.brief, "utf8");
   assert.ok(brief.includes("## Subjects to reword\n\n"), brief);
@@ -192,4 +192,40 @@ test("the line for the tip amends it; the line for an earlier commit rewords it 
     0,
   );
   assert.equal(subjectsOf(wt).at(-1), "feat: add four.txt");
+});
+
+test("two earlier commits and the tip over the limit: the printed lines, run in order, fix every subject", () => {
+  const r = repo();
+  const out = lane(r, "start", "T1").json;
+  const wt = out.worktree;
+  commitFile(wt, "one.txt", "1\n", `feat: ${"a".repeat(80)}`);
+  commitFile(wt, "two.txt", "2\n", "feat: add two.txt");
+  commitFile(wt, "three.txt", "3\n", `feat: ${"b".repeat(80)}`);
+  commitFile(wt, "four.txt", "4\n", `feat: ${"c".repeat(80)}`);
+  writeFileSync(out.reportPath, "DONE\nok\nused_memories: none\n");
+  const tree = git(wt, "rev-parse", "HEAD^{tree}");
+  const res = lane(r, "report", "T1");
+  assert.equal(res.exit, 0, res.stderr);
+  const [head, ...lines] = res.json.rewords.split("\n");
+  assert.equal(head, "run in this order, newest first:");
+  assert.equal(lines.length, 3);
+  // Newest first: the tip's amend comes first.
+  assert.match(lines[0], /^commit \w{7} "feat: c+" .* → cd .* && git commit --amend -m /);
+  assert.match(lines[1], /"feat: b+"/);
+  assert.match(lines[2], /"feat: a+"/);
+  const names = ["feat: add four.txt", "feat: add three.txt", "feat: add one.txt"];
+  lines.forEach((line, i) => {
+    const cmd = line.slice(line.indexOf(" → ") + 3).replace(/<new subject[^>]*>/, names[i]);
+    const done = run(cmd);
+    assert.equal(done.status, 0, done.stderr);
+  });
+  assert.deepEqual(subjectsOf(wt), [
+    "feat: add one.txt",
+    "feat: add two.txt",
+    "feat: add three.txt",
+    "feat: add four.txt",
+  ]);
+  assert.equal(git(wt, "rev-parse", "HEAD^{tree}"), tree, "the tree is unchanged");
+  assert.equal(git(wt, "rev-parse", "--abbrev-ref", "HEAD"), "agentry/T1");
+  assert.equal(git(wt, "status", "--porcelain"), "");
 });

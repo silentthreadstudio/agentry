@@ -33,11 +33,14 @@ export function rewordLine({ worktree, branch, sha, tip, limit }) {
     : `${cd} && git checkout -q --detach ${sha} && ${amend} && git rebase --onto HEAD ${sha} ${branch}`;
 }
 
-/** What to print for the commits `over` (from `overLimit`) of the lane's `ledger` at `tip`: one line each,
- *  at most `LISTED`, then `+n`. "" when none is over. */
+/** What to print for the commits `over` (from `overLimit`, oldest first) of the lane's `ledger` at `tip`:
+ *  one line each, newest first, at most `LISTED`, then `+n` for the older ones left out. Run in that order:
+ *  rewording a commit rewrites only the ones after it, so each older commit's sha is still the one its
+ *  line names. "" when none is over. */
 export function rewordsText(spec, ledger, tip, over) {
   const limit = subjectLimit(spec);
-  const lines = over.slice(0, LISTED).map((c) => {
+  const newest = [...over].reverse();
+  const lines = newest.slice(0, LISTED).map((c) => {
     const line = rewordLine({
       worktree: ledger.worktree,
       branch: ledger.branch,
@@ -47,6 +50,6 @@ export function rewordsText(spec, ledger, tip, over) {
     });
     return `commit ${short(c.sha)} "${c.subject}" is ${c.chars} chars, over the ${limit} limit → ${line}`;
   });
-  if (over.length > LISTED) lines.push(`+${over.length - LISTED}`);
-  return lines.join("\n");
+  if (newest.length > LISTED) lines.push(`+${newest.length - LISTED}`);
+  return lines.length ? `run in this order, newest first:\n${lines.join("\n")}` : "";
 }
