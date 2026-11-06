@@ -47,13 +47,18 @@ Work on one package with `pnpm --filter @agentry/eval <script>`; the plugin's sc
   real subsystem.
 - **Capability-first agents** — no `tools:` allowlists in agent frontmatter.
 - **No shipped `node_modules`** — the plugin's scripts use Node built-ins only (`node:sqlite` for memory).
+- **Dual host: one engine.** `plugin/` is the source of truth for logic, process and prose; both Claude
+  Code and OpenCode V2 run it. Host differences live only in `scripts/build-opencode.mjs` (generated
+  `.opencode/` payload: frontmatter shapes, tool names, paths). Never hand-edit `.opencode/`, never fork
+  logic per host — edit `plugin/`, regenerate. The gate fails when the payload is out of sync, so an
+  edit that reached one host and not the other cannot be committed.
 
 ## Standing rules (CI enforces these)
 
 - **Run `node scripts/check-plugin.mjs` (`pnpm check`) before every commit** — it catches namespacing +
-  structure drift.
-- **Reload-gated** — agent/command/skill changes register only on a Claude Code reload/restart;
-  verify live after a restart.
+  structure drift **and OpenCode payload sync**.
+- **Reload-gated** — agent/command/skill changes register only on a Claude Code reload/restart
+  (OpenCode V2 hot-reloads the generated `.opencode/` payload on save); verify live after a restart.
 - All packages must `typecheck`, `test` and `lint` green; CI runs the gate and the packages on every push/PR.
 
 ## Commits

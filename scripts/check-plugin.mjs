@@ -281,6 +281,20 @@ for (const p of publishing) err(p);
 if (!publishing.length)
   ok("agents cannot publish", "each specialist denies Artifact, ArtifactComments and ArtifactData");
 
+// The OpenCode adapter payload must be in sync with plugin/ (one engine, generated per host).
+// A stale payload means an edit only reached Claude Code — the dual-host rule's own check.
+try {
+  execFileSync(process.execPath, [join(ROOT, "scripts", "build-opencode.mjs"), "--check"], {
+    cwd: ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
+  ok("opencode payload in sync", "generated from plugin/, zero drift");
+} catch (run) {
+  const out = `${run.stdout ?? ""}${run.stderr ?? ""}`.trim().split("\n").slice(1);
+  err(`opencode payload out of sync → node scripts/build-opencode.mjs${out.length ? `\n         ${out.join("\n         ")}` : ""}`);
+}
+
 // Report
 const pad = Math.max(0, ...checks.map((c) => c.name.length));
 console.log(bold("\n  Agentry plugin gate"));

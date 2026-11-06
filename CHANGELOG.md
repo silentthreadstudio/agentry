@@ -6,6 +6,20 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+### Added
+
+- **OpenCode V2 as a second host (adapter, not a fork).** `scripts/build-opencode.mjs` generates a
+  `.opencode/` payload from `plugin/` — 9 agents (nested under `agentry/`, so ids read
+  `agentry/implementer`), 22 commands under `/agentry/…` (path-style names, since OpenCode has no
+  colon prefix), 15 skills — and writes `.opencode/opencode.jsonc` (`default_agent: agentry/conductor`,
+  `external_directory` asks) and a root `AGENTS.md` trigger block, each only when the target lacks one.
+  Host tokens are rewritten at generation (`${CLAUDE_PLUGIN_ROOT}` fallback → `plugin/bin/agentry`,
+  `/agentry:*` → `/agentry/*`, `AskUserQuestion` → `question`, `model: inherit` → unset, colours to
+  hex). `plugin/` stays the single source of truth: never edit `.opencode/` by hand.
+- **The gate enforces dual-host sync.** `check-plugin.mjs` runs the generator with `--check` and fails
+  when the OpenCode payload is out of sync with `plugin/` — an edit that reached one host and not the
+  other cannot be committed. CONTRIBUTING.md states the rule.
+
 ### Changed
 
 - **`merge` docs: a debt writes no handoff only as a kind declared in `exec.kinds`.** A debt kept as a task on
