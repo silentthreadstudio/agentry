@@ -3,6 +3,8 @@
 // the host; the registration contract is sniffed at setup so an unfamiliar shape registers nothing
 // instead of breaking the service. The lane and mem groups register with their own slice.
 import { boardRead, boardWrite } from "./src/tools/board.mjs";
+import { laneDrive, laneRead } from "./src/tools/lane.mjs";
+import { memRead, memWrite } from "./src/tools/mem.mjs";
 
 // The tool-add call to use, from the shapes the host is documented to offer, deepest first: the
 // tool domain's transform may already carry the editor, or be the call itself, or the tool domain
@@ -21,6 +23,7 @@ export const Plugin = {
   async setup(ctx) {
     const add = toolsApi(ctx);
     if (!add) return;
-    for (const registration of [boardRead, boardWrite]) await add(registration);
+    for (const registration of [boardRead, boardWrite, laneRead, laneDrive, memRead, memWrite])
+      await add(registration);
   },
 };

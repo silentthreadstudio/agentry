@@ -17,12 +17,19 @@ const SAY = await import(new URL("../vendor/scripts/lib/cli/help.mjs", import.me
 
 after(fixtureCleanup);
 
-test("setup registers exactly the board pair through the editor, namespaced, typed reads", async () => {
+test("setup registers exactly the six tools through the editor, namespaced, typed reads", async () => {
   const added = [];
   await Plugin.setup({ tool: { transform: { editor: { add: (tool) => added.push(tool) } } } });
   assert.deepEqual(
     added.map(({ name }) => name),
-    ["agentry_board", "agentry_board_write"],
+    [
+      "agentry_board",
+      "agentry_board_write",
+      "agentry_lane",
+      "agentry_lane_drive",
+      "agentry_mem",
+      "agentry_mem_write",
+    ],
   );
   for (const tool of added) assert.deepEqual(tool.options, { namespace: "agentry" });
   assert.deepEqual(added[0].input.properties.verb.enum, [
@@ -45,8 +52,16 @@ test("the older host shapes register through the fallbacks; nothing matching reg
   assert.deepEqual(names, [
     "agentry_board",
     "agentry_board_write",
+    "agentry_lane",
+    "agentry_lane_drive",
+    "agentry_mem",
+    "agentry_mem_write",
     "agentry_board",
     "agentry_board_write",
+    "agentry_lane",
+    "agentry_lane_drive",
+    "agentry_mem",
+    "agentry_mem_write",
   ]);
   await Plugin.setup({});
   await Plugin.setup({ tool: { transform: {} } });
