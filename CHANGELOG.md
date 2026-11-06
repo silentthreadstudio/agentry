@@ -19,6 +19,42 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - **The gate enforces dual-host sync.** `check-plugin.mjs` runs the generator with `--check` and fails
   when the OpenCode payload is out of sync with `plugin/` — an edit that reached one host and not the
   other cannot be committed. CONTRIBUTING.md states the rule.
+- **`agentry init --host opencode` writes the payload for a client repo** — from either the dev layout
+  (a `plugin/` sibling) or an installed plugin (it walks up to the `.claude-plugin` manifest) via
+  `--src`; previews by default and writes with `--apply` (exit 0 ok / 1 findings·stopped / 2 refused);
+  refuses cleanly when the repo has no learned process yet (`/agentry/init` first); a second `--apply`
+  reports zero drift. Atomic: nothing is written when a step refuses.
+- **`--vendor` copies the whole CLI, not just the checker** (A25's mechanism generalized): `bin/agentry`,
+  the four top scripts, `scripts/lib/**`, the process templates and the lane brief templates go to
+  `.agentry/` with a one-line version stamp; the generated commands then call the vendored bin, and
+  `board explain` warns when the stamp is behind the running plugin
+  (`vendored CLI: <stamp> (plugin: <current>, newer) → agentry init --host opencode --vendor --apply`).
+  `lane session start` prints the same advisory when the stamp differs, so the reminder finds the user.
+- **Generated markers moved into the OpenCode frontmatter** (v2's parser reads the first block; a marker
+  comment above it broke command parsing and leaked the header into the prompt). One YAML comment line
+  per generated file, never model-visible.
+- **The memory index degrades to a pure-JS token scan where `node:sqlite` is missing** (second runtimes;
+  the relevance rule is the module's own fallback scan — one rule, never a fork) and says so once on
+  stderr, in the existing `[mem]` notice shape. `agentry mem` verified under Bun 1.3.13 and Node 24.
+
+### Added (OpenCode Tier 2, A62)
+
+- **`agentry-opencode` — the native-tools plugin for OpenCode V2** (npm name reserved; publish owner-gated):
+  six tools over the vendored CLI core — `agentry_board` (typed reads), `agentry_lane` (reads),
+  `agentry_mem` (typed reads on the store), plus `agentry_board_write`, `agentry_lane_drive`,
+  `agentry_mem_write` for mutations through the CLI's own grammar (`words[]` whole tokens; the CLI stays
+  the one strict validator, A26). Every Tier-2 feature keeps its Tier-1 fallback (A59): the shipped tarball
+  carries `vendor/bin/agentry`, so the shell path works in a repo that never installed anything.
+- **Lane safety becomes enforceable, not prose (A60 made real).** The write tools assert their own id via
+  `ctx.permission.assert`, so project rules deny or ask for them by name —
+  `{ "action": "agentry_mem_write", "resource": "*", "effect": "deny" }` refused a write before the CLI ran.
+  The generated preset ships `external_directory: ask` and `default_agent: agentry/conductor`.
+- **The store is the session's repo, not the server's cwd.** A plugin runs inside OpenCode's server whose
+  cwd is not the workspace (measured: `$HOME`); the mem tools spawn the vendored CLI with the workspace as
+  the CLI's own store root, so reads and writes land in the session's repo store. Board and lane stay
+  in-process. Verified live on opencode v2.2.5; the probe record is on the branch's `OPENCODE.md` fact sheet
+  commits.
+
 
 ### Changed
 
