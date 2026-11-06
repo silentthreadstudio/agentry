@@ -65,9 +65,11 @@ type Cdp = {
 
 async function connect(chrome: ChildProcess, profile: string): Promise<Cdp> {
   const portFile = join(profile, "DevToolsActivePort");
-  for (let i = 0; i < 100 && !existsSync(portFile); i++)
+  // A cold Chrome on a busy CI runner can take well over 10 s to write its port file.
+  for (let i = 0; i < 300 && !existsSync(portFile) && chrome.exitCode === null; i++)
     await new Promise((r) => setTimeout(r, 100));
   if (chrome.exitCode !== null) throw new Error("Chrome exited before it was ready");
+  if (!existsSync(portFile)) throw new Error("Chrome did not open its debugging port within 30 s");
   const port = readFileSync(portFile, "utf8").split("\n")[0];
   const targets = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()) as {
     type: string;
