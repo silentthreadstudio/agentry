@@ -8,6 +8,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ### Changed
 
+- **A script under a `ui/` folder goes to the implementer, not the designer.** A path counts as UI by its
+  file kind (`.tscn`, stylesheets, markup, `.vue`, `.svelte`); a folder or a glob in a UI folder still does.
+  The route line says why and names the override, `- **Agent:** designer` in the contract.
 - `agentry mem recall` and `agentry mem search` take the query as one bare argument, as the old memory tools
   did: `agentry mem recall "bundling node:sqlite"`. `--query` still works; giving both, or more than one bare
   argument, is a usage error.

@@ -1,6 +1,6 @@
 // builder — which builder an exec round suggests: the agent the run's step marker names, else the
-// contract's `**Agent:**` bullet, else designer when an owned path is UI-shaped, else implementer. A
-// suggestion: the conductor decides. Pure.
+// contract's `**Agent:**` bullet, else designer when an owned path is UI by its file kind (a UI extension,
+// or a folder or glob in a UI folder), else implementer. A suggestion: the conductor decides. Pure.
 import { bulletOf } from "../process/spec/models.mjs";
 import { runMark } from "../process/steps.mjs";
 
@@ -15,7 +15,8 @@ const UI_DIRS = new Set([
   "themes",
 ]);
 // A glob under one of these names a whole front end (`web/**`), where a plain file there may be anything.
-const FRONT_DIRS = new Set(["web", "app", "ui"]);
+// A path that ends in a file name under a UI folder is UI only by its extension: `ui/panel.gd` is logic.
+const FRONT_DIRS = new Set(["web", "app"]);
 const UI_EXT = /\.(css|scss|sass|less|vue|svelte|astro|html|tscn)$/i;
 
 const AGENTS = ["designer", "implementer"];
@@ -33,11 +34,24 @@ export function suggestBuilder(owned, { contract = "", steps = [], stepRun = nul
     const parts = path.toLowerCase().split("/");
     return (
       UI_EXT.test(path) ||
-      parts.some((part) => UI_DIRS.has(part)) ||
+      (!hasExt(parts.at(-1)) && parts.some((part) => UI_DIRS.has(part))) ||
       (/[*?]/.test(path) && parts.slice(0, -1).some((part) => FRONT_DIRS.has(part)))
     );
   });
-  return ui
-    ? { agent: "designer", why: `${ui} is UI-shaped` }
+  if (ui) return { agent: "designer", why: `${ui} is UI-shaped` };
+  const logic = owned.find((path) =>
+    path
+      .toLowerCase()
+      .split("/")
+      .some((part) => UI_DIRS.has(part)),
+  );
+  return logic
+    ? {
+        agent: "implementer",
+        why: `${logic} is not a UI file kind (add \`- **Agent:** designer\` to the contract to override)`,
+      }
     : { agent: "implementer", why: "no owned path is UI-shaped" };
 }
+
+// A last path part with an extension names a file; one without (`ui`, `**`, `*`) names a folder or a glob.
+const hasExt = (part) => /\.\w+$/.test(part);
