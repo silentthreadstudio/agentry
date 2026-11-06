@@ -563,7 +563,9 @@ test("shortestUnique: 7 characters, longer when another object shares the prefix
   assert.equal(shortestUnique(dir, full.slice(0, 12)), full.slice(0, 7));
   // A loose object whose name shares the 7-character prefix makes it ambiguous.
   const folder = join(dir, ".git", "objects", full.slice(0, 2));
-  writeFileSync(join(folder, `${full.slice(2, 7)}${"f".repeat(full.length - 7)}`), "");
+  // The filler differs from the commit's 8th character, so the two names share exactly 7.
+  const filler = full[7] === "f" ? "0" : "f";
+  writeFileSync(join(folder, `${full.slice(2, 7)}${filler.repeat(full.length - 7)}`), "");
   assert.equal(shortestUnique(dir, full), full.slice(0, 8));
   assert.equal(shortestUnique(dir, "--all"), null);
   assert.equal(shortestUnique(dir, at("rev-parse", "HEAD^{tree}").stdout.trim()), null);
