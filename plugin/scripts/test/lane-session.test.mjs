@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { builtBranch, boardRepo } from "./drift-repo.mjs";
+import { boardRepo, builtBranch } from "./drift-repo.mjs";
 import { gitEnv } from "./git-repo.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -140,7 +140,7 @@ test("the printed value and set are exactly what board explain's vendored row sa
   const text = explain(root, "explain").stdout.split("\n");
   const at = text.findIndex((l) => /^✗ +vendored CLI /.test(l));
   assert.ok(at >= 0, text.join("\n"));
-  const [, plainValue, plainSet] = /^✗ +vendored CLI  +(.*)\n +set: (.*)$/.exec(
+  const [, plainValue, plainSet] = /^✗ +vendored CLI {2,}(.*)\n +set: (.*)$/.exec(
     text.slice(at, at + 2).join("\n"),
   );
   assert.equal(plainValue, row.value);

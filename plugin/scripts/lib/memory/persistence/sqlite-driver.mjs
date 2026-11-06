@@ -1,4 +1,4 @@
-// Runtime seam for `node:sqlite` (ADR-1): resolves `DatabaseSync` once at import — the class the
+// Runtime seam for `node:sqlite`: resolves `DatabaseSync` once at import — the class the
 // index constructor instantiates — or `null` when the runtime lacks it (e.g. Bun 1.3.13). dynamic
 // import + try/catch so importing this module never throws on a driver-less runtime.
 let driver = null;

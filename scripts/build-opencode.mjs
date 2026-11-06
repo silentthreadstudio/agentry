@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 // build-opencode — generates OpenCode V2 payload from the Claude Code plugin sources.
 //
 // plugin/ stays the single source of truth; this script is the thin OpenCode adapter's
@@ -24,9 +25,8 @@
 //   --vendor  generate for a vendored copy: the CLI fallback becomes .agentry/bin/agentry
 //   --check   regenerate to a temp dir and require zero drift (writes nothing under .opencode/)
 // exits: 0 ok / in sync · 1 drift on --check · 2 refused or usage. Node built-ins only.
-import { readdir, readFile, writeFile, mkdir, cp, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join, dirname, relative, resolve } from "node:path";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -41,8 +41,14 @@ const USAGE = `usage: node scripts/build-opencode.mjs [--out <repo-root>] [--src
 example: node scripts/build-opencode.mjs --out .`;
 
 const COLORS = {
-  blue: "#3b82f6", cyan: "#22d3ee", purple: "#a855f7", red: "#ef4444",
-  pink: "#ec4899", orange: "#f97316", yellow: "#eab308", green: "#22c55e",
+  blue: "#3b82f6",
+  cyan: "#22d3ee",
+  purple: "#a855f7",
+  red: "#ef4444",
+  pink: "#ec4899",
+  orange: "#f97316",
+  yellow: "#eab308",
+  green: "#22c55e",
 };
 
 function rewrites(ctx) {
@@ -63,15 +69,18 @@ function rewrites(ctx) {
     [/\/agentry:(\w[\w-]*)/g, "/agentry/$1"],
     [/`agentry:conductor`/g, "`agentry/conductor`"],
     [/agent "agentry:([a-z-]+)"/g, 'agent "agentry/$1"'],
-    [/Do not re-read AGENTS\.md or CLAUDE\.md: they are already loaded\./g,
-      "Do not re-read AGENTS.md: it is already loaded."],
+    [
+      /Do not re-read AGENTS\.md or CLAUDE\.md: they are already loaded\./g,
+      "Do not re-read AGENTS.md: it is already loaded.",
+    ],
     [/--permission-mode bypassPermissions/g, "opencode run --auto"],
   ];
 }
 
 function applyRewrites(text, ctx) {
-  for (const [re, to] of rewrites(ctx)) text = text.replace(re, to);
-  return text;
+  let out = text;
+  for (const [re, to] of rewrites(ctx)) out = out.replace(re, to);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,14 +101,29 @@ function mapAgent(src, name, ctx) {
   const lines = front.split("\n");
   let keep = [];
   for (const line of lines) {
-    if (/^model:\s*inherit\s*$/.test(line)) { dropped.push("model: inherit (unset inherits on OpenCode)"); continue; }
-    if (/^disallowedTools:/.test(line)) { dropped.push("disallowedTools (no Artifact tools on OpenCode)"); continue; }
+    if (/^model:\s*inherit\s*$/.test(line)) {
+      dropped.push("model: inherit (unset inherits on OpenCode)");
+      continue;
+    }
+    if (/^disallowedTools:/.test(line)) {
+      dropped.push("disallowedTools (no Artifact tools on OpenCode)");
+      continue;
+    }
     const sk = /^skills:\s*\[(.+)\]\s*$/.exec(line);
-    if (sk) { skills = sk[1].split(",").map(s => s.trim()).filter(Boolean); continue; }
+    if (sk) {
+      skills = sk[1]
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      continue;
+    }
     const c = /^color:\s*(\S+)\s*$/.exec(line);
     if (c) {
       color = COLORS[c[1]];
-      if (!color) throw new Error(`✗ build-opencode: unknown colour '${c[1]}' in agents/${name}.md → add it to COLORS`);
+      if (!color)
+        throw new Error(
+          `✗ build-opencode: unknown colour '${c[1]}' in agents/${name}.md → add it to COLORS`,
+        );
       continue;
     }
     keep.push(line);
@@ -119,31 +143,32 @@ function mapAgent(src, name, ctx) {
 
   const outFront = ["---", ...frontLines, "---"].join("\n");
   // name comes from keep (id is the path: agents/agentry/<name>); rewrite the rear keys last
-  const bodyOut = applyRewrites(body, ctx).trimStart()
-    + (skills && skills.length
+  const bodyOut =
+    applyRewrites(body, ctx).trimStart() +
+    (skills?.length
       ? `\n\nLoad these skills with the \`skill\` tool when the work needs them: ${skills.join(", ")}.`
       : "");
-  return [
-    outFront,
-    "",
-    bodyOut,
-  ].join("\n") + "\n";
+  return `${[outFront, "", bodyOut].join("\n")}\n`;
 }
 
 // commands: drop argument-hint (not a V2 field), keep description, rewrite the body.
 function mapCommand(src, name, ctx) {
   const { front, body } = splitFrontmatter(src);
   const lines = front.split("\n").filter((l) => !/^argument-hint:/.test(l));
-  return [
-    `---`,
+  const text = [
+    "---",
     // a comment above the frontmatter would break OpenCode's frontmatter parse and leak
     // the whole header into the command's prompt; a YAML comment stays machine-only
     `# Generated from plugin/commands/${name}.md by scripts/build-opencode.mjs — edit the source, not this file.`,
     `${lines.join("\n").trimEnd()}`,
-    `---`,
+    "---",
     "",
     applyRewrites(body, ctx).trimStart(),
-  ].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+  ]
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
+  return `${text}\n`;
 }
 
 // =============================================================================
@@ -161,7 +186,10 @@ async function walk(dir) {
  *  (`agents/` plus `.claude-plugin/plugin.json`); null when it is neither. */
 export function pluginDirOf(srcRoot) {
   if (existsSync(join(srcRoot, "plugin", "agents"))) return join(srcRoot, "plugin");
-  if (existsSync(join(srcRoot, "agents")) && existsSync(join(srcRoot, ".claude-plugin", "plugin.json")))
+  if (
+    existsSync(join(srcRoot, "agents")) &&
+    existsSync(join(srcRoot, ".claude-plugin", "plugin.json"))
+  )
     return srcRoot;
   return null;
 }
@@ -185,7 +213,10 @@ async function generate(out, srcRoot = out, vendor = false) {
   await mkdir(agentsOut, { recursive: true });
   for (const file of (await readdir(join(root, "agents"))).filter((f) => f.endsWith(".md"))) {
     const name = file.replace(/\.md$/, "");
-    await writeFile(join(agentsOut, file), mapAgent(await readFile(join(root, "agents", file), "utf8"), name, ctx));
+    await writeFile(
+      join(agentsOut, file),
+      mapAgent(await readFile(join(root, "agents", file), "utf8"), name, ctx),
+    );
     counts.agents++;
   }
 
@@ -193,7 +224,10 @@ async function generate(out, srcRoot = out, vendor = false) {
   await mkdir(commandsOut, { recursive: true });
   for (const file of (await readdir(join(root, "commands"))).filter((f) => f.endsWith(".md"))) {
     const name = file.replace(/\.md$/, "");
-    await writeFile(join(commandsOut, file), mapCommand(await readFile(join(root, "commands", file), "utf8"), name, ctx));
+    await writeFile(
+      join(commandsOut, file),
+      mapCommand(await readFile(join(root, "commands", file), "utf8"), name, ctx),
+    );
     counts.commands++;
   }
 
@@ -208,27 +242,35 @@ async function generate(out, srcRoot = out, vendor = false) {
 
   const cfg = join(dst, "opencode.jsonc");
   if (!existsSync(cfg)) {
-    await writeFile(cfg, JSON.stringify({
-      $schema: "https://opencode.ai/config.json",
-      // generated: the conductor opens every next session; set per project, never globally
-      default_agent: "agentry/conductor",
-      permissions: [
-        { action: "external_directory", resource: "*", effect: "ask" },
-      ],
-    }, null, 2) + "\n");
+    await writeFile(
+      cfg,
+      `${JSON.stringify(
+        {
+          $schema: "https://opencode.ai/config.json",
+          // generated: the conductor opens every next session; set per project, never globally
+          default_agent: "agentry/conductor",
+          permissions: [{ action: "external_directory", resource: "*", effect: "ask" }],
+        },
+        null,
+        2,
+      )}\n`,
+    );
     counts.config = true;
   }
 
   const agentsMd = join(out, "AGENTS.md");
   if (!existsSync(agentsMd)) {
-    await writeFile(agentsMd, `# Agents
+    await writeFile(
+      agentsMd,
+      `# Agents
 
 Tasks with a board id go through \`/agentry/exec <id>\`; merges through \`/agentry/merge <id>\`;
 questions through \`/agentry/ask\`; a session opens with \`/agentry/start\` and closes with
 \`/agentry/close\`. The code bar is CONTRIBUTING.md.
 
 <!-- Written by scripts/build-opencode.mjs (the OpenCode adapter); keep the block above by hand. -->
-`);
+`,
+    );
   }
 
   return counts;
@@ -236,7 +278,9 @@ questions through \`/agentry/ask\`; a session opens with \`/agentry/start\` and 
 
 // =============================================================================
 function unknownFlags(argv) {
-  return argv.filter((a) => (a.startsWith("--") && !/^--(out|src|check|vendor|help)$/.test(a)) || (!a.startsWith("-")));
+  return argv.filter(
+    (a) => (a.startsWith("--") && !/^--(out|src|check|vendor|help)$/.test(a)) || !a.startsWith("-"),
+  );
 }
 
 async function checked(out, srcRoot = out, vendor = false) {
@@ -251,7 +295,8 @@ async function checked(out, srcRoot = out, vendor = false) {
       const rel = relative(a, p).replace(/\\/g, "/");
       if (rel === "opencode.jsonc") continue;
       const other = join(probe, ".opencode", rel);
-      if (!existsSync(other) || (await readFile(p)).compare(await readFile(other)) !== 0) drift.push(rel);
+      if (!existsSync(other) || (await readFile(p)).compare(await readFile(other)) !== 0)
+        drift.push(rel);
     }
     for (const p of await walk(join(probe, ".opencode"))) {
       const rel = relative(join(probe, ".opencode"), p).replace(/\\/g, "/");
@@ -259,7 +304,9 @@ async function checked(out, srcRoot = out, vendor = false) {
       if (!existsSync(join(a, rel))) drift.push(`absent: ${rel}`);
     }
     if (drift.length) {
-      console.error(`✗ build-opencode --check: payload out of sync → node scripts/build-opencode.mjs --out ${out}`);
+      console.error(
+        `✗ build-opencode --check: payload out of sync → node scripts/build-opencode.mjs --out ${out}`,
+      );
       for (const d of drift.slice(0, 20)) console.error(`  ${d}`);
       return 1;
     }
@@ -273,29 +320,33 @@ async function checked(out, srcRoot = out, vendor = false) {
 export { generate };
 
 // A valued flag's value from argv (resolved), or undefined when absent; null when it takes a value and
-// is the last word. Removes what it reads.
-function flagOf(argv, name) {
+// is the last word. Returns what is left of argv once the flag and its value are out.
+function flagOf(argv0, name) {
+  const argv = [...argv0];
   const i = argv.indexOf(name);
-  if (i < 0) return undefined;
-  const value = argv[i + 1];
-  if (value === undefined || value === "" || value.startsWith("--")) return null;
+  if (i < 0) return { value: undefined, argv };
+  const next = argv[i + 1];
+  if (next === undefined || next === "" || next.startsWith("--")) return { value: null, argv };
   argv.splice(i, 2);
-  return resolve(value);
+  return { value: resolve(next), argv };
 }
 
-export async function main(argv = process.argv.slice(2)) {
-  argv = [...argv];
-  if (argv.includes("--help") || argv.includes("-h")) { console.log(USAGE); return 0; }
-  const vendor = argv.includes("--vendor");
-  if (vendor) argv = argv.filter((a) => a !== "--vendor");
-  const check = argv.includes("--check");
-  if (check) argv = argv.filter((a) => a !== "--check");
-  const out = flagOf(argv, "--out") ?? DEFAULT_OUT;
-  const src = flagOf(argv, "--src") ?? out;
-  if (out === null || src === null) {
+export async function main(argv0 = process.argv.slice(2)) {
+  if (argv0.includes("--help") || argv0.includes("-h")) {
+    console.log(USAGE);
+    return 0;
+  }
+  const vendor = argv0.includes("--vendor");
+  const check = argv0.includes("--check");
+  const outFlag = flagOf(argv0, "--out");
+  const srcFlag = flagOf(outFlag.argv, "--src");
+  const argv = srcFlag.argv;
+  if (outFlag.value === null || srcFlag.value === null) {
     console.error("✗ build-opencode: a flag is last without its value → --help");
     return 2;
   }
+  const out = outFlag.value ?? DEFAULT_OUT;
+  const src = srcFlag.value ?? out;
   const bad = unknownFlags(argv);
   if (bad.length) {
     console.error(`✗ build-opencode: unknown argument(s) ${bad.join(" ")} → --help`);
@@ -316,10 +367,15 @@ export async function main(argv = process.argv.slice(2)) {
   if (counts.commands) regen.push(`${counts.commands} commands`);
   if (counts.skills) regen.push(`${counts.skills} skill files`);
   if (counts.config) regen.push("opencode.jsonc (new)");
-  console.log(`✓ build-opencode: wrote ${regen.join(", ")} → ${relative(DEFAULT_OUT, join(out, ".opencode"))}`);
+  console.log(
+    `✓ build-opencode: wrote ${regen.join(", ")} → ${relative(DEFAULT_OUT, join(out, ".opencode"))}`,
+  );
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href
+) {
   process.exitCode = await main();
 }

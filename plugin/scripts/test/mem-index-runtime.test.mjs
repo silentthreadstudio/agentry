@@ -1,4 +1,4 @@
-// The index runtime seam (ADR-1): a driver-less runtime (no `node:sqlite`, e.g. Bun) runs the
+// The index runtime seam: a driver-less runtime (no `node:sqlite`, e.g. Bun) runs the
 // pure-JS token-scan with the exact fallback relevance rule (hits / query tokens, filtered > 0,
 // desc, limit last); the default production path (driver resolved) is unchanged; and importing
 // the index + constructing the default one writes nothing to disk — the index stays in-memory.
@@ -7,14 +7,17 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { test, mock } from "node:test";
+import { mock, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { MemoryService } from "../lib/memory/application/memory-service.mjs";
 import { SqliteTextIndex } from "../lib/memory/persistence/db-index.mjs";
 import { MarkdownFileStore } from "../lib/memory/persistence/file-store.mjs";
 
 const fresh = () => mkdtempSync(join(tmpdir(), "agentry-mem-idx-"));
-const DB_INDEX = join(dirname(fileURLToPath(import.meta.url)), "../lib/memory/persistence/db-index.mjs");
+const DB_INDEX = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../lib/memory/persistence/db-index.mjs",
+);
 
 /** A driver-less index, its one [mem] notice swallowed (the notice itself is asserted below). */
 function nullIndex(t) {
@@ -49,7 +52,12 @@ test("driver-less index: relevance = hits / query-token-count, sorted desc", (t)
 
 test("driver-less index: limit applied last, after relevance ranking", (t) => {
   const idx = nullIndex(t);
-  for (const [id, body] of [["a", "x y"], ["b", "x y z"], ["c", "x"]]) idx.add(id, body);
+  for (const [id, body] of [
+    ["a", "x y"],
+    ["b", "x y z"],
+    ["c", "x"],
+  ])
+    idx.add(id, body);
   // b covers all three tokens (1.0), a two of three (2/3), c one (1/3); limit 1 keeps only the top.
   assert.deepEqual(idx.search("x y z", 1), [{ id: "b", relevance: 1 }]);
 });
@@ -117,7 +125,11 @@ test("default path: the composed service still opens its index over a temp store
     new SqliteTextIndex(),
     { global: dir, project: null },
   );
-  service.write({ type: "gotcha", scope: "global", text: "node:sqlite is a default-path dependency" });
+  service.write({
+    type: "gotcha",
+    scope: "global",
+    text: "node:sqlite is a default-path dependency",
+  });
   const { memories } = service.recall({ query: "node:sqlite dependency" });
   assert.equal(memories.length, 1);
   for (const m of memories) assert.ok(m.score > 0 && m.score <= 1, m.score);
