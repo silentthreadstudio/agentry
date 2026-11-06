@@ -1,6 +1,7 @@
 // init-vendor — the vendored CLI of `agentry init --vendor`: a runnable copy of this bin and the
 // scripts its groups route to, under <root>/.agentry/ (`bin/agentry`, `scripts/<group>.mjs`,
-// `scripts/lib/**`, the process templates the read side opens back), plus a version stamp
+// `scripts/lib/**`, the skill pages the runtime reads back: the brief templates `lane exec` renders
+// and the process templates the read side opens), plus a version stamp
 // (`bin/.agentry-version`, one line) naming what was copied. `agentry board explain` reads the stamp
 // back to warn when the copy is behind the plugin, so the copy and its read-back live in one place
 // beside the verb that writes them. Test files, `node_modules` and `.docs` never copy; the bin keeps
@@ -115,6 +116,16 @@ export function vendoredFiles(source) {
   if (existsSync(templates))
     for (const { path, src } of walkFiles(templates))
       out.push({ path: `skills/process/templates/${path}`, src, bytes: readFileSync(src) });
+  // the brief templates `lane exec` renders (lib/lane/brief.mjs walks HERE/../../.. + this path):
+  // without them a vendored copy dies on `exec start` before it writes a ledger
+  const briefs = join(source, "skills", "conducting", "references", "briefs");
+  if (existsSync(briefs))
+    for (const { path, src } of walkFiles(briefs))
+      out.push({
+        path: `skills/conducting/references/briefs/${path}`,
+        src,
+        bytes: readFileSync(src),
+      });
   return out.sort((a, b) => (a.path < b.path ? -1 : 1));
 }
 
