@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/ask.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/ask.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Answer a question about this repo, a library or a design with one read-only specialist and cited sources. No worktree, no run, no edits.
 ---
 

@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/close.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/close.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Close the session the same way every time — the owner's pending decision drafts, board fix, worktree and process cleanup (asks before applying), episodes for finished lanes, a short judgment note, and the handoff with the resume line.
 ---
 

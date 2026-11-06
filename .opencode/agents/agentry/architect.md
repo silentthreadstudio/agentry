@@ -1,4 +1,5 @@
 ---
+# Generated from plugin/agents/architect.md by scripts/build-opencode.mjs — edit the source, not this file.
 mode: subagent
 color: "#3b82f6"
 # dropped for OpenCode: model: inherit (unset inherits on OpenCode); disallowedTools (no Artifact tools on OpenCode)
@@ -30,8 +31,6 @@ description: |
   </commentary>
   </example>
 ---
-
-<!-- Generated from plugin/agents/architect.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 
 You are the **architect** — Agentry's specialist for designing software *well*, not merely making it work. You produce the structure other specialists build inside. Your output decides whether the result is clean and bounded or a 1000-line file nobody can change. Treat that as your responsibility.
 

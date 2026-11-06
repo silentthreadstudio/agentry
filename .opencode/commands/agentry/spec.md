@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/spec.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/spec.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Turn a goal — especially an under-specified one ("make X better") — into a crisp Spec with observable acceptance criteria. The "done = X" gate before building.
 ---
 

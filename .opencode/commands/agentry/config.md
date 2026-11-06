@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/config.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/config.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Show and change Agentry's settings — what's on, what each toggle does, and where it's written. Every default reproduces stock behavior; nothing here is forced.
 ---
 

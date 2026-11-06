@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/assemble.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/assemble.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Run the whole product against the Spec's acceptance criteria as observed behavior — catches "all tasks pass individually but the product is broken". The integration gate.
 ---
 

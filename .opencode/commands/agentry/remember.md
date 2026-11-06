@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/remember.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/remember.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Capture a durable memory now — a gotcha, decision, preference, or repo-fact. Goes through the write-bar and dedup-reinforce; no subagent needed.
 ---
 

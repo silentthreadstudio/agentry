@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/exec.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/exec.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Build one task (or debt item) whose contract is already written. `agentry lane exec` cuts its worktree, writes the board, briefs a builder and an independent verifier round by round, and closes on a recorded gate with an episode. No spec, plan or split; no merge or push.
 ---
 

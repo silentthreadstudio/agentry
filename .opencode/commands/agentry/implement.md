@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/implement.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/implement.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Build one task — clean, bounded code (and tests) within its contract. Dispatches the implementer with the task's brief.
 ---
 

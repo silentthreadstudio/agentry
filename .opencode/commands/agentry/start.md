@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/start.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/start.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Open the session the same way every day — the conductor prompt, derived status with drift nudges and pending drafts, recall for the work in flight, the active mode and the owner's open questions, as five lines and one recommendation.
 ---
 

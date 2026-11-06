@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/ship.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/ship.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Take the verified working tree the last mile — Agentry conducts branch → commit → PR → CI-watch → merge, stopping at the authorization gate before anything leaves the machine. Use once work is built and verified.
 ---
 

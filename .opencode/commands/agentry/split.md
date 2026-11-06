@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/split.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/split.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Slice a Plan's architecture map into bounded Task contracts — parallel-safe, cold-resumable, with a coverage matrix. Prepares the build.
 ---
 

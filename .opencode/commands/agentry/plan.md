@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/plan.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/plan.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Design the approach — produce a Plan with an architecture map and any ADRs, right-sized and consistent with the repo. The structure tasks get built inside.
 ---
 

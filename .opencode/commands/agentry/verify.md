@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/verify.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/verify.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Adversarially verify a task against its acceptance — two ordered passes (spec-compliance then code-quality) with a security lens and cited evidence. A separate verifier, never the author.
 ---
 

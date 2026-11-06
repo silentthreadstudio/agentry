@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/merge.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/merge.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Land one task (or debt item) on main — preflight, the repo's own checks, cherry-pick, the gate (or the recorded gate it may trust), the board's done row, SHA and handoff line in one commit, then push per policy and cleanup. Stops at the first red step.
 ---
 

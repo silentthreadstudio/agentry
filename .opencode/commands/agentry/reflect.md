@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/reflect.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/reflect.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Curate memory and distill the run's episodes into durable facts after a piece of work — keeps the moat warm. Proposes skills (human-gated), never installs them.
 ---
 

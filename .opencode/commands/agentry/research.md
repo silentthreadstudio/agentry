@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/research.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/research.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Investigate unknowns — web + repo — and produce cited findings with their implications for the work. Use when a real unknown (unfamiliar library, API, approach) is blocking.
 ---
 

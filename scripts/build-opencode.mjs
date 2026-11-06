@@ -103,6 +103,7 @@ function mapAgent(src, name, ctx) {
 
   const mode = name === "conductor" ? "primary" : "subagent";
   const frontLines = [
+    `# Generated from plugin/agents/${name}.md by scripts/build-opencode.mjs — edit the source, not this file.`,
     `mode: ${mode}`,
     color ? `color: "${color}"` : null,
     ...(dropped.length ? [`# dropped for OpenCode: ${dropped.join("; ")}`] : []),
@@ -118,8 +119,6 @@ function mapAgent(src, name, ctx) {
   return [
     outFront,
     "",
-    `<!-- Generated from plugin/agents/${name}.md by scripts/build-opencode.mjs — edit the source, not this file. -->`,
-    "",
     bodyOut,
   ].join("\n") + "\n";
 }
@@ -129,8 +128,10 @@ function mapCommand(src, name, ctx) {
   const { front, body } = splitFrontmatter(src);
   const lines = front.split("\n").filter((l) => !/^argument-hint:/.test(l));
   return [
-    `<!-- Generated from plugin/commands/${name}.md by scripts/build-opencode.mjs — edit the source, not this file. -->`,
     `---`,
+    // a comment above the frontmatter would break OpenCode's frontmatter parse and leak
+    // the whole header into the command's prompt; a YAML comment stays machine-only
+    `# Generated from plugin/commands/${name}.md by scripts/build-opencode.mjs — edit the source, not this file.`,
     `${lines.join("\n").trimEnd()}`,
     `---`,
     "",

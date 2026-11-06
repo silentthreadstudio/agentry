@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/new.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/new.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Add one item of any kind this repo's process knows — task, sprint, question, decision, or whatever init learned — to every place that kind lives. Asks only that kind's fields; never commits.
 ---
 

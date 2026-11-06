@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/board.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/board.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Show where this repo's work stands and what's wrong with its board — derived status, drift nudges, then every rule finding. Read-only unless --apply.
 ---
 

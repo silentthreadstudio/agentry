@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/init.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/init.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Set Agentry up for this repo — scaffold a board in a new repo, learn the board it already has into .agentry/process.json (the lanes go in .agentry/workflow.json), or show and repair one already set up; then learn the gate and wire the lanes (conductor prompt, AGENTS.md trigger block, default agent, push policy). Asks only what it can't infer; never commits.
 ---
 

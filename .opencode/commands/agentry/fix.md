@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/fix.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/fix.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Diagnose a failure and fix it — Agentry conducts a repro-first debug run (reproduce → isolate → fix → regression-guard). Use for a stack trace, a failing test, a red CI log, or a perf regression.
 ---
 

@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/onboard.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/onboard.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Comprehend a repository read-only — produce a Context map (how it's built, where things live, key conventions) and seed durable repo-facts. Warms a cold codebase.
 ---
 

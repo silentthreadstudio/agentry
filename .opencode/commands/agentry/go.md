@@ -1,5 +1,5 @@
-<!-- Generated from plugin/commands/go.md by scripts/build-opencode.mjs — edit the source, not this file. -->
 ---
+# Generated from plugin/commands/go.md by scripts/build-opencode.mjs — edit the source, not this file.
 description: Agentry's front door — route a task to the least process that wins (one-shot → spec-first → decompose+verify) and conduct it end-to-end. Use for any build, change, or fix you want Agentry to handle.
 ---
 
