@@ -50,3 +50,20 @@ test("a folder visual by name is UI whatever the extension, a generic folder is 
   for (const path of ["src/ui/x.gd", "web/lib/x.ts", "src/views/store.js", "src/components/s.py"])
     assert.equal(suggestBuilder([path]).agent, "implementer", path);
 });
+
+test("a React file is UI inside a generic UI folder only", () => {
+  for (const path of [
+    "components/Button.tsx",
+    "src/views/Home.jsx",
+    "pages/index.tsx",
+    "web/App.tsx",
+  ])
+    assert.equal(suggestBuilder([path]).agent, "designer", path);
+  for (const path of [
+    "lib/useX.tsx",
+    "src/hooks/useY.jsx",
+    "components/Button.ts",
+    "src/ui/panel.gd",
+  ])
+    assert.equal(suggestBuilder([path]).agent, "implementer", path);
+});

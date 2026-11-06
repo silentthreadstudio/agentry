@@ -11,6 +11,8 @@ const UI_DIRS = new Set(["ui", "components", "screens", "views", "pages"]);
 // A glob under one of these names a whole front end (`web/**`), where a plain file there may be anything.
 // A path that ends in a file name under a UI folder is UI only by its extension: `ui/panel.gd` is logic.
 const FRONT_DIRS = new Set(["web", "app"]);
+// React component files: UI only inside a UI folder, where `lib/useX.tsx` is a hook and stays logic.
+const REACT_EXT = /\.[jt]sx$/i;
 const UI_EXT = /\.(css|scss|sass|less|vue|svelte|astro|html|tscn)$/i;
 
 const AGENTS = ["designer", "implementer"];
@@ -28,6 +30,7 @@ export function suggestBuilder(owned, { contract = "", steps = [], stepRun = nul
     const parts = path.toLowerCase().split("/");
     return (
       UI_EXT.test(path) ||
+      (REACT_EXT.test(path) && parts.some((part) => UI_DIRS.has(part) || FRONT_DIRS.has(part))) ||
       parts.some((part) => VISUAL_DIRS.has(part)) ||
       (!hasExt(parts.at(-1)) && parts.some((part) => UI_DIRS.has(part))) ||
       (/[*?]/.test(path) && parts.slice(0, -1).some((part) => FRONT_DIRS.has(part)))
