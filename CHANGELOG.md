@@ -8,6 +8,9 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ### Changed
 
+- **`lane exec show` labels a round that only stopped.** A round the lane held before its report was read
+  (parked while the builder was stopped for a restart) carries `label: "r3 (restart)"`, so the owner's count of
+  build and verify rounds matches. Round numbers do not change.
 - **A script under a `ui/` folder goes to the implementer, not the designer.** A path counts as UI by its
   file kind (`.tscn`, stylesheets, markup, `.vue`, `.svelte`); a folder or a glob in a UI folder still does.
   The route line says why and names the override, `- **Agent:** designer` in the contract.

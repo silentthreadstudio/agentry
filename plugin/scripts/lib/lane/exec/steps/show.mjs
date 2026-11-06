@@ -4,6 +4,7 @@ import { idleMinutes, resolveWorkflow } from "../../../process/spec/presets.mjs"
 import { answerLabel, restackText, routeFixedText } from "../../exec-view.mjs";
 import { short } from "../../fmt.mjs";
 import { idleOf } from "../../idle.mjs";
+import { roundLabel, stoppedOnly } from "../../round-label.mjs";
 import { routeOf } from "../../rounds.mjs";
 import { childrenOf } from "../../stack.mjs";
 import { nestedTrees } from "../admission.mjs";
@@ -50,6 +51,7 @@ export function run(ctx, id) {
         ...(r.verdict && { verdict: r.verdict }),
         ...(r.void && { void: true }),
         ...(r.held && { held: true }),
+        ...(stoppedOnly(r) && { label: roundLabel(r) }),
         ...(r.stepRun && { stepRun: r.stepRun }),
         ...(r.guards && { guards: r.guards }),
       })),
