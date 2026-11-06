@@ -12,6 +12,7 @@ import { writeSpec } from "./spec-files.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BOARD = join(HERE, "..", "board.mjs");
+const PLUGIN = join(HERE, "..", "..");
 
 // A git repo holding the table board, whose process and workflow files get `extra` keys (`only`: just
 // these keys, no fixture lifecycle or drafts). Returns `board` to run a subcommand on it and `lanes()`
@@ -564,8 +565,7 @@ test("exec.verify flagged says which field it keys on; a models row names each m
   }
 });
 
-test("the models row warns of models.verify.ui under a flagged route, wrapped to 80 columns (field 70)", () => {
-  const root0 = mkdtempSync(join(tmpdir(), "agentry-lanes-"));
+test("the models row warns of models.verify.ui under a flagged route, wrapped to 80 columns (field 70)", () => {  const root0 = mkdtempSync(join(tmpdir(), "agentry-lanes-"));
   cpSync(join(HERE, "fixtures", "table-board"), root0, { recursive: true });
   const base = JSON.parse(readFileSync(join(root0, "process.json"), "utf8"));
   rmSync(root0, { recursive: true, force: true });
@@ -612,5 +612,42 @@ test("the models row warns of models.verify.ui under a flagged route, wrapped to
     rmSync(warned.root, { recursive: true, force: true });
     rmSync(plain.root, { recursive: true, force: true });
     rmSync(noFlagged.root, { recursive: true, force: true });
+  }
+});
+
+test("a vendored CLI stamp behind the plugin is a ✗ lanes row naming the refresh command; none when the stamp is gone", () => {
+  const { root, board, lanes } = repo();
+  try {
+    assert.equal(lanes()["vendored CLI"], undefined, "no stamp, no row");
+    write(root, ".agentry/bin/.agentry-version", "0.3.0\n");
+    const row = lanes()["vendored CLI"];
+    assert.deepEqual([row.ok, row.lane], [false, "vendored CLI"]);
+    assert.match(row.value, /^0\.3\.0 \(plugin: [\w.+-]+, newer\)$/);
+    assert.deepEqual(row.set, "agentry init --host opencode --vendor --apply");
+    assert.match(
+      board("explain").stdout,
+      /^✗ +vendored CLI +0\.3\.0 \(plugin: [\w.+-]+, newer\)\n +set: agentry init --host opencode --vendor --apply$/m,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a stamp equal to the plugin's version is silent, and one ahead of it says the plugin is older", () => {
+  const version = JSON.parse(readFileSync(join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8")).version;
+  const current = repo();
+  try {
+    write(current.root, ".agentry/bin/.agentry-version", `${version}\n`);
+    assert.equal(current.lanes()["vendored CLI"], undefined);
+  } finally {
+    rmSync(current.root, { recursive: true, force: true });
+  }
+  const ahead = repo();
+  try {
+    write(ahead.root, ".agentry/bin/.agentry-version", "9.9.9\n");
+    const row = ahead.lanes()["vendored CLI"];
+    assert.deepEqual([row.ok, row.value], [false, "9.9.9 (plugin: " + version + ", older)"]);
+  } finally {
+    rmSync(ahead.root, { recursive: true, force: true });
   }
 });

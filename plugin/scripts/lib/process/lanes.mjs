@@ -10,6 +10,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { nextStep } from "../cli/invoke.mjs";
+import { relationWord, stampOf } from "../cli/init-vendor.mjs";
 import { checkConfig } from "../config.mjs";
 import { AGENT, PLUGIN_ROOT, localAgent, readSettings, verifyStatic } from "./default-agent.mjs";
 import { isIgnored, trackedFiles, worktrees } from "./git.mjs";
@@ -56,8 +57,26 @@ function pluginVersion() {
     return JSON.parse(readFileSync(join(PLUGIN_ROOT, ".claude-plugin", "plugin.json"), "utf8"))
       .version;
   } catch {
-    return "unknown";
+    // no plugin manifest beside the running CLI: a vendored copy, whose stamp named its version
+    return stampOf(join(PLUGIN_ROOT, "..")) ?? "unknown";
   }
+}
+
+// The vendored CLI underneath (.agentry/bin), when `agentry init --vendor` copied one: a ✗ row when its
+// stamp is behind the running plugin, silent when the stamp is absent, or current. The set line is the
+// verb that refreshes the copy (and, with it, the payload it was generated for).
+function vendored(root) {
+  const stamp = stampOf(root);
+  if (stamp === null) return null;
+  const current = pluginVersion();
+  if (stamp === current) return null;
+  const word = relationWord(current, stamp);
+  return {
+    lane: "vendored CLI",
+    ok: false,
+    value: `${stamp} (plugin: ${current}, ${word})`,
+    set: "agentry init --host opencode --vendor --apply",
+  };
 }
 
 // The trigger block, in AGENTS.md or CLAUDE.local.md, against the one `board instructions` would write.
@@ -309,6 +328,7 @@ export function lanes({ root, spec, workflowPath = join(root, ".agentry", "workf
     optional("merge.checks", checks, checks?.join(", ")),
     ...keys({ root, spec }),
     ...POLICY.map((entry) => policy(root, entry)),
+    ...(vendored(root) ? [vendored(root)] : []),
     {
       lane: "process version",
       ok: spec.version === SPEC_VERSION,

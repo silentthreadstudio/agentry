@@ -240,5 +240,15 @@ and § guard and cleanup.
     workflow draft and `agentry board explain` on the owner's OK; add a `forbid` entry only for a rule the repo
     states (an attribution trailer). An existing `commits` is shown, not rewritten.
 
+## Host: opencode
+
+To also run the repo on OpenCode V2, offer `agentry init --host opencode --vendor` from the plugin (preview,
+then `--apply` on the owner's OK): it regenerates the host payload (`.opencode/`, written by
+`scripts/build-opencode.mjs` — never hand-edit or fork it), copies the CLI into `.agentry/` before generating
+(so the payload calls the copy, not this plugin's `bin/`), and re-points the trigger block with
+`agentry board instructions --target agents --apply`: on this host the block always goes to `AGENTS.md`, and
+`CLAUDE.local.md` is never offered or written. A re-run reports zero drift; `agentry board explain` warns when
+the vendored copy is behind the plugin, naming that same verb.
+
 End with what was written (paths), what was left as it was, and the last `agentry board check` result. Nothing is
 committed: the user reviews the diff.

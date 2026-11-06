@@ -10,15 +10,19 @@
 // a rerun refreshes generated payload but never clobbers the owner's own files.
 //
 // Host token rewrites (names only — the logic is untouched):
-//   ${CLAUDE_PLUGIN_ROOT} fallback → the plugin root ("plugin")
+//   ${CLAUDE_PLUGIN_ROOT} fallback → the plugin root ("plugin"), or the vendored copy (".agentry")
+//     with --vendor: the CLI the generated markdown gets to call, never hand-edited in .opencode/
 //   AskUserQuestion → question
 //   "agent": "agentry:conductor" / .claude/settings.json → default_agent / .opencode/opencode.jsonc
 //   model: inherit → unset (V2 inherits when unset); color names → hex;
 //   skills:[] / disallowedTools frontmatter → dropped (skills re-advertised in the body)
 //
-// usage: node scripts/build-opencode.mjs [--out <repo-root>] [--check]
-//   --out    target repo root (default: this repo)
-//   --check  regenerate to a temp dir and require zero drift (writes nothing under .opencode/)
+// usage: node scripts/build-opencode.mjs [--out <repo-root>] [--src <plugin-or-repo>] [--vendor] [--check]
+//   --out     target repo root (default: this repo)
+//   --src     payload source: a plugin dir (agents/ plus .claude-plugin/plugin.json), or a repo root
+//             holding one under plugin/ (default: this repo)
+//   --vendor  generate for a vendored copy: the CLI fallback becomes .agentry/bin/agentry
+//   --check   regenerate to a temp dir and require zero drift (writes nothing under .opencode/)
 // exits: 0 ok / in sync · 1 drift on --check · 2 refused or usage. Node built-ins only.
 import { readdir, readFile, writeFile, mkdir, cp, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -28,9 +32,12 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUT = resolve(HERE, ".."); // this repo's root
 
-const USAGE = `usage: node scripts/build-opencode.mjs [--out <repo-root>] [--check]
-  --out    target repo root (default: this repo)
-  --check  regenerate to a temp dir and require zero drift (no files written)
+const USAGE = `usage: node scripts/build-opencode.mjs [--out <repo-root>] [--src <plugin-or-repo>] [--vendor] [--check]
+  --out     target repo root (default: this repo)
+  --src     payload source: a plugin dir (agents/ + .claude-plugin/plugin.json), or a repo root
+            holding one under plugin/ (default: this repo)
+  --vendor  generate for a vendored copy: the CLI fallback becomes .agentry/bin/agentry
+  --check   regenerate to a temp dir and require zero drift (no files written)
 example: node scripts/build-opencode.mjs --out .`;
 
 const COLORS = {
@@ -150,32 +157,48 @@ async function walk(dir) {
   return out.sort();
 }
 
-async function generate(out, srcRoot = out) {
-  // the CLI path hint is spoken from the repo root the agent works in — a function of the
-  // source tree's layout, never of the probe/output directory
-  const ctx = { pluginRoot: relative(srcRoot, join(srcRoot, "plugin")) || "." };
+/** The payload source as a plugin dir: a repo root holding `plugin/`, or a plugin dir itself
+ *  (`agents/` plus `.claude-plugin/plugin.json`); null when it is neither. */
+export function pluginDirOf(srcRoot) {
+  if (existsSync(join(srcRoot, "plugin", "agents"))) return join(srcRoot, "plugin");
+  if (existsSync(join(srcRoot, "agents")) && existsSync(join(srcRoot, ".claude-plugin", "plugin.json")))
+    return srcRoot;
+  return null;
+}
+
+// Roots are re-resolved before use: a --src flag may be a plugin dir or its repo root whether the
+// caller is the dev gate (this repo's plugin/) or `agentry init --src <installed plugin>`.
+function rooted(srcRoot) {
+  return pluginDirOf(srcRoot) ?? srcRoot;
+}
+
+async function generate(out, srcRoot = out, vendor = false) {
+  // the CLI path hint is spoken from the repo root the agent works in: the plugin layout, or the
+  // vendored copy the CLI copies in (`agentry init --vendor`)
+  const ctx = { pluginRoot: vendor ? ".agentry" : "plugin" };
+  const root = rooted(srcRoot);
   const dst = join(out, ".opencode");
   await mkdir(dst, { recursive: true });
   const counts = { agents: 0, commands: 0, skills: 0, config: false };
 
   const agentsOut = join(dst, "agents", "agentry");
   await mkdir(agentsOut, { recursive: true });
-  for (const file of (await readdir(join(srcRoot, "plugin", "agents"))).filter((f) => f.endsWith(".md"))) {
+  for (const file of (await readdir(join(root, "agents"))).filter((f) => f.endsWith(".md"))) {
     const name = file.replace(/\.md$/, "");
-    await writeFile(join(agentsOut, file), mapAgent(await readFile(join(srcRoot, "plugin", "agents", file), "utf8"), name, ctx));
+    await writeFile(join(agentsOut, file), mapAgent(await readFile(join(root, "agents", file), "utf8"), name, ctx));
     counts.agents++;
   }
 
   const commandsOut = join(dst, "commands", "agentry");
   await mkdir(commandsOut, { recursive: true });
-  for (const file of (await readdir(join(srcRoot, "plugin", "commands"))).filter((f) => f.endsWith(".md"))) {
+  for (const file of (await readdir(join(root, "commands"))).filter((f) => f.endsWith(".md"))) {
     const name = file.replace(/\.md$/, "");
-    await writeFile(join(commandsOut, file), mapCommand(await readFile(join(srcRoot, "plugin", "commands", file), "utf8"), name, ctx));
+    await writeFile(join(commandsOut, file), mapCommand(await readFile(join(root, "commands", file), "utf8"), name, ctx));
     counts.commands++;
   }
 
   const skillsDir = join(dst, "skills");
-  await cp(join(srcRoot, "plugin", "skills"), skillsDir, { recursive: true });
+  await cp(join(root, "skills"), skillsDir, { recursive: true });
   for (const p of await walk(skillsDir)) {
     if (p.endsWith(".md")) {
       await writeFile(p, applyRewrites(await readFile(p, "utf8"), ctx));
@@ -213,14 +236,14 @@ questions through \`/agentry/ask\`; a session opens with \`/agentry/start\` and 
 
 // =============================================================================
 function unknownFlags(argv) {
-  return argv.filter((a) => (a.startsWith("--") && !/^--(out|check|help)$/.test(a)) || (!a.startsWith("-")));
+  return argv.filter((a) => (a.startsWith("--") && !/^--(out|src|check|vendor|help)$/.test(a)) || (!a.startsWith("-")));
 }
 
-async function check(out) {
+async function checked(out, srcRoot = out, vendor = false) {
   const probe = join(out, ".agcheck");
   await rm(probe, { recursive: true, force: true });
   try {
-    await generate(probe, out);
+    await generate(probe, srcRoot, vendor);
     // compare only generated payload; opencode.jsonc is only-when-missing (owner-owned after birth)
     const a = join(out, ".opencode");
     const drift = [];
@@ -249,21 +272,45 @@ async function check(out) {
 
 export { generate };
 
+// A valued flag's value from argv (resolved), or undefined when absent; null when it takes a value and
+// is the last word. Removes what it reads.
+function flagOf(argv, name) {
+  const i = argv.indexOf(name);
+  if (i < 0) return undefined;
+  const value = argv[i + 1];
+  if (value === undefined || value === "" || value.startsWith("--")) return null;
+  argv.splice(i, 2);
+  return resolve(value);
+}
+
 export async function main(argv = process.argv.slice(2)) {
+  argv = [...argv];
   if (argv.includes("--help") || argv.includes("-h")) { console.log(USAGE); return 0; }
-  const bad = unknownFlags(argv.filter((a) => a !== "--check"));
+  const vendor = argv.includes("--vendor");
+  if (vendor) argv = argv.filter((a) => a !== "--vendor");
+  const check = argv.includes("--check");
+  if (check) argv = argv.filter((a) => a !== "--check");
+  const out = flagOf(argv, "--out") ?? DEFAULT_OUT;
+  const src = flagOf(argv, "--src") ?? out;
+  if (out === null || src === null) {
+    console.error("✗ build-opencode: a flag is last without its value → --help");
+    return 2;
+  }
+  const bad = unknownFlags(argv);
   if (bad.length) {
     console.error(`✗ build-opencode: unknown argument(s) ${bad.join(" ")} → --help`);
     return 2;
   }
-  const i = argv.indexOf("--out");
-  const out = resolve(i >= 0 ? argv[i + 1] ?? "." : DEFAULT_OUT);
-  if (!existsSync(join(out, "plugin", "agents"))) {
-    console.error(`✗ build-opencode: no plugin/ payload under ${out} → --out <repo-root>`);
+  if (!pluginDirOf(src)) {
+    console.error(
+      src === out
+        ? `✗ build-opencode: no plugin/ payload under ${src} → node scripts/build-opencode.mjs --src <plugin dir>`
+        : `✗ build-opencode: no Agentry plugin at ${src} (agents/ and .claude-plugin/plugin.json) → --src <plugin dir>`,
+    );
     return 2;
   }
-  if (argv.includes("--check")) return check(out);
-  const counts = await generate(out);
+  if (check) return checked(out, src, vendor);
+  const counts = await generate(out, src, vendor);
   const regen = [];
   if (counts.agents) regen.push(`${counts.agents} agents`);
   if (counts.commands) regen.push(`${counts.commands} commands`);

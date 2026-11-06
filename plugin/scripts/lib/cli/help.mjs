@@ -52,13 +52,18 @@ function buildOf(root) {
 }
 
 /** The running build's version: plugin.json's under `root` (the plugin's own by default), with what the
- *  checkout is past it; null when plugin.json can't be read. */
+ *  checkout is past it; when the root holds no plugin.json, the version stamp of the vendored CLI copy
+ *  under `bin/.agentry-version` stands in (`agentry init --vendor` writes it); null when neither. */
 export function pluginVersion(root = PLUGIN_ROOT) {
   let version;
   try {
     ({ version } = JSON.parse(readFileSync(join(root, ".claude-plugin", "plugin.json"), "utf8")));
   } catch {
-    return null;
+    try {
+      return readFileSync(join(root, "bin", ".agentry-version"), "utf8").trim() || null;
+    } catch {
+      return null;
+    }
   }
   return `${version}${buildOf(root)}`;
 }
