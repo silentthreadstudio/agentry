@@ -7,7 +7,7 @@ import { withBase } from "../../../lib/base.ts";
 <DocsLayout
   current="install"
   title="Install"
-  description="Install Agentry as a Claude Code plugin in two commands, then set it up with /agentry:init. OpenCode support is in development on the next tag. Node ≥ 24."
+  description="Install Agentry as a Claude Code plugin in two commands, then set it up with /agentry:init. OpenCode is supported in 0.4.0. Node ≥ 24."
   eyebrow="Getting Started · Install"
   lede="Two commands install the plugin; a third sets it up for your repo. That is all you need to start."
 >
@@ -16,7 +16,7 @@ import { withBase } from "../../../lib/base.ts";
     <p>
       Agentry installs as a Claude Code plugin from its GitHub repo. From a Claude Code session in your repo, add it, install it, and let <code>/agentry:init</code> draft its process file from what it finds:
     </p>
-    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add silentthreadstudio/agentry#v0.3.0
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add silentthreadstudio/agentry#v0.4.0
 <span class="flag__sigil" aria-hidden="true">$ </span>/plugin install agentry@agentry-dev
 <span class="flag__sigil" aria-hidden="true">$ </span>/agentry:init</code></pre>
     <p>
@@ -26,19 +26,19 @@ import { withBase } from "../../../lib/base.ts";
       to hand it a first task.
     </p>
     <p>
-      The <code>#v0.3.0</code> suffix pins the install to the 0.3.0 release; the repo's main branch moves with
+      The <code>#v0.4.0</code> suffix pins the install to the 0.4.0 release; the repo's main branch moves with
       development. To move to a later release, remove the marketplace and add it again with the new tag. Each
       release is also on <a href="https://github.com/silentthreadstudio/agentry/releases">GitHub Releases</a>
       as a zip.
     </p>
 
-    <h2 class="prose__h">OpenCode (0.4 development line)</h2>
+    <h2 class="prose__h">OpenCode</h2>
     <p>
-      Not in the 0.3.0 release. The OpenCode package, <code>agentry-opencode</code>, is published under the npm
-      <code>next</code> tag first; <code>latest</code> does not carry it yet. It needs OpenCode V2. Add the plugin,
+      OpenCode is supported in 0.4.0. The package, <code>agentry-opencode</code>, is on npm under <code>latest</code>,
+      so no tag is needed. It needs OpenCode V2. Add the plugin,
       then restart the OpenCode service so it loads:
     </p>
-    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>opencode plugin add agentry-opencode@next
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>opencode plugin add agentry-opencode
 <span class="flag__sigil" aria-hidden="true">$ </span>opencode service restart</code></pre>
     <p>
       The plugin registers <code>agentry_board</code>, <code>agentry_lane</code> and <code>agentry_mem</code> as

@@ -17,7 +17,7 @@ export const GET: APIRoute = () =>
       {
         name: SITE_NAME,
         short_name: SITE_NAME,
-        description: "The harness around Claude Code.",
+        description: "The harness around Claude Code and OpenCode.",
         start_url: withBase(""),
         scope: withBase(""),
         display: "browser",

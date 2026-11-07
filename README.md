@@ -4,11 +4,11 @@
 
 <p align="center">
   <b>Built by one agent. Checked by another. Merged when green.</b><br>
-  Agentry is the harness around Claude Code, with OpenCode support in development.
+  Agentry is the harness around Claude Code and OpenCode.
 </p>
 
 <p align="center">
-  <code>0.3.0 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
+  <code>0.4.0 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
 </p>
 
 ---
@@ -18,7 +18,7 @@ has a second agent check the work, and lands it only after your repo's own check
 each run decided, so the next run starts from it. The model stays the same. The conducting around it is the
 product.
 
-It is a Claude Code plugin (OpenCode support is in the 0.4 development line, see [Install](#install)): nine agents, fifteen skills, twenty-two slash commands and one CLI, `agentry`.
+It is a plugin for Claude Code and OpenCode (see [Install](#install)): nine agents, fifteen skills, twenty-two slash commands and one CLI, `agentry`.
 Plain Node, no dependencies, nothing to build.
 
 ## Who it is for
@@ -58,14 +58,14 @@ Plain Node, no dependencies, nothing to build.
 Requires Claude Code and Node 24 or newer. From a Claude Code session:
 
 ```
-/plugin marketplace add silentthreadstudio/agentry#v0.3.0
+/plugin marketplace add silentthreadstudio/agentry#v0.4.0
 /plugin install agentry@agentry-dev
 ```
 
 Restart the session. Agents, commands and skills load at startup, and the plugin puts `agentry` on the
 Bash tool's PATH.
 
-`#v0.3.0` pins the install to the 0.3.0 release; `main` moves with development. To move to a later release,
+`#v0.4.0` pins the install to the 0.4.0 release; `main` moves with development. To move to a later release,
 remove the marketplace and add it again with the new tag. Each release is also on
 [GitHub Releases](https://github.com/silentthreadstudio/agentry/releases) as a zip.
 
@@ -158,13 +158,13 @@ and roots.
 
 ## Safety model
 
-### OpenCode (0.4 development line)
+### OpenCode
 
-Not in the 0.3.0 release. The OpenCode package, `agentry-opencode`, is published under the npm `next` tag
-first; `latest` does not carry it yet. It needs OpenCode V2 and Node 24 or newer.
+OpenCode is supported in 0.4.0. The package, `agentry-opencode`, is on npm under `latest`, so no tag is
+needed. It needs OpenCode V2 and Node 24 or newer.
 
 ```
-opencode plugin add agentry-opencode@next
+opencode plugin add agentry-opencode
 opencode service restart
 ```
 
@@ -208,8 +208,8 @@ pnpm --filter @agentry/eval selfeval report <run-id>    # a self-contained HTML 
 
 ## Status
 
-Pre-1.0. The current release is `0.3.0`. Commands and flags can still change between releases, and
-[`CHANGELOG.md`](./CHANGELOG.md) records each change. Claude Code is the supported host in 0.3.0; OpenCode is in development on the `next` tag.
+Pre-1.0. The current release is `0.4.0`. Commands and flags can still change between releases, and
+[`CHANGELOG.md`](./CHANGELOG.md) records each change. Claude Code and OpenCode are both supported hosts in 0.4.0.
 
 ## Docs
 

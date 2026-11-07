@@ -14,14 +14,14 @@ export const SITE_NAME = "Agentry";
 
 /** The default meta description (≤ 160 characters). */
 export const SITE_DESCRIPTION =
-  "Agentry is the harness around Claude Code (OpenCode in development). It sizes the process to the task, runs your board as verified lanes and keeps local memory.";
+  "Agentry is the harness around Claude Code and OpenCode. It sizes the process to the task, runs your board as verified lanes and keeps local memory.";
 
 export const REPO_URL = "https://github.com/silentthreadstudio/agentry";
 export const PUBLISHER = { name: "Silent Thread", url: "https://silentthreadstudio.com" };
 
 /** The install lines, as the docs install page gives them. */
 export const INSTALL_COMMANDS = [
-  "/plugin marketplace add silentthreadstudio/agentry#v0.3.0",
+  "/plugin marketplace add silentthreadstudio/agentry#v0.4.0",
   "/plugin install agentry@agentry-dev",
   "/agentry:init",
 ] as const;
