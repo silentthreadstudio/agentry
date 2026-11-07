@@ -16,7 +16,7 @@ import { withBase } from "../../../lib/base.ts";
     <p>
       Agentry installs as a Claude Code plugin from its GitHub repo. From a Claude Code session in your repo, add it, install it, and let <code>/agentry:init</code> draft its process file from what it finds:
     </p>
-    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add silentthreadstudio/agentry#v0.4.0
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add silentthreadstudio/agentry#v0.4.1
 <span class="flag__sigil" aria-hidden="true">$ </span>/plugin install agentry@agentry-dev
 <span class="flag__sigil" aria-hidden="true">$ </span>/agentry:init</code></pre>
     <p>
@@ -26,7 +26,7 @@ import { withBase } from "../../../lib/base.ts";
       to hand it a first task.
     </p>
     <p>
-      The <code>#v0.4.0</code> suffix pins the install to the 0.4.0 release; the repo's main branch moves with
+      The <code>#v0.4.1</code> suffix pins the install to the 0.4.1 release; the repo's main branch moves with
       development. To move to a later release, remove the marketplace and add it again with the new tag. Each
       release is also on <a href="https://github.com/silentthreadstudio/agentry/releases">GitHub Releases</a>
       as a zip.
@@ -40,12 +40,16 @@ import { withBase } from "../../../lib/base.ts";
     </p>
     <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>opencode plugin add agentry-opencode
 <span class="flag__sigil" aria-hidden="true">$ </span>opencode service restart
-<span class="flag__sigil" aria-hidden="true">$ </span>npx agentry-opencode init --host opencode --vendor</code></pre>
+<span class="flag__sigil" aria-hidden="true">$ </span>npx agentry-opencode init --host opencode --vendor --apply</code></pre>
     <p>
       The plugin registers <code>agentry_board</code>, <code>agentry_lane</code> and <code>agentry_mem</code> as
-      native tools. The last command gives a repo the OpenCode payload (agents, commands and skills generated from
-      the plugin). It previews by default; add <code>--apply</code> to write. <code>--vendor</code> copies the CLI into the repo's <code>.agentry/</code>,
-      so the agents' CLI fallback works without a checkout. It refuses until the repo has a learned process (<code>/agentry/init</code> first).
+      native tools. The init command gives a repo the OpenCode payload (agents, commands and skills generated from
+      the plugin). Without <code>--apply</code> it previews. <code>--vendor</code> copies the CLI into the repo's <code>.agentry/</code>,
+      so the agents' CLI fallback works without a checkout.
+    </p>
+    <p>
+      In a repo with no learned process the AGENTS.md block is skipped, and the command says so. In OpenCode, run
+      <code>/agentry/init</code> to learn your board, then run the init again to add the AGENTS.md block.
     </p>
 
     <div class="note">

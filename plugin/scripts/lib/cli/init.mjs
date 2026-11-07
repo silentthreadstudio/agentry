@@ -266,6 +266,12 @@ function runInstructions(source, root, apply) {
 
 const MARK = { new: "new", rewrite: "rewrite" };
 
+/** A fresh repo has no process file yet: the trigger block waits for the host's own init command. */
+const NEXT_STEP = {
+  opencode: "/agentry/init", // OpenCode names nested commands with a slash
+};
+const nextStep = (host) => NEXT_STEP[host] ?? "/agentry:init";
+
 function text(state) {
   const apply = state.apply === true;
   const lines = [`${apply ? "✓ " : ""}init ${state.host} → ${state.root}`];
@@ -289,7 +295,11 @@ function text(state) {
     for (const { path, write } of vendored.changed)
       lines.push(`      ${MARK[write] ?? write} ${path}`);
   }
-  if (state.trigger?.data?.lines?.length)
+  if (state.trigger?.skipped)
+    lines.push(
+      `  trigger block: skipped — run ${nextStep(state.host)} in OpenCode to learn your board, then run this init again to add the AGENTS.md block`,
+    );
+  else if (state.trigger?.data?.lines?.length)
     lines.push(
       "  trigger block:",
       ...state.trigger.data.lines.filter((l) => l !== PREVIEW).map((l) => `      ${l}`),
@@ -361,12 +371,15 @@ export async function main(argv = process.argv.slice(2)) {
     );
   // A refusal of the trigger block ends the run before a file is written: the instructions verb and its
   // writers are all-or-nothing, so this stays as clean as the caller's tree was.
+  // The one exception: no process file yet (a fresh repo) skips the block and keeps the rest.
   if (state.trigger.exit >= 2) {
     const why =
       state.trigger.data?.lines?.join("; ") ||
       failText(state.trigger) ||
       `exited ${state.trigger.exit}`;
-    return out(2, say(WHAT, `the trigger block refused: ${why}`, "/agentry:init"));
+    if (!why.includes("no process file here"))
+      return out(2, say(WHAT, `the trigger block refused: ${why}`, nextStep(host)));
+    state.trigger = { exit: 0, data: null, skipped: true };
   }
   Object.assign(state, { host, root, src: source.src, apply });
   if (!apply) return out(0, got["--json"] ? json(state) : text(state));
@@ -406,17 +419,20 @@ export async function main(argv = process.argv.slice(2)) {
   }
   // the trigger block, through the verb that owns it: the plan above already showed its refusal
   // without writing, this one writes
-  const trigger = runInstructions(source, root, true);
+  const trigger = state.trigger.skipped ? state.trigger : runInstructions(source, root, true);
   if (trigger.exit >= 2)
     return out(
       2,
       say(
         WHAT,
         `the trigger block refused: ${trigger.data?.lines?.join("; ") || failText(trigger) || `exited ${trigger.exit}`}`,
-        "/agentry:init",
+        nextStep(host),
       ),
     );
-  const check = cmd(join(source.src, "scripts", "board.mjs"), ["check", "--root", root]);
+  // no process file, no board to check: the same wait as the trigger block
+  const check = trigger.skipped
+    ? null
+    : cmd(join(source.src, "scripts", "board.mjs"), ["check", "--root", root]);
   const final = { ...state, check, vendored, trigger, apply: true };
-  return out(check.status === 0 ? 0 : 1, got["--json"] ? json(final) : text(final));
+  return out(!check || check.status === 0 ? 0 : 1, got["--json"] ? json(final) : text(final));
 }

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <code>0.4.0 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
+  <code>0.4.1 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
 </p>
 
 ---
@@ -58,14 +58,14 @@ Plain Node, no dependencies, nothing to build.
 Requires Claude Code and Node 24 or newer. From a Claude Code session:
 
 ```
-/plugin marketplace add silentthreadstudio/agentry#v0.4.0
+/plugin marketplace add silentthreadstudio/agentry#v0.4.1
 /plugin install agentry@agentry-dev
 ```
 
 Restart the session. Agents, commands and skills load at startup, and the plugin puts `agentry` on the
 Bash tool's PATH.
 
-`#v0.4.0` pins the install to the 0.4.0 release; `main` moves with development. To move to a later release,
+`#v0.4.1` pins the install to the 0.4.1 release; `main` moves with development. To move to a later release,
 remove the marketplace and add it again with the new tag. Each release is also on
 [GitHub Releases](https://github.com/silentthreadstudio/agentry/releases) as a zip.
 
@@ -166,13 +166,15 @@ needed. It needs OpenCode V2 and Node 24 or newer.
 ```
 opencode plugin add agentry-opencode
 opencode service restart
-npx agentry-opencode init --host opencode --vendor
+npx agentry-opencode init --host opencode --vendor --apply
 ```
 
-The plugin registers `agentry_board`, `agentry_lane` and `agentry_mem` as native tools. The last command
-gives a repo the OpenCode payload (agents, commands and skills generated from `plugin/`). It previews by
-default; add `--apply` to write. `--vendor` copies the CLI into the repo's `.agentry/`, so the agents' CLI
-fallback works without a checkout. It refuses until the repo has a learned process (`/agentry/init` first). More in the
+Then, in OpenCode, run `/agentry/init` to learn your board, and run the init again to add the AGENTS.md block.
+
+The plugin registers `agentry_board`, `agentry_lane` and `agentry_mem` as native tools. The init command
+gives a repo the OpenCode payload (agents, commands and skills generated from `plugin/`). Without `--apply`
+it previews. `--vendor` copies the CLI into the repo's `.agentry/`, so the agents' CLI fallback works
+without a checkout. The AGENTS.md block waits for a learned process, so the first run skips it and says so. More in the
 [package README](./packages/agentry-opencode/README.md).
 
 Nothing lands or leaves the machine without you.
@@ -209,7 +211,7 @@ pnpm --filter @agentry/eval selfeval report <run-id>    # a self-contained HTML 
 
 ## Status
 
-Pre-1.0. The current release is `0.4.0`. Commands and flags can still change between releases, and
+Pre-1.0. The current release is `0.4.1`. Commands and flags can still change between releases, and
 [`CHANGELOG.md`](./CHANGELOG.md) records each change. Claude Code and OpenCode are both supported hosts in 0.4.0.
 
 ## Docs

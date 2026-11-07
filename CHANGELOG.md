@@ -6,6 +6,15 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-06
+
+### Fixed
+
+- `agentry init --host opencode --apply` in a repo with no process file yet no longer exits with an error.
+  It keeps the payload and the vendored CLI, skips the AGENTS.md block with a warning that names
+  `/agentry/init` (OpenCode's command syntax), and exits 0. Run `/agentry/init` in OpenCode, then run the
+  init again to add the block.
+
 ## [0.4.0] — 2026-11-06
 
 Agentry 0.4 runs on OpenCode as well as Claude Code. The `agentry-opencode` npm package gives OpenCode
@@ -835,7 +844,8 @@ without the fix.
   - **Self-eval harness** — measures the system's own routing and decision
     quality instead of asserting it works.
 
-[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/silentthreadstudio/agentry/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/silentthreadstudio/agentry/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/silentthreadstudio/agentry/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/silentthreadstudio/agentry/compare/v0.1.2...v0.2.0
