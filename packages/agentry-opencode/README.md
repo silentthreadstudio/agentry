@@ -9,8 +9,11 @@ package ships `vendor/bin/agentry`, so the `shell` tool can run the full CLI (`a
 
 ## Install
 
+The package is published under the npm `next` tag while OpenCode support is in the 0.4 development
+line; `latest` (0.3.0) is Claude Code only.
+
 ```
-opencode plugin add agentry-opencode@<version>
+opencode plugin add agentry-opencode@next
 ```
 
 After updating the plugin, restart the OpenCode service so the new copy is loaded:

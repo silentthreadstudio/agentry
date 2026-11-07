@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Built by one agent. Checked by another. Merged when green.</b><br>
-  Agentry is the harness around Claude Code.
+  Agentry is the harness around Claude Code, with OpenCode support in development.
 </p>
 
 <p align="center">
@@ -18,12 +18,12 @@ has a second agent check the work, and lands it only after your repo's own check
 each run decided, so the next run starts from it. The model stays the same. The conducting around it is the
 product.
 
-It is a Claude Code plugin: nine agents, fifteen skills, twenty-two slash commands and one CLI, `agentry`.
+It is a Claude Code plugin (OpenCode support is in the 0.4 development line, see [Install](#install)): nine agents, fifteen skills, twenty-two slash commands and one CLI, `agentry`.
 Plain Node, no dependencies, nothing to build.
 
 ## Who it is for
 
-- You use Claude Code on a real repository and want its work held to a bar: a contract, an independent
+- You use Claude Code or OpenCode on a real repository and want its work held to a bar: a contract, an independent
   check, your own gate.
 - You keep a board (tasks in Markdown) and want each task built, verified and landed the same way every time.
 - You want the agent to stop re-deriving last week's decisions.
@@ -158,6 +158,22 @@ and roots.
 
 ## Safety model
 
+### OpenCode (0.4 development line)
+
+Not in the 0.3.0 release. The OpenCode package, `agentry-opencode`, is published under the npm `next` tag
+first; `latest` does not carry it yet. It needs OpenCode V2 and Node 24 or newer.
+
+```
+opencode plugin add agentry-opencode@next
+opencode service restart
+```
+
+The plugin registers `agentry_board`, `agentry_lane` and `agentry_mem` as native tools. To give a repo the
+OpenCode payload (agents, commands and skills generated from `plugin/`), run
+`agentry init --host opencode`. It previews by default and writes with `--apply`; it refuses until the repo
+has a learned process (`/agentry/init` first). More in the
+[package README](./packages/agentry-opencode/README.md).
+
 Nothing lands or leaves the machine without you.
 
 - **Lanes never merge or push.** A builder works on `agentry/<id>` in its own worktree. Landing is a separate
@@ -167,7 +183,7 @@ Nothing lands or leaves the machine without you.
 - **Your calls stay yours.** When you reject a proposal or state a rule, the conductor drafts it; nothing is
   written as a decision until you confirm. Closing work that already reached main
   (`lane merge <id> --resolve landed`) or a stuck land is your call too.
-- **Claude Code's permission prompts still apply.** Agentry runs inside them.
+- **The host's permission prompts still apply.** Agentry runs inside them.
 - **Local.** Memory, the board and lane state are files on your machine. The plugin has no telemetry and
   sends nothing anywhere.
 
@@ -193,7 +209,7 @@ pnpm --filter @agentry/eval selfeval report <run-id>    # a self-contained HTML 
 ## Status
 
 Pre-1.0. The current release is `0.3.0`. Commands and flags can still change between releases, and
-[`CHANGELOG.md`](./CHANGELOG.md) records each change. Claude Code is the host today.
+[`CHANGELOG.md`](./CHANGELOG.md) records each change. Claude Code is the supported host in 0.3.0; OpenCode is in development on the `next` tag.
 
 ## Docs
 
