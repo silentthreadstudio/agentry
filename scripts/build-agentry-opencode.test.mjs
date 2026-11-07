@@ -148,7 +148,12 @@ describe("the package", () => {
   });
 
   it("npm pack --dry-run: the vendored core rides along, bin executable, nothing extra", () => {
-    const res = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    // Build vendor/ the way prepack does, then pack without scripts: the build's status line would
+    // otherwise land in the --json output.
+    execFileSync(process.execPath, [join(ROOT, "scripts", "build-agentry-opencode.mjs")], {
+      stdio: "ignore",
+    });
+    const res = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
       cwd: PKG,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
