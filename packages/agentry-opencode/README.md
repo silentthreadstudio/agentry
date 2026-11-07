@@ -26,7 +26,7 @@ opencode service restart
   the opencode-cockpit plugin follows.
 - **Search ranks may differ slightly by runtime.** Where the runtime has `node:sqlite`, memory
   recall/search uses its FTS5 index; without it, a pure-JS token scan with the same relevance rule
-  runs instead. Same outputs either way; ordering can differ a little.
+  runs instead. The same facts are found either way; order can differ slightly.
 
 ## The CLI fallback
 

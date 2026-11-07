@@ -17,15 +17,15 @@ const toMatch = (query) =>
     .map((t) => `${t}*`)
     .join(" OR ");
 
-/** Token-overlap ranking over a full scan: relevance = hits / query-token-count, filtered > 0, sorted
+/** Token-overlap ranking over a full scan, a query token matching as a word prefix (as FTS5 does): relevance = hits / query-token-count, filtered > 0, sorted
  * desc, limit applied last. Fine for the in-memory index's modest size. */
 const rank = (rows, query, limit) => {
   const qs = tokens(query);
   if (qs.length === 0) return [];
   return rows
     .map((r) => {
-      const body = r.body.toLowerCase();
-      const hits = qs.reduce((acc, t) => acc + (body.includes(t) ? 1 : 0), 0);
+      const words = tokens(r.body);
+      const hits = qs.reduce((acc, t) => acc + (words.some((w) => w.startsWith(t)) ? 1 : 0), 0);
       return { id: r.id, relevance: hits / qs.length };
     })
     .filter((r) => r.relevance > 0)

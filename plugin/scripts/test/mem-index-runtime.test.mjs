@@ -50,6 +50,17 @@ test("driver-less index: relevance = hits / query-token-count, sorted desc", (t)
   assert.deepEqual(idx.search("beta epsilon", 10), [{ id: "a", relevance: 0.5 }]);
 });
 
+test("a query term matches as a word prefix on both paths: co finds code, ode does not", () => {
+  for (const idx of [nullIndex(), defaultIndex()]) {
+    idx.add("a", "the code lives here");
+    assert.deepEqual(
+      idx.search("co", 10).map((r) => r.id),
+      ["a"],
+    );
+    assert.deepEqual(idx.search("ode", 10), []);
+  }
+});
+
 test("driver-less index: limit applied last, after relevance ranking", (t) => {
   const idx = nullIndex(t);
   for (const [id, body] of [
