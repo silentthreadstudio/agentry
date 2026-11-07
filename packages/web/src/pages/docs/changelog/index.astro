@@ -1,6 +1,6 @@
 ---
 // /docs/changelog — hand-authored (NOT auto-generated; CHANGELOG.md in the repo is the full record).
-// Release 0.3.0, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
+// Releases 0.4.0 and 0.3.0, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
 // invented features.
 //
 // Base-path rule (#1 404 trap): every internal href goes through withBase().
@@ -11,11 +11,26 @@ import { withBase } from "../../../lib/base.ts";
 <DocsLayout
   current="changelog"
   title="Changelog"
-  description="What changed in Agentry, by release: 0.3.0 (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
+  description="What changed in Agentry, by release: 0.4.0 (OpenCode), 0.3.0 (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
   eyebrow="Reference · Changelog"
   lede="A hand-authored record of what changed, newest first. It tracks releases, not commits, so it leans toward what changed for you. The repo's CHANGELOG.md has every entry."
 >
   <div class="prose">
+    <h2 class="prose__h">0.4.0 — 2026-11-06</h2>
+    <p>
+      Agentry 0.4 runs on OpenCode as well as Claude Code. The <code>agentry-opencode</code> npm package gives
+      OpenCode native board, lane and memory tools, and <code>agentry init --host opencode</code> writes a repo's
+      agents, commands and skills, generated from the same <code>plugin/</code> source as the Claude Code plugin.
+      The memory index no longer needs <code>node:sqlite</code>, so <code>agentry mem</code> also runs under Bun.
+      The <code>lane exec</code> reports, restarts, resumes and briefs say more about what a round did and what
+      comes next.
+    </p>
+    <p>
+      To upgrade on Claude Code, remove the marketplace, add it again with <code>#v0.4.0</code> and restart. On
+      OpenCode, run <code>opencode plugin add agentry-opencode</code> and <code>agentry init --host opencode</code>.
+      The repo's <code>CHANGELOG.md</code> lists what to change when upgrading from 0.3.
+    </p>
+
     <h2 class="prose__h">0.3.0 — 2026-11-05</h2>
     <p>
       Agentry 0.3 turns the plugin into a harness for a repo's own board. <code>/agentry:exec</code> builds a

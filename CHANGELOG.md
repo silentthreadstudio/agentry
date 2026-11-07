@@ -6,9 +6,34 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-06
+
+Agentry 0.4 runs on OpenCode as well as Claude Code. The `agentry-opencode` npm package gives OpenCode
+native board, lane and memory tools, and `agentry init --host opencode` writes a repo's agents, commands
+and skills, generated from the same `plugin/` source as the Claude Code plugin. The memory index no longer
+needs `node:sqlite`, so `agentry mem` also runs under Bun. The `lane exec` reports, restarts, resumes and
+briefs say more about what a round did and what comes next.
+
+### Upgrading from 0.3
+
+- **Claude Code:** move the install pin to `#v0.4.0`: remove the marketplace, add it again with
+  `/plugin marketplace add silentthreadstudio/agentry#v0.4.0`, and restart Claude Code.
+- **OpenCode:** run `opencode plugin add agentry-opencode`, then `opencode service restart`, and
+  `agentry init --host opencode` in the repo (it previews; add `--apply` to write).
+- `agentry mem recall` and `agentry mem search` take the query as one bare argument:
+  `agentry mem recall "bundling node:sqlite"`. `--query` still works; giving both, or more than one bare
+  argument, is a usage error.
+- Specialist agents can no longer publish an Artifact page, and the lane briefs tell builders and
+  verifiers to publish and upload nothing.
+- A script under a `ui/` folder now goes to the implementer, not the designer. Put `- **Agent:** designer`
+  in the contract to override it.
+- Where `node:sqlite` is missing, the memory index falls back to a pure-JS scan and says so once on stderr.
+- `agentry init --host opencode --vendor` now copies the whole CLI, and `lane session start` and
+  `board explain` warn when the vendored copy is behind the plugin.
+
 ### Added
 
-- **OpenCode V2 as a second host (adapter, not a fork).** `scripts/build-opencode.mjs` generates a
+- **OpenCode as a second host (adapter, not a fork).** `scripts/build-opencode.mjs` generates a
   `.opencode/` payload from `plugin/` — 9 agents (nested under `agentry/`, so ids read
   `agentry/implementer`), 22 commands under `/agentry/…` (path-style names, since OpenCode has no
   colon prefix), 15 skills — and writes `.opencode/opencode.jsonc` (`default_agent: agentry/conductor`,
@@ -24,7 +49,7 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   `--src`; previews by default and writes with `--apply` (exit 0 ok / 1 findings·stopped / 2 refused);
   refuses cleanly when the repo has no learned process yet (`/agentry/init` first); a second `--apply`
   reports zero drift. Atomic: nothing is written when a step refuses.
-- **`--vendor` copies the whole CLI, not just the checker** (A25's mechanism generalized): `bin/agentry`,
+- **`--vendor` copies the whole CLI, not just the checker:** `bin/agentry`,
   the four top scripts, `scripts/lib/**`, the process templates and the lane brief templates go to
   `.agentry/` with a one-line version stamp; the generated commands then call the vendored bin, and
   `board explain` warns when the stamp is behind the running plugin
@@ -37,24 +62,20 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
   the relevance rule is the module's own fallback scan — one rule, never a fork) and says so once on
   stderr, in the existing `[mem]` notice shape. `agentry mem` verified under Bun 1.3.13 and Node 24.
 
-### Added (OpenCode Tier 2, A62)
-
-- **`agentry-opencode` — the native-tools plugin for OpenCode V2** (npm name reserved; publish owner-gated):
+- **`agentry-opencode` — the native-tools plugin for OpenCode V2:**
   six tools over the vendored CLI core — `agentry_board` (typed reads), `agentry_lane` (reads),
   `agentry_mem` (typed reads on the store), plus `agentry_board_write`, `agentry_lane_drive`,
   `agentry_mem_write` for mutations through the CLI's own grammar (`words[]` whole tokens; the CLI stays
-  the one strict validator, A26). Every Tier-2 feature keeps its Tier-1 fallback (A59): the shipped tarball
+  the one strict validator). Every native tool keeps a shell fallback: the shipped tarball
   carries `vendor/bin/agentry`, so the shell path works in a repo that never installed anything.
-- **Lane safety becomes enforceable, not prose (A60 made real).** The write tools assert their own id via
+- **Lane safety is enforceable, not prose.** The write tools assert their own id via
   `ctx.permission.assert`, so project rules deny or ask for them by name —
   `{ "action": "agentry_mem_write", "resource": "*", "effect": "deny" }` refused a write before the CLI ran.
   The generated preset ships `external_directory: ask` and `default_agent: agentry/conductor`.
 - **The store is the session's repo, not the server's cwd.** A plugin runs inside OpenCode's server whose
   cwd is not the workspace (measured: `$HOME`); the mem tools spawn the vendored CLI with the workspace as
   the CLI's own store root, so reads and writes land in the session's repo store. Board and lane stay
-  in-process. Verified live on opencode v2.2.5; the probe record is on the branch's `OPENCODE.md` fact sheet
-  commits.
-
+  in-process. Verified live on opencode v2.2.5.
 
 ### Changed
 
@@ -813,7 +834,8 @@ without the fix.
   - **Self-eval harness** — measures the system's own routing and decision
     quality instead of asserting it works.
 
-[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/silentthreadstudio/agentry/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/silentthreadstudio/agentry/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/silentthreadstudio/agentry/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/silentthreadstudio/agentry/compare/v0.1.1...v0.1.2
