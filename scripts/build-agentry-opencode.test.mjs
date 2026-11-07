@@ -236,7 +236,7 @@ describe("the packed tarball, installed alone", () => {
       execFileSync("cp", [join(example, f), join(repo, ".agentry", f)]);
     mkdirSync(join(repo, "docs"), { recursive: true });
     execFileSync("cp", ["-a", join(example, "board"), join(repo, "docs", "work")]);
-    const out = run(["init", "--host", "opencode", "--apply", "--root", repo], repo);
+    const out = run(["init", "--host", "opencode", "--vendor", "--apply", "--root", repo], repo);
     assert.ok(out.startsWith("✓ init opencode"), out);
     for (const path of [
       ".opencode/agents/agentry",
@@ -245,5 +245,12 @@ describe("the packed tarball, installed alone", () => {
     ])
       assert.ok(readdirSync(join(repo, path)).length > 0, `${path} not written`);
     assert.ok(existsSync(join(repo, ".opencode", "agents", "agentry", "conductor.md")));
+    const vendored = join(repo, ".agentry", "bin", "agentry");
+    assert.ok(existsSync(vendored), ".agentry/bin/agentry not written");
+    const said = execFileSync(process.execPath, [vendored, "--version"], {
+      cwd: repo,
+      encoding: "utf8",
+    });
+    assert.equal(said.trim(), version);
   });
 });
