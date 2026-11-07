@@ -14,7 +14,7 @@ export const SITE_NAME = "Agentry";
 
 /** The default meta description (≤ 160 characters). */
 export const SITE_DESCRIPTION =
-  "Agentry is the harness around Claude Code. It sizes the process to the task, runs your board as verified lanes, and keeps a local memory.";
+  "Agentry is the harness around Claude Code (OpenCode in development). It sizes the process to the task, runs your board as verified lanes and keeps local memory.";
 
 export const REPO_URL = "https://github.com/silentthreadstudio/agentry";
 export const PUBLISHER = { name: "Silent Thread", url: "https://silentthreadstudio.com" };
