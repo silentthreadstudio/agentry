@@ -8,7 +8,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -165,8 +164,10 @@ function execRepo() {
 const copyOf = (root) => {
   const to = realpathSync(mkdtempSync(join(tmpdir(), "agentry-opencode-lane-copy-")));
   temp.push(to);
-  rmSync(to, { recursive: true, force: true });
-  cpSync(root, to, { recursive: true });
+  // `cp -a`, not fs.cpSync: on Linux cpSync can fail mid-copy on a git repo's object folders (ENOENT).
+  // The copy keeps ignored files too, which a clone would drop.
+  const res = spawnSync("cp", ["-a", `${root}/.`, to], { encoding: "utf8" });
+  if (res.status !== 0) throw new Error(`cp -a failed: ${res.stderr}`);
   return to;
 };
 
