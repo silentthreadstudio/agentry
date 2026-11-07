@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -312,3 +313,33 @@ test("--global keeps the user's own files in the global dir and rewrites a chang
     rmSync(xdg, { recursive: true, force: true });
   }
 });
+
+test("repo-mode init from a vendored source without --vendor names the global agentry bin, not plugin/bin/agentry", () =>
+  withTemp((root) => {
+    // a vendored package's shape: the plugin payload with its generator inside it
+    // realpath: the generator only runs as a script when its path is not behind a symlink (/var on macOS)
+    const pkg = realpathSync(mkdtempSync(join(tmpdir(), "agentry-init-pkg-")));
+    try {
+      cpSync(PLUGIN, join(pkg, "vendor"), { recursive: true });
+      mkdirSync(join(pkg, "vendor", "scripts"), { recursive: true });
+      cpSync(
+        join(REPO, "scripts", "build-opencode.mjs"),
+        join(pkg, "vendor", "scripts", "build-opencode.mjs"),
+      );
+      const res = run(root, "--src", join(pkg, "vendor"), "--apply");
+      assert.equal(res.status, 0, res.stderr);
+      const text = readFileSync(
+        join(root, ".opencode", "agents", "agentry", "conductor.md"),
+        "utf8",
+      );
+      assert.match(text, /`agentry`, the global bin/);
+      for (const rel of tree(join(root, ".opencode")))
+        assert.doesNotMatch(
+          readFileSync(join(root, ".opencode", rel), "utf8"),
+          /plugin\/bin\/agentry/,
+          rel,
+        );
+    } finally {
+      rmSync(pkg, { recursive: true, force: true });
+    }
+  }));

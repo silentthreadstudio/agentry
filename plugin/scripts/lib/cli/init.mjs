@@ -149,6 +149,16 @@ function resolveSource(srcArg) {
   return { err: "no payload source (a vendored CLI copy carries none)" };
 }
 
+// The CLI hint the generated text carries: `--vendor` names the copy; a source that is a vendored
+// package (its generator ships inside it, so no `plugin/bin/agentry` exists for the user) names the
+// global `agentry` bin, as `--global` does; a repo checkout keeps `plugin/bin/agentry`.
+const textFlag = (got, source) =>
+  got["--vendor"]
+    ? ["--vendor"]
+    : source.generator === join(source.src, "scripts", "build-opencode.mjs")
+      ? ["--global"]
+      : [];
+
 // ---------------------------------------------------------------------------
 // subprocesses: every one is a whole CLI run, stdio piped, output kept
 
@@ -200,7 +210,7 @@ function plan(got, source, root) {
       probe,
       "--src",
       source.src,
-      ...(got["--vendor"] ? ["--vendor"] : []),
+      ...textFlag(got, source),
     ]);
     if (gen.status !== 0)
       return {
@@ -517,7 +527,7 @@ export async function main(argv = process.argv.slice(2)) {
       root,
       "--src",
       source.src,
-      ...(got["--vendor"] ? ["--vendor"] : []),
+      ...textFlag(got, source),
     ]);
     if (gen.status !== 0)
       return out(
