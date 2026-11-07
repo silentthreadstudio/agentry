@@ -92,7 +92,8 @@ Global:
 3. `npm install -g agentry-opencode@<new>`
 4. `agentry init --host opencode --global --apply`
 
-Per project: rerun `npx agentry-opencode@<new> init --host opencode --vendor --apply` in the repo.
+Per project: update the plugin line and restart (steps 1 and 2), then rerun
+`npx agentry-opencode@<new> init --host opencode --vendor --apply` in the repo.
 
 Init previews changes, rewrites only Agentry's generated files, keeps your own files, and does nothing when
 already in sync.
