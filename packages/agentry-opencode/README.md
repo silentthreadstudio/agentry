@@ -9,6 +9,33 @@ package ships `vendor/bin/agentry`, so the `shell` tool can run the full CLI (`a
 
 ## Install
 
+### What you are installing
+
+One npm package, `agentry-opencode`, used in two ways:
+
+- **OpenCode loads it as a plugin.** `opencode plugin add` writes an entry in `opencode.jsonc`, and OpenCode fetches
+  its own copy into its own cache. That copy is not on your PATH.
+- **You install or run it as the CLI.** `npm install -g agentry-opencode` (or `npx agentry-opencode`) gives you the
+  `agentry` command, which the agents run in the shell. The same package carries the agents, commands and skills
+  that `agentry init` writes for OpenCode to read.
+
+So the plugin and the CLI are the same package installed twice, for two readers: OpenCode, and your shell.
+
+The plugin gives the agents native tools, with structured input and output and OpenCode's permission prompt on
+writes:
+
+| Tool | What it does |
+|---|---|
+| `agentry_board` | Reads the board: status, check, explain, contract, next-id, commits, scan, draft list, instructions. |
+| `agentry_board_write` | Changes the board: add, set, fix, draft. Previews unless `--apply` is passed. |
+| `agentry_lane` | Reads lanes: session start, the sweep plan, a lane's ledger (`exec show`). |
+| `agentry_lane_drive` | Drives lanes: exec steps, merge, sweep `--apply`, note, spike, session close. |
+| `agentry_mem` | Reads memory: recall, search, stats. |
+| `agentry_mem_write` | Changes memory: write, update, forget, feedback, episode. |
+
+Without the plugin the agents fall back to running `agentry ...` in the shell, so everything still works. The CLI
+is for the same board, lane and memory operations from your terminal or the agents' shell, plus `init`.
+
 An OpenCode setup has three pieces:
 
 | Piece | What it is |
