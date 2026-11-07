@@ -298,21 +298,21 @@ try {
 }
 
 // Package check — packages/agentry-opencode (the omit-one-engine-miss-one rule works both ways): the
-// generated vendor copy must be in sync with plugin/ (one file-set, two writers), the manifest must
+// vendor copy (built, never committed) must build fresh from plugin/ (one file-set, two writers), the manifest must
 // meet the publish shape (versions equal, zero deps), and the tarball must actually carry the vendored
-// core with its bin executable and nothing the package does not ship.
+// core (built just above, so pack runs without its prepack) with its bin executable and nothing the package does not ship.
 const OCODE = join(ROOT, "packages", "agentry-opencode");
 try {
-  execFileSync(process.execPath, [join(ROOT, "scripts", "build-agentry-opencode.mjs"), "--check"], {
+  execFileSync(process.execPath, [join(ROOT, "scripts", "build-agentry-opencode.mjs")], {
     cwd: ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",
   });
-  ok("agentry-opencode package in sync", "generated from plugin/, zero drift");
+  ok("agentry-opencode vendor builds", "built fresh from plugin/ (not committed)");
 } catch (run) {
   const out = `${run.stdout ?? ""}${run.stderr ?? ""}`.trim().split("\n").slice(1);
   err(
-    `agentry-opencode vendor out of sync → node scripts/build-agentry-opencode.mjs${out.length ? `\n         ${out.join("\n         ")}` : ""}`,
+    `agentry-opencode vendor build failed → node scripts/build-agentry-opencode.mjs${out.length ? `\n         ${out.join("\n         ")}` : ""}`,
   );
 }
 
@@ -347,7 +347,7 @@ try {
 {
   let pack = null;
   try {
-    const res = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    const res = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
       cwd: OCODE,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf8",

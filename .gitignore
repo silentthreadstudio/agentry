@@ -3,6 +3,8 @@ node_modules/
 
 # build output — all dev-only; the plugin ships no build output
 packages/core/dist/
+# the opencode package's vendored CLI core — built from plugin/ by scripts/build-agentry-opencode.mjs (prepack), never committed
+packages/agentry-opencode/vendor/
 
 # derived memory index (text files are the source of truth and ARE committed; the DB is rebuilt)
 **/.agentry/memory/**/*.db

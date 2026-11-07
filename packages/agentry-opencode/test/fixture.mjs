@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import "./vendor.mjs";
 
 const FIXTURES = join(
   dirname(fileURLToPath(import.meta.url)),

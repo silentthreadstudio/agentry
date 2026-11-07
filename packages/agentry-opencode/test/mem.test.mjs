@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { memRead, memWrite } from "../src/tools/mem.mjs";
+import "./vendor.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VENDOR = join(HERE, "..", "vendor", "scripts");

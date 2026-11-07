@@ -18,6 +18,7 @@
     "directory": "packages/agentry-opencode"
   },
   "scripts": {
+    "prepack": "node ../../scripts/build-agentry-opencode.mjs",
     "test": "node --test \"test/*.test.mjs\""
   }
 }
