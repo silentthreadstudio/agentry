@@ -9,47 +9,75 @@ package ships `vendor/bin/agentry`, so the `shell` tool can run the full CLI (`a
 
 ## Install
 
-OpenCode is supported from Agentry 0.4.0. The package is on npm under `latest`, so no tag is needed.
+An OpenCode setup has three pieces:
 
-```
-opencode plugin add agentry-opencode
-```
+| Piece | What it is |
+|---|---|
+| CLI | `agentry`, which the agents run in the shell. |
+| Agents, commands and skills | Files OpenCode reads. |
+| Plugin | The native `agentry_board`, `agentry_lane` and `agentry_mem` tools, loaded from OpenCode's config. Recommended; without it, the agents fall back to the CLI. |
 
-Restart the OpenCode service so the plugin loads (do it after every update too):
+The package, `agentry-opencode`, is on npm. It needs OpenCode V2 and Node 24 or newer. Pick one install.
 
-```
-opencode service restart
-```
+### Global install
 
-Then give the repo its agents, commands and skills. The package carries what it needs, so no Agentry
-checkout is required. `--vendor` copies the CLI into the repo's `.agentry/`, so the agents' CLI fallback
-works without a checkout. Without `--apply` this previews:
-
-```
-npx agentry-opencode init --host opencode --vendor --apply
-```
-
-In a repo with no learned process the AGENTS.md block is skipped, and the command says so. In OpenCode, run
-`/agentry/init` to learn your board, then run the init again to add the AGENTS.md block.
-
-### Install globally
-
-One copy of the payload for every repo, in OpenCode's global config dir (`$XDG_CONFIG_HOME/opencode`, else
-`~/.config/opencode`):
+Recommended for one person across all repos. Run these in this order:
 
 ```
 npm install -g agentry-opencode
-opencode plugin add agentry-opencode
+opencode plugin add agentry-opencode@0.4.2
 opencode service restart
 agentry init --host opencode --global --apply
 ```
 
-Then, per repo, run `/agentry/init` in OpenCode to learn the board, and `agentry init --host opencode --apply`
-for the repo's `AGENTS.md` block. Run that repo init without `--vendor`; its payload overrides the global one.
-`--global` writes only agents, commands and skills, never touches a repo, and never removes your own files
-there; `--global` with `--vendor` is refused.
+Then, in each repo, run `/agentry/init` in OpenCode to learn or scaffold the board, and run
+`agentry init --host opencode --apply` to add the `AGENTS.md` block. Run that repo init without `--vendor`; its
+payload overrides the global one. `--global` writes only agents, commands and skills, never touches a repo, and
+never removes your own files there; `--global` with `--vendor` is refused.
 
-Per project pins the version in each repo and is shared through `.opencode/`; global is one copy for all repos.
+### Per-project install
+
+Pins the version in the repo and can be shared by committing `.opencode/`:
+
+```
+opencode plugin add agentry-opencode@0.4.2
+opencode service restart
+npx agentry-opencode@0.4.2 init --host opencode --vendor --apply
+```
+
+Then run `/agentry/init` in OpenCode, and run the same `npx agentry-opencode@0.4.2 init --host opencode --vendor --apply`
+again to add the `AGENTS.md` block. `--vendor` copies the CLI into the repo's `.agentry/`, so nothing global is
+needed.
+
+### Pin the plugin version
+
+Write `agentry-opencode@<version>` in `opencode plugin add`, never `@latest`: OpenCode caches the version it
+first fetched for `@latest` and does not refetch it, so an update silently does nothing. Keep exactly one
+`agentry-opencode` entry in `opencode.jsonc`, because running `plugin add` again adds a second line.
+
+### Updating
+
+Global:
+
+1. Edit the version in the existing `"agentry-opencode@<version>"` line in `~/.config/opencode/opencode.jsonc`,
+   or run `opencode plugin add agentry-opencode@<new>` and delete the old line.
+2. `opencode service restart`
+3. `npm install -g agentry-opencode@<new>`
+4. `agentry init --host opencode --global --apply`
+
+Per project: rerun `npx agentry-opencode@<new> init --host opencode --vendor --apply` in the repo.
+
+Init previews changes, rewrites only Agentry's generated files, keeps your own files, and does nothing when
+already in sync.
+
+### Check it worked
+
+- `agentry --version` prints `0.4.2`.
+- `opencode debug agents` lists `agentry/conductor` and the 8 specialists.
+- In OpenCode, typing `/agentry` shows the commands. Commands are namespaced: `/agentry/init`, not `/agentry:init`.
+
+Without `--apply`, init previews. The AGENTS.md block waits for a learned process, so a first run in a repo
+skips it and says so.
 
 ## Notes
 
