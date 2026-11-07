@@ -3,8 +3,9 @@
 // this CLI under <root>/.agentry/ (init-vendor.mjs), and the trigger block through
 // `agentry board instructions --target agents` (OpenCode reads AGENTS.md only; CLAUDE.local.md is never
 // offered on this host). The payload source is `--src`, else the sibling `plugin/` of this script's repo
-// root, else the nearest parent holding agents/ and a plugin manifest (a vendored CLI copy has neither,
-// so it refuses there: it cannot generate payloads). Preview by default: the payload is generated into
+// root, else the nearest parent holding agents/ and a plugin manifest (the agentry-opencode package's
+// vendor/ is one, carrying the payload source and generator; a `.agentry/` copy has neither, so it
+// refuses there: it cannot generate payloads). Preview by default: the payload is generated into
 // a temp probe and compared against the target, the trigger block is shown through the instructions
 // verb, and nothing is written. `--apply` runs the same steps for real — vendoring before generation,
 // since the generated text then calls the copy — and closes with `agentry board check`, whose findings

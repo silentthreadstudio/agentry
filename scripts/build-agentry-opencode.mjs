@@ -9,6 +9,10 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 // plugin/scripts/lib/cli/init-vendor.mjs's vendoredFiles() is the one file-set definition and this
 // script its second writer — edit plugin/ and rerun this, never hand-edit vendor/.
 //
+// vendor/ is also a plugin layout: beside the CLI it carries the payload source (agents/, commands/,
+// skills/, .claude-plugin/plugin.json) and the generator (scripts/build-opencode.mjs), so the vendored
+// `agentry init --host opencode` finds its own source and generates exactly as it does in a checkout.
+//
 // usage: node scripts/build-agentry-opencode.mjs [--out <package-dir>] [--check]
 //   --out    the package dir whose vendor/ is written (default: this repo's packages/agentry-opencode)
 //   --check  regenerate to a temp dir and require zero drift (nothing written)
@@ -39,6 +43,28 @@ async function walk(dir) {
   return out.sort();
 }
 
+// Every file under `dir` as `{ path: <prefix><rel>, src }`, sorted.
+async function filesUnder(dir, prefix) {
+  const out = [];
+  for (const p of await walk(dir)) out.push({ path: `${prefix}${relative(dir, p)}`, src: p });
+  return out;
+}
+
+// What the package's vendor/ carries, sorted by path: the CLI's own set plus the payload source and the
+// generator `init` runs. A path both name (the skill templates) is carried once.
+export async function packageFiles(source = PLUGIN) {
+  const found = [
+    ...(await filesUnder(join(source, "agents"), "agents/")),
+    ...(await filesUnder(join(source, "commands"), "commands/")),
+    ...(await filesUnder(join(source, "skills"), "skills/")),
+    { path: ".claude-plugin/plugin.json", src: join(source, ".claude-plugin", "plugin.json") },
+    { path: "scripts/build-opencode.mjs", src: join(ROOT, "scripts", "build-opencode.mjs") },
+  ];
+  const files = new Map(vendoredFiles(source).map((f) => [f.path, f]));
+  for (const { path, src } of found) files.set(path, { path, src, bytes: await readFile(src) });
+  return [...files.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
+}
+
 // vendor/ written from scratch: the whole directory gone, then every carried file back, the bin and the
 // scripts the source marks executable keeping their mode. The version stamp `init --vendor` writes is
 // NOT part of the set (vendoredFiles does not carry it): the package's own freshness is npm's.
@@ -46,7 +72,7 @@ export async function generate(out, source = PLUGIN) {
   const dst = join(out, "vendor");
   await rm(dst, { recursive: true, force: true });
   await mkdir(dst, { recursive: true });
-  const files = vendoredFiles(source);
+  const files = await packageFiles(source);
   for (const file of files) {
     const target = join(dst, file.path);
     await mkdir(dirname(target), { recursive: true });
@@ -71,7 +97,7 @@ async function drift(out, source = PLUGIN) {
   if (!existsSync(real)) return ["absent: vendor/"]; // the whole copy missing is one named thing
   try {
     await generate(probe, source);
-    const files = new Map(vendoredFiles(source).map((f) => [f.path, f]));
+    const files = new Map((await packageFiles(source)).map((f) => [f.path, f]));
     for (const [path, file] of files) {
       const target = join(real, path);
       let bytes = null;

@@ -8,6 +8,9 @@
   "exports": {
     ".": "./index.js"
   },
+  "bin": {
+    "agentry-opencode": "./vendor/bin/agentry"
+  },
   "files": ["index.js", "src/**", "vendor/**", "README.md"],
   "engines": {
     "node": ">=24"

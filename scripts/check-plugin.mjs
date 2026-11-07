@@ -336,6 +336,10 @@ try {
     const files = Array.isArray(m.files) ? m.files : [];
     for (const wanted of ["index.js", "src/**", "vendor/**", "README.md"])
       if (!files.includes(wanted)) problems.push(`files whitelist omits ${wanted}`);
+    if (m.bin?.["agentry-opencode"] !== "./vendor/bin/agentry")
+      problems.push(
+        `bin.agentry-opencode ${JSON.stringify(m.bin?.["agentry-opencode"])} ≠ ./vendor/bin/agentry`,
+      );
     if (m.engines?.node !== ">=24")
       problems.push(`engines.node ${JSON.stringify(m.engines?.node)} ≠ >=24`);
     for (const p of problems) err(`agentry-opencode manifest: ${p}`);
@@ -376,13 +380,21 @@ try {
     for (const wanted of [
       "vendor/scripts/lib/memory/persistence/db-index.mjs",
       "vendor/scripts/lib/cli/router.mjs",
+      "vendor/scripts/build-opencode.mjs",
+      "vendor/.claude-plugin/plugin.json",
+      "vendor/agents/conductor.md",
+      "vendor/commands/init.md",
+      "vendor/skills/process/templates/BOARD.md",
     ])
       if (!paths.has(wanted)) problems.push(`tarball has no ${wanted}`);
     for (const [path] of paths)
       if (/(^|\/)(node_modules|test)\//.test(path)) problems.push(`tarball ships ${path}`);
     for (const p of problems) err(`agentry-opencode tarball: ${p}`);
     if (!problems.length)
-      ok("agentry-opencode tarball", `${entries.length} entries, the vendored core and its bin in`);
+      ok(
+        "agentry-opencode tarball",
+        `${entries.length} entries, the vendored core, its bin and the payload source in`,
+      );
   }
 }
 
