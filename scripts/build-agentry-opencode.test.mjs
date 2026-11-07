@@ -19,8 +19,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { vendoredFiles } from "../plugin/scripts/lib/cli/init-vendor.mjs";
-import { generate, main } from "./build-agentry-opencode.mjs";
+import { generate, main, packageFiles } from "./build-agentry-opencode.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -51,9 +50,9 @@ async function captureErr(fn) {
 }
 
 describe("generate", () => {
-  it("writes exactly vendoredFiles(plugin)'s set, with the bin executable", async () => {
+  it("writes exactly packageFiles(plugin)'s set, with the bin executable", async () => {
     const dir = await pkgDir();
-    const files = vendoredFiles(PLUGIN);
+    const files = await packageFiles(PLUGIN);
     assert.ok(files.length > 100);
     const written = [];
     for (const f of files) {
@@ -63,7 +62,7 @@ describe("generate", () => {
       written.push(f.path);
     }
     const walked = [];
-    for (const f of vendoredFiles(PLUGIN)) walked.push(f.path); // the set is the definition, not walking
+    for (const f of await packageFiles(PLUGIN)) walked.push(f.path); // the set is the definition, not walking
     assert.deepEqual(written, walked);
     assert.ok(
       statSync(join(dir, "vendor", "bin/agentry")).mode & 0o111,
@@ -75,7 +74,7 @@ describe("generate", () => {
     const dir = await pkgDir();
     await generate(dir);
     // a write that lost a suffix would differ; the set is one definition, both writers
-    for (const f of vendoredFiles(PLUGIN))
+    for (const f of await packageFiles(PLUGIN))
       assert.deepEqual(readFileSync(join(dir, "vendor", f.path)), f.bytes);
   });
 });
@@ -143,6 +142,7 @@ describe("the package", () => {
     assert.equal(m.engines.node, ">=24");
     for (const wanted of ["index.js", "src/**", "vendor/**", "README.md"])
       assert.ok(m.files.includes(wanted), `files whitelist omits ${wanted}`);
+    assert.equal(m.bin["agentry-opencode"], "./vendor/bin/agentry");
     assert.ok(!("dependencies" in m));
     assert.ok(!("devDependencies" in m));
   });
@@ -169,8 +169,16 @@ describe("the package", () => {
     for (const wanted of [
       "vendor/scripts/lib/memory/persistence/db-index.mjs",
       "vendor/scripts/lib/cli/router.mjs",
+      "vendor/scripts/build-opencode.mjs",
+      "vendor/.claude-plugin/plugin.json",
+      "vendor/agents/conductor.md",
+      "vendor/commands/init.md",
+      "vendor/skills/process/templates",
     ])
-      assert.ok(entries.has(wanted), `tarball has no ${wanted}`);
+      assert.ok(
+        [...entries.keys()].some((p) => p === wanted || p.startsWith(`${wanted}/`)),
+        `tarball has no ${wanted}`,
+      );
     const bad = [...entries.keys()].filter((path) => /(^|\/)(node_modules|test)\//.test(path));
     assert.deepEqual(bad, [], "tarball ships generated or test noise");
     assert.ok(entries.has("README.md") && entries.has("index.js"));
@@ -187,5 +195,55 @@ describe("the package", () => {
       },
     );
     assert.ok(real.includes("in sync"));
+  });
+});
+
+describe("the packed tarball, installed alone", () => {
+  it("its bin runs init --host opencode --apply in a fresh repo, with no Agentry checkout", () => {
+    // The real thing: build vendor/ as prepack does, npm pack, unpack, run the bin from there.
+    execFileSync(process.execPath, [join(ROOT, "scripts", "build-agentry-opencode.mjs")], {
+      stdio: "ignore",
+    });
+    const dist = join(tmp, "packed");
+    mkdirSync(dist, { recursive: true });
+    const res = execFileSync(
+      "npm",
+      ["pack", "--json", "--ignore-scripts", "--pack-destination", dist],
+      {
+        cwd: PKG,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    const parsed = JSON.parse(res);
+    const pack = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
+    const tarball = join(dist, pack.filename);
+    execFileSync("tar", ["-xzf", tarball, "-C", dist]);
+    const bin = join(dist, "package", "vendor", "bin", "agentry");
+    assert.ok(statSync(bin).mode & 0o111, "the packed bin is not executable");
+    const version = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).version;
+    const run = (args, cwd) =>
+      execFileSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" });
+    assert.ok(run(["--version"], dist).includes(version));
+
+    const repo = join(tmp, "scratch-repo");
+    mkdirSync(repo, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    // a minimal board: the solo-fast example's files, each where its README says it goes
+    const example = join(ROOT, "examples", "workflows", "solo-fast");
+    mkdirSync(join(repo, ".agentry"), { recursive: true });
+    for (const f of ["process.json", "workflow.json", "config.json"])
+      execFileSync("cp", [join(example, f), join(repo, ".agentry", f)]);
+    mkdirSync(join(repo, "docs"), { recursive: true });
+    execFileSync("cp", ["-a", join(example, "board"), join(repo, "docs", "work")]);
+    const out = run(["init", "--host", "opencode", "--apply", "--root", repo], repo);
+    assert.ok(out.startsWith("✓ init opencode"), out);
+    for (const path of [
+      ".opencode/agents/agentry",
+      ".opencode/commands/agentry",
+      ".opencode/skills",
+    ])
+      assert.ok(readdirSync(join(repo, path)).length > 0, `${path} not written`);
+    assert.ok(existsSync(join(repo, ".opencode", "agents", "agentry", "conductor.md")));
   });
 });
