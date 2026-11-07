@@ -45,3 +45,47 @@ jobs:
         with:
           files: agentry-*.zip
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # The `agentry-opencode` npm package, published from the same tag by npm trusted publishing (OIDC): no
+  # token secret. vendor/ is built here, never committed; the version must equal the tag.
+  npm:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # the OIDC token npm trades for a publish credential
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      # trusted publishing needs npm 11.5.1 or later
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Build the vendored core
+        run: node scripts/build-agentry-opencode.mjs
+
+      - name: Verify plugin gate (structure)
+        run: node scripts/check-plugin.mjs
+
+      - name: Check the version matches the tag
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./packages/agentry-opencode/package.json').version")
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::package version $version does not match tag $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        working-directory: packages/agentry-opencode
+        run: |
+          set -euo pipefail
+          tag=""
+          case "${GITHUB_REF_NAME}" in *-*) tag="--tag next" ;; esac
+          npm publish --access public $tag
