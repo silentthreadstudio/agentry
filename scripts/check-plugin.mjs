@@ -336,10 +336,9 @@ try {
     const files = Array.isArray(m.files) ? m.files : [];
     for (const wanted of ["index.js", "src/**", "vendor/**", "README.md"])
       if (!files.includes(wanted)) problems.push(`files whitelist omits ${wanted}`);
-    if (m.bin?.["agentry-opencode"] !== "./vendor/bin/agentry")
-      problems.push(
-        `bin.agentry-opencode ${JSON.stringify(m.bin?.["agentry-opencode"])} ≠ ./vendor/bin/agentry`,
-      );
+    for (const name of ["agentry-opencode", "agentry"])
+      if (m.bin?.[name] !== "./vendor/bin/agentry")
+        problems.push(`bin.${name} ${JSON.stringify(m.bin?.[name])} ≠ ./vendor/bin/agentry`);
     if (m.engines?.node !== ">=24")
       problems.push(`engines.node ${JSON.stringify(m.engines?.node)} ≠ >=24`);
     for (const p of problems) err(`agentry-opencode manifest: ${p}`);
@@ -377,6 +376,11 @@ try {
     if (!bin) problems.push("tarball has no vendor/bin/agentry");
     else if (!isExecFile(modeOf(bin)))
       problems.push(`vendor/bin/agentry mode ${modeOf(bin)} is not executable`);
+    // both commands (`agentry-opencode` and the `agentry` alias) must point at that executable file
+    const bins = readJson(join(OCODE, "package.json")).bin ?? {};
+    for (const name of ["agentry-opencode", "agentry"])
+      if (!paths.has(String(bins[name]).replace(/^\.\//, "")))
+        problems.push(`bin ${name} → ${bins[name]} is not in the tarball`);
     for (const wanted of [
       "vendor/scripts/lib/memory/persistence/db-index.mjs",
       "vendor/scripts/lib/cli/router.mjs",

@@ -9,11 +9,22 @@
 // a temp probe and compared against the target, the trigger block is shown through the instructions
 // verb, and nothing is written. `--apply` runs the same steps for real — vendoring before generation,
 // since the generated text then calls the copy — and closes with `agentry board check`, whose findings
-// end the run as findings and keep the write. Exit 0 ok, 1 findings, 2 refused; --json prints one
+// end the run as findings and keep the write. `--global` writes the payload (agents, commands, skills)
+// into OpenCode's global config dir instead ($XDG_CONFIG_HOME/opencode, else ~/.config/opencode),
+// generated for the `agentry` bin on PATH; it touches no repo (no AGENTS.md block, no board check),
+// never removes a file, and the repo's own payload, when present, overrides it. Exit 0 ok, 1 findings, 2 refused; --json prints one
 // object over the whole state. Node built-ins only.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gitRootOf } from "../process/contract.mjs";
@@ -27,7 +38,8 @@ const WHAT = "init";
 const VENDOR_HOME = ".agentry";
 
 const HELP = {
-  usage: "init --host opencode [--root <git root>] [--src <plugin>] [--vendor] [--apply] [--json]",
+  usage:
+    "init --host opencode [--root <git root>] [--src <plugin>] [--vendor | --global] [--apply] [--json]",
   purpose:
     "Write the OpenCode V2 payload, a vendored CLI under .agentry/ (with --vendor) and the AGENTS.md trigger block: preview by default, --apply writes.",
   args: {},
@@ -38,6 +50,8 @@ const HELP = {
       "the payload source: a plugin dir (agents/ plus .claude-plugin/plugin.json); default: this plugin",
     "--vendor":
       "copy bin/agentry and the scripts its groups run into .agentry/, so the generated payload calls the copy",
+    "--global":
+      "write the payload into OpenCode's global config dir ($XDG_CONFIG_HOME/opencode, else ~/.config/opencode), not a repo; no AGENTS.md block, no check; not with --vendor",
     "--apply": "write: vendored copy, payload, trigger block, then agentry board check",
     "--json": "print the whole state as one JSON object",
   },
@@ -49,11 +63,11 @@ const HELP = {
   example: "agentry init --host opencode --vendor --apply",
 };
 
-// `--host/--root/--src` take a value, `--vendor/--apply/--json` do not; anything else, or a repeat, is
+// `--host/--root/--src` take a value, `--vendor/--global/--apply/--json` do not; anything else, or a repeat, is
 // refused. `--flag=value` reads as `--flag value`.
 function parseFlags(argv) {
   const valued = new Set(["--host", "--root", "--src"]);
-  const switches = new Set(["--vendor", "--apply", "--json"]);
+  const switches = new Set(["--vendor", "--global", "--apply", "--json"]);
   const got = {};
   const seen = new Set();
   for (let i = 0; i < argv.length; i++) {
@@ -262,6 +276,90 @@ function runInstructions(source, root, apply) {
 }
 
 // ---------------------------------------------------------------------------
+// --global: the payload in OpenCode's global config dir
+
+/** OpenCode's global config dir: $XDG_CONFIG_HOME/opencode, else ~/.config/opencode. */
+const globalDir = () => join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "opencode");
+
+/** The generated agents, commands and skills against the global dir, one change or kept each. With
+ *  `write`, the changed files are written; nothing else there is read, rewritten or removed. */
+function globalPayload(source, dir, write) {
+  const probe = mkdtempSync(join(tmpdir(), "agentry-init-"));
+  try {
+    const gen = cmd(source.generator, ["--out", probe, "--src", source.src, "--global"]);
+    if (gen.status !== 0)
+      return {
+        blocked: true,
+        status: gen.status ?? 2,
+        why: failText(gen) || `exited ${gen.status ?? "?"}`,
+      };
+    const payload = { changes: [], kept: 0 };
+    for (const [rel, bytes] of filesOf(join(probe, ".opencode"))) {
+      // the config and the root AGENTS.md are repo files: never part of a global payload
+      if (rel === "opencode.jsonc" || bytes === null) continue;
+      const target = join(dir, rel);
+      let current = null;
+      try {
+        current = readFileSync(target);
+      } catch {
+        current = null;
+      }
+      if (current !== null && current.compare(bytes) === 0) {
+        payload.kept++;
+        continue;
+      }
+      payload.changes.push({ path: rel, write: current === null ? "new" : "rewrite" });
+      if (write) {
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, bytes);
+      }
+    }
+    return { payload };
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+/** `init --host opencode --global`: no repo is read or written. */
+function runGlobal(got, source, host, apply, out) {
+  const dir = globalDir();
+  const done = globalPayload(source, dir, apply);
+  if (done.blocked)
+    return out(
+      done.status === 2 ? 2 : 1,
+      `✗ init: the payload generator refused: ${done.why.split("\n")[0]} → node ${source.generator} --help`,
+    );
+  const { payload } = done;
+  const version = vendorVersion(source.src) ?? "(version unknown)";
+  if (got["--json"])
+    return out(
+      0,
+      JSON.stringify({
+        host,
+        global: true,
+        dir,
+        src: source.src,
+        version,
+        preview: !apply,
+        payload,
+        exit: 0,
+      }),
+    );
+  const n = payload.changes.length;
+  const lines = [
+    `${apply ? "✓ " : ""}init ${host} --global → ${dir}`,
+    `  source: ${source.src} (${version})`,
+    n === 0
+      ? `  payload: in sync (${payload.kept} kept) → ${dir}`
+      : `  payload: ${n} change${n === 1 ? "" : "s"} ${apply ? "written" : "(would write)"} (${payload.kept} kept) → ${dir}`,
+    ...payload.changes.map(({ path, write }) => `      ${MARK[write] ?? write} ${path}`),
+    `  repo: untouched — run ${nextStep(host)} in OpenCode per repo, then agentry init --host ${host} --apply for its AGENTS.md block`,
+  ];
+  if (!apply) lines.push(PREVIEW);
+  return out(0, lines.join("\n"));
+}
+
+// ---------------------------------------------------------------------------
 // output
 
 const MARK = { new: "new", rewrite: "rewrite" };
@@ -352,6 +450,15 @@ export async function main(argv = process.argv.slice(2)) {
   const host = got["--host"] ?? HOSTS[0];
   if (!HOSTS.includes(host))
     return out(2, say(WHAT, `host "${host}" unknown`, `${WHAT} --host ${HOSTS[0]}`));
+  if (got["--global"] && got["--vendor"])
+    return out(
+      2,
+      say(
+        WHAT,
+        "--global and --vendor do not go together: a global payload falls back to the global agentry bin",
+        `${WHAT} --host ${host} --global`,
+      ),
+    );
   const root = got["--root"]
     ? resolve(got["--root"])
     : (mainRoot(process.cwd()) ?? gitRootOf(process.cwd()) ?? process.cwd());
@@ -363,6 +470,7 @@ export async function main(argv = process.argv.slice(2)) {
       say(WHAT, `no scripts/build-opencode.mjs beside ${source.src}`, `${WHAT} --src <plugin dir>`),
     );
   const apply = got["--apply"] === true;
+  if (got["--global"]) return runGlobal(got, source, host, apply, out);
   const state = plan(got, source, root);
   if (state.blocked)
     return out(

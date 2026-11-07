@@ -143,6 +143,7 @@ describe("the package", () => {
     for (const wanted of ["index.js", "src/**", "vendor/**", "README.md"])
       assert.ok(m.files.includes(wanted), `files whitelist omits ${wanted}`);
     assert.equal(m.bin["agentry-opencode"], "./vendor/bin/agentry");
+    assert.equal(m.bin.agentry, "./vendor/bin/agentry");
     assert.ok(!("dependencies" in m));
     assert.ok(!("devDependencies" in m));
   });
@@ -219,6 +220,13 @@ describe("the packed tarball, installed alone", () => {
     const pack = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
     const tarball = join(dist, pack.filename);
     execFileSync("tar", ["-xzf", tarball, "-C", dist]);
+    const packed = JSON.parse(readFileSync(join(dist, "package", "package.json"), "utf8"));
+    for (const name of ["agentry-opencode", "agentry"])
+      assert.equal(
+        packed.bin[name],
+        "./vendor/bin/agentry",
+        `the packed manifest lacks bin ${name}`,
+      );
     const bin = join(dist, "package", "vendor", "bin", "agentry");
     assert.ok(statSync(bin).mode & 0o111, "the packed bin is not executable");
     const version = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).version;

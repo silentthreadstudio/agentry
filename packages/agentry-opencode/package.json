@@ -1,6 +1,6 @@
 {
   "name": "agentry-opencode",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Agentry for OpenCode: native board, lane and memory tools over the agentry CLI, each keeping its CLI fallback.",
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,8 @@
     ".": "./index.js"
   },
   "bin": {
-    "agentry-opencode": "./vendor/bin/agentry"
+    "agentry-opencode": "./vendor/bin/agentry",
+    "agentry": "./vendor/bin/agentry"
   },
   "files": ["index.js", "src/**", "vendor/**", "README.md"],
   "engines": {
