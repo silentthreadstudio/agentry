@@ -15,10 +15,18 @@ OpenCode is supported from Agentry 0.4.0. The package is on npm under `latest`, 
 opencode plugin add agentry-opencode
 ```
 
-After updating the plugin, restart the OpenCode service so the new copy is loaded:
+Restart the OpenCode service so the plugin loads (do it after every update too):
 
 ```
 opencode service restart
+```
+
+Then give the repo its agents, commands and skills. The package carries what it needs, so no Agentry
+checkout is required. This previews; add `--apply` to write:
+
+```
+npx agentry-opencode init --host opencode
+npx agentry-opencode init --host opencode --apply
 ```
 
 ## Notes
@@ -36,7 +44,7 @@ The upgraded-first path stays the CLI. When the native tools cannot reach the co
 bin directly:
 
 ```
-node vendor/bin/agentry <board|lane|mem|init> …
+node vendor/bin/agentry <board|lane|mem|init> …   # also on PATH as agentry-opencode
 ```
 
 Requirements: Node ≥ 24 (the CLI core is a Node program). Node built-ins only — the package has no
