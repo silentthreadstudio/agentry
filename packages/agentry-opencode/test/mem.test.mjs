@@ -275,3 +275,24 @@ test("an unknown verb is the CLI's refusal with the help-steer line, verbatim", 
     },
   );
 });
+
+test("a missing or empty verb is the tool's own refusal, not a TypeError", async () => {
+  for (const tool of [memRead, memWrite]) {
+    for (const input of [{}, { verb: "" }, undefined]) {
+      await assert.rejects(
+        () => withRoots(store(), () => tool.execute(input)),
+        (error) => {
+          assert.ok(error.message.startsWith("✗ agentry_mem:"), error.message);
+          return true;
+        },
+      );
+    }
+  }
+});
+
+test("with no root the inherited project env still names the store the write lands in", async () => {
+  const s = store({ project: true });
+  const words = ["--type", "learning", "--scope", "repo", "--subject", "env", "--text", "kept env"];
+  await withRoots(s, () => memWrite.execute({ verb: "write", words }));
+  assert.ok(readdirSync(FACTS(s.project)).some((f) => f.endsWith(".md")));
+});

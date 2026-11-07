@@ -38,6 +38,7 @@ const WORDS_PARAM = {
 // the resolvers read), everything else inherited. cwd stays the caller's — with both variables set
 // the cwd names no store.
 function memEnv(root) {
+  if (root === undefined) return { ...process.env };
   return { ...process.env, CLAUDE_PROJECT_DIR: root, AGENTRY_PROJECT_DIR: root };
 }
 
@@ -46,6 +47,8 @@ function memEnv(root) {
  *  (stdout; stderr fills in when stdout is empty), 2 → throw its refusal verbatim (the host renders
  *  a tool error), anything else → the same shape carrying the cause. */
 function memRun(argv, root, context) {
+  if (typeof argv[0] !== "string" || argv[0] === "")
+    throw new Error("✗ agentry_mem: a verb is required");
   const spawned = spawnSync(process.execPath, [MEM, ...argv], {
     encoding: "utf8",
     env: memEnv(root),
