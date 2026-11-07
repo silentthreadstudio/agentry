@@ -22,11 +22,12 @@ opencode service restart
 ```
 
 Then give the repo its agents, commands and skills. The package carries what it needs, so no Agentry
-checkout is required. This previews; add `--apply` to write:
+checkout is required. `--vendor` copies the CLI into the repo's `.agentry/`, so the agents' CLI fallback
+works without a checkout. This previews; add `--apply` to write:
 
 ```
-npx agentry-opencode init --host opencode
-npx agentry-opencode init --host opencode --apply
+npx agentry-opencode init --host opencode --vendor
+npx agentry-opencode init --host opencode --vendor --apply
 ```
 
 ## Notes

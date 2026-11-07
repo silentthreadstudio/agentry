@@ -28,7 +28,8 @@ import { withBase } from "../../../lib/base.ts";
     <p>
       To upgrade on Claude Code, remove the marketplace, add it again with <code>#v0.4.0</code> and restart. On
       OpenCode, run <code>opencode plugin add agentry-opencode</code>, <code>opencode service restart</code> and
-      <code>npx agentry-opencode init --host opencode</code> in the repo.
+      <code>npx agentry-opencode init --host opencode --vendor</code> in the repo (add <code>--apply</code> to write;
+      <code>--vendor</code> copies the CLI into <code>.agentry/</code>, so the agents' CLI fallback works without a checkout).
       The repo's <code>CHANGELOG.md</code> lists what to change when upgrading from 0.3.
     </p>
 

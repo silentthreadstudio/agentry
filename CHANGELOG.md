@@ -19,7 +19,8 @@ briefs say more about what a round did and what comes next.
 - **Claude Code:** move the install pin to `#v0.4.0`: remove the marketplace, add it again with
   `/plugin marketplace add silentthreadstudio/agentry#v0.4.0`, and restart Claude Code.
 - **OpenCode:** run `opencode plugin add agentry-opencode`, then `opencode service restart`, and
-  `npx agentry-opencode init --host opencode` in the repo (it previews; add `--apply` to write).
+  `npx agentry-opencode init --host opencode --vendor` in the repo (it previews; add `--apply` to write;
+  `--vendor` copies the CLI into `.agentry/`, so the agents' CLI fallback works without a checkout).
 - `agentry mem recall` and `agentry mem search` take the query as one bare argument:
   `agentry mem recall "bundling node:sqlite"`. `--query` still works; giving both, or more than one bare
   argument, is a usage error.

@@ -40,11 +40,12 @@ import { withBase } from "../../../lib/base.ts";
     </p>
     <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>opencode plugin add agentry-opencode
 <span class="flag__sigil" aria-hidden="true">$ </span>opencode service restart
-<span class="flag__sigil" aria-hidden="true">$ </span>npx agentry-opencode init --host opencode</code></pre>
+<span class="flag__sigil" aria-hidden="true">$ </span>npx agentry-opencode init --host opencode --vendor</code></pre>
     <p>
       The plugin registers <code>agentry_board</code>, <code>agentry_lane</code> and <code>agentry_mem</code> as
       native tools. The last command gives a repo the OpenCode payload (agents, commands and skills generated from
-      the plugin). It previews by default; add <code>--apply</code> to write. It refuses until the repo has a learned process (<code>/agentry/init</code> first).
+      the plugin). It previews by default; add <code>--apply</code> to write. <code>--vendor</code> copies the CLI into the repo's <code>.agentry/</code>,
+      so the agents' CLI fallback works without a checkout. It refuses until the repo has a learned process (<code>/agentry/init</code> first).
     </p>
 
     <div class="note">

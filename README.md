@@ -166,12 +166,13 @@ needed. It needs OpenCode V2 and Node 24 or newer.
 ```
 opencode plugin add agentry-opencode
 opencode service restart
-npx agentry-opencode init --host opencode
+npx agentry-opencode init --host opencode --vendor
 ```
 
 The plugin registers `agentry_board`, `agentry_lane` and `agentry_mem` as native tools. The last command
 gives a repo the OpenCode payload (agents, commands and skills generated from `plugin/`). It previews by
-default; add `--apply` to write. It refuses until the repo has a learned process (`/agentry/init` first). More in the
+default; add `--apply` to write. `--vendor` copies the CLI into the repo's `.agentry/`, so the agents' CLI
+fallback works without a checkout. It refuses until the repo has a learned process (`/agentry/init` first). More in the
 [package README](./packages/agentry-opencode/README.md).
 
 Nothing lands or leaves the machine without you.
