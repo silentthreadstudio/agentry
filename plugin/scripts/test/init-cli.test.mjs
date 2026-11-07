@@ -220,3 +220,23 @@ test("without --vendor the generated fallback calls plugin/bin/agentry; with it,
     for (const copy of calls) assert.match(copy, /node "\.agentry\/bin\/agentry"/);
     for (const copy of calls) assert.doesNotMatch(copy, /node "plugin\/bin\/agentry"/);
   }));
+
+test("--apply in a fresh repo with no process file skips the trigger block, keeps the rest and exits 0", () => {
+  const root = mkdtempSync(join(tmpdir(), "agentry-init-fresh-"));
+  try {
+    spawnSync("git", ["-C", root, "init", "-q"]);
+    const res = run(root, "--host", "opencode", "--vendor", "--apply");
+    assert.equal(res.status, 0, res.stderr + res.stdout);
+    assert.ok(existsSync(join(root, ".opencode", "agents", "agentry")), "payload written");
+    assert.ok(existsSync(join(root, ".agentry", "bin", "agentry")), "vendored CLI written");
+    assert.doesNotMatch(
+      readFileSync(join(root, "AGENTS.md"), "utf8"),
+      /^## Agentry$/m,
+      "no trigger block",
+    );
+    assert.match(res.stdout, /run \/agentry\/init in OpenCode to learn your board/);
+    assert.doesNotMatch(res.stdout + res.stderr, /\/agentry:init/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

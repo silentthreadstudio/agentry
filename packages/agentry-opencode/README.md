@@ -23,12 +23,14 @@ opencode service restart
 
 Then give the repo its agents, commands and skills. The package carries what it needs, so no Agentry
 checkout is required. `--vendor` copies the CLI into the repo's `.agentry/`, so the agents' CLI fallback
-works without a checkout. This previews; add `--apply` to write:
+works without a checkout. Without `--apply` this previews:
 
 ```
-npx agentry-opencode init --host opencode --vendor
 npx agentry-opencode init --host opencode --vendor --apply
 ```
+
+In a repo with no learned process the AGENTS.md block is skipped, and the command says so. In OpenCode, run
+`/agentry/init` to learn your board, then run the init again to add the AGENTS.md block.
 
 ## Notes
 
