@@ -320,7 +320,7 @@ test("sweep through the read tool is the plan only: the CLI's preview, and nothi
 test("show without an id is the CLI's own exit-2 line, verbatim", async () => {
   const [, steps] = /exec <([^>]+)> <id>/.exec(EXEC.help.usage);
   await assert.rejects(
-    () => withFixtureEnv(() => laneRead.execute({ verb: "show" })),
+    () => withFixtureEnv(() => laneRead.execute({ verb: "show", root: execRepo() })),
     (error) => {
       assert.equal(
         error.message,

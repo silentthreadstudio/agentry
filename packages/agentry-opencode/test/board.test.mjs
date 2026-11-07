@@ -79,9 +79,10 @@ test("a host with the permission domain: the three write tools assert their own 
     },
   });
   const call = { sessionID: "ses_t", messageID: "msg_t", id: "prt_t" };
-  await added[1].execute({ verb: "draft", words: ["list"] }, call); // agentry_board_write
-  await added[0].execute({ verb: "status" }, call); // agentry_board (read)
-  await added[3].execute({ verb: "sweep", words: [] }, call); // agentry_lane_drive, plan only
+  const root = mkBoard(); // a scratch board: the repo's own process file is never read
+  await added[1].execute({ verb: "draft", words: ["list"], root }, call); // agentry_board_write
+  await added[0].execute({ verb: "status", root }, call); // agentry_board (read)
+  await added[3].execute({ verb: "sweep", words: [], root }, call); // agentry_lane_drive, plan only
   assert.deepEqual(
     asserted.map(({ action, resources }) => [action, resources]),
     [
