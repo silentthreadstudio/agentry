@@ -12,6 +12,8 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -238,5 +240,121 @@ test("--apply in a fresh repo with no process file skips the trigger block, keep
     assert.doesNotMatch(res.stdout + res.stderr, /\/agentry:init/);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// --global: the payload in OpenCode's global config dir, found from XDG_CONFIG_HOME so the test never
+// reads the real one. No repo is touched.
+const runGlobal = (xdg, ...args) =>
+  spawnSync(process.execPath, [BIN, "init", "--host", "opencode", "--global", ...args], {
+    encoding: "utf8",
+    cwd: xdg,
+    env: { ...process.env, XDG_CONFIG_HOME: xdg },
+  });
+
+test("--global --apply writes agents, commands and skills to $XDG_CONFIG_HOME/opencode, touches no repo, and a second run is in sync", () => {
+  const xdg = mkdtempSync(join(tmpdir(), "agentry-init-xdg-"));
+  const repo = scratch();
+  try {
+    const repoBefore = tree(repo);
+    const preview = runGlobal(xdg);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(preview.stdout, /payload: \d+ changes \(would write\)/);
+    assert.deepEqual(tree(xdg), [], "preview writes nothing");
+    const res = runGlobal(xdg, "--apply", "--root", repo);
+    assert.equal(res.status, 0, res.stderr);
+    const dir = join(xdg, "opencode");
+    assert.ok(existsSync(join(dir, "agents", "agentry", "conductor.md")));
+    assert.ok(readdirSync(join(dir, "commands", "agentry")).length > 0);
+    assert.ok(readdirSync(join(dir, "skills")).length > 0);
+    assert.ok(!existsSync(join(dir, "opencode.jsonc")), "the repo config is not a global file");
+    assert.ok(!existsSync(join(dir, "AGENTS.md")));
+    assert.deepEqual(tree(repo), repoBefore, "no repo file written");
+    const text = readFileSync(join(dir, "agents", "agentry", "conductor.md"), "utf8");
+    assert.match(text, /`agentry`, the global bin/);
+    assert.doesNotMatch(text, /plugin\/bin\/agentry|\.agentry\/bin/);
+    const again = runGlobal(xdg, "--apply");
+    assert.equal(again.status, 0);
+    assert.match(again.stdout, /payload: in sync \(\d+ kept\)/);
+  } finally {
+    rmSync(xdg, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("--global --vendor is a usage error (exit 2)", () => {
+  const xdg = mkdtempSync(join(tmpdir(), "agentry-init-xdg-"));
+  try {
+    const res = runGlobal(xdg, "--vendor", "--apply");
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /--global and --vendor do not go together/);
+    assert.deepEqual(tree(xdg), []);
+  } finally {
+    rmSync(xdg, { recursive: true, force: true });
+  }
+});
+
+test("--global keeps the user's own files in the global dir and rewrites a changed generated one", () => {
+  const xdg = mkdtempSync(join(tmpdir(), "agentry-init-xdg-"));
+  try {
+    const dir = join(xdg, "opencode");
+    mkdirSync(join(dir, "agents"), { recursive: true });
+    writeFileSync(join(dir, "agents", "mine.md"), "mine\n");
+    writeFileSync(join(dir, "opencode.jsonc"), "{}\n");
+    assert.equal(runGlobal(xdg, "--apply").status, 0);
+    assert.equal(readFileSync(join(dir, "agents", "mine.md"), "utf8"), "mine\n");
+    assert.equal(readFileSync(join(dir, "opencode.jsonc"), "utf8"), "{}\n");
+    const mine = join(dir, "agents", "agentry", "conductor.md");
+    writeFileSync(mine, "edited\n");
+    const res = runGlobal(xdg, "--apply");
+    assert.match(res.stdout, /rewrite agents\/agentry\/conductor\.md/);
+    assert.notEqual(readFileSync(mine, "utf8"), "edited\n");
+  } finally {
+    rmSync(xdg, { recursive: true, force: true });
+  }
+});
+
+test("repo-mode init from a vendored source without --vendor names the global agentry bin, not plugin/bin/agentry", () =>
+  withTemp((root) => {
+    // a vendored package's shape: the plugin payload with its generator inside it
+    const pkg = mkdtempSync(join(tmpdir(), "agentry-init-pkg-"));
+    try {
+      cpSync(PLUGIN, join(pkg, "vendor"), { recursive: true });
+      mkdirSync(join(pkg, "vendor", "scripts"), { recursive: true });
+      cpSync(
+        join(REPO, "scripts", "build-opencode.mjs"),
+        join(pkg, "vendor", "scripts", "build-opencode.mjs"),
+      );
+      const res = run(root, "--src", join(pkg, "vendor"), "--apply");
+      assert.equal(res.status, 0, res.stderr);
+      const text = readFileSync(
+        join(root, ".opencode", "agents", "agentry", "conductor.md"),
+        "utf8",
+      );
+      assert.match(text, /`agentry`, the global bin/);
+      for (const rel of tree(join(root, ".opencode")))
+        assert.doesNotMatch(
+          readFileSync(join(root, ".opencode", rel), "utf8"),
+          /plugin\/bin\/agentry/,
+          rel,
+        );
+    } finally {
+      rmSync(pkg, { recursive: true, force: true });
+    }
+  }));
+
+test("the generator runs as a script through a symlinked path and writes the payload", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-init-link-"));
+  try {
+    const link = join(dir, "build-opencode.mjs");
+    symlinkSync(join(REPO, "scripts", "build-opencode.mjs"), link);
+    const out = join(dir, "out");
+    const res = spawnSync(process.execPath, [link, "--out", out, "--src", PLUGIN], {
+      encoding: "utf8",
+    });
+    assert.equal(res.status, 0, res.stderr);
+    assert.ok(existsSync(join(out, ".opencode", "agents", "agentry", "conductor.md")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -9,7 +9,8 @@
     ".": "./index.js"
   },
   "bin": {
-    "agentry-opencode": "./vendor/bin/agentry"
+    "agentry-opencode": "./vendor/bin/agentry",
+    "agentry": "./vendor/bin/agentry"
   },
   "files": ["index.js", "src/**", "vendor/**", "README.md"],
   "engines": {

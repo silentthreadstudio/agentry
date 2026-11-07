@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 // build-opencode — generates OpenCode V2 payload from the Claude Code plugin sources.
 //
 // plugin/ stays the single source of truth; this script is the thin OpenCode adapter's
@@ -18,11 +18,13 @@ import { existsSync } from "node:fs";
 //   model: inherit → unset (V2 inherits when unset); color names → hex;
 //   skills:[] / disallowedTools frontmatter → dropped (skills re-advertised in the body)
 //
-// usage: node scripts/build-opencode.mjs [--out <repo-root>] [--src <plugin-or-repo>] [--vendor] [--check]
+// usage: node scripts/build-opencode.mjs [--out <repo-root>] [--src <plugin-or-repo>] [--vendor] [--global] [--check]
 //   --out     target repo root (default: this repo)
 //   --src     payload source: a plugin dir (agents/ plus .claude-plugin/plugin.json), or a repo root
 //             holding one under plugin/ (default: this repo)
 //   --vendor  generate for a vendored copy: the CLI fallback becomes .agentry/bin/agentry
+//   --global  generate for OpenCode's global config dir: the CLI is the `agentry` bin on PATH
+//             (npm install -g agentry-opencode), not a path in the repo
 //   --check   regenerate to a temp dir and require zero drift (writes nothing under .opencode/)
 // exits: 0 ok / in sync · 1 drift on --check · 2 refused or usage. Node built-ins only.
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -32,11 +34,12 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUT = resolve(HERE, ".."); // this repo's root
 
-const USAGE = `usage: node scripts/build-opencode.mjs [--out <repo-root>] [--src <plugin-or-repo>] [--vendor] [--check]
+const USAGE = `usage: node scripts/build-opencode.mjs [--out <repo-root>] [--src <plugin-or-repo>] [--vendor] [--global] [--check]
   --out     target repo root (default: this repo)
   --src     payload source: a plugin dir (agents/ + .claude-plugin/plugin.json), or a repo root
             holding one under plugin/ (default: this repo)
   --vendor  generate for a vendored copy: the CLI fallback becomes .agentry/bin/agentry
+  --global  generate for the global config dir: the CLI fallback is the \`agentry\` bin on PATH
   --check   regenerate to a temp dir and require zero drift (no files written)
 example: node scripts/build-opencode.mjs --out .`;
 
@@ -52,7 +55,20 @@ const COLORS = {
 };
 
 function rewrites(ctx) {
-  const { pluginRoot } = ctx;
+  const { pluginRoot, global } = ctx;
+  // a global payload has no plugin dir to point at: the CLI is the `agentry` bin on PATH
+  if (global)
+    return [
+      [
+        /Shell calls use `agentry`, the plugin's `bin\/` command; where it is not on PATH, run `node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/board\.mjs"` \(or `lane\.mjs`\) with the same arguments\./g,
+        "Shell calls use `agentry`, the global bin from `npm install -g agentry-opencode`, which is on PATH.",
+      ],
+      [
+        /`node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/board\.mjs"` \(and `lane\.mjs`\)/g,
+        "`agentry board` (and `agentry lane`)",
+      ],
+      ...rewrites({ pluginRoot, global: false }),
+    ];
   return [
     [
       /Shell calls use `agentry`, the plugin's `bin\/` command; where it is not on PATH, run `node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/board\.mjs"` \(or `lane\.mjs`\) with the same arguments\./g,
@@ -200,10 +216,10 @@ function rooted(srcRoot) {
   return pluginDirOf(srcRoot) ?? srcRoot;
 }
 
-async function generate(out, srcRoot = out, vendor = false) {
+async function generate(out, srcRoot = out, vendor = false, global = false) {
   // the CLI path hint is spoken from the repo root the agent works in: the plugin layout, or the
   // vendored copy the CLI copies in (`agentry init --vendor`)
-  const ctx = { pluginRoot: vendor ? ".agentry" : "plugin" };
+  const ctx = { pluginRoot: vendor ? ".agentry" : "plugin", global };
   const root = rooted(srcRoot);
   const dst = join(out, ".opencode");
   await mkdir(dst, { recursive: true });
@@ -279,15 +295,17 @@ questions through \`/agentry/ask\`; a session opens with \`/agentry/start\` and 
 // =============================================================================
 function unknownFlags(argv) {
   return argv.filter(
-    (a) => (a.startsWith("--") && !/^--(out|src|check|vendor|help)$/.test(a)) || !a.startsWith("-"),
+    (a) =>
+      (a.startsWith("--") && !/^--(out|src|check|vendor|global|help)$/.test(a)) ||
+      !a.startsWith("-"),
   );
 }
 
-async function checked(out, srcRoot = out, vendor = false) {
+async function checked(out, srcRoot = out, vendor = false, global = false) {
   const probe = join(out, ".agcheck");
   await rm(probe, { recursive: true, force: true });
   try {
-    await generate(probe, srcRoot, vendor);
+    await generate(probe, srcRoot, vendor, global);
     // compare only generated payload; opencode.jsonc is only-when-missing (owner-owned after birth)
     const a = join(out, ".opencode");
     const drift = [];
@@ -337,6 +355,7 @@ export async function main(argv0 = process.argv.slice(2)) {
     return 0;
   }
   const vendor = argv0.includes("--vendor");
+  const global = argv0.includes("--global");
   const check = argv0.includes("--check");
   const outFlag = flagOf(argv0, "--out");
   const srcFlag = flagOf(outFlag.argv, "--src");
@@ -360,8 +379,8 @@ export async function main(argv0 = process.argv.slice(2)) {
     );
     return 2;
   }
-  if (check) return checked(out, src, vendor);
-  const counts = await generate(out, src, vendor);
+  if (check) return checked(out, src, vendor, global);
+  const counts = await generate(out, src, vendor, global);
   const regen = [];
   if (counts.agents) regen.push(`${counts.agents} agents`);
   if (counts.commands) regen.push(`${counts.commands} commands`);
@@ -373,9 +392,11 @@ export async function main(argv0 = process.argv.slice(2)) {
   return 0;
 }
 
+// the main-module test compares real paths: a symlinked install (pnpm's store, npm link, macOS /tmp)
+// puts the script behind a link that import.meta.url resolves and argv[1] does not
 if (
   process.argv[1] &&
-  import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
 ) {
   process.exitCode = await main();
 }

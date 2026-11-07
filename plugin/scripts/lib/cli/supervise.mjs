@@ -28,10 +28,10 @@
 // ever signals that group (SIGTERM, a holder's timeout, kills it, then the watchdog ends by SIGKILL).
 // `watchdogArgv` builds that argv. Node built-ins only.
 import { spawn } from "node:child_process";
-import { accessSync, constants as fsConstants, statSync } from "node:fs";
+import { accessSync, constants as fsConstants, realpathSync, statSync } from "node:fs";
 import { constants } from "node:os";
 import { delimiter, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { freeDeadHolder, recordGroup } from "../lane/gate-lock.mjs";
 import { alive, groupRunning, identity } from "../process/pid.mjs";
 import { say } from "./help.mjs";
@@ -344,5 +344,9 @@ function watch(argv) {
   });
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+// real paths, so a symlinked install still counts as the main module
+if (
+  process.argv[1] &&
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+)
   watch(process.argv.slice(2));
