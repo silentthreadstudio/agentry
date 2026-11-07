@@ -1,6 +1,6 @@
 ---
 // /docs/changelog — hand-authored (NOT auto-generated; CHANGELOG.md in the repo is the full record).
-// Releases 0.4.1, 0.4.0 and 0.3.0, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
+// Releases 0.4.2, 0.4.1, 0.4.0 and 0.3.0, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
 // invented features.
 //
 // Base-path rule (#1 404 trap): every internal href goes through withBase().
@@ -11,11 +11,18 @@ import { withBase } from "../../../lib/base.ts";
 <DocsLayout
   current="changelog"
   title="Changelog"
-  description="What changed in Agentry, by release: 0.4.1, 0.4.0 (OpenCode), 0.3.0 (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
+  description="What changed in Agentry, by release: 0.4.2, 0.4.1, 0.4.0 (OpenCode), 0.3.0 (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
   eyebrow="Reference · Changelog"
   lede="A hand-authored record of what changed, newest first. It tracks releases, not commits, so it leans toward what changed for you. The repo's CHANGELOG.md has every entry."
 >
   <div class="prose">
+    <h2 class="prose__h">0.4.2 — 2026-11-06</h2>
+    <p>
+      A global OpenCode install. <code>npm install -g agentry-opencode</code> now puts <code>agentry</code> on PATH
+      (beside <code>agentry-opencode</code>), and <code>agentry init --host opencode --global --apply</code> writes
+      the agents, commands and skills into OpenCode's global config dir instead of a repo's <code>.opencode/</code>.
+    </p>
+
     <h2 class="prose__h">0.4.1 — 2026-11-06</h2>
     <p>
       <code>agentry init --host opencode --apply</code> in a repo with no process file yet no longer exits with an

@@ -6,6 +6,19 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-06
+
+### Added
+
+- A global OpenCode install. `agentry init --host opencode --global --apply` writes the agents, commands
+  and skills into OpenCode's global config dir (`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`)
+  instead of a repo's `.opencode/`. It touches no repo (no AGENTS.md block, no board check), never removes
+  your own files there, previews by default, and reports in sync when nothing changed. `--global` with
+  `--vendor` is refused.
+- The `agentry-opencode` package has a second bin, `agentry`, so `npm install -g agentry-opencode` puts
+  `agentry` on PATH and the generated agents' CLI fallback works with no `--vendor`.
+- An "Install globally" section in the OpenCode install docs.
+
 ## [0.4.1] — 2026-11-06
 
 ### Fixed
@@ -844,7 +857,8 @@ without the fix.
   - **Self-eval harness** — measures the system's own routing and decision
     quality instead of asserting it works.
 
-[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/silentthreadstudio/agentry/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/silentthreadstudio/agentry/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/silentthreadstudio/agentry/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/silentthreadstudio/agentry/compare/v0.2.0...v0.3.0

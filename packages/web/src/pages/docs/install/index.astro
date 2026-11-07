@@ -16,7 +16,7 @@ import { withBase } from "../../../lib/base.ts";
     <p>
       Agentry installs as a Claude Code plugin from its GitHub repo. From a Claude Code session in your repo, add it, install it, and let <code>/agentry:init</code> draft its process file from what it finds:
     </p>
-    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add silentthreadstudio/agentry#v0.4.1
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>/plugin marketplace add silentthreadstudio/agentry#v0.4.2
 <span class="flag__sigil" aria-hidden="true">$ </span>/plugin install agentry@agentry-dev
 <span class="flag__sigil" aria-hidden="true">$ </span>/agentry:init</code></pre>
     <p>
@@ -26,7 +26,7 @@ import { withBase } from "../../../lib/base.ts";
       to hand it a first task.
     </p>
     <p>
-      The <code>#v0.4.1</code> suffix pins the install to the 0.4.1 release; the repo's main branch moves with
+      The <code>#v0.4.2</code> suffix pins the install to the 0.4.2 release; the repo's main branch moves with
       development. To move to a later release, remove the marketplace and add it again with the new tag. Each
       release is also on <a href="https://github.com/silentthreadstudio/agentry/releases">GitHub Releases</a>
       as a zip.
@@ -50,6 +50,25 @@ import { withBase } from "../../../lib/base.ts";
     <p>
       In a repo with no learned process the AGENTS.md block is skipped, and the command says so. In OpenCode, run
       <code>/agentry/init</code> to learn your board, then run the init again to add the AGENTS.md block.
+    </p>
+
+    <h3 class="prose__h">Install globally</h3>
+    <p>
+      One copy of the payload for every repo, in OpenCode's global config dir
+      (<code>$XDG_CONFIG_HOME/opencode</code>, else <code>~/.config/opencode</code>):
+    </p>
+    <pre class="flag"><code><span class="flag__sigil" aria-hidden="true">$ </span>npm install -g agentry-opencode
+<span class="flag__sigil" aria-hidden="true">$ </span>opencode plugin add agentry-opencode
+<span class="flag__sigil" aria-hidden="true">$ </span>opencode service restart
+<span class="flag__sigil" aria-hidden="true">$ </span>agentry init --host opencode --global --apply</code></pre>
+    <p>
+      Then, per repo, run <code>/agentry/init</code> in OpenCode to learn the board, and
+      <code>agentry init --host opencode --apply</code> for the repo's AGENTS.md block. Run that repo init without
+      <code>--vendor</code>; its payload overrides the global one. <code>--global</code> never touches a repo and never
+      removes your own files there.
+    </p>
+    <p>
+      Per project pins the version in each repo and is shared through <code>.opencode/</code>; global is one copy for all repos.
     </p>
 
     <div class="note">

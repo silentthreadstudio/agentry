@@ -32,6 +32,25 @@ npx agentry-opencode init --host opencode --vendor --apply
 In a repo with no learned process the AGENTS.md block is skipped, and the command says so. In OpenCode, run
 `/agentry/init` to learn your board, then run the init again to add the AGENTS.md block.
 
+### Install globally
+
+One copy of the payload for every repo, in OpenCode's global config dir (`$XDG_CONFIG_HOME/opencode`, else
+`~/.config/opencode`):
+
+```
+npm install -g agentry-opencode
+opencode plugin add agentry-opencode
+opencode service restart
+agentry init --host opencode --global --apply
+```
+
+Then, per repo, run `/agentry/init` in OpenCode to learn the board, and `agentry init --host opencode --apply`
+for the repo's `AGENTS.md` block. Run that repo init without `--vendor`; its payload overrides the global one.
+`--global` writes only agents, commands and skills, never touches a repo, and never removes your own files
+there; `--global` with `--vendor` is refused.
+
+Per project pins the version in each repo and is shared through `.opencode/`; global is one copy for all repos.
+
 ## Notes
 
 - **Specs pin once they resolve.** A process spec resolves to its lanes the first time a session
@@ -47,7 +66,7 @@ The upgraded-first path stays the CLI. When the native tools cannot reach the co
 bin directly:
 
 ```
-node vendor/bin/agentry <board|lane|mem|init> …   # also on PATH as agentry-opencode
+node vendor/bin/agentry <board|lane|mem|init> …   # also on PATH as agentry and agentry-opencode
 ```
 
 Requirements: Node ≥ 24 (the CLI core is a Node program). Node built-ins only — the package has no
