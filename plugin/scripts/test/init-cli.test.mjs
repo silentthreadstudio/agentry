@@ -10,9 +10,9 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
-  realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -317,8 +317,7 @@ test("--global keeps the user's own files in the global dir and rewrites a chang
 test("repo-mode init from a vendored source without --vendor names the global agentry bin, not plugin/bin/agentry", () =>
   withTemp((root) => {
     // a vendored package's shape: the plugin payload with its generator inside it
-    // realpath: the generator only runs as a script when its path is not behind a symlink (/var on macOS)
-    const pkg = realpathSync(mkdtempSync(join(tmpdir(), "agentry-init-pkg-")));
+    const pkg = mkdtempSync(join(tmpdir(), "agentry-init-pkg-"));
     try {
       cpSync(PLUGIN, join(pkg, "vendor"), { recursive: true });
       mkdirSync(join(pkg, "vendor", "scripts"), { recursive: true });
@@ -343,3 +342,19 @@ test("repo-mode init from a vendored source without --vendor names the global ag
       rmSync(pkg, { recursive: true, force: true });
     }
   }));
+
+test("the generator runs as a script through a symlinked path and writes the payload", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentry-init-link-"));
+  try {
+    const link = join(dir, "build-opencode.mjs");
+    symlinkSync(join(REPO, "scripts", "build-opencode.mjs"), link);
+    const out = join(dir, "out");
+    const res = spawnSync(process.execPath, [link, "--out", out, "--src", PLUGIN], {
+      encoding: "utf8",
+    });
+    assert.equal(res.status, 0, res.stderr);
+    assert.ok(existsSync(join(out, ".opencode", "agents", "agentry", "conductor.md")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

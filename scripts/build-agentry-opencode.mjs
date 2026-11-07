@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 // build-agentry-opencode — regenerates packages/agentry-opencode/vendor/** from plugin/.
 //
 // The OpenCode V2 adapter ships as the npm package `agentry-opencode`; its vendor/ carries a runnable
@@ -179,9 +179,11 @@ export async function main(argv0 = process.argv.slice(2)) {
   return 0;
 }
 
+// the main-module test compares real paths: a symlinked install (pnpm's store, npm link, macOS /tmp)
+// puts the script behind a link that import.meta.url resolves and argv[1] does not
 if (
   process.argv[1] &&
-  import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
 ) {
   process.exitCode = await main();
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 // build-opencode — generates OpenCode V2 payload from the Claude Code plugin sources.
 //
 // plugin/ stays the single source of truth; this script is the thin OpenCode adapter's
@@ -392,9 +392,11 @@ export async function main(argv0 = process.argv.slice(2)) {
   return 0;
 }
 
+// the main-module test compares real paths: a symlinked install (pnpm's store, npm link, macOS /tmp)
+// puts the script behind a link that import.meta.url resolves and argv[1] does not
 if (
   process.argv[1] &&
-  import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
 ) {
   process.exitCode = await main();
 }
