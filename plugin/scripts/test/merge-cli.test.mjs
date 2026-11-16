@@ -3239,3 +3239,50 @@ test("a land prints each step's row on stderr, and the gate log's path before th
   assert.match(res.stdout, /✓ commit/, "the table on stdout is unchanged");
 });
 
+// ---- the owns row ------------------------------------------------------------------------------
+
+function ownedLane(owned, files) {
+  const built = build(files);
+  execLedger({ path: built.path });
+  writeLedger(root, { ...readLedger(root, ID), owned: owned.map((path) => ({ path })) });
+  return built;
+}
+
+test("the preflight's owns row counts the branch's files against the lane's owned list", () => {
+  ownedLane(["src/"], { "src/a.txt": "a\n", "src/b.txt": "b\n" });
+  const inside = merge(ID, "--preflight");
+  assert.equal(inside.status, 0, out(inside));
+  assert.match(inside.stdout, /✓ owns +2 files inside owns/);
+});
+
+test("the preflight's owns row names the files outside owns and the line that adds them; the land warns and goes on", () => {
+  ownedLane(["src/"], { "src/a.txt": "a\n", "docs/x.md": "x\n", "tools/y.sh": "y\n" });
+  const pf = merge(ID, "--preflight");
+  assert.equal(pf.status, 0, `a warning, never a stop: ${out(pf)}`);
+  assert.match(
+    pf.stdout,
+    /! owns +2 outside: docs\/x\.md, tools\/y\.sh → (agentry )?lane exec owns T1 --add docs\/x\.md,tools\/y\.sh/,
+  );
+  const res = merge(ID, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  assert.match(res.stdout, /! owns +2 outside: docs\/x\.md, tools\/y\.sh/);
+});
+
+test("merge.sidecars counts x.gd.uid as owned when x.gd is, and nothing else", () => {
+  commitSpec({ ...SPEC, merge: { sidecars: [".uid", ".import"] } });
+  ownedLane(["src/x.gd"], { "src/x.gd": "a\n", "src/x.gd.uid": "u\n", "src/y.gd.uid": "u\n" });
+  const pf = merge(ID, "--preflight");
+  assert.match(pf.stdout, /! owns +1 outside: src\/y\.gd\.uid/);
+  assert.doesNotMatch(pf.stdout, /outside:.*x\.gd\.uid/);
+});
+
+test("without merge.sidecars the companion file is outside owns", () => {
+  ownedLane(["src/x.gd"], { "src/x.gd": "a\n", "src/x.gd.uid": "u\n" });
+  assert.match(merge(ID, "--preflight").stdout, /! owns +1 outside: src\/x\.gd\.uid/);
+});
+
+test("an adopted branch has no owned list: no owns row", () => {
+  build({ "src/a.txt": "a\n" });
+  assert.doesNotMatch(merge(ID, "--branch", BRANCH, "--preflight").stdout, /owns/);
+});
+

@@ -54,6 +54,7 @@ import {
 } from "../merge/lane.mjs";
 import { mainRow, mainStep } from "../merge/main-row.mjs";
 import { check, cleanupMode, pushMode } from "../merge/modes.mjs";
+import { ownsRow } from "../merge/owns-row.mjs";
 import { landStep } from "../merge/picks.mjs";
 import { commitStep, recordStep } from "../merge/record.mjs";
 import { recoverPreview, recoverStep, resolveMode } from "../merge/recover.mjs";
@@ -220,6 +221,8 @@ function preflight(lane) {
     rows.push(commitsRow(lane).row);
     const subjects = subjectsRow(lane);
     if (subjects) rows.push(subjects);
+    const owns = ownsRow(lane);
+    if (owns) rows.push(owns);
   } else rows.push(ok("land", `a land is under way (step "${merge.step}"): the land resumes it`));
   const gate = gateOf(lane.spec);
   if (!gate) rows.push(red("gate", "the workflow file has no gate: merge cannot prove main"));
@@ -310,6 +313,8 @@ function land(lane) {
       subjects.more.push("ask the builder to reword them on the branch, then land again");
       return done(1, lane, rows);
     }
+    const owns = ownsRow(lane);
+    if (owns?.mark === "warn") rows.push(owns);
   }
   const steps = [
     recoverStep,
