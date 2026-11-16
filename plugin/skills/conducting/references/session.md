@@ -74,8 +74,11 @@ SKILL.md → /agentry:init`). `last close:` shows how the close window stands (t
 is recorded): passed over named, the time of the newest entry (UTC, to the minute), then each failure with its
 note on one line (at most three, then `last close: +N more failed`); a line is cut to 100 columns.
 
-At most three held or parked lanes, then `held: +N more → agentry lane session start --json`; the idle lines
-follow them. Held lanes are left out of `lanes:`. A stacked lane reads `<id> <state> on <Y>` in `lanes:`, and
+Every held or parked lane is listed, never counted as "more": a parked lane's why wraps onto indented lines
+instead of being cut at 80 columns, and the 40 lines count the held and parked lines but never hide one (the
+other lines give way first). The idle lines follow them. The in-flight, held, parked and drift lines carry the
+item's title beside its id (`T1 · The first`), the title cut to fit; so do `board status`'s In flight and On you
+rows. A held lane's `title` is in the JSON when the id is on the board. Held lanes are left out of `lanes:`. A stacked lane reads `<id> <state> on <Y>` in `lanes:`, and
 each one with something due adds a line after it, at most three, then `stack: +N more → agentry lane session
 start --json`:
 
