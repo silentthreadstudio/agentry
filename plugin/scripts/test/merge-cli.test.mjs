@@ -3147,3 +3147,20 @@ test("a stopped lane with a commit after its PASS tip refuses it as unverified, 
   assert.deepEqual(entry.missing, []);
   assert.deepEqual(entry.unverified, [{ sha: fix, subject: "fix(src): make the gate green" }]);
 });
+
+test("a gate refused on a dirty main says to land again, and names --drop-carry for the same cell", () => {
+  build({ "src/a.txt": "a\n" });
+  // A hook that leaves a file behind after the pick: main is dirty when the gate would start.
+  const hook = join(root, ".git", "hooks", "post-commit");
+  writeFileSync(hook, "#!/bin/sh\ntouch stray.txt\n");
+  chmodSync(hook, 0o755);
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 1, out(res));
+  assert.match(res.stdout, /✗ gate +refused: main is not clean/);
+  assert.match(
+    res.stdout,
+    /next: land again \(it resumes, and sets the open lanes' board writes aside again\)/,
+  );
+  assert.match(res.stdout, /pass --drop-carry to land without the set-aside one/);
+});
+

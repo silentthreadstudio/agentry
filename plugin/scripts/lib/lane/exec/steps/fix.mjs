@@ -3,7 +3,7 @@
 import * as ledgers from "../../../process/ledger.mjs";
 import { now } from "../../fmt.mjs";
 import { expects, notesBudget, verdicts } from "../../rounds.mjs";
-import { nestedTrees, refuseAtWriterCap } from "../admission.mjs";
+import { nestedTrees, refuseAtWriterCap, refuseDuringLand } from "../admission.mjs";
 import { dispatchNext } from "../briefs.mjs";
 import { laneLine, mustLedger, readReport, refuse, saved, stepWith } from "../lane.mjs";
 import { liveNotes, notesOf, withOpen } from "../notes.mjs";
@@ -14,6 +14,7 @@ import { view } from "../view.mjs";
 export function run(ctx, id) {
   if (ctx.owner !== null) return ownerFix(ctx, id);
   const { root, value: given } = ctx;
+  refuseDuringLand(root);
   const ledger = mustLedger(root, id);
   const labels = [...new Set(given.split(",").map((n) => n.trim().toUpperCase()))];
   if (!labels.every((n) => /^N\d+$/.test(n)))
@@ -63,6 +64,7 @@ export function run(ctx, id) {
 // `ownerFixes[]`; the board is not written until the work is built again.
 function ownerFix(ctx, id) {
   const { root, spec, owner } = ctx;
+  refuseDuringLand(root);
   if (!owner.trim()) refuse(`--owner needs the owner's change, in words`);
   const ledger = mustLedger(root, id);
   if (ledger.state === "merged") refuse(`${id} is merged: the owner's change is a new task`);

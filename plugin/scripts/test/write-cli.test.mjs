@@ -4,13 +4,23 @@
 // Run: node --test plugin/scripts/test/write-cli.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { check } from "../lib/process/check.mjs";
 import { run as add } from "../lib/process/cli/add.mjs";
+import { run as draft } from "../lib/process/cli/draft.mjs";
+import { run as fix } from "../lib/process/cli/fix.mjs";
 import { run as set } from "../lib/process/cli/set.mjs";
 import { findContract } from "../lib/process/contract.mjs";
 import { loadSpec, readProcess } from "../lib/process/read.mjs";
@@ -552,4 +562,56 @@ test("set on a field that is not the parent moves nothing", () => {
   assert.equal(result.exit, 0, result.out);
   assert.equal(result.out, "set task W3 note=Changed (BOARD.md)");
   assert.match(text(root, A2), /W3/);
+});
+
+// A land in `merging` holds main: the writers refuse (A land is a ledger the lane CLI keeps).
+function landing(root, merge) {
+  const dir = join(root, ".agentry", "run", "process", "ledger");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "ZZ.json"),
+    JSON.stringify({ v: 1, id: "ZZ", state: "merging", worktree: "/gone", merge }),
+  );
+}
+const at = () => new Date().toISOString();
+
+test("add, set, fix and draft apply refuse --apply while a land holds main; a preview and the land's end do not", () => {
+  const root = copy("write");
+  const files = ["board/BOARD.md", "board/TASKS.md", "board/sprints/A1_one.md"];
+  const before = files.map((f) => text(root, f));
+  landing(root, {
+    step: "recording",
+    at: at(),
+    holder: { pid: process.pid, start: null, at: at() },
+  });
+  const refusal =
+    /ZZ is landing \(step recording\): wait for it, or check `agentry lane merge --status`/;
+  for (const res of [
+    call(add, root, ["task", "--fields", '{"id":"W4","sprint":"A1","note":"Fourth"}', "--apply"]),
+    call(set, root, ["task", "W3", "status=doing", "--apply"]),
+    call(fix, root, ["--apply"]),
+    call(draft, root, ["apply", "1", "--apply"]),
+  ]) {
+    assert.equal(res.exit, 2, res.out);
+    assert.match(res.out, refusal);
+  }
+  assert.deepEqual(
+    files.map((f) => text(root, f)),
+    before,
+  );
+  assert.equal(call(set, root, ["task", "W3", "status=doing"]).exit, 0, "a preview writes nothing");
+  landing(root, { step: "committed", at: at() }); // an ordinary ledger of a land that ended is no holder
+  const ledger = join(root, ".agentry", "run", "process", "ledger", "ZZ.json");
+  writeFileSync(ledger, JSON.stringify({ v: 1, id: "ZZ", state: "merged", worktree: "/gone" }));
+  assert.equal(call(set, root, ["task", "W3", "status=doing", "--apply"]).exit, 0);
+});
+
+test("a land whose process is gone is named so by a refused writer", () => {
+  const root = copy("write");
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  landing(root, { step: "gating", at: at(), holder: { pid: dead, start: null, at: at() } });
+  const res = call(set, root, ["task", "W3", "status=doing", "--apply"]);
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /ZZ is landing \(step gating\) but its process is gone/);
+  assert.match(res.out, /--resolve landed\|rolled-back/);
 });

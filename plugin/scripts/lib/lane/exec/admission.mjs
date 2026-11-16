@@ -73,6 +73,13 @@ function picksOnMain(root, merge) {
   );
 }
 
+// A land holds main: every step that writes the ledger or the board refuses, naming the land and its
+// step. The land itself is `lane merge`, not an exec step, so it is never refused here.
+export function refuseDuringLand(root) {
+  const landing = ledgers.landInProgress(root);
+  if (landing) refuse(ledgers.landRefusal(landing));
+}
+
 // A lane cut while another lands could carry picks a red gate then takes off main: `start` waits.
 export function refuseMidLand(root) {
   const landing = ledgers

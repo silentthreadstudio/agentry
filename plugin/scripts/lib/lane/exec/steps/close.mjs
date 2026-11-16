@@ -4,6 +4,7 @@
 // written elsewhere) is still taken for one version, with a deprecation line.
 import { episodeStored, recordEpisode } from "../../../memory/episodes.mjs";
 import * as ledgers from "../../../process/ledger.mjs";
+import { refuseDuringLand } from "../admission.mjs";
 import { episodeOf } from "../episode.mjs";
 import { laneLine, mustLedger, refuse, stop } from "../lane.mjs";
 import { view } from "../view.mjs";
@@ -27,6 +28,7 @@ function stamp(root, id, ledger, episodeId) {
 }
 
 export function run(ctx, id) {
+  refuseDuringLand(ctx.root);
   const { root, value: episodeId, lesson = null, usedMemories = [] } = ctx;
   let ledger = mustLedger(root, id);
   if (episodeId !== null) return stamp(root, id, ledger, episodeId);

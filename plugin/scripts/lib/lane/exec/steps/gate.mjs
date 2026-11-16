@@ -10,6 +10,7 @@ import { flakyReds, runGate } from "../../gate.mjs";
 import { markGating } from "../../restack.mjs";
 import { expects, gateTally } from "../../rounds.mjs";
 import { gateRefusal, stackOf } from "../../stack.mjs";
+import { refuseDuringLand } from "../admission.mjs";
 import { laneTier, refreshBrief } from "../briefs.mjs";
 import { headOf } from "../guard/snapshot.mjs";
 import { Stopped, laneLine, mustLedger, refuse, stepWith } from "../lane.mjs";
@@ -19,6 +20,7 @@ import { view } from "../view.mjs";
 // re-run holds every slot, so it runs alone. The gate's intent is marked before it reads the ledger and
 // cleared on any exit, so a restack waits for a gate that is only queued (`restack.mjs`).
 export function run(ctx, id) {
+  refuseDuringLand(ctx.root);
   const clear = markGating(ctx.root, id);
   try {
     return gateOnce(ctx, id);

@@ -7,6 +7,7 @@ import { appendedAfter } from "../../brief.mjs";
 import { withNew } from "../../owns.mjs";
 import { leaves } from "../../paths.mjs";
 import { PASSES, expects, parkedVerified, verdicts } from "../../rounds.mjs";
+import { refuseDuringLand } from "../admission.mjs";
 import { brief } from "../briefs.mjs";
 import { ownsPath } from "../guard/allow.mjs";
 import { laneLine, mustLedger, normalised, ownedOf, refuse } from "../lane.mjs";
@@ -16,6 +17,7 @@ import { laneLine, mustLedger, normalised, ownedOf, refuse } from "../lane.mjs";
 // amended list. `--add` is for a lane still building: a builder that asked for a file it does not own.
 export function run(ctx, id) {
   const { root, set, add, apply } = ctx;
+  if (apply && (set !== null || add !== null)) refuseDuringLand(root);
   let ledger = mustLedger(root, id);
   const shown = (extra = {}) => ({
     exit: 0,

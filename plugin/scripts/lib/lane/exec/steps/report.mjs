@@ -9,7 +9,7 @@ import { builderStatus, summaryOf, unwrap, usedMemories } from "../../report.mjs
 import { expects, skipsVerifier } from "../../rounds.mjs";
 import { brokenIn, rulesOf } from "../../subjects.mjs";
 import { git, porcelain, rebaseInProgress } from "../../worktree.mjs";
-import { nestedTrees } from "../admission.mjs";
+import { nestedTrees, refuseDuringLand } from "../admission.mjs";
 import { writeBuilt } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { mainGuard } from "../guard/main-guard.mjs";
@@ -88,6 +88,7 @@ function buildNamed(round) {
 
 export function run(ctx, id) {
   const { root, value: agent } = ctx;
+  refuseDuringLand(root);
   const ledger = mustLedger(root, id);
   // A lane a guard trip holds takes a report again: it reads the saved one.
   const parked = ledger.state === "held" && ledger.hold?.for === "guard";

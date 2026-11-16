@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
 import * as drafts from "../drafts.mjs";
 import { mainRoot, topLevel } from "../git.mjs";
+import { landInProgress, landRefusal } from "../ledger.mjs";
 import { fit } from "../render.mjs";
 import { has, own } from "../spec/shape.mjs";
 import { WriteError, appendLine, apply, similarLine } from "../write.mjs";
@@ -218,6 +219,8 @@ export function run(argv, ctx) {
     return usage("--answer and --why go with apply <n>");
   const blank = Object.keys(taken.edits).find((k) => !taken.edits[k].trim());
   if (blank) return fail(`--${blank} must be some text`);
+  const landing = write && action === "apply" ? landInProgress(ctx.root) : null;
+  if (landing) return fail(landRefusal(landing));
   if (action === "list") {
     if (rest.length) return usage("list takes nothing more");
     const open = drafts.pending(runRoot);

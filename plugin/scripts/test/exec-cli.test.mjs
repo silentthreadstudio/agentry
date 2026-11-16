@@ -3161,6 +3161,82 @@ test("start refuses while a land's picks are on main: exit 2, nothing written; a
   assert.equal(lane(r, "start", "T1").exit, 0);
 });
 
+// ---- a land holds main: every writer refuses (the board and the ledger stay as they were) ----------
+
+const landOf = (r, merge) => {
+  mkdirSync(dirname(ledgerFile(r.root, "ZZ")), { recursive: true });
+  writeFileSync(
+    ledgerFile(r.root, "ZZ"),
+    JSON.stringify({ v: 1, id: "ZZ", state: "merging", worktree: "/gone", owned: [], merge }),
+  );
+};
+const WRITERS = [
+  ["report", "T1"],
+  ["verdict", "T1"],
+  ["gate", "T1"],
+  ["close", "T1"],
+  ["reverify", "T1"],
+  ["fix", "T1", "--notes", "N1"],
+  ["fix", "T1", "--owner", "change it"],
+  ["resume", "T1", "--note", "ok"],
+  ["hold", "T1", "--for", "later"],
+  ["owns", "T1", "--add", "x.txt", "--apply"],
+];
+
+test("every exec writer refuses while a land is in merging, naming it and its step; reads and the land's end free them", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const at = new Date().toISOString();
+  landOf(r, { step: "gating", at, holder: { pid: process.pid, start: null, at } });
+  const ledgers = readFileSync(ledgerFile(r.root, "T1"), "utf8");
+  const before = board(r.root);
+  for (const argv of WRITERS) {
+    const res = lane(r, ...argv);
+    assert.equal(res.exit, 2, `${argv.join(" ")}: ${res.stderr}`);
+    assert.match(
+      res.stderr,
+      /ZZ is landing \(step gating\): wait for it, or check `agentry lane merge --status`/,
+      argv.join(" "),
+    );
+  }
+  assert.equal(readFileSync(ledgerFile(r.root, "T1"), "utf8"), ledgers);
+  assert.equal(board(r.root), before);
+  assert.equal(lane(r, "show", "T1").exit, 0, "show only reads");
+  assert.equal(lane(r, "owns", "T1").exit, 0, "listing the owned files only reads");
+  landOf(r, { step: "committed", at }); // the land finished: its ledger is merged
+  const ledger = JSON.parse(readFileSync(ledgerFile(r.root, "ZZ"), "utf8"));
+  writeFileSync(ledgerFile(r.root, "ZZ"), JSON.stringify({ ...ledger, state: "merged" }));
+  assert.doesNotMatch(lane(r, "close", "T1").stderr, /is landing/);
+});
+
+test("a land whose process is gone says so and names the resume and resolve lines", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  const at = new Date().toISOString();
+  landOf(r, { step: "gating", at, holder: { pid: dead, start: null, at } });
+  const res = lane(r, "close", "T1");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /ZZ is landing \(step gating\) but its process is gone/);
+  assert.match(res.stderr, /merge ZZ --message "<board commit message>"/);
+  assert.match(res.stderr, /merge ZZ --resolve landed\|rolled-back/);
+});
+
+test("a land with nothing of it on main (conflict, rolled back), a stuck cut and an untouched adoption refuse no writer", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const at = new Date().toISOString();
+  for (const merge of [
+    { step: "conflict", at },
+    { step: "rolled-back", at },
+    { step: "gating", cut: {}, at },
+    undefined,
+  ]) {
+    landOf(r, merge);
+    assert.doesNotMatch(lane(r, "close", "T1").stderr, /is landing/, JSON.stringify(merge));
+  }
+});
+
 // ---- a rebased lane's guard starts at the commit it was rebased onto ---------------------
 
 test("a lane rebased onto a main commit touching its file is not tripped by that commit at the rebase report", () => {

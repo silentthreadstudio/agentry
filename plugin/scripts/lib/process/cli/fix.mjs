@@ -14,10 +14,11 @@
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = nothing left for the owner, 1 = items left
 // to report, 2 = usage
 import { basename } from "node:path";
-import { PREVIEW, usageError } from "../../cli/help.mjs";
+import { PREVIEW, refuse, usageError } from "../../cli/help.mjs";
 import { accepted, mechanical, nudges } from "../drift.mjs";
 import { mainRoot } from "../git.mjs";
 import { boardId } from "../ids.mjs";
+import { landInProgress, landRefusal } from "../ledger.mjs";
 import { applyEvent } from "../lifecycle.mjs";
 import { readProcess } from "../read.mjs";
 import { wrapText } from "../render.mjs";
@@ -60,6 +61,8 @@ export function run(argv, { root, spec, model }) {
   const dryRun = !argv.includes("--apply");
   const typed = acceptOf(argv);
   if (typed === null) return usageError("board fix", "--accept needs a task id");
+  const landing = dryRun ? null : landInProgress(root);
+  if (landing) return refuse("board fix", landRefusal(landing));
   const id = typed && spec.lifecycle ? boardId(spec, model, typed, spec.lifecycle.kind) : typed;
   const runRoot = mainRoot(root) ?? root;
   const plan = mechanical({ root, runRoot, spec, model });

@@ -15,6 +15,7 @@ import { PREVIEW, refuse, renamed, usageError } from "../../cli/help.mjs";
 import { recorded } from "../board-writes.mjs";
 import { findContract } from "../contract.mjs";
 import { nextId } from "../ids.mjs";
+import { landInProgress, landRefusal } from "../ledger.mjs";
 import { contractHome } from "../rules/structure.mjs";
 import { escapesRoot, own } from "../spec/shape.mjs";
 import { WriteError, addedLines, appendBlock, applyAll, insertRow } from "../write.mjs";
@@ -72,6 +73,8 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
     return renamed("board add", "--json", "--fields", "0.3");
   if (!kindName || argv.indexOf("--fields") < 0 || json === undefined)
     return usageError("board add", "needs <kind> --fields '<fields>'");
+  const landing = write ? landInProgress(root) : null;
+  if (landing) return fail(landRefusal(landing));
   const kind = own(spec.kinds, kindName);
   if (!kind)
     return fail(`unknown kind "${kindName}" (kinds: ${Object.keys(spec.kinds).join(", ")})`);

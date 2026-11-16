@@ -12,6 +12,7 @@ import { join, relative } from "node:path";
 import { PREVIEW, refuse, renamed, usageError } from "../../cli/help.mjs";
 import { recorded } from "../board-writes.mjs";
 import { boardId } from "../ids.mjs";
+import { landInProgress, landRefusal } from "../ledger.mjs";
 import { escapesRoot, own } from "../spec/shape.mjs";
 import { WriteError, applyAll, insertRow, setCell, setKey, takeRow } from "../write.mjs";
 
@@ -115,6 +116,8 @@ export function run(argv, { root, spec, model }) {
     return renamed("board set", "--json '{…}'", "<field>=<value>", "0.3");
   if (!kindName || !typed || at < 1)
     return usageError("board set", "needs <kind> <id> <field>=<value>");
+  const landing = write ? landInProgress(root) : null;
+  if (landing) return fail(landRefusal(landing));
   const fieldName = assignment.slice(0, at);
   const value = assignment.slice(at + 1);
   const kind = own(spec.kinds, kindName);

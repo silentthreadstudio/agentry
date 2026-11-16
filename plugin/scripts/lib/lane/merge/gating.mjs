@@ -110,7 +110,7 @@ export function gateStep(lane, rows) {
     rows.push(red("gate", `refused: ${mainBranch} is not clean`, first.res.files.slice(0, 10)));
     return {
       exit: 1,
-      next: `move what makes ${mainBranch} dirty away, then land again (it resumes)`,
+      next: `land again (it resumes, and sets the open lanes' board writes aside again); a write that hits a cell the set-aside copy also changed stops it: then pass --drop-carry to land without the set-aside one. Any other change on ${mainBranch}: move it away first`,
     };
   }
   // A red that failed only in listed flaky tests, on a clean tree, is re-run once, alone, as `exec gate` does.

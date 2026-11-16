@@ -2,7 +2,7 @@
 // without one.
 import * as ledgers from "../../../process/ledger.mjs";
 import { verdicts } from "../../rounds.mjs";
-import { nestedTrees } from "../admission.mjs";
+import { nestedTrees, refuseDuringLand } from "../admission.mjs";
 import { dispatchNext } from "../briefs.mjs";
 import { mustLedger, refuse, stepWith } from "../lane.mjs";
 import { view } from "../view.mjs";
@@ -11,6 +11,7 @@ import { view } from "../view.mjs";
 // then the usual rows.
 export function run(ctx, id) {
   const { root } = ctx;
+  refuseDuringLand(root);
   const ledger = mustLedger(root, id);
   if (ledger.state !== "verified")
     refuse(

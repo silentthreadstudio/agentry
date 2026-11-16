@@ -5,7 +5,7 @@ import { gateOf } from "../../../process/spec/workflow.mjs";
 import { now } from "../../fmt.mjs";
 import { summaryOf, usedMemories, verdictOf } from "../../report.mjs";
 import { expects, gateTally, notesBudget, verdicts } from "../../rounds.mjs";
-import { nestedTrees } from "../admission.mjs";
+import { nestedTrees, refuseDuringLand } from "../admission.mjs";
 import { boardEvent } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { headOf } from "../guard/snapshot.mjs";
@@ -30,6 +30,7 @@ import { view } from "../view.mjs";
 
 export function run(ctx, id) {
   const { root, spec, value: agent } = ctx;
+  refuseDuringLand(root);
   const ledger = mustLedger(root, id);
   if (expects(ledger) !== "verdict")
     refuse(

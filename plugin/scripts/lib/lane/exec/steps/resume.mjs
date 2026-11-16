@@ -4,7 +4,7 @@ import { gateOf } from "../../../process/spec/workflow.mjs";
 import { answerLabel } from "../../exec-view.mjs";
 import { now, short } from "../../fmt.mjs";
 import { parkedVerified, redoRefusal, skipsVerifier } from "../../rounds.mjs";
-import { nestedTrees, refuseAtWriterCap } from "../admission.mjs";
+import { nestedTrees, refuseAtWriterCap, refuseDuringLand } from "../admission.mjs";
 import { writeBuilt } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { mainGuard } from "../guard/main-guard.mjs";
@@ -17,6 +17,7 @@ import { answerOf, stepCount, view } from "../view.mjs";
 // the verifier (or the gate) is next and built is written. Main must be as the lane left it.
 export function run(ctx, id) {
   const { root, spec, note, redo, fresh, same } = ctx;
+  refuseDuringLand(root);
   const ledger = mustLedger(root, id);
   if (ledger.state !== "held")
     refuse(`the lane is not held (state ${ledger.state}, next ${ledger.next})`);

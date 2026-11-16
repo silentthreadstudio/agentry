@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from "no
 import { join } from "node:path";
 import { atomicWrite, sweepTemps } from "../fs/atomic.mjs";
 import { idProblem } from "../id.mjs";
+import { alive } from "./pid.mjs";
 
 const VERSION = 1;
 const validId = (id) => idProblem(id) === null;
@@ -216,3 +217,37 @@ export function runDir(root, id) {
   mkdirSync(dir, { recursive: true });
   return dir;
 }
+
+// The land steps from which nothing of the land is on main: the picks start over, so no writer need wait.
+const NOTHING_ON_MAIN = ["conflict", "rolled-back"];
+
+/** The land that holds main, or null: a ledger in state `merging` with a land record (`merge.step`) whose
+ *  board commit is not made yet. `{ id, step, since, holder, alive }`: `holder` the `{ pid, start, at }` the
+ *  land recorded for its process (null in a record from before there was one), `since` when that process
+ *  took it, `alive` whether it still runs (null with no holder: nothing says). A cut's stuck land (`merge.cut`)
+ *  is the cut's own to roll back, and an adopted ledger no pick has touched has no land record. */
+export function landInProgress(root) {
+  const lane = list(root, { sweep: false }).find(
+    (l) =>
+      l.state === "merging" &&
+      !l.merge?.cut &&
+      typeof l.merge?.step === "string" &&
+      !NOTHING_ON_MAIN.includes(l.merge.step),
+  );
+  if (!lane) return null;
+  const holder = lane.merge.holder ?? null;
+  return {
+    id: lane.id,
+    step: lane.merge.step,
+    since: holder?.at ?? lane.merge.at ?? null,
+    holder,
+    alive: holder ? alive(holder) : null,
+  };
+}
+
+/** What a writer says when it refuses because `landing` (`landInProgress`'s answer) holds main. A holder
+ *  that is gone is named so, with the lines that finish or close its land. */
+export const landRefusal = ({ id, step, alive: running }) =>
+  running === false
+    ? `${id} is landing (step ${step}) but its process is gone: land it again to resume (agentry lane merge ${id} --message "<board commit message>"), or close it with agentry lane merge ${id} --resolve landed|rolled-back; agentry lane merge --status shows it`
+    : `${id} is landing (step ${step}): wait for it, or check \`agentry lane merge --status\``;
