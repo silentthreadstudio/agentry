@@ -12,6 +12,7 @@ import { runText } from "../../../process/steps.mjs";
 import { shellWord } from "../../../text/shell.mjs";
 import { resolveBranch } from "../../adopt.mjs";
 import { now, short } from "../../fmt.mjs";
+import { ignoredIn, keepIgnored } from "../../land.mjs";
 import { gatingNow } from "../../restack.mjs";
 import { archiveNumber, carry, carryRange, leftover, retire, saveWork } from "../../restart.mjs";
 import { PASSES, expects, verdicts } from "../../rounds.mjs";
@@ -98,11 +99,15 @@ export function run(ctx, id) {
   const keptName = oldTip ? branchOf(`${id}.${n}`) : null;
   const clash = keptName && caseOf(keptName);
   if (clash) refuse(`${clash} would be a case twin of ${keptName}: rename it first`);
-  const left = leftover(root, old, spec.cleanup?.disposable ?? []);
+  const disposable = spec.cleanup?.disposable ?? [];
+  const keep = spec.cleanup?.keep ?? [];
+  const left = leftover(root, old, disposable);
   if (left.problem) refuse(left.problem);
-  if (left.ignored.length)
+  // What `cleanup.keep` names is copied before the worktree goes (below): it never holds the restart.
+  const ignored = keep.length ? ignoredIn(old.worktree, disposable, keep).ignored : left.ignored;
+  if (ignored.length)
     refuse(
-      `the worktree ${old.worktree} holds ${left.ignored.length} ignored file(s) a restart would delete (${left.ignored.slice(0, 5).join(", ")}): copy what you need out and remove them, or add them to cleanup.disposable, then restart`,
+      `the worktree ${old.worktree} holds ${ignored.length} ignored file(s) a restart would delete (${ignored.slice(0, 5).join(", ")}): copy what you need out and remove them, or add them to cleanup.disposable or cleanup.keep, then restart`,
     );
   // What a carry picks: the branch's commits not on main, never base..tip, from a branch
   // based on main's first-parent line; a patch main has already is left out and named.
@@ -126,6 +131,13 @@ export function run(ctx, id) {
     ? saveWork(old.worktree, diffIn(ledgers.runDir(root, id)))
     : { files: [] };
   if (work.error) refuse(`the worktree's uncommitted work could not be saved: ${work.error}`);
+  // The ignored files `cleanup.keep` names, copied before anything is archived or removed; the run directory
+  // (and so this copy) moves to the archive with the lane's files.
+  const savedIgnored = keepIgnored(old.worktree, join(ledgers.runDir(root, id), "kept"), {
+    keep,
+    disposable,
+  });
+  if (savedIgnored.error) refuse(`could not keep the ignored files: ${savedIgnored.error}`);
 
   let oldBlock = "";
   try {
@@ -136,6 +148,12 @@ export function run(ctx, id) {
   let kept = null;
   let keptTip = null;
   let drop = false;
+  const keptIgnored = () =>
+    savedIgnored.files.length
+      ? {
+          keptIgnored: `${savedIgnored.files.length} ignored file(s) in ${join(archived.runs, "kept")}`,
+        }
+      : {};
   const again = (path, base) => {
     const restarted = {
       from: `${id}.${n}`,
@@ -148,7 +166,10 @@ export function run(ctx, id) {
       return {
         restarted: { ...restarted, branch: kept },
         warnings: [clearVerdict(ctx, id)].filter(Boolean),
-        shown: { restarted: `archived as ${id}.${n}; the old branch is kept as ${kept ?? "none"}` },
+        shown: {
+          restarted: `archived as ${id}.${n}; the old branch is kept as ${kept ?? "none"}`,
+          ...keptIgnored(),
+        },
       };
     const res = carry(path, { picks: range?.picks ?? [], diff });
     // The old commits' range-diff starts where they sat on main: after an in-branch rebase that is no
@@ -212,6 +233,7 @@ export function run(ctx, id) {
       exit: res.ok ? 0 : 1,
       shown: {
         restarted: `archived as ${id}.${n}${branch ? `; the old branch is kept as ${branch}` : ""}`,
+        ...keptIgnored(),
         ...(note && { note }),
         carried: `${carried.commits} commits, ${carried.files} files uncommitted${report ? `; last report ${report}` : ""}`,
         ...(skipped.length && {

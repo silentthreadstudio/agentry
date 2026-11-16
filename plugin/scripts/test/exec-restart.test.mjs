@@ -414,6 +414,20 @@ test("a worktree's ignored file outside cleanup.disposable refuses the restart; 
   assert.equal(existsSync(join(out.worktree, "keys.secret")), false);
 });
 
+test("cleanup.keep: a restart copies those ignored files into the archived run directory before the worktree goes", () => {
+  const r = repo();
+  const out = worked(r);
+  writeFileSync(join(out.worktree, "keys.secret"), "x\n");
+  writeSpec(join(r.root, ".agentry"), { ...SPEC, cleanup: { keep: ["*.secret"] } });
+  git(r.root, "commit", "-qam", "chore: keep the secrets");
+  const res = lane(r, "restart", "T3");
+  assert.equal(res.exit, 0, res.stderr);
+  const kept = join(processDir(r.root), "runs", ".archive", "T3.1", "kept");
+  assert.equal(readFileSync(join(kept, "keys.secret"), "utf8"), "x\n");
+  assert.match(JSON.stringify(res.json), /1 ignored file\(s\) in .*T3\.1\/kept/);
+  assert.equal(existsSync(join(out.worktree, "keys.secret")), false);
+});
+
 test("a held lane's restart keeps its holds[] in the archive, and a second restart never overwrites the first", () => {
   const r = repo();
   const out = lane(r, "start", "T1").json;

@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
   mkdirSync,
@@ -297,6 +298,32 @@ test("cut without --keep lands none of the branch on main: only the board commit
   );
   assert.equal(existsSync(worktree), false);
   assert.equal(git(r.root, "rev-parse", "agentry/T1.cut"), tip);
+});
+
+test("cleanup.keep: the cut copies the ignored files it names under runs/<id>/kept, and they never refuse it", () => {
+  const r = repo();
+  appendFileSync(join(r.root, ".git", "info", "exclude"), "exports/\nshots/\n");
+  const { worktree } = parked(r);
+  mkdirSync(join(worktree, "exports"));
+  writeFileSync(join(worktree, "exports", "run.json"), "{}");
+  mkdirSync(join(worktree, "shots"));
+  writeFileSync(join(worktree, "shots", "a.png"), "png");
+  const refused = lane(r, "cut", "T1", "--decision", "D7", "--apply");
+  assert.equal(refused.exit, 2, refused.out);
+  assert.match(refused.out, /holds 2 ignored file\(s\) the cut would delete/);
+  writeSpec(join(r.root, ".agentry"), { ...SPEC, cleanup: { keep: ["exports/**", "shots/**"] } });
+  git(r.root, "add", ".agentry");
+  git(r.root, "commit", "-q", "-m", "chore: keep the exports");
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--apply");
+  assert.equal(res.exit, 0, res.out);
+  const kept = join(runsDir(r.root), "T1", "kept");
+  assert.match(
+    JSON.parse(res.out).keptIgnored,
+    new RegExp(`2 ignored file\\(s\\) in ${kept.replace(/[/.]/g, "\\$&")}`),
+  );
+  assert.equal(readFileSync(join(kept, "exports", "run.json"), "utf8"), "{}");
+  assert.equal(readFileSync(join(kept, "shots", "a.png"), "utf8"), "png");
+  assert.equal(existsSync(worktree), false);
 });
 
 test("a red gate on the kept commit rolls main back and leaves the lane as it was", () => {

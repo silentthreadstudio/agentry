@@ -14,7 +14,7 @@ import { resolveBranch } from "../../adopt.mjs";
 import { decisionKind } from "../../decisions.mjs";
 import { short } from "../../fmt.mjs";
 import { changedSince, pickTier } from "../../gate.mjs";
-import { attributionIn, mergeBaseOf } from "../../land.mjs";
+import { attributionIn, ignoredIn, mergeBaseOf } from "../../land.mjs";
 import { mainRow } from "../../merge/main-row.mjs";
 import { gatingNow } from "../../restack.mjs";
 import { leftover } from "../../restart.mjs";
@@ -105,11 +105,15 @@ export function planCut(ctx, ledger) {
   const keptName = branchOf(`${id}.cut`);
   if (tip && [...tips.keys()].some((b) => b.toLowerCase() === keptName.toLowerCase()))
     refuse(`${keptName} exists: rename or delete it first`);
-  const left = leftover(root, ledger, spec.cleanup?.disposable ?? []);
+  const disposable = spec.cleanup?.disposable ?? [];
+  const keep = spec.cleanup?.keep ?? [];
+  const left = leftover(root, ledger, disposable);
   if (left.problem) refuse(left.problem.replace(/, then restart$/, ", then cut"));
-  if (left.ignored.length)
+  // What `cleanup.keep` names is copied by the cut (`steps/cut.mjs`) before the worktree goes: it never holds it.
+  const ignored = keep.length ? ignoredIn(ledger.worktree, disposable, keep).ignored : left.ignored;
+  if (ignored.length)
     refuse(
-      `the worktree ${ledger.worktree} holds ${left.ignored.length} ignored file(s) the cut would delete (${listed(left.ignored)}): copy what you need out and remove them, or add them to cleanup.disposable, then cut`,
+      `the worktree ${ledger.worktree} holds ${ignored.length} ignored file(s) the cut would delete (${listed(ignored)}): copy what you need out and remove them, or add them to cleanup.disposable or cleanup.keep, then cut`,
     );
   let dirty = [];
   try {

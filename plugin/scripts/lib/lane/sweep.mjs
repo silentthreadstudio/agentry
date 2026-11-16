@@ -44,7 +44,7 @@ import {
   staleWriteLocks,
   takeOverMutex,
 } from "./gate-lock.mjs";
-import { ignoredIn } from "./land.mjs";
+import { ignoredIn, keepIgnored } from "./land.mjs";
 import { clearLockSlot, deadLockTemps, lockDirs, staleLockSlots } from "./named-lock.mjs";
 import { remove, worktreesDir } from "./worktree.mjs";
 
@@ -278,8 +278,9 @@ export function leftovers(root) {
 }
 
 /** What a sweep would do in the repo whose main checkout is `root`. `free` overrides the disk reading;
- *  `disposable` is the process file's `cleanup.disposable`, on top of `DEFAULT_DISPOSABLE`. */
-export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
+ *  `disposable` is the process file's `cleanup.disposable`, on top of `DEFAULT_DISPOSABLE`; `keep` its
+ *  `cleanup.keep`: what it matches is copied (`apply`) before the worktree goes, and never holds it. */
+export function plan(root, { free = freeBytes(root), disposable = [], keep = [] } = {}) {
   // Listed before anything reads the ledgers, and read without sweeping: the preview changes nothing.
   const left = leftovers(root);
   const all = ledgers.list(root, { sweep: false });
@@ -292,12 +293,13 @@ export function plan(root, { free = freeBytes(root), disposable = [] } = {}) {
     );
     if (!ledger) unknown.push({ path: tree.path, branch: tree.branch });
     else if (ledger.state === "merged" || ledger.state === "closed") {
-      const found = ignoredIn(tree.path, disposable);
+      const { kept, ...found } = ignoredIn(tree.path, disposable, keep);
       cleanable.push({
         id: ledger.id,
         path: tree.path,
         branch: tree.branch,
         ...found,
+        ...(kept.length > 0 && { kept }),
         inUse: false,
       });
     }
@@ -459,7 +461,7 @@ function clearLeftovers(root, found, done) {
  *  `keptSlots: [{ file, reason }]`, the slots' groups as `stoppedGroups` and `survivingGroups`, and the
  *  `removedWriteLocks` and `removedTemps`; `appeared`, the strays found after the kill that the plan did not
  *  list (the plan's `warnings` then say to run the sweep again). */
-export function apply(root, found, { discardIgnored = false } = {}) {
+export function apply(root, found, { discardIgnored = false, keep = [], disposable = [] } = {}) {
   const done = {
     removed: [],
     kept: [],
@@ -514,6 +516,13 @@ export function apply(root, found, { discardIgnored = false } = {}) {
       done.kept.push({ id: w.id, reason: why });
       continue;
     }
+    // What `cleanup.keep` names is copied under the run directory first; a copy that fails keeps the worktree.
+    const into = join(ledgers.runDir(root, w.id), "kept");
+    const copied = keepIgnored(w.path, into, { keep, disposable });
+    if (copied.error) {
+      done.kept.push({ id: w.id, reason: `could not keep the ignored files: ${copied.error}` });
+      continue;
+    }
     const merge = all.find((l) => l.id === w.id)?.merge;
     const res = remove(root, { path: w.path, branch: w.branch, merge });
     if (!res.removed) {
@@ -525,6 +534,7 @@ export function apply(root, found, { discardIgnored = false } = {}) {
       id: w.id,
       branchDeleted: res.branchDeleted,
       ...(branchKept && { branchKept }),
+      ...(copied.files.length > 0 && { keptIn: into, keptFiles: copied.files }),
     });
     // Said with the plan's warnings too, which the sweep's CLI prints after the result.
     if (branchKept) found.warnings.push(branchKept);

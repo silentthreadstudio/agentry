@@ -48,12 +48,22 @@ function disposableOf({ spec, problems }, processPath) {
   return { globs: [], note: `it is not a list of strings (${processPath})` };
 }
 
+// The configured `cleanup.keep` globs, or none when the file has no valid list (the disposable ones say why).
+function keepOf(spec) {
+  const value = spec?.cleanup?.keep;
+  return Array.isArray(value) && value.every((glob) => typeof glob === "string") ? value : [];
+}
+
 export function run(argv, { root, processPath }) {
   const runRoot = mainRoot(root) ?? root;
-  const { globs, note } = disposableOf(loadSpec(processPath, { root }), processPath);
-  const found = plan(runRoot, { disposable: globs });
+  const loaded = loadSpec(processPath, { root });
+  const { globs, note } = disposableOf(loaded, processPath);
+  const keep = loaded.problems.length > 0 ? [] : keepOf(loaded.spec);
+  const found = plan(runRoot, { disposable: globs, keep });
   const discardIgnored = argv.includes("--discard-ignored");
-  const done = argv.includes("--apply") ? apply(runRoot, found, { discardIgnored }) : null;
+  const done = argv.includes("--apply")
+    ? apply(runRoot, found, { discardIgnored, keep, disposable: globs })
+    : null;
   const exit = done?.kept.length || done?.survived.length || done?.keptSlots.length ? 1 : 0;
   if (argv.includes("--json"))
     return { exit, out: JSON.stringify({ applied: Boolean(done), ...found, result: done }) };
@@ -74,7 +84,13 @@ function render(found, done, discardIgnored, note) {
       !why && thrown
         ? ` (${done ? "discarded" : "would discard"} ${thrown} disposable path(s))`
         : "";
-    row(`${verb} worktree ${w.id}${why && verb !== "removed" ? `: ${why}` : ""}${discard}`);
+    const saved = done?.removed.find((r) => r.id === w.id)?.keptIn;
+    const copy = saved
+      ? ` (kept ignored files in ${saved})`
+      : !why && w.kept?.length
+        ? ` (would keep ${w.kept.length} ignored path(s) per cleanup.keep, copied under runs/${w.id}/kept)`
+        : "";
+    row(`${verb} worktree ${w.id}${why && verb !== "removed" ? `: ${why}` : ""}${discard}${copy}`);
   }
   for (const w of found.unknown) row(`unknown worktree ${w.path} (left alone)`);
   for (const p of found.strays) {

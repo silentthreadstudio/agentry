@@ -27,6 +27,7 @@ import {
   cherryPick,
   cleanup,
   ignoredIn,
+  keepIgnored,
   landedSince,
   pickInProgress,
   push,
@@ -565,4 +566,74 @@ test("cleanup keeps a branch whose commits are not on main", () => {
   assert.equal(res.ok, false);
   assert.match(res.reason, /not on main/);
   assert.notEqual(git(repo.dir, "branch", "--list", "b"), "");
+});
+
+// A branch landed on main by hand, ignoring `ignored`: cleanup may delete it.
+function landedIgnoring(ignored) {
+  for (const sha of branch({ ".gitignore": ignored })) git(repo.dir, "cherry-pick", sha);
+  return join(repo.dir, ".agentry", "run", "worktrees", "B");
+}
+const keptDir = () => join(repo.dir, ".agentry", "run", "process", "runs", "B", "kept");
+
+test("cleanup.keep copies the ignored files it names before the removal, and they never block it", () => {
+  const path = landedIgnoring("exports/\n.env\n");
+  plant(path, "exports/balance/run.json", "exports/top.csv", ".env");
+  const opts = { branch: "b", main: "main", fallbackPath: path, keep: ["exports/**"] };
+  const blocked = cleanup(repo.dir, { ...opts, into: keptDir() });
+  assert.equal(blocked.ok, false, "the .env is no kept file: it still stops the cleanup");
+  assert.deepEqual(blocked.ignored, [".env"]);
+  assert.ok(!existsSync(keptDir()), "nothing is copied when the cleanup refuses");
+  rmSync(join(path, ".env"));
+  const res = cleanup(repo.dir, { ...opts, into: keptDir() });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.copied.sort(), ["exports/balance/run.json", "exports/top.csv"]);
+  assert.equal(readFileSync(join(keptDir(), "exports", "balance", "run.json"), "utf8"), "x");
+  assert.ok(!existsSync(path));
+});
+
+test("keepAll copies every ignored file that is not disposable, and the removal goes on without discardIgnored", () => {
+  const path = landedIgnoring(".env\nnode_modules/\n");
+  plant(path, ".env", "node_modules/p/index.js");
+  const res = cleanup(repo.dir, {
+    branch: "b",
+    main: "main",
+    fallbackPath: path,
+    keepAll: true,
+    into: keptDir(),
+  });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.copied, [".env"]);
+  assert.ok(existsSync(join(keptDir(), ".env")));
+  assert.ok(!existsSync(join(keptDir(), "node_modules")), "a disposable folder is never walked");
+  assert.ok(!existsSync(path));
+});
+
+test("a copy that fails keeps the worktree: nothing is removed", () => {
+  const path = landedIgnoring("exports/\n");
+  plant(path, "exports/a.json");
+  const res = cleanup(repo.dir, {
+    branch: "b",
+    main: "main",
+    fallbackPath: path,
+    keep: ["exports/**"],
+    into: join(repo.dir, "README.md", "kept"), // a file, so nothing can be made under it
+  });
+  assert.equal(res.ok, false);
+  assert.match(res.reason, /could not keep the ignored files/);
+  assert.ok(existsSync(join(path, "exports", "a.json")));
+});
+
+test("ignoredIn names the kept entries apart: keep wins over disposable, a mixed folder is kept", () => {
+  const path = landedIgnoring("out/\nart/\n");
+  plant(path, "out/a.bin", "art/p.png", "art/keep.psd");
+  const found = ignoredIn(path, ["out/**"], ["out/**", "art/keep.psd"]);
+  assert.deepEqual(found.kept, ["out/"]);
+  assert.deepEqual(
+    found.ignored,
+    ["art/"],
+    "a folder holding a kept and another ignored file is ignored",
+  );
+  assert.deepEqual(keepIgnored(path, keptDir(), { keep: ["art/keep.psd"] }).files, [
+    "art/keep.psd",
+  ]);
 });

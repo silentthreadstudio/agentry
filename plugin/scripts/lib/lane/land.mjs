@@ -7,8 +7,8 @@
 // Every git call is an argv array, never a shell line (a zsh variable that did not split once turned a
 // cherry-pick into a silent no-op), and every one reads its own exit code. A git refusal is an answer
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { isAncestor as ancestor, commitOf, mergeBase } from "../process/git.mjs";
 import { globMatch } from "../process/glob.mjs";
 import { first } from "./fmt.mjs";
@@ -326,31 +326,53 @@ export function push(root, { branch }) {
  * Take down the worktree that has `branch` checked out (found by branch, whatever its directory is
  * called; `fallbackPath` when none has it) with `-f -f`, and delete the branch when everything on it is
  * on `main`. Refused while the worktree holds ignored files (screenshots, a local `.env`: they would be
- * lost) that no default (`DEFAULT_DISPOSABLE`) or `disposable` glob matches, unless `discardIgnored`. Returns `{ ok, path, removed,
- * branchDeleted, ignored?, disposable?, reason? }`: `ignored` the others, `disposable` the matched ones.
+ * lost) that no default (`DEFAULT_DISPOSABLE`) or `disposable` glob matches, unless `discardIgnored` or
+ * `keepAll`. The ignored files a `keep` glob matches (and with `keepAll` every other that is not disposable)
+ * are copied to `into` first (`keepIgnored`), so they never block the removal and are never lost. `merge` is the
+ * ledger's land record: it proves the branch landed when `cherry` cannot (`remove`). Returns `{ ok, path,
+ * removed, branchDeleted, ignored?, disposable?, copied?, reason? }`: `ignored` the others, `disposable` the
+ * matched ones, `copied` the files saved to `into`.
  */
 export function cleanup(
   root,
-  { branch, main, fallbackPath, discardIgnored = false, disposable = [], merge },
+  {
+    branch,
+    main,
+    fallbackPath,
+    discardIgnored = false,
+    disposable = [],
+    keep = [],
+    keepAll = false,
+    into,
+    merge,
+  },
 ) {
   const path = findByBranch(root, branch) ?? fallbackPath;
   if (path === root)
     return { ok: false, path, reason: `${branch} is checked out in the main checkout` };
-  const { ignored, disposable: thrown } = ignoredIn(path, disposable);
+  const { ignored, disposable: thrown } = ignoredIn(path, disposable, keep);
   const kept = {
     ...(ignored.length > 0 && { ignored }),
     ...(thrown.length > 0 && { disposable: thrown }),
   };
-  if (ignored.length > 0 && !discardIgnored)
+  if (ignored.length > 0 && !discardIgnored && !keepAll)
     return {
       ok: false,
       path,
       ...kept,
       reason: `${path} holds ${ignored.length} ignored file(s) that removal would delete`,
     };
+  const copied = keepIgnored(path, into, { keep, all: keepAll, disposable });
+  if (copied.error)
+    return {
+      ok: false,
+      path,
+      ...kept,
+      reason: `could not keep the ignored files: ${copied.error}`,
+    };
   const res = remove(root, { path, branch, onto: main, merge });
   const ok = res.removed && (res.branchDeleted || !commitOf(root, `refs/heads/${branch}`));
-  return { ok, path, ...res, ...kept };
+  return { ok, path, ...res, ...kept, ...(copied.files.length > 0 && { copied: copied.files }) };
 }
 
 /** Ignored files every lane worktree's cleanup and the sweep discard without asking, on top of the
@@ -363,7 +385,12 @@ export const DEFAULT_DISPOSABLE = ["**/node_modules/**", "**/dist/**"];
  *  (gitignore semantics): an entry is matched as itself and as each of its parent folders. Only ignored
  *  files are ever asked about, so a tracked file is never discarded. */
 export function disposableMatcher(globs = []) {
-  const forms = [...DEFAULT_DISPOSABLE, ...globs].flatMap((glob) => {
+  return entryMatcher([...DEFAULT_DISPOSABLE, ...globs]);
+}
+
+// The matcher `disposableMatcher` is, for exactly `globs` (`cleanup.keep` uses it with no defaults).
+function entryMatcher(globs) {
+  const forms = globs.flatMap((glob) => {
     const g = glob.replace(/\/+$/, "");
     return g.endsWith("/**") ? [g, g.slice(0, -3)] : [g];
   });
@@ -391,38 +418,63 @@ function* filesUnder(dir, rel) {
 }
 
 /** The ignored entries of the worktree at `dir` that a removal would delete, split by `disposableMatcher`
- *  (`DEFAULT_DISPOSABLE` and `globs`): `{ ignored, disposable }`. The one filter restart, the land's
- *  cleanup and the sweep share. An entry is disposable when it matches or, for a folder, when every file in it
- *  does (git lists `art/` and `art/preview/` both, and only the second names the glob). A folder with no file at
- *  any depth is in neither: the removal takes it. A directory git cannot read as a work tree holds nothing to
- *  lose. */
-export function ignoredIn(dir, globs = []) {
+ *  (`DEFAULT_DISPOSABLE` and `globs`) and the `keep` globs: `{ ignored, disposable, kept }`. The one filter
+ *  restart, the land's cleanup and the sweep share. An entry is kept or disposable when it matches or, for a
+ *  folder, when every file in it does (git lists `art/` and `art/preview/` both, and only the second names the
+ *  glob); a folder mixing the two is kept. `keep` wins over disposable: what it names is copied before the
+ *  removal (`keepIgnored`). A folder with no file at any depth is in none: the removal takes it. A directory
+ *  git cannot read as a work tree holds nothing to lose. */
+export function ignoredIn(dir, globs = [], keep = []) {
   let found = [];
   try {
     found = ignoredFiles(dir);
   } catch {} // no work tree there (already gone): nothing to lose
   const isDisposable = disposableMatcher(globs);
-  const out = { ignored: [], disposable: [] };
+  const isKept = entryMatcher(keep);
+  const classOf = (path) => (isKept(path) ? "kept" : isDisposable(path) ? "disposable" : "ignored");
+  const out = { ignored: [], disposable: [], kept: [] };
   for (const entry of found) {
-    if (isDisposable(entry)) {
-      out.disposable.push(entry);
+    const own = classOf(entry);
+    if (own !== "ignored") {
+      out[own].push(entry);
       continue;
     }
     if (!entry.endsWith("/")) {
       out.ignored.push(entry);
       continue;
     }
-    let held = false;
-    let rest = false;
+    const classes = new Set();
     for (const file of filesUnder(dir, entry)) {
-      held = true;
-      if (!isDisposable(file)) {
-        rest = true;
-        break;
-      }
+      classes.add(classOf(file));
+      if (classes.has("ignored")) break;
     }
-    if (rest) out.ignored.push(entry);
-    else if (held) out.disposable.push(entry);
+    if (classes.has("ignored")) out.ignored.push(entry);
+    else if (classes.size) out[classes.has("kept") ? "kept" : "disposable"].push(entry);
   }
   return out;
+}
+
+/** Copy ignored files of the worktree `dir` to `into/<path>`, before a removal takes them: the ones a `keep`
+ *  glob matches, and with `all` every one that is not disposable too. A wholly disposable folder is never
+ *  walked (a `node_modules` is no file to read) unless `keep` names it. `{ files }` the paths copied from `dir`
+ *  (none: `into` is not made), or `{ error }` when a copy fails: the removal must not go on then. */
+export function keepIgnored(dir, into, { keep = [], all = false, disposable = [] } = {}) {
+  if ((keep.length === 0 && !all) || !existsSync(dir)) return { files: [] };
+  const isKept = entryMatcher(keep);
+  const isDisposable = disposableMatcher(disposable);
+  const files = [];
+  try {
+    for (const entry of ignoredFiles(dir)) {
+      if (isDisposable(entry) && !isKept(entry)) continue;
+      const found = entry.endsWith("/") ? [...filesUnder(dir, entry)] : [entry];
+      files.push(...found.filter((f) => isKept(f) || (all && !isDisposable(f))));
+    }
+    for (const file of files) {
+      mkdirSync(dirname(join(into, file)), { recursive: true });
+      cpSync(join(dir, file), join(into, file), { verbatimSymlinks: true });
+    }
+  } catch (e) {
+    return { error: e.message };
+  }
+  return { files };
 }

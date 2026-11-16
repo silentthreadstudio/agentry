@@ -6,7 +6,7 @@
 //   merge <id> [--branch <b>] --message <m> [--summary <t>] [--drop-carry]
 //                                                        land → gate or skip → record → board commit
 //   merge <id> --push [--approved]                       push per config merge.push (ask|auto|never)
-//   merge <id> --cleanup [--discard-ignored]             the worktree and branch, found by branch
+//   merge <id> --cleanup [--discard-ignored|--keep-ignored]  the worktree and branch, found by branch
 //   merge --status                                       is a land running: its id, step, since and holder
 //   merge <id> --resolve landed|rolled-back [--checked]  close a stuck land on the owner's call, or (landed)
 //                                                        a verified lane whose work reached main another way
@@ -80,7 +80,7 @@ export const help = {
     "merge <id> --check <name>=pass|fail [--note <t>]",
     "merge <id> [--branch <b>] --message <board commit> [--summary <t>] [--drop-carry]",
     "merge <id> --push [--approved]",
-    "merge <id> --cleanup [--discard-ignored]",
+    "merge <id> --cleanup [--discard-ignored | --keep-ignored]",
     "merge <id> --resolve landed|rolled-back [--checked]",
     "merge --status [--json]",
   ],
@@ -100,6 +100,8 @@ export const help = {
     "--approved": "with --push: the owner said yes (merge.push ask)",
     "--cleanup": "remove the task's worktree and branch",
     "--discard-ignored": "with --cleanup: also when the worktree holds ignored files",
+    "--keep-ignored":
+      "with --cleanup: copy every ignored file that is not disposable to .agentry/run/process/runs/<id>/kept/ first, then remove",
     "--resolve <landed|rolled-back>":
       "close a land stuck in merging (owner's call): its picks all on main, or none; landed also closes a verified lane whose commits main has by patch (git cherry); main and the board untouched",
     "--checked":
@@ -118,7 +120,7 @@ const MODES = {
   "--check": ["--note"],
   "--message": ["--branch", "--summary", "--drop-carry"],
   "--push": ["--approved"],
-  "--cleanup": ["--discard-ignored"],
+  "--cleanup": ["--discard-ignored", "--keep-ignored"],
   "--resolve": ["--checked"],
   "--status": [],
 };

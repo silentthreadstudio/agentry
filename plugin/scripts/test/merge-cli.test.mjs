@@ -3286,3 +3286,42 @@ test("an adopted branch has no owned list: no owns row", () => {
   assert.doesNotMatch(merge(ID, "--branch", BRANCH, "--preflight").stdout, /owns/);
 });
 
+// ---- cleanup.keep and --keep-ignored ---------------------------------------------------------
+
+test("cleanup copies cleanup.keep files to runs/<id>/kept before the removal and prints the path", () => {
+  commitSpec({ ...SPEC, cleanup: { keep: ["exports/**"] } });
+  const { path } = build({ "src/a.txt": "a\n" });
+  writeFileSync(join(path, ".gitignore"), ".agentry/run/\nexports/\nshots/\n");
+  git(path, "add", ".gitignore");
+  git(path, "commit", "-q", "-m", "ignore exports");
+  mustLand("--branch", BRANCH);
+  mkdirSync(join(path, "exports", "balance"), { recursive: true });
+  writeFileSync(join(path, "exports", "balance", "run.json"), "{}");
+  const res = merge(ID, "--cleanup");
+  assert.equal(res.status, 0, out(res));
+  const kept = join(root, ".agentry", "run", "process", "runs", ID, "kept");
+  assert.match(
+    res.stdout,
+    new RegExp(`kept 1 ignored file\\(s\\) in ${kept.replace(/[/.]/g, "\\$&")}`),
+  );
+  assert.equal(readFileSync(join(kept, "exports", "balance", "run.json"), "utf8"), "{}");
+  assert.equal(existsSync(path), false);
+});
+
+test("cleanup --keep-ignored copies every non-disposable ignored file first instead of refusing", () => {
+  const { path } = build({ "src/a.txt": "a\n" });
+  writeFileSync(join(path, ".gitignore"), ".agentry/run/\nshots/\n");
+  git(path, "add", ".gitignore");
+  git(path, "commit", "-q", "-m", "ignore shots");
+  mustLand("--branch", BRANCH);
+  mkdirSync(join(path, "shots"));
+  writeFileSync(join(path, "shots", "probe.png"), "png");
+  const held = merge(ID, "--cleanup");
+  assert.equal(held.status, 2, out(held));
+  assert.match(held.stderr, /--keep-ignored copies them to .*kept first/);
+  const res = merge(ID, "--cleanup", "--keep-ignored");
+  assert.equal(res.status, 0, out(res));
+  const kept = join(root, ".agentry", "run", "process", "runs", ID, "kept", "shots", "probe.png");
+  assert.equal(readFileSync(kept, "utf8"), "png");
+  assert.equal(existsSync(path), false);
+});

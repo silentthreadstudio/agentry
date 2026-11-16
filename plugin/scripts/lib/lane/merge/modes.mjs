@@ -4,7 +4,7 @@
 import { join } from "node:path";
 import { refuse, usageError } from "../../cli/help.mjs";
 import { readConfig } from "../../config.mjs";
-import { read as readLedger } from "../../process/ledger.mjs";
+import { read as readLedger, runDir } from "../../process/ledger.mjs";
 import { SKILL_DIR, skillExists } from "../../process/spec/extensions.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { resolveBranch } from "../adopt.mjs";
@@ -151,24 +151,28 @@ export function cleanupMode(lane) {
     return done(0, lane, [ok("cleanup", gone)]);
   }
   const discard = Boolean(opts["--discard-ignored"]);
+  const into = join(runDir(root, id), "kept");
   const kept = cleanup(root, {
     branch: ledger.branch,
     main: ledger.mainBranch,
     fallbackPath: ledger.worktree ?? join(worktreesDir(root), id),
     discardIgnored: discard,
     disposable: spec.cleanup?.disposable ?? [],
+    keep: spec.cleanup?.keep ?? [],
+    keepAll: Boolean(opts["--keep-ignored"]),
+    into,
     merge,
   });
   const res =
     kept.removed && !kept.branchDeleted && dropChecked(lane)
       ? { ...kept, ok: true, branchDeleted: true, reason: undefined }
       : kept;
-  if (res.ignored && !discard)
+  if (res.ignored && !discard && !opts["--keep-ignored"])
     return done(
       2,
       lane,
       [red("cleanup", res.reason, res.ignored.slice(0, 10))],
-      `copy what you need out of ${res.path}, then lane merge ${id} --cleanup --discard-ignored`,
+      `copy what you need out of ${res.path}, then lane merge ${id} --cleanup --discard-ignored; or lane merge ${id} --cleanup --keep-ignored copies them to ${into} first`,
     );
   const cleaned = {
     path: res.path,
@@ -184,7 +188,8 @@ export function cleanupMode(lane) {
   }
   const more = [
     ...(res.disposable ? [`discarded ${res.disposable.length} disposable path(s)`] : []),
-    ...(res.ignored ? [`discarded ${res.ignored.length} ignored file(s)`] : []),
+    ...(res.ignored && !res.copied ? [`discarded ${res.ignored.length} ignored file(s)`] : []),
+    ...(res.copied ? [`kept ${res.copied.length} ignored file(s) in ${into}`] : []),
   ];
   const detail = `removed ${res.path}; deleted ${ledger.branch}`;
   return done(0, lane, [ok("cleanup", detail, more)], null);

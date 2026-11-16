@@ -359,6 +359,32 @@ test("cleanup.disposable from the workflow file adds to the defaults in the swee
   assert.ok(!existsSync(merged.path));
 });
 
+test("cleanup.keep from the workflow file: the sweep copies those ignored files under runs/<id>/kept, then removes the worktree", () => {
+  const { root, merged } = fixture();
+  const dir = join(root, ".agentry");
+  const read = (name) => JSON.parse(readFileSync(join(dir, name), "utf8"));
+  const spec = {
+    ...read("process.json"),
+    ...(existsSync(join(dir, "workflow.json")) ? read("workflow.json") : {}),
+  };
+  writeSpec(dir, { ...spec, cleanup: { keep: ["exports/**"] } });
+  appendFileSync(join(root, ".git", "info", "exclude"), "exports/\n");
+  mkdirSync(join(merged.path, "exports", "balance"), { recursive: true });
+  writeFileSync(join(merged.path, "exports", "balance", "run.json"), "{}");
+  const dry = sweep(root);
+  assert.match(
+    dry.stdout,
+    /would remove worktree T1 \(would keep 1 ignored path\(s\) per cleanup\.keep/,
+  );
+  assert.ok(existsSync(merged.path), "a preview copies nothing and removes nothing");
+  const res = sweep(root, "--apply");
+  assert.equal(res.status, 0, res.stdout);
+  const kept = join(root, ".agentry", "run", "process", "runs", "T1", "kept");
+  assert.match(res.stdout, new RegExp(`kept ignored files in ${kept.replace(/[/.]/g, "\\$&")}`));
+  assert.equal(readFileSync(join(kept, "exports", "balance", "run.json"), "utf8"), "{}");
+  assert.ok(!existsSync(merged.path));
+});
+
 test("a stray untracked file or any other ignored file keeps a worktree that also holds build output", () => {
   const { root, merged } = fixture();
   appendFileSync(join(root, ".git", "info", "exclude"), "node_modules/\n.env\n");

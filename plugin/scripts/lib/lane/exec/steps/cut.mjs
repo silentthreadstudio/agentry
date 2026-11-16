@@ -12,6 +12,7 @@ import { branchTips } from "../../../process/git.mjs";
 import * as ledgers from "../../../process/ledger.mjs";
 import { shellWord } from "../../../text/shell.mjs";
 import { short } from "../../fmt.mjs";
+import { keepIgnored } from "../../land.mjs";
 import { now } from "../../merge/lane.mjs";
 import { keepBranchAs, saveWork } from "../../restart.mjs";
 import { remove } from "../../worktree.mjs";
@@ -92,6 +93,12 @@ export function run(ctx, id) {
     const saved = saveWork(ledger.worktree, diff);
     if (saved.error) refuse(`the worktree's uncommitted work could not be saved: ${saved.error}`);
   }
+  // The ignored files `cleanup.keep` names are copied under the run directory before the cut lands or removes anything.
+  const savedIgnored = keepIgnored(ledger.worktree, join(ledgers.runDir(root, id), "kept"), {
+    keep: spec.cleanup?.keep ?? [],
+    disposable: spec.cleanup?.disposable ?? [],
+  });
+  if (savedIgnored.error) refuse(`could not keep the ignored files: ${savedIgnored.error}`);
   let landed = {
     commit: null,
     boardCommit: null,
@@ -153,5 +160,8 @@ export function run(ctx, id) {
     episode: payload,
     afterwards: `${laneLine(root, "close", id, ' --lesson "<the one thing worth remembering>"')} writes this episode, with the lesson, to the memory store and stamps it`,
     ...(plan.dirty.length && { uncommitted: diff }),
+    ...(savedIgnored.files.length && {
+      keptIgnored: `${savedIgnored.files.length} ignored file(s) in ${join(ledgers.runDir(root, id), "kept")}`,
+    }),
   });
 }
