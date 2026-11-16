@@ -5,7 +5,8 @@
 // host. The `agentry-task:` marker may sit on line 2 (opencode V2 prefixes its own line to the prompt), so
 // `findMarker` looks at the first few lines, not just the first.
 //
-//   builderStatus  one of DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED, in the first 5 non-empty lines
+//   builderStatus  one of DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED, in the first 5 non-empty lines,
+//                  else the one line of the whole report that is a lone status token
 //   verdictOf      `Verdict: PASS | PASS WITH NOTES | FAIL`, and only as the LAST non-empty line
 //   usedMemories   the ids a builder cites in `used_memories`
 //   summaryOf      one line, ≤ 120 chars, for the ledger and the handoff
@@ -47,13 +48,23 @@ export function findMarker(text, { within = 5 } = {}) {
 const STATUS =
   /^(?:[Ss]tatus\s*:\s*)?[*`]*(DONE_WITH_CONCERNS|DONE|NEEDS_CONTEXT|BLOCKED)(?![A-Za-z0-9_])/;
 
-/** The builder's status token: the first of the first 5 non-empty lines that starts with one. */
+// A line that is only a status token, in the forms STATUS takes (`Status: DONE`, `**DONE**`, `` `DONE` ``).
+const LONE_STATUS = new RegExp(`${STATUS.source}$`);
+
+/** The builder's status token: the first of the first 5 non-empty lines that starts with one. Past those,
+ *  the report's one line that is nothing but a status token (a report that opens with a preamble); two
+ *  such lines, or none, give null. */
 export function builderStatus(text) {
-  for (const line of nonEmpty(text).slice(0, 5)) {
+  const lines = nonEmpty(text);
+  for (const line of lines.slice(0, 5)) {
     const m = STATUS.exec(strip(line));
     if (m) return m[1];
   }
-  return null;
+  const lone = lines.flatMap((line) => {
+    const m = LONE_STATUS.exec(strip(line));
+    return m ? [m[1]] : [];
+  });
+  return lone.length === 1 ? lone[0] : null;
 }
 
 /** The verdict, read from the LAST non-empty line only and only in the exact form `Verdict: <word>`. A

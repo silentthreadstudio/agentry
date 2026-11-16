@@ -65,11 +65,28 @@ test("builderStatus: all four tokens, DONE is not read out of DONE_WITH_CONCERNS
   assert.equal(builderStatus("# Report\n\nDONE"), "DONE");
 });
 
-test("builderStatus: null when absent, past the first 5 lines, or only a prefix of a word", () => {
+test("builderStatus: null when absent or only a prefix of a word", () => {
   assert.equal(builderStatus("I finished the work."), null);
-  assert.equal(builderStatus("a\nb\nc\nd\ne\nDONE"), null);
   assert.equal(builderStatus("DONENESS is a word"), null);
   assert.equal(builderStatus(""), null);
+});
+
+const PREAMBLE = "a\nb\nc\nd\ne\n";
+
+test("builderStatus: past the first 5 lines, the report's one lone status line is read", () => {
+  assert.equal(builderStatus(`${PREAMBLE}DONE`), "DONE");
+  assert.equal(builderStatus(`${PREAMBLE}**Status: NEEDS_CONTEXT**\nmore`), "NEEDS_CONTEXT");
+  assert.equal(builderStatus(`${PREAMBLE}\`DONE_WITH_CONCERNS\`\nthe rest`), "DONE_WITH_CONCERNS");
+});
+
+test("builderStatus: past the first 5 lines, two status lines or a status with prose is no status", () => {
+  assert.equal(builderStatus(`${PREAMBLE}DONE\nlater\nBLOCKED`), null);
+  assert.equal(builderStatus(`${PREAMBLE}DONE\nDONE`), null);
+  assert.equal(builderStatus(`${PREAMBLE}DONE: and the tests pass`), null);
+});
+
+test("builderStatus: a status in the first 5 lines wins over a later one", () => {
+  assert.equal(builderStatus("DONE\nsummary\n\nBLOCKED\n"), "DONE");
 });
 
 test("verdictOf: must be the last non-empty line, exact", () => {
